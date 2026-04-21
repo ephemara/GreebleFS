@@ -2612,3 +2612,26 @@
 - Validation:
   - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
   - passed: `bunx vitest run src/test/settingsStore.test.ts src/test/appearance.test.ts src/test/settingsPage.behavior.test.tsx src/test/settingsPage.shaders.test.tsx src/test/panelRegistry.test.tsx --reporter=dot`
+
+## 2026-04-21 — Native GPU Runtime V1 Landed
+
+- GreebleFS now has a host-owned native GPU offload lane instead of isolated per-surface GPU experiments. The new runtime is meant for bounded explorer/media workloads with automatic CPU fallback, not for raw filesystem traversal.
+- Durable implementation shape:
+  - Added `src-tauri/src/gpu_runtime/` as the native `wgpu` subsystem. It owns adapter probing, `auto` / `safe` / `integrated` / `discrete` tier resolution, one long-lived device/queue, an internal workload registry, WGSL kernel loading, queue-depth telemetry, fallback accounting, and Specta-exported status/events.
+  - `safe` is a real CPU kill-switch for native GPU offload. `integrated` is the default budget tier for the current workloads, while `discrete` currently adds headroom/adapter preference without changing the v1 workload budget. The scheduler now models those concerns separately: workloads declare where they are enabled and which GPU budget tier they actually consume.
+  - V1 native GPU workloads are deliberately scoped: image thumbnails, image editor preview rendering, audio waveform reduction, audio spectral-band reduction, and audio spectrogram rasterization. Search/indexing, raw directory walking, and plugin GPU registration are still out of scope.
+  - Existing explorer/media entrypoints stayed stable. `src-tauri/src/thumbnail_commands.rs`, `src-tauri/src/fs_commands.rs`, `src-tauri/src/image_commands.rs`, `src-tauri/src/audio_engine.rs`, and `src-tauri/src/audio_commands.rs` now prefer the native GPU runtime when available and fall back to the previous CPU paths when the tier is `safe`, the adapter is unsupported, or a workload exceeds the current budget.
+  - The resource layer now respects adapter limits instead of assuming every device can accept arbitrary buffer/texture sizes. The runtime keeps the future seam for SPIR-V/Kain-like kernels, but v1 is intentionally WGSL-only.
+  - Frontend control/diagnostics now live in `src/config/gpuRuntime.ts`, `src/runtime/gpuRuntimeBackend.ts`, `src/store/gpuRuntimeStore.ts`, `src/store/settingsStore.ts`, `src/App.tsx`, and `src/components/SettingsPage.tsx`. The shell persists `settings.system.gpuTierMode`, configures the runtime on startup/tier changes, and exposes read-only adapter/workload diagnostics in Settings.
+- Durable product note:
+  - Treat the native GPU runtime as the single host seam for future GPU-first explorer/media work. If a new workload needs offload, add it to `src-tauri/src/gpu_runtime/` with typed status and a CPU fallback instead of inventing another isolated WebGPU or browser-canvas pipeline.
+  - Browser-local GPU surfaces still exist for their own reasons. The shader workbench and terminal renderer are not yet routed through the native GPU runtime, so do not conflate “native offload” with every GPU-using surface in the shell.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml gpu_runtime --quiet`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml thumbnail_commands --quiet`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml image_commands --quiet`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml audio_engine --quiet`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/settingsStore.test.ts src/test/gpuRuntimeStore.test.ts src/test/settingsPage.behavior.test.tsx --reporter=dot`

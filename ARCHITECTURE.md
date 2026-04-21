@@ -159,6 +159,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Data-driven spreadsheet extension router and file-kind helper shared by the preview shell, save/export path, and search routing.
 - `src/config/explorerThumbnails.ts`
   Data-driven explorer thumbnail policy for generated image/code/shader/audio/video thumbnails, hover-scrub frame counts, and batch sizing limits.
+- `src/config/gpuRuntime.ts`
+  Frontend GPU-tier policy metadata for the native offload lane. It defines the shell-facing labels and descriptions for `auto`, `safe`, `integrated`, and `discrete`.
+- `src/runtime/gpuRuntimeBackend.ts`
+  Typed TS bridge for the native GPU runtime. It is the only frontend entry point for configuring the native `wgpu` runtime and subscribing to adapter/tier/workload status.
 - `src/windows/FileOperationsWindowApp.tsx`
   Themeable secondary window for destination picking and long-running explorer file-operation visibility. It shares the same appearance/runtime stack as the main shell but stays scoped to copy/move flows and the explorer task feed.
 - `src/store/explorerStore.ts`
@@ -166,7 +170,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/explorerTaskStore.ts`
   Explorer-local task-center store. It hydrates durable task history from the Rust backend, subscribes to live explorer task progress events, and owns the open/close state plus retry/cancel/clear helpers used by the explorer toolbar badge and command palette.
 - `src/store/settingsStore.ts`
-  Persisted layout/profile settings, wallpaper/shader/animation overrides, app-vs-dock theme selection, the native `windowMode` presentation toggle, and machine-level developer-mode behavior.
+  Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, and machine-level developer-mode behavior.
+- `src/store/gpuRuntimeStore.ts`
+  Shell-side source of truth for the native GPU runtime snapshot, hydration, event subscription, effective tier, and workload fallback telemetry surfaced in Settings.
 - `src/store/videoEngineStore.ts`
   Shell-side source of truth for the native video engine snapshot, hydration, event subscription, and transport helper wrappers used by `ExplorerVideoEditor.tsx`.
 
@@ -375,6 +381,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src-tauri/src/video_commands.rs` owns `ffprobe`/`ffmpeg` preview-source resolution, preview-proxy generation, and MP4 trim export for the explorer video lane
   - `src/store/videoEngineStore.ts` is the shell-side source of truth for video-engine snapshots, hydration, and event subscription; components should not own video transport state locally
   - `src-tauri/src/pdf_commands.rs` owns explorer PDF preview sessions, Pdfium page raster, AcroForm field extraction, overlay-annotation writeback, and overwrite-in-place save semantics for the inline PDF lane
+  - `src-tauri/src/gpu_runtime/` owns the native `wgpu` offload subsystem: one long-lived device/queue, adapter capability probing, `safe` / `integrated` / `discrete` tier resolution, an internal workload registry, WGSL kernel loading, queue/fallback telemetry, and CPU-safe fallback semantics
+  - the v1 GPU workloads are intentionally narrow and host-owned: image thumbnails, image editor preview rendering, audio waveform reduction, audio spectral-band reduction, and audio spectrogram rasterization
+  - `src/runtime/gpuRuntimeBackend.ts` + `src/store/gpuRuntimeStore.ts` are the only TS entry points for configuring or observing that native GPU runtime; React surfaces should not start their own ad hoc native GPU control flows
   - `src-tauri/src/audio_commands.rs` now owns offline-only audio analysis/export/batch work plus vendored SoX runtime extraction and explorer task cancellation/retry hooks
   - the audio lane is intentionally split:
     - native playback and deck transport live in Rust without the webview media stack
@@ -385,6 +394,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
     - `src-tauri/src/video_commands.rs` keeps ffmpeg-backed trim export and compatibility preview-proxy helpers as the offline mutation lane
     - `src/runtime/videoEngineBackend.ts` + `src/store/videoEngineStore.ts` are the only TS entry points for realtime video transport
   - `src-tauri/src/thumbnail_commands.rs` owns rich explorer thumbnail generation and caching for image posters, code cards, shader spheres, audio waveform/spectral thumbnails, and video poster + hover-scrub frame sequences.
+  - `src-tauri/src/thumbnail_commands.rs`, `src-tauri/src/image_commands.rs`, `src-tauri/src/audio_engine.rs`, and `src-tauri/src/audio_commands.rs` now attempt the native GPU runtime first where appropriate, but every shipped path still keeps its CPU fallback so unsupported adapters do not break explorer flows
   - `src/runtime/explorerBackend.ts` is the only TS bridge for `fs_read_entry_thumbnail`; React should request generated thumbnails there instead of decoding files, probing media, or shelling out from components.
   - `src/runtime/explorerBackend.ts` is also the only TS bridge for batch rename preview/apply, checksum calculation, item properties, fuzzy jump filtering, and terminal shell-integration commands used by explorer surfaces
   - local transfer UX now has a two-step contract instead of silent collision auto-rename:
@@ -483,6 +493,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Repo-wide `.\node_modules\.bin\tsc.exe --noEmit -p tsconfig.json` is also currently red on the nested `src/src/frontend/**` workspace, which is not part of the main Tauri shell path. When validating work in the main app, filter the compiler output to the touched files instead of treating that secondary frontend tree as a regression in the storage lane.
 - Use `node scripts/run-cargo-tests.mjs` for the Rust suite on Linux. Raw `cargo test --workspace` will try to build macOS and Windows workspace members that are intentionally skipped by the host-aware runner.
 - Explorer rich thumbnails are native and cache-backed. `src-tauri/src/thumbnail_commands.rs` writes generated posters and video hover frames under the app-local `explorer-thumbnails` cache. If thumbnails look stale, inspect cache-key inputs and the app-local cache before trying to patch React rendering.
+- Native GPU offload is now a host-owned subsystem, not a generic frontend WebGPU free-for-all. New GPU-first explorer/media work should enter through `src-tauri/src/gpu_runtime/`, expose typed status through Specta, and preserve a CPU fallback path; browser-local GPU surfaces like shader preview and terminal WebGL remain separate systems.
 - If the video timeline starts asking for an audio file while editing a normal video, inspect `src-tauri/src/video_engine.rs` before touching UI copy. That symptom usually means the video engine failed to link deck `B` to the selected file’s embedded audio track; it is not a real request to import standalone audio.
 - A current narrowed file-operations/explorer typecheck also still trips an unrelated screenshot typing issue in `src/components/ScreenshotsManager.tsx`: `SelectionHandle` includes `"move"` but the resize-handle consumer only accepts edge handles. Treat that as pre-existing unless the task is on screenshot selection editing.
 - Built-in theme switches should go through `settingsStore.applyThemeSelection()` or the Settings theme catalog flow, not a direct `updateAppearance({ activeThemeId })` call. The direct path now skips pilot baseline resets for dock mode, layout profile, explorer presentation, wallpaper/shader overrides, and related default-shell behavior.
