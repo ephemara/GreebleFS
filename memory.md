@@ -2574,8 +2574,9 @@
   - Row pagination now keys off the selected table's known `row_count` from `sqlite_get_info`, so `Next` stays available for large tables even when the current page is full and the UI is constrained.
   - SQLite cells now wrap instead of forcing single-line truncation everywhere, which preserves more data in a sidebar-width preview without requiring as much horizontal scrolling.
   - Query failures now render an explicit in-pane error state instead of only logging to the console.
+  - Follow-up compaction pass: the table selector no longer tries to read like a second content surface. It is now a thin horizontal strip of compact chips, so the row grid remains the dominant preview surface and table switching still works in one gesture via horizontal scrolling.
 - Durable product note:
-  - Treat the SQLite lane as preview-pane UI first. If future work adds schema inspection, filtering, or sorting, preserve the compact stacked mode and keep the data grid optimized for constrained width before adding desktop-database-tool chrome.
+  - Treat the SQLite lane as preview-pane UI first. If future work adds schema inspection, filtering, or sorting, do not regress the selector back into a tall card wall or a wide side rail that competes with the actual table grid.
 - Validation:
   - passed `bunx vitest run src/test/explorerSqlitePreview.test.tsx`
   - passed filtered typecheck via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "ExplorerSqlitePreview|explorerSqlitePreview.test" || true`
