@@ -39,7 +39,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/panels/panelRegistry.tsx`
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
-  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video editor paths, the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode.
+  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video/audio editor paths, the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode.
 - `src/components/OverlayScrollArea.tsx`
   Shared overlay scroll host. It owns the explicit scrollbar contract for shipping-shell panes (`hidden`, `themed`, `explorer-file-list`) so explorer lists, popouts, and workbench/detail surfaces can share themed scroll behavior without per-component scrollbar CSS.
 - `src/components/ExplorerImageEditor.tsx`
@@ -47,7 +47,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/ExplorerVideoEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane video surface. It now defaults to a playback-first preview surface and only reveals the heavier trim/inspector editing chrome when Explorer switches the document into explicit edit mode. It mounts a real media-element preview that is driven by the Rust video engine/store, resolves direct-safe sources or ffmpeg-generated MP4 proxies through the typed backend, and exposes loop-aware transport plus non-destructive trim export.
 - `src/components/ExplorerAudioWorkbench.tsx`
-  Shell-owned wrapper for the embedded preview-pane audio surface. It is now a native dual-deck transport UI over the Rust audio engine, with a compact summary strip for high-value metadata, shared waveform selection, DAW-style fade edge handles embedded in the waveform, memoized waveform/spectral subsurfaces, a RAF-driven playhead marker, deck arming/loading, loop/gain/rate control, offline export actions, and spectrogram rendering.
+  Shell-owned wrapper for the embedded preview-pane audio surface. It now follows the same preview-first shell model as the image/video lanes: `FileExplorer.tsx` opens audio in a clean playback-first preview surface, the shared preview header owns the `Preview` / `Edit` toggle, and the heavier trim/export/plugin rack only appears in explicit edit mode. Under that shell split it still rides the Rust audio engine, keeps shared waveform selection, DAW-style fade edge handles, memoized waveform/spectral subsurfaces, a RAF-driven playhead marker, loop/gain/rate control, offline export actions, and spectrogram rendering.
 - `src/components/ExplorerPdfWorkbench.tsx`
   Shell-owned wrapper for the embedded preview-pane PDF surface. It keeps the explorer preview-pane contract, renders one active page at a time, exposes page/zoom/fit/edit/save chrome, authors page-space overlay annotations plus AcroForm edits in React, and defers document truth/render/save back to the typed Rust PDF bridge.
 - `src/components/ExplorerSpreadsheetWorkbench.tsx`
@@ -338,7 +338,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `FileExplorer.tsx` owns both file-centric actions and explorer-local shell controls, so the shared top bar stays panel-agnostic while the explorer keeps its mode/source/preview controls adjacent to the path/search field.
 - Previewable media is now split into three host-owned explorer lanes instead of one generic browser fallback:
   - image editing stays in `ExplorerImageEditor.tsx` through the local package seam
-  - audio playback/editing now lives in `ExplorerAudioWorkbench.tsx`, but transport truth lives in `src-tauri/src/audio_engine.rs` and flows through `src/store/audioEngineStore.ts`
+  - audio playback/editing now lives in `ExplorerAudioWorkbench.tsx`, with a preview-first player surface and an explicit edit-mode workbench; transport truth still lives in `src-tauri/src/audio_engine.rs` and flows through `src/store/audioEngineStore.ts`
   - the browser `<audio>` lane and preview-proxy workaround are no longer the explorer playback path; the preview pane now talks to a CPAL + Symphonia native engine and only uses SoX for offline mutation
   - video playback/editing now lives in `ExplorerVideoEditor.tsx`, but transport truth lives in `src-tauri/src/video_engine.rs` and flows through `src/store/videoEngineStore.ts`
   - video preview now uses a real `<video>` paint surface again, but the transport/timeline truth still lives in Rust; `src-tauri/src/video_commands.rs` probes the file, allows direct playback only for safe codec/container pairs, and generates MP4 preview proxies for hostile formats

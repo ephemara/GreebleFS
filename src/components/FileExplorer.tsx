@@ -3235,6 +3235,7 @@ function PreviewPanel({
   const isShaderPreview = preview.type === "shader";
   const isSpreadsheetPreview = preview.type === "spreadsheet";
   const isVideoPreview = preview.type === "video";
+  const isAudioPreview = preview.type === "audio";
   const isEditableImagePreview =
     preview.type === "image" &&
     isEditableImagePreviewExtension(preview.extension);
@@ -3344,6 +3345,7 @@ function PreviewPanel({
     supportsRenderedPreview ||
     isScriptTextPreview ||
     isVideoPreview ||
+    isAudioPreview ||
     isPdfPreview ||
     isShaderPreview ||
     isSpreadsheetPreview ||
@@ -4391,6 +4393,7 @@ function PreviewPanel({
               audioName={preview.name}
               audioExtension={preview.extension}
               audioSize={preview.size}
+              mode={viewMode}
               onExported={onRefreshPreviewEntry}
             />
           )}
@@ -9954,6 +9957,7 @@ export function FileExplorer({
           }
           return;
         case "audio":
+          setDocumentViewMode("preview");
           if (isCurrentPreviewRequest()) {
             setPreview({
               type: "audio",
@@ -12555,7 +12559,9 @@ export function FileExplorer({
                 ? "Video editor"
                 : "Video preview"
             : preview.type === "audio"
-              ? "Audio preview"
+              ? documentViewMode === "edit"
+                ? "Audio editor"
+                : "Audio preview"
               : preview.type === "folder"
                 ? "Folder preview"
                 : preview.type === "image"
@@ -15766,6 +15772,28 @@ export function FileExplorer({
         return;
       }
 
+      const activeElement = document.activeElement;
+      const isTypingInEmbeddedEditor =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement ||
+        activeElement instanceof HTMLElement
+          ? activeElement.isContentEditable ||
+            activeElement.closest(".monaco-editor") != null
+          : false;
+
+      if (
+        preview.type === "audio" &&
+        !isTypingInEmbeddedEditor &&
+        matchesKeybinding(e, keybindings.audioWorkbenchToggleEditMode)
+      ) {
+        e.preventDefault();
+        setDocumentViewMode((current) =>
+          current === "edit" ? "preview" : "edit",
+        );
+        return;
+      }
+
       if (jumpFilter.active && e.key === "Escape") {
         e.preventDefault();
         setJumpFilter(null);
@@ -15826,16 +15854,6 @@ export function FileExplorer({
         }
         return;
       }
-
-      const activeElement = document.activeElement;
-      const isTypingInEmbeddedEditor =
-        activeElement instanceof HTMLInputElement ||
-        activeElement instanceof HTMLTextAreaElement ||
-        activeElement instanceof HTMLSelectElement ||
-        activeElement instanceof HTMLElement
-          ? activeElement.isContentEditable ||
-            activeElement.closest(".monaco-editor") != null
-          : false;
 
       if (
         preview.type === "text" &&

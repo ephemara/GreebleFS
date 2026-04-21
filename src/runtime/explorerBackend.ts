@@ -323,6 +323,7 @@ export type ExplorerBackendContract = {
   writeFile: typeof writeExplorerFile;
   readTextFile: typeof readExplorerTextFile;
   readFileBase64: typeof readExplorerFileBase64;
+  readPreviewBytes: typeof readExplorerPreviewBytes;
   readImageThumbnail: typeof readExplorerImageThumbnail;
   readEntryThumbnail: typeof readExplorerEntryThumbnail;
   renamePath: typeof renameExplorerPath;
@@ -696,6 +697,16 @@ export async function readExplorerFileBase64(path: string): Promise<string> {
   return unwrapTauriResult(await commands.fsReadFileBase64(path));
 }
 
+export async function readExplorerPreviewBytes(
+  path: string,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  if (isCloudExplorerPath(path)) {
+    return commands.cloudReadPreviewBytes(path, maxBytes);
+  }
+  return commands.fsReadPreviewBytes(path, maxBytes);
+}
+
 export async function readExplorerImageThumbnail(
   path: string,
   maxWidth: number,
@@ -917,6 +928,7 @@ export const explorerBackendContract: ExplorerBackendContract = {
   writeFile: writeExplorerFile,
   readTextFile: readExplorerTextFile,
   readFileBase64: readExplorerFileBase64,
+  readPreviewBytes: readExplorerPreviewBytes,
   readImageThumbnail: readExplorerImageThumbnail,
   readEntryThumbnail: readExplorerEntryThumbnail,
   renamePath: renameExplorerPath,

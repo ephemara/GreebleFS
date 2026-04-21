@@ -74,8 +74,16 @@ vi.mock("../components/ExplorerVideoEditor", () => ({
 }));
 
 vi.mock("../components/ExplorerAudioWorkbench", () => ({
-  ExplorerAudioWorkbench: ({ audioName }: { audioName: string }) => (
-    <div data-testid="mock-explorer-audio-workbench">{audioName}</div>
+  ExplorerAudioWorkbench: ({
+    audioName,
+    mode = "edit",
+  }: {
+    audioName: string;
+    mode?: "preview" | "edit";
+  }) => (
+    <div data-testid="mock-explorer-audio-workbench" data-audio-mode={mode}>
+      {`${audioName}:${mode}`}
+    </div>
   ),
 }));
 
@@ -2044,14 +2052,60 @@ describe("FileExplorer view modes", () => {
 
     fireEvent.click(screen.getByText("anthem.mp3"));
 
-    expect(
-      await screen.findByTestId("mock-explorer-audio-workbench"),
-    ).toHaveTextContent("anthem.mp3");
+    const audioWorkbench = await screen.findByTestId(
+      "mock-explorer-audio-workbench",
+    );
+    expect(audioWorkbench).toHaveTextContent("anthem.mp3:preview");
+    expect(useExplorerStore.getState().session.documentViewMode).toBe(
+      "preview",
+    );
+    const previewModeToggle = getChromeControl("previewModeToggle");
+    expect(previewModeToggle).not.toBeNull();
+    fireEvent.click(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Edit",
+      }),
+    );
+
+    expect(await screen.findByTestId("mock-explorer-audio-workbench")).toHaveTextContent(
+      "anthem.mp3:edit",
+    );
     expect(
       vi
         .mocked(invoke)
         .mock.calls.some(([command]) => command === "fs_read_text_file"),
     ).toBe(false);
+  });
+
+  it("toggles audio preview and edit mode from the shared audio workbench hotkey", async () => {
+    renderExplorer();
+    await screen.findByText("anthem.mp3");
+
+    fireEvent.click(screen.getByText("anthem.mp3"));
+
+    expect(
+      await screen.findByTestId("mock-explorer-audio-workbench"),
+    ).toHaveTextContent("anthem.mp3:preview");
+
+    fireEvent.keyDown(window, { key: "e" });
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.documentViewMode).toBe("edit");
+      expect(screen.getByTestId("mock-explorer-audio-workbench")).toHaveTextContent(
+        "anthem.mp3:edit",
+      );
+    });
+
+    fireEvent.keyDown(window, { key: "e" });
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.documentViewMode).toBe(
+        "preview",
+      );
+      expect(screen.getByTestId("mock-explorer-audio-workbench")).toHaveTextContent(
+        "anthem.mp3:preview",
+      );
+    });
   });
 
   it("defaults videos to playback preview and only enters video edit mode when requested", async () => {

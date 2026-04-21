@@ -55,6 +55,7 @@ type ExplorerAudioWorkbenchProps = {
   audioName: string;
   audioExtension: string;
   audioSize: number;
+  mode?: 'preview' | 'edit';
   onExported?: (outputPath: string) => Promise<void> | void;
 };
 
@@ -336,6 +337,7 @@ export function ExplorerAudioWorkbench({
   audioName,
   audioExtension,
   audioSize,
+  mode = 'edit',
   onExported,
 }: ExplorerAudioWorkbenchProps) {
   useAudioEngineFeed();
@@ -346,6 +348,7 @@ export function ExplorerAudioWorkbench({
   const settings = useSettingsStore((state) => state.settings);
   const keybindings = settings.keybindings;
   const activeDeckId = 'a' as const;
+  const isEditMode = mode === 'edit';
 
   const [analysis, setAnalysis] = useState<ExplorerAudioPreviewAnalysis | null>(null);
   const [selectionStart, setSelectionStart] = useState(0);
@@ -359,6 +362,11 @@ export function ExplorerAudioWorkbench({
   const [isScanningVst, setIsScanningVst] = useState(false);
   
   useEffect(() => {
+    if (!isEditMode) {
+      setIsScanningVst(false);
+      return undefined;
+    }
+
     let active = true;
     const runScan = async () => {
       setIsScanningVst(true);
@@ -378,7 +386,7 @@ export function ExplorerAudioWorkbench({
     };
     runScan();
     return () => { active = false; };
-  }, [settings.audio?.vst3AdditionalFolders]);
+  }, [isEditMode, settings.audio?.vst3AdditionalFolders]);
 
   const [generateSpectrogram, setGenerateSpectrogram] = useState(true);
   const [convertFormat, setConvertFormat] = useState<'mp3' | 'wav' | 'flac' | 'ogg'>(
@@ -512,6 +520,15 @@ export function ExplorerAudioWorkbench({
   const spectralBands = analysis?.spectralBands ?? [];
   const silenceRegions = analysis?.silenceRegions ?? [];
   const estimatedBpm = analysis?.estimatedBpm ?? null;
+  const currentTimeSeconds = clamp(
+    previewDeck.currentTimeSeconds ?? 0,
+    0,
+    effectiveDuration || 0,
+  );
+  const playheadLeft =
+    effectiveDuration > 0
+      ? `${(currentTimeSeconds / effectiveDuration) * 100}%`
+      : '0%';
   const leadingSilenceRegion =
     silenceRegions.find((region) => region.startSeconds <= FINE_TRIM_NUDGE_SECONDS) ?? null;
   const trailingSilenceRegion =
@@ -530,6 +547,57 @@ export function ExplorerAudioWorkbench({
     }
     return { start: nextStart, end: nextEnd };
   }, [effectiveDuration, leadingSilenceRegion, trailingSilenceRegion]);
+  const previewSummaryItems = useMemo(
+    () => [
+      {
+        label: 'Format',
+        value: audioExtension ? audioExtension.toUpperCase() : 'Audio',
+      },
+      {
+        label: 'Duration',
+        value: formatDuration(analysis?.durationSeconds ?? effectiveDuration),
+      },
+      {
+        label: 'Sample Rate',
+        value: analysis?.sampleRateHz
+          ? `${analysis.sampleRateHz.toLocaleString()} Hz`
+          : 'Unknown',
+      },
+      {
+        label: 'Tempo',
+        value: formatBpm(estimatedBpm),
+      },
+    ],
+    [analysis?.durationSeconds, analysis?.sampleRateHz, audioExtension, effectiveDuration, estimatedBpm],
+  );
+  const previewShortcutItems = useMemo(
+    () =>
+      [
+        keybindings.audioWorkbenchPlayPause
+          ? `${keybindings.audioWorkbenchPlayPause} play/pause`
+          : null,
+        keybindings.audioWorkbenchToggleEditMode
+          ? `${keybindings.audioWorkbenchToggleEditMode} edit`
+          : null,
+        keybindings.audioWorkbenchExportClip
+          ? `${keybindings.audioWorkbenchExportClip} export clip`
+          : null,
+      ].filter((value): value is string => Boolean(value)),
+    [
+      keybindings.audioWorkbenchExportClip,
+      keybindings.audioWorkbenchPlayPause,
+      keybindings.audioWorkbenchToggleEditMode,
+    ],
+  );
+  const hasLoopSelectionPreview =
+    previewDeck.loopRegion.enabled &&
+    effectiveDuration > 0 &&
+    selectionDuration > 0 &&
+    (selectionStart > FINE_TRIM_NUDGE_SECONDS ||
+      Math.abs(selectionEnd - effectiveDuration) > FINE_TRIM_NUDGE_SECONDS);
+  const previewTransportStatus = workbenchError || previewDeck.error || snapshot.engineError
+    ? workbenchError ?? previewDeck.error ?? snapshot.engineError
+    : workbenchStatus;
 
   useEffect(() => {
     return () => {
@@ -984,338 +1052,337 @@ export function ExplorerAudioWorkbench({
         .pro-panel-header { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 6px; }
         .pro-label { font-size: 10px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; display: block; }
       `}</style>
-      <div
-        ref={rootRef}
-        tabIndex={-1}
-        style={{
-          width: '100%',
-          height: '100%',
-          background: '#0e0e0e',
-          color: '#fff',
-          overflow: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#121212', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ background: 'rgba(255,255,255,0.1)', padding: 6, borderRadius: 4 }}>
-              <AudioLines size={16} color="#aaa" />
-            </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{audioName}</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
-                {audioExtension.toUpperCase()} • {formatSize(audioSize)} • {formatDuration(analysis?.durationSeconds ?? effectiveDuration)} • {analysis?.sampleRateHz ? `${analysis.sampleRateHz.toLocaleString()} Hz` : 'Unknown Hz'} • {formatBpm(estimatedBpm)}
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" style={toolbarButtonStyle('ghost')} onClick={() => void handleStopPlayback()}>
-              Stop
-            </button>
-            <button type="button" style={toolbarButtonStyle('primary')} onClick={() => void togglePreviewDeckPlayback()}>
-              {previewDeck.isPlaying ? <Pause size={14} /> : <Play size={14} />}
-              {previewDeck.isPlaying ? 'Pause' : 'Play'}
-            </button>
-          </div>
-        </div>
-
-        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div
-              ref={timelineRef}
-              role="presentation"
-              onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
-              style={{
-                position: 'relative',
-                height: 120,
-                borderRadius: 4,
-                background: '#000',
-                border: '1px solid rgba(255,255,255,0.1)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'stretch',
-                overflow: 'hidden'
-              }}
-            >
-              <AudioWorkbenchWaveformBars waveformBuckets={waveformBuckets} isAnalyzing={isAnalyzing} />
-              
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  bottom: 0,
-                  left: selectionLeft,
-                  width: selectionWidth,
-                  background: 'rgba(59, 130, 246, 0.15)',
-                  borderLeft: '1px solid rgba(59, 130, 246, 0.5)',
-                  borderRight: '1px solid rgba(59, 130, 246, 0.5)',
-                  pointerEvents: 'none',
-                }}
-              />
-              <div style={{ position: 'absolute', top: 0, bottom: 0, left: selectionLeft, width: fadeInWidth, background: 'linear-gradient(90deg, rgba(255,255,255,0.1), transparent)', pointerEvents: 'none' }} />
-              <div style={{ position: 'absolute', top: 0, bottom: 0, left: fadeOutHandleLeft, width: fadeOutWidth, background: 'linear-gradient(270deg, rgba(255,255,255,0.1), transparent)', pointerEvents: 'none' }} />
-
-              <div
-                role="presentation"
-                onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('selectionStart', event.clientX); }}
-                style={{ position: 'absolute', top: 0, bottom: 0, left: selectionLeft, width: 10, marginLeft: -5, cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}
-              >
-                <div style={{ width: 2, height: '100%', background: '#3b82f6' }} />
-              </div>
-              <div
-                role="presentation"
-                onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('selectionEnd', event.clientX); }}
-                style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${selectionLeft} + ${selectionWidth})`, width: 10, marginLeft: -5, cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}
-              >
-                <div style={{ width: 2, height: '100%', background: '#3b82f6' }} />
-              </div>
-              
-              <div
-                role="slider"
-                tabIndex={0}
-                aria-label={`Fade in handle for ${audioName}`}
-                aria-valuemin={0}
-                aria-valuemax={selectionDuration}
-                aria-valuenow={boundedFadeInSeconds}
-                aria-valuetext={formatFadeDuration(boundedFadeInSeconds)}
-                onKeyDown={(event) => handleFadeHandleKeyDown('fadeIn', event)}
-                onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('fadeIn', event.clientX); }}
-                style={{ position: 'absolute', top: 0, width: 10, height: 10, left: fadeInHandleLeft, transform: 'translateX(-50%)', cursor: 'ew-resize', zIndex: 4 }}
-              >
-                <div style={{ width: 0, height: 0, borderTop: '10px solid #cbd5e1', borderRight: '10px solid transparent' }} />
-              </div>
-              <div
-                role="slider"
-                tabIndex={0}
-                aria-label={`Fade out handle for ${audioName}`}
-                aria-valuemin={0}
-                aria-valuemax={selectionDuration}
-                aria-valuenow={boundedFadeOutSeconds}
-                aria-valuetext={formatFadeDuration(boundedFadeOutSeconds)}
-                onKeyDown={(event) => handleFadeHandleKeyDown('fadeOut', event)}
-                onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('fadeOut', event.clientX); }}
-                style={{ position: 'absolute', top: 0, width: 10, height: 10, left: fadeOutHandleLeft, transform: 'translateX(-50%)', cursor: 'ew-resize', zIndex: 4 }}
-              >
-                <div style={{ width: 0, height: 0, borderTop: '10px solid #cbd5e1', borderLeft: '10px solid transparent' }} />
-              </div>
-
-              <AudioWorkbenchPlayheadMarker
-                ref={playheadMarkerRef}
-                currentTimeSeconds={previewDeck.currentTimeSeconds}
-                durationSeconds={effectiveDuration}
-                isPlaying={previewDeck.isPlaying}
-                playbackRate={previewDeck.rate}
-              />
-            </div>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(255,255,255,0.5)', fontVariantNumeric: 'tabular-nums' }}>
-              <div>In: {formatPreciseSeconds(selectionStart)}s | Out: {formatPreciseSeconds(selectionEnd)}s | Len: {formatPreciseSeconds(selectionDuration)}s</div>
-              <div>Fade In: {formatFadeDuration(boundedFadeInSeconds)} | Fade Out: {formatFadeDuration(boundedFadeOutSeconds)}</div>
-            </div>
-          </div>
-
-          {(spectralBands.length > 0 || spectrogramSource) && (
-            <div style={{ display: 'flex', gap: 12, marginTop: -12, height: 48 }}>
-              {spectralBands.length > 0 && (
-                <div style={{ flex: 1, background: '#000', borderRadius: 4, overflow: 'hidden' }}>
-                  <AudioWorkbenchSpectralBars spectralBands={spectralBands} />
-                </div>
-              )}
-              {spectrogramSource && (
-                <div style={{ flex: 1, borderRadius: 4, overflow: 'hidden' }}>
-                  <img src={spectrogramSource} alt="Spectrogram" style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000' }} />
-                </div>
-              )}
-            </div>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-            <div className="pro-panel">
-              <div className="pro-panel-header">Deck Controls</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <div>
-                  <label className="pro-label">Gain ({previewDeck.gainLinear.toFixed(2)}x)</label>
-                  <input type="range" className="pro-slider" min="0" max="2" step="0.01" value={previewDeck.gainLinear} onChange={(event) => void handleGainChange(Number(event.target.value))} />
-                </div>
-                <div>
-                  <label className="pro-label">Rate ({previewDeck.rate.toFixed(2)}x)</label>
-                  <input type="range" className="pro-slider" min="0.5" max="2" step="0.01" value={previewDeck.rate} onChange={(event) => void handleRateChange(Number(event.target.value))} />
-                </div>
+      {isEditMode ? (
+        <div
+          ref={rootRef}
+          tabIndex={-1}
+          style={{
+            width: '100%',
+            height: '100%',
+            background: '#0e0e0e',
+            color: '#fff',
+            overflow: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#121212', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ background: 'rgba(255,255,255,0.1)', padding: 6, borderRadius: 4 }}>
+                <AudioLines size={16} color="#aaa" />
               </div>
               <div>
-                <label className="pro-label">Pitch Shift ({formatPitchShift(pitchShiftCents)})</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input type="range" className="pro-slider" min="-1200" max="1200" step="1" value={pitchShiftCents} onChange={(event) => setPitchShiftCents(Number(event.target.value))} />
-                  <input aria-label="Pitch shift cents" type="number" className="pro-input" style={{ width: 70 }} min="-1200" max="1200" value={Math.round(pitchShiftCents)} onChange={(event) => { const nextValue = Number(event.target.value); if (Number.isFinite(nextValue)) setPitchShiftCents(clamp(nextValue, -1200, 1200)); }} />
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{audioName}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                  {audioExtension.toUpperCase()} • {formatSize(audioSize)} • {formatDuration(analysis?.durationSeconds ?? effectiveDuration)} • {analysis?.sampleRateHz ? `${analysis.sampleRateHz.toLocaleString()} Hz` : 'Unknown Hz'} • {formatBpm(estimatedBpm)}
                 </div>
-              </div>
-              <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-start' }}>
-                <button type="button" style={toolbarButtonStyle('danger')} onClick={() => setExportDialogMode('overwrite')}>Save Edits to File</button>
               </div>
             </div>
-
-            <div className="pro-panel">
-              <div className="pro-panel-header">Precision Trim</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <label className="pro-label">In</label>
-                  <input type="number" className="pro-input" step="0.001" min="0" value={formatPreciseSeconds(selectionStart)} onChange={(event) => { const v = Number(event.target.value); if (Number.isFinite(v)) updateSelectionStartFromInput(v); }} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label className="pro-label">Out</label>
-                  <input type="number" className="pro-input" step="0.001" min="0" value={formatPreciseSeconds(selectionEnd)} onChange={(event) => { const v = Number(event.target.value); if (Number.isFinite(v)) updateSelectionEndFromInput(v); }} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label className="pro-label">Length</label>
-                  <input type="number" className="pro-input" step="0.001" min={MINIMUM_SELECTION_SECONDS.toString()} value={formatPreciseSeconds(selectionDuration)} onChange={(event) => { const v = Number(event.target.value); if (Number.isFinite(v)) updateSelectionDurationFromInput(v); }} />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('start', -FINE_TRIM_NUDGE_SECONDS)}>-10ms In</button>
-                <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('start', FINE_TRIM_NUDGE_SECONDS)}>+10ms In</button>
-                <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('end', -FINE_TRIM_NUDGE_SECONDS)}>-10ms Out</button>
-                <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('end', FINE_TRIM_NUDGE_SECONDS)}>+10ms Out</button>
-                <button type="button" style={toolbarButtonStyle()} onClick={trimLeadingSilence}>Trim Head</button>
-                <button type="button" style={toolbarButtonStyle()} onClick={trimTrailingSilence}>Trim Tail</button>
-                <button type="button" style={toolbarButtonStyle()} onClick={trimDetectedContent}>Trim Content</button>
-                <button type="button" style={toolbarButtonStyle()} onClick={() => void clearLoopRegion()}>Clear</button>
-              </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={toolbarButtonStyle('ghost')} onClick={() => void handleStopPlayback()}>
+                Stop
+              </button>
+              <button type="button" style={toolbarButtonStyle('primary')} onClick={() => void togglePreviewDeckPlayback()}>
+                {previewDeck.isPlaying ? <Pause size={14} /> : <Play size={14} />}
+                {previewDeck.isPlaying ? 'Pause' : 'Play'}
+              </button>
             </div>
+          </div>
 
-            <div className="pro-panel">
-              <div className="pro-panel-header">Transform & Export</div>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-                <div style={{ flex: 1 }}>
-                  <label className="pro-label">Convert Format</label>
-                  <select className="pro-select" value={convertFormat} onChange={(event) => setConvertFormat(event.target.value as 'mp3' | 'wav' | 'flac' | 'ogg')}>
-                    {EXPLORER_AUDIO_EXPORT_FORMATS.map((format) => (
-                      <option key={format.id} value={format.id}>{format.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', paddingBottom: 4 }}>
-                  <input type="checkbox" checked={generateSpectrogram} onChange={(event) => setGenerateSpectrogram(event.target.checked)} />
-                  Spectrogram Preview
-                </label>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('clip')}>Export Clip</button>
-                <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('normalized')}>Export Normalized</button>
-                <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('convert')}>Convert</button>
-              </div>
-            </div>
-
-            <div className="pro-panel">
-              <div className="pro-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span>Plugin Rack (VST3)</span>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 400, letterSpacing: '0.04em' }}>HEADLESS</span>
-              </div>
-
-              {/* Plugin slot display */}
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <div style={{
-                  flex: 1,
-                  padding: '5px 8px',
-                  background: previewDeck.activePluginPath ? 'rgba(99,102,241,0.12)' : 'rgba(0,0,0,0.2)',
-                  border: `1px solid ${previewDeck.activePluginPath ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.1)'}`,
+          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div
+                ref={timelineRef}
+                role="presentation"
+                onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
+                style={{
+                  position: 'relative',
+                  height: 120,
                   borderRadius: 4,
-                  fontSize: 11,
-                  color: previewDeck.activePluginPath ? 'rgba(200,200,255,0.95)' : 'rgba(255,255,255,0.35)',
-                  textOverflow: 'ellipsis',
+                  background: '#000',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'stretch',
                   overflow: 'hidden',
-                  whiteSpace: 'nowrap',
-                  transition: 'border-color 0.15s, background 0.15s',
-                }}>
-                  {previewDeck.activePluginPath
-                    ? `⬡ ${previewDeck.activePluginPath.split(/[/\\]/).pop()}`
-                    : '— No plugin loaded —'}
+                }}
+              >
+                <AudioWorkbenchWaveformBars waveformBuckets={waveformBuckets} isAnalyzing={isAnalyzing} />
+
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: selectionLeft,
+                    width: selectionWidth,
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    borderLeft: '1px solid rgba(59, 130, 246, 0.5)',
+                    borderRight: '1px solid rgba(59, 130, 246, 0.5)',
+                    pointerEvents: 'none',
+                  }}
+                />
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: selectionLeft, width: fadeInWidth, background: 'linear-gradient(90deg, rgba(255,255,255,0.1), transparent)', pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', top: 0, bottom: 0, left: fadeOutHandleLeft, width: fadeOutWidth, background: 'linear-gradient(270deg, rgba(255,255,255,0.1), transparent)', pointerEvents: 'none' }} />
+
+                <div
+                  role="presentation"
+                  onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('selectionStart', event.clientX); }}
+                  style={{ position: 'absolute', top: 0, bottom: 0, left: selectionLeft, width: 10, marginLeft: -5, cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}
+                >
+                  <div style={{ width: 2, height: '100%', background: '#3b82f6' }} />
+                </div>
+                <div
+                  role="presentation"
+                  onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('selectionEnd', event.clientX); }}
+                  style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${selectionLeft} + ${selectionWidth})`, width: 10, marginLeft: -5, cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}
+                >
+                  <div style={{ width: 2, height: '100%', background: '#3b82f6' }} />
                 </div>
 
-                <div style={{ flex: 1, display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <select
-                    className="vst-plugin-dropdown"
-                    value={previewDeck.activePluginPath || ''}
-                    onChange={async (e) => {
-                      const path = e.target.value;
-                      if (!path) return;
-                      try {
-                        await loadAudioDeckPlugin(previewDeck.deckId, path);
-                        setWorkbenchStatus(`Plugin loaded: ${path.split(/[/\\]/).pop()}`);
-                      } catch (err: any) {
-                        setWorkbenchStatus(`Plugin load failed: ${err?.message ?? err}`);
-                      }
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: '4px 6px',
-                      background: 'rgba(0,0,0,0.2)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: 4,
-                      fontSize: 11,
-                      color: previewDeck.activePluginPath ? '#fff' : 'rgba(255,255,255,0.4)',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="" disabled>
-                      {isScanningVst ? 'Scanning for plugins...' : 'Select a VST3 plugin...'}
-                    </option>
-                    {discoveredPlugins.map(plugin => (
-                      <option key={plugin.path} value={plugin.path}>
-                        {plugin.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    type="button"
-                    title="Rescan VST3 Folders"
-                    onClick={async () => {
-                      setIsScanningVst(true);
-                      try {
-                        const defaults = await getExplorerVstDefaultScanPaths();
-                        const validDefaults = defaults.filter(p => p.exists).map(p => p.path);
-                        const plugins = await scanExplorerVstPlugins([...validDefaults, ...(settings.audio?.vst3AdditionalFolders ?? [])]);
-                        setDiscoveredPlugins(plugins);
-                        setWorkbenchStatus(`Scanned ${plugins.length} VST3 plugins.`);
-                      } finally {
-                        setIsScanningVst(false);
-                      }
-                    }}
-                    style={{
-                      padding: '4px 6px',
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: 4,
-                      color: 'rgba(255,255,255,0.6)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    ↻
-                  </button>
+                <div
+                  role="slider"
+                  tabIndex={0}
+                  aria-label={`Fade in handle for ${audioName}`}
+                  aria-valuemin={0}
+                  aria-valuemax={selectionDuration}
+                  aria-valuenow={boundedFadeInSeconds}
+                  aria-valuetext={formatFadeDuration(boundedFadeInSeconds)}
+                  onKeyDown={(event) => handleFadeHandleKeyDown('fadeIn', event)}
+                  onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('fadeIn', event.clientX); }}
+                  style={{ position: 'absolute', top: 0, width: 10, height: 10, left: fadeInHandleLeft, transform: 'translateX(-50%)', cursor: 'ew-resize', zIndex: 4 }}
+                >
+                  <div style={{ width: 0, height: 0, borderTop: '10px solid #cbd5e1', borderRight: '10px solid transparent' }} />
+                </div>
+                <div
+                  role="slider"
+                  tabIndex={0}
+                  aria-label={`Fade out handle for ${audioName}`}
+                  aria-valuemin={0}
+                  aria-valuemax={selectionDuration}
+                  aria-valuenow={boundedFadeOutSeconds}
+                  aria-valuetext={formatFadeDuration(boundedFadeOutSeconds)}
+                  onKeyDown={(event) => handleFadeHandleKeyDown('fadeOut', event)}
+                  onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('fadeOut', event.clientX); }}
+                  style={{ position: 'absolute', top: 0, width: 10, height: 10, left: fadeOutHandleLeft, transform: 'translateX(-50%)', cursor: 'ew-resize', zIndex: 4 }}
+                >
+                  <div style={{ width: 0, height: 0, borderTop: '10px solid #cbd5e1', borderLeft: '10px solid transparent' }} />
                 </div>
 
-                {previewDeck.activePluginPath && (
-                  <button
-                    id="audio-workbench-clear-vst-btn"
-                    type="button"
-                    style={toolbarButtonStyle('danger')}
-                    onClick={async () => {
-                      await clearAudioDeckPlugin(previewDeck.deckId);
-                      setWorkbenchStatus('Plugin cleared.');
-                    }}
-                  >
-                    ✕
-                  </button>
+                <AudioWorkbenchPlayheadMarker
+                  ref={playheadMarkerRef}
+                  currentTimeSeconds={currentTimeSeconds}
+                  durationSeconds={effectiveDuration}
+                  isPlaying={previewDeck.isPlaying}
+                  playbackRate={previewDeck.rate}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(255,255,255,0.5)', fontVariantNumeric: 'tabular-nums' }}>
+                <div>In: {formatPreciseSeconds(selectionStart)}s | Out: {formatPreciseSeconds(selectionEnd)}s | Len: {formatPreciseSeconds(selectionDuration)}s</div>
+                <div>Fade In: {formatFadeDuration(boundedFadeInSeconds)} | Fade Out: {formatFadeDuration(boundedFadeOutSeconds)}</div>
+              </div>
+            </div>
+
+            {(spectralBands.length > 0 || spectrogramSource) && (
+              <div style={{ display: 'flex', gap: 12, marginTop: -12, height: 48 }}>
+                {spectralBands.length > 0 && (
+                  <div style={{ flex: 1, background: '#000', borderRadius: 4, overflow: 'hidden' }}>
+                    <AudioWorkbenchSpectralBars spectralBands={spectralBands} />
+                  </div>
+                )}
+                {spectrogramSource && (
+                  <div style={{ flex: 1, borderRadius: 4, overflow: 'hidden' }}>
+                    <img src={spectrogramSource} alt="Spectrogram" style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000' }} />
+                  </div>
                 )}
               </div>
+            )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -4, paddingBottom: 8 }}>
-                 <button
-                   type="button"
-                   style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 10, cursor: 'pointer', textDecoration: 'underline' }}
-                   onClick={async () => {
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              <div className="pro-panel">
+                <div className="pro-panel-header">Deck Controls</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <label className="pro-label">Gain ({previewDeck.gainLinear.toFixed(2)}x)</label>
+                    <input type="range" className="pro-slider" min="0" max="2" step="0.01" value={previewDeck.gainLinear} onChange={(event) => void handleGainChange(Number(event.target.value))} />
+                  </div>
+                  <div>
+                    <label className="pro-label">Rate ({previewDeck.rate.toFixed(2)}x)</label>
+                    <input type="range" className="pro-slider" min="0.5" max="2" step="0.01" value={previewDeck.rate} onChange={(event) => void handleRateChange(Number(event.target.value))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="pro-label">Pitch Shift ({formatPitchShift(pitchShiftCents)})</label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input type="range" className="pro-slider" min="-1200" max="1200" step="1" value={pitchShiftCents} onChange={(event) => setPitchShiftCents(Number(event.target.value))} />
+                    <input aria-label="Pitch shift cents" type="number" className="pro-input" style={{ width: 70 }} min="-1200" max="1200" value={Math.round(pitchShiftCents)} onChange={(event) => { const nextValue = Number(event.target.value); if (Number.isFinite(nextValue)) setPitchShiftCents(clamp(nextValue, -1200, 1200)); }} />
+                  </div>
+                </div>
+                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-start' }}>
+                  <button type="button" style={toolbarButtonStyle('danger')} onClick={() => setExportDialogMode('overwrite')}>Save Edits to File</button>
+                </div>
+              </div>
+
+              <div className="pro-panel">
+                <div className="pro-panel-header">Precision Trim</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="pro-label">In</label>
+                    <input type="number" className="pro-input" step="0.001" min="0" value={formatPreciseSeconds(selectionStart)} onChange={(event) => { const v = Number(event.target.value); if (Number.isFinite(v)) updateSelectionStartFromInput(v); }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label className="pro-label">Out</label>
+                    <input type="number" className="pro-input" step="0.001" min="0" value={formatPreciseSeconds(selectionEnd)} onChange={(event) => { const v = Number(event.target.value); if (Number.isFinite(v)) updateSelectionEndFromInput(v); }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label className="pro-label">Length</label>
+                    <input type="number" className="pro-input" step="0.001" min={MINIMUM_SELECTION_SECONDS.toString()} value={formatPreciseSeconds(selectionDuration)} onChange={(event) => { const v = Number(event.target.value); if (Number.isFinite(v)) updateSelectionDurationFromInput(v); }} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('start', -FINE_TRIM_NUDGE_SECONDS)}>-10ms In</button>
+                  <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('start', FINE_TRIM_NUDGE_SECONDS)}>+10ms In</button>
+                  <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('end', -FINE_TRIM_NUDGE_SECONDS)}>-10ms Out</button>
+                  <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('end', FINE_TRIM_NUDGE_SECONDS)}>+10ms Out</button>
+                  <button type="button" style={toolbarButtonStyle()} onClick={trimLeadingSilence}>Trim Head</button>
+                  <button type="button" style={toolbarButtonStyle()} onClick={trimTrailingSilence}>Trim Tail</button>
+                  <button type="button" style={toolbarButtonStyle()} onClick={trimDetectedContent}>Trim Content</button>
+                  <button type="button" style={toolbarButtonStyle()} onClick={() => void clearLoopRegion()}>Clear</button>
+                </div>
+              </div>
+
+              <div className="pro-panel">
+                <div className="pro-panel-header">Transform & Export</div>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="pro-label">Convert Format</label>
+                    <select className="pro-select" value={convertFormat} onChange={(event) => setConvertFormat(event.target.value as 'mp3' | 'wav' | 'flac' | 'ogg')}>
+                      {EXPLORER_AUDIO_EXPORT_FORMATS.map((format) => (
+                        <option key={format.id} value={format.id}>{format.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', paddingBottom: 4 }}>
+                    <input type="checkbox" checked={generateSpectrogram} onChange={(event) => setGenerateSpectrogram(event.target.checked)} />
+                    Spectrogram Preview
+                  </label>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                  <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('clip')}>Export Clip</button>
+                  <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('normalized')}>Export Normalized</button>
+                  <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('convert')}>Convert</button>
+                </div>
+              </div>
+
+              <div className="pro-panel">
+                <div className="pro-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Plugin Rack (VST3)</span>
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 400, letterSpacing: '0.04em' }}>HEADLESS</span>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{
+                    flex: 1,
+                    padding: '5px 8px',
+                    background: previewDeck.activePluginPath ? 'rgba(99,102,241,0.12)' : 'rgba(0,0,0,0.2)',
+                    border: `1px solid ${previewDeck.activePluginPath ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: 4,
+                    fontSize: 11,
+                    color: previewDeck.activePluginPath ? 'rgba(200,200,255,0.95)' : 'rgba(255,255,255,0.35)',
+                    textOverflow: 'ellipsis',
+                    overflow: 'hidden',
+                    whiteSpace: 'nowrap',
+                    transition: 'border-color 0.15s, background 0.15s',
+                  }}>
+                    {previewDeck.activePluginPath
+                      ? `⬡ ${previewDeck.activePluginPath.split(/[/\\]/).pop()}`
+                      : '— No plugin loaded —'}
+                  </div>
+
+                  <div style={{ flex: 1, display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <select
+                      className="vst-plugin-dropdown"
+                      value={previewDeck.activePluginPath || ''}
+                      onChange={async (e) => {
+                        const path = e.target.value;
+                        if (!path) return;
+                        try {
+                          await loadAudioDeckPlugin(previewDeck.deckId, path);
+                          setWorkbenchStatus(`Plugin loaded: ${path.split(/[/\\]/).pop()}`);
+                        } catch (err: any) {
+                          setWorkbenchStatus(`Plugin load failed: ${err?.message ?? err}`);
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '4px 6px',
+                        background: 'rgba(0,0,0,0.2)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: 4,
+                        fontSize: 11,
+                        color: previewDeck.activePluginPath ? '#fff' : 'rgba(255,255,255,0.4)',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="" disabled>
+                        {isScanningVst ? 'Scanning for plugins...' : 'Select a VST3 plugin...'}
+                      </option>
+                      {discoveredPlugins.map(plugin => (
+                        <option key={plugin.path} value={plugin.path}>
+                          {plugin.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      title="Rescan VST3 Folders"
+                      onClick={async () => {
+                        setIsScanningVst(true);
+                        try {
+                          const defaults = await getExplorerVstDefaultScanPaths();
+                          const validDefaults = defaults.filter(p => p.exists).map(p => p.path);
+                          const plugins = await scanExplorerVstPlugins([...validDefaults, ...(settings.audio?.vst3AdditionalFolders ?? [])]);
+                          setDiscoveredPlugins(plugins);
+                          setWorkbenchStatus(`Scanned ${plugins.length} VST3 plugins.`);
+                        } finally {
+                          setIsScanningVst(false);
+                        }
+                      }}
+                      style={{
+                        padding: '4px 6px',
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: 4,
+                        color: 'rgba(255,255,255,0.6)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ↻
+                    </button>
+                  </div>
+
+                  {previewDeck.activePluginPath && (
+                    <button
+                      id="audio-workbench-clear-vst-btn"
+                      type="button"
+                      style={toolbarButtonStyle('danger')}
+                      onClick={async () => {
+                        await clearAudioDeckPlugin(previewDeck.deckId);
+                        setWorkbenchStatus('Plugin cleared.');
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -4, paddingBottom: 8 }}>
+                  <button
+                    type="button"
+                    style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 10, cursor: 'pointer', textDecoration: 'underline' }}
+                    onClick={async () => {
                       const { open } = await import('@tauri-apps/plugin-fs').catch(() => ({ open: null as any }));
                       if (open) {
                         const picked = await (open as any)({
@@ -1329,89 +1396,298 @@ export function ExplorerAudioWorkbench({
                           setWorkbenchStatus(`Plugin loaded: ${picked.split(/[/\\]/).pop()}`);
                         }
                       }
-                   }}
-                 >
-                   Browse files...
-                 </button>
-              </div>
+                    }}
+                  >
+                    Browse files...
+                  </button>
+                </div>
 
-              {/* Auto-generated parameter sliders */}
-              {previewDeck.vstParameters && previewDeck.vstParameters.length > 0 ? (
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                  gap: 10,
-                  maxHeight: 280,
-                  overflowY: 'auto',
-                  paddingRight: 2,
-                }}>
-                  {previewDeck.vstParameters.map((param) => (
-                    <div
-                      key={param.id}
-                      style={{
-                        background: 'rgba(0,0,0,0.18)',
-                        border: '1px solid rgba(255,255,255,0.07)',
-                        borderRadius: 5,
-                        padding: '6px 8px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 4,
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: 500, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '70%' }}>
-                          {param.title || param.shortTitle}
-                        </span>
-                        <span style={{ fontSize: 10, color: 'rgba(160,160,220,0.8)', fontFamily: 'monospace', flexShrink: 0 }}>
-                          {(param.valueNormalized * 100).toFixed(0)}%
-                        </span>
+                {previewDeck.vstParameters && previewDeck.vstParameters.length > 0 ? (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                    gap: 10,
+                    maxHeight: 280,
+                    overflowY: 'auto',
+                    paddingRight: 2,
+                  }}>
+                    {previewDeck.vstParameters.map((param) => (
+                      <div
+                        key={param.id}
+                        style={{
+                          background: 'rgba(0,0,0,0.18)',
+                          border: '1px solid rgba(255,255,255,0.07)',
+                          borderRadius: 5,
+                          padding: '6px 8px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 4,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: 500, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                            {param.title || param.shortTitle}
+                          </span>
+                          <span style={{ fontSize: 10, color: 'rgba(160,160,220,0.8)', fontFamily: 'monospace', flexShrink: 0 }}>
+                            {(param.valueNormalized * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <input
+                          id={`vst-param-${previewDeck.deckId}-${param.id}`}
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.001}
+                          defaultValue={param.valueNormalized}
+                          style={{ width: '100%', accentColor: 'hsl(245 80% 60%)' }}
+                          onChange={() => { /* param automation wired in next phase */ }}
+                        />
+                        {param.units ? (
+                          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textAlign: 'right' }}>{param.units}</span>
+                        ) : null}
                       </div>
-                      <input
-                        id={`vst-param-${previewDeck.deckId}-${param.id}`}
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.001}
-                        defaultValue={param.valueNormalized}
-                        style={{ width: '100%', accentColor: 'hsl(245 80% 60%)' }}
-                        onChange={() => { /* param automation wired in next phase */ }}
-                      />
-                      {param.units ? (
-                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textAlign: 'right' }}>{param.units}</span>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : previewDeck.activePluginPath ? (
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', padding: '6px 0', fontStyle: 'italic' }}>
-                  No parameters exposed — plugin may not support headless parameter query yet.
-                </div>
-              ) : (
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', padding: '4px 0', fontStyle: 'italic' }}>
-                  Load a .vst3 plugin above to auto-generate its parameter controls.
-                </div>
-              )}
+                    ))}
+                  </div>
+                ) : previewDeck.activePluginPath ? (
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', padding: '6px 0', fontStyle: 'italic' }}>
+                    No parameters exposed — plugin may not support headless parameter query yet.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', padding: '4px 0', fontStyle: 'italic' }}>
+                    Load a .vst3 plugin above to auto-generate its parameter controls.
+                  </div>
+                )}
+              </div>
             </div>
 
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', display: 'flex', gap: 16, flexWrap: 'wrap', paddingBottom: 20 }}>
+              {workbenchError || previewDeck.error || snapshot.engineError ? (
+                <span style={{ color: '#ef4444' }}>{workbenchError ?? previewDeck.error ?? snapshot.engineError}</span>
+              ) : (
+                <span>{workbenchStatus}</span>
+              )}
+              {exportMessage && <span>• {exportMessage}</span>}
+              <span>• Peak: {formatDb(analysis?.peakLevel)} / RMS: {formatDb(analysis?.rmsLevel)}</span>
+              <span>• Silence Regions: {silenceRegions.length}</span>
+              <span style={{ display: 'flex', gap: 6 }}>
+                <button type="button" style={toolbarButtonStyle('ghost')} onClick={() => jumpToAdjacentSilence('previous')}>Prev Silence</button>
+                <button type="button" style={toolbarButtonStyle('ghost')} onClick={() => jumpToAdjacentSilence('next')}>Next Silence</button>
+              </span>
+            </div>
           </div>
-
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', display: 'flex', gap: 16, flexWrap: 'wrap', paddingBottom: 20 }}>
-            {workbenchError || snapshot.engineError ? (
-              <span style={{ color: '#ef4444' }}>{workbenchError ?? previewDeck.error ?? snapshot.engineError}</span>
-            ) : (
-              <span>{workbenchStatus}</span>
-            )}
-            {exportMessage && <span>• {exportMessage}</span>}
-            <span>• Peak: {formatDb(analysis?.peakLevel)} / RMS: {formatDb(analysis?.rmsLevel)}</span>
-            <span>• Silence Regions: {silenceRegions.length}</span>
-            <span style={{ display: 'flex', gap: 6 }}>
-              <button type="button" style={toolbarButtonStyle('ghost')} onClick={() => jumpToAdjacentSilence('previous')}>Prev Silence</button>
-              <button type="button" style={toolbarButtonStyle('ghost')} onClick={() => jumpToAdjacentSilence('next')}>Next Silence</button>
-            </span>
-          </div>
-
         </div>
-      </div>
+      ) : (
+        <div
+          ref={rootRef}
+          tabIndex={-1}
+          data-testid="audio-preview-surface"
+          style={{
+            width: '100%',
+            height: '100%',
+            position: 'relative',
+            overflow: 'hidden',
+            display: 'flex',
+            background:
+              'radial-gradient(circle at 18% 18%, rgba(56,189,248,0.16), transparent 30%), radial-gradient(circle at 82% 16%, rgba(14,165,233,0.18), transparent 26%), linear-gradient(180deg, rgba(4,8,15,0.96) 0%, rgba(8,13,23,0.98) 100%)',
+            color: '#f8fafc',
+          }}
+        >
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.6, backgroundImage: 'linear-gradient(rgba(148,163,184,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.05) 1px, transparent 1px)', backgroundSize: '100% 36px, 36px 100%' }} />
+          <div style={{ position: 'relative', zIndex: 1, flex: 1, overflow: 'auto', padding: 'clamp(20px, 4vw, 36px)' }}>
+            <div style={{ maxWidth: 940, margin: '0 auto', minHeight: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 24 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.18)', boxShadow: '0 12px 32px rgba(2,6,23,0.35)', fontSize: 11, letterSpacing: '0.24em', textTransform: 'uppercase', color: 'rgba(186,230,253,0.82)' }}>
+                  <AudioLines size={14} />
+                  Audio Preview
+                </div>
+                <div style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.05, maxWidth: 780 }}>
+                  {audioName}
+                </div>
+                <div style={{ fontSize: 13, color: 'rgba(226,232,240,0.66)' }}>
+                  {audioExtension.toUpperCase()} • {formatSize(audioSize)} • Native engine playback • {formatDuration(analysis?.durationSeconds ?? effectiveDuration)}
+                </div>
+              </div>
+
+              <div style={{ borderRadius: 30, border: '1px solid rgba(148,163,184,0.16)', background: 'linear-gradient(155deg, rgba(15,23,42,0.9) 0%, rgba(2,6,23,0.96) 100%)', boxShadow: '0 30px 80px rgba(2,6,23,0.52)', overflow: 'hidden' }}>
+                <div style={{ padding: '24px 24px 16px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        aria-label={previewDeck.isPlaying ? 'Pause audio preview' : 'Play audio preview'}
+                        onClick={() => void togglePreviewDeckPlayback()}
+                        style={{
+                          appearance: 'none',
+                          border: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                          minWidth: 132,
+                          padding: '16px 20px',
+                          borderRadius: 999,
+                          cursor: 'pointer',
+                          color: '#eff6ff',
+                          background: 'linear-gradient(135deg, rgba(56,189,248,0.92), rgba(37,99,235,0.86))',
+                          boxShadow: '0 18px 40px rgba(14,165,233,0.28)',
+                          fontSize: 13,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {previewDeck.isPlaying ? <Pause size={18} /> : <Play size={18} />}
+                        {previewDeck.isPlaying ? 'Pause' : 'Play'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleStopPlayback()}
+                        style={{
+                          appearance: 'none',
+                          border: '1px solid rgba(148,163,184,0.18)',
+                          background: 'rgba(15,23,42,0.78)',
+                          color: 'rgba(226,232,240,0.78)',
+                          borderRadius: 999,
+                          cursor: 'pointer',
+                          padding: '12px 16px',
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Stop
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {hasLoopSelectionPreview ? (
+                        <div style={{ padding: '8px 12px', borderRadius: 999, background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(96,165,250,0.2)', fontSize: 11, fontWeight: 600, color: 'rgba(191,219,254,0.9)' }}>
+                          Loop {formatDuration(selectionStart)} - {formatDuration(selectionEnd)}
+                        </div>
+                      ) : null}
+                      <div style={{ padding: '10px 14px', borderRadius: 999, background: 'rgba(15,23,42,0.72)', border: '1px solid rgba(148,163,184,0.16)', fontSize: 12, fontWeight: 600, color: 'rgba(226,232,240,0.9)', fontVariantNumeric: 'tabular-nums' }}>
+                        {formatDuration(currentTimeSeconds)} / {formatDuration(analysis?.durationSeconds ?? effectiveDuration)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    ref={timelineRef}
+                    role="presentation"
+                    onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
+                    style={{
+                      position: 'relative',
+                      height: 164,
+                      borderRadius: 22,
+                      overflow: 'hidden',
+                      cursor: 'pointer',
+                      border: '1px solid rgba(148,163,184,0.14)',
+                      background: 'linear-gradient(180deg, rgba(2,6,23,0.98) 0%, rgba(15,23,42,0.92) 100%)',
+                    }}
+                  >
+                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(56,189,248,0.08) 0%, transparent 55%)', pointerEvents: 'none', zIndex: 1 }} />
+                    <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: playheadLeft, background: 'linear-gradient(90deg, rgba(56,189,248,0.16), rgba(14,165,233,0.06))', pointerEvents: 'none', zIndex: 1 }} />
+                    {hasLoopSelectionPreview ? (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          bottom: 0,
+                          left: selectionLeft,
+                          width: selectionWidth,
+                          background: 'linear-gradient(90deg, rgba(59,130,246,0.14), rgba(56,189,248,0.18))',
+                          borderLeft: '1px solid rgba(125,211,252,0.42)',
+                          borderRight: '1px solid rgba(125,211,252,0.42)',
+                          pointerEvents: 'none',
+                          zIndex: 2,
+                        }}
+                      />
+                    ) : null}
+                    <AudioWorkbenchWaveformBars waveformBuckets={waveformBuckets} isAnalyzing={isAnalyzing} />
+                    <AudioWorkbenchPlayheadMarker
+                      ref={playheadMarkerRef}
+                      currentTimeSeconds={currentTimeSeconds}
+                      durationSeconds={effectiveDuration}
+                      isPlaying={previewDeck.isPlaying}
+                      playbackRate={previewDeck.rate}
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {spectralBands.length > 0 ? (
+                      <div style={{ height: 44, borderRadius: 16, overflow: 'hidden', background: 'rgba(2,6,23,0.76)', border: '1px solid rgba(148,163,184,0.12)' }}>
+                        <AudioWorkbenchSpectralBars spectralBands={spectralBands} />
+                      </div>
+                    ) : null}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                      {previewSummaryItems.map((item) => (
+                        <div
+                          key={item.label}
+                          style={{
+                            padding: '12px 14px',
+                            borderRadius: 18,
+                            background: 'rgba(15,23,42,0.72)',
+                            border: '1px solid rgba(148,163,184,0.14)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 4,
+                          }}
+                        >
+                          <span style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(148,163,184,0.7)' }}>
+                            {item.label}
+                          </span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
+                            {item.value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px solid rgba(148,163,184,0.14)', padding: '16px 24px 20px', display: 'flex', flexDirection: 'column', gap: 14, background: 'rgba(2,6,23,0.5)' }}>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: workbenchError || previewDeck.error || snapshot.engineError ? '#fca5a5' : 'rgba(226,232,240,0.78)', fontWeight: 500 }}>
+                      {previewTransportStatus}
+                    </span>
+                    {exportMessage !== 'Ready for playback and export.' ? (
+                      <span style={{ fontSize: 11, color: 'rgba(191,219,254,0.82)' }}>
+                        {exportMessage}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'rgba(15,23,42,0.72)', border: '1px solid rgba(148,163,184,0.14)', fontSize: 11, color: 'rgba(226,232,240,0.78)' }}>
+                      Peak {formatDb(analysis?.peakLevel)}
+                    </div>
+                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'rgba(15,23,42,0.72)', border: '1px solid rgba(148,163,184,0.14)', fontSize: 11, color: 'rgba(226,232,240,0.78)' }}>
+                      RMS {formatDb(analysis?.rmsLevel)}
+                    </div>
+                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'rgba(15,23,42,0.72)', border: '1px solid rgba(148,163,184,0.14)', fontSize: 11, color: 'rgba(226,232,240,0.78)' }}>
+                      {silenceRegions.length} silence regions
+                    </div>
+                  </div>
+                  {previewShortcutItems.length > 0 ? (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {previewShortcutItems.map((shortcut) => (
+                        <div
+                          key={shortcut}
+                          style={{
+                            padding: '7px 11px',
+                            borderRadius: 999,
+                            background: 'rgba(56,189,248,0.08)',
+                            border: '1px solid rgba(125,211,252,0.16)',
+                            fontSize: 11,
+                            color: 'rgba(186,230,253,0.88)',
+                          }}
+                        >
+                          {shortcut}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AppPromptDialog
         open={

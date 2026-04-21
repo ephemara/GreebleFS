@@ -31,12 +31,17 @@ export const EXPLORER_IMAGE_TILE_PREVIEW_CONFIG = {
   minStagePx: 36,
 } as const;
 
+export const MODEL_PREVIEW_SOURCE_CONFIG = {
+  maxRootSourceBytes: 128 * 1024 * 1024,
+  maxGltfExternalResourceBytes: 128 * 1024 * 1024,
+} as const;
+
 export const MODEL_PREVIEW_PROXY_CONFIG = {
-  maxDirectSourceBytes: 48 * 1024 * 1024,
-  maxRenderableVertexCount: 350_000,
-  maxRenderableTriangleCount: 700_000,
-  maxRenderableMeshCount: 96,
-  maxProxyMeshes: 32,
+  maxDirectSourceBytes: MODEL_PREVIEW_SOURCE_CONFIG.maxRootSourceBytes,
+  maxRenderableVertexCount: 2_000_000,
+  maxRenderableTriangleCount: 4_000_000,
+  maxRenderableMeshCount: 192,
+  maxProxyMeshes: 48,
 } as const;
 
 const IMAGE_PREVIEW_EXTENSIONS = [

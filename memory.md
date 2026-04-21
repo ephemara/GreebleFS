@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Audio Preview Now Opens As A Clean Player Before The Heavy Editor
+
+- Explorer audio files no longer drop straight into the dense trim/export/plugin workbench. They now open in a cleaner playback-first preview surface, and the heavier audio editing tools only appear after an explicit switch into edit mode.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now treats `preview.type === 'audio'` like the other explicit preview/editor lanes: selecting an audio file forces `documentViewMode` back to `preview`, the shared preview header exposes the `Preview` / `Edit` toggle for audio, the preview label reflects preview-vs-editor state, and the explorer-level key handler now routes the settings-backed `audioWorkbenchToggleEditMode` shortcut before type-to-jump can steal the `E` key.
+  - `src/components/ExplorerAudioWorkbench.tsx` now accepts `mode: 'preview' | 'edit'`. Preview mode renders a cleaner hero-style native player with restrained transport, scrub, waveform, stats, and shortcut hints, while edit mode preserves the existing trim/fade/export/plugin rack workflow instead of deleting it.
+  - The audio workbench still loads analysis plus the native deck for the selected file on entry, so switching from preview into edit is a shell-state change rather than a second audio-loading path.
+  - VST discovery is now scoped to edit mode. The preview-first surface does not spend startup budget scanning plugins just to show a clean player.
+  - `src/config/hotkeys.ts` and `src/components/SettingsPage.tsx` now expose `audioWorkbenchToggleEditMode` with the default binding `E`, and `src/test/explorerAudioWorkbench.test.tsx`, `src/test/fileExplorer.viewModes.test.tsx`, `src/test/hotkeys.test.ts`, and `src/test/settingsStore.test.ts` lock the preview shell, hotkey, and default-binding behavior.
+- Durable product note:
+  - Treat audio preview and audio editing as separate user intents. Keep the first-touch audio surface calm and playback-oriented; if future work adds more mastering or plugin depth, keep it behind explicit edit mode instead of bloating the default preview again.
+  - The native audio engine remains the playback truth even in preview mode. Do not regress this lane back to browser `<audio>` behavior just because the UI is calmer now.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerAudioWorkbench.test.tsx src/test/fileExplorer.viewModes.test.tsx src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` check returned no matching errors for the touched audio/shell/hotkey/test files
+
 # 2026-04-20 - Explorer Preview Pane Can Lock To The Current Item
 
 - The explorer preview pane no longer has to live-update on every selection change. Users can now lock the active preview in place while they browse other files, which is useful for following tutorial text, reference notes, or any other “keep this file visible while I navigate” workflow.

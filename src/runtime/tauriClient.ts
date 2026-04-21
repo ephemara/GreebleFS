@@ -115,6 +115,14 @@ const baseCommands = {
     width,
     height,
   }),
+  fsReadPreviewBytes: (path: string, maxBytes: number) =>
+    invoke<ArrayBuffer>('fs_read_preview_bytes', { path, maxBytes }).then(
+      (buffer) => new Uint8Array(buffer),
+    ),
+  cloudReadPreviewBytes: (path: string, maxBytes: number) =>
+    invoke<ArrayBuffer>('cloud_read_preview_bytes', { path, maxBytes }).then(
+      (buffer) => new Uint8Array(buffer),
+    ),
 };
 
 export const commands = Object.fromEntries(

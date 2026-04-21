@@ -156,6 +156,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.spreadsheetWorkbenchNewSheet).toBe('Shift+F11');
     expect(settings.keybindings.spreadsheetWorkbenchFocusFormulaBar).toBe('F2');
     expect(settings.keybindings.audioWorkbenchPlayPause).toBe('Space');
+    expect(settings.keybindings.audioWorkbenchToggleEditMode).toBe('E');
     expect(settings.keybindings.audioWorkbenchJumpToSelectionStart).toBe('I');
     expect(settings.keybindings.audioWorkbenchJumpToSelectionEnd).toBe('O');
     expect(settings.keybindings.audioWorkbenchPreviousSilence).toBe('Shift+ArrowLeft');

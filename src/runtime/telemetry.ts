@@ -359,6 +359,14 @@ export function summarizeTelemetryValue(value: unknown, label: string): Telemetr
     return `${label}[${value.length}]`;
   }
 
+  if (value instanceof ArrayBuffer) {
+    return `${label}<array-buffer:${value.byteLength}>`;
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return `${label}<typed-array:${value.byteLength}>`;
+  }
+
   if (typeof value === 'object') {
     return `${label}{${Object.keys(value as Record<string, unknown>).slice(0, 4).join(',')}}`;
   }

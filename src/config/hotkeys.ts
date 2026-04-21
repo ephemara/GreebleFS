@@ -55,6 +55,7 @@ export type HotkeyBindingKey =
   | 'spreadsheetWorkbenchNewSheet'
   | 'spreadsheetWorkbenchFocusFormulaBar'
   | 'audioWorkbenchPlayPause'
+  | 'audioWorkbenchToggleEditMode'
   | 'audioWorkbenchJumpToSelectionStart'
   | 'audioWorkbenchJumpToSelectionEnd'
   | 'audioWorkbenchPreviousSilence'
@@ -484,6 +485,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Audio Workbench Play/Pause',
     description: 'Toggle native audio playback in the audio workbench.',
     defaultValue: 'Space',
+    scope: 'local',
+  },
+  {
+    key: 'audioWorkbenchToggleEditMode',
+    label: 'Audio Workbench Toggle Edit Mode',
+    description: 'Switch between the clean audio preview player and the full audio editor.',
+    defaultValue: 'E',
     scope: 'local',
   },
   {

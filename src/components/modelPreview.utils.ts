@@ -3,16 +3,6 @@ import type { ModelPreviewFormat } from '../config/filePreview';
 
 const TARGET_MODEL_SIZE = 2.4;
 
-export function decodeDataUrlToUint8Array(dataUrl: string): Uint8Array {
-  const [, base64 = ''] = dataUrl.split(',', 2);
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-}
-
 export function getModelPreviewRotation(format: ModelPreviewFormat): THREE.Euler {
   if (format === 'fbx' || format === 'obj' || format === 'stl') {
     return new THREE.Euler(-Math.PI / 2, 0, 0);

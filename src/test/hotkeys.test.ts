@@ -68,6 +68,7 @@ describe('hotkey config helpers', () => {
     expect(defaults.spreadsheetWorkbenchNewSheet).toBe('Shift+F11');
     expect(defaults.spreadsheetWorkbenchFocusFormulaBar).toBe('F2');
     expect(defaults.audioWorkbenchPlayPause).toBe('Space');
+    expect(defaults.audioWorkbenchToggleEditMode).toBe('E');
     expect(defaults.audioWorkbenchJumpToSelectionStart).toBe('I');
     expect(defaults.audioWorkbenchJumpToSelectionEnd).toBe('O');
     expect(defaults.audioWorkbenchPreviousSilence).toBe('Shift+ArrowLeft');

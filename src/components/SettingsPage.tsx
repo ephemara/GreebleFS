@@ -3431,12 +3431,13 @@ export function SettingsPage({
             <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
               <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Audio Workbench Hotkeys</div>
               <p className="mt-1 text-[11px] opacity-40">
-                Power-user bindings for the explorer audio editor: transport, trim navigation, silence review, and fast clip export all route through the same settings-backed shortcut system.
+                Power-user bindings for the explorer audio preview and editor: playback, preview-edit switching, trim navigation, silence review, and fast clip export all route through the same settings-backed shortcut system.
               </p>
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 {hotkeyBindingDefinitions
                   .filter(definition => [
                     'audioWorkbenchPlayPause',
+                    'audioWorkbenchToggleEditMode',
                     'audioWorkbenchJumpToSelectionStart',
                     'audioWorkbenchJumpToSelectionEnd',
                     'audioWorkbenchPreviousSilence',

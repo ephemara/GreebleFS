@@ -26,6 +26,8 @@ const {
   setAudioDeckLoopRegionMock,
   setAudioDeckRateMock,
   stopAudioDeckMock,
+  loadAudioDeckPluginMock,
+  clearAudioDeckPluginMock,
 } = vi.hoisted(() => ({
   loadSelectionIntoAudioDeckMock: vi.fn(),
   pauseAudioDeckMock: vi.fn(),
@@ -35,6 +37,16 @@ const {
   setAudioDeckLoopRegionMock: vi.fn(),
   setAudioDeckRateMock: vi.fn(),
   stopAudioDeckMock: vi.fn(),
+  loadAudioDeckPluginMock: vi.fn(),
+  clearAudioDeckPluginMock: vi.fn(),
+}));
+
+const {
+  getExplorerVstDefaultScanPathsMock,
+  scanExplorerVstPluginsMock,
+} = vi.hoisted(() => ({
+  getExplorerVstDefaultScanPathsMock: vi.fn(),
+  scanExplorerVstPluginsMock: vi.fn(),
 }));
 
 const audioEngineSnapshot: ExplorerAudioEngineStateSnapshot = {
@@ -110,6 +122,11 @@ vi.mock('../runtime/audioWorkbenchBackend', () => ({
   exportExplorerAudioTransform: exportExplorerAudioTransformMock,
 }));
 
+vi.mock('../runtime/vstBackend', () => ({
+  getExplorerVstDefaultScanPaths: getExplorerVstDefaultScanPathsMock,
+  scanExplorerVstPlugins: scanExplorerVstPluginsMock,
+}));
+
 vi.mock('../store/audioEngineStore', () => ({
   useAudioEngineFeed: () => undefined,
   useAudioEngineSnapshot: () => audioEngineSnapshot,
@@ -128,6 +145,43 @@ vi.mock('../store/audioEngineStore', () => ({
   setAudioDeckLoopRegion: setAudioDeckLoopRegionMock,
   setAudioDeckRate: setAudioDeckRateMock,
   stopAudioDeck: stopAudioDeckMock,
+  loadAudioDeckPlugin: loadAudioDeckPluginMock,
+  clearAudioDeckPlugin: clearAudioDeckPluginMock,
+}));
+
+vi.mock('../store/settingsStore', () => ({
+  useSettingsStore: (selector: (state: {
+    settings: {
+      keybindings: {
+        audioWorkbenchPlayPause: string;
+        audioWorkbenchToggleEditMode: string;
+        audioWorkbenchJumpToSelectionStart: string;
+        audioWorkbenchJumpToSelectionEnd: string;
+        audioWorkbenchPreviousSilence: string;
+        audioWorkbenchNextSilence: string;
+        audioWorkbenchExportClip: string;
+      };
+      audio?: {
+        vst3AdditionalFolders?: string[];
+      };
+    };
+  }) => unknown) =>
+    selector({
+      settings: {
+        keybindings: {
+          audioWorkbenchPlayPause: 'Space',
+          audioWorkbenchToggleEditMode: 'E',
+          audioWorkbenchJumpToSelectionStart: 'I',
+          audioWorkbenchJumpToSelectionEnd: 'O',
+          audioWorkbenchPreviousSilence: 'Shift+ArrowLeft',
+          audioWorkbenchNextSilence: 'Shift+ArrowRight',
+          audioWorkbenchExportClip: 'Ctrl+Shift+S',
+        },
+        audio: {
+          vst3AdditionalFolders: [],
+        },
+      },
+    }),
 }));
 
 describe('ExplorerAudioWorkbench', () => {
@@ -142,6 +196,10 @@ describe('ExplorerAudioWorkbench', () => {
     setAudioDeckLoopRegionMock.mockReset();
     setAudioDeckRateMock.mockReset();
     stopAudioDeckMock.mockReset();
+    loadAudioDeckPluginMock.mockReset();
+    clearAudioDeckPluginMock.mockReset();
+    getExplorerVstDefaultScanPathsMock.mockReset();
+    scanExplorerVstPluginsMock.mockReset();
 
     loadSelectionIntoAudioDeckMock.mockResolvedValue(audioEngineSnapshot);
     pauseAudioDeckMock.mockResolvedValue(audioEngineSnapshot);
@@ -151,6 +209,15 @@ describe('ExplorerAudioWorkbench', () => {
     setAudioDeckLoopRegionMock.mockResolvedValue(audioEngineSnapshot);
     setAudioDeckRateMock.mockResolvedValue(audioEngineSnapshot);
     stopAudioDeckMock.mockResolvedValue(audioEngineSnapshot);
+    loadAudioDeckPluginMock.mockResolvedValue(audioEngineSnapshot);
+    clearAudioDeckPluginMock.mockResolvedValue(audioEngineSnapshot);
+    getExplorerVstDefaultScanPathsMock.mockResolvedValue([
+      {
+        exists: true,
+        path: '/Library/Audio/Plug-Ins/VST3',
+      },
+    ]);
+    scanExplorerVstPluginsMock.mockResolvedValue([]);
 
     analyzeExplorerAudioPreviewMock.mockResolvedValue({
       inputPath: '/tmp/anthem.mp3',
@@ -201,6 +268,11 @@ describe('ExplorerAudioWorkbench', () => {
     expect(screen.getByText(/128 BPM/i)).toBeInTheDocument();
     expect(screen.getByText(/silence regions: 2/i)).toBeInTheDocument();
     expect(screen.queryByText(/^deck b$/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(scanExplorerVstPluginsMock).toHaveBeenCalledWith([
+        '/Library/Audio/Plug-Ins/VST3',
+      ]);
+    });
   });
 
   it('loads the current explorer selection into the single native playback lane', async () => {
@@ -216,6 +288,27 @@ describe('ExplorerAudioWorkbench', () => {
     await waitFor(() => {
       expect(loadSelectionIntoAudioDeckMock).toHaveBeenCalledWith('a', '/tmp/anthem.mp3');
     });
+  });
+
+  it('keeps preview mode focused on the clean player and skips edit-only chrome', async () => {
+    render(
+      <ExplorerAudioWorkbench
+        audioPath='/tmp/anthem.mp3'
+        audioName='anthem.mp3'
+        audioExtension='mp3'
+        audioSize={6 * 1024 * 1024}
+        mode='preview'
+      />,
+    );
+
+    expect(await screen.findByTestId('audio-preview-surface')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /play audio preview/i })).toBeInTheDocument();
+    expect(screen.queryByText(/precision trim/i)).toBeNull();
+    expect(screen.queryByText(/transform & export/i)).toBeNull();
+    expect(screen.queryByText(/plugin rack \(vst3\)/i)).toBeNull();
+    expect(screen.getByText(/space play\/pause/i)).toBeInTheDocument();
+    expect(screen.getByText(/e edit/i)).toBeInTheDocument();
+    expect(scanExplorerVstPluginsMock).not.toHaveBeenCalled();
   });
 
   it('keeps overwrite-original behind an explicit confirmation dialog', async () => {
