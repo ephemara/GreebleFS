@@ -83,7 +83,10 @@ import {
   type LoadedLayoutManifest,
 } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
-import type { LoadedIconThemePackage } from '../config/iconThemePackages';
+import {
+  iconThemeSystemConfig,
+  type LoadedIconThemePackage,
+} from '../config/iconThemePackages';
 import { pluginSystemConfig } from '../config/plugins';
 import {
   getOverlayShaderSurfaceLabel,
@@ -854,15 +857,15 @@ export function SettingsPage({
   themePackagesLoading,
   themePackagesError,
   themePackagesWarnings,
-  iconThemePackages,
-  iconThemePackagesDirectory,
-  iconThemePackagesLoading,
-  iconThemePackagesError,
-  iconThemePackagesWarnings,
+  iconThemePackages = [],
+  iconThemePackagesDirectory = iconThemeSystemConfig.iconThemesDirectory,
+  iconThemePackagesLoading = false,
+  iconThemePackagesError = null,
+  iconThemePackagesWarnings = [],
   onRefreshThemes,
   onOpenThemesFolder,
-  onRefreshIconThemes,
-  onOpenIconThemesFolder,
+  onRefreshIconThemes = async () => {},
+  onOpenIconThemesFolder = async () => {},
   shaders,
   shaderDiagnostics,
   shadersDirectory,
@@ -895,15 +898,15 @@ export function SettingsPage({
   themePackagesLoading: boolean;
   themePackagesError: string | null;
   themePackagesWarnings: string[];
-  iconThemePackages: LoadedIconThemePackage[];
-  iconThemePackagesDirectory: string;
-  iconThemePackagesLoading: boolean;
-  iconThemePackagesError: string | null;
-  iconThemePackagesWarnings: string[];
+  iconThemePackages?: LoadedIconThemePackage[];
+  iconThemePackagesDirectory?: string;
+  iconThemePackagesLoading?: boolean;
+  iconThemePackagesError?: string | null;
+  iconThemePackagesWarnings?: string[];
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
-  onRefreshIconThemes: () => Promise<void>;
-  onOpenIconThemesFolder: () => Promise<void>;
+  onRefreshIconThemes?: () => Promise<void>;
+  onOpenIconThemesFolder?: () => Promise<void>;
   shaders: LoadedOverlayShader[];
   shaderDiagnostics: LoadedOverlayShader[];
   shadersDirectory: string;

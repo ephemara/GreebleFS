@@ -14,7 +14,10 @@ import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayWallpaper } from '../components/wallpaperRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
-import type { LoadedIconThemePackage } from '../config/iconThemePackages';
+import {
+  iconThemeSystemConfig,
+  type LoadedIconThemePackage,
+} from '../config/iconThemePackages';
 import type { TerminalWindowMode } from '../store/settingsStore';
 import type {
   LoadedOverlayPlugin,
@@ -126,15 +129,15 @@ export function createBuiltInPanelDefinitions({
   themePackagesLoading,
   themePackagesError,
   themePackagesWarnings,
-  iconThemePackages,
-  iconThemePackagesDirectory,
-  iconThemePackagesLoading,
-  iconThemePackagesError,
-  iconThemePackagesWarnings,
+  iconThemePackages = [],
+  iconThemePackagesDirectory = iconThemeSystemConfig.iconThemesDirectory,
+  iconThemePackagesLoading = false,
+  iconThemePackagesError = null,
+  iconThemePackagesWarnings = [],
   onRefreshThemes,
   onOpenThemesFolder,
-  onRefreshIconThemes,
-  onOpenIconThemesFolder,
+  onRefreshIconThemes = async () => {},
+  onOpenIconThemesFolder = async () => {},
   shaders,
   shaderDiagnostics,
   shadersDirectory,
@@ -186,15 +189,15 @@ export function createBuiltInPanelDefinitions({
   themePackagesLoading: boolean;
   themePackagesError: string | null;
   themePackagesWarnings: string[];
-  iconThemePackages: LoadedIconThemePackage[];
-  iconThemePackagesDirectory: string;
-  iconThemePackagesLoading: boolean;
-  iconThemePackagesError: string | null;
-  iconThemePackagesWarnings: string[];
+  iconThemePackages?: LoadedIconThemePackage[];
+  iconThemePackagesDirectory?: string;
+  iconThemePackagesLoading?: boolean;
+  iconThemePackagesError?: string | null;
+  iconThemePackagesWarnings?: string[];
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
-  onRefreshIconThemes: () => Promise<void>;
-  onOpenIconThemesFolder: () => Promise<void>;
+  onRefreshIconThemes?: () => Promise<void>;
+  onOpenIconThemesFolder?: () => Promise<void>;
   shaders: LoadedOverlayShader[];
   shaderDiagnostics: LoadedOverlayShader[];
   shadersDirectory: string;

@@ -5,7 +5,7 @@ import {
   type ReactNode,
 } from 'react';
 import * as LucideIcons from 'lucide-react';
-import type { LucideProps } from 'lucide-react';
+import type { LucideIcon, LucideProps } from 'lucide-react';
 
 import {
   getBuiltInIconTheme,
@@ -15,10 +15,8 @@ import {
   type OverlayResolvedIconTheme,
 } from '../config/iconTheme';
 
-type LucideIconComponent = (props: LucideProps) => ReactNode;
-
 const IconThemeContext = createContext<OverlayResolvedIconTheme>(getBuiltInIconTheme());
-const lucideIconLookup = LucideIcons as unknown as Record<string, LucideIconComponent>;
+const lucideIconLookup = LucideIcons as unknown as Record<string, LucideIcon | undefined>;
 
 function resolveIconDimension(size: LucideProps['size']): string | number {
   if (typeof size === 'number' || typeof size === 'string') {
@@ -50,14 +48,13 @@ function renderIconImage(iconSrc: string, props: LucideProps): ReactNode {
       aria-hidden={props['aria-label'] ? undefined : true}
       aria-label={props['aria-label']}
       className={props.className}
-      title={props.title}
       style={imageStyle}
       draggable={false}
     />
   );
 }
 
-function createThemedIcon(slotId: string, FallbackIcon: LucideIconComponent): LucideIconComponent {
+function createThemedIcon(slotId: string, FallbackIcon: LucideIcon): LucideIcon {
   const normalizedSlotId = normalizeIconId(slotId);
 
   return function ThemedIcon(props: LucideProps) {
@@ -68,7 +65,7 @@ function createThemedIcon(slotId: string, FallbackIcon: LucideIconComponent): Lu
       const overrideIconName = iconReference.slice('lucide:'.length).trim();
       const OverrideIcon = lucideIconLookup[overrideIconName];
       if (OverrideIcon) {
-        return OverrideIcon(props);
+        return <OverrideIcon {...props} />;
       }
     } else if (iconReference) {
       const iconSrc = resolveIconSrc(iconReference, iconTheme);
@@ -77,8 +74,8 @@ function createThemedIcon(slotId: string, FallbackIcon: LucideIconComponent): Lu
       }
     }
 
-    return FallbackIcon(props);
-  };
+    return <FallbackIcon {...props} />;
+  } as LucideIcon;
 }
 
 export function IconThemeProvider({
