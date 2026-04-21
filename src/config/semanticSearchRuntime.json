@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "modelId": "sentence-transformers/all-MiniLM-L6-v2",
+  "maxSequenceLength": 256,
+  "chunkMaxLines": 24,
+  "chunkOverlapLines": 6,
+  "chunkMaxChars": 1200,
+  "snippetMaxChars": 220,
+  "torchBatchSize": 24,
+  "onnxBatchSize": 48,
+  "preferredOnnxProviders": [
+    "TensorrtExecutionProvider",
+    "CUDAExecutionProvider",
+    "CPUExecutionProvider"
+  ]
+}

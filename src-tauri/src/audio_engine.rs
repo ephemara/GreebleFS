@@ -23,6 +23,7 @@ use symphonia::core::probe::Hint;
 use symphonia::default::{get_codecs, get_probe};
 use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
+use vst_host::HeadlessVstHost;
 
 use crate::audio_commands::{AudioPreviewAnalysis, AudioSilenceRegion, AudioWaveformBucket};
 use crate::gpu_runtime::GpuRuntimeManager;
@@ -122,6 +123,14 @@ pub struct AudioEngineLoadPluginRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub struct AudioEngineSetPluginParameterRequest {
+    pub deck_id: AudioDeckId,
+    pub parameter_id: u32,
+    pub value_normalized: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct AudioEngineDeckRequest {
     pub deck_id: AudioDeckId,
 }
@@ -213,6 +222,7 @@ struct AudioDeckMetadata {
     is_buffering: bool,
     error: Option<String>,
     active_plugin_path: Option<String>,
+    vst_parameters: Vec<VstParameterState>,
 }
 
 struct AudioClip {
@@ -253,6 +263,26 @@ fn resolve_audio_ffmpeg_binary() -> String {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_AUDIO_FFMPEG_BINARY.to_string())
+}
+
+fn build_vst_parameter_state_snapshot(
+    plugin_path: &str,
+) -> Result<Vec<VstParameterState>, String> {
+    let host = HeadlessVstHost::load_plugin(plugin_path)?;
+    Ok(host
+        .parameters
+        .into_iter()
+        .map(|parameter| VstParameterState {
+            id: parameter.id,
+            title: parameter.title,
+            short_title: parameter.short_title,
+            units: parameter.units,
+            default_normalized: parameter.default_normalized,
+            min: parameter.min,
+            max: parameter.max,
+            value_normalized: parameter.default_normalized,
+        })
+        .collect())
 }
 
 impl AudioDeckRuntime {
@@ -366,7 +396,7 @@ impl AudioEngineSharedState {
             loop_region,
             error: metadata.error,
             active_plugin_path: metadata.active_plugin_path,
-            vst_parameters: Vec::new(),
+            vst_parameters: metadata.vst_parameters,
         }
     }
 }
@@ -1925,8 +1955,7 @@ pub fn audio_engine_load_plugin(
     request: AudioEngineLoadPluginRequest,
 ) -> Result<AudioEngineStateSnapshot, String> {
     let shared = ensure_audio_engine_shared(&app)?;
-    // Store the plugin path on the deck metadata so the frontend knows what is loaded.
-    // Full IEditController parameter interrogation via vst-host will run here in a follow-up.
+    let parameter_state = build_vst_parameter_state_snapshot(&request.plugin_path)?;
     {
         let mut meta = shared
             .deck(request.deck_id)
@@ -1934,6 +1963,7 @@ pub fn audio_engine_load_plugin(
             .lock()
             .map_err(|e| format!("lock error: {e}"))?;
         meta.active_plugin_path = Some(request.plugin_path.clone());
+        meta.vst_parameters = parameter_state;
     }
     let snapshot = shared.snapshot();
     shared.emit_state();
@@ -1954,6 +1984,34 @@ pub fn audio_engine_clear_deck_plugin(
             .lock()
             .map_err(|e| format!("lock error: {e}"))?;
         meta.active_plugin_path = None;
+        meta.vst_parameters.clear();
+    }
+    let snapshot = shared.snapshot();
+    shared.emit_state();
+    Ok(snapshot)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn audio_engine_set_plugin_parameter(
+    app: AppHandle,
+    request: AudioEngineSetPluginParameterRequest,
+) -> Result<AudioEngineStateSnapshot, String> {
+    let shared = ensure_audio_engine_shared(&app)?;
+    {
+        let mut meta = shared
+            .deck(request.deck_id)
+            .metadata
+            .lock()
+            .map_err(|e| format!("lock error: {e}"))?;
+        let parameter = meta
+            .vst_parameters
+            .iter_mut()
+            .find(|parameter| parameter.id == request.parameter_id)
+            .ok_or_else(|| "Unknown VST parameter.".to_string())?;
+        parameter.value_normalized = request
+            .value_normalized
+            .clamp(parameter.min, parameter.max);
     }
     let snapshot = shared.snapshot();
     shared.emit_state();

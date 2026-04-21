@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Timeline Surface Now Splits Fresh Activity Into Hour Bands
+
+- Timeline Surface no longer jumps straight from same-day work into broad daily/week buckets at max granularity. The densest timeline stop now isolates newest activity into explicit hour bands so recent edits read like a real time surface instead of a generic "today" pile.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` `buildTimelineSurfaceBands(...)` now computes clock-hour boundaries and, at the `details` density stop, emits `This Hour` plus `N Hours Ago` bands for the last 6 hours before rolling the rest of the day into `Earlier Today`, then continuing into `Yesterday`, week, month, year, and archive bands.
+  - `src/config/explorerExperimentalModes.ts` now exposes `Hours` as the densest timeline granularity label and updates the Timeline Surface description to mention hourly browsing.
+  - `src/test/explorerExperimentalModes.test.ts` and `src/test/fileExplorer.viewModes.test.tsx` now lock both sides of the contract: the density descriptor says `Hours`, and dense timeline rendering actually places fresh files into the expected hourly sections.
+- Durable product note:
+  - Keep hourly slicing limited to the densest timeline stop. Coarser stops should still favor broad scanability over front-edge precision, or Timeline Surface will turn into noise.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerExperimentalModes.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "timeline surface|hourly bands" --reporter=dot`
+
 # 2026-04-21 - Markdown Preview Now Uses Explorer Theme Surfaces
 
 - Markdown preview no longer ships with a lane-local hardcoded dark background. The rendered document surface now follows the active explorer/theme tokens, so the current light shell gets the white or near-white preview users expect while dark themes remain dark instead of being forced onto one fixed paper mode.

@@ -48,6 +48,7 @@ import {
   useAudioEngineSnapshot,
   loadAudioDeckPlugin,
   clearAudioDeckPlugin,
+  setAudioDeckPluginParameter,
 } from '../store/audioEngineStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { AppConfirmDialog, AppPromptDialog } from './AppModal';
@@ -396,6 +397,7 @@ export function ExplorerAudioWorkbench({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const vstHostSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const vstEditorSessionIdRef = useRef<string | null>(null);
   const snapshot = useAudioEngineSnapshot();
   const settings = useSettingsStore((state) => state.settings);
   const keybindings = settings.keybindings;
@@ -691,8 +693,9 @@ export function ExplorerAudioWorkbench({
 
   useEffect(() => {
     if (!isVstMode || !previewDeck.activePluginPath) {
-      if (vstEditorSession?.sessionId) {
-        void destroyExplorerVstEditorSession(vstEditorSession.sessionId);
+      if (vstEditorSessionIdRef.current) {
+        void destroyExplorerVstEditorSession(vstEditorSessionIdRef.current);
+        vstEditorSessionIdRef.current = null;
       }
       setVstEditorSession(null);
       return;
@@ -733,6 +736,7 @@ export function ExplorerAudioWorkbench({
           return;
         }
         sessionId = session.sessionId;
+        vstEditorSessionIdRef.current = session.sessionId;
         setVstEditorSession(session);
         await syncRect();
       } catch (error) {
@@ -747,6 +751,9 @@ export function ExplorerAudioWorkbench({
         disposed = true;
         if (sessionId) {
           void destroyExplorerVstEditorSession(sessionId);
+          if (vstEditorSessionIdRef.current === sessionId) {
+            vstEditorSessionIdRef.current = null;
+          }
         }
       };
     }
@@ -761,13 +768,15 @@ export function ExplorerAudioWorkbench({
       observer.disconnect();
       if (sessionId) {
         void destroyExplorerVstEditorSession(sessionId);
+        if (vstEditorSessionIdRef.current === sessionId) {
+          vstEditorSessionIdRef.current = null;
+        }
       }
     };
   }, [
     isVstMode,
     previewDeck.activePluginPath,
     previewDeck.deckId,
-    vstEditorSession?.sessionId,
   ]);
 
   useEffect(() => {
@@ -1293,652 +1302,531 @@ export function ExplorerAudioWorkbench({
   return (
     <>
       <style>{`
-        .pro-slider { -webkit-appearance: none; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; outline: none; }
-        .pro-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 8px; height: 12px; border-radius: 2px; background: #ccc; cursor: pointer; }
-        .pro-slider::-webkit-slider-thumb:hover { background: #fff; }
-        .pro-input { appearance: none; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 4px 6px; border-radius: 4px; font-size: 11px; width: 100%; }
-        .pro-input:focus { outline: none; border-color: rgba(255,255,255,0.3); }
-        .pro-select { appearance: none; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 4px 6px; border-radius: 4px; font-size: 11px; width: 100%; cursor: pointer; }
-        .pro-panel { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-        .pro-panel-header { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 6px; }
-        .pro-label { font-size: 10px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; display: block; }
+        .audio-workbench-slider {
+          -webkit-appearance: none;
+          width: 100%;
+          height: 4px;
+          border-radius: 999px;
+          background: var(--overlay-explorer-chip-border);
+          outline: none;
+        }
+        .audio-workbench-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 10px;
+          height: 10px;
+          border-radius: 999px;
+          background: var(--overlay-explorer-chip-active-border);
+          cursor: pointer;
+        }
+        .audio-workbench-slider::-moz-range-thumb {
+          width: 10px;
+          height: 10px;
+          border: none;
+          border-radius: 999px;
+          background: var(--overlay-explorer-chip-active-border);
+          cursor: pointer;
+        }
       `}</style>
-      {isEditMode ? (
-        <div
-          ref={rootRef}
-          tabIndex={-1}
-          style={{
-            width: '100%',
-            height: '100%',
-            background: '#0e0e0e',
-            color: '#fff',
-            overflow: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#121212', flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ background: 'rgba(255,255,255,0.1)', padding: 6, borderRadius: 4 }}>
-                <AudioLines size={16} color="#aaa" />
+      <div
+        ref={rootRef}
+        tabIndex={-1}
+        data-testid={isPreviewMode ? 'audio-preview-surface' : undefined}
+        style={rootSurfaceStyle}
+      >
+        <div style={contentShellStyle}>
+          <div
+            style={{
+              ...cardStyle,
+              padding: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+              <div
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 'var(--overlay-explorer-control-radius, 8px)',
+                  border: '1px solid var(--overlay-explorer-chip-border)',
+                  background: 'var(--overlay-explorer-chip-bg)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <AudioLines size={15} />
               </div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{audioName}</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {audioName}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {audioExtension.toUpperCase()} • {formatSize(audioSize)} • {formatDuration(analysis?.durationSeconds ?? effectiveDuration)} • {analysis?.sampleRateHz ? `${analysis.sampleRateHz.toLocaleString()} Hz` : 'Unknown Hz'} • {formatBpm(estimatedBpm)}
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" style={toolbarButtonStyle('ghost')} onClick={() => void handleStopPlayback()}>
-                Stop
-              </button>
-              <button type="button" style={toolbarButtonStyle('primary')} onClick={() => void togglePreviewDeckPlayback()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                aria-label={isPreviewMode ? (previewDeck.isPlaying ? 'Pause audio preview' : 'Play audio preview') : undefined}
+                onClick={() => void togglePreviewDeckPlayback()}
+                style={toolbarButtonStyle('primary')}
+              >
                 {previewDeck.isPlaying ? <Pause size={14} /> : <Play size={14} />}
                 {previewDeck.isPlaying ? 'Pause' : 'Play'}
               </button>
+              <button type="button" style={toolbarButtonStyle()} onClick={() => void handleStopPlayback()}>
+                Stop
+              </button>
+              <div style={statusChipStyle}>
+                {formatDuration(currentTimeSeconds)} / {formatDuration(analysis?.durationSeconds ?? effectiveDuration)}
+              </div>
             </div>
           </div>
 
-          <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div
-                ref={timelineRef}
-                role="presentation"
-                onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
-                style={{
-                  position: 'relative',
-                  height: 120,
-                  borderRadius: 4,
-                  background: '#000',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'stretch',
-                  overflow: 'hidden',
-                }}
-              >
-                <AudioWorkbenchWaveformBars waveformBuckets={waveformBuckets} isAnalyzing={isAnalyzing} />
-
+          {isPreviewMode ? (
+            <>
+              <div style={{ ...cardStyle, padding: 12, display: 'grid', gap: 10 }}>
                 <div
+                  ref={timelineRef}
+                  role="presentation"
+                  onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
                   style={{
-                    position: 'absolute',
-                    top: 0,
-                    bottom: 0,
-                    left: selectionLeft,
-                    width: selectionWidth,
-                    background: 'rgba(59, 130, 246, 0.15)',
-                    borderLeft: '1px solid rgba(59, 130, 246, 0.5)',
-                    borderRight: '1px solid rgba(59, 130, 246, 0.5)',
-                    pointerEvents: 'none',
+                    position: 'relative',
+                    height: 96,
+                    borderRadius: 'calc(var(--overlay-explorer-control-radius, 10px) + 4px)',
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    border: '1px solid var(--overlay-explorer-preview-border)',
+                    background: 'color-mix(in srgb, var(--overlay-explorer-preview-bg) 82%, black 18%)',
                   }}
-                />
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left: selectionLeft, width: fadeInWidth, background: 'linear-gradient(90deg, rgba(255,255,255,0.1), transparent)', pointerEvents: 'none' }} />
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left: fadeOutHandleLeft, width: fadeOutWidth, background: 'linear-gradient(270deg, rgba(255,255,255,0.1), transparent)', pointerEvents: 'none' }} />
-
-                <div
-                  role="presentation"
-                  onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('selectionStart', event.clientX); }}
-                  style={{ position: 'absolute', top: 0, bottom: 0, left: selectionLeft, width: 10, marginLeft: -5, cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}
                 >
-                  <div style={{ width: 2, height: '100%', background: '#3b82f6' }} />
+                  <div style={{ position: 'absolute', inset: 0, width: playheadLeft, background: 'color-mix(in srgb, var(--overlay-accent) 14%, transparent)', pointerEvents: 'none', zIndex: 1 }} />
+                  {hasLoopSelectionPreview ? (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        bottom: 0,
+                        left: selectionLeft,
+                        width: selectionWidth,
+                        background: 'color-mix(in srgb, var(--overlay-accent) 18%, transparent)',
+                        borderLeft: '1px solid var(--overlay-explorer-chip-active-border)',
+                        borderRight: '1px solid var(--overlay-explorer-chip-active-border)',
+                        pointerEvents: 'none',
+                        zIndex: 2,
+                      }}
+                    />
+                  ) : null}
+                  <AudioWorkbenchWaveformBars waveformBuckets={waveformBuckets} isAnalyzing={isAnalyzing} />
+                  <AudioWorkbenchPlayheadMarker
+                    ref={playheadMarkerRef}
+                    currentTimeSeconds={currentTimeSeconds}
+                    durationSeconds={effectiveDuration}
+                    isPlaying={previewDeck.isPlaying}
+                    playbackRate={previewDeck.rate}
+                  />
                 </div>
-                <div
-                  role="presentation"
-                  onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('selectionEnd', event.clientX); }}
-                  style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${selectionLeft} + ${selectionWidth})`, width: 10, marginLeft: -5, cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}
-                >
-                  <div style={{ width: 2, height: '100%', background: '#3b82f6' }} />
-                </div>
-
-                <div
-                  role="slider"
-                  tabIndex={0}
-                  aria-label={`Fade in handle for ${audioName}`}
-                  aria-valuemin={0}
-                  aria-valuemax={selectionDuration}
-                  aria-valuenow={boundedFadeInSeconds}
-                  aria-valuetext={formatFadeDuration(boundedFadeInSeconds)}
-                  onKeyDown={(event) => handleFadeHandleKeyDown('fadeIn', event)}
-                  onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('fadeIn', event.clientX); }}
-                  style={{ position: 'absolute', top: 0, width: 10, height: 10, left: fadeInHandleLeft, transform: 'translateX(-50%)', cursor: 'ew-resize', zIndex: 4 }}
-                >
-                  <div style={{ width: 0, height: 0, borderTop: '10px solid #cbd5e1', borderRight: '10px solid transparent' }} />
-                </div>
-                <div
-                  role="slider"
-                  tabIndex={0}
-                  aria-label={`Fade out handle for ${audioName}`}
-                  aria-valuemin={0}
-                  aria-valuemax={selectionDuration}
-                  aria-valuenow={boundedFadeOutSeconds}
-                  aria-valuetext={formatFadeDuration(boundedFadeOutSeconds)}
-                  onKeyDown={(event) => handleFadeHandleKeyDown('fadeOut', event)}
-                  onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('fadeOut', event.clientX); }}
-                  style={{ position: 'absolute', top: 0, width: 10, height: 10, left: fadeOutHandleLeft, transform: 'translateX(-50%)', cursor: 'ew-resize', zIndex: 4 }}
-                >
-                  <div style={{ width: 0, height: 0, borderTop: '10px solid #cbd5e1', borderLeft: '10px solid transparent' }} />
-                </div>
-
-                <AudioWorkbenchPlayheadMarker
-                  ref={playheadMarkerRef}
-                  currentTimeSeconds={currentTimeSeconds}
-                  durationSeconds={effectiveDuration}
-                  isPlaying={previewDeck.isPlaying}
-                  playbackRate={previewDeck.rate}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(255,255,255,0.5)', fontVariantNumeric: 'tabular-nums' }}>
-                <div>In: {formatPreciseSeconds(selectionStart)}s | Out: {formatPreciseSeconds(selectionEnd)}s | Len: {formatPreciseSeconds(selectionDuration)}s</div>
-                <div>Fade In: {formatFadeDuration(boundedFadeInSeconds)} | Fade Out: {formatFadeDuration(boundedFadeOutSeconds)}</div>
-              </div>
-            </div>
-
-            {(spectralBands.length > 0 || spectrogramSource) && (
-              <div style={{ display: 'flex', gap: 12, marginTop: -12, height: 48 }}>
-                {spectralBands.length > 0 && (
-                  <div style={{ flex: 1, background: '#000', borderRadius: 4, overflow: 'hidden' }}>
+                {spectralBands.length > 0 ? (
+                  <div style={{ height: 34, borderRadius: 'var(--overlay-explorer-control-radius, 8px)', overflow: 'hidden', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
                     <AudioWorkbenchSpectralBars spectralBands={spectralBands} />
                   </div>
-                )}
-                {spectrogramSource && (
-                  <div style={{ flex: 1, borderRadius: 4, overflow: 'hidden' }}>
-                    <img src={spectrogramSource} alt="Spectrogram" style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000' }} />
-                  </div>
-                )}
+                ) : null}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 10 }}>
+                  {previewSummaryItems.map((item) => (
+                    <div key={item.label} style={summaryCardStyle}>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>
+                        {item.label}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ ...statusChipStyle, color: workbenchError || previewDeck.error || snapshot.engineError ? '#c0392b' : 'var(--overlay-text-primary)' }}>
+                    {activeStatusMessage}
+                  </span>
+                  <span style={statusChipStyle}>Peak {formatDb(analysis?.peakLevel)}</span>
+                  <span style={statusChipStyle}>RMS {formatDb(analysis?.rmsLevel)}</span>
+                  <span style={statusChipStyle}>Silence regions: {silenceRegions.length}</span>
+                  {previewShortcutItems.map((shortcut) => (
+                    <span key={shortcut} style={statusChipStyle}>{shortcut}</span>
+                  ))}
+                </div>
               </div>
-            )}
+            </>
+          ) : isEditMode ? (
+            <>
+              <div style={{ ...cardStyle, padding: 12, display: 'grid', gap: 8 }}>
+                <div
+                  ref={timelineRef}
+                  role="presentation"
+                  onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
+                  style={{
+                    position: 'relative',
+                    height: 124,
+                    borderRadius: 'calc(var(--overlay-explorer-control-radius, 10px) + 4px)',
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    border: '1px solid var(--overlay-explorer-preview-border)',
+                    background: 'color-mix(in srgb, var(--overlay-explorer-preview-bg) 82%, black 18%)',
+                  }}
+                >
+                  <div style={{ position: 'absolute', inset: 0, width: playheadLeft, background: 'color-mix(in srgb, var(--overlay-accent) 14%, transparent)', pointerEvents: 'none', zIndex: 1 }} />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      bottom: 0,
+                      left: selectionLeft,
+                      width: selectionWidth,
+                      background: 'color-mix(in srgb, var(--overlay-accent) 16%, transparent)',
+                      borderLeft: '1px solid var(--overlay-explorer-chip-active-border)',
+                      borderRight: '1px solid var(--overlay-explorer-chip-active-border)',
+                      pointerEvents: 'none',
+                      zIndex: 2,
+                    }}
+                  />
+                  <div style={{ position: 'absolute', top: 0, bottom: 0, left: selectionLeft, width: fadeInWidth, background: 'linear-gradient(90deg, color-mix(in srgb, white 22%, transparent), transparent)', pointerEvents: 'none', zIndex: 3 }} />
+                  <div style={{ position: 'absolute', top: 0, bottom: 0, left: fadeOutHandleLeft, width: fadeOutWidth, background: 'linear-gradient(270deg, color-mix(in srgb, white 22%, transparent), transparent)', pointerEvents: 'none', zIndex: 3 }} />
+                  <AudioWorkbenchWaveformBars waveformBuckets={waveformBuckets} isAnalyzing={isAnalyzing} />
+                  <div
+                    role="presentation"
+                    onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('selectionStart', event.clientX); }}
+                    style={{ position: 'absolute', top: 0, bottom: 0, left: selectionLeft, width: 10, marginLeft: -5, cursor: 'ew-resize', display: 'flex', justifyContent: 'center', zIndex: 4 }}
+                  >
+                    <div style={{ width: 2, height: '100%', background: 'var(--overlay-explorer-chip-active-border)' }} />
+                  </div>
+                  <div
+                    role="presentation"
+                    onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('selectionEnd', event.clientX); }}
+                    style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${selectionLeft} + ${selectionWidth})`, width: 10, marginLeft: -5, cursor: 'ew-resize', display: 'flex', justifyContent: 'center', zIndex: 4 }}
+                  >
+                    <div style={{ width: 2, height: '100%', background: 'var(--overlay-explorer-chip-active-border)' }} />
+                  </div>
+                  <div
+                    role="slider"
+                    tabIndex={0}
+                    aria-label={`Fade in handle for ${audioName}`}
+                    aria-valuemin={0}
+                    aria-valuemax={selectionDuration}
+                    aria-valuenow={boundedFadeInSeconds}
+                    aria-valuetext={formatFadeDuration(boundedFadeInSeconds)}
+                    onKeyDown={(event) => handleFadeHandleKeyDown('fadeIn', event)}
+                    onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('fadeIn', event.clientX); }}
+                    style={{ position: 'absolute', top: 0, width: 12, height: 12, left: fadeInHandleLeft, transform: 'translateX(-50%)', cursor: 'ew-resize', zIndex: 5 }}
+                  >
+                    <div style={{ width: 0, height: 0, borderTop: '12px solid var(--overlay-text-primary)', borderRight: '12px solid transparent' }} />
+                  </div>
+                  <div
+                    role="slider"
+                    tabIndex={0}
+                    aria-label={`Fade out handle for ${audioName}`}
+                    aria-valuemin={0}
+                    aria-valuemax={selectionDuration}
+                    aria-valuenow={boundedFadeOutSeconds}
+                    aria-valuetext={formatFadeDuration(boundedFadeOutSeconds)}
+                    onKeyDown={(event) => handleFadeHandleKeyDown('fadeOut', event)}
+                    onMouseDown={(event) => { event.stopPropagation(); beginTimelineDrag('fadeOut', event.clientX); }}
+                    style={{ position: 'absolute', top: 0, width: 12, height: 12, left: fadeOutHandleLeft, transform: 'translateX(-50%)', cursor: 'ew-resize', zIndex: 5 }}
+                  >
+                    <div style={{ width: 0, height: 0, borderTop: '12px solid var(--overlay-text-primary)', borderLeft: '12px solid transparent' }} />
+                  </div>
+                  <AudioWorkbenchPlayheadMarker
+                    ref={playheadMarkerRef}
+                    currentTimeSeconds={currentTimeSeconds}
+                    durationSeconds={effectiveDuration}
+                    isPlaying={previewDeck.isPlaying}
+                    playbackRate={previewDeck.rate}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', fontSize: 10, color: 'var(--overlay-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                  <div>In {formatPreciseSeconds(selectionStart)}s • Out {formatPreciseSeconds(selectionEnd)}s • Len {formatPreciseSeconds(selectionDuration)}s</div>
+                  <div>Fade in {formatFadeDuration(boundedFadeInSeconds)} • Fade out {formatFadeDuration(boundedFadeOutSeconds)}</div>
+                </div>
+              </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-              <div className="pro-panel">
-                <div className="pro-panel-header">Deck Controls</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              {(spectralBands.length > 0 || spectrogramSource) ? (
+                <div style={{ display: 'grid', gridTemplateColumns: spectrogramSource ? '1fr 1fr' : '1fr', gap: 12 }}>
+                  {spectralBands.length > 0 ? (
+                    <div style={{ ...cardStyle, padding: 10, height: 48, overflow: 'hidden' }}>
+                      <AudioWorkbenchSpectralBars spectralBands={spectralBands} />
+                    </div>
+                  ) : null}
+                  {spectrogramSource ? (
+                    <div style={{ ...cardStyle, padding: 0, overflow: 'hidden', minHeight: 48 }}>
+                      <img src={spectrogramSource} alt="Spectrogram" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                <div style={panelStyle}>
+                  <div style={sectionHeaderStyle}>Precision Trim</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+                    <div>
+                      <label style={formLabelStyle}>In</label>
+                      <input type="number" style={formControlStyle} step="0.001" min="0" value={formatPreciseSeconds(selectionStart)} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) updateSelectionStartFromInput(value); }} />
+                    </div>
+                    <div>
+                      <label style={formLabelStyle}>Out</label>
+                      <input type="number" style={formControlStyle} step="0.001" min="0" value={formatPreciseSeconds(selectionEnd)} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) updateSelectionEndFromInput(value); }} />
+                    </div>
+                    <div>
+                      <label style={formLabelStyle}>Length</label>
+                      <input type="number" style={formControlStyle} step="0.001" min={MINIMUM_SELECTION_SECONDS.toString()} value={formatPreciseSeconds(selectionDuration)} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) updateSelectionDurationFromInput(value); }} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('start', -FINE_TRIM_NUDGE_SECONDS)}>-10ms In</button>
+                    <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('start', FINE_TRIM_NUDGE_SECONDS)}>+10ms In</button>
+                    <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('end', -FINE_TRIM_NUDGE_SECONDS)}>-10ms Out</button>
+                    <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('end', FINE_TRIM_NUDGE_SECONDS)}>+10ms Out</button>
+                    <button type="button" style={toolbarButtonStyle()} onClick={trimLeadingSilence}>Trim Head</button>
+                    <button type="button" style={toolbarButtonStyle()} onClick={trimTrailingSilence}>Trim Tail</button>
+                    <button type="button" style={toolbarButtonStyle()} onClick={trimDetectedContent}>Trim Content</button>
+                    <button type="button" style={toolbarButtonStyle()} onClick={() => void clearLoopRegion()}>Clear</button>
+                  </div>
+                </div>
+
+                <div style={panelStyle}>
+                  <div style={sectionHeaderStyle}>Deck Controls</div>
                   <div>
-                    <label className="pro-label">Gain ({previewDeck.gainLinear.toFixed(2)}x)</label>
-                    <input type="range" className="pro-slider" min="0" max="2" step="0.01" value={previewDeck.gainLinear} onChange={(event) => void handleGainChange(Number(event.target.value))} />
+                    <label style={formLabelStyle}>Gain ({previewDeck.gainLinear.toFixed(2)}x)</label>
+                    <input type="range" className="audio-workbench-slider" min="0" max="2" step="0.01" value={previewDeck.gainLinear} onChange={(event) => void handleGainChange(Number(event.target.value))} />
                   </div>
                   <div>
-                    <label className="pro-label">Rate ({previewDeck.rate.toFixed(2)}x)</label>
-                    <input type="range" className="pro-slider" min="0.5" max="2" step="0.01" value={previewDeck.rate} onChange={(event) => void handleRateChange(Number(event.target.value))} />
+                    <label style={formLabelStyle}>Rate ({previewDeck.rate.toFixed(2)}x)</label>
+                    <input type="range" className="audio-workbench-slider" min="0.5" max="2" step="0.01" value={previewDeck.rate} onChange={(event) => void handleRateChange(Number(event.target.value))} />
+                  </div>
+                  <div>
+                    <label style={formLabelStyle}>Pitch Shift ({formatPitchShift(pitchShiftCents)})</label>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input type="range" className="audio-workbench-slider" min="-1200" max="1200" step="1" value={pitchShiftCents} onChange={(event) => setPitchShiftCents(Number(event.target.value))} />
+                      <input aria-label="Pitch shift cents" type="number" style={{ ...formControlStyle, width: 84 }} min="-1200" max="1200" value={Math.round(pitchShiftCents)} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) setPitchShiftCents(clamp(value, -1200, 1200)); }} />
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <label className="pro-label">Pitch Shift ({formatPitchShift(pitchShiftCents)})</label>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input type="range" className="pro-slider" min="-1200" max="1200" step="1" value={pitchShiftCents} onChange={(event) => setPitchShiftCents(Number(event.target.value))} />
-                    <input aria-label="Pitch shift cents" type="number" className="pro-input" style={{ width: 70 }} min="-1200" max="1200" value={Math.round(pitchShiftCents)} onChange={(event) => { const nextValue = Number(event.target.value); if (Number.isFinite(nextValue)) setPitchShiftCents(clamp(nextValue, -1200, 1200)); }} />
-                  </div>
-                </div>
-                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-start' }}>
-                  <button type="button" style={toolbarButtonStyle('danger')} onClick={() => setExportDialogMode('overwrite')}>Save Edits to File</button>
-                </div>
-              </div>
 
-              <div className="pro-panel">
-                <div className="pro-panel-header">Precision Trim</div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <label className="pro-label">In</label>
-                    <input type="number" className="pro-input" step="0.001" min="0" value={formatPreciseSeconds(selectionStart)} onChange={(event) => { const v = Number(event.target.value); if (Number.isFinite(v)) updateSelectionStartFromInput(v); }} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label className="pro-label">Out</label>
-                    <input type="number" className="pro-input" step="0.001" min="0" value={formatPreciseSeconds(selectionEnd)} onChange={(event) => { const v = Number(event.target.value); if (Number.isFinite(v)) updateSelectionEndFromInput(v); }} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label className="pro-label">Length</label>
-                    <input type="number" className="pro-input" step="0.001" min={MINIMUM_SELECTION_SECONDS.toString()} value={formatPreciseSeconds(selectionDuration)} onChange={(event) => { const v = Number(event.target.value); if (Number.isFinite(v)) updateSelectionDurationFromInput(v); }} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('start', -FINE_TRIM_NUDGE_SECONDS)}>-10ms In</button>
-                  <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('start', FINE_TRIM_NUDGE_SECONDS)}>+10ms In</button>
-                  <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('end', -FINE_TRIM_NUDGE_SECONDS)}>-10ms Out</button>
-                  <button type="button" style={toolbarButtonStyle()} onClick={() => nudgeSelectionBoundary('end', FINE_TRIM_NUDGE_SECONDS)}>+10ms Out</button>
-                  <button type="button" style={toolbarButtonStyle()} onClick={trimLeadingSilence}>Trim Head</button>
-                  <button type="button" style={toolbarButtonStyle()} onClick={trimTrailingSilence}>Trim Tail</button>
-                  <button type="button" style={toolbarButtonStyle()} onClick={trimDetectedContent}>Trim Content</button>
-                  <button type="button" style={toolbarButtonStyle()} onClick={() => void clearLoopRegion()}>Clear</button>
-                </div>
-              </div>
-
-              <div className="pro-panel">
-                <div className="pro-panel-header">Transform & Export</div>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1 }}>
-                    <label className="pro-label">Convert Format</label>
-                    <select className="pro-select" value={convertFormat} onChange={(event) => setConvertFormat(event.target.value as 'mp3' | 'wav' | 'flac' | 'ogg')}>
+                <div style={panelStyle}>
+                  <div style={sectionHeaderStyle}>Transform & Export</div>
+                  <div>
+                    <label style={formLabelStyle}>Convert Format</label>
+                    <select style={formControlStyle} value={convertFormat} onChange={(event) => setConvertFormat(event.target.value as 'mp3' | 'wav' | 'flac' | 'ogg')}>
                       {EXPLORER_AUDIO_EXPORT_FORMATS.map((format) => (
                         <option key={format.id} value={format.id}>{format.label}</option>
                       ))}
                     </select>
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', paddingBottom: 4 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--overlay-text-primary)' }}>
                     <input type="checkbox" checked={generateSpectrogram} onChange={(event) => setGenerateSpectrogram(event.target.checked)} />
-                    Spectrogram Preview
+                    Spectrogram preview
                   </label>
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                  <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('clip')}>Export Clip</button>
-                  <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('normalized')}>Export Normalized</button>
-                  <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('convert')}>Convert</button>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('clip')}>Export Clip</button>
+                    <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('normalized')}>Export Normalized</button>
+                    <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('convert')}>Convert</button>
+                    <button type="button" style={toolbarButtonStyle('danger')} onClick={() => setExportDialogMode('overwrite')}>Save Edits to File</button>
+                  </div>
                 </div>
               </div>
 
-              <div className="pro-panel">
-                <div className="pro-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span>Plugin Rack (VST3)</span>
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 400, letterSpacing: '0.04em' }}>HEADLESS</span>
-                </div>
-
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{
-                    flex: 1,
-                    padding: '5px 8px',
-                    background: previewDeck.activePluginPath ? 'rgba(99,102,241,0.12)' : 'rgba(0,0,0,0.2)',
-                    border: `1px solid ${previewDeck.activePluginPath ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.1)'}`,
-                    borderRadius: 4,
-                    fontSize: 11,
-                    color: previewDeck.activePluginPath ? 'rgba(200,200,255,0.95)' : 'rgba(255,255,255,0.35)',
-                    textOverflow: 'ellipsis',
-                    overflow: 'hidden',
-                    whiteSpace: 'nowrap',
-                    transition: 'border-color 0.15s, background 0.15s',
-                  }}>
-                    {previewDeck.activePluginPath
-                      ? `⬡ ${previewDeck.activePluginPath.split(/[/\\]/).pop()}`
-                      : '— No plugin loaded —'}
-                  </div>
-
-                  <div style={{ flex: 1, display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <select
-                      className="vst-plugin-dropdown"
-                      value={previewDeck.activePluginPath || ''}
-                      onChange={async (e) => {
-                        const path = e.target.value;
-                        if (!path) return;
-                        try {
-                          await loadAudioDeckPlugin(previewDeck.deckId, path);
-                          setWorkbenchStatus(`Plugin loaded: ${path.split(/[/\\]/).pop()}`);
-                        } catch (err: any) {
-                          setWorkbenchStatus(`Plugin load failed: ${err?.message ?? err}`);
-                        }
-                      }}
-                      style={{
-                        flex: 1,
-                        padding: '4px 6px',
-                        background: 'rgba(0,0,0,0.2)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: 4,
-                        fontSize: 11,
-                        color: previewDeck.activePluginPath ? '#fff' : 'rgba(255,255,255,0.4)',
-                        outline: 'none',
-                      }}
-                    >
-                      <option value="" disabled>
-                        {isScanningVst ? 'Scanning for plugins...' : 'Select a VST3 plugin...'}
-                      </option>
-                      {discoveredPlugins.map(plugin => (
-                        <option key={plugin.path} value={plugin.path}>
-                          {plugin.name}
-                        </option>
-                      ))}
-                    </select>
-
-                    <button
-                      type="button"
-                      title="Rescan VST3 Folders"
-                      onClick={async () => {
-                        setIsScanningVst(true);
-                        try {
-                          const defaults = await getExplorerVstDefaultScanPaths();
-                          const validDefaults = defaults.filter(p => p.exists).map(p => p.path);
-                          const plugins = await scanExplorerVstPlugins([...validDefaults, ...(settings.audio?.vst3AdditionalFolders ?? [])]);
-                          setDiscoveredPlugins(plugins);
-                          setWorkbenchStatus(`Scanned ${plugins.length} VST3 plugins.`);
-                        } finally {
-                          setIsScanningVst(false);
-                        }
-                      }}
-                      style={{
-                        padding: '4px 6px',
-                        background: 'rgba(255,255,255,0.05)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: 4,
-                        color: 'rgba(255,255,255,0.6)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      ↻
-                    </button>
-                  </div>
-
-                  {previewDeck.activePluginPath && (
-                    <button
-                      id="audio-workbench-clear-vst-btn"
-                      type="button"
-                      style={toolbarButtonStyle('danger')}
-                      onClick={async () => {
-                        await clearAudioDeckPlugin(previewDeck.deckId);
-                        setWorkbenchStatus('Plugin cleared.');
-                      }}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -4, paddingBottom: 8 }}>
-                  <button
-                    type="button"
-                    style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 10, cursor: 'pointer', textDecoration: 'underline' }}
-                    onClick={async () => {
-                      const { open } = await import('@tauri-apps/plugin-fs').catch(() => ({ open: null as any }));
-                      if (open) {
-                        const picked = await (open as any)({
-                          title: 'Select a VST3 Plugin',
-                          filters: [{ name: 'VST3 Plugin', extensions: ['vst3', 'so', 'dll', 'dylib'] }],
-                          multiple: false,
-                          directory: false,
-                        }) as string | null;
-                        if (picked) {
-                          await loadAudioDeckPlugin(previewDeck.deckId, picked);
-                          setWorkbenchStatus(`Plugin loaded: ${picked.split(/[/\\]/).pop()}`);
-                        }
-                      }
-                    }}
-                  >
-                    Browse files...
-                  </button>
-                </div>
-
-                {previewDeck.vstParameters && previewDeck.vstParameters.length > 0 ? (
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                    gap: 10,
-                    maxHeight: 280,
-                    overflowY: 'auto',
-                    paddingRight: 2,
-                  }}>
-                    {previewDeck.vstParameters.map((param) => (
-                      <div
-                        key={param.id}
-                        style={{
-                          background: 'rgba(0,0,0,0.18)',
-                          border: '1px solid rgba(255,255,255,0.07)',
-                          borderRadius: 5,
-                          padding: '6px 8px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 4,
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: 500, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '70%' }}>
-                            {param.title || param.shortTitle}
-                          </span>
-                          <span style={{ fontSize: 10, color: 'rgba(160,160,220,0.8)', fontFamily: 'monospace', flexShrink: 0 }}>
-                            {(param.valueNormalized * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                        <input
-                          id={`vst-param-${previewDeck.deckId}-${param.id}`}
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.001}
-                          defaultValue={param.valueNormalized}
-                          style={{ width: '100%', accentColor: 'hsl(245 80% 60%)' }}
-                          onChange={() => { /* param automation wired in next phase */ }}
-                        />
-                        {param.units ? (
-                          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textAlign: 'right' }}>{param.units}</span>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : previewDeck.activePluginPath ? (
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', padding: '6px 0', fontStyle: 'italic' }}>
-                    No parameters exposed — plugin may not support headless parameter query yet.
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', padding: '4px 0', fontStyle: 'italic' }}>
-                    Load a .vst3 plugin above to auto-generate its parameter controls.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', display: 'flex', gap: 16, flexWrap: 'wrap', paddingBottom: 20 }}>
-              {workbenchError || previewDeck.error || snapshot.engineError ? (
-                <span style={{ color: '#ef4444' }}>{workbenchError ?? previewDeck.error ?? snapshot.engineError}</span>
-              ) : (
-                <span>{workbenchStatus}</span>
-              )}
-              {exportMessage && <span>• {exportMessage}</span>}
-              <span>• Peak: {formatDb(analysis?.peakLevel)} / RMS: {formatDb(analysis?.rmsLevel)}</span>
-              <span>• Silence Regions: {silenceRegions.length}</span>
-              <span style={{ display: 'flex', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ ...statusChipStyle, color: workbenchError || previewDeck.error || snapshot.engineError ? '#c0392b' : 'var(--overlay-text-primary)' }}>
+                  {activeStatusMessage}
+                </span>
+                {exportMessage ? <span style={statusChipStyle}>{exportMessage}</span> : null}
+                <span style={statusChipStyle}>Peak {formatDb(analysis?.peakLevel)}</span>
+                <span style={statusChipStyle}>RMS {formatDb(analysis?.rmsLevel)}</span>
                 <button type="button" style={toolbarButtonStyle('ghost')} onClick={() => jumpToAdjacentSilence('previous')}>Prev Silence</button>
                 <button type="button" style={toolbarButtonStyle('ghost')} onClick={() => jumpToAdjacentSilence('next')}>Next Silence</button>
-              </span>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div
-          ref={rootRef}
-          tabIndex={-1}
-          data-testid="audio-preview-surface"
-          style={{
-            width: '100%',
-            height: '100%',
-            position: 'relative',
-            overflow: 'hidden',
-            display: 'flex',
-            background:
-              'radial-gradient(circle at 18% 18%, rgba(56,189,248,0.16), transparent 30%), radial-gradient(circle at 82% 16%, rgba(14,165,233,0.18), transparent 26%), linear-gradient(180deg, rgba(4,8,15,0.96) 0%, rgba(8,13,23,0.98) 100%)',
-            color: '#f8fafc',
-          }}
-        >
-          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.6, backgroundImage: 'linear-gradient(rgba(148,163,184,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.05) 1px, transparent 1px)', backgroundSize: '100% 36px, 36px 100%' }} />
-          <div style={{ position: 'relative', zIndex: 1, flex: 1, overflow: 'auto', padding: 'clamp(20px, 4vw, 36px)' }}>
-            <div style={{ maxWidth: 940, margin: '0 auto', minHeight: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 24 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: 'rgba(15,23,42,0.68)', border: '1px solid rgba(148,163,184,0.18)', boxShadow: '0 12px 32px rgba(2,6,23,0.35)', fontSize: 11, letterSpacing: '0.24em', textTransform: 'uppercase', color: 'rgba(186,230,253,0.82)' }}>
-                  <AudioLines size={14} />
-                  Audio Preview
-                </div>
-                <div style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.05, maxWidth: 780 }}>
-                  {audioName}
-                </div>
-                <div style={{ fontSize: 13, color: 'rgba(226,232,240,0.66)' }}>
-                  {audioExtension.toUpperCase()} • {formatSize(audioSize)} • Native engine playback • {formatDuration(analysis?.durationSeconds ?? effectiveDuration)}
-                </div>
               </div>
-
-              <div style={{ borderRadius: 30, border: '1px solid rgba(148,163,184,0.16)', background: 'linear-gradient(155deg, rgba(15,23,42,0.9) 0%, rgba(2,6,23,0.96) 100%)', boxShadow: '0 30px 80px rgba(2,6,23,0.52)', overflow: 'hidden' }}>
-                <div style={{ padding: '24px 24px 16px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        aria-label={previewDeck.isPlaying ? 'Pause audio preview' : 'Play audio preview'}
-                        onClick={() => void togglePreviewDeckPlayback()}
-                        style={{
-                          appearance: 'none',
-                          border: 'none',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 8,
-                          minWidth: 132,
-                          padding: '16px 20px',
-                          borderRadius: 999,
-                          cursor: 'pointer',
-                          color: '#eff6ff',
-                          background: 'linear-gradient(135deg, rgba(56,189,248,0.92), rgba(37,99,235,0.86))',
-                          boxShadow: '0 18px 40px rgba(14,165,233,0.28)',
-                          fontSize: 13,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {previewDeck.isPlaying ? <Pause size={18} /> : <Play size={18} />}
-                        {previewDeck.isPlaying ? 'Pause' : 'Play'}
+            </>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(280px, 0.8fr)', gap: 12 }}>
+                <div style={{ ...cardStyle, padding: 12, display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={sectionHeaderStyle}>VST Host Surface</div>
+                    {vstEditorSession?.sessionId ? (
+                      <button type="button" style={toolbarButtonStyle()} onClick={() => void focusExplorerVstEditorSession(vstEditorSession.sessionId)}>
+                        Focus Host
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleStopPlayback()}
-                        style={{
-                          appearance: 'none',
-                          border: '1px solid rgba(148,163,184,0.18)',
-                          background: 'rgba(15,23,42,0.78)',
-                          color: 'rgba(226,232,240,0.78)',
-                          borderRadius: 999,
-                          cursor: 'pointer',
-                          padding: '12px 16px',
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}
-                      >
-                        Stop
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                      {hasLoopSelectionPreview ? (
-                        <div style={{ padding: '8px 12px', borderRadius: 999, background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(96,165,250,0.2)', fontSize: 11, fontWeight: 600, color: 'rgba(191,219,254,0.9)' }}>
-                          Loop {formatDuration(selectionStart)} - {formatDuration(selectionEnd)}
-                        </div>
-                      ) : null}
-                      <div style={{ padding: '10px 14px', borderRadius: 999, background: 'rgba(15,23,42,0.72)', border: '1px solid rgba(148,163,184,0.16)', fontSize: 12, fontWeight: 600, color: 'rgba(226,232,240,0.9)', fontVariantNumeric: 'tabular-nums' }}>
-                        {formatDuration(currentTimeSeconds)} / {formatDuration(analysis?.durationSeconds ?? effectiveDuration)}
-                      </div>
-                    </div>
+                    ) : null}
                   </div>
-
                   <div
-                    ref={timelineRef}
-                    role="presentation"
-                    onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
+                    ref={vstHostSurfaceRef}
+                    data-testid="audio-vst-host-surface"
                     style={{
-                      position: 'relative',
-                      height: 164,
-                      borderRadius: 22,
-                      overflow: 'hidden',
-                      cursor: 'pointer',
-                      border: '1px solid rgba(148,163,184,0.14)',
-                      background: 'linear-gradient(180deg, rgba(2,6,23,0.98) 0%, rgba(15,23,42,0.92) 100%)',
+                      minHeight: 320,
+                      borderRadius: 'calc(var(--overlay-explorer-control-radius, 10px) + 6px)',
+                      border: '1px dashed var(--overlay-explorer-chip-active-border)',
+                      background:
+                        'radial-gradient(circle at top left, color-mix(in srgb, var(--overlay-accent) 10%, transparent), transparent 38%), color-mix(in srgb, var(--overlay-explorer-preview-bg) 80%, black 20%)',
+                      display: 'grid',
+                      placeItems: 'center',
+                      padding: 18,
+                      textAlign: 'center',
                     }}
                   >
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(56,189,248,0.08) 0%, transparent 55%)', pointerEvents: 'none', zIndex: 1 }} />
-                    <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: playheadLeft, background: 'linear-gradient(90deg, rgba(56,189,248,0.16), rgba(14,165,233,0.06))', pointerEvents: 'none', zIndex: 1 }} />
-                    {hasLoopSelectionPreview ? (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          bottom: 0,
-                          left: selectionLeft,
-                          width: selectionWidth,
-                          background: 'linear-gradient(90deg, rgba(59,130,246,0.14), rgba(56,189,248,0.18))',
-                          borderLeft: '1px solid rgba(125,211,252,0.42)',
-                          borderRight: '1px solid rgba(125,211,252,0.42)',
-                          pointerEvents: 'none',
-                          zIndex: 2,
-                        }}
-                      />
-                    ) : null}
-                    <AudioWorkbenchWaveformBars waveformBuckets={waveformBuckets} isAnalyzing={isAnalyzing} />
-                    <AudioWorkbenchPlayheadMarker
-                      ref={playheadMarkerRef}
-                      currentTimeSeconds={currentTimeSeconds}
-                      durationSeconds={effectiveDuration}
-                      isPlaying={previewDeck.isPlaying}
-                      playbackRate={previewDeck.rate}
-                    />
-                  </div>
-
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    {spectralBands.length > 0 ? (
-                      <div style={{ height: 44, borderRadius: 16, overflow: 'hidden', background: 'rgba(2,6,23,0.76)', border: '1px solid rgba(148,163,184,0.12)' }}>
-                        <AudioWorkbenchSpectralBars spectralBands={spectralBands} />
-                      </div>
-                    ) : null}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-                      {previewSummaryItems.map((item) => (
-                        <div
-                          key={item.label}
-                          style={{
-                            padding: '12px 14px',
-                            borderRadius: 18,
-                            background: 'rgba(15,23,42,0.72)',
-                            border: '1px solid rgba(148,163,184,0.14)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 4,
-                          }}
-                        >
-                          <span style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(148,163,184,0.7)' }}>
-                            {item.label}
-                          </span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
-                            {item.value}
-                          </span>
+                    {previewDeck.activePluginPath ? (
+                      <div style={{ display: 'grid', gap: 8, maxWidth: 360 }}>
+                        <div style={{ fontSize: 15, fontWeight: 700 }}>
+                          {previewDeck.activePluginPath.split(/[/\\]/).pop()}
                         </div>
-                      ))}
-                    </div>
+                        <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                          {vstEditorSession?.statusLabel ?? 'Preparing native VST editor host…'}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                          Attach mode: {vstEditorSession?.attachMode ?? 'pending'}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ fontSize: 15, fontWeight: 700 }}>No VST loaded</div>
+                        <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                          Pick a plugin to open its dedicated VST workflow.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div style={{ borderTop: '1px solid rgba(148,163,184,0.14)', padding: '16px 24px 20px', display: 'flex', flexDirection: 'column', gap: 14, background: 'rgba(2,6,23,0.5)' }}>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: 12, color: workbenchError || previewDeck.error || snapshot.engineError ? '#fca5a5' : 'rgba(226,232,240,0.78)', fontWeight: 500 }}>
-                      {previewTransportStatus}
-                    </span>
-                    {exportMessage !== 'Ready for playback and export.' ? (
-                      <span style={{ fontSize: 11, color: 'rgba(191,219,254,0.82)' }}>
-                        {exportMessage}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'rgba(15,23,42,0.72)', border: '1px solid rgba(148,163,184,0.14)', fontSize: 11, color: 'rgba(226,232,240,0.78)' }}>
-                      Peak {formatDb(analysis?.peakLevel)}
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={panelStyle}>
+                    <div style={sectionHeaderStyle}>Plugin Picker</div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <select
+                        value={previewDeck.activePluginPath || ''}
+                        onChange={(event) => {
+                          const nextPath = event.target.value;
+                          if (nextPath) {
+                            void loadDeckPlugin(nextPath);
+                          }
+                        }}
+                        style={formControlStyle}
+                      >
+                        <option value="" disabled>
+                          {isScanningVst ? 'Scanning for plugins...' : 'Select a VST3 plugin...'}
+                        </option>
+                        {discoveredPlugins.map((plugin) => (
+                          <option key={plugin.path} value={plugin.path}>
+                            {plugin.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button type="button" style={toolbarButtonStyle()} onClick={() => void rescanVstPlugins()}>
+                        Rescan
+                      </button>
                     </div>
-                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'rgba(15,23,42,0.72)', border: '1px solid rgba(148,163,184,0.14)', fontSize: 11, color: 'rgba(226,232,240,0.78)' }}>
-                      RMS {formatDb(analysis?.rmsLevel)}
-                    </div>
-                    <div style={{ padding: '8px 12px', borderRadius: 999, background: 'rgba(15,23,42,0.72)', border: '1px solid rgba(148,163,184,0.14)', fontSize: 11, color: 'rgba(226,232,240,0.78)' }}>
-                      {silenceRegions.length} silence regions
-                    </div>
-                  </div>
-                  {previewShortcutItems.length > 0 ? (
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {previewShortcutItems.map((shortcut) => (
-                        <div
-                          key={shortcut}
-                          style={{
-                            padding: '7px 11px',
-                            borderRadius: 999,
-                            background: 'rgba(56,189,248,0.08)',
-                            border: '1px solid rgba(125,211,252,0.16)',
-                            fontSize: 11,
-                            color: 'rgba(186,230,253,0.88)',
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        style={toolbarButtonStyle('ghost')}
+                        onClick={async () => {
+                          const { open } = await import('@tauri-apps/plugin-fs').catch(() => ({ open: null as any }));
+                          if (!open) {
+                            return;
+                          }
+                          const picked = await (open as any)({
+                            title: 'Select a VST3 Plugin',
+                            filters: [{ name: 'VST3 Plugin', extensions: ['vst3', 'so', 'dll', 'dylib'] }],
+                            multiple: false,
+                            directory: false,
+                          }) as string | null;
+                          if (picked) {
+                            await loadDeckPlugin(picked);
+                          }
+                        }}
+                      >
+                        Browse Files...
+                      </button>
+                      {previewDeck.activePluginPath ? (
+                        <button
+                          id="audio-workbench-clear-vst-btn"
+                          type="button"
+                          style={toolbarButtonStyle('danger')}
+                          onClick={async () => {
+                            await clearAudioDeckPlugin(previewDeck.deckId);
+                            setWorkbenchStatus('Plugin cleared.');
                           }}
                         >
-                          {shortcut}
-                        </div>
-                      ))}
+                          Clear Plugin
+                        </button>
+                      ) : null}
                     </div>
-                  ) : null}
+                    <span style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                      {previewDeck.activePluginPath ?? 'No plugin loaded.'}
+                    </span>
+                  </div>
+
+                  <div style={panelStyle}>
+                    <div style={sectionHeaderStyle}>Parameter Inspector</div>
+                    {previewDeck.vstParameters.length > 0 ? (
+                      <div style={{ display: 'grid', gap: 8, maxHeight: 320, overflowY: 'auto' }}>
+                        {previewDeck.vstParameters.map((param) => (
+                          <div key={param.id} style={{ ...summaryCardStyle, gap: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                              <span style={{ fontSize: 11, fontWeight: 600 }}>{param.title || param.shortTitle}</span>
+                              <span style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>
+                                {(param.valueNormalized * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                            <input
+                              id={`vst-param-${previewDeck.deckId}-${param.id}`}
+                              type="range"
+                              min={0}
+                              max={1}
+                              step={0.001}
+                              value={param.valueNormalized}
+                              className="audio-workbench-slider"
+                              onChange={(event) => {
+                                void setAudioDeckPluginParameter(
+                                  previewDeck.deckId,
+                                  param.id,
+                                  Number(event.target.value),
+                                ).catch((error) => {
+                                  setWorkbenchError(
+                                    error instanceof Error
+                                      ? error.message
+                                      : String(error),
+                                  );
+                                });
+                              }}
+                            />
+                            {param.units ? <span style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>{param.units}</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                        {previewDeck.activePluginPath
+                          ? 'The loaded plugin does not expose parameters to the current host bridge yet.'
+                          : 'Load a plugin to inspect its parameters and editor host state.'}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ ...statusChipStyle, color: workbenchError || previewDeck.error || snapshot.engineError ? '#c0392b' : 'var(--overlay-text-primary)' }}>
+                      {activeStatusMessage}
+                    </span>
+                    {vstEditorSession?.statusLabel ? (
+                      <span style={statusChipStyle}>{vstEditorSession.statusLabel}</span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
-      )}
+      </div>
 
       <AppPromptDialog
         open={

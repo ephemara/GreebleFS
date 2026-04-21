@@ -14,6 +14,6 @@ describe('explorerExperimentalModes', () => {
   it('exposes mode-specific density descriptors', () => {
     expect(getExplorerExperimentalDensityDescriptor('adaptive-semantic-grid', 0.6).label).toBe('Rich Cards');
     expect(getExplorerExperimentalDensityDescriptor('constellation', 0.8).label).toBe('Web');
-    expect(getExplorerExperimentalDensityDescriptor('timeline-surface', 1).label).toBe('Days');
+    expect(getExplorerExperimentalDensityDescriptor('timeline-surface', 1).label).toBe('Hours');
   });
 });

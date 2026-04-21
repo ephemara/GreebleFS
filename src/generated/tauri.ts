@@ -469,6 +469,14 @@ async audioEngineClearDeckPlugin(request: AudioEngineDeckRequest) : Promise<Resu
     else return { status: "error", error: e  as any };
 }
 },
+async audioEngineSetPluginParameter(request: AudioEngineSetPluginParameterRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_set_plugin_parameter", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async audioEngineSyncSelectionToArmedDeck(request: AudioEngineSyncSelectionRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("audio_engine_sync_selection_to_armed_deck", { request }) };
@@ -808,6 +816,38 @@ async explorerSavedSearchesDelete(id: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async explorerSemanticIndexGetSummary(rootPath: string) : Promise<Result<ExplorerSemanticIndexSummary, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("explorer_semantic_index_get_summary", { rootPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async explorerSemanticIndexBuild(request: ExplorerSemanticIndexBuildRequest) : Promise<Result<ExplorerSemanticIndexBuildStartResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("explorer_semantic_index_build", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async explorerSemanticSearch(request: ExplorerSemanticSearchRequest) : Promise<Result<ExplorerSemanticSearchResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("explorer_semantic_search", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async explorerSemanticFindSimilar(request: ExplorerSemanticFindSimilarRequest) : Promise<Result<ExplorerSemanticSearchResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("explorer_semantic_find_similar", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async fsResolveNativeIcons(requests: NativeIconRequest[]) : Promise<Result<NativeIconResponse[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("fs_resolve_native_icons", { requests }) };
@@ -989,6 +1029,38 @@ async vstGetDefaultScanPaths() : Promise<VstScanPath[]> {
  */
 async vstScanPlugins(paths: string[]) : Promise<VstPluginEntry[]> {
     return await TAURI_INVOKE("vst_scan_plugins", { paths });
+},
+async vstHostCreateEditorSession(request: VstEditorSessionCreateRequest) : Promise<Result<VstEditorSessionState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vst_host_create_editor_session", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async vstHostUpdateEditorSessionRect(request: VstEditorSessionRectRequest) : Promise<Result<VstEditorSessionState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vst_host_update_editor_session_rect", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async vstHostFocusEditorSession(sessionId: string) : Promise<Result<VstEditorSessionState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vst_host_focus_editor_session", { sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async vstHostDestroyEditorSession(sessionId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("vst_host_destroy_editor_session", { sessionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 },
 async imageEditorCreateSession(request: ImageEditorSessionCreateRequest) : Promise<Result<ImageEditorSessionBootstrap, string>> {
     try {
@@ -1369,8 +1441,8 @@ videoEngineStateEvent: "video-engine-state-event"
 
 /** user-defined constants **/
 
-export const OVERLAY_WORKBENCH_PRESETS = [{"description":"Cross-axis shell","id":"xmb-media-deck","inputProfile":{"density":"immersive","directionalNavigation":true,"mode":"controller","pointerGestures":false},"label":"XMB Media Deck","navigationModel":"cross-axis","panelBindings":[{"defaultOpen":true,"order":0,"panelId":"terminal","preferredSize":null,"region":"primary"}],"preferredThemeIds":["operator"],"shellBlueprint":"xmb-cross-media","windowProfile":{"anchor":"center","aspectRatio":"16:9","mode":"fullscreen"}}] as const;
 export const YAZI_BINDINGS_MANIFEST = {"entries":[{"crateName":"yazi-actor","exportedTypes":[],"notes":["actor command internals"],"status":"internal"},{"crateName":"yazi-adapter","exportedTypes":[],"notes":["adapter and image bridge surface planned"],"status":"planned"},{"crateName":"yazi-binding","exportedTypes":[],"notes":["Lua binding internals"],"status":"internal"},{"crateName":"yazi-boot","exportedTypes":[],"notes":["boot/runtime handshake surface planned"],"status":"planned"},{"crateName":"yazi-build","exportedTypes":[],"notes":["build helper crate"],"status":"internal"},{"crateName":"yazi-cli","exportedTypes":[],"notes":["CLI-only surface"],"status":"internal"},{"crateName":"yazi-codegen","exportedTypes":[],"notes":["codegen helper crate"],"status":"internal"},{"crateName":"yazi-config","exportedTypes":[],"notes":["config/theme bridge surface planned"],"status":"planned"},{"crateName":"yazi-core","exportedTypes":[],"notes":["runtime state internals"],"status":"internal"},{"crateName":"yazi-dds","exportedTypes":[],"notes":["DDS payload bridge surface planned"],"status":"planned"},{"crateName":"yazi-emulator","exportedTypes":[],"notes":["terminal emulator bridge surface planned"],"status":"planned"},{"crateName":"yazi-ffi","exportedTypes":[],"notes":["FFI handle internals"],"status":"internal"},{"crateName":"yazi-fm","exportedTypes":[],"notes":["full TUI app crate"],"status":"internal"},{"crateName":"yazi-fs","exportedTypes":["YaziFsSortBy","YaziFsSortFallback","YaziFsErrorDto","YaziFsFolderStageDto"],"notes":["file explorer sorting and stage contracts exported"],"status":"bridged"},{"crateName":"yazi-macro","exportedTypes":[],"notes":["macro crate"],"status":"internal"},{"crateName":"yazi-packing","exportedTypes":[],"notes":["archive/package bridge surface planned"],"status":"planned"},{"crateName":"yazi-parser","exportedTypes":["YaziParserTaskSummary","YaziParserSortOpt","YaziParserHiddenOpt","YaziParserHiddenOptState"],"notes":["frontend-safe parser option DTOs exported"],"status":"bridged"},{"crateName":"yazi-plugin","exportedTypes":[],"notes":["plugin runtime bridge surface planned"],"status":"planned"},{"crateName":"yazi-proxy","exportedTypes":[],"notes":["proxy bridge surface planned"],"status":"planned"},{"crateName":"yazi-scheduler","exportedTypes":["YaziSchedulerFetchProg","YaziSchedulerFileProgCopy","YaziSchedulerFileProgCut","YaziSchedulerFileProgLink","YaziSchedulerFileProgHardlink","YaziSchedulerFileProgDelete","YaziSchedulerFileProgTrash","YaziSchedulerFileProgDownload","YaziSchedulerFileProgUpload","YaziSchedulerPluginProgEntry","YaziSchedulerPreloadProg","YaziSchedulerProcessProgBlock","YaziSchedulerProcessProgOrphan","YaziSchedulerProcessProgBg","YaziSchedulerSizeProg","YaziSchedulerTaskProg","YaziSchedulerTaskSnap"],"notes":["task progress bridge DTOs exported"],"status":"bridged"},{"crateName":"yazi-sftp","exportedTypes":[],"notes":["SFTP bridge surface planned"],"status":"planned"},{"crateName":"yazi-shared","exportedTypes":[],"notes":["shared URL/data bridge surface planned"],"status":"planned"},{"crateName":"yazi-shim","exportedTypes":[],"notes":["platform shim internals"],"status":"internal"},{"crateName":"yazi-term","exportedTypes":[],"notes":["terminal presentation bridge surface planned"],"status":"planned"},{"crateName":"yazi-tty","exportedTypes":[],"notes":["TTY internals"],"status":"internal"},{"crateName":"yazi-vfs","exportedTypes":[],"notes":["VFS service bridge surface planned"],"status":"planned"},{"crateName":"yazi-watcher","exportedTypes":[],"notes":["watcher event bridge surface planned"],"status":"planned"},{"crateName":"yazi-widgets","exportedTypes":[],"notes":["widget layout bridge surface planned"],"status":"planned"}],"version":"phase-1"} as const;
+export const OVERLAY_WORKBENCH_PRESETS = [{"description":"Cross-axis shell","id":"xmb-media-deck","inputProfile":{"density":"immersive","directionalNavigation":true,"mode":"controller","pointerGestures":false},"label":"XMB Media Deck","navigationModel":"cross-axis","panelBindings":[{"defaultOpen":true,"order":0,"panelId":"terminal","preferredSize":null,"region":"primary"}],"preferredThemeIds":["operator"],"shellBlueprint":"xmb-cross-media","windowProfile":{"anchor":"center","aspectRatio":"16:9","mode":"fullscreen"}}] as const;
 export const OVERLAY_THEME_MANIFESTS = [{"animationProfiles":[{"durationMs":180,"easing":"ease-in-out","id":"default-motion","intensity":50,"name":"Default Motion"}],"compatibility":{"shellBlueprints":[],"tags":["default","workbench"]},"defaultAnimationProfileId":"default-motion","defaultIconPackId":"system-icons","defaultLayoutPrimitiveId":"operator-stack","defaultNavigationPatternId":"operator-tabs","defaultRenderStyleId":"default-render","designTokens":[{"id":"accent-operator","kind":"color","name":"Accent","value":"#6366f1"},{"id":"panel-spacing","kind":"spacing","name":"Panel Spacing","value":8}],"extends":null,"iconPacks":[{"id":"system-icons","name":"System Icons","style":"system"}],"id":"operator","layoutPrimitives":[{"id":"operator-stack","kind":"stack","name":"Operator Stack","props":{"gap":8}},{"id":"operator-dock","kind":"dock","name":"Operator Dock","props":{"side":"right"}}],"name":"Operator","navigationPatterns":[{"axis":"horizontal","id":"operator-tabs","kind":"tabbed","name":"Operator Tabs","props":{"defaultSurface":"terminal","focusRing":"chrome"}}],"presentation":{"chromeStyle":"floating","cornerRadius":12,"density":"comfortable","iconStyle":"vector","motionStyle":"fluid","panelSpacing":8},"renderStyles":[{"description":"Built-in workbench renderer placeholder","entryModule":"renderers/default.tsx","id":"default-render","kind":"vs-code-workbench","label":"Workbench","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":220,"easing":"ease-out","id":"aqua-sheen","intensity":42,"name":"Aqua Sheen"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["light","aqua","chrome"]},"defaultAnimationProfileId":"aqua-sheen","defaultIconPackId":"aqua-icons","defaultLayoutPrimitiveId":"aqua-shell","defaultNavigationPatternId":"aqua-cascade","defaultRenderStyleId":"aqua-render","designTokens":[{"id":"aqua-accent","kind":"color","name":"Accent","value":"#2a9df4"},{"id":"aqua-radius","kind":"radius","name":"Card Radius","value":12}],"extends":"operator","iconPacks":[{"id":"aqua-icons","name":"Aqua Icons","style":"vector"}],"id":"aqua-light","layoutPrimitives":[{"id":"aqua-shell","kind":"split","name":"Aqua Shell","props":{"primaryRatio":0.62}}],"name":"Aqua Light","navigationPatterns":[{"axis":"both","id":"aqua-cascade","kind":"spatial","name":"Aqua Cascade","props":{"breadcrumb":true}}],"presentation":{"chromeStyle":"floating","cornerRadius":14,"density":"comfortable","iconStyle":"vector","motionStyle":"fluid","panelSpacing":10},"renderStyles":[{"description":"Bright Aqua chrome and translucent panels.","entryModule":"renderers/aqua-light.tsx","id":"aqua-render","kind":"vs-code-workbench","label":"Aqua Glass","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":240,"easing":"ease-out","id":"plasma-surge","intensity":62,"name":"Plasma Surge"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["neon","plasma","cyber"]},"defaultAnimationProfileId":"plasma-surge","defaultIconPackId":"plasma-icons","defaultLayoutPrimitiveId":"plasma-grid","defaultNavigationPatternId":"plasma-trail","defaultRenderStyleId":"plasma-render","designTokens":[{"id":"plasma-accent","kind":"color","name":"Accent","value":"#59e3ff"},{"id":"plasma-motion","kind":"motion","name":"Motion","value":240}],"extends":"operator","iconPacks":[{"id":"plasma-icons","name":"Plasma Icons","style":"vector"}],"id":"plasma-flow","layoutPrimitives":[{"id":"plasma-grid","kind":"grid","name":"Plasma Grid","props":{"cellSize":140}}],"name":"Plasma Flow","navigationPatterns":[{"axis":"horizontal","id":"plasma-trail","kind":"xmb","name":"Plasma Trail","props":{"categoryDepth":2}}],"presentation":{"chromeStyle":"floating","cornerRadius":12,"density":"comfortable","iconStyle":"vector","motionStyle":"dramatic","panelSpacing":10},"renderStyles":[{"description":"Neon dark shell with crisp panels.","entryModule":"renderers/plasma-flow.tsx","id":"plasma-render","kind":"vs-code-workbench","label":"Plasma Lab","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":300,"easing":"ease-in-out","id":"vintage-power-on","intensity":58,"name":"Power On"}],"compatibility":{"shellBlueprints":["retro-desktop"],"tags":["vintage","macintosh","crt"]},"defaultAnimationProfileId":"vintage-power-on","defaultIconPackId":"vintage-icons","defaultLayoutPrimitiveId":"vintage-window","defaultNavigationPatternId":"vintage-desktop","defaultRenderStyleId":"vintage-render","designTokens":[{"id":"vintage-accent","kind":"color","name":"Accent","value":"#506f42"},{"id":"vintage-radius","kind":"radius","name":"Bezel Radius","value":10}],"extends":"operator","iconPacks":[{"id":"vintage-icons","name":"Vintage Icons","style":"skeuomorphic"}],"id":"vintage-macintosh","layoutPrimitives":[{"id":"vintage-window","kind":"freeform","name":"Vintage Window","props":{"bezel":true}}],"name":"Vintage Macintosh","navigationPatterns":[{"axis":"vertical","id":"vintage-desktop","kind":"hierarchy","name":"Vintage Desktop","props":{"menuBar":true}}],"presentation":{"chromeStyle":"ornate","cornerRadius":10,"density":"comfortable","iconStyle":"skeuomorphic","motionStyle":"dramatic","panelSpacing":12},"renderStyles":[{"description":"Desktop chrome tuned for retro Macintosh shells.","entryModule":"renderers/vintage-macintosh.tsx","id":"vintage-render","kind":"desktop-window-manager","label":"Vintage Desktop","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":260,"easing":"ease-out","id":"vista-bloom","intensity":54,"name":"Vista Bloom"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["glass","aero","blue"]},"defaultAnimationProfileId":"vista-bloom","defaultIconPackId":"vista-icons","defaultLayoutPrimitiveId":"vista-glass-shell","defaultNavigationPatternId":"vista-breadcrumbs","defaultRenderStyleId":"vista-render","designTokens":[{"id":"vista-accent","kind":"color","name":"Accent","value":"#7dd3ff"},{"id":"vista-shadow","kind":"shadow","name":"Overlay Shadow","value":"0 20px 64px rgba(0, 0, 0, 0.44)"}],"extends":"github-dark","iconPacks":[{"id":"vista-icons","name":"Vista Icons","style":"skeuomorphic"}],"id":"vista-glass","layoutPrimitives":[{"id":"vista-glass-shell","kind":"dock","name":"Vista Glass Shell","props":{"chrome":"frosted"}}],"name":"Vista Glass","navigationPatterns":[{"axis":"horizontal","id":"vista-breadcrumbs","kind":"palette","name":"Vista Breadcrumbs","props":{"searchFirst":true}}],"presentation":{"chromeStyle":"floating","cornerRadius":16,"density":"comfortable","iconStyle":"skeuomorphic","motionStyle":"fluid","panelSpacing":10},"renderStyles":[{"description":"Glossy Aero-inspired render style for glass shells.","entryModule":"renderers/vista-glass.tsx","id":"vista-render","kind":"vs-code-workbench","label":"Vista Glass","supportsLiveSwap":true}]}] as const;
 
 /** user-defined types **/
@@ -1395,6 +1467,7 @@ export type AudioEngineLoopRegionRequest = { deckId: AudioDeckId; startSeconds: 
 export type AudioEngineRateRequest = { deckId: AudioDeckId; rate: number }
 export type AudioEngineSeekRequest = { deckId: AudioDeckId; positionSeconds: number }
 export type AudioEngineSetArmedDeckRequest = { deckId: AudioDeckId }
+export type AudioEngineSetPluginParameterRequest = { deckId: AudioDeckId; parameterId: number; valueNormalized: number }
 export type AudioEngineStateEvent = { state: AudioEngineStateSnapshot }
 export type AudioEngineStateSnapshot = { ready: boolean; engineError: string | null; armedDeck: AudioDeckId; outputSampleRateHz: number | null; outputChannels: number | null; decks: AudioDeckState[] }
 export type AudioEngineSyncSelectionRequest = { inputPath: string }
@@ -1423,8 +1496,19 @@ export type ExplorerEntryThumbnail = { kind: ExplorerThumbnailKind; posterDataUr
 export type ExplorerEntryThumbnailRequest = { path: string; maxWidth: number; maxHeight: number; includeVideoHoverScrub: boolean | null; videoHoverFrameCount: number | null }
 export type ExplorerLayoutMode = "full" | "dock"
 export type ExplorerPathTagAssignment = { path: string; tagIds: string[]; tagLabels: string[] }
-export type ExplorerSavedSearchRecord = { id: string; name: string; rootPath: string; query: string; includeContent: boolean; tagFilterIds: string[]; createdAt: number; updatedAt: number }
-export type ExplorerSavedSearchSaveRequest = { id: string | null; name: string; rootPath: string; query: string; includeContent: boolean; tagFilterIds: string[] }
+export type ExplorerSavedSearchRecord = { id: string; name: string; rootPath: string; query: string; searchMode: ExplorerSearchMode; tagFilterIds: string[]; createdAt: number; updatedAt: number }
+export type ExplorerSavedSearchSaveRequest = { id: string | null; name: string; rootPath: string; query: string; searchMode: ExplorerSearchMode; tagFilterIds: string[] }
+export type ExplorerSearchMode = "name" | "content" | "semantic"
+export type ExplorerSemanticFindSimilarRequest = { config: PythonRuntimeConfig | null; rootPath: string; targetPath: string; limit: number | null; routingMode: AccelerationRoutingMode | null }
+export type ExplorerSemanticIndexBuildMode = "build" | "rebuild" | "clear"
+export type ExplorerSemanticIndexBuildRequest = { config: PythonRuntimeConfig | null; rootPath: string; mode: ExplorerSemanticIndexBuildMode; routingMode: AccelerationRoutingMode | null }
+export type ExplorerSemanticIndexBuildStartResponse = { taskId: string; rootPath: string }
+export type ExplorerSemanticIndexSummary = { rootPath: string; indexed: boolean; stale: boolean; fileCount: number; chunkCount: number; indexedAt: number | null; modelId: string | null; backendKind: string | null; providerKind: string | null; lastError: string | null }
+export type ExplorerSemanticSearchDiagnostics = { queryKind: ExplorerSemanticSearchQueryKind; backendKind: string; providerKind: string; modelId: string; indexedFileCount: number; indexedChunkCount: number; staleIndex: boolean; resultLimit: number; forceCpu: boolean }
+export type ExplorerSemanticSearchQueryKind = "query" | "similarity"
+export type ExplorerSemanticSearchRequest = { config: PythonRuntimeConfig | null; rootPath: string; query: string; limit: number | null; routingMode: AccelerationRoutingMode | null }
+export type ExplorerSemanticSearchResponse = { results: ExplorerSemanticSearchResult[]; diagnostics: ExplorerSemanticSearchDiagnostics }
+export type ExplorerSemanticSearchResult = { name: string; path: string; relativePath: string; isDir: boolean; size: number; modified: number; extension: string; isHidden: boolean; isSymlink: boolean; matchKind: FileSearchMatchKind | null; snippet: string; lineNumber: number | null; semanticScore: number }
 export type ExplorerShaderCompileRequest = { path: string; format: ExplorerShaderFormat; sourceText: string | null; selectedStage: ExplorerShaderStage | null; selectedEntryPoint: string | null }
 export type ExplorerShaderCompileResult = { format: ExplorerShaderFormat; inspectionSource: string; entryPoints: ExplorerShaderEntryPoint[]; selectedStage: ExplorerShaderStage | null; selectedEntryPoint: string | null; diagnostics: ExplorerShaderDiagnostic[]; normalizedWgsl: string | null; supportsLivePreview: boolean; previewAbi: string }
 export type ExplorerShaderDiagnostic = { severity: ExplorerShaderDiagnosticSeverity; message: string; lineNumber: number | null; columnNumber: number | null }
@@ -1438,7 +1522,7 @@ export type ExplorerTagMutationRequest = { paths: string[]; tagNames: string[]; 
 export type ExplorerTagRecord = { id: string; label: string; color: string | null; pathCount: number }
 export type ExplorerTagSnapshot = { tags: ExplorerTagRecord[]; assignments: ExplorerPathTagAssignment[] }
 export type ExplorerTaskHistoryClearScope = "completed" | "failed" | "finished"
-export type ExplorerTaskKind = "copy" | "move" | "delete" | "trash" | "batchRename" | "duplicateScan" | "extractArchive" | "recursiveSize" | "checksum" | "audioTransform" | "audioBatchProcess"
+export type ExplorerTaskKind = "copy" | "move" | "delete" | "trash" | "batchRename" | "duplicateScan" | "semanticIndex" | "extractArchive" | "recursiveSize" | "checksum" | "audioTransform" | "audioBatchProcess"
 export type ExplorerTaskProgressEvent = { taskId: string; task: ExplorerTaskRecord }
 export type ExplorerTaskRecord = { id: string; kind: ExplorerTaskKind; status: ExplorerTaskStatus; title: string; detail: string; progressCurrent: number | null; progressTotal: number | null; startedAt: number; finishedAt: number | null; sourcePaths: string[]; destinationPath: string | null; errorMessage: string | null; canRetry: boolean; canCancel: boolean; canRevealOutput: boolean; canOpenOutput: boolean; canUndo: boolean; schedulerTask: YaziSchedulerTaskSnap | null }
 export type ExplorerTaskStatus = "running" | "succeeded" | "failed" | "cancelled"
@@ -1618,6 +1702,11 @@ export type VideoPlaybackBackend = "webviewMediaElement"
 export type VideoPreviewSourceKind = "direct" | "proxy"
 export type VideoTrimExportRequest = { inputPath: string; outputPath: string; startTimeSeconds: number; endTimeSeconds: number; overwriteExisting: boolean }
 export type VideoTrimExportResult = { outputPath: string; startTimeSeconds: number; endTimeSeconds: number; durationSeconds: number; ffmpegBinary: string }
+export type VstEditorAttachMode = "inline" | "detached" | "unavailable"
+export type VstEditorHostRect = { x: number; y: number; width: number; height: number; scaleFactor: number }
+export type VstEditorSessionCreateRequest = { deckId: AudioDeckId; pluginPath: string }
+export type VstEditorSessionRectRequest = { sessionId: string; rect: VstEditorHostRect }
+export type VstEditorSessionState = { sessionId: string; deckId: AudioDeckId; pluginPath: string; attachMode: VstEditorAttachMode; statusLabel: string; lastRect: VstEditorHostRect | null }
 export type VstParameterState = { id: number; title: string; shortTitle: string; units: string; defaultNormalized: number; min: number; max: number; valueNormalized: number }
 export type VstPluginEntry = { 
 /**

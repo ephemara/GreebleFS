@@ -109,6 +109,11 @@ pub mod action_ids {
     pub const ML_PROBE: &str = "ml.probe";
     pub const FILES_SCAN_DIRECTORY: &str = "files.scan_directory";
     pub const FILES_HASH_PATHS: &str = "files.hash_paths";
+    pub const SEMANTIC_INDEX_ROOT: &str = "semantic.index_root";
+    pub const SEMANTIC_QUERY_INDEX: &str = "semantic.query_index";
+    pub const SEMANTIC_FIND_SIMILAR_FILE: &str = "semantic.find_similar_file";
+    pub const SEMANTIC_DELETE_INDEX: &str = "semantic.delete_index";
+    pub const SEMANTIC_INDEX_STATUS: &str = "semantic.index_status";
 }
 
 #[derive(Debug, Clone)]

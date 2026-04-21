@@ -136,6 +136,15 @@ const baseCommands = {
     invoke<ArrayBuffer>("cloud_read_preview_bytes", { path, maxBytes }).then(
       (buffer) => new Uint8Array(buffer),
     ),
+  audioEngineSetPluginParameter: (request: {
+    deckId: "a" | "b";
+    parameterId: number;
+    valueNormalized: number;
+  }) =>
+    invoke<Result<tauriBindings.AudioEngineStateSnapshot, string>>(
+      "audio_engine_set_plugin_parameter",
+      { request },
+    ),
 };
 
 export const commands = Object.fromEntries(

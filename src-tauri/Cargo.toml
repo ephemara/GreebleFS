@@ -94,6 +94,7 @@ symphonia = { version = "0.5.5", features = ["all", "opt-simd"] }
 rust_ffmpeg = { path = "../crates/ffmpeg-suite-rs/rust_ffmpeg" }
 rust_ffprobe = { path = "../crates/ffmpeg-suite-rs/rust_ffprobe" }
 wgpu = "26"
+vst-host = { path = "../crates/vst-host" }
 
 [dev-dependencies]
 tokio  = { version = "1", features = ["full"] }

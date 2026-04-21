@@ -979,11 +979,7 @@ type NativeDragDropPositionLike = {
   toLogical?: (scaleFactor: number) => { x: number; y: number };
 };
 
-type ExplorerSelectionNavigationDirection =
-  | "up"
-  | "down"
-  | "left"
-  | "right";
+type ExplorerSelectionNavigationDirection = "up" | "down" | "left" | "right";
 
 function resolveExplorerDropTargetPathFromPoint(
   position: NativeDragDropPositionLike,
@@ -1945,21 +1941,53 @@ function buildTimelineSurfaceBands(
   sortOrder: "asc" | "desc",
   nowMs = Date.now(),
 ): TimelineSurfaceBand[] {
+  const millisecondsPerHour = 60 * 60 * 1000;
+  const millisecondsPerDay = 24 * millisecondsPerHour;
+  const recentHourBucketCount = 6;
   const now = new Date(nowMs);
+  const startOfCurrentHour = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    now.getHours(),
+  ).getTime();
   const startOfToday = new Date(
     now.getFullYear(),
     now.getMonth(),
     now.getDate(),
   ).getTime();
-  const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
+  const startOfYesterday = startOfToday - millisecondsPerDay;
   const dayOfWeekOffset = (now.getDay() + 6) % 7;
-  const startOfWeek = startOfToday - dayOfWeekOffset * 24 * 60 * 60 * 1000;
-  const startOfLastWeek = startOfWeek - 7 * 24 * 60 * 60 * 1000;
+  const startOfWeek = startOfToday - dayOfWeekOffset * millisecondsPerDay;
+  const startOfLastWeek = startOfWeek - 7 * millisecondsPerDay;
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const startOfYear = new Date(now.getFullYear(), 0, 1).getTime();
-  const lastThirtyDays = startOfToday - 30 * 24 * 60 * 60 * 1000;
-  const lastNinetyDays = startOfToday - 90 * 24 * 60 * 60 * 1000;
+  const lastThirtyDays = startOfToday - 30 * millisecondsPerDay;
+  const lastNinetyDays = startOfToday - 90 * millisecondsPerDay;
   const densityStopId = getAdaptiveSemanticDensityStop(density).id;
+  const recentHourBucketDefinitions = Array.from(
+    { length: recentHourBucketCount },
+    (_, hourOffset) => {
+      const bucketStart = startOfCurrentHour - hourOffset * millisecondsPerHour;
+      const bucketEnd = bucketStart + millisecondsPerHour;
+      const label =
+        hourOffset === 0
+          ? "This Hour"
+          : `${hourOffset} Hour${hourOffset === 1 ? "" : "s"} Ago`;
+      const description =
+        hourOffset === 0
+          ? "Fresh edits stay pinned to current hour."
+          : `Changes from ${hourOffset} hour${hourOffset === 1 ? "" : "s"} ago keep exact recent cadence.`;
+      return {
+        id: hourOffset === 0 ? "this-hour" : `${hourOffset}-hours-ago`,
+        label,
+        description,
+        dominant: hourOffset === 0,
+        matches: (entry: FileEntry) =>
+          entry.modified >= bucketStart && entry.modified < bucketEnd,
+      };
+    },
+  );
 
   const bucketDefinitions: Array<{
     id: string;
@@ -2143,12 +2171,13 @@ function buildTimelineSurfaceBands(
                   },
                 ]
               : [
+                  ...recentHourBucketDefinitions,
                   {
-                    id: "today",
-                    label: "Today",
+                    id: "earlier-today",
+                    label: "Earlier Today",
                     description:
-                      "Same-day changes stay closest to the current moment.",
-                    dominant: true,
+                      "Older same-day work rolls up once hourly slices end.",
+                    dominant: false,
                     matches: (entry) => entry.modified >= startOfToday,
                   },
                   {
@@ -2671,10 +2700,10 @@ function ExplorerExperimentalGlyph({
   const fill = active ? `${accent}1f` : "rgba(255,255,255,0.05)";
 
   if (mode === "adaptive-semantic-grid") {
-  return (
-    <span
-      style={{
-        width: 14,
+    return (
+      <span
+        style={{
+          width: 14,
           height: 14,
           display: "grid",
           gridTemplateColumns: "repeat(2, 1fr)",
@@ -2800,10 +2829,10 @@ function ExplorerExperimentalGlyph({
             transform: "rotate(-26deg)",
             transformOrigin: "left center",
           }}
-      />
-    </span>
-  );
-}
+        />
+      </span>
+    );
+  }
 
   if (mode === "timeline-surface") {
     return (
@@ -2976,12 +3005,14 @@ function SearchAwareCodeView({
       monacoRef.current = monaco;
       cursorListenerRef.current?.dispose?.();
       cursorListenerRef.current =
-        editor.onDidChangeCursorPosition?.((event: { position: EditorCursorPosition }) => {
-          onCursorPositionChange?.({
-            lineNumber: event.position.lineNumber,
-            column: event.position.column,
-          });
-        }) ?? null;
+        editor.onDidChangeCursorPosition?.(
+          (event: { position: EditorCursorPosition }) => {
+            onCursorPositionChange?.({
+              lineNumber: event.position.lineNumber,
+              column: event.position.column,
+            });
+          },
+        ) ?? null;
       publishCursorPosition(editor);
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
@@ -3185,11 +3216,13 @@ function PreviewPanel({
   const [wildcardWorkflowTabs, setWildcardWorkflowTabs] = useState<
     ExplorerPreviewWildcardWorkflowTab[]
   >([]);
+  const currentViewModeRef = useRef(viewMode);
   const [pdfPageInputValue, setPdfPageInputValue] = useState("1");
-  const [textPreviewCursor, setTextPreviewCursor] = useState<EditorCursorPosition>({
-    lineNumber: 1,
-    column: 1,
-  });
+  const [textPreviewCursor, setTextPreviewCursor] =
+    useState<EditorCursorPosition>({
+      lineNumber: 1,
+      column: 1,
+    });
   const dragHandleSide = placement === "leading" ? "right" : "left";
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
@@ -3263,8 +3296,12 @@ function PreviewPanel({
   }, [preview.path, preview.type]);
 
   useEffect(() => {
+    currentViewModeRef.current = viewMode;
+  }, [viewMode]);
+
+  useEffect(() => {
     setWildcardWorkflowTabs([]);
-    onWorkflowTabChange(viewMode);
+    onWorkflowTabChange(currentViewModeRef.current);
   }, [onWorkflowTabChange, preview.path, preview.type]);
 
   const handleWildcardWorkflowTabsChange = useCallback(
@@ -3298,9 +3335,9 @@ function PreviewPanel({
         ? "Saving?"
         : preview.error
           ? "Error"
-        : preview.isDirty
-          ? "Unsaved"
-          : "Saved"
+          : preview.isDirty
+            ? "Unsaved"
+            : "Saved"
       : preview.type === "shader"
         ? preview.error
           ? "Error"
@@ -3384,7 +3421,8 @@ function PreviewPanel({
       ? getExplorerTextPreviewMetrics(deferredPreviewTextContent)
       : null;
   const textPreviewShowsEditorCursor =
-    preview.type === "text" && (!supportsRenderedPreview || viewMode === "edit");
+    preview.type === "text" &&
+    (!supportsRenderedPreview || viewMode === "edit");
   const supportsPreviewModeToggle =
     supportsRenderedPreview ||
     isScriptTextPreview ||
@@ -3464,12 +3502,7 @@ function PreviewPanel({
     [],
   );
   const renderPreviewWorkflowToggle = useCallback(
-    (
-      options?: {
-        onPreviewAction?: () => void;
-        onEditAction?: () => void;
-      },
-    ) => (
+    (options?: { onPreviewAction?: () => void; onEditAction?: () => void }) => (
       <div
         style={{
           display: "flex",
@@ -3668,7 +3701,9 @@ function PreviewPanel({
         id: "previewState",
         label: "Preview State",
         surfaces: ["previewHeader"],
-        isVisible: () => previewLocked || (!isPreviewTerminalMode && Boolean(previewStateLabel)),
+        isVisible: () =>
+          previewLocked ||
+          (!isPreviewTerminalMode && Boolean(previewStateLabel)),
         render: () => (
           <div
             style={{
@@ -4375,7 +4410,11 @@ function PreviewPanel({
               imagePath={preview.path}
               imageName={preview.name}
               imageSource={preview.content}
-              mode={isEditableImagePreview && viewMode === "edit" ? "edit" : "preview"}
+              mode={
+                isEditableImagePreview && viewMode === "edit"
+                  ? "edit"
+                  : "preview"
+              }
               onSaved={onRefreshPreviewEntry}
             />
           )}
@@ -4617,7 +4656,8 @@ function PreviewPanel({
             </span>
             {textPreviewShowsEditorCursor && (
               <span data-testid="text-preview-cursor">
-                Ln {textPreviewCursor.lineNumber}, Col {textPreviewCursor.column}
+                Ln {textPreviewCursor.lineNumber}, Col{" "}
+                {textPreviewCursor.column}
               </span>
             )}
           </div>
@@ -4984,8 +5024,7 @@ const ExplorerEntryThumbnailStageContent = React.memo(
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              border:
-                "1px solid color-mix(in srgb, white 14%, transparent)",
+              border: "1px solid color-mix(in srgb, white 14%, transparent)",
               background:
                 "color-mix(in srgb, var(--overlay-bg-shell-solid) 92%, black)",
               boxShadow:
@@ -6764,7 +6803,9 @@ export function FileExplorer({
   const useNativeOsIcons = appearanceSettings.useNativeOsIcons;
   const explorerBlurEnabled = appearanceSettings.appBlur !== false;
   const shaderPerformanceMode = appearanceSettings.shaderPerformanceMode;
-  const shaderPerformanceProfile = getShaderPerformanceProfile(shaderPerformanceMode);
+  const shaderPerformanceProfile = getShaderPerformanceProfile(
+    shaderPerformanceMode,
+  );
   const showHidden = explorerSettings.showHiddenFiles;
   const explorerThumbnailSettings = explorerSettings.thumbnails;
   const viewMode = explorerSettings.viewMode;
@@ -7061,12 +7102,15 @@ export function FileExplorer({
   const lastWorkspaceRefreshSequenceRef = useRef(0);
   useExplorerTaskProgressFeed();
 
+  const explorerFileAreaRef = useRef<HTMLDivElement | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement | null>(null);
   const explorerViewportScrollTopRef = useRef(0);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutWheelDeltaAccumulatorRef = useRef(0);
+  const layoutWheelScrollLockFrameRef = useRef<number | null>(null);
+  const layoutWheelLockedScrollTopRef = useRef<number | null>(null);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
   const [zoomHudVisible, setZoomHudVisible] = useState(false);
@@ -7086,12 +7130,11 @@ export function FileExplorer({
     () => `preview-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
     [instanceId],
   );
-  const previewTerminalWorkingDirectory =
-    currentPathIsCloud
-      ? null
-      : preview.type === "text" && preview.scriptPreview != null
-        ? getPathParent(preview.path) ?? currentPath
-        : currentPath;
+  const previewTerminalWorkingDirectory = currentPathIsCloud
+    ? null
+    : preview.type === "text" && preview.scriptPreview != null
+      ? (getPathParent(preview.path) ?? currentPath)
+      : currentPath;
   const previewPanelVisible =
     !isCompactDock && previewEnabled && !usesWorkspaceCompactChrome;
   const hasPreview = previewPanelVisible && preview.type !== "none";
@@ -7148,6 +7191,14 @@ export function FileExplorer({
       if (!target) {
         return;
       }
+      const lockedScrollTop = layoutWheelLockedScrollTopRef.current;
+      if (lockedScrollTop != null) {
+        if (Math.abs(target.scrollTop - lockedScrollTop) > 0.5) {
+          target.scrollTop = lockedScrollTop;
+        }
+        commitExplorerViewportScrollTop(lockedScrollTop);
+        return;
+      }
       commitExplorerViewportScrollTop(target.scrollTop);
     },
     [commitExplorerViewportScrollTop],
@@ -7164,8 +7215,67 @@ export function FileExplorer({
     [commitExplorerViewportScrollTop],
   );
 
+  const lockExplorerViewportScrollTop = useCallback(
+    (scrollTop: number) => {
+      layoutWheelLockedScrollTopRef.current = scrollTop;
+      setExplorerViewportScrollTop(scrollTop);
+      if (layoutWheelScrollLockFrameRef.current != null) {
+        window.cancelAnimationFrame(layoutWheelScrollLockFrameRef.current);
+      }
+      layoutWheelScrollLockFrameRef.current = window.requestAnimationFrame(() => {
+        layoutWheelScrollLockFrameRef.current = null;
+        const lockedScrollTop = layoutWheelLockedScrollTopRef.current;
+        if (lockedScrollTop == null) {
+          return;
+        }
+        setExplorerViewportScrollTop(lockedScrollTop);
+        layoutWheelLockedScrollTopRef.current = null;
+      });
+    },
+    [setExplorerViewportScrollTop],
+  );
+
+  const shouldHandleExplorerLayoutWheelEvent = useCallback(
+    (
+      event: Pick<
+        WheelEvent,
+        "target" | "ctrlKey" | "metaKey" | "deltaX" | "deltaY"
+      >,
+    ) => {
+      if (isCompactDock || !(event.ctrlKey || event.metaKey)) {
+        return false;
+      }
+      if (isEditableKeyboardTarget(event.target)) {
+        return false;
+      }
+      if (
+        Math.abs(event.deltaY) <= Math.abs(event.deltaX) ||
+        Math.abs(event.deltaY) < 6
+      ) {
+        return false;
+      }
+
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[data-overlay-explorer-plane="preview"]')) {
+        return false;
+      }
+
+      return Boolean(
+        target?.closest(
+          '[data-overlay-explorer-plane="file-area"], [data-overlay-explorer-plane="content-viewport"], .overlay-scroll-area__viewport, .overlay-scroll-area__content',
+        ),
+      );
+    },
+    [isCompactDock],
+  );
+
   const resetExplorerViewport = useCallback(() => {
     layoutWheelDeltaAccumulatorRef.current = 0;
+    if (layoutWheelScrollLockFrameRef.current != null) {
+      window.cancelAnimationFrame(layoutWheelScrollLockFrameRef.current);
+      layoutWheelScrollLockFrameRef.current = null;
+    }
+    layoutWheelLockedScrollTopRef.current = null;
     setExplorerViewportScrollTop(0);
   }, [setExplorerViewportScrollTop]);
 
@@ -8285,17 +8395,21 @@ export function FileExplorer({
     selectedEntries,
   ]);
   const selectedSizeSummary = useMemo(() => {
-    const selectedSizeEntries = selectedEntries
-      .map((entry) => entrySizes[entry.path])
-      .filter((value): value is EntryStorageInfo => Boolean(value));
-    if (selectedSizeEntries.length === 0) {
+    if (selectedEntries.length === 0) {
       return null;
     }
-    const totalBytes = selectedSizeEntries.reduce(
+    const measuredEntries = selectedEntries
+      .map((entry) => entrySizes[entry.path])
+      .filter((value): value is EntryStorageInfo => Boolean(value));
+    const totalBytes = measuredEntries.reduce(
       (sum, value) => sum + value.bytes,
       0,
     );
-    return { totalBytes, count: selectedSizeEntries.length };
+    return {
+      measuredCount: measuredEntries.length,
+      selectedCount: selectedEntries.length,
+      totalBytes,
+    };
   }, [entrySizes, selectedEntries]);
   const propertiesPanelRecursiveSummary = useMemo(() => {
     const cacheEntries = propertiesPanel.targetPaths
@@ -9310,7 +9424,9 @@ export function FileExplorer({
         const payloadMatchesInternal =
           normalizedInternal.length > 0 &&
           normalizedPayload.length === normalizedInternal.length &&
-          normalizedPayload.every((p: string) => normalizedInternal.includes(p));
+          normalizedPayload.every((p: string) =>
+            normalizedInternal.includes(p),
+          );
         const hasPendingNativeSameWindowDrag =
           nativeSameWindowDragPathsRef.current.length > 0;
 
@@ -9330,8 +9446,9 @@ export function FileExplorer({
 
         if (event.payload.type === "enter" || event.payload.type === "over") {
           const hoveredTarget =
-            (await resolveNativeDropTargetPath((event.payload as any).position)) ??
-            null;
+            (await resolveNativeDropTargetPath(
+              (event.payload as any).position,
+            )) ?? null;
           setExplorerDragOverTarget(hoveredTarget);
         }
 
@@ -9360,8 +9477,9 @@ export function FileExplorer({
         if (event.payload.type === "drop") {
           setWindowDropState({ active: false, count: 0 });
           const hoveredTarget =
-            (await resolveNativeDropTargetPath((event.payload as any).position)) ??
-            dragOverRef.current;
+            (await resolveNativeDropTargetPath(
+              (event.payload as any).position,
+            )) ?? dragOverRef.current;
           setExplorerDragOverTarget(null);
           if (!currentPath) return;
 
@@ -9371,10 +9489,7 @@ export function FileExplorer({
           let targetDir = currentPath;
           const operation: "move" | "copy" = isInternalDrag ? "move" : "copy";
 
-          if (
-            hoveredTarget &&
-            hoveredTarget !== EXPLORER_MAIN_DROP_TARGET
-          ) {
+          if (hoveredTarget && hoveredTarget !== EXPLORER_MAIN_DROP_TARGET) {
             targetDir = hoveredTarget;
           }
 
@@ -9455,10 +9570,7 @@ export function FileExplorer({
     try {
       await writeExplorerFile(path, contentAtSave);
       invalidateExplorerResultCaches();
-      clearExplorerEditDraft(
-        EXPLORER_TEXT_DRAFT_SCOPE,
-        path,
-      );
+      clearExplorerEditDraft(EXPLORER_TEXT_DRAFT_SCOPE, path);
       setPreview((prev) => {
         if (prev.type !== "text" || prev.path !== path) return prev;
         const isStillSame = prev.content === contentAtSave;
@@ -9570,10 +9682,7 @@ export function FileExplorer({
     try {
       await writeExplorerFile(path, sourceAtSave);
       invalidateExplorerResultCaches();
-      clearExplorerEditDraft(
-        EXPLORER_SHADER_DRAFT_SCOPE,
-        path,
-      );
+      clearExplorerEditDraft(EXPLORER_SHADER_DRAFT_SCOPE, path);
       setPreview((prev) => {
         if (
           prev.type !== "shader" ||
@@ -10173,9 +10282,8 @@ export function FileExplorer({
           }
 
           const previewCacheKey = `${resolvedPreview.kind}:${entry.path}`;
-          const cachedDataUri = readCachedExplorerPreview<string>(
-            previewCacheKey,
-          );
+          const cachedDataUri =
+            readCachedExplorerPreview<string>(previewCacheKey);
           if (cachedDataUri != null) {
             if (isCurrentPreviewRequest()) {
               setPreview({
@@ -10381,7 +10489,8 @@ export function FileExplorer({
                     entry.path,
                     explorerStringDraftSerializer,
                   );
-            const resolvedEditableSource = restoredDraft ?? document.editableSource;
+            const resolvedEditableSource =
+              restoredDraft ?? document.editableSource;
             const resolvedInspectionSource =
               restoredDraft ?? document.inspectionSource;
             const hasRestoredDraft =
@@ -10990,18 +11099,10 @@ export function FileExplorer({
       await renameExplorerPath(oldPath, newPath);
       invalidateExplorerResultCaches();
       if (shouldMoveRenamedTextDraft) {
-        moveExplorerEditDraft(
-          EXPLORER_TEXT_DRAFT_SCOPE,
-          oldPath,
-          newPath,
-        );
+        moveExplorerEditDraft(EXPLORER_TEXT_DRAFT_SCOPE, oldPath, newPath);
       }
       if (shouldMoveRenamedShaderDraft) {
-        moveExplorerEditDraft(
-          EXPLORER_SHADER_DRAFT_SCOPE,
-          oldPath,
-          newPath,
-        );
+        moveExplorerEditDraft(EXPLORER_SHADER_DRAFT_SCOPE, oldPath, newPath);
       }
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);
@@ -12379,7 +12480,10 @@ export function FileExplorer({
     if (sources.length === 0 && nativeDragPathsRef.current.length > 0) {
       sources = [...nativeDragPathsRef.current];
     }
-    if (sources.length === 0 && nativeSameWindowDragPathsRef.current.length > 0) {
+    if (
+      sources.length === 0 &&
+      nativeSameWindowDragPathsRef.current.length > 0
+    ) {
       sources = [...nativeSameWindowDragPathsRef.current];
     }
     if (sources.length === 0) return;
@@ -12731,21 +12835,22 @@ export function FileExplorer({
               ? documentViewMode === "edit"
                 ? "Video editor"
                 : "Video preview"
-            : preview.type === "audio"
-              ? activePreviewWorkflowTabId === "vst"
-                ? "Audio VST"
-                : documentViewMode === "edit"
-                  ? "Audio editor"
-                  : "Audio preview"
-              : preview.type === "folder"
-                ? "Folder preview"
-                : preview.type === "image"
-                  ? documentViewMode === "edit" && isEditableImagePreviewExtension(preview.extension)
-                    ? "Image editor"
-                    : "Image preview"
-                  : preview.type === "model3d"
-                    ? "3D preview"
-                    : "Preview";
+              : preview.type === "audio"
+                ? activePreviewWorkflowTabId === "vst"
+                  ? "Audio VST"
+                  : documentViewMode === "edit"
+                    ? "Audio editor"
+                    : "Audio preview"
+                : preview.type === "folder"
+                  ? "Folder preview"
+                  : preview.type === "image"
+                    ? documentViewMode === "edit" &&
+                      isEditableImagePreviewExtension(preview.extension)
+                      ? "Image editor"
+                      : "Image preview"
+                    : preview.type === "model3d"
+                      ? "3D preview"
+                      : "Preview";
   const searchModeLabel = searchIncludeContent
     ? "Recursive search + text"
     : "Recursive search (names only)";
@@ -12759,71 +12864,72 @@ export function FileExplorer({
   const showToolbarLocationStrips =
     !isCompactDock && !usesWorkspaceCompactChrome;
   const showToolbarTextLabels = !isCompactDock && !usesWorkspaceQuadChrome;
-  const usesConstellationCanvas = effectiveExperimentalViewMode === "constellation";
+  const usesConstellationCanvas =
+    effectiveExperimentalViewMode === "constellation";
   const explorerFooterViewSwitcherButtons = useMemo(() => {
-      const iconViewActive =
-        themedExperimentalViewMode === "off" &&
-        selectedViewModeDefinition.presentation === "grid";
-      const listViewActive =
-        themedExperimentalViewMode === "off" && themedViewMode === "list";
+    const iconViewActive =
+      themedExperimentalViewMode === "off" &&
+      selectedViewModeDefinition.presentation === "grid";
+    const listViewActive =
+      themedExperimentalViewMode === "off" && themedViewMode === "list";
 
-      return [
-        {
-          id: "icon-view",
-          ariaLabel: "Switch explorer to icon view",
-          title: "Icon view",
-          active: iconViewActive,
-          onClick: () =>
+    return [
+      {
+        id: "icon-view",
+        ariaLabel: "Switch explorer to icon view",
+        title: "Icon view",
+        active: iconViewActive,
+        onClick: () =>
+          updateExplorerSettings({
+            experimentalViewMode: "off",
+            viewMode: "icons-l",
+            gridZoom: getExplorerGridZoomAnchor("icons-l"),
+          }),
+        icon: <LayoutGrid size={13} />,
+      },
+      {
+        id: "list-view",
+        ariaLabel: "Switch explorer to list view",
+        title: "List view",
+        active: listViewActive,
+        onClick: () =>
+          updateExplorerSettings({
+            experimentalViewMode: "off",
+            viewMode: "list",
+          }),
+        icon: <List size={13} />,
+      },
+      ...explorerExperimentalModes.map((mode) => {
+        const active = themedExperimentalViewMode === mode.id;
+        return {
+          id: mode.id,
+          ariaLabel: `Switch explorer to ${mode.label}`,
+          title: mode.label,
+          active,
+          onClick: () => {
             updateExplorerSettings({
-              experimentalViewMode: "off",
-              viewMode: "icons-l",
-              gridZoom: getExplorerGridZoomAnchor("icons-l"),
-            }),
-          icon: <LayoutGrid size={13} />,
-        },
-        {
-          id: "list-view",
-          ariaLabel: "Switch explorer to list view",
-          title: "List view",
-          active: listViewActive,
-          onClick: () =>
-            updateExplorerSettings({
-              experimentalViewMode: "off",
-              viewMode: "list",
-            }),
-          icon: <List size={13} />,
-        },
-        ...explorerExperimentalModes.map((mode) => {
-          const active = themedExperimentalViewMode === mode.id;
-          return {
-            id: mode.id,
-            ariaLabel: `Switch explorer to ${mode.label}`,
-            title: mode.label,
-            active,
-            onClick: () => {
-              updateExplorerSettings({
-                experimentalViewMode: mode.id,
-              });
-              showExperimentalHud();
-            },
-            icon: (
-              <ExplorerExperimentalGlyph
-                accent={accent}
-                active={active}
-                mode={mode.id}
-              />
-            ),
-          };
-        }),
-      ];
-    }, [
-      accent,
-      selectedViewModeDefinition.presentation,
-      showExperimentalHud,
-      themedExperimentalViewMode,
-      themedViewMode,
-      updateExplorerSettings,
-    ]);
+              experimentalViewMode: mode.id,
+            });
+            showExperimentalHud();
+          },
+          icon: (
+            <ExplorerExperimentalGlyph
+              accent={accent}
+              active={active}
+              mode={mode.id}
+            />
+          ),
+        };
+      }),
+    ];
+  }, [
+    accent,
+    selectedViewModeDefinition.presentation,
+    showExperimentalHud,
+    themedExperimentalViewMode,
+    themedViewMode,
+    updateExplorerSettings,
+  ]);
 
   const showZoomHud = useCallback(() => {
     setZoomHudVisible(true);
@@ -12863,12 +12969,14 @@ export function FileExplorer({
     if (!constellationFieldLayout) {
       return null;
     }
-    return constellationFieldLayout.bands
-      .flatMap((band) => band.nodes)
-      .find((node) => selected.has(node.entry.path))
-      ?? constellationFieldLayout.bands.find((band) => band.dominant)?.nodes[0]
-      ?? constellationFieldLayout.bands[0]?.nodes[0]
-      ?? null;
+    return (
+      constellationFieldLayout.bands
+        .flatMap((band) => band.nodes)
+        .find((node) => selected.has(node.entry.path)) ??
+      constellationFieldLayout.bands.find((band) => band.dominant)?.nodes[0] ??
+      constellationFieldLayout.bands[0]?.nodes[0] ??
+      null
+    );
   }, [constellationFieldLayout, selected]);
   const getConstellationViewportMetrics = useCallback(() => {
     const viewport = constellationViewportRef.current;
@@ -12877,13 +12985,13 @@ export function FileExplorer({
     }
     const rect = viewport.getBoundingClientRect();
     const viewportWidth =
-      viewport.clientWidth
-      || rect.width
-      || Math.min(constellationFieldLayout.width, 1280);
+      viewport.clientWidth ||
+      rect.width ||
+      Math.min(constellationFieldLayout.width, 1280);
     const viewportHeight =
-      viewport.clientHeight
-      || rect.height
-      || Math.min(constellationFieldLayout.height, 720);
+      viewport.clientHeight ||
+      rect.height ||
+      Math.min(constellationFieldLayout.height, 720);
     if (viewportWidth <= 0 || viewportHeight <= 0) {
       return null;
     }
@@ -12897,12 +13005,15 @@ export function FileExplorer({
       if (!constellationFieldLayout) {
         return CONSTELLATION_CAMERA_ZOOM_RANGE.default;
       }
-      const fitZoom = getConstellationFitZoom(constellationFieldLayout, metrics);
+      const fitZoom = getConstellationFitZoom(
+        constellationFieldLayout,
+        metrics,
+      );
       return Math.max(
         fitZoom,
         Math.min(
           CONSTELLATION_CAMERA_ZOOM_RANGE.max,
-          0.58 + (experimentalDensity * 0.28),
+          0.58 + experimentalDensity * 0.28,
         ),
       );
     },
@@ -12927,9 +13038,9 @@ export function FileExplorer({
               getConstellationPreferredZoom(metrics),
             );
       setConstellationCamera((current) =>
-        current.x === nextCamera.x
-        && current.y === nextCamera.y
-        && Math.abs(current.zoom - nextCamera.zoom) < 0.0001
+        current.x === nextCamera.x &&
+        current.y === nextCamera.y &&
+        Math.abs(current.zoom - nextCamera.zoom) < 0.0001
           ? current
           : nextCamera,
       );
@@ -12948,8 +13059,8 @@ export function FileExplorer({
       }
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (
-        isEditableKeyboardTarget(target)
-        || target?.closest('[data-overlay-constellation-ui="true"]')
+        isEditableKeyboardTarget(target) ||
+        target?.closest('[data-overlay-constellation-ui="true"]')
       ) {
         return;
       }
@@ -12960,7 +13071,8 @@ export function FileExplorer({
         originX: constellationCamera.x,
         originY: constellationCamera.y,
         targetNodePath:
-          target?.closest("[data-overlay-constellation-node]")
+          target
+            ?.closest("[data-overlay-constellation-node]")
             ?.getAttribute("data-overlay-constellation-node") ?? null,
         moved: false,
       };
@@ -12972,10 +13084,10 @@ export function FileExplorer({
       const gesture = constellationPanGestureRef.current;
       const metrics = getConstellationViewportMetrics();
       if (
-        !gesture
-        || gesture.pointerId !== event.pointerId
-        || !metrics
-        || !constellationFieldLayout
+        !gesture ||
+        gesture.pointerId !== event.pointerId ||
+        !metrics ||
+        !constellationFieldLayout
       ) {
         return;
       }
@@ -13011,31 +13123,28 @@ export function FileExplorer({
     },
     [constellationFieldLayout, getConstellationViewportMetrics],
   );
-  const endConstellationPanGesture = useCallback(
-    (pointerId: number | null) => {
-      const gesture = constellationPanGestureRef.current;
-      if (pointerId != null && gesture?.pointerId !== pointerId) {
-        return;
-      }
-      if (
-        gesture?.moved
-        && gesture.targetNodePath
-        && constellationSuppressClickPathRef.current !== gesture.targetNodePath
-      ) {
-        constellationSuppressClickPathRef.current = gesture.targetNodePath;
-      }
-      if (
-        gesture?.pointerId != null
-        && pointerId != null
-        && constellationViewportRef.current?.hasPointerCapture?.(gesture.pointerId)
-      ) {
-        constellationViewportRef.current.releasePointerCapture(gesture.pointerId);
-      }
-      constellationPanGestureRef.current = null;
-      setConstellationIsPanning(false);
-    },
-    [],
-  );
+  const endConstellationPanGesture = useCallback((pointerId: number | null) => {
+    const gesture = constellationPanGestureRef.current;
+    if (pointerId != null && gesture?.pointerId !== pointerId) {
+      return;
+    }
+    if (
+      gesture?.moved &&
+      gesture.targetNodePath &&
+      constellationSuppressClickPathRef.current !== gesture.targetNodePath
+    ) {
+      constellationSuppressClickPathRef.current = gesture.targetNodePath;
+    }
+    if (
+      gesture?.pointerId != null &&
+      pointerId != null &&
+      constellationViewportRef.current?.hasPointerCapture?.(gesture.pointerId)
+    ) {
+      constellationViewportRef.current.releasePointerCapture(gesture.pointerId);
+    }
+    constellationPanGestureRef.current = null;
+    setConstellationIsPanning(false);
+  }, []);
   useLayoutEffect(() => {
     if (!constellationFieldLayout || constellationPanGestureRef.current) {
       return;
@@ -13081,18 +13190,18 @@ export function FileExplorer({
   const handleConstellationWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
       if (
-        !constellationFieldLayout
-        || event.ctrlKey
-        || event.metaKey
-        || Math.abs(event.deltaY) <= Math.abs(event.deltaX)
-        || Math.abs(event.deltaY) < 2
+        !constellationFieldLayout ||
+        event.ctrlKey ||
+        event.metaKey ||
+        Math.abs(event.deltaY) <= Math.abs(event.deltaX) ||
+        Math.abs(event.deltaY) < 2
       ) {
         return;
       }
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (
-        isEditableKeyboardTarget(target)
-        || target?.closest('[data-overlay-constellation-ui="true"]')
+        isEditableKeyboardTarget(target) ||
+        target?.closest('[data-overlay-constellation-ui="true"]')
       ) {
         return;
       }
@@ -13104,10 +13213,14 @@ export function FileExplorer({
       constellationCameraUserOwnedRef.current = true;
       const rect = event.currentTarget.getBoundingClientRect();
       const focalPoint = {
-        x: rect.width > 0 ? event.clientX - rect.left : metrics.viewportWidth / 2,
-        y: rect.height > 0
-          ? event.clientY - rect.top
-          : metrics.viewportHeight / 2,
+        x:
+          rect.width > 0
+            ? event.clientX - rect.left
+            : metrics.viewportWidth / 2,
+        y:
+          rect.height > 0
+            ? event.clientY - rect.top
+            : metrics.viewportHeight / 2,
       };
       setConstellationCamera((current) => {
         const nextZoom = getConstellationWheelZoom(current.zoom, event.deltaY);
@@ -13129,8 +13242,8 @@ export function FileExplorer({
     (event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (
-        target?.closest("[data-overlay-constellation-node]")
-        || target?.closest('[data-overlay-constellation-ui="true"]')
+        target?.closest("[data-overlay-constellation-node]") ||
+        target?.closest('[data-overlay-constellation-ui="true"]')
       ) {
         return;
       }
@@ -13348,7 +13461,9 @@ export function FileExplorer({
     () => ({
       display: "flex",
       alignItems: "center",
-      justifyContent: usesWorkspaceCompactChrome ? "flex-start" : "space-between",
+      justifyContent: usesWorkspaceCompactChrome
+        ? "flex-start"
+        : "space-between",
       gap: usesWorkspaceQuadChrome ? 4 : 8,
       flexWrap: "wrap",
       minWidth: 0,
@@ -14017,10 +14132,7 @@ export function FileExplorer({
         id: "selectionSizeSummary",
         label: "Selection Size Summary",
         surfaces: ["explorerToolbar"],
-        isVisible: () =>
-          showToolbarLocationStrips &&
-          Boolean(selectedSizeSummary) &&
-          selected.size > 0,
+        isVisible: () => showToolbarLocationStrips && selected.size > 0,
         render: () =>
           selectedSizeSummary && selected.size > 0 ? (
             <div
@@ -14048,12 +14160,17 @@ export function FileExplorer({
               <span
                 style={{
                   fontSize: 10,
-                  color: EXP.text,
+                  color:
+                    selectedSizeSummary.measuredCount > 0
+                      ? EXP.text
+                      : EXP.muted,
                   fontWeight: 700,
                   whiteSpace: "nowrap",
                 }}
               >
-                {formatSize(selectedSizeSummary.totalBytes)}
+                {selectedSizeSummary.measuredCount > 0
+                  ? formatSize(selectedSizeSummary.totalBytes)
+                  : "—"}
               </span>
               <span
                 style={{
@@ -14062,7 +14179,10 @@ export function FileExplorer({
                   whiteSpace: "nowrap",
                 }}
               >
-                {selectedSizeSummary.count} measured
+                {selectedSizeSummary.measuredCount ===
+                selectedSizeSummary.selectedCount
+                  ? `${selectedSizeSummary.measuredCount} measured`
+                  : `${selectedSizeSummary.measuredCount}/${selectedSizeSummary.selectedCount} measured`}
               </span>
             </div>
           ) : null,
@@ -14085,7 +14205,9 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(false)}
           >
             <Star size={11} />
-            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
               Pin
             </span>
           </button>
@@ -14134,7 +14256,9 @@ export function FileExplorer({
             }}
           >
             <span style={{ fontWeight: 700, letterSpacing: "0.02em" }}>Aa</span>
-            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
               Text
             </span>
           </button>
@@ -14159,7 +14283,9 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(!search.trim())}
           >
             <Save size={11} />
-            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
               Save Search
             </span>
           </button>
@@ -14185,7 +14311,9 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(batchRenameTargets.length === 0)}
           >
             <Edit3 size={11} />
-            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
               Batch Rename
             </span>
           </button>
@@ -14214,7 +14342,9 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(selectedEntries.length === 0)}
           >
             <Tags size={11} />
-            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
               Tag
             </span>
           </button>
@@ -14234,7 +14364,9 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(!currentPath)}
           >
             <Sparkles size={11} />
-            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
               Duplicates
             </span>
           </button>
@@ -14253,7 +14385,9 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(!currentPath)}
           >
             <Info size={11} />
-            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
               {propertiesLabel}
             </span>
           </button>
@@ -14272,7 +14406,9 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(false)}
           >
             <Undo2 size={11} />
-            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
               Undo Trash
             </span>
           </button>
@@ -14838,8 +14974,7 @@ export function FileExplorer({
         label: "Toggle Preview",
         surfaces: ["explorerToolbar", "explorerTopbar"],
         isVisible: (surfaceId) =>
-          !usesWorkspaceCompactChrome &&
-          isGlobalChromeSurfaceActive(surfaceId),
+          !usesWorkspaceCompactChrome && isGlobalChromeSurfaceActive(surfaceId),
         render: () => (
           <button
             type="button"
@@ -15211,7 +15346,9 @@ export function FileExplorer({
             <span style={{ color: previewEnabled ? accent : EXP.text }}>
               {previewEnabled ? "On" : "Off"}
             </span>
-            {previewLocked && <span style={{ color: EXP.muted2 }}> · Locked</span>}
+            {previewLocked && (
+              <span style={{ color: EXP.muted2 }}> · Locked</span>
+            )}
             {hasPreview && (
               <span
                 style={{ color: EXP.muted2 }}
@@ -15458,8 +15595,7 @@ export function FileExplorer({
     [explorerChromeControlRegistryById],
   );
   const shouldRenderStatusBar =
-    !usesWorkspaceCompactChrome &&
-    explorerTheme.statusBarStyle !== "hidden";
+    !usesWorkspaceCompactChrome && explorerTheme.statusBarStyle !== "hidden";
   const statusBarStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
@@ -15493,10 +15629,7 @@ export function FileExplorer({
           ? "blur(18px)"
           : "none",
     }),
-    [
-      explorerBlurEnabled,
-      explorerTheme.statusBarStyle,
-    ],
+    [explorerBlurEnabled, explorerTheme.statusBarStyle],
   );
 
   useEffect(
@@ -15506,6 +15639,9 @@ export function FileExplorer({
       }
       if (experimentalHudTimerRef.current != null) {
         window.clearTimeout(experimentalHudTimerRef.current);
+      }
+      if (layoutWheelScrollLockFrameRef.current != null) {
+        window.cancelAnimationFrame(layoutWheelScrollLockFrameRef.current);
       }
     },
     [],
@@ -15553,34 +15689,46 @@ export function FileExplorer({
     };
   }, [syncExplorerViewportScrollTop, syncExplorerViewportSize]);
 
+  useLayoutEffect(() => {
+    const fileArea = explorerFileAreaRef.current;
+    if (!fileArea) {
+      return;
+    }
+
+    const handleNativeLayoutWheel = (event: WheelEvent) => {
+      if (!shouldHandleExplorerLayoutWheelEvent(event)) {
+        return;
+      }
+      event.preventDefault();
+      lockExplorerViewportScrollTop(
+        explorerViewportRef.current?.scrollTop ??
+          explorerViewportScrollTopRef.current,
+      );
+    };
+
+    fileArea.addEventListener("wheel", handleNativeLayoutWheel, {
+      passive: false,
+    });
+
+    return () => {
+      fileArea.removeEventListener("wheel", handleNativeLayoutWheel);
+    };
+  }, [
+    lockExplorerViewportScrollTop,
+    shouldHandleExplorerLayoutWheelEvent,
+  ]);
+
   const handleExplorerLayoutWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
-      if (isCompactDock || !(event.ctrlKey || event.metaKey)) {
-        return;
-      }
-      if (isEditableKeyboardTarget(event.target)) {
-        return;
-      }
-      if (
-        Math.abs(event.deltaY) <= Math.abs(event.deltaX) ||
-        Math.abs(event.deltaY) < 6
-      ) {
-        return;
-      }
-
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('[data-overlay-explorer-plane="preview"]')) {
-        return;
-      }
-      if (
-        !target?.closest(
-          '[data-overlay-explorer-plane="file-area"], [data-overlay-explorer-plane="content-viewport"], .overlay-scroll-area__viewport, .overlay-scroll-area__content',
-        )
-      ) {
+      if (!shouldHandleExplorerLayoutWheelEvent(event.nativeEvent)) {
         return;
       }
 
       event.preventDefault();
+      lockExplorerViewportScrollTop(
+        explorerViewportRef.current?.scrollTop ??
+          explorerViewportScrollTopRef.current,
+      );
       layoutWheelDeltaAccumulatorRef.current += event.deltaY;
       const accumulatedDelta = layoutWheelDeltaAccumulatorRef.current;
       const stepCount = Math.min(
@@ -15655,9 +15803,10 @@ export function FileExplorer({
       effectiveExperimentalViewMode,
       experimentalDensity,
       gridZoom,
-      isCompactDock,
+      lockExplorerViewportScrollTop,
       showExperimentalHud,
       showZoomHud,
+      shouldHandleExplorerLayoutWheelEvent,
       themedViewMode,
       updateExplorerSettings,
     ],
@@ -15693,17 +15842,18 @@ export function FileExplorer({
     };
   }, [repositoryPicker?.active]);
   const virtualizedViewportWidth = explorerViewportMetrics.clientWidth;
-  const measuredVirtualizedViewportHeight = explorerViewportMetrics.clientHeight;
+  const measuredVirtualizedViewportHeight =
+    explorerViewportMetrics.clientHeight;
   const hasMeasuredExplorerViewportHeight =
     measuredVirtualizedViewportHeight > 0;
   const minimumVirtualizedViewportHeight =
     effectiveViewModeDefinition.presentation === "grid"
-      ? (isSearchActive
+      ? ((isSearchActive
           ? activeGridMetrics?.searchRowHeight
-          : activeGridMetrics?.rowHeight) ?? EXPLORER_LIST_ROW_HEIGHT
-      : (isSearchActive
+          : activeGridMetrics?.rowHeight) ?? EXPLORER_LIST_ROW_HEIGHT)
+      : ((isSearchActive
           ? activeRowMetrics?.searchRowHeight
-          : activeRowMetrics?.rowHeight) ?? EXPLORER_LIST_ROW_HEIGHT;
+          : activeRowMetrics?.rowHeight) ?? EXPLORER_LIST_ROW_HEIGHT);
   const virtualizedViewportHeight = Math.max(
     measuredVirtualizedViewportHeight,
     minimumVirtualizedViewportHeight,
@@ -16423,6 +16573,14 @@ export function FileExplorer({
     }
 
     const shouldMeasureDirectories = !isSearchActive;
+    const prioritizedSelectedEntries = selectedEntries
+      .filter(
+        (entry) =>
+          (!entry.is_dir || shouldMeasureDirectories) &&
+          !entrySizes[entry.path] &&
+          !entrySizeLoadingPaths.has(entry.path),
+      )
+      .slice(0, 8);
     const pendingFiles = deferredVirtualizedEntries
       .filter(
         (entry) =>
@@ -16442,9 +16600,13 @@ export function FileExplorer({
           .slice(0, 1)
       : [];
 
-    const nextBatch = (
-      pendingFiles.length > 0 ? pendingFiles : pendingDirectories
-    ).slice(0, 8);
+    const nextBatch =
+      prioritizedSelectedEntries.length > 0
+        ? prioritizedSelectedEntries
+        : (pendingFiles.length > 0 ? pendingFiles : pendingDirectories).slice(
+            0,
+            8,
+          );
     const unresolvedPaths = nextBatch.map((entry) => entry.path);
 
     if (unresolvedPaths.length === 0) {
@@ -16545,6 +16707,7 @@ export function FileExplorer({
     loading,
     recordExplorerMetric,
     deferredVirtualizedEntries,
+    selectedEntries,
   ]);
 
   useEffect(() => {
@@ -17568,15 +17731,11 @@ export function FileExplorer({
         }}
         onDragEnd={onDragEnd}
         onDragOver={
-          node.entry.is_dir
-            ? (e) => onDragOver(e, node.entry.path)
-            : undefined
+          node.entry.is_dir ? (e) => onDragOver(e, node.entry.path) : undefined
         }
         onDragLeave={(e) => onDragLeave(e, node.entry.path)}
         onDrop={
-          node.entry.is_dir
-            ? (e) => onDrop(e, node.entry.path)
-            : undefined
+          node.entry.is_dir ? (e) => onDrop(e, node.entry.path) : undefined
         }
         onClick={(e) => {
           if (constellationSuppressClickPathRef.current === node.entry.path) {
@@ -17621,12 +17780,14 @@ export function FileExplorer({
           );
           if (!isSel && !isDrop) {
             e.currentTarget.style.transform = `translate(-50%, -50%) ${hoverEntrySurface.transform}`;
-            e.currentTarget.style.borderColor = node.emphasis === "anchor"
-              ? `${accent}88`
-              : "rgba(255,255,255,0.18)";
-            e.currentTarget.style.boxShadow = node.emphasis === "anchor"
-              ? `0 20px 42px ${accent}2b`
-              : "0 18px 34px rgba(0,0,0,0.22)";
+            e.currentTarget.style.borderColor =
+              node.emphasis === "anchor"
+                ? `${accent}88`
+                : "rgba(255,255,255,0.18)";
+            e.currentTarget.style.boxShadow =
+              node.emphasis === "anchor"
+                ? `0 20px 42px ${accent}2b`
+                : "0 18px 34px rgba(0,0,0,0.22)";
           }
         }}
         onMouseLeave={(e) => {
@@ -17653,23 +17814,28 @@ export function FileExplorer({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            background: node.emphasis === "anchor"
-              ? "rgba(255,255,255,0.11)"
-              : "rgba(255,255,255,0.07)",
+            background:
+              node.emphasis === "anchor"
+                ? "rgba(255,255,255,0.11)"
+                : "rgba(255,255,255,0.07)",
             overflow: "hidden",
-            boxShadow: node.emphasis === "selected"
-              ? `0 0 0 1px ${accent}55`
-              : "none",
+            boxShadow:
+              node.emphasis === "selected" ? `0 0 0 1px ${accent}55` : "none",
           }}
         >
           {(() => {
-            const thumbnail = getRenderableEntryThumbnail(node.entry, node.size);
+            const thumbnail = getRenderableEntryThumbnail(
+              node.entry,
+              node.size,
+            );
             return (
               <ExplorerEntryThumbnailStageContent
                 entry={node.entry}
                 fallbackIconSize={Math.max(14, node.size - 12)}
                 fallbackIconSrc={iconSrc}
-                hoverScrubEnabled={hoveredVideoThumbnailPath === node.entry.path}
+                hoverScrubEnabled={
+                  hoveredVideoThumbnailPath === node.entry.path
+                }
                 iconTheme={themeIconTheme}
                 stageSize={node.size}
                 thumbnail={thumbnail}
@@ -17748,7 +17914,9 @@ export function FileExplorer({
     };
 
     return (
-      <section style={{ minHeight: "100%", height: "100%", position: "relative" }}>
+      <section
+        style={{ minHeight: "100%", height: "100%", position: "relative" }}
+      >
         <div
           ref={constellationViewportRef}
           role="group"
@@ -17759,7 +17927,9 @@ export function FileExplorer({
           onPointerDown={handleConstellationPointerDown}
           onPointerMove={handleConstellationPointerMove}
           onPointerUp={(event) => endConstellationPanGesture(event.pointerId)}
-          onPointerCancel={(event) => endConstellationPanGesture(event.pointerId)}
+          onPointerCancel={(event) =>
+            endConstellationPanGesture(event.pointerId)
+          }
           onLostPointerCapture={() => endConstellationPanGesture(null)}
           onWheel={handleConstellationWheel}
           onDoubleClick={handleConstellationViewportDoubleClick}
@@ -17812,10 +17982,14 @@ export function FileExplorer({
               >
                 Camera
               </span>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>{zoomPercent}%</span>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>
+                {zoomPercent}%
+              </span>
               <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
               <span style={{ fontSize: 12, color: EXP.muted2 }}>Density</span>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{densityLabel}</span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {densityLabel}
+              </span>
               <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
               <span style={{ fontSize: 12, color: EXP.muted }}>
                 {constellationFieldLayout.bands.length} bands
@@ -17902,7 +18076,10 @@ export function FileExplorer({
                   <circle
                     cx={band.centerX}
                     cy={band.centerY}
-                    r={Math.max(64, band.radius * (band.dominant ? 0.44 : 0.34))}
+                    r={Math.max(
+                      64,
+                      band.radius * (band.dominant ? 0.44 : 0.34),
+                    )}
                     fill="url(#explorer-constellation-cluster-glow)"
                     opacity={band.dominant ? 0.92 : 0.64}
                   />
@@ -17924,7 +18101,9 @@ export function FileExplorer({
                   y1={connection.fromY}
                   x2={connection.toX}
                   y2={connection.toY}
-                  stroke={connection.highlighted ? accent : "rgba(255,255,255,0.18)"}
+                  stroke={
+                    connection.highlighted ? accent : "rgba(255,255,255,0.18)"
+                  }
                   strokeWidth={
                     connection.strength === "primary"
                       ? 1.35
@@ -17959,7 +18138,9 @@ export function FileExplorer({
                   border: `1px solid ${band.dominant ? `${accent}44` : "rgba(255,255,255,0.12)"}`,
                   background: "rgba(12, 15, 22, 0.72)",
                   backdropFilter: explorerBlurEnabled ? "blur(12px)" : "none",
-                  WebkitBackdropFilter: explorerBlurEnabled ? "blur(12px)" : "none",
+                  WebkitBackdropFilter: explorerBlurEnabled
+                    ? "blur(12px)"
+                    : "none",
                   padding: "8px 12px",
                   boxShadow: "0 12px 28px rgba(0,0,0,0.16)",
                   color: EXP.text,
@@ -18524,6 +18705,7 @@ export function FileExplorer({
 
         {/* File area + preview */}
         <div
+          ref={explorerFileAreaRef}
           data-overlay-explorer-plane="file-area"
           data-overlay-explorer-preview-split-mode={
             previewSplitIsPane ? "pane" : "inline"
@@ -19695,8 +19877,7 @@ export function FileExplorer({
                                       }
                                       fallbackIconSrc={iconSrc}
                                       hoverScrubEnabled={
-                                        hoveredVideoThumbnailPath ===
-                                        entry.path
+                                        hoveredVideoThumbnailPath === entry.path
                                       }
                                       iconTheme={themeIconTheme}
                                       stageSize={rowThumbnailStageSize}

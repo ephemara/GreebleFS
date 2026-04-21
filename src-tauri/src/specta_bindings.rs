@@ -17,8 +17,9 @@ use crate::audio_engine::{
     AudioDeckId, AudioDeckState, AudioEngineDeckRequest, AudioEngineGainRequest,
     AudioEngineLoadDeckRequest, AudioEngineLoadPluginRequest, AudioEngineLoopRegion,
     AudioEngineLoopRegionRequest, AudioEngineRateRequest, AudioEngineSeekRequest,
-    AudioEngineSetArmedDeckRequest, AudioEngineStateEvent, AudioEngineStateSnapshot,
-    AudioEngineSyncSelectionRequest, VstParameterState,
+    AudioEngineSetArmedDeckRequest, AudioEngineSetPluginParameterRequest,
+    AudioEngineStateEvent, AudioEngineStateSnapshot, AudioEngineSyncSelectionRequest,
+    VstParameterState,
 };
 use crate::cloud_commands::{
     CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus, CloudBreadcrumb,
@@ -28,10 +29,10 @@ use crate::desktop_integration::{NativeIconRequest, NativeIconResponse};
 use crate::explorer_pro_commands::{
     ExplorerDuplicateGroup, ExplorerDuplicateScanStartResponse, ExplorerDuplicateScanStatus,
     ExplorerPathTagAssignment, ExplorerSavedSearchRecord, ExplorerSavedSearchSaveRequest,
-    ExplorerTagMutationMode, ExplorerTagMutationRequest, ExplorerTagRecord, ExplorerTagSnapshot,
-    ExplorerTrashActionRecord, ExplorerTrashRestoreResult, ExplorerTrashedEntryRecord,
-    FsBatchRenameItem, FsBatchRenameMode, FsBatchRenamePreviewRow, FsBatchRenameRecipe,
-    FsBatchRenameResult,
+    ExplorerSearchMode, ExplorerTagMutationMode, ExplorerTagMutationRequest, ExplorerTagRecord,
+    ExplorerTagSnapshot, ExplorerTrashActionRecord, ExplorerTrashRestoreResult,
+    ExplorerTrashedEntryRecord, FsBatchRenameItem, FsBatchRenameMode, FsBatchRenamePreviewRow,
+    FsBatchRenameRecipe, FsBatchRenameResult,
 };
 use crate::fs_commands::{
     DriveInfo, EntryStorageInfo, ExplorerTaskHistoryClearScope, ExplorerTaskKind,
@@ -76,6 +77,13 @@ use crate::screenshot_commands::{
     SavedScreenshot, ScreenshotAnnotatedExportResult, ScreenshotAnnotation, ScreenshotPreview,
     ScreenshotRegion,
 };
+use crate::semantic_search::{
+    ExplorerSemanticFindSimilarRequest, ExplorerSemanticIndexBuildMode,
+    ExplorerSemanticIndexBuildRequest, ExplorerSemanticIndexBuildStartResponse,
+    ExplorerSemanticIndexSummary, ExplorerSemanticSearchDiagnostics,
+    ExplorerSemanticSearchQueryKind, ExplorerSemanticSearchRequest,
+    ExplorerSemanticSearchResponse, ExplorerSemanticSearchResult,
+};
 use crate::shader_preview_commands::{
     ExplorerShaderCompileRequest, ExplorerShaderCompileResult, ExplorerShaderDiagnostic,
     ExplorerShaderEntryPoint, ExplorerShaderPreviewDocument,
@@ -102,6 +110,10 @@ use crate::video_engine::{
     VideoEngineSeekRequest, VideoEngineStateEvent, VideoEngineStateSnapshot, VideoPlaybackBackend,
 };
 use crate::vst_commands::{VstPluginEntry, VstScanPath, VstScanPathKind};
+use crate::vst_host_runtime::{
+    VstEditorAttachMode, VstEditorHostRect, VstEditorSessionCreateRequest,
+    VstEditorSessionRectRequest, VstEditorSessionState,
+};
 use crate::wayland_dock::{WaylandDockAnchor, WaylandDockHostStatus};
 use overlay_contracts::{
     ExplorerLayoutMode, LayoutBackBehavior, LayoutBarPosition, LayoutBehaviorConfig,
@@ -192,6 +204,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::audio_engine::audio_engine_set_rate,
             crate::audio_engine::audio_engine_load_plugin,
             crate::audio_engine::audio_engine_clear_deck_plugin,
+            crate::audio_engine::audio_engine_set_plugin_parameter,
             crate::audio_engine::audio_engine_sync_selection_to_armed_deck,
             crate::fs_commands::fs_open_with_dialog,
             crate::fs_commands::fs_open_as_admin,
@@ -235,6 +248,10 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::explorer_pro_commands::explorer_saved_searches_list,
             crate::explorer_pro_commands::explorer_saved_searches_save,
             crate::explorer_pro_commands::explorer_saved_searches_delete,
+            crate::semantic_search::explorer_semantic_index_get_summary,
+            crate::semantic_search::explorer_semantic_index_build,
+            crate::semantic_search::explorer_semantic_search,
+            crate::semantic_search::explorer_semantic_find_similar,
             crate::desktop_integration::fs_resolve_native_icons,
             crate::desktop_integration::fs_start_native_file_drag,
             crate::screenshot_commands::screenshot_capture_preview,
@@ -258,6 +275,10 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::plugin_commands::plugin_unwatch_directory,
             crate::vst_commands::vst_get_default_scan_paths,
             crate::vst_commands::vst_scan_plugins,
+            crate::vst_host_runtime::vst_host_create_editor_session,
+            crate::vst_host_runtime::vst_host_update_editor_session_rect,
+            crate::vst_host_runtime::vst_host_focus_editor_session,
+            crate::vst_host_runtime::vst_host_destroy_editor_session,
             crate::image_commands::image_editor_create_session,
             crate::image_commands::image_editor_render_preview,
             crate::image_commands::image_editor_export,
@@ -363,6 +384,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<AudioEngineGainRequest>()
         .typ::<AudioEngineRateRequest>()
         .typ::<AudioEngineSetArmedDeckRequest>()
+        .typ::<AudioEngineSetPluginParameterRequest>()
         .typ::<AudioEngineSyncSelectionRequest>()
         .typ::<DriveInfo>()
         .typ::<EntryStorageInfo>()
@@ -412,8 +434,19 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ExplorerTagSnapshot>()
         .typ::<ExplorerTagMutationMode>()
         .typ::<ExplorerTagMutationRequest>()
+        .typ::<ExplorerSearchMode>()
         .typ::<ExplorerSavedSearchRecord>()
         .typ::<ExplorerSavedSearchSaveRequest>()
+        .typ::<ExplorerSemanticIndexBuildMode>()
+        .typ::<ExplorerSemanticSearchQueryKind>()
+        .typ::<ExplorerSemanticIndexSummary>()
+        .typ::<ExplorerSemanticIndexBuildRequest>()
+        .typ::<ExplorerSemanticIndexBuildStartResponse>()
+        .typ::<ExplorerSemanticSearchRequest>()
+        .typ::<ExplorerSemanticFindSimilarRequest>()
+        .typ::<ExplorerSemanticSearchResult>()
+        .typ::<ExplorerSemanticSearchDiagnostics>()
+        .typ::<ExplorerSemanticSearchResponse>()
         .typ::<ExplorerTrashedEntryRecord>()
         .typ::<ExplorerTrashActionRecord>()
         .typ::<ExplorerTrashRestoreResult>()
@@ -505,6 +538,11 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<VstScanPath>()
         .typ::<VstScanPathKind>()
         .typ::<VstPluginEntry>()
+        .typ::<VstEditorAttachMode>()
+        .typ::<VstEditorHostRect>()
+        .typ::<VstEditorSessionState>()
+        .typ::<VstEditorSessionCreateRequest>()
+        .typ::<VstEditorSessionRectRequest>()
         .typ::<StorageNodeKind>()
         .typ::<StoragePathSummary>()
         .typ::<StorageScanStartResponse>()

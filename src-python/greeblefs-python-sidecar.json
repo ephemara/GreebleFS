@@ -23,7 +23,16 @@
       "id": "ml-core",
       "label": "ML Core",
       "description": "CPU-friendly baseline for NumPy, ONNX, ONNX Runtime, and Torch workflows.",
-      "packages": ["numpy", "pillow", "onnx", "onnxruntime", "torch"]
+      "packages": [
+        "numpy",
+        "pillow",
+        "onnx",
+        "onnxruntime",
+        "torch",
+        "transformers",
+        "tokenizers",
+        "optimum"
+      ]
     },
     {
       "id": "cuda-ai-indexing",
@@ -37,7 +46,8 @@
         "onnxruntime-gpu",
         "sentence-transformers",
         "transformers",
-        "tokenizers"
+        "tokenizers",
+        "optimum"
       ]
     }
   ],
@@ -71,6 +81,36 @@
       "label": "Hash Paths",
       "description": "Computes stable file hashes for one or more paths from Python.",
       "payloadExampleJson": "{\"paths\":[\"/tmp/example.txt\"],\"algorithm\":\"sha256\",\"chunkSize\":1048576}"
+    },
+    {
+      "id": "semantic.index_root",
+      "label": "Build Semantic Index",
+      "description": "Indexes local text/code files into the Explorer semantic-search SQLite store.",
+      "payloadExampleJson": "{\"dbPath\":\"/tmp/semantic-index.sqlite3\",\"rootPath\":\"/tmp/project\",\"allowedExtensions\":[\"rs\",\"ts\",\"md\"],\"maxFileBytes\":2097152,\"sourceSignature\":\"abc123\",\"forceCpu\":false}"
+    },
+    {
+      "id": "semantic.query_index",
+      "label": "Query Semantic Index",
+      "description": "Runs a semantic query against an indexed Explorer root and returns file-ranked results.",
+      "payloadExampleJson": "{\"dbPath\":\"/tmp/semantic-index.sqlite3\",\"rootPath\":\"/tmp/project\",\"query\":\"database migration helper\",\"limit\":25,\"forceCpu\":false}"
+    },
+    {
+      "id": "semantic.find_similar_file",
+      "label": "Find Similar File",
+      "description": "Finds semantically similar indexed files using stored file embeddings.",
+      "payloadExampleJson": "{\"dbPath\":\"/tmp/semantic-index.sqlite3\",\"rootPath\":\"/tmp/project\",\"targetPath\":\"/tmp/project/src/lib.rs\",\"limit\":25,\"forceCpu\":false}"
+    },
+    {
+      "id": "semantic.delete_index",
+      "label": "Delete Semantic Index",
+      "description": "Deletes the semantic-search index rows for one Explorer root.",
+      "payloadExampleJson": "{\"dbPath\":\"/tmp/semantic-index.sqlite3\",\"rootPath\":\"/tmp/project\"}"
+    },
+    {
+      "id": "semantic.index_status",
+      "label": "Semantic Index Status",
+      "description": "Returns the stored semantic-search index metadata for one Explorer root.",
+      "payloadExampleJson": "{\"dbPath\":\"/tmp/semantic-index.sqlite3\",\"rootPath\":\"/tmp/project\"}"
     }
   ]
 }

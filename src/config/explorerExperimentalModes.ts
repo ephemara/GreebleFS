@@ -177,7 +177,7 @@ export const explorerExperimentalModes: readonly ExplorerExperimentalModeDefinit
     id: 'timeline-surface',
     label: 'Timeline Surface',
     shortLabel: 'Timeline',
-    description: 'Maps files across temporal bands so you browse eras, days, and moments.',
+    description: 'Maps files across temporal bands so you browse eras, days, hours, and moments.',
     densityAxisLabel: 'Granularity',
     available: true,
   },
@@ -243,9 +243,9 @@ const timelineDensityDescriptors: readonly ExplorerExperimentalDensityDescriptor
     description: 'Weekly lanes make active stretches of work easy to scan.',
   },
   {
-    label: 'Days',
-    shortLabel: 'Days',
-    description: 'Fine-grained daily grouping exposes moments and bursts.',
+    label: 'Hours',
+    shortLabel: 'Hours',
+    description: 'Hourly buckets expose bursts inside the current day.',
   },
 ] as const;
 

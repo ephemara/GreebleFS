@@ -161,6 +161,7 @@ pub enum ExplorerTaskKind {
     Trash,
     BatchRename,
     DuplicateScan,
+    SemanticIndex,
     ExtractArchive,
     RecursiveSize,
     Checksum,

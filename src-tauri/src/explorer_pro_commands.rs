@@ -76,10 +76,18 @@ pub struct ExplorerSavedSearchRecord {
     pub name: String,
     pub root_path: String,
     pub query: String,
-    pub include_content: bool,
+    pub search_mode: ExplorerSearchMode,
     pub tag_filter_ids: Vec<String>,
     pub created_at: u64,
     pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExplorerSearchMode {
+    Name,
+    Content,
+    Semantic,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -89,8 +97,63 @@ pub struct ExplorerSavedSearchSaveRequest {
     pub name: String,
     pub root_path: String,
     pub query: String,
-    pub include_content: bool,
+    pub search_mode: ExplorerSearchMode,
     pub tag_filter_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedExplorerSavedSearchRecord {
+    id: String,
+    name: String,
+    root_path: String,
+    query: String,
+    #[serde(default)]
+    include_content: Option<bool>,
+    #[serde(default)]
+    search_mode: Option<ExplorerSearchMode>,
+    #[serde(default)]
+    tag_filter_ids: Vec<String>,
+    created_at: u64,
+    updated_at: u64,
+}
+
+impl PersistedExplorerSavedSearchRecord {
+    fn into_public(self) -> ExplorerSavedSearchRecord {
+        let search_mode = self.search_mode.unwrap_or_else(|| {
+            if self.include_content.unwrap_or(false) {
+                ExplorerSearchMode::Content
+            } else {
+                ExplorerSearchMode::Name
+            }
+        });
+        ExplorerSavedSearchRecord {
+            id: self.id,
+            name: self.name,
+            root_path: self.root_path,
+            query: self.query,
+            search_mode,
+            tag_filter_ids: self.tag_filter_ids,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+}
+
+impl From<&ExplorerSavedSearchRecord> for PersistedExplorerSavedSearchRecord {
+    fn from(value: &ExplorerSavedSearchRecord) -> Self {
+        Self {
+            id: value.id.clone(),
+            name: value.name.clone(),
+            root_path: value.root_path.clone(),
+            query: value.query.clone(),
+            include_content: Some(matches!(value.search_mode, ExplorerSearchMode::Content)),
+            search_mode: Some(value.search_mode),
+            tag_filter_ids: value.tag_filter_ids.clone(),
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -202,7 +265,7 @@ struct ExplorerMetadataDocument {
     version: u32,
     tags: Vec<ExplorerTagDefinition>,
     path_tag_ids: HashMap<String, Vec<String>>,
-    saved_searches: Vec<ExplorerSavedSearchRecord>,
+    saved_searches: Vec<PersistedExplorerSavedSearchRecord>,
     recent_trash_action: Option<ExplorerTrashActionRecord>,
 }
 
@@ -1176,7 +1239,7 @@ pub async fn explorer_saved_searches_list(
 ) -> Result<Vec<ExplorerSavedSearchRecord>, String> {
     let mut searches = read_explorer_metadata(&app)?.saved_searches;
     searches.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
-    Ok(searches)
+    Ok(searches.into_iter().map(|search| search.into_public()).collect())
 }
 
 #[tauri::command]
@@ -1218,14 +1281,16 @@ pub async fn explorer_saved_searches_save(
         name: name.to_string(),
         root_path: root_path.to_string(),
         query: query.to_string(),
-        include_content: request.include_content,
+        search_mode: request.search_mode,
         tag_filter_ids: request.tag_filter_ids,
         created_at,
         updated_at: now,
     };
 
     document.saved_searches.retain(|search| search.id != id);
-    document.saved_searches.push(record.clone());
+    document
+        .saved_searches
+        .push(PersistedExplorerSavedSearchRecord::from(&record));
     write_explorer_metadata(&app, &document)?;
     Ok(record)
 }
@@ -1656,7 +1721,8 @@ mod tests {
     use super::{
         batch_rename_preview_rows, collect_duplicate_candidates, ensure_batch_rename_is_valid,
         fs_batch_rename_apply, ExplorerDuplicateScanProgress, ExplorerSavedSearchSaveRequest,
-        FsBatchRenameItem, FsBatchRenameMode, FsBatchRenameRecipe,
+        ExplorerSearchMode, FsBatchRenameItem, FsBatchRenameMode, FsBatchRenameRecipe,
+        PersistedExplorerSavedSearchRecord,
     };
     use std::collections::HashMap;
     use std::fs;
@@ -1732,11 +1798,31 @@ mod tests {
             name: "Images".to_string(),
             root_path: "/tmp/project".to_string(),
             query: "png".to_string(),
-            include_content: false,
+            search_mode: ExplorerSearchMode::Name,
             tag_filter_ids: vec!["visual".to_string(), "approved".to_string()],
         };
 
         assert_eq!(request.tag_filter_ids.len(), 2);
+        assert_eq!(request.search_mode, ExplorerSearchMode::Name);
+    }
+
+    #[test]
+    fn legacy_saved_search_records_upgrade_include_content_to_search_mode() {
+        let record = PersistedExplorerSavedSearchRecord {
+            id: "search-1".to_string(),
+            name: "Docs".to_string(),
+            root_path: "/tmp/project".to_string(),
+            query: "readme".to_string(),
+            include_content: Some(true),
+            search_mode: None,
+            tag_filter_ids: vec!["docs".to_string()],
+            created_at: 1,
+            updated_at: 2,
+        };
+
+        let migrated = record.into_public();
+        assert_eq!(migrated.search_mode, ExplorerSearchMode::Content);
+        assert_eq!(migrated.tag_filter_ids, vec!["docs".to_string()]);
     }
 
     #[test]

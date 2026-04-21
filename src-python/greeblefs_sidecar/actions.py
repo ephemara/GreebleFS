@@ -10,6 +10,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from .semantic_search_runtime import (
+    semantic_delete_index_action,
+    semantic_find_similar_file_action,
+    semantic_index_root_action,
+    semantic_index_status_action,
+    semantic_query_index_action,
+)
+
 
 @dataclass(frozen=True)
 class PythonActionContext:
@@ -239,6 +247,7 @@ def acceleration_cuda_probe_action(payload: Any, context: PythonActionContext) -
         _optional_module_probe("sentence_transformers"),
         _optional_module_probe("transformers"),
         _optional_module_probe("tokenizers"),
+        _optional_module_probe("optimum"),
         _optional_module_probe("faiss"),
     ]
 
@@ -338,6 +347,46 @@ def hash_paths_action(payload: Any, context: PythonActionContext) -> dict[str, A
         "algorithm": algorithm,
         "entries": entries,
     }
+
+
+@python_action("semantic.index_root")
+def semantic_index_root_registered_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    return semantic_index_root_action(payload, context)
+
+
+@python_action("semantic.query_index")
+def semantic_query_index_registered_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    return semantic_query_index_action(payload, context)
+
+
+@python_action("semantic.find_similar_file")
+def semantic_find_similar_file_registered_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    return semantic_find_similar_file_action(payload, context)
+
+
+@python_action("semantic.delete_index")
+def semantic_delete_index_registered_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    return semantic_delete_index_action(payload, context)
+
+
+@python_action("semantic.index_status")
+def semantic_index_status_registered_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    return semantic_index_status_action(payload, context)
 
 
 def register_builtin_actions() -> None:

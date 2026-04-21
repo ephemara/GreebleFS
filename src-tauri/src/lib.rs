@@ -17,6 +17,7 @@ pub mod python_commands;
 pub mod python_pyo3;
 pub mod python_sidecar;
 pub mod screenshot_commands;
+pub mod semantic_search;
 pub mod shader_preview_commands;
 pub mod specta_bindings;
 pub mod sqlite_commands;
@@ -28,6 +29,7 @@ pub mod thumbnail_commands;
 pub mod video_commands;
 pub mod video_engine;
 pub mod vst_commands;
+pub mod vst_host_runtime;
 pub mod wayland_dock;
 pub mod window_commands;
 
@@ -146,6 +148,7 @@ pub fn run() {
             app.manage(pdf_commands::PdfPreviewManager::default());
             app.manage(python_sidecar::PythonSidecarManager::default());
             app.manage(video_engine::VideoEngineManager::default());
+            app.manage(vst_host_runtime::VstHostRuntimeManager::default());
             app.manage(TelemetryManager::default());
             let startup_span = start_native_span(
                 &app.handle(),

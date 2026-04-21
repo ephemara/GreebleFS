@@ -82,14 +82,41 @@ vi.mock("../components/ExplorerAudioWorkbench", () => ({
   ExplorerAudioWorkbench: ({
     audioName,
     mode = "edit",
+    workflowTabId,
+    onRegisterWorkflowTabs,
   }: {
     audioName: string;
     mode?: "preview" | "edit";
-  }) => (
-    <div data-testid="mock-explorer-audio-workbench" data-audio-mode={mode}>
-      {`${audioName}:${mode}`}
-    </div>
-  ),
+    workflowTabId?: string;
+    onRegisterWorkflowTabs?: (
+      tabs: Array<{
+        id: string;
+        label: string;
+        baseMode: "preview" | "edit";
+      }> | null,
+    ) => void;
+  }) => {
+    React.useEffect(() => {
+      onRegisterWorkflowTabs?.([
+        {
+          id: "vst",
+          label: "VST",
+          baseMode: "edit",
+        },
+      ]);
+      return () => onRegisterWorkflowTabs?.(null);
+    }, [onRegisterWorkflowTabs]);
+
+    return (
+      <div
+        data-testid="mock-explorer-audio-workbench"
+        data-audio-mode={mode}
+        data-audio-workflow-tab={workflowTabId ?? mode}
+      >
+        {`${audioName}:${workflowTabId ?? mode}`}
+      </div>
+    );
+  },
 }));
 
 vi.mock("../components/ExplorerSpreadsheetWorkbench", () => ({
@@ -102,7 +129,10 @@ vi.mock("../components/ExplorerSpreadsheetWorkbench", () => ({
   }) => {
     spreadsheetWorkbenchMockState.lastMode = mode;
     return (
-      <div data-testid="mock-explorer-spreadsheet-workbench" data-spreadsheet-mode={mode}>
+      <div
+        data-testid="mock-explorer-spreadsheet-workbench"
+        data-spreadsheet-mode={mode}
+      >
         {`${name}:${mode}`}
       </div>
     );
@@ -330,10 +360,7 @@ import {
   normalizeThemeDefinition,
   resolveOverlayAppearance,
 } from "../config/appearance";
-import {
-  getBuiltInIconTheme,
-  resolveFileIconSrc,
-} from "../config/iconTheme";
+import { getBuiltInIconTheme, resolveFileIconSrc } from "../config/iconTheme";
 import { createDefaultExplorerRailSnapshot } from "../components/explorer/explorerRailState";
 import {
   EXPLORER_LEGACY_BOOKMARKS_KEY,
@@ -693,25 +720,25 @@ function getPreviewResizeHandle() {
 
 function dispatchLayoutWheel(anchorText: string, deltaY: number) {
   const viewport = getExplorerViewport(anchorText);
-  viewport.dispatchEvent(
-    new WheelEvent("wheel", {
-      bubbles: true,
-      cancelable: true,
-      ctrlKey: true,
-      deltaY,
-    }),
-  );
+  const wheelEvent = new WheelEvent("wheel", {
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: true,
+    deltaY,
+  });
+  viewport.dispatchEvent(wheelEvent);
+  return wheelEvent;
 }
 
 function dispatchLayoutWheelOnElement(element: Element, deltaY: number) {
-  element.dispatchEvent(
-    new WheelEvent("wheel", {
-      bubbles: true,
-      cancelable: true,
-      ctrlKey: true,
-      deltaY,
-    }),
-  );
+  const wheelEvent = new WheelEvent("wheel", {
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: true,
+    deltaY,
+  });
+  element.dispatchEvent(wheelEvent);
+  return wheelEvent;
 }
 
 function dispatchLayoutWheelOnFileArea(deltaY: number) {
@@ -721,14 +748,14 @@ function dispatchLayoutWheelOnFileArea(deltaY: number) {
   if (!fileArea) {
     throw new Error("Explorer file area not found");
   }
-  fileArea.dispatchEvent(
-    new WheelEvent("wheel", {
-      bubbles: true,
-      cancelable: true,
-      ctrlKey: true,
-      deltaY,
-    }),
-  );
+  const wheelEvent = new WheelEvent("wheel", {
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: true,
+    deltaY,
+  });
+  fileArea.dispatchEvent(wheelEvent);
+  return wheelEvent;
 }
 
 function dispatchConstellationWheel(
@@ -1078,7 +1105,9 @@ describe("FileExplorer view modes", () => {
         "balanced",
       );
       expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
-      expect(screen.getByRole("button", { name: /manage/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /manage/i }),
+      ).toBeInTheDocument();
       expect(getChromeControl("railClose")).not.toBeNull();
       expect(
         screen.queryByRole("button", { name: /open sources panel/i }),
@@ -1099,10 +1128,14 @@ describe("FileExplorer view modes", () => {
           .modeProfileOverridesByThemeId.operator,
       ).toBe("inspector");
       expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
-      expect(screen.getByRole("button", { name: /manage/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /manage/i }),
+      ).toBeInTheDocument();
     });
 
-    fireEvent.click(within(getChromeControl("railClose") as HTMLElement).getByRole("button"));
+    fireEvent.click(
+      within(getChromeControl("railClose") as HTMLElement).getByRole("button"),
+    );
 
     await waitFor(() => {
       expect(
@@ -1116,7 +1149,9 @@ describe("FileExplorer view modes", () => {
       ).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /open sources panel/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /open sources panel/i }),
+    );
 
     await waitFor(() => {
       expect(
@@ -1375,7 +1410,9 @@ describe("FileExplorer view modes", () => {
     renderExplorer({ workspacePaneCount: 2 });
     await screen.findByText("notes.txt");
 
-    expect(screen.getByRole("button", { name: /open sources panel/i })).toHaveTextContent("Sources");
+    expect(
+      screen.getByRole("button", { name: /open sources panel/i }),
+    ).toHaveTextContent("Sources");
     expect(screen.queryByText(/sources rail closed/i)).toBeNull();
     expect(
       screen.queryByText(/focus mode keeps the sources rail tucked away/i),
@@ -1414,20 +1451,10 @@ describe("FileExplorer view modes", () => {
       onAddBookmark: async () => {},
     };
 
-    rerender(
-      <FileExplorer
-        {...sharedProps}
-        workspacePaneCount={2}
-      />,
-    );
+    rerender(<FileExplorer {...sharedProps} workspacePaneCount={2} />);
     expect(queryPreviewPane()).toBeNull();
 
-    rerender(
-      <FileExplorer
-        {...sharedProps}
-        workspacePaneCount={1}
-      />,
-    );
+    rerender(<FileExplorer {...sharedProps} workspacePaneCount={1} />);
     await screen.findByRole("button", { name: /copy path/i });
   });
 
@@ -1534,15 +1561,21 @@ describe("FileExplorer view modes", () => {
 
     await waitFor(() => {
       expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
-      expect(screen.getByRole("button", { name: /open sources panel/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /open sources panel/i }),
+      ).toBeInTheDocument();
     });
 
     fireEvent.keyDown(window, { key: "b", ctrlKey: true });
 
     await waitFor(() => {
       expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
-      expect(screen.queryByRole("button", { name: /open sources panel/i })).toBeNull();
-      expect(screen.getByRole("button", { name: /manage/i })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /open sources panel/i }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /manage/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -1921,9 +1954,9 @@ const value = 1;
     expect(markdownPreviewRoot.style.background).toBe(
       "var(--overlay-explorer-preview-bg)",
     );
-    expect(await screen.findByTestId("document-preview-article")).toHaveTextContent(
-      "Ship Notes",
-    );
+    expect(
+      await screen.findByTestId("document-preview-article"),
+    ).toHaveTextContent("Ship Notes");
     expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
     expect(screen.queryByTestId("monaco-editor")).toBeNull();
   });
@@ -1962,12 +1995,14 @@ const value = 1;
       throw new Error("Missing default invoke mock implementation");
     }
 
-    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
-      if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
-        return [...ENTRIES, spreadsheetEntry];
-      }
-      return defaultInvoke(command, args as never);
-    });
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return [...ENTRIES, spreadsheetEntry];
+        }
+        return defaultInvoke(command, args as never);
+      },
+    );
 
     renderExplorer();
     await screen.findByText("colors.csv");
@@ -1978,11 +2013,15 @@ const value = 1;
       await screen.findByTestId("mock-explorer-spreadsheet-workbench"),
     ).toHaveTextContent("colors.csv:preview");
     await waitFor(() => {
-      expect(useExplorerStore.getState().session.documentViewMode).toBe("preview");
+      expect(useExplorerStore.getState().session.documentViewMode).toBe(
+        "preview",
+      );
     });
     expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
 
-    fireEvent.click(within(getPreviewPane()).getByRole("button", { name: /^edit$/i }));
+    fireEvent.click(
+      within(getPreviewPane()).getByRole("button", { name: /^edit$/i }),
+    );
 
     await waitFor(() => {
       expect(useExplorerStore.getState().session.documentViewMode).toBe("edit");
@@ -2228,41 +2267,45 @@ const value = 1;
         error: string | null;
       }>
     >();
-    const defaultInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    const defaultInvokeImplementation = vi
+      .mocked(invoke)
+      .getMockImplementation();
     let checksumCallCount = 0;
 
-    vi.mocked(invoke).mockImplementation(async (command: string, args?: Parameters<typeof invoke>[1]) => {
-      const payload = args as { path?: string } | undefined;
-      switch (command) {
-        case "fs_calculate_checksums":
-          checksumCallCount += 1;
-          return checksumCallCount === 1
-            ? firstChecksumResponse.promise
-            : secondChecksumResponse.promise;
-        case "fs_get_item_properties":
-          return {
-            path: payload?.path ?? propertiesPath,
-            name: "notes.txt",
-            isDir: false,
-            isSymlink: false,
-            bytes: 128,
-            modifiedAtMs: 0,
-            createdAtMs: 0,
-            accessedAtMs: 0,
-            permissions: {
-              readonly: false,
-              display: "rw-rw-rw-",
-              unixMode: null,
-              unixModeOctal: null,
-            },
-          };
-        default:
-          if (!defaultInvokeImplementation) {
-            throw new Error(`Unexpected invoke command: ${command}`);
-          }
-          return defaultInvokeImplementation(command, args);
-      }
-    });
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: Parameters<typeof invoke>[1]) => {
+        const payload = args as { path?: string } | undefined;
+        switch (command) {
+          case "fs_calculate_checksums":
+            checksumCallCount += 1;
+            return checksumCallCount === 1
+              ? firstChecksumResponse.promise
+              : secondChecksumResponse.promise;
+          case "fs_get_item_properties":
+            return {
+              path: payload?.path ?? propertiesPath,
+              name: "notes.txt",
+              isDir: false,
+              isSymlink: false,
+              bytes: 128,
+              modifiedAtMs: 0,
+              createdAtMs: 0,
+              accessedAtMs: 0,
+              permissions: {
+                readonly: false,
+                display: "rw-rw-rw-",
+                unixMode: null,
+                unixModeOctal: null,
+              },
+            };
+          default:
+            if (!defaultInvokeImplementation) {
+              throw new Error(`Unexpected invoke command: ${command}`);
+            }
+            return defaultInvokeImplementation(command, args);
+        }
+      },
+    );
 
     const consoleErrorSpy = vi
       .spyOn(console, "error")
@@ -2406,16 +2449,30 @@ const value = 1;
     );
     const previewModeToggle = getChromeControl("previewModeToggle");
     expect(previewModeToggle).not.toBeNull();
-    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
+    expectChromeControlButtonOrder("previewModeToggle", [
+      "Preview",
+      "Edit",
+      "VST",
+    ]);
     fireEvent.click(
       within(previewModeToggle as HTMLElement).getByRole("button", {
         name: "Edit",
       }),
     );
 
-    expect(await screen.findByTestId("mock-explorer-audio-workbench")).toHaveTextContent(
-      "anthem.mp3:edit",
+    expect(
+      await screen.findByTestId("mock-explorer-audio-workbench"),
+    ).toHaveTextContent("anthem.mp3:edit");
+
+    fireEvent.click(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "VST",
+      }),
     );
+
+    expect(
+      await screen.findByTestId("mock-explorer-audio-workbench"),
+    ).toHaveTextContent("anthem.mp3:vst");
     expect(
       vi
         .mocked(invoke)
@@ -2437,9 +2494,24 @@ const value = 1;
 
     await waitFor(() => {
       expect(useExplorerStore.getState().session.documentViewMode).toBe("edit");
-      expect(screen.getByTestId("mock-explorer-audio-workbench")).toHaveTextContent(
-        "anthem.mp3:edit",
-      );
+      expect(
+        screen.getByTestId("mock-explorer-audio-workbench"),
+      ).toHaveTextContent("anthem.mp3:edit");
+    });
+
+    fireEvent.click(
+      within(getChromeControl("previewModeToggle") as HTMLElement).getByRole(
+        "button",
+        {
+          name: "VST",
+        },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("mock-explorer-audio-workbench"),
+      ).toHaveTextContent("anthem.mp3:vst");
     });
 
     fireEvent.keyDown(window, { key: "e" });
@@ -2448,10 +2520,49 @@ const value = 1;
       expect(useExplorerStore.getState().session.documentViewMode).toBe(
         "preview",
       );
-      expect(screen.getByTestId("mock-explorer-audio-workbench")).toHaveTextContent(
-        "anthem.mp3:preview",
-      );
+      expect(
+        screen.getByTestId("mock-explorer-audio-workbench"),
+      ).toHaveTextContent("anthem.mp3:preview");
     });
+  });
+
+  it("resets wildcard workflow tabs when preview kind changes away from audio", async () => {
+    renderExplorer();
+    await screen.findByText("anthem.mp3");
+
+    fireEvent.click(screen.getByText("anthem.mp3"));
+    await screen.findByTestId("mock-explorer-audio-workbench");
+    expectChromeControlButtonOrder("previewModeToggle", [
+      "Preview",
+      "Edit",
+      "VST",
+    ]);
+
+    fireEvent.click(
+      within(getChromeControl("previewModeToggle") as HTMLElement).getByRole(
+        "button",
+        {
+          name: "VST",
+        },
+      ),
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("mock-explorer-audio-workbench"),
+      ).toHaveTextContent("anthem.mp3:vst");
+    });
+
+    fireEvent.click(screen.getByText("trailer.mp4"));
+    await screen.findByTestId("mock-explorer-video-editor");
+    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
+    expect(
+      within(getChromeControl("previewModeToggle") as HTMLElement).queryByRole(
+        "button",
+        {
+          name: "VST",
+        },
+      ),
+    ).toBeNull();
   });
 
   it("defaults videos to playback preview and only enters video edit mode when requested", async () => {
@@ -2460,7 +2571,9 @@ const value = 1;
 
     fireEvent.click(screen.getByText("trailer.mp4"));
 
-    const videoWorkbench = await screen.findByTestId("mock-explorer-video-editor");
+    const videoWorkbench = await screen.findByTestId(
+      "mock-explorer-video-editor",
+    );
     expect(videoWorkbench).toHaveTextContent("trailer.mp4:preview");
 
     const previewModeToggle = getChromeControl("previewModeToggle");
@@ -2472,9 +2585,9 @@ const value = 1;
       }),
     );
 
-    expect(await screen.findByTestId("mock-explorer-video-editor")).toHaveTextContent(
-      "trailer.mp4:edit",
-    );
+    expect(
+      await screen.findByTestId("mock-explorer-video-editor"),
+    ).toHaveTextContent("trailer.mp4:edit");
     expect(
       vi
         .mocked(invoke)
@@ -2921,9 +3034,9 @@ const value = 1;
     });
 
     expect(
-      vi.mocked(invoke).mock.calls.some(
-        ([command]) => command === "fs_read_entry_thumbnail",
-      ),
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([command]) => command === "fs_read_entry_thumbnail"),
     ).toBe(false);
 
     vi.mocked(invoke).mockClear();
@@ -2942,19 +3055,21 @@ const value = 1;
     });
 
     expect(
-      vi.mocked(invoke).mock.calls.some(
-        ([command]) => command === "fs_search_entries_with_diagnostics",
-      ),
+      vi
+        .mocked(invoke)
+        .mock.calls.some(
+          ([command]) => command === "fs_search_entries_with_diagnostics",
+        ),
     ).toBe(true);
     expect(
-      vi.mocked(invoke).mock.calls.some(
-        ([command]) => command === "fs_read_entry_thumbnail",
-      ),
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([command]) => command === "fs_read_entry_thumbnail"),
     ).toBe(false);
     expect(
-      vi.mocked(invoke).mock.calls.some(
-        ([command]) => command === "fs_read_image_thumbnail",
-      ),
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([command]) => command === "fs_read_image_thumbnail"),
     ).toBe(false);
   });
 
@@ -3240,6 +3355,105 @@ const value = 1;
     expect(screen.getAllByText(/undated/i).length).toBeGreaterThan(0);
   });
 
+  it("splits dense timeline surface into hourly bands for newest changes", async () => {
+    const nowMs = new Date(2026, 3, 21, 14, 30, 0, 0).getTime();
+    const timelineEntries = [
+      {
+        name: "this-hour.txt",
+        path: `${REPO_ROOT}\\this-hour.txt`,
+        is_dir: false,
+        size: 64,
+        modified: new Date(2026, 3, 21, 14, 15, 0, 0).getTime(),
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "one-hour.txt",
+        path: `${REPO_ROOT}\\one-hour.txt`,
+        is_dir: false,
+        size: 64,
+        modified: new Date(2026, 3, 21, 13, 10, 0, 0).getTime(),
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "earlier-today.txt",
+        path: `${REPO_ROOT}\\earlier-today.txt`,
+        is_dir: false,
+        size: 64,
+        modified: new Date(2026, 3, 21, 8, 45, 0, 0).getTime(),
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "yesterday.txt",
+        path: `${REPO_ROOT}\\yesterday.txt`,
+        is_dir: false,
+        size: 64,
+        modified: new Date(2026, 3, 20, 18, 20, 0, 0).getTime(),
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ];
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(nowMs);
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return timelineEntries;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+    useSettingsStore.getState().updateExplorer({
+      viewMode: "details",
+      experimentalViewMode: "timeline-surface",
+      experimentalDensity: 1,
+    });
+
+    try {
+      renderExplorer();
+      await screen.findByText("this-hour.txt");
+
+      const thisHourBand = screen.getByText("This Hour").closest("section");
+      const previousHourBand = screen
+        .getByText("1 Hour Ago")
+        .closest("section");
+      const earlierTodayBand = screen
+        .getByText("Earlier Today")
+        .closest("section");
+      const yesterdayBand = screen.getByText("Yesterday").closest("section");
+
+      expect(thisHourBand).toBeTruthy();
+      expect(previousHourBand).toBeTruthy();
+      expect(earlierTodayBand).toBeTruthy();
+      expect(yesterdayBand).toBeTruthy();
+
+      expect(
+        within(thisHourBand as HTMLElement).getByText("this-hour.txt"),
+      ).toBeInTheDocument();
+      expect(
+        within(previousHourBand as HTMLElement).getByText("one-hour.txt"),
+      ).toBeInTheDocument();
+      expect(
+        within(earlierTodayBand as HTMLElement).getByText("earlier-today.txt"),
+      ).toBeInTheDocument();
+      expect(
+        within(yesterdayBand as HTMLElement).getByText("yesterday.txt"),
+      ).toBeInTheDocument();
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
   it("uses list view as the standard-view proxy when leaving a unique footer mode", async () => {
     useSettingsStore.getState().updateExplorer({
       viewMode: "columns",
@@ -3328,6 +3542,34 @@ const value = 1;
         useSettingsStore.getState().settings.explorer.gridZoom,
       ).toBeGreaterThan(0);
     });
+  });
+
+  it("holds explorer scroll position while ctrl-wheel changes layout", async () => {
+    useSettingsStore
+      .getState()
+      .updateExplorer({ viewMode: "icons-m", gridZoom: 0 });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const viewport = getExplorerViewport("alpha");
+    viewport.scrollTop = 420;
+
+    const wheelEvent = dispatchLayoutWheel("alpha", -120);
+
+    act(() => {
+      viewport.scrollTop = 620;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+        "icons-l",
+      );
+      expect(viewport.scrollTop).toBe(420);
+    });
+
+    expect(wheelEvent.defaultPrevented).toBe(true);
   });
 
   it("uses the dedicated explorer viewport class for visible file-list scrollbars", async () => {
@@ -3915,7 +4157,9 @@ const value = 1;
       expect(
         useSettingsStore.getState().settings.explorer.experimentalDensity,
       ).toBeGreaterThan(0.32);
-      expect(field.getAttribute("data-overlay-constellation-zoom")).not.toBeNull();
+      expect(
+        field.getAttribute("data-overlay-constellation-zoom"),
+      ).not.toBeNull();
     });
   });
 
@@ -3930,6 +4174,76 @@ const value = 1;
 
     await waitFor(() => {
       expect(screen.getByText(/2 selected/i)).toBeTruthy();
+    });
+  });
+
+  it("keeps the selection summary visible while a selected empty folder waits on size measurement", async () => {
+    const alphaPath = `${REPO_ROOT}\\alpha`;
+    const selectedFolderMeasureDeferred = createDeferred<
+      Array<{
+        path: string;
+        bytes: number;
+        is_dir: boolean;
+        is_complete: boolean;
+      }>
+    >();
+    const measureRequests: string[][] = [];
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: Parameters<typeof invoke>[1]) => {
+        const payload = args as { paths?: string[] } | undefined;
+        if (command === "fs_measure_entry_sizes") {
+          const paths = payload?.paths ?? [];
+          measureRequests.push(paths);
+          if (paths.includes(alphaPath)) {
+            return selectedFolderMeasureDeferred.promise;
+          }
+        }
+        return baseInvokeImplementation(command, args);
+      },
+    );
+
+    renderExplorer();
+    const alphaEntry = (await screen.findAllByText("alpha")).find((candidate) =>
+      candidate.closest('[data-overlay-explorer-plane="file-area"]'),
+    );
+    if (!alphaEntry) {
+      throw new Error("Explorer row not found for alpha");
+    }
+    fireEvent.click(alphaEntry);
+
+    const selectionSummary = screen.getByTitle("Selected item size summary");
+    expect(selectionSummary).toHaveTextContent("Selected");
+    expect(selectionSummary).toHaveTextContent("0/1 measured");
+    expect(selectionSummary).toHaveTextContent("—");
+
+    await waitFor(() => {
+      expect(measureRequests[0]).toContain(alphaPath);
+    });
+
+    await act(async () => {
+      selectedFolderMeasureDeferred.resolve([
+        {
+          path: alphaPath,
+          bytes: 0,
+          is_dir: true,
+          is_complete: true,
+        },
+      ]);
+      await selectedFolderMeasureDeferred.promise;
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Selected item size summary")).toHaveTextContent(
+        "0 B",
+      );
+      expect(screen.getByTitle("Selected item size summary")).toHaveTextContent(
+        "1 measured",
+      );
     });
   });
 
@@ -4009,9 +4323,9 @@ const value = 1;
 
     fireEvent.keyDown(window, { key: "ArrowDown" });
     await waitFor(() => {
-      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
-        "beta.png",
-      );
+      expect(
+        screen.getByTestId("mock-explorer-image-editor"),
+      ).toHaveTextContent("beta.png");
     });
 
     fireEvent.keyDown(window, { key: "ArrowDown" });
@@ -4147,9 +4461,9 @@ const value = 1;
 
       fireEvent.click(screen.getByText("d.png"));
       await waitFor(() => {
-        expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
-          "d.png",
-        );
+        expect(
+          screen.getByTestId("mock-explorer-image-editor"),
+        ).toHaveTextContent("d.png");
       });
 
       fireEvent.keyDown(window, { key: "ArrowRight" });
@@ -4161,9 +4475,9 @@ const value = 1;
 
       fireEvent.keyDown(window, { key: "ArrowLeft" });
       await waitFor(() => {
-        expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
-          "d.png",
-        );
+        expect(
+          screen.getByTestId("mock-explorer-image-editor"),
+        ).toHaveTextContent("d.png");
       });
 
       fireEvent.keyDown(window, { key: "ArrowUp" });
@@ -4175,9 +4489,9 @@ const value = 1;
 
       fireEvent.keyDown(window, { key: "ArrowDown" });
       await waitFor(() => {
-        expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
-          "d.png",
-        );
+        expect(
+          screen.getByTestId("mock-explorer-image-editor"),
+        ).toHaveTextContent("d.png");
       });
     } finally {
       if (clientWidthDescriptor) {
@@ -4299,12 +4613,13 @@ const value = 1;
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
-        "preview.png:edit",
-      );
       expect(
         screen.getByTestId("mock-explorer-image-editor"),
-      ).toHaveAttribute("data-image-mode", "edit");
+      ).toHaveTextContent("preview.png:edit");
+      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
+        "data-image-mode",
+        "edit",
+      );
     });
   });
 
@@ -4408,12 +4723,13 @@ const value = 1;
     fireEvent(dragSource, createEvent.dragStart(dragSource, { dataTransfer }));
 
     await waitFor(() => {
-      expect(vi.mocked(currentWindow.onDragDropEvent).mock.calls.length).toBeGreaterThan(0);
+      expect(
+        vi.mocked(currentWindow.onDragDropEvent).mock.calls.length,
+      ).toBeGreaterThan(0);
     });
 
     const dragDropCalls = vi.mocked(currentWindow.onDragDropEvent).mock.calls;
-    const nativeDragHandler =
-      dragDropCalls[dragDropCalls.length - 1]?.[0];
+    const nativeDragHandler = dragDropCalls[dragDropCalls.length - 1]?.[0];
     if (!nativeDragHandler) {
       throw new Error("Expected native drag-drop listener");
     }

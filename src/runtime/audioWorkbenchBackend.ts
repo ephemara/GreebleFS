@@ -29,6 +29,11 @@ export type ExplorerAudioTransformInput = AudioTransformRequest;
 export type ExplorerAudioTransformOutput = AudioTransformResult;
 export type ExplorerAudioBatchInput = AudioBatchProcessRequest;
 export type ExplorerAudioBatchOutput = AudioBatchProcessResult;
+export interface ExplorerAudioDeckPluginParameterRequest {
+  deckId: ExplorerAudioDeckId;
+  parameterId: number;
+  valueNormalized: number;
+}
 
 export async function analyzeExplorerAudioPreview(
   inputPath: string,
@@ -142,4 +147,10 @@ export async function clearExplorerAudioDeckPlugin(
   request: AudioEngineDeckRequest,
 ): Promise<ExplorerAudioEngineStateSnapshot> {
   return unwrapTauriResult(await commands.audioEngineClearDeckPlugin(request));
+}
+
+export async function setExplorerAudioDeckPluginParameter(
+  request: ExplorerAudioDeckPluginParameterRequest,
+): Promise<ExplorerAudioEngineStateSnapshot> {
+  return unwrapTauriResult(await commands.audioEngineSetPluginParameter(request));
 }

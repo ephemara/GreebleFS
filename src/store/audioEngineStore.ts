@@ -15,6 +15,7 @@ import {
   seekExplorerAudioDeck,
   setExplorerArmedAudioDeck,
   setExplorerAudioDeckGain,
+  setExplorerAudioDeckPluginParameter,
   setExplorerAudioDeckRate,
   setExplorerAudioLoopRegion,
   stopExplorerAudioDeck,
@@ -274,4 +275,18 @@ export async function clearAudioDeckPlugin(
   deckId: ExplorerAudioDeckId,
 ): Promise<ExplorerAudioEngineStateSnapshot> {
   return commitAudioSnapshot(await clearExplorerAudioDeckPlugin({ deckId }));
+}
+
+export async function setAudioDeckPluginParameter(
+  deckId: ExplorerAudioDeckId,
+  parameterId: number,
+  valueNormalized: number,
+): Promise<ExplorerAudioEngineStateSnapshot> {
+  return commitAudioSnapshot(
+    await setExplorerAudioDeckPluginParameter({
+      deckId,
+      parameterId,
+      valueNormalized,
+    }),
+  );
 }

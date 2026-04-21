@@ -31,11 +31,16 @@ import {
   type ExplorerChromeResolvedSurface,
   type ExplorerChromeSurfaceId,
 } from '../config/explorerChromeLayouts';
+import {
+  CONSTELLATION_DEFAULT_LENS,
+  normalizeConstellationLensId,
+  type ConstellationLensId,
+} from '../config/constellationGraph';
 
 export const EXPLORER_STATE_STORAGE_KEY = 'overlayterm-explorer-state-v3';
 export const EXPLORER_STATE_BACKUP_KEY = 'overlayterm-explorer-state-v3.backup';
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = 'fs-bookmarks-v2';
-export const EXPLORER_STATE_VERSION = 7;
+export const EXPLORER_STATE_VERSION = 8;
 export const PRIMARY_EXPLORER_INSTANCE_ID = 'primary';
 export const PRIMARY_EXPLORER_TAB_ID = 'tab-primary';
 const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
@@ -92,6 +97,13 @@ export interface ExplorerSessionSnapshot {
   searchIncludeContent: boolean;
   documentViewMode: ExplorerDocumentViewMode;
   sourcesVisible: boolean;
+  constellation: ExplorerConstellationSessionSnapshot;
+}
+
+export interface ExplorerConstellationSessionSnapshot {
+  activeLens: ConstellationLensId;
+  routeModeEnabled: boolean;
+  pinnedPaths: string[];
 }
 
 export type ExplorerPreviewSplitMode = ExplorerSessionSnapshot['previewSplitMode'];
@@ -175,6 +187,11 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   searchIncludeContent: true,
   documentViewMode: 'edit',
   sourcesVisible: true,
+  constellation: {
+    activeLens: CONSTELLATION_DEFAULT_LENS,
+    routeModeEnabled: false,
+    pinnedPaths: [],
+  },
 };
 
 const defaultExplorerPersistenceNotice: ExplorerPersistenceNotice = {
@@ -187,6 +204,10 @@ function cloneExplorerSessionSnapshot(session: ExplorerSessionSnapshot): Explore
   return {
     ...session,
     history: [...session.history],
+    constellation: {
+      ...session.constellation,
+      pinnedPaths: [...session.constellation.pinnedPaths],
+    },
   };
 }
 

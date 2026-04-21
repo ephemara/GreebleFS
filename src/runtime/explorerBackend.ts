@@ -20,6 +20,15 @@ import {
   type ExplorerEntryThumbnailRequest,
   type ExplorerSavedSearchRecord,
   type ExplorerSavedSearchSaveRequest,
+  type ExplorerSearchMode,
+  type ExplorerSemanticFindSimilarRequest,
+  type ExplorerSemanticIndexBuildRequest,
+  type ExplorerSemanticIndexBuildStartResponse,
+  type ExplorerSemanticIndexSummary,
+  type ExplorerSemanticSearchDiagnostics,
+  type ExplorerSemanticSearchRequest,
+  type ExplorerSemanticSearchResponse,
+  type ExplorerSemanticSearchResult,
   type FsBatchRenameMode,
   type FsArchiveExtractionMode,
   type FsArchiveExtractionRequest,
@@ -85,6 +94,18 @@ export type ExplorerTagMetadataSnapshot = ExplorerTagSnapshot;
 export type ExplorerTagMutation = ExplorerTagMutationRequest;
 export type ExplorerSavedSearch = ExplorerSavedSearchRecord;
 export type ExplorerSavedSearchInput = ExplorerSavedSearchSaveRequest;
+export type ExplorerSearchModeValue = ExplorerSearchMode;
+export type ExplorerSemanticIndexSummaryValue = ExplorerSemanticIndexSummary;
+export type ExplorerSemanticIndexBuildInput = ExplorerSemanticIndexBuildRequest;
+export type ExplorerSemanticIndexBuildStart =
+  ExplorerSemanticIndexBuildStartResponse;
+export type ExplorerSemanticSearchInput = ExplorerSemanticSearchRequest;
+export type ExplorerSemanticSearchResultValue = ExplorerSemanticSearchResult;
+export type ExplorerSemanticSearchDiagnosticsValue =
+  ExplorerSemanticSearchDiagnostics;
+export type ExplorerSemanticSearchOutput = ExplorerSemanticSearchResponse;
+export type ExplorerSemanticFindSimilarInput =
+  ExplorerSemanticFindSimilarRequest;
 export type ExplorerArchiveExtractionMode = FsArchiveExtractionMode;
 export type ExplorerArchiveExtractionInput = FsArchiveExtractionRequest;
 export type ExplorerArchiveExtractionOutcome = FsArchiveExtractionResult;
@@ -367,6 +388,10 @@ export type ExplorerBackendContract = {
   listSavedSearches: typeof listExplorerSavedSearches;
   saveSavedSearch: typeof saveExplorerSavedSearch;
   deleteSavedSearch: typeof deleteExplorerSavedSearch;
+  getSemanticIndexSummary: typeof getExplorerSemanticIndexSummary;
+  buildSemanticIndex: typeof buildExplorerSemanticIndex;
+  searchSemantic: typeof searchExplorerSemantic;
+  findSemanticSimilar: typeof findSimilarExplorerSemantic;
   isCloudPath: typeof isCloudExplorerPath;
   supportsSearch: typeof supportsExplorerSearch;
   supportsNativeIntegration: typeof supportsExplorerNativeIntegration;
@@ -956,6 +981,50 @@ export async function deleteExplorerSavedSearch(id: string): Promise<void> {
   unwrapTauriResult(await commands.explorerSavedSearchesDelete(id));
 }
 
+export async function getExplorerSemanticIndexSummary(
+  rootPath: string,
+): Promise<ExplorerSemanticIndexSummaryValue> {
+  if (isCloudExplorerPath(rootPath)) {
+    throw new Error(
+      "Semantic indexing is only available for local filesystem roots.",
+    );
+  }
+  return unwrapTauriResult(await commands.explorerSemanticIndexGetSummary(rootPath));
+}
+
+export async function buildExplorerSemanticIndex(
+  request: ExplorerSemanticIndexBuildInput,
+): Promise<ExplorerSemanticIndexBuildStart> {
+  if (isCloudExplorerPath(request.rootPath)) {
+    throw new Error(
+      "Semantic indexing is only available for local filesystem roots.",
+    );
+  }
+  return unwrapTauriResult(await commands.explorerSemanticIndexBuild(request));
+}
+
+export async function searchExplorerSemantic(
+  request: ExplorerSemanticSearchInput,
+): Promise<ExplorerSemanticSearchOutput> {
+  if (isCloudExplorerPath(request.rootPath)) {
+    throw new Error(
+      "Semantic search is only available for local filesystem roots.",
+    );
+  }
+  return unwrapTauriResult(await commands.explorerSemanticSearch(request));
+}
+
+export async function findSimilarExplorerSemantic(
+  request: ExplorerSemanticFindSimilarInput,
+): Promise<ExplorerSemanticSearchOutput> {
+  if (isCloudExplorerPath(request.rootPath)) {
+    throw new Error(
+      "Semantic similarity search is only available for local filesystem roots.",
+    );
+  }
+  return unwrapTauriResult(await commands.explorerSemanticFindSimilar(request));
+}
+
 export function supportsExplorerSearch(path: string): boolean {
   return !isCloudExplorerPath(path);
 }
@@ -1089,6 +1158,10 @@ export const explorerBackendContract: ExplorerBackendContract = {
   listSavedSearches: listExplorerSavedSearches,
   saveSavedSearch: saveExplorerSavedSearch,
   deleteSavedSearch: deleteExplorerSavedSearch,
+  getSemanticIndexSummary: getExplorerSemanticIndexSummary,
+  buildSemanticIndex: buildExplorerSemanticIndex,
+  searchSemantic: searchExplorerSemantic,
+  findSemanticSimilar: findSimilarExplorerSemantic,
   isCloudPath: isCloudExplorerPath,
   supportsSearch: supportsExplorerSearch,
   supportsNativeIntegration: supportsExplorerNativeIntegration,
