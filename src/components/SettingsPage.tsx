@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Camera, FolderOpen, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type, VolumeX } from '@/components/AppIcons';
+import { ArrowDown, ArrowUp, Camera, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, VolumeX } from '@/components/AppIcons';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import type { LoadedOverlayAnimation } from './animationRuntime';
@@ -2837,6 +2837,71 @@ export function SettingsPage({
                           <div key={preview.id} className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}>
                             <span style={{ display: 'flex', color: accent }}>{preview.icon}</span>
                             <span className="truncate text-[10px]">{preview.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Panel Tabs</div>
+                          <p className="mt-1 text-[11px] opacity-40">
+                            Panel chrome can target dedicated `panel_&lt;id&gt;` UI slots, including folder plugins that register their own top-bar tabs.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {[
+                          {
+                            id: 'explorer',
+                            label: 'Explorer',
+                            slotId: getPanelIconSlotId('explorer'),
+                            icon: <ThemedPanelIcon panelId="explorer" fallbackSlotId="folder_open" fallbackIcon={FolderOpen} size={15} />,
+                          },
+                          {
+                            id: 'storage',
+                            label: 'Storage',
+                            slotId: getPanelIconSlotId('storage'),
+                            icon: <ThemedPanelIcon panelId="storage" fallbackSlotId="hard_drive" fallbackIcon={HardDrive} size={15} />,
+                          },
+                          {
+                            id: 'notes',
+                            label: 'Notes',
+                            slotId: getPanelIconSlotId('notes'),
+                            icon: <ThemedPanelIcon panelId="notes" fallbackSlotId="sticky_note" fallbackIcon={StickyNote} size={15} />,
+                          },
+                          {
+                            id: 'screenshots',
+                            label: 'Screenshots',
+                            slotId: getPanelIconSlotId('screenshots'),
+                            icon: <ThemedPanelIcon panelId="screenshots" fallbackSlotId="camera" fallbackIcon={Camera} size={15} />,
+                          },
+                          {
+                            id: 'plugins',
+                            label: 'Plugins',
+                            slotId: getPanelIconSlotId('plugins'),
+                            icon: <ThemedPanelIcon panelId="plugins" fallbackSlotId="puzzle" fallbackIcon={Puzzle} size={15} />,
+                          },
+                          {
+                            id: 'settings',
+                            label: 'Settings',
+                            slotId: getPanelIconSlotId('settings'),
+                            icon: <ThemedPanelIcon panelId="settings" fallbackSlotId="settings2" fallbackIcon={Settings2} size={15} />,
+                          },
+                          {
+                            id: 'drawable-canvas',
+                            label: 'Drawable Canvas',
+                            slotId: getPanelIconSlotId('drawable-canvas'),
+                            icon: <ThemedPanelIcon panelId="drawable-canvas" fallbackSlotId="puzzle" fallbackIcon={Puzzle} size={15} />,
+                          },
+                        ].map(preview => (
+                          <div key={preview.id} className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}>
+                            <span style={{ display: 'flex', color: accent }}>{preview.icon}</span>
+                            <div className="min-w-0">
+                              <div className="truncate text-[10px]">{preview.label}</div>
+                              <div className="truncate text-[8px] opacity-40">{preview.slotId}</div>
+                            </div>
                           </div>
                         ))}
                       </div>

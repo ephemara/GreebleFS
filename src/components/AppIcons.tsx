@@ -8,9 +8,11 @@ import * as LucideIcons from 'lucide-react';
 import type { LucideIcon, LucideProps } from 'lucide-react';
 
 import {
+  createPanelIconSlotId,
   getBuiltInIconTheme,
   normalizeIconId,
   resolveIconSrc,
+  resolvePanelIconReference,
   resolveUiIconReference,
   type OverlayResolvedIconTheme,
 } from '../config/iconTheme';
@@ -54,28 +56,78 @@ function renderIconImage(iconSrc: string, props: LucideProps): ReactNode {
   );
 }
 
+function renderResolvedIconReference(
+  iconReference: string | undefined,
+  iconTheme: OverlayResolvedIconTheme,
+  props: LucideProps,
+): ReactNode | null {
+  if (!iconReference) {
+    return null;
+  }
+
+  if (iconReference.startsWith('lucide:')) {
+    const overrideIconName = iconReference.slice('lucide:'.length).trim();
+    const OverrideIcon = lucideIconLookup[overrideIconName];
+    if (OverrideIcon) {
+      return <OverrideIcon {...props} />;
+    }
+    return null;
+  }
+
+  const iconSrc = resolveIconSrc(iconReference, iconTheme);
+  return iconSrc ? renderIconImage(iconSrc, props) : null;
+}
+
 function createThemedIcon(slotId: string, FallbackIcon: LucideIcon): LucideIcon {
   const normalizedSlotId = normalizeIconId(slotId);
 
   return function ThemedIcon(props: LucideProps) {
     const iconTheme = useContext(IconThemeContext);
-    const iconReference = resolveUiIconReference(normalizedSlotId, iconTheme);
-
-    if (iconReference?.startsWith('lucide:')) {
-      const overrideIconName = iconReference.slice('lucide:'.length).trim();
-      const OverrideIcon = lucideIconLookup[overrideIconName];
-      if (OverrideIcon) {
-        return <OverrideIcon {...props} />;
-      }
-    } else if (iconReference) {
-      const iconSrc = resolveIconSrc(iconReference, iconTheme);
-      if (iconSrc) {
-        return renderIconImage(iconSrc, props);
-      }
+    const themedIcon = renderResolvedIconReference(
+      resolveUiIconReference(normalizedSlotId, iconTheme),
+      iconTheme,
+      props,
+    );
+    if (themedIcon) {
+      return themedIcon;
     }
 
     return <FallbackIcon {...props} />;
   } as LucideIcon;
+}
+
+export function ThemedPanelIcon({
+  panelId,
+  fallbackIcon: FallbackIcon,
+  fallbackSlotId,
+  ...props
+}: LucideProps & {
+  panelId: string;
+  fallbackIcon: LucideIcon;
+  fallbackSlotId?: string;
+}) {
+  const iconTheme = useContext(IconThemeContext);
+  const panelIcon = renderResolvedIconReference(
+    resolvePanelIconReference(panelId, iconTheme),
+    iconTheme,
+    props,
+  );
+  if (panelIcon) {
+    return panelIcon;
+  }
+
+  const fallbackThemedIcon = fallbackSlotId
+    ? renderResolvedIconReference(resolveUiIconReference(fallbackSlotId, iconTheme), iconTheme, props)
+    : null;
+  if (fallbackThemedIcon) {
+    return fallbackThemedIcon;
+  }
+
+  return <FallbackIcon {...props} />;
+}
+
+export function getPanelIconSlotId(panelId: string): string {
+  return createPanelIconSlotId(panelId);
 }
 
 export function IconThemeProvider({

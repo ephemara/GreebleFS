@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Icon Themes Now Own Panel Tabs And Plugin Tab Glyphs
+
+- The shell icon-theme system no longer stops at generic stock UI glyphs. Built-in top-bar panels and folder-plugin tabs now have their own reserved icon-theme slots, so packs can restyle explorer-adjacent chrome without special-casing panel components.
+- Durable implementation shape:
+  - `src/config/iconTheme.ts` now exposes `createPanelIconSlotId(panelId)` and `resolvePanelIconReference(panelId, iconTheme)` as the canonical panel-slot helpers. The reserved contract is `uiIcons.panel_<normalized-panel-id>`.
+  - `src/components/AppIcons.tsx` now exports `ThemedPanelIcon`, which resolves panel-specific slots first, then falls back to a generic UI slot, then finally to the Lucide fallback component. `src/panels/panelRegistry.tsx` uses that path for every built-in panel plus every folder plugin panel definition.
+  - `src/components/SettingsPage.tsx` now previews the panel-slot contract directly in the `Icons` section, including built-ins and the bundled `drawable-canvas` plugin. The preview also surfaces the exact slot id so authored packs and future LLMs can copy the convention without spelunking through the registry code.
+  - `icon-themes/Zen/icon-theme.json` now acts as the gold example for panel theming. It ships dedicated SVGs for `panel_storage`, `panel_notes`, `panel_screenshots`, `panel_plugins`, `panel_settings`, `panel_drawable_canvas`, `panel_chronorift`, `panel_filesystem_aquarium`, and `panel_vibe_capsule`, while also demonstrating that plugin slots can alias existing art via `panel_sketchfab: model3d`.
+  - Zen also maps generic shell UI slots like `hard_drive`, `sticky_note`, `camera`, `puzzle`, `settings2`, and `sliders_horizontal` back onto those new panel glyphs, so theme authors can see how panel-specific art and broader shell UI coverage can share the same manifest assets.
+- Durable product note:
+  - Treat `panel_<id>` as the stable contract for any panel-tab icon that should be themeable. New built-in panels and new folder plugins should not wire custom icon rendering paths when a manifest slot can cover the same need.
+  - Keep icon-theme behavior declarative. If a theme wants a plugin tab to look custom, add a `uiIcons.panel_<plugin-id>` entry in the pack instead of teaching the shell about that plugin’s brand.
+- Validation:
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/iconThemePackages.test.ts src/test/panelRegistry.test.tsx src/test/settingsPage.behavior.test.tsx --reporter=dot`
+
 # 2026-04-21 - Explorer Bottom Bar Now Hosts The Full View-Switch Strip
 
 - The explorer no longer traps its experimental view surfaces behind a top-toolbar `Labs` launcher. The bottom status bar is now the primary quick-switch host for explorer view states.

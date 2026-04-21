@@ -229,6 +229,17 @@ export function resolveUiIconReference(
   return theme.uiIcons[normalizeIconId(slotId)];
 }
 
+export function createPanelIconSlotId(panelId: string): string {
+  return `panel_${normalizeIconId(panelId)}`;
+}
+
+export function resolvePanelIconReference(
+  panelId: string,
+  iconTheme?: OverlayResolvedIconTheme,
+): string | undefined {
+  return resolveUiIconReference(createPanelIconSlotId(panelId), iconTheme);
+}
+
 export function resolveFileIconId(
   entryName: string,
   extension: string,

@@ -44,7 +44,12 @@ describe('icon theme package loader', () => {
     expect(zenPackage?.iconTheme.fileExtensions.ts).toBe('typescript');
     expect(zenPackage?.iconTheme.fileNames['cmakelists.txt']).toBe('cmake');
     expect(zenPackage?.iconTheme.folderNames['src-tauri']).toBe('folder_src');
+    expect(zenPackage?.iconTheme.uiIcons.hard_drive).toBe('panel_storage');
+    expect(zenPackage?.iconTheme.uiIcons.panel_storage).toBe('panel_storage');
+    expect(zenPackage?.iconTheme.uiIcons.panel_drawable_canvas).toBe('panel_drawable_canvas');
+    expect(zenPackage?.iconTheme.uiIcons.panel_sketchfab).toBe('model3d');
     expect(zenPackage?.iconTheme.uiIcons.terminal).toBe('shell');
+    expect(zenPackage?.iconTheme.iconDefinitions.panel_storage).toBe('data:image/svg+xml;base64,PHN2Zy8+');
     expect(zenPackage?.iconTheme.iconDefinitions.typescript).toBe('data:image/svg+xml;base64,PHN2Zy8+');
   });
 });
