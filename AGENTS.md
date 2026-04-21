@@ -1,0 +1,4075 @@
+## GreebleFS, OverlayTerm, and `greeble`
+
+This repository has naming drift.
+
+- The repo is `GreebleFS`
+- The Rust package / binary is currently `greeble`
+- Several docs and UX strings still say `OverlayTerm`
+
+Treat those as the same product line unless a task is explicitly about renaming or brand cleanup.
+
+## What This Repo Actually Is
+
+GreebleFS is a desktop workbench built around a premium, highly themeable file explorer and a broader native shell.
+
+It is built from four major layers:
+
+- React 19 + TypeScript + Vite for the shell, panels, theming, layouts, and runtime-authored presentation
+- Tauri 2 + Rust for the native desktop host, filesystem truth, PTY integration, screenshots, plugin/runtime plumbing, and window behavior
+- Specta-generated contracts for the typed bridge between Rust and TypeScript
+- Yazi crates as the explorer engine substrate
+
+This repo should not collapse into “just a file manager.”
+
+The product is supposed to feel like:
+
+- a world-class content browser
+- a native desktop command center
+- a runtime-authored shell that can radically change its identity through themes, layouts, shaders, wallpapers, animations, and plugins
+
+If you need a quick mental model:
+
+- Yazi is the engine room
+- Rust/Tauri is the host and truth layer
+- Specta is the language between worlds
+- React is the shell and orchestration layer
+- the explorer is the flagship workspace, not the whole app
+
+## The UE5 Content Browser Vibe
+
+The explorer is heavily inspired by the feel of Unreal Engine's Content Browser, but this app is not trying to become a literal clone.
+
+What is being borrowed:
+
+- the idea that browsing content can be the hero workflow, not a side utility
+- a serious sources rail, aggressive previewing, and rich selection state
+- a panel that feels dockable, persistent, and powerful enough to live inside a larger workstation
+- workflows that feel asset-first, keyboard-first, and fast enough to trust
+- the sense that the browser is part of a bigger editor shell, not a standalone window with tabs glued on
+
+What is not being borrowed:
+
+- Unreal’s exact visual language
+- Unreal’s engine/editor assumptions
+- a hardcoded single layout
+- a frontend that owns domain truth
+
+The target is “UE5 content browser energy inside a transformable desktop shell,” not cosplay.
+
+Useful repo evidence for this intent:
+
+- `src/components/FileExplorer.tsx` is explicitly described as a UE5-feel explorer
+- `src/components/TerminalOverlay.tsx` references a UE5 content-drawer-style terminal
+- `docs/reference/` contains Unreal Content Browser reference material used as design research
+
+## The Product Shape To Protect
+
+The intended product shape is:
+
+- shell first
+- explorer as flagship mode
+- native/backend owns truth
+- frontend orchestrates and renders
+- theming changes deep presentation, not just accents
+- layouts can materially change the shell without rewriting core behavior
+- plugins can extend the app without forking the whole system
+
+Do not flatten this into a generic enterprise dashboard.
+Do not flatten it into a terminal app with a file picker.
+Do not flatten it into a web file manager wearing expensive CSS.
+
+## How The App Works
+
+At a high level, the runtime flow is:
+
+1. `src/main.tsx`
+   Boots the frontend and initializes managed content roots before the shell renders.
+2. `src/App.tsx`
+   Loads persisted settings, resolves themes/layouts/workbench runtime, hydrates wallpapers/shaders/animations/plugins, and orchestrates the active shell.
+3. `src/panels/panelRegistry.tsx`
+   Defines the built-in panel registry and wires the explorer, terminal, source, notes, screenshots, settings, and plugins surfaces into the shell.
+4. `src/components/FileExplorer.tsx` plus explorer subcomponents
+   Render the hero explorer surface, dual-pane workspace behavior, rail, view modes, previews, and interaction chrome.
+5. `src/runtime/` and `src/generated/tauri.ts`
+   Bridge frontend intent to typed native commands instead of ad hoc raw invoke calls.
+6. `src-tauri/src/*.rs`
+   Execute native work: filesystem reads/mutations, terminal PTY work, screenshot capture, plugin scanning, overlay geometry, cloud/python/domain helpers, and explorer-pro utilities.
+7. Rust/Yazi/services return typed data back through Specta
+   The TS stores/runtime layer adopts that data, and React rerenders the shell.
+
+That separation matters. Protect it.
+
+## Why The Explorer Is Complex
+
+Do not underestimate the explorer. It is one of the most complex surfaces in the repo.
+
+Current scale markers:
+
+- `src/components/FileExplorer.tsx`: about 7.7k lines
+- `src/components/explorer/ExplorerSideRail.tsx`: about 1.2k lines
+- `src/components/explorer/ExplorerWorkspace.tsx`: about 644 lines
+- `src-tauri/src/fs_commands.rs`: about 6k lines
+- `src-tauri/src/explorer_pro_commands.rs`: about 1.1k lines
+
+That size exists because the explorer is not just a directory list. It has to coordinate:
+
+- path navigation and history
+- cached directory loads and search results
+- inline preview behavior
+- multiple explorer view modes
+- experimental explorer runtimes
+- shared session state and named sessions
+- tabs and dual-pane workspace layout
+- bookmarks, drives, tags, and saved searches
+- drag/drop behavior for both in-app and OS targets
+- native icon resolution and entry size measurement
+- long-running file operations and task state
+- overlay mode vs full window mode
+- theme-driven chrome, metrics, density, and presentation
+- fast enough performance to still feel native
+
+The explorer is hard because it combines:
+
+- a demanding UI surface
+- a high-volume async data plane
+- theme/layout transformability
+- native desktop expectations
+- a large number of edge cases around cache invalidation, remounts, stale requests, preview limits, drag semantics, and performance
+
+Do not do casual drive-by edits in the explorer.
+First decide whether the change belongs in:
+
+- Rust commands
+- typed contracts
+- runtime bridge helpers
+- Zustand stores
+- explorer config / recipe files
+- the rendering layer
+
+If you skip that decision and patch the first component you see, you will make the system worse.
+
+## Architecture Intent
+
+The intended layering is:
+
+1. Rust/backend owns filesystem truth, task truth, search truth, watcher truth, preview truth, and native integrations
+2. Specta exports typed contracts into TypeScript
+3. TS runtime/config/store layers orchestrate shell behavior
+4. React components render the UI and push intents downward
+
+This means:
+
+- no filesystem truth living inside components
+- no random `invoke("some_string")` calls scattered through the app if the runtime layer can own them
+- no theme-specific constants pasted directly into large surfaces when a config or recipe layer should own them
+- no Yazi engine edits unless the behavior truly belongs in engine territory
+
+## Repo Map
+
+### `src/` — frontend shell
+
+This is the main React/TypeScript application layer.
+
+Important files and folders:
+
+- `src/main.tsx`
+  Frontend bootstrap and managed-content initialization.
+- `src/App.tsx`
+  Main shell. Handles theme/runtime resolution, panel orchestration, overlay behavior, wallpaper/shader/animation layering, and app mode.
+- `src/panels/`
+  Built-in panel registry and panel metadata.
+- `src/components/`
+  Major UI surfaces including explorer, terminal, source control, screenshots, settings, plugins, and shell chrome.
+- `src/components/explorer/`
+  Explorer-local UI like the side rail, task badge, workspace shell, and related explorer surfaces.
+- `src/config/`
+  One of the highest-leverage folders in the repo. Holds appearance, workbench theme, explorer theme, layout profiles, explorer shell layouts, experimental modes, wallpapers, overlay geometry rules, plugin discovery, hotkeys, and content-root behavior.
+- `src/runtime/`
+  TS-side service layer around generated native bindings and runtime integrations.
+- `src/store/`
+  Zustand stores for settings, explorer state, terminal state, explorer task state, and other persisted shell behavior.
+- `src/generated/tauri.ts`
+  Generated Specta bindings. Do not hand-edit.
+
+### `src-tauri/` — native desktop host
+
+This folder is the Tauri application and the native truth layer.
+
+Important files:
+
+- `src-tauri/src/lib.rs`
+  Tauri setup and app registration entrypoint.
+- `src-tauri/src/fs_commands.rs`
+  Core filesystem and explorer-facing command surface. This is one of the most important backend files in the entire repo.
+- `src-tauri/src/explorer_pro_commands.rs`
+  Higher-level explorer utilities like app-managed trash, duplicate scanning, batch rename, tags, and saved searches.
+- `src-tauri/src/terminal.rs`
+  PTY terminal backend.
+- `src-tauri/src/plugin_commands.rs`
+  Plugin discovery/runtime helpers and directory watching.
+- `src-tauri/src/screenshot_commands.rs`
+  Screenshot capture, crop/save/copy, and monitor-aware image handling.
+- `src-tauri/src/window_commands.rs`
+  Overlay/dock/window behavior and presentation-mode commands.
+- `src-tauri/src/cloud_commands.rs`
+  Cloud-facing command surface.
+- `src-tauri/src/python_commands.rs`
+  Python/runtime integration helpers.
+- `src-tauri/src/desktop_integration.rs`
+  Platform/Desktop integration helpers.
+- `src-tauri/src/specta_bindings.rs`
+  Generates the TypeScript bindings that land in `src/generated/tauri.ts`.
+
+Also note:
+
+- `src-tauri/tauri.conf.json` is release-safe config; dev-only URL injection is handled by scripts
+- `src-tauri/plugins/`, `themes/`, `shaders/`, `animations/`, and `wallpapers/` contain native-side sample/runtime-authored content used by the app host
+
+### `crates/` — contracts, platform helpers, and engine dependencies
+
+Important crates:
+
+- `crates/overlay-contracts/`
+  Shared typed contracts for theme/workbench/plugin-facing metadata crossing the Rust/TS boundary.
+- `crates/overlay-theme/`
+  Theme-related shared crate support.
+- `crates/yazi-specta/`
+  Yazi-facing types exported through Specta for the frontend bridge.
+- `crates/fileexplorer/`
+  Vendored Yazi project and related crates. This is engine substrate, not the first place to patch app behavior.
+- `crates/file-opening*`
+  Platform-specific file opening helpers for Linux/macOS/Windows.
+- `crates/macos/`
+  macOS-specific integration work.
+
+Special caution:
+
+- `crates/explorer/` exists, but the live app primarily routes through `src-tauri/src/fs_commands.rs` plus the TS runtime/store layers
+- do not assume older crates or experiments are the canonical path without verifying current usage
+
+### Runtime-authored content roots
+
+These are not decorative extras. They are part of the product architecture.
+
+- `themes/`
+  Runtime-discovered theme packages
+- `plugins/`
+  Package and file-driven plugins that can contribute panels, commands, assets, themes, shaders, and other capabilities
+- `shaders/`
+  Runtime shader modules
+- `animations/`
+  Runtime animation modules
+- `wallpapers/`
+  Imported and authored wallpaper content
+- `notes/`
+  Managed notes root in development
+- `automations/`
+  Project/team memory and handoff material, not core app runtime code
+
+Development vs release behavior matters:
+
+- `tauri dev` uses repo-relative content roots so authoring happens in the workspace
+- installed/release builds relocate managed content under Tauri app-local data
+
+Do not break that split by assuming `$HOME/plugins`-style paths are still correct.
+
+### Docs and support material
+
+- `ARCHITECTURE.md`
+  Deep architecture notes. Read this first for serious work.
+- `memory.md`
+  Durable project/task memory and lessons learned.
+- `README.md`
+  Product summary and basic commands.
+- `SHIPPLAN.md`
+  Current shipping priorities and performance-first plan.
+- `HEARTBEAT.md`
+  Explorer heartbeat guidance.
+- `docs/reference/`
+  Design/reference material, including Unreal Content Browser source references.
+
+## The Most Important Frontend Files
+
+If you need to reason about the product quickly, start here:
+
+- `src/App.tsx`
+- `src/panels/panelRegistry.tsx`
+- `src/components/FileExplorer.tsx`
+- `src/components/explorer/ExplorerWorkspace.tsx`
+- `src/components/explorer/ExplorerSideRail.tsx`
+- `src/config/appearance.ts`
+- `src/config/workbenchTheme.ts`
+- `src/config/explorerTheme.ts`
+- `src/config/layoutProfiles.ts`
+- `src/config/explorerShellLayouts.ts`
+- `src/config/explorerExperimentalModes.ts`
+- `src/runtime/explorerBackend.ts`
+- `src/store/explorerStore.ts`
+- `src/store/settingsStore.ts`
+
+## Change Routing Guide
+
+When deciding where a change belongs, use this routing:
+
+### Explorer visual treatment, density, chrome, view metrics
+
+Look at:
+
+- `src/config/explorerTheme.ts`
+- `src/config/explorerShellLayouts.ts`
+- `src/config/explorerViewModes.ts`
+- `src/config/explorerExperimentalModes.ts`
+- theme package manifests under `themes/`
+
+### Explorer UI composition, interactions, tabs, preview, rail behavior
+
+Look at:
+
+- `src/components/FileExplorer.tsx`
+- `src/components/explorer/ExplorerWorkspace.tsx`
+- `src/components/explorer/ExplorerSideRail.tsx`
+- `src/store/explorerStore.ts`
+
+### Filesystem truth, search truth, native file operations, explorer metadata, long-running jobs
+
+Look at:
+
+- `src-tauri/src/fs_commands.rs`
+- `src-tauri/src/explorer_pro_commands.rs`
+- `src/runtime/`
+- `src/generated/tauri.ts`
+
+### Workbench shell, panel orchestration, layout runtime, overlay behavior
+
+Look at:
+
+- `src/App.tsx`
+- `src/panels/panelRegistry.tsx`
+- `src/config/layoutProfiles.ts`
+- `src/config/workbenchTheme.ts`
+- `src/config/overlayWindow.ts`
+- `src-tauri/src/window_commands.rs`
+
+### Plugin, shader, wallpaper, animation, theme discovery/runtime
+
+Look at:
+
+- `src/runtime/useFolderPluginRuntime.ts`
+- `src/config/themePackages.ts`
+- `src/config/wallpapers.ts`
+- `src/components/wallpaperRuntime.tsx`
+- `src-tauri/src/plugin_commands.rs`
+
+### Rust/TS contract changes
+
+Do this in order:
+
+1. change Rust types/commands
+2. update `src-tauri/src/specta_bindings.rs` if needed
+3. regenerate bindings
+4. update TS runtime usage
+5. update UI
+
+Do not patch `src/generated/tauri.ts` by hand.
+
+## Product Rules Future Agents Should Not Break
+
+- The shell is first-class. Explorer is the hero surface, not the whole app.
+- Yazi is a capability source, not a UI prison.
+- Themes must stay deep: colors, typography, iconography, motion, shell chrome, render style, wallpaper, shader atmosphere, and layout behavior all matter.
+- Layouts should be able to materially change presentation without forcing a rewrite of domain logic.
+- New native behavior should usually enter through Rust plus typed bindings, then through `src/runtime/`, not directly inside components.
+- Prefer data/config/manifest-driven extension points over inline constants and one-off branching.
+- Keep managed-content dev vs release path behavior intact.
+- Do not assume overlay/dock mode is a separate fake subsystem unless current architecture proves it.
+- Do not scatter raw platform behavior through React when the Tauri layer should own it.
+
+## Known Complexity / Risk Areas
+
+These are easy places to create regressions:
+
+- explorer cache invalidation and stale async completion
+- preview memory limits and large-file handling
+- drag/drop semantics between in-app and OS-native paths
+- overlay geometry, especially Linux/Wayland/X11 behavior
+- developer-mode watcher behavior vs production manual refresh behavior
+- generated contracts and Specta binding drift
+- theme/layout changes that accidentally hardcode one visual identity
+- touching vendored Yazi crates when the change belongs in the app layer
+
+If a change seems simple but touches one of those areas, assume it is not simple.
+
+## What Not To Touch First
+
+Usually do not start in:
+
+- `target/`
+- `src-tauri/target/`
+- `dist/`
+- `node_modules/`
+- `src/generated/tauri.ts`
+- random files under runtime content roots
+- vendored Yazi crates unless you already proved the bug is engine-level
+
+## Practical Workflow For Agents
+
+Before substantial work:
+
+1. read `ARCHITECTURE.md`
+2. skim `memory.md`
+3. inspect the relevant runtime/config/component/backend files
+4. decide the correct layer before editing
+
+When changing behavior:
+
+1. prefer vertical slices over half-finished scaffolding
+2. keep contracts explicit
+3. keep shell logic in shell layers
+4. keep domain truth in Rust/native layers
+5. validate the narrowest relevant path
+
+When changing the explorer:
+
+1. re-check `FileExplorer.tsx`
+2. re-check `ExplorerWorkspace.tsx`
+3. re-check `ExplorerSideRail.tsx`
+4. re-check explorer config and store files
+5. make one durable improvement, not five speculative ones
+
+## Validation Commands
+
+Common commands from this repo:
+
+- `bun run dev`
+- `bun run tauri dev`
+- `bun run build`
+- `bun run test:unit`
+- `bun run test:browser`
+- `bun run test:rust`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+- `bash ./install.sh`
+- `bun run release:linux:install`
+
+Prefer targeted validation when the workspace has known unrelated failures.
+
+## Durable Lessons
+
+- The explorer is performance-sensitive. Prefer routing chrome/metric changes through config/recipe layers instead of scattering magic numbers through `FileExplorer.tsx`.
+- Shared explorer caches are intentional. Clear or invalidate them deliberately in tests and diagnostics instead of assuming mount isolation.
+- Release/install paths and `tauri dev` content roots do not behave the same way. Respect that split.
+- Generated bindings are generated. Regenerate them.
+- The current product identity depends on preserving shell ambition and transformable presentation. If a change makes the app feel more generic, it is probably wrong.
+
+## The Short Version
+
+If you remember nothing else, remember this:
+
+- this repo is building a premium desktop shell, not a dressed-up file manager
+- the explorer is the flagship workspace, inspired by UE5 content-browser energy
+- Rust owns truth
+- Specta owns the bridge
+- TS runtime/store layers orchestrate
+- React renders
+- themes/layouts/plugins are core architecture, not garnish
+
+Protect that shape every time you touch the repo.
+
+## Auto-generated signatures
+<!-- Updated by gen-context.js -->
+<!-- Generated by SigMap gen-context.js v5.4.0 -->
+<!-- Updated: 2026-04-17T09:41:47.561Z -->
+<!-- Do not edit below — regenerate with: node gen-context.js -->
+
+# Code signatures
+
+<!-- Generated by SigMap gen-context.js v5.4.0 -->
+<!-- DO NOT EDIT below the marker line — run gen-context.js to regenerate -->
+
+# Code signatures
+
+## deps
+```
+src/config/workbenchRenderRuntime.ts ← generated/tauri, appearance, layoutProfiles, themeEngineBindings, shellBlueprints
+src/components/WorkbenchNavigationSurface.tsx ← config/appearance, config/workbenchRenderRuntime, OverlayScrollArea, panels/panelRegistry
+src/components/screenshotsUtils.ts ← config/screenshots
+src/test/browser-proof/fileExplorer.repositoryPicker.page.tsx ← ../components/FileExplorer, ../config/appearance, ../components/explorer/explorerRailState, ../config/performanceTelemetry, ../store/explorerStore
+src/runtime/useFolderPluginRuntime.ts ← config/plugins, config/pluginPackages, components/pluginRuntime, config/pluginContributions, components/shaderRuntime
+src/components/themeRendererRuntime.tsx ← config/appearance, config/layoutProfiles, config/workbenchRenderRuntime, wallpaperRuntime, panels/panelRegistry
+src/config/explorerModeProfiles.ts ← explorerShellLayouts, explorerChromeLayouts, explorerExperimentalModes, explorerViewModes
+src/components/explorer/ExplorerChromeSurface.tsx ← ../config/explorerChromeLayouts
+src/runtime/windowHost.ts ← store/settingsStore
+src/panels/panelRegistry.tsx ← config/appearance, config/pluginContributions, components/TerminalOverlay, components/explorer/ExplorerWorkspace, components/PluginsManager
+src/config/explorerTheme.ts ← appearance, generated/tauri, explorerExperimentalModes, explorerViewModes, themeEngineBindings
+src/components/pluginRuntime.tsx ← config/plugins, config/appearance, runtime/moduleRuntime, runtime/pluginPanelRequests
+plugins/sketchfab/AssetBrowser.tsx ← sketchfabService
+src/config/pluginPackages.ts ← appearance, pluginContributions, platform, plugins, themePackages
+src/config/themePackages.ts ← appearance, runtime/themeEngineBackend, components/animationRuntime, components/themeRendererRuntime, iconTheme
+src/config/layoutProfiles.ts ← generated/tauri, runtime/tauriClient, shellBlueprints
+src/components/explorer/constellationLayout.ts ← ../runtime/explorerBackend
+src/store/explorerTaskStore.ts ← runtime/explorerBackend
+src/components/explorer/ExplorerTaskCenterContent.tsx ← ../runtime/explorerBackend, ../store/explorerTaskStore
+src/components/explorer/ExplorerTaskStatusBadge.tsx ← ../runtime/explorerBackend, ../runtime/fileOperationsWindow, ../store/explorerTaskStore, ExplorerTaskCenterContent
+src/config/appearance.ts ← generated/tauri, explorerTheme, workbenchTheme, runtime/themeEngineBackend, components/themeRendererRuntime
+src/runtime/fileOperationsWindow.ts ← explorerBackend
+src/config/explorerArchives.ts ← generated/tauri
+src/components/GitManager.tsx ← config/appearance, config/performanceTelemetry, OverlayScrollArea, AppModal, ResizablePane
+src/components/ScreenshotsManager.tsx ← ResizablePane, store/settingsStore, config/screenshots, config/appearance, screenshotsUtils
+src/runtime/tauriClient.ts ← generated/tauri
+packages/img-editor/src/editor/image-manager/index.ts ← constants, index, history-manager
+src/runtime/moduleRuntime.ts ← moduleRuntimeCore, workerHost
+src/components/ExplorerImageEditor.tsx ← runtime/explorerBackend, runtime/imageEditorRuntime
+src/components/explorer/explorerDirectoryCache.ts ← ../runtime/explorerBackend
+src/runtime/videoEditorBackend.ts ← generated/tauri, tauriClient
+packages/img-editor/src/editor/index.ts ← listeners, module-loader, worker-manager, customized-controls, font-manager
+packages/img-editor/src/editor/ui/toolbar-manager/index.ts ← .., ../shape-manager/shape-utils, default-config
+src/components/explorer/ExplorerWorkspace.tsx ← ../config/appearance, ../config/explorerChromeLayouts, ../config/pluginContributions, ../config/layoutProfiles, ../config/explorerModeProfiles
+src/runtime/audioWorkbenchBackend.ts ← generated/tauri, tauriClient
+src/store/audioEngineStore.ts ← runtime/audioWorkbenchBackend
+src/components/explorer/explorerRailState.ts ← ../config/explorerRail
+src/config/folderIcons.ts ← iconTheme
+src/config/iconTheme.ts ← canonicalIconTheme
+src/config/pilotThemeContract.ts ← explorerExperimentalModes, explorerTheme, explorerShellLayouts, explorerViewModes, wallpapers
+scripts/sync-canonical-icons.mjs ← src/config/canonicalIconTheme
+scripts/run-cargo-tests.mjs ← rust-cargo-test-suite.config
+src/components/explorer/ExplorerSideRail.tsx ← OverlayScrollArea, ../store/explorerStore, ExplorerChromeSurface, explorerRailState, ../runtime/explorerBackend
+src/config/explorerThumbnails.ts ← filePreview
+src/components/explorerJumpFilter.ts ← runtime/explorerBackend
+src/store/explorerStore.ts ← components/explorer/explorerRailState, config/explorerShellLayouts, config/explorerWorkspaceLayouts, config/explorerChromeLayouts
+src/components/explorerBatchRename.ts ← runtime/explorerBackend
+src/components/DevPerformanceHud.tsx ← config/appearance, config/frameTelemetry, runtime/workerHost
+src/config/frameTelemetry.ts ← performanceTelemetry
+src/components/TerminalOverlay.tsx ← config/appearance, config/workbenchTheme, config/python, config/platform, store/explorerStore
+src/runtime/explorerBackend.ts ← config/searchTelemetry, config/runtimeCachePolicy, tauriClient, store/explorerStore, generated/tauri
+src/components/CommandPalette.tsx ← config/appearance, OverlayScrollArea
+src/windows/FileOperationsWindowApp.tsx ← config/appearance, config/platform, config/themePackages, runtime/explorerBackend, runtime/fileOperationsWindow
+src/config/explorerContextMenu.ts ← pluginContributions
+src/config/workbenchPresets.ts ← generated/tauri, shellBlueprints
+src/runtime/themeEngineBackend.ts ← tauriClient, generated/tauri
+src/App.tsx ← panels/panelRegistry, components/PluginsManager, components/CommandPalette, config/animations, config/wallpapers
+src/components/ExplorerAudioWorkbench.tsx ← config/filePreview, runtime/audioWorkbenchBackend, store/audioEngineStore, AppModal
+src/components/ExplorerVideoEditor.tsx ← runtime/videoEditorBackend, store/videoEngineStore, AppModal
+src/components/FileExplorer.tsx ← config/appearance, config/explorerContextMenu, config/explorerArchives, config/pluginContributions, config/explorerRail
+src/components/SettingsPage.tsx ← animationRuntime, wallpaperRuntime, shaderRuntime, config/appearance, config/platform
+src/components/fileExplorerClickBehavior.ts ← store/settingsStore
+src/runtime/videoEngineBackend.ts ← generated/tauri, tauriClient
+src/store/settingsStore.ts ← config/appearance, config/folderIcons, config/platform, config/explorerViewModes, config/explorerExperimentalModes
+src/store/videoEngineStore.ts ← runtime/videoEngineBackend
+```
+
+## todos
+```
+packages/img-editor/src/editor/index.ts:35  # TODO: Обложиться тестами с помощью jest
+packages/img-editor/src/editor/index.ts:36  # TODO: Сделать более симпатичное демо
+packages/img-editor/src/editor/index.ts:37  # TODO: Режим рисования
+packages/img-editor/src/editor/index.ts:38  # TODO: Подумать как работать с переводами в редакторе
+packages/img-editor/src/editor/index.ts:39  # TODO: Сделать чтобы при наведении мыши на область где находится объект под д
+crates/fileexplorer/crates/yazi-watcher/src/reporter.rs:33  # FIXME: LINKED should return Url instead of Path
+```
+
+## changes (last 10 commits — 3 minutes ago)
+```
+src/App.tsx                                   ~App  ~TopBar
+src/components/ExplorerAudioWorkbench.tsx     +formatFadeDuration  +summaryChipStyle  +fadeOverlayStyle  +fadeHandleStyle
+src/components/ExplorerVideoEditor.tsx        +buildFilePreviewUrl  +toolbarButtonStyle  +previewSurfaceStyle  +loadNativeVideoSource
+src/components/FileExplorer.tsx               ~FileExplorer
+src/components/SettingsPage.tsx               ~SettingsPage
+src/components/fileExplorerClickBehavior.ts   +shouldShowExplorerFolderOpenIcon  ~shouldOpenExplorerEntryOnTrigger
+src/runtime/videoEngineBackend.ts             +prepareExplorerVideoEngine  +getExplorerVideoEngineState  +loadExplorerVideoSource  +playExplorerVideo
+src/store/settingsStore.ts                    +normalizeLayoutSettings  ~normalizePanelStateByProfile  ~mergeSettings
+src/store/videoEngineStore.ts                 +ensureVideoEngineHydration  +ensureVideoEngineSubscription  +ensureVideoEngineFeedReady  +useVideoEngineFeed
+```
+
+## crates
+
+### crates/overlay-contracts/src/lib.rs
+```
+pub struct ThemePresentation
+pub struct ThemeCompatibility
+pub struct ThemeDesignToken
+pub struct ThemeLayoutPrimitive
+pub struct ThemeNavigationPattern
+pub struct ThemeAnimationProfile
+pub struct ThemeIconPackManifest
+pub struct ThemeRenderStyleManifest
+pub struct ThemeManifest
+pub struct LayoutPinnedPanel
+pub struct LayoutChromeConfig
+pub struct LayoutControlDockConfig
+pub struct LayoutBehaviorConfig
+pub struct LayoutInteractionConfig
+pub struct LayoutProfile
+pub struct LayoutManifest
+pub struct WorkbenchPanelBinding
+pub struct WorkbenchWindowProfile
+pub struct WorkbenchInputProfile
+pub struct WorkbenchPreset
+pub struct ShellBlueprint
+pub enum ShellBlueprintId
+pub enum ShellNavigationModel
+pub enum ShellSurfaceStyle
+pub enum ThemeDensity
+```
+
+### crates/fileexplorer/crates/yazi-codegen/Cargo.toml
+```
+table [package]
+table [lints]
+table [lib]
+table [dependencies]
+table [dev-dependencies]
+key name
+key description
+key version.workspace
+key edition.workspace
+key license.workspace
+key authors.workspace
+key homepage.workspace
+key repository.workspace
+key rust-version.workspace
+key workspace
+key proc-macro
+key proc-macro2
+key quote
+```
+
+### crates/fileexplorer/crates/yazi-widgets/Cargo.toml
+```
+table [package]
+table [lints]
+table [features]
+table [dependencies]
+table [target."cfg(windows)".dependencies]
+table [target.'cfg(target_os = "macos")'.dependencies]
+key name
+key description
+key version.workspace
+key edition.workspace
+key license.workspace
+key authors.workspace
+key homepage.workspace
+key repository.workspace
+key rust-version.workspace
+key workspace
+key clipboard-win
+```
+
+### crates/fileexplorer/crates/yazi-watcher/src/reporter.rs
+```
+impl Reporter
+```
+
+### crates/fileexplorer/crates/yazi-watcher/src/lib.rs
+```
+pub fn init()
+```
+
+### crates/fileexplorer/crates/yazi-watcher/src/watched.rs
+```
+pub struct Watched
+impl Watched
+impl Watched
+impl Watched
+```
+
+### crates/.reference/bevydcc-greeblefs/README.md
+```
+h1 GreebleFS Adoption Bundle
+```
+
+### crates/.reference/bevydcc-greeblefs/bundle.toml
+```
+table [[category]]
+key bundle_name
+key bundle_version
+key created_for
+key source_workspace
+key strategy
+key id
+key path
+key priority
+key focus
+```
+
+### crates/.reference/bevydcc-greeblefs/gpu-runtime/Cargo.toml
+```
+table [package]
+table [lib]
+table [package.metadata.greeblefs-curation]
+key name
+key version
+key edition
+key publish
+key license
+key description
+key path
+key bundle
+key focus
+key lift_priority
+```
+
+### crates/.reference/bevydcc-greeblefs/gpu-runtime/README.md
+```
+h1 GPU Runtime Bundle
+```
+
+### crates/.reference/bevydcc-greeblefs/asset-pipeline/Cargo.toml
+```
+table [package]
+table [lib]
+table [package.metadata.greeblefs-curation]
+key name
+key version
+key edition
+key publish
+key license
+key description
+key path
+key bundle
+key focus
+key lift_priority
+```
+
+### crates/.reference/bevydcc-greeblefs/asset-pipeline/README.md
+```
+h1 Asset Pipeline Bundle
+```
+
+### crates/.reference/bevydcc-greeblefs/shell-patterns/Cargo.toml
+```
+table [package]
+table [lib]
+table [package.metadata.greeblefs-curation]
+key name
+key version
+key edition
+key publish
+key license
+key description
+key path
+key bundle
+key focus
+key lift_priority
+```
+
+### crates/.reference/bevydcc-greeblefs/shell-patterns/README.md
+```
+h1 Shell Patterns Bundle
+```
+
+### crates/.reference/bevydcc-greeblefs/asset-pipeline/upstream/crates/asset-pipeline/Cargo.toml
+```
+table [package]
+table [lib]
+table [dependencies]
+table [dev-dependencies]
+table [features]
+key name
+key version
+key edition
+key description
+key path
+key thiserror
+key anyhow
+key serde_json
+key blake3
+key tobj
+key parking_lot
+key rayon
+key log
+key walkdir
+key proptest
+key env_logger
+key tempfile
+```
+
+### crates/.reference/bevydcc-greeblefs/gpu-runtime/upstream/crates/gpu-pipeline/Cargo.toml
+```
+table [package]
+table [lib]
+table [features]
+table [dependencies]
+table [dev-dependencies]
+key name
+key version
+key edition
+key description
+key path
+key wgpu
+key pollster
+key thiserror
+key log
+key parking_lot
+key once_cell
+key notify
+key base64
+key image
+key lazy_static
+key noise
+key rand
+key rayon
+key fastrand
+key hashbrown
+```
+
+### crates/.reference/bevydcc-greeblefs/asset-pipeline/upstream/crates/asset-pipeline/README.md
+```
+h1 k-os-asset-pipeline
+h2 Features
+h2 Supported Formats
+h3 Import
+h3 Export
+h3 Future Support (via assimp-rs)
+h2 Usage
+h2 Architecture
+h3 Core Traits
+h4 AssetImporter
+h4 AssetExporter
+h4 AssetProcessor
+h3 Asset Types
+h2 Caching
+h2 Processing Pipeline
+h2 Performance
+h2 Extending
+h3 Custom Importer
+h3 Custom Processor
+h2 Future Enhancements
+h2 Dependencies
+h2 License
+code-fence rust
+code-fence plain
+```
+
+### crates/.reference/bevydcc-greeblefs/gpu-runtime/upstream/crates/gpu-pipeline/README.md
+```
+h1 k-os-gpu-pipeline
+h2 Features
+h2 Usage
+h2 Configuration
+h3 Buffer Pool Configuration
+h2 Architecture
+h3 Pipeline Cache
+h3 Buffer Pool
+h3 Performance Monitor
+h3 Hot-Reloader (Debug Only)
+h2 Integration with K_OS
+h2 Performance Considerations
+h2 Testing
+h1 Run unit tests
+h1 Run with logging
+h1 Run property-based tests
+h2 Dependencies
+h2 License
+code-fence rust
+code-fence plain
+code-fence bash
+```
+
+### crates/.reference/bevydcc-greeblefs/asset-pipeline/upstream/crates/io/Cargo.toml
+```
+table [package]
+table [lib]
+table [dependencies]
+table [dev-dependencies]
+key name
+key version
+key edition
+key description
+key path
+key dirs
+key log
+key base64
+key serde_json
+key serde_yaml
+key thiserror
+key anyhow
+key bincode
+key async-trait
+key rocksdb
+key futures
+key blake3
+key num_cpus
+key rayon
+key ahash
+key gltf-json
+```
+
+### crates/.reference/bevydcc-greeblefs/gpu-runtime/upstream/crates/renderer/Cargo.toml
+```
+table [package]
+table [dependencies]
+key name
+key version
+key edition
+key crossbeam-channel
+key parking_lot
+key pollster
+key thiserror
+key wgpu
+```
+
+### crates/.reference/bevydcc-greeblefs/asset-pipeline/upstream/crates/plugin/Cargo.toml
+```
+table [package]
+table [lib]
+table [dependencies]
+table [dev-dependencies]
+key name
+key version
+key edition
+key description
+key path
+key libloading
+key thiserror
+key serde_json
+key parking_lot
+key log
+key semver
+key sysinfo
+key proptest
+key env_logger
+key tempfile
+```
+
+### crates/.reference/bevydcc-greeblefs/asset-pipeline/upstream/crates/workspace-registry/Cargo.toml
+```
+table [package]
+table [lib]
+table [dependencies]
+table [build-dependencies]
+key name
+key version
+key edition
+key description
+key path
+key serde_json
+key toml
+key quote
+```
+
+### crates/.reference/bevydcc-greeblefs/asset-pipeline/upstream/crates/workspace-registry/build.rs
+```
+impl WorkspaceConfig
+impl PackageOverride
+```
+
+### crates/.reference/bevydcc-greeblefs/gpu-runtime/upstream/crates/wasm/Cargo.toml
+```
+table [package]
+table [lib]
+table [dependencies]
+key name
+key version
+key edition
+key wasm-bindgen
+key wasm-bindgen-futures
+key serde_json
+key serde-wasm-bindgen
+key lazy_static
+key wgpu
+key js-sys
+key nalgebra
+```
+
+### crates/.reference/bevydcc-greeblefs/asset-pipeline/upstream/crates/workspace-registry/build_public_api.rs
+```
+pub struct PublicApiRegistryDocument
+pub struct PublicApiPackageRecord
+pub struct PublicApiEntrypointRecord
+pub struct PublicApiItemRecord
+pub struct ApiBloatPressureReport
+pub struct ApiBloatPressureRecord
+impl PublicApiCollector
+pub fn collect_public_api_registry(workspace_root: &Path, packages: &[super::CargoPackage],) → PublicApiRegistryDocument
+pub fn render_public_api_summary(document: &PublicApiRegistryDocument) → String
+pub fn derive_api_bloat_pressure_report(document: &PublicApiRegistryDocument,) → ApiBloatPressureReport
+pub fn render_api_bloat_pressure_summary(report: &ApiBloatPressureReport) → String
+```
+
+### crates/.reference/bevydcc-greeblefs/shell-patterns/upstream/crates/ui/Cargo.toml
+```
+table [package]
+table [dependencies]
+key name
+key version
+key description
+key edition
+key base64
+key bevy_egui
+key egui_dock
+key egui-file-dialog
+key egui-notify
+key image
+key serde_json
+```
+
+### crates/.reference/bevydcc-greeblefs/shell-patterns/upstream/crates/bevy/Cargo.toml
+```
+table [package]
+table [[bin]]
+table [dependencies]
+key name
+key version
+key description
+key authors
+key edition
+key default-run
+key path
+key bevy_egui
+key bevy_hanabi
+key bevy_tweening
+key bevy-inspector-egui
+key serde_json
+key toml
+key log
+key env_logger
+key wgpu
+key base64
+key rand
+key image
+```
+
+### crates/.reference/bevydcc-greeblefs/Cargo.toml
+```
+table [workspace]
+key resolver
+```
+
+### crates/.reference/README.md
+```
+h1 Native Reference Bundles
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/asset-pipeline/src/hash.rs
+```
+pub fn hash_file(path: &Path) → Result<String>
+pub fn hash_bytes(data: &[u8]) → String
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/asset-pipeline/src/cache.rs
+```
+pub struct AssetCache
+pub struct CacheStats
+impl AssetCache
+  pub fn new(cache_dir: PathBuf) → Result<Self>
+  pub fn get(&self, path: &Path) → Result<Option<Asset>>
+  pub fn put(&self, asset: &Asset) → Result<()>
+  pub fn clear(&self) → Result<()>
+  pub fn stats(&self) → CacheStats
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/asset-pipeline/src/pipeline.rs
+```
+pub struct AssetPipeline
+pub trait AssetImporter
+pub trait AssetExporter
+pub trait AssetProcessor
+impl AssetPipeline
+  pub fn new(cache_dir: PathBuf) → Result<Self>
+  pub fn register_importer(&self, importer: Arc<dyn AssetImporter>)
+  pub fn register_exporter(&self, exporter: Arc<dyn AssetExporter>)
+  pub fn register_processor(&self, processor: Arc<dyn AssetProcessor>)
+  pub fn import(&self, path: &Path) → Result<Asset>
+  pub fn export(&self, asset: &Asset, path: &Path, format: &str) → Result<()>
+  pub fn process(&self, asset: &mut Asset) → Result<()>
+  pub fn clear_cache(&self) → Result<()>
+```
+
+### crates/greeblefs/README.md
+```
+h1 GreebleFS Adoption Bundle
+```
+
+### crates/greeblefs/asset-pipeline/README.md
+```
+h1 Asset Pipeline Bundle
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/plugin/src/context.rs
+```
+pub struct PluginContext
+pub enum LogLevel
+impl PluginContext
+  pub fn new() → Self
+  pub fn with_name(plugin_name: impl Into<String>) → Self
+  pub fn plugin_name(&self) → &str
+  pub fn register_capability(&mut self, capability: impl Into<String>)
+  pub fn has_capability(&self, capability: &str) → bool
+  pub fn require_capability(&self, capability: &str) → Result<()>
+  pub fn add_restricted_resource(&mut self, resource: impl Into<String>)
+  pub fn is_resource_restricted(&self, resource: &str) → bool
+impl PluginContext
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/plugin/src/resource_limits.rs
+```
+pub struct ResourceLimits
+pub struct ResourceMonitor
+pub struct ResourceUsage
+impl ResourceLimits
+impl ResourceLimits
+  pub fn unlimited() → Self
+  pub fn strict() → Self
+  pub fn relaxed() → Self
+impl ResourceMonitor
+  pub fn new(plugin_name: impl Into<String>, limits: ResourceLimits) → Self
+  pub fn start_operation(&self)
+  pub fn check_operation_time(&self) → Result<()>
+  pub fn end_operation(&self)
+  pub fn allocate_memory(&self, bytes: u64) → Result<()>
+  pub fn deallocate_memory(&self, bytes: u64)
+  pub fn memory_usage(&self) → u64
+  pub fn open_file_handle(&self) → Result<()>
+impl ResourceUsage
+  pub fn memory_percent(&self) → f64
+  pub fn file_handle_percent(&self) → f64
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/asset-pipeline/src/asset.rs
+```
+pub struct Asset
+pub struct MeshData
+pub struct TextureData
+pub struct MaterialData
+pub struct AnimationData
+pub struct AnimationChannel
+pub struct SceneData
+pub struct SceneNode
+pub enum AssetType
+pub enum AssetData
+pub enum TextureFormat
+pub enum AnimationChannelType
+impl Asset
+  pub fn new(id: String, asset_type: AssetType, source_path: PathBuf, data: AssetData) → Self
+  pub fn add_metadata(&mut self, key: String, value: String)
+  pub fn get_metadata(&self, key: &str) → Option<&String>
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/asset-pipeline/README.md
+```
+h1 k-os-asset-pipeline
+h2 Features
+h2 Supported Formats
+h3 Import
+h3 Export
+h3 Future Support (via assimp-rs)
+h2 Usage
+h2 Architecture
+h3 Core Traits
+h4 AssetImporter
+h4 AssetExporter
+h4 AssetProcessor
+h3 Asset Types
+h2 Caching
+h2 Processing Pipeline
+h2 Performance
+h2 Extending
+h3 Custom Importer
+h3 Custom Processor
+h2 Future Enhancements
+h2 Dependencies
+h2 License
+code-fence rust
+code-fence plain
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/asset-pipeline/src/metadata.rs
+```
+pub struct AssetMetadata
+impl AssetMetadata
+  pub fn new() → Self
+  pub fn insert(&mut self, key: String, value: String)
+  pub fn get(&self, key: &str) → Option<&String>
+impl AssetMetadata
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/asset-pipeline/Cargo.toml
+```
+table [package]
+table [lib]
+table [dependencies]
+table [dev-dependencies]
+table [features]
+key name
+key version
+key edition
+key description
+key path
+key thiserror
+key anyhow
+key serde_json
+key blake3
+key tobj
+key parking_lot
+key rayon
+key log
+key walkdir
+key proptest
+key env_logger
+key tempfile
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/plugin/Cargo.toml
+```
+table [package]
+table [lib]
+table [dependencies]
+table [dev-dependencies]
+key name
+key version
+key edition
+key description
+key path
+key libloading
+key thiserror
+key serde_json
+key parking_lot
+key log
+key semver
+key sysinfo
+key proptest
+key env_logger
+key tempfile
+```
+
+### crates/greeblefs/Cargo.toml
+```
+table [workspace]
+key resolver
+```
+
+### crates/greeblefs/asset-pipeline/Cargo.toml
+```
+table [package]
+table [lib]
+table [package.metadata.greeblefs-curation]
+key name
+key version
+key edition
+key publish
+key license
+key description
+key path
+key bundle
+key focus
+key lift_priority
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/workspace-registry/Cargo.toml
+```
+table [package]
+table [lib]
+table [dependencies]
+table [build-dependencies]
+key name
+key version
+key edition
+key description
+key path
+key serde_json
+key toml
+key quote
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/io/Cargo.toml
+```
+table [package]
+table [lib]
+table [dependencies]
+table [dev-dependencies]
+key name
+key version
+key edition
+key description
+key path
+key dirs
+key log
+key base64
+key serde_json
+key serde_yaml
+key thiserror
+key anyhow
+key bincode
+key async-trait
+key rocksdb
+key futures
+key blake3
+key num_cpus
+key rayon
+key ahash
+key gltf-json
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/workspace-registry/build.rs
+```
+impl WorkspaceConfig
+impl PackageOverride
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/workspace-registry/build_public_api.rs
+```
+pub struct PublicApiRegistryDocument
+pub struct PublicApiPackageRecord
+pub struct PublicApiEntrypointRecord
+pub struct PublicApiItemRecord
+pub struct ApiBloatPressureReport
+pub struct ApiBloatPressureRecord
+impl PublicApiCollector
+pub fn collect_public_api_registry(workspace_root: &Path, packages: &[super::CargoPackage],) → PublicApiRegistryDocument
+pub fn render_public_api_summary(document: &PublicApiRegistryDocument) → String
+pub fn derive_api_bloat_pressure_report(document: &PublicApiRegistryDocument,) → ApiBloatPressureReport
+pub fn render_api_bloat_pressure_summary(report: &ApiBloatPressureReport) → String
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/gpu-pipeline/src/device.rs
+```
+pub struct GpuComputeDevice
+impl GpuComputeDevice
+  pub async fn init() → Result<Arc<Mutex<Self>>, St...
+  pub async fn init() → Result<Arc<Mutex<Self>>, St...
+  pub fn get() → Arc<Mutex<Self>>
+  pub fn get() → Arc<Mutex<Self>>
+  pub fn try_get() → Option<Arc<Mutex<Self>>>
+  pub fn try_get() → Option<Arc<Mutex<Self>>>
+  pub fn get_or_init_blocking() → Result<Arc<Mutex<Self>>, St...
+pub fn register_gpu_error_handler(handler: impl Fn(String, String)
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/gpu-pipeline/src/performance.rs
+```
+pub struct PerformanceStats
+pub struct PerformanceMonitor
+impl PerformanceStats
+impl PerformanceMonitor
+  pub fn new() → Self
+  pub fn record_buffer_allocation(&self, size: u64)
+  pub fn record_buffer_deallocation(&self, size: u64)
+  pub fn record_pipeline_compilation(&self, duration: Duration)
+  pub fn record_compute_dispatch(&self)
+  pub fn record_frame(&self)
+  pub fn get_stats(&self) → PerformanceStats
+  pub fn reset(&self)
+impl PerformanceMonitor
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/gpu-pipeline/src/buffer_pool.rs
+```
+pub struct BufferPoolConfig
+pub struct BufferPool
+impl BufferPoolConfig
+impl BufferPool
+  pub fn new(config: BufferPoolConfig) → Self
+  pub fn get_buffer(&self, device: &Device, size: u64, usage: BufferUsages) → Result<Buffer>
+  pub fn return_buffer(&self, buffer: Buffer)
+  pub fn clear(&self)
+  pub fn len(&self) → usize
+  pub fn is_empty(&self) → bool
+  pub fn current_memory(&self) → u64
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/gpu-pipeline/src/mesh_bridge.rs
+```
+pub struct GpuMeshUploadPlan
+pub struct GpuMeshUploadSummary
+pub struct GpuMeshBufferHandles
+pub struct GpuMeshBufferSizing
+pub struct GpuMeshBufferGrowthPolicy
+pub struct GpuUploadRange
+pub struct GpuMeshPartialUploadPlan
+pub struct GpuMeshBridge
+impl GpuMeshBufferGrowthPolicy
+impl GpuMeshBridge
+  pub fn plan_from_viewport_payload(payload: &ViewportBufferPayload) → GpuMeshUploadPlan
+  pub fn summarize(plan: &GpuMeshUploadPlan) → GpuMeshUploadSummary
+  pub fn allocate_buffers(manager: &mut crate::GPUPipelineManager, plan: &GpuMeshUploadPlan,) → Result<GpuMeshBufferHandles>
+  pub fn allocate_buffers_with_sizing(manager: &mut crate::GPUPipelineManager, sizing: GpuMeshBufferSizing,) → Result<GpuMeshBufferHandles>
+  pub fn upload_plan(manager: &crate::GPUPipelineManager, buffers: &GpuMeshBufferHandles, plan: &GpuMeshUploadPlan,) → Result<()>
+  pub fn build_partial_upload_plan(previous: Option<&GpuMeshUploadPlan>, current: &GpuMeshUploadPlan,) → GpuMeshPartialUploadPlan
+  pub fn upload_partial_plan(manager: &crate::GPUPipelineManager, buffers: &GpuMeshBufferHandles, partial: &GpuMeshPartialUploadPlan,) → Result<usize>
+pub fn next_buffer_capacity_with_policy(required: u64, current: Option<u64>, policy: GpuMeshBufferGrowthPolicy,) → u64
+pub fn next_buffer_capacity(required: u64, current: Option<u64>) → u64
+```
+
+### crates/greeblefs/gpu-runtime/README.md
+```
+h1 GPU Runtime Bundle
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/gpu-pipeline/src/pipeline_cache.rs
+```
+pub struct PipelineCache
+impl PipelineCache
+  pub fn new(device: Arc<Device>) → Self
+  pub fn get_or_create(&self, shader_name: &str) → Result<&ComputePipeline>
+  pub fn register_shader_source(&self, name: impl Into<String>, source: impl Into<String>)
+  pub fn invalidate(&self, shader_name: &str)
+  pub fn clear(&self)
+  pub fn len(&self) → usize
+  pub fn is_empty(&self) → bool
+  pub fn cached_names(&self) → Vec<String>
+```
+
+### crates/greeblefs/asset-pipeline/upstream/crates/workspace-registry/src/lib.rs
+```
+pub struct WorkspaceRegistryDocument
+pub struct PublicApiRegistryDocument
+pub struct WorkspacePackageRecord
+pub struct WorkspaceExternalManifestRecord
+pub struct WorkspaceArtifactRecord
+pub struct PublicApiPackageRecord
+pub struct PublicApiEntrypointRecord
+pub struct PublicApiItemRecord
+pub struct ApiBloatPressureReport
+pub struct ApiBloatPressureRecord
+pub struct IntegrationRegistryDocument
+pub struct IntegrationPackageRecord
+pub struct AdapterManifestsDocument
+pub struct AdapterManifestRecord
+pub struct AdapterPackageBinding
+pub fn workspace_registry_json() → &'static str
+pub fn workspace_registry() → &'static WorkspaceRegistryD...
+pub fn public_api_registry_json() → &'static str
+pub fn public_api_registry() → &'static PublicApiRegistryD...
+pub fn api_bloat_pressure_json() → &'static str
+pub fn api_bloat_pressure_report() → &'static ApiBloatPressureRe...
+pub fn integration_registry_json() → &'static str
+pub fn integration_registry() → &'static IntegrationRegistr...
+pub fn adapter_manifests_json() → &'static str
+pub fn adapter_manifests() → &'static AdapterManifestsDo...
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/gpu-pipeline/src/staging.rs
+```
+pub struct StagingBufferPool
+impl StagingBufferPool
+  pub fn new() → Self
+  pub fn get_or_create(&mut self, device: &wgpu::Device, size: u64) → wgpu::Buffer
+  pub fn return_buffer(&mut self, buffer: wgpu::Buffer, size: u64)
+  pub fn clear(&mut self)
+impl StagingBufferPool
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/gpu-pipeline/README.md
+```
+h1 k-os-gpu-pipeline
+h2 Features
+h2 Usage
+h2 Configuration
+h3 Buffer Pool Configuration
+h2 Architecture
+h3 Pipeline Cache
+h3 Buffer Pool
+h3 Performance Monitor
+h3 Hot-Reloader (Debug Only)
+h2 Integration with K_OS
+h2 Performance Considerations
+h2 Testing
+h1 Run unit tests
+h1 Run with logging
+h1 Run property-based tests
+h2 Dependencies
+h2 License
+code-fence rust
+code-fence plain
+code-fence bash
+```
+
+### crates/greeblefs/bundle.toml
+```
+table [[category]]
+key bundle_name
+key bundle_version
+key created_for
+key source_workspace
+key strategy
+key id
+key path
+key priority
+key focus
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/gpu-pipeline/Cargo.toml
+```
+table [package]
+table [lib]
+table [features]
+table [dependencies]
+table [dev-dependencies]
+key name
+key version
+key edition
+key description
+key path
+key wgpu
+key pollster
+key thiserror
+key log
+key parking_lot
+key once_cell
+key notify
+key base64
+key image
+key lazy_static
+key noise
+key rand
+key rayon
+key fastrand
+key hashbrown
+```
+
+### crates/greeblefs/gpu-runtime/Cargo.toml
+```
+table [package]
+table [lib]
+table [package.metadata.greeblefs-curation]
+key name
+key version
+key edition
+key publish
+key license
+key description
+key path
+key bundle
+key focus
+key lift_priority
+```
+
+### crates/greeblefs/shell-patterns/upstream/crates/ui/src/asset_browser.rs
+```
+pub struct AssetEntry
+pub struct BrowserFolder
+pub struct ContextMenuState
+pub struct AssetBrowserFilesystemConfig
+pub struct BrowserState
+pub struct SpawnFromBrowserEvent
+pub struct AssetBrowserImportRequest
+pub struct KernelSyncEvent
+pub struct ToggleBrowserEvent
+pub struct SetActiveAssetEvent
+pub struct AssetBrowserPlugin
+pub enum AssetType
+impl AssetType
+  pub fn color(&self) → egui::Color32
+  pub fn label(&self) → &'static str
+impl BrowserFolder
+  pub fn new(name: &str) → Self
+  pub fn add_asset(&mut self, path: &[&str], asset: AssetEntry)
+  pub fn asset_count(&self) → usize
+impl AssetBrowserFilesystemConfig
+impl AssetImportDialogState
+impl BrowserState
+impl BrowserState
+  pub fn current_folder(&self) → &BrowserFolder
+  pub fn get_display_assets(&self) → Vec<&AssetEntry>
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/renderer/src/render_graph.rs
+```
+pub struct DrawPacket
+pub struct RendererShaderBinding
+pub struct RenderResourceBinding
+pub struct RenderPassNode
+pub struct RenderGraphExecutionContext
+pub struct RenderGraphExecutionReport
+pub struct RenderGraph
+pub enum RenderPassKind
+pub enum RenderMetric
+pub enum DispatchTopology
+pub enum ResourceExtent
+pub enum ResourceDataType
+pub enum RenderResourceUsage
+pub enum ResourceInit
+impl RenderPassKind
+  pub fn as_str(self) → &'static str
+impl RenderGraphExecutionContext
+impl RenderGraph
+impl RenderGraph
+  pub fn pass_count(&self) → usize
+  pub fn shader_bindings(&self) → Vec<&'static RendererShader...
+  pub fn validate_catalog(&self) → Vec<&'static str>
+  pub fn execute(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, ctx: &RenderGraphExecutionContext,) → Result<RenderGraphExecution...
+pub fn renderer_shader_catalog() → &'static BTreeMap<RenderPas...
+pub fn renderer_shader_for_pass(pass: RenderPassKind) → Option<&'static RendererSha...
+```
+
+### crates/greeblefs/shell-patterns/upstream/crates/ui/src/dock.rs
+```
+pub struct DockWorkspaceState
+pub struct DockWorkspacePlugin
+impl DockWorkspaceState
+impl DockWorkspaceState
+  pub fn focus_tab(&mut self, target: impl Into<String>)
+impl DockWorkspacePlugin
+impl DockWorkspaceViewer
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/renderer/src/service.rs
+```
+pub struct RendererService
+pub enum RendererCommand
+impl RendererService
+  pub fn create_viewport(&self, config: ViewportConfig) → Result<ViewportHandle, Rend...
+  pub fn dispose_viewport(&self, viewport: ViewportHandle) → Result<(), RendererError>
+  pub fn attach_mesh(&self, viewport: ViewportHandle, mesh: MeshHandle,) → Result<crate::types::Render...
+  pub fn detach_mesh(&self, viewport: ViewportHandle, render_mesh: crate::types::RenderMeshHandle,) → Result<(), RendererError>
+  pub fn set_camera(&self, viewport: ViewportHandle, camera: CameraState,) → Result<(), RendererError>
+  pub fn request_redraw(&self, viewport: ViewportHandle) → Result<(), RendererError>
+  pub fn request_selection(&self, viewport: ViewportHandle, ndc: [f32; 2],) → Result<SelectionResult, Ren...
+  pub fn get_stats(&self, viewport: ViewportHandle) → Result<FrameStats, Renderer...
+pub fn spawn_headless_service() → RendererService
+pub fn spawn_headless_service_with_source(mesh_source: Option<Arc<dyn EvaluatedMeshSource>>,) → RendererService
+pub fn spawn_headless_service_with_source_and_bridge(mesh_source: Option<Arc<dyn EvaluatedMeshSource>>, upload_bridge: Option<Arc<dyn RendererUploadBridge>>,) → RendererService
+```
+
+### crates/greeblefs/shell-patterns/README.md
+```
+h1 Shell Patterns Bundle
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/wasm/src/lib.rs
+```
+pub async fn init_gpu(_canvas: HtmlCanvasElement) → Result<(), JsValue>
+pub fn spawn_primitive(primitive_id: String, params: JsValue) → Result<JsValue, JsValue>
+pub fn raycast_init(positions: Vec<f32>, indices: Vec<u32>, uvs: Option<Vec<f32>>,) → Result<u64, JsValue>
+pub fn raycast(handle: u64, origin: Box<[f32]>, direction: Box<[f32]>) → Result<JsValue, JsValue>
+pub fn raycast_dispose(handle: u64) → Result<(), JsValue>
+pub fn sculpt_init(positions: Vec<f32>, indices: Vec<u32>) → Result<u64, JsValue>
+pub fn sculpt_apply(handle: u64, point: Box<[f32]>, normal: Box<[f32]>, tool: String, radius: f32, intensity: f32, use_gpu: bool,) → Result<JsValue, JsValue>
+pub fn sculpt_get_positions(handle: u64) → Result<Box<[f32]>, JsValue>
+pub fn sculpt_dispose(handle: u64) → Result<(), JsValue>
+pub fn painter_init() → u64
+pub fn painter_update(handle: u64, x: f32, y: f32, pressure: f32, params: JsValue,) → Result<JsValue, JsValue>
+pub fn painter_reset(handle: u64) → Result<(), JsValue>
+pub fn painter_dispose(handle: u64) → Result<(), JsValue>
+```
+
+### crates/greeblefs/shell-patterns/upstream/crates/bevy/Cargo.toml
+```
+table [package]
+table [[bin]]
+table [dependencies]
+key name
+key version
+key description
+key authors
+key edition
+key default-run
+key path
+key bevy_egui
+key bevy_hanabi
+key bevy_tweening
+key bevy-inspector-egui
+key serde_json
+key toml
+key log
+key env_logger
+key wgpu
+key base64
+key rand
+key image
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/renderer/Cargo.toml
+```
+table [package]
+table [dependencies]
+key name
+key version
+key edition
+key crossbeam-channel
+key parking_lot
+key pollster
+key thiserror
+key wgpu
+```
+
+### crates/greeblefs/shell-patterns/Cargo.toml
+```
+table [package]
+table [lib]
+table [package.metadata.greeblefs-curation]
+key name
+key version
+key edition
+key publish
+key license
+key description
+key path
+key bundle
+key focus
+key lift_priority
+```
+
+### crates/greeblefs/gpu-runtime/upstream/crates/wasm/Cargo.toml
+```
+table [package]
+table [lib]
+table [dependencies]
+key name
+key version
+key edition
+key wasm-bindgen
+key wasm-bindgen-futures
+key serde_json
+key serde-wasm-bindgen
+key lazy_static
+key wgpu
+key js-sys
+key nalgebra
+```
+
+### crates/greeblefs/shell-patterns/upstream/crates/ui/Cargo.toml
+```
+table [package]
+table [dependencies]
+key name
+key version
+key description
+key edition
+key base64
+key bevy_egui
+key egui_dock
+key egui-file-dialog
+key egui-notify
+key image
+key serde_json
+```
+
+### crates/greeblefs/shell-patterns/upstream/crates/ui/src/surfaces.rs
+```
+pub struct UiSurfaceKey
+pub struct UiNode
+pub struct UiDocV1
+pub struct UiSurfaceInfo
+pub struct UiSurfaceRegistry
+pub struct UiDocStore
+pub struct UiSurfaceAction
+pub struct UiRenderCtx
+pub struct UiWidgetDefinition
+pub struct UiWidgetRegistry
+pub struct UiLocalState
+pub struct UiSurfacesHudState
+pub struct UiSurfacesPlugin
+impl UiSurfaceKey
+  pub fn new(app_key: impl Into<String>, surface_key: impl Into<String>) → Self
+impl UiSurfaceRegistry
+  pub fn register(&mut self, info: UiSurfaceInfo)
+  pub fn list(&mut self) → &[UiSurfaceInfo]
+impl UiDocStore
+  pub fn get_or_load(&mut self, info: &UiSurfaceInfo) → UiDoc
+  pub fn set_override(&mut self, key: UiSurfaceKey, doc: UiDoc)
+impl UiSurfaceAction
+impl UiRenderCtx
+  pub fn render_node(&mut self, ui: &mut egui::Ui, node: &UiNode)
+  pub fn render_children(&mut self, ui: &mut egui::Ui, children: &[UiNode])
+```
+
+### crates/greeblefs/shell-patterns/upstream/crates/ui/src/notifications.rs
+```
+pub struct EditorNotificationEvent
+pub struct EditorNotificationsPlugin
+pub enum EditorNotificationLevel
+impl EditorNotificationEvent
+  pub fn success(message: impl Into<String>) → Self
+  pub fn info(message: impl Into<String>) → Self
+  pub fn warning(message: impl Into<String>) → Self
+  pub fn error(message: impl Into<String>) → Self
+  pub fn new(level: EditorNotificationLevel, message: impl Into<String>) → Self
+impl EditorNotificationEvent
+impl EditorNotificationsPlugin
+```
+
+### crates/greeblefs/shell-patterns/upstream/crates/ui/src/panels.rs
+```
+pub struct SuitePanelDefinition
+pub struct SuitePanelRegistry
+pub struct DockWorkspaceLayoutTemplate
+pub struct KeyValuePanelRow
+pub struct KeyValuePanelData
+pub struct KeyValuePanelStore
+pub enum SuitePanelKind
+pub enum PanelSplitAxis
+pub enum PanelLayoutNode
+impl SuitePanelDefinition
+  pub fn new(key: impl Into<String>, title: impl Into<String>, kind: SuitePanelKind,) → Self
+  pub fn with_data_source(mut self, data_source_key: impl Into<String>) → Self
+  pub fn closeable(mut self, closeable: bool) → Self
+impl SuitePanelRegistry
+  pub fn register(&mut self, definition: SuitePanelDefinition)
+  pub fn contains(&self, key: &str) → bool
+  pub fn get(&self, key: &str) → Option<&SuitePanelDefinition>
+  pub fn list(&self) → impl Iterator<Item = &Suite...
+impl DockWorkspaceLayoutTemplate
+impl KeyValuePanelRow
+  pub fn new(label: impl Into<String>, value: impl Into<String>) → Self
+impl KeyValuePanelStore
+  pub fn set_panel(&mut self, key: impl Into<String>, data: KeyValuePanelData)
+  pub fn get(&self, key: &str) → Option<&KeyValuePanelData>
+```
+
+## docs
+
+### docs/release-compatibility.md
+```
+h1 Release Compatibility
+```
+
+## packages
+
+### packages/img-editor/src/editor/image-manager/index.ts
+```
+export type SuccessulImageImportResult
+export type SuccessfulExportResult
+export type ImportImageOptions
+export type ResizeImageToBoundariesOptions
+export type ExportObjectAsImageFileParameters
+export type exportCanvasAsImageFileOptions
+```
+
+### packages/img-editor/src/editor/index.ts
+```
+export class ImageEditor
+  constructor(canvasId, options)
+  async init() → Promise<void>
+  if(showRotationAngle)
+```
+
+### packages/img-editor/src/editor/ui/toolbar-manager/index.ts
+```
+export type ToolbarConfig
+```
+
+## plugins
+
+### plugins/sketchfab/sketchfabService.ts
+```
+export interface SketchfabAuthorSummary
+  username: string
+  displayName: string
+  profileUrl: string
+export interface SketchfabLicenseSummary
+  label: string
+  requirements: string[]
+  url: string | null
+export interface SketchfabModelSummary
+  uid: string
+  name: string
+  description: string
+  viewerUrl: string
+  thumbnailUrl: string | null
+  author: SketchfabAuthorSummary
+  license: SketchfabLicenseSummary | null
+  vertexCount: number | null
+export interface SketchfabSearchResult
+  models: SketchfabModelSummary[]
+  totalCount: number
+  nextCursor: string | null
+  prevCursor: string | null
+export interface SketchfabDownloadAsset
+  format: 'glb' | 'gltf' | 'original'
+  url: string
+```
+
+### plugins/sketchfab/AssetBrowser.tsx
+```
+component SketchfabBrowserPanel
+component InfoBadge
+component SidebarCard
+component EmptyStateCard
+component TagChip
+hook useState
+hook useRef
+hook useEffect
+hook useMemo
+handler onPath
+handler onLeafName
+handler onSubmit
+handler onChange
+```
+
+## scripts
+
+### scripts/run-platform-tauri.mjs
+```
+export function buildLinuxGraphicsEnvironment({ tauriCommand, existingEnv = process.env, platform = process.platform, } = {})
+export function buildManagedContentDirectoryEnvironment({ tauriCommand, projectRootPath = projectRoot, existingEnv = process.env, } = {})
+function hasExplicitEnvValue(value)
+function getLibcFlavor()
+function getNativeBindingPackageName()
+async function pathExists(targetPath)
+async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand)
+function runCommand(command, args, extraEnv = {})
+function commandExists(command)
+function getPackageManagerCommand()
+async function readSharedCliVersion()
+async function ensureNativeBindingAvailable()
+async function main()
+```
+
+### scripts/sync-canonical-icons.mjs
+```
+function normalizeIconPath(iconPath)
+async function pathExists(targetPath)
+function buildCanonicalIconFileNames()
+function buildSourceCandidates(fileName)
+async function resolveSourceIconPath(fileName)
+function createFallbackIconSvg(fileName)
+async function syncCanonicalIcons()
+async function removeLegacyFolderIcons()
+async function main()
+```
+
+### scripts/run-cargo-tests.mjs
+```
+function parseCommandLine(argv)
+function relativeManifestPath(manifestPath)
+function loadWorkspacePackages(workspaceDefinition)
+function platformRuleForPackage(packageDefinition)
+function isPackageSupportedOnHost(packageDefinition)
+function targetDirForPackage(packageDefinition)
+function cargoArgumentsForPackage(packageDefinition, commandLine)
+function runCargoTest(packageDefinition, commandLine)
+function selectedWorkspaceDefinitions(commandLine)
+function deduplicatePackages(packages)
+function main()
+```
+
+## src
+
+### src/config/workbenchRenderRuntime.ts
+```
+export interface ResolvedWorkbenchRenderRuntime
+  kind: WorkbenchRenderRuntimeKind
+  label: string
+  description: string
+  renderStyleId: string | null
+  renderStyleKind: ThemeRenderStyleKind | null
+  layoutPrimitiveId: string | null
+  navigationPatternId: string | null
+  shellBlueprint: OverlayShellBlueprintId
+export interface WorkbenchNavigationMetadata
+  groupId: string
+  groupLabel: string
+  groupOrder?: number
+  itemOrder?: number
+export interface WorkbenchNavigationPanelDescriptor
+  id: string
+  label: string
+  description: string
+  navigation?: WorkbenchNavigationMetadata
+export interface WorkbenchNavigationGroup
+  id: string
+  label: string
+  order: number
+  panels: TPanel[]
+export type WorkbenchRenderRuntimeKind
+```
+
+### src/components/WorkbenchNavigationSurface.tsx
+```
+component WorkbenchNavigationSurface
+props WorkbenchNavigationSurfaceProps
+hook useMemo
+export WorkbenchNavigationSurface
+```
+
+### src/components/screenshotsUtils.ts
+```
+export interface ScreenshotEntryLike
+  name: string
+  path: string
+  is_dir: boolean
+  modified: number
+  extension: string
+export interface RectSelection
+  x: number
+  y: number
+  width: number
+  height: number
+export interface MonitorBounds
+  x: number
+  y: number
+  width: number
+  height: number
+export interface RenderedSize
+  width: number
+  height: number
+export interface PixelSize
+  width: number
+  height: number
+export interface Point2D
+  x: number
+  y: number
+```
+
+### src/runtime/filesystemAquariumBridge.ts
+```
+export interface FilesystemAquariumOpenRequest
+  path: string
+  requestedAt: number
+  nonce: string
+  source: 'explorer'
+export function createFilesystemAquariumOpenRequest(path) → FilesystemAquariumOpenRequest
+export function readFilesystemAquariumOpenRequest(storage?,) → FilesystemAquariumOpenRequest 
+export function requestFilesystemAquariumOpen(path, options?, 'dispatchEvent'> | null; },) → FilesystemAquariumOpenRequest 
+```
+
+### src/test/browser-proof/fileExplorer.repositoryPicker.page.tsx
+```
+component RepositoryPickerProofPage
+hook useState
+handler onAddBookmark
+```
+
+### src/runtime/useFolderPluginRuntime.ts
+```
+export interface UseFolderPluginRuntimeResult
+  folderPlugins: LoadedOverlayPlugin[]
+  pluginContributedShaders: LoadedOverlayShader[]
+  pluginThemePackages: LoadedOverlayThemePackage[]
+  pluginFonts: OverlayRegisteredFontContribution[]
+  pluginCommands: OverlayPluginCommandContribution[]
+  pluginExplorerActions: OverlayPluginExplorerActionContribu
+  pluginContextMenuItems: OverlayPluginContextMenuContributio
+  folderPluginsError: string | null
+export interface UseFolderPluginRuntimeOptions
+  liveReloadEnabled?: boolean
+export function useFolderPluginRuntime(runtimePlatform, options,) → UseFolderPluginRuntimeResult
+```
+
+### src/components/themeRendererRuntime.tsx
+```
+component ThemeRendererBoundary
+props OverlayThemeRendererProps
+export ThemeRendererFileEntry
+export OverlayThemeRendererCapabilities
+export OverlayThemeRendererContext
+export OverlayThemeRendererPanel
+export OverlayThemeRendererLayoutContext
+export OverlayThemeRendererWallpaperContext
+export OverlayThemeRendererHost
+export OverlayThemeRendererProps
+export OverlayThemeRendererDefinition
+export LoadedOverlayThemeRenderer
+export LoadThemeRendererFromSourceOptions
+export ThemeRendererBoundary
+handler onError
+```
+
+### src/config/explorerModeProfiles.ts
+```
+export interface ExplorerModeProfileDefinition
+  id: ExplorerModeProfileId
+  label: string
+  shortLabel: string
+  description: string
+  paneLayoutId: ExplorerShellLayoutId
+  chromeLayoutId: ExplorerChromeLayoutId
+  viewBias: ExplorerModeViewBias
+  preferredViewMode?: ExplorerViewMode
+export type BuiltInExplorerModeProfileId
+export type ExplorerModeProfileId
+export type ExplorerModeViewBias
+export function normalizeExplorerModeProfileId(value) → ExplorerModeProfileId
+export function getExplorerModeProfileDefinition(modeProfileId?,) → ExplorerModeProfileDefinition
+export function mapLegacyShellLayoutIdToExplorerModeProfileId(shellLayoutId?,) → ExplorerModeProfileId
+export function resolveEffectiveExplorerModeProfileId(input) → ExplorerModeProfileId
+export function resolveEffectiveExplorerModeProfile(input) → ExplorerModeProfileDefinition
+export function resolveExplorerModeProfileChromeLayoutId(input, 'chromeLayoutId'> | null; themeChromeLayoutId?) → ExplorerChromeLayoutId
+```
+
+### src/components/explorer/ExplorerChromeSurface.tsx
+```
+component ExplorerChromeSurface
+props ExplorerChromeSurfaceProps
+hook useEffect
+export ExplorerChromeSurface
+handler onDragOver
+handler onDrop
+handler onDragStart
+```
+
+### src/runtime/windowHost.ts
+```
+export type WindowHostRole
+export function normalizeWindowHostRole(label) → WindowHostRole
+export function getCurrentWindowHostRole() → WindowHostRole
+export function hasSeparateWaylandDockHost(args) → boolean
+export function resolvePresentationHostLabel(args) → typeof MAIN_WINDOW_HOST_LABEL 
+export function isWindowHostResponsibleForMode(args) → boolean
+export function shouldRegisterGlobalShortcutForHost(hostRole) → boolean
+export async function emitWindowEventToHost(label, eventName, payload?,) → Promise<boolean>
+```
+
+### src/panels/panelRegistry.tsx
+```
+component DeferredPanel
+export PanelCatalogEntry
+export OverlayPanelDefinition
+handler onOpenInTerminal
+handler onOpenInFilesystemAquarium
+handler onAddBookmark
+handler onClose
+handler onPendingRepositoryImportsHandled
+handler onRequestRepositoryImport
+handler onRefreshThemes
+handler onOpenThemesFolder
+handler onRefreshShaders
+handler onOpenShadersFolder
+handler onDiagnostics
+handler onRefreshAnimations
+handler onOpenAnimationsFolder
+handler onRefreshWallpapers
+handler onOpenWallpapersFolder
+handler onImportWallpaperFiles
+handler onSetWindowMode
+```
+
+### src/config/explorerTheme.ts
+```
+export interface OverlayExplorerThemeMetrics
+  railWidth?: number
+  previewWidth?: number
+  chromeInset?: number
+  toolbarPaddingX?: number
+  toolbarPaddingY?: number
+  toolbarGap?: number
+  controlRadius?: number
+  panelRadius?: number
+export interface OverlayExplorerThemeSurfaces
+  rootBackground?: string
+  contentBackground?: string
+  sidebarBackground?: string
+  sidebarBorder?: string
+  toolbarBackground?: string
+  toolbarBorder?: string
+  toolbarShadow?: string
+  omniboxBackground?: string
+export interface OverlayExplorerThemeTypography
+  railEyebrowSize?: number
+  railTitleSize?: number
+  toolbarFontSize?: number
+  breadcrumbFontSize?: number
+  entryTitleSize?: number
+  entryMetaSize?: number
+```
+
+### src/runtime/pluginPanelRequests.ts
+```
+export interface PluginPanelOpenRequest
+  panelId: string
+  payload: Record<string, string>
+  requestedAt: number
+  nonce: string
+  source: 'plugin-context-menu' | 'plugin-run
+export function getPluginPanelOpenRequestStorageKey(panelId) → string
+export function getPluginPanelOpenRequestEvent(panelId) → string
+export function createPluginPanelOpenRequest(panelId, payload, string>, source,) → PluginPanelOpenRequest | null
+export function readPluginPanelOpenRequest(panelId, storage?,) → PluginPanelOpenRequest | null
+export function requestPluginPanelOpen(panelId, payload, string>, options?, 'dispatchEvent'> | null; },) → PluginPanelOpenRequest | null
+```
+
+### src/config/pluginContributions.ts
+```
+export interface OverlayPluginCommandContribution
+  id: string
+  pluginId: string
+  pluginName: string
+  name: string
+  command: string
+  description?: string
+  runOnSelect: boolean
+export interface OverlayPluginExplorerActionContribution
+  id: string
+  pluginId: string
+  pluginName: string
+  label: string
+  command: string
+  description?: string
+  appliesTo: 'any' | 'file' | 'directory'
+  runOnSelect: boolean
+export interface OverlayPluginContextMenuContribution
+  id: string
+  pluginId: string
+  pluginName: string
+  title: string
+  description?: string
+  contexts: Array<'entry' | 'background'>
+  appliesTo: 'any' | 'file' | 'directory'
+```
+
+### src/components/pluginRuntime.tsx
+```
+props OverlayPluginProps
+export PluginFileEntry
+export OverlayPluginContext
+export OverlayPluginApi
+export OverlayPluginStorageApi
+export OverlayPluginAssetsApi
+export OverlayPluginHostContext
+export OverlayPluginProps
+export OverlayPluginDefinition
+export OverlayPluginSourceKind
+export OverlayPluginCapabilitySummary
+export OverlayPluginDiagnostics
+export LoadedOverlayPlugin
+export PluginBackendResult
+export LoadPluginFromSourceOptions
+```
+
+### src/config/pluginPackages.ts
+```
+export interface OverlayPluginDiscoveryResult
+  plugins: LoadedOverlayPlugin[]
+  themePackages: LoadedOverlayThemePackage[]
+  shaders: LoadedOverlayShader[]
+  fonts: OverlayRegisteredFontContribution[]
+  commands: OverlayPluginCommandContribution[]
+  explorerActions: OverlayPluginExplorerActionContribu
+  contextMenuItems: OverlayPluginContextMenuContributio
+  warnings: string[]
+```
+
+### src/config/explorerWorkspaceLayouts.ts
+```
+export interface ExplorerWorkspaceLayoutDefinition
+  id: ExplorerWorkspaceLayoutMode
+  label: string
+  shortLabel: string
+  description: string
+  visiblePaneIds: ExplorerPaneId[]
+  supportsColumnSplit: boolean
+  supportsRowSplit: boolean
+export type ExplorerPaneId
+export type ExplorerWorkspaceLayoutMode
+export function normalizeExplorerWorkspaceLayoutMode(value,) → ExplorerWorkspaceLayoutMode
+export function getExplorerWorkspaceLayoutDefinition(layoutMode?,) → ExplorerWorkspaceLayoutDefinit
+export function getExplorerWorkspaceVisiblePaneIds(layoutMode?,) → ExplorerPaneId[]
+export function normalizeExplorerPaneId(value) → ExplorerPaneId
+export function getExplorerPaneIndex(paneId) → number
+export function getExplorerPaneLabel(paneId) → string
+export function clampExplorerWorkspaceAxisRatio(value) → number
+```
+
+### src/config/themePackages.ts
+```
+export interface OverlayThemePackageManifest
+  version?: number
+  id?: string
+  name?: string
+  description?: string
+  author?: string
+  homepage?: string
+  tags?: string[]
+  extends?: string
+export interface ThemePackageDirectoryEntry
+  name: string
+  path: string
+export interface LoadedOverlayThemePackage
+  id: string
+  name: string
+  version: number
+  directoryPath: string
+  manifestPath: string
+  sourceKind: 'theme-directory' | 'plugin-package
+  sourceLabel: string
+  description?: string
+export interface ThemePackageLoadResult
+  packages: LoadedOverlayThemePackage[]
+  shaders: LoadedOverlayShader[]
+  animations: LoadedOverlayAnimation[]
+```
+
+### src/config/layoutProfiles.ts
+```
+export interface LoadedLayoutManifest
+  manifest: LayoutManifest
+  sourcePath: string | null
+  sourceType: 'built-in' | 'file'
+  sourceError: string | null
+export type LayoutBarPosition
+export type LayoutDockSide
+export type ExplorerLayoutMode
+export type LayoutPinnedPanel
+export type LayoutChromeConfig
+export type LayoutControlDockConfig
+export type LayoutBehaviorConfig
+export type LayoutSurfaceOwner
+export type LayoutBackBehavior
+export type LayoutModeExitTarget
+export type LayoutProgressOwner
+export type LayoutInteractionConfig
+export type LayoutProfile
+export type LayoutManifest
+export function normalizeLayoutManifest(input) → LayoutManifest
+export function getDefaultLayoutProfile(manifest) → LayoutProfile
+export function resolveLayoutProfile(manifest, activeProfileId,) → LayoutProfile
+export function getNextLayoutProfileId(manifest, activeProfileId,) → string
+export function getPinnedPanelIds(profile) → string[]
+export function isPanelPinned(profile, panelId) → boolean
+```
+
+### src/config/appContentDirectories.ts
+```
+export type ManagedContentDirectoryId
+export async function initializeManagedContentDirectories() → Promise<void>
+export function getManagedContentDirectory(id) → string
+export function isLegacyScreenshotDirectory(path) → boolean
+```
+
+### src/components/explorer/constellationLayout.ts
+```
+export interface ConstellationOrbitBandInput
+  id: string
+  label: string
+  description: string
+  dominant: boolean
+  entries: FileEntry[]
+export interface ConstellationOrbitNode
+  entry: FileEntry
+  x: number
+  y: number
+  size: number
+  labelVisible: boolean
+  emphasis: 'anchor' | 'selected' | 'satellite'
+export interface ConstellationOrbitBand
+  nodes: ConstellationOrbitNode[]
+  hiddenEntryCount: number
+export function buildConstellationOrbitBands(bands, selectedPaths, density,) → ConstellationOrbitBand[]
+```
+
+### src/store/explorerTaskStore.ts
+```
+export function useExplorerTaskProgressFeed() → void
+export function useExplorerTaskSnapshots() → ExplorerTaskSnapshot[]
+export function useExplorerTaskCenterOpen() → boolean
+export function openExplorerTaskCenter() → void
+export function closeExplorerTaskCenter() → void
+export function toggleExplorerTaskCenter() → void
+export async function retryExplorerTaskById(taskId) → Promise<ExplorerTaskSnapshot>
+export async function cancelExplorerTaskById(taskId) → Promise<ExplorerTaskSnapshot>
+export async function clearExplorerTaskHistoryInStore(scope) → Promise<void>
+export async function retryFailedExplorerTasks() → Promise<ExplorerTaskSnapshot[]
+export async function clearCompletedExplorerTasks() → Promise<void>
+export const useExplorerTaskStore = create<ExplorerTaskStoreState>(...)
+  tasks
+  taskOrder
+  subscriptionState
+  subscriptionError
+  hydrationState
+  hydrationError
+  isTaskCenterOpen
+  replaceTasks
+  upsertTask
+  pruneTasks
+  setSubscriptionError
+  setSubscriptionState
+  setHydrationError
+```
+
+### src/components/explorer/ExplorerTaskCenterContent.tsx
+```
+component TaskStatusIcon
+component TaskActionButton
+component TaskCard
+component ExplorerTaskCenterContent
+props ExplorerTaskCenterContentProps
+export ExplorerTaskCenterContent
+handler onClick
+```
+
+### src/components/explorer/ExplorerTaskStatusBadge.tsx
+```
+component ExplorerTaskStatusBadge
+props ExplorerTaskStatusBadgeProps
+hook useRef
+hook useExplorerTaskCenterOpen
+hook useExplorerTaskSnapshots
+hook useEffect
+hook useMemo
+export ExplorerTaskStatusBadge
+handler onClick
+```
+
+### src/config/appearance.ts
+```
+export interface OverlayXTermTheme
+  background: string
+  foreground: string
+  cursor: string
+  black: string
+  red: string
+  green: string
+  yellow: string
+  blue: string
+export interface OverlayThemePalette
+  appBackground: string
+  appBackgroundAlt: string
+  shellBackground: string
+  shellBackgroundSolid: string
+  topBarBackground: string
+  topBarMenuBackground: string
+  sidebarBackground: string
+  panelBackground: string
+export interface OverlayThemeEffects
+  backgroundImage: string
+  backgroundSize: string
+  backgroundPosition: string
+  shadow: string
+  overlayShadow: string
+export interface OverlayThemeVisualAnimation
+```
+
+### src/config/performanceTelemetry.ts
+```
+export interface ExplorerPerformanceSample
+  metricId: ExplorerPerformanceMetricId
+  durationMs: number
+  recordedAt: number
+  metadata: ExplorerPerformanceMetadata
+export interface ExplorerPerformanceSnapshot
+  version: number
+  samples: Record<ExplorerPerformanceMetricId,
+export interface ExplorerPerformanceSummary
+  metricId: ExplorerPerformanceMetricId
+  label: string
+  targetMs: number
+  count: number
+  latestMs: number | null
+  avgMs: number | null
+  p95Ms: number | null
+  bestMs: number | null
+export type ExplorerPerformanceMetricId
+export type ExplorerPerformanceMetadataValue
+export type ExplorerPerformanceMetadata
+```
+
+### src/runtime/fileOperationsWindow.ts
+```
+export interface FileOperationsTaskWindowRequest
+  nonce: string
+  requestedAt: number
+  sourceWindowLabel: string | null
+  view: 'tasks'
+export interface FileOperationsTransferWindowRequest
+  nonce: string
+  operation: ExplorerFileTransferOperation
+  requestedAt: number
+  sourcePaths: string[]
+  sourceWindowLabel: string | null
+  suggestedTargetDir: string | null
+  view: 'transfer'
+export interface FileOperationsTransferCompletedEventDetail
+  completedAt: number
+  destinationPaths: string[]
+  nonce: string
+  operation: ExplorerFileTransferOperation
+  results: ExplorerFileTransferResult[]
+  sourcePaths: string[]
+  targetDir: string
+export type FileOperationsWindowRequest
+export function isCurrentFileOperationsWindow() → boolean
+export function describeFileOperationsWindowRequest(request,) → string
+export function createFileOperationsWindowRequest(value,) → FileOperationsWindowRequest | 
+```
+
+### src/config/themeCatalogCuration.ts
+```
+export interface ThemeCatalogTierDefinition
+  id: ThemeCatalogTierId
+  label: string
+  description: string
+  badgeLabel: string
+  order: number
+export interface ThemeCatalogPackageMetadata
+  tierId: ThemeCatalogTierId
+  tierLabel: string
+  tierDescription: string
+  tierOrder: number
+  badgeLabel: string
+  sortRank: number
+  suiteId: string | null
+  suiteLabel: string | null
+export interface ThemeCatalogComparablePackage
+  id: string
+  name: string
+  catalog: ThemeCatalogPackageMetadata
+export type ThemeCatalogTierId
+export function resolveThemeCatalogPackageMetadata(themeId) → ThemeCatalogPackageMetadata
+export function compareThemeCatalogPackages(left, right) → number
+```
+
+### src/config/explorerArchives.ts
+```
+export interface ExplorerArchiveFormatDescriptor
+  id: ExplorerArchiveFormatId
+  suffixes: readonly string[]
+  label: string
+export type ExplorerArchiveFormatId
+export function getExplorerArchiveDescriptor(value, 'name' | 'is_dir'>,) → ExplorerArchiveFormatDescripto
+export function isExplorerArchiveEntry(entry, 'name' | 'is_dir'>) → boolean
+export function getExplorerArchiveDefaultFolderName(value, 'name'>) → string
+export function getExplorerArchiveExtractToFolderLabel(value, 'name'>,) → string
+```
+
+### src/components/GitManager.tsx
+```
+component GitManager
+props GitManagerProps
+hook useState
+hook useDeferredValue
+hook usePersistentPanelSize
+hook useRef
+hook useEffect
+hook useCallback
+hook useMemo
+hook useSettingsStore
+export GitManager
+handler onHint
+handler onDialog
+handler onSizeChange
+handler onClick
+handler onKeyDown
+handler onChange
+handler onViewportScroll
+handler onMount
+handler onCancel
+```
+
+### src/components/AppModal.tsx
+```
+component AppDialogFrame
+component AppPromptDialog
+component AppConfirmDialog
+props AppDialogFrameProps
+props AppPromptDialogProps
+props AppConfirmDialogProps
+hook useId
+hook useRef
+hook useEffect
+export AppDialogFrame
+export AppPromptDialog
+export AppConfirmDialog
+handler onId
+handler onMouseDown
+handler onClose
+handler onClick
+handler onChange
+handler onKeyDown
+handler onRef
+```
+
+### src/components/ScreenshotsManager.tsx
+```
+component ScreenshotsManager
+component RailButton
+hook useSettingsStore
+hook useRef
+hook useState
+hook usePersistentPanelSize
+hook useCallback
+hook useEffect
+hook useLayoutEffect
+export ScreenshotsManager
+handler onId
+handler onRef
+handler onInteractionRef
+handler onPx
+handler onOutputAction
+handler onPointerDown
+handler onPointerMove
+handler onPointerUp
+handler onPointerCancel
+handler onKeyDown
+handler onChange
+handler onBlur
+handler onSizeChange
+handler onCancel
+handler onClick
+```
+
+### src/runtime/tauriClient.ts
+```
+export interface WaylandDockHostStatus
+  enabled: boolean
+  windowLabel: string | null
+export type WaylandDockAnchor
+export function unwrapTauriResult(result, string>) → T
+```
+
+### src/runtime/moduleRuntimeCore.ts
+```
+export interface RuntimeFileEntry
+  name: string
+  path: string
+  is_dir: boolean
+  modified: number
+  extension: string
+export interface RuntimeRelativeModuleResolveArgs
+  fromModulePath: string
+  specifier: string
+export interface RuntimeResolvedRelativeModuleSource
+  modulePath: string
+  source: string
+export interface RuntimeModuleGraph
+  entryModulePath: string
+  moduleCodeByPath: Record<string, string>
+  relativeSpecifierResolutionsByModulePath: Record<string, Record<string, strin
+export type RuntimeRelativeModuleSourceResolver
+export type RuntimeModuleSourceTranspiler
+export function isSupportedRuntimeFile(entry, extensions,) → boolean
+export function deriveRuntimeModuleId(name, fallback = 'module') → string
+export function deriveRuntimeModuleName(name, fallback = 'Module') → string
+export async function transpileRuntimeModuleSourceLocal(source, prependCode = '',) → Promise<string>
+export async function transpileRuntimeModuleGraphLocal(args) → Promise<RuntimeModuleGraph>
+export function executeRuntimeModule(code, allowedModules, unknown>,) → unknown
+export function executeRuntimeModuleGraph(graph, allowedModules, unknown>,) → unknown
+```
+
+### src/runtime/moduleRuntime.ts
+```
+export async function transpileRuntimeModuleSource(source, prependCode = '',) → Promise<string>
+export async function transpileRuntimeModuleGraph(args) → Promise<RuntimeModuleGraph>
+```
+
+### src/runtime/workerHost.ts
+```
+export interface FrontendWorkerLaneTelemetry
+  activeTaskCount: number
+  completedTaskCount: number
+  errorCount: number
+  fallbackCount: number
+  lastDurationMs: number | null
+  lastError: string | null
+  workerAvailable: boolean
+export interface FrontendWorkerTelemetrySnapshot
+  lanes: Record<FrontendWorkerLaneId, Fronte
+export type FrontendWorkerLaneId
+class WorkerLaneRuntime
+  constructor(private readonly laneId, definition,)
+  if(!worker)
+  if(this.bootFailed)
+  if(this.worker)
+  if(!message || message.kind !== 'response')
+  if(!pendingTask)
+  if(message.success)
+  for(const [requestId, pendingTask] of this.pendingTasks)
+export function readFrontendWorkerTelemetrySnapshot() → FrontendWorkerTelemetrySnapsho
+export function resetFrontendWorkerTelemetryForTests() → void
+```
+
+### src/runtime/imageEditorRuntime.ts
+```
+export async function initExplorerImageEditor(containerId, options,) → Promise<ExplorerImageEditorHan
+```
+
+### src/components/ExplorerImageEditor.tsx
+```
+component ExplorerImageEditor
+hook useId
+hook useRef
+hook useState
+hook useEffect
+export ExplorerImageEditor
+handler onClick
+```
+
+### src/components/explorer/explorerDirectoryCache.ts
+```
+export function getExplorerDirectoryCacheKey(path, showHidden) → string
+export async function loadCachedExplorerLocation(args) → Promise<ExplorerLocationListin
+export function storeExplorerCachedLocation(args) → void
+export function invalidateExplorerDirectoryResultCaches(pathPrefix?) → void
+```
+
+### src/runtime/videoEditorBackend.ts
+```
+export type ExplorerVideoPreviewSource
+export type ExplorerVideoTrimExportInput
+export type ExplorerVideoTrimExportOutput
+export async function createExplorerVideoPreviewProxy(inputPath,) → Promise<ExplorerVideoPreviewSo
+export async function resolveExplorerVideoPreviewSource(inputPath,) → Promise<ExplorerVideoPreviewSo
+export async function exportExplorerVideoTrim(request,) → Promise<ExplorerVideoTrimExpor
+```
+
+### src/components/explorer/ExplorerWorkspace.tsx
+```
+component ExplorerWorkspace
+props ExplorerWorkspaceProps
+hook useExplorerStore
+hook useShallow
+hook useSettingsStore
+hook useRef
+hook useState
+hook useMemo
+hook useCallback
+hook useEffect
+export ExplorerWorkspace
+handler onCount
+handler onRequest
+handler onTransferRequest
+handler onToCommanderTarget
+handler onTransferComplete
+handler onPath
+handler onClick
+handler onWorkspaceRuntimeSnapshotChange
+handler onWorkspaceSelectionTransferComplete
+handler onAddBookmark
+handler onOpenInFilesystemAquarium
+handler onOpenInTerminal
+handler onMouseMove
+handler onMouseDown
+```
+
+### src/runtime/audioWorkbenchBackend.ts
+```
+export type ExplorerAudioDeckId
+export type ExplorerAudioDeckState
+export type ExplorerAudioEngineStateEvent
+export type ExplorerAudioEngineStateSnapshot
+export type ExplorerAudioPreviewAnalysis
+export type ExplorerAudioTransformInput
+export type ExplorerAudioTransformOutput
+export type ExplorerAudioBatchInput
+export type ExplorerAudioBatchOutput
+export async function analyzeExplorerAudioPreview(inputPath,) → Promise<ExplorerAudioPreviewAn
+export async function exportExplorerAudioTransform(request,) → Promise<ExplorerAudioTransform
+export async function runExplorerAudioBatchProcess(request,) → Promise<ExplorerAudioBatchOutp
+export async function prepareExplorerAudioEngine() → Promise<ExplorerAudioEngineSta
+export async function getExplorerAudioEngineState() → Promise<ExplorerAudioEngineSta
+export async function loadExplorerAudioDeck(request,) → Promise<ExplorerAudioEngineSta
+export async function syncExplorerSelectionToArmedDeck(request,) → Promise<ExplorerAudioEngineSta
+export async function unloadExplorerAudioDeck(request,) → Promise<ExplorerAudioEngineSta
+export async function setExplorerArmedAudioDeck(request,) → Promise<ExplorerAudioEngineSta
+export async function playExplorerAudioDeck(request,) → Promise<ExplorerAudioEngineSta
+export async function pauseExplorerAudioDeck(request,) → Promise<ExplorerAudioEngineSta
+export async function stopExplorerAudioDeck(request,) → Promise<ExplorerAudioEngineSta
+export async function seekExplorerAudioDeck(request,) → Promise<ExplorerAudioEngineSta
+export async function setExplorerAudioLoopRegion(request,) → Promise<ExplorerAudioEngineSta
+export async function setExplorerAudioDeckGain(request,) → Promise<ExplorerAudioEngineSta
+export async function setExplorerAudioDeckRate(request,) → Promise<ExplorerAudioEngineSta
+```
+
+### src/store/audioEngineStore.ts
+```
+export function useAudioEngineFeed() → void
+export function useAudioEngineSnapshot() → ExplorerAudioEngineStateSnapsh
+export function getAudioDeckState(snapshot, deckId,) → ExplorerAudioDeckState
+export async function armAudioDeck(deckId) → Promise<ExplorerAudioEngineSta
+export async function loadSelectionIntoAudioDeck(deckId, inputPath,) → Promise<ExplorerAudioEngineSta
+export async function syncSelectionIntoArmedAudioDeck(inputPath,) → Promise<ExplorerAudioEngineSta
+export async function playAudioDeck(deckId) → Promise<ExplorerAudioEngineSta
+export async function pauseAudioDeck(deckId) → Promise<ExplorerAudioEngineSta
+export async function stopAudioDeck(deckId) → Promise<ExplorerAudioEngineSta
+export async function unloadAudioDeck(deckId) → Promise<ExplorerAudioEngineSta
+export async function seekAudioDeck(deckId, positionSeconds,) → Promise<ExplorerAudioEngineSta
+export async function setAudioDeckLoopRegion(deckId, startSeconds, endSeconds, enabled,) → Promise<ExplorerAudioEngineSta
+export async function setAudioDeckGain(deckId, gainLinear,) → Promise<ExplorerAudioEngineSta
+export async function setAudioDeckRate(deckId, rate,) → Promise<ExplorerAudioEngineSta
+export const useAudioEngineStore = create<AudioEngineStoreState>(...)
+  snapshot
+  hydrationState
+  hydrationError
+  subscriptionState
+  subscriptionError
+  replaceSnapshot
+  setHydrationState
+  setHydrationError
+  setSubscriptionState
+  setSubscriptionError
+```
+
+### src/config/explorerRail.ts
+```
+export interface ExplorerRailWidthBounds
+  defaultWidth: number
+  minWidth: number
+  maxWidth: number
+export interface ExplorerBookmarkCategoryPreset
+  id: string
+  name: string
+  color: string
+  keywords: string[]
+export interface ExplorerBookmarkColorOption
+  id: string
+  value: string
+export interface ExplorerRailViewModePresentation
+  sectionChrome: ExplorerRailSectionChrome
+  rowChrome: ExplorerRailRowChrome
+  hierarchyGuideStyle: ExplorerRailHierarchyGuideStyle
+  activeBranchStyle: ExplorerRailActiveBranchStyle
+  iconTone: ExplorerRailIconTone
+export interface ExplorerRailViewModeDefinition
+  id: ExplorerRailViewMode
+  label: string
+  shortLabel: string
+  description: string
+  useCompactChrome: boolean
+  hideSupportingMeta: boolean
+```
+
+### src/components/explorer/explorerRailState.ts
+```
+export interface ExplorerBookmarkCategory
+  id: string
+  name: string
+  color: string
+  kind: 'custom'
+  createdAt: number
+export interface ExplorerBookmarkFolderNode
+  kind: 'folder'
+export interface ExplorerBookmarkLeafNode
+  kind: 'bookmark'
+  path: string
+  targetKind: ExplorerBookmarkTargetKind
+export interface ExplorerRailSnapshot
+  customCategories: ExplorerBookmarkCategory[]
+  nodes: ExplorerBookmarkNode[]
+  collapsedSectionIds: ExplorerRailSectionId[]
+  expandedFolderIds: string[]
+  activeCategoryIds: string[]
+  searchQuery: string
+  viewMode: ExplorerRailViewMode
+  autoExpandToOpenFolder: boolean
+export interface ExplorerBookmarkTreeNode
+  node: ExplorerBookmarkNode
+  depth: number
+  children: ExplorerBookmarkTreeNode[]
+```
+
+### src/components/terminalPaneLayout.ts
+```
+export interface TerminalPaneLeafNode
+  kind: "leaf"
+  paneId: string
+export interface TerminalPaneSplitNode
+  kind: "split"
+  splitId: string
+  direction: TerminalSplitDirection
+  ratio: number
+  first: TerminalPaneLayoutNode
+  second: TerminalPaneLayoutNode
+export interface TerminalPaneSplitResult
+  layout: TerminalPaneLayoutNode
+  inserted: boolean
+export interface TerminalPaneRemoveResult
+  layout: TerminalPaneLayoutNode | null
+  removed: boolean
+  fallbackPaneId: string | null
+export interface TerminalPaneFrame
+  paneId: string
+  x: number
+  y: number
+  width: number
+  height: number
+export interface TerminalPaneSplitHandle
+  splitId: string
+```
+
+### src/config/folderIcons.ts
+```
+export interface FolderIconRule
+  id: string
+  label: string
+  matchers: string[]
+  icon: FolderIconValue
+export interface FolderIconOption
+  value: FolderIconValue
+  label: string
+  closedSrc: string
+  openSrc: string
+export interface FolderIconResolverConfig
+  rules?: readonly FolderIconRule[]
+  defaultIcon?: FolderIconValue
+  iconTheme?: OverlayResolvedIconTheme
+export interface FolderIconResolution
+  icon: FolderIconValue
+  matchedRule: FolderIconRule | null
+export type GeneratedFolderIconPair
+export type FolderIconValue
+export function normalizeFolderIconMatcher(value) → string
+export function createDefaultFolderIconRules() → FolderIconRule[]
+export function getNamedFolderIconSrc(icon, open = false, iconTheme?,) → string
+export function resolveFolderIcon(folderPath, config,) → FolderIconResolution
+export function resolveFolderIconPair(folderPath, config) → GeneratedFolderIconPair
+export function getFolderIconSrc(folderPath, open = false, config) → string
+```
+
+### src/config/iconTheme.ts
+```
+export interface OverlayIconDefinition
+  iconPath?: string
+export interface OverlayIconThemeManifest
+  name?: string
+  version?: number
+  description?: string
+  file?: string
+  folder?: string
+  folderExpanded?: string
+  iconDefinitions?: Record<string, OverlayIconDefinitio
+  fileExtensions?: Record<string, string>
+export interface OverlayResolvedIconTheme
+  name: string
+  version: number
+  description?: string
+  file: string
+  folder: string
+  folderExpanded: string
+  iconDefinitions: Record<string, string>
+  fileExtensions: Record<string, string>
+export interface OverlayFileIconResolution
+  iconId: string
+  matchKind: 'fileName' | 'extension' | 'default
+export function getBuiltInIconTheme() → OverlayResolvedIconTheme
+export function parseIconThemeManifest(source) → OverlayIconThemeManifest
+```
+
+### src/config/pilotThemeContract.ts
+```
+export interface ThemeSelectionAppearanceDefaults
+  theme?: 'dark' | 'light' | 'system'
+  dockThemeMode?: 'follow-app' | 'override'
+  activeDockThemeId?: string | null
+  activeWallpaperId?: string | null
+  wallpaperFitMode?: OverlayWallpaperFitMode
+  wallpaperOpacity?: number
+  wallpaperMuted?: boolean
+  activeShaderId?: string | null
+export interface ThemeSelectionExplorerDefaults
+  showHiddenFiles?: boolean
+  viewMode?: ExplorerViewMode
+  experimentalViewMode?: 'off' | 'adaptive-semantic-grid' | 
+  experimentalDensity?: number
+  folderClickMode?: 'single' | 'double'
+export interface ThemeSelectionExplorerSessionDefaults
+  sidebarWidth?: number | null
+  previewWidth?: number | null
+  previewEnabled?: boolean
+  shellLayoutId?: ExplorerShellLayoutId
+  sourcesVisible?: boolean
+export interface ThemeSelectionLayoutDefaults
+  activeProfileId?: string
+export interface ThemeSelectionDefaults
+  appearance?: ThemeSelectionAppearanceDefaults
+```
+
+### src/components/explorer/ExplorerSideRail.tsx
+```
+component ExplorerSideRail
+component BookmarkTreeRow
+component LocalFolderTreeRow
+component RailSection
+props ExplorerSideRailProps
+props TreeRowProps
+props LocalFolderTreeRowProps
+hook useExplorerStore
+hook useMemo
+hook useState
+hook useDeferredValue
+hook useRef
+hook useCallback
+hook useEffect
+export ExplorerSideRail
+handler onTitle
+handler onLabel
+handler onRef
+handler onDragOver
+handler onDrop
+handler onClick
+handler onNavigate
+handler onToggleExpand
+handler onRetryLoad
+handler onChange
+```
+
+### src/config/explorerViewModes.ts
+```
+export interface ExplorerGridMetrics
+  minWidth: number
+  gap: number
+  padding: number
+  rowHeight: number
+  searchRowHeight: number
+  newItemHeight: number
+  iconSize: number
+  iconStageSize: number
+export interface ExplorerRowMetrics
+  rowHeight: number
+  searchRowHeight: number
+  newItemHeight: number
+  iconSize: number
+export interface ExplorerViewModeDefinition
+  id: ExplorerViewMode
+  label: string
+  shortLabel: string
+  description: string
+  presentation: ExplorerViewPresentation
+  zoomOrder: number
+  grid?: ExplorerGridMetrics
+  rows?: ExplorerRowMetrics
+export type ExplorerViewMode
+export type ExplorerViewPresentation
+```
+
+### src/App.css
+```
+.overlay-window-host
+.overlay-scroll-area
+.overlay-scroll-area__viewport
+.overlay-scroll-area__viewport
+.overlay-scroll-area__viewport--vertical
+.overlay-scroll-area__viewport--horizontal
+.overlay-scroll-area__viewport--both
+.overlay-scroll-area__viewport--explorer-file-list
+```
+
+### src/config/explorerThumbnails.ts
+```
+export interface ExplorerThumbnailSettings
+  enabled: boolean
+  includeImages: boolean
+  includeCode: boolean
+  includeShaders: boolean
+  includeAudio: boolean
+  includeVideo: boolean
+  enableVideoHoverScrub: boolean
+  videoHoverScrubFrameCount: number
+export function normalizeExplorerThumbnailSettings(value,) → ExplorerThumbnailSettings
+export function isShaderThumbnailExtension(extension) → boolean
+export function canRenderExplorerThumbnail(extension, size, settings,) → boolean
+export function clampVideoHoverScrubFrameCount(value) → number
+```
+
+### src/components/explorerJumpFilter.ts
+```
+export interface ExplorerJumpFilterState
+  query: string
+  active: boolean
+  resultIndex: number
+export interface ExplorerJumpFilterMatch
+  entry: ExplorerFileEntry
+  score: number
+  originalIndex: number
+export function isExplorerJumpFilterPrintableKey(event, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>) → boolean
+export function appendExplorerJumpFilterCharacter(query, key) → string
+export function removeExplorerJumpFilterCharacter(query) → string
+export function filterExplorerEntriesForJump(entries, query,) → ExplorerFileEntry[]
+```
+
+### src/store/explorerStore.ts
+```
+export interface ExplorerClipboardEntry
+  path: string
+  name: string
+  is_dir: boolean
+export interface ExplorerClipboardSnapshot
+  action: ExplorerClipboardAction
+  entries: ExplorerClipboardEntry[]
+export interface ExplorerTabSnapshot
+  id: string
+  instanceId: ExplorerInstanceId
+  pane: ExplorerPaneId
+  title: string
+export interface ExplorerWorkspaceSnapshot
+  tabs: ExplorerTabSnapshot[]
+  activeTabIdByPane: Record<ExplorerPaneId, string | nul
+  layoutMode: ExplorerWorkspaceLayoutMode
+  focusedPane: ExplorerPaneId
+  columnSplitRatio: number
+  rowSplitRatio: number
+  nextTabOrdinal: number
+export interface ExplorerSessionSnapshot
+  currentPath: string
+  history: string[]
+  historyIdx: number
+  sidebarWidth: number | null
+```
+
+### src/components/explorerBatchRename.ts
+```
+export interface ExplorerBatchRenameRecipe
+  mode: ExplorerBatchRenameMode
+  findText: string
+  replaceText: string
+  prefix: string
+  suffix: string
+  startingNumber: number
+  padding: number
+export interface ExplorerBatchRenamePreviewRow
+  sourcePath: string
+  currentName: string
+  nextName: string
+  destinationPath: string
+  collision: boolean
+  validationError: string | null
+export interface ExplorerBatchRenamePreviewResult
+  rows: ExplorerBatchRenamePreviewRow[]
+  validationError: string | null
+export type ExplorerBatchRenameMode
+export function buildExplorerBatchRenamePreview(entries, recipe,) → ExplorerBatchRenamePreviewResu
+```
+
+### src/config/explorerChromeLayouts.ts
+```
+export interface ExplorerChromeControlDefinition
+  id: ExplorerChromeControlId
+  label: string
+  surfaces: ExplorerChromeSurfaceId[]
+export interface ExplorerChromeSlotDefinition
+  zone: ExplorerChromeZoneId
+  order: number
+  grow?: number
+  shrink?: number
+  collapsePriority?: number
+  overflowEligible?: boolean
+export interface ExplorerChromeLayoutDefinition
+  id: ExplorerChromeLayoutId
+  label: string
+  placements: Partial<Record<ExplorerChromeContro
+export interface ExplorerChromeOverrideEntry
+  controlId: ExplorerChromeControlId
+  surfaceId: ExplorerChromeSurfaceId
+  zone: ExplorerChromeZoneId
+  order: number
+export interface ExplorerChromeOverrideSnapshot
+  entries: ExplorerChromeOverrideEntry[]
+export interface ExplorerChromeResolvedControlPlacement
+  controlId: ExplorerChromeControlId
+  surfaceId: ExplorerChromeSurfaceId
+```
+
+### src/components/explorerChecksums.ts
+```
+export interface ExplorerChecksumResult
+  md5: string
+  sha256: string
+export async function calculateExplorerChecksumsFromBase64(base64) → Promise<ExplorerChecksumResult
+```
+
+### src/components/DevPerformanceHud.tsx
+```
+component DevPerformanceHud
+component MetricTile
+component HudPill
+props DevPerformanceHudProps
+hook useDevPerformanceHudSnapshot
+hook useRef
+hook useState
+hook useEffect
+export DevPerformanceHud
+handler onStartRef
+handler onPaintsRef
+handler onMs
+```
+
+### src/config/frameTelemetry.ts
+```
+export interface OverlayFrameTelemetryStats
+  avgFrameMs: number
+  avgFps: number
+  p95FrameMs: number
+  worstFrameMs: number
+  frameCount: number
+  overBudgetCount: number
+  withinTarget: boolean
+  windowDurationMs: number
+export function shouldFlushOverlayFrameWindow(frameCount, windowDurationMs) → boolean
+export function summarizeOverlayFrameWindow(frameDurations, windowDurationMs,) → OverlayFrameTelemetryStats | n
+export function recordOverlayFrameTelemetry(stats, metadata, string | number | boolean | null> = {},) → ExplorerPerformanceSample
+```
+
+### src/components/TerminalOverlay.tsx
+```
+component TerminalActionToolbar
+component XTermPane
+component BookmarkChip
+component MiniAdder
+component PythonSidebarContent
+component SidebarContent
+component TerminalOverlay
+props TerminalOverlayProps
+props TerminalActionToolbarProps
+props XTermPaneProps
+props ChipProps
+props AdderProps
+props PythonSidebarContentProps
+props SidebarContentProps
+hook useRef
+hook useSettingsStore
+hook useEffect
+hook useCallback
+hook useState
+hook useMemo
+hook useTerminalStore
+hook useShallow
+hook useExplorerStore
+export ThemeId
+export TerminalOverlay
+```
+
+### src/runtime/explorerBackend.ts
+```
+export type ExplorerFileEntry
+export type ExplorerFileSearchResult
+export type ExplorerEntryStorageInfo
+export type ExplorerFileTransferOperation
+export type ExplorerFileTransferResult
+export type ExplorerFileTransferCollision
+export type ExplorerFileTransferCollisionPolicy
+export type ExplorerFileTransferDisposition
+export type ExplorerTaskProgress
+export type ExplorerTaskSnapshot
+export type ExplorerSchedulerTask
+export type ExplorerTaskHistoryScope
+export type ExplorerTaskKindValue
+export type ExplorerTaskStatusValue
+export type ExplorerWritableContent
+export type ExplorerCloudProviderId
+export type ExplorerCloudAccountStatus
+export type ExplorerCloudAccountSummary
+export type ExplorerCloudAccountsSnapshot
+export type ExplorerCloudAuthSession
+export type ExplorerCloudAuthStatus
+export type ExplorerCloudProviderConfigurationSource
+export type ExplorerCloudProviderConfigurationStatus
+export type ExplorerTagMetadataSnapshot
+export type ExplorerTagMutation
+```
+
+### src/components/CommandPalette.tsx
+```
+component CommandPalette
+hook useState
+hook useRef
+hook useEffect
+hook useMemo
+export OverlayCommandPaletteAction
+export CommandPalette
+handler onMouseDown
+handler onChange
+```
+
+### src/contracts/themeEngine.ts
+```
+export interface ThemeDesignTokens
+  color: ThemeTokenScale
+  typography: ThemeTokenScale
+  spacing: ThemeTokenScale
+  radius: ThemeTokenScale
+  shadow: ThemeTokenScale
+  motion: ThemeTokenScale
+export interface ThemeLayoutPrimitive
+  id: string
+  name: string
+  kind: ThemeLayoutPrimitiveKind
+  props: Record<string, string | number | bo
+export interface ThemeNavigationPattern
+  id: string
+  name: string
+  kind: ThemeNavigationPatternKind
+  axis: 'horizontal' | 'vertical' | 'both'
+  props: Record<string, string | number | bo
+export interface ThemeAnimationProfile
+  id: string
+  name: string
+  durationMs: number
+  easing: string
+  intensity: number
+export interface ThemeIconPack
+```
+
+### src/windows/FileOperationsWindowApp.tsx
+```
+component ActionButton
+component SectionCard
+component FileOperationsWindowApp
+hook useExplorerTaskProgressFeed
+hook useMemo
+hook useState
+hook useRef
+hook useExplorerTaskSnapshots
+hook useSettingsStore
+hook useShallow
+hook useFolderPluginRuntime
+hook useEffect
+hook useCallback
+handler onClick
+handler onSubmit
+handler onChange
+```
+
+### src/config/explorerContextMenu.ts
+```
+export interface ExplorerContextMenuItemOverride
+  enabled?: boolean
+  order?: number
+export interface ExplorerContextMenuCatalogItemBase
+  id: string
+  title: string
+  description?: string
+  contexts: ExplorerContextMenuTarget[]
+  appliesTo: 'any' | 'file' | 'directory'
+  group: ExplorerContextMenuItemGroup
+  defaultOrder: number
+  source: 'built-in' | 'plugin'
+export interface ExplorerBuiltInContextMenuCatalogItem
+  source: 'built-in'
+  execution: { kind: 'built-in'
+  actionId: ExplorerBuiltInContextMenuActionId
+export interface ExplorerResolvedPluginContextMenuContribution
+  source: 'plugin'
+  pluginId: string
+  pluginName: string
+  execution: OverlayPluginContextMenuContributio
+export interface ExplorerSortableContextMenuItem
+  id: string
+  defaultOrder: number
+export type ExplorerContextMenuTarget
+```
+
+### src/config/workbenchPresets.ts
+```
+export type WorkbenchRegionId
+export type WorkbenchWindowMode
+export type WorkbenchInputMode
+export type WorkbenchDensityMode
+export type WorkbenchWindowAnchor
+export type WorkbenchPanelBinding
+export type WorkbenchWindowProfile
+export type WorkbenchInputProfile
+export type WorkbenchPreset
+export function normalizeWorkbenchPreset(input, fallback,) → WorkbenchPreset
+export function resolveWorkbenchPreset(presetId,) → WorkbenchPreset
+export function getWorkbenchPresetsForShellBlueprint(shellBlueprint,) → WorkbenchPreset[]
+```
+
+### src/runtime/themeEngineBackend.ts
+```
+export interface CompiledThemeEngineManifest
+  manifest: ExplorerThemeManifest
+  designTokenLookup: Record<string, ExplorerThemeDesignT
+  layoutPrimitiveLookup: Record<string, ExplorerThemeLayoutP
+  navigationPatternLookup: Record<string, ExplorerThemeNavigat
+  animationProfileLookup: Record<string, ExplorerThemeAnimati
+  iconPackLookup: Record<string, ExplorerThemeIconPac
+  renderStyleLookup: Record<string, ExplorerThemeRenderS
+  defaultDesignToken: ExplorerThemeDesignToken | null
+export interface ThemeEngineCatalog
+  manifests: ExplorerThemeManifest[]
+  presets: ExplorerWorkbenchPreset[]
+export type ExplorerThemeManifest
+export type ExplorerThemePresentation
+export type ExplorerThemeCompatibility
+export type ExplorerThemeDesignToken
+export type ExplorerThemeLayoutPrimitive
+export type ExplorerThemeNavigationPattern
+export type ExplorerThemeAnimationProfile
+export type ExplorerThemeIconPackManifest
+export type ExplorerThemeRenderStyleManifest
+export type ExplorerWorkbenchPreset
+export async function listThemeEngineCatalog() → Promise<ThemeEngineCatalog>
+export function compileThemeEngineManifest(manifestInput) → CompiledThemeEngineManifest
+export function normalizeThemeManifestDraft(draft,) → ExplorerThemeManifest
+```
+
+### src/components/explorer/repo-map.md
+```
+h1 File Summary
+h2 Purpose
+h2 File Format
+h2 Usage Guidelines
+h2 Notes
+h1 Directory Structure
+h1 Files
+h2 File: constellationLayout.ts
+h2 File: ExplorerChromeSurface.tsx
+h2 File: explorerDirectoryCache.ts
+h2 File: explorerRailState.ts
+h2 File: ExplorerSideRail.tsx
+h2 File: ExplorerTaskCenterContent.tsx
+h2 File: ExplorerTaskStatusBadge.tsx
+h2 File: ExplorerWorkspace.tsx
+h2 File: repositoryPickerState.ts
+code-fence plain
+code-fence typescript
+```
+
+### src/repo-map.md
+```
+h1 File Summary
+h2 Purpose
+h2 File Format
+h2 Usage Guidelines
+h2 Notes
+h1 Directory Structure
+h1 Files
+h2 File: assets/react.svg
+h2 File: components/explorer/constellationLayout.ts
+h2 File: components/explorer/ExplorerChromeSurface.tsx
+h2 File: components/explorer/explorerDirectoryCache.ts
+h2 File: components/explorer/explorerRailState.ts
+h2 File: components/explorer/ExplorerSideRail.tsx
+h2 File: components/explorer/ExplorerTaskCenterContent.tsx
+h2 File: components/explorer/ExplorerTaskStatusBadge.tsx
+h2 File: components/explorer/ExplorerWorkspace.tsx
+h2 File: components/explorer/repo-map.md
+h2 File: constellationLayout.ts
+h2 File: ExplorerChromeSurface.tsx
+h2 File: explorerDirectoryCache.ts
+h2 File: explorerRailState.ts
+h2 File: ExplorerSideRail.tsx
+h2 File: ExplorerTaskCenterContent.tsx
+h2 File: ExplorerTaskStatusBadge.tsx
+h2 File: ExplorerWorkspace.tsx
+```
+
+### src/components/repo-map.md
+```
+h1 File Summary
+h2 Purpose
+h2 File Format
+h2 Usage Guidelines
+h2 Notes
+h1 Directory Structure
+h1 Files
+h2 File: explorer/constellationLayout.ts
+h2 File: explorer/ExplorerChromeSurface.tsx
+h2 File: explorer/explorerDirectoryCache.ts
+h2 File: explorer/explorerRailState.ts
+h2 File: explorer/ExplorerSideRail.tsx
+h2 File: explorer/ExplorerTaskCenterContent.tsx
+h2 File: explorer/ExplorerTaskStatusBadge.tsx
+h2 File: explorer/ExplorerWorkspace.tsx
+h2 File: explorer/repo-map.md
+h2 File: constellationLayout.ts
+h2 File: ExplorerChromeSurface.tsx
+h2 File: explorerDirectoryCache.ts
+h2 File: explorerRailState.ts
+h2 File: ExplorerSideRail.tsx
+h2 File: ExplorerTaskCenterContent.tsx
+h2 File: ExplorerTaskStatusBadge.tsx
+h2 File: ExplorerWorkspace.tsx
+h2 File: repositoryPickerState.ts
+```
+
+### src/repomix-output.xml
+```
+root file_summary
+svg -> iconify iconify--logos
+tag Settings
+input#rename-prefix
+```
+
+### src/App.tsx
+```
+component LayoutPinnedPanelSlot
+component App
+component TopBar
+hook useState
+hook useMemo
+hook useRef
+hook useEffect
+hook useSettingsStore
+hook useShallow
+hook useTerminalStore
+hook useFolderPluginRuntime
+hook useCallback
+hook useGlobalShortcut
+export App
+handler onTimerRef
+handler onFrameRef
+handler onCommitTimerRef
+handler onLockUntilRef
+handler onSignatureRef
+handler onShownRef
+handler onHostLabel
+handler onHost
+handler onState
+handler onDurationMs
+handler onIntensity
+```
+
+### src/components/ExplorerAudioWorkbench.tsx
+```
+component AudioWorkbenchWaveformBars
+component AudioWorkbenchSpectralBars
+component AudioWorkbenchPlayheadMarker
+component ExplorerAudioWorkbench
+hook useRef
+hook useImperativeHandle
+hook useLayoutEffect
+hook useEffect
+hook useAudioEngineFeed
+hook useAudioEngineSnapshot
+hook useState
+hook useMemo
+hook useAudioDeck
+export ExplorerAudioWorkbench
+handler onDuration
+handler onLeft
+handler onWidth
+handler onMouseDown
+handler onKeyDown
+handler onSeconds
+handler onChange
+```
+
+### src/components/ExplorerVideoEditor.tsx
+```
+component ExplorerVideoEditor
+hook useVideoEngineFeed
+hook useVideoEngineSnapshot
+hook useRef
+hook useState
+hook useEffect
+hook useVideo
+export ExplorerVideoEditor
+handler onRef
+handler onDuration
+handler onLeft
+handler onWidth
+handler onClick
+handler onMouseDown
+handler onChange
+```
+
+### src/components/FileExplorer.tsx
+```
+component SvgIcon
+component ContextMenu
+component ExplorerLayoutGlyph
+component ExplorerShellLayoutGlyph
+component ExplorerExperimentalGlyph
+component SearchAwareCodeView
+component EditorFallback
+component PreviewPanel
+component DocumentPreviewFallback
+component ModelPreviewFallback
+component RenameInput
+component ExplorerThumbnailImage
+component TrashDialog
+component TransferConflictDialog
+component SaveSearchDialog
+component BatchRenameDialog
+component ExplorerPropertiesDialog
+component DuplicateFinderDialog
+component FileExplorer
+props ExplorerExperimentalGlyphProps
+props FileExplorerProps
+hook useRef
+hook useEffect
+hook useCallback
+hook useState
+```
+
+### src/components/SettingsPage.tsx
+```
+component ThemeBadge
+component ThemeCatalogCard
+component ThemeCatalogSection
+component ThemeCatalogGrid
+component ColorToken
+component SectionTitle
+component RangeField
+component ShortcutField
+component SettingsRailButton
+component OverviewCard
+component SettingsPage
+hook useMemo
+hook useState
+hook useEffect
+hook useCallback
+hook useSettingsStore
+hook useShallow
+hook useTerminalStore
+hook usePersistentPanelSize
+hook useRef
+export SettingsPage
+handler onPattern
+handler onProfile
+handler onPack
+handler onStyle
+```
+
+### src/components/fileExplorerClickBehavior.ts
+```
+export type ExplorerActivationTrigger
+export function shouldOpenExplorerEntryOnTrigger({ isDirectory, trigger, plainClick, folderClickMode, }) → boolean
+export function shouldShowExplorerFolderOpenIcon({ isDirectory, isSelected, isDropTarget, folderClickMode, }) → boolean
+```
+
+### src/config/hotkeys.ts
+```
+export interface HotkeyBindingDefinition
+  key: HotkeyBindingKey
+  label: string
+  description: string
+  defaultValue: string
+  scope: 'global' | 'gesture' | 'local'
+export type HotkeyBindingKey
+export type HotkeyBindingSettings
+export function createDefaultKeybindingSettings() → HotkeyBindingSettings
+export function normalizeKeybindingValue(value, fallback) → string
+export function normalizeKeybindingSettings(value, unknown>> | undefined,) → HotkeyBindingSettings
+export function getHotkeyBindingDefinition(key) → HotkeyBindingDefinition
+export function formatHotkeyLabel(value) → string
+export function matchesKeybinding(event, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>, binding,) → boolean
+export function matchesWheelHotkey(event, 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>, binding,) → boolean
+```
+
+### src/config/filePreview.ts
+```
+export interface ExplorerAudioExportFormatDefinition
+  id: ExplorerAudioExportFormatId
+  label: string
+  extension: string
+  mimeType: string
+export type ModelPreviewFormat
+export type ExplorerAudioExportFormatId
+export function isImagePreviewExtension(extension) → boolean
+export function isExecutableExtension(extension) → boolean
+export function isAudioPreviewExtension(extension) → boolean
+export function isVideoPreviewExtension(extension) → boolean
+export function getAudioPreviewMimeType(extension) → string | null
+export function getExplorerAudioExportFormatDefinition(formatId,) → ExplorerAudioExportFormatDefin
+export function isDirectAudioPreviewExtension(extension) → boolean
+export function getVideoPreviewMimeType(extension) → string | null
+export function getModelPreviewFormat(extension,) → ModelPreviewFormat | null
+export function getMonacoLanguage(extension) → string
+export function isEditableTextExtension(extension, size,) → boolean
+```
+
+### src/generated/tauri.ts
+```
+export type AudioBatchProcessMode
+export type AudioBatchProcessRequest
+export type AudioBatchProcessResult
+export type AudioDeckId
+export type AudioDeckState
+export type AudioEngineDeckRequest
+export type AudioEngineGainRequest
+export type AudioEngineLoadDeckRequest
+export type AudioEngineLoopRegion
+export type AudioEngineLoopRegionRequest
+export type AudioEngineRateRequest
+export type AudioEngineSeekRequest
+export type AudioEngineSetArmedDeckRequest
+export type AudioEngineStateEvent
+export type AudioEngineStateSnapshot
+export type AudioEngineSyncSelectionRequest
+export type AudioPreviewAnalysis
+export type AudioTransformMode
+export type AudioTransformRequest
+export type AudioTransformResult
+export type AudioWaveformBucket
+export type CloudAccountStatus
+export type CloudAccountSummary
+export type CloudAccountsSnapshot
+export type CloudAuthSession
+```
+
+### src/runtime/videoEngineBackend.ts
+```
+export type ExplorerVideoPlaybackBackend
+export type ExplorerVideoEngineLoopRegion
+export type ExplorerVideoEngineStateEvent
+export type ExplorerVideoEngineStateSnapshot
+export async function prepareExplorerVideoEngine() → Promise<ExplorerVideoEngineSta
+export async function getExplorerVideoEngineState() → Promise<ExplorerVideoEngineSta
+export async function loadExplorerVideoSource(request,) → Promise<ExplorerVideoEngineSta
+export async function playExplorerVideo() → Promise<ExplorerVideoEngineSta
+export async function pauseExplorerVideo() → Promise<ExplorerVideoEngineSta
+export async function stopExplorerVideo() → Promise<ExplorerVideoEngineSta
+export async function seekExplorerVideo(request,) → Promise<ExplorerVideoEngineSta
+export async function setExplorerVideoLoopRegion(request,) → Promise<ExplorerVideoEngineSta
+```
+
+### src/store/settingsStore.ts
+```
+export interface EditorSettings
+  fontSize: number
+  fontFamily: string
+  tabSize: number
+  wordWrap: 'on' | 'off' | 'wordWrapColumn' | '
+  minimap: boolean
+  lineNumbers: 'on' | 'off' | 'relative'
+  cursorBlinking: 'blink' | 'smooth' | 'phase' | 'exp
+  cursorStyle: 'line' | 'block' | 'underline'
+export interface TerminalSettings
+  fontSize: number
+  fontFamily: string
+  shell: string
+  showSidebar: boolean
+  cursorBlink: boolean
+  cursorStyle: 'bar' | 'block' | 'underline'
+  scrollback: number
+  overlayHeight: number
+export interface PythonSettings
+  preferredInterpreterPath: string
+  runtimeRoot: string
+  bootstrapPackages: string
+  autoUpgradePip: boolean
+  createBoilerplate: boolean
+export interface ExplorerSettings
+```
+
+### src/store/videoEngineStore.ts
+```
+export function useVideoEngineFeed() → void
+export function useVideoEngineSnapshot() → ExplorerVideoEngineStateSnapsh
+export async function loadVideoSource(inputPath,) → Promise<ExplorerVideoEngineSta
+export async function playVideo() → Promise<ExplorerVideoEngineSta
+export async function pauseVideo() → Promise<ExplorerVideoEngineSta
+export async function stopVideo() → Promise<ExplorerVideoEngineSta
+export async function seekVideo(positionSeconds,) → Promise<ExplorerVideoEngineSta
+export async function setVideoLoopRegion(startSeconds, endSeconds, enabled,) → Promise<ExplorerVideoEngineSta
+export const useVideoEngineStore = create<VideoEngineStoreState>(...)
+  snapshot
+  hydrationState
+  hydrationError
+  subscriptionState
+  subscriptionError
+  replaceSnapshot
+  setHydrationState
+  setHydrationError
+  setSubscriptionState
+  setSubscriptionError
+```
+
+## src-tauri
+
+### src-tauri/src/screenshot_commands.rs
+```
+pub struct SavedScreenshot
+pub struct ScreenshotPreview
+pub struct ScreenshotRegion
+pub struct ScreenshotAnnotatedExportResult
+pub enum ScreenshotAnnotation
+impl OverlayCaptureGuard
+pub async fn screenshot_capture_preview(window: tauri::WebviewWindow, x: i32, y: i32, width: u32, height: u32,) → Result<ScreenshotPreview, S...
+pub async fn screenshot_save_region(capture_id: String, x: u32, y: u32, width: u32, height: u32, directory: String, file_prefix: Option<String>, copy_to_clipboard: Option<bool>,) → Result<SavedScreenshot, Str...
+pub async fn screenshot_export_annotated(capture_id: String, selection: Option<ScreenshotRegion>, annotations: Vec<ScreenshotAnnotation>, directory: Option<String>, file_prefix: Option<String>, copy_to_clipboard: Option<bool>,) → Result<ScreenshotAnnotatedE...
+pub async fn screenshot_copy_region_to_clipboard(capture_id: String, x: u32, y: u32, width: u32, height: u32,) → Result<(), String>
+pub async fn screenshot_copy_image_to_clipboard(path: String) → Result<(), String>
+pub async fn screenshot_read_gallery_thumbnail(path: String, max_width: u32, max_height: u32,) → Result<String, String>
+```
+
+### src-tauri/themes/README.md
+```
+h1 OverlayTerm Theme Packages
+h2 Folder Shape
+h2 Manifest
+h2 Generalized Authoring Model
+h2 Dock Recipe Overrides
+h2 Explorer Recipe Highlights
+h2 Workbench Recipe Highlights
+h2 Authoring Format
+h2 Icon Theme JSON
+h2 Canonical Ids
+h2 Notes
+code-fence text
+code-fence plain
+```
+
+### src-tauri/themes/_starter/README.md
+```
+h1 Theme Starter
+code-fence json
+code-fence plain
+```
+
+### src-tauri/src/desktop_integration.rs
+```
+pub struct NativeIconRequest
+pub struct NativeIconResponse
+pub fn fs_resolve_native_icons(window: WebviewWindow, requests: Vec<NativeIconRequest>,) → Result<Vec<NativeIconRespon...
+pub fn fs_start_native_file_drag(window: WebviewWindow, paths: Vec<String>) → Result<(), String>
+```
+
+### src-tauri/src/cloud_commands.rs
+```
+pub struct CloudProviderConfigurationStatus
+pub struct CloudAccountSummary
+pub struct CloudAccountsSnapshot
+pub struct CloudAuthSession
+pub struct CloudAuthStatus
+pub struct CloudBreadcrumb
+pub struct CloudDirectoryListing
+pub struct CloudRuntimeState
+pub enum CloudProviderId
+pub enum CloudProviderConfigurationSource
+pub enum CloudAccountStatus
+impl PersistedCloudAccount
+impl CloudRuntimeState
+impl CloudPathRef
+pub async fn cloud_list_accounts(app: AppHandle) → Result<CloudAccountsSnapsho...
+pub async fn cloud_set_provider_configuration(app: AppHandle, provider: CloudProviderId, client_id: String, client_secret: Option<String>,) → Result<CloudProviderConfigu...
+pub async fn cloud_clear_provider_configuration(app: AppHandle, provider: CloudProviderId,) → Result<CloudProviderConfigu...
+pub async fn cloud_begin_auth(app: AppHandle, state: State<'_, CloudRuntimeState>, provider: CloudProviderId,) → Result<CloudAuthSession, St...
+pub async fn cloud_poll_auth(app: AppHandle, state: State<'_, CloudRuntimeState>, request_id: String,) → Result<CloudAuthStatus, Str...
+pub async fn cloud_disconnect_account(app: AppHandle, state: State<'_, CloudRuntimeState>, account_id: String,) → Result<(), String>
+pub async fn cloud_list_dir(app: AppHandle, state: State<'_, CloudRuntimeState>, path: String,) → Result<CloudDirectoryListin...
+pub async fn cloud_open_file(app: AppHandle, state: State<'_, CloudRuntimeState>, path: String,) → Result<(), String>
+pub async fn cloud_read_text_file(app: AppHandle, state: State<'_, CloudRuntimeState>, path: String,) → Result<String, String>
+pub async fn cloud_read_file_base64(app: AppHandle, state: State<'_, CloudRuntimeState>, path: String,) → Result<String, String>
+pub async fn cloud_write_file(app: AppHandle, state: State<'_, CloudRuntimeState>, path: String, content: FsWriteFileContent,) → Result<(), String>
+```
+
+### src-tauri/src/archive_ops.rs
+```
+pub struct FsArchiveExtractionRequest
+pub struct FsArchiveExtractionResult
+pub enum FsArchiveExtractionMode
+pub fn is_supported_archive_path(path: &Path) → bool
+pub fn open_archive_cached(path: &Path) → Result<FsArchiveExtractionR...
+pub fn extract_archive(request: &FsArchiveExtractionRequest,) → Result<FsArchiveExtractionR...
+```
+
+### src-tauri/src/window_commands.rs
+```
+pub fn window_apply_mode(app: AppHandle, window: WebviewWindow, decorations: bool, always_on_top: bool, shadow: bool, skip_taskbar: bool, x: i32, y: i32, width: u32, height: u32,) → Result<(), String>
+pub fn window_set_blur(window: WebviewWindow, enabled: bool, strength: Option<f64>,) → Result<(), String>
+pub fn window_set_taskbar_visibility(app: AppHandle, window: WebviewWindow, visible: bool,) → Result<(), String>
+pub fn tray_set_visible(app: AppHandle, visible: bool) → Result<(), String>
+pub fn window_get_linux_display_server() → Option<String>
+pub fn window_get_wayland_dock_host_status(app: AppHandle) → WaylandDockHostStatus
+pub fn window_apply_wayland_dock_layout(window: WebviewWindow, anchor: WaylandDockAnchor, monitor_name: Option<String>, width: u32, height: u32,) → Result<(), String>
+pub fn detect_linux_display_server() → Option<&'static str>
+pub fn detect_linux_display_server() → Option<&'static str>
+```
+
+### src-tauri/src/wayland_dock.rs
+```
+pub struct WaylandDockHostStatus
+pub enum WaylandDockAnchor
+pub fn wayland_dock_host_status(app: &AppHandle) → WaylandDockHostStatus
+pub fn initialize_wayland_dock_host(app: &AppHandle) → Result<(), String>
+pub fn initialize_wayland_dock_host(_app: &AppHandle) → Result<(), String>
+pub fn apply_wayland_dock_layout(window: &WebviewWindow, anchor: WaylandDockAnchor, monitor_name: Option<String>, width: u32, height: u32,) → Result<(), String>
+```
+
+### src-tauri/src/linux_graphics.rs
+```
+pub struct LinuxDisplayBackendStatus
+pub enum LinuxDisplayBackend
+pub enum LinuxDisplayBackendPreference
+impl LinuxDisplayBackend
+impl LinuxGraphicsEnvironmentSnapshot
+```
+
+### src-tauri/src/startup_commands.rs
+```
+pub async fn startup_get_launch_at_startup(app: AppHandle) → Result<bool, String>
+pub async fn startup_set_launch_at_startup(app: AppHandle, enabled: bool) → Result<bool, String>
+pub async fn startup_get_linux_display_backend_status() → Result<LinuxDisplayBackendS...
+pub async fn startup_set_linux_display_backend_preference(preferred_backend: LinuxDisplayBackendPreference,) → Result<LinuxDisplayBackendS...
+```
+
+### src-tauri/src/audio_engine.rs
+```
+pub struct AudioEngineLoopRegion
+pub struct AudioDeckState
+pub struct AudioEngineStateSnapshot
+pub struct AudioEngineStateEvent
+pub struct AudioEngineLoadDeckRequest
+pub struct AudioEngineDeckRequest
+pub struct AudioEngineSeekRequest
+pub struct AudioEngineLoopRegionRequest
+pub struct AudioEngineGainRequest
+pub struct AudioEngineRateRequest
+pub struct AudioEngineSetArmedDeckRequest
+pub struct AudioEngineSyncSelectionRequest
+pub struct AudioEngineManager
+pub enum AudioDeckId
+impl AudioDeckRuntime
+impl AudioEngineSharedState
+impl AudioDeckId
+impl DeckRenderContext
+impl DecodedAudioData
+pub fn analyze_audio_file_native(input_path: &Path) → Result<AudioPreviewAnalysis...
+pub fn audio_engine_prepare(app: AppHandle) → Result<AudioEngineStateSnap...
+pub fn audio_engine_get_state(app: AppHandle) → Result<AudioEngineStateSnap...
+pub async fn audio_engine_load_deck(app: AppHandle, request: AudioEngineLoadDeckRequest,) → Result<AudioEngineStateSnap...
+pub async fn audio_engine_sync_selection_to_armed_deck(app: AppHandle, request: AudioEngineSyncSelectionRequest,) → Result<AudioEngineStateSnap...
+pub fn audio_engine_unload_deck(app: AppHandle, request: AudioEngineDeckRequest,) → Result<AudioEngineStateSnap...
+```
+
+### src-tauri/src/audio_commands.rs
+```
+pub struct AudioWaveformBucket
+pub struct AudioPreviewAnalysis
+pub struct AudioTransformRequest
+pub struct AudioTransformResult
+pub struct AudioBatchProcessRequest
+pub struct AudioBatchProcessResult
+pub enum AudioTransformMode
+pub enum AudioBatchProcessMode
+pub fn cancel_audio_task(task_id: &str) → Result<(), String>
+pub async fn audio_analyze_preview(input_path: String,) → Result<AudioPreviewAnalysis...
+pub async fn audio_export_transform(app: AppHandle, request: AudioTransformRequest,) → Result<AudioTransformResult...
+pub async fn audio_batch_process(app: AppHandle, request: AudioBatchProcessRequest,) → Result<AudioBatchProcessRes...
+```
+
+### src-tauri/src/thumbnail_commands.rs
+```
+pub struct ExplorerVideoHoverFrame
+pub struct ExplorerEntryThumbnail
+pub struct ExplorerEntryThumbnailRequest
+pub enum ExplorerThumbnailKind
+pub async fn fs_read_entry_thumbnail(app: AppHandle, request: ExplorerEntryThumbnailRequest,) → Result<ExplorerEntryThumbna...
+```
+
+### src-tauri/Cargo.toml
+```
+table [package]
+table [lib]
+table [build-dependencies]
+table [dependencies]
+table [dev-dependencies]
+table [target.'cfg(target_os = "windows")'.dependencies]
+table [target.'cfg(target_os = "macos")'.dependencies]
+table [target.'cfg(target_os = "linux")'.dependencies]
+key name
+key version
+key description
+key authors
+key edition
+key default-run
+key tauri-plugin-autostart
+key tauri-plugin-window-state
+key tauri-plugin-opener
+key serde_json
+key portable-pty
+key log
+key tauri-plugin-global-shortcut
+key tauri-plugin-notification
+key tauri-plugin-store
+key tauri-plugin-shell
+key window-vibrancy
+```
+
+### src-tauri/src/terminal.rs
+```
+pub struct TerminalInstance
+pub struct TerminalManager
+pub struct ExternalTerminalRequest
+pub struct TerminalShellIntegrationState
+pub struct TerminalShellIntegrationRequest
+pub struct TerminalShellIntegrationStateEvent
+pub struct TerminalWriteRequest
+pub enum TerminalShellKind
+impl TerminalManager
+  pub fn new() → Self
+  pub fn spawn(&self, id: &str, working_dir: Option<String>, shell: Option<String>, rows: u16, cols: u16,) → Result<(), String>
+pub async fn terminal_spawn(terminal_manager: tauri::State<'_, TerminalManager>, app: AppHandle, id: String, working_dir: Option<String>, shell: Option<String>, rows: Option<u16>, cols: Option<u16>,) → Result<(), String>
+pub async fn terminal_write(terminal_manager: tauri::State<'_, TerminalManager>, id: String, data: String,) → Result<(), String>
+pub async fn terminal_write_many(terminal_manager: tauri::State<'_, TerminalManager>, writes: Vec<TerminalWriteRequest>,) → Result<(), String>
+pub async fn terminal_resize(terminal_manager: tauri::State<'_, TerminalManager>, id: String, rows: u16, cols: u16,) → Result<(), String>
+pub async fn terminal_kill(terminal_manager: tauri::State<'_, TerminalManager>, id: String,) → Result<(), String>
+pub async fn terminal_register_shell_integration(app: AppHandle, terminal_manager: tauri::State<'_, TerminalManager>, request: TerminalShellIntegrationRequest,) → Result<TerminalShellIntegra...
+pub async fn terminal_sync_cwd(app: AppHandle, terminal_manager: tauri::State<'_, TerminalManager>, id: String, cwd: String,) → Result<TerminalShellIntegra...
+pub async fn terminal_set_prompt_state(app: AppHandle, terminal_manager: tauri::State<'_, TerminalManager>, id: String, at_prompt: bool, reported_cwd: Option<String>,) → Result<TerminalShellIntegra...
+pub async fn terminal_open_external(request: ExternalTerminalRequest) → Result<(), String>
+```
+
+### src-tauri/src/fs_commands.rs
+```
+pub struct FileEntry
+pub struct DriveInfo
+pub struct EntryStorageInfo
+pub struct FsChecksumEntryInfo
+pub struct FsPermissionInfo
+pub struct FsItemPropertiesInfo
+pub struct FsJumpFilterEntry
+pub struct FsJumpFilterRequest
+pub struct FsJumpFilterMatch
+pub struct ExplorerTaskProgressEvent
+pub struct ExplorerTaskRecord
+pub struct FsRuntimeCachePolicy
+pub struct FileTransferCollision
+pub struct FileTransferResult
+pub struct FileSearchResult
+pub struct FileSearchDiagnostics
+pub struct FileSearchResponse
+pub enum FsWriteFileContent
+pub enum ExplorerTaskKind
+pub enum ExplorerTaskStatus
+pub enum ExplorerTaskHistoryClearScope
+pub enum FileTransferOperation
+pub enum FileTransferCollisionPolicy
+pub enum FileTransferDisposition
+pub enum FileSearchMatchKind
+```
+
+### src-tauri/src/explorer_pro_commands.rs
+```
+pub struct ExplorerTagRecord
+pub struct ExplorerPathTagAssignment
+pub struct ExplorerTagSnapshot
+pub struct ExplorerTagMutationRequest
+pub struct ExplorerSavedSearchRecord
+pub struct ExplorerSavedSearchSaveRequest
+pub struct ExplorerTrashedEntryRecord
+pub struct ExplorerTrashActionRecord
+pub struct ExplorerTrashRestoreResult
+pub struct FsBatchRenameItem
+pub struct FsBatchRenameRecipe
+pub struct FsBatchRenamePreviewRow
+pub struct FsBatchRenameResult
+pub struct ExplorerDuplicateScanStartResponse
+pub struct ExplorerDuplicateGroup
+pub struct ExplorerDuplicateScanStatus
+pub enum ExplorerTagMutationMode
+pub enum FsBatchRenameMode
+impl ExplorerMetadataDocument
+impl ExplorerDuplicateScanProgress
+pub async fn explorer_tags_list(app: AppHandle, paths: Option<Vec<String>>,) → Result<ExplorerTagSnapshot,...
+pub async fn explorer_tags_set_for_paths(app: AppHandle, request: ExplorerTagMutationRequest,) → Result<ExplorerTagSnapshot,...
+pub async fn explorer_saved_searches_list(app: AppHandle,) → Result<Vec<ExplorerSavedSea...
+pub async fn explorer_saved_searches_save(app: AppHandle, request: ExplorerSavedSearchSaveRequest,) → Result<ExplorerSavedSearchR...
+pub async fn explorer_saved_searches_delete(app: AppHandle, id: String) → Result<(), String>
+```
+
+### src-tauri/src/specta_bindings.rs
+```
+pub fn export_bindings() → Result<PathBuf, String>
+pub fn bindings_output_path() → PathBuf
+pub fn app_specta_builder() → Builder<tauri::Wry>
+```
+
+### src-tauri/src/lib.rs
+```
+pub fn run()
+```
+
+### src-tauri/src/video_commands.rs
+```
+pub struct ResolvedVideoPreviewSource
+pub struct VideoTrimExportRequest
+pub struct VideoTrimExportResult
+pub enum VideoPreviewSourceKind
+pub async fn video_export_trim(request: VideoTrimExportRequest,) → Result<VideoTrimExportResul...
+pub async fn video_create_preview_proxy(app: AppHandle, input_path: String,) → Result<ResolvedVideoPreview...
+pub async fn video_resolve_preview_source(input_path: String,) → Result<ResolvedVideoPreview...
+```
+
+### src-tauri/src/video_engine.rs
+```
+pub struct VideoEngineLoopRegion
+pub struct VideoEngineStateSnapshot
+pub struct VideoEngineStateEvent
+pub struct VideoEngineLoadSourceRequest
+pub struct VideoEngineSeekRequest
+pub struct VideoEngineLoopRegionRequest
+pub struct VideoEngineManager
+pub enum VideoPlaybackBackend
+impl VideoEngineMutableState
+impl VideoEngineSharedState
+pub fn video_engine_prepare(app: AppHandle) → Result<VideoEngineStateSnap...
+pub fn video_engine_get_state(app: AppHandle) → Result<VideoEngineStateSnap...
+pub async fn video_engine_load_source(app: AppHandle, request: VideoEngineLoadSourceRequest,) → Result<VideoEngineStateSnap...
+pub fn video_engine_play(app: AppHandle) → Result<VideoEngineStateSnap...
+pub fn video_engine_pause(app: AppHandle) → Result<VideoEngineStateSnap...
+pub fn video_engine_stop(app: AppHandle) → Result<VideoEngineStateSnap...
+pub fn video_engine_seek(app: AppHandle, request: VideoEngineSeekRequest,) → Result<VideoEngineStateSnap...
+pub fn video_engine_set_loop_region(app: AppHandle, request: VideoEngineLoopRegionRequest,) → Result<VideoEngineStateSnap...
+```
