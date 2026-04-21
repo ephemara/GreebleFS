@@ -48,6 +48,14 @@ describe('explorerThumbnails', () => {
     expect(canRenderExplorerThumbnail('mp4', 2_048, defaultExplorerThumbnailSettings)).toBe(true);
     expect(canRenderExplorerThumbnail('wgsl', 2_048, defaultExplorerThumbnailSettings)).toBe(true);
     expect(canRenderExplorerThumbnail('ts', 4_096, defaultExplorerThumbnailSettings)).toBe(true);
+    expect(
+      canRenderExplorerThumbnail(
+        'ts',
+        4_096,
+        defaultExplorerThumbnailSettings,
+        'search',
+      ),
+    ).toBe(false);
     expect(canRenderExplorerThumbnail('png', 2_048, { ...defaultExplorerThumbnailSettings, enabled: false })).toBe(false);
   });
 });

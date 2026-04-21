@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, Camera, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, VolumeX } from '@/components/AppIcons';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
@@ -551,6 +551,79 @@ function SectionTitle({ icon, title, subtitle }: { icon: ReactNode; title: strin
       </div>
     </div>
   );
+}
+
+type RgbColor = { r: number; g: number; b: number };
+
+function parseCssColorToRgb(color: string | undefined): RgbColor | null {
+  const trimmed = color?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.startsWith('#')) {
+    const hex = trimmed.slice(1);
+    if (hex.length === 3) {
+      return {
+        r: parseInt(hex[0] + hex[0], 16),
+        g: parseInt(hex[1] + hex[1], 16),
+        b: parseInt(hex[2] + hex[2], 16),
+      };
+    }
+    if (hex.length === 6 || hex.length === 8) {
+      return {
+        r: parseInt(hex.slice(0, 2), 16),
+        g: parseInt(hex.slice(2, 4), 16),
+        b: parseInt(hex.slice(4, 6), 16),
+      };
+    }
+    return null;
+  }
+
+  const rgbMatch = trimmed.match(/^rgba?\(([^)]+)\)$/i);
+  if (!rgbMatch) {
+    return null;
+  }
+
+  const channels = rgbMatch[1]
+    .split(',')
+    .slice(0, 3)
+    .map(channel => Number.parseFloat(channel.trim()));
+
+  if (channels.length < 3 || channels.some(channel => Number.isNaN(channel))) {
+    return null;
+  }
+
+  return {
+    r: channels[0] ?? 0,
+    g: channels[1] ?? 0,
+    b: channels[2] ?? 0,
+  };
+}
+
+function getRelativeColorLuminance(color: RgbColor): number {
+  const normalize = (channel: number) => {
+    const srgb = Math.max(0, Math.min(255, channel)) / 255;
+    return srgb <= 0.04045
+      ? srgb / 12.92
+      : ((srgb + 0.055) / 1.055) ** 2.4;
+  };
+
+  return (0.2126 * normalize(color.r)) + (0.7152 * normalize(color.g)) + (0.0722 * normalize(color.b));
+}
+
+function resolveSettingsFormColorScheme(backgroundColor: string, textColor: string): 'light' | 'dark' {
+  const backgroundRgb = parseCssColorToRgb(backgroundColor);
+  if (backgroundRgb) {
+    return getRelativeColorLuminance(backgroundRgb) < 0.42 ? 'dark' : 'light';
+  }
+
+  const textRgb = parseCssColorToRgb(textColor);
+  if (textRgb) {
+    return getRelativeColorLuminance(textRgb) > 0.58 ? 'dark' : 'light';
+  }
+
+  return 'dark';
 }
 
 function RangeField({
@@ -1613,11 +1686,57 @@ export function SettingsPage({
   const effectiveTheme = appearance.theme;
   const editableTheme = appAppearance.baseTheme;
   const panelBackground = effectiveTheme.palette.panelBackground;
+  const inputBackground = effectiveTheme.palette.inputBackground;
   const border = effectiveTheme.palette.border;
   const text = effectiveTheme.palette.textPrimary;
   const muted = effectiveTheme.palette.textMuted;
   const accent = effectiveTheme.palette.accent;
   const workbench = appearance.workbenchTheme;
+  const settingsFormColorScheme = useMemo(
+    () => resolveSettingsFormColorScheme(inputBackground, text),
+    [inputBackground, text],
+  );
+  const settingsFieldStyle = useMemo<CSSProperties>(
+    () => ({
+      borderColor: border,
+      backgroundColor: 'var(--overlay-bg-input)',
+      color: text,
+      caretColor: text,
+      colorScheme: settingsFormColorScheme,
+    }),
+    [border, settingsFormColorScheme, text],
+  );
+  const settingsMonoFieldStyle = useMemo<CSSProperties>(
+    () => ({
+      ...settingsFieldStyle,
+      fontFamily: appearance.fonts.mono,
+    }),
+    [appearance.fonts.mono, settingsFieldStyle],
+  );
+  const settingsSelectStyle = useMemo<CSSProperties>(
+    () => ({
+      ...settingsFieldStyle,
+      appearance: 'none',
+      WebkitAppearance: 'none',
+      MozAppearance: 'none',
+      backgroundImage: [
+        `linear-gradient(45deg, transparent 50%, ${muted} 50%)`,
+        `linear-gradient(135deg, ${muted} 50%, transparent 50%)`,
+      ].join(', '),
+      backgroundPosition: 'calc(100% - 16px) calc(50% - 2px), calc(100% - 11px) calc(50% - 2px)',
+      backgroundSize: '5px 5px',
+      backgroundRepeat: 'no-repeat',
+      paddingRight: '2.4rem',
+    }),
+    [muted, settingsFieldStyle],
+  );
+  const settingsMonoSelectStyle = useMemo<CSSProperties>(
+    () => ({
+      ...settingsSelectStyle,
+      fontFamily: appearance.fonts.mono,
+    }),
+    [appearance.fonts.mono, settingsSelectStyle],
+  );
   const themeIconTheme = editableTheme.assets?.iconTheme ?? getBuiltInIconTheme();
   const iconThemeSelectionSummary = activeIconThemePackage
     ? `${activeIconThemePackage.name} · ${activeIconThemePackage.capabilitySummary.iconDefinitions} glyphs · ${activeIconThemePackage.capabilitySummary.uiIcons} UI overrides`
@@ -1798,22 +1917,22 @@ export function SettingsPage({
   ]);
   const settingsJumpCards = useMemo(() => [
     {
-      id: 'appearance',
-      title: 'Appearance',
-      summary: 'Theme recipes, blur, transparency, and fonts.',
-      action: () => setActiveSection('appearance'),
+      id: 'system',
+      title: 'System',
+      summary: 'Launch, tray, taskbar, GPU tier, and machine-level diagnostics.',
+      action: () => setActiveSection('system'),
     },
     {
-      id: 'wallpapers',
-      title: 'Wallpapers',
-      summary: 'Theme-integrated image, video, and live wallpaper layering.',
-      action: () => setActiveSection('wallpapers'),
+      id: 'terminal',
+      title: 'Terminal',
+      summary: 'Shell presentation, integrated defaults, and external handoff.',
+      action: () => setActiveSection('terminal'),
     },
     {
-      id: 'icons',
-      title: 'Icons',
-      summary: 'VS Code-style icon packs for explorer files, folders, and shell chrome.',
-      action: () => setActiveSection('icons'),
+      id: 'explorer',
+      title: 'Explorer',
+      summary: 'Click behavior, layout bias, startup path, and thumbnails.',
+      action: () => setActiveSection('explorer'),
     },
     {
       id: 'layouts',
@@ -1822,10 +1941,10 @@ export function SettingsPage({
       action: () => setActiveSection('layouts'),
     },
     {
-      id: 'system',
-      title: 'System',
-      summary: 'Launch, tray, and taskbar integration.',
-      action: () => setActiveSection('system'),
+      id: 'appearance',
+      title: 'Appearance',
+      summary: 'Theme recipes, blur, transparency, and fonts.',
+      action: () => setActiveSection('appearance'),
     },
     {
       id: 'theme-json',
@@ -2078,6 +2197,76 @@ export function SettingsPage({
       icon: <Sparkles size={14} />,
     },
     {
+      key: 'system',
+      label: 'System',
+      subtitle: 'Startup and OS integration status.',
+      summary: [
+        settings.system.launchAtStartup ? 'Startup on' : 'Startup off',
+        systemPresentationState.trayVisible ? 'Tray on' : 'Tray off',
+        systemPresentationState.taskbarVisible ? 'Taskbar on' : 'Taskbar off',
+      ].join(' · '),
+      detail: `Handle machine-level behavior like login launch and the ${systemPresentationState.recoveryPath === 'tray' ? 'tray' : platform === 'macos' ? 'Dock' : 'taskbar'} recovery path in one place.`,
+      icon: <Settings2 size={14} />,
+    },
+    {
+      key: 'terminal',
+      label: 'Terminal',
+      subtitle: 'Shell defaults and external handoff.',
+      summary: `${settings.terminal.windowMode === 'windowed' ? 'application' : 'dock'} mode · ${settings.terminal.preferredOpenMode} · ${settings.terminal.cursorStyle} cursor`,
+      detail: 'Control the integrated terminal, its typography, and how commands hand off to external shells.',
+      icon: <TerminalSquare size={14} />,
+    },
+    {
+      key: 'explorer',
+      label: 'Explorer',
+      subtitle: 'Startup path, file visibility, layout, and thumbnail behavior.',
+      summary: `${getExplorerViewModeDefinition(settings.explorer.viewMode).label} · ${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.thumbnails.enabled ? 'Rich thumbnails' : 'Icons only'}`,
+      detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and thumbnail policy without mixing in icon-pack management.',
+      icon: <FolderOpen size={14} />,
+    },
+    {
+      key: 'layouts',
+      label: 'Layouts',
+      subtitle: 'Workbench profiles and shell chrome.',
+      summary: `${activeLayoutProfile.label} · ${layoutManifestState.manifest.profiles.length} profiles · ${settings.layout.zenFocusMode ? 'Zen on' : 'Zen off'}`,
+      detail: 'Switch between shell profiles, point at external manifests, and control the workbench shape at the layout level.',
+      icon: <LayoutGrid size={14} />,
+    },
+    {
+      key: 'hotkeys',
+      label: 'Hotkeys',
+      subtitle: 'Overlay opener and gesture bindings.',
+      summary: [settings.keybindings.terminalToggle, settings.keybindings.windowModeToggle, settings.keybindings.zenFocusModeToggle]
+        .map(formatHotkeyLabel)
+        .join(' · '),
+      detail: 'Keep the overlay easy to summon, control shell presentation, and remap the primary focus toggles without digging through raw config.',
+      icon: <SlidersHorizontal size={14} />,
+    },
+    {
+      key: 'cloud',
+      label: 'Cloud',
+      subtitle: 'OAuth-backed Google Drive and Dropbox accounts.',
+      summary: `${connectedCloudAccountCount} connected · ${configuredCloudProviderCount}/2 providers configured`,
+      detail: 'Manage provider credentials from Settings or the runtime environment, keep account tokens off the settings store, and surface each connected account as an explorer drive.',
+      icon: <HardDrive size={14} />,
+    },
+    {
+      key: 'screenshots',
+      label: 'Screenshots',
+      subtitle: 'Capture defaults, save path, and proof-focused editor behavior.',
+      summary: `${settings.screenshots.defaultCaptureMode === 'monitor' ? 'Full monitor default' : 'Area snip default'} · ${formatScreenshotOutputActionLabel(settings.screenshots.defaultOutputAction)} · ${settings.screenshots.showGrid ? 'Grid on' : 'Grid off'}`,
+      detail: 'Set the default screenshot landing path and decide how the built-in capture tool behaves before and after a proof action.',
+      icon: <Camera size={14} />,
+    },
+    {
+      key: 'audio',
+      label: 'Audio',
+      subtitle: 'Audio pathing and VST3 integration.',
+      summary: `${settings.audio.vst3AdditionalFolders.length} user folders`,
+      detail: 'Configure scan paths for audio integrations and DAW-like plugin discovery.',
+      icon: <Music size={14} />,
+    },
+    {
       key: 'appearance',
       label: 'Appearance',
       subtitle: 'Theme, opacity, panel transparency, blur, and zoom.',
@@ -2118,76 +2307,6 @@ export function SettingsPage({
       icon: <RotateCcw size={14} />,
     },
     {
-      key: 'terminal',
-      label: 'Terminal',
-      subtitle: 'Shell defaults and external handoff.',
-      summary: `${settings.terminal.windowMode === 'windowed' ? 'application' : 'dock'} mode · ${settings.terminal.preferredOpenMode} · ${settings.terminal.cursorStyle} cursor`,
-      detail: 'Control the integrated terminal, its typography, and how commands hand off to external shells.',
-      icon: <TerminalSquare size={14} />,
-    },
-    {
-      key: 'explorer',
-      label: 'Explorer',
-      subtitle: 'Startup path, file visibility, layout, and thumbnail behavior.',
-      summary: `${getExplorerViewModeDefinition(settings.explorer.viewMode).label} · ${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.thumbnails.enabled ? 'Rich thumbnails' : 'Icons only'}`,
-      detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and thumbnail policy without mixing in icon-pack management.',
-      icon: <FolderOpen size={14} />,
-    },
-    {
-      key: 'cloud',
-      label: 'Cloud',
-      subtitle: 'OAuth-backed Google Drive and Dropbox accounts.',
-      summary: `${connectedCloudAccountCount} connected · ${configuredCloudProviderCount}/2 providers configured`,
-      detail: 'Manage provider credentials from Settings or the runtime environment, keep account tokens off the settings store, and surface each connected account as an explorer drive.',
-      icon: <HardDrive size={14} />,
-    },
-    {
-      key: 'screenshots',
-      label: 'Screenshots',
-      subtitle: 'Capture defaults, save path, and proof-focused editor behavior.',
-      summary: `${settings.screenshots.defaultCaptureMode === 'monitor' ? 'Full monitor default' : 'Area snip default'} · ${formatScreenshotOutputActionLabel(settings.screenshots.defaultOutputAction)} · ${settings.screenshots.showGrid ? 'Grid on' : 'Grid off'}`,
-      detail: 'Set the default screenshot landing path and decide how the built-in capture tool behaves before and after a proof action.',
-      icon: <Camera size={14} />,
-    },
-    {
-      key: 'layouts',
-      label: 'Layouts',
-      subtitle: 'Workbench profiles and shell chrome.',
-      summary: `${activeLayoutProfile.label} · ${layoutManifestState.manifest.profiles.length} profiles · ${settings.layout.zenFocusMode ? 'Zen on' : 'Zen off'}`,
-      detail: 'Switch between shell profiles, point at external manifests, and control the workbench shape at the layout level.',
-      icon: <LayoutGrid size={14} />,
-    },
-    {
-      key: 'hotkeys',
-      label: 'Hotkeys',
-      subtitle: 'Overlay opener and gesture bindings.',
-      summary: [settings.keybindings.terminalToggle, settings.keybindings.windowModeToggle, settings.keybindings.zenFocusModeToggle]
-        .map(formatHotkeyLabel)
-        .join(' · '),
-      detail: 'Keep the overlay easy to summon, control shell presentation, and remap the primary focus toggles without digging through raw config.',
-      icon: <SlidersHorizontal size={14} />,
-    },
-    {
-      key: 'system',
-      label: 'System',
-      subtitle: 'Startup and OS integration status.',
-      summary: [
-        settings.system.launchAtStartup ? 'Startup on' : 'Startup off',
-        systemPresentationState.trayVisible ? 'Tray on' : 'Tray off',
-        systemPresentationState.taskbarVisible ? 'Taskbar on' : 'Taskbar off',
-      ].join(' · '),
-      detail: `Handle machine-level behavior like login launch and the ${systemPresentationState.recoveryPath === 'tray' ? 'tray' : platform === 'macos' ? 'Dock' : 'taskbar'} recovery path in one place.`,
-      icon: <Settings2 size={14} />,
-    },
-    {
-      key: 'audio',
-      label: 'Audio',
-      subtitle: 'Audio pathing and VST3 integration.',
-      summary: `${settings.audio.vst3AdditionalFolders.length} user folders`,
-      detail: 'Configure scan paths for audio integrations and DAW-like plugin discovery.',
-      icon: <Music size={14} />,
-    },
-    {
       key: 'theme-json',
       label: 'Theme JSON',
       subtitle: 'Raw theme authoring and import.',
@@ -2206,6 +2325,7 @@ export function SettingsPage({
         minHeight: 0,
         minWidth: 0,
         fontFamily: appearance.fonts.ui,
+        colorScheme: settingsFormColorScheme,
         background: 'var(--overlay-workbench-settings-bg)',
         gap: 'var(--overlay-workbench-panel-gap)',
         padding: 'var(--overlay-workbench-page-padding)',
@@ -2418,7 +2538,7 @@ export function SettingsPage({
                   <OverviewCard
                     title="Settings Shortcuts"
                     subtitle="Jump straight to the settings surfaces most likely to unblock a real release session."
-                    badges={['Appearance', 'Layouts', 'System', 'Theme JSON']}
+                    badges={['System', 'Terminal', 'Explorer', 'Layouts']}
                   >
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                       {settingsJumpCards.map(card => (
@@ -2951,10 +3071,11 @@ export function SettingsPage({
                         draggable={false}
                       />
                       <select
+                        aria-label="Default fallback folder icon"
                         value={settings.explorer.defaultFolderIcon}
                         onChange={event => updateExplorer({ defaultFolderIcon: event.target.value as FolderIconValue })}
                         className="w-full bg-transparent text-[11px] outline-none"
-                        style={{ color: text }}
+                        style={settingsMonoSelectStyle}
                       >
                         {FOLDER_ICON_OPTIONS.map(option => (
                           <option key={option.value} value={option.value}>
@@ -2989,13 +3110,14 @@ export function SettingsPage({
                             onChange={event => updateFolderRule(rule.id, { matchers: parseMatcherInput(event.target.value) })}
                             placeholder="src, source, source_code"
                             className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                            style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                            style={settingsMonoFieldStyle}
                           />
                           <select
+                            aria-label={`Folder icon for ${rule.label}`}
                             value={rule.icon}
                             onChange={event => updateFolderRule(rule.id, { icon: event.target.value as FolderIconValue })}
                             className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                            style={{ borderColor: border, background: panelBackground, color: text }}
+                            style={settingsMonoSelectStyle}
                           >
                             {FOLDER_ICON_OPTIONS.map(option => (
                               <option key={option.value} value={option.value}>
@@ -4166,7 +4288,7 @@ export function SettingsPage({
                       value={settings.terminal.windowedWidth}
                       onChange={event => updateTerminal({ windowedWidth: Number(event.target.value) })}
                       className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                      style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                      style={settingsFieldStyle}
                     />
                   </div>
 
@@ -4179,7 +4301,7 @@ export function SettingsPage({
                       value={settings.terminal.windowedHeight}
                       onChange={event => updateTerminal({ windowedHeight: Number(event.target.value) })}
                       className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                      style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                      style={settingsFieldStyle}
                     />
                   </div>
                 </div>
@@ -4209,7 +4331,7 @@ export function SettingsPage({
                   value={settings.terminal.shell}
                   onChange={event => updateTerminal({ shell: event.target.value })}
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                  style={settingsMonoFieldStyle}
                 />
               </div>
 
@@ -4219,7 +4341,7 @@ export function SettingsPage({
                   value={settings.terminal.fontFamily}
                   onChange={event => updateTerminal({ fontFamily: event.target.value })}
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                  style={settingsMonoFieldStyle}
                 />
               </div>
 
@@ -4232,17 +4354,18 @@ export function SettingsPage({
                   value={settings.terminal.fontSize}
                   onChange={event => updateTerminal({ fontSize: Number(event.target.value) })}
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                  style={settingsFieldStyle}
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Cursor Style</label>
                 <select
+                  aria-label="Cursor Style"
                   value={settings.terminal.cursorStyle}
                   onChange={event => updateTerminal({ cursorStyle: event.target.value as typeof settings.terminal.cursorStyle })}
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={{ borderColor: border, background: panelBackground, color: text }}
+                  style={settingsSelectStyle}
                 >
                   <option value="bar">Bar</option>
                   <option value="block">Block</option>
@@ -4276,10 +4399,11 @@ export function SettingsPage({
               <div className="space-y-1.5 md:col-span-2">
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">External Terminal Profile</label>
                 <select
+                  aria-label="External Terminal Profile"
                   value={settings.terminal.externalTerminalProfile}
                   onChange={event => updateTerminal({ externalTerminalProfile: event.target.value as ExternalTerminalProfile })}
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={{ borderColor: border, background: panelBackground, color: text }}
+                  style={settingsSelectStyle}
                 >
                   {profileOptions.map(option => (
                     <option key={option.id} value={option.id}>{option.label}</option>
@@ -4298,7 +4422,7 @@ export function SettingsPage({
                       value={settings.terminal.externalTerminalCommand}
                       onChange={event => updateTerminal({ externalTerminalCommand: event.target.value })}
                       className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                      style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                      style={settingsMonoFieldStyle}
                     />
                   </div>
 
@@ -4308,7 +4432,7 @@ export function SettingsPage({
                       value={settings.terminal.externalTerminalArgs}
                       onChange={event => updateTerminal({ externalTerminalArgs: event.target.value })}
                       className="min-h-[92px] w-full rounded border px-3 py-2 text-[11px] outline-none"
-                      style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                      style={settingsMonoFieldStyle}
                     />
                   </div>
                 </>
@@ -4623,7 +4747,7 @@ export function SettingsPage({
                       developerTelemetryCaptureMode: event.target.value as typeof settings.system.developerTelemetryCaptureMode,
                     })}
                     className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
-                    style={{ borderColor: border, color: text }}
+                    style={settingsSelectStyle}
                   >
                     <option value="raw">Raw</option>
                     <option value="sampled">Sampled</option>
@@ -4640,7 +4764,7 @@ export function SettingsPage({
                       developerTelemetryPayloadMode: event.target.value as typeof settings.system.developerTelemetryPayloadMode,
                     })}
                     className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
-                    style={{ borderColor: border, color: text }}
+                    style={settingsSelectStyle}
                   >
                     <option value="metadata-only">Metadata Only</option>
                     <option value="metadata+small-payloads">Metadata + Small Payloads</option>
@@ -4661,7 +4785,7 @@ export function SettingsPage({
                       developerTelemetryMaxFileSizeMb: Number(event.target.value),
                     })}
                     className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
-                    style={{ borderColor: border, color: text }}
+                    style={settingsFieldStyle}
                   />
                 </label>
                 <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
@@ -4738,7 +4862,7 @@ export function SettingsPage({
                       event.target.value as LinuxDisplayBackendPreference,
                     )}
                     className="min-w-[140px] rounded border bg-transparent px-2 py-1 text-[11px]"
-                    style={{ borderColor: border, color: text }}
+                    style={settingsSelectStyle}
                   >
                     <option value="auto">Auto</option>
                     <option

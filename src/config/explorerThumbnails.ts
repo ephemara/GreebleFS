@@ -16,6 +16,8 @@ export interface ExplorerThumbnailSettings {
   videoHoverScrubFrameCount: number;
 }
 
+export type ExplorerThumbnailRenderContext = 'browse' | 'search';
+
 export const defaultExplorerThumbnailSettings: ExplorerThumbnailSettings = {
   enabled: true,
   includeImages: true,
@@ -66,7 +68,11 @@ export function canRenderExplorerThumbnail(
   extension: string,
   size: number,
   settings: ExplorerThumbnailSettings,
+  renderContext: ExplorerThumbnailRenderContext = 'browse',
 ): boolean {
+  if (renderContext === 'search') {
+    return false;
+  }
   if (!settings.enabled) {
     return false;
   }
