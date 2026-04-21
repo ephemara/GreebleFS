@@ -7016,6 +7016,9 @@ export function FileExplorer({
   const searchFocusRequestIdRef = useRef(0);
   const jumpFilterRequestIdRef = useRef(0);
   const batchRenamePreviewRequestIdRef = useRef(0);
+  const recursiveSizeRequestIdRef = useRef(0);
+  const propertiesChecksumRequestIdRef = useRef(0);
+  const propertiesInfoRequestIdRef = useRef(0);
   const isExplorerMountedRef = useRef(false);
   const directoryLoadRequestIdRef = useRef(0);
   const pendingNavigationPathRef = useRef<string | null>(null);
@@ -7350,6 +7353,9 @@ export function FileExplorer({
       isExplorerMountedRef.current = false;
       searchRequestIdRef.current += 1;
       directoryLoadRequestIdRef.current += 1;
+      recursiveSizeRequestIdRef.current += 1;
+      propertiesChecksumRequestIdRef.current += 1;
+      propertiesInfoRequestIdRef.current += 1;
     };
   }, []);
 
@@ -8354,6 +8360,18 @@ export function FileExplorer({
     [duplicateEntryLookup, propertiesPanel.targetPaths],
   );
   const propertiesPanelPrimaryEntry = propertiesPanelEntries[0] ?? null;
+  const propertiesPanelRequestScopeKey = useMemo(
+    () =>
+      propertiesPanel.visible
+        ? `${propertiesPanel.tab}::${propertiesPanel.targetPaths.join("\u0000")}`
+        : "hidden",
+    [propertiesPanel.tab, propertiesPanel.targetPaths, propertiesPanel.visible],
+  );
+  useEffect(() => {
+    recursiveSizeRequestIdRef.current += 1;
+    propertiesChecksumRequestIdRef.current += 1;
+    propertiesInfoRequestIdRef.current += 1;
+  }, [propertiesPanelRequestScopeKey]);
   const runRecursiveSizeCalculation = useCallback(
     async (targetPaths?: string[]) => {
       const paths = (
@@ -8370,6 +8388,15 @@ export function FileExplorer({
         return;
       }
 
+      if (!isExplorerMountedRef.current) {
+        return;
+      }
+
+      const requestId = recursiveSizeRequestIdRef.current + 1;
+      recursiveSizeRequestIdRef.current = requestId;
+      const isActiveRecursiveSizeRequest = () =>
+        isExplorerMountedRef.current &&
+        recursiveSizeRequestIdRef.current === requestId;
       const activeTab = propertiesPanel.tab;
       setPropertiesPanel({
         loading: true,
@@ -8390,6 +8417,9 @@ export function FileExplorer({
 
       try {
         const results = await calculateExplorerRecursiveSizes(paths, true);
+        if (!isActiveRecursiveSizeRequest()) {
+          return;
+        }
         startTransition(() => {
           setEntrySizes((current) => {
             const next = { ...current };
@@ -8407,14 +8437,18 @@ export function FileExplorer({
           });
         });
       } catch (error) {
-        setError(String(error));
+        if (isActiveRecursiveSizeRequest()) {
+          setError(String(error));
+        }
       } finally {
-        setPropertiesPanel({
-          loading: false,
-          targetPaths: paths,
-          tab: activeTab,
-          visible: true,
-        });
+        if (isActiveRecursiveSizeRequest()) {
+          setPropertiesPanel({
+            loading: false,
+            targetPaths: paths,
+            tab: activeTab,
+            visible: true,
+          });
+        }
       }
     },
     [
@@ -8438,6 +8472,15 @@ export function FileExplorer({
         return;
       }
 
+      if (!isExplorerMountedRef.current) {
+        return;
+      }
+
+      const requestId = propertiesChecksumRequestIdRef.current + 1;
+      propertiesChecksumRequestIdRef.current = requestId;
+      const isActivePropertiesChecksumRequest = () =>
+        isExplorerMountedRef.current &&
+        propertiesChecksumRequestIdRef.current === requestId;
       const activeTab = propertiesPanel.tab;
       setPropertiesChecksumError(null);
       setPropertiesChecksumLoadingPaths(new Set(paths));
@@ -8456,6 +8499,9 @@ export function FileExplorer({
           }
 
           const [checksumResult] = await calculateExplorerChecksums([path]);
+          if (!isActivePropertiesChecksumRequest()) {
+            return;
+          }
           if (checksumResult) {
             setPropertiesChecksums((current) => ({
               ...current,
@@ -8464,15 +8510,19 @@ export function FileExplorer({
           }
         }
       } catch (error) {
-        setPropertiesChecksumError(String(error));
+        if (isActivePropertiesChecksumRequest()) {
+          setPropertiesChecksumError(String(error));
+        }
       } finally {
-        setPropertiesChecksumLoadingPaths(new Set());
-        setPropertiesPanel({
-          loading: false,
-          targetPaths: paths,
-          tab: activeTab,
-          visible: true,
-        });
+        if (isActivePropertiesChecksumRequest()) {
+          setPropertiesChecksumLoadingPaths(new Set());
+          setPropertiesPanel({
+            loading: false,
+            targetPaths: paths,
+            tab: activeTab,
+            visible: true,
+          });
+        }
       }
     },
     [
@@ -8511,7 +8561,17 @@ export function FileExplorer({
       return;
     }
 
-    void runPropertiesChecksumCalculation([targetPath]);
+    let cancelled = false;
+    const checksumLaunchTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        void runPropertiesChecksumCalculation([targetPath]);
+      }
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(checksumLaunchTimer);
+    };
   }, [
     duplicateEntryLookup,
     entrySizes,
@@ -8534,6 +8594,12 @@ export function FileExplorer({
       return;
     }
 
+    const requestId = propertiesInfoRequestIdRef.current + 1;
+    propertiesInfoRequestIdRef.current = requestId;
+    const isActivePropertiesInfoRequest = () =>
+      isExplorerMountedRef.current &&
+      propertiesInfoRequestIdRef.current === requestId;
+
     void Promise.all(
       targetPaths.map(async (path) => {
         if (propertiesInfoByPath[path]) {
@@ -8542,11 +8608,16 @@ export function FileExplorer({
         try {
           return await getExplorerItemProperties(path);
         } catch (error) {
-          setError(String(error));
+          if (isActivePropertiesInfoRequest()) {
+            setError(String(error));
+          }
           return null;
         }
       }),
     ).then((results) => {
+      if (!isActivePropertiesInfoRequest()) {
+        return;
+      }
       const nextEntries = results.filter(
         (entry): entry is ExplorerItemProperties => Boolean(entry),
       );

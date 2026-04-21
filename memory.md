@@ -1,5 +1,19 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Explorer Properties Checksums Now Survive Tab Remounts
+
+- Explorer properties checksum autoload no longer trips the `getRootForUpdatedFiber` runtime path when a `FileExplorer` instance is replaced during tab/workspace swaps.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now gives recursive-size work, checksum work, and properties-info fetches their own request ids and invalidates them on unmount plus properties-panel scope changes.
+  - The checksums autoload effect now defers its launch with `setTimeout(..., 0)` instead of synchronously scheduling state writes during passive-effect mount.
+  - Stale checksum/info completions now bail before mutating component-local state or reopening the global properties panel after a newer panel scope takes over.
+  - `src/test/fileExplorer.viewModes.test.tsx` now covers the remount case directly and clears the global `propertiesPanel` store slice in `beforeEach` so later explorer tests do not inherit dialog state.
+- Durable product note:
+  - The properties dialog is still store-global while its checksum/info payloads are component-local. Any future async work attached to that dialog needs both mount cleanup and scope invalidation, or explorer tab swaps will regress back into stale writes or remount-time crashes.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "FileExplorer.tsx|fileExplorer.viewModes.test.tsx" || true`
+
 # 2026-04-20 - Shader Default Now Starts In Performance Mode
 
 - Shell shader assignment now has a persisted `shaderPerformanceMode` setting in `src/store/settingsStore.ts` and `src/config/shaders.ts`.

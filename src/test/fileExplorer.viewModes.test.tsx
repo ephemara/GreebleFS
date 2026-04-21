@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  act,
   createEvent,
   fireEvent,
   render,
@@ -759,6 +760,7 @@ describe("FileExplorer view modes", () => {
     resetOverlayTermStorage(window.localStorage);
     useSettingsStore.getState().resetToDefaults();
     useExplorerStore.getState().resetSession();
+    useExplorerStore.getState().setPropertiesPanel(null);
     useExplorerStore
       .getState()
       .replaceRail(createDefaultExplorerRailSnapshot());
@@ -2079,6 +2081,148 @@ describe("FileExplorer view modes", () => {
 
     await screen.findByText("alpha");
     unmount();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("ignores stale properties checksum completions after an explorer tab remount", async () => {
+    const propertiesPath = `${REPO_ROOT}\\notes.txt`;
+    const firstChecksumResponse = createDeferred<
+      Array<{
+        path: string;
+        bytes: number;
+        isDir: boolean;
+        md5: string | null;
+        sha256: string | null;
+        error: string | null;
+      }>
+    >();
+    const secondChecksumResponse = createDeferred<
+      Array<{
+        path: string;
+        bytes: number;
+        isDir: boolean;
+        md5: string | null;
+        sha256: string | null;
+        error: string | null;
+      }>
+    >();
+    const defaultInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    let checksumCallCount = 0;
+
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: Parameters<typeof invoke>[1]) => {
+      const payload = args as { path?: string } | undefined;
+      switch (command) {
+        case "fs_calculate_checksums":
+          checksumCallCount += 1;
+          return checksumCallCount === 1
+            ? firstChecksumResponse.promise
+            : secondChecksumResponse.promise;
+        case "fs_get_item_properties":
+          return {
+            path: payload?.path ?? propertiesPath,
+            name: "notes.txt",
+            isDir: false,
+            isSymlink: false,
+            bytes: 128,
+            modifiedAtMs: 0,
+            createdAtMs: 0,
+            accessedAtMs: 0,
+            permissions: {
+              readonly: false,
+              display: "rw-rw-rw-",
+              unixMode: null,
+              unixModeOctal: null,
+            },
+          };
+        default:
+          if (!defaultInvokeImplementation) {
+            throw new Error(`Unexpected invoke command: ${command}`);
+          }
+          return defaultInvokeImplementation(command, args);
+      }
+    });
+
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const appearance = resolveOverlayAppearance({ activeThemeId: "operator" });
+    const renderExplorerTab = (instanceId: string) =>
+      render(
+        <FileExplorer
+          theme={{
+            accent: appearance.theme.palette.accent,
+            bg: appearance.theme.palette.appBackground,
+            bgPanel: appearance.theme.palette.panelBackground,
+            text: appearance.theme.palette.textPrimary,
+            border: appearance.theme.palette.border,
+            textMuted: appearance.theme.palette.textMuted,
+          }}
+          appearance={appearance}
+          instanceId={instanceId}
+          onOpenInTerminal={() => {}}
+          onAddBookmark={async () => {}}
+        />,
+      );
+
+    const firstExplorer = renderExplorerTab("tab-alpha");
+    await screen.findByText("notes.txt");
+
+    await act(async () => {
+      useExplorerStore.getState().setPropertiesPanel({
+        loading: false,
+        targetPaths: [propertiesPath],
+        tab: "checksums",
+        visible: true,
+      });
+    });
+
+    await waitFor(() => {
+      expect(checksumCallCount).toBe(1);
+    });
+
+    firstExplorer.unmount();
+
+    renderExplorerTab("tab-bravo");
+    await waitFor(() => {
+      expect(screen.getAllByText("notes.txt").length).toBeGreaterThan(0);
+    });
+    await waitFor(() => {
+      expect(checksumCallCount).toBe(2);
+    });
+
+    await act(async () => {
+      firstChecksumResponse.resolve([
+        {
+          path: propertiesPath,
+          bytes: 128,
+          isDir: false,
+          md5: "11111111111111111111111111111111",
+          sha256:
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          error: null,
+        },
+      ]);
+      await firstChecksumResponse.promise;
+    });
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      secondChecksumResponse.resolve([
+        {
+          path: propertiesPath,
+          bytes: 128,
+          isDir: false,
+          md5: "22222222222222222222222222222222",
+          sha256:
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          error: null,
+        },
+      ]);
+      await secondChecksumResponse.promise;
+    });
+
     expect(consoleErrorSpy).not.toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
   });
