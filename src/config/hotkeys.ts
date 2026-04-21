@@ -16,7 +16,8 @@ export type HotkeyBindingKey =
   | 'goForwardDirectory'
   | 'goHomeDirectory'
   | 'clearExplorerSearch'
-  | 'toggleExplorerSearchScope'
+  | 'cycleExplorerSearchMode'
+  | 'findSimilarSelection'
   | 'cycleExplorerSortKey'
   | 'toggleExplorerSortOrder'
   | 'focusExplorerList'
@@ -219,10 +220,17 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     scope: 'local',
   },
   {
-    key: 'toggleExplorerSearchScope',
-    label: 'Toggle Include Text Search',
-    description: 'Toggle whether explorer search includes file contents.',
+    key: 'cycleExplorerSearchMode',
+    label: 'Cycle Explorer Search Mode',
+    description: 'Cycle explorer search among name, content, and semantic modes.',
     defaultValue: 'Ctrl+Alt+F',
+    scope: 'local',
+  },
+  {
+    key: 'findSimilarSelection',
+    label: 'Find Similar File',
+    description: 'Run semantic similarity search for the active local text/code selection.',
+    defaultValue: 'Ctrl+Alt+M',
     scope: 'local',
   },
   {
@@ -634,9 +642,17 @@ export function normalizeKeybindingSettings(
   value: Partial<Record<HotkeyBindingKey, unknown>> | undefined,
 ): HotkeyBindingSettings {
   const defaults = createDefaultKeybindingSettings();
+  const legacyValue = value as Record<string, unknown> | undefined;
 
   return hotkeyBindingDefinitions.reduce((result, definition) => {
-    result[definition.key] = normalizeKeybindingValue(value?.[definition.key], defaults[definition.key]);
+    const legacyFallbackValue =
+      definition.key === 'cycleExplorerSearchMode'
+        ? legacyValue?.toggleExplorerSearchScope
+        : undefined;
+    result[definition.key] = normalizeKeybindingValue(
+      value?.[definition.key] ?? legacyFallbackValue,
+      defaults[definition.key],
+    );
     return result;
   }, {} as HotkeyBindingSettings);
 }

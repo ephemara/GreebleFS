@@ -1,5 +1,4 @@
 use crate::acceleration_runtime::AccelerationRoutingMode;
-use crate::explorer_pro_commands::ExplorerSearchMode;
 use crate::fs_commands::{
     complete_manual_explorer_task, create_manual_explorer_task_with_id,
     fail_manual_explorer_task, update_manual_explorer_task, ExplorerTaskKind,
@@ -168,13 +167,6 @@ struct PythonSemanticIndexRootResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PythonSemanticDeleteIndexPayload {
-    db_path: String,
-    root_path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PythonSemanticIndexStatusPayload {
     db_path: String,
     root_path: String,
 }

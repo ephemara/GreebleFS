@@ -38,7 +38,8 @@ describe('hotkey config helpers', () => {
     expect(defaults.goForwardDirectory).toBe('Alt+Right');
     expect(defaults.goHomeDirectory).toBe('Alt+Home');
     expect(defaults.clearExplorerSearch).toBe('Escape');
-    expect(defaults.toggleExplorerSearchScope).toBe('Ctrl+Alt+F');
+    expect(defaults.cycleExplorerSearchMode).toBe('Ctrl+Alt+F');
+    expect(defaults.findSimilarSelection).toBe('Ctrl+Alt+M');
     expect(defaults.cycleExplorerSortKey).toBe('Ctrl+Alt+S');
     expect(defaults.toggleExplorerSortOrder).toBe('Ctrl+Alt+O');
     expect(defaults.explorerMoveSelectionUp).toBe('ArrowUp');
@@ -81,6 +82,17 @@ describe('hotkey config helpers', () => {
     expect(defaults.find).toBe('');
     expect(defaults.toggleHiddenFiles).toBe('Ctrl+H');
     expect(defaults.replace).toBe('');
+  });
+
+  it('migrates the legacy toggleExplorerSearchScope binding into cycleExplorerSearchMode', () => {
+    const normalized = normalizeKeybindingSettings({
+      toggleExplorerSearchScope: 'Ctrl+Shift+K',
+    } as unknown as Parameters<typeof normalizeKeybindingSettings>[0]);
+
+    expect(normalized.cycleExplorerSearchMode).toBe('Ctrl+Shift+K');
+    expect(normalized.findSimilarSelection).toBe(
+      createDefaultKeybindingSettings().findSimilarSelection,
+    );
   });
 
   it('normalizes option-based wheel bindings to alt-modified scroll gestures', () => {

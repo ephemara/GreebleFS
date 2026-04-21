@@ -37,6 +37,42 @@ interface TestFileSearchResult extends TestFileEntry {
   line_number: number | null;
 }
 
+interface TestSemanticIndexSummary {
+  rootPath: string;
+  indexed: boolean;
+  stale: boolean;
+  fileCount: number;
+  chunkCount: number;
+  indexedAt: number | null;
+  modelId: string | null;
+  backendKind: string | null;
+  providerKind: string | null;
+  lastError: string | null;
+}
+
+interface TestSemanticSearchResult extends TestFileEntry {
+  relativePath: string;
+  matchKind: null;
+  snippet: string;
+  lineNumber: number | null;
+  semanticScore: number;
+}
+
+interface TestSemanticSearchResponse {
+  results: TestSemanticSearchResult[];
+  diagnostics: {
+    queryKind: 'query' | 'similarity';
+    backendKind: string;
+    providerKind: string;
+    modelId: string;
+    indexedFileCount: number;
+    indexedChunkCount: number;
+    staleIndex: boolean;
+    resultLimit: number;
+    forceCpu: boolean;
+  };
+}
+
 const REPO_ROOT = 'C:\\workspace\\repo';
 const SETTINGS_STORAGE_KEY = 'ultacode-settings';
 
@@ -119,6 +155,50 @@ const DEFAULT_SEARCH_DIAGNOSTICS: FileSearchDiagnostics = {
   truncatedByScanBudget: false,
 };
 
+const DEFAULT_SEMANTIC_INDEX_SUMMARY: TestSemanticIndexSummary = {
+  rootPath: REPO_ROOT,
+  indexed: true,
+  stale: false,
+  fileCount: 2,
+  chunkCount: 4,
+  indexedAt: 1710000000000,
+  modelId: 'sentence-transformers/all-MiniLM-L6-v2',
+  backendKind: 'onnx',
+  providerKind: 'cudaPython',
+  lastError: null,
+};
+
+const DEFAULT_SEMANTIC_SEARCH_RESPONSE: TestSemanticSearchResponse = {
+  results: [
+    {
+      name: 'notes.txt',
+      path: `${REPO_ROOT}\\notes.txt`,
+      is_dir: false,
+      size: 12,
+      modified: 0,
+      extension: 'txt',
+      is_hidden: false,
+      is_symlink: false,
+      relativePath: 'notes.txt',
+      matchKind: null,
+      snippet: 'notes about greebles and semantic clustering',
+      lineNumber: 3,
+      semanticScore: 0.987,
+    },
+  ],
+  diagnostics: {
+    queryKind: 'query',
+    backendKind: 'onnx',
+    providerKind: 'cudaPython',
+    modelId: 'sentence-transformers/all-MiniLM-L6-v2',
+    indexedFileCount: 2,
+    indexedChunkCount: 4,
+    staleIndex: false,
+    resultLimit: 60,
+    forceCpu: false,
+  },
+};
+
 function renderExplorer() {
   const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
 
@@ -140,7 +220,17 @@ function renderExplorer() {
   );
 }
 
-function installExplorerBackendMock(diagnostics: FileSearchDiagnostics) {
+function installExplorerBackendMock(
+  diagnostics: FileSearchDiagnostics,
+  options?: {
+    semanticIndexSummary?: TestSemanticIndexSummary;
+    semanticSearchResponse?: TestSemanticSearchResponse;
+  },
+) {
+  const semanticIndexSummary =
+    options?.semanticIndexSummary ?? DEFAULT_SEMANTIC_INDEX_SUMMARY;
+  const semanticSearchResponse =
+    options?.semanticSearchResponse ?? DEFAULT_SEMANTIC_SEARCH_RESPONSE;
   vi.mocked(invoke).mockReset();
   vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
     const payload = args as { paths?: string[] } | undefined;
@@ -163,6 +253,10 @@ function installExplorerBackendMock(diagnostics: FileSearchDiagnostics) {
           results: [SEARCH_RESULT],
           diagnostics,
         };
+      case 'explorer_semantic_index_get_summary':
+        return semanticIndexSummary;
+      case 'explorer_semantic_search':
+        return semanticSearchResponse;
       case 'fs_cancel_search_entries':
       case 'fs_watch_entry_size_root':
       case 'fs_unwatch_entry_size_root':
@@ -288,6 +382,49 @@ describe('FileExplorer search telemetry', () => {
       explorerSearchContentCacheStoredFileCount: diagnostics.contentCacheStoredFileCount,
       explorerSearchContentCacheStoredByteCount: diagnostics.contentCacheStoredByteCount,
       explorerSearchTruncatedByScanBudget: diagnostics.truncatedByScanBudget,
+    });
+  });
+
+  it('records semantic search telemetry and renders semantic result affordances', async () => {
+    renderExplorer();
+
+    await screen.findByText('alpha');
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true, altKey: true });
+    fireEvent.keyDown(window, { key: 'l', ctrlKey: true });
+
+    const omnibox = await screen.findByPlaceholderText(/Search or enter path/i);
+    fireEvent.change(omnibox, { target: { value: 'meaningful notes' } });
+    fireEvent.keyDown(omnibox, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith(
+        'explorer_semantic_search',
+        expect.objectContaining({
+          request: expect.objectContaining({
+            rootPath: REPO_ROOT,
+            query: 'meaningful notes',
+          }),
+        }),
+      );
+      expect(loadExplorerPerformanceSnapshot(window.localStorage).samples.explorer_search).toHaveLength(1);
+    });
+
+    expect(await screen.findByText('notes about greebles and semantic clustering')).toBeTruthy();
+    expect(await screen.findByText('98.7%')).toBeTruthy();
+
+    const searchSample = loadExplorerPerformanceSnapshot(window.localStorage).samples.explorer_search[0];
+    expect(searchSample?.metadata).toMatchObject({
+      success: true,
+      includeContent: false,
+      semanticSearch: true,
+      semanticQueryKind: 'query',
+      semanticBackendKind: 'onnx',
+      semanticProviderKind: 'cudaPython',
+      semanticIndexedFileCount: 2,
+      semanticIndexedChunkCount: 4,
+      semanticStaleIndex: false,
+      semanticForcedCpu: false,
+      resultCount: 1,
     });
   });
 

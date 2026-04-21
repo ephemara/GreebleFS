@@ -191,6 +191,68 @@ describe('explorerStore persistence', () => {
     ).toBeUndefined();
   });
 
+  it('migrates legacy searchIncludeContent into the persisted searchMode field', () => {
+    const { searchMode: _searchMode, ...legacySessionBase } = defaultExplorerSession;
+    const secondaryInstanceId = 'secondary';
+
+    const legacyPersistedState = {
+      version: 7,
+      session: {
+        ...legacySessionBase,
+        search: 'needle',
+        searchIncludeContent: false,
+      },
+      sessions: {
+        [PRIMARY_EXPLORER_INSTANCE_ID]: {
+          ...legacySessionBase,
+          search: 'needle',
+          searchIncludeContent: true,
+        },
+        [secondaryInstanceId]: {
+          ...legacySessionBase,
+          search: 'secondary needle',
+          searchIncludeContent: false,
+        },
+      },
+      workspace: defaultExplorerWorkspace,
+      rail: createDefaultExplorerRailSnapshot(),
+    };
+
+    persistExplorerState(
+      legacyPersistedState as unknown as Parameters<typeof persistExplorerState>[0],
+      window.localStorage,
+    );
+
+    const hydrated = loadExplorerPersistedState(window.localStorage);
+    expect(hydrated.sessions[PRIMARY_EXPLORER_INSTANCE_ID]?.searchMode).toBe('content');
+    expect(hydrated.session.searchMode).toBe('content');
+    expect(hydrated.sessions[secondaryInstanceId]?.searchMode).toBe('name');
+
+    persistExplorerState({
+      version: EXPLORER_STATE_VERSION,
+      session: hydrated.session,
+      sessions: hydrated.sessions,
+      workspace: hydrated.workspace,
+      rail: hydrated.rail,
+    }, window.localStorage);
+
+    const reparsed = JSON.parse(
+      window.localStorage.getItem(EXPLORER_STATE_STORAGE_KEY) ?? '{}',
+    ) as {
+      session?: Record<string, unknown>;
+      sessions?: Record<string, Record<string, unknown>>;
+    };
+
+    expect(reparsed.session?.searchIncludeContent).toBeUndefined();
+    expect(reparsed.session?.searchMode).toBe('content');
+    expect(
+      reparsed.sessions?.[PRIMARY_EXPLORER_INSTANCE_ID]?.searchIncludeContent,
+    ).toBeUndefined();
+    expect(reparsed.sessions?.[PRIMARY_EXPLORER_INSTANCE_ID]?.searchMode).toBe('content');
+    expect(reparsed.sessions?.[secondaryInstanceId]?.searchIncludeContent).toBeUndefined();
+    expect(reparsed.sessions?.[secondaryInstanceId]?.searchMode).toBe('name');
+  });
+
   it('creates, focuses, and closes explorer workspace tabs across panes', () => {
     const store = useExplorerStore.getState();
     store.setWorkspaceLayoutMode('split');

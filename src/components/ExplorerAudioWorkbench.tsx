@@ -727,9 +727,13 @@ export function ExplorerAudioWorkbench({
 
     void (async () => {
       try {
+        const activePluginPath = previewDeck.activePluginPath;
+        if (!activePluginPath) {
+          return;
+        }
         const session = await createExplorerVstEditorSession({
           deckId: previewDeck.deckId,
-          pluginPath: previewDeck.activePluginPath,
+          pluginPath: activePluginPath,
         });
         if (disposed) {
           await destroyExplorerVstEditorSession(session.sessionId);
