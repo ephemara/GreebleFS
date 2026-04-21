@@ -58,6 +58,55 @@ export function collectNormalizedBounds(object: THREE.Object3D): THREE.Box3 {
   return new THREE.Box3().setFromObject(object);
 }
 
+export function applyModelPreviewFallbackMaterials(object: THREE.Object3D) {
+  object.traverse((child: THREE.Object3D) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    if (!child.material) {
+      child.material = new THREE.MeshStandardMaterial({
+        color: "#cbd6e2",
+        roughness: 0.64,
+        metalness: 0.08,
+      });
+    }
+
+    const materials = Array.isArray(child.material)
+      ? child.material
+      : [child.material];
+    materials.forEach((material) => {
+      material.side = THREE.DoubleSide;
+      if ("metalness" in material && typeof material.metalness === "number") {
+        material.metalness = Math.min(material.metalness, 0.2);
+      }
+      if ("roughness" in material && typeof material.roughness === "number") {
+        material.roughness = Math.max(material.roughness, 0.45);
+      }
+      material.needsUpdate = true;
+    });
+
+    if (!child.geometry.attributes.normal) {
+      child.geometry.computeVertexNormals();
+    }
+  });
+}
+
+type DisposablePreviewObject = THREE.Object3D & {
+  geometry?: { dispose?: () => void };
+  material?: THREE.Material | THREE.Material[];
+};
+
+export function disposeModelPreviewObject(object: THREE.Object3D) {
+  object.traverse((child: THREE.Object3D) => {
+    const disposable = child as DisposablePreviewObject;
+    disposable.geometry?.dispose?.();
+    const materials = disposable.material
+      ? Array.isArray(disposable.material)
+        ? disposable.material
+        : [disposable.material]
+      : [];
+    materials.forEach((material: THREE.Material) => material.dispose());
+  });
+}
+
 export function parseDiffuseTexturePath(path: string): string {
   return path.replace(/\\/g, "/");
 }

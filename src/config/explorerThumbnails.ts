@@ -2,7 +2,9 @@ import {
   isAudioPreviewExtension,
   isEditableTextExtension,
   isImagePreviewExtension,
+  isModelPreviewExtension,
   isVideoPreviewExtension,
+  MODEL_PREVIEW_SOURCE_CONFIG,
 } from './filePreview';
 
 export interface ExplorerThumbnailSettings {
@@ -10,6 +12,7 @@ export interface ExplorerThumbnailSettings {
   includeImages: boolean;
   includeCode: boolean;
   includeShaders: boolean;
+  includeModels: boolean;
   includeAudio: boolean;
   includeVideo: boolean;
   enableVideoHoverScrub: boolean;
@@ -23,6 +26,7 @@ export const defaultExplorerThumbnailSettings: ExplorerThumbnailSettings = {
   includeImages: true,
   includeCode: true,
   includeShaders: true,
+  includeModels: true,
   includeAudio: true,
   includeVideo: true,
   enableVideoHoverScrub: true,
@@ -49,6 +53,7 @@ export function normalizeExplorerThumbnailSettings(
     includeImages: source.includeImages !== false,
     includeCode: source.includeCode !== false,
     includeShaders: source.includeShaders !== false,
+    includeModels: source.includeModels !== false,
     includeAudio: source.includeAudio !== false,
     includeVideo: source.includeVideo !== false,
     enableVideoHoverScrub: source.enableVideoHoverScrub !== false,
@@ -86,6 +91,13 @@ export function canRenderExplorerThumbnail(
     return true;
   }
   if (settings.includeShaders && isShaderThumbnailExtension(extension)) {
+    return true;
+  }
+  if (
+    settings.includeModels &&
+    isModelPreviewExtension(extension) &&
+    size <= MODEL_PREVIEW_SOURCE_CONFIG.maxRootSourceBytes
+  ) {
     return true;
   }
   if (settings.includeCode && isEditableTextExtension(extension, size)) {

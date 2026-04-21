@@ -44,6 +44,15 @@ export const MODEL_PREVIEW_PROXY_CONFIG = {
   maxProxyMeshes: 48,
 } as const;
 
+export const MODEL_THUMBNAIL_RENDER_CONFIG = {
+  backgroundColor: "#090d12",
+  ambientIntensity: 1.15,
+  keyLightIntensity: 1.35,
+  fillLightIntensity: 0.45,
+  cameraFov: 42,
+  maxPixelRatio: 1.5,
+} as const;
+
 const IMAGE_PREVIEW_EXTENSIONS = [
   "jpg",
   "jpeg",
@@ -701,6 +710,10 @@ export function getModelPreviewFormat(
   );
 }
 
+export function isModelPreviewExtension(extension: string): boolean {
+  return getModelPreviewFormat(extension) != null;
+}
+
 export function getMonacoLanguage(extension: string): string {
   return (
     MONACO_LANGUAGE_BY_EXTENSION[normalizeExtension(extension)] ?? "plaintext"
@@ -742,7 +755,7 @@ export function isEditableTextExtension(
   if (isDocxPreviewExtension(normalizedExtension)) {
     return false;
   }
-  if (getModelPreviewFormat(normalizedExtension)) {
+  if (isModelPreviewExtension(normalizedExtension)) {
     return false;
   }
   return (

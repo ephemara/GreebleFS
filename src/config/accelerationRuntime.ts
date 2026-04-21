@@ -75,7 +75,7 @@ export const accelerationWorkloadCatalog: readonly AccelerationWorkloadDefinitio
   {
     id: 'thumbnails',
     label: 'Thumbnails',
-    description: 'Image, texture, and explorer poster generation.',
+    description: 'Image, texture, 3D model, and explorer poster generation.',
     defaultProviderOrder: ['wgpu', 'cudaPython', 'cpu'],
   },
   {

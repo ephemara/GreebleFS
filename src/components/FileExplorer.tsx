@@ -305,6 +305,7 @@ import {
   isAudioPreviewExtension,
   isEditableImagePreviewExtension,
   isExecutableBinaryExtension,
+  getModelPreviewFormat,
   isVideoPreviewExtension,
   type ModelPreviewFormat,
   type ShaderPreviewFormat,
@@ -355,6 +356,7 @@ import {
   queueExplorerTerminalDirectorySync,
 } from "../runtime/explorerBackend";
 import { runExplorerAudioBatchProcess } from "../runtime/audioWorkbenchBackend";
+import { readExplorerModelThumbnail } from "../runtime/modelThumbnailBackend";
 import {
   openExplorerPdfPreviewDocument,
   type ExplorerPdfPreviewDocument,
@@ -17687,10 +17689,10 @@ export function FileExplorer({
     }
 
     const pendingPaths = pendingEntries.map((entry) => entry.path);
-    const batchTimer = window.setTimeout(() => {
-      setEntryThumbnailLoadingPaths((current) => {
-        const next = new Set(current);
-        let changed = false;
+      const batchTimer = window.setTimeout(() => {
+        setEntryThumbnailLoadingPaths((current) => {
+          const next = new Set(current);
+          let changed = false;
         for (const path of pendingPaths) {
           if (!next.has(path)) {
             next.add(path);
@@ -17703,13 +17705,20 @@ export function FileExplorer({
       void Promise.all(
         pendingEntries.map(async (entry) => {
           try {
-            const thumbnail = await readExplorerEntryThumbnail({
-              path: entry.path,
-              maxWidth: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
-              maxHeight: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
-              includeVideoHoverScrub: false,
-              videoHoverFrameCount: null,
-            });
+            const modelPreviewFormat = getModelPreviewFormat(entry.extension);
+            const thumbnail = modelPreviewFormat
+              ? await readExplorerModelThumbnail({
+                  entry,
+                  maxWidth: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+                  maxHeight: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+                })
+              : await readExplorerEntryThumbnail({
+                  path: entry.path,
+                  maxWidth: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+                  maxHeight: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+                  includeVideoHoverScrub: false,
+                  videoHoverFrameCount: null,
+                });
             return { path: entry.path, thumbnail };
           } catch {
             return { path: entry.path, thumbnail: null };

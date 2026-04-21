@@ -943,6 +943,7 @@ describe('mergeSettingsWithDefaults()', () => {
       includeImages: false,
       includeCode: false,
       includeShaders: false,
+      includeModels: true,
       includeAudio: false,
       includeVideo: false,
       enableVideoHoverScrub: false,

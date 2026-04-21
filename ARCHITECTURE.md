@@ -120,6 +120,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shell-wide icon compatibility layer. App chrome should import icons from here instead of `lucide-react` directly so manifest-driven UI icon packs can swap explorer and stock shell glyphs immediately without touching thumbnail generation.
 - `src/config/python.ts`
   Data-driven Python runtime config, example presets, sidecar action catalog, and package presets. The `src-python/greeblefs-python-sidecar.json` manifest is the source of truth for the sidecar action list and quick-install package presets exposed to React.
+- `src/config/semanticSearch.ts`
+  Data-driven explorer semantic-search config. It owns the canonical `name` / `content` / `semantic` search-mode contract, the search-mode labels/descriptions, the text/code extension registry loaded from `semanticSearchFileTypes.json`, and the runtime defaults loaded from `semanticSearchRuntime.json` for chunking/model/backend selection.
 - `src/runtime/moduleRuntime.ts`
   Shared runtime-authored module bridge. It compiles authored TS/TSX module graphs for plugins, theme renderers, wallpapers, shaders, and animations, and now routes serializable compile work through the frontend worker host before falling back to the main thread.
 - `src/runtime/workerHost.ts`
@@ -154,6 +156,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   SheetJS + HyperFormula bridge for spreadsheet import/export, clipboard serialization, sheet mutation, and workbook/tabular save paths.
 - `src/runtime/pythonRuntimeBackend.ts`
   Typed frontend seam for the managed Python runtime, persistent sidecar lifecycle, manifest-backed sidecar actions, and embedded `pyo3` execution. New React surfaces should call this layer instead of invoking Python Tauri commands directly.
+- `src/runtime/explorerBackend.ts`
+  Typed explorer bridge for filesystem/search/task work. In addition to classic name/content search, it now owns the semantic-search command surface (`getSemanticIndexSummary`, `buildSemanticIndex`, `searchSemantic`, `findSemanticSimilar`) so Explorer React code never needs raw invoke strings for AI indexing or similarity work.
+- `src/runtime/modelThumbnailBackend.ts` and `src/runtime/modelThumbnailRenderer.ts`
+  Frontend GPU-backed 3D model thumbnail generation for the explorer grid. The backend turns file metadata into cache keys, stores rendered poster data URLs through `src/components/explorer/explorerPreviewCache.ts`, and returns a normal `ExplorerEntryThumbnail` with `kind: "image"` so 3D model posters do not require a new explorer thumbnail contract.
 - `src/config/accelerationRuntime.ts`
   Data-driven acceleration routing catalog for the cross-provider compute lane. It defines the shell-facing routing modes, workload ids, provider labels, and resolution helpers used to decide whether a workload should prefer CPU, native `wgpu`, or the Python-sidecar CUDA path.
 - `src/runtime/accelerationRuntimeBackend.ts`
@@ -161,7 +167,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/explorer/explorerPreviewSystem.ts`
   Data-driven explorer preview descriptor resolver. It centralizes preview-kind classification, inline-preview routing, and the shared loading/error/unsupported fallback copy that `FileExplorer.tsx` uses instead of per-extension JSX branches.
 - `src/components/explorer/explorerPreviewCache.ts`
-  Explorer-local preview cache with a byte budget and oldest-entry eviction. Image/text preview payloads should flow through this seam so cache invalidation stays path-aware and memory pressure handling stays consistent across preview lanes.
+  Explorer-local preview cache with a byte budget and oldest-entry eviction. Image/text/model preview payloads should flow through this seam so cache invalidation stays path-aware and memory pressure handling stays consistent across preview lanes.
 - `src/components/explorer/explorerEditSession.ts`
   Shared explorer draft/session helper for persisted editor drafts, validator wrappers, draft-key moves during rename, and the standard “draft preserved; use Save to retry” save-failure messaging used by preview editors.
 - `src/config/explorerArchives.ts`
@@ -184,6 +190,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Explorer-local task-center store. It hydrates durable task history from the Rust backend, subscribes to live explorer task progress events, and owns the open/close state plus retry/cancel/clear helpers used by the explorer toolbar badge and command palette.
 - `src/store/settingsStore.ts`
   Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, and machine-level developer-mode behavior.
+- `src/store/explorerStore.ts`
+  Persisted explorer rail, named explorer session snapshots, and explorer-local workspace state for tabs plus slot-based workspace layouts. Explorer search state now persists the explicit `searchMode` enum, with legacy `searchIncludeContent` payloads normalized forward on hydration.
 - `src/store/gpuRuntimeStore.ts`
   Shell-side source of truth for the native GPU runtime snapshot, hydration, event subscription, effective tier, and workload fallback telemetry surfaced in Settings.
 - `src/store/accelerationRuntimeStore.ts`
@@ -486,6 +494,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   `src-tauri/src/python_commands.rs` is the managed-runtime truth layer for interpreter discovery, virtualenv bootstrap, package installation, and direct Python execution.
   `src-tauri/src/python_sidecar.rs` owns the persistent managed sidecar lifecycle, workspace sync, stdio protocol, typed sidecar call/start/stop commands, and the backend-facing typed helper API (`action_ids`, decoded JSON helpers) for other Rust modules.
   `src-tauri/src/acceleration_runtime.rs` owns the cross-provider acceleration snapshot surfaced to the shell. It reads the native GPU runtime, optionally probes the Python sidecar for CUDA/Torch/ONNX capability, and turns those signals into a reusable provider catalog for future workload routing.
+  `src-tauri/src/semantic_search.rs` is the explorer semantic-search orchestrator. It validates local-only roots/files, owns the app-local SQLite index contract plus manual task lifecycle, routes embedding/query/similarity work through the Python sidecar, and exposes the typed `build/query/find-similar/status` command surface through Specta.
   `src-tauri/src/python_pyo3.rs` owns the embedded `pyo3` seam for lightweight in-process Python helpers that do not need the long-lived sidecar, including decoded JSON helper functions for backend callers.
   `src-tauri/src/storage_commands.rs` is the storage-tab truth layer for native drive scans. It walks the filesystem on a background thread, tracks progress/cancellation, records logical vs allocated size, aggregates file-type buckets, caches direct child listings for the matrix view, builds a condensed tree plus largest-entry summaries, and prunes completed scan snapshots when newer scans start.
   `src-tauri/src/screenshot_commands.rs` is the screenshot truth layer for monitor capture, cached full-resolution images, native clipboard work, gallery thumbnails, and annotated export compositing.
@@ -505,6 +514,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
 - `cargo test --manifest-path src-tauri/Cargo.toml storage_scan_ -- --nocapture`
 - `bunx vitest run src/test/pythonConfig.test.ts src/test/pythonRuntimeBackend.test.ts src/test/terminalOverlay.test.tsx -t "Python" --reporter=dot`
+- `bunx vitest run src/test/hotkeys.test.ts src/test/explorerStore.test.ts src/test/fileExplorer.searchTelemetry.test.tsx --reporter=dot`
 - `bash ./install.sh`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`
 - `bash ./install.sh --launch`
@@ -530,6 +540,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Python sidecar actions are manifest-driven. Add the Python handler in `src-python/greeblefs_sidecar/actions.py`, register it in `src-python/greeblefs-python-sidecar.json`, and then consume it through `src/runtime/pythonRuntimeBackend.ts` or the Rust sidecar helpers instead of inventing one-off script launch paths.
 - Cross-provider CUDA/AI routing is now control-plane-driven. If a new feature wants NVIDIA acceleration, add or reuse a workload id in `src/config/accelerationRuntime.ts` and extend `src-tauri/src/acceleration_runtime.rs` or the native GPU runtime instead of hardcoding provider selection inside a panel or backend command.
 - `preferCuda` is a routing preference, not a guarantee. The shell will still fall back to native `wgpu` or CPU when the managed Python sidecar is not running, the CUDA probe action is unavailable, or CUDA/Torch/ONNX are not actually ready on the machine.
+- Explorer semantic search is currently manual-task, local-root, and text/code-only by design. If semantic results look empty, check the current root's index status first; cloud roots, binary/media files, and unbuilt local roots are intentionally excluded from v1.
 - The managed runtime still seeds its boilerplate package under `overlayterm_runtime` for compatibility. Do not rename that folder casually; it needs an explicit migration if we ever remove the legacy name from persisted runtimes.
 - `bun run test:browser` currently launches a headed Playwright Chromium session in this workspace. Without an X server it fails before any tests run; use `xvfb-run` or a headless browser config if you need browser validation locally.
 - `plugins/**/dist/**` is versioned source for packaged frontend plugins in this repo. Do not treat those directories like app-build output or let a blanket `dist/` ignore swallow shipped plugin entries.

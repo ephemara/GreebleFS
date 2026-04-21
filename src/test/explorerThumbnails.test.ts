@@ -25,6 +25,7 @@ describe('explorerThumbnails', () => {
       includeImages: false,
       includeCode: false,
       includeShaders: false,
+      includeModels: true,
       includeAudio: false,
       includeVideo: false,
       enableVideoHoverScrub: false,
@@ -44,10 +45,18 @@ describe('explorerThumbnails', () => {
 
   it('gates thumbnail rendering by content family and the enabled flag', () => {
     expect(canRenderExplorerThumbnail('png', 2_048, defaultExplorerThumbnailSettings)).toBe(true);
+    expect(canRenderExplorerThumbnail('glb', 2_048, defaultExplorerThumbnailSettings)).toBe(true);
     expect(canRenderExplorerThumbnail('mp3', 2_048, defaultExplorerThumbnailSettings)).toBe(true);
     expect(canRenderExplorerThumbnail('mp4', 2_048, defaultExplorerThumbnailSettings)).toBe(true);
     expect(canRenderExplorerThumbnail('wgsl', 2_048, defaultExplorerThumbnailSettings)).toBe(true);
     expect(canRenderExplorerThumbnail('ts', 4_096, defaultExplorerThumbnailSettings)).toBe(true);
+    expect(
+      canRenderExplorerThumbnail(
+        'glb',
+        2_048,
+        { ...defaultExplorerThumbnailSettings, includeModels: false },
+      ),
+    ).toBe(false);
     expect(
       canRenderExplorerThumbnail(
         'ts',

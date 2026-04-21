@@ -1,5 +1,40 @@
 # GreebleFS Memory
 
+# 2026-04-21 - 3D Model Thumbnails Are Now Cached GPU Posters
+
+- Explorer grid thumbnails now render `.fbx`, `.glb`, `.gltf`, `.obj`, and `.stl` as GPU-generated poster images instead of leaving them on file icons.
+- Durable implementation shape:
+  - `src/runtime/modelThumbnailRenderer.ts` owns a shared three.js WebGL renderer, lighting rig, and camera framing logic, and it serializes renders through a single queue so thumbnail generation does not churn WebGL contexts.
+  - `src/runtime/modelThumbnailBackend.ts` turns `FileEntry` metadata into stable cache keys, stores poster data URLs in `src/components/explorer/explorerPreviewCache.ts`, and returns a normal `ExplorerEntryThumbnail` with `kind: "image"` so the explorer grid can stay unchanged.
+  - `src/components/FileExplorer.tsx` now branches the thumbnail batch loader: model extensions go through the new backend, while the existing native explorer bridge still handles image, code, shader, audio, and video thumbnails.
+  - `src/components/SettingsPage.tsx` now exposes a `3D Models` thumbnail toggle, `src/config/explorerThumbnails.ts` adds `includeModels`, and `src/config/filePreview.ts` keeps model extensions out of editable-text routing.
+- Validation:
+  - passed: `bunx vitest run src/test/filePreview.test.ts src/test/explorerThumbnails.test.ts src/test/settingsStore.test.ts src/test/modelThumbnailBackend.test.ts src/test/modelPreview.utils.test.ts src/test/modelPreviewSource.test.ts --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "modelThumbnailBackend|modelThumbnailRenderer|FileExplorer\\.tsx|SettingsPage\\.tsx|explorerThumbnails\\.ts|filePreview\\.ts|settingsStore\\.test\\.ts|modelThumbnailBackend\\.test\\.ts|modelPreview\\.utils\\.ts|modelPreviewSource\\.ts" || true`
+- Durable product note:
+  - This first pass stays in the frontend GPU stack. If future work needs native or Python-side thumbnail rasterization, keep the cache key and returned `ExplorerEntryThumbnail` shape stable so the explorer grid does not need a second thumbnail contract.
+
+# 2026-04-21 - Explorer Semantic Search And Similarity V1
+
+- Explorer search no longer has only a names-vs-content boolean. The durable shell contract is now an explicit `searchMode` enum with `name`, `content`, and `semantic`, and that mode is persisted in `src/store/explorerStore.ts` with legacy `searchIncludeContent` payloads normalized forward on hydration.
+- Durable implementation shape:
+  - `src-tauri/src/semantic_search.rs` is the new native orchestrator for semantic indexing, querying, similarity search, and index summary loading. It keeps the v1 scope intentionally narrow: local roots only, text/code files only, manual task-center flows only (`build`, `rebuild`, `clear`), and app-local SQLite storage under the explorer data root.
+  - `src-python/greeblefs_sidecar/semantic_search_runtime.py` is the embedding/search engine. It owns chunking, backend resolution, embedding generation, chunk/file similarity scoring, and direct SQLite writes/reads. Backend resolution prefers ONNX/Torch GPU-capable paths when the acceleration routing resolves to CUDA, but still falls back cleanly to CPU-capable paths.
+  - `src-python/greeblefs-python-sidecar.json` plus `src-python/greeblefs_sidecar/actions.py` now advertise dedicated semantic actions (`semantic.index_root`, `semantic.query_index`, `semantic.find_similar_file`, `semantic.delete_index`, `semantic.index_status`) instead of hiding this behind generic Python execution.
+  - `src/config/semanticSearch.ts`, `src/config/semanticSearchFileTypes.json`, and `src/config/semanticSearchRuntime.json` are the TS-side source of truth for the search-mode enum, semantic file-type allowlist, chunk/model defaults, and mode labels/descriptions. Keep future expansion data-driven there instead of hardcoding more extension/model lists in components.
+  - `src/runtime/explorerBackend.ts` is the only TS bridge for the semantic-search command surface. `src/components/FileExplorer.tsx` now reuses the existing omnibox and result flow, but adds semantic mode cycling, semantic status chips, index-management toolbar controls, semantic snippets/scores in search results, and a built-in `Find Similar` context-menu + hotkey path for eligible local text/code files.
+  - `src/config/hotkeys.ts` and `src/components/SettingsPage.tsx` now treat semantic search as first-class workflow surface with `cycleExplorerSearchMode` and `findSimilarSelection`. The old `toggleExplorerSearchScope` hotkey is migrated forward for compatibility.
+- Durable product note:
+  - Semantic search is additive, not a replacement. Classic name/content search still routes through the native filesystem search commands, while semantic search routes through the Python sidecar plus the acceleration control plane.
+  - CUDA is optional here too. If the sidecar is absent, Torch/ONNX GPU providers are unavailable, or the machine is not NVIDIA-capable, indexing and querying still work through CPU-capable backends.
+  - V1 is intentionally not a global AI librarian. It does not index cloud roots, PDFs, Office docs, image/audio/video content, or watcher-driven background changes yet. If future work expands scope, treat that as a deliberate v2 contract change, not a silent broadening of the current manifest.
+- Validation:
+  - passed: `python3 -m py_compile src-python/greeblefs_sidecar/*.py`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml semantic_search --quiet`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/hotkeys.test.ts src/test/explorerStore.test.ts src/test/fileExplorer.searchTelemetry.test.tsx --reporter=dot`
+
 # 2026-04-21 - Sources Rail Toggle Is Now A Compact Icon Slot
 
 - The explorer no longer wastes a whole helper row just to reopen the sources rail. The closed-rail affordance is now a compact icon button in the shared chrome strip, and the old `Open Sources` row has been removed.

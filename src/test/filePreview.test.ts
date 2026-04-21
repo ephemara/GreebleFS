@@ -16,6 +16,7 @@ import {
   isExecutableExtension,
   isExecutableScriptExtension,
   isImagePreviewExtension,
+  isModelPreviewExtension,
   isPdfPreviewExtension,
   isShaderPreviewExtension,
   isSpreadsheetPreviewExtension,
@@ -117,6 +118,9 @@ describe("filePreview config", () => {
     expect(getModelPreviewFormat("obj")).toBe("obj");
     expect(getModelPreviewFormat("stl")).toBe("stl");
     expect(getModelPreviewFormat("png")).toBeNull();
+    expect(isModelPreviewExtension("glb")).toBe(true);
+    expect(isModelPreviewExtension(".obj")).toBe(true);
+    expect(isModelPreviewExtension("png")).toBe(false);
   });
 
   it("keeps 3d assets out of editable text mode even when small", () => {

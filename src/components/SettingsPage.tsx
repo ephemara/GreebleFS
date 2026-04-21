@@ -4165,6 +4165,8 @@ export function SettingsPage({
                     'goBackDirectory',
                     'goForwardDirectory',
                     'goHomeDirectory',
+                    'cycleExplorerSearchMode',
+                    'findSimilarSelection',
                     'goUpDirectory',
                     'explorerMoveSelectionUp',
                     'explorerMoveSelectionDown',
