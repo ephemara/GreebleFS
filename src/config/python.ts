@@ -1,4 +1,5 @@
 import type { RuntimePlatform } from './platform';
+import pythonSidecarWorkspaceManifestJson from '../../src-python/greeblefs-python-sidecar.json';
 
 export interface PythonRuntimeConfig {
   preferredInterpreterPath: string | null;
@@ -73,6 +74,25 @@ export interface PythonQuickPackagePreset {
   packages: string[];
 }
 
+export interface PythonSidecarActionPreset {
+  id: string;
+  label: string;
+  description: string;
+  payloadExampleJson: string;
+}
+
+export interface PythonSidecarWorkspaceManifest {
+  schemaVersion: number;
+  id: string;
+  displayName: string;
+  moduleName: string;
+  entryModule: string;
+  transport: string;
+  guidePath: string;
+  packagePresets: PythonQuickPackagePreset[];
+  actions: PythonSidecarActionPreset[];
+}
+
 export interface PythonExamplePreset {
   id: string;
   label: string;
@@ -81,26 +101,14 @@ export interface PythonExamplePreset {
   description: string;
 }
 
-export const pythonQuickPackagePresets: PythonQuickPackagePreset[] = [
-  {
-    id: 'automation',
-    label: 'Automation',
-    description: 'Useful packages for scripting, HTTP calls, and CLI tasks.',
-    packages: ['requests', 'pydantic', 'rich'],
-  },
-  {
-    id: 'data-tools',
-    label: 'Data Tools',
-    description: 'General-purpose parsing and tabular data helpers.',
-    packages: ['numpy', 'pandas', 'python-dateutil'],
-  },
-  {
-    id: 'web-scrape',
-    label: 'Web & Parse',
-    description: 'Utilities for HTML parsing and lightweight scraping tasks.',
-    packages: ['requests', 'beautifulsoup4', 'lxml'],
-  },
-];
+export const pythonSidecarWorkspaceManifest =
+  pythonSidecarWorkspaceManifestJson as PythonSidecarWorkspaceManifest;
+
+export const pythonQuickPackagePresets: PythonQuickPackagePreset[] =
+  pythonSidecarWorkspaceManifest.packagePresets;
+
+export const pythonSidecarActionCatalog: PythonSidecarActionPreset[] =
+  pythonSidecarWorkspaceManifest.actions;
 
 export const pythonExamplePresets: PythonExamplePreset[] = [
   {
@@ -113,7 +121,7 @@ export const pythonExamplePresets: PythonExamplePreset[] = [
       'import platform',
       '',
       'print(json.dumps({',
-      '    "overlay": "python-runtime",',
+      '    "runtime": "greeblefs-python-runtime",',
       '    "platform": platform.platform(),',
       '    "status": "ok",',
       '}))',

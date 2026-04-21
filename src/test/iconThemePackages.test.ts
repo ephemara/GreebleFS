@@ -18,7 +18,7 @@ describe('icon theme package loader', () => {
       }
 
       if (command === 'fs_read_file_base64' && normalizedPath.startsWith('icon-themes/Zen/')) {
-        return 'PHN2Zy8+';
+        return 'data:image/svg+xml;base64,PHN2Zy8+';
       }
 
       return null;

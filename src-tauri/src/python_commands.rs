@@ -91,22 +91,22 @@ pub struct PythonInterpreterDescriptor {
 }
 
 #[derive(Debug, Clone)]
-struct DetectedInterpreter {
+pub(crate) struct DetectedInterpreter {
     descriptor: PythonInterpreterDescriptor,
 }
 
 #[derive(Debug, Clone)]
-struct RuntimePaths {
-    root_dir: PathBuf,
-    env_dir: PathBuf,
-    scripts_dir: PathBuf,
-    package_dir: PathBuf,
-    temp_dir: PathBuf,
-    logs_dir: PathBuf,
-    requirements_path: PathBuf,
-    readme_path: PathBuf,
-    hello_script_path: PathBuf,
-    probe_script_path: PathBuf,
+pub(crate) struct RuntimePaths {
+    pub(crate) root_dir: PathBuf,
+    pub(crate) env_dir: PathBuf,
+    pub(crate) scripts_dir: PathBuf,
+    pub(crate) package_dir: PathBuf,
+    pub(crate) temp_dir: PathBuf,
+    pub(crate) logs_dir: PathBuf,
+    pub(crate) requirements_path: PathBuf,
+    pub(crate) readme_path: PathBuf,
+    pub(crate) hello_script_path: PathBuf,
+    pub(crate) probe_script_path: PathBuf,
 }
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
@@ -159,26 +159,26 @@ pub struct PythonActionResponse {
 }
 
 #[derive(Debug, Clone)]
-struct ResolvedRuntimeConfig {
-    preferred_interpreter_path: Option<String>,
-    runtime_root: PathBuf,
-    bootstrap_packages: Vec<String>,
-    auto_upgrade_pip: bool,
-    create_boilerplate: bool,
+pub(crate) struct ResolvedRuntimeConfig {
+    pub(crate) preferred_interpreter_path: Option<String>,
+    pub(crate) runtime_root: PathBuf,
+    pub(crate) bootstrap_packages: Vec<String>,
+    pub(crate) auto_upgrade_pip: bool,
+    pub(crate) create_boilerplate: bool,
 }
 
-fn normalize_optional_string(value: Option<&str>) -> Option<String> {
+pub(crate) fn normalize_optional_string(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
 }
 
-fn path_to_string(path: &Path) -> String {
+pub(crate) fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
 
-fn parse_package_input(raw: &str) -> Vec<String> {
+pub(crate) fn parse_package_input(raw: &str) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut packages = Vec::new();
 
@@ -308,7 +308,7 @@ fn python_candidate_list(preferred: Option<&str>) -> Vec<InterpreterCandidate> {
     candidates
 }
 
-fn detect_interpreters(preferred: Option<&str>) -> Vec<DetectedInterpreter> {
+pub(crate) fn detect_interpreters(preferred: Option<&str>) -> Vec<DetectedInterpreter> {
     let mut detected = Vec::new();
 
     for candidate in python_candidate_list(preferred) {
@@ -352,7 +352,9 @@ fn detect_interpreters(preferred: Option<&str>) -> Vec<DetectedInterpreter> {
     detected
 }
 
-fn choose_base_interpreter(interpreters: &[DetectedInterpreter]) -> Option<DetectedInterpreter> {
+pub(crate) fn choose_base_interpreter(
+    interpreters: &[DetectedInterpreter],
+) -> Option<DetectedInterpreter> {
     interpreters
         .iter()
         .find(|item| item.descriptor.preferred)
@@ -377,7 +379,7 @@ fn resolve_runtime_root(app: &AppHandle, config: &PythonRuntimeConfig) -> Result
         .map_err(|error| format!("Failed to resolve app local data directory: {error}"))
 }
 
-fn resolve_runtime_config(
+pub(crate) fn resolve_runtime_config(
     app: &AppHandle,
     config: Option<PythonRuntimeConfig>,
 ) -> Result<ResolvedRuntimeConfig, String> {
@@ -393,7 +395,7 @@ fn resolve_runtime_config(
     })
 }
 
-fn build_runtime_paths(root_dir: &Path) -> RuntimePaths {
+pub(crate) fn build_runtime_paths(root_dir: &Path) -> RuntimePaths {
     RuntimePaths {
         root_dir: root_dir.to_path_buf(),
         env_dir: root_dir.join("env"),
@@ -408,7 +410,7 @@ fn build_runtime_paths(root_dir: &Path) -> RuntimePaths {
     }
 }
 
-fn managed_python_path(paths: &RuntimePaths) -> PathBuf {
+pub(crate) fn managed_python_path(paths: &RuntimePaths) -> PathBuf {
     #[cfg(target_os = "windows")]
     {
         paths.env_dir.join("Scripts").join("python.exe")
@@ -420,7 +422,7 @@ fn managed_python_path(paths: &RuntimePaths) -> PathBuf {
     }
 }
 
-fn ensure_runtime_directories(paths: &RuntimePaths) -> Result<(), String> {
+pub(crate) fn ensure_runtime_directories(paths: &RuntimePaths) -> Result<(), String> {
     for dir in [
         &paths.root_dir,
         &paths.scripts_dir,
@@ -455,24 +457,29 @@ fn readme_file_contents(paths: &RuntimePaths) -> String {
     let hello_script = path_to_string(&paths.hello_script_path);
     let probe_script = path_to_string(&paths.probe_script_path);
 
-    format!(
-        "# OverlayTerm Python Runtime\n\n\
-This folder is a managed Python workspace for OverlayTerm.\n\n\
-Paths:\n\
-- Runtime root: {runtime_root}\n\
-- Requirements: {requirements}\n\
-- Hello script: {hello_script}\n\
-- ONNX probe: {probe_script}\n\n\
-Workflow:\n\
-1. Bootstrap the runtime from the Python panel.\n\
-2. Install libraries into the managed virtual environment.\n\
-3. Run scripts, modules, or inline Python from the app.\n"
-    )
+    [
+        "# GreebleFS Python Runtime".to_string(),
+        String::new(),
+        "This folder is a managed Python workspace for GreebleFS.".to_string(),
+        String::new(),
+        "Paths:".to_string(),
+        format!("- Runtime root: {runtime_root}"),
+        format!("- Requirements: {requirements}"),
+        format!("- Hello script: {hello_script}"),
+        format!("- ONNX probe: {probe_script}"),
+        String::new(),
+        "Workflow:".to_string(),
+        "1. Bootstrap the runtime from the Python panel.".to_string(),
+        "2. Install libraries into the managed virtual environment.".to_string(),
+        "3. Run scripts, modules, or inline Python from the app.".to_string(),
+        String::new(),
+    ]
+    .join("\n")
 }
 
 fn bridge_init_contents() -> String {
     [
-        "\"\"\"OverlayTerm Python helpers.\"\"\"",
+        "\"\"\"GreebleFS Python helpers.\"\"\"",
         "",
         "from .bridge import emit_json, runtime_summary",
         "",
@@ -518,7 +525,7 @@ fn hello_script_contents() -> String {
         "",
         "emit_json({",
         "    \"status\": \"ready\",",
-        "    \"message\": \"OverlayTerm managed Python runtime is online.\",",
+        "    \"message\": \"GreebleFS managed Python runtime is online.\",",
         "    \"summary\": runtime_summary(),",
         "})",
         "",
@@ -548,7 +555,10 @@ fn probe_script_contents() -> String {
     .join("\n")
 }
 
-fn seed_boilerplate_files(paths: &RuntimePaths, packages: &[String]) -> Result<(), String> {
+pub(crate) fn seed_boilerplate_files(
+    paths: &RuntimePaths,
+    packages: &[String],
+) -> Result<(), String> {
     ensure_runtime_directories(paths)?;
 
     if !paths.requirements_path.exists() {
@@ -680,7 +690,7 @@ fn command_to_string(program: &str, args: &[String]) -> String {
     }
 }
 
-fn run_command(
+pub(crate) fn run_command(
     program: &str,
     args: &[String],
     working_directory: &Path,
@@ -711,7 +721,7 @@ fn run_command(
     })
 }
 
-fn pythonpath_environment(
+pub(crate) fn pythonpath_environment(
     paths: &RuntimePaths,
     overrides: Option<HashMap<String, String>>,
 ) -> HashMap<String, String> {
@@ -733,7 +743,7 @@ fn pythonpath_environment(
     environment
 }
 
-fn build_status(
+pub(crate) fn build_status(
     config: &ResolvedRuntimeConfig,
     paths: &RuntimePaths,
     discovered_interpreters: Vec<DetectedInterpreter>,
@@ -802,7 +812,7 @@ fn build_status(
     }
 }
 
-fn bootstrap_runtime(
+pub(crate) fn bootstrap_runtime(
     config: &ResolvedRuntimeConfig,
 ) -> Result<
     (
@@ -926,7 +936,7 @@ fn bootstrap_runtime(
     ))
 }
 
-fn ensure_managed_environment(
+pub(crate) fn ensure_managed_environment(
     config: &ResolvedRuntimeConfig,
 ) -> Result<(RuntimePaths, Vec<DetectedInterpreter>, DetectedInterpreter), String> {
     let paths = build_runtime_paths(&config.runtime_root);
@@ -993,6 +1003,32 @@ fn resolve_execution_path(
     }
 
     direct
+}
+
+pub(crate) fn prepare_managed_python_runtime(
+    app: &AppHandle,
+    config: Option<PythonRuntimeConfig>,
+) -> Result<
+    (
+        ResolvedRuntimeConfig,
+        RuntimePaths,
+        Vec<DetectedInterpreter>,
+        DetectedInterpreter,
+    ),
+    String,
+> {
+    let resolved = resolve_runtime_config(app, config)?;
+    let (paths, interpreters, base_interpreter) = ensure_managed_environment(&resolved)?;
+    Ok((resolved, paths, interpreters, base_interpreter))
+}
+
+pub(crate) fn runtime_status_with_base_interpreter(
+    resolved: &ResolvedRuntimeConfig,
+    paths: &RuntimePaths,
+    interpreters: Vec<DetectedInterpreter>,
+    base_interpreter: Option<DetectedInterpreter>,
+) -> PythonRuntimeStatus {
+    build_status(resolved, paths, interpreters, base_interpreter)
 }
 
 #[tauri::command]

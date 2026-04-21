@@ -125,7 +125,11 @@ async function resolveIconAssetUrl(path: string): Promise<string> {
     return trimmedPath;
   }
 
-  const base64 = await commands.fsReadFileBase64(trimmedPath).then(unwrapTauriResult);
+  const fileData = await commands.fsReadFileBase64(trimmedPath).then(unwrapTauriResult);
+  if (isWebAssetPath(fileData)) {
+    return fileData;
+  }
+
   const extension = trimmedPath.split('.').pop()?.toLowerCase();
   const mimeType = extension === 'svg'
     ? 'image/svg+xml'
@@ -136,7 +140,7 @@ async function resolveIconAssetUrl(path: string): Promise<string> {
         : extension === 'webp'
           ? 'image/webp'
           : 'application/octet-stream';
-  return `data:${mimeType};base64,${base64}`;
+  return `data:${mimeType};base64,${fileData}`;
 }
 
 async function buildLoadedIconThemePackage(record: IconThemePackageRecord): Promise<LoadedIconThemePackage> {

@@ -65,6 +65,7 @@ import {
   buildManagedPythonReplCommand,
   createPythonRuntimeConfig,
   formatCommandOutput,
+  pythonSidecarActionCatalog,
   pythonQuickPackagePresets,
   pythonExamplePresets,
   summarizeInterpreter,
@@ -84,6 +85,19 @@ import {
 import { useSettingsStore } from '../store/settingsStore';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import {
+  bootstrapManagedPythonRuntime,
+  executeManagedPython,
+  getManagedPythonRuntimeStatus,
+  getPythonRuntimeSummary,
+  getPythonSidecarStatus,
+  installManagedPythonPackages,
+  probePythonMlRuntime,
+  scanDirectoryWithPython,
+  startPythonSidecar,
+  stopPythonSidecar,
+  type ManagedPythonSidecarStatus,
+} from '../runtime/pythonRuntimeBackend';
 import {
   collectTerminalPaneGeometry,
   collectTerminalPaneIds,
@@ -946,6 +960,7 @@ function PythonSidebarContent({
     [pythonSettings],
   );
   const [status, setStatus] = useState<PythonRuntimeStatus | null>(null);
+  const [sidecarStatus, setSidecarStatus] = useState<ManagedPythonSidecarStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -955,8 +970,12 @@ function PythonSidebarContent({
     setStatusError(null);
 
     try {
-      const nextStatus = await commands.pythonGetRuntimeStatus(runtimeConfig).then(unwrapTauriResult);
+      const [nextStatus, nextSidecarStatus] = await Promise.all([
+        getManagedPythonRuntimeStatus(runtimeConfig),
+        getPythonSidecarStatus(runtimeConfig),
+      ]);
       setStatus(nextStatus);
+      setSidecarStatus(nextSidecarStatus);
     } catch (error) {
       const errorText = String(error);
       setStatusError(errorText);
@@ -994,31 +1013,114 @@ function PythonSidebarContent({
     }
   }, [announce, emitToTerminal]);
 
+  const runSidecarAction = useCallback(async <TResult,>(
+    label: string,
+    factory: () => Promise<{
+      runtimeStatus: PythonRuntimeStatus;
+      sidecar: ManagedPythonSidecarStatus;
+      result: TResult;
+    }>,
+  ) => {
+    setPendingAction(label);
+    setStatusError(null);
+
+    try {
+      const response = await factory();
+      setStatus(response.runtimeStatus);
+      setSidecarStatus(response.sidecar);
+      emitToTerminal(
+        'Python',
+        `${label}\n\n${JSON.stringify(response.result, null, 2)}`,
+        'success',
+      );
+      announce(label);
+      return response;
+    } catch (error) {
+      const errorText = String(error);
+      setStatusError(errorText);
+      emitToTerminal('Python', `${label} failed\n\n${errorText}`, 'error');
+      announce(`${label} failed`);
+      return null;
+    } finally {
+      setPendingAction(null);
+    }
+  }, [announce, emitToTerminal]);
+
+  const runSidecarLifecycle = useCallback(async (
+    label: string,
+    factory: () => Promise<{
+      runtimeStatus?: PythonRuntimeStatus;
+      sidecar: ManagedPythonSidecarStatus;
+    }>,
+  ) => {
+    setPendingAction(label);
+    setStatusError(null);
+
+    try {
+      const response = await factory();
+      if (response.runtimeStatus) {
+        setStatus(response.runtimeStatus);
+      }
+      setSidecarStatus(response.sidecar);
+      emitToTerminal(
+        'Python',
+        `${label}\n\n${JSON.stringify(response.sidecar, null, 2)}`,
+        'success',
+      );
+      announce(label);
+      return response;
+    } catch (error) {
+      const errorText = String(error);
+      setStatusError(errorText);
+      emitToTerminal('Python', `${label} failed\n\n${errorText}`, 'error');
+      announce(`${label} failed`);
+      return null;
+    } finally {
+      setPendingAction(null);
+    }
+  }, [announce, emitToTerminal]);
+
   const bootstrapRuntime = useCallback(async () => {
     await runAction('Bootstrapped Python runtime', () =>
-      commands.pythonBootstrapRuntime(runtimeConfig).then(unwrapTauriResult));
+      bootstrapManagedPythonRuntime(runtimeConfig));
   }, [runAction, runtimeConfig]);
 
   const installConfiguredPackages = useCallback(async () => {
     await runAction('Installed configured Python packages', () =>
-      commands.pythonInstallPackages({
+      installManagedPythonPackages({
         config: runtimeConfig,
         packageInput: pythonSettings.bootstrapPackages,
         persistToRequirements: true,
-      }).then(unwrapTauriResult));
+      }));
   }, [pythonSettings.bootstrapPackages, runAction, runtimeConfig]);
 
   const applyPackagePreset = useCallback(async (packages: string[]) => {
     await runAction('Installed Python package preset', () =>
-      commands.pythonInstallPackages({
+      installManagedPythonPackages({
         config: {
           ...runtimeConfig,
           bootstrapPackages: packages.join('\n'),
         },
         packageInput: packages.join('\n'),
         persistToRequirements: false,
-      }).then(unwrapTauriResult));
+      }));
   }, [runAction, runtimeConfig]);
+
+  const startManagedSidecar = useCallback(async () => {
+    await runSidecarLifecycle('Started Python sidecar', async () => {
+      const response = await startPythonSidecar(runtimeConfig);
+      return {
+        runtimeStatus: response.runtimeStatus,
+        sidecar: response.sidecar,
+      };
+    });
+  }, [runSidecarLifecycle, runtimeConfig]);
+
+  const stopManagedSidecar = useCallback(async () => {
+    await runSidecarLifecycle('Stopped Python sidecar', async () => ({
+      sidecar: await stopPythonSidecar(runtimeConfig),
+    }));
+  }, [runSidecarLifecycle, runtimeConfig]);
 
   const openManagedRepl = useCallback(async () => {
     if (!status?.ready || !status.managedPythonPath) {
@@ -1033,7 +1135,7 @@ function PythonSidebarContent({
 
   const runPreset = useCallback(async (preset: PythonExamplePreset) => {
     await runAction(`Ran ${preset.label}`, () =>
-      commands.pythonExecute({
+      executeManagedPython({
         config: runtimeConfig,
         executionMode: preset.mode,
         entry: preset.entry,
@@ -1041,8 +1143,33 @@ function PythonSidebarContent({
         workingDirectory: null,
         environment: {},
         useManagedEnvironment: true,
-      }).then(unwrapTauriResult));
+      }));
   }, [runAction, runtimeConfig]);
+
+  const runRuntimeSummary = useCallback(async () => {
+    await runSidecarAction('Ran Python runtime summary', () =>
+      getPythonRuntimeSummary({}, { config: runtimeConfig }));
+  }, [runSidecarAction, runtimeConfig]);
+
+  const runMlProbe = useCallback(async () => {
+    await runSidecarAction('Probed Python ML runtime', () =>
+      probePythonMlRuntime({}, { config: runtimeConfig }));
+  }, [runSidecarAction, runtimeConfig]);
+
+  const runWorkingDirectoryScan = useCallback(async () => {
+    await runSidecarAction('Scanned working directory with Python', () =>
+      scanDirectoryWithPython(
+        {
+          root: '.',
+          limit: 40,
+          includeHidden: false,
+        },
+        {
+          config: runtimeConfig,
+          workingDirectory: status?.runtimeRoot ?? null,
+        },
+      ));
+  }, [runSidecarAction, runtimeConfig, status?.runtimeRoot]);
 
   const buttonStyle = {
     border: `1px solid ${theme.border}`,
@@ -1090,6 +1217,33 @@ function PythonSidebarContent({
             )}
           </div>
 
+          <div
+            className="rounded border px-3 py-2"
+            style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.025)' }}
+          >
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
+              Managed Sidecar
+            </div>
+            <div className="mt-2 text-[11px]" style={{ color: theme.text }}>
+              {sidecarStatus?.running ? 'Sidecar running' : 'Sidecar offline'}
+            </div>
+            <div className="mt-1 text-[10px]" style={{ color: theme.textMuted }}>
+              {sidecarStatus?.moduleName ?? 'greeblefs_sidecar'}
+              {sidecarStatus?.pid ? ` · pid ${sidecarStatus.pid}` : ''}
+            </div>
+            <div className="mt-1 text-[10px] font-mono break-all" style={{ color: theme.textMuted }}>
+              {sidecarStatus?.workspaceRoot ?? 'Managed sidecar workspace not synced yet'}
+            </div>
+            <div className="mt-2 text-[9px]" style={{ color: theme.textMuted }}>
+              {pythonSidecarActionCatalog.length} registered actions
+            </div>
+            {sidecarStatus?.lastError && (
+              <div className="mt-2 text-[10px]" style={{ color: '#f87171' }}>
+                {sidecarStatus.lastError}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 gap-2">
             <button
               type="button"
@@ -1117,6 +1271,30 @@ function PythonSidebarContent({
 
             <button
               type="button"
+              onClick={() => void startManagedSidecar()}
+              disabled={Boolean(pendingAction) || !status?.ready}
+              className="flex items-center justify-between rounded px-2.5 py-2 text-[10px] font-medium disabled:opacity-35"
+              style={buttonStyle}
+              title="Start the managed Python sidecar process"
+            >
+              <span>Start Sidecar</span>
+              <Zap size={11} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void stopManagedSidecar()}
+              disabled={Boolean(pendingAction) || !sidecarStatus?.running}
+              className="flex items-center justify-between rounded px-2.5 py-2 text-[10px] font-medium disabled:opacity-35"
+              style={buttonStyle}
+              title="Stop the managed Python sidecar process"
+            >
+              <span>Stop Sidecar</span>
+              <Circle size={11} />
+            </button>
+
+            <button
+              type="button"
               onClick={() => void installConfiguredPackages()}
               disabled={Boolean(pendingAction) || !pythonSettings.bootstrapPackages.trim()}
               className="flex items-center justify-between rounded px-2.5 py-2 text-[10px] font-medium disabled:opacity-35"
@@ -1126,6 +1304,70 @@ function PythonSidebarContent({
               <span>Install Package Queue</span>
               <Play size={11} />
             </button>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
+              Sidecar Actions
+            </div>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => void runRuntimeSummary()}
+                disabled={Boolean(pendingAction) || !status?.ready}
+                className="w-full rounded border px-2.5 py-2 text-left disabled:opacity-35"
+                style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.03)' }}
+                title="Runs the built-in runtime.summary sidecar action"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-medium" style={{ color: theme.text }}>
+                    Runtime Summary
+                  </span>
+                  <Zap size={10} style={{ color: theme.accent }} />
+                </div>
+                <div className="mt-1 text-[9px]" style={{ color: theme.textMuted }}>
+                  Verifies the sidecar transport and prints runtime metadata.
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void runMlProbe()}
+                disabled={Boolean(pendingAction) || !status?.ready}
+                className="w-full rounded border px-2.5 py-2 text-left disabled:opacity-35"
+                style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.03)' }}
+                title="Runs the built-in ml.probe sidecar action"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-medium" style={{ color: theme.text }}>
+                    Probe ML Runtime
+                  </span>
+                  <Bot size={10} style={{ color: theme.accent }} />
+                </div>
+                <div className="mt-1 text-[9px]" style={{ color: theme.textMuted }}>
+                  Checks ONNX, ONNX Runtime, Torch, and CUDA visibility in the managed env.
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void runWorkingDirectoryScan()}
+                disabled={Boolean(pendingAction) || !status?.ready}
+                className="w-full rounded border px-2.5 py-2 text-left disabled:opacity-35"
+                style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.03)' }}
+                title="Runs the built-in files.scan_directory sidecar action"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-medium" style={{ color: theme.text }}>
+                    Scan Working Dir
+                  </span>
+                  <Folder size={10} style={{ color: theme.accent }} />
+                </div>
+                <div className="mt-1 text-[9px]" style={{ color: theme.textMuted }}>
+                  Lists the current working directory through the Python sidecar.
+                </div>
+              </button>
+            </div>
           </div>
 
           <div>

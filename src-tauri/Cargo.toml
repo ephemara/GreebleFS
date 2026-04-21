@@ -44,12 +44,14 @@ image = "0.25.8"
 imageproc = "0.25.0"
 ab_glyph = "0.2.29"
 fontdb = "0.16.2"
+include_dir = "0.7.4"
 libc = { workspace = true }
 naga = { version = "29.0.1", features = ["spv-in", "wgsl-in", "wgsl-out"] }
 pollster = "0.4.0"
 lopdf = "0.32.0"
 pdfium-auto = "0.3.0"
 pdfium-render = "0.8.37"
+pyo3 = { version = "0.21.2", features = ["auto-initialize"] }
 xcap = "0.9.1"
 drag = "2.1.0"
 file_icon_provider = "1.0.0"

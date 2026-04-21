@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "greeblefs-python-sidecar",
+  "displayName": "GreebleFS Python Sidecar",
+  "moduleName": "greeblefs_sidecar",
+  "entryModule": "greeblefs_sidecar",
+  "transport": "stdio-json-lines",
+  "guidePath": "GUIDE.md",
+  "packagePresets": [
+    {
+      "id": "automation",
+      "label": "Automation",
+      "description": "CLI, HTTP, and workflow helpers for file automation and task glue.",
+      "packages": ["requests", "pydantic", "rich"]
+    },
+    {
+      "id": "data-tools",
+      "label": "Data Tools",
+      "description": "General parsing and tabular processing helpers for explorer-adjacent scripts.",
+      "packages": ["numpy", "pandas", "python-dateutil"]
+    },
+    {
+      "id": "ml-core",
+      "label": "ML Core",
+      "description": "CPU-friendly baseline for NumPy, ONNX, ONNX Runtime, and Torch workflows.",
+      "packages": ["numpy", "pillow", "onnx", "onnxruntime", "torch"]
+    }
+  ],
+  "actions": [
+    {
+      "id": "runtime.summary",
+      "label": "Runtime Summary",
+      "description": "Returns Python/runtime metadata plus the registered action list.",
+      "payloadExampleJson": "{}"
+    },
+    {
+      "id": "ml.probe",
+      "label": "ML Probe",
+      "description": "Checks ONNX, ONNX Runtime, Torch, and CUDA availability inside the sidecar.",
+      "payloadExampleJson": "{}"
+    },
+    {
+      "id": "files.scan_directory",
+      "label": "Scan Directory",
+      "description": "Lists a directory with lightweight metadata from Python.",
+      "payloadExampleJson": "{\"root\":\".\",\"limit\":50,\"includeHidden\":false}"
+    },
+    {
+      "id": "files.hash_paths",
+      "label": "Hash Paths",
+      "description": "Computes stable file hashes for one or more paths from Python.",
+      "payloadExampleJson": "{\"paths\":[\"/tmp/example.txt\"],\"algorithm\":\"sha256\",\"chunkSize\":1048576}"
+    }
+  ]
+}

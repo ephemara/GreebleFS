@@ -13,6 +13,8 @@ mod linux_graphics;
 pub mod pdf_commands;
 pub mod plugin_commands;
 pub mod python_commands;
+pub mod python_pyo3;
+pub mod python_sidecar;
 pub mod screenshot_commands;
 pub mod shader_preview_commands;
 pub mod specta_bindings;
@@ -141,6 +143,7 @@ pub fn run() {
             app.manage(gpu_runtime);
             app.manage(image_commands::ImageEditorManager::default());
             app.manage(pdf_commands::PdfPreviewManager::default());
+            app.manage(python_sidecar::PythonSidecarManager::default());
             app.manage(video_engine::VideoEngineManager::default());
             app.manage(TelemetryManager::default());
             let startup_span = start_native_span(

@@ -60,6 +60,12 @@ use crate::python_commands::{
     PythonExecutionRequest, PythonInterpreterDescriptor, PythonPackageInstallRequest,
     PythonRuntimeConfig, PythonRuntimeStatus,
 };
+use crate::python_pyo3::{PythonEmbeddedSnippetRequest, PythonEmbeddedSnippetResponse};
+use crate::python_sidecar::{
+    PythonSidecarActionDescriptor, PythonSidecarActionRequest, PythonSidecarActionResponse,
+    PythonSidecarPackagePreset, PythonSidecarStartResponse, PythonSidecarStatus,
+    PythonSidecarWorkspaceManifest,
+};
 use crate::screenshot_commands::{
     SavedScreenshot, ScreenshotAnnotatedExportResult, ScreenshotAnnotation, ScreenshotPreview,
     ScreenshotRegion,
@@ -235,6 +241,11 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::python_commands::python_bootstrap_runtime,
             crate::python_commands::python_install_packages,
             crate::python_commands::python_execute,
+            crate::python_sidecar::python_get_sidecar_status,
+            crate::python_sidecar::python_start_sidecar,
+            crate::python_sidecar::python_stop_sidecar,
+            crate::python_sidecar::python_sidecar_call,
+            crate::python_pyo3::python_execute_embedded,
             crate::plugin_commands::plugin_run_backend,
             crate::plugin_commands::plugin_watch_directory,
             crate::plugin_commands::plugin_unwatch_directory,
@@ -432,6 +443,15 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<PythonRuntimeStatus>()
         .typ::<PythonCommandResult>()
         .typ::<PythonActionResponse>()
+        .typ::<PythonSidecarPackagePreset>()
+        .typ::<PythonSidecarActionDescriptor>()
+        .typ::<PythonSidecarWorkspaceManifest>()
+        .typ::<PythonSidecarStatus>()
+        .typ::<PythonSidecarStartResponse>()
+        .typ::<PythonSidecarActionRequest>()
+        .typ::<PythonSidecarActionResponse>()
+        .typ::<PythonEmbeddedSnippetRequest>()
+        .typ::<PythonEmbeddedSnippetResponse>()
         .typ::<ExplorerShaderPreviewDocument>()
         .typ::<ExplorerShaderEntryPoint>()
         .typ::<ExplorerShaderDiagnostic>()
