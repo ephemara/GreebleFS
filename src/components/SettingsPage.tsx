@@ -1685,7 +1685,6 @@ export function SettingsPage({
 
   const effectiveTheme = appearance.theme;
   const editableTheme = appAppearance.baseTheme;
-  const panelBackground = effectiveTheme.palette.panelBackground;
   const inputBackground = effectiveTheme.palette.inputBackground;
   const border = effectiveTheme.palette.border;
   const text = effectiveTheme.palette.textPrimary;

@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Settings Rail Now Prioritizes Core Config And Uses Themed Select Surfaces
+
+- The settings rail no longer opens with visual garnish ahead of machine and workflow controls. Core configuration now sits at the top, and the form controls that still depended on native select chrome no longer flash white-on-white against dark themes.
+- Durable implementation shape:
+  - `src/components/SettingsPage.tsx` now derives a settings form `colorScheme` from the active theme palette and reuses shared field/select style helpers for settings inputs that need real themed control surfaces. Selects now explicitly opt into themed rendering with a custom caret instead of falling back to OS-default white boxes.
+  - Terminal-facing selects such as `Cursor Style` and `External Terminal Profile`, plus shared system selects like telemetry capture/payload mode and Linux display backend, now all ride the same settings select contract. Folder-icon fallback/rule selects were moved onto the same contract so settings form controls stop drifting section by section.
+  - The left rail order is now intentionally operational first: `Overview`, `System`, `Terminal`, `Explorer`, `Layouts`, `Hotkeys`, `Cloud`, `Screenshots`, `Audio`, then the appearance stack (`Appearance`, `Icons`, `Wallpapers`, `Shaders`, `Animations`, `Theme JSON`).
+  - The Overview shortcut card now mirrors that priority shift by surfacing `System`, `Terminal`, `Explorer`, and `Layouts` before theme authoring paths.
+- Durable product note:
+  - Treat settings ordering as product guidance, not arbitrary alphabet soup. Machine-level behavior, navigation/workflow configuration, and shell-operating defaults should come before appearance toys.
+  - If new settings sections are added later, decide whether they belong in the core-operational band or the appearance-authoring band before dropping them into the rail.
+- Validation:
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx src/test/settingsPage.shaders.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-21 - Icon Themes Now Own Panel Tabs And Plugin Tab Glyphs
 
 - The shell icon-theme system no longer stops at generic stock UI glyphs. Built-in top-bar panels and folder-plugin tabs now have their own reserved icon-theme slots, so packs can restyle explorer-adjacent chrome without special-casing panel components.

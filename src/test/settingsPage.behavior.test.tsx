@@ -230,6 +230,59 @@ describe('SettingsPage behavior', () => {
     expect(useSettingsStore.getState().settings.explorer.doubleClickEmptyToGoBack).toBe(false);
   });
 
+  it('prioritizes core settings ahead of appearance sections in the rail', () => {
+    renderSettingsPage();
+
+    const orderedLabels = [
+      'Overview',
+      'System',
+      'Terminal',
+      'Explorer',
+      'Layouts',
+      'Hotkeys',
+      'Cloud',
+      'Screenshots',
+      'Audio',
+      'Appearance',
+      'Icons',
+      'Wallpapers',
+      'Shaders',
+      'Animations',
+      'Theme JSON',
+    ];
+    const orderedButtons = orderedLabels.map(findSectionButton);
+
+    for (let index = 0; index < orderedButtons.length - 1; index += 1) {
+      expect(
+        orderedButtons[index]?.compareDocumentPosition(orderedButtons[index + 1] as Node)
+          & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it('applies themed select styling in terminal and system settings', async () => {
+    const user = userEvent.setup();
+    renderSettingsPage({ appearanceThemeId: 'monokai' });
+
+    await user.click(findSectionButton('Terminal'));
+
+    const cursorStyleSelect = screen.getByRole('combobox', { name: 'Cursor Style' });
+    const externalProfileSelect = screen.getByRole('combobox', { name: 'External Terminal Profile' });
+
+    expect(cursorStyleSelect.style.appearance).toBe('none');
+    expect(cursorStyleSelect.style.colorScheme).toBe('dark');
+    expect(cursorStyleSelect.style.backgroundImage).not.toBe('');
+    expect(externalProfileSelect.style.appearance).toBe('none');
+    expect(externalProfileSelect.style.colorScheme).toBe('dark');
+
+    await user.click(findSectionButton('System'));
+
+    const telemetryCaptureSelect = screen.getByRole('combobox', { name: 'Telemetry Capture Mode' });
+    expect(telemetryCaptureSelect.style.appearance).toBe('none');
+    expect(telemetryCaptureSelect.style.colorScheme).toBe('dark');
+    expect(telemetryCaptureSelect.style.backgroundImage).not.toBe('');
+  });
+
   it('lets the explorer context menu composer disable and reorder plugin menu items', async () => {
     const user = userEvent.setup();
     renderSettingsPage({
