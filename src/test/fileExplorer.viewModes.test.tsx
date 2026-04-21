@@ -3127,10 +3127,44 @@ const value = 1;
     fireEvent.mouseLeave(notesEntry!);
 
     expect(notesEntry!.style.background).toBe(initialBackground);
-    expect(notesEntry!.style.borderColor).toBe(
-      "var(--overlay-explorer-chip-border)",
-    );
+    expect(notesEntry!.style.borderColor).toBe("transparent");
     expect(notesEntry!.style.transform).toBe(initialTransform);
+  });
+
+  it("keeps adaptive semantic grid visually minimal", async () => {
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /switch explorer to adaptive semantic grid/i,
+      }),
+    );
+
+    const alphaEntry = screen
+      .getByText("alpha")
+      .closest('[data-overlay-drag-source="file"]') as HTMLElement | null;
+    const notesEntry = screen
+      .getByText("notes.txt")
+      .closest('[data-overlay-drag-source="file"]') as HTMLElement | null;
+
+    expect(alphaEntry).toBeTruthy();
+    expect(notesEntry).toBeTruthy();
+
+    expect(alphaEntry).not.toHaveAttribute("title");
+    expect(notesEntry).not.toHaveAttribute("title");
+    expect(alphaEntry!.style.background).toBe("transparent");
+    expect(alphaEntry!.style.borderColor).toBe("transparent");
+    expect(within(alphaEntry!).queryByText(/^Folder$/)).toBeNull();
+    expect(within(notesEntry!).queryByText(/^Text$/)).toBeNull();
+    expect(
+      screen.queryByText(/anchors and destinations stay visually dominant\./i),
+    ).toBeNull();
+    expect(
+      screen.queryByText(
+        /selection-adjacent files stay close while you change density\./i,
+      ),
+    ).toBeNull();
   });
 
   it("activates constellation view without mutating the saved normal layout mode", async () => {

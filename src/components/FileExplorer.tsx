@@ -17017,12 +17017,7 @@ export function FileExplorer({
     const tableThumbnail = densityStop.table
       ? getRenderableEntryThumbnail(entry, tableThumbnailStageSize)
       : null;
-    const semanticTableBaseSurface: ExplorerEntrySurfaceState = {
-      background: "var(--overlay-explorer-chip-bg)",
-      borderColor: "var(--overlay-explorer-chip-border)",
-      boxShadow: "none",
-      transform: "translateY(0)",
-    };
+    const semanticTableBaseSurface = idleEntrySurface;
     const semanticTableRestingSurface = isDrop
       ? dropEntrySurface
       : isSel
@@ -17046,7 +17041,6 @@ export function FileExplorer({
           onClick={(e) => onEntryClick(e, entry)}
           onDoubleClick={() => onEntryDoubleClick(entry)}
           onContextMenu={(e) => onRightClick(e, entry)}
-          title={entry.path}
           style={{
             display: "grid",
             gridTemplateColumns: densityStop.table.showRichMeta
@@ -17149,20 +17143,6 @@ export function FileExplorer({
                   >
                     {entry.name}
                   </div>
-                  {densityStop.table.showRichMeta && (
-                    <div
-                      style={{
-                        marginTop: 3,
-                        fontSize: 10,
-                        color: EXP.muted2,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {renderEntryInlineMeta(entry)}
-                    </div>
-                  )}
                 </>
               )}
             </div>
@@ -17220,24 +17200,23 @@ export function FileExplorer({
     );
     const iconSize = Math.round(densityStop.grid.iconSize * dominantScale);
     const isCards = densityStop.presentation === "cards";
-    const gridThumbnail = getRenderableEntryThumbnail(
-      entry,
-      iconStageSize,
-    );
-    const semanticGridBaseSurface: ExplorerEntrySurfaceState = {
-      background:
-        options.dominant && entry.is_dir
-          ? "linear-gradient(180deg, color-mix(in srgb, white 10%, transparent), color-mix(in srgb, white 4%, transparent))"
-          : "var(--overlay-explorer-chip-bg)",
-      borderColor: "var(--overlay-explorer-chip-border)",
-      boxShadow: "none",
-      transform: "translateY(0)",
-    };
+    const gridThumbnail = getRenderableEntryThumbnail(entry, iconStageSize);
+    const semanticGridBaseSurface = idleEntrySurface;
     const semanticGridRestingSurface = isDrop
       ? dropEntrySurface
       : isSel
         ? selectedEntrySurface
         : semanticGridBaseSurface;
+    const semanticGridMinHeight = Math.max(
+      iconStageSize + (isCards ? 42 : 34),
+      minHeight - (isCards ? 30 : 26),
+    );
+    const semanticGridPadding = isCards
+      ? "10px 10px"
+      : iconSize <= 30
+        ? "8px 4px"
+        : "8px 6px";
+    const semanticGridGap = isCards ? 10 : 6;
 
     return (
       <div
@@ -17253,18 +17232,17 @@ export function FileExplorer({
         onClick={(e) => onEntryClick(e, entry)}
         onDoubleClick={() => onEntryDoubleClick(entry)}
         onContextMenu={(e) => onRightClick(e, entry)}
-        title={entry.path}
         style={{
-          minHeight,
+          minHeight: semanticGridMinHeight,
           borderRadius: isCards ? 18 : 14,
           border: `1px solid ${semanticGridRestingSurface.borderColor}`,
           background: semanticGridRestingSurface.background,
-          padding: isCards ? "14px" : iconSize <= 30 ? "10px 8px" : "12px 10px",
+          padding: semanticGridPadding,
           display: "flex",
           flexDirection: isCards ? "row" : "column",
           alignItems: isCards ? "flex-start" : "center",
           justifyContent: "flex-start",
-          gap: isCards ? 14 : 10,
+          gap: semanticGridGap,
           cursor: "pointer",
           overflow: "hidden",
           userSelect: "none",
@@ -17301,7 +17279,7 @@ export function FileExplorer({
             borderRadius: isCards ? 16 : 12,
             background: gridThumbnail
               ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-              : "rgba(255,255,255,0.04)",
+              : "transparent",
             flexShrink: 0,
             overflow: "hidden",
             border: gridThumbnail
@@ -17355,45 +17333,6 @@ export function FileExplorer({
               >
                 {entry.name}
               </div>
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 10,
-                  color: EXP.muted2,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {isCards
-                  ? renderEntryInlineMeta(entry)
-                  : getEntryTypeLabel(entry)}
-              </div>
-              {isCards && (
-                <div
-                  style={{
-                    marginTop: 6,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 9,
-                      color: accent,
-                      letterSpacing: "0.05em",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {entry.is_dir ? "Folder Anchor" : "Active File"}
-                  </span>
-                  <span style={{ fontSize: 9, color: EXP.muted }}>
-                    {formatDate(entry.modified)}
-                  </span>
-                </div>
-              )}
             </>
           )}
         </div>
@@ -17486,16 +17425,6 @@ export function FileExplorer({
               >
                 {band.label}
               </div>
-              <div
-                style={{
-                  marginTop: 3,
-                  fontSize: 11,
-                  color: EXP.muted,
-                  maxWidth: 420,
-                }}
-              >
-                {band.description}
-              </div>
             </div>
             <div style={{ fontSize: 10, color: EXP.muted2 }}>
               {band.entries.length} items
@@ -17558,16 +17487,6 @@ export function FileExplorer({
               }}
             >
               {band.label}
-            </div>
-            <div
-              style={{
-                marginTop: 3,
-                fontSize: 11,
-                color: EXP.muted,
-                maxWidth: 420,
-              }}
-            >
-              {band.description}
             </div>
           </div>
           <div style={{ fontSize: 10, color: EXP.muted2 }}>
