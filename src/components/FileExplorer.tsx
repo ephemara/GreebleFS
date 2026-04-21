@@ -12637,6 +12637,14 @@ export function FileExplorer({
     () => getExplorerViewModeDefinition(effectiveViewMode),
     [effectiveViewMode],
   );
+  const activeStatusViewLabel = useMemo(
+    () =>
+      effectiveExperimentalViewMode !== "off"
+        ? (getExplorerExperimentalModeDefinition(effectiveExperimentalViewMode)
+            ?.label ?? effectiveViewModeDefinition.label)
+        : effectiveViewModeDefinition.label,
+    [effectiveExperimentalViewMode, effectiveViewModeDefinition.label],
+  );
   const activeGridMetrics = useMemo(
     () =>
       effectiveViewModeDefinition.presentation === "grid"
@@ -12745,10 +12753,6 @@ export function FileExplorer({
         selectedViewModeDefinition.presentation === "grid";
       const listViewActive =
         themedExperimentalViewMode === "off" && themedViewMode === "list";
-      const standardExplorerActive =
-        themedExperimentalViewMode === "off" &&
-        !iconViewActive &&
-        !listViewActive;
 
       return [
         {
@@ -12776,23 +12780,6 @@ export function FileExplorer({
             }),
           icon: <List size={13} />,
         },
-        {
-          id: "standard-explorer",
-          ariaLabel: "Use standard explorer layout chain",
-          title: "Standard explorer",
-          active: standardExplorerActive,
-          onClick: () =>
-            updateExplorerSettings({
-              experimentalViewMode: "off",
-            }),
-          icon: (
-            <ExplorerShellLayoutGlyph
-              layout={effectiveShellLayout}
-              accent={accent}
-              active={standardExplorerActive}
-            />
-          ),
-        },
         ...explorerExperimentalModes.map((mode) => {
           const active = themedExperimentalViewMode === mode.id;
           return {
@@ -12818,7 +12805,6 @@ export function FileExplorer({
       ];
     }, [
       accent,
-      effectiveShellLayout,
       selectedViewModeDefinition.presentation,
       showExperimentalHud,
       themedExperimentalViewMode,
@@ -13355,6 +13341,52 @@ export function FileExplorer({
       toolbarSecondaryActionGroupStyle,
       toolbarSecondaryLocationGroupStyle,
     ],
+  );
+  const getExplorerStatusBarRowStyle = useCallback(
+    (): CSSProperties => ({
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      width: "100%",
+      minWidth: 0,
+      flexWrap: "nowrap",
+    }),
+    [],
+  );
+  const getExplorerStatusBarZoneStyle = useCallback(
+    (zoneId: ExplorerChromeZoneId): CSSProperties => {
+      switch (zoneId) {
+        case "center":
+          return {
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            minWidth: 0,
+            flex: 1,
+            overflow: "hidden",
+          };
+        case "end":
+          return {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            gap: 6,
+            minWidth: 0,
+            marginLeft: "auto",
+            flexShrink: 0,
+          };
+        case "start":
+        default:
+          return {
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            minWidth: 0,
+            flexShrink: 0,
+          };
+      }
+    },
+    [],
   );
   const renderToolbarNavigationButton = useCallback(
     (input: {
@@ -14860,12 +14892,7 @@ export function FileExplorer({
         render: () => (
           <span>
             View:{" "}
-            <span style={{ color: EXP.text }}>
-              {selectedViewModeDefinition.label}
-            </span>
-            {effectiveViewMode !== themedViewMode
-              ? ` -> ${effectiveViewModeDefinition.label}`
-              : ""}
+            <span style={{ color: EXP.text }}>{activeStatusViewLabel}</span>
           </span>
         ),
       },
@@ -15031,20 +15058,8 @@ export function FileExplorer({
         id: "statusLabsSummary",
         label: "Status Labs Summary",
         surfaces: ["explorerStatusBar"],
-        isVisible: () => Boolean(selectedExperimentalModeDefinition),
-        render: () =>
-          selectedExperimentalModeDefinition ? (
-            <span>
-              Experimental:{" "}
-              <span style={{ color: EXP.text }}>
-                {selectedExperimentalModeDefinition.label}
-              </span>
-              {experimentalDensityDescriptor
-                ? ` · ${experimentalDensityDescriptor.label}`
-                : ""}
-              {effectiveExperimentalViewMode === "off" ? " (fallback)" : ""}
-            </span>
-          ) : null,
+        isVisible: () => false,
+        render: () => null,
       },
       {
         id: "statusSearchSummary",
@@ -15074,17 +15089,8 @@ export function FileExplorer({
         id: "statusTaskBadge",
         label: "Status Task Badge",
         surfaces: ["explorerStatusBar"],
-        isVisible: () => true,
-        render: () => (
-          <ExplorerTaskStatusBadge
-            accent={accent}
-            text={EXP.text}
-            muted={EXP.muted}
-            border={EXP.border}
-            danger={EXP.red}
-            background="rgba(255,255,255,0.02)"
-          />
-        ),
+        isVisible: () => false,
+        render: () => null,
       },
       {
         id: "statusClipboardQueue",
@@ -15129,6 +15135,7 @@ export function FileExplorer({
     ],
     [
       accent,
+      activeStatusViewLabel,
       addressDraft,
       addressEditing,
       applyModeProfilePreset,
@@ -15143,7 +15150,6 @@ export function FileExplorer({
       currentFolderSizeSummary,
       currentPath,
       currentPathIsCloud,
-      effectiveExperimentalViewMode,
       experimentalDensityDescriptor,
       experimentalDensityPercent,
       explorerTheme.breadcrumbStyle,
@@ -15182,7 +15188,6 @@ export function FileExplorer({
       selectedEntries,
       selectedExperimentalModeDefinition,
       selectedSizeSummary,
-      selectedViewModeDefinition,
       setAddressDraft,
       setAddressEditing,
       setBatchRename,
@@ -15198,8 +15203,6 @@ export function FileExplorer({
       showZoomHud,
       startDuplicateFinder,
       submitAddressDraft,
-      themedExperimentalViewMode,
-      themedViewMode,
       toggleSourcesPanel,
       shouldRenderRail,
       togglePreviewEnabled,
@@ -15302,6 +15305,7 @@ export function FileExplorer({
       fontSize: "var(--overlay-explorer-status-font-size)",
       color: EXP.muted,
       flexShrink: 0,
+      position: "relative",
       margin:
         explorerTheme.statusBarStyle === "floating"
           ? "0 var(--overlay-explorer-chrome-inset) var(--overlay-explorer-chrome-inset)"
@@ -19732,11 +19736,35 @@ export function FileExplorer({
           <div data-overlay-explorer-plane="status" style={statusBarStyle}>
             <ExplorerChromeSurface
               surface={explorerStatusBarSurface}
-              getRowStyle={getExplorerChromeRowStyle}
-              getZoneStyle={getExplorerChromeZoneStyle}
+              style={{ width: "100%", minWidth: 0 }}
+              getRowStyle={getExplorerStatusBarRowStyle}
+              getZoneStyle={getExplorerStatusBarZoneStyle}
               renderControl={renderExplorerChromeControl}
               editMode={explorerChromeEditMode}
             />
+            <div
+              data-overlay-explorer-status-task-anchor="true"
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                transform: "translate(-50%, -50%)",
+                zIndex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                pointerEvents: "auto",
+              }}
+            >
+              <ExplorerTaskStatusBadge
+                accent={accent}
+                text={EXP.text}
+                muted={EXP.muted}
+                border={EXP.border}
+                danger={EXP.red}
+                background="rgba(255,255,255,0.02)"
+              />
+            </div>
           </div>
         )}
       </div>

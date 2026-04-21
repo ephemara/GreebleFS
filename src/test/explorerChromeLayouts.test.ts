@@ -17,8 +17,9 @@ const toolbarDefinitions: ExplorerChromeControlDefinition[] = [
   { id: 'previewIdentity', label: 'Preview Identity', surfaces: ['previewHeader'] },
   { id: 'previewClose', label: 'Preview Close', surfaces: ['previewHeader'] },
   { id: 'statusItemCount', label: 'Status Item Count', surfaces: ['explorerStatusBar'] },
-  { id: 'statusTaskBadge', label: 'Status Task Badge', surfaces: ['explorerStatusBar'] },
   { id: 'statusViewToggles', label: 'Status View Toggles', surfaces: ['explorerStatusBar'] },
+  { id: 'statusClipboardQueue', label: 'Status Clipboard Queue', surfaces: ['explorerStatusBar'] },
+  { id: 'statusPreviewLoading', label: 'Status Preview Loading', surfaces: ['explorerStatusBar'] },
 ];
 
 describe('explorer chrome layout resolver', () => {
@@ -107,8 +108,11 @@ describe('explorer chrome layout resolver', () => {
     expect(previewHeader.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('previewIdentity');
     expect(previewHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('previewClose');
     expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('statusItemCount');
+    expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'center')?.controls.map((control) => control.controlId)).toEqual([
+      'statusClipboardQueue',
+      'statusPreviewLoading',
+    ]);
     expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toEqual([
-      'statusTaskBadge',
       'statusViewToggles',
     ]);
   });

@@ -20,15 +20,15 @@
 
 - The explorer no longer traps its experimental view surfaces behind a top-toolbar `Labs` launcher. The bottom status bar is now the primary quick-switch host for explorer view states.
 - Durable implementation shape:
-  - `src/components/FileExplorer.tsx` now renders a data-driven footer view switcher immediately to the right of the task badge. The host currently exposes six icon buttons: icon view, list view, standard explorer chain, adaptive semantic grid, constellation view, and timeline surface.
-  - The old top-toolbar `experimentalModes` control is now retired from the visible chrome path, while the existing experimental density HUD was reattached to the new footer switcher so Ctrl/Cmd+wheel and footer activation still surface density feedback.
-  - Standard quick-view buttons now explicitly clear experimental mode when they jump back to icon/list layouts, while experimental buttons preserve the saved normal `viewMode` beneath the experimental surface so users can bounce back without losing their underlying standard layout choice.
-  - `src/config/explorerChromeLayouts.ts` now places `statusTaskBadge` before `statusViewToggles` in the status-bar end zone, making the task button the left anchor for the expanding footer view host.
+  - `src/components/FileExplorer.tsx` now renders a five-button footer view switcher anchored at the far right of the status bar. The host exposes icon view, list view, adaptive semantic grid, constellation view, and timeline surface. The redundant “standard explorer” button was removed, and icon/list now act as the standard-view exit path by proxy.
+  - The old top-toolbar `experimentalModes` control is retired from the visible chrome path, and the status footer no longer prints `Experimental:` copy for those alternate views. The existing density HUD still hangs off the footer switcher so Ctrl/Cmd+wheel and footer activation keep their feedback loop.
+  - The explorer task badge no longer participates in the same flowing status-bar chrome layout as the footer text. `FileExplorer.tsx` now renders it as a fixed centered status-bar anchor so the task button stays dead center while the view switcher stays locked to the far-right edge.
+  - `src/config/explorerChromeLayouts.ts` now reserves the far-right status-bar edge for the footer view host and moves transient clipboard/loading summaries out of that corner, which protects icon muscle memory from shifting with ephemeral status text.
 - Durable product note:
   - Treat the status-bar view switcher as the growth lane for power-user explorer surfaces. If more explorer-specific view states arrive, add them to the same data-driven host instead of reintroducing another top-level mode launcher.
   - Existing keyboard coverage still applies here: `toggleExplorerLayout` plus Ctrl/Cmd+wheel remain the settings-backed rapid-switch path, so the footer refactor did not require a second shortcut system.
 - Validation:
-  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/explorerChromeLayouts.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/explorerChromeLayouts.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot`
   - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
 
 # 2026-04-21 - Managed Python Sidecar And Embedded PyO3 Lane

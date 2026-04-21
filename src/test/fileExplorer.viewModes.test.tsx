@@ -2935,17 +2935,30 @@ describe("FileExplorer view modes", () => {
     }
   });
 
-  it("renders the footer view switcher with standard and experimental view buttons", async () => {
+  it("renders the footer view switcher as a fixed five-button view host on the status bar edge", async () => {
     renderExplorer();
     await screen.findByText("alpha");
 
     const switcher = screen.getByRole("group", {
       name: /explorer footer view switcher/i,
     });
+    const statusSurface = document.querySelector(
+      '[data-overlay-explorer-surface="explorerStatusBar"]',
+    );
+    const taskAnchor = document.querySelector(
+      '[data-overlay-explorer-status-task-anchor="true"]',
+    );
 
     expect(
       screen.queryByRole("button", { name: /experimental view modes:/i }),
     ).toBeNull();
+    expect(statusSurface).toHaveStyle({ width: "100%", minWidth: "0" });
+    expect(taskAnchor).toHaveStyle({
+      left: "50%",
+      top: "50%",
+      transform: "translate(-50%, -50%)",
+    });
+    expect(within(switcher).getAllByRole("button")).toHaveLength(5);
     expect(
       within(switcher).getByRole("button", {
         name: /switch explorer to icon view/i,
@@ -2954,11 +2967,6 @@ describe("FileExplorer view modes", () => {
     expect(
       within(switcher).getByRole("button", {
         name: /switch explorer to list view/i,
-      }),
-    ).toBeTruthy();
-    expect(
-      within(switcher).getByRole("button", {
-        name: /use standard explorer layout chain/i,
       }),
     ).toBeTruthy();
     expect(
@@ -2996,6 +3004,10 @@ describe("FileExplorer view modes", () => {
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
       "columns",
     );
+    expect(getChromeControl("statusViewSummary")).toHaveTextContent(
+      "View: Adaptive Semantic Grid",
+    );
+    expect(screen.queryByText(/experimental:/i)).toBeNull();
     expect(
       screen.getByRole("button", {
         name: /switch explorer to adaptive semantic grid/i,
@@ -3026,6 +3038,10 @@ describe("FileExplorer view modes", () => {
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
       "details",
     );
+    expect(getChromeControl("statusViewSummary")).toHaveTextContent(
+      "View: Constellation View",
+    );
+    expect(screen.queryByText(/experimental:/i)).toBeNull();
     expect(
       screen.getByRole("button", {
         name: /switch explorer to constellation view/i,
@@ -3060,6 +3076,10 @@ describe("FileExplorer view modes", () => {
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
       "columns",
     );
+    expect(getChromeControl("statusViewSummary")).toHaveTextContent(
+      "View: Timeline Surface",
+    );
+    expect(screen.queryByText(/experimental:/i)).toBeNull();
     expect(
       screen.getByRole("button", {
         name: /switch explorer to timeline surface/i,
@@ -3073,7 +3093,7 @@ describe("FileExplorer view modes", () => {
     expect(screen.getAllByText(/undated/i).length).toBeGreaterThan(0);
   });
 
-  it("returns to the standard explorer chain from the footer view switcher without mutating the saved normal layout mode", async () => {
+  it("uses list view as the standard-view proxy when leaving a unique footer mode", async () => {
     useSettingsStore.getState().updateExplorer({
       viewMode: "columns",
       experimentalViewMode: "constellation",
@@ -3084,7 +3104,7 @@ describe("FileExplorer view modes", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: /use standard explorer layout chain/i,
+        name: /switch explorer to list view/i,
       }),
     );
 
@@ -3093,7 +3113,7 @@ describe("FileExplorer view modes", () => {
         useSettingsStore.getState().settings.explorer.experimentalViewMode,
       ).toBe("off");
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
-        "columns",
+        "list",
       );
     });
   });
