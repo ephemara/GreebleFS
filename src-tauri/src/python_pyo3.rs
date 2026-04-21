@@ -25,7 +25,9 @@ pub struct PythonEmbeddedDecodedResponse<TResult> {
     pub result: TResult,
 }
 
-fn encode_embedded_payload_json<T: serde::Serialize>(payload: Option<&T>) -> Result<Option<String>, String> {
+fn encode_embedded_payload_json<T: serde::Serialize>(
+    payload: Option<&T>,
+) -> Result<Option<String>, String> {
     payload
         .map(|value| {
             serde_json::to_string(value)
@@ -34,30 +36,29 @@ fn encode_embedded_payload_json<T: serde::Serialize>(payload: Option<&T>) -> Res
         .transpose()
 }
 
-fn decode_embedded_result_json<TResult: DeserializeOwned>(result_json: &str) -> Result<TResult, String> {
+fn decode_embedded_result_json<TResult: DeserializeOwned>(
+    result_json: &str,
+) -> Result<TResult, String> {
     serde_json::from_str(result_json)
         .map_err(|error| format!("Failed to decode embedded Python result JSON: {error}"))
 }
 
-fn run_embedded_snippet(request: PythonEmbeddedSnippetRequest) -> Result<PythonEmbeddedSnippetResponse, String> {
-    let callable_name = request
-        .callable_name
-        .unwrap_or_else(|| "main".to_string());
-    let payload_json = request
-        .payload_json
-        .unwrap_or_else(|| "null".to_string());
+fn run_embedded_snippet(
+    request: PythonEmbeddedSnippetRequest,
+) -> Result<PythonEmbeddedSnippetResponse, String> {
+    let callable_name = request.callable_name.unwrap_or_else(|| "main".to_string());
+    let payload_json = request.payload_json.unwrap_or_else(|| "null".to_string());
 
     Python::with_gil(|py| -> PyResult<PythonEmbeddedSnippetResponse> {
         let globals = PyDict::new_bound(py);
         py.run_bound(&request.code, None, Some(&globals))?;
 
-        let callable = globals
-            .get_item(&callable_name)
-            ?
-            .ok_or_else(|| PyRuntimeError::new_err(format!(
+        let callable = globals.get_item(&callable_name)?.ok_or_else(|| {
+            PyRuntimeError::new_err(format!(
                 "Embedded Python callable '{}' was not defined.",
                 callable_name
-            )))?;
+            ))
+        })?;
 
         let json = py.import_bound("json")?;
         let sys = py.import_bound("sys")?;
