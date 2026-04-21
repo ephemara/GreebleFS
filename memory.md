@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Explorer Preview Pane Can Lock To The Current Item
+
+- The explorer preview pane no longer has to live-update on every selection change. Users can now lock the active preview in place while they browse other files, which is useful for following tutorial text, reference notes, or any other “keep this file visible while I navigate” workflow.
+- Durable implementation shape:
+  - `src/store/explorerStore.ts` now persists `session.previewLocked` alongside the existing preview shell state so the explorer session can remember whether the preview is live-following selection or intentionally frozen.
+  - `src/components/FileExplorer.tsx` now distinguishes selection-driven preview loads from explicit preview actions. When `previewLocked` is on, passive selection changes from clicks or arrow-key traversal no longer replace the current preview, but explicit preview-opening actions can still deliberately retarget the pane.
+  - The preview header now exposes a dedicated lock toggle, visible lock state badge, and a `data-overlay-explorer-preview-locked` attribute on the pane shell for regression coverage.
+  - Preview clearing paths that fully dismiss the preview surface also clear the lock state, so the explorer does not get stranded in a hidden-but-locked mode after the pane is closed or a previewed item is moved to trash.
+  - `src/config/hotkeys.ts` and `src/components/SettingsPage.tsx` now expose a settings-backed `togglePreviewLock` shortcut with the default binding `Ctrl+Alt+P`.
+  - `src/test/fileExplorer.viewModes.test.tsx`, `src/test/hotkeys.test.ts`, and `src/test/settingsStore.test.ts` lock the behavior: locked previews stay fixed while selection changes, the hotkey toggles the lock state, and theme/session flows preserve the new session flag.
+- Durable product note:
+  - Treat preview locking as a passive-selection override, not a blanket ban on all preview changes. The lock is there to stop browsing from stealing the pane; explicit preview actions are still allowed to move the preview intentionally.
+  - If future preview work adds more selection or navigation paths, keep them routed through the same selection-vs-explicit distinction so lock behavior stays predictable.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` check reported no matching errors for the touched preview/store/hotkey/settings files
+
 # 2026-04-20 - Spreadsheet Preview Now Opens Read-Only First And The Workbench Chrome Was De-Bloated
 
 - Explorer spreadsheets no longer drop straight into an always-edit grid shell, and the spreadsheet workbench no longer renders the earlier pill-heavy top section.

@@ -35,7 +35,7 @@ import {
 export const EXPLORER_STATE_STORAGE_KEY = 'overlayterm-explorer-state-v3';
 export const EXPLORER_STATE_BACKUP_KEY = 'overlayterm-explorer-state-v3.backup';
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = 'fs-bookmarks-v2';
-export const EXPLORER_STATE_VERSION = 5;
+export const EXPLORER_STATE_VERSION = 6;
 export const PRIMARY_EXPLORER_INSTANCE_ID = 'primary';
 export const PRIMARY_EXPLORER_TAB_ID = 'tab-primary';
 const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
@@ -85,6 +85,7 @@ export interface ExplorerSessionSnapshot {
   sidebarWidth: number | null;
   previewWidth: number | null;
   previewEnabled: boolean;
+  previewLocked: boolean;
   previewSplitMode: 'inline' | 'pane';
   shellLayoutId: ExplorerShellLayoutId;
   search: string;
@@ -168,6 +169,7 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   sidebarWidth: null,
   previewWidth: null,
   previewEnabled: true,
+  previewLocked: false,
   previewSplitMode: 'inline',
   shellLayoutId: 'balanced',
   search: '',
@@ -311,6 +313,9 @@ export function normalizeExplorerSessionSnapshot(value: unknown): ExplorerSessio
     previewEnabled: typeof source?.previewEnabled === 'boolean'
       ? source.previewEnabled
       : defaultExplorerSession.previewEnabled,
+    previewLocked: typeof source?.previewLocked === 'boolean'
+      ? source.previewLocked
+      : defaultExplorerSession.previewLocked,
     previewSplitMode: source?.previewSplitMode === 'pane' ? 'pane' : 'inline',
     shellLayoutId: getExplorerShellLayoutDefinition(source?.shellLayoutId).id,
     search: typeof source?.search === 'string' ? source.search : '',

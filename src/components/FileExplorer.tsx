@@ -9819,8 +9819,7 @@ export function FileExplorer({
 
       if ((!previewEnabled && !allowPreviewLoadWhileClosed) || isCompactDock) {
         if (isCurrentPreviewRequest()) {
-          setPreview({ type: "none", path: "" });
-          setPreviewLoading(false);
+          clearPreviewSurface();
         }
         return;
       }
@@ -10502,6 +10501,7 @@ export function FileExplorer({
       flushPreviewTextSave,
       isCompactDock,
       openExplorerPdfPreviewDocument,
+      clearPreviewSurface,
       previewRef,
       previewEnabled,
       readExplorerTextFile,
@@ -10783,6 +10783,7 @@ export function FileExplorer({
       }
     })();
   }, [
+    clearPreviewSurface,
     externalSelectionTransferRequest,
     executeTransferRequest,
     instanceId,

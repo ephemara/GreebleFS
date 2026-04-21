@@ -571,6 +571,14 @@ function getPreviewSplitToggleButton() {
   return within(control).getByRole("button");
 }
 
+function getPreviewLockButton() {
+  const control = getChromeControl("previewLockToggle");
+  if (!control) {
+    throw new Error("Preview lock toggle control not found");
+  }
+  return within(control).getByRole("button");
+}
+
 function getPreviewTerminalToggleButton() {
   const control = getChromeControl("previewTerminalToggle");
   if (!control) {
@@ -1176,6 +1184,48 @@ describe("FileExplorer view modes", () => {
     );
   });
 
+  it("locks the active preview in place while selection keeps moving through the explorer", async () => {
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(screen.getByText("notes.txt"));
+    await waitFor(() => {
+      expect(screen.getByTestId("monaco-editor")).toHaveTextContent(
+        "hello from preview",
+      );
+    });
+
+    fireEvent.click(getPreviewLockButton());
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewLocked).toBe(true);
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-locked",
+        "true",
+      );
+      expect(getPreviewLockButton()).toHaveAttribute("aria-pressed", "true");
+    });
+    expect(getChromeControl("previewState")).toHaveTextContent("Locked");
+
+    fireEvent.click(screen.getByText("preview.png"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("monaco-editor")).toHaveTextContent(
+        "hello from preview",
+      );
+      expect(screen.queryByTestId("mock-explorer-image-editor")).toBeNull();
+    });
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("monaco-editor")).toHaveTextContent(
+        "hello from preview",
+      );
+      expect(screen.queryByTestId("mock-explorer-image-editor")).toBeNull();
+    });
+  });
+
   it("compacts explorer chrome and suppresses the side preview in multi-pane mode", async () => {
     renderExplorer({ workspacePaneCount: 2 });
     await screen.findByText("notes.txt");
@@ -1322,6 +1372,28 @@ describe("FileExplorer view modes", () => {
         "data-overlay-explorer-preview-surface-mode",
         "terminal",
       );
+    });
+  });
+
+  it("toggles the preview lock from the explorer hotkey", async () => {
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(screen.getByText("notes.txt"));
+    await screen.findByRole("button", { name: /copy path/i });
+
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true, altKey: true });
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewLocked).toBe(true);
+      expect(getPreviewLockButton()).toHaveAttribute("aria-pressed", "true");
+    });
+
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true, altKey: true });
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewLocked).toBe(false);
+      expect(getPreviewLockButton()).toHaveAttribute("aria-pressed", "false");
     });
   });
 
