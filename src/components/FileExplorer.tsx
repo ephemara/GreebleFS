@@ -14813,9 +14813,12 @@ export function FileExplorer({
         id: "selectionSizeSummary",
         label: "Selection Size Summary",
         surfaces: ["explorerToolbar"],
-        isVisible: () => showToolbarLocationStrips && selected.size > 0,
-        render: () =>
-          selectedSizeSummary && selected.size > 0 ? (
+        isVisible: () => showToolbarLocationStrips,
+        render: () => {
+          const measuredCount = selectedSizeSummary?.measuredCount ?? 0;
+          const selectedCount = selectedSizeSummary?.selectedCount ?? 0;
+          const hasSelection = selectedCount > 0;
+          return (
             <div
               style={{
                 display: "flex",
@@ -14825,7 +14828,10 @@ export function FileExplorer({
                 minWidth: 0,
                 maxWidth: isCompactDock ? 180 : 240,
                 overflow: "hidden",
+                visibility: hasSelection ? "visible" : "hidden",
+                pointerEvents: hasSelection ? "auto" : "none",
               }}
+              aria-hidden={!hasSelection}
               title="Selected item size summary"
             >
               <span
@@ -14841,16 +14847,13 @@ export function FileExplorer({
               <span
                 style={{
                   fontSize: 10,
-                  color:
-                    selectedSizeSummary.measuredCount > 0
-                      ? EXP.text
-                      : EXP.muted,
+                  color: measuredCount > 0 ? EXP.text : EXP.muted,
                   fontWeight: 700,
                   whiteSpace: "nowrap",
                 }}
               >
-                {selectedSizeSummary.measuredCount > 0
-                  ? formatSize(selectedSizeSummary.totalBytes)
+                {measuredCount > 0
+                  ? formatSize(selectedSizeSummary?.totalBytes ?? 0)
                   : "—"}
               </span>
               <span
@@ -14860,13 +14863,15 @@ export function FileExplorer({
                   whiteSpace: "nowrap",
                 }}
               >
-                {selectedSizeSummary.measuredCount ===
-                selectedSizeSummary.selectedCount
-                  ? `${selectedSizeSummary.measuredCount} measured`
-                  : `${selectedSizeSummary.measuredCount}/${selectedSizeSummary.selectedCount} measured`}
+                {selectedCount === 0
+                  ? "0 measured"
+                  : measuredCount === selectedCount
+                    ? `${measuredCount} measured`
+                    : `${measuredCount}/${selectedCount} measured`}
               </span>
             </div>
-          ) : null,
+          );
+        },
       },
       {
         id: "pinLocation",

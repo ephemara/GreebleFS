@@ -4211,6 +4211,10 @@ const value = 1;
     );
 
     renderExplorer();
+    const idleSelectionSummary = screen.getByTitle(
+      "Selected item size summary",
+    );
+    expect(idleSelectionSummary).toHaveStyle({ visibility: "hidden" });
     const alphaEntry = (await screen.findAllByText("alpha")).find((candidate) =>
       candidate.closest('[data-overlay-explorer-plane="file-area"]'),
     );
@@ -4220,6 +4224,7 @@ const value = 1;
     fireEvent.click(alphaEntry);
 
     const selectionSummary = screen.getByTitle("Selected item size summary");
+    expect(selectionSummary).toHaveStyle({ visibility: "visible" });
     expect(selectionSummary).toHaveTextContent("Selected");
     expect(selectionSummary).toHaveTextContent("0/1 measured");
     expect(selectionSummary).toHaveTextContent("—");
