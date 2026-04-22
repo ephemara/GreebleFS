@@ -9,7 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -777,6 +777,22 @@ function dispatchConstellationWheel(
   return wheelEvent;
 }
 
+async function advanceLayoutZoomCommit() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(220);
+  });
+}
+
+function getExplorerThumbnailReadCount() {
+  return vi
+    .mocked(invoke)
+    .mock.calls.filter(
+      ([command]) =>
+        command === "fs_read_entry_thumbnail" ||
+        command === "fs_read_image_thumbnail",
+    ).length;
+}
+
 function getEntryIconSrc(entryName: string): string {
   const entryLabel = screen
     .getAllByText(entryName)
@@ -828,6 +844,10 @@ function getEntryThumbnailBadgeSrc(entryName: string): string {
 }
 
 describe("FileExplorer view modes", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     const currentWindow = getCurrentWindow();
     pdfPreviewMockState.closeGuardResult = true;
@@ -3516,10 +3536,11 @@ const value = 1;
     });
   });
 
-  it("scales the explorer grid with ctrl-wheel without changing app zoom", async () => {
+  it("scales the explorer grid with ctrl-wheel without changing app zoom and only commits after idle", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     useSettingsStore
       .getState()
-      .updateExplorer({ viewMode: "icons-m", gridZoom: 0 });
+      .updateExplorer({ viewMode: "icons-m", gridZoom: 0.34 });
 
     renderExplorer();
     await screen.findByText("alpha");
@@ -3528,85 +3549,175 @@ const value = 1;
       useSettingsStore.getState().settings.appearance.appZoom;
     dispatchLayoutWheel("alpha", -120);
 
-    await waitFor(() => {
-      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
-        "icons-l",
-      );
-      expect(
-        useSettingsStore.getState().settings.explorer.gridZoom,
-      ).toBeGreaterThan(0);
-    });
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+      "icons-m",
+    );
+    expect(useSettingsStore.getState().settings.explorer.gridZoom).toBe(0.34);
+    expect(useSettingsStore.getState().settings.appearance.appZoom).toBe(
+      appearanceZoomBefore,
+    );
+
+    await advanceLayoutZoomCommit();
+
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+      "icons-m",
+    );
+    expect(
+      useSettingsStore.getState().settings.explorer.gridZoom,
+    ).toBeGreaterThan(0.34);
     expect(useSettingsStore.getState().settings.appearance.appZoom).toBe(
       appearanceZoomBefore,
     );
   });
 
-  it("smoothly scales icon layouts before switching away from the grid", async () => {
+  it("settles one explorer-settings commit for a ctrl-wheel gesture burst", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     useSettingsStore
       .getState()
-      .updateExplorer({ viewMode: "icons-l", gridZoom: 0.5 });
+      .updateExplorer({ viewMode: "icons-l", gridZoom: 0.67 });
+
+    const updateExplorerSpy = vi.spyOn(
+      useSettingsStore.getState(),
+      "updateExplorer",
+    );
 
     renderExplorer();
     await screen.findByText("alpha");
 
     dispatchLayoutWheel("alpha", -120);
+    dispatchLayoutWheel("alpha", -120);
+    dispatchLayoutWheel("alpha", -120);
 
-    await waitFor(() => {
-      expect(
-        useSettingsStore.getState().settings.explorer.gridZoom,
-      ).toBeGreaterThan(0.5);
-      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
-        "icons-xl",
-      );
-    });
+    expect(updateExplorerSpy).toHaveBeenCalledTimes(0);
+    await advanceLayoutZoomCommit();
+    expect(updateExplorerSpy).toHaveBeenCalledTimes(1);
+    updateExplorerSpy.mockRestore();
   });
 
   it("scales the explorer grid when ctrl-wheel happens on the file area shell", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     useSettingsStore
       .getState()
-      .updateExplorer({ viewMode: "icons-m", gridZoom: 0 });
+      .updateExplorer({ viewMode: "icons-m", gridZoom: 0.34 });
 
     renderExplorer();
     await screen.findByText("alpha");
 
     dispatchLayoutWheelOnFileArea(-120);
+    await advanceLayoutZoomCommit();
 
-    await waitFor(() => {
-      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
-        "icons-l",
-      );
-      expect(
-        useSettingsStore.getState().settings.explorer.gridZoom,
-      ).toBeGreaterThan(0);
-    });
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+      "icons-m",
+    );
+    expect(
+      useSettingsStore.getState().settings.explorer.gridZoom,
+    ).toBeGreaterThan(0.34);
   });
 
-  it("holds explorer scroll position while ctrl-wheel changes layout", async () => {
+  it("drops into compact list mode at the minimum zoom boundary and can zoom back into the grid", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     useSettingsStore
       .getState()
-      .updateExplorer({ viewMode: "icons-m", gridZoom: 0 });
+      .updateExplorer({ viewMode: "icons-s", gridZoom: 0 });
 
     renderExplorer();
     await screen.findByText("alpha");
 
-    const viewport = getExplorerViewport("alpha");
-    viewport.scrollTop = 420;
+    dispatchLayoutWheel("alpha", 120);
+    await advanceLayoutZoomCommit();
 
-    const wheelEvent = dispatchLayoutWheel("alpha", -120);
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+      "list",
+    );
 
-    act(() => {
-      viewport.scrollTop = 620;
-      viewport.dispatchEvent(new Event("scroll"));
-    });
+    dispatchLayoutWheel("alpha", -120);
+    dispatchLayoutWheel("alpha", -120);
+    await advanceLayoutZoomCommit();
+
+    expect(
+      useSettingsStore.getState().settings.explorer.viewMode,
+    ).toMatch(/^icons-/);
+    expect(
+      useSettingsStore.getState().settings.explorer.gridZoom,
+    ).toBeGreaterThan(0);
+  });
+
+  it("keeps a deep-grid viewport anchored instead of jumping back to the top while zooming", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const denseEntries = Array.from({ length: 220 }, (_, index) => ({
+      name: `item-${index.toString().padStart(3, "0")}.txt`,
+      path: `${REPO_ROOT}\\item-${index.toString().padStart(3, "0")}.txt`,
+      is_dir: false,
+      size: index + 1,
+      modified: index,
+      extension: "txt",
+      is_hidden: false,
+      is_symlink: false,
+    }));
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return denseEntries;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+    useSettingsStore
+      .getState()
+      .updateExplorer({ viewMode: "icons-l", gridZoom: 0.67 });
+
+    renderExplorer();
+    await screen.findByText("item-000.txt");
+
+    const viewport = getExplorerViewport("item-000.txt");
+    viewport.scrollTop = 1600;
+    fireEvent.scroll(viewport);
 
     await waitFor(() => {
-      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
-        "icons-l",
-      );
-      expect(viewport.scrollTop).toBe(420);
+      expect(screen.getByText("item-120.txt")).toBeInTheDocument();
     });
 
-    expect(wheelEvent.defaultPrevented).toBe(true);
+    dispatchLayoutWheel("item-120.txt", -120);
+    await advanceLayoutZoomCommit();
+
+    expect(screen.getByText("item-120.txt")).toBeInTheDocument();
+    expect(viewport.scrollTop).toBeGreaterThan(1000);
+  });
+
+  it("does not refetch an already-visible generated thumbnail during a zoom gesture", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    useSettingsStore
+      .getState()
+      .updateExplorer({ viewMode: "icons-l", gridZoom: 0.67 });
+
+    renderExplorer();
+    await screen.findByText("preview.png");
+
+    await waitFor(() => {
+      expect(getExplorerThumbnailReadCount()).toBeGreaterThan(0);
+    });
+
+    vi.mocked(invoke).mockClear();
+    dispatchLayoutWheel("preview.png", -120);
+    dispatchLayoutWheel("preview.png", -120);
+    await advanceLayoutZoomCommit();
+
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(
+          ([command, args]) =>
+            (command === "fs_read_entry_thumbnail" ||
+              command === "fs_read_image_thumbnail") &&
+            (args as { path?: string } | undefined)?.path ===
+              `${REPO_ROOT}\\preview.png`,
+        ),
+    ).toBe(false);
   });
 
   it("uses the dedicated explorer viewport class for visible file-list scrollbars", async () => {

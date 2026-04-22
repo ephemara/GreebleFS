@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  adjustExplorerLayoutZoomState,
+  commitExplorerLayoutZoomState,
+  createExplorerLayoutZoomState,
   getAdjacentExplorerGridMode,
   getExplorerGridMetricsForZoom,
   getNearestExplorerGridMode,
   getExplorerViewModeDefinition,
   normalizeExplorerGridZoom,
+  resolveExplorerLayoutZoomState,
   normalizeExplorerViewMode,
   resolveEffectiveExplorerViewMode,
   stepExplorerGridZoom,
@@ -57,5 +61,42 @@ describe('explorerViewModes', () => {
     expect(getExplorerViewModeDefinition('icons-xl').label).toBe('XL Icons');
     expect(getExplorerViewModeDefinition('icons-s').label).toBe('Small Icons');
     expect(getExplorerViewModeDefinition('details').shortLabel).toBe('Details');
+  });
+
+  it('maps persisted settings into the live layout zoom continuum', () => {
+    expect(createExplorerLayoutZoomState('icons-m', 0.34)).toMatchObject({
+      family: 'grid',
+      layoutZoom: 0.34,
+      storedGridZoom: 0.34,
+    });
+    expect(createExplorerLayoutZoomState('details', 0.67)).toMatchObject({
+      family: 'list',
+      storedGridZoom: 0.67,
+    });
+  });
+
+  it('crosses from the grid continuum into list mode at the compact boundary', () => {
+    const compactGrid = createExplorerLayoutZoomState('icons-s', 0);
+    const listState = adjustExplorerLayoutZoomState(compactGrid, -0.12);
+    expect(listState.family).toBe('list');
+    expect(resolveExplorerLayoutZoomState(listState)).toMatchObject({
+      family: 'list',
+      viewMode: 'list',
+      zoomPercent: null,
+    });
+    expect(commitExplorerLayoutZoomState(listState)).toEqual({ viewMode: 'list' });
+  });
+
+  it('commits live grid zoom back to the nearest durable icon anchor', () => {
+    const seededState = createExplorerLayoutZoomState('icons-l', 0.67);
+    const expandedState = adjustExplorerLayoutZoomState(seededState, 0.2);
+    const resolvedState = resolveExplorerLayoutZoomState(expandedState);
+
+    expect(resolvedState.family).toBe('grid');
+    expect(resolvedState.gridZoom).toBeGreaterThan(0.8);
+    expect(commitExplorerLayoutZoomState(expandedState)).toEqual({
+      viewMode: 'icons-xl',
+      gridZoom: resolvedState.gridZoom,
+    });
   });
 });

@@ -1,5 +1,24 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Explorer Ctrl+Scroll Now Uses A Live Spring Zoom Continuum
+
+- Explorer ctrl/cmd+wheel no longer writes `settings.explorer` on every wheel threshold. The hot path is now a local live zoom controller that keeps the gesture inside Explorer and only commits back to persisted settings after the wheel gesture settles.
+- Durable implementation shape:
+  - `src/config/explorerViewModes.ts` now owns an internal `ExplorerLayoutZoomState` continuum for the flagship explorer. It maps persisted `viewMode` / `gridZoom` into a live `grid <-> list` zoom family, resolves the active display mode during the gesture, and commits the settled result back to the existing durable settings contract without changing schema.
+  - The live continuum is intentionally limited to `icons-*` plus compact `list`. Manual `columns` and `details` remain explicit user-selected layouts; ctrl/cmd+wheel no longer cycles through every row preset automatically.
+  - `src/components/FileExplorer.tsx` now drives ctrl/cmd+wheel through `framer-motion` motion values and a spring instead of the old `EXPLORER_LAYOUT_WHEEL_STEP_DELTA` accumulator. The explorer keeps a local live zoom state, applies pointer-anchor scroll correction while the spring updates, and delays `updateExplorerSettings(...)` until the gesture goes idle.
+  - Explorer zoom now records `explorer_layout_zoom` samples in `src/config/performanceTelemetry.ts`, using the p95 frame time observed while the live zoom gesture is active.
+  - Thumbnail behavior is intentionally cache-first during zoom. Existing visible thumbnails stay mounted and the regression tests now guard against refetching an already-visible generated thumbnail path during the gesture.
+  - `src/test/explorerViewModes.test.ts` now locks the live zoom helper contract, and `src/test/fileExplorer.viewModes.test.tsx` now locks delayed commit, gesture-burst commit coalescing, file-area wheel routing, grid/list boundary behavior, viewport anchoring, and thumbnail stability.
+  - `src/test/browser-proof/fileExplorer.layoutZoom.page.tsx` is the browser-proof/manual-validation entry for this work. Use it when checking the feel of ctrl/cmd+wheel alongside the Dev HUD.
+- Durable product note:
+  - Treat explorer ctrl/cmd+wheel as a local interaction runtime, not a direct settings write path. Future tuning should adjust the live continuum or spring parameters first, then the settled commit mapping, instead of reintroducing per-wheel persisted updates.
+  - If future work adds more automatic wheel families, extend the continuum helper in `explorerViewModes.ts` first. Do not grow more one-off wheel logic inside `FileExplorer.tsx`.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerViewModes.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "scales the explorer grid with ctrl-wheel without changing app zoom and only commits after idle|settles one explorer-settings commit|scales the explorer grid when ctrl-wheel happens on the file area shell|drops into compact list mode|keeps a deep-grid viewport anchored|does not refetch an already-visible generated thumbnail" --pool=forks --reporter=dot`
+  - note: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still exits nonzero on this branch from unrelated existing drift outside the filtered zoom paths; the zoom-touched files emitted no filtered TypeScript errors in the targeted pass.
+
 # 2026-04-22 - Explorer Home Is Now An App-Owned Surface With Home Packs
 
 - Explorer `Home` no longer means "navigate to the machine home directory." The durable explorer default is now the virtual route `greeblefs://home`, which is an app-owned surface with its own rendering/runtime/settings model.

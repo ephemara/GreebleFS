@@ -23,6 +23,7 @@ import React, {
 } from "react";
 import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useMotionValue, useSpring } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import type { EditorProps as MonacoEditorProps } from "@monaco-editor/react";
 import {
@@ -133,16 +134,21 @@ import {
 } from "../config/iconTheme";
 import type { ExplorerLayoutMode } from "../config/layoutProfiles";
 import {
-  getAdjacentExplorerGridMode,
+  EXPLORER_LAYOUT_ZOOM_MAX,
+  EXPLORER_LAYOUT_ZOOM_MIN,
   getExplorerGridMetricsForZoom,
   getExplorerGridZoomAnchor,
   getExplorerGridZoomPercent,
+  createExplorerLayoutZoomState,
+  commitExplorerLayoutZoomState,
   explorerViewModes,
   getExplorerViewModeDefinition,
   isExplorerGridMode,
+  resolveExplorerLayoutZoomState,
+  resolveExplorerLayoutZoomStateAtValue,
   resolveEffectiveExplorerViewMode,
-  stepExplorerGridZoom,
   stepExplorerViewMode,
+  type ExplorerLayoutZoomState,
   type ExplorerViewModeDefinition,
   type ExplorerViewPresentation,
 } from "../config/explorerViewModes";
@@ -438,7 +444,9 @@ const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 8;
 const EXPLORER_GRID_OVERSCAN_ROWS = 2;
-const EXPLORER_LAYOUT_WHEEL_STEP_DELTA = 80;
+const EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY = 1 / 720;
+const EXPLORER_LAYOUT_WHEEL_MAX_DELTA = 0.12;
+const EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS = 160;
 const EXPLORER_THUMBNAIL_TYPE_BADGE_MIN_STAGE_PX = 36;
 const EXPLORER_THUMBNAIL_TYPE_BADGE_KINDS = new Set<
   ExplorerEntryThumbnailData["kind"]
@@ -473,6 +481,13 @@ type ExplorerNormalizedSearchResult = {
   line_number: number | null;
   search_mode: ExplorerSearchModeValue;
   semantic_score: number | null;
+};
+
+type ExplorerLayoutZoomPointerAnchor = {
+  itemIndex: number;
+  pointerX: number;
+  pointerY: number;
+  itemOffsetY: number;
 };
 
 type ExplorerSearchCacheEntry = {
@@ -7309,13 +7324,29 @@ export function FileExplorer({
   const explorerViewportScrollTopRef = useRef(0);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
-  const layoutWheelDeltaAccumulatorRef = useRef(0);
-  const layoutWheelScrollLockFrameRef = useRef<number | null>(null);
-  const layoutWheelLockedScrollTopRef = useRef<number | null>(null);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
   const [zoomHudVisible, setZoomHudVisible] = useState(false);
   const zoomHudTimerRef = useRef<number | null>(null);
+  const [layoutZoomGestureActive, setLayoutZoomGestureActive] = useState(false);
+  const layoutZoomGestureActiveRef = useRef(false);
+  const layoutZoomCommitTimerRef = useRef<number | null>(null);
+  const layoutZoomFrameSampleRef = useRef<number[]>([]);
+  const layoutZoomFrameRafRef = useRef<number | null>(null);
+  const layoutZoomFrameLastAtRef = useRef<number | null>(null);
+  const layoutZoomPointerAnchorRef =
+    useRef<ExplorerLayoutZoomPointerAnchor | null>(null);
+  const [liveLayoutZoomState, setLiveLayoutZoomState] =
+    useState<ExplorerLayoutZoomState>(() =>
+      createExplorerLayoutZoomState(viewMode, gridZoom),
+    );
+  const liveLayoutZoomStateRef = useRef(liveLayoutZoomState);
+  const layoutZoomTarget = useMotionValue(liveLayoutZoomState.layoutZoom);
+  const layoutZoomSpring = useSpring(layoutZoomTarget, {
+    stiffness: 280,
+    damping: 34,
+    mass: 0.28,
+  });
   const [experimentalHudVisible, setExperimentalHudVisible] = useState(false);
   const experimentalHudTimerRef = useRef<number | null>(null);
   const [localTreeRefreshRevision, setLocalTreeRefreshRevision] = useState(0);
@@ -7394,14 +7425,6 @@ export function FileExplorer({
       if (!target) {
         return;
       }
-      const lockedScrollTop = layoutWheelLockedScrollTopRef.current;
-      if (lockedScrollTop != null) {
-        if (Math.abs(target.scrollTop - lockedScrollTop) > 0.5) {
-          target.scrollTop = lockedScrollTop;
-        }
-        commitExplorerViewportScrollTop(lockedScrollTop);
-        return;
-      }
       commitExplorerViewportScrollTop(target.scrollTop);
     },
     [commitExplorerViewportScrollTop],
@@ -7418,26 +7441,6 @@ export function FileExplorer({
     [commitExplorerViewportScrollTop],
   );
 
-  const lockExplorerViewportScrollTop = useCallback(
-    (scrollTop: number) => {
-      layoutWheelLockedScrollTopRef.current = scrollTop;
-      setExplorerViewportScrollTop(scrollTop);
-      if (layoutWheelScrollLockFrameRef.current != null) {
-        window.cancelAnimationFrame(layoutWheelScrollLockFrameRef.current);
-      }
-      layoutWheelScrollLockFrameRef.current = window.requestAnimationFrame(() => {
-        layoutWheelScrollLockFrameRef.current = null;
-        const lockedScrollTop = layoutWheelLockedScrollTopRef.current;
-        if (lockedScrollTop == null) {
-          return;
-        }
-        setExplorerViewportScrollTop(lockedScrollTop);
-        layoutWheelLockedScrollTopRef.current = null;
-      });
-    },
-    [setExplorerViewportScrollTop],
-  );
-
   const shouldHandleExplorerLayoutWheelEvent = useCallback(
     (
       event: Pick<
@@ -7445,7 +7448,7 @@ export function FileExplorer({
         "target" | "ctrlKey" | "metaKey" | "deltaX" | "deltaY"
       >,
     ) => {
-      if (isCompactDock || !(event.ctrlKey || event.metaKey)) {
+      if (isCompactDock || search.trim().length > 0 || !(event.ctrlKey || event.metaKey)) {
         return false;
       }
       if (isEditableKeyboardTarget(event.target)) {
@@ -7469,18 +7472,31 @@ export function FileExplorer({
         ),
       );
     },
-    [isCompactDock],
+    [isCompactDock, search],
   );
 
   const resetExplorerViewport = useCallback(() => {
-    layoutWheelDeltaAccumulatorRef.current = 0;
-    if (layoutWheelScrollLockFrameRef.current != null) {
-      window.cancelAnimationFrame(layoutWheelScrollLockFrameRef.current);
-      layoutWheelScrollLockFrameRef.current = null;
-    }
-    layoutWheelLockedScrollTopRef.current = null;
     setExplorerViewportScrollTop(0);
   }, [setExplorerViewportScrollTop]);
+
+  useEffect(() => {
+    const unsubscribe = layoutZoomSpring.on("change", (nextValue) => {
+      const nextState = resolveExplorerLayoutZoomStateAtValue(
+        liveLayoutZoomStateRef.current,
+        nextValue,
+      );
+      liveLayoutZoomStateRef.current = nextState;
+      setLiveLayoutZoomState((current) =>
+        current.family === nextState.family &&
+        Math.abs(current.layoutZoom - nextState.layoutZoom) < 0.0001 &&
+        Math.abs(current.storedGridZoom - nextState.storedGridZoom) < 0.0001
+          ? current
+          : nextState,
+      );
+    });
+
+    return unsubscribe;
+  }, [layoutZoomSpring]);
 
   useEffect(() => {
     let disposed = false;
@@ -13488,9 +13504,45 @@ export function FileExplorer({
         : experimentalViewMode,
     [experimentalViewMode, preferredExperimentalViewMode],
   );
+  useEffect(() => {
+    if (layoutZoomGestureActiveRef.current) {
+      return;
+    }
+
+    const nextState = createExplorerLayoutZoomState(themedViewMode, gridZoom);
+    liveLayoutZoomStateRef.current = nextState;
+    setLiveLayoutZoomState((current) =>
+      current.family === nextState.family &&
+      Math.abs(current.layoutZoom - nextState.layoutZoom) < 0.0001 &&
+      Math.abs(current.storedGridZoom - nextState.storedGridZoom) < 0.0001
+        ? current
+        : nextState,
+    );
+    layoutZoomTarget.set(nextState.layoutZoom);
+  }, [gridZoom, layoutZoomTarget, themedViewMode]);
+  const resolvedLiveLayoutZoom = useMemo(
+    () => resolveExplorerLayoutZoomState(liveLayoutZoomState),
+    [liveLayoutZoomState],
+  );
+  const liveWheelViewMode =
+    layoutZoomGestureActive && themedExperimentalViewMode === "off"
+      ? resolvedLiveLayoutZoom.viewMode
+      : themedViewMode;
+  const liveWheelGridZoom =
+    layoutZoomGestureActive && themedExperimentalViewMode === "off"
+      ? resolvedLiveLayoutZoom.gridZoom
+      : gridZoom;
   const selectedViewModeDefinition = useMemo(
-    () => getExplorerViewModeDefinition(themedViewMode),
-    [themedViewMode],
+    () =>
+      layoutZoomGestureActive && themedExperimentalViewMode === "off"
+        ? resolvedLiveLayoutZoom.definition
+        : getExplorerViewModeDefinition(themedViewMode),
+    [
+      layoutZoomGestureActive,
+      resolvedLiveLayoutZoom.definition,
+      themedExperimentalViewMode,
+      themedViewMode,
+    ],
   );
   const selectedExperimentalModeDefinition = useMemo(
     () =>
@@ -13499,7 +13551,7 @@ export function FileExplorer({
         : getExplorerExperimentalModeDefinition(themedExperimentalViewMode),
     [themedExperimentalViewMode],
   );
-  const effectiveViewMode = resolveEffectiveExplorerViewMode(themedViewMode, {
+  const effectiveViewMode = resolveEffectiveExplorerViewMode(liveWheelViewMode, {
     isCompactDock,
     isSearchActive,
   });
@@ -13547,7 +13599,7 @@ export function FileExplorer({
     () =>
       effectiveViewModeDefinition.presentation === "grid"
         ? applyExplorerThemeToGridMetrics(
-            getExplorerGridMetricsForZoom(gridZoom),
+            getExplorerGridMetricsForZoom(liveWheelGridZoom),
             explorerTheme,
           )
         : effectiveViewModeDefinition.grid
@@ -13556,7 +13608,7 @@ export function FileExplorer({
               explorerTheme,
             )
           : effectiveViewModeDefinition.grid,
-    [effectiveViewModeDefinition, explorerTheme, gridZoom],
+    [effectiveViewModeDefinition, explorerTheme, liveWheelGridZoom],
   );
   const activeRowMetrics = useMemo(
     () =>
@@ -13654,10 +13706,18 @@ export function FileExplorer({
   }, [currentPathIsCloud, currentPathIsHome, semanticIndexSummary]);
   const gridZoomPercent = useMemo(
     () =>
-      isExplorerGridMode(themedViewMode)
-        ? getExplorerGridZoomPercent(gridZoom)
-        : null,
-    [gridZoom, themedViewMode],
+      layoutZoomGestureActive && themedExperimentalViewMode === "off"
+        ? resolvedLiveLayoutZoom.zoomPercent
+        : isExplorerGridMode(themedViewMode)
+          ? getExplorerGridZoomPercent(gridZoom)
+          : null,
+    [
+      gridZoom,
+      layoutZoomGestureActive,
+      resolvedLiveLayoutZoom.zoomPercent,
+      themedExperimentalViewMode,
+      themedViewMode,
+    ],
   );
   const showToolbarLocationStrips =
     !isCompactDock && !usesWorkspaceCompactChrome;
@@ -14270,7 +14330,9 @@ export function FileExplorer({
     [explorerTheme],
   );
   const explorerEntryBaseTransition =
-    "background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease";
+    layoutZoomGestureActive
+      ? "background 0.08s linear, border-color 0.08s linear"
+      : "background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease";
   const handleEntryPointerEnter = useCallback(
     (
       entry: FileEntry,
@@ -14278,6 +14340,9 @@ export function FileExplorer({
       isSelected: boolean,
       isDropTarget: boolean,
     ) => {
+      if (layoutZoomGestureActive) {
+        return;
+      }
       if (!isSelected && !isDropTarget) {
         applyExplorerEntrySurface(target, hoverEntrySurface);
       }
@@ -14297,6 +14362,7 @@ export function FileExplorer({
       explorerThumbnailSettings.enabled,
       explorerThumbnailSettings.includeVideo,
       hoverEntrySurface,
+      layoutZoomGestureActive,
     ],
   );
   const handleEntryPointerLeave = useCallback(
@@ -14307,6 +14373,12 @@ export function FileExplorer({
       isDropTarget: boolean,
       restingSurface: ExplorerEntrySurfaceState = idleEntrySurface,
     ) => {
+      if (layoutZoomGestureActive) {
+        if (hoveredVideoThumbnailPath === entry.path) {
+          setHoveredVideoThumbnailPath(null);
+        }
+        return;
+      }
       if (!isSelected && !isDropTarget) {
         applyExplorerEntrySurface(target, restingSurface);
       }
@@ -14314,7 +14386,7 @@ export function FileExplorer({
         setHoveredVideoThumbnailPath(null);
       }
     },
-    [hoveredVideoThumbnailPath, idleEntrySurface],
+    [hoveredVideoThumbnailPath, idleEntrySurface, layoutZoomGestureActive],
   );
   const bindExplorerEntryMotion = useCallback(
     (args: {
@@ -16171,8 +16243,8 @@ export function FileExplorer({
                     color: EXP.muted2,
                   }}
                 >
-                  Ctrl/Cmd + wheel moves through Small, M, L, XL, then row
-                  layouts with live zoom feedback.
+                  Ctrl/Cmd + wheel now zooms continuously through the icon grid
+                  and drops into compact list mode at the smallest boundary.
                 </div>
               </div>
             )}
@@ -16869,12 +16941,48 @@ export function FileExplorer({
       if (experimentalHudTimerRef.current != null) {
         window.clearTimeout(experimentalHudTimerRef.current);
       }
-      if (layoutWheelScrollLockFrameRef.current != null) {
-        window.cancelAnimationFrame(layoutWheelScrollLockFrameRef.current);
+      if (layoutZoomCommitTimerRef.current != null) {
+        window.clearTimeout(layoutZoomCommitTimerRef.current);
+      }
+      if (layoutZoomFrameRafRef.current != null) {
+        window.cancelAnimationFrame(layoutZoomFrameRafRef.current);
       }
     },
     [],
   );
+
+  useEffect(() => {
+    if (!layoutZoomGestureActive) {
+      layoutZoomFrameSampleRef.current = [];
+      layoutZoomFrameLastAtRef.current = null;
+      if (layoutZoomFrameRafRef.current != null) {
+        window.cancelAnimationFrame(layoutZoomFrameRafRef.current);
+        layoutZoomFrameRafRef.current = null;
+      }
+      return;
+    }
+
+    layoutZoomFrameSampleRef.current = [];
+    layoutZoomFrameLastAtRef.current = null;
+    const sampleFrames = (timestamp: number) => {
+      const lastAt = layoutZoomFrameLastAtRef.current;
+      if (lastAt != null) {
+        layoutZoomFrameSampleRef.current.push(timestamp - lastAt);
+      }
+      layoutZoomFrameLastAtRef.current = timestamp;
+      layoutZoomFrameRafRef.current = window.requestAnimationFrame(sampleFrames);
+    };
+
+    layoutZoomFrameRafRef.current = window.requestAnimationFrame(sampleFrames);
+
+    return () => {
+      if (layoutZoomFrameRafRef.current != null) {
+        window.cancelAnimationFrame(layoutZoomFrameRafRef.current);
+        layoutZoomFrameRafRef.current = null;
+      }
+      layoutZoomFrameLastAtRef.current = null;
+    };
+  }, [layoutZoomGestureActive]);
 
   useLayoutEffect(() => {
     const viewport = explorerViewportRef.current;
@@ -16929,10 +17037,6 @@ export function FileExplorer({
         return;
       }
       event.preventDefault();
-      lockExplorerViewportScrollTop(
-        explorerViewportRef.current?.scrollTop ??
-          explorerViewportScrollTopRef.current,
-      );
     };
 
     fileArea.addEventListener("wheel", handleNativeLayoutWheel, {
@@ -16942,10 +17046,169 @@ export function FileExplorer({
     return () => {
       fileArea.removeEventListener("wheel", handleNativeLayoutWheel);
     };
-  }, [
-    lockExplorerViewportScrollTop,
-    shouldHandleExplorerLayoutWheelEvent,
-  ]);
+  }, [shouldHandleExplorerLayoutWheelEvent]);
+
+  const createLayoutZoomPointerAnchor = useCallback(
+    (event: Pick<WheelEvent, "clientX" | "clientY">) => {
+      const viewport = explorerViewportRef.current;
+      if (!viewport || visibleEntries.length === 0) {
+        return null;
+      }
+
+      const rect = viewport.getBoundingClientRect();
+      const pointerY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+      const pointerX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+      const contentScrollTop = Math.max(
+        0,
+        (viewport.scrollTop || explorerViewportScrollTopRef.current) -
+          (newItem.visible ? activeNewItemHeight : 0),
+      );
+
+      if (effectiveViewModeDefinition.presentation === "grid" && activeGridMetrics) {
+        const availableWidth = Math.max(
+          0,
+          (viewport.clientWidth || explorerViewportMetrics.clientWidth) -
+            activeGridMetrics.padding * 2,
+        );
+        const columns = Math.max(
+          1,
+          Math.floor(
+            (availableWidth + activeGridMetrics.gap) /
+              (activeGridMetrics.minWidth + activeGridMetrics.gap),
+          ),
+        );
+        const rowHeight = activeGridMetrics.rowHeight;
+        const rowAdvance = rowHeight + activeGridMetrics.gap;
+        const rowIndex = Math.max(
+          0,
+          Math.floor((contentScrollTop + pointerY) / Math.max(rowAdvance, 1)),
+        );
+        const innerPointerX = Math.max(0, pointerX - activeGridMetrics.padding);
+        const columnWidth = activeGridMetrics.minWidth + activeGridMetrics.gap;
+        const columnIndex = Math.min(
+          columns - 1,
+          Math.max(0, Math.floor(innerPointerX / Math.max(columnWidth, 1))),
+        );
+        return {
+          itemIndex: Math.min(
+            visibleEntries.length - 1,
+            rowIndex * columns + columnIndex,
+          ),
+          pointerX,
+          pointerY,
+          itemOffsetY: (contentScrollTop + pointerY) - rowIndex * rowAdvance,
+        } satisfies ExplorerLayoutZoomPointerAnchor;
+      }
+
+      const rowHeight = activeRowMetrics?.rowHeight ?? EXPLORER_LIST_ROW_HEIGHT;
+      const rowIndex = Math.max(
+        0,
+        Math.floor((contentScrollTop + pointerY) / Math.max(rowHeight, 1)),
+      );
+      return {
+        itemIndex: Math.min(visibleEntries.length - 1, rowIndex),
+        pointerX,
+        pointerY,
+        itemOffsetY: (contentScrollTop + pointerY) - rowIndex * rowHeight,
+      } satisfies ExplorerLayoutZoomPointerAnchor;
+    },
+    [
+      activeGridMetrics,
+      activeNewItemHeight,
+      activeRowMetrics,
+      effectiveViewModeDefinition.presentation,
+      explorerViewportMetrics.clientWidth,
+      newItem.visible,
+      visibleEntries.length,
+    ],
+  );
+
+  const applyLayoutZoomPointerAnchor = useCallback(
+    (nextState: ExplorerLayoutZoomState) => {
+      const viewport = explorerViewportRef.current;
+      const anchor = layoutZoomPointerAnchorRef.current;
+      if (!viewport || !anchor || visibleEntries.length === 0) {
+        return;
+      }
+
+      const resolvedState = resolveExplorerLayoutZoomState(nextState);
+      if (resolvedState.family === "grid") {
+        const nextGridMetrics = applyExplorerThemeToGridMetrics(
+          getExplorerGridMetricsForZoom(resolvedState.gridZoom),
+          explorerTheme,
+        );
+        const availableWidth = Math.max(
+          0,
+          (viewport.clientWidth || explorerViewportMetrics.clientWidth) -
+            nextGridMetrics.padding * 2,
+        );
+        const columns = Math.max(
+          1,
+          Math.floor(
+            (availableWidth + nextGridMetrics.gap) /
+              (nextGridMetrics.minWidth + nextGridMetrics.gap),
+          ),
+        );
+        const rowHeight = nextGridMetrics.rowHeight;
+        const rowAdvance = rowHeight + nextGridMetrics.gap;
+        const rowIndex = Math.floor(
+          Math.min(visibleEntries.length - 1, anchor.itemIndex) / columns,
+        );
+        const totalRows = Math.ceil(visibleEntries.length / columns);
+        const contentHeight =
+          totalRows * rowHeight + Math.max(0, totalRows - 1) * nextGridMetrics.gap;
+        const maxScrollTop = Math.max(0, contentHeight - viewport.clientHeight);
+        const nextScrollTop = Math.max(
+          0,
+          Math.min(
+            maxScrollTop,
+            rowIndex * rowAdvance + anchor.itemOffsetY - anchor.pointerY,
+          ),
+        );
+        setExplorerViewportScrollTop(
+          nextScrollTop + (newItem.visible ? nextGridMetrics.newItemHeight : 0),
+        );
+        return;
+      }
+
+      const nextRowMetrics = applyExplorerThemeToRowMetrics(
+        getExplorerViewModeDefinition("list").rows,
+        explorerTheme,
+      );
+      const rowHeight = nextRowMetrics?.rowHeight ?? EXPLORER_LIST_ROW_HEIGHT;
+      const maxScrollTop = Math.max(
+        0,
+        visibleEntries.length * rowHeight - viewport.clientHeight,
+      );
+      const nextScrollTop = Math.max(
+        0,
+        Math.min(
+          maxScrollTop,
+          Math.min(visibleEntries.length - 1, anchor.itemIndex) * rowHeight +
+            anchor.itemOffsetY -
+            anchor.pointerY,
+        ),
+      );
+      setExplorerViewportScrollTop(
+        nextScrollTop + (newItem.visible ? nextRowMetrics?.newItemHeight ?? rowHeight : 0),
+      );
+    },
+    [
+      explorerTheme,
+      explorerViewportMetrics.clientWidth,
+      newItem.visible,
+      setExplorerViewportScrollTop,
+      visibleEntries.length,
+    ],
+  );
+
+  useEffect(() => {
+    if (!layoutZoomGestureActiveRef.current) {
+      return;
+    }
+
+    applyLayoutZoomPointerAnchor(liveLayoutZoomState);
+  }, [applyLayoutZoomPointerAnchor, liveLayoutZoomState]);
 
   const handleExplorerLayoutWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
@@ -16954,31 +17217,11 @@ export function FileExplorer({
       }
 
       event.preventDefault();
-      lockExplorerViewportScrollTop(
-        explorerViewportRef.current?.scrollTop ??
-          explorerViewportScrollTopRef.current,
-      );
-      layoutWheelDeltaAccumulatorRef.current += event.deltaY;
-      const accumulatedDelta = layoutWheelDeltaAccumulatorRef.current;
-      const stepCount = Math.min(
-        3,
-        Math.floor(
-          Math.abs(accumulatedDelta) / EXPLORER_LAYOUT_WHEEL_STEP_DELTA,
-        ),
-      );
-      if (stepCount <= 0) {
-        return;
-      }
-
-      const direction = accumulatedDelta < 0 ? "larger" : "smaller";
-      layoutWheelDeltaAccumulatorRef.current -=
-        Math.sign(accumulatedDelta) *
-        stepCount *
-        EXPLORER_LAYOUT_WHEEL_STEP_DELTA;
+      const direction = event.deltaY < 0 ? "larger" : "smaller";
 
       if (effectiveExperimentalViewMode !== "off") {
         let nextDensity = experimentalDensity;
-        for (let stepIndex = 0; stepIndex < stepCount; stepIndex += 1) {
+        for (let stepIndex = 0; stepIndex < 1; stepIndex += 1) {
           const steppedDensity = stepAdaptiveSemanticDensity(
             nextDensity,
             direction,
@@ -16996,47 +17239,89 @@ export function FileExplorer({
         return;
       }
 
-      let nextMode = themedViewMode;
-      let nextGridZoom = gridZoom;
-
-      for (let stepIndex = 0; stepIndex < stepCount; stepIndex += 1) {
-        if (isExplorerGridMode(nextMode)) {
-          const steppedZoom = stepExplorerGridZoom(nextGridZoom, direction);
-          if (steppedZoom !== nextGridZoom) {
-            nextGridZoom = steppedZoom;
-            nextMode = getAdjacentExplorerGridMode(nextMode, direction);
-            continue;
-          }
-        }
-
-        const steppedMode = stepExplorerViewMode(nextMode, direction);
-        if (steppedMode === nextMode) {
-          break;
-        }
-        nextMode = steppedMode;
-        if (isExplorerGridMode(nextMode)) {
-          nextGridZoom = getExplorerGridZoomAnchor(nextMode);
-        }
+      const rawDelta = Math.max(
+        -EXPLORER_LAYOUT_WHEEL_MAX_DELTA,
+        Math.min(
+          EXPLORER_LAYOUT_WHEEL_MAX_DELTA,
+          (-event.deltaY) * EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY,
+        ),
+      );
+      if (Math.abs(rawDelta) < 0.0005) {
+        return;
       }
 
-      if (nextMode !== themedViewMode || nextGridZoom !== gridZoom) {
-        updateExplorerSettings(
-          isExplorerGridMode(nextMode)
-            ? { viewMode: nextMode, gridZoom: nextGridZoom }
-            : { viewMode: nextMode },
-        );
-        showZoomHud();
+      layoutZoomPointerAnchorRef.current = createLayoutZoomPointerAnchor(
+        event.nativeEvent,
+      );
+      layoutZoomGestureActiveRef.current = true;
+      setLayoutZoomGestureActive(true);
+
+      const nextState = resolveExplorerLayoutZoomStateAtValue(
+        liveLayoutZoomStateRef.current,
+        Math.max(
+          EXPLORER_LAYOUT_ZOOM_MIN,
+          Math.min(
+            EXPLORER_LAYOUT_ZOOM_MAX,
+            liveLayoutZoomStateRef.current.layoutZoom + rawDelta,
+          ),
+        ),
+      );
+      liveLayoutZoomStateRef.current = nextState;
+      layoutZoomTarget.set(nextState.layoutZoom);
+      showZoomHud();
+
+      if (layoutZoomCommitTimerRef.current != null) {
+        window.clearTimeout(layoutZoomCommitTimerRef.current);
       }
+      layoutZoomCommitTimerRef.current = window.setTimeout(() => {
+        const committedState = liveLayoutZoomStateRef.current;
+        const nextCommit = commitExplorerLayoutZoomState(committedState);
+        const frameDurations = [...layoutZoomFrameSampleRef.current];
+        if (frameDurations.length > 0) {
+          const sortedDurations = [...frameDurations].sort(
+            (left, right) => left - right,
+          );
+          const p95Index = Math.min(
+            sortedDurations.length - 1,
+            Math.max(0, Math.ceil(sortedDurations.length * 0.95) - 1),
+          );
+          recordExplorerPerformanceSample({
+            metricId: "explorer_layout_zoom",
+            durationMs:
+              sortedDurations[p95Index] ?? sortedDurations[sortedDurations.length - 1] ?? 0,
+            metadata: {
+              frameCount: frameDurations.length,
+              family: committedState.family,
+              targetViewMode: nextCommit.viewMode,
+              worstFrameMs:
+                sortedDurations[sortedDurations.length - 1] ?? 0,
+            },
+          });
+        }
+
+        layoutZoomGestureActiveRef.current = false;
+        setLayoutZoomGestureActive(false);
+        layoutZoomPointerAnchorRef.current = null;
+        layoutZoomCommitTimerRef.current = null;
+
+        if (nextCommit.viewMode === "list") {
+          updateExplorerSettings({ viewMode: "list" });
+        } else {
+          updateExplorerSettings({
+            viewMode: nextCommit.viewMode,
+            gridZoom:
+              nextCommit.gridZoom ?? liveLayoutZoomStateRef.current.storedGridZoom,
+          });
+        }
+      }, EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS);
     },
     [
+      createLayoutZoomPointerAnchor,
       effectiveExperimentalViewMode,
       experimentalDensity,
-      gridZoom,
-      lockExplorerViewportScrollTop,
       showExperimentalHud,
       showZoomHud,
       shouldHandleExplorerLayoutWheelEvent,
-      themedViewMode,
       updateExplorerSettings,
     ],
   );
@@ -17803,13 +18088,13 @@ export function FileExplorer({
       (previousLayout.effectiveViewMode !== effectiveViewMode ||
         previousLayout.effectiveExperimentalViewMode !==
           effectiveExperimentalViewMode ||
-        previousLayout.gridZoom !== gridZoom);
+        previousLayout.gridZoom !== liveWheelGridZoom);
 
     lastViewportLayoutRef.current = {
       currentPath,
       effectiveViewMode,
       effectiveExperimentalViewMode,
-      gridZoom,
+      gridZoom: liveWheelGridZoom,
     };
 
     if (pathChanged) {
@@ -17826,7 +18111,7 @@ export function FileExplorer({
     currentPath,
     effectiveExperimentalViewMode,
     effectiveViewMode,
-    gridZoom,
+    liveWheelGridZoom,
     maxViewportScrollTop,
     resetExplorerViewport,
     setExplorerViewportScrollTop,
@@ -18220,6 +18505,7 @@ export function FileExplorer({
   useEffect(() => {
     if (
       !hoveredVideoThumbnailPath ||
+      layoutZoomGestureActive ||
       isSearchActive ||
       currentPathIsCloud ||
       !explorerThumbnailSettings.enabled ||
@@ -18305,6 +18591,7 @@ export function FileExplorer({
     explorerThumbnailSettings.videoHoverScrubFrameCount,
     hoveredVideoThumbnailPath,
     isSearchActive,
+    layoutZoomGestureActive,
     readExplorerEntryThumbnail,
     videoHoverThumbnailLoadingPaths,
     visibleEntryLookup,
@@ -18315,6 +18602,7 @@ export function FileExplorer({
       return;
     }
     if (
+      layoutZoomGestureActive ||
       isSearchActive ||
       currentPathIsCloud ||
       !explorerThumbnailSettings.enabled ||
@@ -18331,6 +18619,7 @@ export function FileExplorer({
     explorerThumbnailSettings.includeVideo,
     hoveredVideoThumbnailPath,
     isSearchActive,
+    layoutZoomGestureActive,
     visibleEntryLookup,
   ]);
 

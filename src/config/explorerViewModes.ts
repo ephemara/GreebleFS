@@ -9,6 +9,7 @@ export type ExplorerViewMode =
 
 export type ExplorerViewPresentation = 'grid' | 'table' | 'list';
 export type ExplorerViewWheelDirection = 'larger' | 'smaller';
+export type ExplorerLayoutZoomFamily = 'grid' | 'list';
 
 export interface ExplorerGridMetrics {
   minWidth: number;
@@ -41,9 +42,27 @@ export interface ExplorerViewModeDefinition {
   rows?: ExplorerRowMetrics;
 }
 
+export interface ExplorerLayoutZoomState {
+  family: ExplorerLayoutZoomFamily;
+  layoutZoom: number;
+  storedGridZoom: number;
+}
+
+export interface ExplorerResolvedLayoutZoomState {
+  family: ExplorerLayoutZoomFamily;
+  viewMode: 'icons-xl' | 'icons-l' | 'icons-m' | 'icons-s' | 'list';
+  definition: ExplorerViewModeDefinition;
+  gridZoom: number;
+  zoomPercent: number | null;
+}
+
 export const EXPLORER_GRID_ZOOM_MIN = 0;
 export const EXPLORER_GRID_ZOOM_MAX = 1;
 export const EXPLORER_GRID_ZOOM_STEP = 0.08;
+export const EXPLORER_LAYOUT_ZOOM_MIN = -0.18;
+export const EXPLORER_LAYOUT_ZOOM_MAX = EXPLORER_GRID_ZOOM_MAX;
+export const EXPLORER_LAYOUT_ZOOM_LIST_ENTER = -0.08;
+export const EXPLORER_LAYOUT_ZOOM_LIST_EXIT = -0.02;
 
 export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
   {
@@ -210,6 +229,13 @@ export function normalizeExplorerGridZoom(value: unknown, fallbackMode: Explorer
   return getExplorerGridZoomAnchor(fallbackMode);
 }
 
+export function normalizeExplorerLayoutZoom(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return clamp(value, EXPLORER_LAYOUT_ZOOM_MIN, EXPLORER_LAYOUT_ZOOM_MAX);
+  }
+  return EXPLORER_GRID_ZOOM_MIN;
+}
+
 export function stepExplorerGridZoom(currentZoom: number, direction: ExplorerViewWheelDirection): number {
   const delta = direction === 'larger' ? EXPLORER_GRID_ZOOM_STEP : -EXPLORER_GRID_ZOOM_STEP;
   return normalizeExplorerGridZoom(currentZoom + delta);
@@ -281,6 +307,98 @@ export function getExplorerGridMetricsForZoom(gridZoom: number): ExplorerGridMet
   };
 }
 
+export function createExplorerLayoutZoomState(
+  viewMode: ExplorerViewMode,
+  gridZoom: number,
+): ExplorerLayoutZoomState {
+  const normalizedGridZoom = normalizeExplorerGridZoom(gridZoom, viewMode);
+  if (isExplorerGridMode(viewMode)) {
+    return {
+      family: 'grid',
+      layoutZoom: normalizedGridZoom,
+      storedGridZoom: normalizedGridZoom,
+    };
+  }
+
+  return {
+    family: 'list',
+    layoutZoom: EXPLORER_LAYOUT_ZOOM_MIN,
+    storedGridZoom: normalizedGridZoom,
+  };
+}
+
+export function adjustExplorerLayoutZoomState(
+  state: ExplorerLayoutZoomState,
+  delta: number,
+): ExplorerLayoutZoomState {
+  return resolveExplorerLayoutZoomStateAtValue(state, state.layoutZoom + delta);
+}
+
+export function resolveExplorerLayoutZoomStateAtValue(
+  state: ExplorerLayoutZoomState,
+  layoutZoom: number,
+): ExplorerLayoutZoomState {
+  const nextLayoutZoom = normalizeExplorerLayoutZoom(layoutZoom);
+  const nextStoredGridZoom = nextLayoutZoom >= EXPLORER_GRID_ZOOM_MIN
+    ? normalizeExplorerGridZoom(nextLayoutZoom)
+    : state.storedGridZoom;
+  const nextFamily = resolveExplorerLayoutZoomFamily(nextLayoutZoom, state.family);
+
+  return {
+    family: nextFamily,
+    layoutZoom: nextLayoutZoom,
+    storedGridZoom: nextStoredGridZoom,
+  };
+}
+
+export function resolveExplorerLayoutZoomState(
+  state: ExplorerLayoutZoomState,
+): ExplorerResolvedLayoutZoomState {
+  if (state.family === 'list') {
+    const definition = getExplorerViewModeDefinition('list');
+    return {
+      family: 'list',
+      viewMode: 'list',
+      definition,
+      gridZoom: state.storedGridZoom,
+      zoomPercent: null,
+    };
+  }
+
+  const resolvedGridZoom = normalizeExplorerGridZoom(
+    Math.max(EXPLORER_GRID_ZOOM_MIN, state.layoutZoom),
+    'icons-l',
+  );
+  const viewMode = getNearestExplorerGridMode(resolvedGridZoom);
+  return {
+    family: 'grid',
+    viewMode,
+    definition: getExplorerViewModeDefinition(viewMode),
+    gridZoom: resolvedGridZoom,
+    zoomPercent: getExplorerGridZoomPercent(resolvedGridZoom),
+  };
+}
+
+export function commitExplorerLayoutZoomState(
+  state: ExplorerLayoutZoomState,
+): {
+  viewMode: ExplorerViewMode;
+  gridZoom?: number;
+} {
+  if (state.family === 'list') {
+    return { viewMode: 'list' };
+  }
+
+  const resolvedGridZoom = normalizeExplorerGridZoom(
+    Math.max(EXPLORER_GRID_ZOOM_MIN, state.layoutZoom),
+    'icons-l',
+  );
+  return {
+    viewMode: getNearestExplorerGridMode(resolvedGridZoom),
+    gridZoom: resolvedGridZoom,
+  };
+}
+
 export function getExplorerGridZoomPercent(gridZoom: number): number {
   return Math.round(normalizeExplorerGridZoom(gridZoom) * 100);
 }
@@ -324,4 +442,14 @@ function clamp(value: number, min: number, max: number): number {
 
 function lerp(start: number, end: number, t: number): number {
   return start + (end - start) * t;
+}
+
+function resolveExplorerLayoutZoomFamily(
+  layoutZoom: number,
+  previousFamily: ExplorerLayoutZoomFamily,
+): ExplorerLayoutZoomFamily {
+  if (previousFamily === 'list') {
+    return layoutZoom >= EXPLORER_LAYOUT_ZOOM_LIST_EXIT ? 'grid' : 'list';
+  }
+  return layoutZoom <= EXPLORER_LAYOUT_ZOOM_LIST_ENTER ? 'list' : 'grid';
 }

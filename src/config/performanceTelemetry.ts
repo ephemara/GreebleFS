@@ -34,6 +34,11 @@ export const explorerPerformanceBudgets = {
     targetMs: 350,
     description: 'Explorer mount to the first completed interactive directory state.',
   },
+  explorer_layout_zoom: {
+    label: 'Explorer Layout Zoom',
+    targetMs: 8.3,
+    description: 'p95 frame time sampled while ctrl/cmd+scroll live zoom is active in the explorer.',
+  },
   overlay_frame_time: {
     label: 'Overlay Frame p95',
     targetMs: 8.3,
@@ -337,6 +342,7 @@ function createMetricRecord<T>(factory: (metricId: ExplorerPerformanceMetricId) 
     explorer_entry_size_batch: factory('explorer_entry_size_batch'),
     explorer_native_icon_batch: factory('explorer_native_icon_batch'),
     explorer_first_interactive: factory('explorer_first_interactive'),
+    explorer_layout_zoom: factory('explorer_layout_zoom'),
     overlay_frame_time: factory('overlay_frame_time'),
     git_repo_state_load: factory('git_repo_state_load'),
     git_repo_badge_sync: factory('git_repo_badge_sync'),
