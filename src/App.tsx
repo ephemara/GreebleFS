@@ -16,6 +16,11 @@ import {
 import { FolderPluginRenderer, PluginsManager } from './components/PluginsManager';
 import { CommandPalette, type OverlayCommandPaletteAction } from './components/CommandPalette';
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
+import {
+  getManagedContentDirectory,
+  managedContentDirectoryCatalog,
+  type ManagedContentDirectoryId,
+} from './config/appContentDirectories';
 import { wallpaperSystemConfig } from './config/wallpapers';
 import {
   groupPanelsForWorkbenchNavigation,
@@ -92,6 +97,11 @@ import {
   resolveLoadedIconThemePackage,
   type LoadedIconThemePackage,
 } from './config/iconThemePackages';
+import {
+  loadTopBarPackages as discoverTopBarPackages,
+  topBarSystemConfig,
+  type LoadedOverlayTopBarPackage,
+} from './config/topBarPackages';
 import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
 import { dispatchTerminalCommand } from './config/pluginContributions';
 import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './config/hotkeys';
@@ -121,6 +131,10 @@ import {
 import { resolveConditionalBlurFilter } from './config/chromeEffects';
 import { detectClientPlatform, joinPlatformPath } from './config/platform';
 import { resolveActiveTopBarSelection } from './config/topBars';
+import {
+  settingsSectionCatalog,
+  type SettingsSectionKey,
+} from './config/settingsNavigation';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
 import { WorkbenchTopBar } from './components/WorkbenchTopBar';
@@ -475,6 +489,7 @@ function App() {
   const animationSignatureRef = useRef('');
   const shaderSignatureRef = useRef('');
   const wallpaperSignatureRef = useRef('');
+  const topBarPackagesSignatureRef = useRef('');
   const themePackagesSignatureRef = useRef('');
   const iconThemePackagesSignatureRef = useRef('');
   const authoredAnimationsRefreshInFlightRef = useRef(false);
@@ -483,6 +498,8 @@ function App() {
   const authoredShadersRefreshQueuedRef = useRef(false);
   const authoredWallpapersRefreshInFlightRef = useRef(false);
   const authoredWallpapersRefreshQueuedRef = useRef(false);
+  const topBarPackagesRefreshInFlightRef = useRef(false);
+  const topBarPackagesRefreshQueuedRef = useRef(false);
   const themePackagesRefreshInFlightRef = useRef(false);
   const themePackagesRefreshQueuedRef = useRef(false);
   const iconThemePackagesRefreshInFlightRef = useRef(false);
@@ -503,6 +520,10 @@ function App() {
   const isFreefloatingRef = useRef(false);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
   const [layoutConfigSource, setLayoutConfigSource] = useState<string | null>(null);
+  const [topBarPackages, setTopBarPackages] = useState<LoadedOverlayTopBarPackage[]>([]);
+  const [topBarPackagesLoading, setTopBarPackagesLoading] = useState(true);
+  const [topBarPackagesError, setTopBarPackagesError] = useState<string | null>(null);
+  const [topBarPackagesWarnings, setTopBarPackagesWarnings] = useState<string[]>([]);
   const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
   const [themePackagesLoading, setThemePackagesLoading] = useState(true);
   const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
@@ -588,6 +609,10 @@ function App() {
     () => [...themePackages, ...pluginThemePackages],
     [pluginThemePackages, themePackages],
   );
+  const combinedTopBarPackageSources = useMemo(
+    () => [...topBarPackages, ...combinedThemePackages],
+    [combinedThemePackages, topBarPackages],
+  );
   const selectedIconTheme = useMemo(() => {
     return resolveLoadedIconThemePackage(iconThemePackages, appearance.activeIconThemeId)?.iconTheme ?? null;
   }, [appearance.activeIconThemeId, iconThemePackages]);
@@ -631,11 +656,11 @@ function App() {
     () => resolveActiveTopBarSelection({
       requestedTopBarId: appearance.activeTopBarId,
       theme: resolvedAppearance.baseTheme,
-      packageSources: combinedThemePackages,
+      packageSources: combinedTopBarPackageSources,
     }),
     [
       appearance.activeTopBarId,
-      combinedThemePackages,
+      combinedTopBarPackageSources,
       resolvedAppearance.baseTheme,
     ],
   );
@@ -2625,6 +2650,73 @@ function App() {
     }
   }, []);
 
+  const refreshTopBarPackages = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setTopBarPackages([]);
+      setTopBarPackagesError(null);
+      setTopBarPackagesWarnings([]);
+      setTopBarPackagesLoading(false);
+      return;
+    }
+
+    if (force) {
+      topBarPackagesRefreshQueuedRef.current = true;
+    }
+    if (topBarPackagesRefreshInFlightRef.current) {
+      topBarPackagesRefreshQueuedRef.current = true;
+      return;
+    }
+
+    topBarPackagesRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || topBarPackagesRefreshQueuedRef.current;
+        topBarPackagesRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          topBarPackagesSignatureRef.current = '';
+        }
+
+        setTopBarPackagesLoading(prev => prev && !nextForce);
+        try {
+          await ensureDir(topBarSystemConfig.topBarsDirectory);
+          const listed = await listExplorerDir(topBarSystemConfig.topBarsDirectory, false);
+          const nextSignature = listed
+            .map(entry => `${entry.path}:${entry.modified}`)
+            .sort()
+            .join('|');
+
+          if (!nextForce && nextSignature === topBarPackagesSignatureRef.current) {
+            setTopBarPackagesLoading(false);
+            continue;
+          }
+
+          topBarPackagesSignatureRef.current = nextSignature;
+          const result = await discoverTopBarPackages();
+          setTopBarPackages(result.packages);
+          setTopBarPackagesError(result.sourceError);
+          setTopBarPackagesWarnings(result.warnings);
+        } catch (error) {
+          setTopBarPackages([]);
+          setTopBarPackagesError(String(error));
+          setTopBarPackagesWarnings([]);
+        } finally {
+          setTopBarPackagesLoading(false);
+        }
+      } while (topBarPackagesRefreshQueuedRef.current);
+    } finally {
+      topBarPackagesRefreshInFlightRef.current = false;
+    }
+  }, []);
+
+  const refreshTopBarCatalog = useCallback(async () => {
+    await Promise.all([
+      refreshTopBarPackages(true),
+      refreshThemePackages(true),
+    ]);
+  }, [refreshThemePackages, refreshTopBarPackages]);
+
   const openIconThemesFolder = useCallback(async () => {
     if (!isTauri()) {
       return;
@@ -2641,6 +2733,15 @@ function App() {
 
     await ensureDir(themeSystemConfig.themesDirectory);
     await openExplorerPath(themeSystemConfig.themesDirectory);
+  }, []);
+
+  const openTopBarsFolder = useCallback(async () => {
+    if (!isTauri()) {
+      return;
+    }
+
+    await ensureDir(topBarSystemConfig.topBarsDirectory);
+    await openExplorerPath(topBarSystemConfig.topBarsDirectory);
   }, []);
 
   const openAnimationsFolder = useCallback(async () => {
@@ -2961,6 +3062,22 @@ function App() {
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshThemePackages]);
 
+  useEffect(() => {
+    void refreshTopBarPackages(true);
+  }, [refreshTopBarPackages]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !topBarSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshTopBarPackages();
+    }, topBarSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshTopBarPackages]);
+
   const panelDefinitions: OverlayPanelDefinition[] = useMemo(
     () => [
       ...createBuiltInPanelDefinitions({
@@ -2987,11 +3104,18 @@ function App() {
         onRequestRepositoryImport: handleRequestRepositoryImport,
         pendingRepositoryImports,
         onPendingRepositoryImportsHandled: handleRepositoryImportsHandled,
+        topBarPackages,
+        topBarPackagesDirectory: topBarSystemConfig.topBarsDirectory,
+        topBarPackagesLoading,
+        topBarPackagesError,
+        topBarPackagesWarnings,
         themePackages: combinedThemePackages,
         themePackagesDirectory: themeSystemConfig.themesDirectory,
         themePackagesLoading,
         themePackagesError,
         themePackagesWarnings,
+        onRefreshTopBars: refreshTopBarCatalog,
+        onOpenTopBarsFolder: openTopBarsFolder,
         iconThemePackages,
         iconThemePackagesDirectory: iconThemeSystemConfig.iconThemesDirectory,
         iconThemePackagesLoading,
@@ -3076,11 +3200,17 @@ function App() {
       openAnimationsFolder,
       openShadersFolder,
       openPluginsFolder,
+      openTopBarsFolder,
       openWallpapersFolder,
       openIconThemesFolder,
       openThemesFolder,
       pendingRepositoryImports,
       refreshIconThemePackages,
+      refreshTopBarCatalog,
+      topBarPackages,
+      topBarPackagesError,
+      topBarPackagesLoading,
+      topBarPackagesWarnings,
       refreshThemePackages,
       refreshAuthoredAnimations,
       refreshAuthoredWallpapers,

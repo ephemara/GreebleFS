@@ -3,7 +3,7 @@ import type {
   OverlayWorkbenchTabStyle,
 } from './workbenchTheme';
 
-export type OverlayTopBarSource = 'built-in' | 'theme-package';
+export type OverlayTopBarSource = 'built-in' | 'theme-package' | 'top-bar-package';
 export type OverlayTopBarNavigationMode = 'auto' | 'summary';
 export type OverlayTopBarControlId =
   | 'layout-cycle'
@@ -39,6 +39,7 @@ export interface LoadedOverlayTopBarDefinition {
   source: OverlayTopBarSource;
   sourceLabel: string;
   sourceThemeId?: string;
+  sourcePackageId?: string;
   topBarStyle?: OverlayWorkbenchChromeStyle;
   tabStyle?: OverlayWorkbenchTabStyle;
   navigationMode: OverlayTopBarNavigationMode;
@@ -196,12 +197,15 @@ export function createLoadedTopBarDefinition(
   options: {
     source: OverlayTopBarSource;
     sourceLabel: string;
+    scopeId?: string;
     sourceThemeId?: string;
+    sourcePackageId?: string;
   },
 ): LoadedOverlayTopBarDefinition {
   const localId = normalizeTopBarIdFragment(definition.id ?? definition.name, 'top-bar');
-  const id = options.sourceThemeId
-    ? createScopedTopBarId(options.sourceThemeId, localId)
+  const normalizedScopeId = normalizeTopBarSelectionId(options.scopeId);
+  const id = normalizedScopeId
+    ? createScopedTopBarId(normalizedScopeId, localId)
     : localId;
   const fallbackName = definition.name?.trim() || localId.replace(/-/g, ' ').replace(/\b\w/g, character => character.toUpperCase());
 
@@ -218,6 +222,7 @@ export function createLoadedTopBarDefinition(
     source: options.source,
     sourceLabel: options.sourceLabel,
     sourceThemeId: options.sourceThemeId,
+    sourcePackageId: options.sourcePackageId,
     topBarStyle: normalizeTopBarStyle(definition.topBarStyle),
     tabStyle: normalizeTopBarTabStyle(definition.tabStyle),
     navigationMode: normalizeTopBarNavigationMode(definition.navigationMode),
@@ -457,7 +462,15 @@ export function getTopBarNavigationModeLabel(mode: OverlayTopBarNavigationMode):
 }
 
 export function getTopBarSourceLabel(source: OverlayTopBarSource): string {
-  return source === 'theme-package' ? 'Theme Package' : 'Built In';
+  if (source === 'theme-package') {
+    return 'Theme Package';
+  }
+
+  if (source === 'top-bar-package') {
+    return 'Top Bar Package';
+  }
+
+  return 'Built In';
 }
 
 export function getTopBarControlLabel(controlId: OverlayTopBarControlId): string {

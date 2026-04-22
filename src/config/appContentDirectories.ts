@@ -2,37 +2,115 @@ import { isTauri } from '@tauri-apps/api/core';
 import { appLocalDataDir, homeDir, join } from '@tauri-apps/api/path';
 import { exists, mkdir, rename } from '@tauri-apps/plugin-fs';
 
-export type ManagedContentDirectoryId =
-  | 'plugins'
-  | 'themes'
-  | 'iconThemes'
-  | 'shaders'
-  | 'animations'
-  | 'wallpapers'
-  | 'notes'
-  | 'screenshots';
+export interface ManagedContentDirectoryDefinition {
+  id: string;
+  label: string;
+  description: string;
+  keywords: readonly string[];
+  releaseDirectoryName: string;
+  legacyRelativeDirectoryName: string;
+  envVarSuffix: string;
+  order: number;
+}
 
-const LEGACY_RELATIVE_DIRECTORY_NAMES: Record<ManagedContentDirectoryId, string> = {
-  plugins: 'plugins',
-  themes: 'themes',
-  iconThemes: 'icon-themes',
-  shaders: 'shaders',
-  animations: 'animations',
-  wallpapers: 'wallpapers',
-  notes: 'notes',
-  screenshots: 'Screenshots',
-};
+export const managedContentDirectoryCatalog = [
+  {
+    id: 'plugins',
+    label: 'Plugins',
+    description: 'Drop TSX panels and runtime modules here.',
+    keywords: ['plugin', 'panel', 'runtime module', 'command'],
+    releaseDirectoryName: 'plugins',
+    legacyRelativeDirectoryName: 'plugins',
+    envVarSuffix: 'PLUGINS',
+    order: 10,
+  },
+  {
+    id: 'themes',
+    label: 'Themes',
+    description: 'Package theme manifests, assets, and engine recipes here.',
+    keywords: ['theme', 'theme package', 'appearance', 'catalog'],
+    releaseDirectoryName: 'themes',
+    legacyRelativeDirectoryName: 'themes',
+    envVarSuffix: 'THEMES',
+    order: 20,
+  },
+  {
+    id: 'topBars',
+    label: 'Top Bars',
+    description: 'Author standalone shell chrome workflows here.',
+    keywords: ['top bar', 'chrome', 'header', 'shell chrome'],
+    releaseDirectoryName: 'top-bars',
+    legacyRelativeDirectoryName: 'top-bars',
+    envVarSuffix: 'TOP_BARS',
+    order: 25,
+  },
+  {
+    id: 'iconThemes',
+    label: 'Icon Themes',
+    description: 'Drop VS Code-style icon-theme manifests here for explorer and shell icon swaps.',
+    keywords: ['icons', 'icon theme', 'folder icons', 'ui icons'],
+    releaseDirectoryName: 'icon-themes',
+    legacyRelativeDirectoryName: 'icon-themes',
+    envVarSuffix: 'ICON_THEMES',
+    order: 30,
+  },
+  {
+    id: 'shaders',
+    label: 'Shaders',
+    description: 'Author shell shader profiles with surface-level controls.',
+    keywords: ['shader', 'render', 'visuals'],
+    releaseDirectoryName: 'shaders',
+    legacyRelativeDirectoryName: 'shaders',
+    envVarSuffix: 'SHADERS',
+    order: 40,
+  },
+  {
+    id: 'animations',
+    label: 'Animations',
+    description: 'Author open and close motion modules here.',
+    keywords: ['animation', 'motion', 'transition'],
+    releaseDirectoryName: 'animations',
+    legacyRelativeDirectoryName: 'animations',
+    envVarSuffix: 'ANIMATIONS',
+    order: 50,
+  },
+  {
+    id: 'wallpapers',
+    label: 'Wallpapers',
+    description: 'Import images, videos, and live wallpaper modules here.',
+    keywords: ['wallpaper', 'background', 'video wallpaper', 'live wallpaper'],
+    releaseDirectoryName: 'wallpapers',
+    legacyRelativeDirectoryName: 'wallpapers',
+    envVarSuffix: 'WALLPAPERS',
+    order: 60,
+  },
+  {
+    id: 'notes',
+    label: 'Notes',
+    description: 'Managed notes live here in development and release builds.',
+    keywords: ['notes', 'scratchpad', 'documents'],
+    releaseDirectoryName: 'notes',
+    legacyRelativeDirectoryName: 'notes',
+    envVarSuffix: 'NOTES',
+    order: 70,
+  },
+  {
+    id: 'screenshots',
+    label: 'Screenshots',
+    description: 'Saved captures and annotated proof land here.',
+    keywords: ['screenshot', 'capture', 'proof'],
+    releaseDirectoryName: 'screenshots',
+    legacyRelativeDirectoryName: 'Screenshots',
+    envVarSuffix: 'SCREENSHOTS',
+    order: 80,
+  },
+] as const satisfies readonly ManagedContentDirectoryDefinition[];
 
-const RELEASE_DIRECTORY_NAMES: Record<ManagedContentDirectoryId, string> = {
-  plugins: 'plugins',
-  themes: 'themes',
-  iconThemes: 'icon-themes',
-  shaders: 'shaders',
-  animations: 'animations',
-  wallpapers: 'wallpapers',
-  notes: 'notes',
-  screenshots: 'screenshots',
-};
+export type ManagedContentDirectoryId = typeof managedContentDirectoryCatalog[number]['id'];
+
+const managedContentDirectoryLookup = new Map(
+  managedContentDirectoryCatalog.map(entry => [entry.id, entry] as const),
+);
 
 const LEGACY_SCREENSHOT_DEFAULT_DIRECTORY = 'M:\\Assets\\Showcase\\TermOverlay';
 const CURRENT_RELEASE_APP_IDENTIFIER = 'co.greeblefs.app';
@@ -48,6 +126,7 @@ function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
   const env = import.meta.env as {
     VITE_GREEBLEFS_PLUGINS_DIR?: string;
     VITE_GREEBLEFS_THEMES_DIR?: string;
+    VITE_GREEBLEFS_TOP_BARS_DIR?: string;
     VITE_GREEBLEFS_ICON_THEMES_DIR?: string;
     VITE_GREEBLEFS_SHADERS_DIR?: string;
     VITE_GREEBLEFS_ANIMATIONS_DIR?: string;
@@ -56,6 +135,7 @@ function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
     VITE_GREEBLEFS_SCREENSHOTS_DIR?: string;
     VITE_OVERLAYTERM_PLUGINS_DIR?: string;
     VITE_OVERLAYTERM_THEMES_DIR?: string;
+    VITE_OVERLAYTERM_TOP_BARS_DIR?: string;
     VITE_OVERLAYTERM_ICON_THEMES_DIR?: string;
     VITE_OVERLAYTERM_SHADERS_DIR?: string;
     VITE_OVERLAYTERM_ANIMATIONS_DIR?: string;
@@ -64,28 +144,13 @@ function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
     VITE_OVERLAYTERM_SCREENSHOTS_DIR?: string;
   };
 
-  const rawValue = (() => {
-    switch (id) {
-      case 'plugins':
-        return env.VITE_GREEBLEFS_PLUGINS_DIR ?? env.VITE_OVERLAYTERM_PLUGINS_DIR;
-      case 'themes':
-        return env.VITE_GREEBLEFS_THEMES_DIR ?? env.VITE_OVERLAYTERM_THEMES_DIR;
-      case 'iconThemes':
-        return env.VITE_GREEBLEFS_ICON_THEMES_DIR ?? env.VITE_OVERLAYTERM_ICON_THEMES_DIR;
-      case 'shaders':
-        return env.VITE_GREEBLEFS_SHADERS_DIR ?? env.VITE_OVERLAYTERM_SHADERS_DIR;
-      case 'animations':
-        return env.VITE_GREEBLEFS_ANIMATIONS_DIR ?? env.VITE_OVERLAYTERM_ANIMATIONS_DIR;
-      case 'wallpapers':
-        return env.VITE_GREEBLEFS_WALLPAPERS_DIR ?? env.VITE_OVERLAYTERM_WALLPAPERS_DIR;
-      case 'notes':
-        return env.VITE_GREEBLEFS_NOTES_DIR ?? env.VITE_OVERLAYTERM_NOTES_DIR;
-      case 'screenshots':
-        return env.VITE_GREEBLEFS_SCREENSHOTS_DIR ?? env.VITE_OVERLAYTERM_SCREENSHOTS_DIR;
-      default:
-        return '';
-    }
-  })();
+  const directoryDefinition = managedContentDirectoryLookup.get(id);
+  if (!directoryDefinition) {
+    return null;
+  }
+
+  const rawValue = env[`VITE_GREEBLEFS_${directoryDefinition.envVarSuffix}_DIR` as keyof typeof env]
+    ?? env[`VITE_OVERLAYTERM_${directoryDefinition.envVarSuffix}_DIR` as keyof typeof env];
 
   const normalizedValue = typeof rawValue === 'string' ? rawValue.trim() : '';
   return normalizedValue.length > 0 ? normalizedValue : null;
@@ -104,32 +169,20 @@ function shouldUseReleaseManagedDirectories(): boolean {
 
 async function buildReleaseManagedDirectoryMap(): Promise<Record<ManagedContentDirectoryId, string>> {
   const root = (await appLocalDataDir()).replace(/[\\/]+$/, '');
-
-  return {
-    plugins: await join(root, RELEASE_DIRECTORY_NAMES.plugins),
-    themes: await join(root, RELEASE_DIRECTORY_NAMES.themes),
-    iconThemes: await join(root, RELEASE_DIRECTORY_NAMES.iconThemes),
-    shaders: await join(root, RELEASE_DIRECTORY_NAMES.shaders),
-    animations: await join(root, RELEASE_DIRECTORY_NAMES.animations),
-    wallpapers: await join(root, RELEASE_DIRECTORY_NAMES.wallpapers),
-    notes: await join(root, RELEASE_DIRECTORY_NAMES.notes),
-    screenshots: await join(root, RELEASE_DIRECTORY_NAMES.screenshots),
-  };
+  return Object.fromEntries(
+    await Promise.all(
+      managedContentDirectoryCatalog.map(async entry => [entry.id, await join(root, entry.releaseDirectoryName)] as const),
+    ),
+  ) as Record<ManagedContentDirectoryId, string>;
 }
 
 async function buildLegacyHomeDirectoryMap(): Promise<Record<ManagedContentDirectoryId, string>> {
   const root = (await homeDir()).replace(/[\\/]+$/, '');
-
-  return {
-    plugins: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.plugins),
-    themes: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.themes),
-    iconThemes: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.iconThemes),
-    shaders: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.shaders),
-    animations: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.animations),
-    wallpapers: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.wallpapers),
-    notes: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.notes),
-    screenshots: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.screenshots),
-  };
+  return Object.fromEntries(
+    await Promise.all(
+      managedContentDirectoryCatalog.map(async entry => [entry.id, await join(root, entry.legacyRelativeDirectoryName)] as const),
+    ),
+  ) as Record<ManagedContentDirectoryId, string>;
 }
 
 function replaceTrailingDirectoryName(path: string, fromName: string, toName: string): string | null {
@@ -154,16 +207,11 @@ async function buildLegacyReleaseDirectoryMap(): Promise<Partial<Record<ManagedC
     return {};
   }
 
-  return {
-    plugins: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.plugins),
-    themes: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.themes),
-    iconThemes: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.iconThemes),
-    shaders: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.shaders),
-    animations: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.animations),
-    wallpapers: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.wallpapers),
-    notes: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.notes),
-    screenshots: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.screenshots),
-  };
+  return Object.fromEntries(
+    await Promise.all(
+      managedContentDirectoryCatalog.map(async entry => [entry.id, await join(legacyRoot, entry.releaseDirectoryName)] as const),
+    ),
+  ) as Partial<Record<ManagedContentDirectoryId, string>>;
 }
 
 async function migrateLegacyDirectory(
@@ -247,6 +295,11 @@ export async function initializeManagedContentDirectories(): Promise<void> {
 }
 
 export function getManagedContentDirectory(id: ManagedContentDirectoryId): string {
+  const directoryDefinition = managedContentDirectoryLookup.get(id);
+  if (!directoryDefinition) {
+    return id;
+  }
+
   const overrideDirectory = readDirectoryOverride(id);
   if (overrideDirectory) {
     return overrideDirectory;
@@ -257,7 +310,7 @@ export function getManagedContentDirectory(id: ManagedContentDirectoryId): strin
     return resolvedDirectory;
   }
 
-  return LEGACY_RELATIVE_DIRECTORY_NAMES[id];
+  return directoryDefinition.legacyRelativeDirectoryName;
 }
 
 export function isLegacyScreenshotDirectory(path: string | null | undefined): boolean {

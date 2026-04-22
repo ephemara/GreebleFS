@@ -756,6 +756,7 @@ function buildPackageTopBars(
     const loadedTopBar = createLoadedTopBarDefinition(definition, {
       source: 'theme-package',
       sourceLabel: packageName,
+      scopeId: packageId,
       sourceThemeId: packageId,
     });
 

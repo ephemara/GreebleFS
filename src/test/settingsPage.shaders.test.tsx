@@ -50,11 +50,18 @@ describe('SettingsPage shaders section', () => {
     render(
       <SettingsPage
         appearance={appearance}
+        topBarPackages={[]}
+        topBarPackagesDirectory="top-bars"
+        topBarPackagesLoading={false}
+        topBarPackagesError={null}
+        topBarPackagesWarnings={[]}
         themePackages={[]}
         themePackagesDirectory="themes"
         themePackagesLoading={false}
         themePackagesError={null}
         themePackagesWarnings={[]}
+        onRefreshTopBars={async () => {}}
+        onOpenTopBarsFolder={async () => {}}
         onRefreshThemes={async () => {}}
         onOpenThemesFolder={async () => {}}
         shaders={[...createBuiltInOverlayShaders(), authoredShader]}

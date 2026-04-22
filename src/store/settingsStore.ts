@@ -88,6 +88,10 @@ import {
   type ScreenshotOutputActionId,
 } from '../config/screenshots';
 import { isLegacyScreenshotDirectory } from '../config/appContentDirectories';
+import {
+  normalizeSettingsSectionKey,
+  type SettingsSectionKey,
+} from '../config/settingsNavigation';
 import { normalizeIconThemePackageSelectionId } from '../config/iconThemePackages';
 import {
   DEFAULT_PILOT_ACCENT_COLOR,
@@ -984,12 +988,12 @@ export function mergeSettingsWithDefaults(imported?: LegacyImportedSettings): Se
 interface SettingsState {
   settings: Settings;
   isOpen: boolean;
-  activeSection: string;
+  activeSection: SettingsSectionKey;
   
   // Actions
   openSettings: () => void;
   closeSettings: () => void;
-  setActiveSection: (section: string) => void;
+  setActiveSection: (section: SettingsSectionKey) => void;
   
   // Update settings
   updateEditor: (updates: Partial<EditorSettings>) => void;
@@ -1033,11 +1037,11 @@ export const useSettingsStore = create<SettingsState>()(
     (set, get) => ({
       settings: defaultSettings,
       isOpen: false,
-      activeSection: 'editor',
+      activeSection: 'overview',
       
       openSettings: () => set({ isOpen: true }),
       closeSettings: () => set({ isOpen: false }),
-      setActiveSection: (section) => set({ activeSection: section }),
+      setActiveSection: (section) => set({ activeSection: normalizeSettingsSectionKey(section) }),
       
       updateEditor: (updates) => set((state) => ({
         settings: {
@@ -1286,6 +1290,7 @@ export const useSettingsStore = create<SettingsState>()(
         return {
           ...currentState,
           ...persisted,
+          activeSection: normalizeSettingsSectionKey(persisted?.activeSection ?? currentState.activeSection),
           settings: mergeSettingsWithDefaults(persisted?.settings),
         };
       },

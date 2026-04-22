@@ -10,6 +10,7 @@ import { createDefaultFolderIconRules } from '../config/folderIcons';
 import { resolveThemeCatalogPackageMetadata } from '../config/themeCatalogCuration';
 import { pluginSystemConfig } from '../config/plugins';
 import { screenshotFeatureConfig } from '../config/screenshots';
+import { topBarSystemConfig, type LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import { compileThemeEngineManifest, normalizeThemeManifestDraft } from '../runtime/themeEngineBackend';
 import { createLoadedTopBarDefinition } from '../config/topBars';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
@@ -37,6 +38,7 @@ function findSectionButton(label: string): HTMLButtonElement {
 
 function renderSettingsPage(options?: {
   appearanceThemeId?: string;
+  topBarPackages?: LoadedOverlayTopBarPackage[];
   themePackages?: LoadedOverlayThemePackage[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginExplorerActions?: OverlayPluginExplorerActionContribution[];
@@ -56,11 +58,18 @@ function renderSettingsPage(options?: {
   render(
     <SettingsPage
       appearance={appearance}
+      topBarPackages={options?.topBarPackages ?? []}
+      topBarPackagesDirectory={topBarSystemConfig.topBarsDirectory}
+      topBarPackagesLoading={false}
+      topBarPackagesError={null}
+      topBarPackagesWarnings={[]}
       themePackages={options?.themePackages ?? []}
       themePackagesDirectory="themes"
       themePackagesLoading={false}
       themePackagesError={null}
       themePackagesWarnings={[]}
+      onRefreshTopBars={async () => {}}
+      onOpenTopBarsFolder={async () => {}}
       onRefreshThemes={async () => {}}
       onOpenThemesFolder={async () => {}}
       shaders={createBuiltInOverlayShaders()}
@@ -140,6 +149,33 @@ describe('SettingsPage behavior', () => {
     });
     expect(invokeMock).toHaveBeenCalledWith('fs_open_file', { path: pluginSystemConfig.pluginsDirectory });
     expect(screen.getByText(`Opened Plugins: ${pluginSystemConfig.pluginsDirectory}`)).toBeInTheDocument();
+  }, 30000);
+
+  it('opens the standalone top-bars folder from the dedicated settings section', async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+
+    invokeMock.mockImplementation(async (command: string, args: unknown) => {
+      if (command === 'fs_list_dir') {
+        const payload = args as { path?: string } | undefined;
+        if (payload?.path === topBarSystemConfig.topBarsDirectory) {
+          throw new Error('missing');
+        }
+        return [];
+      }
+
+      return null;
+    });
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Top Bars'));
+    await user.click(screen.getByRole('button', { name: 'Open Top Bars Folder' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('fs_create_dir', { path: topBarSystemConfig.topBarsDirectory });
+    });
+    expect(invokeMock).toHaveBeenCalledWith('fs_open_file', { path: topBarSystemConfig.topBarsDirectory });
   }, 30000);
 
   it('updates explorer click mode, restores folder rules, and seeds bookmarks without duplicates', async () => {

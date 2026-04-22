@@ -92,6 +92,15 @@ import {
   overlayWallpaperFitModes,
   wallpaperSystemConfig,
 } from '../config/wallpapers';
+import {
+  getManagedContentDirectory,
+  managedContentDirectoryCatalog,
+  type ManagedContentDirectoryId,
+} from '../config/appContentDirectories';
+import {
+  settingsSectionCatalog,
+  type SettingsSectionKey,
+} from '../config/settingsNavigation';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { InteractionMotionLab } from '../animation/MotionLab';
@@ -118,7 +127,6 @@ import {
   resolveActiveTopBarSelection,
   type LoadedOverlayTopBarDefinition,
 } from '../config/topBars';
-import { pluginSystemConfig } from '../config/plugins';
 import {
   getOverlayShaderSurfaceLabel,
   getShaderEnabledSurfaceIds,
@@ -146,7 +154,7 @@ import {
   normalizeKeybindingValue,
   type HotkeyBindingKey,
 } from '../config/hotkeys';
-import { screenshotFeatureConfig, type ScreenshotOutputActionId } from '../config/screenshots';
+import { screenshotFeatureConfig, type ScreenshotCaptureModeId, type ScreenshotOutputActionId } from '../config/screenshots';
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
@@ -968,6 +976,175 @@ function SettingsRailButton({
   );
 }
 
+function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
+  switch (sectionKey) {
+    case 'overview':
+      return <Sparkles size={14} />;
+    case 'system':
+      return <Settings2 size={14} />;
+    case 'terminal':
+      return <TerminalSquare size={14} />;
+    case 'explorer':
+      return <FolderOpen size={14} />;
+    case 'layouts':
+      return <LayoutGrid size={14} />;
+    case 'hotkeys':
+      return <SlidersHorizontal size={14} />;
+    case 'cloud':
+      return <HardDrive size={14} />;
+    case 'screenshots':
+      return <Camera size={14} />;
+    case 'audio':
+      return <Music size={14} />;
+    case 'appearance':
+      return <Palette size={14} />;
+    case 'top-bars':
+      return <SlidersHorizontal size={14} />;
+    case 'icons':
+      return <Image size={14} />;
+    case 'wallpapers':
+      return <MonitorPlay size={14} />;
+    case 'shaders':
+      return <Sparkles size={14} />;
+    case 'animations':
+      return <RotateCcw size={14} />;
+    case 'theme-json':
+      return <Type size={14} />;
+  }
+}
+
+interface SettingsSectionContentContext {
+  effectiveThemeName: string;
+  activeLayoutLabel: string;
+  workspaceRootCount: number;
+  launchAtStartup: boolean;
+  systemPresentationState: ReturnType<typeof resolveSystemPresentationState>;
+  platform: 'windows' | 'macos' | 'linux' | 'unknown';
+  terminalWindowMode: TerminalWindowMode;
+  terminalPreferredOpenMode: 'integrated' | 'external';
+  terminalCursorStyle: string;
+  explorerViewModeLabel: string;
+  explorerFolderClickMode: 'single' | 'double';
+  explorerThumbnailsEnabled: boolean;
+  layoutProfileCount: number;
+  zenFocusMode: boolean;
+  hotkeyLabels: string[];
+  connectedCloudAccountCount: number;
+  configuredCloudProviderCount: number;
+  screenshotDefaultCaptureMode: ScreenshotCaptureModeId;
+  screenshotDefaultOutputAction: ScreenshotOutputActionId;
+  screenshotShowGrid: boolean;
+  audioFolderCount: number;
+  availableWallpapersCount: number;
+  themeWallpaperAvailable: boolean;
+  wallpaperFailureCount: number;
+  availableShadersCount: number;
+  shaderPerformanceLabel: string;
+  shaderFailureCount: number;
+  availableAnimationsCount: number;
+  animationFailureCount: number;
+  topBarSelectionSummary: string;
+  availableTopBarsCount: number;
+  followThemeTopBarDetail: string;
+  iconThemeSelectionSummary: string;
+  appOpacity: number;
+  panelTransparency: number;
+  appZoom: number;
+  appBlurStrength: number;
+}
+
+function getSettingsSectionContent(
+  sectionKey: SettingsSectionKey,
+  context: SettingsSectionContentContext,
+): { summary: string; detail: string } {
+  switch (sectionKey) {
+    case 'overview':
+      return {
+        summary: `${context.effectiveThemeName} · ${context.activeLayoutLabel} · ${context.workspaceRootCount} workspace roots`,
+        detail: 'Orient new operators quickly: learn the panel handoff flow, jump into key settings areas, and open the authoring folders that define the release surface.',
+      };
+    case 'system':
+      return {
+        summary: [
+          context.launchAtStartup ? 'Startup on' : 'Startup off',
+          context.systemPresentationState.trayVisible ? 'Tray on' : 'Tray off',
+          context.systemPresentationState.taskbarVisible ? 'Taskbar on' : 'Taskbar off',
+        ].join(' · '),
+        detail: `Handle machine-level behavior like login launch and the ${context.systemPresentationState.recoveryPath === 'tray' ? 'tray' : context.platform === 'macos' ? 'Dock' : 'taskbar'} recovery path in one place.`,
+      };
+    case 'terminal':
+      return {
+        summary: `${context.terminalWindowMode === 'windowed' ? 'application' : 'dock'} mode · ${context.terminalPreferredOpenMode} · ${context.terminalCursorStyle} cursor`,
+        detail: 'Control the integrated terminal, its typography, and how commands hand off to external shells.',
+      };
+    case 'explorer':
+      return {
+        summary: `${context.explorerViewModeLabel} · ${context.explorerFolderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${context.explorerThumbnailsEnabled ? 'Rich thumbnails' : 'Icons only'}`,
+        detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and thumbnail policy without mixing in icon-pack management.',
+      };
+    case 'layouts':
+      return {
+        summary: `${context.activeLayoutLabel} · ${context.layoutProfileCount} profiles · ${context.zenFocusMode ? 'Zen on' : 'Zen off'}`,
+        detail: 'Switch between shell profiles, point at external manifests, and control the workbench shape at the layout level.',
+      };
+    case 'hotkeys':
+      return {
+        summary: context.hotkeyLabels.join(' · '),
+        detail: 'Keep the overlay easy to summon, control shell presentation, and remap the primary focus toggles without digging through raw config.',
+      };
+    case 'cloud':
+      return {
+        summary: `${context.connectedCloudAccountCount} connected · ${context.configuredCloudProviderCount}/2 providers configured`,
+        detail: 'Manage provider credentials from Settings or the runtime environment, keep account tokens off the settings store, and surface each connected account as an explorer drive.',
+      };
+    case 'screenshots':
+      return {
+        summary: `${context.screenshotDefaultCaptureMode === 'monitor' ? 'Full monitor default' : 'Area snip default'} · ${formatScreenshotOutputActionLabel(context.screenshotDefaultOutputAction)} · ${context.screenshotShowGrid ? 'Grid on' : 'Grid off'}`,
+        detail: 'Set the default screenshot landing path and decide how the built-in capture tool behaves before and after a proof action.',
+      };
+    case 'audio':
+      return {
+        summary: `${context.audioFolderCount} user folders`,
+        detail: 'Configure scan paths for audio integrations and DAW-like plugin discovery.',
+      };
+    case 'appearance':
+      return {
+        summary: `${context.effectiveThemeName} · ${formatOverlayVisualControlValue('opacity', context.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', context.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', context.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', context.appBlurStrength)} BL`,
+        detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, UI typography, and the theme package catalog that can now contribute separate top bars.',
+      };
+    case 'top-bars':
+      return {
+        summary: `${context.topBarSelectionSummary} · ${context.availableTopBarsCount} variants`,
+        detail: context.followThemeTopBarDetail,
+      };
+    case 'icons':
+      return {
+        summary: context.iconThemeSelectionSummary,
+        detail: 'Choose a dedicated icon theme independently from the active shell theme, keep folder rules in one place, and decide when OS-native icons should still fill gaps.',
+      };
+    case 'wallpapers':
+      return {
+        summary: `${context.availableWallpapersCount} catalog items${context.themeWallpaperAvailable ? ' · theme default available' : ''}${context.wallpaperFailureCount > 0 ? ` · ${context.wallpaperFailureCount} errors` : ''}`,
+        detail: 'Wallpapers stay in the theme system, can be overridden per user, and still render underneath shader and visual layers instead of replacing them.',
+      };
+    case 'shaders':
+      return {
+        summary: `${context.availableShadersCount} profiles · ${context.shaderPerformanceLabel}${context.shaderFailureCount > 0 ? ` · ${context.shaderFailureCount} errors` : ''}`,
+        detail: `Default mode is ${context.shaderPerformanceLabel.toLowerCase()}, which keeps automatic theme shaders off until you explicitly choose a profile and keeps the live preview budgeted.`,
+      };
+    case 'animations':
+      return {
+        summary: `${context.availableAnimationsCount} modules${context.animationFailureCount > 0 ? ` · ${context.animationFailureCount} errors` : ''}`,
+        detail: 'Browse built-in and authored animation modules, assign the live open/close bindings, and manage the animation authoring folder.',
+      };
+    case 'theme-json':
+      return {
+        summary: 'Direct JSON editing',
+        detail: 'Paste, tweak, and version full theme definitions directly when the recipe controls and token pickers are not enough.',
+      };
+  }
+}
+
 function formatScreenshotOutputActionLabel(action: ScreenshotOutputActionId): string {
   if (action === 'save-copy') {
     return 'Save + Copy';
@@ -1173,6 +1350,8 @@ export function SettingsPage({
     return 'the OS';
   }, [platform]);
   const {
+    activeSection,
+    setActiveSection,
     settings,
     updateTerminal,
     updateExplorer,
@@ -1186,6 +1365,8 @@ export function SettingsPage({
     updateAudio,
     resetToDefaults,
   } = useSettingsStore(useShallow(state => ({
+    activeSection: state.activeSection,
+    setActiveSection: state.setActiveSection,
     settings: state.settings,
     updateTerminal: state.updateTerminal,
     updateExplorer: state.updateExplorer,
@@ -1234,7 +1415,6 @@ export function SettingsPage({
   const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.app.baseTheme));
   const [themeImportError, setThemeImportError] = useState<string | null>(null);
   const [folderIconSearch, setFolderIconSearch] = useState('');
-  const [activeSection, setActiveSection] = useState<SettingsSectionKey>('overview');
   const [startupSyncPending, setStartupSyncPending] = useState(false);
   const [startupSyncError, setStartupSyncError] = useState<string | null>(null);
   const [linuxDisplayBackendSyncPending, setLinuxDisplayBackendSyncPending] = useState(false);
@@ -2196,102 +2376,20 @@ export function SettingsPage({
       action: () => setActiveSection('screenshots'),
     },
   ], []);
-  const workspaceRoots = useMemo(() => [
-    {
-      id: 'plugins',
-      label: 'Plugins',
-      path: pluginSystemConfig.pluginsDirectory,
-      description: 'Drop TSX panels and runtime modules here.',
-    },
-    {
-      id: 'themes',
-      label: 'Themes',
-      path: themePackagesDirectory,
-      description: 'Package theme manifests, assets, and icon sets here.',
-    },
-    {
-      id: 'top-bars',
-      label: 'Top Bars',
-      path: topBarPackagesDirectory,
-      description: 'Author standalone shell top-bar workflows here.',
-    },
-    {
-      id: 'icon-themes',
-      label: 'Icon Themes',
-      path: iconThemePackagesDirectory,
-      description: 'Drop VS Code-style icon-theme manifests here for explorer and shell icon swaps.',
-    },
-    {
-      id: 'shaders',
-      label: 'Shaders',
-      path: shadersDirectory,
-      description: 'Author shell shader profiles with surface-level controls.',
-    },
-    {
-      id: 'animations',
-      label: 'Animations',
-      path: animationsDirectory,
-      description: 'Author open and close motion modules here.',
-    },
-    {
-      id: 'wallpapers',
-      label: 'Wallpapers',
-      path: wallpapersDirectory,
-      description: 'Import images, videos, and live wallpaper modules here.',
-    },
-    {
-      id: 'screenshots',
-      label: 'Screenshots',
-      path: settings.screenshots.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory,
-      description: 'Saved captures and annotated proof land here.',
-    },
-  ], [
-    animationsDirectory,
-    iconThemePackagesDirectory,
-    settings.screenshots.saveDirectory,
-    shadersDirectory,
-    topBarPackagesDirectory,
-    themePackagesDirectory,
-    wallpapersDirectory,
-  ]);
-  const settingsJumpCards = useMemo(() => [
-    {
-      id: 'system',
-      title: 'System',
-      summary: 'Launch, tray, taskbar, GPU tier, and machine-level diagnostics.',
-      action: () => setActiveSection('system'),
-    },
-    {
-      id: 'terminal',
-      title: 'Terminal',
-      summary: 'Shell presentation, integrated defaults, and external handoff.',
-      action: () => setActiveSection('terminal'),
-    },
-    {
-      id: 'explorer',
-      title: 'Explorer',
-      summary: 'Click behavior, layout bias, startup path, and thumbnails.',
-      action: () => setActiveSection('explorer'),
-    },
-    {
-      id: 'layouts',
-      title: 'Layouts',
-      summary: 'Manifest-driven panel profiles and shell chrome.',
-      action: () => setActiveSection('layouts'),
-    },
-    {
-      id: 'appearance',
-      title: 'Appearance',
-      summary: 'Theme recipes, blur, transparency, and fonts.',
-      action: () => setActiveSection('appearance'),
-    },
-    {
-      id: 'theme-json',
-      title: 'Theme JSON',
-      summary: 'Raw import/export path for full theme definitions.',
-      action: () => setActiveSection('theme-json'),
-    },
-  ], []);
+  const workspaceRoots = useMemo(() => managedContentDirectoryCatalog.map(entry => ({
+    id: entry.id,
+    label: entry.label,
+    path: getManagedContentDirectory(entry.id as ManagedContentDirectoryId),
+    description: entry.description,
+  })), []);
+  const settingsJumpCards = useMemo(() => settingsSectionCatalog
+    .filter(section => section.featuredInOverview)
+    .map(section => ({
+      id: section.key,
+      title: section.label,
+      summary: section.overviewSummary,
+      action: () => setActiveSection(section.key as SettingsSectionKey),
+    })), [setActiveSection]);
   const connectedCloudAccountCount = safeCloudSnapshot.accounts.filter(account => account.status === 'connected').length;
   const configuredCloudProviderCount = safeCloudSnapshot.providers.filter(provider => provider.configured).length;
 
@@ -2519,149 +2617,97 @@ export function SettingsPage({
     updateAppearance,
   ]);
 
-  const settingsSections: Array<{
-    key: SettingsSectionKey;
-    label: string;
-    subtitle: string;
-    summary: string;
-    detail: string;
-    icon: ReactNode;
-  }> = [
-      {
-        key: 'overview',
-        label: 'Overview',
-        subtitle: 'Start here for the workbench map and release-facing paths.',
-        summary: `${effectiveTheme.name} · ${activeLayoutProfile.label} · ${workspaceRoots.length} workspace roots`,
-        detail: 'Orient new operators quickly: learn the panel handoff flow, jump into key settings areas, and open the authoring folders that define the release surface.',
-        icon: <Sparkles size={14} />,
-      },
-      {
-        key: 'system',
-        label: 'System',
-        subtitle: 'Startup and OS integration status.',
-        summary: [
-          settings.system.launchAtStartup ? 'Startup on' : 'Startup off',
-          systemPresentationState.trayVisible ? 'Tray on' : 'Tray off',
-          systemPresentationState.taskbarVisible ? 'Taskbar on' : 'Taskbar off',
-        ].join(' · '),
-        detail: `Handle machine-level behavior like login launch and the ${systemPresentationState.recoveryPath === 'tray' ? 'tray' : platform === 'macos' ? 'Dock' : 'taskbar'} recovery path in one place.`,
-        icon: <Settings2 size={14} />,
-      },
-      {
-        key: 'terminal',
-        label: 'Terminal',
-        subtitle: 'Shell defaults and external handoff.',
-        summary: `${settings.terminal.windowMode === 'windowed' ? 'application' : 'dock'} mode · ${settings.terminal.preferredOpenMode} · ${settings.terminal.cursorStyle} cursor`,
-        detail: 'Control the integrated terminal, its typography, and how commands hand off to external shells.',
-        icon: <TerminalSquare size={14} />,
-      },
-      {
-        key: 'explorer',
-        label: 'Explorer',
-        subtitle: 'Startup path, file visibility, layout, and thumbnail behavior.',
-        summary: `${getExplorerViewModeDefinition(settings.explorer.viewMode).label} · ${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.thumbnails.enabled ? 'Rich thumbnails' : 'Icons only'}`,
-        detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and thumbnail policy without mixing in icon-pack management.',
-        icon: <FolderOpen size={14} />,
-      },
-      {
-        key: 'layouts',
-        label: 'Layouts',
-        subtitle: 'Workbench profiles and shell chrome.',
-        summary: `${activeLayoutProfile.label} · ${layoutManifestState.manifest.profiles.length} profiles · ${settings.layout.zenFocusMode ? 'Zen on' : 'Zen off'}`,
-        detail: 'Switch between shell profiles, point at external manifests, and control the workbench shape at the layout level.',
-        icon: <LayoutGrid size={14} />,
-      },
-      {
-        key: 'hotkeys',
-        label: 'Hotkeys',
-        subtitle: 'Overlay opener and gesture bindings.',
-        summary: [settings.keybindings.terminalToggle, settings.keybindings.windowModeToggle, settings.keybindings.zenFocusModeToggle]
-          .map(formatHotkeyLabel)
-          .join(' · '),
-        detail: 'Keep the overlay easy to summon, control shell presentation, and remap the primary focus toggles without digging through raw config.',
-        icon: <SlidersHorizontal size={14} />,
-      },
-      {
-        key: 'cloud',
-        label: 'Cloud',
-        subtitle: 'OAuth-backed Google Drive and Dropbox accounts.',
-        summary: `${connectedCloudAccountCount} connected · ${configuredCloudProviderCount}/2 providers configured`,
-        detail: 'Manage provider credentials from Settings or the runtime environment, keep account tokens off the settings store, and surface each connected account as an explorer drive.',
-        icon: <HardDrive size={14} />,
-      },
-      {
-        key: 'screenshots',
-        label: 'Screenshots',
-        subtitle: 'Capture defaults, save path, and proof-focused editor behavior.',
-        summary: `${settings.screenshots.defaultCaptureMode === 'monitor' ? 'Full monitor default' : 'Area snip default'} · ${formatScreenshotOutputActionLabel(settings.screenshots.defaultOutputAction)} · ${settings.screenshots.showGrid ? 'Grid on' : 'Grid off'}`,
-        detail: 'Set the default screenshot landing path and decide how the built-in capture tool behaves before and after a proof action.',
-        icon: <Camera size={14} />,
-      },
-      {
-        key: 'audio',
-        label: 'Audio',
-        subtitle: 'Audio pathing and VST3 integration.',
-        summary: `${settings.audio.vst3AdditionalFolders.length} user folders`,
-        detail: 'Configure scan paths for audio integrations and DAW-like plugin discovery.',
-        icon: <Music size={14} />,
-      },
-      {
-        key: 'appearance',
-        label: 'Appearance',
-        subtitle: 'Theme, opacity, panel transparency, blur, and zoom.',
-        summary: `${effectiveTheme.name} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
-        detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, UI typography, and the theme package catalog that can now contribute separate top bars.',
-        icon: <Palette size={14} />,
-      },
-      {
-        key: 'top-bars',
-        label: 'Top Bar',
-        subtitle: 'Standalone shell chrome workflows that can follow the active theme or stay pinned independently.',
-        summary: `${topBarSelectionSummary} · ${availableTopBars.length} variants`,
-        detail: 'Mix and match top-bar workflows independently from the active theme. Theme packages can still publish their own top bars, but users do not need to swap whole themes just to change shell chrome.',
-        icon: <SlidersHorizontal size={14} />,
-      },
-      {
-        key: 'icons',
-        label: 'Icons',
-        subtitle: 'VS Code-style icon packs for explorer files, folders, and shell chrome.',
-        summary: iconThemeSelectionSummary,
-        detail: 'Choose a dedicated icon theme independently from the active shell theme, keep folder rules in one place, and decide when OS-native icons should still fill gaps.',
-        icon: <Image size={14} />,
-      },
-      {
-        key: 'wallpapers',
-        label: 'Wallpapers',
-        subtitle: 'Theme-backed wallpapers plus custom image, video, and live backgrounds.',
-        summary: `${availableWallpapers.length} catalog items${themeWallpaperAvailable ? ' · theme default available' : ''}${wallpaperFailures.length > 0 ? ` · ${wallpaperFailures.length} errors` : ''}`,
-        detail: 'Wallpapers stay in the theme system, can be overridden per user, and still render underneath shader and visual layers instead of replacing them.',
-        icon: <MonitorPlay size={14} />,
-      },
-      {
-        key: 'shaders',
-        label: 'Shaders',
-        subtitle: 'Shell-wide shader profiles for background, chrome, and rails.',
-        summary: `${availableShaders.length} profiles · ${shaderPerformanceProfile.label}${shaderFailures.length > 0 ? ` · ${shaderFailures.length} errors` : ''}`,
-        detail: `Default mode is ${shaderPerformanceProfile.label.toLowerCase()}, which keeps automatic theme shaders off until you explicitly choose a profile and keeps the live preview budgeted.`,
-        icon: <Sparkles size={14} />,
-      },
-      {
-        key: 'animations',
-        label: 'Animations',
-        subtitle: 'Open and close motion modules.',
-        summary: `${availableAnimations.length} modules${animationFailures.length > 0 ? ` · ${animationFailures.length} errors` : ''}`,
-        detail: 'Browse built-in and authored animation modules, assign the live open/close bindings, and manage the animation authoring folder.',
-        icon: <RotateCcw size={14} />,
-      },
-      {
-        key: 'theme-json',
-        label: 'Theme JSON',
-        subtitle: 'Raw theme authoring and import.',
-        summary: 'Direct JSON editing',
-        detail: 'Paste, tweak, and version full theme definitions directly when the recipe controls and token pickers are not enough.',
-        icon: <Type size={14} />,
-      },
-    ];
+  const settingsSectionContext = useMemo<SettingsSectionContentContext>(() => ({
+    effectiveThemeName: effectiveTheme.name,
+    activeLayoutLabel: activeLayoutProfile.label,
+    workspaceRootCount: workspaceRoots.length,
+    launchAtStartup: settings.system.launchAtStartup,
+    systemPresentationState,
+    platform: platform as SettingsSectionContentContext['platform'],
+    terminalWindowMode: settings.terminal.windowMode,
+    terminalPreferredOpenMode: settings.terminal.preferredOpenMode,
+    terminalCursorStyle: settings.terminal.cursorStyle,
+    explorerViewModeLabel: getExplorerViewModeDefinition(settings.explorer.viewMode).label,
+    explorerFolderClickMode: settings.explorer.folderClickMode,
+    explorerThumbnailsEnabled: settings.explorer.thumbnails.enabled,
+    layoutProfileCount: layoutManifestState.manifest.profiles.length,
+    zenFocusMode: settings.layout.zenFocusMode,
+    hotkeyLabels: [
+      settings.keybindings.terminalToggle,
+      settings.keybindings.windowModeToggle,
+      settings.keybindings.zenFocusModeToggle,
+    ].map(formatHotkeyLabel),
+    connectedCloudAccountCount,
+    configuredCloudProviderCount,
+    screenshotDefaultCaptureMode: settings.screenshots.defaultCaptureMode,
+    screenshotDefaultOutputAction: settings.screenshots.defaultOutputAction,
+    screenshotShowGrid: settings.screenshots.showGrid,
+    audioFolderCount: settings.audio.vst3AdditionalFolders.length,
+    availableWallpapersCount: availableWallpapers.length,
+    themeWallpaperAvailable,
+    wallpaperFailureCount: wallpaperFailures.length,
+    availableShadersCount: availableShaders.length,
+    shaderPerformanceLabel: shaderPerformanceProfile.label,
+    shaderFailureCount: shaderFailures.length,
+    availableAnimationsCount: availableAnimations.length,
+    animationFailureCount: animationFailures.length,
+    topBarSelectionSummary,
+    availableTopBarsCount: availableTopBars.length,
+    followThemeTopBarDetail,
+    iconThemeSelectionSummary,
+    appOpacity: settings.appearance.appOpacity,
+    panelTransparency: settings.appearance.panelTransparency,
+    appZoom: settings.appearance.appZoom,
+    appBlurStrength: settings.appearance.appBlurStrength,
+  }), [
+    activeLayoutProfile.label,
+    animationFailures.length,
+    availableAnimations.length,
+    availableShaders.length,
+    availableTopBars.length,
+    availableWallpapers.length,
+    connectedCloudAccountCount,
+    configuredCloudProviderCount,
+    effectiveTheme.name,
+    followThemeTopBarDetail,
+    iconThemeSelectionSummary,
+    layoutManifestState.manifest.profiles.length,
+    platform,
+    settings.audio.vst3AdditionalFolders.length,
+    settings.appearance.appBlurStrength,
+    settings.appearance.appOpacity,
+    settings.appearance.appZoom,
+    settings.appearance.panelTransparency,
+    settings.explorer.folderClickMode,
+    settings.explorer.thumbnails.enabled,
+    settings.explorer.viewMode,
+    settings.keybindings.terminalToggle,
+    settings.keybindings.windowModeToggle,
+    settings.keybindings.zenFocusModeToggle,
+    settings.layout.zenFocusMode,
+    settings.screenshots.defaultCaptureMode,
+    settings.screenshots.defaultOutputAction,
+    settings.screenshots.showGrid,
+    settings.system.launchAtStartup,
+    shaderFailures.length,
+    shaderPerformanceProfile.label,
+    systemPresentationState,
+    themeWallpaperAvailable,
+    topBarSelectionSummary,
+    workspaceRoots.length,
+  ]);
+
+  const settingsSections = useMemo(() => settingsSectionCatalog.map(section => {
+    const content = getSettingsSectionContent(section.key as SettingsSectionKey, settingsSectionContext);
+    return {
+      key: section.key as SettingsSectionKey,
+      label: section.label,
+      subtitle: section.subtitle,
+      summary: content.summary,
+      detail: content.detail,
+      icon: getSettingsSectionIcon(section.key as SettingsSectionKey),
+    };
+  }), [settingsSectionContext]);
   const activeSectionMeta = settingsSections.find(section => section.key === activeSection) ?? settingsSections[0];
 
   return (
@@ -3159,13 +3205,13 @@ export function SettingsPage({
                       <div>
                         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Top Bar Catalog</div>
                         <p className="mt-1 text-[11px] opacity-40">
-                          Top bars now resolve independently from the active theme. Built-ins always stay available, and theme packages in <code>{themePackagesDirectory}</code> can contribute additional shell chrome workflows without forcing users to swap the entire theme.
+                          Top bars now have their own authored storage root in <code>{topBarPackagesDirectory}</code>. Built-ins always stay available, standalone top-bar packages live there, and theme packages in <code>{themePackagesDirectory}</code> can still contribute additional shell chrome workflows without forcing users to swap the entire theme.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => void onRefreshThemes()}
+                          onClick={() => void onRefreshTopBars()}
                           className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
                           style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
                         >
@@ -3174,11 +3220,11 @@ export function SettingsPage({
                         </button>
                         <button
                           type="button"
-                          onClick={() => void onOpenThemesFolder()}
+                          onClick={() => void onOpenTopBarsFolder()}
                           className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
                           style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
                         >
-                          Open Theme Folder
+                          Open Top Bars Folder
                         </button>
                       </div>
                     </div>
@@ -3191,13 +3237,40 @@ export function SettingsPage({
                         Mode: {settings.appearance.activeTopBarId == null ? 'Follow Theme' : 'Pinned'}
                       </span>
                       <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
-                        Catalog: {availableTopBars.length} top bars
+                        {topBarCatalogLoading ? 'Scanning Catalog' : `Catalog: ${availableTopBars.length} top bars`}
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        Standalone: {authoredTopBarCount}
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        Theme Contributed: {themeContributedTopBarCount}
                       </span>
                     </div>
 
                     <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}33`, background: `${accent}10`, color: text }}>
                       {followThemeTopBarDetail}
                     </div>
+
+                    <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}>
+                      Standalone top bars refresh from <code>{topBarPackagesDirectory}</code>. Theme-contributed top bars still refresh from the theme package pipeline in <code>{themePackagesDirectory}</code>.
+                    </div>
+
+                    {topBarPackagesError ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+                        Top-bar package scan failed: {topBarPackagesError}
+                      </div>
+                    ) : null}
+
+                    {topBarPackagesWarnings.length > 0 ? (
+                      <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
+                        <div className="font-semibold uppercase tracking-[0.12em]">Top-bar warnings</div>
+                        <div className="mt-2 space-y-1.5">
+                          {topBarPackagesWarnings.map(warning => (
+                            <div key={warning}>{warning}</div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
 
                     {resolvedTopBarSelection.explicitSelectionMissing ? (
                       <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>

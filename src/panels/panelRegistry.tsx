@@ -14,6 +14,7 @@ import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayWallpaper } from '../components/wallpaperRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
+import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import {
   iconThemeSystemConfig,
   type LoadedIconThemePackage,
@@ -124,11 +125,18 @@ export function createBuiltInPanelDefinitions({
   onRequestRepositoryImport,
   pendingRepositoryImports,
   onPendingRepositoryImportsHandled,
+  topBarPackages,
+  topBarPackagesDirectory,
+  topBarPackagesLoading,
+  topBarPackagesError,
+  topBarPackagesWarnings,
   themePackages,
   themePackagesDirectory,
   themePackagesLoading,
   themePackagesError,
   themePackagesWarnings,
+  onRefreshTopBars,
+  onOpenTopBarsFolder,
   iconThemePackages = [],
   iconThemePackagesDirectory = iconThemeSystemConfig.iconThemesDirectory,
   iconThemePackagesLoading = false,
@@ -184,11 +192,18 @@ export function createBuiltInPanelDefinitions({
   onRequestRepositoryImport: () => void;
   pendingRepositoryImports: string[];
   onPendingRepositoryImportsHandled: () => void;
+  topBarPackages: LoadedOverlayTopBarPackage[];
+  topBarPackagesDirectory: string;
+  topBarPackagesLoading: boolean;
+  topBarPackagesError: string | null;
+  topBarPackagesWarnings: string[];
   themePackages: LoadedOverlayThemePackage[];
   themePackagesDirectory: string;
   themePackagesLoading: boolean;
   themePackagesError: string | null;
   themePackagesWarnings: string[];
+  onRefreshTopBars: () => Promise<void>;
+  onOpenTopBarsFolder: () => Promise<void>;
   iconThemePackages?: LoadedIconThemePackage[];
   iconThemePackagesDirectory?: string;
   iconThemePackagesLoading?: boolean;
@@ -386,11 +401,18 @@ export function createBuiltInPanelDefinitions({
         <DeferredPanel>
           <LazySettingsPage
             appearance={appearance}
+            topBarPackages={topBarPackages}
+            topBarPackagesDirectory={topBarPackagesDirectory}
+            topBarPackagesLoading={topBarPackagesLoading}
+            topBarPackagesError={topBarPackagesError}
+            topBarPackagesWarnings={topBarPackagesWarnings}
             themePackages={themePackages}
             themePackagesDirectory={themePackagesDirectory}
             themePackagesLoading={themePackagesLoading}
             themePackagesError={themePackagesError}
             themePackagesWarnings={themePackagesWarnings}
+            onRefreshTopBars={onRefreshTopBars}
+            onOpenTopBarsFolder={onOpenTopBarsFolder}
             iconThemePackages={iconThemePackages}
             iconThemePackagesDirectory={iconThemePackagesDirectory}
             iconThemePackagesLoading={iconThemePackagesLoading}
