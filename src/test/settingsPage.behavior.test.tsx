@@ -261,6 +261,41 @@ describe('SettingsPage behavior', () => {
     }
   });
 
+  it('updates interaction motion settings and exposes motion-lab preview surfaces', async () => {
+    const user = userEvent.setup();
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Animations'));
+
+    const enabledToggle = screen.getByRole('checkbox', {
+      name: /enable interaction motion/i,
+    });
+    const explorerSurfaceToggle = screen.getByRole('checkbox', {
+      name: /enable explorer entries interaction motion/i,
+    });
+
+    expect(enabledToggle).toBeChecked();
+    expect(explorerSurfaceToggle).toBeChecked();
+
+    await user.click(screen.getByRole('button', {
+      name: /use spring interaction motion preset/i,
+    }));
+    expect(useSettingsStore.getState().settings.appearance.interactionMotionPresetId).toBe('spring');
+
+    await user.click(explorerSurfaceToggle);
+    expect(useSettingsStore.getState().settings.appearance.interactionMotionSurfaceOverrides.explorerEntry).toBe(false);
+
+    await user.click(enabledToggle);
+    expect(useSettingsStore.getState().settings.appearance.interactionMotionEnabled).toBe(false);
+
+    await user.click(enabledToggle);
+    expect(useSettingsStore.getState().settings.appearance.interactionMotionEnabled).toBe(true);
+
+    const motionLabEntry = screen.getByText('Idle folder').closest('button');
+    expect(motionLabEntry).not.toBeNull();
+    expect(motionLabEntry).toHaveAttribute('data-interaction-motion-surface', 'explorerEntry');
+  });
+
   it('applies themed select styling in terminal and system settings', async () => {
     const user = userEvent.setup();
     renderSettingsPage({ appearanceThemeId: 'monokai' });

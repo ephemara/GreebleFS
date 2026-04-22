@@ -16,6 +16,8 @@ import {
   X,
 } from '@/components/AppIcons';
 import { OverlayScrollArea } from '../OverlayScrollArea';
+import { useInteractionMotionController, type InteractionMotionBinding } from '../../animation/interactionMotion';
+import type { ResolvedOverlayAppearance } from '../../config/appearance';
 import { useExplorerStore } from '../../store/explorerStore';
 import { ExplorerChromeSurface } from './ExplorerChromeSurface';
 import {
@@ -68,6 +70,7 @@ import {
 } from '../../config/explorerRail';
 
 interface ExplorerSideRailProps {
+  appearance?: Pick<ResolvedOverlayAppearance, 'baseTheme'> | null;
   accent: string;
   brandLabel: string;
   sidebarWidth: number;
@@ -111,6 +114,7 @@ interface ExplorerSideRailProps {
 
 interface TreeRowProps {
   accent: string;
+  bindRailMotion: (active?: boolean) => InteractionMotionBinding;
   compactTree: boolean;
   dense: boolean;
   viewMode: ExplorerRailViewModeDefinition;
@@ -136,6 +140,7 @@ type LocalFolderTreeLoadState = {
 
 interface LocalFolderTreeRowProps {
   accent: string;
+  bindRailMotion: (active?: boolean) => InteractionMotionBinding;
   compactTree: boolean;
   dense: boolean;
   viewMode: ExplorerRailViewModeDefinition;
@@ -156,6 +161,7 @@ const EXPLORER_RAIL_ULTRA_DENSE_WIDTH = 220;
 const EXPLORER_RAIL_VERBOSE_DRAG_GUIDE_MIN_WIDTH = 320;
 
 export function ExplorerSideRail({
+  appearance,
   accent,
   brandLabel,
   sidebarWidth,
@@ -188,6 +194,15 @@ export function ExplorerSideRail({
   const updateRail = useExplorerStore((state) => state.updateRail);
   const restoreRailBackup = useExplorerStore((state) => state.restoreRailBackup);
   const clearPersistenceNotice = useExplorerStore((state) => state.clearPersistenceNotice);
+  const interactionMotion = useInteractionMotionController(appearance);
+  const railItemTransition = 'background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, opacity 160ms ease';
+  const bindRailMotion = useCallback((active = false) => (
+    interactionMotion.bindSurface({
+      surfaceId: 'explorerRailItem',
+      triggerState: active ? { activate: true } : undefined,
+      baseTransition: railItemTransition,
+    })
+  ), [interactionMotion, railItemTransition]);
 
   const railViewMode = useMemo<ExplorerRailViewModeDefinition>(
     () => getExplorerRailViewModeDefinition(rail.viewMode),
@@ -762,13 +777,31 @@ export function ExplorerSideRail({
           collapsed={isExplorerRailSectionCollapsed(rail, 'quick-access')}
           onToggle={() => updateRail(toggleExplorerRailSection(rail, 'quick-access'))}
         >
-          <button type="button" onClick={onGoHome} style={quickLinkButtonStyle(currentPath === '', accent, dense, railViewMode)}>
+          {(() => {
+            const homeMotion = bindRailMotion(currentPath === '');
+            return (
+              <button
+                type="button"
+                onClick={onGoHome}
+                {...homeMotion.motionDataAttributes}
+                onPointerEnter={homeMotion.onPointerEnter}
+                onPointerLeave={homeMotion.onPointerLeave}
+                onPointerDown={homeMotion.onPointerDown}
+                onPointerUp={homeMotion.onPointerUp}
+                onPointerCancel={homeMotion.onPointerCancel}
+                style={{
+                  ...quickLinkButtonStyle(currentPath === '', accent, dense, railViewMode),
+                  ...homeMotion.motionStyle,
+                }}
+              >
             <Home size={dense ? 12 : 13} style={{ color: accent, flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
               <div style={bookmarkTitleStyle(railViewMode, 'default')}>Home</div>
               {showSupportingMeta && <div style={bookmarkMetaStyle(railViewMode)}>Jump to your user root.</div>}
             </div>
-          </button>
+              </button>
+            );
+          })()}
         </RailSection>
 
         <RailSection
@@ -801,11 +834,18 @@ export function ExplorerSideRail({
               : activeLocalDrivePath !== null && isSameLocalPath(drive.path, activeLocalDrivePath);
 
             if (isCloudDrive) {
+              const cloudDriveMotion = bindRailMotion(isActive);
               return (
                 <button
                   key={drive.id}
                   type="button"
                   onClick={() => onNavigate(drive.path)}
+                  {...cloudDriveMotion.motionDataAttributes}
+                  onPointerEnter={cloudDriveMotion.onPointerEnter}
+                  onPointerLeave={cloudDriveMotion.onPointerLeave}
+                  onPointerDown={cloudDriveMotion.onPointerDown}
+                  onPointerUp={cloudDriveMotion.onPointerUp}
+                  onPointerCancel={cloudDriveMotion.onPointerCancel}
                   style={{
                     ...getRailSelectableRowStyle({
                       accent,
@@ -819,6 +859,7 @@ export function ExplorerSideRail({
                     alignItems: 'center',
                     cursor: 'pointer',
                     marginBottom: 4,
+                    ...cloudDriveMotion.motionStyle,
                   }}
                 >
                   <FolderTree size={dense ? 11 : 14} style={{ color: resolveRailIconColor(railViewMode, accent, isActive ? 'active' : 'default') }} />
@@ -845,9 +886,16 @@ export function ExplorerSideRail({
             const usedRatio = drive.total_bytes > 0 ? usedBytes / drive.total_bytes : 0;
             const normalizedDrivePath = normalizeLocalTreePath(drive.path);
             const isExpanded = expandedFolderPaths.includes(normalizedDrivePath);
+            const driveRowMotion = bindRailMotion(isActive || isExpanded);
             return (
               <div key={drive.id} style={{ marginBottom: 4 }}>
                 <div
+                  {...driveRowMotion.motionDataAttributes}
+                  onPointerEnter={driveRowMotion.onPointerEnter}
+                  onPointerLeave={driveRowMotion.onPointerLeave}
+                  onPointerDown={driveRowMotion.onPointerDown}
+                  onPointerUp={driveRowMotion.onPointerUp}
+                  onPointerCancel={driveRowMotion.onPointerCancel}
                   style={{
                     ...getRailSelectableRowStyle({
                       accent,
@@ -860,6 +908,7 @@ export function ExplorerSideRail({
                     display: 'grid',
                     gridTemplateColumns: 'auto auto 1fr',
                     alignItems: 'center',
+                    ...driveRowMotion.motionStyle,
                   }}
                 >
                   <button
@@ -908,6 +957,7 @@ export function ExplorerSideRail({
                   <div role="tree" aria-label={`${drive.label} folder tree`} style={{ marginTop: 4 }}>
                     <LocalFolderTreeRow
                       accent={accent}
+                      bindRailMotion={bindRailMotion}
                       compactTree={compactTree}
                       dense={dense}
                       viewMode={railViewMode}
@@ -950,25 +1000,35 @@ export function ExplorerSideRail({
                 marginBottom: 4,
               }}
             >
-              <button
-                type="button"
-                onClick={() => onOpenSavedSearch?.(savedSearch)}
-                style={{
-                  ...getRailSelectableRowStyle({
-                    accent,
-                    viewMode: railViewMode,
-                    dense,
-                    state: 'idle',
-                  }),
-                  flex: 1,
-                  minWidth: 0,
-                  display: 'grid',
-                  gridTemplateColumns: 'auto 1fr',
-                  alignItems: 'center',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
+              {(() => {
+                const savedSearchMotion = bindRailMotion();
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onOpenSavedSearch?.(savedSearch)}
+                    {...savedSearchMotion.motionDataAttributes}
+                    onPointerEnter={savedSearchMotion.onPointerEnter}
+                    onPointerLeave={savedSearchMotion.onPointerLeave}
+                    onPointerDown={savedSearchMotion.onPointerDown}
+                    onPointerUp={savedSearchMotion.onPointerUp}
+                    onPointerCancel={savedSearchMotion.onPointerCancel}
+                    style={{
+                      ...getRailSelectableRowStyle({
+                        accent,
+                        viewMode: railViewMode,
+                        dense,
+                        state: 'idle',
+                      }),
+                      flex: 1,
+                      minWidth: 0,
+                      display: 'grid',
+                      gridTemplateColumns: 'auto 1fr',
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      ...savedSearchMotion.motionStyle,
+                    }}
+                  >
                 <Search size={dense ? 11 : 13} style={{ color: accent, flexShrink: 0 }} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ ...bookmarkTitleStyle(railViewMode, 'default'), fontSize: dense ? 9.5 : 10.5 }}>
@@ -980,7 +1040,9 @@ export function ExplorerSideRail({
                     </div>
                   )}
                 </div>
-              </button>
+                  </button>
+                );
+              })()}
               {onDeleteSavedSearch && (
                 <button
                   type="button"
@@ -1039,24 +1101,46 @@ export function ExplorerSideRail({
                 marginBottom: availableTags.length > 0 ? 6 : 0,
               }}
             >
-              <button
-                type="button"
-                onClick={() => onClearTagFilters?.()}
-                style={categoryChipStyle(activeTagFilterIds.length === 0)}
-              >
-                All
-              </button>
+              {(() => {
+                const allTagsMotion = bindRailMotion(activeTagFilterIds.length === 0);
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onClearTagFilters?.()}
+                    {...allTagsMotion.motionDataAttributes}
+                    onPointerEnter={allTagsMotion.onPointerEnter}
+                    onPointerLeave={allTagsMotion.onPointerLeave}
+                    onPointerDown={allTagsMotion.onPointerDown}
+                    onPointerUp={allTagsMotion.onPointerUp}
+                    onPointerCancel={allTagsMotion.onPointerCancel}
+                    style={{
+                      ...categoryChipStyle(activeTagFilterIds.length === 0),
+                      ...allTagsMotion.motionStyle,
+                    }}
+                  >
+                    All
+                  </button>
+                );
+              })()}
               {availableTags.map((tag) => {
                 const active = activeTagFilterIds.includes(tag.id);
+                const tagMotion = bindRailMotion(active);
                 return (
                   <button
                     key={tag.id}
                     type="button"
                     onClick={() => onToggleTagFilter?.(tag.id)}
+                    {...tagMotion.motionDataAttributes}
+                    onPointerEnter={tagMotion.onPointerEnter}
+                    onPointerLeave={tagMotion.onPointerLeave}
+                    onPointerDown={tagMotion.onPointerDown}
+                    onPointerUp={tagMotion.onPointerUp}
+                    onPointerCancel={tagMotion.onPointerCancel}
                     style={{
                       ...categoryChipStyle(active),
                       borderColor: active ? accent : 'var(--overlay-border)',
                       color: active ? accent : 'var(--overlay-text-muted)',
+                      ...tagMotion.motionStyle,
                     }}
                   >
                     <Tag size={10} />
@@ -1270,6 +1354,7 @@ export function ExplorerSideRail({
               <BookmarkTreeRow
                 key={row.node.id}
                 accent={accent}
+                bindRailMotion={bindRailMotion}
                 compactTree={compactTree}
                 dense={dense}
                 viewMode={railViewMode}
@@ -1329,6 +1414,7 @@ export function ExplorerSideRail({
 
 function BookmarkTreeRow({
   accent,
+  bindRailMotion,
   compactTree,
   dense,
   viewMode,
@@ -1352,6 +1438,7 @@ function BookmarkTreeRow({
   const isDropTarget = dropTargetFolderId === row.node.id;
   const isActive = row.node.kind === 'bookmark' && isSameLocalPath(currentPath, row.node.path);
   const rowState: RailSelectableRowState = isDropTarget ? 'drop-target' : isActive ? 'active' : isFolder && isExpanded ? 'ancestor' : 'idle';
+  const rowMotion = bindRailMotion(rowState !== 'idle');
 
   return (
     <div style={{ marginTop: 4 }}>
@@ -1360,6 +1447,12 @@ function BookmarkTreeRow({
         aria-expanded={isFolder ? isExpanded : undefined}
         aria-selected={isActive}
         data-rail-row-state={rowState}
+        {...rowMotion.motionDataAttributes}
+        onPointerEnter={rowMotion.onPointerEnter}
+        onPointerLeave={rowMotion.onPointerLeave}
+        onPointerDown={rowMotion.onPointerDown}
+        onPointerUp={rowMotion.onPointerUp}
+        onPointerCancel={rowMotion.onPointerCancel}
         style={{
           ...getRailSelectableRowStyle({
             accent,
@@ -1371,6 +1464,7 @@ function BookmarkTreeRow({
           display: 'flex',
           alignItems: 'center',
           paddingLeft: (compactTree ? 6 : 8) + row.depth * treeIndentStep,
+          ...rowMotion.motionStyle,
         }}
         onDragOver={isFolder ? (event) => onDragOverFolder(event, row.node.id) : undefined}
         onDragLeave={isFolder ? onDragLeaveFolder : undefined}
@@ -1455,6 +1549,7 @@ function BookmarkTreeRow({
         <BookmarkTreeRow
           key={child.node.id}
           accent={accent}
+          bindRailMotion={bindRailMotion}
           compactTree={compactTree}
           dense={dense}
           viewMode={viewMode}
@@ -1478,6 +1573,7 @@ function BookmarkTreeRow({
 
 function LocalFolderTreeRow({
   accent,
+  bindRailMotion,
   compactTree,
   dense,
   viewMode,
@@ -1544,6 +1640,7 @@ function LocalFolderTreeRow({
         const isAncestor = !isActive && (isStrictDescendant || isExpanded);
         const rowState: RailSelectableRowState = isActive ? 'active' : (isAncestor || isExpanded ? 'ancestor' : 'idle');
         const canExpand = isExpanded || childState?.status !== 'ready' || (childState.childFolders?.length ?? 0) > 0;
+        const rowMotion = bindRailMotion(rowState !== 'idle');
 
         return (
           <div key={childPath} style={{ marginTop: 4 }}>
@@ -1552,6 +1649,12 @@ function LocalFolderTreeRow({
               aria-expanded={canExpand ? isExpanded : undefined}
               aria-selected={isActive}
               data-rail-row-state={rowState}
+              {...rowMotion.motionDataAttributes}
+              onPointerEnter={rowMotion.onPointerEnter}
+              onPointerLeave={rowMotion.onPointerLeave}
+              onPointerDown={rowMotion.onPointerDown}
+              onPointerUp={rowMotion.onPointerUp}
+              onPointerCancel={rowMotion.onPointerCancel}
               style={{
                 ...getRailSelectableRowStyle({
                   accent,
@@ -1563,6 +1666,7 @@ function LocalFolderTreeRow({
                 display: 'flex',
                 alignItems: 'center',
                 paddingLeft: (compactTree ? 6 : 8) + depth * treeIndentStep,
+                ...rowMotion.motionStyle,
               }}
             >
               {canExpand ? (
@@ -1612,6 +1716,7 @@ function LocalFolderTreeRow({
             {isExpanded && (
               <LocalFolderTreeRow
                 accent={accent}
+                bindRailMotion={bindRailMotion}
                 compactTree={compactTree}
                 dense={dense}
                 viewMode={viewMode}

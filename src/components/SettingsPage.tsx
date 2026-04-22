@@ -103,6 +103,7 @@ import {
   type LoadedLayoutManifest,
 } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
+import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import {
   iconThemeSystemConfig,
   normalizeIconThemePackageSelectionId,
@@ -443,19 +444,19 @@ function ThemeCatalogSection({
   const isOfficialSuite = sectionId === 'official-pilot';
   const sectionStyle = sectionId === 'official-pilot'
     ? {
-        borderColor: 'rgba(125,211,255,0.34)',
-        background: 'linear-gradient(180deg, rgba(16,22,34,0.94) 0%, rgba(10,14,24,0.98) 100%)',
-      }
+      borderColor: 'rgba(125,211,255,0.34)',
+      background: 'linear-gradient(180deg, rgba(16,22,34,0.94) 0%, rgba(10,14,24,0.98) 100%)',
+    }
     : sectionId === 'built-in'
       ? {
-          borderColor: 'rgba(255,255,255,0.12)',
-          background: 'rgba(255,255,255,0.03)',
-        }
+        borderColor: 'rgba(255,255,255,0.12)',
+        background: 'rgba(255,255,255,0.03)',
+      }
       : {
-          borderColor: 'rgba(148,163,184,0.18)',
-          background: 'rgba(255,255,255,0.018)',
-          opacity: 0.92,
-        };
+        borderColor: 'rgba(148,163,184,0.18)',
+        background: 'rgba(255,255,255,0.018)',
+        opacity: 0.92,
+      };
 
   const sortedThemes = [...themes].sort((left, right) => {
     const leftPackageInfo = themePackageLookup.get(left.id);
@@ -1069,6 +1070,11 @@ function getCloudProviderConfigurationSourceLabel(
 
 export function SettingsPage({
   appearance,
+  topBarPackages,
+  topBarPackagesDirectory,
+  topBarPackagesLoading,
+  topBarPackagesError,
+  topBarPackagesWarnings,
   themePackages,
   themePackagesDirectory,
   themePackagesLoading,
@@ -1079,10 +1085,12 @@ export function SettingsPage({
   iconThemePackagesLoading = false,
   iconThemePackagesError = null,
   iconThemePackagesWarnings = [],
+  onRefreshTopBars,
+  onOpenTopBarsFolder,
   onRefreshThemes,
   onOpenThemesFolder,
-  onRefreshIconThemes = async () => {},
-  onOpenIconThemesFolder = async () => {},
+  onRefreshIconThemes = async () => { },
+  onOpenIconThemesFolder = async () => { },
   shaders,
   shaderDiagnostics,
   shadersDirectory,
@@ -1110,6 +1118,11 @@ export function SettingsPage({
   pluginExplorerActions = [],
 }: {
   appearance: ResolvedOverlayAppearance;
+  topBarPackages: LoadedOverlayTopBarPackage[];
+  topBarPackagesDirectory: string;
+  topBarPackagesLoading: boolean;
+  topBarPackagesError: string | null;
+  topBarPackagesWarnings: string[];
   themePackages: LoadedOverlayThemePackage[];
   themePackagesDirectory: string;
   themePackagesLoading: boolean;
@@ -1120,6 +1133,8 @@ export function SettingsPage({
   iconThemePackagesLoading?: boolean;
   iconThemePackagesError?: string | null;
   iconThemePackagesWarnings?: string[];
+  onRefreshTopBars: () => Promise<void>;
+  onOpenTopBarsFolder: () => Promise<void>;
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
   onRefreshIconThemes?: () => Promise<void>;
@@ -1496,11 +1511,20 @@ export function SettingsPage({
     () => resolveActiveTopBarSelection({
       requestedTopBarId: settings.appearance.activeTopBarId,
       theme: appearance.baseTheme,
-      packageSources: themePackages,
+      packageSources: [...topBarPackages, ...themePackages],
     }),
-    [appearance.baseTheme, settings.appearance.activeTopBarId, themePackages],
+    [appearance.baseTheme, settings.appearance.activeTopBarId, themePackages, topBarPackages],
   );
   const availableTopBars = resolvedTopBarSelection.availableTopBars;
+  const topBarCatalogLoading = topBarPackagesLoading || themePackagesLoading;
+  const authoredTopBarCount = useMemo(
+    () => topBarPackages.reduce((total, pkg) => total + pkg.topBars.length, 0),
+    [topBarPackages],
+  );
+  const themeContributedTopBarCount = useMemo(
+    () => themePackages.reduce((total, pkg) => total + (pkg.topBars?.length ?? 0), 0),
+    [themePackages],
+  );
   const blurEnabled = settings.appearance.appBlur !== false;
   const activeWallpaperSelectionId = settings.appearance.activeWallpaperId ?? null;
   const themeWallpaperAvailable = Boolean(appAppearance.baseTheme.assets?.backgroundUrl);
@@ -1836,8 +1860,8 @@ export function SettingsPage({
       const snapshot = await listCloudAccounts();
       setCloudSnapshot(
         snapshot
-        && Array.isArray(snapshot.accounts)
-        && Array.isArray(snapshot.providers)
+          && Array.isArray(snapshot.accounts)
+          && Array.isArray(snapshot.providers)
           ? snapshot
           : EMPTY_CLOUD_ACCOUNTS_SNAPSHOT,
       );
@@ -1856,8 +1880,8 @@ export function SettingsPage({
   const safeCloudSnapshot = cloudSnapshot
     && Array.isArray(cloudSnapshot.accounts)
     && Array.isArray(cloudSnapshot.providers)
-      ? cloudSnapshot
-      : EMPTY_CLOUD_ACCOUNTS_SNAPSHOT;
+    ? cloudSnapshot
+    : EMPTY_CLOUD_ACCOUNTS_SNAPSHOT;
 
   useEffect(() => {
     const nextDrafts = createEmptyCloudProviderCredentialDrafts();
@@ -2186,6 +2210,12 @@ export function SettingsPage({
       description: 'Package theme manifests, assets, and icon sets here.',
     },
     {
+      id: 'top-bars',
+      label: 'Top Bars',
+      path: topBarPackagesDirectory,
+      description: 'Author standalone shell top-bar workflows here.',
+    },
+    {
       id: 'icon-themes',
       label: 'Icon Themes',
       path: iconThemePackagesDirectory,
@@ -2220,6 +2250,7 @@ export function SettingsPage({
     iconThemePackagesDirectory,
     settings.screenshots.saveDirectory,
     shadersDirectory,
+    topBarPackagesDirectory,
     themePackagesDirectory,
     wallpapersDirectory,
   ]);
@@ -2496,141 +2527,141 @@ export function SettingsPage({
     detail: string;
     icon: ReactNode;
   }> = [
-    {
-      key: 'overview',
-      label: 'Overview',
-      subtitle: 'Start here for the workbench map and release-facing paths.',
-      summary: `${effectiveTheme.name} · ${activeLayoutProfile.label} · ${workspaceRoots.length} workspace roots`,
-      detail: 'Orient new operators quickly: learn the panel handoff flow, jump into key settings areas, and open the authoring folders that define the release surface.',
-      icon: <Sparkles size={14} />,
-    },
-    {
-      key: 'system',
-      label: 'System',
-      subtitle: 'Startup and OS integration status.',
-      summary: [
-        settings.system.launchAtStartup ? 'Startup on' : 'Startup off',
-        systemPresentationState.trayVisible ? 'Tray on' : 'Tray off',
-        systemPresentationState.taskbarVisible ? 'Taskbar on' : 'Taskbar off',
-      ].join(' · '),
-      detail: `Handle machine-level behavior like login launch and the ${systemPresentationState.recoveryPath === 'tray' ? 'tray' : platform === 'macos' ? 'Dock' : 'taskbar'} recovery path in one place.`,
-      icon: <Settings2 size={14} />,
-    },
-    {
-      key: 'terminal',
-      label: 'Terminal',
-      subtitle: 'Shell defaults and external handoff.',
-      summary: `${settings.terminal.windowMode === 'windowed' ? 'application' : 'dock'} mode · ${settings.terminal.preferredOpenMode} · ${settings.terminal.cursorStyle} cursor`,
-      detail: 'Control the integrated terminal, its typography, and how commands hand off to external shells.',
-      icon: <TerminalSquare size={14} />,
-    },
-    {
-      key: 'explorer',
-      label: 'Explorer',
-      subtitle: 'Startup path, file visibility, layout, and thumbnail behavior.',
-      summary: `${getExplorerViewModeDefinition(settings.explorer.viewMode).label} · ${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.thumbnails.enabled ? 'Rich thumbnails' : 'Icons only'}`,
-      detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and thumbnail policy without mixing in icon-pack management.',
-      icon: <FolderOpen size={14} />,
-    },
-    {
-      key: 'layouts',
-      label: 'Layouts',
-      subtitle: 'Workbench profiles and shell chrome.',
-      summary: `${activeLayoutProfile.label} · ${layoutManifestState.manifest.profiles.length} profiles · ${settings.layout.zenFocusMode ? 'Zen on' : 'Zen off'}`,
-      detail: 'Switch between shell profiles, point at external manifests, and control the workbench shape at the layout level.',
-      icon: <LayoutGrid size={14} />,
-    },
-    {
-      key: 'hotkeys',
-      label: 'Hotkeys',
-      subtitle: 'Overlay opener and gesture bindings.',
-      summary: [settings.keybindings.terminalToggle, settings.keybindings.windowModeToggle, settings.keybindings.zenFocusModeToggle]
-        .map(formatHotkeyLabel)
-        .join(' · '),
-      detail: 'Keep the overlay easy to summon, control shell presentation, and remap the primary focus toggles without digging through raw config.',
-      icon: <SlidersHorizontal size={14} />,
-    },
-    {
-      key: 'cloud',
-      label: 'Cloud',
-      subtitle: 'OAuth-backed Google Drive and Dropbox accounts.',
-      summary: `${connectedCloudAccountCount} connected · ${configuredCloudProviderCount}/2 providers configured`,
-      detail: 'Manage provider credentials from Settings or the runtime environment, keep account tokens off the settings store, and surface each connected account as an explorer drive.',
-      icon: <HardDrive size={14} />,
-    },
-    {
-      key: 'screenshots',
-      label: 'Screenshots',
-      subtitle: 'Capture defaults, save path, and proof-focused editor behavior.',
-      summary: `${settings.screenshots.defaultCaptureMode === 'monitor' ? 'Full monitor default' : 'Area snip default'} · ${formatScreenshotOutputActionLabel(settings.screenshots.defaultOutputAction)} · ${settings.screenshots.showGrid ? 'Grid on' : 'Grid off'}`,
-      detail: 'Set the default screenshot landing path and decide how the built-in capture tool behaves before and after a proof action.',
-      icon: <Camera size={14} />,
-    },
-    {
-      key: 'audio',
-      label: 'Audio',
-      subtitle: 'Audio pathing and VST3 integration.',
-      summary: `${settings.audio.vst3AdditionalFolders.length} user folders`,
-      detail: 'Configure scan paths for audio integrations and DAW-like plugin discovery.',
-      icon: <Music size={14} />,
-    },
-    {
-      key: 'appearance',
-      label: 'Appearance',
-      subtitle: 'Theme, opacity, panel transparency, blur, and zoom.',
-      summary: `${effectiveTheme.name} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
-      detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, UI typography, and the theme package catalog that can now contribute separate top bars.',
-      icon: <Palette size={14} />,
-    },
-    {
-      key: 'top-bars',
-      label: 'Top Bars',
-      subtitle: 'Standalone shell chrome workflows that can follow the active theme or stay pinned independently.',
-      summary: `${topBarSelectionSummary} · ${availableTopBars.length} variants`,
-      detail: 'Mix and match top-bar workflows independently from the active theme. Theme packages can still publish their own top bars, but users do not need to swap whole themes just to change shell chrome.',
-      icon: <SlidersHorizontal size={14} />,
-    },
-    {
-      key: 'icons',
-      label: 'Icons',
-      subtitle: 'VS Code-style icon packs for explorer files, folders, and shell chrome.',
-      summary: iconThemeSelectionSummary,
-      detail: 'Choose a dedicated icon theme independently from the active shell theme, keep folder rules in one place, and decide when OS-native icons should still fill gaps.',
-      icon: <Image size={14} />,
-    },
-    {
-      key: 'wallpapers',
-      label: 'Wallpapers',
-      subtitle: 'Theme-backed wallpapers plus custom image, video, and live backgrounds.',
-      summary: `${availableWallpapers.length} catalog items${themeWallpaperAvailable ? ' · theme default available' : ''}${wallpaperFailures.length > 0 ? ` · ${wallpaperFailures.length} errors` : ''}`,
-      detail: 'Wallpapers stay in the theme system, can be overridden per user, and still render underneath shader and visual layers instead of replacing them.',
-      icon: <MonitorPlay size={14} />,
-    },
-    {
-      key: 'shaders',
-      label: 'Shaders',
-      subtitle: 'Shell-wide shader profiles for background, chrome, and rails.',
-      summary: `${availableShaders.length} profiles · ${shaderPerformanceProfile.label}${shaderFailures.length > 0 ? ` · ${shaderFailures.length} errors` : ''}`,
-      detail: `Default mode is ${shaderPerformanceProfile.label.toLowerCase()}, which keeps automatic theme shaders off until you explicitly choose a profile and keeps the live preview budgeted.`,
-      icon: <Sparkles size={14} />,
-    },
-    {
-      key: 'animations',
-      label: 'Animations',
-      subtitle: 'Open and close motion modules.',
-      summary: `${availableAnimations.length} modules${animationFailures.length > 0 ? ` · ${animationFailures.length} errors` : ''}`,
-      detail: 'Browse built-in and authored animation modules, assign the live open/close bindings, and manage the animation authoring folder.',
-      icon: <RotateCcw size={14} />,
-    },
-    {
-      key: 'theme-json',
-      label: 'Theme JSON',
-      subtitle: 'Raw theme authoring and import.',
-      summary: 'Direct JSON editing',
-      detail: 'Paste, tweak, and version full theme definitions directly when the recipe controls and token pickers are not enough.',
-      icon: <Type size={14} />,
-    },
-  ];
+      {
+        key: 'overview',
+        label: 'Overview',
+        subtitle: 'Start here for the workbench map and release-facing paths.',
+        summary: `${effectiveTheme.name} · ${activeLayoutProfile.label} · ${workspaceRoots.length} workspace roots`,
+        detail: 'Orient new operators quickly: learn the panel handoff flow, jump into key settings areas, and open the authoring folders that define the release surface.',
+        icon: <Sparkles size={14} />,
+      },
+      {
+        key: 'system',
+        label: 'System',
+        subtitle: 'Startup and OS integration status.',
+        summary: [
+          settings.system.launchAtStartup ? 'Startup on' : 'Startup off',
+          systemPresentationState.trayVisible ? 'Tray on' : 'Tray off',
+          systemPresentationState.taskbarVisible ? 'Taskbar on' : 'Taskbar off',
+        ].join(' · '),
+        detail: `Handle machine-level behavior like login launch and the ${systemPresentationState.recoveryPath === 'tray' ? 'tray' : platform === 'macos' ? 'Dock' : 'taskbar'} recovery path in one place.`,
+        icon: <Settings2 size={14} />,
+      },
+      {
+        key: 'terminal',
+        label: 'Terminal',
+        subtitle: 'Shell defaults and external handoff.',
+        summary: `${settings.terminal.windowMode === 'windowed' ? 'application' : 'dock'} mode · ${settings.terminal.preferredOpenMode} · ${settings.terminal.cursorStyle} cursor`,
+        detail: 'Control the integrated terminal, its typography, and how commands hand off to external shells.',
+        icon: <TerminalSquare size={14} />,
+      },
+      {
+        key: 'explorer',
+        label: 'Explorer',
+        subtitle: 'Startup path, file visibility, layout, and thumbnail behavior.',
+        summary: `${getExplorerViewModeDefinition(settings.explorer.viewMode).label} · ${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.thumbnails.enabled ? 'Rich thumbnails' : 'Icons only'}`,
+        detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and thumbnail policy without mixing in icon-pack management.',
+        icon: <FolderOpen size={14} />,
+      },
+      {
+        key: 'layouts',
+        label: 'Layouts',
+        subtitle: 'Workbench profiles and shell chrome.',
+        summary: `${activeLayoutProfile.label} · ${layoutManifestState.manifest.profiles.length} profiles · ${settings.layout.zenFocusMode ? 'Zen on' : 'Zen off'}`,
+        detail: 'Switch between shell profiles, point at external manifests, and control the workbench shape at the layout level.',
+        icon: <LayoutGrid size={14} />,
+      },
+      {
+        key: 'hotkeys',
+        label: 'Hotkeys',
+        subtitle: 'Overlay opener and gesture bindings.',
+        summary: [settings.keybindings.terminalToggle, settings.keybindings.windowModeToggle, settings.keybindings.zenFocusModeToggle]
+          .map(formatHotkeyLabel)
+          .join(' · '),
+        detail: 'Keep the overlay easy to summon, control shell presentation, and remap the primary focus toggles without digging through raw config.',
+        icon: <SlidersHorizontal size={14} />,
+      },
+      {
+        key: 'cloud',
+        label: 'Cloud',
+        subtitle: 'OAuth-backed Google Drive and Dropbox accounts.',
+        summary: `${connectedCloudAccountCount} connected · ${configuredCloudProviderCount}/2 providers configured`,
+        detail: 'Manage provider credentials from Settings or the runtime environment, keep account tokens off the settings store, and surface each connected account as an explorer drive.',
+        icon: <HardDrive size={14} />,
+      },
+      {
+        key: 'screenshots',
+        label: 'Screenshots',
+        subtitle: 'Capture defaults, save path, and proof-focused editor behavior.',
+        summary: `${settings.screenshots.defaultCaptureMode === 'monitor' ? 'Full monitor default' : 'Area snip default'} · ${formatScreenshotOutputActionLabel(settings.screenshots.defaultOutputAction)} · ${settings.screenshots.showGrid ? 'Grid on' : 'Grid off'}`,
+        detail: 'Set the default screenshot landing path and decide how the built-in capture tool behaves before and after a proof action.',
+        icon: <Camera size={14} />,
+      },
+      {
+        key: 'audio',
+        label: 'Audio',
+        subtitle: 'Audio pathing and VST3 integration.',
+        summary: `${settings.audio.vst3AdditionalFolders.length} user folders`,
+        detail: 'Configure scan paths for audio integrations and DAW-like plugin discovery.',
+        icon: <Music size={14} />,
+      },
+      {
+        key: 'appearance',
+        label: 'Appearance',
+        subtitle: 'Theme, opacity, panel transparency, blur, and zoom.',
+        summary: `${effectiveTheme.name} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
+        detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, UI typography, and the theme package catalog that can now contribute separate top bars.',
+        icon: <Palette size={14} />,
+      },
+      {
+        key: 'top-bars',
+        label: 'Top Bar',
+        subtitle: 'Standalone shell chrome workflows that can follow the active theme or stay pinned independently.',
+        summary: `${topBarSelectionSummary} · ${availableTopBars.length} variants`,
+        detail: 'Mix and match top-bar workflows independently from the active theme. Theme packages can still publish their own top bars, but users do not need to swap whole themes just to change shell chrome.',
+        icon: <SlidersHorizontal size={14} />,
+      },
+      {
+        key: 'icons',
+        label: 'Icons',
+        subtitle: 'VS Code-style icon packs for explorer files, folders, and shell chrome.',
+        summary: iconThemeSelectionSummary,
+        detail: 'Choose a dedicated icon theme independently from the active shell theme, keep folder rules in one place, and decide when OS-native icons should still fill gaps.',
+        icon: <Image size={14} />,
+      },
+      {
+        key: 'wallpapers',
+        label: 'Wallpapers',
+        subtitle: 'Theme-backed wallpapers plus custom image, video, and live backgrounds.',
+        summary: `${availableWallpapers.length} catalog items${themeWallpaperAvailable ? ' · theme default available' : ''}${wallpaperFailures.length > 0 ? ` · ${wallpaperFailures.length} errors` : ''}`,
+        detail: 'Wallpapers stay in the theme system, can be overridden per user, and still render underneath shader and visual layers instead of replacing them.',
+        icon: <MonitorPlay size={14} />,
+      },
+      {
+        key: 'shaders',
+        label: 'Shaders',
+        subtitle: 'Shell-wide shader profiles for background, chrome, and rails.',
+        summary: `${availableShaders.length} profiles · ${shaderPerformanceProfile.label}${shaderFailures.length > 0 ? ` · ${shaderFailures.length} errors` : ''}`,
+        detail: `Default mode is ${shaderPerformanceProfile.label.toLowerCase()}, which keeps automatic theme shaders off until you explicitly choose a profile and keeps the live preview budgeted.`,
+        icon: <Sparkles size={14} />,
+      },
+      {
+        key: 'animations',
+        label: 'Animations',
+        subtitle: 'Open and close motion modules.',
+        summary: `${availableAnimations.length} modules${animationFailures.length > 0 ? ` · ${animationFailures.length} errors` : ''}`,
+        detail: 'Browse built-in and authored animation modules, assign the live open/close bindings, and manage the animation authoring folder.',
+        icon: <RotateCcw size={14} />,
+      },
+      {
+        key: 'theme-json',
+        label: 'Theme JSON',
+        subtitle: 'Raw theme authoring and import.',
+        summary: 'Direct JSON editing',
+        detail: 'Paste, tweak, and version full theme definitions directly when the recipe controls and token pickers are not enough.',
+        icon: <Type size={14} />,
+      },
+    ];
   const activeSectionMeta = settingsSections.find(section => section.key === activeSection) ?? settingsSections[0];
 
   return (
@@ -2953,165 +2984,165 @@ export function SettingsPage({
                     />
                   </div>
 
-              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Dock Theme Mode</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Keep dock mode on the application theme, or pin dock mode to a completely different theme while still honoring dock-specific recipe overrides.
-                    </p>
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Dock Theme Mode</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Keep dock mode on the application theme, or pin dock mode to a completely different theme while still honoring dock-specific recipe overrides.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {[
+                          {
+                            value: 'follow-app',
+                            label: 'Follow Application',
+                            description: 'Dock uses the app theme plus any dock-specific recipes declared by that theme.',
+                          },
+                          {
+                            value: 'override',
+                            label: 'Override Theme',
+                            description: 'Dock uses its own separately selected theme.',
+                          },
+                        ].map(option => {
+                          const active = settings.appearance.dockThemeMode === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => updateAppearance({ dockThemeMode: option.value as 'follow-app' | 'override' })}
+                              className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                              style={{
+                                border: `1px solid ${active ? accent : border}`,
+                                background: active ? `${accent}18` : 'rgba(255,255,255,0.04)',
+                                color: text,
+                              }}
+                              title={option.description}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        Dock Source: {settings.appearance.dockThemeMode === 'override' ? 'Override Theme' : 'Application Theme'}
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        Current Dock Theme: {dockAppearance.baseTheme.name}
+                      </span>
+                    </div>
+                    {settings.appearance.dockThemeMode === 'follow-app' ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}33`, background: `${accent}10`, color: text }}>
+                        Dock mode is following <strong>{appAppearance.baseTheme.name}</strong>. If that theme declares `theme.dock.workbench` or `theme.dock.explorer`, those dock-specific recipes are applied automatically.
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {[
-                      {
-                        value: 'follow-app',
-                        label: 'Follow Application',
-                        description: 'Dock uses the app theme plus any dock-specific recipes declared by that theme.',
-                      },
-                      {
-                        value: 'override',
-                        label: 'Override Theme',
-                        description: 'Dock uses its own separately selected theme.',
-                      },
-                    ].map(option => {
-                      const active = settings.appearance.dockThemeMode === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => updateAppearance({ dockThemeMode: option.value as 'follow-app' | 'override' })}
-                          className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                          style={{
-                            border: `1px solid ${active ? accent : border}`,
-                            background: active ? `${accent}18` : 'rgba(255,255,255,0.04)',
-                            color: text,
-                          }}
-                          title={option.description}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
+
+                  {settings.appearance.dockThemeMode === 'override' && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Curated Dock Theme Suite</label>
+                      <ThemeCatalogGrid
+                        themes={appearance.themes}
+                        activeThemeId={settings.appearance.activeDockThemeId}
+                        onSelect={applyDockThemeSelection}
+                        themePackageLookup={themePackageLookup}
+                        createThemeCardMotion={bindSettingsCardMotion}
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                      <Type size={10} />
+                      UI Font
+                    </label>
+                    <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
+                      {overlayFontCatalog.map(font => {
+                        const active = settings.appearance.uiFontFamily === font.family;
+                        return (
+                          <button
+                            key={font.id}
+                            onClick={() => updateAppearance({ uiFontFamily: font.family })}
+                            className="w-full rounded px-3 py-2 text-left text-[11px] transition-colors hover:bg-white/5"
+                            style={{
+                              fontFamily: font.family,
+                              background: active ? `${accent}18` : 'transparent',
+                              border: `1px solid ${active ? accent : 'rgba(255,255,255,0.08)'}`,
+                              color: active ? text : muted,
+                            }}
+                          >
+                            {font.name}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                  <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    Dock Source: {settings.appearance.dockThemeMode === 'override' ? 'Override Theme' : 'Application Theme'}
-                  </span>
-                  <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
-                    Current Dock Theme: {dockAppearance.baseTheme.name}
-                  </span>
-                </div>
-                {settings.appearance.dockThemeMode === 'follow-app' ? (
-                  <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}33`, background: `${accent}10`, color: text }}>
-                    Dock mode is following <strong>{appAppearance.baseTheme.name}</strong>. If that theme declares `theme.dock.workbench` or `theme.dock.explorer`, those dock-specific recipes are applied automatically.
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <ColorToken label="Accent" value={editableTheme.palette.accent} onChange={value => updateThemePalette({ accent: value, accentSoft: `${value}22` })} />
+                    <ColorToken label="App Background" value={editableTheme.palette.appBackground} onChange={value => updateThemePalette({ appBackground: value, shellBackgroundSolid: value })} />
+                    <ColorToken label="Panel" value={editableTheme.palette.panelBackground} onChange={value => updateThemePalette({ panelBackground: value, sidebarBackground: value })} />
+                    <ColorToken label="Text" value={editableTheme.palette.textPrimary} onChange={value => updateThemePalette({ textPrimary: value })} />
                   </div>
-                ) : null}
-              </div>
 
-              {settings.appearance.dockThemeMode === 'override' && (
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Curated Dock Theme Suite</label>
-                  <ThemeCatalogGrid
-                    themes={appearance.themes}
-                    activeThemeId={settings.appearance.activeDockThemeId}
-                    onSelect={applyDockThemeSelection}
-                    themePackageLookup={themePackageLookup}
-                    createThemeCardMotion={bindSettingsCardMotion}
-                  />
+                  <div className="grid grid-cols-1 gap-2 xl:grid-cols-4">
+                    <RangeField
+                      label="Window Opacity"
+                      description="How translucent the overlay surface should feel."
+                      min={overlayVisualControls.opacity.min}
+                      max={overlayVisualControls.opacity.max}
+                      step={overlayVisualControls.opacity.step}
+                      value={settings.appearance.appOpacity}
+                      valueLabel={formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)}
+                      onChange={value => updateAppearance({ appOpacity: clampOverlayVisualControlValue('opacity', value) })}
+                    />
+                    <RangeField
+                      label="Panel Transparency"
+                      description="Fade panel chrome away while keeping the actual panel content readable."
+                      min={overlayVisualControls.panelTransparency.min}
+                      max={overlayVisualControls.panelTransparency.max}
+                      step={overlayVisualControls.panelTransparency.step}
+                      value={settings.appearance.panelTransparency}
+                      valueLabel={formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)}
+                      onChange={value => updateAppearance({ panelTransparency: clampOverlayVisualControlValue('panelTransparency', value) })}
+                    />
+                    <RangeField
+                      label="Blur Strength"
+                      description="Scale the glass softness separately from overall opacity so fully opaque shells can still feel frosted."
+                      min={overlayVisualControls.blurStrength.min}
+                      max={overlayVisualControls.blurStrength.max}
+                      step={overlayVisualControls.blurStrength.step}
+                      value={settings.appearance.appBlurStrength}
+                      valueLabel={formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)}
+                      onChange={value => updateAppearance({ appBlurStrength: clampOverlayVisualControlValue('blurStrength', value) })}
+                    />
+                    <RangeField
+                      label="Window Zoom"
+                      description="Scale the full overlay shell without changing monitor placement."
+                      min={overlayVisualControls.zoom.min}
+                      max={overlayVisualControls.zoom.max}
+                      step={overlayVisualControls.zoom.step}
+                      value={settings.appearance.appZoom}
+                      valueLabel={formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)}
+                      onChange={value => updateAppearance({ appZoom: clampOverlayVisualControlValue('zoom', value) })}
+                    />
+                  </div>
+
+                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                    <div>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Native Glass Blur</div>
+                      <p className="mt-1 text-[11px] opacity-40">Use compositor-backed window blur when the platform supports it, then tune the glass amount with Blur Strength.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.appearance.appBlur}
+                      onChange={event => updateAppearance({ appBlur: event.target.checked })}
+                    />
+                  </label>
                 </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
-                  <Type size={10} />
-                  UI Font
-                </label>
-                <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
-                  {overlayFontCatalog.map(font => {
-                    const active = settings.appearance.uiFontFamily === font.family;
-                    return (
-                      <button
-                        key={font.id}
-                        onClick={() => updateAppearance({ uiFontFamily: font.family })}
-                        className="w-full rounded px-3 py-2 text-left text-[11px] transition-colors hover:bg-white/5"
-                        style={{
-                          fontFamily: font.family,
-                          background: active ? `${accent}18` : 'transparent',
-                          border: `1px solid ${active ? accent : 'rgba(255,255,255,0.08)'}`,
-                          color: active ? text : muted,
-                        }}
-                      >
-                        {font.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <ColorToken label="Accent" value={editableTheme.palette.accent} onChange={value => updateThemePalette({ accent: value, accentSoft: `${value}22` })} />
-                <ColorToken label="App Background" value={editableTheme.palette.appBackground} onChange={value => updateThemePalette({ appBackground: value, shellBackgroundSolid: value })} />
-                <ColorToken label="Panel" value={editableTheme.palette.panelBackground} onChange={value => updateThemePalette({ panelBackground: value, sidebarBackground: value })} />
-                <ColorToken label="Text" value={editableTheme.palette.textPrimary} onChange={value => updateThemePalette({ textPrimary: value })} />
-              </div>
-
-              <div className="grid grid-cols-1 gap-2 xl:grid-cols-4">
-                <RangeField
-                  label="Window Opacity"
-                  description="How translucent the overlay surface should feel."
-                  min={overlayVisualControls.opacity.min}
-                  max={overlayVisualControls.opacity.max}
-                  step={overlayVisualControls.opacity.step}
-                  value={settings.appearance.appOpacity}
-                  valueLabel={formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)}
-                  onChange={value => updateAppearance({ appOpacity: clampOverlayVisualControlValue('opacity', value) })}
-                />
-                <RangeField
-                  label="Panel Transparency"
-                  description="Fade panel chrome away while keeping the actual panel content readable."
-                  min={overlayVisualControls.panelTransparency.min}
-                  max={overlayVisualControls.panelTransparency.max}
-                  step={overlayVisualControls.panelTransparency.step}
-                  value={settings.appearance.panelTransparency}
-                  valueLabel={formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)}
-                  onChange={value => updateAppearance({ panelTransparency: clampOverlayVisualControlValue('panelTransparency', value) })}
-                />
-                <RangeField
-                  label="Blur Strength"
-                  description="Scale the glass softness separately from overall opacity so fully opaque shells can still feel frosted."
-                  min={overlayVisualControls.blurStrength.min}
-                  max={overlayVisualControls.blurStrength.max}
-                  step={overlayVisualControls.blurStrength.step}
-                  value={settings.appearance.appBlurStrength}
-                  valueLabel={formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)}
-                  onChange={value => updateAppearance({ appBlurStrength: clampOverlayVisualControlValue('blurStrength', value) })}
-                />
-                <RangeField
-                  label="Window Zoom"
-                  description="Scale the full overlay shell without changing monitor placement."
-                  min={overlayVisualControls.zoom.min}
-                  max={overlayVisualControls.zoom.max}
-                  step={overlayVisualControls.zoom.step}
-                  value={settings.appearance.appZoom}
-                  valueLabel={formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)}
-                  onChange={value => updateAppearance({ appZoom: clampOverlayVisualControlValue('zoom', value) })}
-                />
-              </div>
-
-              <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
-                <div>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Native Glass Blur</div>
-                  <p className="mt-1 text-[11px] opacity-40">Use compositor-backed window blur when the platform supports it, then tune the glass amount with Blur Strength.</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.appearance.appBlur}
-                  onChange={event => updateAppearance({ appBlur: event.target.checked })}
-                />
-              </label>
-            </div>
-          </section>
+              </section>
             )}
 
             {activeSection === 'top-bars' && (
@@ -3922,633 +3953,47 @@ export function SettingsPage({
 
             {activeSection === 'shaders' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-            <SectionTitle
-              icon={<Sparkles size={12} />}
-              title="Shaders"
-              subtitle="Dedicated shell shader profiles with a separate authoring/runtime path from motion."
-            />
+                <SectionTitle
+                  icon={<Sparkles size={12} />}
+                  title="Shaders"
+                  subtitle="Dedicated shell shader profiles with a separate authoring/runtime path from motion."
+                />
 
-            <div className="mt-4 space-y-4">
-              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Catalog</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Shader authoring lives in its own catalog now. Use this page to browse built-ins plus folder-authored profiles, inspect load failures, and choose whether the shell stays in performance mode, follows the theme default, or uses a user override.
-                    </p>
-                  </div>
-                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    Shader
-                  </span>
-                </div>
-
-                <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Performance Mode</div>
-                      <p className="mt-1 text-[11px] opacity-40">
-                        Performance is the default. Balanced restores theme shader defaults with a capped preview budget. Quality spends more on the preview host when you want fidelity over throughput.
-                      </p>
-                    </div>
-                    <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: accent, background: `${accent}14`, color: accent }}>
-                      {shaderPerformanceProfile.label}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
-                    {shaderPerformanceProfiles.map(profile => {
-                      const active = profile.id === shaderPerformanceMode;
-                      return (
-                        <button
-                          key={profile.id}
-                          type="button"
-                          onClick={() => updateAppearance({ shaderPerformanceMode: profile.id })}
-                          className="rounded px-3 py-2 text-left transition-colors"
-                          style={{
-                            border: `1px solid ${active ? accent : border}`,
-                            background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                            color: text,
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-semibold">{profile.label}</span>
-                            {active ? (
-                              <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: accent }}>
-                                Active
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 text-[11px] opacity-45">{profile.description}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px]">
-                  <div className="opacity-45">
-                    {availableShaders.length} ready profiles
-                    {shaderFailures.length > 0 ? ` · ${shaderFailures.length} failed loads` : ''}
-                    {shadersLoading ? ' · refreshing…' : ''}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => void onRefreshShaders()}
-                      className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
-                      style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
-                    >
-                      <RefreshCw size={12} />
-                      Refresh Shaders
-                    </button>
-                    <button
-                      onClick={() => void onOpenShadersFolder()}
-                      className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
-                      style={{ borderColor: accent, background: `${accent}16`, color: text }}
-                    >
-                      <FolderOpen size={12} />
-                      Open Folder
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Authoring Folder</div>
-                  <div className="mt-1 break-all opacity-55">{shadersDirectory}</div>
-                  {shadersError && (
-                    <div className="mt-2 rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}>
-                      {shadersError}
-                    </div>
-                  )}
-                </div>
-
-                {shaderFailures.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {shaderFailures.map(shader => (
-                      <div
-                        key={`shader-error-${shader.filePath}`}
-                        className="rounded border px-3 py-2"
-                        style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-[11px] font-semibold">{shader.name}</div>
-                          <span className="text-[9px] uppercase tracking-[0.12em] opacity-55">Load Error</span>
-                        </div>
-                        <div className="mt-1 break-all text-[10px] opacity-55">{shader.filePath}</div>
-                        <pre className="mt-2 whitespace-pre-wrap text-[10px] leading-4 opacity-80">{shader.error}</pre>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Live Assignment</div>
-                      <p className="mt-1 text-[11px] opacity-40">
-                        A user override wins over the active theme. Clearing the override hands control back to the theme default when performance mode allows it, and unresolved IDs collapse safely to <code>none</code>.
-                      </p>
-                    </div>
-                    <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: accent, background: `${accent}14`, color: accent }}>
-                      {shaderSelectionSummary}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-1 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => updateAppearance({ activeShaderId: null, shaderPerformanceMode: 'balanced' })}
-                      className="rounded px-3 py-2 text-left transition-colors"
-                      aria-pressed={settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId)}
-                      style={{
-                        border: `1px solid ${settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId) ? accent : border}`,
-                        background: settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId) ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                        color: text,
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold">Follow Theme Default</span>
-                        <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId) ? accent : muted }}>
-                          {editableTheme.defaultShaderId ?? 'none'}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[11px] opacity-45">
-                        {editableTheme.defaultShaderId
-                          ? `Active theme ${editableTheme.name} defaults to ${editableTheme.defaultShaderId}.`
-                          : `Active theme ${editableTheme.name} does not define a shader, so the shell falls back to none.`
-                        }{!shaderPerformanceProfile.shellUsesThemeDefault ? ' Performance mode keeps the theme default suspended until you switch to Balanced or Quality.' : ''}
-                      </p>
-                    </button>
-
-                    {availableShaders.map(shader => {
-                      const overrideActive = settings.appearance.activeShaderId === shader.id;
-                      const effectiveActive = effectiveShaderId === shader.id;
-                      const surfaceSummary = getShaderEnabledSurfaceIds(shader)
-                        .map(surface => getOverlayShaderSurfaceLabel(surface))
-                        .join(' · ');
-                      return (
-                        <button
-                          key={`shader-${shader.id}`}
-                          type="button"
-                          onClick={() => updateAppearance({ activeShaderId: shader.id })}
-                          className="rounded px-3 py-2 text-left transition-colors"
-                          style={{
-                            border: `1px solid ${overrideActive ? accent : border}`,
-                            background: overrideActive ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                            color: text,
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-semibold">{shader.name}</span>
-                            <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: overrideActive ? accent : muted }}>
-                              {shader.group}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-[11px] opacity-45">{shader.description ?? 'Shell shader profile.'}</p>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[9px] uppercase tracking-[0.12em] opacity-55">
-                            <span>{surfaceSummary || 'No Surfaces'}</span>
-                            {shader.controls.length > 0 && <span>{shader.controls.length} Controls</span>}
-                            {effectiveActive && <span style={{ color: accent }}>Live</span>}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Effective Shader</div>
-                    <div className="mt-2 flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-[12px] font-semibold">{effectiveShader?.name ?? 'None'}</div>
-                        <p className="mt-1 text-[11px] opacity-45">
-                          {effectiveShader?.description ?? 'No shader surfaces are currently active.'}
-                        </p>
-                      </div>
-                      <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ borderColor: border, color: muted }}>
-                        {effectiveShader?.id ?? 'none'}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2 text-[9px] uppercase tracking-[0.12em]">
-                      {(effectiveShader?.tags ?? []).map(tag => (
-                        <span key={`shader-tag-${tag}`} className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: muted }}>
-                          {tag}
-                        </span>
-                      ))}
-                      {(effectiveShader?.tags ?? []).length === 0 && (
-                        <span className="opacity-45">No metadata tags</span>
-                      )}
-                    </div>
-                  </div>
-
+                <div className="mt-4 space-y-4">
                   <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Controls</div>
-                        <p className="mt-1 text-[11px] opacity-45">
-                          Shaders can expose their own live tweak set. Overrides are stored per shader, so changing profiles does not wipe a tuned setup for another one.
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Catalog</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Shader authoring lives in its own catalog now. Use this page to browse built-ins plus folder-authored profiles, inspect load failures, and choose whether the shell stays in performance mode, follows the theme default, or uses a user override.
                         </p>
                       </div>
-                      {effectiveShader && effectiveShader.controls.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const nextShaderControlValues = { ...settings.appearance.shaderControlValues };
-                            delete nextShaderControlValues[effectiveShader.id];
-                            updateAppearance({ shaderControlValues: nextShaderControlValues });
-                          }}
-                          className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                          style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}
-                        >
-                          Reset Shader
-                        </button>
-                      )}
+                      <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        Shader
+                      </span>
                     </div>
 
-                    {effectiveShader && effectiveShader.controls.length > 0 ? (
-                      <div className="mt-3 space-y-2">
-                        {effectiveShader.controls.map(control => (
-                          <RangeField
-                            key={`shader-control-${effectiveShader.id}-${control.id}`}
-                            label={control.label}
-                            description={control.description ?? `Live ${effectiveShader.name} control.`}
-                            min={control.min}
-                            max={control.max}
-                            step={control.step}
-                            value={effectiveShaderControlValues[control.id] ?? control.defaultValue ?? control.min}
-                            valueLabel={formatShaderControlValue(
-                              control,
-                              effectiveShaderControlValues[control.id] ?? control.defaultValue ?? control.min,
-                            )}
-                            onChange={value => setShaderControlValue(effectiveShader, control, value)}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mt-3 rounded border px-3 py-2 text-[11px] opacity-55" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                        {effectiveShader
-                          ? `${effectiveShader.name} does not expose live controls yet. Add a \`controls\` array in the shader module to surface tweakable sliders here.`
-                          : 'No shader is currently active, so there are no live controls to show.'}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Surface Coverage</div>
-                    <div className="mt-3 grid grid-cols-1 gap-2">
-                      {(['background', 'topBar', 'border'] as const).map(surface => {
-                        const enabled = enabledShaderSurfaces.includes(surface);
-                        return (
-                          <div
-                            key={`shader-surface-${surface}`}
-                            className="rounded border px-3 py-2"
-                            style={{
-                              borderColor: enabled ? `${accent}55` : border,
-                              background: enabled ? `${accent}12` : 'rgba(255,255,255,0.03)',
-                              color: text,
-                            }}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-semibold">{getOverlayShaderSurfaceLabel(surface)}</span>
-                              <span className="text-[9px] uppercase tracking-[0.12em]" style={{ color: enabled ? accent : muted }}>
-                                {enabled ? 'Enabled' : 'Off'}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-[11px] opacity-45">
-                              {enabled
-                                ? `${effectiveShader?.name ?? 'Current shader'} actively renders this shell surface.`
-                                : `${effectiveShader?.name ?? 'Current shader'} does not supply a renderer for this surface.`}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-            )}
-
-            {activeSection === 'animations' && (
-              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-            <SectionTitle
-              icon={<RotateCcw size={12} />}
-              title="Animations"
-              subtitle="Shell transitions and shell-wide interaction motion live together here, but they stay on separate runtime lanes."
-            />
-
-            <div className="mt-4 space-y-4">
-              <div
-                className="rounded border p-3"
-                {...shellTransitionMotionCard.motionDataAttributes}
-                onPointerEnter={shellTransitionMotionCard.onPointerEnter}
-                onPointerLeave={shellTransitionMotionCard.onPointerLeave}
-                onPointerDown={shellTransitionMotionCard.onPointerDown}
-                onPointerUp={shellTransitionMotionCard.onPointerUp}
-                onPointerCancel={shellTransitionMotionCard.onPointerCancel}
-                style={{
-                  borderColor: border,
-                  background: 'rgba(255,255,255,0.025)',
-                  ...shellTransitionMotionCard.motionStyle,
-                }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shell Transitions</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Keep window open and close choreography separate from interaction motion. Browse authored modules here, assign live bindings, and manage the animation folder without crowding the rest of Appearance.
-                    </p>
-                  </div>
-                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    Transition Lane
-                  </span>
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px]">
-                  <div className="opacity-45">
-                    {availableAnimations.length} ready modules
-                    {animationFailures.length > 0 ? ` · ${animationFailures.length} failed loads` : ''}
-                    {animationsLoading ? ' · refreshing…' : ''}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => void onRefreshAnimations()}
-                      className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
-                      style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
-                    >
-                      <RefreshCw size={12} />
-                      Refresh Motion
-                    </button>
-                    <button
-                      onClick={() => void onOpenAnimationsFolder()}
-                      className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
-                      style={{ borderColor: accent, background: `${accent}16`, color: text }}
-                    >
-                      <FolderOpen size={12} />
-                      Open Folder
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Authoring Folder</div>
-                  <div className="mt-1 break-all opacity-55">{animationsDirectory}</div>
-                  {animationsError && (
-                    <div className="mt-2 rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}>
-                      {animationsError}
-                    </div>
-                  )}
-                </div>
-
-                {animationFailures.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {animationFailures.map(animation => (
-                      <div
-                        key={`animation-error-${animation.filePath}`}
-                        className="rounded border px-3 py-2"
-                        style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-[11px] font-semibold">{animation.name}</div>
-                          <span className="text-[9px] uppercase tracking-[0.12em] opacity-55">Load Error</span>
-                        </div>
-                        <div className="mt-1 break-all text-[10px] opacity-55">{animation.filePath}</div>
-                        <pre className="mt-2 whitespace-pre-wrap text-[10px] leading-4 opacity-80">{animation.error}</pre>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Open Motion</label>
-                    <div className="grid grid-cols-1 gap-2">
-                      <button
-                        onClick={() => updateAppearance({ appOpenAnimation: null })}
-                        className="rounded px-3 py-2 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${settings.appearance.appOpenAnimation == null ? accent : border}`,
-                          background: settings.appearance.appOpenAnimation == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                          color: text,
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-semibold">Follow Theme Default</span>
-                          <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.appOpenAnimation == null ? accent : muted }}>
-                            {effectiveOpenAnimationId}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] opacity-45">
-                          {editableTheme.defaultOpenAnimationId
-                            ? `Active theme ${editableTheme.name} defaults open motion to ${editableTheme.defaultOpenAnimationId}.`
-                            : `Active theme ${editableTheme.name} does not define open motion, so GreebleFS falls back to ${animationSystemConfig.defaultOpenAnimationId}.`}
-                        </p>
-                      </button>
-                      {openAnimationOptions.map(animation => {
-                        const active = settings.appearance.appOpenAnimation === animation.id;
-                        return (
-                          <button
-                            key={`open-${animation.id}`}
-                            onClick={() => updateAppearance({ appOpenAnimation: animation.id })}
-                            className="rounded px-3 py-2 text-left transition-colors"
-                            style={{
-                              border: `1px solid ${active ? accent : border}`,
-                              background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                              color: text,
-                            }}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-semibold">{animation.name}</span>
-                              <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: active ? accent : muted }}>
-                                {animation.group}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-[11px] opacity-45">{animation.description ?? 'Authored window opening motion module.'}</p>
-                          </button>
-                        );
-                      })}
-                      {openAnimationOptions.length === 0 && (
-                        <div className="rounded border px-3 py-2 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                          No open-capable motion modules loaded yet.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Close Motion</label>
-                    <div className="grid grid-cols-1 gap-2">
-                      <button
-                        onClick={() => updateAppearance({ appCloseAnimation: null })}
-                        className="rounded px-3 py-2 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${settings.appearance.appCloseAnimation == null ? accent : border}`,
-                          background: settings.appearance.appCloseAnimation == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                          color: text,
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-semibold">Follow Theme Default</span>
-                          <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.appCloseAnimation == null ? accent : muted }}>
-                            {effectiveCloseAnimationId}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] opacity-45">
-                          {editableTheme.defaultCloseAnimationId
-                            ? `Active theme ${editableTheme.name} defaults close motion to ${editableTheme.defaultCloseAnimationId}.`
-                            : `Active theme ${editableTheme.name} does not define close motion, so GreebleFS falls back to ${animationSystemConfig.defaultCloseAnimationId}.`}
-                        </p>
-                      </button>
-                      {closeAnimationOptions.map(animation => {
-                        const active = settings.appearance.appCloseAnimation === animation.id;
-                        return (
-                          <button
-                            key={`close-${animation.id}`}
-                            onClick={() => updateAppearance({ appCloseAnimation: animation.id })}
-                            className="rounded px-3 py-2 text-left transition-colors"
-                            style={{
-                              border: `1px solid ${active ? accent : border}`,
-                              background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                              color: text,
-                            }}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-semibold">{animation.name}</span>
-                              <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: active ? accent : muted }}>
-                                {animation.group}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-[11px] opacity-45">{animation.description ?? 'Authored window closing motion module.'}</p>
-                          </button>
-                        );
-                      })}
-                      {closeAnimationOptions.length === 0 && (
-                        <div className="rounded border px-3 py-2 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                          No close-capable motion modules loaded yet.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <RangeField
-                    label="Animation Duration"
-                    description="How long each open or close pass gets to play before the window settles."
-                    min={140}
-                    max={1200}
-                    step={20}
-                    value={settings.appearance.appAnimationDurationMs}
-                    valueLabel={`${settings.appearance.appAnimationDurationMs}ms`}
-                    onChange={value => updateAppearance({ appAnimationDurationMs: clampOverlayAnimationDuration(value) })}
-                  />
-                  <RangeField
-                    label="Animation Intensity"
-                    description="Push the translation, breakup, and glow harder without changing the active recipe."
-                    min={0.55}
-                    max={1.8}
-                    step={0.05}
-                    value={settings.appearance.appAnimationIntensity}
-                    valueLabel={`${settings.appearance.appAnimationIntensity.toFixed(2)}x`}
-                    onChange={value => updateAppearance({ appAnimationIntensity: clampOverlayAnimationIntensity(value) })}
-                  />
-                </div>
-              </div>
-
-              <div
-                className="rounded border p-3"
-                {...interactionMotionCard.motionDataAttributes}
-                onPointerEnter={interactionMotionCard.onPointerEnter}
-                onPointerLeave={interactionMotionCard.onPointerLeave}
-                onPointerDown={interactionMotionCard.onPointerDown}
-                onPointerUp={interactionMotionCard.onPointerUp}
-                onPointerCancel={interactionMotionCard.onPointerCancel}
-                style={{
-                  borderColor: border,
-                  background: 'rgba(255,255,255,0.025)',
-                  ...interactionMotionCard.motionStyle,
-                }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Interaction Motion</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      A shared motion resolver now drives explorer entries, the rail, preview workflow tabs, panel tabs, top-bar buttons, and settings cards. Theme defaults still land first, and settings overrides only step in when you ask for them.
-                    </p>
-                  </div>
-                  <span
-                    className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                    style={{
-                      borderColor: settings.appearance.interactionMotionEnabled ? `${accent}66` : border,
-                      background: settings.appearance.interactionMotionEnabled ? `${accent}16` : 'rgba(255,255,255,0.04)',
-                      color: settings.appearance.interactionMotionEnabled ? accent : text,
-                    }}
-                  >
-                    {settings.appearance.interactionMotionEnabled ? 'Live' : 'Disabled'}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                  <div className="space-y-3">
-                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                      <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                      <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Resolver State</div>
-                          <p className="mt-1 text-[11px] opacity-45">
-                            Current live profile: <strong>{effectiveInteractionMotionProfile?.label ?? 'Subtle'}</strong>.
-                            {' '}
-                            {settings.appearance.interactionMotionPresetId == null
-                              ? (themeInteractionMotionPresetId
-                                  ? `Following theme default ${themeInteractionMotionPresetId}.`
-                                  : 'Following the built-in subtle fallback.')
-                              : 'Pinned by Settings.'}
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Performance Mode</div>
+                          <p className="mt-1 text-[11px] opacity-40">
+                            Performance is the default. Balanced restores theme shader defaults with a capped preview budget. Quality spends more on the preview host when you want fidelity over throughput.
                           </p>
                         </div>
-                        <label className="inline-flex items-center gap-2 text-[11px] font-medium" style={{ color: text }}>
-                          <input
-                            type="checkbox"
-                            aria-label="Enable interaction motion"
-                            checked={settings.appearance.interactionMotionEnabled}
-                            onChange={event => updateAppearance({ interactionMotionEnabled: event.target.checked })}
-                          />
-                          <span>Enable Interaction Motion</span>
-                        </label>
+                        <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: accent, background: `${accent}14`, color: accent }}>
+                          {shaderPerformanceProfile.label}
+                        </span>
                       </div>
-                    </div>
 
-                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Preset Source</div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          aria-label="Follow theme interaction motion preset"
-                          onClick={() => updateAppearance({ interactionMotionPresetId: null })}
-                          className="rounded px-3 py-2 text-left transition-colors"
-                          style={{
-                            border: `1px solid ${settings.appearance.interactionMotionPresetId == null ? accent : border}`,
-                            background: settings.appearance.interactionMotionPresetId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                            color: text,
-                          }}
-                        >
-                          <div className="text-[11px] font-semibold">Follow Theme</div>
-                          <div className="mt-1 text-[10px] opacity-50">
-                            {themeInteractionMotionPresetId
-                              ? `Theme default: ${themeInteractionMotionPresetId}`
-                              : 'Falls back to subtle when the theme does not declare one.'}
-                          </div>
-                        </button>
-                        {interactionMotionPresetOptions.map(option => {
-                          const active = settings.appearance.interactionMotionPresetId === option.id;
+                      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                        {shaderPerformanceProfiles.map(profile => {
+                          const active = profile.id === shaderPerformanceMode;
                           return (
                             <button
-                              key={`interaction-motion-preset-${option.id}`}
+                              key={profile.id}
                               type="button"
-                              aria-label={`Use ${option.label} interaction motion preset`}
-                              onClick={() => updateAppearance({ interactionMotionPresetId: option.id })}
+                              onClick={() => updateAppearance({ shaderPerformanceMode: profile.id })}
                               className="rounded px-3 py-2 text-left transition-colors"
                               style={{
                                 border: `1px solid ${active ? accent : border}`,
@@ -4556,1560 +4001,2146 @@ export function SettingsPage({
                                 color: text,
                               }}
                             >
-                              <div className="text-[11px] font-semibold">{option.label}</div>
-                              <div className="mt-1 max-w-[16rem] text-[10px] leading-4 opacity-50">{option.description}</div>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold">{profile.label}</span>
+                                {active ? (
+                                  <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: accent }}>
+                                    Active
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="mt-1 text-[11px] opacity-45">{profile.description}</p>
                             </button>
                           );
                         })}
                       </div>
                     </div>
 
-                    <RangeField
-                      label="Interaction Intensity"
-                      description="Scale the shared motion profile without changing which preset or theme recipe is active."
-                      min={0.25}
-                      max={2.5}
-                      step={0.05}
-                      value={settings.appearance.interactionMotionIntensity}
-                      valueLabel={`${settings.appearance.interactionMotionIntensity.toFixed(2)}x`}
-                      onChange={value => updateAppearance({ interactionMotionIntensity: clampInteractionMotionIntensity(value) })}
-                    />
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px]">
+                      <div className="opacity-45">
+                        {availableShaders.length} ready profiles
+                        {shaderFailures.length > 0 ? ` · ${shaderFailures.length} failed loads` : ''}
+                        {shadersLoading ? ' · refreshing…' : ''}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => void onRefreshShaders()}
+                          className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                          style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
+                        >
+                          <RefreshCw size={12} />
+                          Refresh Shaders
+                        </button>
+                        <button
+                          onClick={() => void onOpenShadersFolder()}
+                          className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                          style={{ borderColor: accent, background: `${accent}16`, color: text }}
+                        >
+                          <FolderOpen size={12} />
+                          Open Folder
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Authoring Folder</div>
+                      <div className="mt-1 break-all opacity-55">{shadersDirectory}</div>
+                      {shadersError && (
+                        <div className="mt-2 rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}>
+                          {shadersError}
+                        </div>
+                      )}
+                    </div>
+
+                    {shaderFailures.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {shaderFailures.map(shader => (
+                          <div
+                            key={`shader-error-${shader.filePath}`}
+                            className="rounded border px-3 py-2"
+                            style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[11px] font-semibold">{shader.name}</div>
+                              <span className="text-[9px] uppercase tracking-[0.12em] opacity-55">Load Error</span>
+                            </div>
+                            <div className="mt-1 break-all text-[10px] opacity-55">{shader.filePath}</div>
+                            <pre className="mt-2 whitespace-pre-wrap text-[10px] leading-4 opacity-80">{shader.error}</pre>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                    <div className="flex items-center justify-between gap-3">
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.8fr]">
+                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Live Assignment</div>
+                          <p className="mt-1 text-[11px] opacity-40">
+                            A user override wins over the active theme. Clearing the override hands control back to the theme default when performance mode allows it, and unresolved IDs collapse safely to <code>none</code>.
+                          </p>
+                        </div>
+                        <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: accent, background: `${accent}14`, color: accent }}>
+                          {shaderSelectionSummary}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateAppearance({ activeShaderId: null, shaderPerformanceMode: 'balanced' })}
+                          className="rounded px-3 py-2 text-left transition-colors"
+                          aria-pressed={settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId)}
+                          style={{
+                            border: `1px solid ${settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId) ? accent : border}`,
+                            background: settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId) ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                            color: text,
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold">Follow Theme Default</span>
+                            <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId) ? accent : muted }}>
+                              {editableTheme.defaultShaderId ?? 'none'}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] opacity-45">
+                            {editableTheme.defaultShaderId
+                              ? `Active theme ${editableTheme.name} defaults to ${editableTheme.defaultShaderId}.`
+                              : `Active theme ${editableTheme.name} does not define a shader, so the shell falls back to none.`
+                            }{!shaderPerformanceProfile.shellUsesThemeDefault ? ' Performance mode keeps the theme default suspended until you switch to Balanced or Quality.' : ''}
+                          </p>
+                        </button>
+
+                        {availableShaders.map(shader => {
+                          const overrideActive = settings.appearance.activeShaderId === shader.id;
+                          const effectiveActive = effectiveShaderId === shader.id;
+                          const surfaceSummary = getShaderEnabledSurfaceIds(shader)
+                            .map(surface => getOverlayShaderSurfaceLabel(surface))
+                            .join(' · ');
+                          return (
+                            <button
+                              key={`shader-${shader.id}`}
+                              type="button"
+                              onClick={() => updateAppearance({ activeShaderId: shader.id })}
+                              className="rounded px-3 py-2 text-left transition-colors"
+                              style={{
+                                border: `1px solid ${overrideActive ? accent : border}`,
+                                background: overrideActive ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                color: text,
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold">{shader.name}</span>
+                                <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: overrideActive ? accent : muted }}>
+                                  {shader.group}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-[11px] opacity-45">{shader.description ?? 'Shell shader profile.'}</p>
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-[9px] uppercase tracking-[0.12em] opacity-55">
+                                <span>{surfaceSummary || 'No Surfaces'}</span>
+                                {shader.controls.length > 0 && <span>{shader.controls.length} Controls</span>}
+                                {effectiveActive && <span style={{ color: accent }}>Live</span>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Effective Shader</div>
+                        <div className="mt-2 flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[12px] font-semibold">{effectiveShader?.name ?? 'None'}</div>
+                            <p className="mt-1 text-[11px] opacity-45">
+                              {effectiveShader?.description ?? 'No shader surfaces are currently active.'}
+                            </p>
+                          </div>
+                          <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ borderColor: border, color: muted }}>
+                            {effectiveShader?.id ?? 'none'}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2 text-[9px] uppercase tracking-[0.12em]">
+                          {(effectiveShader?.tags ?? []).map(tag => (
+                            <span key={`shader-tag-${tag}`} className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: muted }}>
+                              {tag}
+                            </span>
+                          ))}
+                          {(effectiveShader?.tags ?? []).length === 0 && (
+                            <span className="opacity-45">No metadata tags</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Controls</div>
+                            <p className="mt-1 text-[11px] opacity-45">
+                              Shaders can expose their own live tweak set. Overrides are stored per shader, so changing profiles does not wipe a tuned setup for another one.
+                            </p>
+                          </div>
+                          {effectiveShader && effectiveShader.controls.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextShaderControlValues = { ...settings.appearance.shaderControlValues };
+                                delete nextShaderControlValues[effectiveShader.id];
+                                updateAppearance({ shaderControlValues: nextShaderControlValues });
+                              }}
+                              className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
+                              style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}
+                            >
+                              Reset Shader
+                            </button>
+                          )}
+                        </div>
+
+                        {effectiveShader && effectiveShader.controls.length > 0 ? (
+                          <div className="mt-3 space-y-2">
+                            {effectiveShader.controls.map(control => (
+                              <RangeField
+                                key={`shader-control-${effectiveShader.id}-${control.id}`}
+                                label={control.label}
+                                description={control.description ?? `Live ${effectiveShader.name} control.`}
+                                min={control.min}
+                                max={control.max}
+                                step={control.step}
+                                value={effectiveShaderControlValues[control.id] ?? control.defaultValue ?? control.min}
+                                valueLabel={formatShaderControlValue(
+                                  control,
+                                  effectiveShaderControlValues[control.id] ?? control.defaultValue ?? control.min,
+                                )}
+                                onChange={value => setShaderControlValue(effectiveShader, control, value)}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mt-3 rounded border px-3 py-2 text-[11px] opacity-55" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                            {effectiveShader
+                              ? `${effectiveShader.name} does not expose live controls yet. Add a \`controls\` array in the shader module to surface tweakable sliders here.`
+                              : 'No shader is currently active, so there are no live controls to show.'}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Surface Coverage</div>
+                        <div className="mt-3 grid grid-cols-1 gap-2">
+                          {(['background', 'topBar', 'border'] as const).map(surface => {
+                            const enabled = enabledShaderSurfaces.includes(surface);
+                            return (
+                              <div
+                                key={`shader-surface-${surface}`}
+                                className="rounded border px-3 py-2"
+                                style={{
+                                  borderColor: enabled ? `${accent}55` : border,
+                                  background: enabled ? `${accent}12` : 'rgba(255,255,255,0.03)',
+                                  color: text,
+                                }}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-semibold">{getOverlayShaderSurfaceLabel(surface)}</span>
+                                  <span className="text-[9px] uppercase tracking-[0.12em]" style={{ color: enabled ? accent : muted }}>
+                                    {enabled ? 'Enabled' : 'Off'}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-[11px] opacity-45">
+                                  {enabled
+                                    ? `${effectiveShader?.name ?? 'Current shader'} actively renders this shell surface.`
+                                    : `${effectiveShader?.name ?? 'Current shader'} does not supply a renderer for this surface.`}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeSection === 'animations' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<RotateCcw size={12} />}
+                  title="Animations"
+                  subtitle="Shell transitions and shell-wide interaction motion live together here, but they stay on separate runtime lanes."
+                />
+
+                <div className="mt-4 space-y-4">
+                  <div
+                    className="rounded border p-3"
+                    {...shellTransitionMotionCard.motionDataAttributes}
+                    onPointerEnter={shellTransitionMotionCard.onPointerEnter}
+                    onPointerLeave={shellTransitionMotionCard.onPointerLeave}
+                    onPointerDown={shellTransitionMotionCard.onPointerDown}
+                    onPointerUp={shellTransitionMotionCard.onPointerUp}
+                    onPointerCancel={shellTransitionMotionCard.onPointerCancel}
+                    style={{
+                      borderColor: border,
+                      background: 'rgba(255,255,255,0.025)',
+                      ...shellTransitionMotionCard.motionStyle,
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Surface Overrides</div>
-                        <p className="mt-1 text-[11px] opacity-45">
-                          Disable motion on a surface without changing the theme recipe or preset for the rest of the shell.
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shell Transitions</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Keep window open and close choreography separate from interaction motion. Browse authored modules here, assign live bindings, and manage the animation folder without crowding the rest of Appearance.
                         </p>
                       </div>
-                      <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
-                        {interactionMotionSurfaceCatalog.length} surfaces
+                      <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        Transition Lane
                       </span>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-1 gap-2">
-                      {interactionMotionSurfaceCatalog.map(surface => {
-                        const override = settings.appearance.interactionMotionSurfaceOverrides[surface.id];
-                        const surfaceEnabled = typeof override === 'boolean'
-                          ? override
-                          : override?.enabled !== false;
-                        return (
-                          <label
-                            key={`interaction-motion-surface-${surface.id}`}
-                            className="flex items-start gap-3 rounded border px-3 py-2"
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px]">
+                      <div className="opacity-45">
+                        {availableAnimations.length} ready modules
+                        {animationFailures.length > 0 ? ` · ${animationFailures.length} failed loads` : ''}
+                        {animationsLoading ? ' · refreshing…' : ''}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => void onRefreshAnimations()}
+                          className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                          style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
+                        >
+                          <RefreshCw size={12} />
+                          Refresh Motion
+                        </button>
+                        <button
+                          onClick={() => void onOpenAnimationsFolder()}
+                          className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                          style={{ borderColor: accent, background: `${accent}16`, color: text }}
+                        >
+                          <FolderOpen size={12} />
+                          Open Folder
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Authoring Folder</div>
+                      <div className="mt-1 break-all opacity-55">{animationsDirectory}</div>
+                      {animationsError && (
+                        <div className="mt-2 rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}>
+                          {animationsError}
+                        </div>
+                      )}
+                    </div>
+
+                    {animationFailures.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {animationFailures.map(animation => (
+                          <div
+                            key={`animation-error-${animation.filePath}`}
+                            className="rounded border px-3 py-2"
+                            style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[11px] font-semibold">{animation.name}</div>
+                              <span className="text-[9px] uppercase tracking-[0.12em] opacity-55">Load Error</span>
+                            </div>
+                            <div className="mt-1 break-all text-[10px] opacity-55">{animation.filePath}</div>
+                            <pre className="mt-2 whitespace-pre-wrap text-[10px] leading-4 opacity-80">{animation.error}</pre>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Open Motion</label>
+                        <div className="grid grid-cols-1 gap-2">
+                          <button
+                            onClick={() => updateAppearance({ appOpenAnimation: null })}
+                            className="rounded px-3 py-2 text-left transition-colors"
                             style={{
-                              borderColor: surfaceEnabled ? border : `${accent}44`,
-                              background: surfaceEnabled ? 'rgba(255,255,255,0.02)' : `${accent}0c`,
+                              border: `1px solid ${settings.appearance.appOpenAnimation == null ? accent : border}`,
+                              background: settings.appearance.appOpenAnimation == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                              color: text,
                             }}
                           >
-                            <input
-                              type="checkbox"
-                              aria-label={`Enable ${surface.label} interaction motion`}
-                              checked={surfaceEnabled}
-                              onChange={event => setInteractionMotionSurfaceEnabled(surface.id, event.target.checked)}
-                            />
-                            <span style={{ minWidth: 0 }}>
-                              <span className="text-[11px] font-semibold" style={{ color: text }}>{surface.label}</span>
-                              <span className="mt-1 block text-[10px] leading-4 opacity-50">{surface.description}</span>
-                            </span>
-                          </label>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-semibold">Follow Theme Default</span>
+                              <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.appOpenAnimation == null ? accent : muted }}>
+                                {effectiveOpenAnimationId}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[11px] opacity-45">
+                              {editableTheme.defaultOpenAnimationId
+                                ? `Active theme ${editableTheme.name} defaults open motion to ${editableTheme.defaultOpenAnimationId}.`
+                                : `Active theme ${editableTheme.name} does not define open motion, so GreebleFS falls back to ${animationSystemConfig.defaultOpenAnimationId}.`}
+                            </p>
+                          </button>
+                          {openAnimationOptions.map(animation => {
+                            const active = settings.appearance.appOpenAnimation === animation.id;
+                            return (
+                              <button
+                                key={`open-${animation.id}`}
+                                onClick={() => updateAppearance({ appOpenAnimation: animation.id })}
+                                className="rounded px-3 py-2 text-left transition-colors"
+                                style={{
+                                  border: `1px solid ${active ? accent : border}`,
+                                  background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                  color: text,
+                                }}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-semibold">{animation.name}</span>
+                                  <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: active ? accent : muted }}>
+                                    {animation.group}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-[11px] opacity-45">{animation.description ?? 'Authored window opening motion module.'}</p>
+                              </button>
+                            );
+                          })}
+                          {openAnimationOptions.length === 0 && (
+                            <div className="rounded border px-3 py-2 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                              No open-capable motion modules loaded yet.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Close Motion</label>
+                        <div className="grid grid-cols-1 gap-2">
+                          <button
+                            onClick={() => updateAppearance({ appCloseAnimation: null })}
+                            className="rounded px-3 py-2 text-left transition-colors"
+                            style={{
+                              border: `1px solid ${settings.appearance.appCloseAnimation == null ? accent : border}`,
+                              background: settings.appearance.appCloseAnimation == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-semibold">Follow Theme Default</span>
+                              <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.appCloseAnimation == null ? accent : muted }}>
+                                {effectiveCloseAnimationId}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[11px] opacity-45">
+                              {editableTheme.defaultCloseAnimationId
+                                ? `Active theme ${editableTheme.name} defaults close motion to ${editableTheme.defaultCloseAnimationId}.`
+                                : `Active theme ${editableTheme.name} does not define close motion, so GreebleFS falls back to ${animationSystemConfig.defaultCloseAnimationId}.`}
+                            </p>
+                          </button>
+                          {closeAnimationOptions.map(animation => {
+                            const active = settings.appearance.appCloseAnimation === animation.id;
+                            return (
+                              <button
+                                key={`close-${animation.id}`}
+                                onClick={() => updateAppearance({ appCloseAnimation: animation.id })}
+                                className="rounded px-3 py-2 text-left transition-colors"
+                                style={{
+                                  border: `1px solid ${active ? accent : border}`,
+                                  background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                  color: text,
+                                }}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-semibold">{animation.name}</span>
+                                  <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: active ? accent : muted }}>
+                                    {animation.group}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-[11px] opacity-45">{animation.description ?? 'Authored window closing motion module.'}</p>
+                              </button>
+                            );
+                          })}
+                          {closeAnimationOptions.length === 0 && (
+                            <div className="rounded border px-3 py-2 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                              No close-capable motion modules loaded yet.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <RangeField
+                        label="Animation Duration"
+                        description="How long each open or close pass gets to play before the window settles."
+                        min={140}
+                        max={1200}
+                        step={20}
+                        value={settings.appearance.appAnimationDurationMs}
+                        valueLabel={`${settings.appearance.appAnimationDurationMs}ms`}
+                        onChange={value => updateAppearance({ appAnimationDurationMs: clampOverlayAnimationDuration(value) })}
+                      />
+                      <RangeField
+                        label="Animation Intensity"
+                        description="Push the translation, breakup, and glow harder without changing the active recipe."
+                        min={0.55}
+                        max={1.8}
+                        step={0.05}
+                        value={settings.appearance.appAnimationIntensity}
+                        valueLabel={`${settings.appearance.appAnimationIntensity.toFixed(2)}x`}
+                        onChange={value => updateAppearance({ appAnimationIntensity: clampOverlayAnimationIntensity(value) })}
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    className="rounded border p-3"
+                    {...interactionMotionCard.motionDataAttributes}
+                    onPointerEnter={interactionMotionCard.onPointerEnter}
+                    onPointerLeave={interactionMotionCard.onPointerLeave}
+                    onPointerDown={interactionMotionCard.onPointerDown}
+                    onPointerUp={interactionMotionCard.onPointerUp}
+                    onPointerCancel={interactionMotionCard.onPointerCancel}
+                    style={{
+                      borderColor: border,
+                      background: 'rgba(255,255,255,0.025)',
+                      ...interactionMotionCard.motionStyle,
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Interaction Motion</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          A shared motion resolver now drives explorer entries, the rail, preview workflow tabs, panel tabs, top-bar buttons, and settings cards. Theme defaults still land first, and settings overrides only step in when you ask for them.
+                        </p>
+                      </div>
+                      <span
+                        className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                        style={{
+                          borderColor: settings.appearance.interactionMotionEnabled ? `${accent}66` : border,
+                          background: settings.appearance.interactionMotionEnabled ? `${accent}16` : 'rgba(255,255,255,0.04)',
+                          color: settings.appearance.interactionMotionEnabled ? accent : text,
+                        }}
+                      >
+                        {settings.appearance.interactionMotionEnabled ? 'Live' : 'Disabled'}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                      <div className="space-y-3">
+                        <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Resolver State</div>
+                              <p className="mt-1 text-[11px] opacity-45">
+                                Current live profile: <strong>{effectiveInteractionMotionProfile?.label ?? 'Subtle'}</strong>.
+                                {' '}
+                                {settings.appearance.interactionMotionPresetId == null
+                                  ? (themeInteractionMotionPresetId
+                                    ? `Following theme default ${themeInteractionMotionPresetId}.`
+                                    : 'Following the built-in subtle fallback.')
+                                  : 'Pinned by Settings.'}
+                              </p>
+                            </div>
+                            <label className="inline-flex items-center gap-2 text-[11px] font-medium" style={{ color: text }}>
+                              <input
+                                type="checkbox"
+                                aria-label="Enable interaction motion"
+                                checked={settings.appearance.interactionMotionEnabled}
+                                onChange={event => updateAppearance({ interactionMotionEnabled: event.target.checked })}
+                              />
+                              <span>Enable Interaction Motion</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Preset Source</div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              aria-label="Follow theme interaction motion preset"
+                              onClick={() => updateAppearance({ interactionMotionPresetId: null })}
+                              className="rounded px-3 py-2 text-left transition-colors"
+                              style={{
+                                border: `1px solid ${settings.appearance.interactionMotionPresetId == null ? accent : border}`,
+                                background: settings.appearance.interactionMotionPresetId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                color: text,
+                              }}
+                            >
+                              <div className="text-[11px] font-semibold">Follow Theme</div>
+                              <div className="mt-1 text-[10px] opacity-50">
+                                {themeInteractionMotionPresetId
+                                  ? `Theme default: ${themeInteractionMotionPresetId}`
+                                  : 'Falls back to subtle when the theme does not declare one.'}
+                              </div>
+                            </button>
+                            {interactionMotionPresetOptions.map(option => {
+                              const active = settings.appearance.interactionMotionPresetId === option.id;
+                              return (
+                                <button
+                                  key={`interaction-motion-preset-${option.id}`}
+                                  type="button"
+                                  aria-label={`Use ${option.label} interaction motion preset`}
+                                  onClick={() => updateAppearance({ interactionMotionPresetId: option.id })}
+                                  className="rounded px-3 py-2 text-left transition-colors"
+                                  style={{
+                                    border: `1px solid ${active ? accent : border}`,
+                                    background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                    color: text,
+                                  }}
+                                >
+                                  <div className="text-[11px] font-semibold">{option.label}</div>
+                                  <div className="mt-1 max-w-[16rem] text-[10px] leading-4 opacity-50">{option.description}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <RangeField
+                          label="Interaction Intensity"
+                          description="Scale the shared motion profile without changing which preset or theme recipe is active."
+                          min={0.25}
+                          max={2.5}
+                          step={0.05}
+                          value={settings.appearance.interactionMotionIntensity}
+                          valueLabel={`${settings.appearance.interactionMotionIntensity.toFixed(2)}x`}
+                          onChange={value => updateAppearance({ interactionMotionIntensity: clampInteractionMotionIntensity(value) })}
+                        />
+                      </div>
+
+                      <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Surface Overrides</div>
+                            <p className="mt-1 text-[11px] opacity-45">
+                              Disable motion on a surface without changing the theme recipe or preset for the rest of the shell.
+                            </p>
+                          </div>
+                          <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                            {interactionMotionSurfaceCatalog.length} surfaces
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-1 gap-2">
+                          {interactionMotionSurfaceCatalog.map(surface => {
+                            const override = settings.appearance.interactionMotionSurfaceOverrides[surface.id];
+                            const surfaceEnabled = typeof override === 'boolean'
+                              ? override
+                              : override?.enabled !== false;
+                            return (
+                              <label
+                                key={`interaction-motion-surface-${surface.id}`}
+                                className="flex items-start gap-3 rounded border px-3 py-2"
+                                style={{
+                                  borderColor: surfaceEnabled ? border : `${accent}44`,
+                                  background: surfaceEnabled ? 'rgba(255,255,255,0.02)' : `${accent}0c`,
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Enable ${surface.label} interaction motion`}
+                                  checked={surfaceEnabled}
+                                  onChange={event => setInteractionMotionSurfaceEnabled(surface.id, event.target.checked)}
+                                />
+                                <span style={{ minWidth: 0 }}>
+                                  <span className="text-[11px] font-semibold" style={{ color: text }}>{surface.label}</span>
+                                  <span className="mt-1 block text-[10px] leading-4 opacity-50">{surface.description}</span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <InteractionMotionLab
+                        appearance={appAppearance}
+                        accent={accent}
+                        border={border}
+                        text={text}
+                        muted={muted}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeSection === 'hotkeys' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<TerminalSquare size={12} />}
+                  title="Hotkeys"
+                  subtitle="Keep the overlay opener configurable and expose the shell presentation toggles alongside the first global gesture controls."
+                />
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {hotkeyBindingDefinitions
+                    .filter(definition => (
+                      definition.scope === 'global'
+                      || definition.scope === 'gesture'
+                      || definition.key === 'windowModeToggle'
+                      || definition.key === 'zenFocusModeToggle'
+                      || definition.key === 'toggleDeveloperTelemetryHud'
+                    ))
+                    .map(definition => (
+                      <ShortcutField
+                        key={definition.key}
+                        bindingKey={definition.key}
+                        value={settings.keybindings[definition.key]}
+                        onCommit={value => updateKeybindings({ [definition.key]: value })}
+                      />
+                    ))}
+                </div>
+                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Explorer Hotkeys</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    These bindings drive the file browser directly, keeping the content-browser flow on the same data-driven shortcut system as the rest of the app.
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {hotkeyBindingDefinitions
+                      .filter(definition => [
+                        'newFile',
+                        'newFolder',
+                        'renameItem',
+                        'deleteItem',
+                        'duplicateItem',
+                        'refreshExplorer',
+                        'goBackDirectory',
+                        'goForwardDirectory',
+                        'goHomeDirectory',
+                        'cycleExplorerSearchMode',
+                        'findSimilarSelection',
+                        'goUpDirectory',
+                        'explorerMoveSelectionUp',
+                        'explorerMoveSelectionDown',
+                        'explorerMoveSelectionLeft',
+                        'explorerMoveSelectionRight',
+                        'toggleExplorerSources',
+                        'togglePreviewLock',
+                        'copyPath',
+                        'copySelection',
+                        'cutSelection',
+                        'pasteSelection',
+                        'toggleHiddenFiles',
+                        'toggleExplorerLayout',
+                        'cycleConstellationLens',
+                        'toggleConstellationRouteMode',
+                        'toggleConstellationPinSelection',
+                        'togglePreviewTerminal',
+                        'searchExplorer',
+                        'selectAllExplorer',
+                        'clearExplorerSelection',
+                      ].includes(definition.key))
+                      .map(definition => (
+                        <ShortcutField
+                          key={definition.key}
+                          bindingKey={definition.key}
+                          value={settings.keybindings[definition.key]}
+                          onCommit={value => updateKeybindings({ [definition.key]: value })}
+                        />
+                      ))}
+                  </div>
+                </div>
+                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Audio Workbench Hotkeys</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Power-user bindings for the explorer audio preview and editor: playback, preview-edit switching, trim navigation, silence review, and fast clip export all route through the same settings-backed shortcut system.
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {hotkeyBindingDefinitions
+                      .filter(definition => [
+                        'audioWorkbenchPlayPause',
+                        'audioWorkbenchToggleEditMode',
+                        'audioWorkbenchJumpToSelectionStart',
+                        'audioWorkbenchJumpToSelectionEnd',
+                        'audioWorkbenchPreviousSilence',
+                        'audioWorkbenchNextSilence',
+                        'audioWorkbenchExportClip',
+                      ].includes(definition.key))
+                      .map(definition => (
+                        <ShortcutField
+                          key={definition.key}
+                          bindingKey={definition.key}
+                          value={settings.keybindings[definition.key]}
+                          onCommit={value => updateKeybindings({ [definition.key]: value })}
+                        />
+                      ))}
+                  </div>
+                </div>
+                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Workbench Hotkeys</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Keyboard coverage for the explorer shader workbench: save, preview/edit mode switching, and scene host toggling all stay on the same settings-backed shortcut layer as the other inline workbenches.
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {hotkeyBindingDefinitions
+                      .filter(definition => [
+                        'saveFile',
+                        'shaderWorkbenchToggleEditMode',
+                        'shaderWorkbenchToggleScene',
+                      ].includes(definition.key))
+                      .map(definition => (
+                        <ShortcutField
+                          key={definition.key}
+                          bindingKey={definition.key}
+                          value={settings.keybindings[definition.key]}
+                          onCommit={value => updateKeybindings({ [definition.key]: value })}
+                        />
+                      ))}
+                  </div>
+                </div>
+                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Spreadsheet Workbench Hotkeys</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Keyboard coverage for the spreadsheet preview/editor: preview-edit mode switching, sheet travel, sheet creation, formula focus, and save all stay inside the shared explorer shortcut system.
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {hotkeyBindingDefinitions
+                      .filter(definition => [
+                        'saveFile',
+                        'spreadsheetWorkbenchToggleEditMode',
+                        'spreadsheetWorkbenchPreviousSheet',
+                        'spreadsheetWorkbenchNextSheet',
+                        'spreadsheetWorkbenchNewSheet',
+                        'spreadsheetWorkbenchFocusFormulaBar',
+                      ].includes(definition.key))
+                      .map(definition => (
+                        <ShortcutField
+                          key={definition.key}
+                          bindingKey={definition.key}
+                          value={settings.keybindings[definition.key]}
+                          onCommit={value => updateKeybindings({ [definition.key]: value })}
+                        />
+                      ))}
+                  </div>
+                </div>
+                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">PDF Workbench Hotkeys</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Keyboard coverage for the inline PDF workbench: page travel, zoom, save, and preview/edit mode switching all stay inside the shared explorer shortcut system.
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {hotkeyBindingDefinitions
+                      .filter(definition => [
+                        'saveFile',
+                        'pdfWorkbenchPreviousPage',
+                        'pdfWorkbenchNextPage',
+                        'pdfWorkbenchZoomIn',
+                        'pdfWorkbenchZoomOut',
+                        'pdfWorkbenchToggleEditMode',
+                      ].includes(definition.key))
+                      .map(definition => (
+                        <ShortcutField
+                          key={definition.key}
+                          bindingKey={definition.key}
+                          value={settings.keybindings[definition.key]}
+                          onCommit={value => updateKeybindings({ [definition.key]: value })}
+                        />
+                      ))}
+                  </div>
+                </div>
+                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Image Editor Hotkeys</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Keyboard coverage for the explorer image editor: save, undo, redo, reset, and selection cleanup all stay on the same settings-backed shortcut layer as the rest of the shell.
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {hotkeyBindingDefinitions
+                      .filter(definition => [
+                        'saveFile',
+                        'deleteItem',
+                        'imageEditorUndo',
+                        'imageEditorRedo',
+                        'imageEditorReset',
+                      ].includes(definition.key))
+                      .map(definition => (
+                        <ShortcutField
+                          key={definition.key}
+                          bindingKey={definition.key}
+                          value={settings.keybindings[definition.key]}
+                          onCommit={value => updateKeybindings({ [definition.key]: value })}
+                        />
+                      ))}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeSection === 'terminal' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<TerminalSquare size={12} />}
+                  title="Terminal"
+                  subtitle="Application mode, dock mode, integrated shell defaults, and external terminal handoff."
+                />
+
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-3 md:col-span-2 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shell Presentation</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          `Ctrl+Space` always shows the current presentation mode. Use {formatHotkeyLabel(settings.keybindings.windowModeToggle)} to swap between the dock-style overlay shell and a regular desktop application window, and {formatHotkeyLabel(settings.keybindings.zenFocusModeToggle)} to hide the shell top bar for a cleaner explorer-focused pass.
+                        </p>
+                      </div>
+                      <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        {settings.terminal.windowMode === 'windowed' ? 'Application Window' : 'Dock Overlay'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      {([
+                        {
+                          value: 'overlay',
+                          label: 'Dock Mode',
+                          description: 'Pins the shell to the monitor edge, keeps the hotkey-driven dock flow, and uses the current anchor behavior.',
+                        },
+                        {
+                          value: 'windowed',
+                          label: 'Application Mode',
+                          description: 'Opens as a regular resizable desktop window with native minimize, maximize, and close controls.',
+                        },
+                      ] as const satisfies Array<{ value: TerminalWindowMode; label: string; description: string }>).map(option => {
+                        const active = settings.terminal.windowMode === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              if (onSetWindowMode) {
+                                void onSetWindowMode(option.value);
+                                return;
+                              }
+                              updateTerminal({ windowMode: option.value });
+                            }}
+                            className="rounded px-3 py-3 text-left transition-colors"
+                            style={{
+                              border: `1px solid ${active ? accent : border}`,
+                              background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="text-[11px] font-semibold">{option.label}</div>
+                            <p className="mt-1 text-[11px] opacity-45">{option.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Windowed Width</label>
+                        <input
+                          type="number"
+                          min={720}
+                          step={20}
+                          value={settings.terminal.windowedWidth}
+                          onChange={event => updateTerminal({ windowedWidth: Number(event.target.value) })}
+                          className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                          style={settingsFieldStyle}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Windowed Height</label>
+                        <input
+                          type="number"
+                          min={480}
+                          step={20}
+                          value={settings.terminal.windowedHeight}
+                          onChange={event => updateTerminal({ windowedHeight: Number(event.target.value) })}
+                          className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                          style={settingsFieldStyle}
+                        />
+                      </div>
+                    </div>
+
+                    <label
+                      className="flex items-center justify-between gap-3 rounded border px-3 py-2 text-[11px]"
+                      style={{ borderColor: border }}
+                    >
+                      <div>
+                        <div className="font-medium">Show Terminal Sidebar</div>
+                        <p className="mt-1 text-[10px] opacity-45">
+                          Keeps the directories and command rail expanded when the terminal opens. You can still tuck it away live from the terminal header.
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        aria-label="Show terminal sidebar"
+                        checked={settings.terminal.showSidebar}
+                        onChange={event => updateTerminal({ showSidebar: event.target.checked })}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Integrated Shell</label>
+                    <input
+                      value={settings.terminal.shell}
+                      onChange={event => updateTerminal({ shell: event.target.value })}
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={settingsMonoFieldStyle}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Terminal Font</label>
+                    <input
+                      value={settings.terminal.fontFamily}
+                      onChange={event => updateTerminal({ fontFamily: event.target.value })}
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={settingsMonoFieldStyle}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Font Size</label>
+                    <input
+                      type="number"
+                      min={8}
+                      max={24}
+                      value={settings.terminal.fontSize}
+                      onChange={event => updateTerminal({ fontSize: Number(event.target.value) })}
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={settingsFieldStyle}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Cursor Style</label>
+                    <select
+                      aria-label="Cursor Style"
+                      value={settings.terminal.cursorStyle}
+                      onChange={event => updateTerminal({ cursorStyle: event.target.value as typeof settings.terminal.cursorStyle })}
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={settingsSelectStyle}
+                    >
+                      <option value="bar">Bar</option>
+                      <option value="block">Block</option>
+                      <option value="underline">Underline</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Open Target</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['integrated', 'external'] as const).map(mode => {
+                        const active = settings.terminal.preferredOpenMode === mode;
+                        return (
+                          <button
+                            key={mode}
+                            onClick={() => updateTerminal({ preferredOpenMode: mode })}
+                            className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                            style={{
+                              background: active ? `${accent}20` : 'rgba(255,255,255,0.04)',
+                              color: active ? text : muted,
+                              border: `1px solid ${active ? accent : border}`,
+                            }}
+                          >
+                            {mode}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">External Terminal Profile</label>
+                    <select
+                      aria-label="External Terminal Profile"
+                      value={settings.terminal.externalTerminalProfile}
+                      onChange={event => updateTerminal({ externalTerminalProfile: event.target.value as ExternalTerminalProfile })}
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={settingsSelectStyle}
+                    >
+                      {profileOptions.map(option => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] opacity-40">
+                      {profileOptions.find(option => option.id === settings.terminal.externalTerminalProfile)?.description ?? 'Use a platform-appropriate terminal profile.'}
+                    </p>
+                  </div>
+
+                  {(settings.terminal.externalTerminalProfile === 'custom' || settings.terminal.preferredOpenMode === 'external') && (
+                    <>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">External Command</label>
+                        <input
+                          value={settings.terminal.externalTerminalCommand}
+                          onChange={event => updateTerminal({ externalTerminalCommand: event.target.value })}
+                          className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                          style={settingsMonoFieldStyle}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">External Args</label>
+                        <textarea
+                          value={settings.terminal.externalTerminalArgs}
+                          onChange={event => updateTerminal({ externalTerminalArgs: event.target.value })}
+                          className="min-h-[92px] w-full rounded border px-3 py-2 text-[11px] outline-none"
+                          style={settingsMonoFieldStyle}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                    <span>Cursor Blink</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.terminal.cursorBlink}
+                      onChange={event => updateTerminal({ cursorBlink: event.target.checked })}
+                    />
+                  </label>
+                </div>
+              </section>
+            )}
+
+            {activeSection === 'layouts' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<LayoutGrid size={12} />}
+                  title="Layouts"
+                  subtitle="Drive the whole shell from a manifest instead of a single hardcoded chrome layout."
+                />
+
+                <div className="mt-4 space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Manifest Path</label>
+                    <input
+                      value={settings.layout.configPath}
+                      onChange={event => updateLayout({ configPath: event.target.value })}
+                      placeholder="Leave blank to probe ~/.greeblefs/greeblefs.layouts.json or .toml"
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                    />
+                    <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                      <button
+                        onClick={() => updateLayout({ configPath: '' })}
+                        className="rounded px-2 py-1 font-semibold uppercase tracking-[0.14em]"
+                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                      >
+                        Use Auto Probe
+                      </button>
+                      <span
+                        className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.14em]"
+                        style={{
+                          borderColor: layoutManifestState.sourceError ? '#f97316' : accent,
+                          background: layoutManifestState.sourceError ? 'rgba(249,115,22,0.12)' : `${accent}12`,
+                          color: layoutManifestState.sourceError ? '#fdba74' : text,
+                        }}
+                      >
+                        {layoutManifestState.sourceType === 'file' ? 'External Manifest' : 'Built In'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] opacity-40">
+                      {layoutSourceSummary}
+                    </p>
+                    {layoutManifestState.sourceError && (
+                      <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+                        Manifest load failed: {layoutManifestState.sourceError}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Profiles</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Click a profile to switch the entire workbench layout. The GreebleFS chrome button still cycles this same ordered set.
+                        </p>
+                      </div>
+                      <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        {layoutManifestState.manifest.profiles.length} loaded
+                      </span>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      {layoutManifestState.manifest.profiles.map(profile => {
+                        const active = profile.id === activeLayoutProfile.id;
+                        return (
+                          <button
+                            key={profile.id}
+                            onClick={() => updateLayout({ activeProfileId: profile.id })}
+                            className="w-full rounded border px-3 py-3 text-left transition-colors"
+                            style={{
+                              borderColor: active ? accent : border,
+                              background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-[11px] font-semibold">{profile.label}</div>
+                                <p className="mt-1 text-[11px] opacity-45">{profile.description}</p>
+                              </div>
+                              {active && (
+                                <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ borderColor: accent, color: accent }}>
+                                  Live
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2 text-[9px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                              <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                                Bar {profile.chrome.barPosition}
+                              </span>
+                              <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                                Dock {profile.controlDock.enabled ? profile.controlDock.side : 'off'}
+                              </span>
+                              <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                                Pinned {profile.pinnedPanels.length}
+                              </span>
+                              <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                                Default {profile.behavior.defaultActivePanelId}
+                              </span>
+                              <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                                Primary {profile.interaction.primaryAxisOwner}
+                              </span>
+                              <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                                Command {profile.interaction.commandOwner}
+                              </span>
+                              <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                                Back {profile.interaction.backBehavior}
+                              </span>
+                            </div>
+                          </button>
                         );
                       })}
                     </div>
                   </div>
                 </div>
-
-                <div className="mt-4">
-                  <InteractionMotionLab
-                    appearance={appAppearance}
-                    accent={accent}
-                    border={border}
-                    text={text}
-                    muted={muted}
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
-            )}
-
-            {activeSection === 'hotkeys' && (
-              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-            <SectionTitle
-              icon={<TerminalSquare size={12} />}
-              title="Hotkeys"
-              subtitle="Keep the overlay opener configurable and expose the shell presentation toggles alongside the first global gesture controls."
-            />
-
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              {hotkeyBindingDefinitions
-                .filter(definition => (
-                  definition.scope === 'global'
-                  || definition.scope === 'gesture'
-                  || definition.key === 'windowModeToggle'
-                  || definition.key === 'zenFocusModeToggle'
-                  || definition.key === 'toggleDeveloperTelemetryHud'
-                ))
-                .map(definition => (
-                  <ShortcutField
-                    key={definition.key}
-                    bindingKey={definition.key}
-                    value={settings.keybindings[definition.key]}
-                    onCommit={value => updateKeybindings({ [definition.key]: value })}
-                  />
-                ))}
-            </div>
-            <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Explorer Hotkeys</div>
-              <p className="mt-1 text-[11px] opacity-40">
-                These bindings drive the file browser directly, keeping the content-browser flow on the same data-driven shortcut system as the rest of the app.
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {hotkeyBindingDefinitions
-                  .filter(definition => [
-                    'newFile',
-                    'newFolder',
-                    'renameItem',
-                    'deleteItem',
-                    'duplicateItem',
-                    'refreshExplorer',
-                    'goBackDirectory',
-                    'goForwardDirectory',
-                    'goHomeDirectory',
-                    'cycleExplorerSearchMode',
-                    'findSimilarSelection',
-                    'goUpDirectory',
-                    'explorerMoveSelectionUp',
-                    'explorerMoveSelectionDown',
-                    'explorerMoveSelectionLeft',
-                    'explorerMoveSelectionRight',
-                    'toggleExplorerSources',
-                    'togglePreviewLock',
-                    'copyPath',
-                    'copySelection',
-                    'cutSelection',
-                    'pasteSelection',
-                    'toggleHiddenFiles',
-                    'toggleExplorerLayout',
-                    'cycleConstellationLens',
-                    'toggleConstellationRouteMode',
-                    'toggleConstellationPinSelection',
-                    'togglePreviewTerminal',
-                    'searchExplorer',
-                    'selectAllExplorer',
-                    'clearExplorerSelection',
-                  ].includes(definition.key))
-                  .map(definition => (
-                    <ShortcutField
-                      key={definition.key}
-                      bindingKey={definition.key}
-                      value={settings.keybindings[definition.key]}
-                      onCommit={value => updateKeybindings({ [definition.key]: value })}
-                    />
-                ))}
-              </div>
-            </div>
-            <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Audio Workbench Hotkeys</div>
-              <p className="mt-1 text-[11px] opacity-40">
-                Power-user bindings for the explorer audio preview and editor: playback, preview-edit switching, trim navigation, silence review, and fast clip export all route through the same settings-backed shortcut system.
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {hotkeyBindingDefinitions
-                  .filter(definition => [
-                    'audioWorkbenchPlayPause',
-                    'audioWorkbenchToggleEditMode',
-                    'audioWorkbenchJumpToSelectionStart',
-                    'audioWorkbenchJumpToSelectionEnd',
-                    'audioWorkbenchPreviousSilence',
-                    'audioWorkbenchNextSilence',
-                    'audioWorkbenchExportClip',
-                  ].includes(definition.key))
-                  .map(definition => (
-                    <ShortcutField
-                      key={definition.key}
-                      bindingKey={definition.key}
-                      value={settings.keybindings[definition.key]}
-                      onCommit={value => updateKeybindings({ [definition.key]: value })}
-                    />
-                ))}
-              </div>
-            </div>
-            <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Workbench Hotkeys</div>
-              <p className="mt-1 text-[11px] opacity-40">
-                Keyboard coverage for the explorer shader workbench: save, preview/edit mode switching, and scene host toggling all stay on the same settings-backed shortcut layer as the other inline workbenches.
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {hotkeyBindingDefinitions
-                  .filter(definition => [
-                    'saveFile',
-                    'shaderWorkbenchToggleEditMode',
-                    'shaderWorkbenchToggleScene',
-                  ].includes(definition.key))
-                  .map(definition => (
-                    <ShortcutField
-                      key={definition.key}
-                      bindingKey={definition.key}
-                      value={settings.keybindings[definition.key]}
-                      onCommit={value => updateKeybindings({ [definition.key]: value })}
-                    />
-                  ))}
-              </div>
-            </div>
-            <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Spreadsheet Workbench Hotkeys</div>
-              <p className="mt-1 text-[11px] opacity-40">
-                Keyboard coverage for the spreadsheet preview/editor: preview-edit mode switching, sheet travel, sheet creation, formula focus, and save all stay inside the shared explorer shortcut system.
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {hotkeyBindingDefinitions
-                  .filter(definition => [
-                    'saveFile',
-                    'spreadsheetWorkbenchToggleEditMode',
-                    'spreadsheetWorkbenchPreviousSheet',
-                    'spreadsheetWorkbenchNextSheet',
-                    'spreadsheetWorkbenchNewSheet',
-                    'spreadsheetWorkbenchFocusFormulaBar',
-                  ].includes(definition.key))
-                  .map(definition => (
-                    <ShortcutField
-                      key={definition.key}
-                      bindingKey={definition.key}
-                      value={settings.keybindings[definition.key]}
-                      onCommit={value => updateKeybindings({ [definition.key]: value })}
-                    />
-                  ))}
-              </div>
-            </div>
-            <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">PDF Workbench Hotkeys</div>
-              <p className="mt-1 text-[11px] opacity-40">
-                Keyboard coverage for the inline PDF workbench: page travel, zoom, save, and preview/edit mode switching all stay inside the shared explorer shortcut system.
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {hotkeyBindingDefinitions
-                  .filter(definition => [
-                    'saveFile',
-                    'pdfWorkbenchPreviousPage',
-                    'pdfWorkbenchNextPage',
-                    'pdfWorkbenchZoomIn',
-                    'pdfWorkbenchZoomOut',
-                    'pdfWorkbenchToggleEditMode',
-                  ].includes(definition.key))
-                  .map(definition => (
-                    <ShortcutField
-                      key={definition.key}
-                      bindingKey={definition.key}
-                      value={settings.keybindings[definition.key]}
-                      onCommit={value => updateKeybindings({ [definition.key]: value })}
-                    />
-                  ))}
-              </div>
-            </div>
-            <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Image Editor Hotkeys</div>
-              <p className="mt-1 text-[11px] opacity-40">
-                Keyboard coverage for the explorer image editor: save, undo, redo, reset, and selection cleanup all stay on the same settings-backed shortcut layer as the rest of the shell.
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {hotkeyBindingDefinitions
-                  .filter(definition => [
-                    'saveFile',
-                    'deleteItem',
-                    'imageEditorUndo',
-                    'imageEditorRedo',
-                    'imageEditorReset',
-                  ].includes(definition.key))
-                  .map(definition => (
-                    <ShortcutField
-                      key={definition.key}
-                      bindingKey={definition.key}
-                      value={settings.keybindings[definition.key]}
-                      onCommit={value => updateKeybindings({ [definition.key]: value })}
-                    />
-                  ))}
-              </div>
-            </div>
-          </section>
-            )}
-
-            {activeSection === 'terminal' && (
-              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-            <SectionTitle
-              icon={<TerminalSquare size={12} />}
-              title="Terminal"
-              subtitle="Application mode, dock mode, integrated shell defaults, and external terminal handoff."
-            />
-
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="space-y-3 md:col-span-2 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shell Presentation</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      `Ctrl+Space` always shows the current presentation mode. Use {formatHotkeyLabel(settings.keybindings.windowModeToggle)} to swap between the dock-style overlay shell and a regular desktop application window, and {formatHotkeyLabel(settings.keybindings.zenFocusModeToggle)} to hide the shell top bar for a cleaner explorer-focused pass.
-                    </p>
-                  </div>
-                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    {settings.terminal.windowMode === 'windowed' ? 'Application Window' : 'Dock Overlay'}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                  {([
-                    {
-                      value: 'overlay',
-                      label: 'Dock Mode',
-                      description: 'Pins the shell to the monitor edge, keeps the hotkey-driven dock flow, and uses the current anchor behavior.',
-                    },
-                    {
-                      value: 'windowed',
-                      label: 'Application Mode',
-                      description: 'Opens as a regular resizable desktop window with native minimize, maximize, and close controls.',
-                    },
-                  ] as const satisfies Array<{ value: TerminalWindowMode; label: string; description: string }>).map(option => {
-                    const active = settings.terminal.windowMode === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => {
-                          if (onSetWindowMode) {
-                            void onSetWindowMode(option.value);
-                            return;
-                          }
-                          updateTerminal({ windowMode: option.value });
-                        }}
-                        className="rounded px-3 py-3 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${active ? accent : border}`,
-                          background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
-                          color: text,
-                        }}
-                      >
-                        <div className="text-[11px] font-semibold">{option.label}</div>
-                        <p className="mt-1 text-[11px] opacity-45">{option.description}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Windowed Width</label>
-                    <input
-                      type="number"
-                      min={720}
-                      step={20}
-                      value={settings.terminal.windowedWidth}
-                      onChange={event => updateTerminal({ windowedWidth: Number(event.target.value) })}
-                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                      style={settingsFieldStyle}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Windowed Height</label>
-                    <input
-                      type="number"
-                      min={480}
-                      step={20}
-                      value={settings.terminal.windowedHeight}
-                      onChange={event => updateTerminal({ windowedHeight: Number(event.target.value) })}
-                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                      style={settingsFieldStyle}
-                    />
-                  </div>
-                </div>
-
-                <label
-                  className="flex items-center justify-between gap-3 rounded border px-3 py-2 text-[11px]"
-                  style={{ borderColor: border }}
-                >
-                  <div>
-                    <div className="font-medium">Show Terminal Sidebar</div>
-                    <p className="mt-1 text-[10px] opacity-45">
-                      Keeps the directories and command rail expanded when the terminal opens. You can still tuck it away live from the terminal header.
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    aria-label="Show terminal sidebar"
-                    checked={settings.terminal.showSidebar}
-                    onChange={event => updateTerminal({ showSidebar: event.target.checked })}
-                  />
-                </label>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Integrated Shell</label>
-                <input
-                  value={settings.terminal.shell}
-                  onChange={event => updateTerminal({ shell: event.target.value })}
-                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={settingsMonoFieldStyle}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Terminal Font</label>
-                <input
-                  value={settings.terminal.fontFamily}
-                  onChange={event => updateTerminal({ fontFamily: event.target.value })}
-                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={settingsMonoFieldStyle}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Font Size</label>
-                <input
-                  type="number"
-                  min={8}
-                  max={24}
-                  value={settings.terminal.fontSize}
-                  onChange={event => updateTerminal({ fontSize: Number(event.target.value) })}
-                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={settingsFieldStyle}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Cursor Style</label>
-                <select
-                  aria-label="Cursor Style"
-                  value={settings.terminal.cursorStyle}
-                  onChange={event => updateTerminal({ cursorStyle: event.target.value as typeof settings.terminal.cursorStyle })}
-                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={settingsSelectStyle}
-                >
-                  <option value="bar">Bar</option>
-                  <option value="block">Block</option>
-                  <option value="underline">Underline</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5 md:col-span-2">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Open Target</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['integrated', 'external'] as const).map(mode => {
-                    const active = settings.terminal.preferredOpenMode === mode;
-                    return (
-                      <button
-                        key={mode}
-                        onClick={() => updateTerminal({ preferredOpenMode: mode })}
-                        className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
-                        style={{
-                          background: active ? `${accent}20` : 'rgba(255,255,255,0.04)',
-                          color: active ? text : muted,
-                          border: `1px solid ${active ? accent : border}`,
-                        }}
-                      >
-                        {mode}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-1.5 md:col-span-2">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">External Terminal Profile</label>
-                <select
-                  aria-label="External Terminal Profile"
-                  value={settings.terminal.externalTerminalProfile}
-                  onChange={event => updateTerminal({ externalTerminalProfile: event.target.value as ExternalTerminalProfile })}
-                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={settingsSelectStyle}
-                >
-                  {profileOptions.map(option => (
-                    <option key={option.id} value={option.id}>{option.label}</option>
-                  ))}
-                </select>
-                <p className="text-[11px] opacity-40">
-                  {profileOptions.find(option => option.id === settings.terminal.externalTerminalProfile)?.description ?? 'Use a platform-appropriate terminal profile.'}
-                </p>
-              </div>
-
-              {(settings.terminal.externalTerminalProfile === 'custom' || settings.terminal.preferredOpenMode === 'external') && (
-                <>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">External Command</label>
-                    <input
-                      value={settings.terminal.externalTerminalCommand}
-                      onChange={event => updateTerminal({ externalTerminalCommand: event.target.value })}
-                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                      style={settingsMonoFieldStyle}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">External Args</label>
-                    <textarea
-                      value={settings.terminal.externalTerminalArgs}
-                      onChange={event => updateTerminal({ externalTerminalArgs: event.target.value })}
-                      className="min-h-[92px] w-full rounded border px-3 py-2 text-[11px] outline-none"
-                      style={settingsMonoFieldStyle}
-                    />
-                  </div>
-                </>
-              )}
-
-              <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
-                <span>Cursor Blink</span>
-                <input
-                  type="checkbox"
-                  checked={settings.terminal.cursorBlink}
-                  onChange={event => updateTerminal({ cursorBlink: event.target.checked })}
-                />
-              </label>
-            </div>
-          </section>
-            )}
-
-            {activeSection === 'layouts' && (
-              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-            <SectionTitle
-              icon={<LayoutGrid size={12} />}
-              title="Layouts"
-              subtitle="Drive the whole shell from a manifest instead of a single hardcoded chrome layout."
-            />
-
-            <div className="mt-4 space-y-3">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Manifest Path</label>
-                <input
-                  value={settings.layout.configPath}
-                  onChange={event => updateLayout({ configPath: event.target.value })}
-                  placeholder="Leave blank to probe ~/.greeblefs/greeblefs.layouts.json or .toml"
-                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
-                />
-                <div className="flex flex-wrap items-center gap-2 text-[10px]">
-                  <button
-                    onClick={() => updateLayout({ configPath: '' })}
-                    className="rounded px-2 py-1 font-semibold uppercase tracking-[0.14em]"
-                    style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
-                  >
-                    Use Auto Probe
-                  </button>
-                  <span
-                    className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.14em]"
-                    style={{
-                      borderColor: layoutManifestState.sourceError ? '#f97316' : accent,
-                      background: layoutManifestState.sourceError ? 'rgba(249,115,22,0.12)' : `${accent}12`,
-                      color: layoutManifestState.sourceError ? '#fdba74' : text,
-                    }}
-                  >
-                    {layoutManifestState.sourceType === 'file' ? 'External Manifest' : 'Built In'}
-                  </span>
-                </div>
-                <p className="text-[11px] opacity-40">
-                  {layoutSourceSummary}
-                </p>
-                {layoutManifestState.sourceError && (
-                  <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
-                    Manifest load failed: {layoutManifestState.sourceError}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Profiles</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Click a profile to switch the entire workbench layout. The GreebleFS chrome button still cycles this same ordered set.
-                    </p>
-                  </div>
-                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    {layoutManifestState.manifest.profiles.length} loaded
-                  </span>
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  {layoutManifestState.manifest.profiles.map(profile => {
-                    const active = profile.id === activeLayoutProfile.id;
-                    return (
-                      <button
-                        key={profile.id}
-                        onClick={() => updateLayout({ activeProfileId: profile.id })}
-                        className="w-full rounded border px-3 py-3 text-left transition-colors"
-                        style={{
-                          borderColor: active ? accent : border,
-                          background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                          color: text,
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-[11px] font-semibold">{profile.label}</div>
-                            <p className="mt-1 text-[11px] opacity-45">{profile.description}</p>
-                          </div>
-                          {active && (
-                            <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ borderColor: accent, color: accent }}>
-                              Live
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-2 text-[9px] font-semibold uppercase tracking-[0.12em] opacity-70">
-                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
-                            Bar {profile.chrome.barPosition}
-                          </span>
-                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
-                            Dock {profile.controlDock.enabled ? profile.controlDock.side : 'off'}
-                          </span>
-                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
-                            Pinned {profile.pinnedPanels.length}
-                          </span>
-                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
-                            Default {profile.behavior.defaultActivePanelId}
-                          </span>
-                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
-                            Primary {profile.interaction.primaryAxisOwner}
-                          </span>
-                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
-                            Command {profile.interaction.commandOwner}
-                          </span>
-                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
-                            Back {profile.interaction.backBehavior}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </section>
+              </section>
             )}
 
             {activeSection === 'system' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-            <SectionTitle
-              icon={<Settings2 size={12} />}
-              title="System"
-              subtitle="Machine-level startup behavior and OS integration state."
-            />
+                <SectionTitle
+                  icon={<Settings2 size={12} />}
+                  title="System"
+                  subtitle="Machine-level startup behavior and OS integration state."
+                />
 
-            <div className="mt-4 space-y-3">
-              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                <div>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Launch At Startup</div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    Registers GreebleFS as a login item so the tray and overlay are available after sign-in.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.system.launchAtStartup}
-                  disabled={startupSyncPending}
-                  onChange={event => void setLaunchAtStartup(event.target.checked)}
-                />
-              </label>
-              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                <div>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Hide App In Tray</div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    Keeps a {platform === 'macos' ? 'menu bar' : 'system tray'} entry available so the overlay can stay resident when the main window is hidden.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.system.hideAppInTray}
-                  onChange={event => setHideAppInTray(event.target.checked)}
-                />
-              </label>
-              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                <div>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Show In Taskbar</div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    Shows the main window in the {platform === 'macos' ? 'Dock' : 'taskbar'} while the shell is running so application mode behaves like a regular desktop app.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.system.showInTaskbar}
-                  onChange={event => setShowInTaskbar(event.target.checked)}
-                />
-              </label>
-              <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">GPU Runtime</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Controls the native `wgpu` offload lane used for image thumbnails, image preview rendering, and audio analysis/spectrogram work. `Safe` forces CPU fallback.
-                    </p>
-                  </div>
-                  <span
-                    className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                    style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
-                  >
-                    {getGpuTierModeLabel(gpuRuntimeSnapshot.effectiveTier)}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
-                  {gpuRuntimeTierOptions.map(option => {
-                    const active = settings.system.gpuTierMode === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => updateSystem({ gpuTierMode: option.id })}
-                        className="rounded px-3 py-3 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${active ? accent : border}`,
-                          background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
-                          color: text,
-                        }}
-                      >
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
-                          {option.label}
-                        </div>
-                        <p className="mt-2 text-[11px] leading-4 opacity-65">
-                          {option.description}
+                <div className="mt-4 space-y-3">
+                  <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                    <div>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Launch At Startup</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Registers GreebleFS as a login item so the tray and overlay are available after sign-in.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.system.launchAtStartup}
+                      disabled={startupSyncPending}
+                      onChange={event => void setLaunchAtStartup(event.target.checked)}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                    <div>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Hide App In Tray</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Keeps a {platform === 'macos' ? 'menu bar' : 'system tray'} entry available so the overlay can stay resident when the main window is hidden.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.system.hideAppInTray}
+                      onChange={event => setHideAppInTray(event.target.checked)}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                    <div>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Show In Taskbar</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Shows the main window in the {platform === 'macos' ? 'Dock' : 'taskbar'} while the shell is running so application mode behaves like a regular desktop app.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.system.showInTaskbar}
+                      onChange={event => setShowInTaskbar(event.target.checked)}
+                    />
+                  </label>
+                  <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">GPU Runtime</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Controls the native `wgpu` offload lane used for image thumbnails, image preview rendering, and audio analysis/spectrogram work. `Safe` forces CPU fallback.
                         </p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div
-                  className="mt-3 rounded border px-3 py-2 text-[11px]"
-                  style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}
-                >
-                  {gpuRuntimeDiagnosticsSummary}
-                </div>
-                <div
-                  className="mt-2 rounded border px-3 py-2 text-[11px]"
-                  style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}
-                >
-                  {gpuRuntimeFeedStatus}
-                </div>
-                {gpuRuntimeSnapshot.workloads.length > 0 ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {gpuRuntimeSnapshot.workloads.map(workload => (
+                      </div>
                       <span
-                        key={workload.workloadId}
-                        className="rounded border px-2 py-1 text-[10px] uppercase tracking-[0.12em]"
-                        style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
+                        className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                        style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
                       >
-                        {workload.label} · {workload.ready ? 'GPU ready' : 'CPU fallback'} · exec {workload.executions} · fallback {workload.fallbackCount}
+                        {getGpuTierModeLabel(gpuRuntimeSnapshot.effectiveTier)}
                       </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Acceleration Pipeline</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Cross-provider routing for CPU fallback, the native `wgpu` lane, and the Python-sidecar CUDA/AI lane. Future thumbnail, media, indexing, inference, and similarity features should resolve through this contract.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleProbeAccelerationPipeline()}
-                    disabled={accelerationProbePending}
-                    className="rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
-                    style={{
-                      borderColor: accelerationProbePending ? border : accent,
-                      background: accelerationProbePending ? 'rgba(255,255,255,0.03)' : `${accent}14`,
-                      color: text,
-                      opacity: accelerationProbePending ? 0.7 : 1,
-                    }}
-                  >
-                    {accelerationProbePending ? 'Probing…' : 'Probe CUDA / AI'}
-                  </button>
-                </div>
+                    </div>
 
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
-                  {accelerationRoutingModeOptions.map(option => {
-                    const active = settings.system.accelerationRoutingMode === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => updateSystem({ accelerationRoutingMode: option.id })}
-                        className="rounded px-3 py-3 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${active ? accent : border}`,
-                          background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
-                          color: text,
-                        }}
-                      >
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
-                          {option.label}
-                        </div>
-                        <p className="mt-2 text-[11px] leading-4 opacity-65">
-                          {option.description}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
+                      {gpuRuntimeTierOptions.map(option => {
+                        const active = settings.system.gpuTierMode === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => updateSystem({ gpuTierMode: option.id })}
+                            className="rounded px-3 py-3 text-left transition-colors"
+                            style={{
+                              border: `1px solid ${active ? accent : border}`,
+                              background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                              {option.label}
+                            </div>
+                            <p className="mt-2 text-[11px] leading-4 opacity-65">
+                              {option.description}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                <div
-                  className="mt-3 rounded border px-3 py-2 text-[11px]"
-                  style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}
-                >
-                  {accelerationProviderSummary}
-                </div>
-                <div
-                  className="mt-2 rounded border px-3 py-2 text-[11px]"
-                  style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}
-                >
-                  {accelerationPipelineStatus}
-                </div>
-
-                {accelerationRuntimeSnapshot.providers.length > 0 ? (
-                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
-                    {accelerationRuntimeSnapshot.providers.map(provider => (
-                      <div
-                        key={provider.providerKind}
-                        className="rounded border px-3 py-3"
-                        style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
-                            {provider.label}
-                          </div>
-                          <span className="opacity-55">
-                            {provider.ready ? 'Ready' : provider.available ? 'Detected' : 'Unavailable'}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-[11px] leading-4 opacity-70">
-                          {provider.detail}
-                        </p>
-                        {provider.supportedWorkloadIds.length > 0 ? (
-                          <div className="mt-2 text-[10px] uppercase tracking-[0.12em] opacity-50">
-                            {provider.supportedWorkloadIds.join(' · ')}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  {accelerationWorkloadRoutes.map(route => (
                     <div
-                      key={route.definition.id}
-                      className="rounded border px-3 py-3"
-                      style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
+                      className="mt-3 rounded border px-3 py-2 text-[11px]"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
-                          {route.definition.label}
-                        </div>
-                        <span className="opacity-55">
-                          {route.resolution.provider?.label ?? route.resolution.providerKind}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-[11px] leading-4 opacity-65">
-                        {route.definition.description}
-                      </p>
-                      <div className="mt-2 text-[10px] uppercase tracking-[0.12em] opacity-50">
-                        {route.resolution.ready
-                          ? 'provider ready'
-                          : route.resolution.available
-                            ? 'provider detected'
-                            : 'cpu fallback'}
-                      </div>
+                      {gpuRuntimeDiagnosticsSummary}
                     </div>
-                  ))}
-                </div>
-
-                {accelerationRuntimeSnapshot.pythonProbe ? (
-                  <div
-                    className="mt-3 rounded border px-3 py-3 text-[11px]"
-                    style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
-                  >
-                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">
-                      Python CUDA Probe
+                    <div
+                      className="mt-2 rounded border px-3 py-2 text-[11px]"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}
+                    >
+                      {gpuRuntimeFeedStatus}
                     </div>
-                    <p className="mt-2 opacity-70">
-                      {accelerationRuntimeSnapshot.pythonProbe.platform} · Python {accelerationRuntimeSnapshot.pythonProbe.pythonVersion}
-                      {accelerationRuntimeSnapshot.pythonProbe.cudaVisibleDevices
-                        ? ` · CUDA_VISIBLE_DEVICES=${accelerationRuntimeSnapshot.pythonProbe.cudaVisibleDevices}`
-                        : ''}
-                    </p>
-                    {accelerationRuntimeSnapshot.pythonProbe.torch.devices.length > 0 ? (
-                      <p className="mt-2 opacity-65">
-                        Torch devices: {accelerationRuntimeSnapshot.pythonProbe.torch.devices.map(device => device.name).join(', ')}
-                      </p>
-                    ) : null}
-                    {accelerationRuntimeSnapshot.pythonProbe.optionalModules.length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {accelerationRuntimeSnapshot.pythonProbe.optionalModules.map(module => (
+                    {gpuRuntimeSnapshot.workloads.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {gpuRuntimeSnapshot.workloads.map(workload => (
                           <span
-                            key={module.id}
+                            key={workload.workloadId}
                             className="rounded border px-2 py-1 text-[10px] uppercase tracking-[0.12em]"
                             style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
                           >
-                            {module.id} · {module.imported ? 'ready' : module.installed ? 'installed' : 'missing'}
+                            {workload.label} · {workload.ready ? 'GPU ready' : 'CPU fallback'} · exec {workload.executions} · fallback {workload.fallbackCount}
                           </span>
                         ))}
                       </div>
                     ) : null}
                   </div>
-                ) : null}
-              </div>
-              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                <div>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Developer Mode</div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    Enables live watchers and hot reload for plugins, shaders, animations, and explorer metadata. Leave this off for the normal production path and use manual refresh actions instead.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.system.developerMode}
-                  onChange={event => updateSystem({ developerMode: event.target.checked })}
-                />
-              </label>
-              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                <div className="pr-4">
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Developer Telemetry</div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    Records frontend, bridge, native, and plugin/runtime spans into structured session traces for deep debugging in dev and installed builds.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.system.developerTelemetryEnabled}
-                  onChange={event => updateSystem({ developerTelemetryEnabled: event.target.checked })}
-                />
-              </label>
-              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                <div className="pr-4">
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Source Trace Mode</div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    Dev-only extra trace depth with source-aware stacks and callsites. Pressing {formatHotkeyLabel(settings.keybindings.toggleDeveloperTelemetryHud)} also arms this automatically when the HUD opens.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.system.sourceTraceModeEnabled}
-                  onChange={event => updateSystem({ sourceTraceModeEnabled: event.target.checked })}
-                />
-              </label>
-              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                <div className="pr-4">
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Consumer Diagnostics</div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    Keeps local diagnostic traces available for support bundles when themes, plugins, or renderers misbehave in production.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.system.consumerDiagnosticsEnabled}
-                  onChange={event => updateSystem({ consumerDiagnosticsEnabled: event.target.checked })}
-                />
-              </label>
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Capture Mode</div>
-                  <p className="mt-1 opacity-40">Raw keeps the deepest trace. Sampled trims noise. Perf-only records timing without full action detail.</p>
-                  <select
-                    aria-label="Telemetry Capture Mode"
-                    value={settings.system.developerTelemetryCaptureMode}
-                    onChange={event => updateSystem({
-                      developerTelemetryCaptureMode: event.target.value as typeof settings.system.developerTelemetryCaptureMode,
-                    })}
-                    className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
-                    style={settingsSelectStyle}
-                  >
-                    <option value="raw">Raw</option>
-                    <option value="sampled">Sampled</option>
-                    <option value="perf-only">Perf Only</option>
-                  </select>
-                </label>
-                <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Payload Detail</div>
-                  <p className="mt-1 opacity-40">Metadata-only avoids noisy args. Small payload mode preserves compact command details for debugging.</p>
-                  <select
-                    aria-label="Telemetry Payload Detail"
-                    value={settings.system.developerTelemetryPayloadMode}
-                    onChange={event => updateSystem({
-                      developerTelemetryPayloadMode: event.target.value as typeof settings.system.developerTelemetryPayloadMode,
-                    })}
-                    className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
-                    style={settingsSelectStyle}
-                  >
-                    <option value="metadata-only">Metadata Only</option>
-                    <option value="metadata+small-payloads">Metadata + Small Payloads</option>
-                  </select>
-                </label>
-              </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Max Session File</div>
-                  <p className="mt-1 opacity-40">Hard cap before the native writer rolls to the next session file.</p>
-                  <input
-                    type="number"
-                    min={8}
-                    max={512}
-                    step={1}
-                    value={settings.system.developerTelemetryMaxFileSizeMb}
-                    onChange={event => updateSystem({
-                      developerTelemetryMaxFileSizeMb: Number(event.target.value),
-                    })}
-                    className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
-                    style={settingsFieldStyle}
-                  />
-                </label>
-                <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                  <div className="pr-4">
-                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Write Trace Files</div>
-                    <p className="mt-1 opacity-40">Persist session JSONL traces to disk for later inspection and bundle export.</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.system.developerTelemetryWriteToFile}
-                    onChange={event => updateSystem({ developerTelemetryWriteToFile: event.target.checked })}
-                  />
-                </label>
-                <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                  <div className="pr-4">
-                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Show Inspector Surface</div>
-                    <p className="mt-1 opacity-40">Keeps the live telemetry inspector lane available for future dev HUD and diagnostics UI.</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.system.developerTelemetryShowInspector}
-                    onChange={event => updateSystem({ developerTelemetryShowInspector: event.target.checked })}
-                  />
-                </label>
-              </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                  <div className="pr-4">
-                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Plugin Runtime Diagnostics</div>
-                    <p className="mt-1 opacity-40">Include plugin attribution and execution context in consumer bundles.</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.system.consumerDiagnosticsIncludePluginRuntime}
-                    onChange={event => updateSystem({ consumerDiagnosticsIncludePluginRuntime: event.target.checked })}
-                  />
-                </label>
-                <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                  <div className="pr-4">
-                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Renderer Diagnostics</div>
-                    <p className="mt-1 opacity-40">Include renderer/theme execution context in exported support bundles.</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.system.consumerDiagnosticsIncludeRendererRuntime}
-                    onChange={event => updateSystem({ consumerDiagnosticsIncludeRendererRuntime: event.target.checked })}
-                  />
-                </label>
-                <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                  <div className="pr-4">
-                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Perf Samples In Bundles</div>
-                    <p className="mt-1 opacity-40">Keep performance timing summaries alongside trace files for support triage.</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.system.consumerDiagnosticsIncludePerfSamples}
-                    onChange={event => updateSystem({ consumerDiagnosticsIncludePerfSamples: event.target.checked })}
-                  />
-                </label>
-              </div>
-              {platform === 'linux' && (
-                <label className="flex items-center justify-between gap-4 rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-                  <div className="min-w-0">
-                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Linux Display Backend</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Chooses whether GreebleFS launches through Auto selection, X11 fallback, or native Wayland. Auto will switch to X11 on NVIDIA Wayland sessions when XWayland is available.
-                    </p>
-                  </div>
-                  <select
-                    aria-label="Linux Display Backend"
-                    value={settings.system.linuxDisplayBackendPreference}
-                    disabled={linuxDisplayBackendSyncPending}
-                    onChange={event => void setLinuxDisplayBackendPreference(
-                      event.target.value as LinuxDisplayBackendPreference,
-                    )}
-                    className="min-w-[140px] rounded border bg-transparent px-2 py-1 text-[11px]"
-                    style={settingsSelectStyle}
-                  >
-                    <option value="auto">Auto</option>
-                    <option
-                      value="x11"
-                      disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('x11')}
+                  <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Acceleration Pipeline</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Cross-provider routing for CPU fallback, the native `wgpu` lane, and the Python-sidecar CUDA/AI lane. Future thumbnail, media, indexing, inference, and similarity features should resolve through this contract.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleProbeAccelerationPipeline()}
+                        disabled={accelerationProbePending}
+                        className="rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
+                        style={{
+                          borderColor: accelerationProbePending ? border : accent,
+                          background: accelerationProbePending ? 'rgba(255,255,255,0.03)' : `${accent}14`,
+                          color: text,
+                          opacity: accelerationProbePending ? 0.7 : 1,
+                        }}
+                      >
+                        {accelerationProbePending ? 'Probing…' : 'Probe CUDA / AI'}
+                      </button>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
+                      {accelerationRoutingModeOptions.map(option => {
+                        const active = settings.system.accelerationRoutingMode === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => updateSystem({ accelerationRoutingMode: option.id })}
+                            className="rounded px-3 py-3 text-left transition-colors"
+                            style={{
+                              border: `1px solid ${active ? accent : border}`,
+                              background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                              {option.label}
+                            </div>
+                            <p className="mt-2 text-[11px] leading-4 opacity-65">
+                              {option.description}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div
+                      className="mt-3 rounded border px-3 py-2 text-[11px]"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}
                     >
-                      X11
-                    </option>
-                    <option
-                      value="wayland"
-                      disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('wayland')}
+                      {accelerationProviderSummary}
+                    </div>
+                    <div
+                      className="mt-2 rounded border px-3 py-2 text-[11px]"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}
                     >
-                      Wayland
-                    </option>
-                  </select>
-                </label>
-              )}
-              <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Telemetry Session</div>
-                    <p className="mt-1 opacity-40">
-                      {telemetryStatusPending
-                        ? 'Refreshing telemetry session status...'
-                        : telemetryStatusError
-                          ? `Telemetry unavailable: ${telemetryStatusError}`
-                          : telemetryStatus == null
-                            ? 'No telemetry session has been created yet.'
-                            : `Enabled ${telemetryStatus.config.developer_telemetry_enabled || telemetryStatus.config.consumer_diagnostics_enabled ? 'yes' : 'no'} · records ${telemetryStatus.recent_record_count} · session ${telemetryStatus.session_id} · file ${telemetryStatus.current_file_path ?? 'not started'}`}
-                    </p>
+                      {accelerationPipelineStatus}
+                    </div>
+
+                    {accelerationRuntimeSnapshot.providers.length > 0 ? (
+                      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                        {accelerationRuntimeSnapshot.providers.map(provider => (
+                          <div
+                            key={provider.providerKind}
+                            className="rounded border px-3 py-3"
+                            style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                                {provider.label}
+                              </div>
+                              <span className="opacity-55">
+                                {provider.ready ? 'Ready' : provider.available ? 'Detected' : 'Unavailable'}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-[11px] leading-4 opacity-70">
+                              {provider.detail}
+                            </p>
+                            {provider.supportedWorkloadIds.length > 0 ? (
+                              <div className="mt-2 text-[10px] uppercase tracking-[0.12em] opacity-50">
+                                {provider.supportedWorkloadIds.join(' · ')}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                      {accelerationWorkloadRoutes.map(route => (
+                        <div
+                          key={route.definition.id}
+                          className="rounded border px-3 py-3"
+                          style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                              {route.definition.label}
+                            </div>
+                            <span className="opacity-55">
+                              {route.resolution.provider?.label ?? route.resolution.providerKind}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-[11px] leading-4 opacity-65">
+                            {route.definition.description}
+                          </p>
+                          <div className="mt-2 text-[10px] uppercase tracking-[0.12em] opacity-50">
+                            {route.resolution.ready
+                              ? 'provider ready'
+                              : route.resolution.available
+                                ? 'provider detected'
+                                : 'cpu fallback'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {accelerationRuntimeSnapshot.pythonProbe ? (
+                      <div
+                        className="mt-3 rounded border px-3 py-3 text-[11px]"
+                        style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
+                      >
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">
+                          Python CUDA Probe
+                        </div>
+                        <p className="mt-2 opacity-70">
+                          {accelerationRuntimeSnapshot.pythonProbe.platform} · Python {accelerationRuntimeSnapshot.pythonProbe.pythonVersion}
+                          {accelerationRuntimeSnapshot.pythonProbe.cudaVisibleDevices
+                            ? ` · CUDA_VISIBLE_DEVICES=${accelerationRuntimeSnapshot.pythonProbe.cudaVisibleDevices}`
+                            : ''}
+                        </p>
+                        {accelerationRuntimeSnapshot.pythonProbe.torch.devices.length > 0 ? (
+                          <p className="mt-2 opacity-65">
+                            Torch devices: {accelerationRuntimeSnapshot.pythonProbe.torch.devices.map(device => device.name).join(', ')}
+                          </p>
+                        ) : null}
+                        {accelerationRuntimeSnapshot.pythonProbe.optionalModules.length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {accelerationRuntimeSnapshot.pythonProbe.optionalModules.map(module => (
+                              <span
+                                key={module.id}
+                                className="rounded border px-2 py-1 text-[10px] uppercase tracking-[0.12em]"
+                                style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
+                              >
+                                {module.id} · {module.imported ? 'ready' : module.installed ? 'installed' : 'missing'}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void refreshTelemetryStatus()}
-                      className="rounded border px-3 py-2 transition-colors"
-                      style={{ borderColor: border }}
-                    >
-                      Refresh
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleTelemetryExport()}
-                      disabled={telemetryActionPending != null}
-                      className="rounded border px-3 py-2 transition-colors disabled:opacity-50"
-                      style={{ borderColor: border }}
-                    >
-                      {telemetryActionPending === 'export' ? 'Exporting...' : 'Export Support Bundle'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleTelemetryClear()}
-                      disabled={telemetryActionPending != null}
-                      className="rounded border px-3 py-2 transition-colors disabled:opacity-50"
-                      style={{ borderColor: border, color: '#fca5a5' }}
-                    >
-                      {telemetryActionPending === 'clear' ? 'Clearing...' : 'Clear Sessions'}
-                    </button>
+                  <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                    <div>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Developer Mode</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Enables live watchers and hot reload for plugins, shaders, animations, and explorer metadata. Leave this off for the normal production path and use manual refresh actions instead.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.system.developerMode}
+                      onChange={event => updateSystem({ developerMode: event.target.checked })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                    <div className="pr-4">
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Developer Telemetry</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Records frontend, bridge, native, and plugin/runtime spans into structured session traces for deep debugging in dev and installed builds.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.system.developerTelemetryEnabled}
+                      onChange={event => updateSystem({ developerTelemetryEnabled: event.target.checked })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                    <div className="pr-4">
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Source Trace Mode</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Dev-only extra trace depth with source-aware stacks and callsites. Pressing {formatHotkeyLabel(settings.keybindings.toggleDeveloperTelemetryHud)} also arms this automatically when the HUD opens.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.system.sourceTraceModeEnabled}
+                      onChange={event => updateSystem({ sourceTraceModeEnabled: event.target.checked })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                    <div className="pr-4">
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Consumer Diagnostics</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Keeps local diagnostic traces available for support bundles when themes, plugins, or renderers misbehave in production.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.system.consumerDiagnosticsEnabled}
+                      onChange={event => updateSystem({ consumerDiagnosticsEnabled: event.target.checked })}
+                    />
+                  </label>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Capture Mode</div>
+                      <p className="mt-1 opacity-40">Raw keeps the deepest trace. Sampled trims noise. Perf-only records timing without full action detail.</p>
+                      <select
+                        aria-label="Telemetry Capture Mode"
+                        value={settings.system.developerTelemetryCaptureMode}
+                        onChange={event => updateSystem({
+                          developerTelemetryCaptureMode: event.target.value as typeof settings.system.developerTelemetryCaptureMode,
+                        })}
+                        className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
+                        style={settingsSelectStyle}
+                      >
+                        <option value="raw">Raw</option>
+                        <option value="sampled">Sampled</option>
+                        <option value="perf-only">Perf Only</option>
+                      </select>
+                    </label>
+                    <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Payload Detail</div>
+                      <p className="mt-1 opacity-40">Metadata-only avoids noisy args. Small payload mode preserves compact command details for debugging.</p>
+                      <select
+                        aria-label="Telemetry Payload Detail"
+                        value={settings.system.developerTelemetryPayloadMode}
+                        onChange={event => updateSystem({
+                          developerTelemetryPayloadMode: event.target.value as typeof settings.system.developerTelemetryPayloadMode,
+                        })}
+                        className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
+                        style={settingsSelectStyle}
+                      >
+                        <option value="metadata-only">Metadata Only</option>
+                        <option value="metadata+small-payloads">Metadata + Small Payloads</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Max Session File</div>
+                      <p className="mt-1 opacity-40">Hard cap before the native writer rolls to the next session file.</p>
+                      <input
+                        type="number"
+                        min={8}
+                        max={512}
+                        step={1}
+                        value={settings.system.developerTelemetryMaxFileSizeMb}
+                        onChange={event => updateSystem({
+                          developerTelemetryMaxFileSizeMb: Number(event.target.value),
+                        })}
+                        className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
+                        style={settingsFieldStyle}
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                      <div className="pr-4">
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Write Trace Files</div>
+                        <p className="mt-1 opacity-40">Persist session JSONL traces to disk for later inspection and bundle export.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.system.developerTelemetryWriteToFile}
+                        onChange={event => updateSystem({ developerTelemetryWriteToFile: event.target.checked })}
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                      <div className="pr-4">
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Show Inspector Surface</div>
+                        <p className="mt-1 opacity-40">Keeps the live telemetry inspector lane available for future dev HUD and diagnostics UI.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.system.developerTelemetryShowInspector}
+                        onChange={event => updateSystem({ developerTelemetryShowInspector: event.target.checked })}
+                      />
+                    </label>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                      <div className="pr-4">
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Plugin Runtime Diagnostics</div>
+                        <p className="mt-1 opacity-40">Include plugin attribution and execution context in consumer bundles.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.system.consumerDiagnosticsIncludePluginRuntime}
+                        onChange={event => updateSystem({ consumerDiagnosticsIncludePluginRuntime: event.target.checked })}
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                      <div className="pr-4">
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Renderer Diagnostics</div>
+                        <p className="mt-1 opacity-40">Include renderer/theme execution context in exported support bundles.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.system.consumerDiagnosticsIncludeRendererRuntime}
+                        onChange={event => updateSystem({ consumerDiagnosticsIncludeRendererRuntime: event.target.checked })}
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                      <div className="pr-4">
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Perf Samples In Bundles</div>
+                        <p className="mt-1 opacity-40">Keep performance timing summaries alongside trace files for support triage.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.system.consumerDiagnosticsIncludePerfSamples}
+                        onChange={event => updateSystem({ consumerDiagnosticsIncludePerfSamples: event.target.checked })}
+                      />
+                    </label>
+                  </div>
+                  {platform === 'linux' && (
+                    <label className="flex items-center justify-between gap-4 rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                      <div className="min-w-0">
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Linux Display Backend</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Chooses whether GreebleFS launches through Auto selection, X11 fallback, or native Wayland. Auto will switch to X11 on NVIDIA Wayland sessions when XWayland is available.
+                        </p>
+                      </div>
+                      <select
+                        aria-label="Linux Display Backend"
+                        value={settings.system.linuxDisplayBackendPreference}
+                        disabled={linuxDisplayBackendSyncPending}
+                        onChange={event => void setLinuxDisplayBackendPreference(
+                          event.target.value as LinuxDisplayBackendPreference,
+                        )}
+                        className="min-w-[140px] rounded border bg-transparent px-2 py-1 text-[11px]"
+                        style={settingsSelectStyle}
+                      >
+                        <option value="auto">Auto</option>
+                        <option
+                          value="x11"
+                          disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('x11')}
+                        >
+                          X11
+                        </option>
+                        <option
+                          value="wayland"
+                          disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('wayland')}
+                        >
+                          Wayland
+                        </option>
+                      </select>
+                    </label>
+                  )}
+                  <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Telemetry Session</div>
+                        <p className="mt-1 opacity-40">
+                          {telemetryStatusPending
+                            ? 'Refreshing telemetry session status...'
+                            : telemetryStatusError
+                              ? `Telemetry unavailable: ${telemetryStatusError}`
+                              : telemetryStatus == null
+                                ? 'No telemetry session has been created yet.'
+                                : `Enabled ${telemetryStatus.config.developer_telemetry_enabled || telemetryStatus.config.consumer_diagnostics_enabled ? 'yes' : 'no'} · records ${telemetryStatus.recent_record_count} · session ${telemetryStatus.session_id} · file ${telemetryStatus.current_file_path ?? 'not started'}`}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void refreshTelemetryStatus()}
+                          className="rounded border px-3 py-2 transition-colors"
+                          style={{ borderColor: border }}
+                        >
+                          Refresh
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleTelemetryExport()}
+                          disabled={telemetryActionPending != null}
+                          className="rounded border px-3 py-2 transition-colors disabled:opacity-50"
+                          style={{ borderColor: border }}
+                        >
+                          {telemetryActionPending === 'export' ? 'Exporting...' : 'Export Support Bundle'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleTelemetryClear()}
+                          disabled={telemetryActionPending != null}
+                          className="rounded border px-3 py-2 transition-colors disabled:opacity-50"
+                          style={{ borderColor: border, color: '#fca5a5' }}
+                        >
+                          {telemetryActionPending === 'clear' ? 'Clearing...' : 'Clear Sessions'}
+                        </button>
+                      </div>
+                    </div>
+                    {telemetryNotice ? (
+                      <div className="mt-3 rounded border px-3 py-2" style={{ borderColor: border, color: text }}>
+                        {telemetryNotice}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: startupSyncError ? '#fda4af' : muted }}>
+                    {startupSyncPending
+                      ? 'Updating OS startup registration...'
+                      : startupSyncError
+                        ? `Startup registration failed: ${startupSyncError}`
+                        : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${systemPresentationState.trayVisible ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${systemPresentationState.taskbarVisible ? 'enabled' : 'disabled'} · recovery path ${systemPresentationState.recoveryPath === 'tray' ? (platform === 'macos' ? 'Dock' : 'tray') : platform === 'macos' ? 'Dock' : 'taskbar'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'} · deep telemetry ${settings.system.developerTelemetryEnabled ? 'enabled' : 'disabled'} · source trace ${settings.system.sourceTraceModeEnabled ? 'enabled' : 'disabled'} · consumer diagnostics ${settings.system.consumerDiagnosticsEnabled ? 'enabled' : 'disabled'}${platform === 'linux' && linuxDisplayBackendStatusSummary ? ` · ${linuxDisplayBackendStatusSummary}` : ''}`}
                   </div>
                 </div>
-                {telemetryNotice ? (
-                  <div className="mt-3 rounded border px-3 py-2" style={{ borderColor: border, color: text }}>
-                    {telemetryNotice}
-                  </div>
-                ) : null}
-              </div>
-              <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: startupSyncError ? '#fda4af' : muted }}>
-                {startupSyncPending
-                  ? 'Updating OS startup registration...'
-                  : startupSyncError
-                    ? `Startup registration failed: ${startupSyncError}`
-                  : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${systemPresentationState.trayVisible ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${systemPresentationState.taskbarVisible ? 'enabled' : 'disabled'} · recovery path ${systemPresentationState.recoveryPath === 'tray' ? (platform === 'macos' ? 'Dock' : 'tray') : platform === 'macos' ? 'Dock' : 'taskbar'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'} · deep telemetry ${settings.system.developerTelemetryEnabled ? 'enabled' : 'disabled'} · source trace ${settings.system.sourceTraceModeEnabled ? 'enabled' : 'disabled'} · consumer diagnostics ${settings.system.consumerDiagnosticsEnabled ? 'enabled' : 'disabled'}${platform === 'linux' && linuxDisplayBackendStatusSummary ? ` · ${linuxDisplayBackendStatusSummary}` : ''}`}
-              </div>
-            </div>
-          </section>
+              </section>
             )}
 
             {activeSection === 'explorer' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-            <SectionTitle
-              icon={<FolderOpen size={12} />}
-              title="Explorer"
-              subtitle="Startup path, folder activation, visibility rules, and bookmark quality-of-life."
-            />
-
-            <div className="mt-4 space-y-3">
-              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">File Clicking</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Choose how folders activate in the browser. Files still preview on single click and open on double click.
-                    </p>
-                  </div>
-                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    {settings.explorer.folderClickMode === 'single' ? 'Single Click' : 'Double Click'}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  {([
-                    {
-                      value: 'single',
-                      label: 'Single Click',
-                      description: 'Open folders on the first plain click, closer to a content-browser flow.',
-                    },
-                    {
-                      value: 'double',
-                      label: 'Double Click',
-                      description: 'Keep folders selection-first and require a second click to enter them.',
-                    },
-                  ] as const).map(option => {
-                    const active = settings.explorer.folderClickMode === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => updateExplorer({ folderClickMode: option.value })}
-                        className="rounded px-3 py-3 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${active ? accent : border}`,
-                          background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
-                          color: text,
-                        }}
-                      >
-                        <div className="text-[11px] font-semibold">{option.label}</div>
-                        <p className="mt-1 text-[11px] opacity-45">{option.description}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Content Layout</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Match the explorer to a UE-style content browser. Ctrl/Cmd + wheel in the explorer steps through these modes without shrinking the whole UI.
-                    </p>
-                  </div>
-                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    {getExplorerViewModeDefinition(settings.explorer.viewMode).label}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-                  {explorerViewModes.map(option => {
-                    const active = settings.explorer.viewMode === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => updateExplorer({ viewMode: option.id })}
-                        className="rounded px-3 py-3 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${active ? accent : border}`,
-                          background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
-                          color: text,
-                        }}
-                      >
-                        <div className="text-[11px] font-semibold">{option.label}</div>
-                        <p className="mt-1 text-[11px] opacity-45">{option.description}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Thumbnail Rendering</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Generated thumbnails replace file icons with native previews for images, 3D models, code, shaders, audio waveforms, and video posters. Video hover-scrub uses a cached frame montage instead of live playback.
-                    </p>
-                  </div>
-                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    {settings.explorer.thumbnails.enabled ? 'Enabled' : 'Disabled'}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
-                    <span>Enable Generated Thumbnails</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.explorer.thumbnails.enabled}
-                      onChange={event => updateExplorer({
-                        thumbnails: {
-                          ...settings.explorer.thumbnails,
-                          enabled: event.target.checked,
-                        },
-                      })}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
-                    <span>Video Hover Scrub</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.explorer.thumbnails.enableVideoHoverScrub}
-                      disabled={!settings.explorer.thumbnails.enabled || !settings.explorer.thumbnails.includeVideo}
-                      onChange={event => updateExplorer({
-                        thumbnails: {
-                          ...settings.explorer.thumbnails,
-                          enableVideoHoverScrub: event.target.checked,
-                        },
-                      })}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
-                    <span>Image Files</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.explorer.thumbnails.includeImages}
-                      disabled={!settings.explorer.thumbnails.enabled}
-                      onChange={event => updateExplorer({
-                        thumbnails: {
-                          ...settings.explorer.thumbnails,
-                          includeImages: event.target.checked,
-                        },
-                      })}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
-                    <span>3D Models</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.explorer.thumbnails.includeModels}
-                      disabled={!settings.explorer.thumbnails.enabled}
-                      onChange={event => updateExplorer({
-                        thumbnails: {
-                          ...settings.explorer.thumbnails,
-                          includeModels: event.target.checked,
-                        },
-                      })}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
-                    <span>Code Files</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.explorer.thumbnails.includeCode}
-                      disabled={!settings.explorer.thumbnails.enabled}
-                      onChange={event => updateExplorer({
-                        thumbnails: {
-                          ...settings.explorer.thumbnails,
-                          includeCode: event.target.checked,
-                        },
-                      })}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
-                    <span>Shader Files</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.explorer.thumbnails.includeShaders}
-                      disabled={!settings.explorer.thumbnails.enabled}
-                      onChange={event => updateExplorer({
-                        thumbnails: {
-                          ...settings.explorer.thumbnails,
-                          includeShaders: event.target.checked,
-                        },
-                      })}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
-                    <span>Audio Waveforms</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.explorer.thumbnails.includeAudio}
-                      disabled={!settings.explorer.thumbnails.enabled}
-                      onChange={event => updateExplorer({
-                        thumbnails: {
-                          ...settings.explorer.thumbnails,
-                          includeAudio: event.target.checked,
-                        },
-                      })}
-                    />
-                  </label>
-                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
-                    <span>Video Posters</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.explorer.thumbnails.includeVideo}
-                      disabled={!settings.explorer.thumbnails.enabled}
-                      onChange={event => updateExplorer({
-                        thumbnails: {
-                          ...settings.explorer.thumbnails,
-                          includeVideo: event.target.checked,
-                        },
-                      })}
-                    />
-                  </label>
-                </div>
-
-                <div className="mt-3 rounded border px-3 py-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', opacity: settings.explorer.thumbnails.enabled && settings.explorer.thumbnails.enableVideoHoverScrub && settings.explorer.thumbnails.includeVideo ? 1 : 0.55 }}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Hover Montage Frames</div>
-                      <p className="mt-1 text-[11px] opacity-40">
-                        Cached frame count for each video hover-scrub sequence.
-                      </p>
-                    </div>
-                    <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                      {settings.explorer.thumbnails.videoHoverScrubFrameCount} frames
-                    </span>
-                  </div>
-                  <input
-                    className="mt-3 w-full"
-                    type="range"
-                    min={1}
-                    max={10}
-                    step={1}
-                    value={settings.explorer.thumbnails.videoHoverScrubFrameCount}
-                    disabled={!settings.explorer.thumbnails.enabled || !settings.explorer.thumbnails.enableVideoHoverScrub || !settings.explorer.thumbnails.includeVideo}
-                    onChange={event => updateExplorer({
-                      thumbnails: {
-                        ...settings.explorer.thumbnails,
-                        videoHoverScrubFrameCount: clampVideoHoverScrubFrameCount(Number(event.target.value)),
-                      },
-                    })}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Startup Path</label>
-                <input
-                  value={settings.explorer.defaultPath}
-                  onChange={event => updateExplorer({ defaultPath: event.target.value })}
-                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                <SectionTitle
+                  icon={<FolderOpen size={12} />}
+                  title="Explorer"
+                  subtitle="Startup path, folder activation, visibility rules, and bookmark quality-of-life."
                 />
-                <p className="text-[11px] opacity-40">Use `.` to prefer the detected home directory for the current machine.</p>
-              </div>
 
-              <div className="grid grid-cols-1 gap-2">
-                <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
-                  <span>Show Hidden Files</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.explorer.showHiddenFiles}
-                    onChange={event => updateExplorer({ showHiddenFiles: event.target.checked })}
-                  />
-                </label>
-                <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
-                  <div className="pr-4">
-                    <div>Double-Click Empty Space to Go Up/Back</div>
-                    <p className="mt-1 text-[10px] opacity-45">
-                      Navigates to the parent directory when double-clicking on empty space in the file area.
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.explorer.doubleClickEmptyToGoBack}
-                    onChange={event => updateExplorer({ doubleClickEmptyToGoBack: event.target.checked })}
-                  />
-                </label>
-                <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
-                  <span>Confirm Delete</span>
-                  <input
-                    type="checkbox"
-                    checked={settings.explorer.confirmDelete}
-                    onChange={event => updateExplorer({ confirmDelete: event.target.checked })}
-                  />
-                </label>
-              </div>
+                <div className="mt-4 space-y-3">
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">File Clicking</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Choose how folders activate in the browser. Files still preview on single click and open on double click.
+                        </p>
+                      </div>
+                      <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        {settings.explorer.folderClickMode === 'single' ? 'Single Click' : 'Double Click'}
+                      </span>
+                    </div>
 
-              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Context Menu Composer</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Every explorer menu item now resolves through a typed catalog. Built-ins and plugin items share the same ordering and visibility controls.
-                    </p>
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                      {([
+                        {
+                          value: 'single',
+                          label: 'Single Click',
+                          description: 'Open folders on the first plain click, closer to a content-browser flow.',
+                        },
+                        {
+                          value: 'double',
+                          label: 'Double Click',
+                          description: 'Keep folders selection-first and require a second click to enter them.',
+                        },
+                      ] as const).map(option => {
+                        const active = settings.explorer.folderClickMode === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => updateExplorer({ folderClickMode: option.value })}
+                            className="rounded px-3 py-3 text-left transition-colors"
+                            style={{
+                              border: `1px solid ${active ? accent : border}`,
+                              background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="text-[11px] font-semibold">{option.label}</div>
+                            <p className="mt-1 text-[11px] opacity-45">{option.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Content Layout</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Match the explorer to a UE-style content browser. Ctrl/Cmd + wheel in the explorer steps through these modes without shrinking the whole UI.
+                        </p>
+                      </div>
+                      <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        {getExplorerViewModeDefinition(settings.explorer.viewMode).label}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                      {explorerViewModes.map(option => {
+                        const active = settings.explorer.viewMode === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => updateExplorer({ viewMode: option.id })}
+                            className="rounded px-3 py-3 text-left transition-colors"
+                            style={{
+                              border: `1px solid ${active ? accent : border}`,
+                              background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="text-[11px] font-semibold">{option.label}</div>
+                            <p className="mt-1 text-[11px] opacity-45">{option.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Thumbnail Rendering</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Generated thumbnails replace file icons with native previews for images, 3D models, code, shaders, audio waveforms, and video posters. Video hover-scrub uses a cached frame montage instead of live playback.
+                        </p>
+                      </div>
+                      <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        {settings.explorer.thumbnails.enabled ? 'Enabled' : 'Disabled'}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                        <span>Enable Generated Thumbnails</span>
+                        <input
+                          type="checkbox"
+                          checked={settings.explorer.thumbnails.enabled}
+                          onChange={event => updateExplorer({
+                            thumbnails: {
+                              ...settings.explorer.thumbnails,
+                              enabled: event.target.checked,
+                            },
+                          })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                        <span>Video Hover Scrub</span>
+                        <input
+                          type="checkbox"
+                          checked={settings.explorer.thumbnails.enableVideoHoverScrub}
+                          disabled={!settings.explorer.thumbnails.enabled || !settings.explorer.thumbnails.includeVideo}
+                          onChange={event => updateExplorer({
+                            thumbnails: {
+                              ...settings.explorer.thumbnails,
+                              enableVideoHoverScrub: event.target.checked,
+                            },
+                          })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                        <span>Image Files</span>
+                        <input
+                          type="checkbox"
+                          checked={settings.explorer.thumbnails.includeImages}
+                          disabled={!settings.explorer.thumbnails.enabled}
+                          onChange={event => updateExplorer({
+                            thumbnails: {
+                              ...settings.explorer.thumbnails,
+                              includeImages: event.target.checked,
+                            },
+                          })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                        <span>3D Models</span>
+                        <input
+                          type="checkbox"
+                          checked={settings.explorer.thumbnails.includeModels}
+                          disabled={!settings.explorer.thumbnails.enabled}
+                          onChange={event => updateExplorer({
+                            thumbnails: {
+                              ...settings.explorer.thumbnails,
+                              includeModels: event.target.checked,
+                            },
+                          })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                        <span>Code Files</span>
+                        <input
+                          type="checkbox"
+                          checked={settings.explorer.thumbnails.includeCode}
+                          disabled={!settings.explorer.thumbnails.enabled}
+                          onChange={event => updateExplorer({
+                            thumbnails: {
+                              ...settings.explorer.thumbnails,
+                              includeCode: event.target.checked,
+                            },
+                          })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                        <span>Shader Files</span>
+                        <input
+                          type="checkbox"
+                          checked={settings.explorer.thumbnails.includeShaders}
+                          disabled={!settings.explorer.thumbnails.enabled}
+                          onChange={event => updateExplorer({
+                            thumbnails: {
+                              ...settings.explorer.thumbnails,
+                              includeShaders: event.target.checked,
+                            },
+                          })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                        <span>Audio Waveforms</span>
+                        <input
+                          type="checkbox"
+                          checked={settings.explorer.thumbnails.includeAudio}
+                          disabled={!settings.explorer.thumbnails.enabled}
+                          onChange={event => updateExplorer({
+                            thumbnails: {
+                              ...settings.explorer.thumbnails,
+                              includeAudio: event.target.checked,
+                            },
+                          })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                        <span>Video Posters</span>
+                        <input
+                          type="checkbox"
+                          checked={settings.explorer.thumbnails.includeVideo}
+                          disabled={!settings.explorer.thumbnails.enabled}
+                          onChange={event => updateExplorer({
+                            thumbnails: {
+                              ...settings.explorer.thumbnails,
+                              includeVideo: event.target.checked,
+                            },
+                          })}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-3 rounded border px-3 py-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', opacity: settings.explorer.thumbnails.enabled && settings.explorer.thumbnails.enableVideoHoverScrub && settings.explorer.thumbnails.includeVideo ? 1 : 0.55 }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Hover Montage Frames</div>
+                          <p className="mt-1 text-[11px] opacity-40">
+                            Cached frame count for each video hover-scrub sequence.
+                          </p>
+                        </div>
+                        <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {settings.explorer.thumbnails.videoHoverScrubFrameCount} frames
+                        </span>
+                      </div>
+                      <input
+                        className="mt-3 w-full"
+                        type="range"
+                        min={1}
+                        max={10}
+                        step={1}
+                        value={settings.explorer.thumbnails.videoHoverScrubFrameCount}
+                        disabled={!settings.explorer.thumbnails.enabled || !settings.explorer.thumbnails.enableVideoHoverScrub || !settings.explorer.thumbnails.includeVideo}
+                        onChange={event => updateExplorer({
+                          thumbnails: {
+                            ...settings.explorer.thumbnails,
+                            videoHoverScrubFrameCount: clampVideoHoverScrubFrameCount(Number(event.target.value)),
+                          },
+                        })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Startup Path</label>
+                    <input
+                      value={settings.explorer.defaultPath}
+                      onChange={event => updateExplorer({ defaultPath: event.target.value })}
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                    />
+                    <p className="text-[11px] opacity-40">Use `.` to prefer the detected home directory for the current machine.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2">
+                    <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                      <span>Show Hidden Files</span>
+                      <input
+                        type="checkbox"
+                        checked={settings.explorer.showHiddenFiles}
+                        onChange={event => updateExplorer({ showHiddenFiles: event.target.checked })}
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                      <div className="pr-4">
+                        <div>Double-Click Empty Space to Go Up/Back</div>
+                        <p className="mt-1 text-[10px] opacity-45">
+                          Navigates to the parent directory when double-clicking on empty space in the file area.
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.explorer.doubleClickEmptyToGoBack}
+                        onChange={event => updateExplorer({ doubleClickEmptyToGoBack: event.target.checked })}
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                      <span>Confirm Delete</span>
+                      <input
+                        type="checkbox"
+                        checked={settings.explorer.confirmDelete}
+                        onChange={event => updateExplorer({ confirmDelete: event.target.checked })}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Context Menu Composer</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Every explorer menu item now resolves through a typed catalog. Built-ins and plugin items share the same ordering and visibility controls.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={resetContextMenuLayout}
+                        className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                      >
+                        Normalize Order
+                      </button>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      {contextMenuCatalog.map((item, index) => {
+                        const enabled = isExplorerContextMenuItemEnabled(item.id, settings.explorer.contextMenuItemOverrides);
+                        const isFirst = index === 0;
+                        const isLast = index === contextMenuCatalog.length - 1;
+                        const sourceLabel = item.source === 'built-in'
+                          ? 'Built-in'
+                          : `Plugin · ${item.pluginName}`;
+                        const contextLabel = item.contexts.join(' + ');
+                        const executionLabel = item.execution.kind === 'plugin-backend'
+                          ? `Backend · ${item.execution.entry}`
+                          : item.execution.kind === 'terminal-template'
+                            ? 'Terminal Template'
+                            : item.execution.kind === 'panel-request'
+                              ? `Panel Request · ${item.execution.panelId}`
+                              : 'Host Action';
+
+                        return (
+                          <div
+                            key={item.id}
+                            className="rounded border px-3 py-3"
+                            style={{ borderColor: enabled ? border : `${border}99`, background: enabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.015)', opacity: enabled ? 1 : 0.78 }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-semibold">{item.title}</div>
+                                <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] opacity-60">
+                                  <ThemeBadge label={sourceLabel} />
+                                  <ThemeBadge label={contextLabel} />
+                                  <ThemeBadge label={executionLabel} />
+                                </div>
+                                {item.description && (
+                                  <p className="mt-2 text-[11px] opacity-45">{item.description}</p>
+                                )}
+                              </div>
+                              <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                                <span>Enabled</span>
+                                <input
+                                  type="checkbox"
+                                  checked={enabled}
+                                  onChange={event => toggleContextMenuItemEnabled(item.id, event.target.checked)}
+                                />
+                              </label>
+                            </div>
+
+                            <div className="mt-3 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => moveContextMenuItem(item.id, 'up')}
+                                disabled={isFirst}
+                                className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                                style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: isFirst ? muted : text, opacity: isFirst ? 0.5 : 1 }}
+                              >
+                                <ArrowUp size={11} />
+                                Up
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveContextMenuItem(item.id, 'down')}
+                                disabled={isLast}
+                                className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                                style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: isLast ? muted : text, opacity: isLast ? 0.5 : 1 }}
+                              >
+                                <ArrowDown size={11} />
+                                Down
+                              </button>
+                              <span className="text-[10px] opacity-45">
+                                Slot {(index + 1).toString().padStart(2, '0')}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <button
-                    type="button"
-                    onClick={resetContextMenuLayout}
-                    className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                    style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                    onClick={() => void seedDefaultBookmarks()}
+                    className="w-full rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                    style={{ background: `${accent}18`, color: text, border: `1px solid ${accent}55` }}
                   >
-                    Normalize Order
+                    Seed Platform Bookmarks
                   </button>
                 </div>
-
-                <div className="mt-3 space-y-2">
-                  {contextMenuCatalog.map((item, index) => {
-                    const enabled = isExplorerContextMenuItemEnabled(item.id, settings.explorer.contextMenuItemOverrides);
-                    const isFirst = index === 0;
-                    const isLast = index === contextMenuCatalog.length - 1;
-                    const sourceLabel = item.source === 'built-in'
-                      ? 'Built-in'
-                      : `Plugin · ${item.pluginName}`;
-                    const contextLabel = item.contexts.join(' + ');
-                    const executionLabel = item.execution.kind === 'plugin-backend'
-                      ? `Backend · ${item.execution.entry}`
-                      : item.execution.kind === 'terminal-template'
-                        ? 'Terminal Template'
-                        : item.execution.kind === 'panel-request'
-                          ? `Panel Request · ${item.execution.panelId}`
-                        : 'Host Action';
-
-                    return (
-                      <div
-                        key={item.id}
-                        className="rounded border px-3 py-3"
-                        style={{ borderColor: enabled ? border : `${border}99`, background: enabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.015)', opacity: enabled ? 1 : 0.78 }}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-[11px] font-semibold">{item.title}</div>
-                            <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] opacity-60">
-                              <ThemeBadge label={sourceLabel} />
-                              <ThemeBadge label={contextLabel} />
-                              <ThemeBadge label={executionLabel} />
-                            </div>
-                            {item.description && (
-                              <p className="mt-2 text-[11px] opacity-45">{item.description}</p>
-                            )}
-                          </div>
-                          <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
-                            <span>Enabled</span>
-                            <input
-                              type="checkbox"
-                              checked={enabled}
-                              onChange={event => toggleContextMenuItemEnabled(item.id, event.target.checked)}
-                            />
-                          </label>
-                        </div>
-
-                        <div className="mt-3 flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => moveContextMenuItem(item.id, 'up')}
-                            disabled={isFirst}
-                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: isFirst ? muted : text, opacity: isFirst ? 0.5 : 1 }}
-                          >
-                            <ArrowUp size={11} />
-                            Up
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveContextMenuItem(item.id, 'down')}
-                            disabled={isLast}
-                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: isLast ? muted : text, opacity: isLast ? 0.5 : 1 }}
-                          >
-                            <ArrowDown size={11} />
-                            Down
-                          </button>
-                          <span className="text-[10px] opacity-45">
-                            Slot {(index + 1).toString().padStart(2, '0')}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <button
-                onClick={() => void seedDefaultBookmarks()}
-                className="w-full rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
-                style={{ background: `${accent}18`, color: text, border: `1px solid ${accent}55` }}
-              >
-                Seed Platform Bookmarks
-              </button>
-            </div>
-          </section>
+              </section>
             )}
 
             {activeSection === 'cloud' && (
@@ -6554,57 +6585,57 @@ export function SettingsPage({
 
             {activeSection === 'theme-json' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-            <SectionTitle
-              icon={<Palette size={12} />}
-              title="Theme JSON"
-              subtitle="Paste, tweak, or version your custom theme directly."
-            />
+                <SectionTitle
+                  icon={<Palette size={12} />}
+                  title="Theme JSON"
+                  subtitle="Paste, tweak, or version your custom theme directly."
+                />
 
-            <div className="mt-4 space-y-2">
-              <textarea
-                value={themeDraft}
-                onChange={event => {
-                  setThemeDraft(event.target.value);
-                  if (themeImportError) {
-                    setThemeImportError(null);
-                  }
-                }}
-                className="min-h-[280px] w-full rounded border px-3 py-3 text-[11px] outline-none"
-                style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
-              />
-              {themeImportError ? (
-                <div
-                  className="rounded border px-3 py-2 text-[11px]"
-                  style={{
-                    borderColor: 'rgba(248,113,113,0.3)',
-                    background: 'rgba(127,29,29,0.28)',
-                    color: '#fca5a5',
-                  }}
-                >
-                  {themeImportError}
+                <div className="mt-4 space-y-2">
+                  <textarea
+                    value={themeDraft}
+                    onChange={event => {
+                      setThemeDraft(event.target.value);
+                      if (themeImportError) {
+                        setThemeImportError(null);
+                      }
+                    }}
+                    className="min-h-[280px] w-full rounded border px-3 py-3 text-[11px] outline-none"
+                    style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                  />
+                  {themeImportError ? (
+                    <div
+                      className="rounded border px-3 py-2 text-[11px]"
+                      style={{
+                        borderColor: 'rgba(248,113,113,0.3)',
+                        background: 'rgba(127,29,29,0.28)',
+                        color: '#fca5a5',
+                      }}
+                    >
+                      {themeImportError}
+                    </div>
+                  ) : null}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        setThemeDraft(serializeTheme(editableTheme));
+                        setThemeImportError(null);
+                      }}
+                      className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                      style={{ background: 'rgba(255,255,255,0.06)', color: text, border: `1px solid ${border}` }}
+                    >
+                      Reset Draft
+                    </button>
+                    <button
+                      onClick={applyThemeDraft}
+                      className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                      style={{ background: `${accent}20`, color: text, border: `1px solid ${accent}` }}
+                    >
+                      Import / Apply
+                    </button>
+                  </div>
                 </div>
-              ) : null}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => {
-                    setThemeDraft(serializeTheme(editableTheme));
-                    setThemeImportError(null);
-                  }}
-                  className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
-                  style={{ background: 'rgba(255,255,255,0.06)', color: text, border: `1px solid ${border}` }}
-                >
-                  Reset Draft
-                </button>
-                <button
-                  onClick={applyThemeDraft}
-                  className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
-                  style={{ background: `${accent}20`, color: text, border: `1px solid ${accent}` }}
-                >
-                  Import / Apply
-                </button>
-              </div>
-            </div>
-          </section>
+              </section>
             )}
           </div>
         </OverlayScrollArea>

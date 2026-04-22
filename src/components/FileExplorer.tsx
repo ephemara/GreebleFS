@@ -205,6 +205,7 @@ import {
   removeExplorerJumpFilterCharacter,
 } from "./explorerJumpFilter";
 import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
+import { useInteractionMotionController } from "../animation/interactionMotion";
 import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
 import {
   buildExplorerPreviewWorkflowTabs,
@@ -1038,7 +1039,6 @@ function applyExplorerEntrySurface(
   target.style.background = surface.background;
   target.style.borderColor = surface.borderColor;
   target.style.boxShadow = surface.boxShadow;
-  target.style.transform = surface.transform;
 }
 
 function shouldIgnoreExplorerDragLeave(event: React.DragEvent): boolean {
@@ -3298,6 +3298,7 @@ function PreviewPanel({
   onOpenFolderPreviewEntry: (entry: FileEntry) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
 }) {
+  const interactionMotion = useInteractionMotionController();
   const dragging = useRef(false);
   const startX = useRef(0);
   const startW = useRef(width);
@@ -3612,6 +3613,11 @@ function PreviewPanel({
       >
         {previewWorkflowTabs.map((tab) => {
           const active = activePreviewWorkflowTab.id === tab.id;
+          const workflowTabMotion = interactionMotion.bindSurface({
+            surfaceId: "previewWorkflowTab",
+            triggerState: { activate: active },
+            baseTransition: "background 0.14s ease, border-color 0.14s ease, color 0.14s ease",
+          });
           return (
             <button
               key={tab.id}
@@ -3627,7 +3633,16 @@ function PreviewPanel({
                   options?.onEditAction?.();
                 }
               }}
-              style={previewChipButtonStyle(active)}
+              {...workflowTabMotion.motionDataAttributes}
+              onPointerEnter={workflowTabMotion.onPointerEnter}
+              onPointerLeave={workflowTabMotion.onPointerLeave}
+              onPointerDown={workflowTabMotion.onPointerDown}
+              onPointerUp={workflowTabMotion.onPointerUp}
+              onPointerCancel={workflowTabMotion.onPointerCancel}
+              style={{
+                ...previewChipButtonStyle(active),
+                ...workflowTabMotion.motionStyle,
+              }}
             >
               {tab.label}
             </button>
@@ -3637,6 +3652,7 @@ function PreviewPanel({
     ),
     [
       activePreviewWorkflowTab.id,
+      interactionMotion,
       onViewModeChange,
       onWorkflowTabChange,
       previewChipButtonStyle,
@@ -6782,6 +6798,7 @@ export function FileExplorer({
     writeFile: writeExplorerFile,
   } = explorerBackend;
   const accent = theme.accent;
+  const interactionMotion = useInteractionMotionController(appearance);
   const {
     explorerSettings,
     appearanceSettings,
@@ -13854,7 +13871,7 @@ export function FileExplorer({
   const handleConstellationNodeHover = useCallback(
     (
       node: ConstellationFieldNode,
-      event: React.MouseEvent<HTMLDivElement>,
+      event: React.MouseEvent<HTMLDivElement> | React.PointerEvent<HTMLElement>,
     ) => {
       const explanation = resolveConstellationNodeExplanation({
         nodePath: node.entry.path,
@@ -13959,6 +13976,8 @@ export function FileExplorer({
     () => getExplorerHoverSurface(explorerTheme),
     [explorerTheme],
   );
+  const explorerEntryBaseTransition =
+    "background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease";
   const handleEntryPointerEnter = useCallback(
     (
       entry: FileEntry,
@@ -14003,6 +14022,60 @@ export function FileExplorer({
       }
     },
     [hoveredVideoThumbnailPath, idleEntrySurface],
+  );
+  const bindExplorerEntryMotion = useCallback(
+    (args: {
+      entry: FileEntry;
+      isSelected: boolean;
+      isDropTarget: boolean;
+      baseTransform: string;
+      restingSurface?: ExplorerEntrySurfaceState;
+      baseTransition?: string;
+      onPointerEnter?: React.PointerEventHandler<HTMLElement>;
+      onPointerLeave?: React.PointerEventHandler<HTMLElement>;
+      onPointerMove?: React.PointerEventHandler<HTMLElement>;
+    }) => {
+      const binding = interactionMotion.bindSurface({
+        surfaceId: "explorerEntry",
+        triggerState: {
+          select: args.isSelected,
+          dropHover: args.isDropTarget,
+        },
+        baseTransform: args.baseTransform,
+        baseTransition: args.baseTransition ?? explorerEntryBaseTransition,
+        onPointerEnter: (event) => {
+          handleEntryPointerEnter(
+            args.entry,
+            event.currentTarget,
+            args.isSelected,
+            args.isDropTarget,
+          );
+          args.onPointerEnter?.(event);
+        },
+        onPointerLeave: (event) => {
+          handleEntryPointerLeave(
+            args.entry,
+            event.currentTarget,
+            args.isSelected,
+            args.isDropTarget,
+            args.restingSurface ?? idleEntrySurface,
+          );
+          args.onPointerLeave?.(event);
+        },
+      });
+
+      return {
+        ...binding,
+        onPointerMove: args.onPointerMove,
+      };
+    },
+    [
+      explorerEntryBaseTransition,
+      handleEntryPointerEnter,
+      handleEntryPointerLeave,
+      idleEntrySurface,
+      interactionMotion,
+    ],
   );
   const explorerRootStyle = useMemo<CSSProperties>(
     () => ({
@@ -18041,6 +18114,13 @@ export function FileExplorer({
       : isSel
         ? selectedEntrySurface
         : semanticTableBaseSurface;
+    const semanticTableMotion = bindExplorerEntryMotion({
+      entry,
+      isSelected: isSel,
+      isDropTarget: isDrop,
+      baseTransform: semanticTableRestingSurface.transform,
+      restingSurface: semanticTableBaseSurface,
+    });
 
     if (densityStop.presentation === "table" && densityStop.table) {
       return (
@@ -18059,6 +18139,12 @@ export function FileExplorer({
           onClick={(e) => onEntryClick(e, entry)}
           onDoubleClick={() => onEntryDoubleClick(entry)}
           onContextMenu={(e) => onRightClick(e, entry)}
+          {...semanticTableMotion.motionDataAttributes}
+          onPointerEnter={semanticTableMotion.onPointerEnter}
+          onPointerLeave={semanticTableMotion.onPointerLeave}
+          onPointerDown={semanticTableMotion.onPointerDown}
+          onPointerUp={semanticTableMotion.onPointerUp}
+          onPointerCancel={semanticTableMotion.onPointerCancel}
           style={{
             display: "grid",
             gridTemplateColumns: densityStop.table.showRichMeta
@@ -18076,24 +18162,7 @@ export function FileExplorer({
             boxSizing: "border-box",
             userSelect: "none",
             boxShadow: semanticTableRestingSurface.boxShadow,
-            transform: semanticTableRestingSurface.transform,
-          }}
-          onMouseEnter={(e) => {
-            handleEntryPointerEnter(
-              entry,
-              e.currentTarget as HTMLDivElement,
-              isSel,
-              isDrop,
-            );
-          }}
-          onMouseLeave={(e) => {
-            handleEntryPointerLeave(
-              entry,
-              e.currentTarget as HTMLDivElement,
-              isSel,
-              isDrop,
-              semanticTableBaseSurface,
-            );
+            ...semanticTableMotion.motionStyle,
           }}
         >
           <div
@@ -18235,6 +18304,13 @@ export function FileExplorer({
         ? "8px 4px"
         : "8px 6px";
     const semanticGridGap = isCards ? 10 : 6;
+    const semanticGridMotion = bindExplorerEntryMotion({
+      entry,
+      isSelected: isSel,
+      isDropTarget: isDrop,
+      baseTransform: semanticGridRestingSurface.transform,
+      restingSurface: semanticGridBaseSurface,
+    });
 
     return (
       <div
@@ -18250,6 +18326,12 @@ export function FileExplorer({
         onClick={(e) => onEntryClick(e, entry)}
         onDoubleClick={() => onEntryDoubleClick(entry)}
         onContextMenu={(e) => onRightClick(e, entry)}
+        {...semanticGridMotion.motionDataAttributes}
+        onPointerEnter={semanticGridMotion.onPointerEnter}
+        onPointerLeave={semanticGridMotion.onPointerLeave}
+        onPointerDown={semanticGridMotion.onPointerDown}
+        onPointerUp={semanticGridMotion.onPointerUp}
+        onPointerCancel={semanticGridMotion.onPointerCancel}
         style={{
           minHeight: semanticGridMinHeight,
           borderRadius: isCards ? 18 : 14,
@@ -18266,24 +18348,7 @@ export function FileExplorer({
           userSelect: "none",
           boxSizing: "border-box",
           boxShadow: semanticGridRestingSurface.boxShadow,
-          transform: semanticGridRestingSurface.transform,
-        }}
-        onMouseEnter={(e) => {
-          handleEntryPointerEnter(
-            entry,
-            e.currentTarget as HTMLDivElement,
-            isSel,
-            isDrop,
-          );
-        }}
-        onMouseLeave={(e) => {
-          handleEntryPointerLeave(
-            entry,
-            e.currentTarget as HTMLDivElement,
-            isSel,
-            isDrop,
-            semanticGridBaseSurface,
-          );
+          ...semanticGridMotion.motionStyle,
         }}
       >
         <div
@@ -18595,6 +18660,43 @@ export function FileExplorer({
         : node.emphasis === "anchor"
           ? `0 16px 36px ${accent}1f`
           : "0 12px 24px rgba(0,0,0,0.18)";
+    const constellationNodeMotion = bindExplorerEntryMotion({
+      entry: node.entry,
+      isSelected: isSel,
+      isDropTarget: isDrop,
+      baseTransform: `translate(-50%, -50%) ${restingTransform}`,
+      restingSurface: idleEntrySurface,
+      baseTransition:
+        "box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms cubic-bezier(0.22, 1, 0.36, 1)",
+      onPointerEnter: (event) => {
+        handleConstellationNodeHover(node, event);
+        if (!isSel && !isDrop) {
+          event.currentTarget.style.borderColor =
+            isRouteAnchor || isRouteTarget || isPinned
+              ? `${accent}92`
+              : node.emphasis === "anchor"
+              ? `${accent}88`
+              : "rgba(255,255,255,0.18)";
+          event.currentTarget.style.boxShadow =
+            isRouteAnchor || isRouteTarget
+              ? `0 24px 48px ${accent}34`
+              : node.emphasis === "anchor"
+              ? `0 20px 42px ${accent}2b`
+              : "0 18px 34px rgba(0,0,0,0.22)";
+        }
+      },
+      onPointerLeave: (event) => {
+        clearConstellationHover();
+        if (!isSel && !isDrop) {
+          event.currentTarget.style.background = highlightBackground;
+          event.currentTarget.style.borderColor = restingBorderColor;
+          event.currentTarget.style.boxShadow = restingBoxShadow;
+        }
+      },
+      onPointerMove: (event) => {
+        handleConstellationNodeHover(node, event);
+      },
+    });
 
     return (
       <div
@@ -18638,11 +18740,17 @@ export function FileExplorer({
         onDoubleClick={() => onEntryDoubleClick(node.entry)}
         onContextMenu={(e) => onRightClick(e, node.entry)}
         title={node.entry.path}
+        {...constellationNodeMotion.motionDataAttributes}
+        onPointerEnter={constellationNodeMotion.onPointerEnter}
+        onPointerLeave={constellationNodeMotion.onPointerLeave}
+        onPointerDown={constellationNodeMotion.onPointerDown}
+        onPointerUp={constellationNodeMotion.onPointerUp}
+        onPointerCancel={constellationNodeMotion.onPointerCancel}
+        onPointerMove={constellationNodeMotion.onPointerMove}
         style={{
           position: "absolute",
           left: node.x,
           top: node.y,
-          transform: `translate(-50%, -50%) ${restingTransform}`,
           minWidth: showsLabel ? Math.max(92, node.size + 42) : node.size + 16,
           maxWidth: showsLabel ? 164 : node.size + 16,
           minHeight: node.size + 14,
@@ -18660,54 +18768,7 @@ export function FileExplorer({
           opacity: dimForHover ? 0.34 : dimForRoute ? 0.58 : 1,
           transition:
             "transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms cubic-bezier(0.22, 1, 0.36, 1)",
-        }}
-        onMouseEnter={(e) => {
-          handleEntryPointerEnter(
-            node.entry,
-            e.currentTarget as HTMLDivElement,
-            isSel,
-            isDrop,
-          );
-          handleConstellationNodeHover(
-            node,
-            e as React.MouseEvent<HTMLDivElement>,
-          );
-          if (!isSel && !isDrop) {
-            e.currentTarget.style.transform = `translate(-50%, -50%) ${hoverEntrySurface.transform}`;
-            e.currentTarget.style.borderColor =
-              isRouteAnchor || isRouteTarget || isPinned
-                ? `${accent}92`
-                : node.emphasis === "anchor"
-                ? `${accent}88`
-                : "rgba(255,255,255,0.18)";
-            e.currentTarget.style.boxShadow =
-              isRouteAnchor || isRouteTarget
-                ? `0 24px 48px ${accent}34`
-                : node.emphasis === "anchor"
-                ? `0 20px 42px ${accent}2b`
-                : "0 18px 34px rgba(0,0,0,0.22)";
-          }
-        }}
-        onMouseMove={(e) => {
-          handleConstellationNodeHover(
-            node,
-            e as React.MouseEvent<HTMLDivElement>,
-          );
-        }}
-        onMouseLeave={(e) => {
-          handleEntryPointerLeave(
-            node.entry,
-            e.currentTarget as HTMLDivElement,
-            isSel,
-            isDrop,
-          );
-          clearConstellationHover();
-          if (!isSel && !isDrop) {
-            e.currentTarget.style.transform = `translate(-50%, -50%) ${restingTransform}`;
-            e.currentTarget.style.background = highlightBackground;
-            e.currentTarget.style.borderColor = restingBorderColor;
-            e.currentTarget.style.boxShadow = restingBoxShadow;
-          }
+          ...constellationNodeMotion.motionStyle,
         }}
       >
         <div
@@ -19365,6 +19426,13 @@ export function FileExplorer({
       : isSel
         ? selectedEntrySurface
         : timelineBaseSurface;
+    const timelineEntryMotion = bindExplorerEntryMotion({
+      entry,
+      isSelected: isSel,
+      isDropTarget: isDrop,
+      baseTransform: timelineRestingSurface.transform,
+      restingSurface: timelineBaseSurface,
+    });
     return (
       <div
         key={entry.path}
@@ -19380,6 +19448,12 @@ export function FileExplorer({
         onDoubleClick={() => onEntryDoubleClick(entry)}
         onContextMenu={(e) => onRightClick(e, entry)}
         title={entry.path}
+        {...timelineEntryMotion.motionDataAttributes}
+        onPointerEnter={timelineEntryMotion.onPointerEnter}
+        onPointerLeave={timelineEntryMotion.onPointerLeave}
+        onPointerDown={timelineEntryMotion.onPointerDown}
+        onPointerUp={timelineEntryMotion.onPointerUp}
+        onPointerCancel={timelineEntryMotion.onPointerCancel}
         style={{
           borderRadius: 18,
           border: `1px solid ${timelineRestingSurface.borderColor}`,
@@ -19392,24 +19466,7 @@ export function FileExplorer({
           cursor: "pointer",
           userSelect: "none",
           minHeight: 92,
-          transform: timelineRestingSurface.transform,
-        }}
-        onMouseEnter={(e) => {
-          handleEntryPointerEnter(
-            entry,
-            e.currentTarget as HTMLDivElement,
-            isSel,
-            isDrop,
-          );
-        }}
-        onMouseLeave={(e) => {
-          handleEntryPointerLeave(
-            entry,
-            e.currentTarget as HTMLDivElement,
-            isSel,
-            isDrop,
-            timelineBaseSurface,
-          );
+          ...timelineEntryMotion.motionStyle,
         }}
       >
         <div
@@ -19646,6 +19703,7 @@ export function FileExplorer({
             style={sidebarPaneStyle}
           >
             <ExplorerSideRail
+              appearance={appearance}
               accent={accent}
               brandLabel={explorerTheme.railBrandLabel}
               sidebarWidth={sidebarWidth}
@@ -20191,6 +20249,18 @@ export function FileExplorer({
                             entry,
                             activeGridMetrics.iconStageSize,
                           );
+                          const gridEntryMotion = bindExplorerEntryMotion({
+                            entry,
+                            isSelected: isSel,
+                            isDropTarget: isDrop,
+                            baseTransform: isDrop
+                              ? dropEntrySurface.transform
+                              : isSel
+                                ? selectedEntrySurface.transform
+                                : idleEntrySurface.transform,
+                            baseTransition:
+                              "background 0.14s ease, border-color 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+                          });
                           return (
                             <div
                               key={entry.path}
@@ -20217,6 +20287,12 @@ export function FileExplorer({
                               onDoubleClick={() => onEntryDoubleClick(entry)}
                               onContextMenu={(e) => onRightClick(e, entry)}
                               title={getSearchTooltip(entry)}
+                              {...gridEntryMotion.motionDataAttributes}
+                              onPointerEnter={gridEntryMotion.onPointerEnter}
+                              onPointerLeave={gridEntryMotion.onPointerLeave}
+                              onPointerDown={gridEntryMotion.onPointerDown}
+                              onPointerUp={gridEntryMotion.onPointerUp}
+                              onPointerCancel={gridEntryMotion.onPointerCancel}
                               style={{
                                 background: isDrop
                                   ? dropEntrySurface.background
@@ -20246,29 +20322,7 @@ export function FileExplorer({
                                   : isSel
                                     ? selectedEntrySurface.boxShadow
                                     : idleEntrySurface.boxShadow,
-                                transform: isDrop
-                                  ? dropEntrySurface.transform
-                                  : isSel
-                                    ? selectedEntrySurface.transform
-                                    : idleEntrySurface.transform,
-                                transition:
-                                  "background 0.14s ease, border-color 0.14s ease, transform 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
-                              }}
-                              onMouseEnter={(e) => {
-                                handleEntryPointerEnter(
-                                  entry,
-                                  e.currentTarget as HTMLDivElement,
-                                  isSel,
-                                  isDrop,
-                                );
-                              }}
-                              onMouseLeave={(e) => {
-                                handleEntryPointerLeave(
-                                  entry,
-                                  e.currentTarget as HTMLDivElement,
-                                  isSel,
-                                  isDrop,
-                                );
+                                ...gridEntryMotion.motionStyle,
                               }}
                             >
                               <div
@@ -20483,6 +20537,16 @@ export function FileExplorer({
                           entry,
                           rowThumbnailStageSize,
                         );
+                        const listEntryMotion = bindExplorerEntryMotion({
+                          entry,
+                          isSelected: isSel,
+                          isDropTarget: isDrop,
+                          baseTransform: isDrop
+                            ? dropEntrySurface.transform
+                            : isSel
+                              ? selectedEntrySurface.transform
+                              : idleEntrySurface.transform,
+                        });
                         return (
                           <div
                             key={entry.path}
@@ -20509,6 +20573,12 @@ export function FileExplorer({
                             onDoubleClick={() => onEntryDoubleClick(entry)}
                             onContextMenu={(e) => onRightClick(e, entry)}
                             title={getSearchTooltip(entry)}
+                            {...listEntryMotion.motionDataAttributes}
+                            onPointerEnter={listEntryMotion.onPointerEnter}
+                            onPointerLeave={listEntryMotion.onPointerLeave}
+                            onPointerDown={listEntryMotion.onPointerDown}
+                            onPointerUp={listEntryMotion.onPointerUp}
+                            onPointerCancel={listEntryMotion.onPointerCancel}
                             style={{
                               display: "flex",
                               alignItems: "center",
@@ -20537,27 +20607,7 @@ export function FileExplorer({
                                 : isSel
                                   ? selectedEntrySurface.boxShadow
                                   : idleEntrySurface.boxShadow,
-                              transform: isDrop
-                                ? dropEntrySurface.transform
-                                : isSel
-                                  ? selectedEntrySurface.transform
-                                  : idleEntrySurface.transform,
-                            }}
-                            onMouseEnter={(e) => {
-                              handleEntryPointerEnter(
-                                entry,
-                                e.currentTarget as HTMLDivElement,
-                                isSel,
-                                isDrop,
-                              );
-                            }}
-                            onMouseLeave={(e) => {
-                              handleEntryPointerLeave(
-                                entry,
-                                e.currentTarget as HTMLDivElement,
-                                isSel,
-                                isDrop,
-                              );
+                              ...listEntryMotion.motionStyle,
                             }}
                           >
                             <div
@@ -20909,6 +20959,16 @@ export function FileExplorer({
                             rowThumbnailStageSize,
                           );
                           const isDetailsMode = effectiveViewMode === "details";
+                          const tableEntryMotion = bindExplorerEntryMotion({
+                            entry,
+                            isSelected: isSel,
+                            isDropTarget: isDrop,
+                            baseTransform: isDrop
+                              ? dropEntrySurface.transform
+                              : isSel
+                                ? selectedEntrySurface.transform
+                                : idleEntrySurface.transform,
+                          });
                           return (
                             <tr
                               key={entry.path}
@@ -20935,6 +20995,12 @@ export function FileExplorer({
                               onDoubleClick={() => onEntryDoubleClick(entry)}
                               onContextMenu={(e) => onRightClick(e, entry)}
                               title={getSearchTooltip(entry)}
+                              {...tableEntryMotion.motionDataAttributes}
+                              onPointerEnter={tableEntryMotion.onPointerEnter}
+                              onPointerLeave={tableEntryMotion.onPointerLeave}
+                              onPointerDown={tableEntryMotion.onPointerDown}
+                              onPointerUp={tableEntryMotion.onPointerUp}
+                              onPointerCancel={tableEntryMotion.onPointerCancel}
                               style={{
                                 background: isDrop
                                   ? dropEntrySurface.background
@@ -20953,27 +21019,7 @@ export function FileExplorer({
                                   : isSel
                                     ? selectedEntrySurface.boxShadow
                                     : idleEntrySurface.boxShadow,
-                                transform: isDrop
-                                  ? dropEntrySurface.transform
-                                  : isSel
-                                    ? selectedEntrySurface.transform
-                                    : idleEntrySurface.transform,
-                              }}
-                              onMouseEnter={(e) => {
-                                handleEntryPointerEnter(
-                                  entry,
-                                  e.currentTarget as HTMLTableRowElement,
-                                  isSel,
-                                  isDrop,
-                                );
-                              }}
-                              onMouseLeave={(e) => {
-                                handleEntryPointerLeave(
-                                  entry,
-                                  e.currentTarget as HTMLTableRowElement,
-                                  isSel,
-                                  isDrop,
-                                );
+                                ...tableEntryMotion.motionStyle,
                               }}
                             >
                               <td

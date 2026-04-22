@@ -1,5 +1,27 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Interaction Motion Is Now A First-Class Appearance Subsystem
+
+- Micro-interactions are no longer scattered hover transforms inside explorer and shell components. GreebleFS now has a dedicated interaction-motion lane with theme defaults, persisted user overrides, and one shared resolver for high-frequency shell surfaces.
+- Durable implementation shape:
+  - `src/config/interactionMotion.ts` is the source of truth for the subsystem. It defines the v1 surface ids (`explorerEntry`, `explorerRailItem`, `previewWorkflowTab`, `panelTab`, `topBarButton`, `settingsCard`), trigger ids, built-in profiles (`subtle`, `spring`, `playful`), the theme recipe contract, and the precedence path `user preset > theme default > built-in subtle`.
+  - `src/animation/interactionMotion.tsx` is the canonical runtime seam. `useInteractionMotionController(...)` merges theme defaults, persisted appearance state, and reduced-motion detection into one binder/resolver that returns stable style data plus pointer handlers. High-frequency shell UI should use this path instead of ad hoc inline `transform` writes.
+  - `src/store/settingsStore.ts` now persists `appearance.interactionMotionEnabled`, `interactionMotionPresetId`, `interactionMotionIntensity`, and `interactionMotionSurfaceOverrides`. `interactionMotionPresetId: null` intentionally means "follow the active theme".
+  - `src/config/appearance.ts` now accepts `theme.interactionMotion`, so themes can choose a default interaction profile and intensity without hijacking authored shell-transition modules.
+  - `src/components/SettingsPage.tsx` split `Animations` into two lanes: existing shell-transition module selection and new `Interaction Motion` controls. That section now owns the enable toggle, `Follow Theme`, preset buttons, intensity slider, per-surface enablement, and the compact `Motion Lab` preview harness.
+  - `src/components/FileExplorer.tsx`, `src/components/explorer/ExplorerSideRail.tsx`, and `src/components/WorkbenchTopBar.tsx` now route explorer entries, preview workflow tabs, explorer rail items, top-bar buttons, and panel tabs through the shared binder. Entry-surface styling still owns background/border/shadow, while motion composes on top instead of overwriting the rest of the visual state.
+  - `src/animation/index.ts` now separates micro-interaction exports from advanced scene-effect exports. `SubtleEffects` plus the shared motion math remain the production hot-path lane; cloner/effector/field/fluid/particle tooling stays available for authored or lab-style scenes instead of becoming the default explorer-row runtime.
+- Durable product note:
+  - Treat interaction motion like icon packs or top bars: a shell identity layer with theme defaults plus user control, not a one-off explorer experiment.
+  - Keep authored `animations/` modules for overlay/shell-transition work. Explorer rows, rails, tabs, and buttons should stay on the cheap shared resolver so virtualization and pointer latency remain predictable.
+- Validation:
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/interactionMotion.test.ts src/test/explorerSideRail.test.tsx src/test/workbenchTopBar.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "updates interaction motion settings and exposes motion-lab preview surfaces" --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "routes explorer entry and preview workflow tab motion through the shared interaction resolver" --reporter=dot`
+  - note: the full `src/test/fileExplorer.viewModes.test.tsx` suite still hits a Vitest worker heap OOM in this workspace, so the stable signal for this pass is the targeted resolver test above rather than the whole file
+  - note: the full `src/test/settingsPage.behavior.test.tsx` suite still contains the pre-existing `Top Bars` assertion failure unrelated to the interaction-motion changes
+
 # 2026-04-21 - Top Bars Became A Standalone Appearance System
 
 - The global shell top bar is no longer trapped inside the active theme's workbench recipe. Top bars now resolve through their own catalog and selection path, so users can pin a shell-header workflow independently from the active theme while theme packages still publish defaults.

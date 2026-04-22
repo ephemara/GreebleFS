@@ -2480,6 +2480,39 @@ const value = 1;
     ).toBe(false);
   });
 
+  it("routes explorer entry and preview workflow tab motion through the shared interaction resolver", async () => {
+    renderExplorer();
+    await screen.findByText("anthem.mp3");
+
+    const entrySurface = screen
+      .getByText("anthem.mp3")
+      .closest('[data-interaction-motion-surface="explorerEntry"]') as HTMLElement | null;
+    expect(entrySurface).not.toBeNull();
+    expect(entrySurface).toHaveAttribute(
+      "data-interaction-motion-surface",
+      "explorerEntry",
+    );
+
+    fireEvent.pointerEnter(entrySurface as HTMLElement);
+    expect((entrySurface as HTMLElement).style.transform).toContain(
+      "translate3d",
+    );
+
+    fireEvent.click(screen.getByText("anthem.mp3"));
+    const previewModeToggle = await waitFor(() => {
+      const control = getChromeControl("previewModeToggle");
+      expect(control).not.toBeNull();
+      return control as HTMLElement;
+    });
+    const previewButton = within(previewModeToggle).getByRole("button", {
+      name: "Preview",
+    });
+    expect(previewButton).toHaveAttribute(
+      "data-interaction-motion-surface",
+      "previewWorkflowTab",
+    );
+  });
+
   it("toggles audio preview and edit mode from the shared audio workbench hotkey", async () => {
     renderExplorer();
     await screen.findByText("anthem.mp3");

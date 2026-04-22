@@ -122,6 +122,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Packaged frontend plugin runtime loader. It owns the allowlisted module graph for frontend plugins, including package-local relative imports and the host-provided `overlayterm-plugin` bridge helpers.
 - `src/components/animationRuntime.tsx`
   Authored shell-motion runtime loader. It normalizes built-in and folder-authored animation modules, renders shell overlay layers with failure isolation, and now exposes the sanitized `src/animation/` MoGraph toolkit through the `overlayterm-animation` runtime import so authored shell motion can reuse host-owned cloners, fields, particle/fluid helpers, subtle motion wrappers, and timeline utilities without importing app internals directly.
+- `src/config/interactionMotion.ts`
+  Data-driven shell interaction-motion contract. It owns the built-in micro-interaction profile catalog, surface ids, trigger ids, theme/default normalization, user-override precedence, per-surface toggle contract, and the canonical transform/filter/data-attribute payload used by shell surfaces.
+- `src/animation/interactionMotion.tsx`
+  Shared interaction-motion resolver and pointer binder. It merges the active theme lane, persisted appearance settings, and reduced-motion state into reusable bindings for explorer entries, explorer rail items, preview tabs, panel tabs, top-bar buttons, settings cards, and Motion Lab previews. High-frequency shell UI motion should enter through this hook instead of ad hoc inline transforms.
 - `src/components/AppIcons.tsx`
   Shell-wide icon compatibility layer. App chrome should import icons from here instead of `lucide-react` directly so manifest-driven UI icon packs can swap explorer and stock shell glyphs immediately without touching thumbnail generation.
 - `src/config/python.ts`
@@ -216,6 +220,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/store/settingsStore.ts` now persists `settings.appearance.activeTopBarId`; `null` means "follow the active theme path"
   - `SettingsPage.tsx` owns top-bar selection in a dedicated `Top Bars` section, so users can pin a top bar without swapping the entire theme
   - Theme packages can still contribute top bars and choose `theme.defaultTopBarId`; this is how packaged themes publish shell-header workflows now
+- Interaction motion is now a first-class appearance lane separate from authored shell-transition modules:
+  - `src/config/interactionMotion.ts` defines the built-in `subtle`, `spring`, and `playful` profiles, the v1 shell surface catalog, the theme recipe contract, and the resolver precedence `user override > theme default > built-in subtle`
+  - `src/store/settingsStore.ts` persists `settings.appearance.interactionMotionEnabled`, `interactionMotionPresetId`, `interactionMotionIntensity`, and `interactionMotionSurfaceOverrides`; `null` preset means "follow theme"
+  - `src/animation/interactionMotion.tsx` is the only supported integration path for high-frequency shell controls. Components should use the shared surface binder instead of writing one-off `transform`/`transition` hover logic inline
+  - `src/components/SettingsPage.tsx` exposes this lane inside `Animations` as `Interaction Motion`, including global enablement, preset selection, intensity scaling, per-surface toggles, and a compact `Motion Lab` preview harness that exercises the same resolver as the live shell
+  - folder-authored modules under `animations/` and `src/components/animationRuntime.tsx` remain the shell-transition / authored-overlay lane; they are not the default engine for explorer rows, rail chips, tabs, or other hot-path shell controls
 - Icon theming is now a first-class managed subsystem instead of an explorer-only concern:
   - `src/config/iconTheme.ts` resolves the canonical built-in icon map, folder/file matchers, UI icon slots, and merge rules for theme-default or user-selected icon packs
   - `src/config/canonicalIconTheme.json` now advertises the full built-in app-chrome slot surface via `uiIcons`, not just file/folder glyph ids; the built-in manifest should mirror the live `AppIcons.tsx` exports so theme authors can discover every overridable shell glyph from one place

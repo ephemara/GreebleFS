@@ -1,17 +1,12 @@
 /**
  * MoGraph System
- * 
- * Cinema 4D-style motion graphics system for web UI
- * Procedural animation, cloning, effectors, and fields
- * 
- * BREAKTHROUGH: Applying 3D DCC motion graphics concepts to 2D web UI
+ *
+ * The animation folder now has two explicit lanes:
+ * - shell-facing micro interactions and profile math
+ * - advanced MoGraph scene effects for labs and authored runtime overlays
  */
 
-export { Cloner, type ClonerProps, type ClonerLayout } from './Cloner';
-export { Effector, type EffectorProps, type EffectorType } from './Effector';
-export { Field, FieldTarget, type FieldProps, type FieldType, type FalloffType } from './Field';
-export { ParticleUI, type ParticleUIProps, type ParticleMode } from './ParticleUI';
-export { FluidUI, type FluidUIProps } from './FluidUI';
+export * from './advancedEffects';
 export {
   AnimationTimeline,
   bakeAnimation,
@@ -29,13 +24,4 @@ export {
   type UseAnimationOptions,
 } from './lib';
 
-// Subtle professional effects for UI polish
-export {
-  MagneticButton,
-  FloatOnHover,
-  PulseGlow,
-  ParallaxCard,
-  ScaleOnHover,
-  StaggerChildren,
-  childVariants,
-} from './SubtleEffects';
+export * from './microInteractions';

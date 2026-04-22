@@ -87,6 +87,32 @@ describe('ExplorerSideRail', () => {
     expect(screen.queryByText('Explorer')).not.toBeInTheDocument();
   });
 
+  it('applies shared interaction-motion metadata to rail items', () => {
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={240}
+        currentPath=""
+        drives={[]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    const homeButton = screen.getByRole('button', { name: /home/i });
+    expect(homeButton).toHaveAttribute('data-interaction-motion-surface', 'explorerRailItem');
+
+    fireEvent.pointerEnter(homeButton);
+    expect(homeButton.style.transform).toContain('translate3d');
+  });
+
   it('keeps bookmark row management controls hidden until manage mode is enabled', () => {
     const timestamp = Date.now();
     useExplorerStore.getState().replaceRail({
