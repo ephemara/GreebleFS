@@ -3394,7 +3394,7 @@ function PreviewPanel({
     currentViewModeRef.current = viewMode;
   }, [viewMode]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setWildcardWorkflowTabs([]);
     onWorkflowTabChange(currentViewModeRef.current);
   }, [onWorkflowTabChange, preview.path, preview.type]);

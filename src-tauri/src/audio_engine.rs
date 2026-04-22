@@ -1955,15 +1955,25 @@ pub fn audio_engine_load_plugin(
     request: AudioEngineLoadPluginRequest,
 ) -> Result<AudioEngineStateSnapshot, String> {
     let shared = ensure_audio_engine_shared(&app)?;
-    let parameter_state = build_vst_parameter_state_snapshot(&request.plugin_path)?;
+    let deck = shared.deck(request.deck_id);
+    let plugin_load_result = build_vst_parameter_state_snapshot(&request.plugin_path);
     {
-        let mut meta = shared
-            .deck(request.deck_id)
+        let mut meta = deck
             .metadata
             .lock()
             .map_err(|e| format!("lock error: {e}"))?;
-        meta.active_plugin_path = Some(request.plugin_path.clone());
-        meta.vst_parameters = parameter_state;
+        match plugin_load_result {
+            Ok(parameter_state) => {
+                meta.active_plugin_path = Some(request.plugin_path.clone());
+                meta.vst_parameters = parameter_state;
+                meta.error = None;
+            }
+            Err(error) => {
+                meta.active_plugin_path = None;
+                meta.vst_parameters.clear();
+                meta.error = Some(format!("VST load failed: {error}"));
+            }
+        }
     }
     let snapshot = shared.snapshot();
     shared.emit_state();
@@ -1985,6 +1995,7 @@ pub fn audio_engine_clear_deck_plugin(
             .map_err(|e| format!("lock error: {e}"))?;
         meta.active_plugin_path = None;
         meta.vst_parameters.clear();
+        meta.error = None;
     }
     let snapshot = shared.snapshot();
     shared.emit_state();

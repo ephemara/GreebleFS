@@ -334,9 +334,9 @@ describe('ExplorerAudioWorkbench', () => {
     expect(
       await screen.findByText(/audio loaded and ready for playback/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/44,100 Hz/i)).toBeInTheDocument();
-    expect(screen.getByText(/0:24/i)).toBeInTheDocument();
-    expect(screen.getByText(/128 BPM/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/44,100 Hz/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/0:24/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/128 BPM/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/silence regions: 2/i)).toBeInTheDocument();
     expect(screen.queryByText(/^deck b$/i)).not.toBeInTheDocument();
     expect(scanExplorerVstPluginsMock).not.toHaveBeenCalled();

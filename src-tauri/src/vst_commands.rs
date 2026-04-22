@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
+use vst_host::resolve_vst3_module_path;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -147,6 +148,10 @@ fn scan_dir_for_plugins(dir: &PathBuf, out: &mut Vec<VstPluginEntry>) {
             .to_lowercase();
 
         if ext == "vst3" {
+            if resolve_vst3_module_path(&path).is_err() {
+                continue;
+            }
+
             let file_stem = path
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())

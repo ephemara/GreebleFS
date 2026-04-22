@@ -75,6 +75,7 @@ type ExplorerAudioWorkbenchProps = {
 
 type ExportDialogMode = 'clip' | 'normalized' | 'convert' | 'overwrite' | null;
 type TimelineDragMode = 'playhead' | 'selectionStart' | 'selectionEnd' | 'fadeIn' | 'fadeOut';
+type VstPluginPathDialogMode = 'load' | null;
 
 
 const MINIMUM_SELECTION_SECONDS = 0.05;
@@ -402,6 +403,7 @@ export function ExplorerAudioWorkbench({
   const settings = useSettingsStore((state) => state.settings);
   const keybindings = settings.keybindings;
   const activeDeckId = 'a' as const;
+  const previewDeck = getAudioDeckState(snapshot, activeDeckId);
   const activeWorkflowTabId = workflowTabId ?? mode;
   const isPreviewMode = activeWorkflowTabId === 'preview';
   const isEditMode = activeWorkflowTabId === 'edit';
@@ -417,6 +419,10 @@ export function ExplorerAudioWorkbench({
   // VST Discovery State
   const [discoveredPlugins, setDiscoveredPlugins] = useState<ExplorerVstPluginEntry[]>([]);
   const [isScanningVst, setIsScanningVst] = useState(false);
+  const [selectedVstPluginPath, setSelectedVstPluginPath] = useState('');
+  const [manualVstPathInput, setManualVstPathInput] = useState('');
+  const [vstPluginPathDialogMode, setVstPluginPathDialogMode] =
+    useState<VstPluginPathDialogMode>(null);
   const [vstEditorSession, setVstEditorSession] =
     useState<ExplorerVstEditorSessionState | null>(null);
 
@@ -443,16 +449,28 @@ export function ExplorerAudioWorkbench({
         const plugins = await scanExplorerVstPlugins(allPaths);
         if (active) {
           setDiscoveredPlugins(plugins);
+          if (plugins.length === 1 && !selectedVstPluginPath && !previewDeck.activePluginPath) {
+            setSelectedVstPluginPath(plugins[0].path);
+          }
         }
       } catch (err: any) {
-        console.error('Failed to scan VST3 plugins:', err);
+        if (active) {
+          const message = err instanceof Error ? err.message : String(err);
+          setWorkbenchError(message);
+          setWorkbenchStatus('VST scan failed.');
+        }
       } finally {
         if (active) setIsScanningVst(false);
       }
     };
     runScan();
     return () => { active = false; };
-  }, [isVstMode, settings.audio?.vst3AdditionalFolders]);
+  }, [
+    isVstMode,
+    previewDeck.activePluginPath,
+    selectedVstPluginPath,
+    settings.audio?.vst3AdditionalFolders,
+  ]);
 
   const [generateSpectrogram, setGenerateSpectrogram] = useState(true);
   const [convertFormat, setConvertFormat] = useState<'mp3' | 'wav' | 'flac' | 'ogg'>(
@@ -473,7 +491,13 @@ export function ExplorerAudioWorkbench({
   const pendingSeekSecondsRef = useRef(0);
   const playheadMarkerRef = useRef<AudioWorkbenchPlayheadMarkerHandle | null>(null);
 
-  const previewDeck = getAudioDeckState(snapshot, activeDeckId);
+  useEffect(() => {
+    if (!previewDeck.activePluginPath) {
+      return;
+    }
+    setSelectedVstPluginPath(previewDeck.activePluginPath);
+    setManualVstPathInput(previewDeck.activePluginPath);
+  }, [previewDeck.activePluginPath]);
   const effectiveDuration = Math.max(
     analysis?.durationSeconds ?? 0,
     previewDeck.durationSeconds ?? 0,
@@ -657,6 +681,30 @@ export function ExplorerAudioWorkbench({
       keybindings.audioWorkbenchToggleEditMode,
     ],
   );
+  const vstPluginOptions = useMemo(() => {
+    if (!selectedVstPluginPath) {
+      return discoveredPlugins;
+    }
+
+    if (discoveredPlugins.some((plugin) => plugin.path === selectedVstPluginPath)) {
+      return discoveredPlugins;
+    }
+
+    const fileStem =
+      selectedVstPluginPath
+        .split(/[/\\]/)
+        .pop()
+        ?.replace(/\.vst3$/i, '') || 'Manual Plugin';
+
+    return [
+      {
+        name: `${fileStem} (manual)`,
+        path: selectedVstPluginPath,
+        fileStem,
+      },
+      ...discoveredPlugins,
+    ];
+  }, [discoveredPlugins, selectedVstPluginPath]);
   const hasLoopSelectionPreview =
     previewDeck.loopRegion.enabled &&
     effectiveDuration > 0 &&
@@ -677,16 +725,59 @@ export function ExplorerAudioWorkbench({
         ...(settings.audio?.vst3AdditionalFolders ?? []),
       ]);
       setDiscoveredPlugins(plugins);
+      if (plugins.length === 1 && !selectedVstPluginPath && !previewDeck.activePluginPath) {
+        setSelectedVstPluginPath(plugins[0].path);
+      }
+      setWorkbenchError(null);
       setWorkbenchStatus(`Scanned ${plugins.length} VST3 plugins.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWorkbenchError(message);
+      setWorkbenchStatus('VST scan failed.');
     } finally {
       setIsScanningVst(false);
     }
-  }, [settings.audio?.vst3AdditionalFolders]);
+  }, [
+    previewDeck.activePluginPath,
+    selectedVstPluginPath,
+    settings.audio?.vst3AdditionalFolders,
+  ]);
 
   const loadDeckPlugin = useCallback(
     async (pluginPath: string) => {
-      await loadAudioDeckPlugin(previewDeck.deckId, pluginPath);
-      setWorkbenchStatus(`Plugin loaded: ${pluginPath.split(/[/\\]/).pop()}`);
+      const normalizedPluginPath = pluginPath.trim();
+      if (!normalizedPluginPath) {
+        setWorkbenchError('Choose a VST3 plugin path before loading it.');
+        setWorkbenchStatus('Plugin load failed.');
+        return null;
+      }
+
+      setSelectedVstPluginPath(normalizedPluginPath);
+      setManualVstPathInput(normalizedPluginPath);
+      setWorkbenchError(null);
+      setWorkbenchStatus(
+        `Loading VST3 plugin: ${normalizedPluginPath.split(/[/\\]/).pop()}…`,
+      );
+
+      try {
+        const nextSnapshot = await loadAudioDeckPlugin(previewDeck.deckId, normalizedPluginPath);
+        const nextDeck = getAudioDeckState(nextSnapshot, previewDeck.deckId);
+        if (nextDeck.error) {
+          setWorkbenchError(nextDeck.error);
+          setWorkbenchStatus('Plugin load failed.');
+          return nextSnapshot;
+        }
+
+        setWorkbenchStatus(
+          `Plugin loaded: ${normalizedPluginPath.split(/[/\\]/).pop()}`,
+        );
+        return nextSnapshot;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setWorkbenchError(message);
+        setWorkbenchStatus('Plugin load failed.');
+        return null;
+      }
     },
     [previewDeck.deckId],
   );
@@ -1654,12 +1745,144 @@ export function ExplorerAudioWorkbench({
             </>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(280px, 0.8fr)', gap: 12 }}>
+              <div style={{ display: 'grid', gap: 12, minHeight: 0 }}>
                 <div style={{ ...cardStyle, padding: 12, display: 'grid', gap: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <div style={sectionHeaderStyle}>VST Host Surface</div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      gap: 10,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: '1 1 320px', display: 'grid', gap: 4 }}>
+                      <div style={sectionHeaderStyle}>Plugin Picker</div>
+                      <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                        Keep the chrome compact and leave the rest of this pane to the VST editor.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        style={toolbarButtonStyle()}
+                        onClick={() => void rescanVstPlugins()}
+                      >
+                        Rescan
+                      </button>
+                      <button
+                        type="button"
+                        style={toolbarButtonStyle()}
+                        onClick={() => {
+                          setManualVstPathInput(
+                            selectedVstPluginPath || previewDeck.activePluginPath || '',
+                          );
+                          setVstPluginPathDialogMode('load');
+                        }}
+                      >
+                        Load Path…
+                      </button>
+                      <button
+                        type="button"
+                        style={toolbarButtonStyle('primary')}
+                        disabled={!selectedVstPluginPath}
+                        onClick={() => void loadDeckPlugin(selectedVstPluginPath)}
+                      >
+                        Load Selected
+                      </button>
+                      {previewDeck.activePluginPath ? (
+                        <button
+                          id="audio-workbench-clear-vst-btn"
+                          type="button"
+                          style={toolbarButtonStyle('danger')}
+                          onClick={() => {
+                            void clearAudioDeckPlugin(previewDeck.deckId)
+                              .then(() => {
+                                setWorkbenchError(null);
+                                setWorkbenchStatus('Plugin cleared.');
+                              })
+                              .catch((error) => {
+                                const message =
+                                  error instanceof Error ? error.message : String(error);
+                                setWorkbenchError(message);
+                                setWorkbenchStatus('Plugin clear failed.');
+                              });
+                          }}
+                        >
+                          Clear Plugin
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(0, 1fr) auto',
+                      gap: 8,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <select
+                      value={selectedVstPluginPath}
+                      onChange={(event) => {
+                        setSelectedVstPluginPath(event.target.value);
+                        setWorkbenchError(null);
+                      }}
+                      style={{ ...formControlStyle, minWidth: 0 }}
+                    >
+                      <option value="">
+                        {isScanningVst
+                          ? 'Scanning for host-ready VST3 plugins...'
+                          : vstPluginOptions.length > 0
+                            ? 'Select a host-ready VST3 plugin...'
+                            : 'No host-ready VST3 plugins found'}
+                      </option>
+                      {vstPluginOptions.map((plugin) => (
+                        <option key={plugin.path} value={plugin.path}>
+                          {plugin.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div style={{ ...statusChipStyle, whiteSpace: 'nowrap' }}>
+                      {vstPluginOptions.length} ready
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={statusChipStyle}>
+                      {selectedVstPluginPath || 'No plugin selected.'}
+                    </span>
+                    {previewDeck.activePluginPath ? (
+                      <span style={statusChipStyle}>
+                        Active: {previewDeck.activePluginPath.split(/[/\\]/).pop()}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div style={{ ...cardStyle, padding: 12, display: 'grid', gap: 10, minHeight: 0 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 8,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div style={{ display: 'grid', gap: 4 }}>
+                      <div style={sectionHeaderStyle}>VST Host Surface</div>
+                      <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                        Dedicated editor space for oversized plugins and plugin-focused workflows.
+                      </div>
+                    </div>
                     {vstEditorSession?.sessionId ? (
-                      <button type="button" style={toolbarButtonStyle()} onClick={() => void focusExplorerVstEditorSession(vstEditorSession.sessionId)}>
+                      <button
+                        type="button"
+                        style={toolbarButtonStyle()}
+                        onClick={() => void focusExplorerVstEditorSession(vstEditorSession.sessionId)}
+                      >
                         Focus Host
                       </button>
                     ) : null}
@@ -1668,11 +1891,12 @@ export function ExplorerAudioWorkbench({
                     ref={vstHostSurfaceRef}
                     data-testid="audio-vst-host-surface"
                     style={{
-                      minHeight: 320,
+                      minHeight: 420,
+                      height: 'clamp(420px, 58vh, 720px)',
                       borderRadius: 'calc(var(--overlay-explorer-control-radius, 10px) + 6px)',
                       border: '1px dashed var(--overlay-explorer-chip-active-border)',
                       background:
-                        'radial-gradient(circle at top left, color-mix(in srgb, var(--overlay-accent) 10%, transparent), transparent 38%), color-mix(in srgb, var(--overlay-explorer-preview-bg) 80%, black 20%)',
+                        'radial-gradient(circle at top left, color-mix(in srgb, var(--overlay-accent) 10%, transparent), transparent 34%), color-mix(in srgb, var(--overlay-explorer-preview-bg) 88%, black 12%)',
                       display: 'grid',
                       placeItems: 'center',
                       padding: 18,
@@ -1680,8 +1904,8 @@ export function ExplorerAudioWorkbench({
                     }}
                   >
                     {previewDeck.activePluginPath ? (
-                      <div style={{ display: 'grid', gap: 8, maxWidth: 360 }}>
-                        <div style={{ fontSize: 15, fontWeight: 700 }}>
+                      <div style={{ display: 'grid', gap: 8, maxWidth: 420 }}>
+                        <div style={{ fontSize: 16, fontWeight: 700 }}>
                           {previewDeck.activePluginPath.split(/[/\\]/).pop()}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
@@ -1693,91 +1917,41 @@ export function ExplorerAudioWorkbench({
                       </div>
                     ) : (
                       <div style={{ display: 'grid', gap: 6 }}>
-                        <div style={{ fontSize: 15, fontWeight: 700 }}>No VST loaded</div>
+                        <div style={{ fontSize: 16, fontWeight: 700 }}>No VST loaded</div>
                         <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
-                          Pick a plugin to open its dedicated VST workflow.
+                          Load a host-ready plugin to give it this pane.
                         </div>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gap: 12 }}>
-                  <div style={panelStyle}>
-                    <div style={sectionHeaderStyle}>Plugin Picker</div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <select
-                        value={previewDeck.activePluginPath || ''}
-                        onChange={(event) => {
-                          const nextPath = event.target.value;
-                          if (nextPath) {
-                            void loadDeckPlugin(nextPath);
-                          }
-                        }}
-                        style={formControlStyle}
-                      >
-                        <option value="" disabled>
-                          {isScanningVst ? 'Scanning for plugins...' : 'Select a VST3 plugin...'}
-                        </option>
-                        {discoveredPlugins.map((plugin) => (
-                          <option key={plugin.path} value={plugin.path}>
-                            {plugin.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button type="button" style={toolbarButtonStyle()} onClick={() => void rescanVstPlugins()}>
-                        Rescan
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        style={toolbarButtonStyle('ghost')}
-                        onClick={async () => {
-                          const { open } = await import('@tauri-apps/plugin-fs').catch(() => ({ open: null as any }));
-                          if (!open) {
-                            return;
-                          }
-                          const picked = await (open as any)({
-                            title: 'Select a VST3 Plugin',
-                            filters: [{ name: 'VST3 Plugin', extensions: ['vst3', 'so', 'dll', 'dylib'] }],
-                            multiple: false,
-                            directory: false,
-                          }) as string | null;
-                          if (picked) {
-                            await loadDeckPlugin(picked);
-                          }
-                        }}
-                      >
-                        Browse Files...
-                      </button>
-                      {previewDeck.activePluginPath ? (
-                        <button
-                          id="audio-workbench-clear-vst-btn"
-                          type="button"
-                          style={toolbarButtonStyle('danger')}
-                          onClick={async () => {
-                            await clearAudioDeckPlugin(previewDeck.deckId);
-                            setWorkbenchStatus('Plugin cleared.');
-                          }}
-                        >
-                          Clear Plugin
-                        </button>
-                      ) : null}
-                    </div>
-                    <span style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
-                      {previewDeck.activePluginPath ?? 'No plugin loaded.'}
-                    </span>
-                  </div>
-
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                    gap: 12,
+                    alignItems: 'start',
+                  }}
+                >
                   <div style={panelStyle}>
                     <div style={sectionHeaderStyle}>Parameter Inspector</div>
                     {previewDeck.vstParameters.length > 0 ? (
-                      <div style={{ display: 'grid', gap: 8, maxHeight: 320, overflowY: 'auto' }}>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                          gap: 8,
+                          maxHeight: 220,
+                          overflowY: 'auto',
+                        }}
+                      >
                         {previewDeck.vstParameters.map((param) => (
                           <div key={param.id} style={{ ...summaryCardStyle, gap: 6 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                              <span style={{ fontSize: 11, fontWeight: 600 }}>{param.title || param.shortTitle}</span>
+                              <span style={{ fontSize: 11, fontWeight: 600 }}>
+                                {param.title || param.shortTitle}
+                              </span>
                               <span style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>
                                 {(param.valueNormalized * 100).toFixed(0)}%
                               </span>
@@ -1797,14 +1971,16 @@ export function ExplorerAudioWorkbench({
                                   Number(event.target.value),
                                 ).catch((error) => {
                                   setWorkbenchError(
-                                    error instanceof Error
-                                      ? error.message
-                                      : String(error),
+                                    error instanceof Error ? error.message : String(error),
                                   );
                                 });
                               }}
                             />
-                            {param.units ? <span style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>{param.units}</span> : null}
+                            {param.units ? (
+                              <span style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>
+                                {param.units}
+                              </span>
+                            ) : null}
                           </div>
                         ))}
                       </div>
@@ -1817,20 +1993,67 @@ export function ExplorerAudioWorkbench({
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ ...statusChipStyle, color: workbenchError || previewDeck.error || snapshot.engineError ? '#c0392b' : 'var(--overlay-text-primary)' }}>
-                      {activeStatusMessage}
-                    </span>
-                    {vstEditorSession?.statusLabel ? (
-                      <span style={statusChipStyle}>{vstEditorSession.statusLabel}</span>
-                    ) : null}
+                  <div style={panelStyle}>
+                    <div style={sectionHeaderStyle}>Session State</div>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <div style={summaryCardStyle}>
+                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>
+                          Attach
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>
+                          {vstEditorSession?.attachMode ?? 'pending'}
+                        </span>
+                      </div>
+                      <div style={summaryCardStyle}>
+                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>
+                          Parameters
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>
+                          {previewDeck.vstParameters.length}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                        {vstEditorSession?.statusLabel
+                          ?? 'Host session is created when a plugin is active in the VST workflow.'}
+                      </div>
+                    </div>
                   </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ ...statusChipStyle, color: workbenchError || previewDeck.error || snapshot.engineError ? '#c0392b' : 'var(--overlay-text-primary)' }}>
+                    {activeStatusMessage}
+                  </span>
+                  {vstEditorSession?.statusLabel ? (
+                    <span style={statusChipStyle}>{vstEditorSession.statusLabel}</span>
+                  ) : null}
                 </div>
               </div>
             </>
           )}
         </div>
       </div>
+
+      <AppPromptDialog
+        open={vstPluginPathDialogMode === 'load'}
+        title='Load VST3 Plugin Path'
+        description='Paste an absolute path to a host-ready VST3 plugin or bundle.'
+        value={manualVstPathInput}
+        placeholder='/home/user/.vst3/MyPlugin.vst3'
+        submitLabel='Load Plugin'
+        onChange={setManualVstPathInput}
+        onCancel={() => setVstPluginPathDialogMode(null)}
+        onSubmit={() => {
+          const nextPath = manualVstPathInput.trim();
+          if (!nextPath) {
+            setWorkbenchError('Enter a VST3 path before loading it.');
+            setWorkbenchStatus('Plugin load failed.');
+            return;
+          }
+          setVstPluginPathDialogMode(null);
+          void loadDeckPlugin(nextPath);
+        }}
+      />
 
       <AppPromptDialog
         open={

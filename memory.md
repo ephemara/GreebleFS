@@ -1,5 +1,25 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Wildcard Preview Tabs And Audio VST Workflow
+
+- The shared Explorer preview header is no longer a hardcoded binary toggle. It now supports lane-owned wildcard workflow tabs while keeping the canonical non-edit-first ordering.
+- Durable implementation shape:
+  - `src/components/explorer/explorerPreviewWorkflowTabs.ts` is the shared contract for preview workflow tabs. It always builds the canonical built-in tabs first, then appends normalized wildcard tabs such as audio `VST`.
+  - `src/components/FileExplorer.tsx` `PreviewPanel` now owns wildcard-tab registration and active-tab normalization. Wildcard tab ids are live preview UI state only; they are reset on preview path/type changes and are not persisted into explorer session state.
+  - `src/components/ExplorerAudioWorkbench.tsx` now uses three workflows: `preview`, `edit`, and `vst`. `Preview` is dense and themed, `Edit` keeps trim/fade/export only, and `VST` is a host-dominant lane with compact plugin-picking chrome so the pane mostly belongs to the plugin UI.
+  - `crates/vst-host/src/lib.rs` now resolves real VST3 load targets instead of assuming the user-picked `.vst3` path is always a directly loadable library. It handles flat binaries plus bundle layouts and rejects foreign-platform binaries for the current host.
+  - `src-tauri/src/vst_commands.rs` now only surfaces host-ready VST3 entries in the picker, which prevents Linux/macOS from advertising incompatible Windows plugin binaries as selectable VSTs.
+  - `src-tauri/src/audio_engine.rs` now stores deck-level `activePluginPath` plus `vstParameters`, and failed plugin loads now resolve into `deck.error` state instead of rejecting the whole preview workflow with an unhandled promise.
+  - `src/runtime/audioVstEditorBackend.ts` plus `src-tauri/src/vst_host_runtime.rs` now own editor-session lifecycle and rect sync for the VST lane.
+- Current limitation:
+  - The VST session bridge is still honest scaffolding. It can validate/load plugins, track session state, and sync the requested host rect, but it still reports `attachMode: unavailable`. True inline native editor embedding and actual VST DSP insertion into the realtime audio render path are still pending.
+- Validation:
+  - passed: `cargo test --manifest-path Cargo.toml -p vst-host`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - passed: `bunx vitest run src/test/explorerAudioWorkbench.test.tsx --reporter=verbose --pool=forks`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx --reporter=verbose --pool=forks`
+  - note: running both large Vitest files together with the default worker pool still hit a worker heap OOM in this workspace, so the stable validation signal is the per-file `--pool=forks` runs above.
+
 # 2026-04-21 - Zen App-Chrome Coverage Is Now One Slot Per SVG
 
 - The Zen icon pack stopped being a partial example with shared UI aliases. It is now the gold reference for fully tweakable app chrome.
