@@ -9,7 +9,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_specta::Event;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -26,6 +27,100 @@ pub struct TerminalInstance {
 pub struct TerminalManager {
     terminals: Mutex<HashMap<String, Arc<Mutex<TerminalInstance>>>>,
     shell_states: Mutex<HashMap<String, TerminalShellIntegrationState>>,
+}
+
+const TERMINAL_SHELL_INTEGRATION_CWD_PREFIX: &[u8] = b"\x1b]633;GreebleFS;Cwd=";
+const TERMINAL_SHELL_INTEGRATION_BEL: u8 = 0x07;
+
+#[derive(Debug, Default)]
+struct TerminalShellIntegrationChunk {
+    visible_output: Vec<u8>,
+    reported_cwds: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+struct TerminalShellIntegrationOutputParser {
+    carryover: Vec<u8>,
+}
+
+impl TerminalShellIntegrationOutputParser {
+    fn consume(&mut self, chunk: &[u8]) -> TerminalShellIntegrationChunk {
+        let mut combined = std::mem::take(&mut self.carryover);
+        combined.extend_from_slice(chunk);
+
+        let mut visible_output = Vec::with_capacity(combined.len());
+        let mut reported_cwds = Vec::new();
+        let mut cursor = 0usize;
+
+        while let Some(relative_start) =
+            find_subslice(&combined[cursor..], TERMINAL_SHELL_INTEGRATION_CWD_PREFIX)
+        {
+            let marker_start = cursor + relative_start;
+            visible_output.extend_from_slice(&combined[cursor..marker_start]);
+
+            let payload_start = marker_start + TERMINAL_SHELL_INTEGRATION_CWD_PREFIX.len();
+            if let Some(relative_end) = combined[payload_start..]
+                .iter()
+                .position(|byte| *byte == TERMINAL_SHELL_INTEGRATION_BEL)
+            {
+                let payload_end = payload_start + relative_end;
+                let reported_cwd =
+                    String::from_utf8_lossy(&combined[payload_start..payload_end]).to_string();
+                if !reported_cwd.trim().is_empty() {
+                    reported_cwds.push(reported_cwd);
+                }
+                cursor = payload_end + 1;
+                continue;
+            }
+
+            self.carryover = combined[marker_start..].to_vec();
+            return TerminalShellIntegrationChunk {
+                visible_output,
+                reported_cwds,
+            };
+        }
+
+        let remaining = &combined[cursor..];
+        let partial_prefix_len =
+            longest_suffix_matching_prefix(remaining, TERMINAL_SHELL_INTEGRATION_CWD_PREFIX);
+        if partial_prefix_len > 0 {
+            let visible_end = remaining.len() - partial_prefix_len;
+            visible_output.extend_from_slice(&remaining[..visible_end]);
+            self.carryover = remaining[visible_end..].to_vec();
+        } else {
+            visible_output.extend_from_slice(remaining);
+        }
+
+        TerminalShellIntegrationChunk {
+            visible_output,
+            reported_cwds,
+        }
+    }
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn longest_suffix_matching_prefix(input: &[u8], prefix: &[u8]) -> usize {
+    if input.is_empty() || prefix.is_empty() {
+        return 0;
+    }
+
+    let max_len = input.len().min(prefix.len().saturating_sub(1));
+    for length in (1..=max_len).rev() {
+        if input[input.len() - length..] == prefix[..length] {
+            return length;
+        }
+    }
+
+    0
 }
 
 #[derive(Debug, serde::Deserialize, specta::Type)]
@@ -83,6 +178,20 @@ pub struct TerminalShellIntegrationStateEvent {
 pub struct TerminalWriteRequest {
     pub id: String,
     pub data: String,
+}
+
+fn emit_terminal_shell_integration_state_event(
+    app: &AppHandle,
+    id: String,
+    state: TerminalShellIntegrationState,
+    applied_cwd: Option<String>,
+) {
+    let _ = TerminalShellIntegrationStateEvent {
+        id,
+        state,
+        applied_cwd,
+    }
+    .emit(app);
 }
 
 impl TerminalManager {
@@ -259,6 +368,15 @@ impl TerminalManager {
                 last_synced_cwd: None,
             },
         );
+        drop(shell_states);
+
+        if let Some(bootstrap_command) = terminal_shell_integration_bootstrap_command(
+            &terminal_shell_kind_from_executable(&shell),
+        ) {
+            if let Err(error) = self.write(id, bootstrap_command.as_bytes()) {
+                log::warn!("failed to install terminal shell integration for {id}: {error}");
+            }
+        }
 
         Ok(())
     }
@@ -433,6 +551,35 @@ impl TerminalManager {
         Ok((state.clone(), applied))
     }
 
+    pub fn report_prompt_ready_cwd(
+        &self,
+        id: &str,
+        reported_cwd: &str,
+    ) -> Result<Option<(TerminalShellIntegrationState, Option<String>)>, String> {
+        let mut states = self.shell_states.lock().unwrap();
+        let state = states
+            .get_mut(id)
+            .ok_or_else(|| format!("Terminal {} shell state not found", id))?;
+        let normalized_reported_cwd =
+            normalize_reported_terminal_cwd(&state.shell_kind, reported_cwd);
+        if normalized_reported_cwd.is_empty() {
+            return Ok(None);
+        }
+
+        let should_emit = !state.at_prompt
+            || state.reported_cwd.as_deref() != Some(normalized_reported_cwd.as_str())
+            || state.pending_cwd.is_some();
+
+        state.at_prompt = true;
+        state.reported_cwd = Some(normalized_reported_cwd);
+        let applied = self.flush_pending_cwd_locked(id, state)?;
+        if !should_emit && applied.is_none() {
+            return Ok(None);
+        }
+
+        Ok(Some((state.clone(), applied)))
+    }
+
     fn flush_pending_cwd_locked(
         &self,
         id: &str,
@@ -466,15 +613,45 @@ impl TerminalManager {
 
         if let Some(mut reader) = reader {
             let event_name = format!("terminal-output-{}", id);
+            let terminal_id = id.clone();
 
             std::thread::spawn(move || {
                 let mut buffer = [0u8; 4096];
+                let mut shell_integration_parser = TerminalShellIntegrationOutputParser::default();
                 loop {
                     match reader.read(&mut buffer) {
                         Ok(0) => break, // EOF
                         Ok(n) => {
-                            let data = String::from_utf8_lossy(&buffer[..n]).to_string();
-                            let _ = app.emit(&event_name, data);
+                            let parsed_chunk = shell_integration_parser.consume(&buffer[..n]);
+                            if !parsed_chunk.visible_output.is_empty() {
+                                let data = String::from_utf8_lossy(&parsed_chunk.visible_output)
+                                    .to_string();
+                                let _ = app.emit(&event_name, data);
+                            }
+
+                            for reported_cwd in parsed_chunk.reported_cwds {
+                                let terminal_manager = app.state::<TerminalManager>();
+                                match terminal_manager
+                                    .report_prompt_ready_cwd(&terminal_id, &reported_cwd)
+                                {
+                                    Ok(Some((state, applied_cwd))) => {
+                                        emit_terminal_shell_integration_state_event(
+                                            &app,
+                                            terminal_id.clone(),
+                                            state,
+                                            applied_cwd,
+                                        );
+                                    }
+                                    Ok(None) => {}
+                                    Err(error) => {
+                                        log::warn!(
+                                            "failed to apply reported cwd for {}: {}",
+                                            terminal_id,
+                                            error
+                                        );
+                                    }
+                                }
+                            }
                         }
                         Err(e) => {
                             log::error!("Terminal read error: {}", e);
@@ -515,6 +692,117 @@ fn terminal_auto_cd_command(shell_kind: &TerminalShellKind, cwd: &str) -> Option
             Some(format!("builtin cd -- {}\n", shell_quote_single(cwd)))
         }
         TerminalShellKind::Unknown => Some(format!("cd -- {}\n", shell_quote_single(cwd))),
+    }
+}
+
+fn terminal_shell_integration_bootstrap_command(shell_kind: &TerminalShellKind) -> Option<String> {
+    match shell_kind {
+        TerminalShellKind::Bash => Some(concat!(
+            "__greeblefs_prompt_cwd(){ printf '\\033]633;GreebleFS;Cwd=%s\\a' \"$PWD\"; }; ",
+            "case \";${PROMPT_COMMAND};\" in ",
+            "*\";__greeblefs_prompt_cwd;\"*) ;; ",
+            "*) PROMPT_COMMAND=\"__greeblefs_prompt_cwd${PROMPT_COMMAND:+;${PROMPT_COMMAND}}\" ;; ",
+            "esac\n",
+        )
+        .to_string()),
+        TerminalShellKind::Zsh => Some(concat!(
+            "__greeblefs_precmd(){ printf '\\033]633;GreebleFS;Cwd=%s\\a' \"$PWD\"; }; ",
+            "typeset -ga precmd_functions; ",
+            "(( ${precmd_functions[(Ie)__greeblefs_precmd]} )) || precmd_functions=(__greeblefs_precmd $precmd_functions)\n",
+        )
+        .to_string()),
+        TerminalShellKind::Fish => Some(concat!(
+            "functions -q __greeblefs_original_fish_prompt; or functions -c fish_prompt __greeblefs_original_fish_prompt; ",
+            "function fish_prompt; printf '\\e]633;GreebleFS;Cwd=%s\\a' \"$PWD\"; __greeblefs_original_fish_prompt; end\n",
+        )
+        .to_string()),
+        TerminalShellKind::PowerShell => Some(
+            concat!(
+                "if (-not (Test-Path function:__GreebleFSOriginalPrompt)) { Copy-Item function:prompt function:__GreebleFSOriginalPrompt -ErrorAction SilentlyContinue }; ",
+                "function global:prompt { ",
+                "$cwd = $executionContext.SessionState.Path.CurrentLocation.Path; ",
+                "[Console]::Out.Write(\"`e]633;GreebleFS;Cwd=$cwd`a\"); ",
+                "if (Test-Path function:__GreebleFSOriginalPrompt) { & __GreebleFSOriginalPrompt } else { \"PS $cwd> \" } ",
+                "}\r\n",
+            )
+            .to_string(),
+        ),
+        TerminalShellKind::Cmd => Some(format!(
+            "prompt $E]633;GreebleFS;Cwd=$P{}$P$G\r\n",
+            '\u{7}'
+        )),
+        TerminalShellKind::Unknown => None,
+    }
+}
+
+fn normalize_reported_terminal_cwd(_shell_kind: &TerminalShellKind, reported_cwd: &str) -> String {
+    let trimmed = reported_cwd.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let supports_posix_windows_paths = matches!(
+            _shell_kind,
+            TerminalShellKind::Bash | TerminalShellKind::Zsh | TerminalShellKind::Fish
+        );
+        if supports_posix_windows_paths {
+            if let Some(converted) = convert_posix_windows_shell_path(trimmed) {
+                return converted;
+            }
+        }
+
+        if let Some(converted) = normalize_windows_drive_path(trimmed) {
+            return converted;
+        }
+    }
+
+    trimmed.to_string()
+}
+
+#[cfg(target_os = "windows")]
+fn convert_posix_windows_shell_path(path: &str) -> Option<String> {
+    let stripped = path.strip_prefix('/')?;
+    let bytes = stripped.as_bytes();
+    let drive_letter = (*bytes.first()?).to_ascii_uppercase();
+    if !drive_letter.is_ascii_alphabetic() {
+        return None;
+    }
+
+    if bytes.len() == 1 {
+        return Some(format!("{}:\\", drive_letter as char));
+    }
+
+    if bytes[1] != b'/' {
+        return None;
+    }
+
+    let remainder = stripped[2..].replace('/', "\\");
+    if remainder.is_empty() {
+        Some(format!("{}:\\", drive_letter as char))
+    } else {
+        Some(format!("{}:\\{}", drive_letter as char, remainder))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn normalize_windows_drive_path(path: &str) -> Option<String> {
+    let bytes = path.as_bytes();
+    if bytes.len() < 2 || !bytes[0].is_ascii_alphabetic() || bytes[1] != b':' {
+        return None;
+    }
+
+    let drive_letter = bytes[0].to_ascii_uppercase() as char;
+    if bytes.len() == 2 {
+        return Some(format!("{}:\\", drive_letter));
+    }
+
+    let remainder = path[2..].replace('/', "\\");
+    if remainder.starts_with('\\') {
+        Some(format!("{}:{}", drive_letter, remainder))
+    } else {
+        Some(format!("{}:\\{}", drive_letter, remainder))
     }
 }
 
@@ -1005,13 +1293,11 @@ pub async fn terminal_register_shell_integration(
     request: TerminalShellIntegrationRequest,
 ) -> Result<TerminalShellIntegrationState, String> {
     let state = terminal_manager.register_shell_integration(&request)?;
-    let _ = app.emit(
-        "terminal-shell-integration-state",
-        TerminalShellIntegrationStateEvent {
-            id: request.id,
-            state: state.clone(),
-            applied_cwd: state.last_synced_cwd.clone(),
-        },
+    emit_terminal_shell_integration_state_event(
+        &app,
+        request.id,
+        state.clone(),
+        state.last_synced_cwd.clone(),
     );
     Ok(state)
 }
@@ -1025,14 +1311,7 @@ pub async fn terminal_sync_cwd(
     cwd: String,
 ) -> Result<TerminalShellIntegrationState, String> {
     let (state, applied_cwd) = terminal_manager.request_cwd_sync(&id, &cwd)?;
-    let _ = app.emit(
-        "terminal-shell-integration-state",
-        TerminalShellIntegrationStateEvent {
-            id,
-            state: state.clone(),
-            applied_cwd,
-        },
-    );
+    emit_terminal_shell_integration_state_event(&app, id, state.clone(), applied_cwd);
     Ok(state)
 }
 
@@ -1046,14 +1325,7 @@ pub async fn terminal_set_prompt_state(
     reported_cwd: Option<String>,
 ) -> Result<TerminalShellIntegrationState, String> {
     let (state, applied_cwd) = terminal_manager.set_prompt_state(&id, at_prompt, reported_cwd)?;
-    let _ = app.emit(
-        "terminal-shell-integration-state",
-        TerminalShellIntegrationStateEvent {
-            id,
-            state: state.clone(),
-            applied_cwd,
-        },
-    );
+    emit_terminal_shell_integration_state_event(&app, id, state.clone(), applied_cwd);
     Ok(state)
 }
 
@@ -1078,10 +1350,15 @@ pub async fn terminal_open_external(request: ExternalTerminalRequest) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsStr;
-    use std::sync::{LazyLock, Mutex};
     use tempfile::tempdir;
 
+    #[cfg(target_os = "windows")]
+    use std::ffi::OsStr;
+
+    #[cfg(target_os = "windows")]
+    use std::sync::{LazyLock, Mutex};
+
+    #[cfg(target_os = "windows")]
     static ENV_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[test]
@@ -1126,6 +1403,81 @@ mod tests {
             .expect("queue cwd sync");
         assert_eq!(updated_state.pending_cwd.as_deref(), Some("/tmp/workspace"));
         assert!(applied.is_none());
+    }
+
+    #[test]
+    fn terminal_shell_integration_parser_extracts_cwd_markers_across_chunks() {
+        let mut parser = TerminalShellIntegrationOutputParser::default();
+
+        let first_chunk = parser.consume(b"hello\x1b]633;GreebleFS;Cwd=/tmp");
+        assert_eq!(
+            String::from_utf8_lossy(&first_chunk.visible_output),
+            "hello"
+        );
+        assert!(first_chunk.reported_cwds.is_empty());
+
+        let second_chunk = parser.consume(b"/workspace\x07world");
+        assert_eq!(
+            String::from_utf8_lossy(&second_chunk.visible_output),
+            "world"
+        );
+        assert_eq!(
+            second_chunk.reported_cwds,
+            vec!["/tmp/workspace".to_string()]
+        );
+    }
+
+    #[test]
+    fn terminal_shell_integration_parser_preserves_regular_escape_output() {
+        let mut parser = TerminalShellIntegrationOutputParser::default();
+        let chunk = parser.consume(b"\x1b[32mok\x1b[0m");
+
+        assert_eq!(
+            String::from_utf8_lossy(&chunk.visible_output),
+            "\x1b[32mok\x1b[0m"
+        );
+        assert!(chunk.reported_cwds.is_empty());
+    }
+
+    #[test]
+    fn terminal_shell_integration_bootstrap_commands_cover_supported_shells() {
+        let bash_command = terminal_shell_integration_bootstrap_command(&TerminalShellKind::Bash)
+            .expect("bash bootstrap");
+        assert!(bash_command.contains("__greeblefs_prompt_cwd"));
+        assert!(bash_command.contains("633;GreebleFS;Cwd="));
+
+        let power_shell_command =
+            terminal_shell_integration_bootstrap_command(&TerminalShellKind::PowerShell)
+                .expect("powershell bootstrap");
+        assert!(power_shell_command.contains("function global:prompt"));
+        assert!(power_shell_command.contains("633;GreebleFS;Cwd="));
+
+        let cmd_command = terminal_shell_integration_bootstrap_command(&TerminalShellKind::Cmd)
+            .expect("cmd bootstrap");
+        assert!(cmd_command.starts_with("prompt $E]633;GreebleFS;Cwd=$P"));
+        assert!(cmd_command.contains('\u{7}'));
+    }
+
+    #[test]
+    fn terminal_shell_state_accepts_reported_cwd_from_shell_integration() {
+        let manager = TerminalManager::new();
+        manager
+            .register_shell_integration(&TerminalShellIntegrationRequest {
+                id: "terminal-b".to_string(),
+                shell_kind: Some(TerminalShellKind::Bash),
+                supports_auto_cd: Some(true),
+                at_prompt: Some(false),
+                reported_cwd: None,
+            })
+            .expect("register shell integration");
+
+        let reported = manager
+            .report_prompt_ready_cwd("terminal-b", "/tmp/project")
+            .expect("report cwd")
+            .expect("state update");
+        assert_eq!(reported.0.reported_cwd.as_deref(), Some("/tmp/project"));
+        assert!(reported.0.at_prompt);
+        assert!(reported.1.is_none());
     }
 
     #[cfg(target_os = "windows")]

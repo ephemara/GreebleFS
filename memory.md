@@ -1,5 +1,24 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Explorer Preview Terminal Now Drives Explorer Navigation Through Native Shell Integration
+
+- The embedded explorer preview terminal no longer depends on mocked callbacks or optimistic prompt timers to tell Explorer where the shell actually is. The native terminal lane now reports cwd changes from the shell prompt itself.
+- Durable implementation shape:
+  - `src-tauri/src/terminal.rs` now installs per-shell prompt hooks for `bash`, `zsh`, `fish`, `PowerShell`, and `cmd`, emitting a host-owned OSC marker whenever a prompt renders with a cwd.
+  - The PTY reader now parses and strips those OSC markers before forwarding visible output to xterm, so the terminal view stays clean while Rust still gets a reliable cwd signal.
+  - The terminal manager now routes those prompt-time cwd reports through `report_prompt_ready_cwd(...)`, which updates `TerminalShellIntegrationState`, marks the pane back at prompt, and reuses the existing pending-cwd flush path. This keeps explorer -> terminal and terminal -> explorer sync on one state machine instead of inventing a second channel.
+  - Shell-integration event emission now uses the typed `TerminalShellIntegrationStateEvent` emitter, fixing the previous event-name drift between Rust and `TerminalOverlay.tsx`.
+  - Windows-native path normalization now lives in the Rust terminal layer, including POSIX-style `/c/...` cwd reports from Unix-like shells on Windows, so Explorer gets a native path before React sees the event.
+- Durable product note:
+  - Keep terminal cwd sync in the native terminal host. Do not regress to parsing `cd ...` strings in React; shell truth belongs in the PTY/backend lane.
+  - If new shells are supported later, extend the shell hook/bootstrap + cwd normalization path in `src-tauri/src/terminal.rs` rather than adding more frontend exceptions.
+- Validation:
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml terminal_shell_integration -- --nocapture`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml terminal_shell_ -- --nocapture`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml terminal_shell_state_accepts_reported_cwd_from_shell_integration -- --nocapture`
+  - passed: `bunx vitest run src/test/terminalOverlay.test.tsx -t "reports shell integration cwd changes only for the active pane prompt and dedupes repeats|injects a shell-specific cd command when the explorer queues a terminal cwd sync" --reporter=dot`
+  - note: the repo still emits unrelated Rust warnings in other crates and existing non-terminal files in this worktree were already dirty during the pass; this change intentionally stayed scoped to the native terminal host plus docs.
+
 # 2026-04-22 - Interaction Motion Now Splits Chrome From Files And Exposes KCloner-Style Modifier Knobs
 
 - Interaction Motion no longer behaves like one flat preset applied everywhere. The resolver now routes surfaces through two durable modules:
