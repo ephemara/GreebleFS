@@ -32,7 +32,7 @@ describe('explorerViewModes', () => {
   });
 
   it('interpolates grid zoom between the icon presets', () => {
-    expect(normalizeExplorerGridZoom(99)).toBe(1);
+    expect(normalizeExplorerGridZoom(99)).toBe(2.8);
     expect(stepExplorerGridZoom(0.5, 'larger')).toBeGreaterThan(0.5);
     expect(getNearestExplorerGridMode(0.1)).toBe('icons-s');
     expect(getNearestExplorerGridMode(0.5)).toBe('icons-m');
@@ -53,10 +53,10 @@ describe('explorerViewModes', () => {
     expect(commitExplorerLayoutZoomState({
       family: 'grid',
       layoutZoom: 2.8,
-      storedGridZoom: 1,
+      storedGridZoom: 2.8,
     })).toEqual({
       viewMode: 'icons-xl',
-      gridZoom: 1,
+      gridZoom: 2.8,
     });
   });
 

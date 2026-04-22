@@ -134,12 +134,10 @@ import {
 } from "../config/iconTheme";
 import type { ExplorerLayoutMode } from "../config/layoutProfiles";
 import {
-  EXPLORER_GRID_ZOOM_MAX,
   EXPLORER_LAYOUT_ZOOM_MAX,
   EXPLORER_LAYOUT_ZOOM_MIN,
   getExplorerGridMetricsForZoom,
   getExplorerGridZoomAnchor,
-  getExplorerGridZoomPercent,
   createExplorerLayoutZoomState,
   commitExplorerLayoutZoomState,
   explorerViewModes,
@@ -509,6 +507,111 @@ function getNormalizedExplorerLayoutWheelDelta(
   }
 
   return event.deltaY;
+}
+
+function setExplorerLayoutCssVariable(
+  element: HTMLElement,
+  name: string,
+  value: string,
+) {
+  element.style.setProperty(name, value);
+}
+
+function applyExplorerLayoutZoomCssVariables(
+  element: HTMLElement | null,
+  layoutZoomState: ExplorerLayoutZoomState,
+  explorerTheme: ResolvedExplorerThemeRecipe,
+) {
+  if (!element) {
+    return;
+  }
+
+  const resolvedState = resolveExplorerLayoutZoomState(layoutZoomState);
+  element.dataset.overlayExplorerLiveZoomFamily = resolvedState.family;
+
+  if (resolvedState.family === "grid") {
+    const metrics = applyExplorerThemeToGridMetrics(
+      getExplorerGridMetricsForZoom(resolvedState.gridZoom),
+      explorerTheme,
+    );
+    const itemPadding =
+      metrics.iconSize <= 46 ? "8px 6px 6px" : "10px 8px 8px";
+    const thumbnailRadius = Math.max(
+      10,
+      Math.round(metrics.tileRadius * 0.72),
+    );
+
+    setExplorerLayoutCssVariable(
+      element,
+      "--overlay-explorer-grid-gap",
+      `${metrics.gap}px`,
+    );
+    setExplorerLayoutCssVariable(
+      element,
+      "--overlay-explorer-grid-padding",
+      `${metrics.padding}px`,
+    );
+    setExplorerLayoutCssVariable(
+      element,
+      "--overlay-explorer-grid-row-height",
+      `${metrics.rowHeight}px`,
+    );
+    setExplorerLayoutCssVariable(
+      element,
+      "--overlay-explorer-grid-new-item-height",
+      `${metrics.newItemHeight}px`,
+    );
+    setExplorerLayoutCssVariable(
+      element,
+      "--overlay-explorer-grid-tile-radius",
+      `${metrics.tileRadius}px`,
+    );
+    setExplorerLayoutCssVariable(
+      element,
+      "--overlay-explorer-grid-icon-stage-size",
+      `${metrics.iconStageSize}px`,
+    );
+    setExplorerLayoutCssVariable(
+      element,
+      "--overlay-explorer-grid-item-padding",
+      itemPadding,
+    );
+    setExplorerLayoutCssVariable(
+      element,
+      "--overlay-explorer-grid-thumbnail-radius",
+      `${thumbnailRadius}px`,
+    );
+    return;
+  }
+
+  const rowMetrics = applyExplorerThemeToRowMetrics(
+    getExplorerViewModeDefinition("list").rows,
+    explorerTheme,
+  );
+  const rowHeight = rowMetrics?.rowHeight ?? EXPLORER_LIST_ROW_HEIGHT;
+  const newItemHeight = rowMetrics?.newItemHeight ?? 42;
+  const thumbnailStageSize = Math.max((rowMetrics?.iconSize ?? 16) + 12, 28);
+
+  setExplorerLayoutCssVariable(
+    element,
+    "--overlay-explorer-list-row-height",
+    `${rowHeight}px`,
+  );
+  setExplorerLayoutCssVariable(
+    element,
+    "--overlay-explorer-list-new-item-height",
+    `${newItemHeight}px`,
+  );
+  setExplorerLayoutCssVariable(
+    element,
+    "--overlay-explorer-list-thumbnail-size",
+    `${thumbnailStageSize}px`,
+  );
+  setExplorerLayoutCssVariable(
+    element,
+    "--overlay-explorer-list-padding",
+    "12px",
+  );
 }
 
 type ExplorerSearchCacheEntry = {
@@ -7355,7 +7458,6 @@ export function FileExplorer({
   const layoutZoomFrameSampleRef = useRef<number[]>([]);
   const layoutZoomFrameRafRef = useRef<number | null>(null);
   const layoutZoomFrameLastAtRef = useRef<number | null>(null);
-  const preserveOversizedLayoutZoomRef = useRef(false);
   const layoutZoomPointerAnchorRef =
     useRef<ExplorerLayoutZoomPointerAnchor | null>(null);
   const [liveLayoutZoomState, setLiveLayoutZoomState] =
@@ -7503,22 +7605,18 @@ export function FileExplorer({
 
   useEffect(() => {
     const unsubscribe = layoutZoomSpring.on("change", (nextValue) => {
-      const nextState = resolveExplorerLayoutZoomStateAtValue(
-        liveLayoutZoomStateRef.current,
-        nextValue,
-      );
-      liveLayoutZoomStateRef.current = nextState;
-      setLiveLayoutZoomState((current) =>
-        current.family === nextState.family &&
-        Math.abs(current.layoutZoom - nextState.layoutZoom) < 0.0001 &&
-        Math.abs(current.storedGridZoom - nextState.storedGridZoom) < 0.0001
-          ? current
-          : nextState,
+      applyExplorerLayoutZoomCssVariables(
+        mainRef.current,
+        resolveExplorerLayoutZoomStateAtValue(
+          liveLayoutZoomStateRef.current,
+          nextValue,
+        ),
+        explorerTheme,
       );
     });
 
     return unsubscribe;
-  }, [layoutZoomSpring]);
+  }, [explorerTheme, layoutZoomSpring]);
 
   useEffect(() => {
     let disposed = false;
@@ -13531,18 +13629,6 @@ export function FileExplorer({
       return;
     }
 
-    if (preserveOversizedLayoutZoomRef.current) {
-      const currentState = liveLayoutZoomStateRef.current;
-      if (
-        currentState.family === "grid" &&
-        currentState.layoutZoom > EXPLORER_GRID_ZOOM_MAX &&
-        themedViewMode === "icons-xl"
-      ) {
-        return;
-      }
-      preserveOversizedLayoutZoomRef.current = false;
-    }
-
     const nextState = createExplorerLayoutZoomState(themedViewMode, gridZoom);
     liveLayoutZoomStateRef.current = nextState;
     setLiveLayoutZoomState((current) =>
@@ -13558,6 +13644,13 @@ export function FileExplorer({
     () => resolveExplorerLayoutZoomState(liveLayoutZoomState),
     [liveLayoutZoomState],
   );
+  useLayoutEffect(() => {
+    applyExplorerLayoutZoomCssVariables(
+      mainRef.current,
+      liveLayoutZoomStateRef.current,
+      explorerTheme,
+    );
+  }, [explorerTheme, liveLayoutZoomState]);
   const liveWheelViewMode =
     layoutZoomGestureActive && themedExperimentalViewMode === "off"
       ? resolvedLiveLayoutZoom.viewMode
@@ -13738,28 +13831,62 @@ export function FileExplorer({
     const staleLabel = semanticIndexSummary.stale ? " · stale" : "";
     return `${semanticIndexSummary.fileCount} files · ${semanticIndexSummary.chunkCount} chunks${backendLabel ? ` · ${backendLabel}` : ""}${staleLabel}`;
   }, [currentPathIsCloud, currentPathIsHome, semanticIndexSummary]);
-  const gridZoomPercent = useMemo(
+  const currentGridZoomValue = useMemo(
     () =>
       layoutZoomGestureActive && themedExperimentalViewMode === "off"
-        ? resolvedLiveLayoutZoom.zoomPercent
+        ? resolvedLiveLayoutZoom.family === "grid"
+          ? resolvedLiveLayoutZoom.gridZoom
+          : null
         : isExplorerGridMode(themedViewMode)
-          ? getExplorerGridZoomPercent(gridZoom)
+          ? gridZoom
           : null,
     [
       gridZoom,
       layoutZoomGestureActive,
-      resolvedLiveLayoutZoom.zoomPercent,
+      resolvedLiveLayoutZoom.family,
+      resolvedLiveLayoutZoom.gridZoom,
       themedExperimentalViewMode,
       themedViewMode,
     ],
   );
-  const zoomHudProgressPercent = useMemo(
-    () =>
-      gridZoomPercent == null
-        ? null
-        : Math.max(0, Math.min(100, gridZoomPercent)),
-    [gridZoomPercent],
-  );
+  const zoomHudProgressPercent = useMemo(() => {
+    const activeLayoutZoom =
+      layoutZoomGestureActive && themedExperimentalViewMode === "off"
+        ? liveLayoutZoomState.layoutZoom
+        : currentGridZoomValue;
+    if (activeLayoutZoom == null) {
+      return null;
+    }
+
+    const normalizedProgress = Math.max(
+      0,
+      Math.min(
+        1,
+        (activeLayoutZoom - EXPLORER_LAYOUT_ZOOM_MIN) /
+          (EXPLORER_LAYOUT_ZOOM_MAX - EXPLORER_LAYOUT_ZOOM_MIN),
+      ),
+    );
+    return normalizedProgress * 100;
+  }, [
+    currentGridZoomValue,
+    layoutZoomGestureActive,
+    liveLayoutZoomState.layoutZoom,
+    themedExperimentalViewMode,
+  ]);
+  const layoutZoomBadgeLabel = useMemo(() => {
+    if (currentGridZoomValue == null) {
+      return selectedViewModeDefinition.shortLabel;
+    }
+
+    if (currentGridZoomValue > 1.72) {
+      return "XL++";
+    }
+    if (currentGridZoomValue > 1.02) {
+      return "XL+";
+    }
+
+    return selectedViewModeDefinition.shortLabel;
+  }, [currentGridZoomValue, selectedViewModeDefinition.shortLabel]);
   const explorerGridContainerTransition = layoutZoomGestureActive
     ? "none"
     : "gap 0.14s ease, padding 0.14s ease";
@@ -16094,22 +16221,11 @@ export function FileExplorer({
                     textTransform: "uppercase",
                   }}
                 >
-                  {selectedViewModeDefinition.shortLabel}
+                  {layoutZoomBadgeLabel}
                 </span>
-                {gridZoomPercent != null && (
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      color: showLayoutMenu ? EXP.text : EXP.muted2,
-                    }}
-                  >
-                    {gridZoomPercent}%
-                  </span>
-                )}
               </span>
             </button>
-            {zoomHudVisible && gridZoomPercent != null && (
+            {zoomHudVisible && zoomHudProgressPercent != null && (
               <div
                 style={{
                   position: "absolute",
@@ -16146,12 +16262,7 @@ export function FileExplorer({
                       color: EXP.text,
                     }}
                   >
-                    {selectedViewModeDefinition.shortLabel}
-                  </span>
-                  <span
-                    style={{ fontSize: 10, fontWeight: 700, color: accent }}
-                  >
-                    {gridZoomPercent}%
+                    {layoutZoomBadgeLabel}
                   </span>
                 </div>
                 <div
@@ -16807,7 +16918,6 @@ export function FileExplorer({
       goBack,
       goForward,
       goUp,
-      gridZoomPercent,
       handleBookmarkCreated,
       history.length,
       historyIdx,
@@ -17321,6 +17431,7 @@ export function FileExplorer({
         ),
       );
       liveLayoutZoomStateRef.current = nextState;
+      setLiveLayoutZoomState(nextState);
       layoutZoomTarget.set(nextState.layoutZoom);
       showZoomHud();
 
@@ -17357,9 +17468,6 @@ export function FileExplorer({
         setLayoutZoomGestureActive(false);
         layoutZoomPointerAnchorRef.current = null;
         layoutZoomCommitTimerRef.current = null;
-        preserveOversizedLayoutZoomRef.current =
-          committedState.family === "grid" &&
-          committedState.layoutZoom > EXPLORER_GRID_ZOOM_MAX;
 
         if (nextCommit.viewMode === "list") {
           updateExplorerSettings({ viewMode: "list" });
@@ -21097,7 +21205,8 @@ export function FileExplorer({
                   activeGridMetrics && (
                     <div
                       style={{
-                        padding: `0 ${activeGridMetrics.padding}px ${activeGridMetrics.padding}px`,
+                        padding:
+                          "0 var(--overlay-explorer-grid-padding) var(--overlay-explorer-grid-padding)",
                         boxSizing: "border-box",
                       }}
                     >
@@ -21107,16 +21216,14 @@ export function FileExplorer({
                             "var(--overlay-explorer-item-selected-bg)",
                           border:
                             "1px solid var(--overlay-explorer-item-selected-border)",
-                          borderRadius: activeGridMetrics.tileRadius,
-                          padding:
-                            activeGridMetrics.iconSize <= 46
-                              ? "8px 6px 6px"
-                              : "10px 8px 8px",
+                          borderRadius:
+                            "var(--overlay-explorer-grid-tile-radius)",
+                          padding: "var(--overlay-explorer-grid-item-padding)",
                           display: "flex",
                           flexDirection: "column",
                           alignItems: "center",
                           gap: 8,
-                          height: activeGridMetrics.newItemHeight,
+                          height: "var(--overlay-explorer-grid-new-item-height)",
                           boxSizing: "border-box",
                           transition:
                             explorerGridCardSizeTransition,
@@ -21181,9 +21288,10 @@ export function FileExplorer({
                         style={{
                           display: "grid",
                           gridTemplateColumns: `repeat(${virtualWindow.columns}, minmax(0, 1fr))`,
-                          gridAutoRows: `${virtualWindow.rowHeight}px`,
-                          gap: activeGridMetrics.gap,
-                          padding: `0 ${activeGridMetrics.padding}px`,
+                          gridAutoRows:
+                            "var(--overlay-explorer-grid-row-height)",
+                          gap: "var(--overlay-explorer-grid-gap)",
+                          padding: "0 var(--overlay-explorer-grid-padding)",
                           alignItems: "stretch",
                           transition: explorerGridContainerTransition,
                         }}
@@ -21256,11 +21364,10 @@ export function FileExplorer({
                                     ? selectedEntrySurface.background
                                     : idleEntrySurface.background,
                                 border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : idleEntrySurface.borderColor}`,
-                                borderRadius: activeGridMetrics.tileRadius,
+                                borderRadius:
+                                  "var(--overlay-explorer-grid-tile-radius)",
                                 padding:
-                                  activeGridMetrics.iconSize <= 46
-                                    ? "8px 6px 6px"
-                                    : "10px 8px 8px",
+                                  "var(--overlay-explorer-grid-item-padding)",
                                 cursor: "pointer",
                                 display: "flex",
                                 flexDirection: "column",
@@ -21283,20 +21390,17 @@ export function FileExplorer({
                             >
                               <div
                                 style={{
-                                  width: activeGridMetrics.iconStageSize,
-                                  height: activeGridMetrics.iconStageSize,
+                                  width:
+                                    "var(--overlay-explorer-grid-icon-stage-size)",
+                                  height:
+                                    "var(--overlay-explorer-grid-icon-stage-size)",
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "center",
                                   overflow: "hidden",
                                   flexShrink: 0,
                                   borderRadius: thumbnail
-                                    ? Math.max(
-                                        10,
-                                        Math.round(
-                                          activeGridMetrics.tileRadius * 0.72,
-                                        ),
-                                      )
+                                    ? "var(--overlay-explorer-grid-thumbnail-radius)"
                                     : undefined,
                                   border: thumbnail
                                     ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
@@ -21397,11 +21501,12 @@ export function FileExplorer({
                   effectiveViewModeDefinition.presentation === "list" && (
                     <div
                       style={{
-                        height: activeRowMetrics?.newItemHeight ?? 42,
+                        height:
+                          "var(--overlay-explorer-list-new-item-height)",
                         display: "flex",
                         alignItems: "center",
                         gap: 10,
-                        padding: "0 12px",
+                        padding: "0 var(--overlay-explorer-list-padding)",
                         borderBottom:
                           "1px solid var(--overlay-explorer-toolbar-border)",
                         background: "var(--overlay-explorer-item-selected-bg)",
@@ -21541,8 +21646,8 @@ export function FileExplorer({
                               alignItems: "center",
                               justifyContent: "space-between",
                               gap: 12,
-                              height: virtualWindow.rowHeight,
-                              padding: "0 12px",
+                              height: "var(--overlay-explorer-list-row-height)",
+                              padding: "0 var(--overlay-explorer-list-padding)",
                               borderBottomWidth: 1,
                               borderBottomStyle: "solid",
                               borderBottomColor: isDrop
@@ -21578,9 +21683,12 @@ export function FileExplorer({
                             >
                               <div
                                 style={{
-                                  width: rowThumbnailStageSize,
-                                  height: rowThumbnailStageSize,
-                                  minWidth: rowThumbnailStageSize,
+                                  width:
+                                    "var(--overlay-explorer-list-thumbnail-size)",
+                                  height:
+                                    "var(--overlay-explorer-list-thumbnail-size)",
+                                  minWidth:
+                                    "var(--overlay-explorer-list-thumbnail-size)",
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "center",

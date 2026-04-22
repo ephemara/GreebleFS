@@ -329,6 +329,13 @@ describe('useSettingsStore.updateExplorer()', () => {
     expect(useSettingsStore.getState().settings.explorer.gridZoom).toBe(0.18);
   });
 
+  it('persists oversized grid zoom above the legacy icons-xl ceiling', () => {
+    const store = useSettingsStore.getState();
+    store.updateExplorer({ viewMode: 'icons-xl', gridZoom: 2.4 });
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-xl');
+    expect(useSettingsStore.getState().settings.explorer.gridZoom).toBe(2.4);
+  });
+
   it('stores experimental explorer mode and density independently from normal view mode', () => {
     const store = useSettingsStore.getState();
     store.updateExplorer({

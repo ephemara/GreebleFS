@@ -225,13 +225,6 @@ export function getExplorerGridZoomAnchor(mode: ExplorerViewMode): number {
 
 export function normalizeExplorerGridZoom(value: unknown, fallbackMode: ExplorerViewMode = 'icons-l'): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return clamp(value, EXPLORER_GRID_ZOOM_MIN, EXPLORER_GRID_ZOOM_MAX);
-  }
-  return getExplorerGridZoomAnchor(fallbackMode);
-}
-
-export function normalizeExplorerLiveGridZoom(value: unknown, fallbackMode: ExplorerViewMode = 'icons-l'): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
     return clamp(value, EXPLORER_GRID_ZOOM_MIN, EXPLORER_LIVE_GRID_ZOOM_MAX);
   }
   return getExplorerGridZoomAnchor(fallbackMode);
@@ -286,7 +279,7 @@ export function getAdjacentExplorerGridMode(
 }
 
 export function getExplorerGridMetricsForZoom(gridZoom: number): ExplorerGridMetrics {
-  const zoom = normalizeExplorerLiveGridZoom(gridZoom);
+  const zoom = normalizeExplorerGridZoom(gridZoom);
   if (zoom > EXPLORER_GRID_ZOOM_MAX) {
     return getExplorerOversizedGridMetrics(zoom);
   }
@@ -377,13 +370,11 @@ export function resolveExplorerLayoutZoomState(
     };
   }
 
-  const resolvedGridZoom = normalizeExplorerLiveGridZoom(
+  const resolvedGridZoom = normalizeExplorerGridZoom(
     Math.max(EXPLORER_GRID_ZOOM_MIN, state.layoutZoom),
     'icons-l',
   );
-  const viewMode = getNearestExplorerGridMode(
-    normalizeExplorerGridZoom(resolvedGridZoom, 'icons-l'),
-  );
+  const viewMode = getNearestExplorerGridMode(resolvedGridZoom);
   return {
     family: 'grid',
     viewMode,
@@ -414,7 +405,7 @@ export function commitExplorerLayoutZoomState(
 }
 
 export function getExplorerGridZoomPercent(gridZoom: number): number {
-  return Math.round(normalizeExplorerLiveGridZoom(gridZoom) * 100);
+  return Math.round(normalizeExplorerGridZoom(gridZoom) * 100);
 }
 
 export function stepExplorerViewMode(
