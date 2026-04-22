@@ -5,15 +5,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 
-use include_dir::{include_dir, Dir, DirEntry};
+use include_dir::{Dir, DirEntry, include_dir};
 use serde::de::DeserializeOwned;
 use tauri::{AppHandle, Manager};
 
 use crate::python_commands::{
-    build_runtime_paths, ensure_runtime_directories, managed_python_path, path_to_string,
+    PythonRuntimeConfig, PythonRuntimeStatus, RuntimePaths, build_runtime_paths,
+    ensure_runtime_directories, managed_python_path, path_to_string,
     prepare_managed_python_runtime, pythonpath_environment, resolve_runtime_config,
-    runtime_status_with_base_interpreter, seed_boilerplate_files, PythonRuntimeConfig,
-    PythonRuntimeStatus, RuntimePaths,
+    runtime_status_with_base_interpreter, seed_boilerplate_files,
 };
 
 const PYTHON_SIDECAR_MANIFEST_FILENAME: &str = "greeblefs-python-sidecar.json";
@@ -23,6 +23,9 @@ const PYTHON_SIDECAR_ENV_RUNTIME_ROOT: &str = "GREEBLEFS_PYTHON_RUNTIME_ROOT";
 const PYTHON_SIDECAR_ENV_WORKSPACE_ROOT: &str = "GREEBLEFS_PYTHON_SIDECAR_ROOT";
 const PYTHON_SIDECAR_ENV_PROTOCOL: &str = "GREEBLEFS_PYTHON_SIDECAR_PROTOCOL";
 const PYTHON_SIDECAR_ENV_UNBUFFERED: &str = "PYTHONUNBUFFERED";
+const LOCAL_MODEL_CATALOG_RUNTIME_RELATIVE_PATH: &str = "greeblefs_sidecar/localModelCatalog.json";
+const EMBEDDED_LOCAL_MODEL_CATALOG_TEXT: &str =
+    include_str!("../../src/config/localModelCatalog.json");
 
 static EMBEDDED_PYTHON_WORKSPACE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../src-python");
 
@@ -343,6 +346,10 @@ fn repo_python_workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src-python")
 }
 
+fn repo_local_model_catalog_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/config/localModelCatalog.json")
+}
+
 fn should_skip_workspace_entry(path: &Path) -> bool {
     path.components().any(|component| {
         matches!(
@@ -514,6 +521,42 @@ fn copy_filesystem_workspace(source_root: &Path, target_root: &Path) -> Result<(
     recurse(source_root, source_root, target_root)
 }
 
+fn load_local_model_catalog_text() -> Result<String, String> {
+    let repo_catalog_path = repo_local_model_catalog_path();
+    if repo_catalog_path.exists() {
+        return fs::read_to_string(&repo_catalog_path).map_err(|error| {
+            format!(
+                "Failed to read local model catalog {}: {error}",
+                path_to_string(&repo_catalog_path)
+            )
+        });
+    }
+
+    Ok(EMBEDDED_LOCAL_MODEL_CATALOG_TEXT.to_string())
+}
+
+fn sync_sidecar_runtime_assets(target_root: &Path) -> Result<(), String> {
+    let local_model_catalog_path = target_root.join(LOCAL_MODEL_CATALOG_RUNTIME_RELATIVE_PATH);
+    if let Some(parent) = local_model_catalog_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create Python sidecar runtime asset directory {}: {error}",
+                path_to_string(parent)
+            )
+        })?;
+    }
+
+    let local_model_catalog_text = load_local_model_catalog_text()?;
+    fs::write(&local_model_catalog_path, local_model_catalog_text).map_err(|error| {
+        format!(
+            "Failed to write Python sidecar local model catalog {}: {error}",
+            path_to_string(&local_model_catalog_path)
+        )
+    })?;
+
+    Ok(())
+}
+
 fn sync_python_workspace(
     paths: &RuntimePaths,
 ) -> Result<(PythonSidecarWorkspaceManifest, PythonSidecarPaths), String> {
@@ -541,6 +584,7 @@ fn sync_python_workspace(
     } else {
         copy_embedded_workspace(&sidecar_paths.workspace_root)?;
     }
+    sync_sidecar_runtime_assets(&sidecar_paths.workspace_root)?;
 
     Ok((manifest, sidecar_paths))
 }
@@ -997,20 +1041,25 @@ pub async fn python_sidecar_call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn sidecar_manifest_parses_expected_shape() {
         let manifest = load_sidecar_manifest().expect("manifest should parse");
         assert_eq!(manifest.id, "greeblefs-python-sidecar");
         assert_eq!(manifest.module_name, "greeblefs_sidecar");
-        assert!(manifest
-            .actions
-            .iter()
-            .any(|action| action.id == action_ids::ML_PROBE));
-        assert!(manifest
-            .actions
-            .iter()
-            .any(|action| action.id == action_ids::RUNTIME_SUMMARY));
+        assert!(
+            manifest
+                .actions
+                .iter()
+                .any(|action| action.id == action_ids::ML_PROBE)
+        );
+        assert!(
+            manifest
+                .actions
+                .iter()
+                .any(|action| action.id == action_ids::RUNTIME_SUMMARY)
+        );
     }
 
     #[test]
@@ -1044,5 +1093,27 @@ mod tests {
 
         assert_eq!(decoded["status"], "ok");
         assert_eq!(decoded["count"], 3);
+    }
+
+    #[test]
+    fn sync_python_workspace_seeds_local_model_catalog_into_runtime_workspace() {
+        let temp_dir = tempdir().expect("tempdir should be created");
+        let runtime_paths = build_runtime_paths(temp_dir.path());
+        let (_, sidecar_paths) =
+            sync_python_workspace(&runtime_paths).expect("sidecar workspace should sync");
+        let seeded_catalog_path = sidecar_paths
+            .workspace_root
+            .join(LOCAL_MODEL_CATALOG_RUNTIME_RELATIVE_PATH);
+        let seeded_catalog_text =
+            fs::read_to_string(&seeded_catalog_path).expect("seeded catalog should be readable");
+        let expected_catalog_text =
+            load_local_model_catalog_text().expect("expected catalog should load");
+
+        let seeded_catalog_json: serde_json::Value = serde_json::from_str(&seeded_catalog_text)
+            .expect("seeded catalog should be valid json");
+        let expected_catalog_json: serde_json::Value = serde_json::from_str(&expected_catalog_text)
+            .expect("expected catalog should be valid json");
+
+        assert_eq!(seeded_catalog_json, expected_catalog_json);
     }
 }

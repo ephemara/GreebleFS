@@ -12,17 +12,35 @@ from typing import TYPE_CHECKING, Any, Iterable
 if TYPE_CHECKING:
     from .actions import PythonActionContext
 
-LOCAL_MODEL_CATALOG_PATH = Path("src/config/localModelCatalog.json")
+RUNTIME_LOCAL_MODEL_CATALOG_PATH = Path("greeblefs_sidecar/localModelCatalog.json")
+REPO_LOCAL_MODEL_CATALOG_FALLBACK_PATH = Path("../src/config/localModelCatalog.json")
 LOCAL_MODEL_CATALOG_CACHE: dict[str, dict[str, Any]] = {}
 
 
+def resolve_local_model_catalog_path(context: PythonActionContext) -> Path:
+    candidate_paths = [
+        (context.workspace_root / RUNTIME_LOCAL_MODEL_CATALOG_PATH).resolve(),
+        (context.workspace_root / REPO_LOCAL_MODEL_CATALOG_FALLBACK_PATH).resolve(),
+    ]
+
+    for candidate_path in candidate_paths:
+        if candidate_path.exists():
+            return candidate_path
+
+    searched_paths = ", ".join(str(path) for path in candidate_paths)
+    raise FileNotFoundError(
+        "Unable to locate the local model catalog for the Python sidecar. "
+        f"Checked: {searched_paths}"
+    )
+
+
 def load_local_model_catalog(context: PythonActionContext) -> dict[str, Any]:
-    cache_key = str(context.workspace_root)
+    catalog_path = resolve_local_model_catalog_path(context)
+    cache_key = str(catalog_path)
     cached = LOCAL_MODEL_CATALOG_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
-    catalog_path = (context.workspace_root / LOCAL_MODEL_CATALOG_PATH).resolve()
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     LOCAL_MODEL_CATALOG_CACHE[cache_key] = catalog
     return catalog
