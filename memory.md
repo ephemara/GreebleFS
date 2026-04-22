@@ -1,5 +1,19 @@
 # GreebleFS Memory
 
+# 2026-04-21 - PDF Preview Pane Now Uses Shared Explorer Preview Theme Surfaces
+
+- The embedded PDF workbench no longer ships its own hardcoded navy/blue shell. Its chrome now reads from the same explorer preview theme contract as the other preview lanes, so theme swaps and layout variants do not leave PDF on a private color system.
+- Durable implementation shape:
+  - `src/components/ExplorerPdfWorkbench.tsx` now routes the root/header/footer surfaces, save button, edit-tool palette, dialog buttons, and PDF form-field chrome through `--overlay-explorer-preview-*` and `--overlay-explorer-chip-*` variables instead of fixed `rgba(...)` / `#2563eb` values.
+  - Lane status pills (`Saved`, `Unsaved`, `Saving`) now use the shared shell semantic colors `--overlay-success`, `--overlay-danger`, and `--overlay-warning` instead of lane-local hardcoded colors.
+  - Content-specific PDF annotation defaults remain intact, but the surrounding preview shell now matches the SQLite/audio/video/image preview language.
+  - `src/test/explorerPdfWorkbench.test.tsx` now locks the themed surface contract by asserting that the rendered PDF chrome points at the shared explorer preview tokens.
+- Durable product note:
+  - If future PDF work adds more pane chrome, keep it on the explorer preview token set first. PDF can have domain-specific document tooling, but it should not grow a private shell palette again.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerPdfWorkbench.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-21 - Canonical Built-In Theme Now Advertises The Full UI Slot Surface
 
 - The icon-theme runtime could already override app chrome, but the built-in canonical manifest only declared `folder_tree`, which made most of the UI contract invisible even though Lucide fallback still rendered.

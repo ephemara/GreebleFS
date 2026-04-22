@@ -122,6 +122,26 @@ describe('ExplorerPdfWorkbench', () => {
     });
   });
 
+  it('uses the shared explorer preview theme tokens for PDF chrome', () => {
+    const { container } = render(
+      <ExplorerPdfWorkbench document={createMockPdfDocument()} />,
+    );
+
+    const rootStyle = container.firstElementChild?.getAttribute('style') ?? '';
+    expect(rootStyle).toContain('var(--overlay-explorer-preview-bg)');
+    expect(rootStyle).toContain('var(--overlay-accent)');
+
+    const saveButtonStyle =
+      screen.getByRole('button', { name: /^save$/i }).getAttribute('style') ?? '';
+    expect(saveButtonStyle).toContain('var(--overlay-explorer-chip-bg)');
+    expect(saveButtonStyle).toContain('var(--overlay-explorer-chip-border)');
+
+    const savedBadgeStyle =
+      screen.getByText('Saved').getAttribute('style') ?? '';
+    expect(savedBadgeStyle).toContain('var(--overlay-success)');
+    expect(savedBadgeStyle).toContain('var(--overlay-explorer-chip-bg)');
+  });
+
   it('rejects clearing required dropdown fields and keeps the prior value', async () => {
     const document = createMockPdfDocument({
       formFields: [

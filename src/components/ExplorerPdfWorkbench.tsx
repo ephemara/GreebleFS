@@ -103,6 +103,8 @@ type PendingCloseResolution = {
   resolve: (shouldClose: boolean) => void;
 };
 
+type PdfWorkbenchTone = 'default' | 'accent' | 'success' | 'warning' | 'danger';
+
 const PDF_WORKBENCH_PADDING_PX = 24;
 const PDF_MIN_RENDER_VIEWPORT_PX = 280;
 const PDF_MIN_ZOOM_SCALE = 0.3;
@@ -139,6 +141,24 @@ const toolDefinitions: Array<{
   { id: 'arrow', label: 'Arrow', icon: ArrowRight },
   { id: 'signature', label: 'Signature', icon: Signature },
 ];
+
+const PDF_WORKBENCH_THEME = {
+  rootBackground:
+    'radial-gradient(circle at top, color-mix(in srgb, var(--overlay-accent) 10%, transparent), transparent 56%), var(--overlay-explorer-preview-bg)',
+  headerBackground:
+    'linear-gradient(180deg, color-mix(in srgb, var(--overlay-explorer-preview-header-bg) 96%, transparent), color-mix(in srgb, var(--overlay-explorer-preview-bg) 94%, transparent))',
+  footerBackground:
+    'linear-gradient(180deg, color-mix(in srgb, var(--overlay-explorer-preview-header-bg) 88%, transparent), color-mix(in srgb, var(--overlay-explorer-preview-bg) 94%, transparent))',
+  viewportAccentWash:
+    'radial-gradient(circle at top, color-mix(in srgb, var(--overlay-accent) 8%, transparent), transparent 40%)',
+  floatingPaletteBackground:
+    'color-mix(in srgb, var(--overlay-explorer-preview-header-bg) 88%, transparent)',
+  pageSurfaceBackground: 'var(--overlay-bg-card)',
+  formIdleBackground:
+    'color-mix(in srgb, var(--overlay-bg-card) 72%, transparent)',
+  formEditBackground:
+    'color-mix(in srgb, var(--overlay-explorer-preview-header-bg) 82%, transparent)',
+} as const;
 
 function createInitialPdfFormDrafts(
   document: ExplorerPdfPreviewDocument,
@@ -266,6 +286,56 @@ function getPdfColorCss(color: ExplorerPdfColorValue, alphaOverride?: number): s
   const alpha =
     alphaOverride != null ? clamp(alphaOverride, 0, 1) : color.alpha / 255;
   return `rgba(${color.red}, ${color.green}, ${color.blue}, ${alpha})`;
+}
+
+function getPdfWorkbenchToneColor(tone: PdfWorkbenchTone): string {
+  switch (tone) {
+    case 'accent':
+      return 'var(--overlay-accent)';
+    case 'success':
+      return 'var(--overlay-success)';
+    case 'warning':
+      return 'var(--overlay-warning)';
+    case 'danger':
+      return 'var(--overlay-danger)';
+    case 'default':
+    default:
+      return 'var(--overlay-text-primary)';
+  }
+}
+
+function getPdfWorkbenchStatusPillStyle(
+  tone: Exclude<PdfWorkbenchTone, 'default'>,
+): CSSProperties {
+  const toneColor = getPdfWorkbenchToneColor(tone);
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '3px 8px',
+    borderRadius: 999,
+    border: `1px solid color-mix(in srgb, ${toneColor} 34%, var(--overlay-explorer-chip-border))`,
+    background: `color-mix(in srgb, ${toneColor} 14%, var(--overlay-explorer-chip-bg))`,
+    color: toneColor,
+    fontSize: 11,
+    fontWeight: 700,
+  };
+}
+
+function getPdfWorkbenchFormFieldChrome(isEditMode: boolean): CSSProperties {
+  return {
+    border: isEditMode
+      ? '1px solid color-mix(in srgb, var(--overlay-accent) 46%, var(--overlay-explorer-preview-border))'
+      : '1px solid var(--overlay-explorer-preview-border)',
+    background: isEditMode
+      ? PDF_WORKBENCH_THEME.formEditBackground
+      : PDF_WORKBENCH_THEME.formIdleBackground,
+    color: 'var(--overlay-text-primary)',
+    backdropFilter: 'blur(10px)',
+    boxShadow: isEditMode
+      ? '0 0 0 1px color-mix(in srgb, var(--overlay-accent) 16%, transparent)'
+      : 'none',
+  };
 }
 
 function measureTextAnnotationBounds(
@@ -434,7 +504,9 @@ export function ExplorerPdfWorkbench({
     : isRendering
       ? 'Rendering PDF page…'
       : 'Ready';
-  const footerStatusColor = error ? '#fca5a5' : 'rgba(255,255,255,0.56)';
+  const footerStatusColor = error
+    ? 'var(--overlay-danger)'
+    : 'var(--overlay-text-muted)';
   const pageScaleX =
     activePage && renderedWidthPx > 0
       ? renderedWidthPx / activePage.widthPoints
@@ -1062,15 +1134,10 @@ export function ExplorerPdfWorkbench({
         fontSize: 12,
         padding: field.kind === 'checkbox' || field.kind === 'radio' ? 0 : '2px 4px',
         borderRadius: 4,
-        border: isEditMode
-          ? '1px solid rgba(250, 204, 21, 0.8)'
-          : '1px solid rgba(255,255,255,0.1)',
-        background: isEditMode
-          ? 'rgba(15,23,42,0.7)'
-          : 'rgba(15,23,42,0.45)',
-        color: 'rgba(255,255,255,0.92)',
+        ...getPdfWorkbenchFormFieldChrome(isEditMode),
         outline: 'none',
         boxSizing: 'border-box',
+        fontFamily: 'var(--overlay-font-ui)',
       };
 
       if (field.kind === 'checkbox') {
@@ -1232,10 +1299,10 @@ export function ExplorerPdfWorkbench({
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        background:
-          'radial-gradient(circle at top, rgba(30,41,59,0.72), rgba(2,6,23,0.95) 65%)',
-        color: 'rgba(255,255,255,0.92)',
+        background: PDF_WORKBENCH_THEME.rootBackground,
+        color: 'var(--overlay-text-primary)',
         outline: 'none',
+        fontFamily: 'var(--overlay-font-ui)',
       }}
     >
       <div
@@ -1245,8 +1312,8 @@ export function ExplorerPdfWorkbench({
           justifyContent: 'space-between',
           gap: 12,
           padding: '10px 14px',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-          background: 'rgba(2,6,23,0.38)',
+          borderBottom: '1px solid var(--overlay-explorer-preview-border)',
+          background: PDF_WORKBENCH_THEME.headerBackground,
           flexShrink: 0,
         }}
       >
@@ -1255,7 +1322,7 @@ export function ExplorerPdfWorkbench({
             <span style={{ fontSize: 12, fontWeight: 700 }}>
               Page {activePageIndex + 1} / {pdfDocument.pageCount}
             </span>
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.56)' }}>
+            <span style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
               {fitMode === 'fitWidth'
                 ? 'Fit width'
                 : fitMode === 'fitPage'
@@ -1263,25 +1330,17 @@ export function ExplorerPdfWorkbench({
                   : `${Math.round(zoomScale * 100)}%`}
             </span>
             {isSaving ? (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  fontSize: 11,
-                  color: '#facc15',
-                }}
-              >
+              <span style={getPdfWorkbenchStatusPillStyle('warning')}>
                 <Loader size={11} style={{ animation: 'spin 1s linear infinite' }} />
                 Saving…
               </span>
             ) : isDirty ? (
-              <span style={{ fontSize: 11, color: '#f87171' }}>Unsaved</span>
+              <span style={getPdfWorkbenchStatusPillStyle('danger')}>Unsaved</span>
             ) : (
-              <span style={{ fontSize: 11, color: '#34d399' }}>Saved</span>
+              <span style={getPdfWorkbenchStatusPillStyle('success')}>Saved</span>
             )}
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.56)' }}>
+          <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
             {activePage
               ? `${activePage.widthPoints.toFixed(1)} × ${activePage.heightPoints.toFixed(1)} pt`
               : 'Loading page…'}
@@ -1311,6 +1370,7 @@ export function ExplorerPdfWorkbench({
           padding: PDF_WORKBENCH_PADDING_PX,
           display: 'grid',
           placeItems: 'center',
+          background: PDF_WORKBENCH_THEME.viewportAccentWash,
         }}
       >
         {isEditMode && (
@@ -1326,9 +1386,9 @@ export function ExplorerPdfWorkbench({
               gap: 6,
               padding: 6,
               borderRadius: 999,
-              border: '1px solid rgba(255,255,255,0.08)',
-              background: 'rgba(15,23,42,0.78)',
-              boxShadow: '0 18px 48px rgba(0,0,0,0.35)',
+              border: '1px solid var(--overlay-explorer-preview-border)',
+              background: PDF_WORKBENCH_THEME.floatingPaletteBackground,
+              boxShadow: '0 18px 48px rgba(0,0,0,0.28)',
               backdropFilter: 'blur(14px)',
             }}
           >
@@ -1358,7 +1418,7 @@ export function ExplorerPdfWorkbench({
               placeItems: 'center',
               gap: 10,
               minHeight: 240,
-              color: 'rgba(255,255,255,0.56)',
+              color: 'var(--overlay-text-muted)',
             }}
           >
             <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} />
@@ -1374,10 +1434,11 @@ export function ExplorerPdfWorkbench({
               position: 'relative',
               width: renderedWidthPx || 'auto',
               height: renderedHeightPx || 'auto',
+              border: '1px solid var(--overlay-explorer-preview-border)',
               boxShadow: '0 22px 64px rgba(0,0,0,0.48)',
               borderRadius: 16,
               overflow: 'hidden',
-              background: '#fff',
+              background: PDF_WORKBENCH_THEME.pageSurfaceBackground,
               touchAction: 'none',
             }}
           >
@@ -1437,7 +1498,7 @@ export function ExplorerPdfWorkbench({
                       fill={strokeColor}
                       fontSize={14}
                       fontWeight={700}
-                      stroke={isSelected ? '#facc15' : 'transparent'}
+                      stroke={isSelected ? 'var(--overlay-warning)' : 'transparent'}
                       strokeWidth={isSelected ? 0.2 : 0}
                     >
                       {annotation.text}
@@ -1530,10 +1591,10 @@ export function ExplorerPdfWorkbench({
           gap: 10,
           minHeight: 34,
           padding: '8px 14px',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
+          borderTop: '1px solid var(--overlay-explorer-preview-border)',
           fontSize: 11,
           color: footerStatusColor,
-          background: 'rgba(2,6,23,0.48)',
+          background: PDF_WORKBENCH_THEME.footerBackground,
           boxSizing: 'border-box',
           flexShrink: 0,
         }}
@@ -1612,12 +1673,18 @@ function toolButtonStyle(active: boolean): CSSProperties {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 6,
-    border: '1px solid rgba(255,255,255,0.12)',
+    border: active
+      ? '1px solid var(--overlay-explorer-chip-active-border)'
+      : '1px solid var(--overlay-explorer-chip-border)',
     borderRadius: 999,
     padding: '6px 10px',
     cursor: active ? 'pointer' : 'default',
-    background: active ? 'rgba(37,99,235,0.18)' : 'rgba(255,255,255,0.04)',
-    color: active ? '#dbeafe' : 'rgba(255,255,255,0.45)',
+    background: active
+      ? 'var(--overlay-explorer-chip-active-bg)'
+      : 'var(--overlay-explorer-chip-bg)',
+    color: active
+      ? 'var(--overlay-explorer-chip-active-text)'
+      : 'var(--overlay-text-muted)',
     fontSize: 11,
     fontWeight: 700,
   };
@@ -1629,34 +1696,38 @@ function toolPaletteButtonStyle(active: boolean): CSSProperties {
     alignItems: 'center',
     gap: 6,
     border: active
-      ? '1px solid rgba(250,204,21,0.8)'
-      : '1px solid rgba(255,255,255,0.08)',
+      ? '1px solid var(--overlay-explorer-chip-active-border)'
+      : '1px solid var(--overlay-explorer-chip-border)',
     borderRadius: 999,
     padding: '6px 10px',
     cursor: 'pointer',
-    background: active ? 'rgba(250,204,21,0.16)' : 'rgba(255,255,255,0.03)',
-    color: active ? '#fef08a' : 'rgba(255,255,255,0.72)',
+    background: active
+      ? 'var(--overlay-explorer-chip-active-bg)'
+      : 'var(--overlay-explorer-chip-bg)',
+    color: active
+      ? 'var(--overlay-explorer-chip-active-text)'
+      : 'var(--overlay-text-secondary)',
     fontSize: 11,
     fontWeight: 700,
   };
 }
 
 const dialogPrimaryButtonStyle: CSSProperties = {
-  border: '1px solid rgba(37,99,235,0.78)',
+  border: '1px solid var(--overlay-explorer-chip-active-border)',
   borderRadius: 10,
   padding: '10px 14px',
-  background: '#2563eb',
-  color: '#fff',
+  background: 'var(--overlay-explorer-chip-active-bg)',
+  color: 'var(--overlay-explorer-chip-active-text)',
   cursor: 'pointer',
   fontWeight: 700,
 };
 
 const dialogSecondaryButtonStyle: CSSProperties = {
-  border: '1px solid rgba(255,255,255,0.12)',
+  border: '1px solid var(--overlay-explorer-chip-border)',
   borderRadius: 10,
   padding: '10px 14px',
-  background: 'rgba(255,255,255,0.04)',
-  color: 'rgba(255,255,255,0.9)',
+  background: 'var(--overlay-explorer-chip-bg)',
+  color: 'var(--overlay-text-primary)',
   cursor: 'pointer',
   fontWeight: 600,
 };
