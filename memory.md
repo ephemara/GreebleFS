@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Top Bars Now Have Their Own Managed Content Root
+
+- Top bars are no longer only modular in code. They now also have a first-class authored storage root at `top-bars/`, so shell-header workflows can be shipped and mixed independently from whole theme packages.
+- Durable implementation shape:
+  - `src/config/appContentDirectories.ts` now treats `topBars` as a managed content directory with `VITE_GREEBLEFS_TOP_BARS_DIR` plus legacy `VITE_OVERLAYTERM_TOP_BARS_DIR` overrides. Dev uses repo-local `top-bars/`; release resolves under Tauri app-local data like other authored content roots.
+  - `src/config/topBarPackages.ts` is the standalone loader for `top-bars/`. It resolves `top-bar.json` / `top-bar.toml` / `manifest.json` / `manifest.toml`, supports single-file shorthand manifests, scopes authored ids per package, and emits `LoadedOverlayTopBarPackage` records with flattened top-bar definitions.
+  - `src/config/topBars.ts` now recognizes `top-bar-package` sources in addition to built-ins and theme-package contributions, while keeping the same active-resolution order and scoped-id behavior for theme-contributed bars.
+  - `src/App.tsx` now refreshes and watches standalone top-bar packages separately from theme packages, opens the dedicated top-bars folder on demand, and resolves the active catalog from both authored top-bar packages and theme-package contributions.
+  - `src/components/SettingsPage.tsx` now treats top bars like a real content root: the `Top Bars` section shows standalone-vs-theme contribution counts, opens `top-bars/`, refreshes both standalone and theme-contributed catalog sources, and lists `Top Bars` in the Overview workspace roots.
+- Durable product note:
+  - Treat `top-bars/` like `icon-themes/` or `wallpapers/`: user-authored shell identity layer with its own storage path, while themes remain allowed to publish bundled defaults and extra variants.
+- Validation:
+  - passed: `bunx vitest run src/test/appContentDirectories.test.ts src/test/topBars.test.ts src/test/topBarPackages.test.ts src/test/settingsPage.behavior.test.tsx src/test/settingsPage.shaders.test.tsx src/test/themePackageExplorerRecipe.test.ts --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-21 - Command Palette And Settings Navigation Became Catalog-Driven
 
 - The command palette no longer hardcodes settings-section paths or managed-content folder opens. `App.tsx` now builds those actions from shared catalogs, so new settings sections or content roots become discoverable without adding one-off palette branches.

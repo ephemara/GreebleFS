@@ -100,6 +100,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Built-in and external layout manifest normalization for shell blueprints, pinned panels, control docks, and top/bottom chrome behavior.
 - `src/config/themePackages.ts`
   Theme package discovery and manifest loading from `themes/`.
+- `src/config/topBarPackages.ts`
+  Standalone top-bar package discovery and manifest loading from `top-bars/`.
 - `src/config/iconTheme.ts` and `src/config/iconThemePackages.ts`
   VS Code-style icon-theme manifest resolution plus managed `icon-themes/` package discovery for explorer file/folder mappings and shell-wide UI icon overrides.
 - `src/config/themeCatalogCuration.ts`
@@ -216,10 +218,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Overlay themes still own the global palette, effects, fonts, icon theme, visuals, and shader/motion defaults.
 - Top bars are now a first-class shell subsystem instead of an implicit side effect of `theme.workbench.topBarStyle`:
   - `src/config/topBars.ts` defines the built-in catalog, the control-zone schema (`leadingControls`, `navigationShortcuts`, `trailingControls`), and the active resolution order: explicit user pin, `theme.defaultTopBarId`, legacy `theme.workbench.topBarStyle`, then built-in fallback
+  - `src/config/topBarPackages.ts` owns the standalone `top-bars/` loader, so authored top bars no longer need to hide inside theme packages just to exist on disk
   - `src/components/WorkbenchTopBar.tsx` renders the active top bar from that data-driven definition instead of hardcoding one shell-header workflow in `App.tsx`
   - `src/store/settingsStore.ts` now persists `settings.appearance.activeTopBarId`; `null` means "follow the active theme path"
-  - `SettingsPage.tsx` owns top-bar selection in a dedicated `Top Bars` section, so users can pin a top bar without swapping the entire theme
-  - Theme packages can still contribute top bars and choose `theme.defaultTopBarId`; this is how packaged themes publish shell-header workflows now
+  - `SettingsPage.tsx` owns top-bar selection in a dedicated `Top Bars` section, plus the open/refresh affordances for the standalone `top-bars/` root
+  - Theme packages can still contribute top bars and choose `theme.defaultTopBarId`; the authored `top-bars/` root and theme package contributions both flow through the same resolver
 - Settings navigation is now catalog-driven instead of hardcoded section ids:
   - `src/config/settingsNavigation.ts` defines the canonical settings-section keys, labels, ordering, overview summaries, and keyword metadata used by the rail, overview cards, and command palette
   - `src/store/settingsStore.ts` persists `activeSection` as a typed `SettingsSectionKey`, and `SettingsPage.tsx` reads that store value directly so palette deep-links can land on sections like `Icons` or `Top Bars` without component-local routing state
@@ -513,6 +516,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Persisted settings, explorer state, terminal state, and task state.
 - `themes/`
   Theme packages discovered at runtime.
+- `top-bars/`
+  Standalone top-bar packages discovered at runtime.
 - `animations/`
   Authored animation modules.
 - `wallpapers/`
