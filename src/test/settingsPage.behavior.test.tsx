@@ -11,6 +11,7 @@ import { resolveThemeCatalogPackageMetadata } from '../config/themeCatalogCurati
 import { pluginSystemConfig } from '../config/plugins';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import { compileThemeEngineManifest, normalizeThemeManifestDraft } from '../runtime/themeEngineBackend';
+import { createLoadedTopBarDefinition } from '../config/topBars';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
 import { useExplorerStore } from '../store/explorerStore';
 import { useTerminalStore } from '../store/terminalStore';
@@ -1151,6 +1152,69 @@ describe('SettingsPage behavior', () => {
         activeDockThemeId: 'vista-glass',
       });
     });
+  });
+
+  it('lets users pin a standalone top bar from the dedicated settings section', async () => {
+    const user = userEvent.setup();
+    const packageTopBar = createLoadedTopBarDefinition(
+      {
+        id: 'launcher-rail',
+        name: 'Launcher Rail',
+        description: 'A compact package-owned launcher strip.',
+        topBarStyle: 'floating',
+        navigationMode: 'summary',
+      },
+      {
+        source: 'theme-package',
+        sourceLabel: 'Cyber Nexus HUD',
+        sourceThemeId: 'cyber-nexus-hud',
+      },
+    );
+
+    renderSettingsPage({
+      themePackages: [createThemePackageFixture({
+        id: 'cyber-nexus-hud',
+        name: 'Cyber Nexus HUD',
+        version: 4,
+        directoryPath: 'themes/cyber-nexus-hud',
+        manifestPath: 'themes/cyber-nexus-hud/theme.json',
+        sourceKind: 'theme-directory',
+        sourceLabel: 'themes/cyber-nexus-hud',
+        tags: ['pilot'],
+        previewUrl: 'asset://localhost/themes/cyber-nexus-hud/assets/preview.svg',
+        capabilitySummary: {
+          icons: true,
+          wallpaper: true,
+          dock: false,
+          visuals: 2,
+          shaders: 1,
+          animations: 1,
+          fonts: 1,
+          themeRenderer: false,
+          topBars: 1,
+        },
+        warnings: [],
+        theme: normalizeThemeDefinition({
+          id: 'cyber-nexus-hud',
+          name: 'Cyber Nexus HUD',
+          source: 'package',
+          defaultTopBarId: packageTopBar.id,
+        } as never),
+        topBars: [packageTopBar],
+      })],
+    });
+
+    await user.click(findSectionButton('Top Bars'));
+    expect(screen.getByText('Standalone shell chrome workflows that can follow theme defaults or stay pinned independently.')).toBeInTheDocument();
+
+    await user.click(findSectionButton('Launcher Rail'));
+    expect(useSettingsStore.getState().settings.appearance.activeTopBarId).toBe(packageTopBar.id);
+
+    const followThemeButtons = screen.getAllByRole('button').filter(button =>
+      button.textContent?.includes('Follow Theme'),
+    );
+    await user.click(followThemeButtons[followThemeButtons.length - 1] as HTMLButtonElement);
+    expect(useSettingsStore.getState().settings.appearance.activeTopBarId).toBeNull();
   });
 
   it('shows theme import failures inline instead of using a browser alert', async () => {

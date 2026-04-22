@@ -60,6 +60,12 @@ import {
   type OverlayAnimationPresetId,
 } from '../config/overlayAnimations';
 import {
+  clampInteractionMotionIntensity,
+  normalizeInteractionMotionPresetId,
+  normalizeInteractionMotionSurfaceOverrideMap,
+  type OverlayInteractionMotionSurfaceOverrideMap,
+} from '../config/interactionMotion';
+import {
   clampOverlayVisualControlValue,
   overlayVisualControls,
   overlayWindowGeometry,
@@ -165,6 +171,7 @@ export interface AppearanceSettings {
   activeThemeId: string;
   dockThemeMode: DockThemeMode;
   activeDockThemeId: string | null;
+  activeTopBarId: string | null;
   activeIconThemeId: string | null;
   customThemes: OverlayThemeDefinition[];
   activeWallpaperId?: string | null;
@@ -190,6 +197,10 @@ export interface AppearanceSettings {
   appCloseAnimation: OverlayAnimationPresetId | null;
   appAnimationDurationMs: number;
   appAnimationIntensity: number;
+  interactionMotionEnabled: boolean;
+  interactionMotionPresetId: string | null;
+  interactionMotionIntensity: number;
+  interactionMotionSurfaceOverrides: OverlayInteractionMotionSurfaceOverrideMap;
 }
 
 export interface SystemSettings {
@@ -581,6 +592,11 @@ function normalizeAppearanceSettings(
       : merged.activeDockThemeId === null
         ? null
         : base.activeDockThemeId ?? null,
+    activeTopBarId: typeof merged.activeTopBarId === 'string'
+      ? merged.activeTopBarId.trim() || null
+      : merged.activeTopBarId === null
+        ? null
+        : base.activeTopBarId ?? null,
     activeIconThemeId: normalizeIconThemePackageSelectionId(
       typeof merged.activeIconThemeId === 'string'
         ? merged.activeIconThemeId
@@ -619,6 +635,17 @@ function normalizeAppearanceSettings(
         : base.appCloseAnimation ?? null,
     appAnimationDurationMs: clampOverlayAnimationDuration(merged.appAnimationDurationMs),
     appAnimationIntensity: clampOverlayAnimationIntensity(merged.appAnimationIntensity),
+    interactionMotionEnabled: merged.interactionMotionEnabled !== false,
+    interactionMotionPresetId: normalizeInteractionMotionPresetId(merged.interactionMotionPresetId)
+      ?? normalizeInteractionMotionPresetId(base.interactionMotionPresetId)
+      ?? null,
+    interactionMotionIntensity: clampInteractionMotionIntensity(
+      merged.interactionMotionIntensity,
+      base.interactionMotionIntensity,
+    ),
+    interactionMotionSurfaceOverrides: normalizeInteractionMotionSurfaceOverrideMap(
+      merged.interactionMotionSurfaceOverrides ?? base.interactionMotionSurfaceOverrides,
+    ),
   };
 }
 
@@ -755,6 +782,7 @@ export const defaultSettings: Settings = {
     activeThemeId: DEFAULT_PILOT_DARK_THEME_ID,
     dockThemeMode: 'follow-app',
     activeDockThemeId: null,
+    activeTopBarId: null,
     activeIconThemeId: null,
     customThemes: [],
     activeWallpaperId: null,
@@ -780,6 +808,10 @@ export const defaultSettings: Settings = {
     appCloseAnimation: null,
     appAnimationDurationMs: 320,
     appAnimationIntensity: 1.0,
+    interactionMotionEnabled: true,
+    interactionMotionPresetId: null,
+    interactionMotionIntensity: 1.0,
+    interactionMotionSurfaceOverrides: {},
   },
   system: {
     launchAtStartup: false,
@@ -1154,6 +1186,7 @@ export const useSettingsStore = create<SettingsState>()(
             activeShaderId: null,
             appOpenAnimation: null,
             appCloseAnimation: null,
+            interactionMotionPresetId: null,
             ...(themeDefaults?.appearance ?? {}),
             ...(options?.forceManagedIcons ? { useNativeOsIcons: false } : {}),
           };

@@ -81,12 +81,21 @@ import {
 import { getBuiltInIconTheme, resolveFileIconSrc } from '../config/iconTheme';
 import { animationSystemConfig, resolvePreferredAnimationId } from '../config/animations';
 import {
+  clampInteractionMotionIntensity,
+  interactionMotionPresetOptions,
+  interactionMotionSurfaceCatalog,
+  normalizeInteractionMotionPresetId,
+  resolveInteractionMotionProfileId,
+} from '../config/interactionMotion';
+import {
   getOverlayWallpaperFitModeLabel,
   overlayWallpaperFitModes,
   wallpaperSystemConfig,
 } from '../config/wallpapers';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
+import { InteractionMotionLab } from '../animation/MotionLab';
+import { useInteractionMotionController, type InteractionMotionBinding } from '../animation/interactionMotion';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   loadExternalLayoutManifest,
@@ -100,6 +109,14 @@ import {
   resolveLoadedIconThemePackage,
   type LoadedIconThemePackage,
 } from '../config/iconThemePackages';
+import {
+  getTopBarControlLabel,
+  getTopBarNavigationModeLabel,
+  getTopBarSourceLabel,
+  getTopBarStyleLabel,
+  resolveActiveTopBarSelection,
+  type LoadedOverlayTopBarDefinition,
+} from '../config/topBars';
 import { pluginSystemConfig } from '../config/plugins';
 import {
   getOverlayShaderSurfaceLabel,
@@ -268,12 +285,14 @@ function ThemeCatalogCard({
   active,
   sectionId,
   onSelect,
+  motionBinding,
 }: {
   themeOption: OverlayThemeDefinition;
   packageInfo: LoadedOverlayThemePackage | undefined;
   active: boolean;
   sectionId: ThemeCatalogSectionId;
   onSelect: (themeId: string) => void;
+  motionBinding?: InteractionMotionBinding;
 }) {
   const description = clampThemeDescription(packageInfo?.description ?? themeOption.description);
   const previewBackground = getThemePreviewBackground(themeOption, packageInfo?.previewUrl);
@@ -305,12 +324,19 @@ function ThemeCatalogCard({
       data-theme-catalog-theme-id={themeOption.id}
       onClick={() => onSelect(themeOption.id)}
       className="overflow-hidden rounded text-left transition-opacity hover:opacity-100"
+      {...motionBinding?.motionDataAttributes}
+      onPointerEnter={motionBinding?.onPointerEnter}
+      onPointerLeave={motionBinding?.onPointerLeave}
+      onPointerDown={motionBinding?.onPointerDown}
+      onPointerUp={motionBinding?.onPointerUp}
+      onPointerCancel={motionBinding?.onPointerCancel}
       style={{
         opacity: getThemeCatalogCardOpacity(sectionId),
         background: themeOption.palette.appBackground,
         border: `1px solid ${active ? themeOption.palette.accent : themeOption.palette.border}`,
         color: themeOption.palette.textPrimary,
         boxShadow: active ? `0 0 0 1px ${themeOption.palette.accent}40 inset` : 'none',
+        ...motionBinding?.motionStyle,
       }}
     >
       <div
@@ -401,12 +427,14 @@ function ThemeCatalogSection({
   activeThemeId,
   onSelect,
   themePackageLookup,
+  createThemeCardMotion,
 }: {
   sectionId: ThemeCatalogSectionId;
   themes: OverlayThemeDefinition[];
   activeThemeId: string | null;
   onSelect: (themeId: string) => void;
   themePackageLookup: Map<string, LoadedOverlayThemePackage>;
+  createThemeCardMotion?: (active: boolean) => InteractionMotionBinding;
 }) {
   if (themes.length === 0) {
     return null;
@@ -472,6 +500,7 @@ function ThemeCatalogSection({
               active={active}
               sectionId={themeSectionId}
               onSelect={onSelect}
+              motionBinding={createThemeCardMotion?.(active)}
             />
           );
         })}
@@ -495,11 +524,13 @@ function ThemeCatalogGrid({
   activeThemeId,
   onSelect,
   themePackageLookup,
+  createThemeCardMotion,
 }: {
   themes: OverlayThemeDefinition[];
   activeThemeId: string | null;
   onSelect: (themeId: string) => void;
   themePackageLookup: Map<string, LoadedOverlayThemePackage>;
+  createThemeCardMotion?: (active: boolean) => InteractionMotionBinding;
 }) {
   const catalogSections = useMemo(() => {
     const groupedThemes: Record<ThemeCatalogSectionId, OverlayThemeDefinition[]> = {
@@ -530,9 +561,79 @@ function ThemeCatalogGrid({
           activeThemeId={activeThemeId}
           onSelect={onSelect}
           themePackageLookup={themePackageLookup}
+          createThemeCardMotion={createThemeCardMotion}
         />
       ))}
     </div>
+  );
+}
+
+function summarizeTopBarControls(topBar: LoadedOverlayTopBarDefinition): string {
+  const prioritizedControls = [
+    ...topBar.navigationShortcuts,
+    ...topBar.leadingControls,
+    ...topBar.trailingControls,
+  ];
+
+  const labels = Array.from(new Set(
+    prioritizedControls.map(controlId => getTopBarControlLabel(controlId)),
+  ));
+
+  return labels.slice(0, 4).join(' · ');
+}
+
+function TopBarCatalogCard({
+  topBar,
+  active,
+  border,
+  accent,
+  text,
+  muted,
+  onClick,
+}: {
+  topBar: LoadedOverlayTopBarDefinition;
+  active: boolean;
+  border: string;
+  accent: string;
+  text: string;
+  muted: string;
+  onClick: () => void;
+}) {
+  const controlSummary = summarizeTopBarControls(topBar);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded border p-3 text-left transition-colors"
+      style={{
+        borderColor: active ? accent : border,
+        background: active ? `${accent}12` : 'rgba(255,255,255,0.03)',
+        color: text,
+        boxShadow: active ? `inset 0 0 0 1px ${accent}22` : 'none',
+      }}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-semibold">{topBar.name}</div>
+          <div className="mt-1 text-[11px] leading-4 opacity-55">{topBar.description}</div>
+        </div>
+        {active ? <ThemeBadge label="Pinned" active /> : null}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <ThemeBadge label={getTopBarSourceLabel(topBar.source)} active={active} />
+        <ThemeBadge label={getTopBarStyleLabel(topBar.topBarStyle)} active={active} />
+        <ThemeBadge label={getTopBarNavigationModeLabel(topBar.navigationMode)} active={active} />
+        {topBar.tags.slice(0, 2).map(tag => (
+          <ThemeBadge key={`${topBar.id}-${tag}`} label={tag} />
+        ))}
+      </div>
+      {controlSummary ? (
+        <div className="mt-3 text-[10px] uppercase tracking-[0.12em]" style={{ color: active ? accent : muted }}>
+          {controlSummary}
+        </div>
+      ) : null}
+    </button>
   );
 }
 
@@ -784,6 +885,7 @@ const DEFAULT_LOADED_LAYOUT_MANIFEST: LoadedLayoutManifest = {
 type SettingsSectionKey =
   | 'overview'
   | 'appearance'
+  | 'top-bars'
   | 'icons'
   | 'wallpapers'
   | 'shaders'
@@ -809,6 +911,7 @@ function SettingsRailButton({
   text,
   muted,
   onClick,
+  motionBinding,
 }: {
   active: boolean;
   icon: ReactNode;
@@ -820,6 +923,7 @@ function SettingsRailButton({
   text: string;
   muted: string;
   onClick: () => void;
+  motionBinding?: InteractionMotionBinding;
 }) {
   return (
     <button
@@ -827,11 +931,18 @@ function SettingsRailButton({
       onClick={onClick}
       title={subtitle}
       className="w-full rounded px-2 py-2 text-left transition-colors"
+      {...motionBinding?.motionDataAttributes}
+      onPointerEnter={motionBinding?.onPointerEnter}
+      onPointerLeave={motionBinding?.onPointerLeave}
+      onPointerDown={motionBinding?.onPointerDown}
+      onPointerUp={motionBinding?.onPointerUp}
+      onPointerCancel={motionBinding?.onPointerCancel}
       style={{
         border: `1px solid ${active ? `${accent}88` : border}`,
         background: active ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-settings-rail-bg)',
         color: text,
         boxShadow: active ? `inset 0 0 0 1px ${accent}22` : 'none',
+        ...motionBinding?.motionStyle,
       }}
     >
       <div className="flex items-center gap-2">
@@ -869,14 +980,29 @@ function OverviewCard({
   subtitle,
   badges,
   children,
+  motionBinding,
 }: {
   title: string;
   subtitle: string;
   badges?: string[];
   children: ReactNode;
+  motionBinding?: InteractionMotionBinding;
 }) {
   return (
-    <div className="rounded border p-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
+    <div
+      className="rounded border p-3"
+      {...motionBinding?.motionDataAttributes}
+      onPointerEnter={motionBinding?.onPointerEnter}
+      onPointerLeave={motionBinding?.onPointerLeave}
+      onPointerDown={motionBinding?.onPointerDown}
+      onPointerUp={motionBinding?.onPointerUp}
+      onPointerCancel={motionBinding?.onPointerCancel}
+      style={{
+        borderColor: 'var(--overlay-workbench-settings-card-border)',
+        background: 'var(--overlay-workbench-settings-card-bg)',
+        ...motionBinding?.motionStyle,
+      }}
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{title}</div>
@@ -1366,6 +1492,15 @@ export function SettingsPage({
   );
   const appAppearance = appearance.app;
   const dockAppearance = appearance.dock;
+  const resolvedTopBarSelection = useMemo(
+    () => resolveActiveTopBarSelection({
+      requestedTopBarId: settings.appearance.activeTopBarId,
+      theme: appearance.baseTheme,
+      packageSources: themePackages,
+    }),
+    [appearance.baseTheme, settings.appearance.activeTopBarId, themePackages],
+  );
+  const availableTopBars = resolvedTopBarSelection.availableTopBars;
   const blurEnabled = settings.appearance.appBlur !== false;
   const activeWallpaperSelectionId = settings.appearance.activeWallpaperId ?? null;
   const themeWallpaperAvailable = Boolean(appAppearance.baseTheme.assets?.backgroundUrl);
@@ -1374,6 +1509,16 @@ export function SettingsPage({
     : activeWallpaperSelectionId === wallpaperSystemConfig.noneWallpaperId
       ? 'Disabled'
       : 'Settings Override';
+  const topBarSelectionSummary = settings.appearance.activeTopBarId == null
+    ? `Follow Theme · ${resolvedTopBarSelection.topBar.name}`
+    : resolvedTopBarSelection.explicitSelectionMissing
+      ? `Pinned missing · ${resolvedTopBarSelection.topBar.name}`
+      : `Pinned · ${resolvedTopBarSelection.topBar.name}`;
+  const followThemeTopBarDetail = resolvedTopBarSelection.resolvedFrom === 'theme-default'
+    ? `${appearance.baseTheme.name} explicitly defaults to ${resolvedTopBarSelection.topBar.name}.`
+    : resolvedTopBarSelection.resolvedFrom === 'theme-legacy-style'
+      ? `${appearance.baseTheme.name} does not declare a standalone top bar yet, so the shell falls back from that theme's legacy workbench top-bar style into ${resolvedTopBarSelection.topBar.name}.`
+      : `${appearance.baseTheme.name} is currently using the built-in top-bar fallback ${resolvedTopBarSelection.topBar.name}.`;
   const effectiveShaderId = useMemo(
     () => resolvePreferredShaderId({
       availableShaderIds,
@@ -1465,6 +1610,59 @@ export function SettingsPage({
     }),
     [appAppearance.baseTheme.defaultCloseAnimationId, availableCloseAnimationIds, settings.appearance.appCloseAnimation],
   );
+  const settingsInteractionMotion = useInteractionMotionController(appAppearance);
+  const settingsCardTransition = 'background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, opacity 0.16s ease';
+  const themeInteractionMotionPresetId = useMemo(
+    () => normalizeInteractionMotionPresetId(appAppearance.baseTheme.interactionMotion?.defaultPresetId),
+    [appAppearance.baseTheme.interactionMotion?.defaultPresetId],
+  );
+  const effectiveInteractionMotionPresetId = useMemo(
+    () => resolveInteractionMotionProfileId({
+      userOverrideId: settings.appearance.interactionMotionPresetId,
+      themeDefaultPresetId: themeInteractionMotionPresetId,
+    }),
+    [settings.appearance.interactionMotionPresetId, themeInteractionMotionPresetId],
+  );
+  const effectiveInteractionMotionProfile = useMemo(
+    () => interactionMotionPresetOptions.find(option => option.id === effectiveInteractionMotionPresetId) ?? interactionMotionPresetOptions[0],
+    [effectiveInteractionMotionPresetId],
+  );
+  const bindSettingsCardMotion = useCallback((active = false) => (
+    settingsInteractionMotion.bindSurface({
+      surfaceId: 'settingsCard',
+      triggerState: active ? { activate: true } : undefined,
+      baseTransition: settingsCardTransition,
+    })
+  ), [settingsCardTransition, settingsInteractionMotion]);
+  const setInteractionMotionSurfaceEnabled = useCallback((surfaceId: (typeof interactionMotionSurfaceCatalog)[number]['id'], enabled: boolean) => {
+    const nextOverrides = { ...settings.appearance.interactionMotionSurfaceOverrides };
+    const currentOverride = nextOverrides[surfaceId];
+
+    if (enabled) {
+      if (currentOverride && typeof currentOverride === 'object' && !Array.isArray(currentOverride)) {
+        const nextOverride = { ...currentOverride };
+        delete nextOverride.enabled;
+        if (Object.keys(nextOverride).length > 0) {
+          nextOverrides[surfaceId] = nextOverride;
+        } else {
+          delete nextOverrides[surfaceId];
+        }
+      } else {
+        delete nextOverrides[surfaceId];
+      }
+    } else if (currentOverride && typeof currentOverride === 'object' && !Array.isArray(currentOverride)) {
+      nextOverrides[surfaceId] = {
+        ...currentOverride,
+        enabled: false,
+      };
+    } else {
+      nextOverrides[surfaceId] = false;
+    }
+
+    updateAppearance({ interactionMotionSurfaceOverrides: nextOverrides });
+  }, [settings.appearance.interactionMotionSurfaceOverrides, updateAppearance]);
+  const shellTransitionMotionCard = bindSettingsCardMotion();
+  const interactionMotionCard = bindSettingsCardMotion(settings.appearance.interactionMotionEnabled);
 
   useEffect(() => {
     ensureFontFamilyLoaded(appearance.fonts.ui);
@@ -2381,8 +2579,16 @@ export function SettingsPage({
       label: 'Appearance',
       subtitle: 'Theme, opacity, panel transparency, blur, and zoom.',
       summary: `${effectiveTheme.name} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
-      detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, and UI typography.',
+      detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, UI typography, and the theme package catalog that can now contribute separate top bars.',
       icon: <Palette size={14} />,
+    },
+    {
+      key: 'top-bars',
+      label: 'Top Bars',
+      subtitle: 'Standalone shell chrome workflows that can follow the active theme or stay pinned independently.',
+      summary: `${topBarSelectionSummary} · ${availableTopBars.length} variants`,
+      detail: 'Mix and match top-bar workflows independently from the active theme. Theme packages can still publish their own top bars, but users do not need to swap whole themes just to change shell chrome.',
+      icon: <SlidersHorizontal size={14} />,
     },
     {
       key: 'icons',
@@ -2485,6 +2691,7 @@ export function SettingsPage({
                 text={text}
                 muted={muted}
                 onClick={() => setActiveSection(section.key)}
+                motionBinding={bindSettingsCardMotion(activeSection === section.key)}
               />
             ))}
           </div>
@@ -2683,7 +2890,7 @@ export function SettingsPage({
                       <div>
                         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Packages</div>
                         <p className="mt-1 text-[11px] opacity-40">
-                          Drop packaged themes into <code>{themePackagesDirectory}</code> and GreebleFS will discover them as curated themes with assets and visuals.
+                          Drop packaged themes into <code>{themePackagesDirectory}</code> and GreebleFS will discover them as curated themes with assets, visuals, and any modular top-bar contributions they publish.
                           Official pilot themes surface first, built-ins stay supported, and archive material remains selectable without dominating the page.
                         </p>
                       </div>
@@ -2742,6 +2949,7 @@ export function SettingsPage({
                       activeThemeId={settings.appearance.activeThemeId}
                       onSelect={applyThemeSelection}
                       themePackageLookup={themePackageLookup}
+                      createThemeCardMotion={bindSettingsCardMotion}
                     />
                   </div>
 
@@ -2809,6 +3017,7 @@ export function SettingsPage({
                     activeThemeId={settings.appearance.activeDockThemeId}
                     onSelect={applyDockThemeSelection}
                     themePackageLookup={themePackageLookup}
+                    createThemeCardMotion={bindSettingsCardMotion}
                   />
                 </div>
               )}
@@ -2903,6 +3112,115 @@ export function SettingsPage({
               </label>
             </div>
           </section>
+            )}
+
+            {activeSection === 'top-bars' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<SlidersHorizontal size={12} />}
+                  title="Top Bars"
+                  subtitle="Standalone shell chrome workflows that can follow theme defaults or stay pinned independently."
+                />
+
+                <div className="mt-4 space-y-4">
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Top Bar Catalog</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Top bars now resolve independently from the active theme. Built-ins always stay available, and theme packages in <code>{themePackagesDirectory}</code> can contribute additional shell chrome workflows without forcing users to swap the entire theme.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void onRefreshThemes()}
+                          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          <RefreshCw size={10} />
+                          Refresh
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void onOpenThemesFolder()}
+                          className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
+                        >
+                          Open Theme Folder
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        Current: {resolvedTopBarSelection.topBar.name}
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        Mode: {settings.appearance.activeTopBarId == null ? 'Follow Theme' : 'Pinned'}
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        Catalog: {availableTopBars.length} top bars
+                      </span>
+                    </div>
+
+                    <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}33`, background: `${accent}10`, color: text }}>
+                      {followThemeTopBarDetail}
+                    </div>
+
+                    {resolvedTopBarSelection.explicitSelectionMissing ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
+                        The pinned top bar id <code>{settings.appearance.activeTopBarId}</code> is no longer available, so the shell is temporarily following the active theme fallback until you pin another one.
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Selection</label>
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => updateAppearance({ activeTopBarId: null })}
+                        className="w-full rounded border p-3 text-left transition-colors"
+                        style={{
+                          borderColor: settings.appearance.activeTopBarId == null ? accent : border,
+                          background: settings.appearance.activeTopBarId == null ? `${accent}12` : 'rgba(255,255,255,0.03)',
+                          color: text,
+                          boxShadow: settings.appearance.activeTopBarId == null ? `inset 0 0 0 1px ${accent}22` : 'none',
+                        }}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] font-semibold">Follow Theme</div>
+                            <div className="mt-1 text-[11px] leading-4 opacity-55">
+                              Let the current app theme choose the top bar. Theme packages can publish explicit defaults, and older themes still map through the legacy workbench top-bar style fallback.
+                            </div>
+                          </div>
+                          {settings.appearance.activeTopBarId == null ? <ThemeBadge label="Active" active /> : null}
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                          <ThemeBadge label={`Resolved ${resolvedTopBarSelection.topBar.name}`} active={settings.appearance.activeTopBarId == null} />
+                          <ThemeBadge label={appearance.baseTheme.name} />
+                          <ThemeBadge label={resolvedTopBarSelection.resolvedFrom === 'theme-default' ? 'Theme Default' : resolvedTopBarSelection.resolvedFrom === 'theme-legacy-style' ? 'Legacy Fallback' : 'Built-In Fallback'} />
+                        </div>
+                      </button>
+
+                      {availableTopBars.map(topBar => (
+                        <TopBarCatalogCard
+                          key={topBar.id}
+                          topBar={topBar}
+                          active={settings.appearance.activeTopBarId === topBar.id}
+                          border={border}
+                          accent={accent}
+                          text={text}
+                          muted={muted}
+                          onClick={() => updateAppearance({ activeTopBarId: topBar.id })}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
             )}
 
             {activeSection === 'icons' && (
@@ -3920,20 +4238,33 @@ export function SettingsPage({
             <SectionTitle
               icon={<RotateCcw size={12} />}
               title="Animations"
-              subtitle="Built-in and authored motion modules with dedicated open and close bindings."
+              subtitle="Shell transitions and shell-wide interaction motion live together here, but they stay on separate runtime lanes."
             />
 
             <div className="mt-4 space-y-4">
-              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+              <div
+                className="rounded border p-3"
+                {...shellTransitionMotionCard.motionDataAttributes}
+                onPointerEnter={shellTransitionMotionCard.onPointerEnter}
+                onPointerLeave={shellTransitionMotionCard.onPointerLeave}
+                onPointerDown={shellTransitionMotionCard.onPointerDown}
+                onPointerUp={shellTransitionMotionCard.onPointerUp}
+                onPointerCancel={shellTransitionMotionCard.onPointerCancel}
+                style={{
+                  borderColor: border,
+                  background: 'rgba(255,255,255,0.025)',
+                  ...shellTransitionMotionCard.motionStyle,
+                }}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Animation Modules</div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shell Transitions</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      Keep motion authoring separate from theme work. Browse modules here, assign live open and close bindings, and manage the animation folder without crowding the Appearance page.
+                      Keep window open and close choreography separate from interaction motion. Browse authored modules here, assign live bindings, and manage the animation folder without crowding the rest of Appearance.
                     </p>
                   </div>
                   <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    Motion
+                    Transition Lane
                   </span>
                 </div>
 
@@ -4124,6 +4455,179 @@ export function SettingsPage({
                     value={settings.appearance.appAnimationIntensity}
                     valueLabel={`${settings.appearance.appAnimationIntensity.toFixed(2)}x`}
                     onChange={value => updateAppearance({ appAnimationIntensity: clampOverlayAnimationIntensity(value) })}
+                  />
+                </div>
+              </div>
+
+              <div
+                className="rounded border p-3"
+                {...interactionMotionCard.motionDataAttributes}
+                onPointerEnter={interactionMotionCard.onPointerEnter}
+                onPointerLeave={interactionMotionCard.onPointerLeave}
+                onPointerDown={interactionMotionCard.onPointerDown}
+                onPointerUp={interactionMotionCard.onPointerUp}
+                onPointerCancel={interactionMotionCard.onPointerCancel}
+                style={{
+                  borderColor: border,
+                  background: 'rgba(255,255,255,0.025)',
+                  ...interactionMotionCard.motionStyle,
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Interaction Motion</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      A shared motion resolver now drives explorer entries, the rail, preview workflow tabs, panel tabs, top-bar buttons, and settings cards. Theme defaults still land first, and settings overrides only step in when you ask for them.
+                    </p>
+                  </div>
+                  <span
+                    className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                    style={{
+                      borderColor: settings.appearance.interactionMotionEnabled ? `${accent}66` : border,
+                      background: settings.appearance.interactionMotionEnabled ? `${accent}16` : 'rgba(255,255,255,0.04)',
+                      color: settings.appearance.interactionMotionEnabled ? accent : text,
+                    }}
+                  >
+                    {settings.appearance.interactionMotionEnabled ? 'Live' : 'Disabled'}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                  <div className="space-y-3">
+                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Resolver State</div>
+                          <p className="mt-1 text-[11px] opacity-45">
+                            Current live profile: <strong>{effectiveInteractionMotionProfile?.label ?? 'Subtle'}</strong>.
+                            {' '}
+                            {settings.appearance.interactionMotionPresetId == null
+                              ? (themeInteractionMotionPresetId
+                                  ? `Following theme default ${themeInteractionMotionPresetId}.`
+                                  : 'Following the built-in subtle fallback.')
+                              : 'Pinned by Settings.'}
+                          </p>
+                        </div>
+                        <label className="inline-flex items-center gap-2 text-[11px] font-medium" style={{ color: text }}>
+                          <input
+                            type="checkbox"
+                            aria-label="Enable interaction motion"
+                            checked={settings.appearance.interactionMotionEnabled}
+                            onChange={event => updateAppearance({ interactionMotionEnabled: event.target.checked })}
+                          />
+                          <span>Enable Interaction Motion</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Preset Source</div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          aria-label="Follow theme interaction motion preset"
+                          onClick={() => updateAppearance({ interactionMotionPresetId: null })}
+                          className="rounded px-3 py-2 text-left transition-colors"
+                          style={{
+                            border: `1px solid ${settings.appearance.interactionMotionPresetId == null ? accent : border}`,
+                            background: settings.appearance.interactionMotionPresetId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                            color: text,
+                          }}
+                        >
+                          <div className="text-[11px] font-semibold">Follow Theme</div>
+                          <div className="mt-1 text-[10px] opacity-50">
+                            {themeInteractionMotionPresetId
+                              ? `Theme default: ${themeInteractionMotionPresetId}`
+                              : 'Falls back to subtle when the theme does not declare one.'}
+                          </div>
+                        </button>
+                        {interactionMotionPresetOptions.map(option => {
+                          const active = settings.appearance.interactionMotionPresetId === option.id;
+                          return (
+                            <button
+                              key={`interaction-motion-preset-${option.id}`}
+                              type="button"
+                              aria-label={`Use ${option.label} interaction motion preset`}
+                              onClick={() => updateAppearance({ interactionMotionPresetId: option.id })}
+                              className="rounded px-3 py-2 text-left transition-colors"
+                              style={{
+                                border: `1px solid ${active ? accent : border}`,
+                                background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                color: text,
+                              }}
+                            >
+                              <div className="text-[11px] font-semibold">{option.label}</div>
+                              <div className="mt-1 max-w-[16rem] text-[10px] leading-4 opacity-50">{option.description}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <RangeField
+                      label="Interaction Intensity"
+                      description="Scale the shared motion profile without changing which preset or theme recipe is active."
+                      min={0.25}
+                      max={2.5}
+                      step={0.05}
+                      value={settings.appearance.interactionMotionIntensity}
+                      valueLabel={`${settings.appearance.interactionMotionIntensity.toFixed(2)}x`}
+                      onChange={value => updateAppearance({ interactionMotionIntensity: clampInteractionMotionIntensity(value) })}
+                    />
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Surface Overrides</div>
+                        <p className="mt-1 text-[11px] opacity-45">
+                          Disable motion on a surface without changing the theme recipe or preset for the rest of the shell.
+                        </p>
+                      </div>
+                      <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        {interactionMotionSurfaceCatalog.length} surfaces
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2">
+                      {interactionMotionSurfaceCatalog.map(surface => {
+                        const override = settings.appearance.interactionMotionSurfaceOverrides[surface.id];
+                        const surfaceEnabled = typeof override === 'boolean'
+                          ? override
+                          : override?.enabled !== false;
+                        return (
+                          <label
+                            key={`interaction-motion-surface-${surface.id}`}
+                            className="flex items-start gap-3 rounded border px-3 py-2"
+                            style={{
+                              borderColor: surfaceEnabled ? border : `${accent}44`,
+                              background: surfaceEnabled ? 'rgba(255,255,255,0.02)' : `${accent}0c`,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              aria-label={`Enable ${surface.label} interaction motion`}
+                              checked={surfaceEnabled}
+                              onChange={event => setInteractionMotionSurfaceEnabled(surface.id, event.target.checked)}
+                            />
+                            <span style={{ minWidth: 0 }}>
+                              <span className="text-[11px] font-semibold" style={{ color: text }}>{surface.label}</span>
+                              <span className="mt-1 block text-[10px] leading-4 opacity-50">{surface.description}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <InteractionMotionLab
+                    appearance={appAppearance}
+                    accent={accent}
+                    border={border}
+                    text={text}
+                    muted={muted}
                   />
                 </div>
               </div>

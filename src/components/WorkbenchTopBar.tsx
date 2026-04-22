@@ -1,0 +1,1213 @@
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
+
+import {
+  Check,
+  Droplet,
+  LayoutGrid,
+  Search,
+  Settings2,
+  Terminal as TerminalIcon,
+  X,
+} from '@/components/AppIcons';
+import type { OverlayPanelDefinition } from '../panels/panelRegistry';
+import type { ResolvedOverlayAppearance } from '../config/appearance';
+import { resolveConditionalBlurFilter } from '../config/chromeEffects';
+import type { LayoutProfile } from '../config/layoutProfiles';
+import type { RuntimePlatform } from '../config/platform';
+import type {
+  LoadedOverlayTopBarDefinition,
+  OverlayTopBarControlId,
+} from '../config/topBars';
+import type { ResolvedWorkbenchRenderRuntime } from '../config/workbenchRenderRuntime';
+import type {
+  OverlayWindowAnchor,
+  TerminalWindowMode,
+} from '../store/settingsStore';
+import type { OverlayThemeRendererSurfaceOwnership } from './themeRendererShellModel';
+import { useInteractionMotionController } from '../animation/interactionMotion';
+import { OverlayScrollArea } from './OverlayScrollArea';
+import { WindowControls } from './WindowControls';
+
+interface WorkbenchTopBarProps {
+  appearance: ResolvedOverlayAppearance;
+  renderRuntime: ResolvedWorkbenchRenderRuntime;
+  layoutProfile: LayoutProfile;
+  layoutSourcePath: string | null;
+  panels: OverlayPanelDefinition[];
+  openPanelIds: string[];
+  pinnedPanelIds: string[];
+  activePanelId: string | null;
+  onPanelSelect: (panelId: string | null) => void;
+  onPanelToggle: (panelId: string) => void;
+  onPanelClose: (panelId: string) => void;
+  onPanelReorder: (draggedId: string, targetId: string) => void;
+  onOpenSettings: () => void;
+  onCycleLayout: () => void;
+  onSetWindowMode: (mode: TerminalWindowMode) => void;
+  onOpenCommandPalette: () => void;
+  onToggleOverlayAnchor: () => void;
+  onClose: () => void;
+  accent: string;
+  blur: boolean;
+  onBlurChange: (value: boolean) => void;
+  blurStrength: number;
+  blurPlatform: RuntimePlatform;
+  windowMode: TerminalWindowMode;
+  overlayAnchor: OverlayWindowAnchor;
+  surfaceOwnership?: OverlayThemeRendererSurfaceOwnership | null;
+  commandPaletteShortcutLabel: string;
+  toggleShortcutLabel: string;
+  zenFocusMode: boolean;
+  zenFocusShortcutLabel: string;
+  onToggleZenFocusMode: () => void;
+  topBarShaderLayer?: ReactNode;
+  topBarDefinition: LoadedOverlayTopBarDefinition;
+}
+
+function renderControlZone(
+  children: ReactNode[],
+  side: 'leading' | 'trailing',
+): ReactNode {
+  if (children.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '0 8px',
+        background: 'var(--overlay-workbench-chrome-button-bg)',
+        borderRight: side === 'leading' ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+        borderLeft: side === 'trailing' ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+        flexShrink: 0,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function WorkbenchTopBar({
+  appearance,
+  renderRuntime,
+  layoutProfile,
+  layoutSourcePath,
+  panels,
+  openPanelIds,
+  pinnedPanelIds,
+  activePanelId,
+  onPanelSelect,
+  onPanelToggle,
+  onPanelClose,
+  onPanelReorder,
+  onOpenSettings,
+  onCycleLayout,
+  onSetWindowMode,
+  onOpenCommandPalette,
+  onToggleOverlayAnchor,
+  onClose,
+  accent,
+  blur,
+  onBlurChange,
+  blurStrength,
+  blurPlatform,
+  windowMode,
+  overlayAnchor,
+  surfaceOwnership,
+  commandPaletteShortcutLabel,
+  toggleShortcutLabel,
+  zenFocusMode,
+  zenFocusShortcutLabel,
+  onToggleZenFocusMode,
+  topBarShaderLayer,
+  topBarDefinition,
+}: WorkbenchTopBarProps) {
+  const borderColor = appearance.theme.palette.border;
+  const muted = appearance.theme.palette.textMuted;
+  const text = appearance.theme.palette.textPrimary;
+  const workbench = appearance.workbenchTheme;
+  const effectiveTopBarStyle = topBarDefinition.topBarStyle ?? workbench.topBarStyle;
+  const effectiveTabStyle = topBarDefinition.tabStyle ?? workbench.tabStyle;
+  const uiFont = appearance.fonts.ui;
+  const monoFont = appearance.fonts.mono;
+  const chromeHeight = workbench.metrics.chromeHeight;
+  const usesFloatingTopBar = effectiveTopBarStyle === 'floating' || effectiveTopBarStyle === 'glass';
+  const usesInsetTopBar = usesFloatingTopBar || effectiveTopBarStyle === 'minimal';
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
+  const [viewportSize, setViewportSize] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  const activePanelDefinition = activePanelId ? panels.find(panel => panel.id === activePanelId) ?? null : null;
+  const isExplorerActive = activePanelId === 'explorer';
+  const isSettingsActive = activePanelId === 'settings';
+  const rendererOwnsLauncher = Boolean(surfaceOwnership?.launcher);
+  const runtimeUsesTabbedNavigation = !rendererOwnsLauncher && renderRuntime.showTabStrip;
+  const showPrimaryLauncherChrome = !rendererOwnsLauncher;
+  const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
+  const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
+  const isWindowedMode = windowMode === 'windowed';
+  const windowedChromeTopInset = isWindowedMode && blurPlatform === 'windows' && !isWindowMaximized ? 10 : 0;
+  const topBarBackdropFilter = resolveConditionalBlurFilter({
+    enabled: blur && effectiveTopBarStyle === 'glass',
+    blurPx: Math.min(blurStrength, 18),
+  });
+  const interactionMotion = useInteractionMotionController(appearance);
+  const topBarButtonTransition = 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s, opacity 0.15s';
+  const panelTabTransition = 'background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s, box-shadow 0.15s';
+  const openPanels = useMemo(
+    () => getTabbedOpenPanelIds(layoutProfile, openPanelIds)
+      .map(id => panels.find(panel => panel.id === id))
+      .filter((panel): panel is OverlayPanelDefinition => Boolean(panel)),
+    [layoutProfile, openPanelIds, panels],
+  );
+  const tabPanels = useMemo(
+    () => openPanels.filter(panel => panel.id !== 'explorer' && panel.id !== 'settings'),
+    [openPanels],
+  );
+  const panelGroups = useMemo(() => {
+    const builtInPanels = panels.filter(panel => panel.kind === 'built-in-panel');
+    const pluginPanels = panels.filter(panel => panel.kind === 'folder-plugin');
+
+    return [
+      builtInPanels.length > 0 ? { id: 'core', label: 'Core Panels', panels: builtInPanels } : null,
+      pluginPanels.length > 0 ? { id: 'plugins', label: 'Plugin Panels', panels: pluginPanels } : null,
+    ].filter((group): group is { id: string; label: string; panels: OverlayPanelDefinition[] } => Boolean(group));
+  }, [panels]);
+  const panelMenuWidth = Math.max(236, Math.min(292, viewportSize.width - 24));
+  const panelMenuMaxHeight = Math.max(190, Math.min(440, viewportSize.height - 92));
+  const compactPanelMenu = panelMenuWidth < 264 || viewportSize.height < 640;
+  const panelMenuRowHeight = compactPanelMenu ? 42 : 52;
+  const panelMenuHeight = Math.max(
+    190,
+    Math.min(
+      panelMenuMaxHeight,
+      52 + panelGroups.length * 26 + panels.length * panelMenuRowHeight,
+    ),
+  );
+  const showPanelDescriptions = !compactPanelMenu && panelMenuHeight > 290;
+  const nextOverlayAnchor = overlayAnchor === 'top' ? 'bottom' : 'top';
+  const layoutButtonTitle = isWindowedMode
+    ? (layoutSourcePath
+      ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}`
+      : `Cycle Layout (${layoutProfile.label})`)
+    : (layoutSourcePath
+      ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`
+      : `Cycle Layout (${layoutProfile.label})\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`);
+  const shouldShowLeadingWindowControls = isWindowedMode && blurPlatform === 'macos';
+  const shouldShowTrailingWindowControls = isWindowedMode && blurPlatform !== 'macos';
+  const showsTabStrip = runtimeUsesTabbedNavigation && topBarDefinition.navigationMode !== 'summary';
+
+  const handleStartWindowDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isWindowedMode || event.button !== 0 || !isTauri()) {
+      return;
+    }
+
+    event.preventDefault();
+    getCurrentWindow().startDragging().catch(() => {});
+  }, [isWindowedMode]);
+
+  const handleMinimizeWindow = useCallback(() => {
+    if (!isWindowedMode || !isTauri()) {
+      return;
+    }
+
+    getCurrentWindow().minimize().catch(() => {});
+  }, [isWindowedMode]);
+
+  const handleToggleMaximize = useCallback(async () => {
+    if (!isWindowedMode || !isTauri()) {
+      return;
+    }
+
+    const currentWindow = getCurrentWindow();
+    const maximized = await currentWindow.isMaximized().catch(() => false);
+    if (maximized) {
+      await currentWindow.unmaximize().catch(() => {});
+      setIsWindowMaximized(false);
+      return;
+    }
+
+    await currentWindow.maximize().catch(() => {});
+    setIsWindowMaximized(true);
+  }, [isWindowedMode]);
+
+  useEffect(() => {
+    if (!isMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target)) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [isMenuOpen]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (!isWindowedMode || !isTauri()) {
+      setIsWindowMaximized(false);
+      return;
+    }
+
+    let cancelled = false;
+    const currentWindow = getCurrentWindow();
+    const sync = async () => {
+      const nextValue = await currentWindow.isMaximized().catch(() => false);
+      if (!cancelled) {
+        setIsWindowMaximized(nextValue);
+      }
+    };
+
+    void sync();
+    const unlistenResize = currentWindow.onResized(() => {
+      void sync();
+    });
+
+    return () => {
+      cancelled = true;
+      void unlistenResize.then(unlisten => unlisten());
+    };
+  }, [isWindowedMode]);
+
+  const panelMenu = (
+    <div
+      style={{
+        position: 'absolute',
+        top: isBottomBar ? 'auto' : 'calc(100% + 8px)',
+        bottom: isBottomBar ? 'calc(100% + 8px)' : 'auto',
+        right: 0,
+        width: panelMenuWidth,
+        maxWidth: 'calc(100vw - 16px)',
+        height: panelMenuHeight,
+        maxHeight: panelMenuMaxHeight,
+        background: 'var(--overlay-workbench-chrome-menu-bg)',
+        border: '1px solid var(--overlay-workbench-chrome-border)',
+        borderRadius: workbench.metrics.panelRadius,
+        boxShadow: 'var(--overlay-workbench-shell-shadow)',
+        padding: 6,
+        zIndex: 50,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        backdropFilter: topBarBackdropFilter,
+        WebkitBackdropFilter: topBarBackdropFilter,
+      }}
+    >
+      <div
+        style={{
+          padding: '8px 10px 10px',
+          fontSize: 10,
+          color: muted,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          fontWeight: 700,
+          borderBottom: '1px solid var(--overlay-workbench-chrome-border)',
+        }}
+      >
+        <div>Panels</div>
+        <div
+          style={{
+            marginTop: 4,
+            fontSize: 9,
+            letterSpacing: '0.04em',
+            textTransform: 'none',
+            fontWeight: 500,
+          }}
+        >
+          {openPanels.length} open
+          {panelGroups.some(group => group.id === 'plugins')
+            ? ` • ${panelGroups.find(group => group.id === 'plugins')?.panels.length ?? 0} plugins`
+            : ''}
+        </div>
+      </div>
+
+      <OverlayScrollArea
+        style={{ flex: 1, minHeight: 0 }}
+        viewportStyle={{ paddingRight: 2, paddingTop: 6 }}
+        contentStyle={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 4 }}
+      >
+        {panelGroups.map(group => (
+          <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div
+              style={{
+                padding: '0 6px',
+                fontSize: 9,
+                color: muted,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                fontWeight: 700,
+              }}
+            >
+              {group.label}
+            </div>
+
+            {group.panels.map(panel => {
+              const isOpen = openPanelIds.includes(panel.id);
+              const isActive = panel.id === activePanelId;
+              const isPinned = pinnedPanelIds.includes(panel.id);
+              const helperLabel = isPinned ? `Docked by ${layoutProfile.label}` : panel.description;
+              const statusLabel = isPinned ? 'Docked' : isOpen ? 'Open' : panel.kind === 'folder-plugin' ? 'Plugin' : 'Closed';
+
+              return (
+                <button
+                  key={panel.id}
+                  onClick={() => {
+                    if (!isPinned) {
+                      if (isOpen) {
+                        onPanelSelect(panel.id);
+                      } else {
+                        onPanelToggle(panel.id);
+                      }
+                    }
+                    setIsMenuOpen(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: compactPanelMenu ? 8 : 10,
+                    padding: compactPanelMenu ? '8px 10px' : '9px 10px',
+                    border: `1px solid ${isActive ? 'var(--overlay-workbench-chrome-button-active-border)' : 'transparent'}`,
+                    borderRadius: 9,
+                    background: isActive
+                      ? 'var(--overlay-workbench-chrome-tab-active-bg)'
+                      : isOpen
+                        ? 'var(--overlay-workbench-chrome-tab-bg)'
+                        : 'var(--overlay-workbench-chrome-button-bg)',
+                    color: text,
+                    cursor: isPinned ? 'default' : 'pointer',
+                    textAlign: 'left',
+                    minHeight: compactPanelMenu ? 40 : 48,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 14,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: isOpen || isPinned ? accent : 'transparent',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Check size={12} />
+                  </span>
+                  <span style={{ display: 'flex', color: isActive ? accent : muted, flexShrink: 0 }}>{panel.icon}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: compactPanelMenu ? 11 : 12, fontWeight: 700, color: text }}>{panel.label}</span>
+                      {isActive ? <span style={{ width: 5, height: 5, borderRadius: '50%', background: accent, flexShrink: 0 }} /> : null}
+                    </span>
+                    {showPanelDescriptions ? (
+                      <span
+                        style={{
+                          display: 'block',
+                          marginTop: 2,
+                          fontSize: 10,
+                          color: muted,
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        {helperLabel}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 9,
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase',
+                      color: isPinned || isOpen ? accent : muted,
+                      padding: '3px 6px',
+                      borderRadius: workbench.metrics.controlRadius,
+                      border: `1px solid ${isPinned || isOpen ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                      background: isPinned || isOpen ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-chrome-button-bg)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {statusLabel}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </OverlayScrollArea>
+    </div>
+  );
+
+  const bindTopBarButtonMotion = useCallback((active = false) => (
+    interactionMotion.bindSurface({
+      surfaceId: 'topBarButton',
+      triggerState: active ? { activate: true } : undefined,
+      baseTransition: topBarButtonTransition,
+    })
+  ), [interactionMotion, topBarButtonTransition]);
+
+  const bindPanelTabMotion = useCallback((active = false) => (
+    interactionMotion.bindSurface({
+      surfaceId: 'panelTab',
+      triggerState: active ? { activate: true } : undefined,
+      baseTransition: panelTabTransition,
+    })
+  ), [interactionMotion, panelTabTransition]);
+
+  const renderCompactButton = (
+    content: ReactNode,
+    options: {
+      key: string;
+      active?: boolean;
+      title: string;
+      onClick?: () => void;
+      onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
+      ariaLabel?: string;
+      style?: CSSProperties;
+    },
+  ): ReactNode => {
+    const motionBinding = bindTopBarButtonMotion(options.active);
+
+    return (
+      <button
+        key={options.key}
+        aria-label={options.ariaLabel}
+        onClick={options.onClick}
+        onContextMenu={options.onContextMenu}
+        title={options.title}
+        {...motionBinding.motionDataAttributes}
+        onPointerEnter={motionBinding.onPointerEnter}
+        onPointerLeave={motionBinding.onPointerLeave}
+        onPointerDown={motionBinding.onPointerDown}
+        onPointerUp={motionBinding.onPointerUp}
+        onPointerCancel={motionBinding.onPointerCancel}
+        style={{
+          height: 22,
+          minWidth: 22,
+          padding: 0,
+          background: options.active
+            ? 'var(--overlay-workbench-chrome-button-active-bg)'
+            : 'var(--overlay-workbench-chrome-button-bg)',
+          border: `1px solid ${options.active ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+          color: options.active ? text : muted,
+          borderRadius: workbench.metrics.controlRadius,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          boxShadow: options.active ? `0 0 0 1px ${accent}22 inset` : 'none',
+          ...options.style,
+          ...motionBinding.motionStyle,
+        }}
+      >
+        {content}
+      </button>
+    );
+  };
+
+  const renderCompactControl = useCallback((controlId: OverlayTopBarControlId): ReactNode | null => {
+    switch (controlId) {
+      case 'layout-cycle':
+        return renderCompactButton(
+          <div
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: workbench.metrics.controlRadius,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: `${accent}1e`,
+              border: `1px solid ${accent}40`,
+            }}
+          >
+            <TerminalIcon size={10} style={{ color: accent }} />
+          </div>,
+          {
+            key: controlId,
+            title: layoutButtonTitle,
+            onClick: onCycleLayout,
+            onContextMenu: event => {
+              event.preventDefault();
+              if (!isWindowedMode) {
+                onToggleOverlayAnchor();
+              }
+            },
+            style: {
+              minWidth: 24,
+              width: 24,
+              background: 'var(--overlay-workbench-chrome-button-bg)',
+            },
+          },
+        );
+      case 'window-mode':
+        const windowModeMotion = bindTopBarButtonMotion(windowMode === 'overlay');
+        return (
+          <button
+            key={controlId}
+            onClick={() => {
+              setIsMenuOpen(false);
+              onSetWindowMode(windowMode === 'windowed' ? 'overlay' : 'windowed');
+            }}
+            title={windowMode === 'windowed' ? 'Switch to Dock Mode' : 'Switch to Application Mode'}
+            {...windowModeMotion.motionDataAttributes}
+            onPointerEnter={windowModeMotion.onPointerEnter}
+            onPointerLeave={windowModeMotion.onPointerLeave}
+            onPointerDown={windowModeMotion.onPointerDown}
+            onPointerUp={windowModeMotion.onPointerUp}
+            onPointerCancel={windowModeMotion.onPointerCancel}
+            style={{
+              height: 22,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '0 7px',
+              borderRadius: workbench.metrics.controlRadius,
+              border: `1px solid ${windowMode === 'overlay' ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+              background: windowMode === 'overlay'
+                ? 'var(--overlay-workbench-chrome-button-active-bg)'
+                : 'var(--overlay-workbench-chrome-button-bg)',
+              color: windowMode === 'overlay' ? text : muted,
+              fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+              fontWeight: 700,
+              letterSpacing: 'var(--overlay-workbench-label-spacing)',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              boxShadow: windowMode === 'overlay' ? `0 0 0 1px ${accent}18 inset` : 'none',
+              ...windowModeMotion.motionStyle,
+            }}
+          >
+            <span>{windowMode === 'windowed' ? 'Dock' : 'App'}</span>
+          </button>
+        );
+      case 'overlay-anchor':
+        if (windowMode !== 'overlay') {
+          return null;
+        }
+
+        const overlayAnchorMotion = bindTopBarButtonMotion();
+        return (
+          <button
+            key={controlId}
+            onClick={onToggleOverlayAnchor}
+            title={`Docked to ${overlayAnchor === 'top' ? 'top' : 'bottom'} edge`}
+            {...overlayAnchorMotion.motionDataAttributes}
+            onPointerEnter={overlayAnchorMotion.onPointerEnter}
+            onPointerLeave={overlayAnchorMotion.onPointerLeave}
+            onPointerDown={overlayAnchorMotion.onPointerDown}
+            onPointerUp={overlayAnchorMotion.onPointerUp}
+            onPointerCancel={overlayAnchorMotion.onPointerCancel}
+            style={{
+              height: 22,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '0 7px',
+              borderRadius: workbench.metrics.controlRadius,
+              border: '1px solid var(--overlay-workbench-chrome-border)',
+              background: 'var(--overlay-workbench-chrome-button-bg)',
+              color: muted,
+              fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+              fontWeight: 700,
+              letterSpacing: 'var(--overlay-workbench-label-spacing)',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              ...overlayAnchorMotion.motionStyle,
+            }}
+          >
+            <span>{overlayAnchor === 'top' ? 'Top Edge' : 'Bottom Edge'}</span>
+          </button>
+        );
+      case 'blur-toggle':
+        if (!layoutProfile.chrome.showBlurToggle) {
+          return null;
+        }
+
+        return renderCompactButton(
+          <Droplet size={11} />,
+          {
+            key: controlId,
+            active: blur,
+            title: supportsNativeBlur
+              ? (blur ? 'Disable native window blur' : 'Enable native window blur')
+              : 'Native blur is currently only available on macOS and Windows',
+            onClick: () => onBlurChange(!blur),
+            style: {
+              opacity: supportsNativeBlur ? 1 : 0.65,
+              color: blur ? accent : muted,
+              borderColor: blur ? accent : borderColor,
+              background: blur ? `${accent}22` : 'rgba(255,255,255,0.025)',
+            },
+          },
+        );
+      case 'zen-mode':
+        const zenModeMotion = bindTopBarButtonMotion(zenFocusMode);
+        return (
+          <button
+            key={controlId}
+            onClick={onToggleZenFocusMode}
+            title={`${zenFocusMode ? 'Exit' : 'Enter'} Zen Focus Mode (${zenFocusShortcutLabel})`}
+            {...zenModeMotion.motionDataAttributes}
+            onPointerEnter={zenModeMotion.onPointerEnter}
+            onPointerLeave={zenModeMotion.onPointerLeave}
+            onPointerDown={zenModeMotion.onPointerDown}
+            onPointerUp={zenModeMotion.onPointerUp}
+            onPointerCancel={zenModeMotion.onPointerCancel}
+            style={{
+              height: 22,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '0 7px',
+              borderRadius: workbench.metrics.controlRadius,
+              border: `1px solid ${zenFocusMode ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+              background: zenFocusMode
+                ? 'var(--overlay-workbench-chrome-button-active-bg)'
+                : 'var(--overlay-workbench-chrome-button-bg)',
+              color: zenFocusMode ? text : muted,
+              fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+              fontWeight: 700,
+              letterSpacing: 'var(--overlay-workbench-label-spacing)',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              boxShadow: zenFocusMode ? `0 0 0 1px ${accent}18 inset` : 'none',
+              ...zenModeMotion.motionStyle,
+            }}
+          >
+            <span>Zen</span>
+          </button>
+        );
+      case 'panel-menu':
+        if (!showPrimaryLauncherChrome || !layoutProfile.chrome.showPanelMenu) {
+          return null;
+        }
+
+        return (
+          <div key={controlId} ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
+            {renderCompactButton(
+              <LayoutGrid size={11} style={{ color: isMenuOpen ? accent : muted }} />,
+              {
+                key: `${controlId}-button`,
+                active: isMenuOpen,
+                title: 'Toggle Panels',
+                onClick: () => setIsMenuOpen(open => !open),
+              },
+            )}
+            {isMenuOpen ? panelMenu : null}
+          </div>
+        );
+      case 'command-palette':
+        return renderCompactButton(
+          <Search size={11} />,
+          {
+            key: controlId,
+            title: `Open Command Palette (${commandPaletteShortcutLabel})`,
+            onClick: onOpenCommandPalette,
+          },
+        );
+      case 'shortcut-badge':
+        if (!layoutProfile.chrome.showShortcutBadge || isWindowedMode) {
+          return null;
+        }
+
+        return (
+          <kbd
+            key={controlId}
+            style={{
+              fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+              fontFamily: monoFont,
+              background: 'var(--overlay-workbench-chrome-button-bg)',
+              padding: '1px 4px',
+              borderRadius: workbench.metrics.controlRadius,
+              border: '1px solid var(--overlay-workbench-chrome-border)',
+              color: muted,
+              userSelect: 'none',
+            }}
+          >
+            {toggleShortcutLabel}
+          </kbd>
+        );
+      case 'close-overlay':
+        if (isWindowedMode) {
+          return null;
+        }
+
+        const closeOverlayMotion = bindTopBarButtonMotion();
+        return (
+          <button
+            key={controlId}
+            onClick={onClose}
+            title="Close (Esc)"
+            {...closeOverlayMotion.motionDataAttributes}
+            onPointerEnter={event => {
+              closeOverlayMotion.onPointerEnter(event);
+              event.currentTarget.style.background = 'rgba(248,113,113,0.12)';
+              event.currentTarget.style.color = appearance.theme.palette.danger;
+            }}
+            onPointerLeave={event => {
+              closeOverlayMotion.onPointerLeave(event);
+              event.currentTarget.style.background = 'transparent';
+              event.currentTarget.style.color = muted;
+            }}
+            onPointerDown={closeOverlayMotion.onPointerDown}
+            onPointerUp={closeOverlayMotion.onPointerUp}
+            onPointerCancel={event => {
+              closeOverlayMotion.onPointerCancel(event);
+              event.currentTarget.style.background = 'transparent';
+              event.currentTarget.style.color = muted;
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: muted,
+              padding: 4,
+              borderRadius: workbench.metrics.controlRadius,
+              display: 'flex',
+              alignItems: 'center',
+              ...closeOverlayMotion.motionStyle,
+            }}
+          >
+            <X size={12} />
+          </button>
+        );
+      default:
+        return null;
+    }
+  }, [
+    accent,
+    appearance.theme.palette.danger,
+    blur,
+    borderColor,
+    commandPaletteShortcutLabel,
+    isMenuOpen,
+    isWindowedMode,
+    layoutButtonTitle,
+    layoutProfile.chrome.showBlurToggle,
+    layoutProfile.chrome.showPanelMenu,
+    layoutProfile.chrome.showShortcutBadge,
+    monoFont,
+    muted,
+    onBlurChange,
+    onClose,
+    onCycleLayout,
+    onOpenCommandPalette,
+    onSetWindowMode,
+    onToggleOverlayAnchor,
+    onToggleZenFocusMode,
+    overlayAnchor,
+    panelMenu,
+    showPrimaryLauncherChrome,
+    supportsNativeBlur,
+    text,
+    toggleShortcutLabel,
+    windowMode,
+    workbench.metrics.controlRadius,
+    zenFocusMode,
+    zenFocusShortcutLabel,
+  ]);
+
+  const renderNavigationShortcutControl = useCallback((controlId: OverlayTopBarControlId): ReactNode | null => {
+    switch (controlId) {
+      case 'settings-shortcut':
+        if (!showPrimaryLauncherChrome || !layoutProfile.chrome.showSettingsShortcut || !renderRuntime.showSettingsShortcut) {
+          return null;
+        }
+
+        const settingsShortcutMotion = bindPanelTabMotion(isSettingsActive);
+        return (
+          <button
+            key={controlId}
+            onClick={onOpenSettings}
+            title="Open Settings"
+            {...settingsShortcutMotion.motionDataAttributes}
+            onPointerEnter={settingsShortcutMotion.onPointerEnter}
+            onPointerLeave={settingsShortcutMotion.onPointerLeave}
+            onPointerDown={settingsShortcutMotion.onPointerDown}
+            onPointerUp={settingsShortcutMotion.onPointerUp}
+            onPointerCancel={settingsShortcutMotion.onPointerCancel}
+            style={{
+              height: '100%',
+              width: 34,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: isSettingsActive
+                ? 'var(--overlay-workbench-chrome-tab-active-bg)'
+                : 'var(--overlay-workbench-chrome-tab-bg)',
+              border: 'none',
+              borderRight: `1px solid ${borderColor}`,
+              borderLeft: `1px solid ${isSettingsActive ? 'var(--overlay-workbench-chrome-button-active-border)' : borderColor}`,
+              color: isSettingsActive ? text : muted,
+              cursor: 'pointer',
+              flexShrink: 0,
+              boxShadow: isSettingsActive
+                ? `inset 0 ${isBottomBar ? 2 : -2}px 0 ${accent}, inset 0 0 0 1px ${accent}18`
+                : `inset 0 ${isBottomBar ? 2 : -2}px 0 transparent`,
+              padding: 0,
+              ...settingsShortcutMotion.motionStyle,
+            }}
+          >
+            <Settings2 size={12} style={{ color: isSettingsActive ? accent : muted }} />
+          </button>
+        );
+      case 'explorer-shortcut':
+        if (!showPrimaryLauncherChrome || !renderRuntime.showExplorerShortcut) {
+          return null;
+        }
+
+        const explorerShortcutMotion = bindPanelTabMotion(isExplorerActive);
+        return (
+          <button
+            key={controlId}
+            onClick={() => onPanelSelect('explorer')}
+            title="Open Explorer"
+            {...explorerShortcutMotion.motionDataAttributes}
+            onPointerEnter={explorerShortcutMotion.onPointerEnter}
+            onPointerLeave={explorerShortcutMotion.onPointerLeave}
+            onPointerDown={explorerShortcutMotion.onPointerDown}
+            onPointerUp={explorerShortcutMotion.onPointerUp}
+            onPointerCancel={explorerShortcutMotion.onPointerCancel}
+            style={{
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '0 14px',
+              background: isExplorerActive
+                ? 'var(--overlay-workbench-chrome-tab-active-bg)'
+                : 'var(--overlay-workbench-chrome-tab-bg)',
+              border: 'none',
+              borderRight: `1px solid ${borderColor}`,
+              color: isExplorerActive ? text : muted,
+              cursor: 'pointer',
+              flexShrink: 0,
+              boxShadow: isExplorerActive
+                ? `inset 0 ${isBottomBar ? 2 : -2}px 0 ${accent}, inset 0 0 0 1px ${accent}18`
+                : `inset 0 ${isBottomBar ? 2 : -2}px 0 transparent`,
+              ...explorerShortcutMotion.motionStyle,
+            }}
+          >
+            <span style={{ display: 'flex', color: isExplorerActive ? accent : muted }}>
+              {panels.find(panel => panel.id === 'explorer')?.icon ?? <TerminalIcon size={12} />}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>Explorer</span>
+            {isExplorerActive ? <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} /> : null}
+          </button>
+        );
+      default:
+        return renderCompactControl(controlId);
+    }
+  }, [
+    accent,
+    borderColor,
+    isBottomBar,
+    isExplorerActive,
+    isSettingsActive,
+    muted,
+    onOpenSettings,
+    onPanelSelect,
+    panels,
+    renderCompactControl,
+    renderRuntime.showExplorerShortcut,
+    renderRuntime.showSettingsShortcut,
+    showPrimaryLauncherChrome,
+    text,
+    layoutProfile.chrome.showSettingsShortcut,
+  ]);
+
+  const leadingControls = topBarDefinition.leadingControls
+    .map(controlId => renderCompactControl(controlId))
+    .filter((entry): entry is ReactNode => entry != null);
+  const navigationShortcuts = topBarDefinition.navigationShortcuts
+    .map(controlId => renderNavigationShortcutControl(controlId))
+    .filter((entry): entry is ReactNode => entry != null);
+  const trailingControls = topBarDefinition.trailingControls
+    .map(controlId => renderCompactControl(controlId))
+    .filter((entry): entry is ReactNode => entry != null);
+
+  const centerContent = showsTabStrip ? (
+    <OverlayScrollArea
+      direction="horizontal"
+      style={{
+        display: 'flex',
+        alignItems: 'stretch',
+        flex: 1,
+        minWidth: 0,
+        background: 'rgba(0,0,0,0.08)',
+      }}
+      contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}
+    >
+      {tabPanels.map(panel => {
+        const isActive = panel.id === activePanelId;
+        const isDragged = draggedPanelId === panel.id;
+        const isPersistentTab = layoutProfile.behavior.enforcedOpenPanelIds.includes(panel.id);
+        const panelTabMotion = bindPanelTabMotion(isActive);
+        return (
+          <button
+            key={panel.id}
+            draggable
+            onClick={() => onPanelSelect(panel.id)}
+            onDragStart={() => setDraggedPanelId(panel.id)}
+            onDragEnd={() => setDraggedPanelId(null)}
+            onDragOver={event => {
+              event.preventDefault();
+            }}
+            onDrop={event => {
+              event.preventDefault();
+              if (draggedPanelId && draggedPanelId !== panel.id) {
+                onPanelReorder(draggedPanelId, panel.id);
+              }
+              setDraggedPanelId(null);
+            }}
+            {...panelTabMotion.motionDataAttributes}
+            onPointerEnter={panelTabMotion.onPointerEnter}
+            onPointerLeave={panelTabMotion.onPointerLeave}
+            onPointerDown={panelTabMotion.onPointerDown}
+            onPointerUp={panelTabMotion.onPointerUp}
+            onPointerCancel={panelTabMotion.onPointerCancel}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '0 9px',
+              cursor: 'pointer',
+              background: isActive
+                ? 'var(--overlay-workbench-chrome-tab-active-bg)'
+                : (effectiveTabStyle === 'segment' ? 'var(--overlay-workbench-chrome-tab-bg)' : 'transparent'),
+              border: 'none',
+              borderBottom: isBottomBar ? 'none' : `2px solid ${isActive ? accent : 'transparent'}`,
+              borderTop: isBottomBar ? `2px solid ${isActive ? accent : 'transparent'}` : 'none',
+              borderRight: `1px solid ${borderColor}`,
+              color: isActive ? text : muted,
+              fontSize: 'var(--overlay-workbench-tab-label-size)',
+              fontWeight: isActive ? 700 : 500,
+              fontFamily: uiFont,
+              transition: 'background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s',
+              flexShrink: 0,
+              userSelect: 'none',
+              opacity: isDragged ? 0.45 : 1,
+              height: '100%',
+              borderRadius: effectiveTabStyle === 'capsule' ? workbench.metrics.controlRadius : 0,
+              margin: effectiveTabStyle === 'capsule' ? '4px 4px' : 0,
+              ...panelTabMotion.motionStyle,
+            }}
+          >
+            <span style={{ display: 'flex', color: isActive ? accent : muted }}>{panel.icon}</span>
+            <span>{panel.label}</span>
+            {isActive ? <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} /> : null}
+            {isActive && !isPersistentTab ? (
+              <span
+                onClick={event => {
+                  event.stopPropagation();
+                  onPanelClose(panel.id);
+                }}
+                title={`Close ${panel.label}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 14,
+                  height: 14,
+                  borderRadius: 4,
+                  color: muted,
+                }}
+              >
+                <X size={10} />
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </OverlayScrollArea>
+  ) : (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        flex: 1,
+        minWidth: 0,
+        padding: '0 14px',
+        background: 'rgba(0,0,0,0.08)',
+        borderLeft: navigationShortcuts.length > 0 ? 'none' : `1px solid ${borderColor}`,
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: muted }}>
+          {renderRuntime.label}
+        </span>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: text,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {activePanelDefinition?.label ?? 'Launcher Ready'}
+        </span>
+      </div>
+      <span
+        style={{
+          fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+          color: muted,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {renderRuntime.description}
+      </span>
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'stretch',
+        height: chromeHeight + windowedChromeTopInset,
+        flexShrink: 0,
+        paddingTop: windowedChromeTopInset,
+        boxSizing: 'border-box',
+        margin: usesInsetTopBar ? 'var(--overlay-workbench-shell-inset)' : 0,
+        background: effectiveTopBarStyle === 'minimal'
+          ? 'transparent'
+          : `linear-gradient(180deg, var(--overlay-workbench-chrome-bg), ${appearance.theme.palette.appBackgroundAlt})`,
+        borderBottom: usesFloatingTopBar || effectiveTopBarStyle === 'minimal'
+          ? 'none'
+          : (isBottomBar ? 'none' : '1px solid var(--overlay-workbench-chrome-border)'),
+        borderTop: usesFloatingTopBar || effectiveTopBarStyle === 'minimal'
+          ? 'none'
+          : (isBottomBar ? '1px solid var(--overlay-workbench-chrome-border)' : 'none'),
+        border: usesFloatingTopBar ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+        borderRadius: usesInsetTopBar ? workbench.metrics.panelRadius : 0,
+        boxShadow: usesFloatingTopBar
+          ? 'var(--overlay-workbench-shell-shadow)'
+          : (isBottomBar
+              ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
+              : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)'),
+        overflow: 'hidden',
+        backdropFilter: topBarBackdropFilter,
+        WebkitBackdropFilter: topBarBackdropFilter,
+      }}
+    >
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+        {topBarShaderLayer}
+      </div>
+      {shouldShowLeadingWindowControls ? (
+        <div style={{ borderRight: `1px solid ${borderColor}`, flexShrink: 0 }}>
+          <WindowControls
+            platform={blurPlatform}
+            isMaximized={isWindowMaximized}
+            onMinimize={handleMinimizeWindow}
+            onMaximize={() => { void handleToggleMaximize(); }}
+            onClose={onClose}
+            textMuted={muted}
+          />
+        </div>
+      ) : null}
+      {renderControlZone(leadingControls, 'leading')}
+      <div style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}>
+        {navigationShortcuts}
+        {centerContent}
+      </div>
+
+      {isWindowedMode ? (
+        <div
+          data-tauri-drag-region
+          onPointerDown={handleStartWindowDrag}
+          onDoubleClick={() => { void handleToggleMaximize(); }}
+          title="Drag Window"
+          style={{
+            width: 72,
+            minWidth: 72,
+            flexShrink: 0,
+            borderLeft: `1px solid ${borderColor}`,
+            background: 'var(--overlay-workbench-chrome-button-bg)',
+            cursor: 'grab',
+            userSelect: 'none',
+          }}
+        />
+      ) : null}
+      {renderControlZone(trailingControls, 'trailing')}
+      {shouldShowTrailingWindowControls ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 8px',
+            borderLeft: `1px solid ${borderColor}`,
+            background: 'var(--overlay-workbench-chrome-button-bg)',
+            flexShrink: 0,
+          }}
+        >
+          <WindowControls
+            platform={blurPlatform}
+            isMaximized={isWindowMaximized}
+            onMinimize={handleMinimizeWindow}
+            onMaximize={() => { void handleToggleMaximize(); }}
+            onClose={onClose}
+            textMuted={muted}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function getTabbedOpenPanelIds(
+  layoutProfile: LayoutProfile,
+  openPanelIds: string[],
+): string[] {
+  const seen = new Set<string>();
+  const ordered = [
+    ...layoutProfile.behavior.enforcedOpenPanelIds,
+    ...openPanelIds,
+  ];
+
+  return ordered.filter(panelId => {
+    if (seen.has(panelId)) {
+      return false;
+    }
+
+    seen.add(panelId);
+    return true;
+  });
+}

@@ -74,12 +74,16 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, adaptive split sizing, and one shared workspace strip that always shows the focused pane's tab set. This layer still owns top-level multi-pane explorer topology; the newer preview split stays inside a single `FileExplorer` instance instead of routing through workspace panes.
 - `src/components/explorer/ExplorerSideRail.tsx`
   Explorer rail, drives, bookmarks, saved searches, and tag-filter browsing.
+- `src/components/WorkbenchTopBar.tsx`
+  Data-driven shell top bar renderer. It resolves launcher controls, navigation tabs or summary mode, window chrome, and theme-shader layering from the standalone top-bar catalog instead of burying the whole shell header inside `App.tsx`.
 - `src/config/appearance.ts`
   Core overlay theme model and resolved CSS variables.
 - `src/config/pilotThemeContract.ts`
   Data-driven pilot theme baseline for built-in theme defaults, app/dock recipe normalization, and explorer/layout reset behavior when built-in themes are selected.
 - `src/config/workbenchTheme.ts`
   App-wide workbench recipe resolution and workbench-scoped CSS variable contract.
+- `src/config/topBars.ts`
+  Standalone top-bar catalog and resolver. It owns built-in top-bar variants, theme-package top-bar contribution loading, legacy `theme.workbench.topBarStyle` fallback mapping, and the active selection resolution path used by `App.tsx` and Settings.
 - `src/config/explorerTheme.ts`
   Explorer-specific theme recipe resolution, metrics scaling, and explorer-scoped CSS variable contract.
 - `src/config/explorerModeProfiles.ts`
@@ -206,6 +210,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 ## Theme / Workbench Architecture
 
 - Overlay themes still own the global palette, effects, fonts, icon theme, visuals, and shader/motion defaults.
+- Top bars are now a first-class shell subsystem instead of an implicit side effect of `theme.workbench.topBarStyle`:
+  - `src/config/topBars.ts` defines the built-in catalog, the control-zone schema (`leadingControls`, `navigationShortcuts`, `trailingControls`), and the active resolution order: explicit user pin, `theme.defaultTopBarId`, legacy `theme.workbench.topBarStyle`, then built-in fallback
+  - `src/components/WorkbenchTopBar.tsx` renders the active top bar from that data-driven definition instead of hardcoding one shell-header workflow in `App.tsx`
+  - `src/store/settingsStore.ts` now persists `settings.appearance.activeTopBarId`; `null` means "follow the active theme path"
+  - `SettingsPage.tsx` owns top-bar selection in a dedicated `Top Bars` section, so users can pin a top bar without swapping the entire theme
+  - Theme packages can still contribute top bars and choose `theme.defaultTopBarId`; this is how packaged themes publish shell-header workflows now
 - Icon theming is now a first-class managed subsystem instead of an explorer-only concern:
   - `src/config/iconTheme.ts` resolves the canonical built-in icon map, folder/file matchers, UI icon slots, and merge rules for theme-default or user-selected icon packs
   - `src/config/canonicalIconTheme.json` now advertises the full built-in app-chrome slot surface via `uiIcons`, not just file/folder glyph ids; the built-in manifest should mirror the live `AppIcons.tsx` exports so theme authors can discover every overridable shell glyph from one place
@@ -234,7 +244,6 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/appearance.ts` now preserves compiled engine manifests on the active theme so recipe resolution can use them at runtime.
 - Workbench theming is now a first-class recipe layer under `theme.workbench`.
 - `theme.workbench` supports optional recipe seeds like `workbench`, `xmb`, and `channel-grid`, plus explicit `layoutPrimitiveId` / `navigationPatternId` / `renderStyleId` bindings and app-wide overrides for:
-  - top bar chrome
   - command palette chrome
   - terminal shell chrome
   - terminal renderer mode and pane FX recipe
@@ -242,6 +251,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - shared tabs and button treatment
   - shell insets, radii, and panel spacing
   - workbench-scoped CSS vars
+- Treat `theme.workbench.topBarStyle` as a legacy visual hint for the standalone top-bar resolver, not as the only way to choose the shell header. New top-bar workflow work should land in `src/config/topBars.ts` plus `SettingsPage.tsx`, with themes optionally selecting defaults through `theme.defaultTopBarId`.
 - Explorer theming is now a first-class recipe layer under `theme.explorer`.
 - `theme.explorer` supports optional recipe seeds like `workbench`, `xmb`, and `channel-grid`, plus explicit `layoutPrimitiveId` / `navigationPatternId` / `renderStyleId` bindings and local overrides for:
   - chrome style

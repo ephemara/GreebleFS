@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Top Bars Became A Standalone Appearance System
+
+- The global shell top bar is no longer trapped inside the active theme's workbench recipe. Top bars now resolve through their own catalog and selection path, so users can pin a shell-header workflow independently from the active theme while theme packages still publish defaults.
+- Durable implementation shape:
+  - `src/config/topBars.ts` is the new source of truth for top-bar variants. It defines built-in top bars, the control-zone schema (`leadingControls`, `navigationShortcuts`, `trailingControls`), legacy fallback from `theme.workbench.topBarStyle`, and the active selection resolver used by both the shell and Settings.
+  - `src/components/WorkbenchTopBar.tsx` now owns the shell-header renderer. `App.tsx` resolves the active top bar and passes a data-driven definition into that component instead of owning one monolithic `TopBar` implementation inline.
+  - `src/store/settingsStore.ts` now persists `settings.appearance.activeTopBarId`; `null` means "follow theme". This keeps user-pinned top bars stable across sessions without hijacking theme selection.
+  - `src/config/appearance.ts` now allows themes to declare `defaultTopBarId`. Theme packages load top-bar contributions through `src/config/themePackages.ts`, qualify package-local ids, and surface those variants in `LoadedOverlayThemePackage.topBars`.
+  - `src/components/SettingsPage.tsx` now has a dedicated `Top Bars` section with `Follow Theme` plus pin-able built-in and package-contributed top bars. This is the intended user-facing control surface for shell-header workflow swapping.
+- Durable product note:
+  - Treat top bars like icon packs or wallpapers: a modular shell-identity layer that can follow theme defaults but is not synonymous with theme selection.
+  - New shell-header workflow work should extend `src/config/topBars.ts` and `src/components/WorkbenchTopBar.tsx`. Do not regress to re-embedding top-bar selection logic inside `theme.workbench` or back into `App.tsx`.
+- Validation:
+  - passed: `bunx vitest run src/test/topBars.test.ts src/test/themePackageExplorerRecipe.test.ts src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - passed: filtered touched-path typecheck via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "App\\.tsx|WorkbenchTopBar\\.tsx|SettingsPage\\.tsx|themePackages\\.ts|appearance\\.ts|topBars\\.ts|settingsStore\\.ts|chromeEffects\\.ts|ExplorerSideRail"`, which only surfaced pre-existing `ExplorerSideRail.tsx` errors unrelated to this top-bar work
+  - note: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` is still blocked by the existing `src/components/explorer/ExplorerSideRail.tsx` `bindRailMotion` errors on this branch
+
 # 2026-04-21 - PDF Preview Pane Now Uses Shared Explorer Preview Theme Surfaces
 
 - The embedded PDF workbench no longer ships its own hardcoded navy/blue shell. Its chrome now reads from the same explorer preview theme contract as the other preview lanes, so theme swaps and layout variants do not leave PDF on a private color system.

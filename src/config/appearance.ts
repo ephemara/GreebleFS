@@ -29,6 +29,11 @@ import {
   mergeResolvedIconThemes,
   type OverlayResolvedIconTheme,
 } from './iconTheme';
+import {
+  createDefaultInteractionMotionThemeRecipe,
+  normalizeInteractionMotionThemeRecipe,
+  type OverlayInteractionMotionThemeRecipe,
+} from './interactionMotion';
 import { clampOverlayVisualControlValue } from './overlayWindow';
 import {
   DEFAULT_PILOT_DARK_THEME_ID,
@@ -160,9 +165,11 @@ export interface OverlayThemeDefinition {
   id: string;
   name: string;
   description?: string;
+  defaultTopBarId?: string;
   defaultShaderId?: string;
   defaultOpenAnimationId?: string;
   defaultCloseAnimationId?: string;
+  interactionMotion?: OverlayInteractionMotionThemeRecipe;
   palette: OverlayThemePalette;
   effects: OverlayThemeEffects;
   xterm: OverlayXTermTheme;
@@ -454,6 +461,7 @@ function createTheme(
     workbench?: OverlayWorkbenchThemeRecipe;
     explorer?: OverlayExplorerThemeRecipe;
     dock?: OverlayThemeDefinition['dock'];
+    interactionMotion?: OverlayInteractionMotionThemeRecipe;
   },
 ): OverlayThemeDefinition {
   return {
@@ -545,6 +553,10 @@ function createTheme(
     compatibility: options?.compatibility,
     workbench: options?.workbench ?? pilotWorkbenchThemeRecipe,
     explorer: options?.explorer ?? pilotExplorerThemeRecipe,
+    interactionMotion: normalizeInteractionMotionThemeRecipe(
+      options?.interactionMotion,
+      createDefaultInteractionMotionThemeRecipe(),
+    ),
     dock: options?.dock ?? {
       workbench: pilotDockWorkbenchThemeRecipe,
       explorer: pilotDockExplorerThemeRecipe,
@@ -1308,6 +1320,9 @@ export function normalizeThemeDefinition(
     id: String(theme.id ?? fallback.id),
     name: String(theme.name ?? fallback.name),
     description: theme.description ?? fallback.description,
+    defaultTopBarId: typeof theme.defaultTopBarId === 'string'
+      ? theme.defaultTopBarId.trim() || undefined
+      : fallbackTheme?.defaultTopBarId,
     defaultShaderId: typeof theme.defaultShaderId === 'string'
       ? theme.defaultShaderId.trim() || undefined
       : fallback.defaultShaderId,
@@ -1317,6 +1332,10 @@ export function normalizeThemeDefinition(
     defaultCloseAnimationId: typeof theme.defaultCloseAnimationId === 'string'
       ? theme.defaultCloseAnimationId.trim() || undefined
       : fallback.defaultCloseAnimationId,
+    interactionMotion: normalizeInteractionMotionThemeRecipe(
+      theme.interactionMotion,
+      fallback.interactionMotion,
+    ),
     source: theme.source ?? fallback.source ?? 'custom',
     extendsThemeId: theme.extendsThemeId ?? fallback.extendsThemeId,
     palette: {

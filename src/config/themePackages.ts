@@ -2,6 +2,12 @@ import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
 
 import {
+  createLoadedTopBarDefinition,
+  qualifyThemeTopBarSelectionId,
+  type LoadedOverlayTopBarDefinition,
+  type OverlayTopBarDefinition,
+} from './topBars';
+import {
   normalizeThemeDefinition,
   overlayThemePresets,
   type OverlayThemeAssets,
@@ -66,6 +72,8 @@ export interface OverlayThemePackageManifest {
   homepage?: string;
   tags?: string[];
   extends?: string;
+  defaultTopBarId?: string;
+  topBars?: OverlayTopBarDefinition[];
   theme?: Partial<OverlayThemeDefinition>;
   assets?: {
     background?: string;
@@ -146,11 +154,13 @@ export interface LoadedOverlayThemePackage {
     animations: number;
     fonts: number;
     themeRenderer: boolean;
+    topBars?: number;
   };
   theme: OverlayThemeDefinition;
   engineManifest?: ExplorerThemeManifest;
   compiledEngineManifest?: CompiledThemeEngineManifest;
   themeRenderer?: LoadedOverlayThemeRenderer;
+  topBars?: LoadedOverlayTopBarDefinition[];
 }
 
 export interface ThemePackageLoadResult {
@@ -407,6 +417,11 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
       ? source.tags.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0).map(entry => entry.trim())
       : [],
     extends: asString(source.extends),
+    defaultTopBarId: asString(source.defaultTopBarId),
+    topBars: Array.isArray(source.topBars)
+      ? source.topBars.filter((entry): entry is OverlayTopBarDefinition => Boolean(asRecord(entry)))
+        .map(entry => asRecord(entry) as OverlayTopBarDefinition)
+      : [],
     theme: asRecord(source.theme) as Partial<OverlayThemeDefinition> | undefined,
     assets: {
       background: asString(asRecord(source.assets)?.background),
@@ -730,6 +745,28 @@ function buildThemeEngineManifest(
   });
 }
 
+function buildPackageTopBars(
+  record: OverlayThemePackageRecord,
+  packageId: string,
+  packageName: string,
+): LoadedOverlayTopBarDefinition[] {
+  const dedupedTopBars = new Map<string, LoadedOverlayTopBarDefinition>();
+
+  for (const definition of record.manifest.topBars ?? []) {
+    const loadedTopBar = createLoadedTopBarDefinition(definition, {
+      source: 'theme-package',
+      sourceLabel: packageName,
+      sourceThemeId: packageId,
+    });
+
+    if (!dedupedTopBars.has(loadedTopBar.id)) {
+      dedupedTopBars.set(loadedTopBar.id, loadedTopBar);
+    }
+  }
+
+  return Array.from(dedupedTopBars.values());
+}
+
 async function buildPackageTheme(
   record: OverlayThemePackageRecord,
   packageMap: Map<string, OverlayThemePackageRecord>,
@@ -757,6 +794,8 @@ async function buildPackageTheme(
   }
 
   const packageAssetsSource = record.manifest.assets;
+  const packageName = derivePackageName(record);
+  const packageTopBars = buildPackageTopBars(record, packageId, packageName);
   const backgroundPath = asString(packageAssetsSource?.background);
   const previewPath = asString(packageAssetsSource?.preview);
   const iconsDirectory = asString(packageAssetsSource?.iconsDirectory);
@@ -797,12 +836,18 @@ async function buildPackageTheme(
   const themePatch = record.manifest.theme ?? {};
   const backgroundImage = themePatch.effects?.backgroundImage
     ?? (resolvedAssets.backgroundUrl ? `url("${resolvedAssets.backgroundUrl}")` : undefined);
+  const resolvedDefaultTopBarId = qualifyThemeTopBarSelectionId(
+    asString(record.manifest.defaultTopBarId) || themePatch.defaultTopBarId,
+    packageId,
+    packageTopBars,
+  );
   const mergedTheme = normalizeThemeDefinition({
     ...baseTheme,
     ...themePatch,
     id: packageId,
-    name: derivePackageName(record),
+    name: packageName,
     description: asString(record.manifest.description) || themePatch.description || baseTheme.description,
+    defaultTopBarId: resolvedDefaultTopBarId,
     source: 'package',
     extendsThemeId: record.manifest.extends || baseTheme.id,
     palette: {
@@ -881,6 +926,7 @@ export async function loadThemePackagesFromDirectoryEntries(
 
       try {
         const theme = await buildPackageTheme(record, packageMap, cache);
+        const packageTopBars = buildPackageTopBars(record, theme.id, theme.name);
         const shaderEntries = await resolvePackageRuntimeEntries(
           record.directoryPath,
           record.manifest.contributions?.shaders,
@@ -995,11 +1041,13 @@ export async function loadThemePackagesFromDirectoryEntries(
             animations: packageAnimations.length,
             fonts: [theme.fonts?.ui, theme.fonts?.mono].filter(Boolean).length,
             themeRenderer: Boolean(rendererManifest?.entryModule),
+            topBars: packageTopBars.length,
           },
           theme: themeWithEngineManifest,
           engineManifest,
           compiledEngineManifest,
           themeRenderer: packageThemeRenderer,
+          topBars: packageTopBars,
         });
         shaders.push(...packageShaders);
         animations.push(...packageAnimations);

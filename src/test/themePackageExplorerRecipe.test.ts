@@ -13,6 +13,20 @@ describe('theme package explorer recipe loading', () => {
           id: 'xmb-shell',
           name: 'XMB Shell',
           extends: 'catppuccin',
+          defaultTopBarId: 'cross-media-rack',
+          topBars: [
+            {
+              id: 'cross-media-rack',
+              name: 'Cross Media Rack',
+              description: 'A summary-first floating launcher strip.',
+              topBarStyle: 'floating',
+              tabStyle: 'capsule',
+              navigationMode: 'summary',
+              leadingControls: ['panel-menu', 'command-palette', 'layout-cycle'],
+              navigationShortcuts: ['settings-shortcut', 'explorer-shortcut'],
+              trailingControls: ['window-mode', 'overlay-anchor', 'zen-mode', 'close-overlay'],
+            },
+          ],
           theme: {
             workbench: {
               preset: 'xmb',
@@ -75,9 +89,13 @@ describe('theme package explorer recipe loading', () => {
     expect(result.packages[0]?.theme.explorer?.cssVars?.['--overlay-explorer-brand']).toBe('cross-media');
     expect(result.packages[0]?.theme.dock?.workbench?.brandLabel).toBe('Dock Cross Media');
     expect(result.packages[0]?.theme.dock?.explorer?.toolbarStyle).toBe('glass');
+    expect(result.packages[0]?.theme.defaultTopBarId).toBe('xmb-shell:cross-media-rack');
     expect(result.packages[0]?.theme.workbench?.preset).toBe('xmb');
     expect(result.packages[0]?.theme.workbench?.topBarStyle).toBe('floating');
     expect(result.packages[0]?.theme.workbench?.commandPaletteStyle).toBe('glass');
     expect(result.packages[0]?.theme.workbench?.cssVars?.['--overlay-workbench-brand']).toBe('cross-media');
+    expect(result.packages[0]?.topBars?.[0]?.id).toBe('xmb-shell:cross-media-rack');
+    expect(result.packages[0]?.topBars?.[0]?.navigationMode).toBe('summary');
+    expect(result.packages[0]?.capabilitySummary.topBars).toBe(1);
   });
 });
