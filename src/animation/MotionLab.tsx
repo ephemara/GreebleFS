@@ -67,67 +67,81 @@ export function InteractionMotionLab({
     surfaceId: 'explorerEntry',
     baseTransform: 'translateY(0)',
     baseTransition: sampleTransition,
+    motionStepIndex: 0,
   });
   const explorerIconIdleMotion = interactionMotion.bindSurface({
     surfaceId: 'explorerEntryIcon',
     baseTransition: chromeTransition,
+    motionStepIndex: 0,
   });
   const explorerIconSelectedMotion = interactionMotion.bindSurface({
     surfaceId: 'explorerEntryIcon',
     triggerState: { select: true },
     baseTransition: chromeTransition,
+    motionStepIndex: 1,
   });
   const explorerSelectedMotion = interactionMotion.bindSurface({
     surfaceId: 'explorerEntry',
     triggerState: { select: true },
     baseTransform: 'translateY(0)',
     baseTransition: sampleTransition,
+    motionStepIndex: 1,
   });
   const explorerDropMotion = interactionMotion.bindSurface({
     surfaceId: 'explorerEntry',
     triggerState: { dropHover: true },
     baseTransform: 'translateY(-2px)',
     baseTransition: sampleTransition,
+    motionStepIndex: 2,
   });
   const railIdleMotion = interactionMotion.bindSurface({
     surfaceId: 'explorerRailItem',
     baseTransition: chromeTransition,
+    motionStepIndex: 0,
   });
   const railActiveMotion = interactionMotion.bindSurface({
     surfaceId: 'explorerRailItem',
     triggerState: { activate: true },
     baseTransition: chromeTransition,
+    motionStepIndex: 1,
   });
   const workflowIdleMotion = interactionMotion.bindSurface({
     surfaceId: 'previewWorkflowTab',
     baseTransition: chromeTransition,
+    motionStepIndex: 0,
   });
   const workflowActiveMotion = interactionMotion.bindSurface({
     surfaceId: 'previewWorkflowTab',
     triggerState: { activate: true },
     baseTransition: chromeTransition,
+    motionStepIndex: 1,
   });
   const panelIdleMotion = interactionMotion.bindSurface({
     surfaceId: 'panelTab',
     baseTransition: chromeTransition,
+    motionStepIndex: 0,
   });
   const panelActiveMotion = interactionMotion.bindSurface({
     surfaceId: 'panelTab',
     triggerState: { activate: true },
     baseTransition: chromeTransition,
+    motionStepIndex: 1,
   });
   const topBarIdleMotion = interactionMotion.bindSurface({
     surfaceId: 'topBarButton',
     baseTransition: chromeTransition,
+    motionStepIndex: 0,
   });
   const topBarActiveMotion = interactionMotion.bindSurface({
     surfaceId: 'topBarButton',
     triggerState: { activate: true },
     baseTransition: chromeTransition,
+    motionStepIndex: 1,
   });
   const settingsCardMotion = interactionMotion.bindSurface({
     surfaceId: 'settingsCard',
     baseTransition: chromeTransition,
+    motionStepIndex: 0,
   });
 
   const chipStyle = useMemo<CSSProperties>(() => ({

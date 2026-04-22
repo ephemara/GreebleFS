@@ -203,6 +203,7 @@ export function useInteractionMotionController(appearance?: Pick<ResolvedOverlay
     triggerState?: InteractionMotionTriggerState;
     baseTransform?: string;
     baseTransition?: string;
+    motionStepIndex?: number;
   }): {
     resolved: ResolvedInteractionMotionSurfaceStyle;
     style: ReturnType<typeof toInteractionMotionStyleObject>;
@@ -214,6 +215,7 @@ export function useInteractionMotionController(appearance?: Pick<ResolvedOverlay
       themeDefaults,
       reducedMotion: prefersReducedMotion,
       baseTransform: args.baseTransform,
+      motionStepIndex: args.motionStepIndex,
     });
 
     return {
@@ -231,6 +233,7 @@ export function useInteractionMotionController(appearance?: Pick<ResolvedOverlay
     triggerState?: InteractionMotionTriggerState;
     baseTransform?: string;
     baseTransition?: string;
+    motionStepIndex?: number;
     onPointerEnter?: React.PointerEventHandler<HTMLElement>;
     onPointerLeave?: React.PointerEventHandler<HTMLElement>;
     onPointerDown?: React.PointerEventHandler<HTMLElement>;
@@ -243,6 +246,7 @@ export function useInteractionMotionController(appearance?: Pick<ResolvedOverlay
       triggerState: baseTriggerState,
       baseTransform: args.baseTransform,
       baseTransition: args.baseTransition,
+      motionStepIndex: args.motionStepIndex,
     });
     const hoverTriggerState = { ...baseTriggerState, hover: true };
     const pressedTriggerState = { ...hoverTriggerState, press: true };
@@ -251,12 +255,14 @@ export function useInteractionMotionController(appearance?: Pick<ResolvedOverlay
       triggerState: hoverTriggerState,
       baseTransform: args.baseTransform,
       baseTransition: args.baseTransition,
+      motionStepIndex: args.motionStepIndex,
     });
     const pressedSurface = resolveSurfaceStyle({
       surfaceId: args.surfaceId,
       triggerState: pressedTriggerState,
       baseTransform: args.baseTransform,
       baseTransition: args.baseTransition,
+      motionStepIndex: args.motionStepIndex,
     });
 
     return {
@@ -288,6 +294,7 @@ export function useInteractionMotionController(appearance?: Pick<ResolvedOverlay
           triggerState: { ...baseTriggerState, ...triggerState },
           baseTransform: args.baseTransform,
           baseTransition: args.baseTransition,
+          motionStepIndex: args.motionStepIndex,
         }).style
       ),
     };

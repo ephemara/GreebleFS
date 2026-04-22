@@ -1,5 +1,24 @@
 # GreebleFS Memory
 
+# 2026-04-22 - KCloner-Style Interaction Motion Now Supports Per-Instance Step Offsets
+
+- The shared UI motion system no longer forces every matching animated surface to loop in perfect lockstep. KCloner-style presets now expose a real `Step` modifier that phase-offsets repeated items such as selected explorer entries/icons, workflow tabs, rail rows, and top-bar controls.
+- Durable implementation shape:
+  - `src/config/interactionMotion.ts` now appends a `Step` control to every animated KCloner profile. It is stored as a per-preset modifier value in seconds, mirrors the KCloner mental model instead of a generic stagger percentage, and resolves into a negative animation delay based on each bound surface's instance index.
+  - `resolveInteractionMotionSurfaceStyle(...)` now accepts an optional `motionStepIndex`. Animated presets use that index plus the active preset's `step` modifier to compute phase offsets, while non-animated/system presets safely ignore it.
+  - `src/animation/interactionMotion.tsx` now threads `motionStepIndex` through the shared binder, so live surfaces can opt into phase offsets without inventing a second motion API.
+  - `src/components/FileExplorer.tsx` now passes visible-entry order into both `explorerEntry` and `explorerEntryIcon` bindings across the main list/grid/table views plus the semantic, timeline-surface, and constellation views. This is the core fix for "selected icons all move together."
+  - `src/components/WorkbenchTopBar.tsx`, `src/components/explorer/ExplorerSideRail.tsx`, and `src/animation/MotionLab.tsx` now pass stable per-list indices into the shared binder where those chrome surfaces already render through ordered arrays, so shell-chrome presets can benefit from the same step control instead of exposing a dead slider.
+- Durable product note:
+  - Treat `step` as part of the shared interaction-motion resolver, not a one-off explorer animation tweak. Future animated shell surfaces should pass a meaningful instance index into `bindSurface(...)` when they render repeated items, otherwise the step control will exist but do nothing for that surface.
+  - The UI interpretation of `step` is "seconds of phase offset per repeated item," which maps more closely to KCloner's time-offset behavior than a normalized percentage-of-cycle slider.
+- Validation:
+  - passed: `bunx vitest run src/test/interactionMotion.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "updates interaction motion settings and exposes motion-lab preview surfaces" --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "routes explorer entry and preview workflow tab motion through the shared interaction resolver" --reporter=dot`
+  - passed: `bunx vitest run src/test/explorerSideRail.test.tsx src/test/workbenchTopBar.test.tsx --reporter=dot`
+  - passed: filtered touched-path TypeScript check for the interaction-motion, explorer, rail, top-bar, and Motion Lab files (no touched-file TypeScript errors surfaced)
+
 # 2026-04-22 - Explorer Drag And Drop Now Uses Shared Scope Arbitration
 
 - Explorer file drag/drop is no longer owned by scattered per-entry handlers plus pane-local native-drag refs. The explorer now has a shared interaction seam for drop-target hit testing and same-window drag state, which fixes the old "magic drop zones" behavior across panes and other explorer surfaces.

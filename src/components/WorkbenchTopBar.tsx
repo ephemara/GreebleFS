@@ -470,18 +470,20 @@ export function WorkbenchTopBar({
     </div>
   );
 
-  const bindTopBarButtonMotion = useCallback((active = false) => (
+  const bindTopBarButtonMotion = useCallback((active = false, motionStepIndex = 0) => (
     interactionMotion.bindSurface({
       surfaceId: 'topBarButton',
       triggerState: active ? { activate: true } : undefined,
+      motionStepIndex,
       baseTransition: topBarButtonTransition,
     })
   ), [interactionMotion, topBarButtonTransition]);
 
-  const bindPanelTabMotion = useCallback((active = false) => (
+  const bindPanelTabMotion = useCallback((active = false, motionStepIndex = 0) => (
     interactionMotion.bindSurface({
       surfaceId: 'panelTab',
       triggerState: active ? { activate: true } : undefined,
+      motionStepIndex,
       baseTransition: panelTabTransition,
     })
   ), [interactionMotion, panelTabTransition]);
@@ -492,13 +494,17 @@ export function WorkbenchTopBar({
       key: string;
       active?: boolean;
       title: string;
+      motionStepIndex?: number;
       onClick?: () => void;
       onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
       ariaLabel?: string;
       style?: CSSProperties;
     },
   ): ReactNode => {
-    const motionBinding = bindTopBarButtonMotion(options.active);
+    const motionBinding = bindTopBarButtonMotion(
+      options.active,
+      options.motionStepIndex,
+    );
 
     return (
       <button
@@ -537,7 +543,10 @@ export function WorkbenchTopBar({
     );
   };
 
-  const renderCompactControl = useCallback((controlId: OverlayTopBarControlId): ReactNode | null => {
+  const renderCompactControl = useCallback((
+    controlId: OverlayTopBarControlId,
+    motionStepIndex = 0,
+  ): ReactNode | null => {
     switch (controlId) {
       case 'layout-cycle':
         return renderCompactButton(
@@ -558,6 +567,7 @@ export function WorkbenchTopBar({
           {
             key: controlId,
             title: layoutButtonTitle,
+            motionStepIndex,
             onClick: onCycleLayout,
             onContextMenu: event => {
               event.preventDefault();
@@ -573,7 +583,10 @@ export function WorkbenchTopBar({
           },
         );
       case 'window-mode':
-        const windowModeMotion = bindTopBarButtonMotion(windowMode === 'overlay');
+        const windowModeMotion = bindTopBarButtonMotion(
+          windowMode === 'overlay',
+          motionStepIndex,
+        );
         return (
           <button
             key={controlId}
@@ -617,7 +630,7 @@ export function WorkbenchTopBar({
           return null;
         }
 
-        const overlayAnchorMotion = bindTopBarButtonMotion();
+        const overlayAnchorMotion = bindTopBarButtonMotion(false, motionStepIndex);
         return (
           <button
             key={controlId}
@@ -660,6 +673,7 @@ export function WorkbenchTopBar({
           {
             key: controlId,
             active: blur,
+            motionStepIndex,
             title: supportsNativeBlur
               ? (blur ? 'Disable native window blur' : 'Enable native window blur')
               : 'Native blur is currently only available on macOS and Windows',
@@ -673,7 +687,7 @@ export function WorkbenchTopBar({
           },
         );
       case 'zen-mode':
-        const zenModeMotion = bindTopBarButtonMotion(zenFocusMode);
+        const zenModeMotion = bindTopBarButtonMotion(zenFocusMode, motionStepIndex);
         return (
           <button
             key={controlId}
@@ -721,6 +735,7 @@ export function WorkbenchTopBar({
               {
                 key: `${controlId}-button`,
                 active: isMenuOpen,
+                motionStepIndex,
                 title: 'Toggle Panels',
                 onClick: () => setIsMenuOpen(open => !open),
               },
@@ -734,6 +749,7 @@ export function WorkbenchTopBar({
           {
             key: controlId,
             title: `Open Command Palette (${commandPaletteShortcutLabel})`,
+            motionStepIndex,
             onClick: onOpenCommandPalette,
           },
         );
@@ -764,7 +780,7 @@ export function WorkbenchTopBar({
           return null;
         }
 
-        const closeOverlayMotion = bindTopBarButtonMotion();
+        const closeOverlayMotion = bindTopBarButtonMotion(false, motionStepIndex);
         return (
           <button
             key={controlId}
@@ -839,14 +855,17 @@ export function WorkbenchTopBar({
     zenFocusShortcutLabel,
   ]);
 
-  const renderNavigationShortcutControl = useCallback((controlId: OverlayTopBarControlId): ReactNode | null => {
+  const renderNavigationShortcutControl = useCallback((
+    controlId: OverlayTopBarControlId,
+    motionStepIndex = 0,
+  ): ReactNode | null => {
     switch (controlId) {
       case 'settings-shortcut':
         if (!showPrimaryLauncherChrome || !layoutProfile.chrome.showSettingsShortcut || !renderRuntime.showSettingsShortcut) {
           return null;
         }
 
-        const settingsShortcutMotion = bindPanelTabMotion(isSettingsActive);
+        const settingsShortcutMotion = bindPanelTabMotion(isSettingsActive, motionStepIndex);
         return (
           <button
             key={controlId}
@@ -888,7 +907,7 @@ export function WorkbenchTopBar({
           return null;
         }
 
-        const explorerShortcutMotion = bindPanelTabMotion(isExplorerActive);
+        const explorerShortcutMotion = bindPanelTabMotion(isExplorerActive, motionStepIndex);
         return (
           <button
             key={controlId}
@@ -928,7 +947,7 @@ export function WorkbenchTopBar({
           </button>
         );
       default:
-        return renderCompactControl(controlId);
+        return renderCompactControl(controlId, motionStepIndex);
     }
   }, [
     accent,
@@ -949,13 +968,13 @@ export function WorkbenchTopBar({
   ]);
 
   const leadingControls = topBarDefinition.leadingControls
-    .map(controlId => renderCompactControl(controlId))
+    .map((controlId, index) => renderCompactControl(controlId, index))
     .filter((entry): entry is ReactNode => entry != null);
   const navigationShortcuts = topBarDefinition.navigationShortcuts
-    .map(controlId => renderNavigationShortcutControl(controlId))
+    .map((controlId, index) => renderNavigationShortcutControl(controlId, index))
     .filter((entry): entry is ReactNode => entry != null);
   const trailingControls = topBarDefinition.trailingControls
-    .map(controlId => renderCompactControl(controlId))
+    .map((controlId, index) => renderCompactControl(controlId, index))
     .filter((entry): entry is ReactNode => entry != null);
 
   const centerContent = showsTabStrip ? (
@@ -970,11 +989,11 @@ export function WorkbenchTopBar({
       }}
       contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}
     >
-      {tabPanels.map(panel => {
+      {tabPanels.map((panel, index) => {
         const isActive = panel.id === activePanelId;
         const isDragged = draggedPanelId === panel.id;
         const isPersistentTab = layoutProfile.behavior.enforcedOpenPanelIds.includes(panel.id);
-        const panelTabMotion = bindPanelTabMotion(isActive);
+        const panelTabMotion = bindPanelTabMotion(isActive, index);
         return (
           <button
             key={panel.id}

@@ -115,6 +115,7 @@ describe('interaction motion resolver', () => {
     const resolvedFileIcon = resolveInteractionMotionSurfaceStyle({
       surfaceId: 'explorerEntryIcon',
       triggerState: { hover: true },
+      motionStepIndex: 3,
       settings: {
         ...baseSettings,
         interactionMotionModuleOverrides: {
@@ -125,6 +126,7 @@ describe('interaction motion resolver', () => {
                 height: 1.8,
                 squash: 1.4,
                 pace: 1,
+                step: 0.12,
               },
             },
           },
@@ -153,9 +155,11 @@ describe('interaction motion resolver', () => {
     expect(resolvedFileIcon.enabled).toBe(true);
     expect(resolvedFileIcon.presetId).toBe('bounce');
     expect(resolvedFileIcon.animation).toContain('interaction-motion-bounce');
+    expect(resolvedFileIcon.animation).toContain('-360ms');
     expect(resolvedFileIcon.customProperties['--interaction-motion-translate-y']).toBe('-18.000px');
     expect(resolvedFileIcon.dataAttributes['data-interaction-motion-surface']).toBe('explorerEntryIcon');
     expect(resolvedFileIcon.dataAttributes['data-interaction-motion-module']).toBe('fileItems');
+    expect(resolvedFileIcon.dataAttributes['data-interaction-motion-step-index']).toBe('3');
 
     expect(resolvedChrome.enabled).toBe(true);
     expect(resolvedChrome.presetId).toBe('subtle');

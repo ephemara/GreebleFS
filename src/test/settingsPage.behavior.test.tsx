@@ -501,12 +501,16 @@ describe('SettingsPage behavior', () => {
     fireEvent.change(screen.getByRole('slider', { name: /squash/i }), {
       target: { value: '1.6' },
     });
+    fireEvent.change(screen.getByRole('slider', { name: /step/i }), {
+      target: { value: '0.18' },
+    });
     expect(
       useSettingsStore.getState().settings.appearance.interactionMotionModuleOverrides.fileItems,
     ).toMatchObject({
       modifierValuesByPresetId: {
         bounce: {
           squash: 1.6,
+          step: 0.18,
         },
       },
     });

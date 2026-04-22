@@ -851,7 +851,7 @@ interface InteractionMotionProfileModifierDefinition {
 const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierDefinition[] = [
   {
     profileId: 'bounce',
-    controls: [
+    controls: withInteractionMotionStepControl([
       {
         id: 'height',
         label: 'Height',
@@ -882,11 +882,11 @@ const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierD
         defaultValue: 1,
         valueSuffix: 'x',
       },
-    ],
+    ], 0.1),
   },
   {
     profileId: 'lissajous',
-    controls: [
+    controls: withInteractionMotionStepControl([
       {
         id: 'width',
         label: 'Width',
@@ -917,11 +917,11 @@ const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierD
         defaultValue: 1,
         valueSuffix: 'x',
       },
-    ],
+    ], 0.05),
   },
   {
     profileId: 'shake',
-    controls: [
+    controls: withInteractionMotionStepControl([
       {
         id: 'distance',
         label: 'Distance',
@@ -952,11 +952,11 @@ const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierD
         defaultValue: 1,
         valueSuffix: 'x',
       },
-    ],
+    ], 0.05),
   },
   {
     profileId: 'float',
-    controls: [
+    controls: withInteractionMotionStepControl([
       {
         id: 'height',
         label: 'Height',
@@ -987,11 +987,11 @@ const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierD
         defaultValue: 1,
         valueSuffix: 'x',
       },
-    ],
+    ], 0.2),
   },
   {
     profileId: 'pulse',
-    controls: [
+    controls: withInteractionMotionStepControl([
       {
         id: 'amount',
         label: 'Amount',
@@ -1022,11 +1022,11 @@ const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierD
         defaultValue: 1,
         valueSuffix: 'x',
       },
-    ],
+    ], 0.1),
   },
   {
     profileId: 'elastic',
-    controls: [
+    controls: withInteractionMotionStepControl([
       {
         id: 'travel',
         label: 'Travel',
@@ -1057,11 +1057,11 @@ const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierD
         defaultValue: 1,
         valueSuffix: 'x',
       },
-    ],
+    ], 0.1),
   },
   {
     profileId: 'wobble',
-    controls: [
+    controls: withInteractionMotionStepControl([
       {
         id: 'travel',
         label: 'Travel',
@@ -1092,11 +1092,11 @@ const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierD
         defaultValue: 1,
         valueSuffix: 'x',
       },
-    ],
+    ], 0.2),
   },
   {
     profileId: 'sway',
-    controls: [
+    controls: withInteractionMotionStepControl([
       {
         id: 'angle',
         label: 'Angle',
@@ -1127,11 +1127,11 @@ const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierD
         defaultValue: 1,
         valueSuffix: 'x',
       },
-    ],
+    ], 0.2),
   },
   {
     profileId: 'heartbeat',
-    controls: [
+    controls: withInteractionMotionStepControl([
       {
         id: 'amount',
         label: 'Amount',
@@ -1162,11 +1162,11 @@ const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierD
         defaultValue: 1,
         valueSuffix: 'x',
       },
-    ],
+    ], 0),
   },
   {
     profileId: 'orbit',
-    controls: [
+    controls: withInteractionMotionStepControl([
       {
         id: 'radius',
         label: 'Radius',
@@ -1197,9 +1197,34 @@ const interactionMotionProfileModifierCatalog: InteractionMotionProfileModifierD
         defaultValue: 1,
         valueSuffix: 'x',
       },
-    ],
+    ], 0.1),
   },
 ];
+
+function createInteractionMotionStepControl(
+  defaultValue: number,
+): InteractionMotionModifierControlDefinition {
+  return {
+    id: 'step',
+    label: 'Step',
+    description: 'Per-instance phase offset in seconds. Higher values spread matching items out instead of running them in perfect sync.',
+    min: 0,
+    max: 0.5,
+    step: 0.01,
+    defaultValue,
+    valueSuffix: 's',
+  };
+}
+
+function withInteractionMotionStepControl(
+  controls: readonly InteractionMotionModifierControlDefinition[],
+  defaultStepValue: number,
+): readonly InteractionMotionModifierControlDefinition[] {
+  return [
+    ...controls,
+    createInteractionMotionStepControl(defaultStepValue),
+  ];
+}
 
 const interactionMotionProfileModifierLookup = new Map(
   interactionMotionProfileModifierCatalog.map(entry => [entry.profileId, entry.controls] as const),
@@ -1719,6 +1744,28 @@ function formatInteractionMotionIterationCount(
   return iterationCount === 'infinite' ? iterationCount : String(iterationCount);
 }
 
+function normalizeInteractionMotionStepIndex(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+
+  return Math.floor(value);
+}
+
+function resolveInteractionMotionPhaseDelayMs(
+  modifierValues: OverlayInteractionMotionModifierValueMap,
+  motionStepIndex: number,
+): number {
+  const stepValue = typeof modifierValues.step === 'number' && Number.isFinite(modifierValues.step)
+    ? Math.max(0, modifierValues.step)
+    : 0;
+  if (motionStepIndex <= 0 || stepValue <= 0) {
+    return 0;
+  }
+
+  return Math.round(stepValue * motionStepIndex * 1000);
+}
+
 export function mergeTransitionValues(...values: Array<string | null | undefined>): string | undefined {
   const filteredValues = values
     .map(value => value?.trim())
@@ -1733,6 +1780,7 @@ export function resolveInteractionMotionSurfaceStyle(args: {
   themeDefaults?: OverlayInteractionMotionThemeRecipe;
   reducedMotion?: boolean;
   baseTransform?: string;
+  motionStepIndex?: number;
 }): ResolvedInteractionMotionSurfaceStyle {
   const normalizedThemeDefaults = normalizeInteractionMotionThemeRecipe(args.themeDefaults);
   const moduleId = getInteractionMotionModuleIdForSurface(args.surfaceId);
@@ -1744,13 +1792,15 @@ export function resolveInteractionMotionSurfaceStyle(args: {
     settings: args.settings,
     themeDefaultPresetId: normalizedThemeDefaults?.defaultPresetId,
   });
+  const modifierValues = resolveInteractionMotionModifierValues(
+    profileId,
+    moduleOverride.modifierValuesByPresetId[profileId],
+  );
   const profile = applyInteractionMotionModifierValues(
     resolveInteractionMotionProfile(profileId),
-    resolveInteractionMotionModifierValues(
-      profileId,
-      moduleOverride.modifierValuesByPresetId[profileId],
-    ),
+    modifierValues,
   );
+  const motionStepIndex = normalizeInteractionMotionStepIndex(args.motionStepIndex);
   const triggerState = args.triggerState ?? {};
   const activeTriggers = resolveActiveInteractionTriggers(triggerState);
   const surfaceOverride = mergeInteractionMotionSurfaceOverrides(
@@ -1845,7 +1895,7 @@ export function resolveInteractionMotionSurfaceStyle(args: {
       `interaction-motion-${resolvedAnimationPreset.id}`,
       `${animatedPriorityEffect.durationMs}ms`,
       animatedPriorityEffect.easing ?? resolvedAnimationPreset.defaultEasing,
-      '0ms',
+      `${resolveInteractionMotionPhaseDelayMs(modifierValues, motionStepIndex) * -1}ms`,
       formatInteractionMotionIterationCount(animatedPriorityEffect.iterationCount),
       animatedPriorityEffect.direction ?? resolvedAnimationPreset.defaultDirection,
       'both',
@@ -1876,6 +1926,11 @@ export function resolveInteractionMotionSurfaceStyle(args: {
       'data-interaction-motion-enabled': enabled ? 'true' : 'false',
       'data-interaction-motion-preset': profile.id,
       'data-interaction-motion-module': moduleId,
+      ...(motionStepIndex > 0
+        ? {
+          'data-interaction-motion-step-index': String(motionStepIndex),
+        }
+        : {}),
     },
   };
 }
