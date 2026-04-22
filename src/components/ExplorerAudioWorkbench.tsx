@@ -76,6 +76,7 @@ type ExplorerAudioWorkbenchProps = {
 type ExportDialogMode = 'clip' | 'normalized' | 'convert' | 'overwrite' | null;
 type TimelineDragMode = 'playhead' | 'selectionStart' | 'selectionEnd' | 'fadeIn' | 'fadeOut';
 type VstPluginPathDialogMode = 'load' | null;
+type VstPresentationMode = 'headless' | 'surface';
 
 
 const MINIMUM_SELECTION_SECONDS = 0.05;
@@ -423,6 +424,9 @@ export function ExplorerAudioWorkbench({
   const [manualVstPathInput, setManualVstPathInput] = useState('');
   const [vstPluginPathDialogMode, setVstPluginPathDialogMode] =
     useState<VstPluginPathDialogMode>(null);
+  const [vstPresentationMode, setVstPresentationMode] =
+    useState<VstPresentationMode>('headless');
+  const [vstParameterSearch, setVstParameterSearch] = useState('');
   const [vstEditorSession, setVstEditorSession] =
     useState<ExplorerVstEditorSessionState | null>(null);
 
@@ -498,6 +502,14 @@ export function ExplorerAudioWorkbench({
     setSelectedVstPluginPath(previewDeck.activePluginPath);
     setManualVstPathInput(previewDeck.activePluginPath);
   }, [previewDeck.activePluginPath]);
+
+  useEffect(() => {
+    if (!isVstMode) {
+      setVstPresentationMode('headless');
+      setVstParameterSearch('');
+    }
+  }, [isVstMode]);
+
   const effectiveDuration = Math.max(
     analysis?.durationSeconds ?? 0,
     previewDeck.durationSeconds ?? 0,
@@ -705,6 +717,23 @@ export function ExplorerAudioWorkbench({
       ...discoveredPlugins,
     ];
   }, [discoveredPlugins, selectedVstPluginPath]);
+  const isVstHeadlessMode = isVstMode && vstPresentationMode === 'headless';
+  const isVstSurfaceMode = isVstMode && vstPresentationMode === 'surface';
+  const activeVstPluginLeafName =
+    previewDeck.activePluginPath?.split(/[/\\]/).pop() ?? null;
+  const visibleVstParameters = useMemo(() => {
+    const search = vstParameterSearch.trim().toLowerCase();
+    if (!search) {
+      return previewDeck.vstParameters;
+    }
+
+    return previewDeck.vstParameters.filter((parameter) => {
+      const title = parameter.title.toLowerCase();
+      const shortTitle = parameter.shortTitle.toLowerCase();
+      const units = parameter.units.toLowerCase();
+      return title.includes(search) || shortTitle.includes(search) || units.includes(search);
+    });
+  }, [previewDeck.vstParameters, vstParameterSearch]);
   const hasLoopSelectionPreview =
     previewDeck.loopRegion.enabled &&
     effectiveDuration > 0 &&
@@ -742,6 +771,47 @@ export function ExplorerAudioWorkbench({
     selectedVstPluginPath,
     settings.audio?.vst3AdditionalFolders,
   ]);
+
+  const updateDeckVstParameter = useCallback(
+    async (parameterId: number, valueNormalized: number) => {
+      try {
+        await setAudioDeckPluginParameter(
+          previewDeck.deckId,
+          parameterId,
+          clamp(valueNormalized, 0, 1),
+        );
+        setWorkbenchError(null);
+      } catch (error) {
+        setWorkbenchError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [previewDeck.deckId],
+  );
+
+  const resetVisibleVstParametersToDefault = useCallback(async () => {
+    if (visibleVstParameters.length === 0) {
+      return;
+    }
+
+    try {
+      await Promise.all(
+        visibleVstParameters.map((parameter) =>
+          setAudioDeckPluginParameter(
+            previewDeck.deckId,
+            parameter.id,
+            parameter.defaultNormalized,
+          ),
+        ),
+      );
+      setWorkbenchError(null);
+      setWorkbenchStatus(
+        `Reset ${visibleVstParameters.length} parameter${visibleVstParameters.length === 1 ? '' : 's'} to default.`,
+      );
+    } catch (error) {
+      setWorkbenchError(error instanceof Error ? error.message : String(error));
+      setWorkbenchStatus('Parameter reset failed.');
+    }
+  }, [previewDeck.deckId, visibleVstParameters]);
 
   const loadDeckPlugin = useCallback(
     async (pluginPath: string) => {
@@ -783,7 +853,7 @@ export function ExplorerAudioWorkbench({
   );
 
   useEffect(() => {
-    if (!isVstMode || !previewDeck.activePluginPath) {
+    if (!isVstSurfaceMode || !previewDeck.activePluginPath) {
       if (vstEditorSessionIdRef.current) {
         void destroyExplorerVstEditorSession(vstEditorSessionIdRef.current);
         vstEditorSessionIdRef.current = null;
@@ -869,7 +939,7 @@ export function ExplorerAudioWorkbench({
       }
     };
   }, [
-    isVstMode,
+    isVstSurfaceMode,
     previewDeck.activePluginPath,
     previewDeck.deckId,
   ]);
@@ -1389,6 +1459,18 @@ export function ExplorerAudioWorkbench({
     flexDirection: 'column',
     gap: 4,
   };
+  const vstModeTabRowStyle: CSSProperties = {
+    display: 'flex',
+    gap: 6,
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  };
+  const vstParameterCardStyle: CSSProperties = {
+    ...summaryCardStyle,
+    gap: 10,
+    padding: '12px 12px 10px',
+    minWidth: 0,
+  };
   const activeStatusMessage =
     workbenchError || previewDeck.error || snapshot.engineError
       ? workbenchError ?? previewDeck.error ?? snapshot.engineError
@@ -1759,7 +1841,7 @@ export function ExplorerAudioWorkbench({
                     <div style={{ minWidth: 0, flex: '1 1 320px', display: 'grid', gap: 4 }}>
                       <div style={sectionHeaderStyle}>Plugin Picker</div>
                       <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
-                        Keep the chrome compact and leave the rest of this pane to the VST editor.
+                        Default to headless control for now. Surface mode stays available, but it only boots when you ask for it.
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1855,176 +1937,372 @@ export function ExplorerAudioWorkbench({
                     </span>
                     {previewDeck.activePluginPath ? (
                       <span style={statusChipStyle}>
-                        Active: {previewDeck.activePluginPath.split(/[/\\]/).pop()}
+                        Active: {activeVstPluginLeafName}
                       </span>
                     ) : null}
                   </div>
-                </div>
 
-                <div style={{ ...cardStyle, padding: 12, display: 'grid', gap: 10, minHeight: 0 }}>
                   <div
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 8,
+                      gap: 10,
                       flexWrap: 'wrap',
+                      alignItems: 'center',
                     }}
                   >
-                    <div style={{ display: 'grid', gap: 4 }}>
-                      <div style={sectionHeaderStyle}>VST Host Surface</div>
-                      <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
-                        Dedicated editor space for oversized plugins and plugin-focused workflows.
+                    <div style={vstModeTabRowStyle}>
+                      <button
+                        type="button"
+                        aria-pressed={vstPresentationMode === 'headless'}
+                        style={toolbarButtonStyle(
+                          vstPresentationMode === 'headless' ? 'primary' : 'default',
+                        )}
+                        onClick={() => setVstPresentationMode('headless')}
+                      >
+                        Headless
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={vstPresentationMode === 'surface'}
+                        style={toolbarButtonStyle(
+                          vstPresentationMode === 'surface' ? 'primary' : 'default',
+                        )}
+                        onClick={() => setVstPresentationMode('surface')}
+                      >
+                        Surface
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={statusChipStyle}>
+                        {previewDeck.vstParameters.length} parameter
+                        {previewDeck.vstParameters.length === 1 ? '' : 's'}
+                      </span>
+                      <span style={statusChipStyle}>
+                        {isVstHeadlessMode
+                          ? 'Headless is the default release path'
+                          : `Attach ${vstEditorSession?.attachMode ?? 'pending'}`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {isVstHeadlessMode ? (
+                  <div
+                    data-testid="audio-vst-headless-parameters"
+                    style={{ ...cardStyle, padding: 12, display: 'grid', gap: 12, minHeight: 0 }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ display: 'grid', gap: 4 }}>
+                        <div style={sectionHeaderStyle}>Headless Parameters</div>
+                        <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                          Put the release focus here. Surface mode stays available, but the parameter board is the reliable V1 path.
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={statusChipStyle}>
+                          {activeVstPluginLeafName ?? 'No active plugin'}
+                        </span>
+                        <span style={statusChipStyle}>
+                          Surface {previewDeck.activePluginPath ? 'on standby' : 'idle'}
+                        </span>
                       </div>
                     </div>
-                    {vstEditorSession?.sessionId ? (
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr) auto',
+                        gap: 8,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <input
+                        type="search"
+                        value={vstParameterSearch}
+                        onChange={(event) => setVstParameterSearch(event.target.value)}
+                        placeholder="Filter exposed parameters..."
+                        style={{ ...formControlStyle, minWidth: 0 }}
+                      />
                       <button
                         type="button"
                         style={toolbarButtonStyle()}
-                        onClick={() => void focusExplorerVstEditorSession(vstEditorSession.sessionId)}
+                        disabled={visibleVstParameters.length === 0}
+                        onClick={() => void resetVisibleVstParametersToDefault()}
                       >
-                        Focus Host
+                        Reset Visible
                       </button>
-                    ) : null}
-                  </div>
-                  <div
-                    ref={vstHostSurfaceRef}
-                    data-testid="audio-vst-host-surface"
-                    style={{
-                      minHeight: 420,
-                      height: 'clamp(420px, 58vh, 720px)',
-                      borderRadius: 'calc(var(--overlay-explorer-control-radius, 10px) + 6px)',
-                      border: '1px dashed var(--overlay-explorer-chip-active-border)',
-                      background:
-                        'radial-gradient(circle at top left, color-mix(in srgb, var(--overlay-accent) 10%, transparent), transparent 34%), color-mix(in srgb, var(--overlay-explorer-preview-bg) 88%, black 12%)',
-                      display: 'grid',
-                      placeItems: 'center',
-                      padding: 18,
-                      textAlign: 'center',
-                    }}
-                  >
-                    {previewDeck.activePluginPath ? (
-                      <div style={{ display: 'grid', gap: 8, maxWidth: 420 }}>
-                        <div style={{ fontSize: 16, fontWeight: 700 }}>
-                          {previewDeck.activePluginPath.split(/[/\\]/).pop()}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={statusChipStyle}>
+                        Showing {visibleVstParameters.length} of {previewDeck.vstParameters.length}
+                      </span>
+                      {vstParameterSearch.trim() ? (
+                        <span style={statusChipStyle}>Filter: {vstParameterSearch.trim()}</span>
+                      ) : null}
+                    </div>
+
+                    {previewDeck.vstParameters.length > 0 ? (
+                      visibleVstParameters.length > 0 ? (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                            gap: 10,
+                            maxHeight: 'min(58vh, 720px)',
+                            overflowY: 'auto',
+                            paddingRight: 4,
+                          }}
+                        >
+                          {visibleVstParameters.map((param) => (
+                            <div key={param.id} style={vstParameterCardStyle}>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  gap: 10,
+                                  alignItems: 'flex-start',
+                                }}
+                              >
+                                <div style={{ minWidth: 0, display: 'grid', gap: 3 }}>
+                                  <span
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: 700,
+                                      lineHeight: 1.2,
+                                      overflowWrap: 'anywhere',
+                                    }}
+                                  >
+                                    {param.title || param.shortTitle || `Parameter ${param.id}`}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      color: 'var(--overlay-text-muted)',
+                                      overflowWrap: 'anywhere',
+                                    }}
+                                  >
+                                    {param.shortTitle && param.shortTitle !== param.title
+                                      ? param.shortTitle
+                                      : param.units || `ID ${param.id}`}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  style={toolbarButtonStyle('ghost')}
+                                  onClick={() =>
+                                    void updateDeckVstParameter(
+                                      param.id,
+                                      param.defaultNormalized,
+                                    )
+                                  }
+                                >
+                                  Reset
+                                </button>
+                              </div>
+
+                              <div
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'minmax(0, 1fr) 72px',
+                                  gap: 8,
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <input
+                                  id={`vst-param-${previewDeck.deckId}-${param.id}`}
+                                  type="range"
+                                  min={0}
+                                  max={1}
+                                  step={0.001}
+                                  value={param.valueNormalized}
+                                  className="audio-workbench-slider"
+                                  onChange={(event) => {
+                                    void updateDeckVstParameter(
+                                      param.id,
+                                      Number(event.target.value),
+                                    );
+                                  }}
+                                />
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  step={0.1}
+                                  value={(param.valueNormalized * 100).toFixed(1)}
+                                  style={{ ...formControlStyle, padding: '6px 8px' }}
+                                  onChange={(event) => {
+                                    const nextValue = Number(event.target.value);
+                                    if (Number.isFinite(nextValue)) {
+                                      void updateDeckVstParameter(param.id, nextValue / 100);
+                                    }
+                                  }}
+                                />
+                              </div>
+
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  gap: 8,
+                                  fontSize: 10,
+                                  color: 'var(--overlay-text-muted)',
+                                }}
+                              >
+                                <span>
+                                  Current {(param.valueNormalized * 100).toFixed(1)}%
+                                </span>
+                                <span>
+                                  Default {(param.defaultNormalized * 100).toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
-                          {vstEditorSession?.statusLabel ?? 'Preparing native VST editor host…'}
+                      ) : (
+                        <div style={{ ...panelStyle, gap: 8 }}>
+                          <div style={sectionHeaderStyle}>No Search Matches</div>
+                          <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                            No exposed parameters matched “{vstParameterSearch.trim()}”.
+                          </div>
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
-                          Attach mode: {vstEditorSession?.attachMode ?? 'pending'}
-                        </div>
-                      </div>
+                      )
                     ) : (
-                      <div style={{ display: 'grid', gap: 6 }}>
-                        <div style={{ fontSize: 16, fontWeight: 700 }}>No VST loaded</div>
+                      <div style={{ ...panelStyle, gap: 8 }}>
+                        <div style={sectionHeaderStyle}>No Exposed Parameters</div>
                         <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
-                          Load a host-ready plugin to give it this pane.
+                          {previewDeck.activePluginPath
+                            ? 'This plugin loaded, but it does not expose headless parameters through the current host bridge.'
+                            : 'Load a plugin to turn this pane into a parameter-first headless workflow.'}
                         </div>
                       </div>
                     )}
                   </div>
-                </div>
-
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                    gap: 12,
-                    alignItems: 'start',
-                  }}
-                >
-                  <div style={panelStyle}>
-                    <div style={sectionHeaderStyle}>Parameter Inspector</div>
-                    {previewDeck.vstParameters.length > 0 ? (
+                ) : (
+                  <>
+                    <div style={{ ...cardStyle, padding: 12, display: 'grid', gap: 10, minHeight: 0 }}>
                       <div
                         style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
                           gap: 8,
-                          maxHeight: 220,
-                          overflowY: 'auto',
+                          flexWrap: 'wrap',
                         }}
                       >
-                        {previewDeck.vstParameters.map((param) => (
-                          <div key={param.id} style={{ ...summaryCardStyle, gap: 6 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                              <span style={{ fontSize: 11, fontWeight: 600 }}>
-                                {param.title || param.shortTitle}
-                              </span>
-                              <span style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>
-                                {(param.valueNormalized * 100).toFixed(0)}%
-                              </span>
-                            </div>
-                            <input
-                              id={`vst-param-${previewDeck.deckId}-${param.id}`}
-                              type="range"
-                              min={0}
-                              max={1}
-                              step={0.001}
-                              value={param.valueNormalized}
-                              className="audio-workbench-slider"
-                              onChange={(event) => {
-                                void setAudioDeckPluginParameter(
-                                  previewDeck.deckId,
-                                  param.id,
-                                  Number(event.target.value),
-                                ).catch((error) => {
-                                  setWorkbenchError(
-                                    error instanceof Error ? error.message : String(error),
-                                  );
-                                });
-                              }}
-                            />
-                            {param.units ? (
-                              <span style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>
-                                {param.units}
-                              </span>
-                            ) : null}
+                        <div style={{ display: 'grid', gap: 4 }}>
+                          <div style={sectionHeaderStyle}>VST Host Surface</div>
+                          <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                            Keep this around for plugins that genuinely need their own editor. Headless remains the recommended default.
                           </div>
-                        ))}
+                        </div>
+                        {vstEditorSession?.sessionId ? (
+                          <button
+                            type="button"
+                            style={toolbarButtonStyle()}
+                            onClick={() => void focusExplorerVstEditorSession(vstEditorSession.sessionId)}
+                          >
+                            Focus Host
+                          </button>
+                        ) : null}
                       </div>
-                    ) : (
-                      <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
-                        {previewDeck.activePluginPath
-                          ? 'The loaded plugin does not expose parameters to the current host bridge yet.'
-                          : 'Load a plugin to inspect its parameters and editor host state.'}
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={panelStyle}>
-                    <div style={sectionHeaderStyle}>Session State</div>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <div style={summaryCardStyle}>
-                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>
-                          Attach
-                        </span>
-                        <span style={{ fontSize: 13, fontWeight: 700 }}>
-                          {vstEditorSession?.attachMode ?? 'pending'}
-                        </span>
-                      </div>
-                      <div style={summaryCardStyle}>
-                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>
-                          Parameters
-                        </span>
-                        <span style={{ fontSize: 13, fontWeight: 700 }}>
-                          {previewDeck.vstParameters.length}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
-                        {vstEditorSession?.statusLabel
-                          ?? 'Host session is created when a plugin is active in the VST workflow.'}
+                      <div
+                        ref={vstHostSurfaceRef}
+                        data-testid="audio-vst-host-surface"
+                        style={{
+                          minHeight: 420,
+                          height: 'clamp(420px, 58vh, 720px)',
+                          borderRadius: 'calc(var(--overlay-explorer-control-radius, 10px) + 6px)',
+                          border: '1px dashed var(--overlay-explorer-chip-active-border)',
+                          background:
+                            'radial-gradient(circle at top left, color-mix(in srgb, var(--overlay-accent) 10%, transparent), transparent 34%), color-mix(in srgb, var(--overlay-explorer-preview-bg) 88%, black 12%)',
+                          display: 'grid',
+                          placeItems: 'center',
+                          padding: 18,
+                          textAlign: 'center',
+                        }}
+                      >
+                        {previewDeck.activePluginPath ? (
+                          <div style={{ display: 'grid', gap: 8, maxWidth: 420 }}>
+                            <div style={{ fontSize: 16, fontWeight: 700 }}>
+                              {activeVstPluginLeafName}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                              {vstEditorSession?.statusLabel ?? 'Preparing native VST editor host…'}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                              Attach mode: {vstEditorSession?.attachMode ?? 'pending'}
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'grid', gap: 6 }}>
+                            <div style={{ fontSize: 16, fontWeight: 700 }}>No VST loaded</div>
+                            <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                              Load a host-ready plugin to give it this pane.
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                        gap: 12,
+                        alignItems: 'start',
+                      }}
+                    >
+                      <div style={panelStyle}>
+                        <div style={sectionHeaderStyle}>Surface Session State</div>
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          <div style={summaryCardStyle}>
+                            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>
+                              Attach
+                            </span>
+                            <span style={{ fontSize: 13, fontWeight: 700 }}>
+                              {vstEditorSession?.attachMode ?? 'pending'}
+                            </span>
+                          </div>
+                          <div style={summaryCardStyle}>
+                            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>
+                              Headless Parameters
+                            </span>
+                            <span style={{ fontSize: 13, fontWeight: 700 }}>
+                              {previewDeck.vstParameters.length}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                            {vstEditorSession?.statusLabel
+                              ?? 'Surface mode creates the native host session on demand.'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={panelStyle}>
+                        <div style={sectionHeaderStyle}>Headless Recommendation</div>
+                        <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)', lineHeight: 1.5 }}>
+                          Parameters are exposed and stable now. Use the headless tab for the release-focused workflow, then hop back here only when a plugin really needs its own native editor.
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ ...statusChipStyle, color: workbenchError || previewDeck.error || snapshot.engineError ? '#c0392b' : 'var(--overlay-text-primary)' }}>
                     {activeStatusMessage}
                   </span>
-                  {vstEditorSession?.statusLabel ? (
+                  {isVstSurfaceMode && vstEditorSession?.statusLabel ? (
                     <span style={statusChipStyle}>{vstEditorSession.statusLabel}</span>
                   ) : null}
                 </div>

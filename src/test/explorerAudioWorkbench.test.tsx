@@ -397,7 +397,7 @@ describe('ExplorerAudioWorkbench', () => {
     expect(scanExplorerVstPluginsMock).not.toHaveBeenCalled();
   });
 
-  it('registers the VST wildcard workflow and syncs the native host rect in vst mode', async () => {
+  it('defaults the VST workflow to headless controls and only boots the surface host on demand', async () => {
     audioEngineSnapshot.decks[0].activePluginPath =
       '/Library/Audio/Plug-Ins/VST3/SpaceLab.vst3';
     audioEngineSnapshot.decks[0].vstParameters = [
@@ -430,7 +430,7 @@ describe('ExplorerAudioWorkbench', () => {
       />,
     );
 
-    expect(await screen.findByTestId('audio-vst-host-surface')).toBeInTheDocument();
+    expect(await screen.findByTestId('audio-vst-headless-parameters')).toBeInTheDocument();
     expect(registerWorkflowTabs).toHaveBeenCalledWith([
       {
         id: 'vst',
@@ -438,10 +438,24 @@ describe('ExplorerAudioWorkbench', () => {
         baseMode: 'edit',
       },
     ]);
+    expect(screen.getByRole('button', { name: /headless/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.queryByTestId('audio-vst-host-surface')).toBeNull();
     await waitFor(() => {
       expect(scanExplorerVstPluginsMock).toHaveBeenCalledWith([
         '/Library/Audio/Plug-Ins/VST3',
       ]);
+    });
+
+    expect(createExplorerVstEditorSessionMock).not.toHaveBeenCalled();
+    expect(syncExplorerVstEditorSessionRectMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /surface/i }));
+
+    expect(await screen.findByTestId('audio-vst-host-surface')).toBeInTheDocument();
+    await waitFor(() => {
       expect(createExplorerVstEditorSessionMock).toHaveBeenCalledWith({
         deckId: 'a',
         pluginPath: '/Library/Audio/Plug-Ins/VST3/SpaceLab.vst3',
