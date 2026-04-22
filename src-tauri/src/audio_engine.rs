@@ -271,12 +271,12 @@ fn build_vst_parameter_state_snapshot(
     let host = HeadlessVstHost::load_plugin(plugin_path)?;
     Ok(host
         .parameters
-        .into_iter()
+        .iter()
         .map(|parameter| VstParameterState {
             id: parameter.id,
-            title: parameter.title,
-            short_title: parameter.short_title,
-            units: parameter.units,
+            title: parameter.title.clone(),
+            short_title: parameter.short_title.clone(),
+            units: parameter.units.clone(),
             default_normalized: parameter.default_normalized,
             min: parameter.min,
             max: parameter.max,

@@ -168,6 +168,7 @@
   - `src-tauri/src/vst_commands.rs` now only surfaces host-ready VST3 entries in the picker, which prevents Linux/macOS from advertising incompatible Windows plugin binaries as selectable VSTs.
   - `src-tauri/src/audio_engine.rs` now stores deck-level `activePluginPath` plus `vstParameters`, and failed plugin loads now resolve into `deck.error` state instead of rejecting the whole preview workflow with an unhandled promise.
   - `src/runtime/audioVstEditorBackend.ts` plus `src-tauri/src/vst_host_runtime.rs` now own editor-session lifecycle and rect sync for the VST lane.
+  - `crates/vst-host/src/lib.rs` also now follows the real VST3 module lifecycle on Linux/macOS instead of treating `GetPluginFactory` as sufficient. The loader activates the module (`ModuleEntry` / `bundleEntry`), passes a minimal `IHostApplication` context, instantiates the controller through `IComponent::getControllerClassId()` when available, and only calls the module exit hook after the COM objects have been terminated and released.
 - Current limitation:
   - The VST session bridge is still honest scaffolding. It can validate/load plugins, track session state, and sync the requested host rect, but it still reports `attachMode: unavailable`. True inline native editor embedding and actual VST DSP insertion into the realtime audio render path are still pending.
 - Validation:

@@ -2,10 +2,16 @@ use libloading::{Library, Symbol};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use vst3::Steinberg::Vst::{IAudioProcessor, IComponent, IEditController, IEditControllerTrait};
-use vst3::Steinberg::{IPluginFactory, IPluginFactoryTrait};
-use vst3::com_scrape_types::ComPtr;
-use vst3::com_scrape_types::Interface;
+use vst3::Steinberg::Vst::{
+    IAudioProcessor, IComponent, IComponentTrait, IEditController, IEditControllerTrait,
+    IHostApplication, IHostApplicationTrait, String128,
+};
+use vst3::Steinberg::{
+    kInvalidArgument, kNoInterface, kNotImplemented, kResultOk, tresult, FUnknown, IPluginBaseTrait,
+    IPluginFactory, IPluginFactory3Trait, IPluginFactoryTrait, PClassInfo, TUID,
+};
+use vst3::com_scrape_types::{ComPtr, ComWrapper, Interface};
+use vst3::Class;
 
 #[derive(Debug, Clone)]
 pub struct VstParameterDef {
@@ -21,6 +27,50 @@ pub struct VstParameterDef {
 fn parse_tchar(chars: &[u16]) -> String {
     let u16_chars: Vec<u16> = chars.iter().take_while(|&&c| c != 0).copied().collect();
     String::from_utf16_lossy(&u16_chars)
+}
+
+fn copy_tchar_string(source: &str, destination: &mut [u16]) {
+    destination.fill(0);
+    for (index, code_unit) in source
+        .encode_utf16()
+        .take(destination.len().saturating_sub(1))
+        .enumerate()
+    {
+        destination[index] = code_unit;
+    }
+}
+
+struct MinimalHostApplication;
+
+impl Class for MinimalHostApplication {
+    type Interfaces = (IHostApplication,);
+}
+
+impl IHostApplicationTrait for MinimalHostApplication {
+    unsafe fn getName(&self, name: *mut String128) -> tresult {
+        if name.is_null() {
+            return kInvalidArgument;
+        }
+
+        unsafe {
+            copy_tchar_string("GreebleFS", &mut *name);
+        }
+        kResultOk
+    }
+
+    unsafe fn createInstance(
+        &self,
+        _cid: *mut TUID,
+        _iid: *mut TUID,
+        obj: *mut *mut std::ffi::c_void,
+    ) -> tresult {
+        if !obj.is_null() {
+            unsafe {
+                *obj = std::ptr::null_mut();
+            }
+        }
+        kNoInterface
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,13 +255,176 @@ pub fn resolve_vst3_module_path<P: AsRef<Path>>(path: P) -> Result<PathBuf, Stri
     Ok(module_path)
 }
 
+#[cfg(unix)]
+fn load_dynamic_library_with_raw_handle(
+    path: &Path,
+) -> Result<(Library, *mut std::ffi::c_void), String> {
+    let raw_library =
+        unsafe { libloading::os::unix::Library::new(path).map_err(|error| error.to_string())? };
+    let raw_handle = raw_library.into_raw();
+    let library = Library::from(unsafe { libloading::os::unix::Library::from_raw(raw_handle) });
+    Ok((library, raw_handle))
+}
+
+#[cfg(windows)]
+fn load_dynamic_library_with_raw_handle(
+    path: &Path,
+) -> Result<(Library, *mut std::ffi::c_void), String> {
+    let raw_library =
+        unsafe { libloading::os::windows::Library::new(path).map_err(|error| error.to_string())? };
+    let raw_handle = raw_library.into_raw();
+    let library =
+        Library::from(unsafe { libloading::os::windows::Library::from_raw(raw_handle) });
+    Ok((library, raw_handle as *mut std::ffi::c_void))
+}
+
+type ModuleExitProc = unsafe extern "system" fn() -> bool;
+
+#[cfg(target_os = "linux")]
+type ModuleEntryProc = unsafe extern "system" fn(*mut std::ffi::c_void) -> bool;
+
+#[cfg(target_os = "macos")]
+type ModuleEntryProc = unsafe extern "system" fn(*mut std::ffi::c_void) -> bool;
+
+#[cfg(target_os = "windows")]
+type ModuleEntryProc = unsafe extern "system" fn() -> bool;
+
+fn load_required_symbol<T: Copy>(library: &Library, symbol_name: &[u8]) -> Result<T, String> {
+    let symbol: Symbol<T> =
+        unsafe { library.get(symbol_name).map_err(|error| error.to_string())? };
+    Ok(*symbol)
+}
+
+#[cfg(target_os = "windows")]
+fn load_optional_symbol<T: Copy>(library: &Library, symbol_name: &[u8]) -> Result<Option<T>, String> {
+    match unsafe { library.get::<T>(symbol_name) } {
+        Ok(symbol) => Ok(Some(*symbol)),
+        Err(_) => Ok(None),
+    }
+}
+
+fn activate_vst_module(
+    library: &Library,
+    raw_handle: *mut std::ffi::c_void,
+) -> Result<Option<ModuleExitProc>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let module_entry: ModuleEntryProc = load_required_symbol(library, b"ModuleEntry\0")?;
+        let module_exit: ModuleExitProc = load_required_symbol(library, b"ModuleExit\0")?;
+        if unsafe { module_entry(raw_handle) } {
+            return Ok(Some(module_exit));
+        }
+
+        return Err("VST3 ModuleEntry returned false on Linux.".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let bundle_entry: ModuleEntryProc =
+            load_required_symbol(library, b"bundleEntry\0")
+                .or_else(|_| load_required_symbol(library, b"BundleEntry\0"))?;
+        let bundle_exit: ModuleExitProc = load_required_symbol(library, b"bundleExit\0")
+            .or_else(|_| load_required_symbol(library, b"BundleExit\0"))?;
+        if unsafe { bundle_entry(raw_handle) } {
+            return Ok(Some(bundle_exit));
+        }
+
+        return Err("VST3 bundleEntry returned false on macOS.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(init_dll) = load_optional_symbol::<ModuleEntryProc>(library, b"InitDll\0")? {
+            if !unsafe { init_dll() } {
+                return Err("VST3 InitDll returned false on Windows.".to_string());
+            }
+        }
+
+        return load_optional_symbol::<ModuleExitProc>(library, b"ExitDll\0");
+    }
+
+    #[allow(unreachable_code)]
+    Ok(None)
+}
+
+fn build_host_application_context() -> ComPtr<IHostApplication> {
+    ComWrapper::new(MinimalHostApplication)
+        .to_com_ptr::<IHostApplication>()
+        .expect("minimal host application should build")
+}
+
+fn find_audio_module_class_id(factory: &ComPtr<IPluginFactory>) -> Result<TUID, String> {
+    let class_count = unsafe { factory.countClasses() };
+    for index in 0..class_count {
+        let mut class_info = unsafe { std::mem::zeroed::<PClassInfo>() };
+        if unsafe { factory.getClassInfo(index, &mut class_info) } != kResultOk {
+            continue;
+        }
+
+        let category = unsafe { std::ffi::CStr::from_ptr(class_info.category.as_ptr()) };
+        if category.to_string_lossy() == "Audio Module Class" {
+            return Ok(class_info.cid);
+        }
+    }
+
+    Err("No Audio Module Class found in VST3 plugin.".to_string())
+}
+
+fn create_interface_instance<T: Interface>(
+    factory: &ComPtr<IPluginFactory>,
+    class_id: TUID,
+    interface_name: &str,
+) -> Result<ComPtr<T>, String> {
+    let mut instance_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+    let result = unsafe {
+        factory.createInstance(
+            class_id.as_ptr(),
+            T::IID.as_ptr() as *const _,
+            &mut instance_ptr,
+        )
+    };
+
+    if result != kResultOk || instance_ptr.is_null() {
+        return Err(format!("Failed to instantiate VST3 {interface_name}."));
+    }
+
+    unsafe { ComPtr::<T>::from_raw(instance_ptr as *mut T) }
+        .ok_or_else(|| format!("Failed to wrap VST3 {interface_name}."))
+}
+
+fn controller_class_id(component: &ComPtr<IComponent>) -> Option<TUID> {
+    let mut class_id = [0_i8; 16];
+    let result = unsafe { component.getControllerClassId(&mut class_id) };
+    if result == kResultOk && class_id.iter().any(|byte| *byte != 0) {
+        Some(class_id)
+    } else {
+        None
+    }
+}
+
+struct VstModuleHandle {
+    _library: Library,
+    module_exit: Option<ModuleExitProc>,
+}
+
+impl Drop for VstModuleHandle {
+    fn drop(&mut self) {
+        if let Some(module_exit) = self.module_exit {
+            let _ = unsafe { module_exit() };
+        }
+    }
+}
+
 pub struct HeadlessVstHost {
-    _lib: Library,
+    _host_context: ComPtr<IHostApplication>,
     _factory: ComPtr<IPluginFactory>,
     pub component: ComPtr<IComponent>,
     pub edit_controller: Option<ComPtr<IEditController>>,
     pub audio_processor: Option<ComPtr<IAudioProcessor>>,
     pub parameters: Vec<VstParameterDef>,
+    component_initialized: bool,
+    controller_initialized: bool,
+    _module: VstModuleHandle,
 }
 
 type GetPluginFactoryProc = unsafe extern "system" fn() -> *mut IPluginFactory;
@@ -219,7 +432,8 @@ type GetPluginFactoryProc = unsafe extern "system" fn() -> *mut IPluginFactory;
 impl HeadlessVstHost {
     pub fn load_plugin<P: AsRef<Path>>(path: P) -> Result<Self, String> {
         let load_target_path = resolve_vst3_module_path(path.as_ref())?;
-        let lib = unsafe { Library::new(&load_target_path).map_err(|e| e.to_string())? };
+        let (lib, raw_module_handle) = load_dynamic_library_with_raw_handle(&load_target_path)?;
+        let module_exit = activate_vst_module(&lib, raw_module_handle)?;
 
         let get_plugin_factory: Symbol<GetPluginFactoryProc> =
             unsafe { lib.get(b"GetPluginFactory\0").map_err(|e| e.to_string())? };
@@ -233,39 +447,55 @@ impl HeadlessVstHost {
         let factory = unsafe { ComPtr::from_raw(factory_ptr) }
             .ok_or("Failed to convert factory to ComPtr")?;
 
-        let class_count = unsafe { factory.countClasses() };
-        let mut target_cid: Option<vst3::Steinberg::TUID> = None;
-        for i in 0..class_count {
-            let mut class_info = unsafe { std::mem::zeroed::<vst3::Steinberg::PClassInfo>() };
-            if unsafe { factory.getClassInfo(i, &mut class_info) } == vst3::Steinberg::kResultOk {
-                let category = unsafe { std::ffi::CStr::from_ptr(class_info.category.as_ptr()) };
-                if category.to_string_lossy() == "Audio Module Class" {
-                    target_cid = Some(class_info.cid);
-                    break;
-                }
+        let host_context = build_host_application_context();
+        if let Some(factory3) = factory.cast::<vst3::Steinberg::IPluginFactory3>() {
+            let host_context_ptr = host_context.as_ptr() as *mut FUnknown;
+            let set_host_context_result = unsafe { factory3.setHostContext(host_context_ptr) };
+            if set_host_context_result != kResultOk
+                && set_host_context_result != kNotImplemented
+                && set_host_context_result != kNoInterface
+            {
+                eprintln!(
+                    "VST3 setHostContext returned {set_host_context_result}; continuing with minimal host context."
+                );
             }
         }
 
-        let cid = target_cid.ok_or("No Audio Module Class found in VST3 plugin")?;
-
-        let mut instance_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-
-        let result = unsafe {
-            factory.createInstance(
-                cid.as_ptr(),
-                vst3::Steinberg::Vst::IComponent::IID.as_ptr() as *const _,
-                &mut instance_ptr,
-            )
-        };
-
-        if result != vst3::Steinberg::kResultOk || instance_ptr.is_null() {
-            return Err("Failed to instantiate VST3 IComponent".to_string());
+        let cid = find_audio_module_class_id(&factory)?;
+        let component = create_interface_instance::<IComponent>(&factory, cid, "IComponent")?;
+        let controller_class_id = controller_class_id(&component);
+        let component_init_result =
+            unsafe { component.initialize(host_context.as_ptr() as *mut FUnknown) };
+        if component_init_result != kResultOk {
+            return Err(format!(
+                "Failed to initialize the VST3 component: {component_init_result}."
+            ));
         }
 
-        let component = unsafe { ComPtr::<IComponent>::from_raw(instance_ptr as *mut IComponent) }
-            .ok_or("Failed to wrap IComponent")?;
-
-        let edit_controller = component.cast::<IEditController>();
+        let mut controller_initialized = false;
+        let edit_controller = if let Some(controller_class_id) = controller_class_id {
+            match create_interface_instance::<IEditController>(
+                &factory,
+                controller_class_id,
+                "IEditController",
+            ) {
+                Ok(controller) => {
+                    let controller_init_result =
+                        unsafe { controller.initialize(host_context.as_ptr() as *mut FUnknown) };
+                    if controller_init_result == kResultOk {
+                        controller_initialized = true;
+                        Some(controller)
+                    } else {
+                        return Err(format!(
+                            "Failed to initialize the VST3 edit controller: {controller_init_result}."
+                        ));
+                    }
+                }
+                Err(_) => component.cast::<IEditController>(),
+            }
+        } else {
+            component.cast::<IEditController>()
+        };
         let audio_processor = component.cast::<IAudioProcessor>();
 
         let mut parameters = Vec::new();
@@ -294,19 +524,42 @@ impl HeadlessVstHost {
         }
 
         Ok(Self {
-            _lib: lib,
+            _host_context: host_context,
             _factory: factory,
             component,
             edit_controller,
             audio_processor,
             parameters,
+            component_initialized: true,
+            controller_initialized,
+            _module: VstModuleHandle {
+                _library: lib,
+                module_exit,
+            },
         })
+    }
+}
+
+impl Drop for HeadlessVstHost {
+    fn drop(&mut self) {
+        if self.controller_initialized {
+            if let Some(edit_controller) = self.edit_controller.as_ref() {
+                let _ = unsafe { edit_controller.terminate() };
+            }
+        }
+
+        self.audio_processor = None;
+        self.edit_controller = None;
+
+        if self.component_initialized {
+            let _ = unsafe { self.component.terminate() };
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_vst3_module_path;
+    use super::{HeadlessVstHost, resolve_vst3_module_path};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -411,5 +664,16 @@ mod tests {
         assert!(error.contains("current host expects"));
 
         fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn smoke_loads_real_vst_when_env_var_is_set() {
+        let Ok(plugin_path) = std::env::var("GREEBLEFS_VST_SMOKE_PATH") else {
+            return;
+        };
+
+        let host =
+            HeadlessVstHost::load_plugin(&plugin_path).expect("real VST smoke path should load");
+        assert!(host.audio_processor.is_some() || host.edit_controller.is_some());
     }
 }

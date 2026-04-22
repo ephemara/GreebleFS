@@ -468,6 +468,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src-tauri/src/thumbnail_commands.rs`, `src-tauri/src/image_commands.rs`, `src-tauri/src/audio_engine.rs`, and `src-tauri/src/audio_commands.rs` now attempt the native GPU runtime first where appropriate, but every shipped path still keeps its CPU fallback so unsupported adapters do not break explorer flows
   - `src/runtime/explorerBackend.ts` is the only TS bridge for `fs_read_entry_thumbnail`; React should request generated thumbnails there instead of decoding files, probing media, or shelling out from components.
   - `src/runtime/explorerBackend.ts` is also the only TS bridge for batch rename preview/apply, checksum calculation, item properties, fuzzy jump filtering, and terminal shell-integration commands used by explorer surfaces
+    - on Linux and macOS, `crates/vst-host` must activate the module through the platform entry hook before touching the factory (`ModuleEntry` on Linux, `bundleEntry` on macOS). If a real VST3 crashes during `countClasses()` or `getClassInfo()`, check module activation and module-exit ordering before assuming the UI or Tauri command layer is at fault
   - local transfer UX now has a two-step contract instead of silent collision auto-rename:
     - `fs_plan_transfer_items` reports pending name collisions before paste/drag/pane transfers run
     - `fs_transfer_items` accepts explicit collision policies: `keep_both`, `replace`, and `skip`
