@@ -4962,6 +4962,89 @@ const value = 1;
     });
   });
 
+  it("drops native same-window drags into the current folder when the pointer is over a file card", async () => {
+    const currentWindow = getCurrentWindow();
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const dataTransfer = createDataTransfer();
+    const dragSource = screen
+      .getByText("notes.txt")
+      .closest('[data-overlay-drag-source="file"]');
+    const fileTarget = screen
+      .getByText("preview.png")
+      .closest('[data-overlay-drag-source="file"]');
+    if (
+      !(dragSource instanceof HTMLElement) ||
+      !(fileTarget instanceof HTMLElement)
+    ) {
+      throw new Error("Expected draggable explorer entries");
+    }
+
+    fireEvent(dragSource, createEvent.dragStart(dragSource, { dataTransfer }));
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(currentWindow.onDragDropEvent).mock.calls.length,
+      ).toBeGreaterThan(0);
+    });
+
+    const dragDropCalls = vi.mocked(currentWindow.onDragDropEvent).mock.calls;
+    const nativeDragHandler = dragDropCalls[dragDropCalls.length - 1]?.[0];
+    if (!nativeDragHandler) {
+      throw new Error("Expected native drag-drop listener");
+    }
+
+    const position = {
+      x: 96,
+      y: 48,
+      toLogical: vi.fn().mockReturnValue({ x: 96, y: 48 }),
+    };
+    const originalElementFromPoint = document.elementFromPoint;
+    const mockElementFromPoint = vi.fn(() => fileTarget);
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: mockElementFromPoint,
+    });
+
+    try {
+      await nativeDragHandler({
+        payload: {
+          type: "over",
+          position,
+        },
+      } as never);
+      await nativeDragHandler({
+        payload: {
+          type: "drop",
+          paths: [`${REPO_ROOT}\\\\notes.txt`],
+          position,
+        },
+      } as never);
+    } finally {
+      if (originalElementFromPoint) {
+        Object.defineProperty(document, "elementFromPoint", {
+          configurable: true,
+          value: originalElementFromPoint,
+        });
+      } else {
+        Reflect.deleteProperty(document, "elementFromPoint");
+      }
+    }
+
+    await waitFor(() => {
+      const transferCalls = vi
+        .mocked(invoke)
+        .mock.calls.filter(([command]) => command === "fs_transfer_items");
+      expect(transferCalls).toHaveLength(1);
+      expect(transferCalls[0]?.[1]).toMatchObject({
+        targetDir: REPO_ROOT,
+        sources: [`${REPO_ROOT}\\\\notes.txt`],
+        operation: "move",
+      });
+    });
+  });
+
   it("keeps explorer drags internal when Shift is held", async () => {
     renderExplorer();
     const entry = await screen.findByText("notes.txt");

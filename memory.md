@@ -1,5 +1,34 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Explorer Drag And Drop Now Uses Shared Scope Arbitration
+
+- Explorer file drag/drop is no longer owned by scattered per-entry handlers plus pane-local native-drag refs. The explorer now has a shared interaction seam for drop-target hit testing and same-window drag state, which fixes the old "magic drop zones" behavior across panes and other explorer surfaces.
+- Durable implementation shape:
+  - `src/components/explorer/explorerDragAndDrop.ts` is now the canonical drag/drop helper for the explorer surface. It owns:
+    - scope-aware hit testing (`data-overlay-explorer-drop-scope-id` plus root-path fallback)
+    - direct-target vs viewport-root arbitration
+    - shared same-window drag session state that survives native-out drag end briefly so another pane can still resolve the internal move/copy correctly
+    - common payload parsing from `DataTransfer`
+  - `src/components/FileExplorer.tsx` now treats the content viewport as the primary drop surface. Entry cards keep `data-overlay-drop-target-path`, but the hot path is root-owned:
+    - root `dragover` / `drop` resolves the exact folder-under-pointer or falls back to the current directory
+    - Tauri `onDragDropEvent` now gates itself to the pane actually under the pointer instead of letting every `FileExplorer` instance compete for the same window-level drop
+    - native same-window drags now resolve through the same arbitration path as React drags, with a `mainRef.contains(...)` fallback when browser-style scope geometry is unavailable
+  - `src/components/explorer/ExplorerSideRail.tsx` now reads dropped paths through the shared payload/session helper too, so bookmark imports can still resolve same-window explorer drags when the DOM payload is incomplete.
+  - `src/test/explorerDragAndDrop.test.ts` now locks:
+    - direct folder-vs-viewport arbitration
+    - multi-scope pane routing
+    - shared native-out drag-session linger
+    - payload parsing fallback behavior
+  - `src/test/fileExplorer.viewModes.test.tsx` now includes a native same-window regression case for dropping over a non-folder file card, which should still route to the current folder instead of rejecting the pane.
+- Durable product note:
+  - Treat explorer drag/drop as a first-class interaction layer, not as one-off `onDrop` handlers sprinkled across cards. If a new explorer surface becomes droppable later, wire it into `explorerDragAndDrop.ts` first so hit testing, pane ownership, and same-window native drag behavior stay coherent.
+  - Dolphin’s useful pattern here was the distinction between a hovered item and the widget that is actually eligible to receive the drop. Preserve that distinction. Non-folder cards should not steal the drop from the viewport root, and background drops should not require "magic" empty regions.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerDragAndDrop.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "starts native drag on plain explorer drags while keeping in-app payloads available|moves multi-selected files into the hovered folder without leaking the drop to the viewport root|moves native same-window drags into the hovered folder via the Tauri drag-drop listener|drops native same-window drags into the current folder when the pointer is over a file card|keeps explorer drags internal when Shift is held" --pool=forks --reporter=dot`
+  - passed: `bunx vitest run src/test/explorerSideRail.test.tsx -t "prompts for dropped folders and creates bookmarks optimistically after confirmation" --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-22 - Explorer Preview Terminal Now Drives Explorer Navigation Through Native Shell Integration
 
 - The embedded explorer preview terminal no longer depends on mocked callbacks or optimistic prompt timers to tell Explorer where the shell actually is. The native terminal lane now reports cwd changes from the shell prompt itself.

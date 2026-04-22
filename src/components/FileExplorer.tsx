@@ -178,6 +178,18 @@ import {
   type FileOperationsTransferCompletedEventDetail,
 } from "../runtime/fileOperationsWindow";
 import {
+  EXPLORER_DROP_TARGET_ATTRIBUTE,
+  clearExplorerSharedDragSession,
+  doesExplorerPayloadMatchSharedDragSession,
+  getExplorerSharedDragSession,
+  readExplorerPathsFromDataTransfer,
+  resolveExplorerDropHitFromPoint,
+  settleExplorerSharedDragSessionAfterDragEnd,
+  startExplorerSharedDragSession,
+  type ExplorerDragIntent,
+  type ExplorerDropPointerLike,
+} from "./explorer/explorerDragAndDrop";
+import {
   recordExplorerPerformanceSample,
   type ExplorerPerformanceMetadata,
   type ExplorerPerformanceMetricId,
@@ -988,7 +1000,6 @@ interface NewItemState {
   visible: boolean;
   kind: "file" | "folder";
 }
-type ExplorerDragIntent = "internal" | "native-out";
 type ExplorerSortKey = "name" | "size" | "date" | "type";
 interface PendingExplorerTransferRequest {
   targetDir: string;
@@ -1291,47 +1302,7 @@ function shouldIgnoreExplorerDragLeave(event: React.DragEvent): boolean {
   );
 }
 
-const EXPLORER_MAIN_DROP_TARGET = "__main__";
-const EXPLORER_DROP_TARGET_ATTRIBUTE = "data-overlay-drop-target-path";
-
-type NativeDragDropPositionLike = {
-  x: number;
-  y: number;
-  toLogical?: (scaleFactor: number) => { x: number; y: number };
-};
-
 type ExplorerSelectionNavigationDirection = "up" | "down" | "left" | "right";
-
-function resolveExplorerDropTargetPathFromPoint(
-  position: NativeDragDropPositionLike,
-  scaleFactor: number,
-): string | null {
-  if (typeof document === "undefined") {
-    return null;
-  }
-
-  const safeScaleFactor =
-    Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
-  const logicalPosition =
-    typeof position.toLogical === "function"
-      ? position.toLogical(safeScaleFactor)
-      : {
-          x: position.x / safeScaleFactor,
-          y: position.y / safeScaleFactor,
-        };
-  const elementAtPointer = document.elementFromPoint(
-    logicalPosition.x,
-    logicalPosition.y,
-  );
-  if (!(elementAtPointer instanceof Element)) {
-    return null;
-  }
-
-  const dropTarget = elementAtPointer.closest(
-    `[${EXPLORER_DROP_TARGET_ATTRIBUTE}]`,
-  );
-  return dropTarget?.getAttribute(EXPLORER_DROP_TARGET_ATTRIBUTE) ?? null;
-}
 
 function matchesExplorerSelectionNavigationKeybinding(
   event: Pick<
@@ -3837,11 +3808,12 @@ function PreviewPanel({
           flexWrap: "wrap",
         }}
       >
-        {previewWorkflowTabs.map((tab) => {
+        {previewWorkflowTabs.map((tab, index) => {
           const active = activePreviewWorkflowTab.id === tab.id;
           const workflowTabMotion = interactionMotion.bindSurface({
             surfaceId: "previewWorkflowTab",
             triggerState: { activate: active },
+            motionStepIndex: index,
             baseTransition: "background 0.14s ease, border-color 0.14s ease, color 0.14s ease",
           });
           return (
@@ -5309,6 +5281,7 @@ const ExplorerEntryThumbnailStageContent = React.memo(
     hoverScrubEnabled,
     iconTheme = getBuiltInIconTheme(),
     motionAppearance,
+    motionStepIndex = 0,
     motionTriggerState,
     stageSize,
     thumbnail,
@@ -5319,6 +5292,7 @@ const ExplorerEntryThumbnailStageContent = React.memo(
     hoverScrubEnabled: boolean;
     iconTheme?: OverlayResolvedIconTheme;
     motionAppearance?: Pick<ResolvedOverlayAppearance, "baseTheme"> | null;
+    motionStepIndex?: number;
     motionTriggerState?: InteractionMotionTriggerState;
     stageSize: number;
     thumbnail: ExplorerEntryThumbnailData | null;
@@ -5327,6 +5301,7 @@ const ExplorerEntryThumbnailStageContent = React.memo(
     const iconMotionBinding = iconMotion.bindSurface({
       surfaceId: "explorerEntryIcon",
       triggerState: motionTriggerState,
+      motionStepIndex,
       baseTransition: "transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 180ms cubic-bezier(0.22, 1, 0.36, 1)",
     });
 
@@ -7176,6 +7151,11 @@ export function FileExplorer({
   );
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const explorerSearchScopeId = useId();
+  const explorerDropScopeId = useMemo(
+    () =>
+      `explorer-drop-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}-${explorerSearchScopeId.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+    [explorerSearchScopeId, instanceId],
+  );
   const explorerSearchScope = useMemo(
     () => resolveExplorerSearchScope(explorerSearchScopeId),
     [explorerSearchScopeId],
@@ -9743,9 +9723,6 @@ export function FileExplorer({
         }),
     [droppedSourceLookup],
   );
-  const activeDragPathsRef = useRef<string[]>([]);
-  const nativeDragPathsRef = useRef<string[]>([]);
-  const nativeSameWindowDragPathsRef = useRef<string[]>([]);
   const isProcessElevatedRef = useRef(false);
   const lastObservedFileTransferNonceRef = useRef<string | null>(null);
   const selectedDirectoryEntries = useMemo(
@@ -10296,72 +10273,108 @@ export function FileExplorer({
       return cachedScaleFactor;
     };
 
-    const resolveNativeDropTargetPath = async (
-      position: unknown,
-    ): Promise<string | null> => {
-      if (!position || typeof position !== "object") {
+    const resolveNativeDropHit = async (position: unknown) => {
+      if (
+        !position ||
+        typeof position !== "object" ||
+        currentPathIsHome ||
+        !currentPath.trim()
+      ) {
         return null;
       }
 
       const scaleFactor = await getWindowScaleFactor();
-      return resolveExplorerDropTargetPathFromPoint(
-        position as NativeDragDropPositionLike,
+      const hit = resolveExplorerDropHitFromPoint(
+        position as ExplorerDropPointerLike,
         scaleFactor,
       );
+      if (hit && hit.scopeId === explorerDropScopeId) {
+        return hit;
+      }
+
+      if (typeof document.elementFromPoint !== "function") {
+        return null;
+      }
+
+      const logicalPoint =
+        typeof (position as ExplorerDropPointerLike).toLogical === "function"
+          ? (position as ExplorerDropPointerLike).toLogical?.(scaleFactor) ?? {
+              x: (position as ExplorerDropPointerLike).x / scaleFactor,
+              y: (position as ExplorerDropPointerLike).y / scaleFactor,
+            }
+          : {
+              x: (position as ExplorerDropPointerLike).x / scaleFactor,
+              y: (position as ExplorerDropPointerLike).y / scaleFactor,
+            };
+      const elementAtPointer = document.elementFromPoint(
+        logicalPoint.x,
+        logicalPoint.y,
+      );
+      if (!(elementAtPointer instanceof Element) || !mainRef.current) {
+        return null;
+      }
+      if (!mainRef.current.contains(elementAtPointer)) {
+        return null;
+      }
+
+      const directTarget = elementAtPointer.closest<HTMLElement>(
+        `[${EXPLORER_DROP_TARGET_ATTRIBUTE}]`,
+      );
+      if (directTarget && mainRef.current.contains(directTarget)) {
+        const targetPath = directTarget.getAttribute(
+          EXPLORER_DROP_TARGET_ATTRIBUTE,
+        );
+        if (targetPath) {
+          return {
+            targetPath,
+          };
+        }
+      }
+
+      return {
+        targetPath: currentPath,
+      };
     };
 
     win
       .onDragDropEvent(async (event) => {
         if (disposed) return;
 
-        // Detect internal drags (initiated from the explorer via fsStartNativeFileDrag).
-        // When an internal native drag re-enters/drops on the same window, Tauri fires
-        // onDragDropEvent instead of React onDrop.  We need to route the drop to the
-        // specific folder the cursor is hovering over, not just currentPath.
-        const internalDragPaths =
-          activeDragPathsRef.current.length > 0
-            ? activeDragPathsRef.current
-            : nativeDragPathsRef.current.length > 0
-              ? nativeDragPathsRef.current
-              : nativeSameWindowDragPathsRef.current;
-        const payloadPaths = (event.payload as any).paths || [];
-        const normalizePath = (p: string) => {
-          const collapsed = p.replace(/[\\/]+/g, "/").replace(/\/$/, "");
-          return runtimePlatform === "windows"
-            ? collapsed.toLowerCase()
-            : collapsed;
-        };
-        const normalizedInternal = internalDragPaths.map(normalizePath);
-        const normalizedPayload = payloadPaths.map(normalizePath);
-        const payloadMatchesInternal =
-          normalizedInternal.length > 0 &&
-          normalizedPayload.length === normalizedInternal.length &&
-          normalizedPayload.every((p: string) =>
-            normalizedInternal.includes(p),
-          );
-        const hasPendingNativeSameWindowDrag =
-          nativeSameWindowDragPathsRef.current.length > 0;
-
+        const payloadPaths = Array.isArray((event.payload as any).paths)
+          ? ((event.payload as any).paths as string[]).filter(
+              (path): path is string =>
+                typeof path === "string" && path.trim().length > 0,
+            )
+          : [];
+        const sharedDragSession = getExplorerSharedDragSession();
+        const payloadMatchesSharedDrag =
+          payloadPaths.length === 0
+            ? Boolean(sharedDragSession?.paths.length)
+            : doesExplorerPayloadMatchSharedDragSession({
+                payloadPaths,
+                platform: runtimePlatform,
+                session: sharedDragSession,
+              });
         if (
-          hasPendingNativeSameWindowDrag &&
-          normalizedPayload.length > 0 &&
-          !payloadMatchesInternal
+          sharedDragSession &&
+          payloadPaths.length > 0 &&
+          !payloadMatchesSharedDrag
         ) {
-          nativeSameWindowDragPathsRef.current = [];
+          clearExplorerSharedDragSession();
         }
-
         const isInternalDrag =
-          nativeSameWindowDragPathsRef.current.length > 0 ||
-          nativeDragPathsRef.current.length > 0 ||
-          (normalizedInternal.length > 0 &&
-            (normalizedPayload.length === 0 || payloadMatchesInternal));
+          Boolean(sharedDragSession) &&
+          (payloadPaths.length === 0 || payloadMatchesSharedDrag);
 
         if (event.payload.type === "enter" || event.payload.type === "over") {
-          const hoveredTarget =
-            (await resolveNativeDropTargetPath(
-              (event.payload as any).position,
-            )) ?? null;
-          setExplorerDragOverTarget(hoveredTarget);
+          const hoveredHit = await resolveNativeDropHit(
+            (event.payload as any).position,
+          );
+          setExplorerDragOverTarget(hoveredHit?.targetPath ?? null);
+          if (!hoveredHit) {
+            setWindowDropState({ active: false, count: 0 });
+            return;
+          }
         }
 
         if (event.payload.type === "enter") {
@@ -10372,6 +10385,8 @@ export function FileExplorer({
               active: true,
               count: payloadPaths.length,
             });
+          } else {
+            setWindowDropState({ active: false, count: 0 });
           }
           return;
         }
@@ -10388,40 +10403,39 @@ export function FileExplorer({
 
         if (event.payload.type === "drop") {
           setWindowDropState({ active: false, count: 0 });
-          const hoveredTarget =
-            (await resolveNativeDropTargetPath(
-              (event.payload as any).position,
-            )) ?? dragOverRef.current;
+          const hoveredHit =
+            (await resolveNativeDropHit((event.payload as any).position)) ??
+            (dragOverRef.current
+              ? {
+                  targetPath: dragOverRef.current,
+                }
+              : null);
           setExplorerDragOverTarget(null);
-          if (!currentPath) return;
+          if (!hoveredHit) return;
 
-          // For internal drags, resolve the target from the folder currently being
-          // hovered. "__main__" or null means the drop landed on empty space in the
-          // current directory.
-          let targetDir = currentPath;
           const operation: "move" | "copy" = isInternalDrag ? "move" : "copy";
-
-          if (hoveredTarget && hoveredTarget !== EXPLORER_MAIN_DROP_TARGET) {
-            targetDir = hoveredTarget;
-          }
-
-          if (isInternalDrag) {
-            activeDragPathsRef.current = [];
-            nativeDragPathsRef.current = [];
-            nativeSameWindowDragPathsRef.current = [];
+          const resolvedSources =
+            payloadPaths.length > 0
+              ? payloadPaths
+              : sharedDragSession?.paths ?? [];
+          if (resolvedSources.length === 0) {
+            return;
           }
 
           try {
-            await executeTransferRequest(
+            const results = await executeTransferRequest(
               {
-                targetDir,
-                sources: payloadPaths,
+                targetDir: hoveredHit.targetPath,
+                sources: resolvedSources,
                 operation,
               },
               {
                 onSuccess: () => refresh(),
               },
             );
+            if (results !== null && isInternalDrag) {
+              clearExplorerSharedDragSession();
+            }
           } catch (error) {
             setError(String(error));
           }
@@ -10441,7 +10455,15 @@ export function FileExplorer({
       disposed = true;
       unlisten?.();
     };
-  }, [currentPath, executeTransferRequest, refresh, setExplorerDragOverTarget]);
+  }, [
+    currentPath,
+    currentPathIsHome,
+    executeTransferRequest,
+    explorerDropScopeId,
+    refresh,
+    runtimePlatform,
+    setExplorerDragOverTarget,
+  ]);
 
   // ── Open ──
   const getSearchFocusTarget = useCallback(
@@ -13391,6 +13413,58 @@ export function FileExplorer({
   };
 
   // ── Drag and Drop ──
+  const resolveCurrentExplorerDropHit = useCallback(
+    (pointer: ExplorerDropPointerLike, scaleFactor = 1) => {
+      if (currentPathIsHome || !currentPath.trim()) {
+        return null;
+      }
+      const hit = resolveExplorerDropHitFromPoint(pointer, scaleFactor);
+      if (!hit || hit.scopeId !== explorerDropScopeId) {
+        return null;
+      }
+      return hit;
+    },
+    [currentPath, currentPathIsHome, explorerDropScopeId],
+  );
+
+  const resolveCurrentExplorerDropHitFromEvent = useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      const pointerResolvedHit = resolveCurrentExplorerDropHit({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      if (pointerResolvedHit) {
+        return pointerResolvedHit;
+      }
+
+      const scopeElement = event.currentTarget;
+      const eventTarget =
+        event.target instanceof Element ? event.target : scopeElement;
+      const directTarget = eventTarget.closest<HTMLElement>(
+        `[${EXPLORER_DROP_TARGET_ATTRIBUTE}]`,
+      );
+      if (directTarget && scopeElement.contains(directTarget)) {
+        const targetPath = directTarget.getAttribute(
+          EXPLORER_DROP_TARGET_ATTRIBUTE,
+        );
+        if (targetPath) {
+          return {
+            scopeId: explorerDropScopeId,
+            targetKind: "directory" as const,
+            targetPath,
+          };
+        }
+      }
+
+      return {
+        scopeId: explorerDropScopeId,
+        targetKind: "viewport" as const,
+        targetPath: currentPath,
+      };
+    },
+    [currentPath, explorerDropScopeId, resolveCurrentExplorerDropHit],
+  );
+
   const onDragStart = (e: React.DragEvent<HTMLElement>, entry: FileEntry) => {
     const dragEntries = resolveEntriesForAction(entry);
     const dragPaths = dragEntries.map((item) => item.path);
@@ -13399,9 +13473,11 @@ export function FileExplorer({
       requestedDragIntent === "native-out" && !supportsNativeDragOut(dragPaths)
         ? "internal"
         : requestedDragIntent;
-    activeDragPathsRef.current = dragPaths;
-    nativeSameWindowDragPathsRef.current =
-      dragIntent === "native-out" ? dragPaths : [];
+    startExplorerSharedDragSession({
+      paths: dragPaths,
+      intent: dragIntent,
+      sourceScopeId: explorerDropScopeId,
+    });
     e.currentTarget.dataset.overlayDragIntent = dragIntent;
     // Keep explorer surface alive during native drag so in-app folder drops do not
     // collapse overlay shell before the drop target resolves.
@@ -13431,15 +13507,12 @@ export function FileExplorer({
             "GreebleFS is running as Administrator, so Windows may block dragging files into normal Explorer/Desktop windows. Run GreebleFS without elevation for drag-out support.",
           );
         }
-        nativeDragPathsRef.current = dragPaths;
         void commands
           .fsStartNativeFileDrag(dragPaths)
           .then((result) => {
-            nativeDragPathsRef.current = [];
             unwrapTauriResult(result);
           })
           .catch((error) => {
-            nativeDragPathsRef.current = [];
             const fallback = formatExplorerNativeDragError(error);
             if (runtimePlatform === "windows" && isProcessElevatedRef.current) {
               setError(
@@ -13455,17 +13528,75 @@ export function FileExplorer({
   };
 
   const onDragEnd = (e: React.DragEvent<HTMLElement>) => {
-    const dragIntent = e.currentTarget.dataset.overlayDragIntent;
+    const dragIntent =
+      e.currentTarget.dataset.overlayDragIntent === "native-out"
+        ? "native-out"
+        : "internal";
     delete e.currentTarget.dataset.overlayDragIntent;
     delete e.currentTarget.dataset.overlayDragHide;
-    activeDragPathsRef.current = [];
-    if (dragIntent !== "native-out") {
-      nativeSameWindowDragPathsRef.current = [];
-    }
+    settleExplorerSharedDragSessionAfterDragEnd(dragIntent);
     setExplorerDragOverTarget(null);
   };
 
-  const onDragOver = (e: React.DragEvent, targetPath: string) => {
+  const onContentDragOver = (e: React.DragEvent<HTMLElement>) => {
+    const hit = resolveCurrentExplorerDropHitFromEvent(e);
+    if (!hit) {
+      setExplorerDragOverTarget(null);
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = resolveExplorerDropOperation(
+      e,
+      runtimePlatform,
+    );
+    setExplorerDragOverTarget(hit.targetPath);
+  };
+
+  const onContentDragLeave = (e: React.DragEvent<HTMLElement>) => {
+    if (shouldIgnoreExplorerDragLeave(e)) {
+      return;
+    }
+    e.stopPropagation();
+    setExplorerDragOverTarget(null);
+  };
+
+  const executeExplorerDropTransfer = useCallback(
+    async (
+      targetDir: string,
+      dataTransfer: DataTransfer | null | undefined,
+      operation: FileTransferOperation,
+    ) => {
+      const sharedDragSession = getExplorerSharedDragSession();
+      const sources = readExplorerPathsFromDataTransfer({
+        dataTransfer,
+        fallbackPaths: sharedDragSession?.paths ?? [],
+      });
+      if (sources.length === 0) {
+        return;
+      }
+
+      const results = await executeTransferRequest(
+        {
+          targetDir,
+          sources,
+          operation,
+        },
+        {
+          onSuccess: () => refresh(),
+        },
+      );
+      if (results !== null) {
+        clearExplorerSharedDragSession();
+      }
+    },
+    [executeTransferRequest, refresh],
+  );
+
+  const onExplicitDropTargetDragOver = (
+    e: React.DragEvent<HTMLElement>,
+    targetPath: string,
+  ) => {
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = resolveExplorerDropOperation(
@@ -13475,7 +13606,10 @@ export function FileExplorer({
     setExplorerDragOverTarget(targetPath);
   };
 
-  const onDragLeave = (e: React.DragEvent, targetPath: string) => {
+  const onExplicitDropTargetDragLeave = (
+    e: React.DragEvent<HTMLElement>,
+    targetPath: string,
+  ) => {
     if (shouldIgnoreExplorerDragLeave(e)) {
       return;
     }
@@ -13487,51 +13621,41 @@ export function FileExplorer({
     });
   };
 
-  const onDrop = async (e: React.DragEvent, targetDir: string) => {
+  const onExplicitDropTargetDrop = async (
+    e: React.DragEvent<HTMLElement>,
+    targetPath: string,
+  ) => {
     e.preventDefault();
     e.stopPropagation();
     setExplorerDragOverTarget(null);
-    const payload = e.dataTransfer.getData("application/x-overlayterm-paths");
-    let sources: string[] = [];
-    if (payload) {
-      try {
-        sources = JSON.parse(payload) as string[];
-      } catch {
-        sources = [];
-      }
-    }
-    if (sources.length === 0) {
-      sources = [e.dataTransfer.getData("text/plain")].filter(Boolean);
-    }
-    if (sources.length === 0 && activeDragPathsRef.current.length > 0) {
-      sources = [...activeDragPathsRef.current];
-    }
-    if (sources.length === 0 && nativeDragPathsRef.current.length > 0) {
-      sources = [...nativeDragPathsRef.current];
-    }
-    if (
-      sources.length === 0 &&
-      nativeSameWindowDragPathsRef.current.length > 0
-    ) {
-      sources = [...nativeSameWindowDragPathsRef.current];
-    }
-    if (sources.length === 0) return;
+    setWindowDropState({ active: false, count: 0 });
     try {
-      const results = await executeTransferRequest(
-        {
-          targetDir,
-          sources,
-          operation: resolveExplorerDropOperation(e, runtimePlatform),
-        },
-        {
-          onSuccess: () => refresh(),
-        },
+      await executeExplorerDropTransfer(
+        targetPath,
+        e.dataTransfer,
+        resolveExplorerDropOperation(e, runtimePlatform),
       );
-      if (results !== null) {
-        activeDragPathsRef.current = [];
-        nativeDragPathsRef.current = [];
-        nativeSameWindowDragPathsRef.current = [];
-      }
+    } catch (error) {
+      setError(String(error));
+    }
+  };
+
+  const onContentDrop = async (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dropHit = resolveCurrentExplorerDropHitFromEvent(e);
+    setExplorerDragOverTarget(null);
+    setWindowDropState({ active: false, count: 0 });
+    if (!dropHit) {
+      return;
+    }
+
+    try {
+      await executeExplorerDropTransfer(
+        dropHit.targetPath,
+        e.dataTransfer,
+        resolveExplorerDropOperation(e, runtimePlatform),
+      );
     } catch (e) {
       setError(String(e));
     }
@@ -14673,6 +14797,7 @@ export function FileExplorer({
       isSelected: boolean;
       isDropTarget: boolean;
       baseTransform: string;
+      motionStepIndex?: number;
       restingSurface?: ExplorerEntrySurfaceState;
       baseTransition?: string;
       onPointerEnter?: React.PointerEventHandler<HTMLElement>;
@@ -14686,6 +14811,7 @@ export function FileExplorer({
           dropHover: args.isDropTarget,
         },
         baseTransform: args.baseTransform,
+        motionStepIndex: args.motionStepIndex,
         baseTransition: args.baseTransition ?? explorerEntryBaseTransition,
         onPointerEnter: (event) => {
           handleEntryPointerEnter(
@@ -15234,9 +15360,15 @@ export function FileExplorer({
                             e.stopPropagation();
                             navigate(c.path);
                           }}
-                          onDragOver={(e) => onDragOver(e, c.path)}
-                          onDragLeave={(e) => onDragLeave(e, c.path)}
-                          onDrop={(e) => onDrop(e, c.path)}
+                          onDragOver={(e) =>
+                            onExplicitDropTargetDragOver(e, c.path)
+                          }
+                          onDragLeave={(e) =>
+                            onExplicitDropTargetDragLeave(e, c.path)
+                          }
+                          onDrop={(e) =>
+                            void onExplicitDropTargetDrop(e, c.path)
+                          }
                           style={{
                             border: "none",
                             cursor: "pointer",
@@ -19019,6 +19151,7 @@ export function FileExplorer({
     densityStop: AdaptiveSemanticDensityStopDefinition,
     options: { dominant: boolean },
   ) => {
+    const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
     const isSel = selected.has(entry.path);
     const isDrop = dragOver === entry.path && entry.is_dir;
     const isRenaming = rename.active && rename.path === entry.path;
@@ -19040,6 +19173,7 @@ export function FileExplorer({
       isSelected: isSel,
       isDropTarget: isDrop,
       baseTransform: semanticTableRestingSurface.transform,
+      motionStepIndex,
       restingSurface: semanticTableBaseSurface,
     });
 
@@ -19052,11 +19186,6 @@ export function FileExplorer({
           data-overlay-drop-target-path={entry.is_dir ? entry.path : undefined}
           onDragStart={(e) => onDragStart(e, entry)}
           onDragEnd={onDragEnd}
-          onDragOver={
-            entry.is_dir ? (e) => onDragOver(e, entry.path) : undefined
-          }
-          onDragLeave={(e) => onDragLeave(e, entry.path)}
-          onDrop={entry.is_dir ? (e) => onDrop(e, entry.path) : undefined}
           onClick={(e) => onEntryClick(e, entry)}
           onDoubleClick={() => onEntryDoubleClick(entry)}
           onContextMenu={(e) => onRightClick(e, entry)}
@@ -19122,6 +19251,7 @@ export function FileExplorer({
                 hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
                 iconTheme={themeIconTheme}
                 motionAppearance={appearance}
+                motionStepIndex={motionStepIndex}
                 motionTriggerState={{ select: isSel, dropHover: isDrop }}
                 stageSize={tableThumbnailStageSize}
                 thumbnail={tableThumbnail}
@@ -19232,6 +19362,7 @@ export function FileExplorer({
       isSelected: isSel,
       isDropTarget: isDrop,
       baseTransform: semanticGridRestingSurface.transform,
+      motionStepIndex,
       restingSurface: semanticGridBaseSurface,
     });
 
@@ -19243,9 +19374,6 @@ export function FileExplorer({
         data-overlay-drop-target-path={entry.is_dir ? entry.path : undefined}
         onDragStart={(e) => onDragStart(e, entry)}
         onDragEnd={onDragEnd}
-        onDragOver={entry.is_dir ? (e) => onDragOver(e, entry.path) : undefined}
-        onDragLeave={(e) => onDragLeave(e, entry.path)}
-        onDrop={entry.is_dir ? (e) => onDrop(e, entry.path) : undefined}
         onClick={(e) => onEntryClick(e, entry)}
         onDoubleClick={() => onEntryDoubleClick(entry)}
         onContextMenu={(e) => onRightClick(e, entry)}
@@ -19303,6 +19431,7 @@ export function FileExplorer({
             hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
             iconTheme={themeIconTheme}
             motionAppearance={appearance}
+            motionStepIndex={motionStepIndex}
             motionTriggerState={{ select: isSel, dropHover: isDrop }}
             stageSize={iconStageSize}
             thumbnail={gridThumbnail}
@@ -19524,6 +19653,7 @@ export function FileExplorer({
     band: ConstellationFieldBand,
     node: ConstellationFieldNode,
   ) => {
+    const motionStepIndex = visibleEntryIndexLookup.get(node.entry.path) ?? 0;
     const isSel = selected.has(node.entry.path);
     const isDrop = dragOver === node.entry.path && node.entry.is_dir;
     const isPinned = constellationPinnedPathSet.has(node.entry.path);
@@ -19590,6 +19720,7 @@ export function FileExplorer({
       isSelected: isSel,
       isDropTarget: isDrop,
       baseTransform: `translate(-50%, -50%) ${restingTransform}`,
+      motionStepIndex,
       restingSurface: idleEntrySurface,
       baseTransition:
         "box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms cubic-bezier(0.22, 1, 0.36, 1)",
@@ -19646,13 +19777,6 @@ export function FileExplorer({
           onDragStart(e, node.entry);
         }}
         onDragEnd={onDragEnd}
-        onDragOver={
-          node.entry.is_dir ? (e) => onDragOver(e, node.entry.path) : undefined
-        }
-        onDragLeave={(e) => onDragLeave(e, node.entry.path)}
-        onDrop={
-          node.entry.is_dir ? (e) => onDrop(e, node.entry.path) : undefined
-        }
         onClick={(e) => {
           if (constellationSuppressClickPathRef.current === node.entry.path) {
             constellationSuppressClickPathRef.current = null;
@@ -19729,6 +19853,7 @@ export function FileExplorer({
                 }
                 iconTheme={themeIconTheme}
                 motionAppearance={appearance}
+                motionStepIndex={motionStepIndex}
                 motionTriggerState={{ select: isSel, dropHover: isDrop }}
                 stageSize={node.size}
                 thumbnail={thumbnail}
@@ -20337,6 +20462,7 @@ export function FileExplorer({
   };
 
   const renderTimelineSurfaceEntry = (entry: FileEntry) => {
+    const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
     const isSel = selected.has(entry.path);
     const isDrop = dragOver === entry.path && entry.is_dir;
     const isRenaming = rename.active && rename.path === entry.path;
@@ -20358,6 +20484,7 @@ export function FileExplorer({
       isSelected: isSel,
       isDropTarget: isDrop,
       baseTransform: timelineRestingSurface.transform,
+      motionStepIndex,
       restingSurface: timelineBaseSurface,
     });
     return (
@@ -20368,9 +20495,6 @@ export function FileExplorer({
         data-overlay-drop-target-path={entry.is_dir ? entry.path : undefined}
         onDragStart={(e) => onDragStart(e, entry)}
         onDragEnd={onDragEnd}
-        onDragOver={entry.is_dir ? (e) => onDragOver(e, entry.path) : undefined}
-        onDragLeave={(e) => onDragLeave(e, entry.path)}
-        onDrop={entry.is_dir ? (e) => onDrop(e, entry.path) : undefined}
         onClick={(e) => onEntryClick(e, entry)}
         onDoubleClick={() => onEntryDoubleClick(entry)}
         onContextMenu={(e) => onRightClick(e, entry)}
@@ -20415,6 +20539,7 @@ export function FileExplorer({
             hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
             iconTheme={themeIconTheme}
             motionAppearance={appearance}
+            motionStepIndex={motionStepIndex}
             motionTriggerState={{ select: isSel, dropHover: isDrop }}
             stageSize={42}
             thumbnail={thumbnail}
@@ -21057,7 +21182,13 @@ export function FileExplorer({
               <div
                 ref={mainRef}
                 data-overlay-explorer-plane="content-viewport"
-                data-overlay-drop-target-path={EXPLORER_MAIN_DROP_TARGET}
+                data-overlay-explorer-instance-id={String(instanceId)}
+                data-overlay-explorer-drop-scope-id={explorerDropScopeId}
+                data-overlay-explorer-drop-root-path={
+                  currentPathIsHome || !currentPath.trim()
+                    ? undefined
+                    : currentPath
+                }
                 tabIndex={0}
                 aria-busy={loading ? true : undefined}
                 style={{
@@ -21068,23 +21199,13 @@ export function FileExplorer({
                   position: "relative",
                 }}
                 onClick={() => mainRef.current?.focus()}
-                onDragOver={(e) => {
-                  if (currentPathIsHome) {
-                    return;
-                  }
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = resolveExplorerDropOperation(
-                    e,
-                    runtimePlatform,
-                  );
-                  setExplorerDragOverTarget(EXPLORER_MAIN_DROP_TARGET);
-                }}
-                onDragLeave={(e) => onDragLeave(e, EXPLORER_MAIN_DROP_TARGET)}
+                onDragOver={onContentDragOver}
+                onDragLeave={onContentDragLeave}
                 onDrop={(e) => {
                   if (currentPathIsHome) {
                     return;
                   }
-                  onDrop(e, currentPath);
+                  void onContentDrop(e);
                 }}
                 onContextMenu={(e) => {
                   if (e.target !== e.currentTarget) return;
@@ -21411,6 +21532,8 @@ export function FileExplorer({
                         }}
                       >
                         {virtualizedEntries.map((entry) => {
+                          const motionStepIndex =
+                            visibleEntryIndexLookup.get(entry.path) ?? 0;
                           const isSel = selected.has(entry.path);
                           const isDrop =
                             dragOver === entry.path && entry.is_dir;
@@ -21434,6 +21557,7 @@ export function FileExplorer({
                               : isSel
                                 ? selectedEntrySurface.transform
                                 : idleEntrySurface.transform,
+                            motionStepIndex,
                             baseTransition:
                               layoutZoomGestureActive
                                 ? "none"
@@ -21450,17 +21574,6 @@ export function FileExplorer({
                               }
                               onDragStart={(e) => onDragStart(e, entry)}
                               onDragEnd={onDragEnd}
-                              onDragOver={
-                                entry.is_dir
-                                  ? (e) => onDragOver(e, entry.path)
-                                  : undefined
-                              }
-                              onDragLeave={(e) => onDragLeave(e, entry.path)}
-                              onDrop={
-                                entry.is_dir
-                                  ? (e) => onDrop(e, entry.path)
-                                  : undefined
-                              }
                               onClick={(e) => onEntryClick(e, entry)}
                               onDoubleClick={() => onEntryDoubleClick(entry)}
                               onContextMenu={(e) => onRightClick(e, entry)}
@@ -21539,6 +21652,7 @@ export function FileExplorer({
                                   }
                                   iconTheme={themeIconTheme}
                                   motionAppearance={appearance}
+                                  motionStepIndex={motionStepIndex}
                                   motionTriggerState={{ select: isSel, dropHover: isDrop }}
                                   stageSize={activeGridMetrics.iconStageSize}
                                   thumbnail={thumbnail}
@@ -21698,6 +21812,8 @@ export function FileExplorer({
                     <div style={{ minHeight: 0 }}>
                       <div style={{ height: virtualWindow.topSpacer }} />
                       {virtualizedEntries.map((entry) => {
+                        const motionStepIndex =
+                          visibleEntryIndexLookup.get(entry.path) ?? 0;
                         const isSel = selected.has(entry.path);
                         const isDrop = dragOver === entry.path && entry.is_dir;
                         const isRenaming =
@@ -21724,6 +21840,7 @@ export function FileExplorer({
                             : isSel
                               ? selectedEntrySurface.transform
                               : idleEntrySurface.transform,
+                          motionStepIndex,
                         });
                         return (
                           <div
@@ -21736,17 +21853,6 @@ export function FileExplorer({
                             }
                             onDragStart={(e) => onDragStart(e, entry)}
                             onDragEnd={onDragEnd}
-                            onDragOver={
-                              entry.is_dir
-                                ? (e) => onDragOver(e, entry.path)
-                                : undefined
-                            }
-                            onDragLeave={(e) => onDragLeave(e, entry.path)}
-                            onDrop={
-                              entry.is_dir
-                                ? (e) => onDrop(e, entry.path)
-                                : undefined
-                            }
                             onClick={(e) => onEntryClick(e, entry)}
                             onDoubleClick={() => onEntryDoubleClick(entry)}
                             onContextMenu={(e) => onRightClick(e, entry)}
@@ -21833,6 +21939,7 @@ export function FileExplorer({
                                   }
                                   iconTheme={themeIconTheme}
                                   motionAppearance={appearance}
+                                  motionStepIndex={motionStepIndex}
                                   motionTriggerState={{ select: isSel, dropHover: isDrop }}
                                   stageSize={rowThumbnailStageSize}
                                   thumbnail={thumbnail}
@@ -22125,6 +22232,8 @@ export function FileExplorer({
                           />
                         </tr>
                         {virtualizedEntries.map((entry) => {
+                          const motionStepIndex =
+                            visibleEntryIndexLookup.get(entry.path) ?? 0;
                           const isSel = selected.has(entry.path);
                           const isDrop =
                             dragOver === entry.path && entry.is_dir;
@@ -22153,6 +22262,7 @@ export function FileExplorer({
                               : isSel
                                 ? selectedEntrySurface.transform
                                 : idleEntrySurface.transform,
+                            motionStepIndex,
                           });
                           return (
                             <tr
@@ -22165,17 +22275,6 @@ export function FileExplorer({
                               }
                               onDragStart={(e) => onDragStart(e, entry)}
                               onDragEnd={onDragEnd}
-                              onDragOver={
-                                entry.is_dir
-                                  ? (e) => onDragOver(e, entry.path)
-                                  : undefined
-                              }
-                              onDragLeave={(e) => onDragLeave(e, entry.path)}
-                              onDrop={
-                                entry.is_dir
-                                  ? (e) => onDrop(e, entry.path)
-                                  : undefined
-                              }
                               onClick={(e) => onEntryClick(e, entry)}
                               onDoubleClick={() => onEntryDoubleClick(entry)}
                               onContextMenu={(e) => onRightClick(e, entry)}
@@ -22257,6 +22356,7 @@ export function FileExplorer({
                                       }
                                       iconTheme={themeIconTheme}
                                       motionAppearance={appearance}
+                                      motionStepIndex={motionStepIndex}
                                       motionTriggerState={{ select: isSel, dropHover: isDrop }}
                                       stageSize={rowThumbnailStageSize}
                                       thumbnail={thumbnail}

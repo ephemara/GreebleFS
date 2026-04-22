@@ -69,6 +69,10 @@ import {
   type ExplorerRailViewModeDefinition,
 } from '../../config/explorerRail';
 import { isExplorerHomePath } from '../../config/explorerVirtualLocations';
+import {
+  getExplorerSharedDragSession,
+  readExplorerPathsFromDataTransfer,
+} from './explorerDragAndDrop';
 
 interface ExplorerSideRailProps {
   appearance?: Pick<ResolvedOverlayAppearance, 'baseTheme'> | null;
@@ -115,7 +119,7 @@ interface ExplorerSideRailProps {
 
 interface TreeRowProps {
   accent: string;
-  bindRailMotion: (active?: boolean) => InteractionMotionBinding;
+  bindRailMotion: (active?: boolean, motionStepIndex?: number) => InteractionMotionBinding;
   compactTree: boolean;
   dense: boolean;
   viewMode: ExplorerRailViewModeDefinition;
@@ -141,7 +145,7 @@ type LocalFolderTreeLoadState = {
 
 interface LocalFolderTreeRowProps {
   accent: string;
-  bindRailMotion: (active?: boolean) => InteractionMotionBinding;
+  bindRailMotion: (active?: boolean, motionStepIndex?: number) => InteractionMotionBinding;
   compactTree: boolean;
   dense: boolean;
   viewMode: ExplorerRailViewModeDefinition;
@@ -197,10 +201,11 @@ export function ExplorerSideRail({
   const clearPersistenceNotice = useExplorerStore((state) => state.clearPersistenceNotice);
   const interactionMotion = useInteractionMotionController(appearance);
   const railItemTransition = 'background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, opacity 160ms ease';
-  const bindRailMotion = useCallback((active = false) => (
+  const bindRailMotion = useCallback((active = false, motionStepIndex = 0) => (
     interactionMotion.bindSurface({
       surfaceId: 'explorerRailItem',
       triggerState: active ? { activate: true } : undefined,
+      motionStepIndex,
       baseTransition: railItemTransition,
     })
   ), [interactionMotion, railItemTransition]);
@@ -442,26 +447,10 @@ export function ExplorerSideRail({
     event.preventDefault();
     event.stopPropagation();
     setDropTargetFolderId(null);
-
-    const payload = event.dataTransfer.getData('application/x-overlayterm-paths');
-    let droppedPaths: string[] = [];
-    if (payload) {
-      try {
-        const parsed = JSON.parse(payload);
-        if (Array.isArray(parsed)) {
-          droppedPaths = parsed.filter((entry): entry is string => typeof entry === 'string');
-        }
-      } catch {
-        droppedPaths = [];
-      }
-    }
-
-    if (droppedPaths.length === 0) {
-      const textPath = event.dataTransfer.getData('text/plain').trim();
-      if (textPath) {
-        droppedPaths = [textPath];
-      }
-    }
+    const droppedPaths = readExplorerPathsFromDataTransfer({
+      dataTransfer: event.dataTransfer,
+      fallbackPaths: getExplorerSharedDragSession()?.paths ?? [],
+    });
 
     const sources = resolveDroppedSources(droppedPaths);
     const nextPlan = planExplorerBookmarkImport(rail, sources, targetFolderId);
@@ -780,7 +769,7 @@ export function ExplorerSideRail({
           onToggle={() => updateRail(toggleExplorerRailSection(rail, 'quick-access'))}
         >
           {(() => {
-            const homeMotion = bindRailMotion(currentPathIsHome);
+            const homeMotion = bindRailMotion(currentPathIsHome, 0);
             return (
               <button
                 type="button"
@@ -828,7 +817,7 @@ export function ExplorerSideRail({
             </div>
           )}
 
-          {!drivesLoading && drives.map((drive) => {
+          {!drivesLoading && drives.map((drive, index) => {
             const isCloudDrive = drive.kind === 'cloud';
             const drivePath = drive.path;
             const isActive = isCloudDrive
@@ -836,7 +825,7 @@ export function ExplorerSideRail({
               : activeLocalDrivePath !== null && isSameLocalPath(drive.path, activeLocalDrivePath);
 
             if (isCloudDrive) {
-              const cloudDriveMotion = bindRailMotion(isActive);
+              const cloudDriveMotion = bindRailMotion(isActive, index);
               return (
                 <button
                   key={drive.id}
@@ -888,7 +877,7 @@ export function ExplorerSideRail({
             const usedRatio = drive.total_bytes > 0 ? usedBytes / drive.total_bytes : 0;
             const normalizedDrivePath = normalizeLocalTreePath(drive.path);
             const isExpanded = expandedFolderPaths.includes(normalizedDrivePath);
-            const driveRowMotion = bindRailMotion(isActive || isExpanded);
+            const driveRowMotion = bindRailMotion(isActive || isExpanded, index);
             return (
               <div key={drive.id} style={{ marginBottom: 4 }}>
                 <div
@@ -992,7 +981,7 @@ export function ExplorerSideRail({
               Save a search from the explorer toolbar to pin it here.
             </div>
           )}
-          {savedSearches.map((savedSearch) => (
+          {savedSearches.map((savedSearch, index) => (
             <div
               key={savedSearch.id}
               style={{
@@ -1003,7 +992,7 @@ export function ExplorerSideRail({
               }}
             >
               {(() => {
-                const savedSearchMotion = bindRailMotion();
+                const savedSearchMotion = bindRailMotion(false, index);
                 return (
                   <button
                     type="button"
@@ -1104,7 +1093,7 @@ export function ExplorerSideRail({
               }}
             >
               {(() => {
-                const allTagsMotion = bindRailMotion(activeTagFilterIds.length === 0);
+                const allTagsMotion = bindRailMotion(activeTagFilterIds.length === 0, 0);
                 return (
                   <button
                     type="button"
@@ -1124,9 +1113,9 @@ export function ExplorerSideRail({
                   </button>
                 );
               })()}
-              {availableTags.map((tag) => {
+              {availableTags.map((tag, index) => {
                 const active = activeTagFilterIds.includes(tag.id);
-                const tagMotion = bindRailMotion(active);
+                const tagMotion = bindRailMotion(active, index + 1);
                 return (
                   <button
                     key={tag.id}
