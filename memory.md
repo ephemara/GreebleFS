@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Focus Mode Search Control Now Stays In The Primary Toolbar Rail
+
+- Explorer `focus` mode no longer parks the search-focus button beside the volatile folder/selection size summaries.
+- Durable implementation shape:
+  - `src/config/explorerChromeLayouts.ts` now places `focusAddressBar` in the `focused-search` layout's `primaryEnd` zone instead of `secondaryStart`, keeping the search affordance in the stable top toolbar row while `selectionSizeSummary` continues to live in the secondary metrics strip.
+  - `src/test/explorerChromeLayouts.test.ts` now locks that built-in layout contract so future chrome-layout edits cannot silently push the control back into the secondary row.
+  - `src/test/fileExplorer.viewModes.test.tsx` now verifies the rendered explorer keeps `focusAddressBar` in `primaryEnd` after switching into focus mode and after selecting entries, which protects against the specific "button drifts when selection changes" regression.
+- Durable product note:
+  - Search/path focus is muscle-memory chrome, not selection-context chrome. In future explorer layout passes, keep it anchored with navigation/address controls or another stable global slot, not next to live metrics whose width changes with selection.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "lets the user switch explorer modes from the toolbar without mutating the live session shell preset or sources visibility|keeps the search focus control anchored in the primary toolbar zone in focus mode" --pool=forks --reporter=dot`
+
 # 2026-04-22 - Explorer Ctrl+Scroll Now Uses A Live Spring Zoom Continuum
 
 - Explorer ctrl/cmd+wheel no longer writes `settings.explorer` on every wheel threshold. The hot path is now a local live zoom controller that keeps the gesture inside Explorer and only commits back to persisted settings after the wheel gesture settles.
