@@ -125,6 +125,7 @@ import {
   type ConstellationLensId,
 } from "../config/constellationGraph";
 import { getFolderIconSrc, resolveFolderIcon } from "../config/folderIcons";
+import type { InteractionMotionTriggerState } from "../config/interactionMotion";
 import {
   getBuiltInIconTheme,
   resolveFileIcon,
@@ -443,8 +444,8 @@ const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 8;
 const EXPLORER_GRID_OVERSCAN_ROWS = 2;
-const EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY = 1 / 280;
-const EXPLORER_LAYOUT_WHEEL_MAX_DELTA = 0.34;
+const EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY = 1 / 480;
+const EXPLORER_LAYOUT_WHEEL_MAX_DELTA = 0.18;
 const EXPLORER_LAYOUT_WHEEL_LINE_DELTA_PX = 18;
 const EXPLORER_LAYOUT_WHEEL_PAGE_DELTA_FALLBACK_PX = 320;
 const EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS = 160;
@@ -507,6 +508,64 @@ function getNormalizedExplorerLayoutWheelDelta(
   }
 
   return event.deltaY;
+}
+
+function adjustExplorerLayoutWheelDeltaForRange(
+  currentLayoutZoom: number,
+  delta: number,
+): number {
+  const direction = Math.sign(delta);
+  const magnitude = Math.abs(delta);
+  if (magnitude === 0) {
+    return 0;
+  }
+
+  if (direction > 0) {
+    if (currentLayoutZoom < 0) {
+      return magnitude * 0.58;
+    }
+    if (currentLayoutZoom < 0.67) {
+      return magnitude * 0.72;
+    }
+    if (currentLayoutZoom < 1) {
+      return magnitude * 0.5;
+    }
+    if (currentLayoutZoom < 1.8) {
+      return magnitude * 0.24;
+    }
+    return magnitude * 0.16;
+  }
+
+  if (currentLayoutZoom <= 0) {
+    return -magnitude * 0.7;
+  }
+  if (currentLayoutZoom <= 1) {
+    return -magnitude * 0.62;
+  }
+  if (currentLayoutZoom <= 1.8) {
+    return -magnitude * 0.34;
+  }
+  return -magnitude * 0.24;
+}
+
+function getExplorerLayoutZoomHudProgress(layoutZoom: number): number {
+  if (layoutZoom <= 0) {
+    const normalizedListProgress = Math.max(
+      0,
+      Math.min(1, (layoutZoom - EXPLORER_LAYOUT_ZOOM_MIN) / (0 - EXPLORER_LAYOUT_ZOOM_MIN)),
+    );
+    return normalizedListProgress * 14;
+  }
+
+  if (layoutZoom <= 1) {
+    return 14 + layoutZoom * 64;
+  }
+
+  const normalizedOversizeProgress = Math.max(
+    0,
+    Math.min(1, (layoutZoom - 1) / (EXPLORER_LAYOUT_ZOOM_MAX - 1)),
+  );
+  return 78 + normalizedOversizeProgress * 22;
 }
 
 function setExplorerLayoutCssVariable(
@@ -5249,6 +5308,8 @@ const ExplorerEntryThumbnailStageContent = React.memo(
     fallbackIconSrc,
     hoverScrubEnabled,
     iconTheme = getBuiltInIconTheme(),
+    motionAppearance,
+    motionTriggerState,
     stageSize,
     thumbnail,
   }: {
@@ -5257,11 +5318,40 @@ const ExplorerEntryThumbnailStageContent = React.memo(
     fallbackIconSrc: string;
     hoverScrubEnabled: boolean;
     iconTheme?: OverlayResolvedIconTheme;
+    motionAppearance?: Pick<ResolvedOverlayAppearance, "baseTheme"> | null;
+    motionTriggerState?: InteractionMotionTriggerState;
     stageSize: number;
     thumbnail: ExplorerEntryThumbnailData | null;
   }) {
+    const iconMotion = useInteractionMotionController(motionAppearance);
+    const iconMotionBinding = iconMotion.bindSurface({
+      surfaceId: "explorerEntryIcon",
+      triggerState: motionTriggerState,
+      baseTransition: "transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 180ms cubic-bezier(0.22, 1, 0.36, 1)",
+    });
+
     if (!thumbnail) {
-      return <SvgIcon src={fallbackIconSrc} size={fallbackIconSize} />;
+      return (
+        <div
+          data-explorer-entry-icon-motion="true"
+          {...iconMotionBinding.motionDataAttributes}
+          onPointerEnter={iconMotionBinding.onPointerEnter}
+          onPointerLeave={iconMotionBinding.onPointerLeave}
+          onPointerDown={iconMotionBinding.onPointerDown}
+          onPointerUp={iconMotionBinding.onPointerUp}
+          onPointerCancel={iconMotionBinding.onPointerCancel}
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            ...iconMotionBinding.motionStyle,
+          }}
+        >
+          <SvgIcon src={fallbackIconSrc} size={fallbackIconSize} />
+        </div>
+      );
     }
 
     const shouldShowTypeBadge =
@@ -5274,10 +5364,18 @@ const ExplorerEntryThumbnailStageContent = React.memo(
 
     return (
       <div
+        data-explorer-entry-icon-motion="true"
+        {...iconMotionBinding.motionDataAttributes}
+        onPointerEnter={iconMotionBinding.onPointerEnter}
+        onPointerLeave={iconMotionBinding.onPointerLeave}
+        onPointerDown={iconMotionBinding.onPointerDown}
+        onPointerUp={iconMotionBinding.onPointerUp}
+        onPointerCancel={iconMotionBinding.onPointerCancel}
         style={{
           position: "relative",
           width: "100%",
           height: "100%",
+          ...iconMotionBinding.motionStyle,
         }}
       >
         <ExplorerThumbnailImage
@@ -7464,7 +7562,8 @@ export function FileExplorer({
     useState<ExplorerLayoutZoomState>(() =>
       createExplorerLayoutZoomState(viewMode, gridZoom),
     );
-  const liveLayoutZoomStateRef = useRef(liveLayoutZoomState);
+  const liveLayoutZoomTargetStateRef = useRef(liveLayoutZoomState);
+  const renderedLayoutZoomStateRef = useRef(liveLayoutZoomState);
   const layoutZoomTarget = useMotionValue(liveLayoutZoomState.layoutZoom);
   const layoutZoomSpring = useSpring(layoutZoomTarget, {
     stiffness: 280,
@@ -7605,12 +7704,22 @@ export function FileExplorer({
 
   useEffect(() => {
     const unsubscribe = layoutZoomSpring.on("change", (nextValue) => {
+      const nextRenderedState = resolveExplorerLayoutZoomStateAtValue(
+        renderedLayoutZoomStateRef.current,
+        nextValue,
+      );
+      renderedLayoutZoomStateRef.current = nextRenderedState;
+      setLiveLayoutZoomState((current) =>
+        current.family === nextRenderedState.family &&
+        Math.abs(current.layoutZoom - nextRenderedState.layoutZoom) < 0.0001 &&
+        Math.abs(current.storedGridZoom - nextRenderedState.storedGridZoom) <
+          0.0001
+          ? current
+          : nextRenderedState,
+      );
       applyExplorerLayoutZoomCssVariables(
         mainRef.current,
-        resolveExplorerLayoutZoomStateAtValue(
-          liveLayoutZoomStateRef.current,
-          nextValue,
-        ),
+        nextRenderedState,
         explorerTheme,
       );
     });
@@ -13630,7 +13739,8 @@ export function FileExplorer({
     }
 
     const nextState = createExplorerLayoutZoomState(themedViewMode, gridZoom);
-    liveLayoutZoomStateRef.current = nextState;
+    liveLayoutZoomTargetStateRef.current = nextState;
+    renderedLayoutZoomStateRef.current = nextState;
     setLiveLayoutZoomState((current) =>
       current.family === nextState.family &&
       Math.abs(current.layoutZoom - nextState.layoutZoom) < 0.0001 &&
@@ -13647,7 +13757,7 @@ export function FileExplorer({
   useLayoutEffect(() => {
     applyExplorerLayoutZoomCssVariables(
       mainRef.current,
-      liveLayoutZoomStateRef.current,
+      liveLayoutZoomState,
       explorerTheme,
     );
   }, [explorerTheme, liveLayoutZoomState]);
@@ -13858,15 +13968,7 @@ export function FileExplorer({
       return null;
     }
 
-    const normalizedProgress = Math.max(
-      0,
-      Math.min(
-        1,
-        (activeLayoutZoom - EXPLORER_LAYOUT_ZOOM_MIN) /
-          (EXPLORER_LAYOUT_ZOOM_MAX - EXPLORER_LAYOUT_ZOOM_MIN),
-      ),
-    );
-    return normalizedProgress * 100;
+    return getExplorerLayoutZoomHudProgress(activeLayoutZoom);
   }, [
     currentGridZoomValue,
     layoutZoomGestureActive,
@@ -17403,12 +17505,16 @@ export function FileExplorer({
         event.nativeEvent,
         explorerViewportRef.current?.clientHeight ?? 0,
       );
-      const rawDelta = Math.max(
+      const normalizedRawDelta = Math.max(
         -EXPLORER_LAYOUT_WHEEL_MAX_DELTA,
         Math.min(
           EXPLORER_LAYOUT_WHEEL_MAX_DELTA,
           (-normalizedDeltaY) * EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY,
         ),
+      );
+      const rawDelta = adjustExplorerLayoutWheelDeltaForRange(
+        liveLayoutZoomTargetStateRef.current.layoutZoom,
+        normalizedRawDelta,
       );
       if (Math.abs(rawDelta) < 0.0005) {
         return;
@@ -17421,17 +17527,16 @@ export function FileExplorer({
       setLayoutZoomGestureActive(true);
 
       const nextState = resolveExplorerLayoutZoomStateAtValue(
-        liveLayoutZoomStateRef.current,
+        liveLayoutZoomTargetStateRef.current,
         Math.max(
           EXPLORER_LAYOUT_ZOOM_MIN,
           Math.min(
             EXPLORER_LAYOUT_ZOOM_MAX,
-            liveLayoutZoomStateRef.current.layoutZoom + rawDelta,
+            liveLayoutZoomTargetStateRef.current.layoutZoom + rawDelta,
           ),
         ),
       );
-      liveLayoutZoomStateRef.current = nextState;
-      setLiveLayoutZoomState(nextState);
+      liveLayoutZoomTargetStateRef.current = nextState;
       layoutZoomTarget.set(nextState.layoutZoom);
       showZoomHud();
 
@@ -17439,7 +17544,7 @@ export function FileExplorer({
         window.clearTimeout(layoutZoomCommitTimerRef.current);
       }
       layoutZoomCommitTimerRef.current = window.setTimeout(() => {
-        const committedState = liveLayoutZoomStateRef.current;
+        const committedState = liveLayoutZoomTargetStateRef.current;
         const nextCommit = commitExplorerLayoutZoomState(committedState);
         const frameDurations = [...layoutZoomFrameSampleRef.current];
         if (frameDurations.length > 0) {
@@ -17475,7 +17580,8 @@ export function FileExplorer({
           updateExplorerSettings({
             viewMode: nextCommit.viewMode,
             gridZoom:
-              nextCommit.gridZoom ?? liveLayoutZoomStateRef.current.storedGridZoom,
+              nextCommit.gridZoom ??
+              liveLayoutZoomTargetStateRef.current.storedGridZoom,
           });
         }
       }, EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS);
@@ -19015,6 +19121,8 @@ export function FileExplorer({
                 fallbackIconSrc={iconSrc}
                 hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
                 iconTheme={themeIconTheme}
+                motionAppearance={appearance}
+                motionTriggerState={{ select: isSel, dropHover: isDrop }}
                 stageSize={tableThumbnailStageSize}
                 thumbnail={tableThumbnail}
               />
@@ -19194,6 +19302,8 @@ export function FileExplorer({
             fallbackIconSrc={iconSrc}
             hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
             iconTheme={themeIconTheme}
+            motionAppearance={appearance}
+            motionTriggerState={{ select: isSel, dropHover: isDrop }}
             stageSize={iconStageSize}
             thumbnail={gridThumbnail}
           />
@@ -19618,6 +19728,8 @@ export function FileExplorer({
                   hoveredVideoThumbnailPath === node.entry.path
                 }
                 iconTheme={themeIconTheme}
+                motionAppearance={appearance}
+                motionTriggerState={{ select: isSel, dropHover: isDrop }}
                 stageSize={node.size}
                 thumbnail={thumbnail}
               />
@@ -20302,6 +20414,8 @@ export function FileExplorer({
             fallbackIconSrc={iconSrc}
             hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
             iconTheme={themeIconTheme}
+            motionAppearance={appearance}
+            motionTriggerState={{ select: isSel, dropHover: isDrop }}
             stageSize={42}
             thumbnail={thumbnail}
           />
@@ -21424,6 +21538,8 @@ export function FileExplorer({
                                     hoveredVideoThumbnailPath === entry.path
                                   }
                                   iconTheme={themeIconTheme}
+                                  motionAppearance={appearance}
+                                  motionTriggerState={{ select: isSel, dropHover: isDrop }}
                                   stageSize={activeGridMetrics.iconStageSize}
                                   thumbnail={thumbnail}
                                 />
@@ -21716,6 +21832,8 @@ export function FileExplorer({
                                     hoveredVideoThumbnailPath === entry.path
                                   }
                                   iconTheme={themeIconTheme}
+                                  motionAppearance={appearance}
+                                  motionTriggerState={{ select: isSel, dropHover: isDrop }}
                                   stageSize={rowThumbnailStageSize}
                                   thumbnail={thumbnail}
                                 />
@@ -22138,6 +22256,8 @@ export function FileExplorer({
                                         hoveredVideoThumbnailPath === entry.path
                                       }
                                       iconTheme={themeIconTheme}
+                                      motionAppearance={appearance}
+                                      motionTriggerState={{ select: isSel, dropHover: isDrop }}
                                       stageSize={rowThumbnailStageSize}
                                       thumbnail={thumbnail}
                                     />

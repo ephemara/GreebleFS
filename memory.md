@@ -1,5 +1,24 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Interaction Motion Became A KCloner-Inspired UI Motion Suite
+
+- Interaction Motion is no longer only three static shell presets. The subsystem now exposes a broader KCloner-style motion family set and can animate explorer icon stages independently from the surrounding row/card shell.
+- Durable implementation shape:
+  - `src/config/interactionMotion.ts` now includes a dedicated `explorerEntryIcon` surface plus ten animated motion-family presets: `bounce`, `lissajous`, `shake`, `float`, `pulse`, `elastic`, `wobble`, `sway`, `heartbeat`, and `orbit`, alongside the lighter `subtle`, `spring`, and `playful` system profiles.
+  - That config now also carries preset grouping metadata (`system` vs `kcloner`) so Settings can present the suite as a gallery instead of a flat strip of buttons.
+  - `src/animation/interactionMotion.tsx` now injects a shared keyframe stylesheet and applies animation CSS vars plus `animation` properties on bound surfaces. Animated presets still route through the same resolver/store path as the older static presets.
+  - `src/components/FileExplorer.tsx` now binds the new `explorerEntryIcon` surface on thumbnail/icon wrappers, so selected files and folders can animate at icon level instead of only moving the whole row/card.
+  - `src/animation/MotionLab.tsx` now previews icon-stage motion too, not just entry rows and shell chrome.
+  - `src/components/SettingsPage.tsx` now renders a grouped `Preset Studio` inside `Interaction Motion`, separating fast shell defaults from the KCloner motion family set.
+- Durable product note:
+  - Treat animated motion families as first-class interaction presets, not as a separate engine. They should stay on the same resolver path so theme defaults, per-surface disables, reduced-motion handling, and Motion Lab all remain coherent.
+  - Explorer feedback can now be split between row shell and icon shell. If future work adds clone/field authoring, preserve that separation instead of only animating whole entry cards.
+- Validation:
+  - passed: `bunx vitest run src/test/interactionMotion.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "updates interaction motion settings and exposes motion-lab preview surfaces" --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "routes explorer entry and preview workflow tab motion through the shared interaction resolver" --reporter=dot`
+  - note: filtered touched-path TypeScript is still blocked by pre-existing unrelated `src/components/FileExplorer.tsx` `liveLayoutZoomStateRef` errors already present on this branch outside the interaction-motion changes
+
 # 2026-04-22 - Focus Mode Search Control Now Stays In The Primary Toolbar Rail
 
 - Explorer `focus` mode no longer parks the search-focus button beside the volatile folder/selection size summaries.
@@ -32,6 +51,8 @@
   - `src/components/FileExplorer.tsx` no longer shows a fake `0-100%` zoom readout for the layout continuum. The layout picker/HUD now uses a continuum bar and an `XL / XL+ / XL++`-style label instead of pretending the oversize range maps to a finite percentage metric.
   - Dolphin reference note: the useful idea from `packages/dolphin-master` was not a fancy wheel algorithm. The smoothness comes from letting the view own zoom-level math and item-size updates, batching layout changes, and giving the large-icon end of the range much more headroom. Keep copying that shape rather than chasing per-wheel gimmicks.
   - The main hot-path cleanup in `FileExplorer.tsx` now memoizes the rail, toolbar, and preview subtrees so live zoom frames stop rebuilding those panes. It also disables per-entry size transitions while the live zoom spring is active, avoids React state updates on every spring tick, and pushes the visible grid/list sizing through DOM/CSS variables that the spring updates directly.
+  - Tuning follow-up: removing React spring-frame updates entirely made the explorer feel worse because the layout was snapping toward target states while only the CSS variables were animating. The current shape keeps the spring-driven rendered layout state for the viewport itself while still keeping the surrounding explorer chrome cold.
+  - Wheel tuning now uses range-aware damping inspired by Dolphin's restrained per-step zoom behavior. List-to-grid entry is slowed down, normal grid zoom moves in moderate increments, and oversized `XL+`/`XL++` travel is heavily damped so a single wheel burst does not jump half the continuum.
 - Validation:
   - passed: `bunx vitest run src/test/explorerViewModes.test.ts --reporter=dot`
   - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "scales the explorer grid with ctrl-wheel without changing app zoom and only commits after idle|settles one explorer-settings commit|scales the explorer grid when ctrl-wheel happens on the file area shell|drops into compact list mode|keeps a deep-grid viewport anchored|does not refetch an already-visible generated thumbnail" --pool=forks --reporter=dot`
