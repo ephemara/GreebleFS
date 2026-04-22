@@ -3560,7 +3560,7 @@ const value = 1;
     await advanceLayoutZoomCommit();
 
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
-      "icons-m",
+      "icons-l",
     );
     expect(
       useSettingsStore.getState().settings.explorer.gridZoom,
@@ -3607,7 +3607,7 @@ const value = 1;
     await advanceLayoutZoomCommit();
 
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
-      "icons-m",
+      "icons-l",
     );
     expect(
       useSettingsStore.getState().settings.explorer.gridZoom,

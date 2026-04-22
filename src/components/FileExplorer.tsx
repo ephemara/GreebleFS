@@ -134,6 +134,7 @@ import {
 } from "../config/iconTheme";
 import type { ExplorerLayoutMode } from "../config/layoutProfiles";
 import {
+  EXPLORER_GRID_ZOOM_MAX,
   EXPLORER_LAYOUT_ZOOM_MAX,
   EXPLORER_LAYOUT_ZOOM_MIN,
   getExplorerGridMetricsForZoom,
@@ -444,8 +445,10 @@ const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 8;
 const EXPLORER_GRID_OVERSCAN_ROWS = 2;
-const EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY = 1 / 720;
-const EXPLORER_LAYOUT_WHEEL_MAX_DELTA = 0.12;
+const EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY = 1 / 280;
+const EXPLORER_LAYOUT_WHEEL_MAX_DELTA = 0.34;
+const EXPLORER_LAYOUT_WHEEL_LINE_DELTA_PX = 18;
+const EXPLORER_LAYOUT_WHEEL_PAGE_DELTA_FALLBACK_PX = 320;
 const EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS = 160;
 const EXPLORER_THUMBNAIL_TYPE_BADGE_MIN_STAGE_PX = 36;
 const EXPLORER_THUMBNAIL_TYPE_BADGE_KINDS = new Set<
@@ -489,6 +492,24 @@ type ExplorerLayoutZoomPointerAnchor = {
   pointerY: number;
   itemOffsetY: number;
 };
+
+function getNormalizedExplorerLayoutWheelDelta(
+  event: WheelEvent,
+  viewportHeight: number,
+): number {
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+    return event.deltaY * EXPLORER_LAYOUT_WHEEL_LINE_DELTA_PX;
+  }
+
+  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+    return event.deltaY * Math.max(
+      viewportHeight,
+      EXPLORER_LAYOUT_WHEEL_PAGE_DELTA_FALLBACK_PX,
+    );
+  }
+
+  return event.deltaY;
+}
 
 type ExplorerSearchCacheEntry = {
   results: ExplorerNormalizedSearchResult[];
@@ -7334,6 +7355,7 @@ export function FileExplorer({
   const layoutZoomFrameSampleRef = useRef<number[]>([]);
   const layoutZoomFrameRafRef = useRef<number | null>(null);
   const layoutZoomFrameLastAtRef = useRef<number | null>(null);
+  const preserveOversizedLayoutZoomRef = useRef(false);
   const layoutZoomPointerAnchorRef =
     useRef<ExplorerLayoutZoomPointerAnchor | null>(null);
   const [liveLayoutZoomState, setLiveLayoutZoomState] =
@@ -13509,6 +13531,18 @@ export function FileExplorer({
       return;
     }
 
+    if (preserveOversizedLayoutZoomRef.current) {
+      const currentState = liveLayoutZoomStateRef.current;
+      if (
+        currentState.family === "grid" &&
+        currentState.layoutZoom > EXPLORER_GRID_ZOOM_MAX &&
+        themedViewMode === "icons-xl"
+      ) {
+        return;
+      }
+      preserveOversizedLayoutZoomRef.current = false;
+    }
+
     const nextState = createExplorerLayoutZoomState(themedViewMode, gridZoom);
     liveLayoutZoomStateRef.current = nextState;
     setLiveLayoutZoomState((current) =>
@@ -13719,6 +13753,22 @@ export function FileExplorer({
       themedViewMode,
     ],
   );
+  const zoomHudProgressPercent = useMemo(
+    () =>
+      gridZoomPercent == null
+        ? null
+        : Math.max(0, Math.min(100, gridZoomPercent)),
+    [gridZoomPercent],
+  );
+  const explorerGridContainerTransition = layoutZoomGestureActive
+    ? "none"
+    : "gap 0.14s ease, padding 0.14s ease";
+  const explorerGridCardSizeTransition = layoutZoomGestureActive
+    ? "none"
+    : "border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)";
+  const explorerGridStageSizeTransition = layoutZoomGestureActive
+    ? "none"
+    : "width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)";
   const showToolbarLocationStrips =
     !isCompactDock && !usesWorkspaceCompactChrome;
   const showToolbarTextLabels = !isCompactDock && !usesWorkspaceQuadChrome;
@@ -16115,7 +16165,7 @@ export function FileExplorer({
                 >
                   <div
                     style={{
-                      width: `${gridZoomPercent}%`,
+                      width: `${zoomHudProgressPercent ?? 0}%`,
                       height: "100%",
                       borderRadius: 999,
                       background: `linear-gradient(90deg, ${accent}99, ${accent})`,
@@ -17239,11 +17289,15 @@ export function FileExplorer({
         return;
       }
 
+      const normalizedDeltaY = getNormalizedExplorerLayoutWheelDelta(
+        event.nativeEvent,
+        explorerViewportRef.current?.clientHeight ?? 0,
+      );
       const rawDelta = Math.max(
         -EXPLORER_LAYOUT_WHEEL_MAX_DELTA,
         Math.min(
           EXPLORER_LAYOUT_WHEEL_MAX_DELTA,
-          (-event.deltaY) * EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY,
+          (-normalizedDeltaY) * EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY,
         ),
       );
       if (Math.abs(rawDelta) < 0.0005) {
@@ -17303,6 +17357,9 @@ export function FileExplorer({
         setLayoutZoomGestureActive(false);
         layoutZoomPointerAnchorRef.current = null;
         layoutZoomCommitTimerRef.current = null;
+        preserveOversizedLayoutZoomRef.current =
+          committedState.family === "grid" &&
+          committedState.layoutZoom > EXPLORER_GRID_ZOOM_MAX;
 
         if (nextCommit.viewMode === "list") {
           updateExplorerSettings({ viewMode: "list" });
@@ -20311,6 +20368,279 @@ export function FileExplorer({
   const showBlockingExplorerLoadingState =
     loading && !hasResolvedExplorerLocation;
   const shouldRenderExplorerContent = !showBlockingExplorerLoadingState;
+  const explorerRailPane = useMemo(() => {
+    if (!shouldRenderRail) {
+      return null;
+    }
+
+    return (
+      <div
+        data-overlay-explorer-plane="rail"
+        style={{ display: "flex", minHeight: 0, minWidth: 0 }}
+      >
+        <ResizablePane
+          size={sidebarWidth}
+          minSize={sidebarBounds.minWidth}
+          maxSize={sidebarBounds.maxWidth}
+          onSizeChange={setSidebarWidth}
+          borderColor={`${accent}55`}
+          handleSide={effectiveRailPosition === "right" ? "left" : "right"}
+          style={sidebarPaneStyle}
+        >
+          <ExplorerSideRail
+            appearance={appearance}
+            accent={accent}
+            brandLabel={explorerTheme.railBrandLabel}
+            sidebarWidth={sidebarWidth}
+            currentPath={currentPath}
+            locationTitle={locationTitle}
+            locationLabel={locationLabel}
+            drives={drives}
+            drivesLoading={drivesLoading}
+            showHiddenFiles={showHidden}
+            isCompactDock={isCompactDock}
+            savedSearches={savedSearches}
+            availableTags={tagMetadata.tags}
+            activeTagFilterIds={activeTagFilterIds}
+            onNavigate={navigate}
+            onGoHome={goHome}
+            localTreeRefreshRevision={localTreeRefreshRevision}
+            onOpenSavedSearch={(savedSearch) => {
+              void applySavedSearch(savedSearch);
+            }}
+            onDeleteSavedSearch={(savedSearchId) => {
+              void deleteExplorerSavedSearch(savedSearchId)
+                .then(() =>
+                  setSavedSearches((current) =>
+                    current.filter(
+                      (savedSearch) => savedSearch.id !== savedSearchId,
+                    ),
+                  ),
+                )
+                .catch((deleteError) => setError(String(deleteError)));
+            }}
+            onToggleTagFilter={(tagId) =>
+              setActiveTagFilterIds((current) =>
+                current.includes(tagId)
+                  ? current.filter((candidate) => candidate !== tagId)
+                  : [...current, tagId],
+              )
+            }
+            onClearTagFilters={() => setActiveTagFilterIds([])}
+            onBookmarkCreated={handleBookmarkCreated}
+            resolveDroppedSources={resolveDroppedBookmarkSources}
+            onCloseSources={closeSourcesPanel}
+            chromeLayoutId={effectiveChromeLayoutId}
+            chromeOverride={explorerChromeOverride}
+            chromeEditMode={explorerChromeEditMode}
+          />
+        </ResizablePane>
+      </div>
+    );
+  }, [
+    accent,
+    activeTagFilterIds,
+    appearance,
+    applySavedSearch,
+    closeSourcesPanel,
+    currentPath,
+    deleteExplorerSavedSearch,
+    drives,
+    drivesLoading,
+    effectiveChromeLayoutId,
+    effectiveRailPosition,
+    explorerChromeEditMode,
+    explorerChromeOverride,
+    explorerTheme.railBrandLabel,
+    goHome,
+    handleBookmarkCreated,
+    isCompactDock,
+    localTreeRefreshRevision,
+    locationLabel,
+    locationTitle,
+    navigate,
+    resolveDroppedBookmarkSources,
+    savedSearches,
+    setActiveTagFilterIds,
+    setError,
+    setSidebarWidth,
+    showHidden,
+    shouldRenderRail,
+    sidebarBounds.maxWidth,
+    sidebarBounds.minWidth,
+    sidebarPaneStyle,
+    sidebarWidth,
+    tagMetadata.tags,
+  ]);
+  const explorerToolbarPane = useMemo(
+    () => (
+      <div
+        data-overlay-explorer-plane="toolbar"
+        style={toolbarContainerStyle}
+      >
+        {showsGlobalChromeControls && (
+          <ExplorerChromeSurface
+            surface={explorerTopbarSurface}
+            getRowStyle={getExplorerChromeRowStyle}
+            getZoneStyle={getExplorerChromeZoneStyle}
+            renderControl={renderExplorerChromeControl}
+            editMode={explorerChromeEditMode}
+          />
+        )}
+        <ExplorerChromeSurface
+          surface={explorerToolbarSurface}
+          getRowStyle={getExplorerChromeRowStyle}
+          getZoneStyle={getExplorerChromeZoneStyle}
+          renderControl={renderExplorerChromeControl}
+          editMode={explorerChromeEditMode}
+        />
+      </div>
+    ),
+    [
+      explorerChromeEditMode,
+      explorerToolbarSurface,
+      explorerTopbarSurface,
+      getExplorerChromeRowStyle,
+      getExplorerChromeZoneStyle,
+      renderExplorerChromeControl,
+      showsGlobalChromeControls,
+      toolbarContainerStyle,
+    ],
+  );
+  const explorerPreviewPane = useMemo(() => {
+    if (!previewPanelVisible) {
+      return null;
+    }
+
+    return (
+      <PreviewPanel
+        preview={preview}
+        width={previewWidth}
+        placement={previewPlacement}
+        presentationMode={previewSplitMode}
+        previewLocked={previewLocked}
+        previewSurfaceMode={previewSurfaceMode}
+        previewTerminalMounted={previewTerminalMounted}
+        previewTerminalCommandRequest={previewTerminalCommandRequest}
+        previewTerminalWorkingDirectory={previewTerminalWorkingDirectory}
+        previewTerminalReportedWorkingDirectory={
+          previewTerminalReportedWorkingDirectory
+        }
+        previewTerminalNamespace={previewTerminalNamespace}
+        onWidthChange={setPreviewWidth}
+        onTextChange={updatePreviewTextContent}
+        onTextSave={persistPreviewText}
+        onShaderSourceChange={updateShaderPreviewContent}
+        onShaderSelectionChange={updateShaderPreviewSelection}
+        onShaderCompileResult={updateShaderPreviewCompileResult}
+        onShaderSceneChange={updateShaderPreviewScene}
+        onShaderSave={persistShaderPreviewSource}
+        onRefreshPreviewEntry={refresh}
+        onPdfDocumentChange={updatePdfPreviewDocument}
+        onPdfChromeStateChange={handlePdfPreviewChromeStateChange}
+        onRegisterCloseGuard={registerPreviewCloseGuard}
+        onCopyPath={copyToSysClipboard}
+        onTogglePresentationMode={() =>
+          setPreviewSplitMode((current) =>
+            current === "pane" ? "inline" : "pane",
+          )
+        }
+        onTogglePreviewLock={togglePreviewLock}
+        onTogglePreviewTerminal={togglePreviewTerminal}
+        onRunTextScript={runPreviewTextScript}
+        onStopTextScriptRun={stopPreviewTextScriptRun}
+        onPreviewTerminalCommandHandled={handlePreviewTerminalCommandHandled}
+        onPreviewTerminalReportedWorkingDirectoryChange={
+          handlePreviewTerminalReportedWorkingDirectoryChange
+        }
+        viewMode={documentViewMode}
+        onViewModeChange={setDocumentViewMode}
+        activeWorkflowTabId={activePreviewWorkflowTabId}
+        onWorkflowTabChange={setActivePreviewWorkflowTabId}
+        explorerTheme={explorerTheme}
+        blurEnabled={explorerBlurEnabled}
+        chromeLayoutId={effectiveChromeLayoutId}
+        chromeOverride={explorerChromeOverride}
+        chromeEditMode={explorerChromeEditMode}
+        showHiddenFiles={showHidden}
+        editorSettings={editorSettings}
+        shaderPerformanceMode={shaderPerformanceMode}
+        onOpenFolderPreviewEntry={openFolderPreviewEntry}
+        onExtractArchive={(mode) => {
+          if (preview.type === "archive") {
+            void handleArchiveAction(
+              {
+                path: preview.path,
+                name: preview.name,
+                size: preview.size,
+                is_dir: false,
+                modified: Date.now(),
+                extension: getEntryExtension({
+                  name: preview.name,
+                  extension: "",
+                  is_dir: false,
+                }),
+                is_hidden: false,
+                is_symlink: false,
+              },
+              mode,
+            );
+          }
+        }}
+        onClose={() => {
+          void closePreviewPanel();
+        }}
+      />
+    );
+  }, [
+    activePreviewWorkflowTabId,
+    closePreviewPanel,
+    copyToSysClipboard,
+    documentViewMode,
+    editorSettings,
+    effectiveChromeLayoutId,
+    explorerBlurEnabled,
+    explorerChromeEditMode,
+    explorerChromeOverride,
+    explorerTheme,
+    handleArchiveAction,
+    handlePdfPreviewChromeStateChange,
+    handlePreviewTerminalCommandHandled,
+    handlePreviewTerminalReportedWorkingDirectoryChange,
+    openFolderPreviewEntry,
+    persistPreviewText,
+    persistShaderPreviewSource,
+    preview,
+    previewLocked,
+    previewPanelVisible,
+    previewPlacement,
+    previewSplitMode,
+    previewSurfaceMode,
+    previewTerminalCommandRequest,
+    previewTerminalMounted,
+    previewTerminalNamespace,
+    previewTerminalReportedWorkingDirectory,
+    previewTerminalWorkingDirectory,
+    previewWidth,
+    refresh,
+    registerPreviewCloseGuard,
+    runPreviewTextScript,
+    setActivePreviewWorkflowTabId,
+    setDocumentViewMode,
+    setPreviewSplitMode,
+    setPreviewWidth,
+    shaderPerformanceMode,
+    showHidden,
+    stopPreviewTextScriptRun,
+    togglePreviewLock,
+    togglePreviewTerminal,
+    updatePdfPreviewDocument,
+    updatePreviewTextContent,
+    updateShaderPreviewCompileResult,
+    updateShaderPreviewContent,
+    updateShaderPreviewScene,
+    updateShaderPreviewSelection,
+  ]);
 
   return (
     <div
@@ -20338,95 +20668,12 @@ export function FileExplorer({
     >
       <div style={explorerContentRowStyle}>
       {/* ══ SIDEBAR ══ */}
-      {shouldRenderRail && (
-        <div
-          data-overlay-explorer-plane="rail"
-          style={{ display: "flex", minHeight: 0, minWidth: 0 }}
-        >
-          <ResizablePane
-            size={sidebarWidth}
-            minSize={sidebarBounds.minWidth}
-            maxSize={sidebarBounds.maxWidth}
-            onSizeChange={setSidebarWidth}
-            borderColor={`${accent}55`}
-            handleSide={effectiveRailPosition === "right" ? "left" : "right"}
-            style={sidebarPaneStyle}
-          >
-            <ExplorerSideRail
-              appearance={appearance}
-              accent={accent}
-              brandLabel={explorerTheme.railBrandLabel}
-              sidebarWidth={sidebarWidth}
-              currentPath={currentPath}
-              locationTitle={locationTitle}
-              locationLabel={locationLabel}
-              drives={drives}
-              drivesLoading={drivesLoading}
-              showHiddenFiles={showHidden}
-              isCompactDock={isCompactDock}
-              savedSearches={savedSearches}
-              availableTags={tagMetadata.tags}
-              activeTagFilterIds={activeTagFilterIds}
-              onNavigate={navigate}
-              onGoHome={goHome}
-              localTreeRefreshRevision={localTreeRefreshRevision}
-              onOpenSavedSearch={(savedSearch) => {
-                void applySavedSearch(savedSearch);
-              }}
-              onDeleteSavedSearch={(savedSearchId) => {
-                void deleteExplorerSavedSearch(savedSearchId)
-                  .then(() =>
-                    setSavedSearches((current) =>
-                      current.filter(
-                        (savedSearch) => savedSearch.id !== savedSearchId,
-                      ),
-                    ),
-                  )
-                  .catch((deleteError) => setError(String(deleteError)));
-              }}
-              onToggleTagFilter={(tagId) =>
-                setActiveTagFilterIds((current) =>
-                  current.includes(tagId)
-                    ? current.filter((candidate) => candidate !== tagId)
-                    : [...current, tagId],
-                )
-              }
-              onClearTagFilters={() => setActiveTagFilterIds([])}
-              onBookmarkCreated={handleBookmarkCreated}
-              resolveDroppedSources={resolveDroppedBookmarkSources}
-              onCloseSources={closeSourcesPanel}
-              chromeLayoutId={effectiveChromeLayoutId}
-              chromeOverride={explorerChromeOverride}
-              chromeEditMode={explorerChromeEditMode}
-            />
-          </ResizablePane>
-        </div>
-      )}
+      {explorerRailPane}
 
       {/* ══ MAIN ══ */}
       <div data-overlay-explorer-plane="main" style={mainColumnStyle}>
         {/* Toolbar */}
-        <div
-          data-overlay-explorer-plane="toolbar"
-          style={toolbarContainerStyle}
-        >
-          {showsGlobalChromeControls && (
-            <ExplorerChromeSurface
-              surface={explorerTopbarSurface}
-              getRowStyle={getExplorerChromeRowStyle}
-              getZoneStyle={getExplorerChromeZoneStyle}
-              renderControl={renderExplorerChromeControl}
-              editMode={explorerChromeEditMode}
-            />
-          )}
-          <ExplorerChromeSurface
-            surface={explorerToolbarSurface}
-            getRowStyle={getExplorerChromeRowStyle}
-            getZoneStyle={getExplorerChromeZoneStyle}
-            renderControl={renderExplorerChromeControl}
-            editMode={explorerChromeEditMode}
-          />
-        </div>
+        {explorerToolbarPane}
         {repositoryPicker?.active && (
           <div
             style={{
@@ -20872,7 +21119,7 @@ export function FileExplorer({
                           height: activeGridMetrics.newItemHeight,
                           boxSizing: "border-box",
                           transition:
-                            "border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+                            explorerGridCardSizeTransition,
                         }}
                       >
                         <SvgIcon
@@ -20938,7 +21185,7 @@ export function FileExplorer({
                           gap: activeGridMetrics.gap,
                           padding: `0 ${activeGridMetrics.padding}px`,
                           alignItems: "stretch",
-                          transition: "gap 0.14s ease, padding 0.14s ease",
+                          transition: explorerGridContainerTransition,
                         }}
                       >
                         {virtualizedEntries.map((entry) => {
@@ -20966,7 +21213,9 @@ export function FileExplorer({
                                 ? selectedEntrySurface.transform
                                 : idleEntrySurface.transform,
                             baseTransition:
-                              "background 0.14s ease, border-color 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+                              layoutZoomGestureActive
+                                ? "none"
+                                : "background 0.14s ease, border-color 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
                           });
                           return (
                             <div
@@ -21060,8 +21309,7 @@ export function FileExplorer({
                                   boxShadow: thumbnail
                                     ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
                                     : undefined,
-                                  transition:
-                                    "width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+                                  transition: explorerGridStageSizeTransition,
                                 }}
                               >
                                 <ExplorerEntryThumbnailStageContent
@@ -21922,88 +22170,7 @@ export function FileExplorer({
           </div>
 
           {/* Side pane */}
-          {previewPanelVisible && (
-            <PreviewPanel
-              preview={preview}
-              width={previewWidth}
-              placement={previewPlacement}
-              presentationMode={previewSplitMode}
-              previewLocked={previewLocked}
-              previewSurfaceMode={previewSurfaceMode}
-              previewTerminalMounted={previewTerminalMounted}
-              previewTerminalCommandRequest={previewTerminalCommandRequest}
-              previewTerminalWorkingDirectory={previewTerminalWorkingDirectory}
-              previewTerminalReportedWorkingDirectory={
-                previewTerminalReportedWorkingDirectory
-              }
-              previewTerminalNamespace={previewTerminalNamespace}
-              onWidthChange={setPreviewWidth}
-              onTextChange={updatePreviewTextContent}
-              onTextSave={persistPreviewText}
-              onShaderSourceChange={updateShaderPreviewContent}
-              onShaderSelectionChange={updateShaderPreviewSelection}
-              onShaderCompileResult={updateShaderPreviewCompileResult}
-              onShaderSceneChange={updateShaderPreviewScene}
-              onShaderSave={persistShaderPreviewSource}
-              onRefreshPreviewEntry={refresh}
-              onPdfDocumentChange={updatePdfPreviewDocument}
-              onPdfChromeStateChange={handlePdfPreviewChromeStateChange}
-              onRegisterCloseGuard={registerPreviewCloseGuard}
-              onCopyPath={copyToSysClipboard}
-              onTogglePresentationMode={() =>
-                setPreviewSplitMode((current) =>
-                  current === "pane" ? "inline" : "pane",
-                )
-              }
-              onTogglePreviewLock={togglePreviewLock}
-              onTogglePreviewTerminal={togglePreviewTerminal}
-              onRunTextScript={runPreviewTextScript}
-              onStopTextScriptRun={stopPreviewTextScriptRun}
-              onPreviewTerminalCommandHandled={
-                handlePreviewTerminalCommandHandled
-              }
-              onPreviewTerminalReportedWorkingDirectoryChange={
-                handlePreviewTerminalReportedWorkingDirectoryChange
-              }
-              viewMode={documentViewMode}
-              onViewModeChange={setDocumentViewMode}
-              activeWorkflowTabId={activePreviewWorkflowTabId}
-              onWorkflowTabChange={setActivePreviewWorkflowTabId}
-              explorerTheme={explorerTheme}
-              blurEnabled={explorerBlurEnabled}
-              chromeLayoutId={effectiveChromeLayoutId}
-              chromeOverride={explorerChromeOverride}
-              chromeEditMode={explorerChromeEditMode}
-              showHiddenFiles={showHidden}
-              editorSettings={editorSettings}
-              shaderPerformanceMode={shaderPerformanceMode}
-              onOpenFolderPreviewEntry={openFolderPreviewEntry}
-              onExtractArchive={(mode) => {
-                if (preview.type === "archive") {
-                  void handleArchiveAction(
-                    {
-                      path: preview.path,
-                      name: preview.name,
-                      size: preview.size,
-                      is_dir: false,
-                      modified: Date.now(),
-                      extension: getEntryExtension({
-                        name: preview.name,
-                        extension: "",
-                        is_dir: false,
-                      }),
-                      is_hidden: false,
-                      is_symlink: false,
-                    },
-                    mode,
-                  );
-                }
-              }}
-              onClose={() => {
-                void closePreviewPanel();
-              }}
-            />
-          )}
+          {explorerPreviewPane}
         </div>
       </div>
       </div>

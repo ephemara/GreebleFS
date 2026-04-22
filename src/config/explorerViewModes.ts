@@ -60,7 +60,8 @@ export const EXPLORER_GRID_ZOOM_MIN = 0;
 export const EXPLORER_GRID_ZOOM_MAX = 1;
 export const EXPLORER_GRID_ZOOM_STEP = 0.08;
 export const EXPLORER_LAYOUT_ZOOM_MIN = -0.18;
-export const EXPLORER_LAYOUT_ZOOM_MAX = EXPLORER_GRID_ZOOM_MAX;
+export const EXPLORER_LIVE_GRID_ZOOM_MAX = 2.8;
+export const EXPLORER_LAYOUT_ZOOM_MAX = EXPLORER_LIVE_GRID_ZOOM_MAX;
 export const EXPLORER_LAYOUT_ZOOM_LIST_ENTER = -0.08;
 export const EXPLORER_LAYOUT_ZOOM_LIST_EXIT = -0.02;
 
@@ -229,6 +230,13 @@ export function normalizeExplorerGridZoom(value: unknown, fallbackMode: Explorer
   return getExplorerGridZoomAnchor(fallbackMode);
 }
 
+export function normalizeExplorerLiveGridZoom(value: unknown, fallbackMode: ExplorerViewMode = 'icons-l'): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return clamp(value, EXPLORER_GRID_ZOOM_MIN, EXPLORER_LIVE_GRID_ZOOM_MAX);
+  }
+  return getExplorerGridZoomAnchor(fallbackMode);
+}
+
 export function normalizeExplorerLayoutZoom(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return clamp(value, EXPLORER_LAYOUT_ZOOM_MIN, EXPLORER_LAYOUT_ZOOM_MAX);
@@ -278,7 +286,11 @@ export function getAdjacentExplorerGridMode(
 }
 
 export function getExplorerGridMetricsForZoom(gridZoom: number): ExplorerGridMetrics {
-  const zoom = normalizeExplorerGridZoom(gridZoom);
+  const zoom = normalizeExplorerLiveGridZoom(gridZoom);
+  if (zoom > EXPLORER_GRID_ZOOM_MAX) {
+    return getExplorerOversizedGridMetrics(zoom);
+  }
+
   let lowerIndex = 0;
   for (let index = 0; index < explorerGridModeAnchors.length; index += 1) {
     if (explorerGridModeAnchors[index]!.zoom <= zoom) {
@@ -365,11 +377,13 @@ export function resolveExplorerLayoutZoomState(
     };
   }
 
-  const resolvedGridZoom = normalizeExplorerGridZoom(
+  const resolvedGridZoom = normalizeExplorerLiveGridZoom(
     Math.max(EXPLORER_GRID_ZOOM_MIN, state.layoutZoom),
     'icons-l',
   );
-  const viewMode = getNearestExplorerGridMode(resolvedGridZoom);
+  const viewMode = getNearestExplorerGridMode(
+    normalizeExplorerGridZoom(resolvedGridZoom, 'icons-l'),
+  );
   return {
     family: 'grid',
     viewMode,
@@ -400,7 +414,7 @@ export function commitExplorerLayoutZoomState(
 }
 
 export function getExplorerGridZoomPercent(gridZoom: number): number {
-  return Math.round(normalizeExplorerGridZoom(gridZoom) * 100);
+  return Math.round(normalizeExplorerLiveGridZoom(gridZoom) * 100);
 }
 
 export function stepExplorerViewMode(
@@ -442,6 +456,39 @@ function clamp(value: number, min: number, max: number): number {
 
 function lerp(start: number, end: number, t: number): number {
   return start + (end - start) * t;
+}
+
+function easeOutCubic(t: number): number {
+  return 1 - (1 - t) ** 3;
+}
+
+function getExplorerOversizedGridMetrics(gridZoom: number): ExplorerGridMetrics {
+  const baseMetrics = getExplorerViewModeDefinition('icons-xl').grid!;
+  const oversizeProgress = clamp(
+    (gridZoom - EXPLORER_GRID_ZOOM_MAX) /
+      (EXPLORER_LIVE_GRID_ZOOM_MAX - EXPLORER_GRID_ZOOM_MAX),
+    0,
+    1,
+  );
+  const easedProgress = easeOutCubic(oversizeProgress);
+  const tileScale = lerp(1, 3.2, easedProgress);
+  const rowScale = lerp(1, 2.7, easedProgress);
+  const iconScale = lerp(1, 2.45, easedProgress);
+  const stageScale = lerp(1, 2.95, easedProgress);
+  const spacingScale = lerp(1, 2.05, easedProgress);
+
+  return {
+    minWidth: baseMetrics.minWidth * tileScale,
+    gap: baseMetrics.gap * spacingScale,
+    padding: baseMetrics.padding * lerp(1, 1.8, easedProgress),
+    rowHeight: baseMetrics.rowHeight * rowScale,
+    searchRowHeight: baseMetrics.searchRowHeight * lerp(1, 2.78, easedProgress),
+    newItemHeight: baseMetrics.newItemHeight * rowScale,
+    iconSize: baseMetrics.iconSize * iconScale,
+    iconStageSize: baseMetrics.iconStageSize * stageScale,
+    tileRadius: baseMetrics.tileRadius * lerp(1, 1.6, easedProgress),
+    nameLines: Math.max(baseMetrics.nameLines, Math.round(lerp(2, 4, easedProgress))),
+  };
 }
 
 function resolveExplorerLayoutZoomFamily(

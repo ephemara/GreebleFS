@@ -44,6 +44,22 @@ describe('explorerViewModes', () => {
     expect(metrics.minWidth).toBeLessThan(122);
   });
 
+  it('extends the live zoom continuum past icons-xl for oversized browsing without changing the durable anchors', () => {
+    const oversizedMetrics = getExplorerGridMetricsForZoom(2.8);
+
+    expect(oversizedMetrics.minWidth).toBeGreaterThan(560);
+    expect(oversizedMetrics.iconStageSize).toBeGreaterThan(300);
+    expect(oversizedMetrics.nameLines).toBe(4);
+    expect(commitExplorerLayoutZoomState({
+      family: 'grid',
+      layoutZoom: 2.8,
+      storedGridZoom: 1,
+    })).toEqual({
+      viewMode: 'icons-xl',
+      gridZoom: 1,
+    });
+  });
+
   it('treats named icon layouts as anchors while zooming between them', () => {
     expect(getAdjacentExplorerGridMode('icons-l', 'larger')).toBe('icons-xl');
     expect(getAdjacentExplorerGridMode('icons-l', 'smaller')).toBe('icons-m');
