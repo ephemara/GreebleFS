@@ -469,17 +469,47 @@ describe('SettingsPage behavior', () => {
     const enabledToggle = screen.getByRole('checkbox', {
       name: /enable interaction motion/i,
     });
+    const shellChromeToggle = screen.getByRole('checkbox', {
+      name: /enable shell chrome interaction motion/i,
+    });
+    const fileItemsToggle = screen.getByRole('checkbox', {
+      name: /enable files & folders interaction motion/i,
+    });
     const explorerSurfaceToggle = screen.getByRole('checkbox', {
       name: /enable explorer entries interaction motion/i,
     });
 
     expect(enabledToggle).toBeChecked();
+    expect(shellChromeToggle).toBeChecked();
+    expect(fileItemsToggle).toBeChecked();
     expect(explorerSurfaceToggle).toBeChecked();
 
     await user.click(screen.getByRole('button', {
-      name: /use spring interaction motion preset/i,
+      name: /use spring interaction motion preset for shell chrome/i,
     }));
-    expect(useSettingsStore.getState().settings.appearance.interactionMotionPresetId).toBe('spring');
+    expect(useSettingsStore.getState().settings.appearance.interactionMotionModuleOverrides.shellChrome).toMatchObject({
+      presetId: 'spring',
+    });
+
+    await user.click(screen.getByRole('button', {
+      name: /use bounce interaction motion preset for files & folders/i,
+    }));
+    expect(useSettingsStore.getState().settings.appearance.interactionMotionModuleOverrides.fileItems).toMatchObject({
+      presetId: 'bounce',
+    });
+
+    fireEvent.change(screen.getByRole('slider', { name: /squash/i }), {
+      target: { value: '1.6' },
+    });
+    expect(
+      useSettingsStore.getState().settings.appearance.interactionMotionModuleOverrides.fileItems,
+    ).toMatchObject({
+      modifierValuesByPresetId: {
+        bounce: {
+          squash: 1.6,
+        },
+      },
+    });
 
     await user.click(explorerSurfaceToggle);
     expect(useSettingsStore.getState().settings.appearance.interactionMotionSurfaceOverrides.explorerEntry).toBe(false);
@@ -493,7 +523,7 @@ describe('SettingsPage behavior', () => {
     const motionLabEntry = screen.getByText('Idle folder').closest('button');
     expect(motionLabEntry).not.toBeNull();
     expect(motionLabEntry).toHaveAttribute('data-interaction-motion-surface', 'explorerEntry');
-  });
+  }, 30000);
 
   it('applies themed select styling in terminal and system settings', async () => {
     const user = userEvent.setup();

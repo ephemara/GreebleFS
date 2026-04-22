@@ -1,5 +1,24 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Interaction Motion Now Splits Chrome From Files And Exposes KCloner-Style Modifier Knobs
+
+- Interaction Motion no longer behaves like one flat preset applied everywhere. The resolver now routes surfaces through two durable modules:
+  - `shellChrome` for rail items, tabs, top-bar buttons, and settings cards
+  - `fileItems` for explorer rows/cards plus explorer entry icons
+- Durable implementation shape:
+  - `src/config/interactionMotion.ts` now owns `interactionMotionModuleCatalog`, module-aware surface metadata, module override normalization, and module routing helpers. Future interaction surfaces should declare their module there instead of inventing ad hoc override paths.
+  - Appearance settings now persist `interactionMotionModuleOverrides`, letting each module carry its own enabled state, preset selection, intensity multiplier, and per-preset modifier values without breaking the existing global master switch and master intensity.
+  - The KCloner-inspired presets no longer stop at preset selection. `src/config/interactionMotion.ts` now defines per-preset modifier control metadata plus a profile-tuning layer, so families like `bounce`, `lissajous`, `shake`, `float`, `elastic`, and `orbit` expose named control sets (`height`, `squash`, `pace`, `radius`, `spin`, etc.) and the resolver morphs the profile before surface transforms are computed.
+  - `src/components/SettingsPage.tsx` now treats `Interaction Motion` like a real editor surface: one master state card, one module card for `Shell Chrome`, one for `Files & Folders`, per-module preset galleries, per-module intensity, and per-module modifier sliders. Preserve that split instead of collapsing back to a single preset studio.
+- Durable product note:
+  - File/folder interaction and shell-chrome interaction are different authoring problems. Keep them separately routable even when they share resolver infrastructure.
+  - If future work adds cloners, fields, or authorable chains, route them through the module-aware resolver instead of bypassing it, otherwise the theme/default/reduced-motion/per-surface guarantees will fragment.
+- Validation:
+  - passed: `bunx vitest run src/test/interactionMotion.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "updates interaction motion settings and exposes motion-lab preview surfaces" --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "routes explorer entry and preview workflow tab motion through the shared interaction resolver" --reporter=dot`
+  - passed: filtered touched-path TypeScript check for `interactionMotion.ts`, `interactionMotion.tsx`, `SettingsPage.tsx`, `settingsStore.ts`, and the touched tests
+
 # 2026-04-22 - Interaction Motion Became A KCloner-Inspired UI Motion Suite
 
 - Interaction Motion is no longer only three static shell presets. The subsystem now exposes a broader KCloner-style motion family set and can animate explorer icon stages independently from the surrounding row/card shell.

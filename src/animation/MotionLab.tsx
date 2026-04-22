@@ -68,6 +68,15 @@ export function InteractionMotionLab({
     baseTransform: 'translateY(0)',
     baseTransition: sampleTransition,
   });
+  const explorerIconIdleMotion = interactionMotion.bindSurface({
+    surfaceId: 'explorerEntryIcon',
+    baseTransition: chromeTransition,
+  });
+  const explorerIconSelectedMotion = interactionMotion.bindSurface({
+    surfaceId: 'explorerEntryIcon',
+    triggerState: { select: true },
+    baseTransition: chromeTransition,
+  });
   const explorerSelectedMotion = interactionMotion.bindSurface({
     surfaceId: 'explorerEntry',
     triggerState: { select: true },
@@ -248,6 +257,69 @@ export function InteractionMotionLab({
                   <span style={{ display: 'block', fontSize: 9.5, color: muted }}>Drop-hover trigger</span>
                 </span>
               </button>
+            </div>
+
+            <div
+              className="grid grid-cols-2 gap-2"
+              style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}
+            >
+              {[{
+                label: 'Folder Icon',
+                meta: 'Hover / press icon-only motion',
+                binding: explorerIconIdleMotion,
+                icon: <FolderOpen size={16} style={{ color: accent }} />,
+                active: false,
+              }, {
+                label: 'Selected Icon',
+                meta: 'Select trigger on icon stage',
+                binding: explorerIconSelectedMotion,
+                icon: <Sparkles size={16} style={{ color: accent }} />,
+                active: true,
+              }].map(sample => (
+                <button
+                  key={sample.label}
+                  type="button"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'auto 1fr',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    border: `1px solid ${sample.active ? `${accent}66` : border}`,
+                    background: sample.active ? `${accent}10` : 'rgba(255,255,255,0.03)',
+                    color: text,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${border}`,
+                      ...sample.binding.motionStyle,
+                    }}
+                    {...sample.binding.motionDataAttributes}
+                    onPointerEnter={sample.binding.onPointerEnter}
+                    onPointerLeave={sample.binding.onPointerLeave}
+                    onPointerDown={sample.binding.onPointerDown}
+                    onPointerUp={sample.binding.onPointerUp}
+                    onPointerCancel={sample.binding.onPointerCancel}
+                  >
+                    {sample.icon}
+                  </span>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700 }}>{sample.label}</span>
+                    <span style={{ display: 'block', fontSize: 9.5, color: muted }}>{sample.meta}</span>
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
         </MotionLabSampleSurface>

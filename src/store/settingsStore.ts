@@ -61,8 +61,10 @@ import {
 } from '../config/overlayAnimations';
 import {
   clampInteractionMotionIntensity,
+  normalizeInteractionMotionModuleOverrideMap,
   normalizeInteractionMotionPresetId,
   normalizeInteractionMotionSurfaceOverrideMap,
+  type OverlayInteractionMotionModuleOverrideMap,
   type OverlayInteractionMotionSurfaceOverrideMap,
 } from '../config/interactionMotion';
 import {
@@ -218,6 +220,7 @@ export interface AppearanceSettings {
   interactionMotionEnabled: boolean;
   interactionMotionPresetId: string | null;
   interactionMotionIntensity: number;
+  interactionMotionModuleOverrides: OverlayInteractionMotionModuleOverrideMap;
   interactionMotionSurfaceOverrides: OverlayInteractionMotionSurfaceOverrideMap;
 }
 
@@ -764,6 +767,9 @@ function normalizeAppearanceSettings(
       merged.interactionMotionIntensity,
       base.interactionMotionIntensity,
     ),
+    interactionMotionModuleOverrides: normalizeInteractionMotionModuleOverrideMap(
+      merged.interactionMotionModuleOverrides ?? base.interactionMotionModuleOverrides,
+    ),
     interactionMotionSurfaceOverrides: normalizeInteractionMotionSurfaceOverrideMap(
       merged.interactionMotionSurfaceOverrides ?? base.interactionMotionSurfaceOverrides,
     ),
@@ -942,6 +948,7 @@ export const defaultSettings: Settings = {
     interactionMotionEnabled: true,
     interactionMotionPresetId: null,
     interactionMotionIntensity: 1.0,
+    interactionMotionModuleOverrides: {},
     interactionMotionSurfaceOverrides: {},
   },
   system: {

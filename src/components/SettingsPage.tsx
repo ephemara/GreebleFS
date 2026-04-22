@@ -101,10 +101,15 @@ import { getBuiltInIconTheme, resolveFileIconSrc } from '../config/iconTheme';
 import { animationSystemConfig, resolvePreferredAnimationId } from '../config/animations';
 import {
   clampInteractionMotionIntensity,
+  formatInteractionMotionModifierControlValue,
+  getInteractionMotionProfileModifierControls,
+  interactionMotionModuleCatalog,
   interactionMotionPresetOptions,
   interactionMotionSurfaceCatalog,
+  normalizeInteractionMotionModuleOverride,
   normalizeInteractionMotionPresetId,
-  resolveInteractionMotionProfileId,
+  resolveInteractionMotionModifierValues,
+  resolveInteractionMotionModuleProfileId,
 } from '../config/interactionMotion';
 import {
   getOverlayWallpaperFitModeLabel,
@@ -2212,16 +2217,60 @@ export function SettingsPage({
     () => normalizeInteractionMotionPresetId(appAppearance.baseTheme.interactionMotion?.defaultPresetId),
     [appAppearance.baseTheme.interactionMotion?.defaultPresetId],
   );
-  const effectiveInteractionMotionPresetId = useMemo(
-    () => resolveInteractionMotionProfileId({
-      userOverrideId: settings.appearance.interactionMotionPresetId,
-      themeDefaultPresetId: themeInteractionMotionPresetId,
-    }),
-    [settings.appearance.interactionMotionPresetId, themeInteractionMotionPresetId],
+  const sharedInteractionMotionPresetId = useMemo(
+    () => normalizeInteractionMotionPresetId(settings.appearance.interactionMotionPresetId),
+    [settings.appearance.interactionMotionPresetId],
   );
-  const effectiveInteractionMotionProfile = useMemo(
-    () => interactionMotionPresetOptions.find(option => option.id === effectiveInteractionMotionPresetId) ?? interactionMotionPresetOptions[0],
-    [effectiveInteractionMotionPresetId],
+  const interactionMotionPresetGroups = useMemo(() => ([
+    {
+      id: 'system',
+      label: 'System Profiles',
+      subtitle: 'Fast shell defaults tuned for everyday UI interaction.',
+      options: interactionMotionPresetOptions.filter(option => option.groupId === 'system'),
+    },
+    {
+      id: 'kcloner',
+      label: 'KCloner Motion Set',
+      subtitle: 'Cinema4D / MoGraph-flavored UI motion families pulled into the shell.',
+      options: interactionMotionPresetOptions.filter(option => option.groupId === 'kcloner'),
+    },
+  ]), []);
+  const interactionMotionModuleEditorStates = useMemo(() => (
+    interactionMotionModuleCatalog.map(module => {
+      const moduleOverride = normalizeInteractionMotionModuleOverride(
+        settings.appearance.interactionMotionModuleOverrides[module.id],
+      );
+      const effectivePresetId = resolveInteractionMotionModuleProfileId({
+        moduleId: module.id,
+        settings: settings.appearance,
+        themeDefaultPresetId: themeInteractionMotionPresetId,
+      });
+      const effectiveProfile = interactionMotionPresetOptions.find(option => option.id === effectivePresetId)
+        ?? interactionMotionPresetOptions[0];
+      const modifierControls = getInteractionMotionProfileModifierControls(effectivePresetId);
+      const modifierValues = resolveInteractionMotionModifierValues(
+        effectivePresetId,
+        moduleOverride.modifierValuesByPresetId[effectivePresetId],
+      );
+
+      return {
+        module,
+        moduleOverride,
+        effectivePresetId,
+        effectiveProfile,
+        modifierControls,
+        modifierValues,
+      };
+    })
+  ), [
+    settings.appearance,
+    themeInteractionMotionPresetId,
+  ]);
+  const effectiveInteractionMotionProfileLabel = useMemo(
+    () => interactionMotionModuleEditorStates
+      .map(state => `${state.module.label}: ${state.effectiveProfile.label}`)
+      .join(' · '),
+    [interactionMotionModuleEditorStates],
   );
   const bindSettingsCardMotion = useCallback((active = false) => (
     settingsInteractionMotion.bindSurface({
@@ -2230,6 +2279,70 @@ export function SettingsPage({
       baseTransition: settingsCardTransition,
     })
   ), [settingsCardTransition, settingsInteractionMotion]);
+  const setInteractionMotionModuleEnabled = useCallback((moduleId: (typeof interactionMotionModuleCatalog)[number]['id'], enabled: boolean) => {
+    const currentOverride = normalizeInteractionMotionModuleOverride(
+      settings.appearance.interactionMotionModuleOverrides[moduleId],
+    );
+    updateAppearance({
+      interactionMotionModuleOverrides: {
+        ...settings.appearance.interactionMotionModuleOverrides,
+        [moduleId]: {
+          ...currentOverride,
+          enabled,
+        },
+      },
+    });
+  }, [settings.appearance.interactionMotionModuleOverrides, updateAppearance]);
+  const setInteractionMotionModulePresetId = useCallback((moduleId: (typeof interactionMotionModuleCatalog)[number]['id'], presetId: string | null) => {
+    const currentOverride = normalizeInteractionMotionModuleOverride(
+      settings.appearance.interactionMotionModuleOverrides[moduleId],
+    );
+    updateAppearance({
+      interactionMotionModuleOverrides: {
+        ...settings.appearance.interactionMotionModuleOverrides,
+        [moduleId]: {
+          ...currentOverride,
+          presetId,
+        },
+      },
+    });
+  }, [settings.appearance.interactionMotionModuleOverrides, updateAppearance]);
+  const setInteractionMotionModuleIntensity = useCallback((moduleId: (typeof interactionMotionModuleCatalog)[number]['id'], intensityMultiplier: number) => {
+    const currentOverride = normalizeInteractionMotionModuleOverride(
+      settings.appearance.interactionMotionModuleOverrides[moduleId],
+    );
+    updateAppearance({
+      interactionMotionModuleOverrides: {
+        ...settings.appearance.interactionMotionModuleOverrides,
+        [moduleId]: {
+          ...currentOverride,
+          intensityMultiplier: clampInteractionMotionIntensity(intensityMultiplier),
+        },
+      },
+    });
+  }, [settings.appearance.interactionMotionModuleOverrides, updateAppearance]);
+  const setInteractionMotionModuleModifierValue = useCallback((moduleId: (typeof interactionMotionModuleCatalog)[number]['id'], presetId: string, controlId: string, value: number) => {
+    const currentOverride = normalizeInteractionMotionModuleOverride(
+      settings.appearance.interactionMotionModuleOverrides[moduleId],
+    );
+    const nextModifierValuesByPresetId = {
+      ...currentOverride.modifierValuesByPresetId,
+      [presetId]: {
+        ...(currentOverride.modifierValuesByPresetId[presetId] ?? {}),
+        [controlId]: value,
+      },
+    };
+
+    updateAppearance({
+      interactionMotionModuleOverrides: {
+        ...settings.appearance.interactionMotionModuleOverrides,
+        [moduleId]: {
+          ...currentOverride,
+          modifierValuesByPresetId: nextModifierValuesByPresetId,
+        },
+      },
+    });
+  }, [settings.appearance.interactionMotionModuleOverrides, updateAppearance]);
   const setInteractionMotionSurfaceEnabled = useCallback((surfaceId: (typeof interactionMotionSurfaceCatalog)[number]['id'], enabled: boolean) => {
     const nextOverrides = { ...settings.appearance.interactionMotionSurfaceOverrides };
     const currentOverride = nextOverrides[surfaceId];
@@ -3164,7 +3277,7 @@ export function SettingsPage({
     availableAnimationsCount: availableAnimations.length,
     animationFailureCount: animationFailures.length,
     interactionMotionEnabled: settings.appearance.interactionMotionEnabled,
-    interactionMotionProfileLabel: effectiveInteractionMotionProfile?.label ?? 'Subtle',
+    interactionMotionProfileLabel: effectiveInteractionMotionProfileLabel,
     interactionMotionSurfaceCount: interactionMotionSurfaceCatalog.length,
     topBarSelectionSummary,
     availableTopBarsCount: availableTopBars.length,
@@ -3184,7 +3297,7 @@ export function SettingsPage({
     connectedCloudAccountCount,
     configuredCloudProviderCount,
     effectiveTheme.name,
-    effectiveInteractionMotionProfile?.label,
+    effectiveInteractionMotionProfileLabel,
     followThemeTopBarDetail,
     homePackSummary,
     iconThemeSelectionSummary,
@@ -5678,88 +5791,242 @@ export function SettingsPage({
                       </span>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                      <div className="space-y-3">
-                        <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Resolver State</div>
-                              <p className="mt-1 text-[11px] opacity-45">
-                                Current live profile: <strong>{effectiveInteractionMotionProfile?.label ?? 'Subtle'}</strong>.
-                                {' '}
-                                {settings.appearance.interactionMotionPresetId == null
-                                  ? (themeInteractionMotionPresetId
-                                    ? `Following theme default ${themeInteractionMotionPresetId}.`
-                                    : 'Following the built-in subtle fallback.')
-                                  : 'Pinned by Settings.'}
-                              </p>
-                            </div>
-                            <label className="inline-flex items-center gap-2 text-[11px] font-medium" style={{ color: text }}>
-                              <input
-                                type="checkbox"
-                                aria-label="Enable interaction motion"
-                                checked={settings.appearance.interactionMotionEnabled}
-                                onChange={event => updateAppearance({ interactionMotionEnabled: event.target.checked })}
-                              />
-                              <span>Enable Interaction Motion</span>
-                            </label>
+                    <div className="mt-3 space-y-3">
+                      <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Resolver State</div>
+                            <p className="mt-1 text-[11px] opacity-45">
+                              Chrome lane and file/folder lane resolve separately now. Current live routing:
+                              {' '}
+                              <strong>{effectiveInteractionMotionProfileLabel}</strong>.
+                            </p>
                           </div>
+                          <label className="inline-flex items-center gap-2 text-[11px] font-medium" style={{ color: text }}>
+                            <input
+                              type="checkbox"
+                              aria-label="Enable interaction motion"
+                              checked={settings.appearance.interactionMotionEnabled}
+                              onChange={event => updateAppearance({ interactionMotionEnabled: event.target.checked })}
+                            />
+                            <span>Enable Interaction Motion</span>
+                          </label>
                         </div>
 
-                        <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Preset Source</div>
-                          <div className="mt-3 flex flex-wrap gap-2">
+                        {sharedInteractionMotionPresetId && (
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded border px-3 py-2" style={{ borderColor: `${accent}44`, background: `${accent}0c` }}>
+                            <div>
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: accent }}>Shared Legacy Fallback</div>
+                              <div className="mt-1 text-[10px] leading-4 opacity-55">
+                                Old shared preset <strong>{sharedInteractionMotionPresetId}</strong> still exists. Module cards can override it, or clear it so only theme + module routing remain.
+                              </div>
+                            </div>
                             <button
                               type="button"
-                              aria-label="Follow theme interaction motion preset"
+                              aria-label="Clear shared interaction motion fallback"
                               onClick={() => updateAppearance({ interactionMotionPresetId: null })}
-                              className="rounded px-3 py-2 text-left transition-colors"
+                              className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
                               style={{
-                                border: `1px solid ${settings.appearance.interactionMotionPresetId == null ? accent : border}`,
-                                background: settings.appearance.interactionMotionPresetId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                                color: text,
+                                border: `1px solid ${accent}66`,
+                                background: `${accent}16`,
+                                color: accent,
                               }}
                             >
-                              <div className="text-[11px] font-semibold">Follow Theme</div>
-                              <div className="mt-1 text-[10px] opacity-50">
-                                {themeInteractionMotionPresetId
-                                  ? `Theme default: ${themeInteractionMotionPresetId}`
-                                  : 'Falls back to subtle when the theme does not declare one.'}
-                              </div>
+                              Clear Shared Fallback
                             </button>
-                            {interactionMotionPresetOptions.map(option => {
-                              const active = settings.appearance.interactionMotionPresetId === option.id;
-                              return (
-                                <button
-                                  key={`interaction-motion-preset-${option.id}`}
-                                  type="button"
-                                  aria-label={`Use ${option.label} interaction motion preset`}
-                                  onClick={() => updateAppearance({ interactionMotionPresetId: option.id })}
-                                  className="rounded px-3 py-2 text-left transition-colors"
-                                  style={{
-                                    border: `1px solid ${active ? accent : border}`,
-                                    background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                                    color: text,
-                                  }}
-                                >
-                                  <div className="text-[11px] font-semibold">{option.label}</div>
-                                  <div className="mt-1 max-w-[16rem] text-[10px] leading-4 opacity-50">{option.description}</div>
-                                </button>
-                              );
-                            })}
                           </div>
-                        </div>
+                        )}
+                      </div>
 
-                        <RangeField
-                          label="Interaction Intensity"
-                          description="Scale the shared motion profile without changing which preset or theme recipe is active."
-                          min={0.25}
-                          max={2.5}
-                          step={0.05}
-                          value={settings.appearance.interactionMotionIntensity}
-                          valueLabel={`${settings.appearance.interactionMotionIntensity.toFixed(2)}x`}
-                          onChange={value => updateAppearance({ interactionMotionIntensity: clampInteractionMotionIntensity(value) })}
-                        />
+                      <RangeField
+                        label="Master Motion Intensity"
+                        description="Global multiplier applied before each module lane and per-surface override. Use this as the broad shell-wide gain control."
+                        min={0.25}
+                        max={2.5}
+                        step={0.05}
+                        value={settings.appearance.interactionMotionIntensity}
+                        valueLabel={`${settings.appearance.interactionMotionIntensity.toFixed(2)}x`}
+                        onChange={value => updateAppearance({ interactionMotionIntensity: clampInteractionMotionIntensity(value) })}
+                      />
+
+                      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        {interactionMotionModuleEditorStates.map(moduleState => {
+                          const moduleEnabled = moduleState.moduleOverride.enabled !== false;
+                          const followLabel = moduleState.moduleOverride.presetId == null
+                            ? (sharedInteractionMotionPresetId
+                              ? `Following shared fallback ${sharedInteractionMotionPresetId}.`
+                              : themeInteractionMotionPresetId
+                                ? `Following theme default ${themeInteractionMotionPresetId}.`
+                                : 'Following the built-in subtle fallback.')
+                            : 'Pinned by module settings.';
+
+                          return (
+                            <div
+                              key={`interaction-motion-module-${moduleState.module.id}`}
+                              className="rounded border p-3"
+                              style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{moduleState.module.label}</div>
+                                  <p className="mt-1 text-[11px] leading-4 opacity-45">
+                                    {moduleState.module.description}
+                                    {' '}
+                                    Live preset: <strong>{moduleState.effectiveProfile.label}</strong>. {followLabel}
+                                  </p>
+                                </div>
+                                <label className="inline-flex items-center gap-2 text-[11px] font-medium" style={{ color: text }}>
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Enable ${moduleState.module.label} interaction motion`}
+                                    checked={moduleEnabled}
+                                    onChange={event => setInteractionMotionModuleEnabled(moduleState.module.id, event.target.checked)}
+                                  />
+                                  <span>Lane Enabled</span>
+                                </label>
+                              </div>
+
+                              <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Preset Studio</div>
+                                    <div className="mt-1 text-[10px] leading-4 opacity-45">
+                                      Pick motion family per lane. Files can bounce while chrome stays restrained, or vice versa.
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    aria-label={`Follow theme interaction motion preset for ${moduleState.module.label}`}
+                                    onClick={() => setInteractionMotionModulePresetId(moduleState.module.id, null)}
+                                    className="rounded px-3 py-2 text-left transition-colors"
+                                    style={{
+                                      border: `1px solid ${moduleState.moduleOverride.presetId == null ? accent : border}`,
+                                      background: moduleState.moduleOverride.presetId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                      color: text,
+                                      minWidth: '14rem',
+                                    }}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-[11px] font-semibold">Follow Routing</span>
+                                      <span className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: moduleState.moduleOverride.presetId == null ? accent : muted }}>
+                                        Default Path
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 text-[10px] leading-4 opacity-50">{followLabel}</div>
+                                  </button>
+                                </div>
+
+                                <div className="mt-4 space-y-3">
+                                  {interactionMotionPresetGroups.map(group => (
+                                    <div key={`${moduleState.module.id}-${group.id}`} className="space-y-2">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{group.label}</div>
+                                          <div className="mt-1 text-[10px] leading-4 opacity-45">{group.subtitle}</div>
+                                        </div>
+                                        <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                                          {group.options.length} presets
+                                        </span>
+                                      </div>
+
+                                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                                        {group.options.map(option => {
+                                          const active = moduleState.moduleOverride.presetId === option.id;
+                                          return (
+                                            <button
+                                              key={`interaction-motion-preset-${moduleState.module.id}-${option.id}`}
+                                              type="button"
+                                              aria-label={`Use ${option.label} interaction motion preset for ${moduleState.module.label}`}
+                                              onClick={() => setInteractionMotionModulePresetId(moduleState.module.id, option.id)}
+                                              className="rounded px-3 py-3 text-left transition-colors"
+                                              style={{
+                                                border: `1px solid ${active ? accent : border}`,
+                                                background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                                color: text,
+                                              }}
+                                            >
+                                              <div className="flex items-start justify-between gap-2">
+                                                <div>
+                                                  <div className="text-[11px] font-semibold">{option.label}</div>
+                                                  <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: active ? accent : muted }}>
+                                                    {group.label}
+                                                  </div>
+                                                </div>
+                                                {moduleState.effectivePresetId === option.id && (
+                                                  <span className="rounded border px-1.5 py-1 text-[8px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: `${accent}66`, color: accent }}>
+                                                    Live
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <div className="mt-2 text-[10px] leading-4 opacity-50">{option.description}</div>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="mt-3">
+                                <RangeField
+                                  label={`${moduleState.module.label} Intensity`}
+                                  description="Lane-specific multiplier after the master intensity. Use this to keep chrome restrained while files/icons go harder."
+                                  min={0.25}
+                                  max={2.5}
+                                  step={0.05}
+                                  value={moduleState.moduleOverride.intensityMultiplier}
+                                  valueLabel={`${moduleState.moduleOverride.intensityMultiplier.toFixed(2)}x`}
+                                  onChange={value => setInteractionMotionModuleIntensity(moduleState.module.id, value)}
+                                />
+                              </div>
+
+                              <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Modifier Controls</div>
+                                    <div className="mt-1 text-[10px] leading-4 opacity-45">
+                                      Selected preset exposes its own tweak set, KCloner-style.
+                                    </div>
+                                  </div>
+                                  <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                                    {moduleState.modifierControls.length > 0 ? `${moduleState.modifierControls.length} knobs` : 'No extra knobs'}
+                                  </span>
+                                </div>
+
+                                {moduleState.modifierControls.length > 0 ? (
+                                  <div className="mt-3 space-y-3">
+                                    {moduleState.modifierControls.map(control => (
+                                      <RangeField
+                                        key={`${moduleState.module.id}-${moduleState.effectivePresetId}-${control.id}`}
+                                        label={control.label}
+                                        description={control.description}
+                                        min={control.min}
+                                        max={control.max}
+                                        step={control.step}
+                                        value={moduleState.modifierValues[control.id]}
+                                        valueLabel={formatInteractionMotionModifierControlValue(
+                                          control,
+                                          moduleState.modifierValues[control.id],
+                                        )}
+                                        onChange={value => setInteractionMotionModuleModifierValue(
+                                          moduleState.module.id,
+                                          moduleState.effectivePresetId,
+                                          control.id,
+                                          value,
+                                        )}
+                                      />
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="mt-3 rounded border px-3 py-2 text-[10px] leading-4 opacity-55" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                                    This profile stays simple. Switch to a KCloner motion family to get a richer tweak set for this lane.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
 
                       <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
@@ -5767,7 +6034,7 @@ export function SettingsPage({
                           <div>
                             <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Surface Overrides</div>
                             <p className="mt-1 text-[11px] opacity-45">
-                              Disable motion on a surface without changing theme recipe or preset for rest of shell.
+                              Disable motion on one surface without changing the module preset or tweak values feeding the rest of that lane.
                             </p>
                           </div>
                           <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
@@ -5775,34 +6042,52 @@ export function SettingsPage({
                           </span>
                         </div>
 
-                        <div className="mt-3 grid grid-cols-1 gap-2">
-                          {interactionMotionSurfaceCatalog.map(surface => {
-                            const override = settings.appearance.interactionMotionSurfaceOverrides[surface.id];
-                            const surfaceEnabled = typeof override === 'boolean'
-                              ? override
-                              : override?.enabled !== false;
-                            return (
-                              <label
-                                key={`interaction-motion-surface-${surface.id}`}
-                                className="flex items-start gap-3 rounded border px-3 py-2"
-                                style={{
-                                  borderColor: surfaceEnabled ? border : `${accent}44`,
-                                  background: surfaceEnabled ? 'rgba(255,255,255,0.02)' : `${accent}0c`,
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  aria-label={`Enable ${surface.label} interaction motion`}
-                                  checked={surfaceEnabled}
-                                  onChange={event => setInteractionMotionSurfaceEnabled(surface.id, event.target.checked)}
-                                />
-                                <span style={{ minWidth: 0 }}>
-                                  <span className="text-[11px] font-semibold" style={{ color: text }}>{surface.label}</span>
-                                  <span className="mt-1 block text-[10px] leading-4 opacity-50">{surface.description}</span>
+                        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                          {interactionMotionModuleCatalog.map(module => (
+                            <div key={`interaction-motion-surface-group-${module.id}`} className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{module.label}</div>
+                                  <div className="mt-1 text-[10px] leading-4 opacity-45">{module.description}</div>
+                                </div>
+                                <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                                  {module.surfaceIds.length} surfaces
                                 </span>
-                              </label>
-                            );
-                          })}
+                              </div>
+
+                              <div className="mt-3 grid grid-cols-1 gap-2">
+                                {interactionMotionSurfaceCatalog
+                                  .filter(surface => surface.moduleId === module.id)
+                                  .map(surface => {
+                                    const override = settings.appearance.interactionMotionSurfaceOverrides[surface.id];
+                                    const surfaceEnabled = typeof override === 'boolean'
+                                      ? override
+                                      : override?.enabled !== false;
+                                    return (
+                                      <label
+                                        key={`interaction-motion-surface-${surface.id}`}
+                                        className="flex items-start gap-3 rounded border px-3 py-2"
+                                        style={{
+                                          borderColor: surfaceEnabled ? border : `${accent}44`,
+                                          background: surfaceEnabled ? 'rgba(255,255,255,0.02)' : `${accent}0c`,
+                                        }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          aria-label={`Enable ${surface.label} interaction motion`}
+                                          checked={surfaceEnabled}
+                                          onChange={event => setInteractionMotionSurfaceEnabled(surface.id, event.target.checked)}
+                                        />
+                                        <span style={{ minWidth: 0 }}>
+                                          <span className="text-[11px] font-semibold" style={{ color: text }}>{surface.label}</span>
+                                          <span className="mt-1 block text-[10px] leading-4 opacity-50">{surface.description}</span>
+                                        </span>
+                                      </label>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </div>
