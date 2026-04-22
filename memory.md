@@ -1,5 +1,27 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Explorer Drag/Drop Now Uses A Central Interaction Runtime
+
+- Explorer file moving no longer relies on pane-local `dragOver` state and scattered `onDrop` branches. The drag/drop interaction path now routes through one shared controller in `src/components/explorer/explorerDragAndDrop.ts`.
+- Durable implementation shape:
+  - Added `src/config/explorerDragInteractions.ts` as the data-driven source of truth for drag-surface priorities, dwell timings, and overlay pointer offsets. Extend that file first instead of hardcoding target precedence or hover-open timing inside `FileExplorer.tsx`.
+  - `src/components/explorer/explorerDragAndDrop.ts` now owns three concerns:
+    - shared drag session continuity for internal/native-out drags
+    - semantic drop-surface bindings (`scope-root`, `directory-target`, `navigation-target`) that UI surfaces attach declaratively
+    - central drag interaction state for active-target resolution, invalid-drop rejection, and hover-dwell auto-open
+  - `src/components/FileExplorer.tsx` now treats the explorer shell as a transport surface. The outer explorer root captures DOM drag events, the main pane registers the current-folder scope root, and folder cards plus breadcrumbs only register semantic targets through the shared binding helper.
+  - `src/components/explorer/ExplorerWorkspace.tsx` now renders `ExplorerDragOverlay` once for the workspace and registers workspace tabs as navigation hover targets so drag-dwell can activate tabs without pane-local hacks.
+  - `src/components/explorer/ExplorerSideRail.tsx` keeps bookmark-group import behavior, but bookmark rows with real filesystem paths now register as file-drop navigation targets through the same controller. Empty bookmark-space import remains separate on purpose.
+- Durable product note:
+  - Current-folder fallback now belongs to the registered scope root, not to random DOM gaps. If drag behavior regresses, inspect which semantic surface is registered for that area before adding another direct `onDragOver`.
+  - Direct file-card drops intentionally resolve to the owning current folder unless the pointer is over a registered directory target.
+  - Workspace tabs now participate in the shared drag state for hover activation and feedback, but direct “drop onto a tab chip and transfer immediately” is still weaker than pane/body folder drops. If that workflow needs to become first-class later, extend the shared controller with an explicit workspace-level drop executor instead of reintroducing local tab handlers.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerDragAndDrop.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "moves multi-selected files into the hovered folder without leaking the drop to the viewport root|moves native same-window drags into the hovered folder via the Tauri drag-drop listener|drops native same-window drags into the current folder when the pointer is over a file card|keeps explorer drags internal when Shift is held|starts native drag on plain explorer drags while keeping in-app payloads available" --pool=forks --reporter=dot`
+  - passed: `bunx vitest run src/test/explorerSideRail.test.tsx --reporter=dot`
+  - note: filtered `tsc` grep over the touched explorer drag files emitted no touched-file errors; full repo typecheck still has unrelated branch drift outside this pass.
+
 # 2026-04-22 - Premium Sliders Became A Shared Shell Primitive
 
 - The shell no longer relies on scattered native `input[type="range"]` controls for premium-facing tuning surfaces. Slider styling and behavior now route through a shared Radix-backed primitive so motion settings, editors, and preview workbenches all inherit the same interaction quality.

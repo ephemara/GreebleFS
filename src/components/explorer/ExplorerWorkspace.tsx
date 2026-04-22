@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, CopyPlus, MoreHorizontal, Plus, SquareSplitHorizontal, X } from '@/components/AppIcons';
 import { useShallow } from 'zustand/react/shallow';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
+import { detectClientPlatform } from '../../config/platform';
 import {
   moveExplorerChromeControlInResolvedSurfaces,
   resolveExplorerChromeSurfaceLayout,
@@ -40,6 +41,7 @@ import {
 import { useSettingsStore } from '../../store/settingsStore';
 import type { SettingsSectionKey } from '../../config/settingsNavigation';
 import { ExplorerChromeSurface } from './ExplorerChromeSurface';
+import { ExplorerDragOverlay } from './ExplorerDragOverlay';
 import { FileExplorer } from '../FileExplorer';
 import type {
   ExplorerWorkspaceNavigationRequest,
@@ -49,6 +51,16 @@ import type {
   ExplorerWorkspaceSelectionTransferRequest,
   ExplorerWorkspaceSelectionTransferResult,
 } from '../FileExplorer';
+import {
+  clearExplorerDragInteractionTarget,
+  createExplorerDropSurfaceBinding,
+  doesExplorerPayloadMatchSharedDragSession,
+  getExplorerSharedDragSession,
+  getExplorerDragInteractionState,
+  getExplorerDropScopeId,
+  readExplorerPathsFromDataTransfer,
+  updateExplorerDragInteractionFromPoint,
+} from './explorerDragAndDrop';
 
 interface ExplorerWorkspaceProps {
   theme: { accent: string; bg: string; bgPanel: string; text: string; border: string; textMuted: string };
@@ -217,6 +229,7 @@ export function ExplorerWorkspace({
     () => appearance?.explorerTheme ?? resolveExplorerThemeRecipe(appearance),
     [appearance],
   );
+  const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const explorerChromeThemeId = useMemo(() => {
     const resolvedAppearanceThemeId = appearance?.baseTheme.id?.trim();
     if (resolvedAppearanceThemeId) {
@@ -259,6 +272,55 @@ export function ExplorerWorkspace({
     ),
     [visiblePaneIds, workspace.focusedPane],
   );
+  const resolveWorkspaceDragPayload = useCallback((dataTransfer: DataTransfer | null | undefined) => {
+    const sharedDragSession = getExplorerSharedDragSession();
+    const sourcePaths = readExplorerPathsFromDataTransfer({
+      dataTransfer,
+      fallbackPaths: sharedDragSession?.paths ?? [],
+    });
+    const payloadMatchesSharedDrag = sourcePaths.length === 0
+      ? Boolean(sharedDragSession?.paths.length)
+      : doesExplorerPayloadMatchSharedDragSession({
+        payloadPaths: sourcePaths,
+        platform: runtimePlatform,
+        session: sharedDragSession,
+      });
+    const isInternalDrag = Boolean(sharedDragSession)
+      && (sourcePaths.length === 0 || payloadMatchesSharedDrag);
+    return {
+      sourceKind: isInternalDrag ? 'internal' : 'external',
+      operation: isInternalDrag ? 'move' : 'copy',
+      sourcePaths,
+    } as const;
+  }, [runtimePlatform]);
+  const onWorkspaceDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const dragPayload = resolveWorkspaceDragPayload(event.dataTransfer);
+    const hit = updateExplorerDragInteractionFromPoint({
+      pointer: { x: event.clientX, y: event.clientY },
+      sourceKind: dragPayload.sourceKind,
+      sourcePaths: dragPayload.sourcePaths,
+      operation: event.shiftKey ? 'copy' : dragPayload.operation,
+      platform: runtimePlatform,
+      externalWindowItemCount: dragPayload.sourceKind === 'external' ? dragPayload.sourcePaths.length : 0,
+    });
+    if (!hit || !hit.surfaceId.startsWith('workspace-tab-')) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const interactionState = getExplorerDragInteractionState();
+    event.dataTransfer.dropEffect = interactionState.valid ? (event.shiftKey ? 'copy' : dragPayload.operation) : 'none';
+  }, [resolveWorkspaceDragPayload, runtimePlatform]);
+  const onWorkspaceDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const relatedTarget = event.relatedTarget;
+    if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) {
+      return;
+    }
+    const interactionState = getExplorerDragInteractionState();
+    if (interactionState.targetSurfaceId?.startsWith('workspace-tab-')) {
+      clearExplorerDragInteractionTarget();
+    }
+  }, []);
   const activeTab = activeTabByPane[activePane]
     ?? visiblePaneIds.map((paneId) => activeTabByPane[paneId]).find((tab): tab is ExplorerTabSnapshot => Boolean(tab))
     ?? null;
@@ -728,6 +790,17 @@ export function ExplorerWorkspace({
               ?? '';
             const isActive = activeTab?.id === tab.id;
             const moveTargetPaneId = getNextVisiblePaneId(visiblePaneIds, activePane);
+            const tabDropBinding = currentPath.trim()
+              ? createExplorerDropSurfaceBinding({
+                surfaceId: `workspace-tab-${tab.id}`,
+                scopeId: getExplorerDropScopeId(tab.instanceId),
+                role: 'navigation-target',
+                targetPath: currentPath,
+                autoOpenDelayMs: 800,
+                onAutoOpen: () => focusWorkspaceTab(tab.id),
+                label: getTabDisplayLabel(tab, currentPath),
+              })
+              : null;
             return (
               <div
                 key={tab.id}
@@ -735,6 +808,11 @@ export function ExplorerWorkspace({
               >
                 <button
                   type="button"
+                  ref={tabDropBinding?.ref}
+                  data-overlay-explorer-drop-scope-id={tabDropBinding?.["data-overlay-explorer-drop-scope-id"]}
+                  data-overlay-explorer-drop-surface-role={tabDropBinding?.["data-overlay-explorer-drop-surface-role"]}
+                  data-overlay-explorer-drop-surface-id={tabDropBinding?.["data-overlay-explorer-drop-surface-id"]}
+                  data-overlay-drop-target-path={tabDropBinding?.["data-overlay-drop-target-path"]}
                   onClick={() => focusWorkspaceTab(tab.id)}
                   title={currentPath || tab.title || 'Explorer'}
                   style={workspaceTabButtonStyle(isActive)}
@@ -1174,10 +1252,11 @@ export function ExplorerWorkspace({
             >
               Open Explorer
             </button>
-          </div>
-        </div>
-      );
-    }
+      </div>
+      <ExplorerDragOverlay />
+    </div>
+  );
+}
 
     return (
       <div
@@ -1300,6 +1379,8 @@ export function ExplorerWorkspace({
   return (
     <div
       ref={containerRef}
+      onDragOver={onWorkspaceDragOver}
+      onDragLeave={onWorkspaceDragLeave}
       style={{
         display: 'flex',
         flexDirection: 'column',

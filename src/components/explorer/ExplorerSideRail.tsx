@@ -70,8 +70,12 @@ import {
 } from '../../config/explorerRail';
 import { isExplorerHomePath } from '../../config/explorerVirtualLocations';
 import {
+  createExplorerDropSurfaceBinding,
+  getExplorerDropBindingElementProps,
   getExplorerSharedDragSession,
   readExplorerPathsFromDataTransfer,
+  shallowEqualExplorerDragSelection,
+  useExplorerDragInteractionSelector,
 } from './explorerDragAndDrop';
 
 interface ExplorerSideRailProps {
@@ -80,6 +84,7 @@ interface ExplorerSideRailProps {
   brandLabel: string;
   sidebarWidth: number;
   currentPath: string;
+  dropScopeId?: string;
   locationTitle?: string;
   locationLabel?: string;
   drives: ExplorerDriveInfo[];
@@ -127,8 +132,10 @@ interface TreeRowProps {
   treeIndentStep: number;
   manageMode: boolean;
   currentPath: string;
+  dropScopeId: string;
   row: ExplorerBookmarkTreeNode;
   dropTargetFolderId: string | null;
+  activeFileDropTargetPath: string | null;
   onNavigate: (path: string) => void;
   onQueueFolderCreate: (parentId: string | null) => void;
   onRenameNode: (nodeId: string, nodeName: string) => void;
@@ -171,6 +178,7 @@ export function ExplorerSideRail({
   brandLabel,
   sidebarWidth,
   currentPath,
+  dropScopeId = 'explorer-drop-standalone',
   locationTitle: locationTitleProp,
   locationLabel: locationLabelProp,
   drives,
@@ -200,6 +208,17 @@ export function ExplorerSideRail({
   const restoreRailBackup = useExplorerStore((state) => state.restoreRailBackup);
   const clearPersistenceNotice = useExplorerStore((state) => state.clearPersistenceNotice);
   const interactionMotion = useInteractionMotionController(appearance);
+  const activeFileDropState = useExplorerDragInteractionSelector(
+    (state) => ({
+      scopeId: state.scopeId,
+      targetPath: state.valid ? state.targetPath : null,
+    }),
+    shallowEqualExplorerDragSelection,
+  );
+  const activeFileDropTargetPath =
+    activeFileDropState.scopeId === dropScopeId
+      ? activeFileDropState.targetPath
+      : null;
   const railItemTransition = 'background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, opacity 160ms ease';
   const bindRailMotion = useCallback((active = false, motionStepIndex = 0) => (
     interactionMotion.bindSurface({
@@ -1353,8 +1372,10 @@ export function ExplorerSideRail({
                 treeIndentStep={railViewMode.treeIndentStep}
                 manageMode={isManageMode}
                 currentPath={currentPath}
+                dropScopeId={dropScopeId}
                 row={row}
                 dropTargetFolderId={dropTargetFolderId}
+                activeFileDropTargetPath={activeFileDropTargetPath}
                 onNavigate={onNavigate}
                 onQueueFolderCreate={(parentId) => {
                   setDraftFolderParentId(parentId);
@@ -1413,8 +1434,10 @@ function BookmarkTreeRow({
   treeIndentStep,
   manageMode,
   currentPath,
+  dropScopeId,
   row,
   dropTargetFolderId,
+  activeFileDropTargetPath,
   onNavigate,
   onQueueFolderCreate,
   onRenameNode,
@@ -1426,8 +1449,20 @@ function BookmarkTreeRow({
   const updateRail = useExplorerStore((state) => state.updateRail);
   const isFolder = row.node.kind === 'folder';
   const isExpanded = isFolder ? isExplorerBookmarkFolderExpanded(rail, row.node.id) : false;
-  const isDropTarget = dropTargetFolderId === row.node.id;
-  const isActive = row.node.kind === 'bookmark' && isSameLocalPath(currentPath, row.node.path);
+  const bookmarkPath = row.node.kind === 'bookmark' ? row.node.path : null;
+  const bookmarkFileDropBinding = bookmarkPath
+    ? createExplorerDropSurfaceBinding({
+      surfaceId: `explorer-rail-bookmark:${row.node.id}`,
+      scopeId: dropScopeId,
+      role: 'navigation-target',
+      targetPath: bookmarkPath,
+      onAutoOpen: () => onNavigate(bookmarkPath),
+      label: row.node.name,
+    })
+    : null;
+  const isDropTarget = dropTargetFolderId === row.node.id
+    || (bookmarkPath !== null && activeFileDropTargetPath === bookmarkPath);
+  const isActive = bookmarkPath !== null && isSameLocalPath(currentPath, bookmarkPath);
   const rowState: RailSelectableRowState = isDropTarget ? 'drop-target' : isActive ? 'active' : isFolder && isExpanded ? 'ancestor' : 'idle';
   const rowMotion = bindRailMotion(rowState !== 'idle');
 
@@ -1457,6 +1492,7 @@ function BookmarkTreeRow({
           paddingLeft: (compactTree ? 6 : 8) + row.depth * treeIndentStep,
           ...rowMotion.motionStyle,
         }}
+        {...getExplorerDropBindingElementProps(bookmarkFileDropBinding)}
         onDragOver={isFolder ? (event) => onDragOverFolder(event, row.node.id) : undefined}
         onDragLeave={isFolder ? onDragLeaveFolder : undefined}
         onDrop={isFolder ? (event) => onDropIntoFolder(event, row.node.id) : undefined}
@@ -1548,8 +1584,10 @@ function BookmarkTreeRow({
           treeIndentStep={treeIndentStep}
           manageMode={manageMode}
           currentPath={currentPath}
+          dropScopeId={dropScopeId}
           row={child}
           dropTargetFolderId={dropTargetFolderId}
+          activeFileDropTargetPath={activeFileDropTargetPath}
           onNavigate={onNavigate}
           onQueueFolderCreate={onQueueFolderCreate}
           onRenameNode={onRenameNode}

@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createExplorerDropSurfaceBinding,
   clearExplorerSharedDragSession,
+  endExplorerDragInteraction,
+  getExplorerDragInteractionState,
   getExplorerSharedDragSession,
   readExplorerPathsFromDataTransfer,
   resolveExplorerDropHitFromPoint,
   settleExplorerSharedDragSessionAfterDragEnd,
   startExplorerSharedDragSession,
+  updateExplorerDragInteractionFromResolvedHit,
+  validateExplorerDropTarget,
 } from "../components/explorer/explorerDragAndDrop";
 
 function setElementRect(
@@ -86,7 +91,7 @@ describe("explorerDragAndDrop", () => {
 
     const hit = resolveExplorerDropHitFromPoint({ x: 192, y: 72 });
     expect(hit?.scopeId).toBe("pane-a");
-    expect(hit?.targetKind).toBe("viewport");
+    expect(hit?.targetKind).toBe("scope-root");
     expect(hit?.targetPath).toBe("/workspace");
   });
 
@@ -222,5 +227,61 @@ describe("explorerDragAndDrop", () => {
         fallbackPaths: getExplorerSharedDragSession()?.paths ?? [],
       }),
     ).toEqual(["/workspace/from-session.txt"]);
+  });
+
+  it("rejects descendant drops before the transfer path runs", () => {
+    expect(
+      validateExplorerDropTarget({
+        sourcePaths: ["/workspace/alpha"],
+        targetPath: "/workspace/alpha/nested",
+        platform: "linux",
+      }),
+    ).toEqual({
+      valid: false,
+      reason: "descendant",
+    });
+  });
+
+  it("auto-opens hovered folder targets once after dwell", () => {
+    vi.useFakeTimers();
+    const onAutoOpen = vi.fn();
+    const folderElement = document.createElement("div");
+    const binding = createExplorerDropSurfaceBinding({
+      surfaceId: "folder-auto-open",
+      scopeId: "pane-a",
+      role: "directory-target",
+      targetPath: "/workspace/alpha",
+      onAutoOpen,
+      autoOpenDelayMs: 120,
+      label: "alpha",
+    });
+
+    binding.ref(folderElement);
+
+    updateExplorerDragInteractionFromResolvedHit({
+      resolvedHit: {
+        scopeId: "pane-a",
+        surfaceId: "folder-auto-open",
+        surfaceRole: "directory-target",
+        targetKind: "directory",
+        targetPath: "/workspace/alpha",
+        scopeElement: null,
+        targetElement: folderElement,
+        point: { x: 24, y: 24 },
+      },
+      sourceKind: "internal",
+      sourcePaths: ["/workspace/notes.txt"],
+      operation: "move",
+      platform: "linux",
+      primaryLabel: "notes.txt",
+    });
+
+    vi.advanceTimersByTime(121);
+
+    expect(onAutoOpen).toHaveBeenCalledTimes(1);
+    expect(getExplorerDragInteractionState().dwellSurfaceId).toBeNull();
+
+    binding.ref(null);
+    endExplorerDragInteraction();
   });
 });
