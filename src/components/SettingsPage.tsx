@@ -990,6 +990,8 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <Sparkles size={14} />;
     case 'animations':
       return <RotateCcw size={14} />;
+    case 'interaction-motion':
+      return <Sparkles size={14} />;
     case 'theme-json':
       return <Type size={14} />;
   }
@@ -1027,6 +1029,9 @@ interface SettingsSectionContentContext {
   shaderFailureCount: number;
   availableAnimationsCount: number;
   animationFailureCount: number;
+  interactionMotionEnabled: boolean;
+  interactionMotionProfileLabel: string;
+  interactionMotionSurfaceCount: number;
   topBarSelectionSummary: string;
   availableTopBarsCount: number;
   followThemeTopBarDetail: string;
@@ -1120,6 +1125,11 @@ function getSettingsSectionContent(
       return {
         summary: `${context.availableAnimationsCount} modules${context.animationFailureCount > 0 ? ` · ${context.animationFailureCount} errors` : ''}`,
         detail: 'Browse built-in and authored animation modules, assign the live open/close bindings, and manage the animation authoring folder.',
+      };
+    case 'interaction-motion':
+      return {
+        summary: `${context.interactionMotionProfileLabel} · ${context.interactionMotionEnabled ? 'Live' : 'Disabled'} · ${context.interactionMotionSurfaceCount} surfaces`,
+        detail: 'Control shell micro-interactions separately from window transitions, including presets, per-surface toggles, and the Motion Lab preview harness.',
       };
     case 'theme-json':
       return {
@@ -2640,6 +2650,9 @@ export function SettingsPage({
     shaderFailureCount: shaderFailures.length,
     availableAnimationsCount: availableAnimations.length,
     animationFailureCount: animationFailures.length,
+    interactionMotionEnabled: settings.appearance.interactionMotionEnabled,
+    interactionMotionProfileLabel: effectiveInteractionMotionProfile?.label ?? 'Subtle',
+    interactionMotionSurfaceCount: interactionMotionSurfaceCatalog.length,
     topBarSelectionSummary,
     availableTopBarsCount: availableTopBars.length,
     followThemeTopBarDetail,
@@ -2658,13 +2671,16 @@ export function SettingsPage({
     connectedCloudAccountCount,
     configuredCloudProviderCount,
     effectiveTheme.name,
+    effectiveInteractionMotionProfile?.label,
     followThemeTopBarDetail,
     iconThemeSelectionSummary,
+    interactionMotionSurfaceCatalog.length,
     layoutManifestState.manifest.profiles.length,
     platform,
     settings.audio.vst3AdditionalFolders.length,
     settings.appearance.appBlurStrength,
     settings.appearance.appOpacity,
+    settings.appearance.interactionMotionEnabled,
     settings.appearance.appZoom,
     settings.appearance.panelTransparency,
     settings.explorer.folderClickMode,
@@ -4331,7 +4347,7 @@ export function SettingsPage({
                 <SectionTitle
                   icon={<RotateCcw size={12} />}
                   title="Animations"
-                  subtitle="Shell transitions and shell-wide interaction motion live together here, but they stay on separate runtime lanes."
+                  subtitle="Window open and close choreography lives here. Keep authored transition modules separate from shell interaction motion."
                 />
 
                 <div className="mt-4 space-y-4">
@@ -4551,7 +4567,19 @@ export function SettingsPage({
                       />
                     </div>
                   </div>
+                </div>
+              </section>
+            )}
 
+            {activeSection === 'interaction-motion' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<Sparkles size={12} />}
+                  title="Interaction Motion"
+                  subtitle="Shell micro-interactions live here: explorer entries, rail items, tabs, buttons, and settings cards. Window open/close animation stays in Animations."
+                />
+
+                <div className="mt-4 space-y-4">
                   <div
                     className="rounded border p-3"
                     {...interactionMotionCard.motionDataAttributes}
@@ -4570,7 +4598,7 @@ export function SettingsPage({
                       <div>
                         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Interaction Motion</div>
                         <p className="mt-1 text-[11px] opacity-40">
-                          A shared motion resolver now drives explorer entries, the rail, preview workflow tabs, panel tabs, top-bar buttons, and settings cards. Theme defaults still land first, and settings overrides only step in when you ask for them.
+                          Shared resolver drives explorer entries, rail items, preview workflow tabs, panel tabs, top-bar buttons, and settings cards. Theme defaults still land first, and settings overrides only step in when you ask for them.
                         </p>
                       </div>
                       <span
@@ -4674,7 +4702,7 @@ export function SettingsPage({
                           <div>
                             <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Surface Overrides</div>
                             <p className="mt-1 text-[11px] opacity-45">
-                              Disable motion on a surface without changing the theme recipe or preset for the rest of the shell.
+                              Disable motion on a surface without changing theme recipe or preset for rest of shell.
                             </p>
                           </div>
                           <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>

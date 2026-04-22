@@ -73,6 +73,7 @@ export interface OverlayThemePackageManifest {
   tags?: string[];
   extends?: string;
   defaultTopBarId?: string;
+  defaultHomePackId?: string;
   topBars?: OverlayTopBarDefinition[];
   theme?: Partial<OverlayThemeDefinition>;
   assets?: {
@@ -849,6 +850,7 @@ async function buildPackageTheme(
     name: packageName,
     description: asString(record.manifest.description) || themePatch.description || baseTheme.description,
     defaultTopBarId: resolvedDefaultTopBarId,
+    defaultHomePackId: asString(record.manifest.defaultHomePackId) || themePatch.defaultHomePackId,
     source: 'package',
     extendsThemeId: record.manifest.extends || baseTheme.id,
     palette: {

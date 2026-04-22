@@ -24,6 +24,9 @@ const EXPLORER_PRO_DIRECTORY: &str = "explorer";
 const EXPLORER_METADATA_FILE: &str = "metadata.json";
 const EXPLORER_TRASH_DIRECTORY: &str = "trash";
 const EXPLORER_METADATA_VERSION: u32 = 1;
+const EXPLORER_HOME_USAGE_MAX_ENTRIES: usize = 256;
+const EXPLORER_HOME_USAGE_RECENT_LIMIT: usize = 24;
+const EXPLORER_HOME_USAGE_MOST_USED_LIMIT: usize = 24;
 
 static DUPLICATE_SCAN_REGISTRY: OnceLock<
     Mutex<HashMap<String, Arc<Mutex<ExplorerDuplicateScanProgress>>>>,
@@ -181,6 +184,21 @@ pub struct ExplorerTrashRestoreResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub struct ExplorerHomeUsageRecord {
+    pub path: String,
+    pub open_count: u64,
+    pub last_opened_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplorerHomeUsageSnapshot {
+    pub most_used: Vec<ExplorerHomeUsageRecord>,
+    pub recent: Vec<ExplorerHomeUsageRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct FsBatchRenameItem {
     pub source_path: String,
     pub destination_path: String,
@@ -267,6 +285,8 @@ struct ExplorerMetadataDocument {
     path_tag_ids: HashMap<String, Vec<String>>,
     saved_searches: Vec<PersistedExplorerSavedSearchRecord>,
     recent_trash_action: Option<ExplorerTrashActionRecord>,
+    #[serde(default)]
+    home_usage_by_path: HashMap<String, ExplorerHomeUsageRecord>,
 }
 
 impl Default for ExplorerMetadataDocument {
@@ -277,6 +297,7 @@ impl Default for ExplorerMetadataDocument {
             path_tag_ids: HashMap::new(),
             saved_searches: Vec::new(),
             recent_trash_action: None,
+            home_usage_by_path: HashMap::new(),
         }
     }
 }
@@ -427,6 +448,71 @@ fn sync_duplicate_scan_task(task_id: &str, progress: &ExplorerDuplicateScanProgr
 
 fn normalize_path_key(path: &str) -> String {
     path.trim().to_string()
+}
+
+fn is_home_usage_trackable_path(path: &str) -> bool {
+    let normalized = path.trim();
+    !normalized.is_empty()
+        && !normalized.starts_with("cloud://")
+        && !normalized.starts_with("greeblefs://")
+}
+
+fn prune_home_usage_records(document: &mut ExplorerMetadataDocument) {
+    if document.home_usage_by_path.len() <= EXPLORER_HOME_USAGE_MAX_ENTRIES {
+        return;
+    }
+
+    let mut entries = document
+        .home_usage_by_path
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        right
+            .last_opened_at
+            .cmp(&left.last_opened_at)
+            .then_with(|| right.open_count.cmp(&left.open_count))
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    entries.truncate(EXPLORER_HOME_USAGE_MAX_ENTRIES);
+
+    document.home_usage_by_path = entries
+        .into_iter()
+        .map(|entry| (normalize_path_key(&entry.path), entry))
+        .collect();
+}
+
+fn build_home_usage_snapshot(document: &ExplorerMetadataDocument) -> ExplorerHomeUsageSnapshot {
+    let mut entries = document
+        .home_usage_by_path
+        .values()
+        .filter(|entry| is_home_usage_trackable_path(&entry.path))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let mut recent = entries.clone();
+    recent.sort_by(|left, right| {
+        right
+            .last_opened_at
+            .cmp(&left.last_opened_at)
+            .then_with(|| right.open_count.cmp(&left.open_count))
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    recent.truncate(EXPLORER_HOME_USAGE_RECENT_LIMIT);
+
+    entries.sort_by(|left, right| {
+        right
+            .open_count
+            .cmp(&left.open_count)
+            .then_with(|| right.last_opened_at.cmp(&left.last_opened_at))
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    entries.truncate(EXPLORER_HOME_USAGE_MOST_USED_LIMIT);
+
+    ExplorerHomeUsageSnapshot {
+        most_used: entries,
+        recent,
+    }
 }
 
 fn normalize_tag_label(label: &str) -> String {
@@ -1305,6 +1391,53 @@ pub async fn explorer_saved_searches_delete(app: AppHandle, id: String) -> Resul
         write_explorer_metadata(&app, &document)?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn explorer_home_usage_list(
+    app: AppHandle,
+) -> Result<ExplorerHomeUsageSnapshot, String> {
+    Ok(build_home_usage_snapshot(&read_explorer_metadata(&app)?))
+}
+
+#[tauri::command]
+pub async fn explorer_home_usage_record(
+    app: AppHandle,
+    path: String,
+) -> Result<ExplorerHomeUsageSnapshot, String> {
+    if !is_home_usage_trackable_path(&path) {
+        return Ok(ExplorerHomeUsageSnapshot {
+            most_used: Vec::new(),
+            recent: Vec::new(),
+        });
+    }
+
+    let normalized_path = normalize_path_key(&path);
+    let mut document = read_explorer_metadata(&app)?;
+    let entry = document
+        .home_usage_by_path
+        .entry(normalized_path.clone())
+        .or_insert_with(|| ExplorerHomeUsageRecord {
+            path: normalized_path.clone(),
+            open_count: 0,
+            last_opened_at: 0,
+        });
+
+    entry.open_count = entry.open_count.saturating_add(1);
+    entry.last_opened_at = now_epoch_ms();
+    prune_home_usage_records(&mut document);
+    write_explorer_metadata(&app, &document)?;
+    Ok(build_home_usage_snapshot(&document))
+}
+
+#[tauri::command]
+pub async fn explorer_home_usage_clear(
+    app: AppHandle,
+) -> Result<ExplorerHomeUsageSnapshot, String> {
+    let mut document = read_explorer_metadata(&app)?;
+    document.home_usage_by_path.clear();
+    write_explorer_metadata(&app, &document)?;
+    Ok(build_home_usage_snapshot(&document))
 }
 
 pub(crate) async fn run_batch_rename_task(items: Vec<FsBatchRenameItem>) -> Result<String, String> {

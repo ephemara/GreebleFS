@@ -285,6 +285,7 @@ describe('SettingsPage behavior', () => {
       'Wallpapers',
       'Shaders',
       'Animations',
+      'Interaction Motion',
       'Theme JSON',
     ];
     const orderedButtons = orderedLabels.map(findSectionButton);
@@ -302,6 +303,11 @@ describe('SettingsPage behavior', () => {
     renderSettingsPage();
 
     await user.click(findSectionButton('Animations'));
+    expect(screen.queryByRole('checkbox', {
+      name: /enable interaction motion/i,
+    })).not.toBeInTheDocument();
+
+    await user.click(findSectionButton('Interaction Motion'));
 
     const enabledToggle = screen.getByRole('checkbox', {
       name: /enable interaction motion/i,

@@ -28,11 +28,12 @@ use crate::cloud_commands::{
 use crate::desktop_integration::{NativeIconRequest, NativeIconResponse};
 use crate::explorer_pro_commands::{
     ExplorerDuplicateGroup, ExplorerDuplicateScanStartResponse, ExplorerDuplicateScanStatus,
-    ExplorerPathTagAssignment, ExplorerSavedSearchRecord, ExplorerSavedSearchSaveRequest,
-    ExplorerSearchMode, ExplorerTagMutationMode, ExplorerTagMutationRequest, ExplorerTagRecord,
-    ExplorerTagSnapshot, ExplorerTrashActionRecord, ExplorerTrashRestoreResult,
-    ExplorerTrashedEntryRecord, FsBatchRenameItem, FsBatchRenameMode, FsBatchRenamePreviewRow,
-    FsBatchRenameRecipe, FsBatchRenameResult,
+    ExplorerHomeUsageRecord, ExplorerHomeUsageSnapshot, ExplorerPathTagAssignment,
+    ExplorerSavedSearchRecord, ExplorerSavedSearchSaveRequest, ExplorerSearchMode,
+    ExplorerTagMutationMode, ExplorerTagMutationRequest, ExplorerTagRecord, ExplorerTagSnapshot,
+    ExplorerTrashActionRecord, ExplorerTrashRestoreResult, ExplorerTrashedEntryRecord,
+    FsBatchRenameItem, FsBatchRenameMode, FsBatchRenamePreviewRow, FsBatchRenameRecipe,
+    FsBatchRenameResult,
 };
 use crate::fs_commands::{
     DriveInfo, EntryStorageInfo, ExplorerTaskHistoryClearScope, ExplorerTaskKind,
@@ -248,6 +249,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::explorer_pro_commands::explorer_saved_searches_list,
             crate::explorer_pro_commands::explorer_saved_searches_save,
             crate::explorer_pro_commands::explorer_saved_searches_delete,
+            crate::explorer_pro_commands::explorer_home_usage_list,
+            crate::explorer_pro_commands::explorer_home_usage_record,
+            crate::explorer_pro_commands::explorer_home_usage_clear,
             crate::semantic_search::explorer_semantic_index_get_summary,
             crate::semantic_search::explorer_semantic_index_build,
             crate::semantic_search::explorer_semantic_search,

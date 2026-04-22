@@ -1,5 +1,19 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Interaction Motion Now Has Its Own Settings Pane
+
+- `Animations` no longer carries both window transitions and shell micro-interactions in one pane. `Animations` is now window open/close only, while `Interaction Motion` is its own settings section with the existing resolver controls and Motion Lab.
+- Durable implementation shape:
+  - `src/config/settingsNavigation.ts` now declares `interaction-motion` as a standalone settings section. Keep `Animations` scoped to authored open/close transition modules, not shell micro-interaction controls.
+  - `src/components/SettingsPage.tsx` now renders the full interaction-motion control surface under `Interaction Motion`, with `Animations` keeping only shell-transition controls and the animation authoring folder.
+  - `src/test/settingsPage.behavior.test.tsx` now locks the split by asserting `Animations` no longer exposes the interaction-motion toggle and that the dedicated `Interaction Motion` pane still drives the store and Motion Lab preview.
+- Durable product note:
+  - If future procedural authoring grows beyond presets and per-surface toggles, extend `Interaction Motion` or add children beneath it. Do not stuff it back into `Animations`.
+- Validation:
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "prioritizes core settings ahead of appearance sections in the rail" --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "updates interaction motion settings and exposes motion-lab preview surfaces" --reporter=dot`
+  - passed: filtered touched-path TypeScript check for `SettingsPage.tsx`, `settingsNavigation.ts`, and `settingsPage.behavior.test.tsx`
+
 # 2026-04-21 - Top Bars Now Have Their Own Managed Content Root
 
 - Top bars are no longer only modular in code. They now also have a first-class authored storage root at `top-bars/`, so shell-header workflows can be shipped and mixed independently from whole theme packages.

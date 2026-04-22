@@ -1,5 +1,6 @@
 import type { FileSearchResponse } from "../config/searchTelemetry";
 import type { FsRuntimeCachePolicy } from "../config/runtimeCachePolicy";
+import { isExplorerVirtualPath } from "../config/explorerVirtualLocations";
 import { commands, events, unwrapTauriResult } from "./tauriClient";
 import { useExplorerStore } from "../store/explorerStore";
 import {
@@ -1026,15 +1027,15 @@ export async function findSimilarExplorerSemantic(
 }
 
 export function supportsExplorerSearch(path: string): boolean {
-  return !isCloudExplorerPath(path);
+  return !isCloudExplorerPath(path) && !isExplorerVirtualPath(path);
 }
 
 export function supportsExplorerNativeIntegration(path: string): boolean {
-  return !isCloudExplorerPath(path);
+  return !isCloudExplorerPath(path) && !isExplorerVirtualPath(path);
 }
 
 export function supportsExplorerNativeDragOut(paths: string[]): boolean {
-  return paths.every((path) => !isCloudExplorerPath(path));
+  return paths.every((path) => !isCloudExplorerPath(path) && !isExplorerVirtualPath(path));
 }
 
 export async function listCloudAccounts(): Promise<ExplorerCloudAccountsSnapshot> {
