@@ -314,7 +314,11 @@ import {
   isExplorerTrackableFolderPath,
   isExplorerVirtualPath,
 } from "../config/explorerVirtualLocations";
-import { listExplorerHomeUsage, recordExplorerHomeUsage } from "../runtime/homeBackend";
+import {
+  listExplorerHomeUsage,
+  recordExplorerHomeUsage,
+  type ExplorerHomeUsageSnapshotValue,
+} from "../runtime/homeBackend";
 import {
   shouldOpenExplorerEntryOnTrigger,
   shouldNavigateUpOnEmptyExplorerDoubleClick,
@@ -7294,11 +7298,8 @@ export function FileExplorer({
   useExplorerTaskProgressFeed();
   const homeTasks = useExplorerTaskSnapshots();
   const [userHomePath, setUserHomePath] = useState("");
-  const [homeUsageSnapshot, setHomeUsageSnapshot] = useState<{
-    most_used: Array<{ path: string; open_count: number; last_opened_at: number }>;
-    recent: Array<{ path: string; open_count: number; last_opened_at: number }>;
-  }>({
-    most_used: [],
+  const [homeUsageSnapshot, setHomeUsageSnapshot] = useState<ExplorerHomeUsageSnapshotValue>({
+    mostUsed: [],
     recent: [],
   });
 
@@ -7528,7 +7529,7 @@ export function FileExplorer({
       })
       .catch(() => {
         if (!disposed) {
-          setHomeUsageSnapshot({ most_used: [], recent: [] });
+          setHomeUsageSnapshot({ mostUsed: [], recent: [] });
         }
       });
 
@@ -8815,21 +8816,21 @@ export function FileExplorer({
   );
   const homeMostUsedFolders = useMemo(
     () =>
-      homeUsageSnapshot.most_used.map((entry) => ({
+      homeUsageSnapshot.mostUsed.map((entry) => ({
         path: entry.path,
         label: getPathLeaf(entry.path),
-        openCount: entry.open_count,
-        lastOpenedAt: entry.last_opened_at,
+        openCount: entry.openCount,
+        lastOpenedAt: entry.lastOpenedAt,
       })),
-    [homeUsageSnapshot.most_used],
+    [homeUsageSnapshot.mostUsed],
   );
   const homeRecentFolders = useMemo(
     () =>
       homeUsageSnapshot.recent.map((entry) => ({
         path: entry.path,
         label: getPathLeaf(entry.path),
-        openCount: entry.open_count,
-        lastOpenedAt: entry.last_opened_at,
+        openCount: entry.openCount,
+        lastOpenedAt: entry.lastOpenedAt,
       })),
     [homeUsageSnapshot.recent],
   );
@@ -12799,7 +12800,7 @@ export function FileExplorer({
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     if (currentPathIsHome) {
-      return finalizeContextMenuItems([
+      const homeItems: CtxItem[] = [
         {
           id: "home.customize",
           group: "system",
@@ -12818,19 +12819,20 @@ export function FileExplorer({
             void refresh();
           },
         },
-        ...(userHomePath
-          ? [{
-              id: "home.open-user-home",
-              group: "open",
-              defaultOrder: 30,
-              icon: <FolderOpen size={13} />,
-              label: "Open User Home",
-              action: () => {
-                void navigate(userHomePath);
-              },
-            }]
-          : []),
-      ]);
+      ];
+      if (userHomePath) {
+        homeItems.push({
+          id: "home.open-user-home",
+          group: "open",
+          defaultOrder: 30,
+          icon: <FolderOpen size={13} />,
+          label: "Open User Home",
+          action: () => {
+            void navigate(userHomePath);
+          },
+        });
+      }
+      return finalizeContextMenuItems(homeItems);
     }
 
     const canUseNativeIntegration = supportsNativeIntegration(currentPath);

@@ -1330,13 +1330,13 @@ function formatModelTimestamp(epochMs: number | null | undefined): string {
 }
 
 function mapExplorerHomeUsageEntries(
-  records: ExplorerHomeUsageSnapshotValue['most_used'],
+  records: ExplorerHomeUsageSnapshotValue['mostUsed'],
 ): ExplorerHomeUsageEntry[] {
-  return records.map((record: ExplorerHomeUsageSnapshotValue['most_used'][number]) => ({
+  return records.map((record: ExplorerHomeUsageSnapshotValue['mostUsed'][number]) => ({
     path: record.path,
     label: getHomeEntryLabel(record.path),
-    openCount: record.open_count,
-    lastOpenedAt: record.last_opened_at,
+    openCount: record.openCount,
+    lastOpenedAt: record.lastOpenedAt,
   }));
 }
 
@@ -1576,7 +1576,7 @@ export function SettingsPage({
     );
   const [homeUserPath, setHomeUserPath] = useState('');
   const [homeUsageSnapshot, setHomeUsageSnapshot] = useState<ExplorerHomeUsageSnapshotValue>({
-    most_used: [],
+    mostUsed: [],
     recent: [],
   });
   const [homeSavedSearches, setHomeSavedSearches] = useState<ExplorerSavedSearch[]>([]);
@@ -1946,7 +1946,7 @@ export function SettingsPage({
 
     let disposed = false;
     void Promise.all([
-      listExplorerHomeUsage().catch(() => ({ most_used: [], recent: [] })),
+      listExplorerHomeUsage().catch(() => ({ mostUsed: [], recent: [] })),
       listExplorerSavedSearches().catch(() => []),
       getExplorerDrives().catch(() => []),
     ]).then(([usageSnapshot, savedSearchesSnapshot, drivesSnapshot]) => {
@@ -2654,8 +2654,8 @@ export function SettingsPage({
     [explorerRail],
   );
   const homeMostUsedFolders = useMemo(
-    () => mapExplorerHomeUsageEntries(homeUsageSnapshot.most_used),
-    [homeUsageSnapshot.most_used],
+    () => mapExplorerHomeUsageEntries(homeUsageSnapshot.mostUsed),
+    [homeUsageSnapshot.mostUsed],
   );
   const homeRecentFolders = useMemo(
     () => mapExplorerHomeUsageEntries(homeUsageSnapshot.recent),

@@ -74,6 +74,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, adaptive split sizing, and one shared workspace strip that always shows the focused pane's tab set. This layer still owns top-level multi-pane explorer topology; the newer preview split stays inside a single `FileExplorer` instance instead of routing through workspace panes.
 - `src/components/explorer/ExplorerSideRail.tsx`
   Explorer rail, drives, bookmarks, saved searches, and tag-filter browsing.
+- `src/components/home/ExplorerHomeSurface.tsx`, `src/components/home/homePackRuntime.tsx`, and `src/config/homePackages.ts`
+  Explorer Home surface runtime. This subsystem owns the virtual `greeblefs://home` route, the constrained host data/actions exposed to Home packs, built-in Home packs (`command-center`, `favorites-deck`), and authored pack discovery from `home-packs/`.
 - `src/components/WorkbenchTopBar.tsx`
   Data-driven shell top bar renderer. It resolves launcher controls, navigation tabs or summary mode, window chrome, and theme-shader layering from the standalone top-bar catalog instead of burying the whole shell header inside `App.tsx`.
 - `src/config/appearance.ts`
@@ -207,7 +209,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/explorerTaskStore.ts`
   Explorer-local task-center store. It hydrates durable task history from the Rust backend, subscribes to live explorer task progress events, and owns the open/close state plus retry/cancel/clear helpers used by the explorer toolbar badge and command palette.
 - `src/store/settingsStore.ts`
-  Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, and machine-level developer-mode behavior.
+  Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, machine-level developer-mode behavior, and the new `settings.home` contract (active Home pack id, usage-telemetry toggle, per-pack state blobs, and active preset selection by pack id). Home configuration should live here rather than inside ad hoc component-local storage.
 - `src/store/explorerStore.ts`
   Persisted explorer rail, named explorer session snapshots, and explorer-local workspace state for tabs plus slot-based workspace layouts. Explorer search state now persists the explicit `searchMode` enum, with legacy `searchIncludeContent` payloads normalized forward on hydration.
 - `src/store/gpuRuntimeStore.ts`
@@ -231,6 +233,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/config/settingsNavigation.ts` defines the canonical settings-section keys, labels, ordering, overview summaries, and keyword metadata used by the rail, overview cards, and command palette
   - `src/store/settingsStore.ts` persists `activeSection` as a typed `SettingsSectionKey`, and `SettingsPage.tsx` reads that store value directly so palette deep-links can land on sections like `Icons` or `Top Bars` without component-local routing state
   - `src/App.tsx` builds section-jump command-palette entries from the same catalog instead of hardcoding menu paths, which keeps future settings sections discoverable as soon as they are added to the catalog
+- Explorer Home is now a first-class app-owned surface instead of a synonym for the OS home directory:
+  - the canonical startup route is `greeblefs://home`
+  - `FileExplorer.tsx` special-cases that route as a rendered surface, not a directory listing
+  - the machine home directory still appears inside Home as quick access / navigation target, but explicit filesystem startup paths remain valid
+  - Home packs are independent from app themes: themes may suggest `defaultHomePackId`, but user pack selection and pack state persist through `settings.home`
+  - usage telemetry for `most used` and `recent` folders is local-only and stored through the explorer metadata lane in `src-tauri/src/explorer_pro_commands.rs`
 - Interaction motion is now a first-class appearance lane separate from authored shell-transition modules:
   - `src/config/interactionMotion.ts` defines the built-in `subtle`, `spring`, and `playful` profiles, the v1 shell surface catalog, the theme recipe contract, and the resolver precedence `user override > theme default > built-in subtle`
   - `src/store/settingsStore.ts` persists `settings.appearance.interactionMotionEnabled`, `interactionMotionPresetId`, `interactionMotionIntensity`, and `interactionMotionSurfaceOverrides`; `null` preset means "follow theme"
@@ -460,6 +468,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
     - SoX stays as the offline trim/fade/normalize/convert/spectrogram utility
     - `ffmpeg` remains the codec bridge for formats the vendored SoX bundle cannot read/write on a given platform (for example Linux `mp3`)
     - VST3 discovery filters to host-ready binaries in `src-tauri/src/vst_commands.rs` using `crates/vst-host`, while `src-tauri/src/vst_host_runtime.rs` currently owns session bookkeeping and host-rect sync for future inline editor attachment
+    - on Linux and macOS, `crates/vst-host` must activate the module through the platform entry hook before touching the factory (`ModuleEntry` on Linux, `bundleEntry` on macOS). If a real VST3 crashes during `countClasses()` or `getClassInfo()`, check module activation and module-exit ordering before assuming the UI or Tauri command layer is at fault
   - the video lane is intentionally split:
     - native transport and preview-frame state live in Rust without the webview media stack
     - `src-tauri/src/video_commands.rs` keeps ffmpeg-backed trim export and compatibility preview-proxy helpers as the offline mutation lane
@@ -468,7 +477,6 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src-tauri/src/thumbnail_commands.rs`, `src-tauri/src/image_commands.rs`, `src-tauri/src/audio_engine.rs`, and `src-tauri/src/audio_commands.rs` now attempt the native GPU runtime first where appropriate, but every shipped path still keeps its CPU fallback so unsupported adapters do not break explorer flows
   - `src/runtime/explorerBackend.ts` is the only TS bridge for `fs_read_entry_thumbnail`; React should request generated thumbnails there instead of decoding files, probing media, or shelling out from components.
   - `src/runtime/explorerBackend.ts` is also the only TS bridge for batch rename preview/apply, checksum calculation, item properties, fuzzy jump filtering, and terminal shell-integration commands used by explorer surfaces
-    - on Linux and macOS, `crates/vst-host` must activate the module through the platform entry hook before touching the factory (`ModuleEntry` on Linux, `bundleEntry` on macOS). If a real VST3 crashes during `countClasses()` or `getClassInfo()`, check module activation and module-exit ordering before assuming the UI or Tauri command layer is at fault
   - local transfer UX now has a two-step contract instead of silent collision auto-rename:
     - `fs_plan_transfer_items` reports pending name collisions before paste/drag/pane transfers run
     - `fs_transfer_items` accepts explicit collision policies: `keep_both`, `replace`, and `skip`

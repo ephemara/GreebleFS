@@ -1394,6 +1394,7 @@ pub async fn explorer_saved_searches_delete(app: AppHandle, id: String) -> Resul
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn explorer_home_usage_list(
     app: AppHandle,
 ) -> Result<ExplorerHomeUsageSnapshot, String> {
@@ -1401,6 +1402,7 @@ pub async fn explorer_home_usage_list(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn explorer_home_usage_record(
     app: AppHandle,
     path: String,
@@ -1431,6 +1433,7 @@ pub async fn explorer_home_usage_record(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn explorer_home_usage_clear(
     app: AppHandle,
 ) -> Result<ExplorerHomeUsageSnapshot, String> {

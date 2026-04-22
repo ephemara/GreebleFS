@@ -68,6 +68,7 @@ import {
   getExplorerRailViewModeDefinition,
   type ExplorerRailViewModeDefinition,
 } from '../../config/explorerRail';
+import { isExplorerHomePath } from '../../config/explorerVirtualLocations';
 
 interface ExplorerSideRailProps {
   appearance?: Pick<ResolvedOverlayAppearance, 'baseTheme'> | null;
@@ -232,7 +233,8 @@ export function ExplorerSideRail({
     () => rail.nodes.filter((node) => node.kind === 'bookmark').length,
     [rail.nodes],
   );
-  const locationTitle = locationTitleProp ?? (currentPath.trim() || 'Home');
+  const currentPathIsHome = isExplorerHomePath(currentPath);
+  const locationTitle = locationTitleProp ?? (currentPathIsHome ? 'Home' : (currentPath.trim() || 'Home'));
   const locationLabel = locationLabelProp ?? getPathLeaf(locationTitle);
   const normalizedBrandLabel = brandLabel.trim();
   const showBrandLabel = normalizedBrandLabel.length > 0
@@ -778,7 +780,7 @@ export function ExplorerSideRail({
           onToggle={() => updateRail(toggleExplorerRailSection(rail, 'quick-access'))}
         >
           {(() => {
-            const homeMotion = bindRailMotion(currentPath === '');
+            const homeMotion = bindRailMotion(currentPathIsHome);
             return (
               <button
                 type="button"
@@ -790,14 +792,14 @@ export function ExplorerSideRail({
                 onPointerUp={homeMotion.onPointerUp}
                 onPointerCancel={homeMotion.onPointerCancel}
                 style={{
-                  ...quickLinkButtonStyle(currentPath === '', accent, dense, railViewMode),
+                  ...quickLinkButtonStyle(currentPathIsHome, accent, dense, railViewMode),
                   ...homeMotion.motionStyle,
                 }}
               >
             <Home size={dense ? 12 : 13} style={{ color: accent, flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
               <div style={bookmarkTitleStyle(railViewMode, 'default')}>Home</div>
-              {showSupportingMeta && <div style={bookmarkMetaStyle(railViewMode)}>Jump to your user root.</div>}
+              {showSupportingMeta && <div style={bookmarkMetaStyle(railViewMode)}>Open the explorer home surface.</div>}
             </div>
               </button>
             );
@@ -1797,7 +1799,7 @@ function formatBytes(bytes: number): string {
 
 function getPathLeaf(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, '');
-  if (!trimmed) {
+  if (!trimmed || isExplorerHomePath(trimmed)) {
     return 'Home';
   }
   const segments = trimmed.split(/[\\/]/).filter(Boolean);

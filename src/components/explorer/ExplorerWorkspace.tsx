@@ -16,10 +16,12 @@ import type {
   OverlayPluginExplorerActionContribution,
 } from '../../config/pluginContributions';
 import type { ExplorerLayoutMode } from '../../config/layoutProfiles';
+import type { LoadedExplorerHomePack } from '../../config/homePackages';
 import {
   resolveEffectiveExplorerModeProfile,
   resolveExplorerModeProfileChromeLayoutId,
 } from '../../config/explorerModeProfiles';
+import { isExplorerHomePath } from '../../config/explorerVirtualLocations';
 import { resolveExplorerThemeRecipe } from '../../config/explorerTheme';
 import {
   createEmptyExplorerPaneRecord,
@@ -36,6 +38,7 @@ import {
   type ExplorerTabSnapshot,
 } from '../../store/explorerStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import type { SettingsSectionKey } from '../../config/settingsNavigation';
 import { ExplorerChromeSurface } from './ExplorerChromeSurface';
 import { FileExplorer } from '../FileExplorer';
 import type {
@@ -53,6 +56,9 @@ interface ExplorerWorkspaceProps {
   onOpenInTerminal: (path: string) => void;
   onOpenInFilesystemAquarium?: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void | Promise<void>;
+  homePacks?: LoadedExplorerHomePack[];
+  onOpenPanel?: (panelId: string) => void;
+  onOpenSettingsSection?: (section: SettingsSectionKey) => void;
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
@@ -68,7 +74,7 @@ interface ExplorerWorkspaceProps {
 
 function getPathLeaf(path: string): string {
   const trimmed = path.trim();
-  if (!trimmed) {
+  if (!trimmed || isExplorerHomePath(trimmed)) {
     return 'Home';
   }
   const parts = trimmed.split(/[\\/]/).filter(Boolean);
@@ -142,6 +148,9 @@ export function ExplorerWorkspace({
   onOpenInTerminal,
   onOpenInFilesystemAquarium = () => undefined,
   onAddBookmark,
+  homePacks = [],
+  onOpenPanel = () => undefined,
+  onOpenSettingsSection = () => undefined,
   pluginActions = [],
   pluginContextMenuItems = [],
   layoutMode = 'full',
@@ -1203,6 +1212,9 @@ export function ExplorerWorkspace({
           repositoryPicker={repositoryPicker}
           theme={theme}
           onAddBookmark={onAddBookmark}
+          homePacks={homePacks}
+          onOpenPanel={onOpenPanel}
+          onOpenSettingsSection={onOpenSettingsSection}
           onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
           onOpenInTerminal={onOpenInTerminal}
         />
@@ -1218,8 +1230,11 @@ export function ExplorerWorkspace({
     layoutMode,
     navigationRequestsByInstanceId,
     onAddBookmark,
+    homePacks,
     onOpenInFilesystemAquarium,
     onOpenInTerminal,
+    onOpenPanel,
+    onOpenSettingsSection,
     pluginActions,
     pluginContextMenuItems,
     publishRuntimeSnapshot,

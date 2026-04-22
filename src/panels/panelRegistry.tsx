@@ -13,6 +13,7 @@ import type { LoadedOverlayAnimation } from '../components/animationRuntime';
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayWallpaper } from '../components/wallpaperRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
+import type { LoadedExplorerHomePack } from '../config/homePackages';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import {
@@ -20,6 +21,7 @@ import {
   type LoadedIconThemePackage,
 } from '../config/iconThemePackages';
 import type { TerminalWindowMode } from '../store/settingsStore';
+import type { SettingsSectionKey } from '../config/settingsNavigation';
 import type {
   LoadedOverlayPlugin,
   OverlayPluginApi,
@@ -130,6 +132,11 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesLoading,
   topBarPackagesError,
   topBarPackagesWarnings,
+  homePacks = [],
+  homePacksDirectory = '',
+  homePacksLoading = false,
+  homePacksError = null,
+  homePacksWarnings = [],
   themePackages,
   themePackagesDirectory,
   themePackagesLoading,
@@ -137,6 +144,8 @@ export function createBuiltInPanelDefinitions({
   themePackagesWarnings,
   onRefreshTopBars,
   onOpenTopBarsFolder,
+  onRefreshHomePacks = async () => {},
+  onOpenHomePacksFolder = async () => {},
   iconThemePackages = [],
   iconThemePackagesDirectory = iconThemeSystemConfig.iconThemesDirectory,
   iconThemePackagesLoading = false,
@@ -169,6 +178,8 @@ export function createBuiltInPanelDefinitions({
   onOpenWallpapersFolder,
   onImportWallpaperFiles,
   onSetWindowMode,
+  onActivatePanel = () => {},
+  onOpenSettingsSection = () => {},
   renderPluginsManager,
 }: {
   appearance: ResolvedOverlayAppearance;
@@ -197,6 +208,11 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesLoading: boolean;
   topBarPackagesError: string | null;
   topBarPackagesWarnings: string[];
+  homePacks?: LoadedExplorerHomePack[];
+  homePacksDirectory?: string;
+  homePacksLoading?: boolean;
+  homePacksError?: string | null;
+  homePacksWarnings?: string[];
   themePackages: LoadedOverlayThemePackage[];
   themePackagesDirectory: string;
   themePackagesLoading: boolean;
@@ -204,6 +220,8 @@ export function createBuiltInPanelDefinitions({
   themePackagesWarnings: string[];
   onRefreshTopBars: () => Promise<void>;
   onOpenTopBarsFolder: () => Promise<void>;
+  onRefreshHomePacks?: () => Promise<void>;
+  onOpenHomePacksFolder?: () => Promise<void>;
   iconThemePackages?: LoadedIconThemePackage[];
   iconThemePackagesDirectory?: string;
   iconThemePackagesLoading?: boolean;
@@ -236,6 +254,8 @@ export function createBuiltInPanelDefinitions({
   onOpenWallpapersFolder: () => Promise<void>;
   onImportWallpaperFiles: (files: File[]) => Promise<void>;
   onSetWindowMode: (mode: TerminalWindowMode) => Promise<void> | void;
+  onActivatePanel?: (panelId: string) => void;
+  onOpenSettingsSection?: (section: SettingsSectionKey) => void;
   renderPluginsManager: () => React.ReactNode;
 }): OverlayPanelDefinition[] {
   const accent = appearance.theme.palette.accent;
@@ -273,6 +293,9 @@ export function createBuiltInPanelDefinitions({
           onOpenInTerminal={onOpenInTerminal}
           onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
           onAddBookmark={onAddBookmark}
+          homePacks={homePacks}
+          onOpenPanel={onActivatePanel}
+          onOpenSettingsSection={onOpenSettingsSection}
           pluginActions={pluginExplorerActions}
           pluginContextMenuItems={pluginContextMenuItems}
         />
@@ -406,6 +429,11 @@ export function createBuiltInPanelDefinitions({
             topBarPackagesLoading={topBarPackagesLoading}
             topBarPackagesError={topBarPackagesError}
             topBarPackagesWarnings={topBarPackagesWarnings}
+            homePacks={homePacks}
+            homePacksDirectory={homePacksDirectory}
+            homePacksLoading={homePacksLoading}
+            homePacksError={homePacksError}
+            homePacksWarnings={homePacksWarnings}
             themePackages={themePackages}
             themePackagesDirectory={themePackagesDirectory}
             themePackagesLoading={themePackagesLoading}
@@ -413,6 +441,8 @@ export function createBuiltInPanelDefinitions({
             themePackagesWarnings={themePackagesWarnings}
             onRefreshTopBars={onRefreshTopBars}
             onOpenTopBarsFolder={onOpenTopBarsFolder}
+            onRefreshHomePacks={onRefreshHomePacks}
+            onOpenHomePacksFolder={onOpenHomePacksFolder}
             iconThemePackages={iconThemePackages}
             iconThemePackagesDirectory={iconThemePackagesDirectory}
             iconThemePackagesLoading={iconThemePackagesLoading}

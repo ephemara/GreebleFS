@@ -47,6 +47,9 @@ export type BuiltInExplorerChromeControlId =
   | 'togglePreview'
   | 'toggleHiddenFiles'
   | 'refresh'
+  | 'customizeHome'
+  | 'refreshHome'
+  | 'openUserHome'
   | 'newFolder'
   | 'newFile'
   | 'pasteClipboard'
@@ -309,6 +312,15 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       refresh: {
         explorerToolbar: { zone: 'primaryEnd', order: 80 },
       },
+      customizeHome: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 5 },
+      },
+      refreshHome: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 6 },
+      },
+      openUserHome: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 7 },
+      },
       newFolder: {
         explorerToolbar: { zone: 'secondaryEnd', order: 80 },
       },
@@ -542,6 +554,15 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       refresh: {
         explorerToolbar: { zone: 'primaryEnd', order: 60 },
+      },
+      customizeHome: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 6 },
+      },
+      refreshHome: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 7 },
+      },
+      openUserHome: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 8 },
       },
       newFolder: {
         explorerToolbar: { zone: 'secondaryEnd', order: 100 },

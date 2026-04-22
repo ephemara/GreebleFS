@@ -1,5 +1,26 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Explorer Home Is Now An App-Owned Surface With Home Packs
+
+- Explorer `Home` no longer means "navigate to the machine home directory." The durable explorer default is now the virtual route `greeblefs://home`, which is an app-owned surface with its own rendering/runtime/settings model.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now treats `greeblefs://home` as a special explorer surface rather than a directory listing. It skips filesystem listing/search/preview assumptions, swaps in Home-specific toolbar/context actions, preserves history normally, and only records usage telemetry for successful local folder navigations.
+  - `src/components/explorer/ExplorerSideRail.tsx` and `src/components/explorer/ExplorerWorkspace.tsx` now recognize the virtual Home route as a first-class location label/state instead of falling through to raw path leaf handling.
+  - `src/components/home/ExplorerHomeSurface.tsx` is the host-owned Home renderer/runtime seam. It assembles quick access, bookmarks, saved searches, drives, task-center data, launchpad actions, and usage telemetry into one constrained pack host contract.
+  - `src/components/home/homePackRuntime.tsx`, `src/components/home/builtInHomePacks.tsx`, and `src/config/homePackages.ts` now define the Home-pack system. Built-ins ship as `command-center` and `favorites-deck`, while authored packs live under the managed `home-packs/` root and can contribute presets, module layouts, custom renderers, and optional pack-specific settings UI.
+  - `src/store/settingsStore.ts` now persists `settings.home.activePackId`, `usageTrackingEnabled`, `packStateById`, and `activePresetIdByPackId`. Treat this as the canonical Home-state contract instead of smuggling pack state into generic appearance or explorer settings.
+  - `src/config/appearance.ts` and `src/config/themePackages.ts` now allow themes to suggest `defaultHomePackId`, but Home-pack choice remains independent from the active app theme.
+  - `src-tauri/src/explorer_pro_commands.rs` now owns local-only Home usage telemetry through the existing explorer metadata lane. The typed commands `explorer_home_usage_list`, `explorer_home_usage_record`, and `explorer_home_usage_clear` feed the frontend's `most used` and `recent` lanes without inventing a second persistence store.
+  - `src/components/SettingsPage.tsx` now has a dedicated `Home` section for active-pack selection, preset selection, usage-tracking toggle/reset, managed-folder open/refresh controls, and pack-provided settings UI. Home is intentionally its own settings surface, not a subsection of Explorer.
+- Durable product note:
+  - If a test or tool needs the explorer to boot into a real filesystem path, it must seed `settings.explorer.defaultPath` explicitly. The shipped default should remain `greeblefs://home`.
+  - Keep Home packs modular and host-constrained. New Home content should extend the pack host/catalog or pack manifests first, not punch raw filesystem truth or random native invokes directly into pack code.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `bun x tsc --noEmit`
+  - passed: `bun x vitest run src/test/panelRegistry.test.tsx src/test/settingsPage.behavior.test.tsx src/test/settingsPage.shaders.test.tsx src/test/ExplorerWorkspace.test.tsx src/test/fileExplorer.searchTelemetry.test.tsx`
+  - note: `src/test/fileExplorer.viewModes.test.tsx` still hits a Vitest heap OOM in this workspace even when isolated and retried with `--pool=forks`; the suite reached `63/88` passing tests before the harness died, so treat that as environment instability rather than a confirmed Home regression.
+
 # 2026-04-22 - Models Settings Tab And Shared Local-Model Management
 
 - Local models are no longer only an implementation detail of semantic search. GreebleFS now has a dedicated `Models` settings section intended to stay valid as more local-model features land, including semantic indexing now and future local inference or source-separation lanes later.

@@ -15,7 +15,6 @@ import {
 import {
   createLoadedExplorerHomePackRuntime,
   type ExplorerHomeBookmarkItem,
-  type ExplorerHomePackHost,
   type ExplorerHomePackRendererProps,
   type ExplorerHomePackSettingsProps,
   type LoadedExplorerHomePackRuntime,

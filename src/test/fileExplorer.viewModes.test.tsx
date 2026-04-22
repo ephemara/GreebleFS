@@ -839,6 +839,7 @@ describe("FileExplorer view modes", () => {
     vi.mocked(currentWindow.scaleFactor).mockClear();
     resetOverlayTermStorage(window.localStorage);
     useSettingsStore.getState().resetToDefaults();
+    useSettingsStore.getState().updateExplorer({ defaultPath: REPO_ROOT });
     useExplorerStore.getState().resetSession();
     useExplorerStore.getState().setPropertiesPanel(null);
     useExplorerStore

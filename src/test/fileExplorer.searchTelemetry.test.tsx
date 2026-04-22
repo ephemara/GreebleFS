@@ -273,6 +273,7 @@ describe('FileExplorer search telemetry', () => {
     resetExplorerPerformanceSnapshot(window.localStorage);
     invalidateExplorerResultCaches();
     useSettingsStore.getState().resetToDefaults();
+    useSettingsStore.getState().updateExplorer({ defaultPath: REPO_ROOT });
     useExplorerStore.getState().resetSession();
     useExplorerStore.getState().replaceRail(createDefaultExplorerRailSnapshot());
     useExplorerStore.getState().clearPersistenceNotice();

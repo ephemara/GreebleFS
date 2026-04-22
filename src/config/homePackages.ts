@@ -517,7 +517,7 @@ export async function loadExplorerHomePacks(): Promise<ExplorerHomePackLoadResul
   }
 
   try {
-    const entries = await commands.fsListDir(directory).then(unwrapTauriResult);
+    const entries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
     return loadExplorerHomePacksFromDirectoryEntries(entries, directory);
   } catch (error) {
     return {

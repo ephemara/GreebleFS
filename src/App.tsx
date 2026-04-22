@@ -71,6 +71,7 @@ import {
   type OverlayThemeRendererHost,
   type OverlayThemeRendererPanel,
 } from './components/themeRendererRuntime';
+import { getBuiltInExplorerHomePacks } from './components/home/builtInHomePacks';
 import {
   normalizeThemeRendererShellLayout,
   type OverlayThemeRendererShellModel,
@@ -99,6 +100,11 @@ import {
   topBarSystemConfig,
   type LoadedOverlayTopBarPackage,
 } from './config/topBarPackages';
+import {
+  homePackSystemConfig,
+  loadExplorerHomePacks as discoverExplorerHomePacks,
+  type LoadedExplorerHomePack,
+} from './config/homePackages';
 import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
 import { dispatchTerminalCommand } from './config/pluginContributions';
 import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './config/hotkeys';
@@ -489,6 +495,7 @@ function App() {
   const topBarPackagesSignatureRef = useRef('');
   const themePackagesSignatureRef = useRef('');
   const iconThemePackagesSignatureRef = useRef('');
+  const homePacksSignatureRef = useRef('');
   const authoredAnimationsRefreshInFlightRef = useRef(false);
   const authoredAnimationsRefreshQueuedRef = useRef(false);
   const authoredShadersRefreshInFlightRef = useRef(false);
@@ -501,6 +508,8 @@ function App() {
   const themePackagesRefreshQueuedRef = useRef(false);
   const iconThemePackagesRefreshInFlightRef = useRef(false);
   const iconThemePackagesRefreshQueuedRef = useRef(false);
+  const homePacksRefreshInFlightRef = useRef(false);
+  const homePacksRefreshQueuedRef = useRef(false);
   const frameTelemetryContextRef = useRef<{
     activePanelId: string | null;
     openPanelCount: number;
@@ -512,6 +521,8 @@ function App() {
   });
   const dragHideRestoreRef = useRef(false);
   const openTerminalPanelRef = useRef<() => void>(() => undefined);
+  const activatePanelRef = useRef<(panelId: string) => void>(() => undefined);
+  const openSettingsSectionRef = useRef<(section: SettingsSectionKey) => void>(() => undefined);
   const zenFocusRestorePanelIdRef = useRef<string | null>(null);
   // Tracks whether the overlay has been dragged away from its anchor position
   const isFreefloatingRef = useRef(false);
@@ -529,6 +540,10 @@ function App() {
   const [iconThemePackagesLoading, setIconThemePackagesLoading] = useState(true);
   const [iconThemePackagesError, setIconThemePackagesError] = useState<string | null>(null);
   const [iconThemePackagesWarnings, setIconThemePackagesWarnings] = useState<string[]>([]);
+  const [authoredHomePacks, setAuthoredHomePacks] = useState<LoadedExplorerHomePack[]>([]);
+  const [homePacksLoading, setHomePacksLoading] = useState(true);
+  const [homePacksError, setHomePacksError] = useState<string | null>(null);
+  const [homePacksWarnings, setHomePacksWarnings] = useState<string[]>([]);
   const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
   const [repositoryPickerRequestId, setRepositoryPickerRequestId] = useState(0);
   const [isRepositoryPickerActive, setIsRepositoryPickerActive] = useState(false);
@@ -604,6 +619,31 @@ function App() {
     createPluginApi,
   } = useFolderPluginRuntime(runtimePlatform, { liveReloadEnabled: systemSettings.developerMode });
   const liveReloadEnabled = systemSettings.developerMode;
+  const builtInHomePacks = useMemo<LoadedExplorerHomePack[]>(() => (
+    getBuiltInExplorerHomePacks().map((runtime) => ({
+      id: runtime.id,
+      name: runtime.name,
+      version: 1,
+      directoryPath: runtime.packRoot,
+      manifestPath: runtime.filePath,
+      sourceKind: 'built-in',
+      sourceLabel: 'built-in',
+      description: runtime.description,
+      tags: ['built-in', 'home-pack'],
+      warnings: runtime.error ? [runtime.error] : [],
+      runtime,
+    }))
+  ), []);
+  const combinedHomePacks = useMemo(() => {
+    const packMap = new Map<string, LoadedExplorerHomePack>();
+    for (const pack of builtInHomePacks) {
+      packMap.set(pack.id, pack);
+    }
+    for (const pack of authoredHomePacks) {
+      packMap.set(pack.id, pack);
+    }
+    return [...packMap.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [authoredHomePacks, builtInHomePacks]);
   const combinedThemePackages = useMemo(
     () => [...themePackages, ...pluginThemePackages],
     [pluginThemePackages, themePackages],
@@ -2583,6 +2623,66 @@ function App() {
     }
   }, []);
 
+  const refreshHomePacks = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setAuthoredHomePacks([]);
+      setHomePacksError(null);
+      setHomePacksWarnings([]);
+      setHomePacksLoading(false);
+      return;
+    }
+
+    if (force) {
+      homePacksRefreshQueuedRef.current = true;
+    }
+    if (homePacksRefreshInFlightRef.current) {
+      homePacksRefreshQueuedRef.current = true;
+      return;
+    }
+
+    homePacksRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || homePacksRefreshQueuedRef.current;
+        homePacksRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          homePacksSignatureRef.current = '';
+        }
+
+        setHomePacksLoading((prev) => prev && !nextForce);
+        try {
+          await ensureDir(homePackSystemConfig.homePacksDirectory);
+          const listed = await listExplorerDir(homePackSystemConfig.homePacksDirectory, false);
+          const nextSignature = listed
+            .map((entry) => `${entry.path}:${entry.modified}`)
+            .sort()
+            .join('|');
+
+          if (!nextForce && nextSignature === homePacksSignatureRef.current) {
+            setHomePacksLoading(false);
+            continue;
+          }
+
+          homePacksSignatureRef.current = nextSignature;
+          const result = await discoverExplorerHomePacks();
+          setAuthoredHomePacks(result.packs);
+          setHomePacksError(result.sourceError);
+          setHomePacksWarnings(result.warnings);
+        } catch (error) {
+          setAuthoredHomePacks([]);
+          setHomePacksError(String(error));
+          setHomePacksWarnings([]);
+        } finally {
+          setHomePacksLoading(false);
+        }
+      } while (homePacksRefreshQueuedRef.current);
+    } finally {
+      homePacksRefreshInFlightRef.current = false;
+    }
+  }, []);
+
   const refreshThemePackages = useCallback(async (force = false) => {
     if (!isTauri()) {
       setThemePackages([]);
@@ -2728,6 +2828,10 @@ function App() {
 
   const openIconThemesFolder = useCallback(async () => {
     await openManagedContentDirectory('iconThemes');
+  }, [openManagedContentDirectory]);
+
+  const openHomePacksFolder = useCallback(async () => {
+    await openManagedContentDirectory('homePacks');
   }, [openManagedContentDirectory]);
 
   const openThemesFolder = useCallback(async () => {
@@ -3027,6 +3131,22 @@ function App() {
   }, [isOverlayVisible, liveReloadEnabled, refreshIconThemePackages]);
 
   useEffect(() => {
+    void refreshHomePacks(true);
+  }, [refreshHomePacks]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !homePackSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshHomePacks();
+    }, homePackSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshHomePacks]);
+
+  useEffect(() => {
     void refreshThemePackages(true);
   }, [refreshThemePackages]);
 
@@ -3088,6 +3208,11 @@ function App() {
         topBarPackagesLoading,
         topBarPackagesError,
         topBarPackagesWarnings,
+        homePacks: combinedHomePacks,
+        homePacksDirectory: homePackSystemConfig.homePacksDirectory,
+        homePacksLoading,
+        homePacksError,
+        homePacksWarnings,
         themePackages: combinedThemePackages,
         themePackagesDirectory: themeSystemConfig.themesDirectory,
         themePackagesLoading,
@@ -3095,6 +3220,8 @@ function App() {
         themePackagesWarnings,
         onRefreshTopBars: refreshTopBarCatalog,
         onOpenTopBarsFolder: openTopBarsFolder,
+        onRefreshHomePacks: () => refreshHomePacks(true),
+        onOpenHomePacksFolder: openHomePacksFolder,
         iconThemePackages,
         iconThemePackagesDirectory: iconThemeSystemConfig.iconThemesDirectory,
         iconThemePackagesLoading,
@@ -3127,6 +3254,8 @@ function App() {
         onOpenWallpapersFolder: openWallpapersFolder,
         onImportWallpaperFiles: importWallpaperFiles,
         onSetWindowMode: requestWindowModeChange,
+        onActivatePanel: (panelId) => activatePanelRef.current(panelId),
+        onOpenSettingsSection: (section) => openSettingsSectionRef.current(section),
         renderPluginsManager: () => (
           <PluginsManager
             appearance={resolvedAppearance}
@@ -3172,11 +3301,13 @@ function App() {
       availableAnimations,
       availableWallpapers,
       availableShaders,
+      combinedHomePacks,
       pluginContributedShaders,
       pluginCommands,
       pluginExplorerActions,
       pluginContextMenuItems,
       openAnimationsFolder,
+      openHomePacksFolder,
       openShadersFolder,
       openPluginsFolder,
       openTopBarsFolder,
@@ -3208,6 +3339,10 @@ function App() {
       themePackagesError,
       themePackagesLoading,
       themePackagesWarnings,
+      homePacksError,
+      homePacksLoading,
+      homePacksWarnings,
+      refreshHomePacks,
     ],
   );
   const panelLookup = useMemo(
@@ -3521,6 +3656,7 @@ function App() {
       dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== 'settings'),
     }));
   }, [setActiveSection, updateActiveLayoutPanelState]);
+  openSettingsSectionRef.current = handleOpenSettingsSection;
 
   const handleOpenSettings = useCallback(() => {
     handleOpenSettingsSection('overview');
@@ -3537,6 +3673,7 @@ function App() {
       dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== panelId),
     }));
   }, [panelLookup, pinnedPanelIds, updateActiveLayoutPanelState]);
+  activatePanelRef.current = handleActivatePanel;
 
   const handleOpenTerminalPanel = useCallback(() => {
     const now = Date.now();

@@ -179,58 +179,64 @@ export function normalizeExplorerHomePackPresets(
     return [];
   }
 
-  return presets
-    .map((preset, presetIndex) => {
-      const presetId = typeof preset.id === 'string' && preset.id.trim()
-        ? preset.id.trim()
-        : `preset-${presetIndex + 1}`;
-      const modules = Array.isArray(preset.modules)
-        ? preset.modules
-          .map((module, moduleIndex) => {
-            if (!module || typeof module !== 'object') {
-              return null;
-            }
+  const normalizedPresets: ExplorerHomePackPresetDefinition[] = [];
 
-            const normalizedModuleId = typeof module.moduleId === 'string' && module.moduleId.trim()
-              ? module.moduleId.trim()
-              : '';
-            if (!normalizedModuleId) {
-              return null;
-            }
+  for (const [presetIndex, preset] of presets.entries()) {
+    const presetId = typeof preset.id === 'string' && preset.id.trim()
+      ? preset.id.trim()
+      : `preset-${presetIndex + 1}`;
+    const modules: ExplorerHomePackModuleLayout[] = [];
 
-            return {
-              id: typeof module.id === 'string' && module.id.trim()
-                ? module.id.trim()
-                : `${presetId}-module-${moduleIndex + 1}`,
-              moduleId: normalizedModuleId,
-              title: typeof module.title === 'string' && module.title.trim()
-                ? module.title.trim()
-                : undefined,
-              description: typeof module.description === 'string' && module.description.trim()
-                ? module.description.trim()
-                : undefined,
-              style: module.style,
-              limit: typeof module.limit === 'number' && Number.isFinite(module.limit)
-                ? Math.max(1, Math.trunc(module.limit))
-                : undefined,
-              prominence: module.prominence,
-            } satisfies ExplorerHomePackModuleLayout;
-          })
-          .filter((module): module is ExplorerHomePackModuleLayout => module != null)
-        : [];
+    if (Array.isArray(preset.modules)) {
+      for (const [moduleIndex, module] of preset.modules.entries()) {
+        if (!module || typeof module !== 'object') {
+          continue;
+        }
 
-      return {
-        id: presetId,
-        name: typeof preset.name === 'string' && preset.name.trim()
-          ? preset.name.trim()
-          : deriveExplorerHomePackName(presetId),
-        description: typeof preset.description === 'string' && preset.description.trim()
-          ? preset.description.trim()
-          : undefined,
-        modules,
-      } satisfies ExplorerHomePackPresetDefinition;
-    })
-    .filter((preset) => preset.modules.length > 0);
+        const normalizedModuleId = typeof module.moduleId === 'string' && module.moduleId.trim()
+          ? module.moduleId.trim()
+          : '';
+        if (!normalizedModuleId) {
+          continue;
+        }
+
+        modules.push({
+          id: typeof module.id === 'string' && module.id.trim()
+            ? module.id.trim()
+            : `${presetId}-module-${moduleIndex + 1}`,
+          moduleId: normalizedModuleId,
+          title: typeof module.title === 'string' && module.title.trim()
+            ? module.title.trim()
+            : undefined,
+          description: typeof module.description === 'string' && module.description.trim()
+            ? module.description.trim()
+            : undefined,
+          style: module.style,
+          limit: typeof module.limit === 'number' && Number.isFinite(module.limit)
+            ? Math.max(1, Math.trunc(module.limit))
+            : undefined,
+          prominence: module.prominence,
+        });
+      }
+    }
+
+    if (modules.length === 0) {
+      continue;
+    }
+
+    normalizedPresets.push({
+      id: presetId,
+      name: typeof preset.name === 'string' && preset.name.trim()
+        ? preset.name.trim()
+        : deriveExplorerHomePackName(presetId),
+      description: typeof preset.description === 'string' && preset.description.trim()
+        ? preset.description.trim()
+        : undefined,
+      modules,
+    });
+  }
+
+  return normalizedPresets;
 }
 
 export function createLoadedExplorerHomePackRuntime(
