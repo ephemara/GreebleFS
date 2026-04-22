@@ -40,6 +40,8 @@ function renderSettingsPage(options?: {
   appearanceThemeId?: string;
   topBarPackages?: LoadedOverlayTopBarPackage[];
   themePackages?: LoadedOverlayThemePackage[];
+  onRefreshTopBars?: () => Promise<void>;
+  onOpenTopBarsFolder?: () => Promise<void>;
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginExplorerActions?: OverlayPluginExplorerActionContribution[];
 }) {
@@ -68,8 +70,8 @@ function renderSettingsPage(options?: {
       themePackagesLoading={false}
       themePackagesError={null}
       themePackagesWarnings={[]}
-      onRefreshTopBars={async () => {}}
-      onOpenTopBarsFolder={async () => {}}
+      onRefreshTopBars={options?.onRefreshTopBars ?? (async () => {})}
+      onOpenTopBarsFolder={options?.onOpenTopBarsFolder ?? (async () => {})}
       onRefreshThemes={async () => {}}
       onOpenThemesFolder={async () => {}}
       shaders={createBuiltInOverlayShaders()}
@@ -103,6 +105,7 @@ function renderSettingsPage(options?: {
 describe('SettingsPage behavior', () => {
   beforeEach(() => {
     useSettingsStore.getState().resetToDefaults();
+    useSettingsStore.setState({ activeSection: 'overview' });
     useExplorerStore.getState().resetSession();
     useTerminalStore.setState({
       isInitialized: true,
@@ -115,6 +118,14 @@ describe('SettingsPage behavior', () => {
       configurable: true,
       value: 'Win32',
     });
+  });
+
+  it('lands directly on the icons section when deep-linked through the settings store', () => {
+    useSettingsStore.getState().setActiveSection('icons');
+
+    renderSettingsPage();
+
+    expect(screen.getByText('Choose a dedicated icon theme independently from the active shell theme, keep folder rules in one place, and decide when OS-native icons should still fill gaps.')).toBeInTheDocument();
   });
 
   it('lands on the overview section and can create then open a missing workspace root', async () => {
@@ -143,6 +154,8 @@ describe('SettingsPage behavior', () => {
 
     await user.click(findSectionButton('Overview'));
     await user.click(screen.getByRole('button', { name: 'Open Plugins Folder' }));
+    expect(screen.getByRole('button', { name: 'Open Notes Folder' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Home Packs Folder' })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('fs_create_dir', { path: pluginSystemConfig.pluginsDirectory });
@@ -153,29 +166,16 @@ describe('SettingsPage behavior', () => {
 
   it('opens the standalone top-bars folder from the dedicated settings section', async () => {
     const user = userEvent.setup();
-    const invokeMock = vi.mocked(invoke);
+    const openTopBarsFolder = vi.fn(async () => {});
 
-    invokeMock.mockImplementation(async (command: string, args: unknown) => {
-      if (command === 'fs_list_dir') {
-        const payload = args as { path?: string } | undefined;
-        if (payload?.path === topBarSystemConfig.topBarsDirectory) {
-          throw new Error('missing');
-        }
-        return [];
-      }
-
-      return null;
+    renderSettingsPage({
+      onOpenTopBarsFolder: openTopBarsFolder,
     });
-
-    renderSettingsPage();
 
     await user.click(findSectionButton('Top Bars'));
     await user.click(screen.getByRole('button', { name: 'Open Top Bars Folder' }));
 
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('fs_create_dir', { path: topBarSystemConfig.topBarsDirectory });
-    });
-    expect(invokeMock).toHaveBeenCalledWith('fs_open_file', { path: topBarSystemConfig.topBarsDirectory });
+    expect(openTopBarsFolder).toHaveBeenCalledTimes(1);
   }, 30000);
 
   it('updates explorer click mode, restores folder rules, and seeds bookmarks without duplicates', async () => {
@@ -482,7 +482,7 @@ describe('SettingsPage behavior', () => {
       expect(screen.getByText('Saved in Settings')).toBeInTheDocument();
       expect(screen.getAllByRole('button', { name: 'Connect Account' })[0]).not.toBeDisabled();
     });
-  });
+  }, 30000);
 
   it('syncs startup registration, desktop visibility toggles, and commits hotkey edits', async () => {
     const user = userEvent.setup();

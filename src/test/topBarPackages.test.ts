@@ -13,17 +13,14 @@ describe('top bar packages', () => {
       if (command === 'fs_read_text_file') {
         const payload = args as { path?: string } | undefined;
         if (payload?.path === '/workspace/top-bars/scanner-rack.json') {
-          return {
-            status: 'ok',
-            data: JSON.stringify({
-              id: 'scanner-rack',
-              name: 'Scanner Rack',
-              description: 'A standalone scan-heavy top bar.',
-              topBarStyle: 'glass',
-              navigationMode: 'summary',
-              leadingControls: ['command-palette', 'panel-menu'],
-            }),
-          };
+          return JSON.stringify({
+            id: 'scanner-rack',
+            name: 'Scanner Rack',
+            description: 'A standalone scan-heavy top bar.',
+            topBarStyle: 'glass',
+            navigationMode: 'summary',
+            leadingControls: ['command-palette', 'panel-menu'],
+          });
         }
       }
 

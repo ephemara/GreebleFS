@@ -344,7 +344,7 @@ export async function loadTopBarPackages(): Promise<TopBarPackageLoadResult> {
   }
 
   try {
-    const entries = await commands.fsListDir(directory).then(unwrapTauriResult);
+    const entries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
     return loadTopBarPackagesFromDirectoryEntries(entries, directory);
   } catch (error) {
     return {

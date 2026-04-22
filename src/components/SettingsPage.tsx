@@ -891,24 +891,6 @@ const DEFAULT_LOADED_LAYOUT_MANIFEST: LoadedLayoutManifest = {
   sourceError: null,
 };
 
-type SettingsSectionKey =
-  | 'overview'
-  | 'appearance'
-  | 'top-bars'
-  | 'icons'
-  | 'wallpapers'
-  | 'shaders'
-  | 'animations'
-  | 'terminal'
-  | 'explorer'
-  | 'cloud'
-  | 'screenshots'
-  | 'layouts'
-  | 'hotkeys'
-  | 'system'
-  | 'audio'
-  | 'theme-json';
-
 function SettingsRailButton({
   active,
   icon,
@@ -1011,6 +993,8 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
     case 'theme-json':
       return <Type size={14} />;
   }
+
+  return <Settings2 size={14} />;
 }
 
 interface SettingsSectionContentContext {
@@ -1143,6 +1127,11 @@ function getSettingsSectionContent(
         detail: 'Paste, tweak, and version full theme definitions directly when the recipe controls and token pickers are not enough.',
       };
   }
+
+  return {
+    summary: String(sectionKey),
+    detail: 'Configure this settings slice.',
+  };
 }
 
 function formatScreenshotOutputActionLabel(action: ScreenshotOutputActionId): string {
@@ -2375,7 +2364,7 @@ export function SettingsPage({
       actionLabel: 'Screenshot Settings',
       action: () => setActiveSection('screenshots'),
     },
-  ], []);
+  ], [setActiveSection]);
   const workspaceRoots = useMemo(() => managedContentDirectoryCatalog.map(entry => ({
     id: entry.id,
     label: entry.label,

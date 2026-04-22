@@ -46,6 +46,15 @@ export const settingsSectionCatalog = [
     order: 40,
   },
   {
+    key: 'home',
+    label: 'Home',
+    subtitle: 'Explorer home packs, presets, telemetry, and launch surfaces.',
+    keywords: ['home', 'home page', 'dashboard', 'start page', 'favorites'],
+    overviewSummary: 'Explorer home packs, presets, usage telemetry, and launchpad controls.',
+    featuredInOverview: true,
+    order: 45,
+  },
+  {
     key: 'layouts',
     label: 'Layouts',
     subtitle: 'Workbench profiles and shell chrome.',
@@ -171,7 +180,8 @@ export function normalizeSettingsSectionKey(value: unknown): SettingsSectionKey 
   }
 
   const trimmedValue = value.trim();
-  return SETTINGS_SECTION_LOOKUP.has(trimmedValue) ? trimmedValue as SettingsSectionKey : 'overview';
+  const normalizedValue = trimmedValue as SettingsSectionKey;
+  return SETTINGS_SECTION_LOOKUP.has(normalizedValue) ? normalizedValue : 'overview';
 }
 
 export const featuredSettingsSectionKeys = settingsSectionCatalog

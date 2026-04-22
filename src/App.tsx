@@ -33,9 +33,6 @@ import {
   type OverlayFrameTelemetryStats,
 } from './config/frameTelemetry';
 import {
-  pluginSystemConfig,
-} from './config/plugins';
-import {
   AnimationOverlayLayer,
   createBuiltInOverlayAnimations,
   isFrontendAnimationFile,
@@ -561,6 +558,7 @@ function App() {
     layoutSettings,
     pythonSettings,
     systemSettings,
+    setActiveSection,
     updateTerminal,
     updateAppearance,
     updateLayout,
@@ -572,6 +570,7 @@ function App() {
     layoutSettings: state.settings.layout,
     pythonSettings: state.settings.python,
     systemSettings: state.settings.system,
+    setActiveSection: state.setActiveSection,
     updateTerminal: state.updateTerminal,
     updateAppearance: state.updateAppearance,
     updateLayout: state.updateLayout,
@@ -2717,59 +2716,39 @@ function App() {
     ]);
   }, [refreshThemePackages, refreshTopBarPackages]);
 
-  const openIconThemesFolder = useCallback(async () => {
+  const openManagedContentDirectory = useCallback(async (directoryId: ManagedContentDirectoryId) => {
     if (!isTauri()) {
       return;
     }
 
-    await ensureDir(iconThemeSystemConfig.iconThemesDirectory);
-    await openExplorerPath(iconThemeSystemConfig.iconThemesDirectory);
+    const directoryPath = getManagedContentDirectory(directoryId);
+    await ensureDir(directoryPath);
+    await openExplorerPath(directoryPath);
   }, []);
+
+  const openIconThemesFolder = useCallback(async () => {
+    await openManagedContentDirectory('iconThemes');
+  }, [openManagedContentDirectory]);
 
   const openThemesFolder = useCallback(async () => {
-    if (!isTauri()) {
-      return;
-    }
-
-    await ensureDir(themeSystemConfig.themesDirectory);
-    await openExplorerPath(themeSystemConfig.themesDirectory);
-  }, []);
+    await openManagedContentDirectory('themes');
+  }, [openManagedContentDirectory]);
 
   const openTopBarsFolder = useCallback(async () => {
-    if (!isTauri()) {
-      return;
-    }
-
-    await ensureDir(topBarSystemConfig.topBarsDirectory);
-    await openExplorerPath(topBarSystemConfig.topBarsDirectory);
-  }, []);
+    await openManagedContentDirectory('topBars');
+  }, [openManagedContentDirectory]);
 
   const openAnimationsFolder = useCallback(async () => {
-    if (!isTauri()) {
-      return;
-    }
-
-    await ensureDir(animationSystemConfig.animationsDirectory);
-    await openExplorerPath(animationSystemConfig.animationsDirectory);
-  }, []);
+    await openManagedContentDirectory('animations');
+  }, [openManagedContentDirectory]);
 
   const openShadersFolder = useCallback(async () => {
-    if (!isTauri()) {
-      return;
-    }
-
-    await ensureDir(shaderSystemConfig.shadersDirectory);
-    await openExplorerPath(shaderSystemConfig.shadersDirectory);
-  }, []);
+    await openManagedContentDirectory('shaders');
+  }, [openManagedContentDirectory]);
 
   const openWallpapersFolder = useCallback(async () => {
-    if (!isTauri()) {
-      return;
-    }
-
-    await ensureDir(wallpaperSystemConfig.wallpapersDirectory);
-    await openExplorerPath(wallpaperSystemConfig.wallpapersDirectory);
-  }, []);
+    await openManagedContentDirectory('wallpapers');
+  }, [openManagedContentDirectory]);
 
   const refreshAuthoredWallpapers = useCallback(async (force = false) => {
     if (!isTauri()) {
@@ -3534,13 +3513,18 @@ function App() {
     }));
   }, [tabbedOpenPanelIds, updateActiveLayoutPanelState]);
 
-  const handleOpenSettings = useCallback(() => {
+  const handleOpenSettingsSection = useCallback((section: SettingsSectionKey) => {
+    setActiveSection(section);
     updateActiveLayoutPanelState(current => ({
       openPanelIds: uniquePanelIds([...current.openPanelIds, 'settings']),
       activePanelId: 'settings',
       dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== 'settings'),
     }));
-  }, [updateActiveLayoutPanelState]);
+  }, [setActiveSection, updateActiveLayoutPanelState]);
+
+  const handleOpenSettings = useCallback(() => {
+    handleOpenSettingsSection('overview');
+  }, [handleOpenSettingsSection]);
 
   const handleActivatePanel = useCallback((panelId: string) => {
     if (!panelLookup.has(panelId) || pinnedPanelIds.includes(panelId)) {
@@ -3587,9 +3571,9 @@ function App() {
       {
         id: 'open-settings',
         title: 'Open Settings',
-        subtitle: 'Jump to the settings panel.',
+        subtitle: 'Jump to the settings overview.',
         group: 'App',
-        keywords: ['preferences', 'config', 'appearance'],
+        keywords: ['preferences', 'config', 'appearance', 'overview'],
         badge: 'App',
         onSelect: handleOpenSettings,
       },
@@ -3639,15 +3623,6 @@ function App() {
         onSelect: () => refreshFolderPlugins(true),
       },
       {
-        id: 'open-plugins-folder',
-        title: 'Open Plugins Folder',
-        subtitle: pluginSystemConfig.pluginsDirectory,
-        group: 'App',
-        keywords: ['plugins', 'folder'],
-        badge: 'Folder',
-        onSelect: openPluginsFolder,
-      },
-      {
         id: 'refresh-themes',
         title: 'Refresh Themes',
         subtitle: 'Reload theme packages and theme contributions.',
@@ -3682,15 +3657,6 @@ function App() {
         keywords: ['wallpapers', 'backgrounds', 'reload'],
         badge: 'Refresh',
         onSelect: () => refreshAuthoredWallpapers(true),
-      },
-      {
-        id: 'open-wallpapers-folder',
-        title: 'Open Wallpapers Folder',
-        subtitle: wallpaperSystemConfig.wallpapersDirectory,
-        group: 'App',
-        keywords: ['wallpapers', 'backgrounds', 'folder'],
-        badge: 'Folder',
-        onSelect: openWallpapersFolder,
       },
       {
         id: 'cycle-layout',
@@ -3736,6 +3702,34 @@ function App() {
         : []),
     ];
 
+    const settingsSectionActions = settingsSectionCatalog
+      .filter(section => section.key !== 'overview')
+      .map<OverlayCommandPaletteAction>(section => ({
+        id: `open-settings-section:${section.key}`,
+        title: `Open ${section.label} Settings`,
+        subtitle: section.overviewSummary,
+        group: 'Settings',
+        keywords: [
+          section.key,
+          section.label,
+          section.subtitle,
+          section.overviewSummary,
+          ...section.keywords,
+        ],
+        badge: 'Section',
+        onSelect: () => handleOpenSettingsSection(section.key as SettingsSectionKey),
+      }));
+
+    const managedContentDirectoryActions = managedContentDirectoryCatalog.map<OverlayCommandPaletteAction>(entry => ({
+      id: `open-managed-content-folder:${entry.id}`,
+      title: `Open ${entry.label} Folder`,
+      subtitle: entry.description,
+      group: 'Content',
+      keywords: [entry.id, entry.label, entry.description, ...entry.keywords],
+      badge: 'Folder',
+      onSelect: () => void openManagedContentDirectory(entry.id as ManagedContentDirectoryId),
+    }));
+
     const panelActions = panelDefinitions
       .filter(panel => !pinnedPanelIds.includes(panel.id))
       .map<OverlayCommandPaletteAction>(panel => ({
@@ -3760,6 +3754,8 @@ function App() {
 
     return [
       ...builtInActions,
+      ...settingsSectionActions,
+      ...managedContentDirectoryActions,
       ...panelActions,
       ...pluginCommandActions,
     ];
@@ -3768,12 +3764,12 @@ function App() {
     handleActivatePanel,
     handleCycleLayout,
     handleOpenSettings,
+    handleOpenSettingsSection,
     handleToggleOverlayAnchor,
     handleToggleZenFocusMode,
     handleToggleWindowMode,
     overlayAnchor,
-    openPluginsFolder,
-    openWallpapersFolder,
+    openManagedContentDirectory,
     pinnedPanelIds,
     panelDefinitions,
     pluginCommands,

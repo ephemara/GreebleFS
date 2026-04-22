@@ -93,6 +93,7 @@ import {
   type SettingsSectionKey,
 } from '../config/settingsNavigation';
 import { normalizeIconThemePackageSelectionId } from '../config/iconThemePackages';
+import { EXPLORER_HOME_PATH } from '../config/explorerVirtualLocations';
 import {
   DEFAULT_PILOT_ACCENT_COLOR,
   DEFAULT_PILOT_DARK_THEME_ID,
@@ -207,6 +208,13 @@ export interface AppearanceSettings {
   interactionMotionSurfaceOverrides: OverlayInteractionMotionSurfaceOverrideMap;
 }
 
+export interface HomeSettings {
+  activePackId: string | null;
+  usageTrackingEnabled: boolean;
+  packStateById: Record<string, Record<string, unknown>>;
+  activePresetIdByPackId: Record<string, string | null>;
+}
+
 export interface SystemSettings {
   launchAtStartup: boolean;
   hideAppInTray: boolean;
@@ -277,6 +285,7 @@ export interface Settings {
   terminal: TerminalSettings;
   python: PythonSettings;
   explorer: ExplorerSettings;
+  home: HomeSettings;
   appearance: AppearanceSettings;
   system: SystemSettings;
   screenshots: ScreenshotSettings;
@@ -307,9 +316,7 @@ type LegacyImportedSettings = Partial<Settings> & {
 // ============================================================================
 
 const getDefaultPath = (): string => {
-  // Return current working directory - will be set by Tauri on first load
-  // This is safer than guessing user paths
-  return '.';
+  return EXPLORER_HOME_PATH;
 };
 
 export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAnchor {
@@ -421,6 +428,80 @@ function normalizeExplorerSettings(
     contextMenuItemOverrides: hasExplicitContextMenuItemOverrides
       ? normalizeExplorerContextMenuItemOverrideMap(updates?.contextMenuItemOverrides)
       : base.contextMenuItemOverrides,
+  };
+}
+
+function normalizeHomePackId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return value === null ? null : null;
+  }
+
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+function normalizeHomePackStateById(
+  value: unknown,
+): Record<string, Record<string, unknown>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([packId, packState]) => {
+        const normalizedPackId = packId.trim();
+        if (!normalizedPackId || !packState || typeof packState !== 'object' || Array.isArray(packState)) {
+          return null;
+        }
+
+        return [normalizedPackId, { ...(packState as Record<string, unknown>) }] as const;
+      })
+      .filter((entry): entry is readonly [string, Record<string, unknown>] => entry != null),
+  );
+}
+
+function normalizeHomePresetSelectionMap(
+  value: unknown,
+): Record<string, string | null> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([packId, presetId]) => {
+        const normalizedPackId = packId.trim();
+        if (!normalizedPackId) {
+          return null;
+        }
+
+        return [normalizedPackId, normalizeHomePackId(presetId)] as const;
+      })
+      .filter((entry): entry is readonly [string, string | null] => entry != null),
+  );
+}
+
+function normalizeHomeSettings(
+  base: HomeSettings,
+  updates?: Partial<HomeSettings>,
+): HomeSettings {
+  const hasExplicitPackStateById = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'packStateById');
+  const hasExplicitActivePresetIdByPackId = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'activePresetIdByPackId');
+
+  return {
+    ...base,
+    ...updates,
+    activePackId: normalizeHomePackId(updates?.activePackId ?? base.activePackId),
+    usageTrackingEnabled: updates?.usageTrackingEnabled ?? base.usageTrackingEnabled,
+    packStateById: hasExplicitPackStateById
+      ? normalizeHomePackStateById(updates?.packStateById)
+      : base.packStateById,
+    activePresetIdByPackId: hasExplicitActivePresetIdByPackId
+      ? normalizeHomePresetSelectionMap(updates?.activePresetIdByPackId)
+      : base.activePresetIdByPackId,
   };
 }
 
@@ -781,6 +862,12 @@ export const defaultSettings: Settings = {
     chromeLayoutOverridesByThemeId: {},
     contextMenuItemOverrides: {},
   },
+  home: {
+    activePackId: null,
+    usageTrackingEnabled: true,
+    packStateById: {},
+    activePresetIdByPackId: {},
+  },
   appearance: {
     theme: 'dark',
     activeThemeId: DEFAULT_PILOT_DARK_THEME_ID,
@@ -961,6 +1048,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
         imported?.explorer?.contextMenuItemOverrides ?? base.explorer.contextMenuItemOverrides,
       ),
     },
+    home: normalizeHomeSettings(base.home, (imported as Partial<Settings> | undefined)?.home),
     appearance: {
       ...normalizeAppearanceSettings(base.appearance, {
         ...importedAppearanceSettings,
@@ -1000,6 +1088,9 @@ interface SettingsState {
   updateTerminal: (updates: Partial<TerminalSettings>) => void;
   updatePython: (updates: Partial<PythonSettings>) => void;
   updateExplorer: (updates: Partial<ExplorerSettings>) => void;
+  updateHome: (updates: Partial<HomeSettings>) => void;
+  setHomePackState: (packId: string, state: Record<string, unknown>) => void;
+  setHomePresetSelection: (packId: string, presetId: string | null) => void;
   setExplorerModeProfileOverride: (themeId: string, modeProfileId: ExplorerModeProfileId) => void;
   clearExplorerModeProfileOverride: (themeId: string) => void;
   setExplorerChromeLayoutOverride: (
@@ -1070,6 +1161,51 @@ export const useSettingsStore = create<SettingsState>()(
           explorer: normalizeExplorerSettings(state.settings.explorer, updates),
         },
       })),
+
+      updateHome: (updates) => set((state) => ({
+        settings: {
+          ...state.settings,
+          home: normalizeHomeSettings(state.settings.home, updates),
+        },
+      })),
+
+      setHomePackState: (packId, packState) => set((state) => {
+        const normalizedPackId = packId.trim();
+        if (!normalizedPackId) {
+          return state;
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            home: normalizeHomeSettings(state.settings.home, {
+              packStateById: {
+                ...state.settings.home.packStateById,
+                [normalizedPackId]: { ...packState },
+              },
+            }),
+          },
+        };
+      }),
+
+      setHomePresetSelection: (packId, presetId) => set((state) => {
+        const normalizedPackId = packId.trim();
+        if (!normalizedPackId) {
+          return state;
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            home: normalizeHomeSettings(state.settings.home, {
+              activePresetIdByPackId: {
+                ...state.settings.home.activePresetIdByPackId,
+                [normalizedPackId]: normalizeHomePackId(presetId),
+              },
+            }),
+          },
+        };
+      }),
 
       setExplorerModeProfileOverride: (themeId, modeProfileId) => set((state) => {
         const trimmedThemeId = themeId.trim();

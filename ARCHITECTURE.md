@@ -220,6 +220,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/store/settingsStore.ts` now persists `settings.appearance.activeTopBarId`; `null` means "follow the active theme path"
   - `SettingsPage.tsx` owns top-bar selection in a dedicated `Top Bars` section, so users can pin a top bar without swapping the entire theme
   - Theme packages can still contribute top bars and choose `theme.defaultTopBarId`; this is how packaged themes publish shell-header workflows now
+- Settings navigation is now catalog-driven instead of hardcoded section ids:
+  - `src/config/settingsNavigation.ts` defines the canonical settings-section keys, labels, ordering, overview summaries, and keyword metadata used by the rail, overview cards, and command palette
+  - `src/store/settingsStore.ts` persists `activeSection` as a typed `SettingsSectionKey`, and `SettingsPage.tsx` reads that store value directly so palette deep-links can land on sections like `Icons` or `Top Bars` without component-local routing state
+  - `src/App.tsx` builds section-jump command-palette entries from the same catalog instead of hardcoding menu paths, which keeps future settings sections discoverable as soon as they are added to the catalog
 - Interaction motion is now a first-class appearance lane separate from authored shell-transition modules:
   - `src/config/interactionMotion.ts` defines the built-in `subtle`, `spring`, and `playful` profiles, the v1 shell surface catalog, the theme recipe contract, and the resolver precedence `user override > theme default > built-in subtle`
   - `src/store/settingsStore.ts` persists `settings.appearance.interactionMotionEnabled`, `interactionMotionPresetId`, `interactionMotionIntensity`, and `interactionMotionSurfaceOverrides`; `null` preset means "follow theme"
@@ -358,9 +362,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - worker lanes must always keep a safe fallback path so test mode, unsupported environments, or worker boot failures do not break plugin/theme/shader loading
   - `DevPerformanceHud.tsx` now surfaces worker activity, fallback count, error count, and last-task duration so frontend threading changes are observable during local performance work
 - Managed content roots now split by runtime mode:
-  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `icon-themes/`, `shaders/`, `animations/`, `wallpapers/`, and `notes/` so authoring stays in the workspace
-  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/icon-themes`, `$HOME/shaders`, `$HOME/animations`, `$HOME/wallpapers`, `$HOME/notes`, or `$HOME/Screenshots`
-  - `src/config/appContentDirectories.ts` owns that bootstrap and the legacy-home-path detection/migration rules
+  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `top-bars/`, `home-packs/`, `icon-themes/`, `shaders/`, `animations/`, `wallpapers/`, `notes/`, and `Screenshots/` so authoring stays in the workspace
+  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/top-bars`, `$HOME/home-packs`, `$HOME/icon-themes`, `$HOME/shaders`, `$HOME/animations`, `$HOME/wallpapers`, `$HOME/notes`, or `$HOME/Screenshots`
+  - `src/config/appContentDirectories.ts` owns that bootstrap, the managed-content catalog, and the legacy-home-path detection/migration rules
+  - `src/App.tsx` and `SettingsPage.tsx` consume the managed-content catalog so workspace roots and folder-open commands stay discoverable as new managed roots are added
   - release migrations now also carry old `co.overlayterm.app` app-local directories forward into `co.greeblefs.app`
   - layout auto-probe now prefers `~/.greeblefs/greeblefs.layouts.{json,toml}` before older `.greeble` / `.overlayterm` fallbacks
 - Developer telemetry now follows the dev/release split too:
@@ -501,7 +506,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/`
   UI components and explorer runtime surfaces.
 - `src/config/`
-  Theme, explorer, layout, wallpaper, shader, animation, plugin, and runtime configuration.
+  Theme, explorer, layout, wallpaper, shader, animation, plugin, settings-navigation, managed-content, and runtime configuration.
 - `src/runtime/`
   Tauri/backend bridge helpers.
 - `src/store/`

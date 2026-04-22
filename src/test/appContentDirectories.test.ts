@@ -10,6 +10,10 @@ describe('managed content directories', () => {
     expect(getManagedContentDirectory('notes')).toBe('notes');
   });
 
+  it('defaults icon-theme storage to a portable managed directory name', () => {
+    expect(getManagedContentDirectory('iconThemes')).toBe('icon-themes');
+  });
+
   it('defaults top-bar storage to a portable managed directory name', () => {
     expect(getManagedContentDirectory('topBars')).toBe('top-bars');
   });
@@ -26,10 +30,22 @@ describe('managed content directories', () => {
     expect(getManagedContentDirectory('topBars')).toBe('/tmp/greeblefs-top-bars');
   });
 
+  it('respects an icon-theme directory override', () => {
+    vi.stubEnv('VITE_GREEBLEFS_ICON_THEMES_DIR', '/tmp/greeblefs-icon-themes');
+
+    expect(getManagedContentDirectory('iconThemes')).toBe('/tmp/greeblefs-icon-themes');
+  });
+
   it('still honors the legacy notes directory override', () => {
     vi.stubEnv('VITE_OVERLAYTERM_NOTES_DIR', '/tmp/overlayterm-notes');
 
     expect(getManagedContentDirectory('notes')).toBe('/tmp/overlayterm-notes');
+  });
+
+  it('still honors the legacy icon-theme directory override', () => {
+    vi.stubEnv('VITE_OVERLAYTERM_ICON_THEMES_DIR', '/tmp/overlayterm-icon-themes');
+
+    expect(getManagedContentDirectory('iconThemes')).toBe('/tmp/overlayterm-icon-themes');
   });
 
   it('still honors the legacy top-bar directory override', () => {

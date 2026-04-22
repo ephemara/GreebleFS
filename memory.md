@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Command Palette And Settings Navigation Became Catalog-Driven
+
+- The command palette no longer hardcodes settings-section paths or managed-content folder opens. `App.tsx` now builds those actions from shared catalogs, so new settings sections or content roots become discoverable without adding one-off palette branches.
+- Durable implementation shape:
+  - `src/config/settingsNavigation.ts` is the source of truth for settings sections. It owns the canonical keys, labels, ordering, overview summaries, and keyword metadata used by the rail, overview shortcut cards, and command-palette deep links.
+  - `src/store/settingsStore.ts` now persists `activeSection` as a typed `SettingsSectionKey`, with `overview` as the default. `SettingsPage.tsx` reads that store value directly, so the settings panel can land on `Icons`, `Top Bars`, or any future section without local state plumbing.
+  - `src/config/appContentDirectories.ts` now owns the managed-content catalog and env override resolution for runtime roots such as `plugins`, `themes`, `top-bars`, `home-packs`, `icon-themes`, `shaders`, `animations`, `wallpapers`, `notes`, and `screenshots`.
+  - `src/App.tsx` builds both the section-jump actions and the folder-open actions from those catalogs, while `SettingsPage.tsx` derives its overview workspace roots from the same managed-content list.
+  - `src/test/settingsPage.behavior.test.tsx`, `src/test/appContentDirectories.test.ts`, and `src/test/panelRegistry.test.tsx` now lock the new catalog-driven behavior and the updated panel prop contract.
+- Durable product note:
+  - Treat settings sections and managed roots as catalog data, not hardcoded command targets. If a new settings area or authoring folder is added later, extend the catalog first and let the palette and settings page pick it up automatically.
+- Validation:
+  - passed: `bunx vitest run src/test/appContentDirectories.test.ts src/test/settingsPage.behavior.test.tsx src/test/panelRegistry.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/commandPalette.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-21 - Interaction Motion Is Now A First-Class Appearance Subsystem
 
 - Micro-interactions are no longer scattered hover transforms inside explorer and shell components. GreebleFS now has a dedicated interaction-motion lane with theme defaults, persisted user overrides, and one shared resolver for high-frequency shell surfaces.

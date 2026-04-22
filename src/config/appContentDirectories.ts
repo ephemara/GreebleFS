@@ -45,6 +45,16 @@ export const managedContentDirectoryCatalog = [
     order: 25,
   },
   {
+    id: 'homePacks',
+    label: 'Home Packs',
+    description: 'Author explorer home dashboards, presets, and runtime modules here.',
+    keywords: ['home', 'home pack', 'dashboard', 'start page'],
+    releaseDirectoryName: 'home-packs',
+    legacyRelativeDirectoryName: 'home-packs',
+    envVarSuffix: 'HOME_PACKS',
+    order: 28,
+  },
+  {
     id: 'iconThemes',
     label: 'Icon Themes',
     description: 'Drop VS Code-style icon-theme manifests here for explorer and shell icon swaps.',
@@ -123,34 +133,15 @@ let resolvedLegacyHomeDirectories: Partial<Record<ManagedContentDirectoryId, str
 let resolvedLegacyReleaseDirectories: Partial<Record<ManagedContentDirectoryId, string>> = {};
 
 function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
-  const env = import.meta.env as {
-    VITE_GREEBLEFS_PLUGINS_DIR?: string;
-    VITE_GREEBLEFS_THEMES_DIR?: string;
-    VITE_GREEBLEFS_TOP_BARS_DIR?: string;
-    VITE_GREEBLEFS_ICON_THEMES_DIR?: string;
-    VITE_GREEBLEFS_SHADERS_DIR?: string;
-    VITE_GREEBLEFS_ANIMATIONS_DIR?: string;
-    VITE_GREEBLEFS_WALLPAPERS_DIR?: string;
-    VITE_GREEBLEFS_NOTES_DIR?: string;
-    VITE_GREEBLEFS_SCREENSHOTS_DIR?: string;
-    VITE_OVERLAYTERM_PLUGINS_DIR?: string;
-    VITE_OVERLAYTERM_THEMES_DIR?: string;
-    VITE_OVERLAYTERM_TOP_BARS_DIR?: string;
-    VITE_OVERLAYTERM_ICON_THEMES_DIR?: string;
-    VITE_OVERLAYTERM_SHADERS_DIR?: string;
-    VITE_OVERLAYTERM_ANIMATIONS_DIR?: string;
-    VITE_OVERLAYTERM_WALLPAPERS_DIR?: string;
-    VITE_OVERLAYTERM_NOTES_DIR?: string;
-    VITE_OVERLAYTERM_SCREENSHOTS_DIR?: string;
-  };
+  const env = import.meta.env as Record<string, string | undefined>;
 
   const directoryDefinition = managedContentDirectoryLookup.get(id);
   if (!directoryDefinition) {
     return null;
   }
 
-  const rawValue = env[`VITE_GREEBLEFS_${directoryDefinition.envVarSuffix}_DIR` as keyof typeof env]
-    ?? env[`VITE_OVERLAYTERM_${directoryDefinition.envVarSuffix}_DIR` as keyof typeof env];
+  const rawValue = env[`VITE_GREEBLEFS_${directoryDefinition.envVarSuffix}_DIR`]
+    ?? env[`VITE_OVERLAYTERM_${directoryDefinition.envVarSuffix}_DIR`];
 
   const normalizedValue = typeof rawValue === 'string' ? rawValue.trim() : '';
   return normalizedValue.length > 0 ? normalizedValue : null;
@@ -171,7 +162,7 @@ async function buildReleaseManagedDirectoryMap(): Promise<Record<ManagedContentD
   const root = (await appLocalDataDir()).replace(/[\\/]+$/, '');
   return Object.fromEntries(
     await Promise.all(
-      managedContentDirectoryCatalog.map(async entry => [entry.id, await join(root, entry.releaseDirectoryName)] as const),
+      managedContentDirectoryCatalog.map(async entry => [entry.id as ManagedContentDirectoryId, await join(root, entry.releaseDirectoryName)] as const),
     ),
   ) as Record<ManagedContentDirectoryId, string>;
 }
@@ -180,7 +171,7 @@ async function buildLegacyHomeDirectoryMap(): Promise<Record<ManagedContentDirec
   const root = (await homeDir()).replace(/[\\/]+$/, '');
   return Object.fromEntries(
     await Promise.all(
-      managedContentDirectoryCatalog.map(async entry => [entry.id, await join(root, entry.legacyRelativeDirectoryName)] as const),
+      managedContentDirectoryCatalog.map(async entry => [entry.id as ManagedContentDirectoryId, await join(root, entry.legacyRelativeDirectoryName)] as const),
     ),
   ) as Record<ManagedContentDirectoryId, string>;
 }
@@ -209,7 +200,7 @@ async function buildLegacyReleaseDirectoryMap(): Promise<Partial<Record<ManagedC
 
   return Object.fromEntries(
     await Promise.all(
-      managedContentDirectoryCatalog.map(async entry => [entry.id, await join(legacyRoot, entry.releaseDirectoryName)] as const),
+      managedContentDirectoryCatalog.map(async entry => [entry.id as ManagedContentDirectoryId, await join(legacyRoot, entry.releaseDirectoryName)] as const),
     ),
   ) as Partial<Record<ManagedContentDirectoryId, string>>;
 }
@@ -268,12 +259,14 @@ export async function initializeManagedContentDirectories(): Promise<void> {
       resolvedLegacyHomeDirectories = legacyHomeDirectories;
       resolvedLegacyReleaseDirectories = legacyReleaseDirectories;
 
-      for (const id of Object.keys(RELEASE_DIRECTORY_NAMES) as ManagedContentDirectoryId[]) {
+      for (const entry of managedContentDirectoryCatalog) {
+        const id = entry.id as ManagedContentDirectoryId;
         const overrideDirectory = readDirectoryOverride(id);
         resolvedManagedDirectories[id] = overrideDirectory ?? releaseDirectories[id];
       }
 
-      for (const id of Object.keys(RELEASE_DIRECTORY_NAMES) as ManagedContentDirectoryId[]) {
+      for (const entry of managedContentDirectoryCatalog) {
+        const id = entry.id as ManagedContentDirectoryId;
         if (readDirectoryOverride(id)) {
           continue;
         }
