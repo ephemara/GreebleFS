@@ -96,6 +96,8 @@ import {
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import {
   iconThemeSystemConfig,
+  normalizeIconThemePackageSelectionId,
+  resolveLoadedIconThemePackage,
   type LoadedIconThemePackage,
 } from '../config/iconThemePackages';
 import { pluginSystemConfig } from '../config/plugins';
@@ -1304,15 +1306,22 @@ export function SettingsPage({
     () => new Map(themePackages.map(pkg => [pkg.id, pkg] as const)),
     [themePackages],
   );
+  const normalizedActiveIconThemeId = useMemo(
+    () => normalizeIconThemePackageSelectionId(settings.appearance.activeIconThemeId),
+    [settings.appearance.activeIconThemeId],
+  );
   const iconThemePackageLookup = useMemo(
-    () => new Map(iconThemePackages.map(pkg => [pkg.id, pkg] as const)),
+    () => new Map(
+      iconThemePackages.map(pkg => [normalizeIconThemePackageSelectionId(pkg.id) ?? pkg.id, pkg] as const),
+    ),
     [iconThemePackages],
   );
   const activeIconThemePackage = useMemo(
-    () => settings.appearance.activeIconThemeId
-      ? (iconThemePackageLookup.get(settings.appearance.activeIconThemeId) ?? null)
+    () => normalizedActiveIconThemeId
+      ? (iconThemePackageLookup.get(normalizedActiveIconThemeId)
+        ?? resolveLoadedIconThemePackage(iconThemePackages, normalizedActiveIconThemeId))
       : null,
-    [iconThemePackageLookup, settings.appearance.activeIconThemeId],
+    [iconThemePackageLookup, iconThemePackages, normalizedActiveIconThemeId],
   );
   const availableShaders = useMemo(
     () => shaders.filter(shader => !shader.error),
@@ -1838,7 +1847,7 @@ export function SettingsPage({
     }),
     [appearance.fonts.mono, settingsSelectStyle],
   );
-  const themeIconTheme = editableTheme.assets?.iconTheme ?? getBuiltInIconTheme();
+  const themeIconTheme = activeIconThemePackage?.iconTheme ?? editableTheme.assets?.iconTheme ?? getBuiltInIconTheme();
   const iconThemeSelectionSummary = activeIconThemePackage
     ? `${activeIconThemePackage.name} · ${activeIconThemePackage.capabilitySummary.iconDefinitions} glyphs · ${activeIconThemePackage.capabilitySummary.uiIcons} UI overrides`
     : `Follow Theme Default · ${themeIconTheme.name}`;
@@ -2966,14 +2975,14 @@ export function SettingsPage({
                         onClick={() => applyIconThemeSelection(null)}
                         className="rounded px-3 py-3 text-left transition-colors"
                         style={{
-                          border: `1px solid ${settings.appearance.activeIconThemeId == null ? accent : border}`,
-                          background: settings.appearance.activeIconThemeId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                          border: `1px solid ${normalizedActiveIconThemeId == null ? accent : border}`,
+                          background: normalizedActiveIconThemeId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
                           color: text,
                         }}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[11px] font-semibold">Follow Theme Default</span>
-                          <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.activeIconThemeId == null ? accent : muted }}>
+                          <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: normalizedActiveIconThemeId == null ? accent : muted }}>
                             {themeIconTheme.name}
                           </span>
                         </div>
@@ -2983,7 +2992,7 @@ export function SettingsPage({
                       </button>
 
                       {iconThemePackages.map(iconThemePackage => {
-                        const active = settings.appearance.activeIconThemeId === iconThemePackage.id;
+                        const active = normalizedActiveIconThemeId === normalizeIconThemePackageSelectionId(iconThemePackage.id);
                         return (
                           <button
                             key={iconThemePackage.id}

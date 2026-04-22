@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { loadIconThemePackagesFromDirectoryEntries } from '../config/iconThemePackages';
+import {
+  loadIconThemePackagesFromDirectoryEntries,
+  resolveLoadedIconThemePackage,
+} from '../config/iconThemePackages';
 
 const zenManifestPath = resolve(process.cwd(), 'icon-themes/Zen/icon-theme.json');
 const zenManifestText = readFileSync(zenManifestPath, 'utf8');
@@ -58,5 +61,35 @@ describe('icon theme package loader', () => {
     expect(zenPackage?.iconTheme.iconDefinitions.folder_tree).toBe('data:image/svg+xml;base64,PHN2Zy8+');
     expect(zenPackage?.iconTheme.iconDefinitions.panel_sketchfab).toBe('data:image/svg+xml;base64,PHN2Zy8+');
     expect(zenPackage?.iconTheme.iconDefinitions.typescript).toBe('data:image/svg+xml;base64,PHN2Zy8+');
+  });
+
+  it('resolves mixed-case persisted package ids against normalized package ids', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'icon-themes/Zen/icon-theme.json') {
+        return zenManifestText;
+      }
+
+      if (command === 'fs_read_file_base64' && normalizedPath.startsWith('icon-themes/Zen/')) {
+        return 'data:image/svg+xml;base64,PHN2Zy8+';
+      }
+
+      return null;
+    });
+
+    const result = await loadIconThemePackagesFromDirectoryEntries([
+      {
+        name: 'Zen',
+        path: 'icon-themes/Zen',
+        is_dir: true,
+        extension: '',
+        modified: 0,
+      },
+    ], 'icon-themes');
+
+    expect(resolveLoadedIconThemePackage(result.packages, ' Zen ')?.id).toBe('zen');
+    expect(resolveLoadedIconThemePackage(result.packages, 'ZEN')?.id).toBe('zen');
   });
 });

@@ -566,10 +566,10 @@ describe('useSettingsStore.updateAppearance()', () => {
     expect(appearance.activeDockThemeId).toBe('dock-burnished');
   });
 
-  it('stores icon theme selection independently and normalizes blank clears back to null', () => {
+  it('stores icon theme selection independently, normalizes ids, and clears blanks back to null', () => {
     const store = useSettingsStore.getState();
-    store.updateAppearance({ activeIconThemeId: ' operator-blueprint ' });
-    expect(useSettingsStore.getState().settings.appearance.activeIconThemeId).toBe('operator-blueprint');
+    store.updateAppearance({ activeIconThemeId: ' Zen ' });
+    expect(useSettingsStore.getState().settings.appearance.activeIconThemeId).toBe('zen');
 
     store.updateAppearance({ activeIconThemeId: '   ' });
     expect(useSettingsStore.getState().settings.appearance.activeIconThemeId).toBeNull();
@@ -868,10 +868,10 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.appearance.appCloseAnimation).toBeNull();
   });
 
-  it('normalizes icon theme ids by trimming whitespace and collapsing blank values to null', () => {
+  it('normalizes icon theme ids by canonicalizing case and collapsing blank values to null', () => {
     const trimmed = mergeSettingsWithDefaults({
       appearance: {
-        activeIconThemeId: ' operator-blueprint ',
+        activeIconThemeId: ' Zen ',
       } as typeof defaultSettings.appearance,
     });
     const blank = mergeSettingsWithDefaults({
@@ -880,7 +880,7 @@ describe('mergeSettingsWithDefaults()', () => {
       } as typeof defaultSettings.appearance,
     });
 
-    expect(trimmed.appearance.activeIconThemeId).toBe('operator-blueprint');
+    expect(trimmed.appearance.activeIconThemeId).toBe('zen');
     expect(blank.appearance.activeIconThemeId).toBeNull();
   });
 

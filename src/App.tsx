@@ -95,6 +95,7 @@ import {
 import {
   iconThemeSystemConfig,
   loadIconThemePackages as discoverIconThemePackages,
+  resolveLoadedIconThemePackage,
   type LoadedIconThemePackage,
 } from './config/iconThemePackages';
 import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
@@ -608,12 +609,7 @@ function App() {
     [pluginThemePackages, themePackages],
   );
   const selectedIconTheme = useMemo(() => {
-    const activeIconThemeId = appearance.activeIconThemeId?.trim();
-    if (!activeIconThemeId) {
-      return null;
-    }
-
-    return iconThemePackages.find(iconThemePackage => iconThemePackage.id === activeIconThemeId)?.iconTheme ?? null;
+    return resolveLoadedIconThemePackage(iconThemePackages, appearance.activeIconThemeId)?.iconTheme ?? null;
   }, [appearance.activeIconThemeId, iconThemePackages]);
   const resolvedPackageThemes = useMemo(
     () => combinedThemePackages.map(pkg => pkg.theme),

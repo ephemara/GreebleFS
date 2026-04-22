@@ -24,6 +24,7 @@ import {
 import { detectClientPlatform } from '../config/platform';
 import {
   loadIconThemePackages,
+  resolveLoadedIconThemePackage,
   type LoadedIconThemePackage,
 } from '../config/iconThemePackages';
 import {
@@ -320,7 +321,7 @@ export default function FileOperationsWindowApp() {
   );
   const selectedIconTheme = useMemo(
     () => appearanceSettings.activeIconThemeId
-      ? (iconThemePackages.find(iconThemePackage => iconThemePackage.id === appearanceSettings.activeIconThemeId)?.iconTheme ?? null)
+      ? (resolveLoadedIconThemePackage(iconThemePackages, appearanceSettings.activeIconThemeId)?.iconTheme ?? null)
       : null,
     [appearanceSettings.activeIconThemeId, iconThemePackages],
   );

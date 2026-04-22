@@ -24,6 +24,16 @@
 - Durable product note:
   - Treat `canonicalIconTheme.json` as the public built-in icon contract. If a slot exists in `AppIcons.tsx` but not in the canonical manifest, the theme system is incomplete even if fallback Lucide rendering still works.
 
+# 2026-04-21 - Icon Theme Selection IDs Now Normalize Before Lookup
+
+- Icon theme packs are normalized to canonical ids like `zen` when they load, so persisted selections must normalize too or the app silently falls back to Lucide even though the pack is installed.
+- Durable implementation shape:
+  - `src/config/iconThemePackages.ts` now owns `normalizeIconThemePackageSelectionId(...)` and `resolveLoadedIconThemePackage(...)`, which means the same mixed-case/whitespace-tolerant lookup logic is shared by the main shell, Settings, and the file-operations window.
+  - `src/store/settingsStore.ts` now canonicalizes `appearance.activeIconThemeId` during merges and updates, which repairs old persisted values like `Zen` into `zen` instead of preserving a lookup miss forever.
+  - `src/test/iconThemePackages.test.ts` and `src/test/settingsStore.test.ts` now lock the legacy-id path so authored packs keep applying even if earlier sessions stored display-name casing instead of the normalized package id.
+- Durable product note:
+  - Treat icon-theme ids as canonical machine ids, not display labels. UI can show `Zen`, but persisted lookups should always normalize through the package selection helper before comparing or rendering.
+
 # 2026-04-21 - Git Manager Branch Selector No Longer Falls Back To Native White Chrome
 
 - The Git manager branch picker no longer renders as a browser-native white box inside dark themes. The control now uses shell-owned select styling so branch switching reads like part of the Git header instead of a default form widget.

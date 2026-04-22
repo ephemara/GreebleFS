@@ -12,6 +12,7 @@ import {
 import {
   getBuiltInIconTheme,
   mergeResolvedIconThemes,
+  normalizeIconId,
   parseIconThemeManifest,
   resolveIconThemeManifest,
   type OverlayResolvedIconTheme,
@@ -60,6 +61,30 @@ interface IconThemePackageRecord {
   fileName: string;
   directoryPath: string;
   manifestPath: string;
+}
+
+export function normalizeIconThemePackageSelectionId(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  return trimmedValue ? normalizeIconId(trimmedValue) : null;
+}
+
+export function resolveLoadedIconThemePackage(
+  packages: LoadedIconThemePackage[],
+  packageId: string | null | undefined,
+): LoadedIconThemePackage | null {
+  const normalizedPackageId = normalizeIconThemePackageSelectionId(packageId);
+  if (!normalizedPackageId) {
+    return null;
+  }
+
+  return packages.find(
+    iconThemePackage =>
+      normalizeIconThemePackageSelectionId(iconThemePackage.id) === normalizedPackageId,
+  ) ?? null;
 }
 
 export const iconThemeSystemConfig = {

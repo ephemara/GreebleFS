@@ -82,6 +82,7 @@ import {
   type ScreenshotOutputActionId,
 } from '../config/screenshots';
 import { isLegacyScreenshotDirectory } from '../config/appContentDirectories';
+import { normalizeIconThemePackageSelectionId } from '../config/iconThemePackages';
 import {
   DEFAULT_PILOT_ACCENT_COLOR,
   DEFAULT_PILOT_DARK_THEME_ID,
@@ -580,11 +581,13 @@ function normalizeAppearanceSettings(
       : merged.activeDockThemeId === null
         ? null
         : base.activeDockThemeId ?? null,
-    activeIconThemeId: typeof merged.activeIconThemeId === 'string'
-      ? merged.activeIconThemeId.trim() || null
-      : merged.activeIconThemeId === null
-        ? null
-        : base.activeIconThemeId ?? null,
+    activeIconThemeId: normalizeIconThemePackageSelectionId(
+      typeof merged.activeIconThemeId === 'string'
+        ? merged.activeIconThemeId
+        : merged.activeIconThemeId === null
+          ? null
+          : base.activeIconThemeId ?? null,
+    ),
     activeWallpaperId: typeof merged.activeWallpaperId === 'string'
       ? merged.activeWallpaperId.trim() || null
       : merged.activeWallpaperId === null
