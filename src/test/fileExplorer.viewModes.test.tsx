@@ -3152,6 +3152,9 @@ const value = 1;
       screen.queryByRole("button", { name: /experimental view modes:/i }),
     ).toBeNull();
     expect(statusSurface).toHaveStyle({ width: "100%", minWidth: "0" });
+    expect(
+      statusSurface?.closest('[data-overlay-explorer-plane="main"]'),
+    ).toBeNull();
     expect(taskAnchor).toHaveStyle({
       left: "50%",
       top: "50%",

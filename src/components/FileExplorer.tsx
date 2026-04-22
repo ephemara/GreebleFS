@@ -14009,14 +14009,25 @@ export function FileExplorer({
       ...(explorerTheme.cssVars as CSSProperties),
       flex: 1,
       display: "flex",
-      overflow: "hidden",
+      flexDirection: "column",
       background: "var(--overlay-explorer-root-bg)",
       color: EXP.text,
       fontFamily: uiFont,
       position: "relative",
+      overflow: "hidden",
+    }),
+    [explorerTheme.cssVars, uiFont],
+  );
+  const explorerContentRowStyle = useMemo<CSSProperties>(
+    () => ({
+      flex: 1,
+      display: "flex",
+      minHeight: 0,
+      minWidth: 0,
+      overflow: "hidden",
       flexDirection: effectiveRailPosition === "right" ? "row-reverse" : "row",
     }),
-    [effectiveRailPosition, explorerTheme.cssVars, uiFont],
+    [effectiveRailPosition],
   );
   const sidebarPaneStyle = useMemo<CSSProperties>(
     () => ({
@@ -16379,6 +16390,7 @@ export function FileExplorer({
       display: "flex",
       alignItems: "center",
       gap: 12,
+      width: "100%",
       padding: "3px 12px",
       background: "var(--overlay-explorer-status-bg)",
       borderTop: "1px solid var(--overlay-explorer-status-border)",
@@ -19612,6 +19624,7 @@ export function FileExplorer({
         setCtxMenu({ visible: true, x: e.clientX, y: e.clientY, entry: null });
       }}
     >
+      <div style={explorerContentRowStyle}>
       {/* ══ SIDEBAR ══ */}
       {shouldRenderRail && (
         <div
@@ -21230,6 +21243,8 @@ export function FileExplorer({
             />
           )}
         </div>
+      </div>
+      </div>
 
         {/* Status bar */}
         {shouldRenderStatusBar && (
@@ -21267,7 +21282,6 @@ export function FileExplorer({
             </div>
           </div>
         )}
-      </div>
 
       {/* Context menu */}
       <ContextMenu
