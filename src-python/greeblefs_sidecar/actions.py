@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from .model_management import (
+    build_model_cache_summary,
+    local_model_catalog_status_action,
+    prewarm_local_model_action,
+)
 from .semantic_search_runtime import (
     semantic_delete_index_action,
     semantic_find_similar_file_action,
@@ -261,6 +266,22 @@ def acceleration_cuda_probe_action(payload: Any, context: PythonActionContext) -
         "onnxruntime": onnxruntime_info,
         "optionalModules": optional_modules,
     }
+
+
+@python_action("models.catalog_status")
+def models_catalog_status_action(payload: Any, context: PythonActionContext) -> dict[str, Any]:
+    return local_model_catalog_status_action(payload, context)
+
+
+@python_action("models.cache_summary")
+def models_cache_summary_action(payload: Any, context: PythonActionContext) -> dict[str, Any]:
+    _ = payload
+    return build_model_cache_summary(context)
+
+
+@python_action("models.prewarm")
+def models_prewarm_action(payload: Any, context: PythonActionContext) -> dict[str, Any]:
+    return prewarm_local_model_action(payload, context)
 
 
 @python_action("files.scan_directory")

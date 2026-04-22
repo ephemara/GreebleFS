@@ -8,6 +8,7 @@ import { useSettingsStore, defaultSettings, mergeSettingsWithDefaults, resolveSy
 import { useExplorerStore } from '../store/explorerStore';
 import { overlayWindowGeometry } from '../config/overlayWindow';
 import { defaultExplorerThumbnailSettings } from '../config/explorerThumbnails';
+import { semanticIndexingCapabilityId } from '../config/localModels';
 
 beforeEach(() => {
   useSettingsStore.getState().resetToDefaults();
@@ -60,6 +61,15 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.python.bootstrapPackages).toBe('');
     expect(settings.python.autoUpgradePip).toBe(true);
     expect(settings.python.createBoilerplate).toBe(true);
+  });
+
+  it('has the correct default local model settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.models.capabilityBindings[semanticIndexingCapabilityId]).toEqual({
+      modelId: 'semantic-minilm-l6-v2',
+      backendPreference: 'auto',
+    });
+    expect(settings.models.semanticIndexRootOverrides).toEqual({});
   });
 
   it('has the correct default explorer settings', () => {
@@ -733,6 +743,38 @@ describe('useSettingsStore.applyThemeSelection()', () => {
   });
 });
 
+describe('useSettingsStore.updateModels()', () => {
+  it('updates capability bindings and semantic root overrides independently from the rest of settings', () => {
+    const store = useSettingsStore.getState();
+    store.updateModels({
+      capabilityBindings: {
+        ...store.settings.models.capabilityBindings,
+        [semanticIndexingCapabilityId]: {
+          modelId: 'semantic-bge-base-en-v1_5',
+          backendPreference: 'onnx',
+        },
+      },
+      semanticIndexRootOverrides: {
+        '/workspace/demo': {
+          modelId: 'semantic-minilm-l6-v2',
+          backendPreference: 'cpu',
+        },
+      },
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.models.capabilityBindings[semanticIndexingCapabilityId]).toEqual({
+      modelId: 'semantic-bge-base-en-v1_5',
+      backendPreference: 'onnx',
+    });
+    expect(settings.models.semanticIndexRootOverrides['/workspace/demo']).toEqual({
+      modelId: 'semantic-minilm-l6-v2',
+      backendPreference: 'cpu',
+    });
+    expect(settings.python.runtimeRoot).toBe(defaultSettings.python.runtimeRoot);
+  });
+});
+
 describe('useSettingsStore.updateScreenshots()', () => {
   it('normalizes invalid screenshot preference updates and preserves valid toggles', () => {
     const store = useSettingsStore.getState();
@@ -965,6 +1007,44 @@ describe('mergeSettingsWithDefaults()', () => {
 
     expect(merged.explorer.contextMenuItemOverrides).toEqual({
       'built-in.open': { enabled: false, order: 28 },
+    });
+  });
+
+  it('normalizes imported local model bindings and semantic root overrides', () => {
+    const merged = mergeSettingsWithDefaults({
+      models: {
+        capabilityBindings: {
+          [semanticIndexingCapabilityId]: {
+            modelId: 'semantic-bge-large-en-v1_5',
+            backendPreference: 'cuda',
+          },
+          'broken-capability': {
+            modelId: 'ignored-model',
+            backendPreference: 'bogus',
+          },
+        },
+        semanticIndexRootOverrides: {
+          '   /workspace/demo   ': {
+            modelId: 'semantic-minilm-l6-v2',
+            backendPreference: 'cpu',
+          },
+          '': {
+            modelId: 'semantic-bge-base-en-v1_5',
+            backendPreference: 'onnx',
+          },
+        },
+      } as unknown as typeof defaultSettings.models,
+    });
+
+    expect(merged.models.capabilityBindings[semanticIndexingCapabilityId]).toEqual({
+      modelId: 'semantic-bge-large-en-v1_5',
+      backendPreference: 'cuda',
+    });
+    expect(merged.models.semanticIndexRootOverrides).toEqual({
+      '/workspace/demo': {
+        modelId: 'semantic-minilm-l6-v2',
+        backendPreference: 'cpu',
+      },
     });
   });
 

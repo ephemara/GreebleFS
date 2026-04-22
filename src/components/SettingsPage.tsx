@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Camera, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, VolumeX } from '@/components/AppIcons';
+import { ArrowDown, ArrowUp, Bot, Camera, Cpu, Database, Download, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, VolumeX } from '@/components/AppIcons';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import type { LoadedOverlayAnimation } from './animationRuntime';
@@ -41,15 +41,34 @@ import {
 } from '../config/accelerationRuntime';
 import { createPythonRuntimeConfig } from '../config/python';
 import {
+  formatLocalModelEstimatedFootprint,
+  getCapabilityModels,
+  getLocalModelCapabilityDefinition,
+  getLocalModelDefinition,
+  getLocalModelDefinitionByProviderModelId,
+  getLocalModelHardwareProfile,
+  localModelBackendOptions,
+  localModelCapabilityCatalog,
+  localModelDefinitions,
+  normalizeLocalModelBackendPreference,
+  semanticIndexingCapabilityId,
+  type LocalModelBackendPreference,
+} from '../config/localModels';
+import {
   beginCloudAuth,
   clearCloudProviderConfiguration,
   disconnectCloudAccount,
   createExplorerDir,
+  getExplorerDrives,
+  getExplorerHomeDir,
   listCloudAccounts,
+  listExplorerSavedSearches,
   listExplorerDir,
   openExplorerPath,
   pollCloudAuth,
   setCloudProviderConfiguration,
+  type ExplorerDriveInfo,
+  type ExplorerSavedSearch,
   type ExplorerCloudAccountSummary,
   type ExplorerCloudAccountsSnapshot,
   type ExplorerCloudProviderConfigurationSource,
@@ -113,12 +132,20 @@ import {
 } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
+import type { LoadedExplorerHomePack } from '../config/homePackages';
 import {
   iconThemeSystemConfig,
   normalizeIconThemePackageSelectionId,
   resolveLoadedIconThemePackage,
   type LoadedIconThemePackage,
 } from '../config/iconThemePackages';
+import {
+  createExplorerHomeHost,
+  createExplorerHomeLaunchpadItems,
+  createExplorerHomeQuickAccessItems,
+  resolveExplorerHomePackSelection,
+} from './home/ExplorerHomeSurface';
+import type { ExplorerHomeBookmarkItem, ExplorerHomeUsageEntry } from './home/homePackRuntime';
 import {
   getTopBarControlLabel,
   getTopBarNavigationModeLabel,
@@ -160,6 +187,8 @@ import type {
   OverlayPluginExplorerActionContribution,
 } from '../config/pluginContributions';
 import { useSettingsStore, resolveSystemPresentationState, type TerminalWindowMode } from '../store/settingsStore';
+import { useExplorerStore } from '../store/explorerStore';
+import { useExplorerTaskSnapshots } from '../store/explorerTaskStore';
 import {
   refreshAccelerationRuntimeStatus,
   useAccelerationRuntimeStore,
@@ -178,6 +207,16 @@ import {
   getTelemetryStatus,
   type OverlayTelemetrySessionStatus,
 } from '../runtime/telemetryBackend';
+import {
+  getLocalModelCatalogStatus,
+  prewarmLocalModel,
+  type LocalModelCatalogStatus,
+} from '../runtime/modelManagementBackend';
+import {
+  clearExplorerHomeUsage,
+  listExplorerHomeUsage,
+  type ExplorerHomeUsageSnapshotValue,
+} from '../runtime/homeBackend';
 
 function ThemeBadge({ label, active = false }: { label: string; active?: boolean }) {
   return (
@@ -964,10 +1003,14 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <Sparkles size={14} />;
     case 'system':
       return <Settings2 size={14} />;
+    case 'models':
+      return <Bot size={14} />;
     case 'terminal':
       return <TerminalSquare size={14} />;
     case 'explorer':
       return <FolderOpen size={14} />;
+    case 'home':
+      return <Home size={14} />;
     case 'layouts':
       return <LayoutGrid size={14} />;
     case 'hotkeys':
@@ -1003,6 +1046,9 @@ interface SettingsSectionContentContext {
   effectiveThemeName: string;
   activeLayoutLabel: string;
   workspaceRootCount: number;
+  installedModelCount: number;
+  localModelCacheFootprint: string;
+  semanticIndexModelSummary: string;
   launchAtStartup: boolean;
   systemPresentationState: ReturnType<typeof resolveSystemPresentationState>;
   platform: 'windows' | 'macos' | 'linux' | 'unknown';
@@ -1012,6 +1058,7 @@ interface SettingsSectionContentContext {
   explorerViewModeLabel: string;
   explorerFolderClickMode: 'single' | 'double';
   explorerThumbnailsEnabled: boolean;
+  homePackSummary: string;
   layoutProfileCount: number;
   zenFocusMode: boolean;
   hotkeyLabels: string[];
@@ -1061,6 +1108,11 @@ function getSettingsSectionContent(
         ].join(' · '),
         detail: `Handle machine-level behavior like login launch and the ${context.systemPresentationState.recoveryPath === 'tray' ? 'tray' : context.platform === 'macos' ? 'Dock' : 'taskbar'} recovery path in one place.`,
       };
+    case 'models':
+      return {
+        summary: `${context.installedModelCount} installed · ${context.semanticIndexModelSummary} · ${context.localModelCacheFootprint}`,
+        detail: 'Manage the shared local-model cache, prewarm curated models, and route semantic indexing plus future local inference lanes through explicit backend and model bindings.',
+      };
     case 'terminal':
       return {
         summary: `${context.terminalWindowMode === 'windowed' ? 'application' : 'dock'} mode · ${context.terminalPreferredOpenMode} · ${context.terminalCursorStyle} cursor`,
@@ -1070,6 +1122,11 @@ function getSettingsSectionContent(
       return {
         summary: `${context.explorerViewModeLabel} · ${context.explorerFolderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${context.explorerThumbnailsEnabled ? 'Rich thumbnails' : 'Icons only'}`,
         detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and thumbnail policy without mixing in icon-pack management.',
+      };
+    case 'home':
+      return {
+        summary: context.homePackSummary,
+        detail: 'Home is now an app-owned explorer surface with pack selection, preset routing, usage telemetry, and a dedicated runtime-authored customization lane.',
       };
     case 'layouts':
       return {
@@ -1243,6 +1300,60 @@ function getCloudProviderConfigurationSourceLabel(
   }
 }
 
+function getHomeEntryLabel(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, '');
+  if (!trimmed) {
+    return 'Home';
+  }
+
+  const segments = trimmed.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? trimmed;
+}
+
+function formatModelCacheBytes(bytes: number | null | undefined): string {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B';
+  }
+
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function formatModelTimestamp(epochMs: number | null | undefined): string {
+  if (typeof epochMs !== 'number' || !Number.isFinite(epochMs) || epochMs <= 0) {
+    return 'Not warmed yet';
+  }
+
+  return new Date(epochMs).toLocaleString();
+}
+
+function mapExplorerHomeUsageEntries(
+  records: ExplorerHomeUsageSnapshotValue['most_used'],
+): ExplorerHomeUsageEntry[] {
+  return records.map((record: ExplorerHomeUsageSnapshotValue['most_used'][number]) => ({
+    path: record.path,
+    label: getHomeEntryLabel(record.path),
+    openCount: record.open_count,
+    lastOpenedAt: record.last_opened_at,
+  }));
+}
+
+function mapExplorerHomeBookmarks(
+  rail: ReturnType<typeof useExplorerStore.getState>['rail'],
+): ExplorerHomeBookmarkItem[] {
+  return rail.nodes
+    .filter((node): node is typeof rail.nodes[number] & { kind: 'bookmark'; path: string } => node.kind === 'bookmark')
+    .map((node) => ({
+      id: node.id,
+      label: node.name,
+      path: node.path,
+      color: node.color,
+      categoryIds: node.categoryIds,
+    }));
+}
+
 
 export function SettingsPage({
   appearance,
@@ -1251,6 +1362,11 @@ export function SettingsPage({
   topBarPackagesLoading,
   topBarPackagesError,
   topBarPackagesWarnings,
+  homePacks = [],
+  homePacksDirectory = '',
+  homePacksLoading = false,
+  homePacksError = null,
+  homePacksWarnings = [],
   themePackages,
   themePackagesDirectory,
   themePackagesLoading,
@@ -1263,6 +1379,8 @@ export function SettingsPage({
   iconThemePackagesWarnings = [],
   onRefreshTopBars,
   onOpenTopBarsFolder,
+  onRefreshHomePacks = async () => { },
+  onOpenHomePacksFolder = async () => { },
   onRefreshThemes,
   onOpenThemesFolder,
   onRefreshIconThemes = async () => { },
@@ -1299,6 +1417,11 @@ export function SettingsPage({
   topBarPackagesLoading: boolean;
   topBarPackagesError: string | null;
   topBarPackagesWarnings: string[];
+  homePacks?: LoadedExplorerHomePack[];
+  homePacksDirectory?: string;
+  homePacksLoading?: boolean;
+  homePacksError?: string | null;
+  homePacksWarnings?: string[];
   themePackages: LoadedOverlayThemePackage[];
   themePackagesDirectory: string;
   themePackagesLoading: boolean;
@@ -1311,6 +1434,8 @@ export function SettingsPage({
   iconThemePackagesWarnings?: string[];
   onRefreshTopBars: () => Promise<void>;
   onOpenTopBarsFolder: () => Promise<void>;
+  onRefreshHomePacks?: () => Promise<void>;
+  onOpenHomePacksFolder?: () => Promise<void>;
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
   onRefreshIconThemes?: () => Promise<void>;
@@ -1354,6 +1479,7 @@ export function SettingsPage({
     settings,
     updateTerminal,
     updateExplorer,
+    updateHome,
     updateAppearance,
     applyThemeSelection: applyThemeSelectionWithDefaults,
     applyDockThemeSelection: applyDockThemeSelectionWithDefaults,
@@ -1361,7 +1487,10 @@ export function SettingsPage({
     updateKeybindings,
     updateScreenshots,
     updateSystem,
+    updateModels,
     updateAudio,
+    setHomePackState,
+    setHomePresetSelection,
     resetToDefaults,
   } = useSettingsStore(useShallow(state => ({
     activeSection: state.activeSection,
@@ -1369,6 +1498,7 @@ export function SettingsPage({
     settings: state.settings,
     updateTerminal: state.updateTerminal,
     updateExplorer: state.updateExplorer,
+    updateHome: state.updateHome,
     updateAppearance: state.updateAppearance,
     applyThemeSelection: state.applyThemeSelection,
     applyDockThemeSelection: state.applyDockThemeSelection,
@@ -1376,7 +1506,10 @@ export function SettingsPage({
     updateKeybindings: state.updateKeybindings,
     updateScreenshots: state.updateScreenshots,
     updateSystem: state.updateSystem,
+    updateModels: state.updateModels,
     updateAudio: state.updateAudio,
+    setHomePackState: state.setHomePackState,
+    setHomePresetSelection: state.setHomePresetSelection,
     resetToDefaults: state.resetToDefaults,
   })));
   const systemPresentationState = useMemo(
@@ -1409,6 +1542,8 @@ export function SettingsPage({
     directoryBookmarks: state.directoryBookmarks,
     addDirectoryBookmark: state.addDirectoryBookmark,
   })));
+  const explorerRail = useExplorerStore((state) => state.rail);
+  const homeTasks = useExplorerTaskSnapshots();
 
   const profileOptions = useMemo(() => getExternalTerminalProfileOptions(platform), [platform]);
   const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.app.baseTheme));
@@ -1424,6 +1559,28 @@ export function SettingsPage({
   const [telemetryStatusError, setTelemetryStatusError] = useState<string | null>(null);
   const [telemetryNotice, setTelemetryNotice] = useState<string | null>(null);
   const [telemetryActionPending, setTelemetryActionPending] = useState<'export' | 'clear' | null>(null);
+  const [localModelStatus, setLocalModelStatus] = useState<LocalModelCatalogStatus | null>(null);
+  const [localModelStatusPending, setLocalModelStatusPending] = useState(false);
+  const [localModelStatusError, setLocalModelStatusError] = useState<string | null>(null);
+  const [localModelNotice, setLocalModelNotice] = useState<string | null>(null);
+  const [modelPrewarmPendingId, setModelPrewarmPendingId] = useState<string | null>(null);
+  const [semanticOverrideRootPathDraft, setSemanticOverrideRootPathDraft] = useState('');
+  const [semanticOverrideModelIdDraft, setSemanticOverrideModelIdDraft] = useState<string | null>(
+    settings.models.capabilityBindings[semanticIndexingCapabilityId]?.modelId ?? null,
+  );
+  const [semanticOverrideBackendPreferenceDraft, setSemanticOverrideBackendPreferenceDraft] =
+    useState<LocalModelBackendPreference>(
+      normalizeLocalModelBackendPreference(
+        settings.models.capabilityBindings[semanticIndexingCapabilityId]?.backendPreference,
+      ),
+    );
+  const [homeUserPath, setHomeUserPath] = useState('');
+  const [homeUsageSnapshot, setHomeUsageSnapshot] = useState<ExplorerHomeUsageSnapshotValue>({
+    most_used: [],
+    recent: [],
+  });
+  const [homeSavedSearches, setHomeSavedSearches] = useState<ExplorerSavedSearch[]>([]);
+  const [homeDrives, setHomeDrives] = useState<ExplorerDriveInfo[]>([]);
   const [accelerationProbePending, setAccelerationProbePending] = useState(false);
   const [accelerationProbeNotice, setAccelerationProbeNotice] = useState<string | null>(null);
   const [accelerationProbeError, setAccelerationProbeError] = useState<string | null>(null);
@@ -1571,13 +1728,17 @@ export function SettingsPage({
     accelerationRuntimeSnapshot,
     settings.system.accelerationRoutingMode,
   ]);
+  const managedPythonRuntimeConfig = useMemo(
+    () => createPythonRuntimeConfig(settings.python),
+    [settings.python],
+  );
   const handleProbeAccelerationPipeline = useCallback(async () => {
     setAccelerationProbePending(true);
     setAccelerationProbeNotice(null);
     setAccelerationProbeError(null);
     try {
       const snapshot = await refreshAccelerationRuntimeStatus({
-        config: createPythonRuntimeConfig(settings.python),
+        config: managedPythonRuntimeConfig,
         routingMode: settings.system.accelerationRoutingMode,
         startSidecarIfNeeded: true,
       });
@@ -1593,9 +1754,216 @@ export function SettingsPage({
       setAccelerationProbePending(false);
     }
   }, [
-    settings.python,
+    managedPythonRuntimeConfig,
     settings.system.accelerationRoutingMode,
   ]);
+  const cudaProviderStatus = useMemo(
+    () => accelerationRuntimeSnapshot.providers.find(provider => provider.providerKind === 'cudaPython') ?? null,
+    [accelerationRuntimeSnapshot.providers],
+  );
+  const cudaProviderReady = cudaProviderStatus?.ready === true || cudaProviderStatus?.available === true;
+  const semanticIndexingCapability = useMemo(
+    () => getLocalModelCapabilityDefinition(semanticIndexingCapabilityId),
+    [],
+  );
+  const semanticIndexingBinding = useMemo(
+    () => settings.models.capabilityBindings[semanticIndexingCapabilityId] ?? {
+      modelId: semanticIndexingCapability?.defaultModelId ?? null,
+      backendPreference: semanticIndexingCapability?.defaultBackendPreference ?? 'auto',
+    },
+    [
+      semanticIndexingCapability?.defaultBackendPreference,
+      semanticIndexingCapability?.defaultModelId,
+      settings.models.capabilityBindings,
+    ],
+  );
+  const semanticIndexingModels = useMemo(
+    () => getCapabilityModels(semanticIndexingCapabilityId),
+    [],
+  );
+  const localModelStatusById = useMemo(
+    () => new Map((localModelStatus?.models ?? []).map(entry => [entry.modelId, entry] as const)),
+    [localModelStatus],
+  );
+  const semanticIndexOverrideEntries = useMemo(
+    () => Object.entries(settings.models.semanticIndexRootOverrides)
+      .sort(([leftPath], [rightPath]) => leftPath.localeCompare(rightPath)),
+    [settings.models.semanticIndexRootOverrides],
+  );
+  const refreshLocalModels = useCallback(async (startIfNeeded = true) => {
+    setLocalModelStatusPending(true);
+    setLocalModelStatusError(null);
+    try {
+      const response = await getLocalModelCatalogStatus(
+        {},
+        { config: managedPythonRuntimeConfig, startIfNeeded },
+      );
+      setLocalModelStatus(response.result);
+    } catch (error) {
+      setLocalModelStatusError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLocalModelStatusPending(false);
+    }
+  }, [managedPythonRuntimeConfig]);
+  const handlePrewarmLocalModel = useCallback(async (
+    modelId: string,
+    capabilityId: string | null,
+    backendPreference: LocalModelBackendPreference,
+  ) => {
+    setModelPrewarmPendingId(modelId);
+    setLocalModelNotice(null);
+    setLocalModelStatusError(null);
+    try {
+      const response = await prewarmLocalModel(
+        {
+          modelId,
+          capabilityId,
+          backendPreference,
+        },
+        { config: managedPythonRuntimeConfig, startIfNeeded: true },
+      );
+      setLocalModelNotice(response.result.message);
+      setLocalModelStatus(await getLocalModelCatalogStatus(
+        {},
+        { config: managedPythonRuntimeConfig, startIfNeeded: true },
+      ).then(result => result.result));
+    } catch (error) {
+      setLocalModelStatusError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setModelPrewarmPendingId(null);
+    }
+  }, [managedPythonRuntimeConfig]);
+  const handleUpdateModelCapabilityBinding = useCallback((
+    capabilityId: string,
+    updates: {
+      modelId?: string | null;
+      backendPreference?: LocalModelBackendPreference;
+    },
+  ) => {
+    const currentBinding = settings.models.capabilityBindings[capabilityId] ?? {
+      modelId: null,
+      backendPreference: 'auto' as LocalModelBackendPreference,
+    };
+    updateModels({
+      capabilityBindings: {
+        ...settings.models.capabilityBindings,
+        [capabilityId]: {
+          modelId: updates.modelId ?? currentBinding.modelId,
+          backendPreference: updates.backendPreference ?? currentBinding.backendPreference,
+        },
+      },
+    });
+  }, [settings.models.capabilityBindings, updateModels]);
+  const handleApplySemanticIndexOverride = useCallback(() => {
+    const normalizedRootPath = semanticOverrideRootPathDraft.trim();
+    if (!normalizedRootPath) {
+      setLocalModelStatusError('Semantic index override requires a root path.');
+      return;
+    }
+
+    updateModels({
+      semanticIndexRootOverrides: {
+        ...settings.models.semanticIndexRootOverrides,
+        [normalizedRootPath]: {
+          modelId: semanticOverrideModelIdDraft,
+          backendPreference: semanticOverrideBackendPreferenceDraft,
+        },
+      },
+    });
+    setLocalModelNotice(`Saved semantic index override for ${normalizedRootPath}.`);
+    setSemanticOverrideRootPathDraft('');
+  }, [
+    semanticOverrideBackendPreferenceDraft,
+    semanticOverrideModelIdDraft,
+    semanticOverrideRootPathDraft,
+    settings.models.semanticIndexRootOverrides,
+    updateModels,
+  ]);
+  const handleRemoveSemanticIndexOverride = useCallback((rootPath: string) => {
+    const nextOverrides = { ...settings.models.semanticIndexRootOverrides };
+    delete nextOverrides[rootPath];
+    updateModels({ semanticIndexRootOverrides: nextOverrides });
+  }, [settings.models.semanticIndexRootOverrides, updateModels]);
+  const handleOpenLocalModelCache = useCallback(async () => {
+    const cacheRoot = localModelStatus?.cacheRoot?.trim();
+    if (!cacheRoot) {
+      setLocalModelStatusError('Model cache location is unavailable until the managed Python runtime is ready.');
+      return;
+    }
+    try {
+      await createExplorerDir(cacheRoot).catch(() => {});
+      await openExplorerPath(cacheRoot);
+    } catch (error) {
+      setLocalModelStatusError(error instanceof Error ? error.message : String(error));
+    }
+  }, [localModelStatus?.cacheRoot]);
+
+  useEffect(() => {
+    setSemanticOverrideModelIdDraft(semanticIndexingBinding.modelId);
+    setSemanticOverrideBackendPreferenceDraft(
+      normalizeLocalModelBackendPreference(semanticIndexingBinding.backendPreference),
+    );
+  }, [semanticIndexingBinding.backendPreference, semanticIndexingBinding.modelId]);
+
+  useEffect(() => {
+    if (activeSection !== 'models') {
+      return;
+    }
+
+    if (localModelStatus == null && !localModelStatusPending) {
+      void refreshLocalModels(true);
+    }
+  }, [
+    activeSection,
+    localModelStatus,
+    localModelStatusPending,
+    refreshLocalModels,
+  ]);
+
+  useEffect(() => {
+    let disposed = false;
+    void getExplorerHomeDir()
+      .then((path) => {
+        if (!disposed) {
+          setHomeUserPath(path.trim());
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setHomeUserPath('');
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeSection !== 'home') {
+      return;
+    }
+
+    let disposed = false;
+    void Promise.all([
+      listExplorerHomeUsage().catch(() => ({ most_used: [], recent: [] })),
+      listExplorerSavedSearches().catch(() => []),
+      getExplorerDrives().catch(() => []),
+    ]).then(([usageSnapshot, savedSearchesSnapshot, drivesSnapshot]) => {
+      if (disposed) {
+        return;
+      }
+
+      setHomeUsageSnapshot(usageSnapshot);
+      setHomeSavedSearches(savedSearchesSnapshot);
+      setHomeDrives(drivesSnapshot);
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, [activeSection]);
+
   const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
   const contextMenuCatalog = useMemo(
     () => sortExplorerContextMenuItems(
@@ -1722,6 +2090,31 @@ export function SettingsPage({
     : resolvedTopBarSelection.resolvedFrom === 'theme-legacy-style'
       ? `${appearance.baseTheme.name} does not declare a standalone top bar yet, so the shell falls back from that theme's legacy workbench top-bar style into ${resolvedTopBarSelection.topBar.name}.`
       : `${appearance.baseTheme.name} is currently using the built-in top-bar fallback ${resolvedTopBarSelection.topBar.name}.`;
+  const semanticIndexingSelectedModel = useMemo(
+    () => getLocalModelDefinition(semanticIndexingBinding.modelId)
+      ?? getLocalModelDefinitionByProviderModelId(semanticIndexingBinding.modelId),
+    [semanticIndexingBinding.modelId],
+  );
+  const semanticIndexingBackendLabel = useMemo(
+    () => localModelBackendOptions.find(
+      option => option.id === normalizeLocalModelBackendPreference(semanticIndexingBinding.backendPreference),
+    )?.label ?? 'Auto',
+    [semanticIndexingBinding.backendPreference],
+  );
+  const installedLocalModelCount = localModelStatus?.installedModelCount
+    ?? (localModelStatus?.models.filter(model => model.installed).length ?? 0);
+  const localModelCacheFootprint = `${formatModelCacheBytes(localModelStatus?.totalCacheSizeBytes ?? 0)} cache`;
+  const semanticIndexModelSummary = `${semanticIndexingSelectedModel?.label ?? 'No model'} · ${semanticIndexingBackendLabel}`;
+  const semanticIndexingSelectedModelStatus = useMemo(
+    () => semanticIndexingSelectedModel
+      ? localModelStatusById.get(semanticIndexingSelectedModel.id) ?? null
+      : null,
+    [localModelStatusById, semanticIndexingSelectedModel],
+  );
+  const semanticIndexingSelectedHardwareProfile = useMemo(
+    () => getLocalModelHardwareProfile(semanticIndexingSelectedModel?.hardwareProfileId),
+    [semanticIndexingSelectedModel?.hardwareProfileId],
+  );
   const effectiveShaderId = useMemo(
     () => resolvePreferredShaderId({
       availableShaderIds,
@@ -2252,6 +2645,122 @@ export function SettingsPage({
   const iconThemeSelectionSummary = activeIconThemePackage
     ? `${activeIconThemePackage.name} · ${activeIconThemePackage.capabilitySummary.iconDefinitions} glyphs · ${activeIconThemePackage.capabilitySummary.uiIcons} UI overrides`
     : `Follow Theme Default · ${themeIconTheme.name}`;
+  const homeQuickAccess = useMemo(
+    () => createExplorerHomeQuickAccessItems(homeUserPath),
+    [homeUserPath],
+  );
+  const homeBookmarks = useMemo(
+    () => mapExplorerHomeBookmarks(explorerRail),
+    [explorerRail],
+  );
+  const homeMostUsedFolders = useMemo(
+    () => mapExplorerHomeUsageEntries(homeUsageSnapshot.most_used),
+    [homeUsageSnapshot.most_used],
+  );
+  const homeRecentFolders = useMemo(
+    () => mapExplorerHomeUsageEntries(homeUsageSnapshot.recent),
+    [homeUsageSnapshot.recent],
+  );
+  const homeLaunchpad = useMemo(
+    () => createExplorerHomeLaunchpadItems(),
+    [],
+  );
+  const homeSelection = useMemo(
+    () => resolveExplorerHomePackSelection({
+      packs: homePacks,
+      requestedPackId: settings.home.activePackId,
+      themeDefaultPackId: appearance.baseTheme.defaultHomePackId,
+    }),
+    [appearance.baseTheme.defaultHomePackId, homePacks, settings.home.activePackId],
+  );
+  const activeHomePack = homeSelection.activePack;
+  const activeHomePackState = useMemo<Record<string, unknown>>(
+    () => (activeHomePack ? (settings.home.packStateById[activeHomePack.id] ?? {}) : {}),
+    [activeHomePack, settings.home.packStateById],
+  );
+  const activeHomePresetId = activeHomePack
+    ? (settings.home.activePresetIdByPackId[activeHomePack.id]
+      ?? activeHomePack.runtime.defaultPresetId
+      ?? null)
+    : null;
+  const homePackSummary = activeHomePack
+    ? `${homeSelection.isFallback ? 'Fallback' : 'Active'} · ${activeHomePack.name} · ${settings.home.usageTrackingEnabled ? 'Telemetry on' : 'Telemetry off'}`
+    : 'No Home packs available';
+  const homePackSettingsHost = useMemo(
+    () => activeHomePack
+      ? createExplorerHomeHost(
+        {
+          appearance,
+          activePresetId: activeHomePresetId,
+          usageTrackingEnabled: settings.home.usageTrackingEnabled,
+          quickAccess: homeQuickAccess,
+          bookmarks: homeBookmarks,
+          mostUsedFolders: homeMostUsedFolders,
+          recentFolders: homeRecentFolders,
+          savedSearches: homeSavedSearches,
+          drives: homeDrives,
+          tasks: homeTasks,
+          launchpad: homeLaunchpad,
+          packState: activeHomePackState,
+          packWarnings: homeSelection.warnings,
+          diagnostics: {
+            isFallback: homeSelection.isFallback,
+            authoredPackCount: homeSelection.authoredPackCount,
+            selectedPackError: homeSelection.selectedPackError,
+          },
+        },
+        {
+          navigate: () => undefined,
+          openSavedSearch: () => undefined,
+          openPanel: () => undefined,
+          openSettingsSection: setActiveSection,
+          refresh: () => {
+            void onRefreshHomePacks();
+          },
+          updatePackState: (updates) => {
+            if (activeHomePack) {
+              setHomePackState(activeHomePack.id, {
+                ...activeHomePackState,
+                ...updates,
+              });
+            }
+          },
+          setPreset: (presetId) => {
+            if (activeHomePack) {
+              setHomePresetSelection(activeHomePack.id, presetId);
+            }
+          },
+        },
+      )
+      : null,
+    [
+      activeHomePack,
+      activeHomePackState,
+      activeHomePresetId,
+      appearance,
+      homeBookmarks,
+      homeDrives,
+      homeLaunchpad,
+      homeMostUsedFolders,
+      homeQuickAccess,
+      homeRecentFolders,
+      homeSavedSearches,
+      homeSelection.authoredPackCount,
+      homeSelection.isFallback,
+      homeSelection.selectedPackError,
+      homeSelection.warnings,
+      homeTasks,
+      onRefreshHomePacks,
+      setActiveSection,
+      setHomePackState,
+      setHomePresetSelection,
+      settings.home.usageTrackingEnabled,
+    ],
+  );
+  const handleResetHomeUsage = useCallback(async () => {
+    const snapshot = await clearExplorerHomeUsage();
+    setHomeUsageSnapshot(snapshot);
+  }, []);
   const activeLayoutProfile = useMemo(
     () => resolveLayoutProfile(layoutManifestState.manifest, settings.layout.activeProfileId),
     [layoutManifestState.manifest, settings.layout.activeProfileId],
@@ -2620,6 +3129,9 @@ export function SettingsPage({
     effectiveThemeName: effectiveTheme.name,
     activeLayoutLabel: activeLayoutProfile.label,
     workspaceRootCount: workspaceRoots.length,
+    installedModelCount: installedLocalModelCount,
+    localModelCacheFootprint,
+    semanticIndexModelSummary,
     launchAtStartup: settings.system.launchAtStartup,
     systemPresentationState,
     platform: platform as SettingsSectionContentContext['platform'],
@@ -2629,6 +3141,7 @@ export function SettingsPage({
     explorerViewModeLabel: getExplorerViewModeDefinition(settings.explorer.viewMode).label,
     explorerFolderClickMode: settings.explorer.folderClickMode,
     explorerThumbnailsEnabled: settings.explorer.thumbnails.enabled,
+    homePackSummary,
     layoutProfileCount: layoutManifestState.manifest.profiles.length,
     zenFocusMode: settings.layout.zenFocusMode,
     hotkeyLabels: [
@@ -2673,10 +3186,14 @@ export function SettingsPage({
     effectiveTheme.name,
     effectiveInteractionMotionProfile?.label,
     followThemeTopBarDetail,
+    homePackSummary,
     iconThemeSelectionSummary,
+    installedLocalModelCount,
     interactionMotionSurfaceCatalog.length,
     layoutManifestState.manifest.profiles.length,
+    localModelCacheFootprint,
     platform,
+    semanticIndexModelSummary,
     settings.audio.vst3AdditionalFolders.length,
     settings.appearance.appBlurStrength,
     settings.appearance.appOpacity,
@@ -2714,6 +3231,7 @@ export function SettingsPage({
     };
   }), [settingsSectionContext]);
   const activeSectionMeta = settingsSections.find(section => section.key === activeSection) ?? settingsSections[0];
+  const ActiveHomePackSettingsComponent = activeHomePack?.runtime.settingsComponent ?? null;
 
   return (
     <div
@@ -2954,6 +3472,553 @@ export function SettingsPage({
                       ))}
                     </div>
                   </OverviewCard>
+                </div>
+              </section>
+            )}
+
+            {activeSection === 'models' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<Bot size={12} />}
+                  title="Models"
+                  subtitle="Shared local-model management for semantic indexing now, with the same cache and capability routing ready for future inference, source separation, and other Python-backed AI lanes."
+                />
+
+                <div className="mt-4 space-y-4">
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                    <OverviewCard
+                      title="Managed Cache"
+                      subtitle="Curated models download into the shared managed runtime cache so future AI features reuse one install surface."
+                      badges={[
+                        `${installedLocalModelCount} installed`,
+                        localModelCacheFootprint,
+                        localModelStatusPending ? 'Refreshing' : 'Ready',
+                      ]}
+                    >
+                      <div className="space-y-3">
+                        <div className="rounded border px-3 py-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                            <Database size={11} />
+                            <span>Cache Location</span>
+                          </div>
+                          <div className="mt-2 break-all text-[11px]" style={{ color: text, fontFamily: appearance.fonts.mono }}>
+                            {localModelStatus?.cacheRoot ?? managedPythonRuntimeConfig?.runtimeRoot ?? 'Initialize the managed Python runtime to resolve the cache root.'}
+                          </div>
+                          {localModelStatus ? (
+                            <div className="mt-2 text-[10px] opacity-45">
+                              Python {localModelStatus.pythonVersion} · registry {localModelStatus.registryRoot}
+                            </div>
+                          ) : (
+                            <div className="mt-2 text-[10px] opacity-45">
+                              Model cache metadata appears after the first catalog refresh.
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void refreshLocalModels(true)}
+                            disabled={localModelStatusPending}
+                            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                            style={{
+                              border: `1px solid ${localModelStatusPending ? border : accent}`,
+                              background: localModelStatusPending ? 'rgba(255,255,255,0.03)' : `${accent}16`,
+                              color: text,
+                              opacity: localModelStatusPending ? 0.72 : 1,
+                            }}
+                          >
+                            {localModelStatusPending ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                            Refresh Models
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenLocalModelCache()}
+                            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.03)', color: text }}
+                          >
+                            <FolderOpen size={11} />
+                            Open Cache Folder
+                          </button>
+                        </div>
+                      </div>
+                    </OverviewCard>
+
+                    <OverviewCard
+                      title="Acceleration Lane"
+                      subtitle="Backend preferences stay explicit. CUDA is optional, and the UI only offers the NVIDIA lane when the acceleration runtime actually detects it."
+                      badges={[
+                        cudaProviderReady ? 'CUDA ready' : 'CUDA unavailable',
+                        settings.system.accelerationRoutingMode,
+                        cudaProviderStatus?.available ? 'provider detected' : 'cpu fallback',
+                      ]}
+                    >
+                      <div className="space-y-3">
+                        <div className="rounded border px-3 py-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                            <Cpu size={11} />
+                            <span>CUDA Python Provider</span>
+                          </div>
+                          <div className="mt-2 text-[11px]" style={{ color: text }}>
+                            {cudaProviderStatus?.label ?? 'CUDA Python Sidecar'}
+                          </div>
+                          <p className="mt-1 text-[11px] leading-4 opacity-45">
+                            {cudaProviderStatus?.detail
+                              ?? 'The acceleration runtime has not reported a CUDA-ready provider yet, so CPU and ONNX remain the portable lanes.'}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleProbeAccelerationPipeline()}
+                            disabled={accelerationProbePending}
+                            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                            style={{
+                              border: `1px solid ${accelerationProbePending ? border : accent}`,
+                              background: accelerationProbePending ? 'rgba(255,255,255,0.03)' : `${accent}16`,
+                              color: text,
+                              opacity: accelerationProbePending ? 0.72 : 1,
+                            }}
+                          >
+                            {accelerationProbePending ? <Loader2 size={11} className="animate-spin" /> : <Cpu size={11} />}
+                            Probe CUDA / AI
+                          </button>
+                        </div>
+
+                        <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: muted }}>
+                          {accelerationPipelineStatus}
+                        </div>
+                      </div>
+                    </OverviewCard>
+
+                    <OverviewCard
+                      title="Active Semantic Lane"
+                      subtitle="Semantic indexing is the first capability online, but the binding model is shared so future local-model features land on the same contract."
+                      badges={[
+                        semanticIndexingSelectedModel?.label ?? 'No model',
+                        semanticIndexingBackendLabel,
+                        semanticIndexingSelectedHardwareProfile?.label ?? 'Profile pending',
+                      ]}
+                    >
+                      <div className="space-y-3">
+                        <div className="rounded border px-3 py-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                            <Bot size={11} />
+                            <span>Current Active Model</span>
+                          </div>
+                          <div className="mt-2 text-[11px]" style={{ color: text }}>
+                            {semanticIndexingSelectedModel?.label ?? 'No semantic model selected'}
+                          </div>
+                          <p className="mt-1 text-[11px] leading-4 opacity-45">
+                            {semanticIndexingSelectedModel?.description
+                              ?? 'Choose a curated embedding model below to drive semantic indexing and similarity search.'}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <ThemeBadge label={`Backend ${semanticIndexingBackendLabel}`} active />
+                            <ThemeBadge label={semanticIndexingSelectedModelStatus?.installed ? 'Installed' : 'Not warmed'} />
+                            {semanticIndexingSelectedHardwareProfile
+                              ? <ThemeBadge label={semanticIndexingSelectedHardwareProfile.label} />
+                              : null}
+                          </div>
+                        </div>
+
+                        <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: muted }}>
+                          {semanticIndexOverrideEntries.length > 0
+                            ? `${semanticIndexOverrideEntries.length} per-root override${semanticIndexOverrideEntries.length === 1 ? '' : 's'} pinned for semantic indexing.`
+                            : 'No per-root semantic overrides yet; the default semantic binding applies to every local index root.'}
+                        </div>
+                      </div>
+                    </OverviewCard>
+                  </div>
+
+                  {localModelNotice ? (
+                    <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}44`, background: `${accent}12`, color: text }}>
+                      {localModelNotice}
+                    </div>
+                  ) : null}
+                  {localModelStatusError ? (
+                    <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+                      {localModelStatusError}
+                    </div>
+                  ) : null}
+
+                  <OverviewCard
+                    title="Capability Routing"
+                    subtitle="Model and backend bindings are capability-driven. Semantic indexing is live now; local inference and source separation stay visible so the settings surface does not have to be reinvented when those lanes arrive."
+                    badges={['Shared bindings', 'Capability-first', 'Future-ready']}
+                  >
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                      {localModelCapabilityCatalog.map(capability => {
+                        const binding = settings.models.capabilityBindings[capability.id] ?? {
+                          modelId: capability.defaultModelId,
+                          backendPreference: capability.defaultBackendPreference,
+                        };
+                        const selectedModel = getLocalModelDefinition(binding.modelId)
+                          ?? getLocalModelDefinitionByProviderModelId(binding.modelId);
+                        const selectedModelStatus = selectedModel
+                          ? localModelStatusById.get(selectedModel.id) ?? null
+                          : null;
+                        const capabilityModels = getCapabilityModels(capability.id);
+
+                        return (
+                          <div
+                            key={capability.id}
+                            className="rounded border p-3"
+                            style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-[11px] font-semibold" style={{ color: text }}>{capability.label}</div>
+                                <p className="mt-1 text-[11px] leading-4 opacity-45">{capability.description}</p>
+                              </div>
+                              <ThemeBadge label={capability.availability === 'active' ? 'Active' : 'Planned'} active={capability.availability === 'active'} />
+                            </div>
+
+                            {capability.availability === 'active' ? (
+                              <div className="mt-3 space-y-3">
+                                <label className="block">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Model</div>
+                                  <select
+                                    aria-label={`${capability.label} model`}
+                                    value={binding.modelId ?? ''}
+                                    onChange={event => handleUpdateModelCapabilityBinding(capability.id, {
+                                      modelId: event.target.value || null,
+                                    })}
+                                    className="mt-2 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                                    style={settingsSelectStyle}
+                                  >
+                                    {capabilityModels.map(model => (
+                                      <option key={model.id} value={model.id}>
+                                        {model.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+
+                                <div>
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Backend</div>
+                                  <div className="mt-2 grid grid-cols-2 gap-2">
+                                    {localModelBackendOptions
+                                      .filter(option => capability.backendOptionIds.includes(option.id))
+                                      .map(option => {
+                                        const active = binding.backendPreference === option.id;
+                                        const disabled = option.id === 'cuda' && !cudaProviderReady;
+                                        return (
+                                          <button
+                                            key={`${capability.id}-${option.id}`}
+                                            type="button"
+                                            aria-label={`Use ${option.label} backend for ${capability.label}`}
+                                            onClick={() => {
+                                              if (!disabled) {
+                                                handleUpdateModelCapabilityBinding(capability.id, {
+                                                  backendPreference: option.id,
+                                                });
+                                              }
+                                            }}
+                                            disabled={disabled}
+                                            title={disabled ? 'CUDA is unavailable until an NVIDIA-capable sidecar provider is detected.' : option.description}
+                                            className="rounded px-3 py-2 text-left transition-colors"
+                                            style={{
+                                              border: `1px solid ${active ? accent : border}`,
+                                              background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                              color: text,
+                                              opacity: disabled ? 0.45 : 1,
+                                              cursor: disabled ? 'not-allowed' : 'pointer',
+                                            }}
+                                          >
+                                            <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">{option.label}</div>
+                                            <div className="mt-1 text-[10px] leading-4 opacity-55">{option.description}</div>
+                                          </button>
+                                        );
+                                      })}
+                                  </div>
+                                </div>
+
+                                <div className="rounded border px-3 py-2 text-[10px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: muted }}>
+                                  {selectedModel?.label ?? 'No model selected'} · {selectedModelStatus?.installed ? 'Installed' : 'Not warmed'}
+                                  {selectedModel ? ` · ${formatLocalModelEstimatedFootprint(selectedModel.estimatedFootprintMb)}` : ''}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: muted }}>
+                                Curated models for this capability have not been published yet. The shared cache and capability binding system is already in place, so this lane can come online without another settings refactor.
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </OverviewCard>
+
+                  <OverviewCard
+                    title="Installed Model Catalog"
+                    subtitle="Curated models stay visible even before they are warmed so operators can see the intended hardware profile, backend bias, and cache footprint before downloading anything."
+                    badges={[`${localModelDefinitions.length} curated`, 'Download on demand', 'Shared cache']}
+                  >
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                      {localModelDefinitions.map(model => {
+                        const status = localModelStatusById.get(model.id) ?? null;
+                        const hardwareProfile = getLocalModelHardwareProfile(model.hardwareProfileId);
+                        const recommendedBackendLabel = localModelBackendOptions.find(
+                          option => option.id === model.recommendedBackendPreference,
+                        )?.label ?? model.recommendedBackendPreference;
+                        const prewarmDisabled = modelPrewarmPendingId != null && modelPrewarmPendingId !== model.id;
+                        const semanticModelActive = semanticIndexingBinding.modelId === model.id;
+
+                        return (
+                          <div
+                            key={model.id}
+                            className="rounded border p-3"
+                            style={{
+                              borderColor: semanticModelActive ? `${accent}66` : border,
+                              background: semanticModelActive ? `${accent}0f` : 'rgba(255,255,255,0.025)',
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-[11px] font-semibold" style={{ color: text }}>{model.label}</div>
+                                <p className="mt-1 text-[11px] leading-4 opacity-45">{model.description}</p>
+                              </div>
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                {semanticModelActive ? <ThemeBadge label="Active Semantic Model" active /> : null}
+                                <ThemeBadge label={status?.installed ? 'Installed' : 'Not Warmed'} active={status?.installed === true} />
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              {hardwareProfile ? <ThemeBadge label={hardwareProfile.label} /> : null}
+                              <ThemeBadge label={`Recommend ${recommendedBackendLabel}`} />
+                              <ThemeBadge label={formatLocalModelEstimatedFootprint(model.estimatedFootprintMb)} />
+                              {model.tags.slice(0, 3).map(tag => (
+                                <ThemeBadge key={`${model.id}-${tag}`} label={tag} />
+                              ))}
+                            </div>
+
+                            <div className="mt-3 rounded border px-3 py-3 text-[10px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: muted }}>
+                              <div style={{ fontFamily: appearance.fonts.mono }}>{model.providerModelId}</div>
+                              <div className="mt-2">
+                                Last warmed: {formatModelTimestamp(status?.lastWarmedAtMs)}
+                              </div>
+                              <div className="mt-1">
+                                Last used: {formatModelTimestamp(status?.lastUsedAtMs)}
+                              </div>
+                              {status?.backendKinds.length ? (
+                                <div className="mt-2">Backends: {status.backendKinds.join(', ')}</div>
+                              ) : null}
+                              {status?.providerKinds.length ? (
+                                <div className="mt-1">Providers: {status.providerKinds.join(', ')}</div>
+                              ) : null}
+                              {status?.lastError ? (
+                                <div className="mt-2 rounded border px-2 py-1.5" style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}>
+                                  {status.lastError}
+                                </div>
+                              ) : null}
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateModelCapabilityBinding(semanticIndexingCapabilityId, { modelId: model.id })}
+                                className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                                style={{
+                                  border: `1px solid ${semanticModelActive ? accent : border}`,
+                                  background: semanticModelActive ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                  color: text,
+                                }}
+                              >
+                                <Bot size={11} />
+                                {semanticModelActive ? 'Semantic Default' : 'Use For Semantic Indexing'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handlePrewarmLocalModel(
+                                  model.id,
+                                  model.capabilityIds[0] ?? semanticIndexingCapabilityId,
+                                  normalizeLocalModelBackendPreference(model.recommendedBackendPreference),
+                                )}
+                                disabled={prewarmDisabled}
+                                className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                                style={{
+                                  border: `1px solid ${accent}`,
+                                  background: `${accent}16`,
+                                  color: text,
+                                  opacity: prewarmDisabled ? 0.52 : 1,
+                                }}
+                              >
+                                {modelPrewarmPendingId === model.id ? (
+                                  <Loader2 size={11} className="animate-spin" />
+                                ) : (
+                                  <Download size={11} />
+                                )}
+                                {status?.installed ? 'Rewarm Model' : 'Download / Prewarm'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </OverviewCard>
+
+                  {semanticIndexingCapability && semanticIndexingCapability.supportsPerRootOverrides ? (
+                    <OverviewCard
+                      title="Semantic Index Root Overrides"
+                      subtitle="Pin a specific embedding model and backend for one local root without changing the global semantic default."
+                      badges={['Per-root', 'Manual', `${semanticIndexOverrideEntries.length} overrides`]}
+                    >
+                      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                        <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Create Override</div>
+                          <p className="mt-1 text-[11px] opacity-45">
+                            Use this when one project root needs a different embedding quality or a forced CPU/ONNX lane than the rest of the machine.
+                          </p>
+
+                          <div className="mt-3 grid grid-cols-1 gap-3">
+                            <label className="block">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Root Path</div>
+                              <input
+                                aria-label="Semantic index override root path"
+                                value={semanticOverrideRootPathDraft}
+                                onChange={event => setSemanticOverrideRootPathDraft(event.target.value)}
+                                placeholder="/workspace/project"
+                                className="mt-2 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                                style={settingsMonoFieldStyle}
+                              />
+                            </label>
+
+                            <label className="block">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Model</div>
+                              <select
+                                aria-label="Semantic index override model"
+                                value={semanticOverrideModelIdDraft ?? ''}
+                                onChange={event => setSemanticOverrideModelIdDraft(event.target.value || null)}
+                                className="mt-2 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                                style={settingsSelectStyle}
+                              >
+                                {semanticIndexingModels.map(model => (
+                                  <option key={`semantic-override-${model.id}`} value={model.id}>
+                                    {model.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <div>
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Backend</div>
+                              <div className="mt-2 grid grid-cols-2 gap-2">
+                                {localModelBackendOptions
+                                  .filter(option => semanticIndexingCapability.backendOptionIds.includes(option.id))
+                                  .map(option => {
+                                    const active = semanticOverrideBackendPreferenceDraft === option.id;
+                                    const disabled = option.id === 'cuda' && !cudaProviderReady;
+                                    return (
+                                      <button
+                                        key={`semantic-override-backend-${option.id}`}
+                                        type="button"
+                                        aria-label={`Use ${option.label} backend for semantic index override`}
+                                        onClick={() => {
+                                          if (!disabled) {
+                                            setSemanticOverrideBackendPreferenceDraft(option.id);
+                                          }
+                                        }}
+                                        disabled={disabled}
+                                        className="rounded px-3 py-2 text-left transition-colors"
+                                        style={{
+                                          border: `1px solid ${active ? accent : border}`,
+                                          background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                                          color: text,
+                                          opacity: disabled ? 0.45 : 1,
+                                          cursor: disabled ? 'not-allowed' : 'pointer',
+                                        }}
+                                      >
+                                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">{option.label}</div>
+                                        <div className="mt-1 text-[10px] leading-4 opacity-55">{option.description}</div>
+                                      </button>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={handleApplySemanticIndexOverride}
+                                disabled={!semanticOverrideRootPathDraft.trim()}
+                                className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                                style={{
+                                  border: `1px solid ${accent}`,
+                                  background: `${accent}16`,
+                                  color: text,
+                                  opacity: semanticOverrideRootPathDraft.trim() ? 1 : 0.5,
+                                }}
+                              >
+                                <Plus size={11} />
+                                Save Override
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Current Overrides</div>
+                          <p className="mt-1 text-[11px] opacity-45">
+                            Overrides only affect future semantic index builds and queries for the matching root path.
+                          </p>
+
+                          <div className="mt-3 space-y-2">
+                            {semanticIndexOverrideEntries.length > 0 ? semanticIndexOverrideEntries.map(([rootPath, binding]) => {
+                              const overrideModel = getLocalModelDefinition(binding.modelId)
+                                ?? getLocalModelDefinitionByProviderModelId(binding.modelId);
+                              const backendLabel = localModelBackendOptions.find(option => option.id === binding.backendPreference)?.label
+                                ?? binding.backendPreference;
+                              return (
+                                <div
+                                  key={`semantic-override-entry-${rootPath}`}
+                                  className="rounded border px-3 py-3"
+                                  style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}
+                                >
+                                  <div className="break-all text-[10px]" style={{ color: muted, fontFamily: appearance.fonts.mono }}>
+                                    {rootPath}
+                                  </div>
+                                  <div className="mt-2 text-[11px]" style={{ color: text }}>
+                                    {overrideModel?.label ?? binding.modelId ?? 'No model'} · {backendLabel}
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSemanticOverrideRootPathDraft(rootPath);
+                                        setSemanticOverrideModelIdDraft(binding.modelId);
+                                        setSemanticOverrideBackendPreferenceDraft(binding.backendPreference);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                                      style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.03)', color: text }}
+                                    >
+                                      <Bot size={11} />
+                                      Load Into Editor
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveSemanticIndexOverride(rootPath)}
+                                      className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                                      style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.03)', color: text }}
+                                    >
+                                      <Trash2 size={11} />
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }) : (
+                              <div className="rounded border px-3 py-3 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                                No semantic root overrides yet.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </OverviewCard>
+                  ) : null}
                 </div>
               </section>
             )}
@@ -6229,6 +7294,250 @@ export function SettingsPage({
                   >
                     Seed Platform Bookmarks
                   </button>
+                </div>
+              </section>
+            )}
+
+            {activeSection === 'home' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<Home size={12} />}
+                  title="Home"
+                  subtitle="Dedicated explorer landing surface with pack selection, preset routing, telemetry, and managed authoring."
+                />
+
+                <div className="mt-4 space-y-3">
+                  <div className="rounded border p-3" style={{ borderColor: `${accent}44`, background: `${accent}0d` }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="max-w-[760px]">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Explorer Home Runtime</div>
+                        <p className="mt-2 text-[12px] leading-5" style={{ color: muted }}>
+                          Home is no longer the OS home directory. It is now an app-owned explorer surface at <code>greeblefs://home</code> with pack switching, preset state, and local usage telemetry that feeds most-used and recent folder lanes.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {activeHomePack?.name ?? 'No Pack'}
+                        </span>
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {settings.home.usageTrackingEnabled ? 'Usage Tracking On' : 'Usage Tracking Off'}
+                        </span>
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {homePacks.length} Pack{homePacks.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={() => void onRefreshHomePacks()}
+                      className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                      style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                    >
+                      Refresh Home Packs
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onOpenHomePacksFolder()}
+                      className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                      style={{ border: `1px solid ${accent}55`, background: `${accent}16`, color: text }}
+                    >
+                      Open Home Packs Folder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleResetHomeUsage()}
+                      className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                      style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                    >
+                      Reset Usage Snapshot
+                    </button>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Managed Root</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Drop authored Home packs into <code>{homePacksDirectory}</code>. Runtime discovery follows the same managed-content flow as themes and other shell assets.
+                        </p>
+                      </div>
+                      <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        {homePacksLoading ? 'Scanning' : 'Ready'}
+                      </span>
+                    </div>
+                    <div className="mt-3 rounded border px-3 py-2 text-[10px]" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.12)', color: muted, fontFamily: appearance.fonts.mono }}>
+                      {homePacksDirectory}
+                    </div>
+                    {homePacksError ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+                        {homePacksError}
+                      </div>
+                    ) : null}
+                    {[...new Set([...homePacksWarnings, ...homeSelection.warnings])].length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        {[...new Set([...homePacksWarnings, ...homeSelection.warnings])].map((warning) => (
+                          <div
+                            key={warning}
+                            className="rounded border px-3 py-2 text-[11px]"
+                            style={{ borderColor: 'rgba(245,158,11,0.28)', background: 'rgba(120,53,15,0.18)', color: '#fde68a' }}
+                          >
+                            {warning}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.35fr_0.65fr]">
+                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Home Pack</div>
+                          <p className="mt-1 text-[11px] opacity-40">
+                            App themes can suggest a Home pack, but the Home selection persists independently.
+                          </p>
+                        </div>
+                        <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          Theme Suggestion · {appearance.baseTheme.defaultHomePackId ?? 'None'}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                        {homePacks.map((pack) => {
+                          const active = activeHomePack?.id === pack.id;
+                          return (
+                            <button
+                              key={pack.id}
+                              type="button"
+                              onClick={() => updateHome({ activePackId: pack.id })}
+                              className="rounded px-3 py-3 text-left transition-colors"
+                              style={{
+                                border: `1px solid ${active ? accent : border}`,
+                                background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                                color: text,
+                              }}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-[11px] font-semibold">{pack.name}</div>
+                                  <div className="mt-1 text-[10px] uppercase tracking-[0.12em] opacity-50">
+                                    {pack.sourceKind === 'built-in' ? 'Built-In' : 'Home Folder'}
+                                  </div>
+                                </div>
+                                {pack.warnings.length > 0 ? (
+                                  <ThemeBadge label={`${pack.warnings.length} warn`} />
+                                ) : null}
+                              </div>
+                              <p className="mt-2 text-[11px] opacity-45">{pack.description ?? 'No description provided.'}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Usage Telemetry</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Successful local folder navigations feed the Home most-used and recent lanes. Cloud and virtual paths are ignored.
+                      </p>
+
+                      <label className="mt-3 flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                        <span>Enable local Home usage tracking</span>
+                        <input
+                          type="checkbox"
+                          checked={settings.home.usageTrackingEnabled}
+                          onChange={(event) => updateHome({ usageTrackingEnabled: event.target.checked })}
+                        />
+                      </label>
+
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                        <div className="rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                          <div className="opacity-50">Most Used</div>
+                          <div className="mt-1 font-semibold">{homeMostUsedFolders.length}</div>
+                        </div>
+                        <div className="rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                          <div className="opacity-50">Recent</div>
+                          <div className="mt-1 font-semibold">{homeRecentFolders.length}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {activeHomePack?.runtime.presets.length ? (
+                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Preset</div>
+                          <p className="mt-1 text-[11px] opacity-40">
+                            Presets let a single pack ship multiple home layouts without changing the active pack itself.
+                          </p>
+                        </div>
+                        <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {activeHomePresetId ?? 'Default'}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                        {activeHomePack.runtime.presets.map((preset) => {
+                          const active = activeHomePresetId === preset.id;
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={() => setHomePresetSelection(activeHomePack.id, preset.id)}
+                              className="rounded px-3 py-3 text-left transition-colors"
+                              style={{
+                                border: `1px solid ${active ? accent : border}`,
+                                background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                                color: text,
+                              }}
+                            >
+                              <div className="text-[11px] font-semibold">{preset.name}</div>
+                              <p className="mt-1 text-[11px] opacity-45">{preset.description ?? `${preset.modules.length} host modules`}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Telemetry Preview</div>
+                      <div className="mt-3 space-y-2">
+                        {homeMostUsedFolders.slice(0, 4).map((entry) => (
+                          <div key={`most-used-${entry.path}`} className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                            <div className="font-semibold">{entry.label}</div>
+                            <div className="mt-1 opacity-45">{entry.path}</div>
+                          </div>
+                        ))}
+                        {homeMostUsedFolders.length === 0 ? (
+                          <div className="rounded border px-3 py-3 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                            No usage data yet. Navigate through local folders from Explorer Home or normal directory views to fill this in.
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Active Pack Settings</div>
+                      <div className="mt-3">
+                        {ActiveHomePackSettingsComponent && activeHomePack && homePackSettingsHost ? (
+                          <ActiveHomePackSettingsComponent
+                            pack={activeHomePack.runtime}
+                            host={homePackSettingsHost}
+                          />
+                        ) : (
+                          <div className="rounded border px-3 py-3 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                            The active Home pack does not expose custom settings yet.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </section>
             )}

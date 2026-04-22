@@ -132,6 +132,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shell-wide icon compatibility layer. App chrome should import icons from here instead of `lucide-react` directly so manifest-driven UI icon packs can swap explorer and stock shell glyphs immediately without touching thumbnail generation.
 - `src/config/python.ts`
   Data-driven Python runtime config, example presets, sidecar action catalog, and package presets. The `src-python/greeblefs-python-sidecar.json` manifest is the source of truth for the sidecar action list and quick-install package presets exposed to React.
+- `src/config/localModels.ts` and `src/config/localModelCatalog.json`
+  Data-driven local-model catalog plus typed normalization helpers. This is the canonical source for curated local models, backend-option labels (`auto` / `cpu` / `onnx` / `cuda`), hardware-profile metadata, capability ids, default bindings, and semantic per-root override resolution used by Settings and semantic-search routing.
 - `src/config/semanticSearch.ts`
   Data-driven explorer semantic-search config. It owns the canonical `name` / `content` / `semantic` search-mode contract, the search-mode labels/descriptions, the text/code extension registry loaded from `semanticSearchFileTypes.json`, and the runtime defaults loaded from `semanticSearchRuntime.json` for chunking/model/backend selection.
 - `src/runtime/moduleRuntime.ts`
@@ -170,6 +172,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   SheetJS + HyperFormula bridge for spreadsheet import/export, clipboard serialization, sheet mutation, and workbook/tabular save paths.
 - `src/runtime/pythonRuntimeBackend.ts`
   Typed frontend seam for the managed Python runtime, persistent sidecar lifecycle, manifest-backed sidecar actions, and embedded `pyo3` execution. New React surfaces should call this layer instead of invoking Python Tauri commands directly.
+- `src/runtime/modelManagementBackend.ts`
+  Typed frontend seam for shared local-model management. It owns the curated model catalog status, cache-summary reads, and prewarm/download calls so Settings and future AI surfaces do not need to hand-roll Python-sidecar model-management requests.
 - `src/runtime/explorerBackend.ts`
   Typed explorer bridge for filesystem/search/task work. In addition to classic name/content search, it now owns the semantic-search command surface (`getSemanticIndexSummary`, `buildSemanticIndex`, `searchSemantic`, `findSemanticSimilar`) so Explorer React code never needs raw invoke strings for AI indexing or similarity work.
 - `src/runtime/modelThumbnailBackend.ts` and `src/runtime/modelThumbnailRenderer.ts`

@@ -72,6 +72,8 @@ pub struct ExplorerSemanticIndexBuildRequest {
     pub root_path: String,
     pub mode: ExplorerSemanticIndexBuildMode,
     pub routing_mode: Option<AccelerationRoutingMode>,
+    pub model_id: Option<String>,
+    pub backend_preference: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -89,6 +91,8 @@ pub struct ExplorerSemanticSearchRequest {
     pub query: String,
     pub limit: Option<usize>,
     pub routing_mode: Option<AccelerationRoutingMode>,
+    pub model_id: Option<String>,
+    pub backend_preference: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -99,6 +103,8 @@ pub struct ExplorerSemanticFindSimilarRequest {
     pub target_path: String,
     pub limit: Option<usize>,
     pub routing_mode: Option<AccelerationRoutingMode>,
+    pub model_id: Option<String>,
+    pub backend_preference: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -149,6 +155,8 @@ struct PythonSemanticIndexRootPayload {
     max_file_bytes: u64,
     source_signature: String,
     force_cpu: bool,
+    model_id: Option<String>,
+    backend_preference: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,6 +200,8 @@ struct PythonSemanticSearchPayload {
     query: String,
     limit: usize,
     force_cpu: bool,
+    model_id: Option<String>,
+    backend_preference: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -202,6 +212,8 @@ struct PythonSemanticFindSimilarPayload {
     target_path: String,
     limit: usize,
     force_cpu: bool,
+    model_id: Option<String>,
+    backend_preference: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -714,6 +726,8 @@ fn run_semantic_index_task(
                 max_file_bytes: SEMANTIC_SEARCH_MAX_INDEXABLE_FILE_BYTES,
                 source_signature,
                 force_cpu,
+                model_id: request.model_id.clone(),
+                backend_preference: request.backend_preference.clone(),
             }),
             Some(root_path_string.clone()),
             Some(BTreeMap::from([(
@@ -855,6 +869,7 @@ pub async fn explorer_semantic_search(
 
     let result_limit = normalize_result_limit(request.limit);
     let force_cpu = semantic_force_cpu(request.routing_mode);
+    let resolved_model_id = summary.model_id.clone().or(request.model_id.clone());
     let response = python_sidecar::call_sidecar_action_json::<
         PythonSemanticSearchPayload,
         PythonSemanticSearchResponse,
@@ -868,6 +883,8 @@ pub async fn explorer_semantic_search(
             query,
             limit: result_limit,
             force_cpu,
+            model_id: resolved_model_id,
+            backend_preference: request.backend_preference.clone(),
         }),
         Some(semantic_search_path_to_string(&canonical_root)),
         Some(BTreeMap::from([(
@@ -937,6 +954,7 @@ pub async fn explorer_semantic_find_similar(
 
     let result_limit = normalize_result_limit(request.limit);
     let force_cpu = semantic_force_cpu(request.routing_mode);
+    let resolved_model_id = summary.model_id.clone().or(request.model_id.clone());
     let response = python_sidecar::call_sidecar_action_json::<
         PythonSemanticFindSimilarPayload,
         PythonSemanticSearchResponse,
@@ -950,6 +968,8 @@ pub async fn explorer_semantic_find_similar(
             target_path: semantic_search_path_to_string(&canonical_target),
             limit: result_limit,
             force_cpu,
+            model_id: resolved_model_id,
+            backend_preference: request.backend_preference.clone(),
         }),
         Some(semantic_search_path_to_string(&canonical_root)),
         Some(BTreeMap::from([(

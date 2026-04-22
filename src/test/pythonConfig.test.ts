@@ -66,8 +66,16 @@ describe('python config helpers', () => {
       'runtime.summary',
       'ml.probe',
       'acceleration.cuda_probe',
+      'models.catalog_status',
+      'models.cache_summary',
+      'models.prewarm',
       'files.scan_directory',
       'files.hash_paths',
+      'semantic.index_root',
+      'semantic.query_index',
+      'semantic.find_similar_file',
+      'semantic.delete_index',
+      'semantic.index_status',
     ]);
   });
 });

@@ -28,6 +28,15 @@ export const settingsSectionCatalog = [
     order: 20,
   },
   {
+    key: 'models',
+    label: 'Models',
+    subtitle: 'Managed local-model catalog, cache, and acceleration-aware bindings.',
+    keywords: ['models', 'local ai', 'semantic indexing', 'cuda', 'onnx', 'huggingface'],
+    overviewSummary: 'Local model cache, prewarm controls, and capability bindings for semantic search and future AI features.',
+    featuredInOverview: true,
+    order: 25,
+  },
+  {
     key: 'terminal',
     label: 'Terminal',
     subtitle: 'Shell defaults and external handoff.',

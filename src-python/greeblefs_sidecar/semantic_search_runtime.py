@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
+
+from .model_management import (
+    configure_shared_model_cache,
+    import_module,
+    mark_model_registry_ready,
+    preferred_onnx_provider,
+    resolve_model_descriptor,
+    torch_cuda_available,
+    touch_model_registry_usage,
+    normalize_model_backend_preference,
+)
 
 if TYPE_CHECKING:
     from .actions import PythonActionContext
@@ -58,6 +68,7 @@ class SemanticBackendHandle:
     kind: str
     provider_kind: str
     model_id: str
+    provider_model_id: str
     batch_size: int
     tokenizer: Any
     runtime: Any
@@ -80,9 +91,23 @@ def semantic_index_root_action(
     max_file_bytes = _positive_int(payload_dict.get("maxFileBytes"), fallback=2 * 1024 * 1024)
     source_signature = _required_string(payload_dict, "sourceSignature")
     force_cpu = bool(payload_dict.get("forceCpu", False))
+    requested_model_id = payload_dict.get("modelId")
+    backend_preference = normalize_model_backend_preference(payload_dict.get("backendPreference"))
 
     runtime_config = _load_runtime_config(context)
-    backend = _resolve_backend(context, runtime_config, force_cpu=force_cpu)
+    model_descriptor = resolve_model_descriptor(
+        context,
+        model_id=str(requested_model_id).strip() if isinstance(requested_model_id, str) else None,
+        capability_id="semantic-indexing",
+        fallback_provider_model_id=runtime_config.model_id,
+    )
+    backend = _resolve_backend(
+        context,
+        runtime_config,
+        model_descriptor=model_descriptor,
+        force_cpu=force_cpu,
+        backend_preference=backend_preference,
+    )
     connection = _connect_database(db_path)
     indexed_at_ms = int(time.time() * 1000)
     root_id = str(uuid.uuid4())
@@ -192,12 +217,26 @@ def semantic_query_index_action(
     query = _required_string(payload_dict, "query").strip()
     limit = _positive_int(payload_dict.get("limit"), fallback=60)
     force_cpu = bool(payload_dict.get("forceCpu", False))
+    requested_model_id = payload_dict.get("modelId")
+    backend_preference = normalize_model_backend_preference(payload_dict.get("backendPreference"))
 
     if not query:
         raise ValueError("semantic.query_index requires a non-empty 'query'.")
 
     runtime_config = _load_runtime_config(context)
-    backend = _resolve_backend(context, runtime_config, force_cpu=force_cpu)
+    model_descriptor = resolve_model_descriptor(
+        context,
+        model_id=str(requested_model_id).strip() if isinstance(requested_model_id, str) else None,
+        capability_id="semantic-indexing",
+        fallback_provider_model_id=runtime_config.model_id,
+    )
+    backend = _resolve_backend(
+        context,
+        runtime_config,
+        model_descriptor=model_descriptor,
+        force_cpu=force_cpu,
+        backend_preference=backend_preference,
+    )
     query_vector = _encode_texts(backend, runtime_config, [query])[0]
 
     connection = _connect_database(db_path)
@@ -276,9 +315,23 @@ def semantic_find_similar_file_action(
     target_path = _required_path(payload_dict, "targetPath")
     limit = _positive_int(payload_dict.get("limit"), fallback=60)
     force_cpu = bool(payload_dict.get("forceCpu", False))
+    requested_model_id = payload_dict.get("modelId")
+    backend_preference = normalize_model_backend_preference(payload_dict.get("backendPreference"))
 
     runtime_config = _load_runtime_config(context)
-    backend = _resolve_backend(context, runtime_config, force_cpu=force_cpu)
+    model_descriptor = resolve_model_descriptor(
+        context,
+        model_id=str(requested_model_id).strip() if isinstance(requested_model_id, str) else None,
+        capability_id="semantic-indexing",
+        fallback_provider_model_id=runtime_config.model_id,
+    )
+    backend = _resolve_backend(
+        context,
+        runtime_config,
+        model_descriptor=model_descriptor,
+        force_cpu=force_cpu,
+        backend_preference=backend_preference,
+    )
 
     connection = _connect_database(db_path)
     try:
@@ -494,48 +547,67 @@ def _load_runtime_config(context: PythonActionContext) -> SemanticRuntimeConfig:
     return runtime_config
 
 
-def _configure_model_cache(context: PythonActionContext) -> None:
-    cache_root = context.runtime_root / "cache" / "semantic-search"
-    huggingface_cache_root = cache_root / "huggingface"
-    huggingface_cache_root.mkdir(parents=True, exist_ok=True)
-    os.environ.setdefault("HF_HOME", str(huggingface_cache_root))
-    os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(huggingface_cache_root / "hub"))
-    os.environ.setdefault("TRANSFORMERS_CACHE", str(huggingface_cache_root / "transformers"))
-    os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(huggingface_cache_root / "sentence-transformers"))
-
-
 def _resolve_backend(
     context: PythonActionContext,
     runtime_config: SemanticRuntimeConfig,
     *,
+    model_descriptor: dict[str, Any],
     force_cpu: bool,
+    backend_preference: str,
 ) -> SemanticBackendHandle:
-    _configure_model_cache(context)
+    configure_shared_model_cache(context)
     attempts: list[tuple[str, str]] = []
-    if not force_cpu:
-        onnx_gpu_provider = _preferred_onnx_provider(
+    if force_cpu or backend_preference == "cpu":
+        attempts.extend([
+            ("torch", "cpu"),
+            ("onnx", "CPUExecutionProvider"),
+        ])
+    elif backend_preference == "onnx":
+        attempts.extend([
+            ("onnx", "CPUExecutionProvider"),
+        ])
+        onnx_gpu_provider = preferred_onnx_provider(
             runtime_config.preferred_onnx_providers,
             cpu_only=False,
         )
         if onnx_gpu_provider is not None:
             attempts.append(("onnx", onnx_gpu_provider))
-        if _torch_cuda_available():
-            attempts.append(("torch", "cuda"))
-    attempts.append(("onnx", "CPUExecutionProvider"))
-    attempts.append(("torch", "cpu"))
+        attempts.append(("torch", "cpu"))
+    else:
+        if not force_cpu:
+            onnx_gpu_provider = preferred_onnx_provider(
+                runtime_config.preferred_onnx_providers,
+                cpu_only=False,
+            )
+            if onnx_gpu_provider is not None:
+                attempts.append(("onnx", onnx_gpu_provider))
+            if torch_cuda_available():
+                attempts.append(("torch", "cuda"))
+        attempts.extend([
+            ("onnx", "CPUExecutionProvider"),
+            ("torch", "cpu"),
+        ])
 
     errors: list[str] = []
     for backend_kind, provider_name in attempts:
-        cache_key = f"{backend_kind}:{provider_name}:{runtime_config.model_id}"
+        cache_key = f"{backend_kind}:{provider_name}:{model_descriptor['modelId']}"
         cached = _SEMANTIC_BACKEND_CACHE.get(cache_key)
         if cached is not None:
+            touch_model_registry_usage(context, model_descriptor)
             return cached
         try:
             if backend_kind == "onnx":
-                backend = _load_onnx_backend(runtime_config, provider_name)
+                backend = _load_onnx_backend(runtime_config, model_descriptor, provider_name)
             else:
-                backend = _load_torch_backend(runtime_config, provider_name)
+                backend = _load_torch_backend(runtime_config, model_descriptor, provider_name)
             _SEMANTIC_BACKEND_CACHE[cache_key] = backend
+            mark_model_registry_ready(
+                context,
+                model_descriptor,
+                backend_kind=backend.kind,
+                provider_kind=backend.provider_kind,
+                capability_id="semantic-indexing",
+            )
             return backend
         except Exception as error:
             errors.append(f"{backend_kind}:{provider_name} -> {error}")
@@ -546,57 +618,23 @@ def _resolve_backend(
     )
 
 
-def _preferred_onnx_provider(
-    provider_preference: Iterable[str],
-    *,
-    cpu_only: bool,
-) -> str | None:
-    available = _onnxruntime_available_providers()
-    if not available:
-        return None
-    for provider_name in provider_preference:
-        if cpu_only and provider_name != "CPUExecutionProvider":
-            continue
-        if not cpu_only and provider_name == "CPUExecutionProvider":
-            continue
-        if provider_name in available:
-            return provider_name
-    if cpu_only and "CPUExecutionProvider" in available:
-        return "CPUExecutionProvider"
-    return None
-
-
-def _torch_cuda_available() -> bool:
-    try:
-        torch = _import_module("torch")
-        return bool(getattr(torch, "cuda", None) and torch.cuda.is_available())
-    except Exception:
-        return False
-
-
-def _onnxruntime_available_providers() -> list[str]:
-    try:
-        onnxruntime = _import_module("onnxruntime")
-        return list(onnxruntime.get_available_providers())
-    except Exception:
-        return []
-
-
 def _load_torch_backend(
     runtime_config: SemanticRuntimeConfig,
+    model_descriptor: dict[str, Any],
     provider_name: str,
 ) -> SemanticBackendHandle:
-    torch = _import_module("torch")
-    transformers = _import_module("transformers")
-    tokenizer = transformers.AutoTokenizer.from_pretrained(runtime_config.model_id)
-    model = transformers.AutoModel.from_pretrained(runtime_config.model_id)
+    torch = import_module("torch")
+    transformers = import_module("transformers")
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_descriptor["providerModelId"])
+    model = transformers.AutoModel.from_pretrained(model_descriptor["providerModelId"])
     device = "cuda" if provider_name == "cuda" else "cpu"
     model.to(device)
     model.eval()
     return SemanticBackendHandle(
         kind="torch",
         provider_kind="cudaPython" if device == "cuda" else "cpu",
-        model_id=runtime_config.model_id,
+        model_id=model_descriptor["modelId"],
+        provider_model_id=model_descriptor["providerModelId"],
         batch_size=runtime_config.torch_batch_size,
         tokenizer=tokenizer,
         runtime=model,
@@ -607,32 +645,28 @@ def _load_torch_backend(
 
 def _load_onnx_backend(
     runtime_config: SemanticRuntimeConfig,
+    model_descriptor: dict[str, Any],
     provider_name: str,
 ) -> SemanticBackendHandle:
-    transformers = _import_module("transformers")
-    optimum_onnxruntime = _import_module("optimum.onnxruntime")
-    tokenizer = transformers.AutoTokenizer.from_pretrained(runtime_config.model_id)
+    transformers = import_module("transformers")
+    optimum_onnxruntime = import_module("optimum.onnxruntime")
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_descriptor["providerModelId"])
     model = optimum_onnxruntime.ORTModelForFeatureExtraction.from_pretrained(
-        runtime_config.model_id,
+        model_descriptor["providerModelId"],
         export=True,
         provider=provider_name,
     )
     return SemanticBackendHandle(
         kind="onnx",
         provider_kind="cudaPython" if provider_name != "CPUExecutionProvider" else "cpu",
-        model_id=runtime_config.model_id,
+        model_id=model_descriptor["modelId"],
+        provider_model_id=model_descriptor["providerModelId"],
         batch_size=runtime_config.onnx_batch_size,
         tokenizer=tokenizer,
         runtime=model,
         device=None,
         provider_name=provider_name,
     )
-
-
-def _import_module(module_name: str) -> Any:
-    import importlib
-
-    return importlib.import_module(module_name)
 
 
 def _encode_texts(
@@ -652,8 +686,8 @@ def _encode_texts_torch(
     runtime_config: SemanticRuntimeConfig,
     texts: list[str],
 ) -> list[list[float]]:
-    numpy = _import_module("numpy")
-    torch = _import_module("torch")
+    numpy = import_module("numpy")
+    torch = import_module("torch")
     all_embeddings: list[list[float]] = []
     for batch in _batched(texts, backend.batch_size):
         encoded = backend.tokenizer(
@@ -684,7 +718,7 @@ def _encode_texts_onnx(
     runtime_config: SemanticRuntimeConfig,
     texts: list[str],
 ) -> list[list[float]]:
-    numpy = _import_module("numpy")
+    numpy = import_module("numpy")
     all_embeddings: list[list[float]] = []
     for batch in _batched(texts, backend.batch_size):
         encoded = backend.tokenizer(

@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "cache": {
+    "runtimeRelativeRoot": "cache/models",
+    "huggingFaceDirectoryName": "huggingface",
+    "registryDirectoryName": "registry"
+  },
+  "backendOptions": [
+    {
+      "id": "auto",
+      "label": "Auto",
+      "description": "Prefer the best ready local execution lane for the selected model."
+    },
+    {
+      "id": "cpu",
+      "label": "CPU",
+      "description": "Force the portable CPU-safe lane for maximum compatibility."
+    },
+    {
+      "id": "onnx",
+      "label": "ONNX",
+      "description": "Prefer ONNX Runtime for a leaner inference lane and deterministic deployment."
+    },
+    {
+      "id": "cuda",
+      "label": "CUDA",
+      "description": "Prefer the NVIDIA-accelerated lane when CUDA-capable hardware and packages are ready."
+    }
+  ],
+  "hardwareProfiles": [
+    {
+      "id": "cpu-safe-small",
+      "label": "CPU-Safe Small",
+      "description": "Fast and safe on CPU-first machines with moderate cache footprint."
+    },
+    {
+      "id": "balanced",
+      "label": "Balanced",
+      "description": "Higher quality than the tiny lane without assuming a premium GPU."
+    },
+    {
+      "id": "cuda-heavy-better",
+      "label": "CUDA-Heavy Better",
+      "description": "Higher quality and larger memory appetite for beefier NVIDIA rigs."
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "semantic-indexing",
+      "label": "Semantic Indexing",
+      "description": "Explorer embeddings, semantic query search, and file-level similarity over local text and code corpora.",
+      "availability": "active",
+      "supportsPerRootOverrides": true,
+      "defaultModelId": "semantic-minilm-l6-v2",
+      "defaultBackendPreference": "auto",
+      "backendOptionIds": ["auto", "cpu", "onnx", "cuda"]
+    },
+    {
+      "id": "local-inference",
+      "label": "Local Inference",
+      "description": "General-purpose local AI tasks that will land on the managed Python and acceleration lanes.",
+      "availability": "planned",
+      "supportsPerRootOverrides": false,
+      "defaultModelId": null,
+      "defaultBackendPreference": "auto",
+      "backendOptionIds": ["auto", "cpu", "onnx", "cuda"]
+    },
+    {
+      "id": "source-separation",
+      "label": "Source Separation",
+      "description": "Stem splitting and other audio-isolation models such as Demucs-style workflows.",
+      "availability": "planned",
+      "supportsPerRootOverrides": false,
+      "defaultModelId": null,
+      "defaultBackendPreference": "cuda",
+      "backendOptionIds": ["auto", "cpu", "cuda"]
+    }
+  ],
+  "models": [
+    {
+      "id": "semantic-minilm-l6-v2",
+      "label": "MiniLM L6 v2",
+      "description": "Fast, CPU-friendly embedding model for semantic indexing and similarity search.",
+      "provider": "huggingface",
+      "providerModelId": "sentence-transformers/all-MiniLM-L6-v2",
+      "family": "sentence-transformer",
+      "hardwareProfileId": "cpu-safe-small",
+      "recommendedBackendPreference": "onnx",
+      "estimatedFootprintMb": 90,
+      "capabilityIds": ["semantic-indexing"],
+      "tags": ["default", "semantic", "embeddings", "search"]
+    },
+    {
+      "id": "semantic-bge-base-en-v1_5",
+      "label": "BGE Base EN v1.5",
+      "description": "Balanced-quality English embedding model for stronger retrieval and clustering.",
+      "provider": "huggingface",
+      "providerModelId": "BAAI/bge-base-en-v1.5",
+      "family": "sentence-transformer",
+      "hardwareProfileId": "balanced",
+      "recommendedBackendPreference": "onnx",
+      "estimatedFootprintMb": 440,
+      "capabilityIds": ["semantic-indexing"],
+      "tags": ["semantic", "embeddings", "balanced"]
+    },
+    {
+      "id": "semantic-bge-large-en-v1_5",
+      "label": "BGE Large EN v1.5",
+      "description": "Higher-quality embedding lane intended for heavier CUDA-backed semantic search workloads.",
+      "provider": "huggingface",
+      "providerModelId": "BAAI/bge-large-en-v1.5",
+      "family": "sentence-transformer",
+      "hardwareProfileId": "cuda-heavy-better",
+      "recommendedBackendPreference": "cuda",
+      "estimatedFootprintMb": 1300,
+      "capabilityIds": ["semantic-indexing"],
+      "tags": ["semantic", "embeddings", "quality", "cuda"]
+    }
+  ]
+}

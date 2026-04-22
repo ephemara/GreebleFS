@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { SettingsPage } from '../components/SettingsPage';
 import { createBuiltInOverlayAnimations } from '../components/animationRuntime';
+import { getBuiltInExplorerHomePacks } from '../components/home/builtInHomePacks';
 import { createBuiltInOverlayShaders } from '../components/shaderRuntime';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultFolderIconRules } from '../config/folderIcons';
+import { homePackSystemConfig, type LoadedExplorerHomePack } from '../config/homePackages';
 import { resolveThemeCatalogPackageMetadata } from '../config/themeCatalogCuration';
 import { pluginSystemConfig } from '../config/plugins';
 import { screenshotFeatureConfig } from '../config/screenshots';
@@ -14,6 +16,7 @@ import { topBarSystemConfig, type LoadedOverlayTopBarPackage } from '../config/t
 import { compileThemeEngineManifest, normalizeThemeManifestDraft } from '../runtime/themeEngineBackend';
 import { createLoadedTopBarDefinition } from '../config/topBars';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
+import { useAccelerationRuntimeStore } from '../store/accelerationRuntimeStore';
 import { useExplorerStore } from '../store/explorerStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
@@ -28,6 +31,22 @@ function createThemePackageFixture(
   };
 }
 
+const BUILT_IN_HOME_PACK_FIXTURES: LoadedExplorerHomePack[] = getBuiltInExplorerHomePacks().map(runtime => ({
+  id: runtime.id,
+  name: runtime.name,
+  version: 1,
+  directoryPath: `builtin:${runtime.id}`,
+  manifestPath: `builtin:${runtime.id}:manifest`,
+  sourceKind: 'built-in',
+  sourceLabel: 'built-in',
+  description: runtime.description,
+  author: undefined,
+  homepage: undefined,
+  tags: [],
+  warnings: [],
+  runtime,
+}));
+
 function findSectionButton(label: string): HTMLButtonElement {
   const button = screen.getAllByRole('button').find(entry => entry.textContent?.includes(label));
   if (!button) {
@@ -39,9 +58,12 @@ function findSectionButton(label: string): HTMLButtonElement {
 function renderSettingsPage(options?: {
   appearanceThemeId?: string;
   topBarPackages?: LoadedOverlayTopBarPackage[];
+  homePacks?: LoadedExplorerHomePack[];
   themePackages?: LoadedOverlayThemePackage[];
   onRefreshTopBars?: () => Promise<void>;
   onOpenTopBarsFolder?: () => Promise<void>;
+  onRefreshHomePacks?: () => Promise<void>;
+  onOpenHomePacksFolder?: () => Promise<void>;
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginExplorerActions?: OverlayPluginExplorerActionContribution[];
 }) {
@@ -65,6 +87,11 @@ function renderSettingsPage(options?: {
       topBarPackagesLoading={false}
       topBarPackagesError={null}
       topBarPackagesWarnings={[]}
+      homePacks={options?.homePacks ?? BUILT_IN_HOME_PACK_FIXTURES}
+      homePacksDirectory={homePackSystemConfig.homePacksDirectory}
+      homePacksLoading={false}
+      homePacksError={null}
+      homePacksWarnings={[]}
       themePackages={options?.themePackages ?? []}
       themePackagesDirectory="themes"
       themePackagesLoading={false}
@@ -72,6 +99,8 @@ function renderSettingsPage(options?: {
       themePackagesWarnings={[]}
       onRefreshTopBars={options?.onRefreshTopBars ?? (async () => {})}
       onOpenTopBarsFolder={options?.onOpenTopBarsFolder ?? (async () => {})}
+      onRefreshHomePacks={options?.onRefreshHomePacks ?? (async () => {})}
+      onOpenHomePacksFolder={options?.onOpenHomePacksFolder ?? (async () => {})}
       onRefreshThemes={async () => {}}
       onOpenThemesFolder={async () => {}}
       shaders={createBuiltInOverlayShaders()}
@@ -107,6 +136,20 @@ describe('SettingsPage behavior', () => {
     useSettingsStore.getState().resetToDefaults();
     useSettingsStore.setState({ activeSection: 'overview' });
     useExplorerStore.getState().resetSession();
+    useAccelerationRuntimeStore.setState(state => ({
+      ...state,
+      snapshot: {
+        ...state.snapshot,
+        providers: [],
+        pythonProbe: null,
+        pythonProbeAttempted: false,
+        pythonProbeError: null,
+        pythonSidecarRunning: false,
+        pythonSidecarActionAvailable: false,
+      },
+      hydrationState: 'ready',
+      hydrationError: null,
+    }));
     useTerminalStore.setState({
       isInitialized: true,
       directoryBookmarks: [],
@@ -127,6 +170,117 @@ describe('SettingsPage behavior', () => {
 
     expect(screen.getByText('Choose a dedicated icon theme independently from the active shell theme, keep folder rules in one place, and decide when OS-native icons should still fill gaps.')).toBeInTheDocument();
   });
+
+  it('renders the models section, keeps CUDA disabled without an NVIDIA provider, and saves semantic root overrides', async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+
+    invokeMock.mockImplementation(async (command: string, args: unknown) => {
+      if (command === 'python_sidecar_call') {
+        const request = (args as { request?: { actionId?: string } } | undefined)?.request;
+        if (request?.actionId === 'models.catalog_status') {
+          return {
+            runtimeStatus: {
+              runtimeRoot: '/tmp/python-runtime',
+            },
+            sidecar: {
+              running: true,
+              actionIds: ['models.catalog_status'],
+            },
+            requestId: 'models-1',
+            actionId: 'models.catalog_status',
+            resultJson: JSON.stringify({
+              pythonVersion: '3.11.9',
+              cacheRoot: '/tmp/python-runtime/cache/models',
+              huggingFaceCacheRoot: '/tmp/python-runtime/cache/models/huggingface',
+              registryRoot: '/tmp/python-runtime/cache/models/registry',
+              totalCacheSizeBytes: 128 * 1024 * 1024,
+              installedModelCount: 1,
+              models: [
+                {
+                  modelId: 'semantic-minilm-l6-v2',
+                  installed: true,
+                  backendKinds: ['onnx'],
+                  providerKinds: ['cpu'],
+                  lastWarmedAtMs: 1713798000000,
+                  lastUsedAtMs: 1713798300000,
+                  lastError: null,
+                },
+                {
+                  modelId: 'semantic-bge-base-en-v1_5',
+                  installed: false,
+                  backendKinds: [],
+                  providerKinds: [],
+                  lastWarmedAtMs: null,
+                  lastUsedAtMs: null,
+                  lastError: null,
+                },
+                {
+                  modelId: 'semantic-bge-large-en-v1_5',
+                  installed: false,
+                  backendKinds: [],
+                  providerKinds: [],
+                  lastWarmedAtMs: null,
+                  lastUsedAtMs: null,
+                  lastError: null,
+                },
+              ],
+            }),
+          };
+        }
+      }
+
+      return null;
+    });
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Models'));
+
+    expect(await screen.findByText('Current Active Model')).toBeInTheDocument();
+    expect(screen.getByText('Managed Cache')).toBeInTheDocument();
+    expect(screen.getAllByText('MiniLM L6 v2').length).toBeGreaterThan(0);
+
+    const cudaButton = screen.getByRole('button', {
+      name: 'Use CUDA backend for Semantic Indexing',
+    });
+    expect(cudaButton).toBeDisabled();
+
+    await user.click(screen.getByRole('button', {
+      name: 'Use ONNX backend for Semantic Indexing',
+    }));
+    expect(
+      useSettingsStore.getState().settings.models.capabilityBindings['semantic-indexing']?.backendPreference,
+    ).toBe('onnx');
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Semantic Indexing model' }),
+      'semantic-bge-base-en-v1_5',
+    );
+    expect(
+      useSettingsStore.getState().settings.models.capabilityBindings['semantic-indexing']?.modelId,
+    ).toBe('semantic-bge-base-en-v1_5');
+
+    await user.type(
+      screen.getByLabelText('Semantic index override root path'),
+      '/workspace/demo',
+    );
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Semantic index override model' }),
+      'semantic-minilm-l6-v2',
+    );
+    await user.click(screen.getByRole('button', {
+      name: 'Use CPU backend for semantic index override',
+    }));
+    await user.click(screen.getByRole('button', { name: 'Save Override' }));
+
+    expect(
+      useSettingsStore.getState().settings.models.semanticIndexRootOverrides['/workspace/demo'],
+    ).toEqual({
+      modelId: 'semantic-minilm-l6-v2',
+      backendPreference: 'cpu',
+    });
+  }, 30000);
 
   it('lands on the overview section and can create then open a missing workspace root', async () => {
     const user = userEvent.setup();
@@ -273,14 +427,17 @@ describe('SettingsPage behavior', () => {
     const orderedLabels = [
       'Overview',
       'System',
+      'Models',
       'Terminal',
       'Explorer',
+      'Home',
       'Layouts',
       'Hotkeys',
       'Cloud',
       'Screenshots',
       'Audio',
       'Appearance',
+      'Top Bars',
       'Icons',
       'Wallpapers',
       'Shaders',

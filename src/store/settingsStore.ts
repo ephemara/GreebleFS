@@ -75,6 +75,14 @@ import {
   normalizeAccelerationRoutingMode,
   type AccelerationRoutingMode,
 } from '../config/accelerationRuntime';
+import {
+  createDefaultLocalModelCapabilityBindings,
+  normalizeLocalModelCapabilityBindingMap,
+  normalizeLocalModelRootOverrideMap,
+  semanticIndexingCapabilityId,
+  type LocalModelCapabilityBindingMap,
+  type LocalModelRootOverrideMap,
+} from '../config/localModels';
 import { shaderSystemConfig, type ShaderPerformanceMode } from '../config/shaders';
 import {
   normalizeOverlayWallpaperFitMode,
@@ -147,6 +155,11 @@ export interface PythonSettings {
   bootstrapPackages: string;
   autoUpgradePip: boolean;
   createBoilerplate: boolean;
+}
+
+export interface ModelsSettings {
+  capabilityBindings: LocalModelCapabilityBindingMap;
+  semanticIndexRootOverrides: LocalModelRootOverrideMap;
 }
 
 export type ExplorerFolderClickMode = 'single' | 'double';
@@ -284,6 +297,7 @@ export interface Settings {
   editor: EditorSettings;
   terminal: TerminalSettings;
   python: PythonSettings;
+  models: ModelsSettings;
   explorer: ExplorerSettings;
   home: HomeSettings;
   appearance: AppearanceSettings;
@@ -535,6 +549,28 @@ function normalizeTerminalSettings(
     windowMode: normalizeTerminalWindowMode(merged.windowMode ?? base.windowMode),
     windowedWidth: normalizeSavedWindowDimension(merged.windowedWidth, base.windowedWidth, 720),
     windowedHeight: normalizeSavedWindowDimension(merged.windowedHeight, base.windowedHeight, 480),
+  };
+}
+
+function normalizeModelsSettings(
+  base: ModelsSettings,
+  updates?: Partial<ModelsSettings>,
+): ModelsSettings {
+  const hasExplicitCapabilityBindings = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'capabilityBindings');
+  const hasExplicitSemanticIndexRootOverrides = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'semanticIndexRootOverrides');
+
+  return {
+    capabilityBindings: hasExplicitCapabilityBindings
+      ? normalizeLocalModelCapabilityBindingMap(updates?.capabilityBindings)
+      : base.capabilityBindings,
+    semanticIndexRootOverrides: hasExplicitSemanticIndexRootOverrides
+      ? normalizeLocalModelRootOverrideMap(
+        updates?.semanticIndexRootOverrides,
+        semanticIndexingCapabilityId,
+      )
+      : base.semanticIndexRootOverrides,
   };
 }
 
@@ -843,6 +879,10 @@ export const defaultSettings: Settings = {
     autoUpgradePip: true,
     createBoilerplate: true,
   },
+  models: {
+    capabilityBindings: createDefaultLocalModelCapabilityBindings(),
+    semanticIndexRootOverrides: {},
+  },
   explorer: {
     defaultPath: getDefaultPath(),
     showHiddenFiles: false,
@@ -1019,6 +1059,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     editor: { ...base.editor, ...imported?.editor },
     terminal: normalizeTerminalSettings(base.terminal, importedTerminal),
     python: { ...base.python, ...(imported as Partial<Settings> | undefined)?.python },
+    models: normalizeModelsSettings(base.models, (imported as Partial<Settings> | undefined)?.models),
     explorer: {
       ...base.explorer,
       ...imported?.explorer,
@@ -1087,6 +1128,7 @@ interface SettingsState {
   updateEditor: (updates: Partial<EditorSettings>) => void;
   updateTerminal: (updates: Partial<TerminalSettings>) => void;
   updatePython: (updates: Partial<PythonSettings>) => void;
+  updateModels: (updates: Partial<ModelsSettings>) => void;
   updateExplorer: (updates: Partial<ExplorerSettings>) => void;
   updateHome: (updates: Partial<HomeSettings>) => void;
   setHomePackState: (packId: string, state: Record<string, unknown>) => void;
@@ -1152,6 +1194,13 @@ export const useSettingsStore = create<SettingsState>()(
         settings: {
           ...state.settings,
           python: { ...state.settings.python, ...updates },
+        },
+      })),
+
+      updateModels: (updates) => set((state) => ({
+        settings: {
+          ...state.settings,
+          models: normalizeModelsSettings(state.settings.models, updates),
         },
       })),
       

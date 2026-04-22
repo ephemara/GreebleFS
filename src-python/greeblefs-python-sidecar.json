@@ -71,6 +71,24 @@
       "payloadExampleJson": "{}"
     },
     {
+      "id": "models.catalog_status",
+      "label": "Model Catalog Status",
+      "description": "Returns curated local-model install state, cache metadata, and registry-backed readiness information.",
+      "payloadExampleJson": "{}"
+    },
+    {
+      "id": "models.cache_summary",
+      "label": "Model Cache Summary",
+      "description": "Returns the managed local-model cache roots and total cache footprint.",
+      "payloadExampleJson": "{}"
+    },
+    {
+      "id": "models.prewarm",
+      "label": "Prewarm Model",
+      "description": "Downloads and initializes a curated local model through the requested backend preference.",
+      "payloadExampleJson": "{\"modelId\":\"semantic-minilm-l6-v2\",\"capabilityId\":\"semantic-indexing\",\"backendPreference\":\"onnx\"}"
+    },
+    {
       "id": "files.scan_directory",
       "label": "Scan Directory",
       "description": "Lists a directory with lightweight metadata from Python.",

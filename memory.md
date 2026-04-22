@@ -1,5 +1,31 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Models Settings Tab And Shared Local-Model Management
+
+- Local models are no longer only an implementation detail of semantic search. GreebleFS now has a dedicated `Models` settings section intended to stay valid as more local-model features land, including semantic indexing now and future local inference or source-separation lanes later.
+- Durable implementation shape:
+  - `src/config/localModelCatalog.json` is the source of truth for curated local-model metadata. It owns backend options (`auto`, `cpu`, `onnx`, `cuda`), hardware-profile labels, capability ids, default capability bindings, and the current curated semantic-search model list.
+  - `src/config/localModels.ts` is the typed normalization and resolution layer over that catalog. New local-model features should extend the catalog there first instead of hardcoding model ids, backend labels, or per-root override behavior inside React.
+  - `src/store/settingsStore.ts` now persists `settings.models.capabilityBindings` plus `settings.models.semanticIndexRootOverrides`. Semantic search should read from those bindings, but the store shape is intentionally capability-first so new local-model features can reuse it.
+  - `src-python/greeblefs_sidecar/model_management.py` is the shared Python-sidecar model-management seam. It owns the managed Hugging Face cache roots, registry manifests, backend/provider detection helpers, curated-model resolution, cache-footprint reporting, and model prewarm/download behavior.
+  - `src-python/greeblefs-python-sidecar.json` plus `src-python/greeblefs_sidecar/actions.py` now advertise dedicated model-management actions: `models.catalog_status`, `models.cache_summary`, and `models.prewarm`.
+  - `src/runtime/modelManagementBackend.ts` is the only TS bridge for model catalog status, cache summary, and prewarm actions. React should not call the Python sidecar directly for model-management work.
+  - `src/components/SettingsPage.tsx` now has a first-class `Models` tab with four durable lanes:
+    - shared cache/runtime summary
+    - capability routing cards
+    - curated installed-model catalog with `Download / Prewarm`
+    - per-root semantic-index overrides
+  - The Models tab intentionally grays out the `CUDA` backend option when the acceleration runtime does not report a ready/detected NVIDIA-capable provider. CUDA is additive, not required.
+  - `src-tauri/src/semantic_search.rs`, `src-python/greeblefs_sidecar/semantic_search_runtime.py`, and `src/components/FileExplorer.tsx` now all accept explicit `modelId` / `backendPreference` inputs for semantic indexing/search/similarity, but live queries still prefer the model already recorded in the stored index summary so embedding compatibility is not silently broken.
+- Durable product note:
+  - Treat the Models tab as the shared local-AI operator surface, not a semantic-search-only admin pane.
+  - Prewarm is currently the curated download path. If a broader Hugging Face browser/downloader lands later, it should still write through the same cache/registry contract instead of inventing a second local-model store.
+- Validation:
+  - passed: `python3 -m py_compile src-python/greeblefs_sidecar/*.py`
+  - passed: `bunx vitest run src/test/settingsStore.test.ts src/test/settingsPage.behavior.test.tsx src/test/pythonConfig.test.ts --reporter=dot`
+  - note: full repo `bunx tsc --noEmit --pretty false -p tsconfig.json` is currently blocked by unrelated branch drift in `FileExplorer`, Home-pack runtime wiring, and panel-registry prop updates outside this models-settings pass
+  - note: full `cargo check --manifest-path src-tauri/Cargo.toml --quiet` is currently blocked by unrelated `specta_bindings.rs` / home-usage command drift already present in the branch
+
 # 2026-04-22 - Interaction Motion Now Has Its Own Settings Pane
 
 - `Animations` no longer carries both window transitions and shell micro-interactions in one pane. `Animations` is now window open/close only, while `Interaction Motion` is its own settings section with the existing resolver controls and Motion Lab.
