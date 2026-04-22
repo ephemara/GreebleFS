@@ -33,6 +33,7 @@ import {
   scanExplorerVstPlugins,
   type ExplorerVstPluginEntry,
 } from '../runtime/vstBackend';
+import { PremiumSlider } from './PremiumSlider';
 import type { ExplorerPreviewWildcardWorkflowTab } from './explorer/explorerPreviewWorkflowTabs';
 import {
   getAudioDeckState,
@@ -1458,33 +1459,6 @@ export function ExplorerAudioWorkbench({
 
   return (
     <>
-      <style>{`
-        .audio-workbench-slider {
-          -webkit-appearance: none;
-          width: 100%;
-          height: 4px;
-          border-radius: 999px;
-          background: var(--overlay-explorer-chip-border);
-          outline: none;
-        }
-        .audio-workbench-slider::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 10px;
-          height: 10px;
-          border-radius: 999px;
-          background: var(--overlay-explorer-chip-active-border);
-          cursor: pointer;
-        }
-        .audio-workbench-slider::-moz-range-thumb {
-          width: 10px;
-          height: 10px;
-          border: none;
-          border-radius: 999px;
-          background: var(--overlay-explorer-chip-active-border);
-          cursor: pointer;
-        }
-      `}</style>
       <div
         ref={rootRef}
         tabIndex={-1}
@@ -1756,16 +1730,44 @@ export function ExplorerAudioWorkbench({
                   <div style={sectionHeaderStyle}>Deck Controls</div>
                   <div>
                     <label style={formLabelStyle}>Gain ({previewDeck.gainLinear.toFixed(2)}x)</label>
-                    <input type="range" className="audio-workbench-slider" min="0" max="2" step="0.01" value={previewDeck.gainLinear} onChange={(event) => void handleGainChange(Number(event.target.value))} />
+                    <PremiumSlider
+                      ariaLabel="Deck gain"
+                      ariaValueText={`${previewDeck.gainLinear.toFixed(2)}x`}
+                      density="compact"
+                      min={0}
+                      max={2}
+                      step={0.01}
+                      value={previewDeck.gainLinear}
+                      onChange={(value) => void handleGainChange(value)}
+                    />
                   </div>
                   <div>
                     <label style={formLabelStyle}>Rate ({previewDeck.rate.toFixed(2)}x)</label>
-                    <input type="range" className="audio-workbench-slider" min="0.5" max="2" step="0.01" value={previewDeck.rate} onChange={(event) => void handleRateChange(Number(event.target.value))} />
+                    <PremiumSlider
+                      ariaLabel="Deck rate"
+                      ariaValueText={`${previewDeck.rate.toFixed(2)}x`}
+                      density="compact"
+                      min={0.5}
+                      max={2}
+                      step={0.01}
+                      value={previewDeck.rate}
+                      onChange={(value) => void handleRateChange(value)}
+                    />
                   </div>
                   <div>
                     <label style={formLabelStyle}>Pitch Shift ({formatPitchShift(pitchShiftCents)})</label>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <input type="range" className="audio-workbench-slider" min="-1200" max="1200" step="1" value={pitchShiftCents} onChange={(event) => setPitchShiftCents(Number(event.target.value))} />
+                      <PremiumSlider
+                        ariaLabel="Pitch shift"
+                        ariaValueText={formatPitchShift(pitchShiftCents)}
+                        density="compact"
+                        min={-1200}
+                        max={1200}
+                        step={1}
+                        value={pitchShiftCents}
+                        onChange={setPitchShiftCents}
+                        style={{ flex: 1 }}
+                      />
                       <input aria-label="Pitch shift cents" type="number" style={{ ...formControlStyle, width: 84 }} min="-1200" max="1200" value={Math.round(pitchShiftCents)} onChange={(event) => { const value = Number(event.target.value); if (Number.isFinite(value)) setPitchShiftCents(clamp(value, -1200, 1200)); }} />
                     </div>
                   </div>
@@ -2060,20 +2062,21 @@ export function ExplorerAudioWorkbench({
                                 </span>
                               </div>
 
-                              <input
-                                id={`vst-param-${previewDeck.deckId}-${param.id}`}
-                                type="range"
+                              <PremiumSlider
+                                ariaLabel={param.title || param.shortTitle || `Parameter ${param.id}`}
+                                ariaValueText={param.valueNormalized.toFixed(3)}
+                                density="compact"
                                 min={0}
                                 max={1}
                                 step={0.001}
                                 value={param.valueNormalized}
-                                className="audio-workbench-slider"
-                                onChange={(event) => {
+                                onChange={(value) => {
                                   void updateDeckVstParameter(
                                     param.id,
-                                    Number(event.target.value),
+                                    value,
                                   );
                                 }}
+                                style={{ width: '100%' }}
                               />
 
                               <input

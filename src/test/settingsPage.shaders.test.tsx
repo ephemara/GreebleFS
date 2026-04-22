@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SettingsPage } from '../components/SettingsPage';
 import { createBuiltInOverlayShaders, type LoadedOverlayShader } from '../components/shaderRuntime';
@@ -18,7 +19,8 @@ describe('SettingsPage shaders section', () => {
     useSettingsStore.getState().resetToDefaults();
   });
 
-  it('shows the Shaders rail item, renders built-ins plus authored shaders, and updates the live override', () => {
+  it('shows the Shaders rail item, renders built-ins plus authored shaders, and updates the live override', async () => {
+    const user = userEvent.setup();
     const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
     const authoredShader: LoadedOverlayShader = {
       id: 'aurora-ribbon',
@@ -99,7 +101,11 @@ describe('SettingsPage shaders section', () => {
     expect(screen.getAllByText('Soft volumetric glows drift across the full shell with chrome shimmer and accent rails.').length).toBeGreaterThan(0);
 
     fireEvent.click(findButtonByText('Aurora Ribbon'));
-    fireEvent.change(screen.getByRole('slider', { name: /Intensity/i }), { target: { value: '0.8' } });
+    const intensitySlider = screen.getByRole('slider', { name: /Intensity/i });
+    intensitySlider.focus();
+    for (let stepIndex = 0; stepIndex < 8; stepIndex += 1) {
+      await user.keyboard('{ArrowRight}');
+    }
 
     expect(useSettingsStore.getState().settings.appearance.activeShaderId).toBe('aurora-ribbon');
     expect(useSettingsStore.getState().settings.appearance.shaderControlValues['aurora-ribbon']?.intensity).toBe(0.8);

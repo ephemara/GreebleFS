@@ -56,6 +56,20 @@ const createMemoryStorage = (): Storage => {
   }
 })();
 
+if (typeof globalThis.ResizeObserver !== 'function') {
+  class MockResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+
+  Object.defineProperty(globalThis, 'ResizeObserver', {
+    value: MockResizeObserver,
+    writable: true,
+    configurable: true,
+  });
+}
+
 // ─── Mock the entire @tauri-apps/* surface ───────────────────────────────────
 // We are testing logic / rendering only. Real Tauri IPC is NOT available in
 // jsdom, so every `invoke`, `listen`, etc. must be stubbed.

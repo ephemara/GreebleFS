@@ -38,6 +38,7 @@ import {
   resolveExplorerVideoPreviewSource,
   type ExplorerVideoPreviewSource,
 } from '../runtime/videoEditorBackend';
+import { PremiumSlider } from './PremiumSlider';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -167,12 +168,6 @@ function ControlSlider({ label, value, min, max, reset, onChange }: ControlSlide
 
   useEffect(() => { setLocal(value); }, [value]);
 
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = parseFloat(e.target.value);
-    setLocal(v);
-    onChange(v);
-  }, [onChange]);
-
   const handleNumChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const v = parseFloat(e.target.value) || 0;
     setLocal(v);
@@ -183,8 +178,6 @@ function ControlSlider({ label, value, min, max, reset, onChange }: ControlSlide
     setLocal(reset);
     onChange(reset);
   }, [reset, onChange]);
-
-  const pct = ((local - min) / (max - min)) * 100;
 
   return (
     <div style={{ marginBottom: 10, userSelect: 'none' }}>
@@ -224,35 +217,22 @@ function ControlSlider({ label, value, min, max, reset, onChange }: ControlSlide
           }}
         />
       </div>
-      <div style={{ position: 'relative', height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          height: '100%',
-          width: `${clamp(pct, 0, 100)}%`,
-          background: 'var(--overlay-accent, rgba(99,179,237,0.9))',
-          borderRadius: 3,
-          pointerEvents: 'none',
-        }} />
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={(max - min) / 300}
-          value={local}
-          onChange={handleChange}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            opacity: 0,
-            cursor: 'pointer',
-            margin: 0,
-          }}
-        />
-      </div>
+      <PremiumSlider
+        ariaLabel={label}
+        ariaValueText={local.toFixed(1)}
+        density="compact"
+        min={min}
+        max={max}
+        step={(max - min) / 300}
+        value={local}
+        onChange={(nextValue) => {
+          setLocal(nextValue);
+          onChange(nextValue);
+        }}
+        style={{
+          width: '100%',
+        }}
+      />
     </div>
   );
 }
@@ -815,17 +795,20 @@ export function ExplorerVideoEditor({
             >
               {isMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
             </button>
-            <input
-              type="range"
-              min={0} max={1} step={0.02}
+            <PremiumSlider
+              ariaLabel="Volume"
+              ariaValueText={`${Math.round((isMuted ? 0 : volume) * 100)}%`}
+              density="compact"
+              min={0}
+              max={1}
+              step={0.02}
               value={isMuted ? 0 : volume}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
+              onChange={(v) => {
                 setVolume(v);
                 setIsMuted(v === 0);
                 if (videoRef.current) videoRef.current.volume = v;
               }}
-              style={{ width: 56, accentColor: 'var(--overlay-accent, #63b3ed)', cursor: 'pointer' }}
+              style={{ width: 64 }}
             />
             <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--overlay-text-muted)', minWidth: 90, textAlign: 'right' }}>
               {formatTimecode(currentTime)}

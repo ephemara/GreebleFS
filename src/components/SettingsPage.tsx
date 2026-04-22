@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { ArrowDown, ArrowUp, Bot, Camera, Cpu, Database, Download, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, VolumeX } from '@/components/AppIcons';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
+import { PremiumSlider } from './PremiumSlider';
 import type { LoadedOverlayAnimation } from './animationRuntime';
 import { getOverlayWallpaperKindLabel, type LoadedOverlayWallpaper } from './wallpaperRuntime';
 import {
@@ -823,15 +824,17 @@ function RangeField({
           {valueLabel}
         </span>
       </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={event => onChange(parseFloat(event.target.value))}
-        className="mt-3 w-full cursor-pointer"
-      />
+      <div className="mt-3">
+        <PremiumSlider
+          ariaLabel={label}
+          ariaValueText={valueLabel}
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={onChange}
+        />
+      </div>
     </label>
   );
 }
@@ -7417,21 +7420,23 @@ export function SettingsPage({
                           {settings.explorer.thumbnails.videoHoverScrubFrameCount} frames
                         </span>
                       </div>
-                      <input
-                        className="mt-3 w-full"
-                        type="range"
-                        min={1}
-                        max={10}
-                        step={1}
-                        value={settings.explorer.thumbnails.videoHoverScrubFrameCount}
-                        disabled={!settings.explorer.thumbnails.enabled || !settings.explorer.thumbnails.enableVideoHoverScrub || !settings.explorer.thumbnails.includeVideo}
-                        onChange={event => updateExplorer({
-                          thumbnails: {
-                            ...settings.explorer.thumbnails,
-                            videoHoverScrubFrameCount: clampVideoHoverScrubFrameCount(Number(event.target.value)),
-                          },
-                        })}
-                      />
+                      <div className="mt-3">
+                        <PremiumSlider
+                          ariaLabel="Hover Montage Frames"
+                          ariaValueText={`${settings.explorer.thumbnails.videoHoverScrubFrameCount} frames`}
+                          min={1}
+                          max={10}
+                          step={1}
+                          value={settings.explorer.thumbnails.videoHoverScrubFrameCount}
+                          disabled={!settings.explorer.thumbnails.enabled || !settings.explorer.thumbnails.enableVideoHoverScrub || !settings.explorer.thumbnails.includeVideo}
+                          onChange={value => updateExplorer({
+                            thumbnails: {
+                              ...settings.explorer.thumbnails,
+                              videoHoverScrubFrameCount: clampVideoHoverScrubFrameCount(value),
+                            },
+                          })}
+                        />
+                      </div>
                     </div>
                   </div>
 

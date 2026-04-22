@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+# 2026-04-22 - Premium Sliders Became A Shared Shell Primitive
+
+- The shell no longer relies on scattered native `input[type="range"]` controls for premium-facing tuning surfaces. Slider styling and behavior now route through a shared Radix-backed primitive so motion settings, editors, and preview workbenches all inherit the same interaction quality.
+- Durable implementation shape:
+  - Added `src/components/PremiumSlider.tsx` as the canonical slider primitive. It wraps `@radix-ui/react-slider`, uses theme tokens such as `--overlay-accent` and workbench card-border variables, and bakes in larger grab targets, drag/focus state, compact vs comfortable density, smooth range fill, and thumb halo/locking feedback.
+  - `src/components/SettingsPage.tsx` now routes `RangeField` and the hover-montage frame slider through `PremiumSlider`, so the interaction-motion controls and the broader settings surface use the same shell-owned control instead of browser-native ranges.
+  - `src/components/ExplorerImageEditor.tsx`, `src/components/ExplorerVideoEditor.tsx`, `src/components/ExplorerAudioWorkbench.tsx`, and `src/components/ExplorerFontPreview.tsx` now consume the shared primitive instead of bespoke inline slider CSS. This removed the old local slider styles and keeps editor/workbench controls visually aligned with Settings.
+  - Radix slider accessibility lives on the thumb role, not the outer root. `PremiumSlider` now applies the `aria-*` metadata directly to `SliderPrimitive.Thumb`, which is required for Testing Library queries and real assistive-tech naming to resolve correctly.
+  - `src/test/setup.tsx` now provides a minimal global `ResizeObserver` shim for jsdom because `@radix-ui/react-slider` depends on it through `@radix-ui/react-use-size`.
+- Durable product note:
+  - Future shell sliders should reuse `PremiumSlider` instead of introducing new native range inputs or per-surface CSS tracks. If a slider needs a variant, extend the shared primitive or add a data-driven prop there first.
+  - When testing Radix sliders, drive the thumb via keyboard or pointer semantics rather than faking native `change` events on a hidden/nonexistent range input.
+- Validation:
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "updates interaction motion settings and exposes motion-lab preview surfaces" --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.shaders.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false`
+
 # 2026-04-22 - KCloner-Style Interaction Motion Now Supports Per-Instance Step Offsets
 
 - The shared UI motion system no longer forces every matching animated surface to loop in perfect lockstep. KCloner-style presets now expose a real `Step` modifier that phase-offsets repeated items such as selected explorer entries/icons, workflow tabs, rail rows, and top-bar controls.

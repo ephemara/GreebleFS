@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Loader, Type } from "@/components/AppIcons";
 import { commands } from "../runtime/tauriClient";
 import { OverlayScrollArea } from "./OverlayScrollArea";
+import { PremiumSlider } from "./PremiumSlider";
 
 const PANGRAMS = [
   "The quick brown fox jumps over the lazy dog.",
@@ -221,13 +222,15 @@ export function ExplorerFontPreview({
 
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <span style={{ fontSize: 11, color: "var(--overlay-text-muted)", fontWeight: 600 }}>SIZE</span>
-          <input
-            type="range"
+          <PremiumSlider
+            ariaLabel="Font preview size"
+            ariaValueText={`${fontSize}px`}
+            density="compact"
             min={12}
             max={120}
             value={fontSize}
-            onChange={(e) => setFontSize(Number(e.target.value))}
-            style={{ flex: 1, cursor: "pointer", accentColor: "var(--overlay-accent)" }}
+            onChange={setFontSize}
+            style={{ flex: 1 }}
           />
           <span style={{ fontSize: 11, color: "var(--overlay-text-primary)", width: 24, textAlign: "right" }}>{fontSize}px</span>
         </div>

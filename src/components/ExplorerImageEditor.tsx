@@ -16,6 +16,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { matchesKeybinding } from '../config/hotkeys';
 import { writeExplorerFile } from '../runtime/explorerBackend';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { PremiumSlider as PremiumSliderControl } from './PremiumSlider';
 import {
   imageEditorFilterDefinitions,
   createDefaultImageFiltersState,
@@ -160,46 +161,16 @@ function buttonStyle(variant: 'primary' | 'default' | 'danger' | 'ghost' = 'defa
   }
 }
 
-const PREMIUM_SLIDER_STYLES = `
-  .premium-slider {
-    -webkit-appearance: none;
-    width: 100%;
-    height: 4px;
-    border-radius: 2px;
-    outline: none;
-    transition: background 0.1s ease;
-  }
-  .premium-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: #ffffff;
-    cursor: pointer;
-    box-shadow: 0 1px 5px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1);
-    transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
-  }
-  .premium-slider::-webkit-slider-thumb:hover {
-    box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.2);
-  }
-  .premium-slider:active::-webkit-slider-thumb {
-    transform: scale(1.3);
-    background: #e2e8f0;
-  }
-`;
-
-function PremiumSlider({ 
-  def, 
-  value, 
-  onChange 
+function ImageFilterSlider({
+  def,
+  value,
+  onChange
 }: { 
   def: import('../config/imageEditorFilters').ImageEditorFilterDefinition; 
   value: number; 
   onChange: (val: number) => void;
 }) {
   const isDefault = value === def.default;
-  const percentage = ((value - def.min) / (def.max - def.min)) * 100;
   
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -208,17 +179,14 @@ function PremiumSlider({
         <span style={{ fontVariantNumeric: 'tabular-nums' }}>{value}{def.unit}</span>
       </div>
       <div style={{ padding: '6px 0', display: 'flex', alignItems: 'center' }}>
-        <input
-          type="range"
+        <PremiumSliderControl
+          ariaLabel={def.label}
+          ariaValueText={`${value}${def.unit}`}
           min={def.min}
           max={def.max}
           step={def.step}
           value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="premium-slider"
-          style={{
-            background: `linear-gradient(to right, #3b82f6 ${percentage}%, rgba(255, 255, 255, 0.1) ${percentage}%)`,
-          }}
+          onChange={onChange}
         />
       </div>
     </div>
@@ -574,7 +542,6 @@ export function ExplorerImageEditor({
 
   return (
     <>
-    <style>{PREMIUM_SLIDER_STYLES}</style>
     <div
       ref={rootRef}
       data-testid="explorer-image-editor"
@@ -777,10 +744,10 @@ export function ExplorerImageEditor({
                 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px 24px' }}>
                   {imageEditorFilterDefinitions.map((def) => (
-                    <PremiumSlider 
-                      key={def.key} 
-                      def={def} 
-                      value={filters[def.key]} 
+                    <ImageFilterSlider
+                      key={def.key}
+                      def={def}
+                      value={filters[def.key]}
                       onChange={(val) => setFilters(prev => ({ ...prev, [def.key]: val }))} 
                     />
                   ))}

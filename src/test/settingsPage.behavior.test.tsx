@@ -498,12 +498,17 @@ describe('SettingsPage behavior', () => {
       presetId: 'bounce',
     });
 
-    fireEvent.change(screen.getByRole('slider', { name: /squash/i }), {
-      target: { value: '1.6' },
-    });
-    fireEvent.change(screen.getByRole('slider', { name: /step/i }), {
-      target: { value: '0.18' },
-    });
+    const squashSlider = screen.getByRole('slider', { name: /squash/i });
+    squashSlider.focus();
+    for (let stepIndex = 0; stepIndex < 12; stepIndex += 1) {
+      await user.keyboard('{ArrowRight}');
+    }
+
+    const stepSlider = screen.getByRole('slider', { name: /step/i });
+    stepSlider.focus();
+    for (let stepIndex = 0; stepIndex < 8; stepIndex += 1) {
+      await user.keyboard('{ArrowRight}');
+    }
     expect(
       useSettingsStore.getState().settings.appearance.interactionMotionModuleOverrides.fileItems,
     ).toMatchObject({
