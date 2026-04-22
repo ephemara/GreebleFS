@@ -1,0 +1,27 @@
+use tauri::command;
+use crate::lan_share::{
+    server::{start_lan_share, stop_lan_share_inner, get_local_ip},
+    types::LanShareResult,
+};
+
+#[command]
+#[specta::specta]
+pub async fn lan_share_start(
+    path: String,
+    share_mode: String,
+    hub_paths: Option<Vec<String>>,
+) -> Result<LanShareResult, String> {
+    start_lan_share(path, share_mode, hub_paths).await
+}
+
+#[command]
+#[specta::specta]
+pub async fn lan_share_stop() -> Result<(), String> {
+    stop_lan_share_inner().await
+}
+
+#[command]
+#[specta::specta]
+pub fn lan_share_get_local_ip() -> Result<String, String> {
+    get_local_ip()
+}

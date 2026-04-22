@@ -10,6 +10,7 @@ pub mod explorer_pro_commands;
 pub mod fs_commands;
 pub mod gpu_runtime;
 pub mod image_commands;
+pub mod lan_share;
 mod linux_graphics;
 pub mod pdf_commands;
 pub mod plugin_commands;
@@ -19,6 +20,7 @@ pub mod python_sidecar;
 pub mod screenshot_commands;
 pub mod semantic_search;
 pub mod shader_preview_commands;
+pub mod share_commands;
 pub mod specta_bindings;
 pub mod sqlite_commands;
 pub mod startup_commands;
@@ -26,6 +28,8 @@ pub mod storage_commands;
 pub mod telemetry;
 pub mod terminal;
 pub mod thumbnail_commands;
+#[cfg(target_os = "windows")]
+pub mod url_drop;
 pub mod video_commands;
 pub mod video_engine;
 pub mod vst_commands;
@@ -162,6 +166,9 @@ pub fn run() {
             if let Err(error) = wayland_dock::initialize_wayland_dock_host(&app.handle()) {
                 eprintln!("GreebleFS: failed to initialize Wayland dock host: {error}");
             }
+
+            #[cfg(target_os = "windows")]
+            url_drop::setup(&app.handle());
 
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 if cfg!(debug_assertions) {
