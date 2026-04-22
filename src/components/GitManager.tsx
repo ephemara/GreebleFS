@@ -1197,10 +1197,6 @@ export function GitManager({
                         alignItems: 'center',
                         gap: 6,
                         minHeight: 28,
-                        padding: '0 8px',
-                        borderRadius: 8,
-                        border: `1px solid ${palette.border}`,
-                        background: alpha(palette.bg, 0.46),
                         color: palette.text,
                       }}
                     >
@@ -1212,13 +1208,16 @@ export function GitManager({
                         disabled={loading}
                         onChange={event => { void handleSwitchBranch(event.target.value); }}
                         style={{
-                          minWidth: 150,
-                          border: 'none',
-                          background: 'transparent',
-                          color: palette.text,
-                          fontSize: 10.5,
-                          fontWeight: 700,
-                          outline: 'none',
+                          ...themedSelectStyle({
+                            backgroundColor: alpha(palette.panel, 0.96),
+                            borderColor: alpha(palette.border, 0.95),
+                            textColor: palette.text,
+                            mutedColor: palette.muted,
+                            fontFamily: uiFont,
+                            minWidth: 280,
+                            fontSize: 10.5,
+                            fontWeight: 700,
+                          }),
                           cursor: loading ? 'default' : 'pointer',
                         }}
                       >
@@ -1773,6 +1772,117 @@ function toolbarButtonStyle(palette: { border: string; panel: string; text: stri
 
 function pillStyle(background: string, color: string): React.CSSProperties {
   return { display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 17, padding: '0 6px', borderRadius: 999, background, color, fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' };
+}
+
+type RgbColor = { r: number; g: number; b: number };
+
+function parseCssColorToRgb(color: string | undefined): RgbColor | null {
+  const trimmed = color?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.startsWith('#')) {
+    const hex = trimmed.slice(1);
+    if (hex.length === 3) {
+      return {
+        r: parseInt(hex[0] + hex[0], 16),
+        g: parseInt(hex[1] + hex[1], 16),
+        b: parseInt(hex[2] + hex[2], 16),
+      };
+    }
+    if (hex.length === 6 || hex.length === 8) {
+      return {
+        r: parseInt(hex.slice(0, 2), 16),
+        g: parseInt(hex.slice(2, 4), 16),
+        b: parseInt(hex.slice(4, 6), 16),
+      };
+    }
+    return null;
+  }
+
+  const rgbMatch = trimmed.match(/^rgba?\(([^)]+)\)$/i);
+  if (!rgbMatch) {
+    return null;
+  }
+
+  const channels = rgbMatch[1]
+    .split(',')
+    .slice(0, 3)
+    .map(channel => Number.parseFloat(channel.trim()));
+
+  if (channels.length < 3 || channels.some(channel => Number.isNaN(channel))) {
+    return null;
+  }
+
+  return {
+    r: channels[0] ?? 0,
+    g: channels[1] ?? 0,
+    b: channels[2] ?? 0,
+  };
+}
+
+function getRelativeColorLuminance(color: RgbColor): number {
+  const normalize = (channel: number) => {
+    const srgb = Math.max(0, Math.min(255, channel)) / 255;
+    return srgb <= 0.04045
+      ? srgb / 12.92
+      : ((srgb + 0.055) / 1.055) ** 2.4;
+  };
+
+  return (0.2126 * normalize(color.r)) + (0.7152 * normalize(color.g)) + (0.0722 * normalize(color.b));
+}
+
+function resolveSelectColorScheme(backgroundColor: string, textColor: string): 'light' | 'dark' {
+  const backgroundRgb = parseCssColorToRgb(backgroundColor);
+  if (backgroundRgb) {
+    return getRelativeColorLuminance(backgroundRgb) < 0.42 ? 'dark' : 'light';
+  }
+
+  const textRgb = parseCssColorToRgb(textColor);
+  if (textRgb) {
+    return getRelativeColorLuminance(textRgb) > 0.58 ? 'dark' : 'light';
+  }
+
+  return 'dark';
+}
+
+function themedSelectStyle(options: {
+  backgroundColor: string;
+  borderColor: string;
+  textColor: string;
+  mutedColor: string;
+  fontFamily?: string;
+  minWidth?: number;
+  fontSize?: number;
+  fontWeight?: number;
+}): React.CSSProperties {
+  return {
+    minWidth: options.minWidth ?? 160,
+    minHeight: 28,
+    padding: '0 30px 0 10px',
+    borderRadius: 8,
+    border: `1px solid ${options.borderColor}`,
+    backgroundColor: options.backgroundColor,
+    backgroundImage: [
+      `linear-gradient(45deg, transparent 50%, ${options.mutedColor} 50%)`,
+      `linear-gradient(135deg, ${options.mutedColor} 50%, transparent 50%)`,
+    ].join(', '),
+    backgroundPosition: 'calc(100% - 15px) calc(50% - 2px), calc(100% - 10px) calc(50% - 2px)',
+    backgroundSize: '5px 5px',
+    backgroundRepeat: 'no-repeat',
+    color: options.textColor,
+    fontFamily: options.fontFamily,
+    fontSize: options.fontSize ?? 10.5,
+    fontWeight: options.fontWeight ?? 700,
+    lineHeight: 1.2,
+    outline: 'none',
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    MozAppearance: 'none',
+    colorScheme: resolveSelectColorScheme(options.backgroundColor, options.textColor),
+    boxShadow: `inset 0 0 0 1px ${alpha(options.textColor, 0.02)}`,
+  };
 }
 
 function statusLabel(file: GitFileStatus): string {

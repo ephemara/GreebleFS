@@ -5299,7 +5299,7 @@ export function SettingsPage({
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Thumbnail Rendering</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      Generated thumbnails replace file icons with native previews for images, code, shaders, audio waveforms, and video posters. Video hover-scrub uses a cached frame montage instead of live playback.
+                      Generated thumbnails replace file icons with native previews for images, 3D models, code, shaders, audio waveforms, and video posters. Video hover-scrub uses a cached frame montage instead of live playback.
                     </p>
                   </div>
                   <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
@@ -5345,6 +5345,20 @@ export function SettingsPage({
                         thumbnails: {
                           ...settings.explorer.thumbnails,
                           includeImages: event.target.checked,
+                        },
+                      })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                    <span>3D Models</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.explorer.thumbnails.includeModels}
+                      disabled={!settings.explorer.thumbnails.enabled}
+                      onChange={event => updateExplorer({
+                        thumbnails: {
+                          ...settings.explorer.thumbnails,
+                          includeModels: event.target.checked,
                         },
                       })}
                     />

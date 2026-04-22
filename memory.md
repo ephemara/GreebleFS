@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Git Manager Branch Selector No Longer Falls Back To Native White Chrome
+
+- The Git manager branch picker no longer renders as a browser-native white box inside dark themes. The control now uses shell-owned select styling so branch switching reads like part of the Git header instead of a default form widget.
+- Durable implementation shape:
+  - `src/components/GitManager.tsx` now gives the branch selector a dedicated themed select contract: explicit dark/light `colorScheme` resolution from the resolved palette, `appearance: none`, a custom caret, and a shell-owned background/border instead of relying on UA-native select chrome.
+  - The branch label wrapper was simplified so the select itself is the intentional control surface. This removes the old nested label shell that still let the native white box leak through.
+  - The select-style helper is currently local to `GitManager.tsx` so the fix can land without touching other in-flight settings/audio work in the tree, but it is shaped to be reusable when more dropdown cleanup passes happen.
+- Durable product note:
+  - Any new select in Git or other dark-shell panels should opt into shell-owned form styling immediately. Native browser select chrome is not visually stable enough for GreebleFS themes.
+- Validation:
+  - passed: `bunx vitest run src/test/gitManager.history.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-21 - Wildcard Preview Tabs And Audio VST Workflow
 
 - The shared Explorer preview header is no longer a hardcoded binary toggle. It now supports lane-owned wildcard workflow tabs while keeping the canonical non-edit-first ordering.

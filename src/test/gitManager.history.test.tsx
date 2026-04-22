@@ -216,6 +216,11 @@ describe('GitManager history and branch controls', () => {
 
     const branchSelect = screen.getByLabelText('Git branch');
     expect(branchSelect).toHaveValue('main');
+    expect(branchSelect).toHaveStyle({
+      appearance: 'none',
+      colorScheme: 'dark',
+    });
+    expect(branchSelect.style.backgroundImage).not.toBe('');
 
     await user.selectOptions(branchSelect, 'feature/history');
 
