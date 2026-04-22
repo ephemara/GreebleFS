@@ -1,5 +1,15 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Canonical Built-In Theme Now Advertises The Full UI Slot Surface
+
+- The icon-theme runtime could already override app chrome, but the built-in canonical manifest only declared `folder_tree`, which made most of the UI contract invisible even though Lucide fallback still rendered.
+- Durable implementation shape:
+  - `src/config/canonicalIconTheme.json` now includes every `AppIcons.tsx` slot under `uiIcons`, mapped to its built-in `lucide:*` fallback reference.
+  - `scripts/sync-canonical-ui-icons.mjs` is the tracked sync path for that contract. It parses `src/components/AppIcons.tsx` and rewrites the canonical `uiIcons` table so new app glyphs do not stay implicit.
+  - `src/test/iconTheme.test.ts` now locks the built-in surface by asserting that every `createThemedIcon(...)` slot has a matching canonical `uiIcons` entry.
+- Durable product note:
+  - Treat `canonicalIconTheme.json` as the public built-in icon contract. If a slot exists in `AppIcons.tsx` but not in the canonical manifest, the theme system is incomplete even if fallback Lucide rendering still works.
+
 # 2026-04-21 - Git Manager Branch Selector No Longer Falls Back To Native White Chrome
 
 - The Git manager branch picker no longer renders as a browser-native white box inside dark themes. The control now uses shell-owned select styling so branch switching reads like part of the Git header instead of a default form widget.

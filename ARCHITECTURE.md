@@ -208,6 +208,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Overlay themes still own the global palette, effects, fonts, icon theme, visuals, and shader/motion defaults.
 - Icon theming is now a first-class managed subsystem instead of an explorer-only concern:
   - `src/config/iconTheme.ts` resolves the canonical built-in icon map, folder/file matchers, UI icon slots, and merge rules for theme-default or user-selected icon packs
+  - `src/config/canonicalIconTheme.json` now advertises the full built-in app-chrome slot surface via `uiIcons`, not just file/folder glyph ids; the built-in manifest should mirror the live `AppIcons.tsx` exports so theme authors can discover every overridable shell glyph from one place
   - `src/config/iconThemePackages.ts` discovers dedicated `icon-themes/` packages whose `icon-theme.json` / `manifest.json` files can override explorer file/folder ids plus shell UI icon slots
   - Top-bar and nav-tab panel icons now resolve through reserved `uiIcons.panel_<normalized-panel-id>` slots first, then fall back to generic UI slots like `folder_tree`, `hard_drive`, `sticky_note`, `camera`, `puzzle`, or `shell`
   - `icon-themes/Zen/` is the first full repo-local example pack; use it as the reference shape for authored icon themes
@@ -215,6 +216,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
     - `icon-themes/Zen/ui/` is the app-chrome coverage layer for the package; it now includes explicit SVGs for every `AppIcons.tsx` slot plus dedicated panel extras like `panel_storage`, `panel_drawable_canvas`, and `panel_sketchfab`
     - `packages/UI/scripts/generate_greeblefs_zen_ui_icons.py` is the reproducible coverage generator. Add new `AppIcons.tsx` slots there, rerun the script, and commit the generated `Zen/ui/*.svg` plus manifest updates so future packs see the exact SVG surface they need to implement
     - The Zen manifest is intentionally one-to-one for app chrome slots now. Avoid aliasing UI slots back onto older generic ids if the goal is to keep the pack as the gold example for complete tweakability
+  - `scripts/sync-canonical-ui-icons.mjs` is the built-in manifest sync path. When `AppIcons.tsx` gains a new slot, rerun it so the canonical theme keeps advertising the full overridable UI surface
   - `src/components/AppIcons.tsx` is the only supported app-chrome icon import surface; direct `lucide-react` imports bypass the icon-theme system
   - `src/store/settingsStore.ts` persists `settings.appearance.activeIconThemeId`, while `src/config/appearance.ts` injects the selected icon pack into both the app and dock appearance channels so icon swaps land immediately in the main shell and the `file-operations` popout
   - `SettingsPage.tsx` owns icon-pack selection and folder-icon authoring in the dedicated `Icons` section; the Explorer section should no longer grow icon-pack management UI
