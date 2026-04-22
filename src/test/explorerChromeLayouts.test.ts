@@ -9,6 +9,7 @@ const toolbarDefinitions: ExplorerChromeControlDefinition[] = [
   { id: 'navigateBack', label: 'Back', surfaces: ['explorerToolbar'] },
   { id: 'addressBar', label: 'Address Bar', surfaces: ['explorerToolbar'] },
   { id: 'toggleSources', label: 'Sources', surfaces: ['explorerToolbar', 'explorerTopbar'] },
+  { id: 'focusAddressBar', label: 'Focus Address Bar', surfaces: ['explorerToolbar', 'explorerTopbar'] },
   { id: 'experimentalModes', label: 'Experimental Modes', surfaces: ['explorerToolbar', 'explorerTopbar'] },
   { id: 'refresh', label: 'Refresh', surfaces: ['explorerToolbar'] },
   { id: 'railIdentity', label: 'Rail Identity', surfaces: ['railHeader'] },
@@ -51,10 +52,13 @@ describe('explorer chrome layout resolver', () => {
 
     const primaryStart = surface.rows[0]?.zones.find((zone) => zone.id === 'primaryStart');
     const primaryEnd = surface.rows[0]?.zones.find((zone) => zone.id === 'primaryEnd');
+    const secondaryStart = surface.rows[1]?.zones.find((zone) => zone.id === 'secondaryStart');
     const secondaryEnd = surface.rows[1]?.zones.find((zone) => zone.id === 'secondaryEnd');
 
     expect(primaryEnd?.controls.map((control) => control.controlId)).toContain('refresh');
+    expect(primaryEnd?.controls.map((control) => control.controlId)).toContain('focusAddressBar');
     expect(primaryStart?.controls.map((control) => control.controlId)).toContain('toggleSources');
+    expect(secondaryStart?.controls.map((control) => control.controlId)).not.toContain('focusAddressBar');
     expect(secondaryEnd?.controls.map((control) => control.controlId)).toContain('experimentalModes');
   });
 

@@ -530,7 +530,7 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
         explorerTopbar: { zone: 'start', order: 5 },
       },
       focusAddressBar: {
-        explorerToolbar: { zone: 'secondaryStart', order: 40 },
+        explorerToolbar: { zone: 'primaryEnd', order: 35 },
         explorerTopbar: { zone: 'start', order: 20 },
       },
       experimentalModes: {

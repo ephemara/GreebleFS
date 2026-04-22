@@ -1136,6 +1136,37 @@ describe("FileExplorer view modes", () => {
     });
   });
 
+  it("keeps the search focus control anchored in the primary toolbar zone in focus mode", async () => {
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(screen.getByRole("button", { name: /explorer mode:/i }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /focus/i }));
+
+    await waitFor(() => {
+      expect(
+        getChromeControl("focusAddressBar")?.getAttribute(
+          "data-overlay-explorer-control-zone",
+        ),
+      ).toBe("primaryEnd");
+    });
+
+    fireEvent.click(screen.getByText("alpha"));
+
+    await waitFor(() => {
+      expect(
+        getChromeControl("focusAddressBar")?.getAttribute(
+          "data-overlay-explorer-control-zone",
+        ),
+      ).toBe("primaryEnd");
+      expect(
+        getChromeControl("selectionSizeSummary")?.getAttribute(
+          "data-overlay-explorer-control-zone",
+        ),
+      ).toBe("secondaryStart");
+    });
+  });
+
   it("can close the sources rail in inspector mode and reopen it without leaving that mode", async () => {
     renderExplorer();
     await screen.findByText("alpha");
