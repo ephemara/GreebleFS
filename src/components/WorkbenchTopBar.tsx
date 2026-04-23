@@ -1270,7 +1270,7 @@ export function WorkbenchTopBar({
           : (isBottomBar
               ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
               : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)'),
-        overflow: 'hidden',
+        overflow: isMobilePopoverOpen ? 'visible' : 'hidden',
         backdropFilter: topBarBackdropFilter,
         WebkitBackdropFilter: topBarBackdropFilter,
       }}

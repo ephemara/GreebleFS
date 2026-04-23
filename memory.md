@@ -1,3 +1,19 @@
+# 2026-04-23 - Mobile Share Hover QR Now Renders Reliably And Can Show Tailnet Beside LAN
+
+- The phone button hover flow already had QR generation through the `qrcode` package, but the popover could still appear missing because the top-bar shell clipped absolutely positioned children and LAN-mode shares only surfaced a tailnet route when Tailscale mode was explicitly selected.
+- Durable implementation shape:
+  - `src/components/WorkbenchTopBar.tsx` now opens the actual top-bar shell overflow while the mobile popover is visible, instead of leaving the root chrome clipped. The panel menu keeps its own overflow behavior; the mobile share popover is the only thing that temporarily escapes the shell bounds.
+  - `src-tauri/src/lan_share/server.rs` now opportunistically resolves a Tailscale target even when the selected mobile access mode is `lan`. That keeps LAN as the preferred route while still allowing the hover popover to show a second tailnet QR card when the desktop is already connected to Tailscale.
+  - `src/config/mobileAccess.ts` lowered the hover-open delay to `1200ms`, which is still deliberate but much less likely to feel broken than the previous 3-second wait.
+  - `src/test/workbenchTopBar.test.tsx` now covers the actual QR lane instead of only checking for popover text. The test mocks QR generation, verifies the top bar flips to `overflow: visible` once the hover popover opens, and asserts that both the LAN HTTPS and Tailnet QR images render.
+- Durable product note:
+  - Keep QR generation in the React popover layer unless the backend eventually needs printable/exportable QR artifacts for other surfaces. The browser already has the exact URLs and theme context needed for the current handoff flow.
+  - The mobile popover should prefer the configured route, but it should still surface alternate reachable paths when they are already available. That is especially useful for “scan locally now, use tailnet later” pairing flows.
+- Validation:
+  - passed: `bunx vitest run src/test/workbenchTopBar.test.tsx --reporter=dot`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - note: full `bunx tsc --noEmit --pretty false -p tsconfig.json` is currently blocked by unrelated pre-existing `src/components/StoragePanel.tsx` errors on this branch
+
 # 2026-04-23 - Archives Now Browse As Read-Only Virtual Folders With Direct Drag-Out
 
 - Archive files no longer need to be fully extracted before they feel explorable. Opening a supported archive now enters a `greeblefs://archive?...` location from the current explorer cwd, and the preview pane can drag individual files out on demand.

@@ -6,6 +6,17 @@ import { resolveOverlayAppearance } from '../config/appearance';
 import { BUILT_IN_LAYOUT_MANIFEST, resolveLayoutProfile } from '../config/layoutProfiles';
 import type { LoadedOverlayTopBarDefinition } from '../config/topBars';
 import type { ResolvedWorkbenchRenderRuntime } from '../config/workbenchRenderRuntime';
+import type { MobileShareSession } from '../runtime/mobileShareRuntime';
+
+const { qrCodeToDataUrlMock } = vi.hoisted(() => ({
+  qrCodeToDataUrlMock: vi.fn(async (url: string) => `data:image/png;base64,${Buffer.from(url).toString('base64')}`),
+}));
+
+vi.mock('qrcode', () => ({
+  default: {
+    toDataURL: qrCodeToDataUrlMock,
+  },
+}));
 
 const topBarDefinition: LoadedOverlayTopBarDefinition = {
   id: 'test-top-bar',
@@ -140,8 +151,40 @@ describe('WorkbenchTopBar', () => {
     const layoutProfile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'overlay-classic');
     const onToggleMobileShare = vi.fn();
     const onOpenMobileSettings = vi.fn();
+    const session: MobileShareSession = {
+      sharePath: '/tmp/greeble-mobile',
+      remoteAccessMode: 'lan',
+      startedAt: Date.now(),
+      preferredUrl: 'https://my.rig:8080',
+      result: {
+        address: 'http://192.168.1.4:8080',
+        preferred_address: 'https://my.rig:8080',
+        mdns_address: 'my.rig:8080',
+        ios_address: 'https://my.rig:8080',
+        tailscale_address: 'https://greeble-node.tailnet.ts.net:8080',
+        tailscale_https_ready: true,
+      },
+      connectionTargets: [
+        {
+          id: 'lan-secure',
+          label: 'LAN HTTPS',
+          description: 'Local-network HTTPS route for Safari and nearby devices.',
+          kind: 'lan',
+          url: 'https://my.rig:8080',
+          isPreferred: true,
+        },
+        {
+          id: 'tailnet',
+          label: 'Tailnet',
+          description: 'Remote path over the active tailnet when Tailscale is connected.',
+          kind: 'tailscale',
+          url: 'https://greeble-node.tailnet.ts.net:8080',
+          isPreferred: false,
+        },
+      ],
+    };
 
-    render(
+    const { container } = render(
       <WorkbenchTopBar
         appearance={appearance}
         renderRuntime={renderRuntime}
@@ -171,8 +214,8 @@ describe('WorkbenchTopBar', () => {
         mobileShareShortcutLabel="Ctrl+Alt+Shift+M"
         toggleShortcutLabel="Ctrl+Space"
         mobileShareRemoteAccessMode="lan"
-        mobileSharePhase="idle"
-        mobileShareSession={null}
+        mobileSharePhase="running"
+        mobileShareSession={session}
         mobileShareError={null}
         mobileShareNotice={null}
         onToggleMobileShare={onToggleMobileShare}
@@ -187,13 +230,17 @@ describe('WorkbenchTopBar', () => {
       />,
     );
 
-    const mobileShareButton = screen.getByTitle('Start Mobile Share (Ctrl+Alt+Shift+M)');
+    const mobileShareButton = screen.getByTitle('Stop Mobile Share (Ctrl+Alt+Shift+M)');
     fireEvent.click(mobileShareButton);
     expect(onToggleMobileShare).toHaveBeenCalledTimes(1);
 
     fireEvent.pointerEnter(mobileShareButton.parentElement as HTMLElement);
 
     expect(await screen.findByText('Mobile Share', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(container.firstElementChild).toHaveStyle({ overflow: 'visible' });
+    expect(await screen.findByAltText('QR code for LAN HTTPS', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(await screen.findByAltText('QR code for Tailnet', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(qrCodeToDataUrlMock).toHaveBeenCalledTimes(2);
     expect(screen.getByRole('button', { name: /mobile settings/i })).toBeInTheDocument();
   });
 });

@@ -79,10 +79,9 @@ pub async fn start_lan_share(
         Err(error) => return Err(error),
     };
     let http_port = find_available_port(HTTP_DEFAULT_PORT, &[])?;
-    let tailscale_target = if remote_access_mode == ShareRemoteAccessMode::Tailscale {
-        Some(get_tailscale_share_target()?)
-    } else {
-        None
+    let tailscale_target = match remote_access_mode {
+        ShareRemoteAccessMode::Tailscale => Some(get_tailscale_share_target()?),
+        ShareRemoteAccessMode::Lan => get_tailscale_share_target().ok(),
     };
 
     let is_directory = state.share_path.is_dir();
