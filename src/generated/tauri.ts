@@ -960,33 +960,17 @@ async fsStartNativeFileDrag(paths: string[]) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async screenshotCapturePreview(x: number, y: number, width: number, height: number) : Promise<Result<ScreenshotPreview, string>> {
+async screenshotPrepareImageStage(path: string, crop: ScreenshotRegion | null) : Promise<Result<ScreenshotStage, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("screenshot_capture_preview", { x, y, width, height }) };
+    return { status: "ok", data: await TAURI_INVOKE("screenshot_prepare_image_stage", { path, crop }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async screenshotSaveRegion(captureId: string, x: number, y: number, width: number, height: number, directory: string, filePrefix: string | null, copyToClipboard: boolean | null) : Promise<Result<SavedScreenshot, string>> {
+async screenshotFinalizeImage(path: string, directory: string, filePrefix: string | null, copyToClipboard: boolean | null) : Promise<Result<SavedScreenshot, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("screenshot_save_region", { captureId, x, y, width, height, directory, filePrefix, copyToClipboard }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async screenshotExportAnnotated(captureId: string, selection: ScreenshotRegion | null, annotations: ScreenshotAnnotation[], directory: string | null, filePrefix: string | null, copyToClipboard: boolean | null) : Promise<Result<ScreenshotAnnotatedExportResult, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("screenshot_export_annotated", { captureId, selection, annotations, directory, filePrefix, copyToClipboard }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async screenshotCopyRegionToClipboard(captureId: string, x: number, y: number, width: number, height: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("screenshot_copy_region_to_clipboard", { captureId, x, y, width, height }) };
+    return { status: "ok", data: await TAURI_INVOKE("screenshot_finalize_image", { path, directory, filePrefix, copyToClipboard }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1000,9 +984,9 @@ async screenshotCopyImageToClipboard(path: string) : Promise<Result<null, string
     else return { status: "error", error: e  as any };
 }
 },
-async screenshotReadGalleryThumbnail(path: string, maxWidth: number, maxHeight: number) : Promise<Result<string, string>> {
+async screenshotDeleteImageStage(path: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("screenshot_read_gallery_thumbnail", { path, maxWidth, maxHeight }) };
+    return { status: "ok", data: await TAURI_INVOKE("screenshot_delete_image_stage", { path }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1743,10 +1727,8 @@ export type PythonSidecarStatus = { runtimeRoot: string; workspaceRoot: string; 
 export type PythonSidecarWorkspaceManifest = { schemaVersion: number; id: string; displayName: string; moduleName: string; entryModule: string; transport: string; guidePath: string; packagePresets: PythonSidecarPackagePreset[]; actions: PythonSidecarActionDescriptor[] }
 export type ResolvedVideoPreviewSource = { sourcePath: string; sourceKind: VideoPreviewSourceKind; mimeType: string | null; generatedFromPath: string | null }
 export type SavedScreenshot = { path: string; file_name: string; created_at: number }
-export type ScreenshotAnnotatedExportResult = { saved: SavedScreenshot | null; copiedToClipboard: boolean }
-export type ScreenshotAnnotation = { type: "rect"; x1: number; y1: number; x2: number; y2: number; color: string; lw: number } | { type: "arrow"; x1: number; y1: number; x2: number; y2: number; color: string; lw: number } | { type: "text"; x: number; y: number; text: string; color: string; size: number }
-export type ScreenshotPreview = { captureId: string; previewUrl: string; imageWidth: number; imageHeight: number }
 export type ScreenshotRegion = { x: number; y: number; width: number; height: number }
+export type ScreenshotStage = { path: string; imageWidth: number; imageHeight: number }
 export type ShellBlueprint = { id: ShellBlueprintId; label: string; description: string; navigationModel: ShellNavigationModel; surfaceStyle: ShellSurfaceStyle; supportsPinnedPanels: boolean; supportsViewportDock: boolean; supportsPanelTabs: boolean; supportsDualScreen: boolean }
 export type ShellBlueprintId = "classic-dock" | "xmb-cross-media" | "retro-desktop" | "tile-start" | "handheld-dual-screen"
 export type ShellNavigationModel = "tabs" | "cross-axis" | "desktop" | "tiles" | "stacked-dual-pane"

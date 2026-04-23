@@ -169,6 +169,17 @@ vi.mock('@tauri-apps/plugin-global-shortcut', () => ({
   unregisterAll: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('tauri-plugin-screenshots-api', () => ({
+  getScreenshotableMonitors: vi.fn().mockResolvedValue([
+    { id: 1, name: 'Primary Display' },
+  ]),
+  getMonitorScreenshot: vi
+    .fn()
+    .mockResolvedValue('/tmp/tauri-plugin-screenshots/monitor-1.png'),
+  removeMonitorScreenshot: vi.fn().mockResolvedValue(undefined),
+  clearScreenshots: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('@monaco-editor/react', () => ({
   default: () => null,
 }));

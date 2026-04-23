@@ -74,10 +74,7 @@ use crate::python_sidecar::{
     PythonSidecarPackagePreset, PythonSidecarStartResponse, PythonSidecarStatus,
     PythonSidecarWorkspaceManifest,
 };
-use crate::screenshot_commands::{
-    SavedScreenshot, ScreenshotAnnotatedExportResult, ScreenshotAnnotation, ScreenshotPreview,
-    ScreenshotRegion,
-};
+use crate::screenshot_commands::{SavedScreenshot, ScreenshotRegion, ScreenshotStage};
 use crate::semantic_search::{
     ExplorerSemanticFindSimilarRequest, ExplorerSemanticIndexBuildMode,
     ExplorerSemanticIndexBuildRequest, ExplorerSemanticIndexBuildStartResponse,
@@ -267,12 +264,10 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::semantic_search::explorer_semantic_find_similar,
             crate::desktop_integration::fs_resolve_native_icons,
             crate::desktop_integration::fs_start_native_file_drag,
-            crate::screenshot_commands::screenshot_capture_preview,
-            crate::screenshot_commands::screenshot_save_region,
-            crate::screenshot_commands::screenshot_export_annotated,
-            crate::screenshot_commands::screenshot_copy_region_to_clipboard,
+            crate::screenshot_commands::screenshot_prepare_image_stage,
+            crate::screenshot_commands::screenshot_finalize_image,
             crate::screenshot_commands::screenshot_copy_image_to_clipboard,
-            crate::screenshot_commands::screenshot_read_gallery_thumbnail,
+            crate::screenshot_commands::screenshot_delete_image_stage,
             crate::python_commands::python_get_runtime_status,
             crate::python_commands::python_bootstrap_runtime,
             crate::python_commands::python_install_packages,
@@ -524,9 +519,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ExplorerShaderCompileResult>()
         .typ::<SavedScreenshot>()
         .typ::<ScreenshotRegion>()
-        .typ::<ScreenshotAnnotation>()
-        .typ::<ScreenshotAnnotatedExportResult>()
-        .typ::<ScreenshotPreview>()
+        .typ::<ScreenshotStage>()
         .typ::<ExternalTerminalRequest>()
         .typ::<TerminalShellKind>()
         .typ::<TerminalShellIntegrationState>()

@@ -52,7 +52,7 @@ lopdf = "0.32.0"
 pdfium-auto = "0.3.0"
 pdfium-render = "0.8.37"
 pyo3 = { version = "0.21.2", features = ["auto-initialize"] }
-xcap = "0.9.1"
+tauri-plugin-screenshots = "2"
 drag = "2.1.0"
 file_icon_provider = "1.0.0"
 ignore = "0.4.25"

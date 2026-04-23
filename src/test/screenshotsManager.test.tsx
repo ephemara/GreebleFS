@@ -1,18 +1,91 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { invoke } from '@tauri-apps/api/core';
+import { forwardRef, useImperativeHandle } from 'react';
 import {
   availableMonitors,
   currentMonitor,
   primaryMonitor,
 } from '@tauri-apps/api/window';
 import type { Monitor as TauriMonitor } from '@tauri-apps/api/window';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { ScreenshotsManager } from '../components/ScreenshotsManager';
 import { joinPlatformPath } from '../config/platform';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import { useSettingsStore } from '../store/settingsStore';
-import { useExplorerTaskStore } from '../store/explorerTaskStore';
+
+const {
+  listScreenshotableMonitorsMock,
+  captureScreenshotMonitorMock,
+  removeScreenshotMonitorCaptureMock,
+  clearScreenshotPluginCapturesMock,
+  prepareScreenshotStageMock,
+  finalizeScreenshotStageMock,
+  deleteScreenshotStageMock,
+  copyScreenshotImageToClipboardMock,
+  createExplorerDirMock,
+  deleteExplorerPathMock,
+  listExplorerDirMock,
+  openExplorerPathMock,
+  readExplorerImageThumbnailMock,
+  revealExplorerPathMock,
+  editorSaveMock,
+  editorHasUnsavedChangesMock,
+} = vi.hoisted(() => ({
+  listScreenshotableMonitorsMock: vi.fn(),
+  captureScreenshotMonitorMock: vi.fn(),
+  removeScreenshotMonitorCaptureMock: vi.fn(),
+  clearScreenshotPluginCapturesMock: vi.fn(),
+  prepareScreenshotStageMock: vi.fn(),
+  finalizeScreenshotStageMock: vi.fn(),
+  deleteScreenshotStageMock: vi.fn(),
+  copyScreenshotImageToClipboardMock: vi.fn(),
+  createExplorerDirMock: vi.fn(),
+  deleteExplorerPathMock: vi.fn(),
+  listExplorerDirMock: vi.fn(),
+  openExplorerPathMock: vi.fn(),
+  readExplorerImageThumbnailMock: vi.fn(),
+  revealExplorerPathMock: vi.fn(),
+  editorSaveMock: vi.fn(),
+  editorHasUnsavedChangesMock: vi.fn(),
+}));
+
+vi.mock('../runtime/screenshotBackend', () => ({
+  listScreenshotableMonitors: listScreenshotableMonitorsMock,
+  captureScreenshotMonitor: captureScreenshotMonitorMock,
+  removeScreenshotMonitorCapture: removeScreenshotMonitorCaptureMock,
+  clearScreenshotPluginCaptures: clearScreenshotPluginCapturesMock,
+  prepareScreenshotStage: prepareScreenshotStageMock,
+  finalizeScreenshotStage: finalizeScreenshotStageMock,
+  deleteScreenshotStage: deleteScreenshotStageMock,
+  copyScreenshotImageToClipboard: copyScreenshotImageToClipboardMock,
+  buildScreenshotAssetUrl: (path: string, revision?: number | string) =>
+    `asset://localhost/${path}${revision == null ? '' : `?v=${revision}`}`,
+}));
+
+vi.mock('../runtime/explorerBackend', () => ({
+  createExplorerDir: createExplorerDirMock,
+  deleteExplorerPath: deleteExplorerPathMock,
+  listExplorerDir: listExplorerDirMock,
+  openExplorerPath: openExplorerPathMock,
+  readExplorerImageThumbnail: readExplorerImageThumbnailMock,
+  revealExplorerPath: revealExplorerPathMock,
+}));
+
+vi.mock('../components/ExplorerImageEditor', () => ({
+  ExplorerImageEditor: forwardRef(function MockExplorerImageEditor(
+    props: { imagePath: string },
+    ref,
+  ) {
+    useImperativeHandle(ref, () => ({
+      save: editorSaveMock,
+      hasUnsavedChanges: editorHasUnsavedChangesMock,
+      resetToSavedState: vi.fn(),
+    }));
+
+    return <div data-testid="mock-shared-editor">{props.imagePath}</div>;
+  }),
+}));
 
 const DEFAULT_MONITOR = {
   name: 'Primary Display',
@@ -38,29 +111,54 @@ function makeGalleryEntry(name: string) {
   };
 }
 
+class MockImage {
+  onload: null | (() => void) = null;
+  onerror: null | (() => void) = null;
+  width = 1920;
+  height = 1080;
+  naturalWidth = 1920;
+  naturalHeight = 1080;
+
+  private _src = '';
+
+  set src(value: string) {
+    this._src = value;
+    queueMicrotask(() => this.onload?.());
+  }
+
+  get src(): string {
+    return this._src;
+  }
+}
+
+const originalImageDescriptor = Object.getOwnPropertyDescriptor(window, 'Image');
+
+function installImageMock(): void {
+  Object.defineProperty(window, 'Image', {
+    configurable: true,
+    writable: true,
+    value: MockImage as unknown as typeof Image,
+  });
+}
+
+function restoreImageMock(): void {
+  if (originalImageDescriptor) {
+    Object.defineProperty(window, 'Image', originalImageDescriptor);
+    return;
+  }
+
+  Reflect.deleteProperty(window, 'Image');
+}
+
 describe('ScreenshotsManager', () => {
   beforeEach(() => {
     window.localStorage.clear();
     useSettingsStore.getState().resetToDefaults();
-    useExplorerTaskStore.setState({
-      tasks: {},
-      taskOrder: [],
-      subscriptionState: 'idle',
-      subscriptionError: null,
-    });
-    vi.mocked(invoke).mockReset();
+    installImageMock();
+
     vi.mocked(availableMonitors).mockResolvedValue([DEFAULT_MONITOR]);
     vi.mocked(currentMonitor).mockResolvedValue(DEFAULT_MONITOR);
     vi.mocked(primaryMonitor).mockResolvedValue(DEFAULT_MONITOR);
-
-    Object.defineProperty(window, 'ResizeObserver', {
-      configurable: true,
-      writable: true,
-      value: class ResizeObserver {
-        observe() {}
-        disconnect() {}
-      },
-    });
 
     Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
       configurable: true,
@@ -76,36 +174,68 @@ describe('ScreenshotsManager', () => {
         toJSON: () => ({}),
       }),
     });
+
+    listScreenshotableMonitorsMock.mockReset();
+    captureScreenshotMonitorMock.mockReset();
+    removeScreenshotMonitorCaptureMock.mockReset();
+    clearScreenshotPluginCapturesMock.mockReset();
+    prepareScreenshotStageMock.mockReset();
+    finalizeScreenshotStageMock.mockReset();
+    deleteScreenshotStageMock.mockReset();
+    copyScreenshotImageToClipboardMock.mockReset();
+    createExplorerDirMock.mockReset();
+    deleteExplorerPathMock.mockReset();
+    listExplorerDirMock.mockReset();
+    openExplorerPathMock.mockReset();
+    readExplorerImageThumbnailMock.mockReset();
+    revealExplorerPathMock.mockReset();
+    editorSaveMock.mockReset();
+    editorHasUnsavedChangesMock.mockReset();
+
+    listScreenshotableMonitorsMock.mockResolvedValue([
+      { id: 1, name: 'Primary Display' },
+    ]);
+    captureScreenshotMonitorMock.mockResolvedValue(
+      '/tmp/tauri-plugin-screenshots/monitor-1.png',
+    );
+    removeScreenshotMonitorCaptureMock.mockResolvedValue(undefined);
+    clearScreenshotPluginCapturesMock.mockResolvedValue(undefined);
+    prepareScreenshotStageMock.mockResolvedValue({
+      path: '/tmp/tauri-plugin-screenshots/stage-1.png',
+      imageWidth: 1920,
+      imageHeight: 1080,
+    });
+    deleteScreenshotStageMock.mockResolvedValue(undefined);
+    finalizeScreenshotStageMock.mockResolvedValue({
+      path: joinPlatformPath(
+        screenshotFeatureConfig.defaultSaveDirectory,
+        'overlayterm-shot-monitor.png',
+      ),
+      file_name: 'overlayterm-shot-monitor.png',
+      created_at: Date.UTC(2026, 2, 22, 11, 0, 0),
+    });
+    createExplorerDirMock.mockResolvedValue(undefined);
+    deleteExplorerPathMock.mockResolvedValue(undefined);
+    openExplorerPathMock.mockResolvedValue(undefined);
+    revealExplorerPathMock.mockResolvedValue(undefined);
+    readExplorerImageThumbnailMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+    editorSaveMock.mockResolvedValue(true);
+    editorHasUnsavedChangesMock.mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    restoreImageMock();
   });
 
   it('deletes a gallery item after confirmation and refreshes the library', async () => {
     const user = userEvent.setup();
-    const invokeMock = vi.mocked(invoke);
     const screenshot = makeGalleryEntry('overlayterm-shot-a.png');
     let galleryEntries = [screenshot];
 
-    invokeMock.mockImplementation(async (command: string, args: unknown) => {
-      if (command === 'fs_list_dir') {
-        return galleryEntries;
-      }
-      if (command === 'screenshot_capture_preview') {
-        return {
-          captureId: 'capture-1',
-          previewUrl: 'data:image/png;base64,ZmFrZQ==',
-          imageWidth: 1920,
-          imageHeight: 1080,
-        };
-      }
-      if (command === 'screenshot_read_gallery_thumbnail') {
-        return 'data:image/png;base64,ZmFrZQ==';
-      }
-      if (command === 'fs_delete') {
-        const payload = args as { path?: string } | undefined;
-        expect(payload?.path).toBe(screenshot.path);
-        galleryEntries = [];
-        return null;
-      }
-      return null;
+    listExplorerDirMock.mockImplementation(async () => galleryEntries);
+    deleteExplorerPathMock.mockImplementation(async (path: string) => {
+      expect(path).toBe(screenshot.path);
+      galleryEntries = [];
     });
 
     render(<ScreenshotsManager />);
@@ -114,461 +244,96 @@ describe('ScreenshotsManager', () => {
 
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(`Delete ${screenshot.name} from the screenshot library?`)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        `Delete ${screenshot.name} from the screenshot library?`,
+      ),
+    ).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('fs_delete', {
-        path: screenshot.path,
-        recursive: false,
-      });
+      expect(deleteExplorerPathMock).toHaveBeenCalledWith(screenshot.path, false);
     });
 
     expect(await screen.findByText(`Deleted ${screenshot.name}.`)).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText('No screenshots yet.')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('No screenshots yet.')).toBeInTheDocument();
   });
 
-  it('does not delete a gallery item when confirmation is cancelled', async () => {
+  it('auto-enters full monitor editing and saves through the shared editor flow', async () => {
     const user = userEvent.setup();
-    const invokeMock = vi.mocked(invoke);
-    const screenshot = makeGalleryEntry('overlayterm-shot-b.png');
-
-    invokeMock.mockImplementation(async (command: string) => {
-      if (command === 'fs_list_dir') {
-        return [screenshot];
-      }
-      if (command === 'screenshot_capture_preview') {
-        return {
-          captureId: 'capture-1',
-          previewUrl: 'data:image/png;base64,ZmFrZQ==',
-          imageWidth: 1920,
-          imageHeight: 1080,
-        };
-      }
-      if (command === 'screenshot_read_gallery_thumbnail') {
-        return 'data:image/png;base64,ZmFrZQ==';
-      }
-      return null;
-    });
-
-    render(<ScreenshotsManager />);
-
-    expect(await screen.findByText(screenshot.name)).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Delete' }));
-    const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-
-    expect(invokeMock).not.toHaveBeenCalledWith('fs_delete', expect.anything());
-    expect(screen.getByText(screenshot.name)).toBeInTheDocument();
-  });
-
-  it('uses screenshot defaults for monitor-first save actions and returns to the library after saving', async () => {
-    const user = userEvent.setup();
-    const invokeMock = vi.mocked(invoke);
     const savedScreenshot = makeGalleryEntry('overlayterm-shot-monitor.png');
-    let galleryEntries = [] as ReturnType<typeof makeGalleryEntry>[];
+    let galleryEntries: ReturnType<typeof makeGalleryEntry>[] = [];
 
     useSettingsStore.getState().updateScreenshots({
       defaultCaptureMode: 'monitor',
       defaultOutputAction: 'save',
       closeEditorAfterAction: true,
-      showGrid: true,
     });
 
-    invokeMock.mockImplementation(async (command: string, args: unknown) => {
-      if (command === 'fs_list_dir') {
-        return galleryEntries;
-      }
-      if (command === 'screenshot_capture_preview') {
-        return {
-          captureId: 'capture-1',
-          previewUrl: 'data:image/png;base64,ZmFrZQ==',
-          imageWidth: 1920,
-          imageHeight: 1080,
-        };
-      }
-      if (command === 'screenshot_read_gallery_thumbnail') {
-        return 'data:image/png;base64,ZmFrZQ==';
-      }
-      if (command === 'screenshot_save_region') {
-        expect(args).toEqual({
-          captureId: 'capture-1',
-          x: 0,
-          y: 0,
-          width: 1920,
-          height: 1080,
-          directory: screenshotFeatureConfig.defaultSaveDirectory,
-          filePrefix: screenshotFeatureConfig.filePrefix,
-          copyToClipboard: false,
-        });
-        galleryEntries = [savedScreenshot];
-        return {
-          path: savedScreenshot.path,
-          file_name: savedScreenshot.name,
-          created_at: savedScreenshot.modified,
-        };
-      }
-      return null;
+    listExplorerDirMock.mockImplementation(async () => galleryEntries);
+    finalizeScreenshotStageMock.mockImplementation(async (path, directory, filePrefix, copyToClipboard) => {
+      expect(path).toBe('/tmp/tauri-plugin-screenshots/stage-1.png');
+      expect(directory).toBe(screenshotFeatureConfig.defaultSaveDirectory);
+      expect(filePrefix).toBe(screenshotFeatureConfig.filePrefix);
+      expect(copyToClipboard).toBe(false);
+
+      galleryEntries = [savedScreenshot];
+      return {
+        path: savedScreenshot.path,
+        file_name: savedScreenshot.name,
+        created_at: savedScreenshot.modified,
+      };
     });
 
     render(<ScreenshotsManager />);
 
-    expect(await screen.findByTestId('screenshot-grid')).toBeInTheDocument();
-    expect(screen.getByText('Full monitor is the default capture, or drag to switch to area snip:')).toBeInTheDocument();
-
-    const saveButton = await screen.findByRole('button', { name: /^Save Screen$/i });
+    expect(await screen.findByTestId('mock-shared-editor')).toBeInTheDocument();
     await waitFor(() => {
-      expect(saveButton).toBeEnabled();
+      expect(prepareScreenshotStageMock).toHaveBeenCalledWith(
+        '/tmp/tauri-plugin-screenshots/monitor-1.png',
+        null,
+      );
     });
-    await user.click(saveButton);
+
+    await user.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    await waitFor(() => {
+      expect(editorSaveMock).toHaveBeenCalled();
+      expect(finalizeScreenshotStageMock).toHaveBeenCalled();
+      expect(deleteScreenshotStageMock).toHaveBeenCalledWith(
+        '/tmp/tauri-plugin-screenshots/stage-1.png',
+      );
+    });
 
     expect(await screen.findByText('Screenshot Library')).toBeInTheDocument();
     expect(await screen.findByText(savedScreenshot.name)).toBeInTheDocument();
   });
 
-  it('exports annotated captures through the native Rust command instead of browser-side file writing', async () => {
+  it('prepares a cropped stage from a region selection before opening the shared editor', async () => {
     const user = userEvent.setup();
-    const invokeMock = vi.mocked(invoke);
-
-    useSettingsStore.getState().updateScreenshots({
-      defaultCaptureMode: 'monitor',
-      defaultOutputAction: 'save',
-      closeEditorAfterAction: false,
-    });
-
-    invokeMock.mockImplementation(async (command: string, args: unknown) => {
-      if (command === 'fs_list_dir') {
-        return [];
-      }
-      if (command === 'screenshot_capture_preview') {
-        return {
-          captureId: 'capture-annotated',
-          previewUrl: 'data:image/png;base64,ZmFrZQ==',
-          imageWidth: 1920,
-          imageHeight: 1080,
-        };
-      }
-      if (command === 'screenshot_export_annotated') {
-        expect(args).toEqual({
-          captureId: 'capture-annotated',
-          selection: { x: 0, y: 0, width: 1920, height: 1080 },
-          annotations: [
-            {
-              type: 'rect',
-              x1: 200,
-              y1: 200,
-              x2: 400,
-              y2: 360,
-              color: '#ef4444',
-              lw: 6,
-            },
-          ],
-          directory: screenshotFeatureConfig.defaultSaveDirectory,
-          filePrefix: screenshotFeatureConfig.filePrefix,
-          copyToClipboard: false,
-        });
-        return {
-          saved: {
-            path: joinPlatformPath(screenshotFeatureConfig.defaultSaveDirectory, 'overlayterm-shot-annotated.png'),
-            file_name: 'overlayterm-shot-annotated.png',
-            created_at: Date.UTC(2026, 2, 22, 11, 0, 0),
-          },
-          copiedToClipboard: false,
-        };
-      }
-      return null;
-    });
+    listExplorerDirMock.mockResolvedValue([]);
 
     render(<ScreenshotsManager />);
 
-    const preview = await screen.findByLabelText('Screenshot editor preview');
-    await user.click(screen.getByRole('button', { name: /Rectangle/i }));
-
-    fireEvent.pointerDown(preview, { pointerId: 1, clientX: 100, clientY: 100 });
-    fireEvent.pointerMove(preview, { pointerId: 1, clientX: 200, clientY: 180 });
-    fireEvent.pointerUp(preview, { pointerId: 1, clientX: 200, clientY: 180 });
-
-    await user.click(await screen.findByRole('button', { name: /^Save Annotated$/i }));
-
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('screenshot_export_annotated', expect.anything());
-    });
-    expect(invokeMock).not.toHaveBeenCalledWith('fs_write_file', expect.anything());
-  });
-
-  it('supports keyboard move and resize for an active selection before saving', async () => {
-    const user = userEvent.setup();
-    const invokeMock = vi.mocked(invoke);
-
-    invokeMock.mockImplementation(async (command: string, args: unknown) => {
-      if (command === 'fs_list_dir') {
-        return [];
-      }
-      if (command === 'screenshot_capture_preview') {
-        return {
-          captureId: 'capture-keyboard',
-          previewUrl: 'data:image/png;base64,ZmFrZQ==',
-          imageWidth: 1920,
-          imageHeight: 1080,
-        };
-      }
-      if (command === 'screenshot_save_region') {
-        expect(args).toEqual({
-          captureId: 'capture-keyboard',
-          x: 220,
-          y: 200,
-          width: 600,
-          height: 420,
-          directory: screenshotFeatureConfig.defaultSaveDirectory,
-          filePrefix: screenshotFeatureConfig.filePrefix,
-          copyToClipboard: false,
-        });
-        return {
-          path: joinPlatformPath(screenshotFeatureConfig.defaultSaveDirectory, 'overlayterm-shot-keyboard.png'),
-          file_name: 'overlayterm-shot-keyboard.png',
-          created_at: Date.UTC(2026, 2, 22, 11, 15, 0),
-        };
-      }
-      return null;
-    });
-
-    render(<ScreenshotsManager />);
-
-    const preview = await screen.findByLabelText('Screenshot editor preview');
+    const preview = await screen.findByLabelText('Screenshot selection preview');
     fireEvent.pointerDown(preview, { pointerId: 1, clientX: 100, clientY: 100 });
     fireEvent.pointerMove(preview, { pointerId: 1, clientX: 400, clientY: 300 });
     fireEvent.pointerUp(preview, { pointerId: 1, clientX: 400, clientY: 300 });
 
-    fireEvent.keyDown(preview, { key: 'ArrowRight', shiftKey: true });
-    fireEvent.keyDown(preview, { key: 'ArrowDown', altKey: true, shiftKey: true });
-
-    await user.click(await screen.findByRole('button', { name: /^Save$/i }));
+    await user.click(screen.getByRole('button', { name: 'Edit Selection' }));
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('screenshot_save_region', expect.anything());
-    });
-  });
-
-  it('supports pointer handle resizing for an active selection', async () => {
-    const user = userEvent.setup();
-    const invokeMock = vi.mocked(invoke);
-
-    invokeMock.mockImplementation(async (command: string, args: unknown) => {
-      if (command === 'fs_list_dir') {
-        return [];
-      }
-      if (command === 'screenshot_capture_preview') {
-        return {
-          captureId: 'capture-resize',
-          previewUrl: 'data:image/png;base64,ZmFrZQ==',
-          imageWidth: 1920,
-          imageHeight: 1080,
-        };
-      }
-      if (command === 'screenshot_save_region') {
-        expect(args).toEqual({
-          captureId: 'capture-resize',
+      expect(prepareScreenshotStageMock).toHaveBeenCalledWith(
+        '/tmp/tauri-plugin-screenshots/monitor-1.png',
+        {
           x: 200,
           y: 200,
-          width: 720,
-          height: 360,
-          directory: screenshotFeatureConfig.defaultSaveDirectory,
-          filePrefix: screenshotFeatureConfig.filePrefix,
-          copyToClipboard: false,
-        });
-        return {
-          path: joinPlatformPath(screenshotFeatureConfig.defaultSaveDirectory, 'overlayterm-shot-resize.png'),
-          file_name: 'overlayterm-shot-resize.png',
-          created_at: Date.UTC(2026, 2, 22, 11, 25, 0),
-        };
-      }
-      return null;
-    });
-
-    render(<ScreenshotsManager />);
-
-    const preview = await screen.findByLabelText('Screenshot editor preview');
-    fireEvent.pointerDown(preview, { pointerId: 1, clientX: 100, clientY: 100 });
-    fireEvent.pointerMove(preview, { pointerId: 1, clientX: 340, clientY: 280 });
-    fireEvent.pointerUp(preview, { pointerId: 1, clientX: 340, clientY: 280 });
-
-    fireEvent.pointerDown(preview, { pointerId: 2, clientX: 340, clientY: 190 });
-    fireEvent.pointerMove(preview, { pointerId: 2, clientX: 460, clientY: 190 });
-    fireEvent.pointerUp(preview, { pointerId: 2, clientX: 460, clientY: 190 });
-
-    await user.click(await screen.findByRole('button', { name: /^Save$/i }));
-
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('screenshot_save_region', expect.anything());
-    });
-  });
-
-  it('defers gallery thumbnail decoding until the full library is opened', async () => {
-    const user = userEvent.setup();
-    const invokeMock = vi.mocked(invoke);
-    const screenshot = makeGalleryEntry('overlayterm-shot-thumb.png');
-
-    invokeMock.mockImplementation(async (command: string) => {
-      if (command === 'fs_list_dir') {
-        return [screenshot];
-      }
-      if (command === 'screenshot_capture_preview') {
-        return {
-          captureId: 'capture-1',
-          previewUrl: 'data:image/png;base64,ZmFrZQ==',
-          imageWidth: 1920,
-          imageHeight: 1080,
-        };
-      }
-      if (command === 'screenshot_read_gallery_thumbnail') {
-        return 'data:image/png;base64,ZmFrZQ==';
-      }
-      return null;
-    });
-
-    render(<ScreenshotsManager />);
-
-    expect(await screen.findByText(screenshot.name)).toBeInTheDocument();
-    expect(invokeMock).not.toHaveBeenCalledWith('screenshot_read_gallery_thumbnail', expect.anything());
-
-    await user.click(screen.getByRole('button', { name: 'Library' }));
-
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('screenshot_read_gallery_thumbnail', {
-        path: screenshot.path,
-        maxWidth: screenshotFeatureConfig.galleryThumbnail.maxWidth,
-        maxHeight: screenshotFeatureConfig.galleryThumbnail.maxHeight,
-      });
-    });
-  });
-
-  it('does not surface unrelated explorer tasks in the screenshot status bar', async () => {
-    const invokeMock = vi.mocked(invoke);
-    const screenshot = makeGalleryEntry('overlayterm-shot-task-isolation.png');
-
-    invokeMock.mockImplementation(async (command: string) => {
-      if (command === 'fs_list_dir') {
-        return [screenshot];
-      }
-      if (command === 'screenshot_capture_preview') {
-        return {
-          captureId: 'capture-1',
-          previewUrl: 'data:image/png;base64,ZmFrZQ==',
-          imageWidth: 1920,
-          imageHeight: 1080,
-        };
-      }
-      if (command === 'screenshot_read_gallery_thumbnail') {
-        return 'data:image/png;base64,ZmFrZQ==';
-      }
-      return null;
-    });
-
-    useExplorerTaskStore.getState().upsertTask({
-      id: 'rogue-delete-task',
-      kind: 'delete',
-      status: 'running',
-      title: 'Delete M:\\\\\\\\Assets\\\\\\\\OverlayTerm\\\\\\\\notes\\\\\\\\new-note_1775861948830-jzyb4i.md',
-      detail: '',
-      progressCurrent: 0,
-      progressTotal: 1,
-      startedAt: Date.now(),
-      finishedAt: null,
-      sourcePaths: [],
-      destinationPath: null,
-      errorMessage: null,
-      canRetry: false,
-      canCancel: true,
-      canRevealOutput: false,
-      canOpenOutput: false,
-      canUndo: false,
-      schedulerTask: null,
-      /*
-        name: 'Delete M:\\Assets\\OverlayTerm\\notes\\new-note_1775861948830-jzyb4i.md',
-        prog: {
-          kind: 'fileDelete',
-          totalFiles: 1,
-          successFiles: 0,
-          failedFiles: 0,
-          totalBytes: 100,
-          processedBytes: 0,
-          collected: null,
-          cleaned: null,
+          width: 600,
+          height: 400,
         },
-      },
-      */
+      );
     });
 
-    render(<ScreenshotsManager />);
-
-    expect(await screen.findByText(screenshot.name)).toBeInTheDocument();
-    expect(screen.queryByText(/Delete M:\\Assets\\OverlayTerm\\notes\\/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Working…')).not.toBeInTheDocument();
-  });
-
-  it('captures Linux high-DPI monitor previews with physical bounds', async () => {
-    const invokeMock = vi.mocked(invoke);
-
-    Object.defineProperty(window.navigator, 'platform', {
-      configurable: true,
-      value: 'Linux x86_64',
-    });
-
-    vi.mocked(availableMonitors).mockResolvedValue([{
-      ...DEFAULT_MONITOR,
-      size: { width: 3840, height: 2160 },
-      scaleFactor: 2,
-      workArea: {
-        position: { x: 0, y: 0 },
-        size: { width: 3840, height: 2160 },
-      },
-    } as TauriMonitor]);
-    vi.mocked(currentMonitor).mockResolvedValue({
-      ...DEFAULT_MONITOR,
-      size: { width: 3840, height: 2160 },
-      scaleFactor: 2,
-      workArea: {
-        position: { x: 0, y: 0 },
-        size: { width: 3840, height: 2160 },
-      },
-    } as TauriMonitor);
-    vi.mocked(primaryMonitor).mockResolvedValue({
-      ...DEFAULT_MONITOR,
-      size: { width: 3840, height: 2160 },
-      scaleFactor: 2,
-      workArea: {
-        position: { x: 0, y: 0 },
-        size: { width: 3840, height: 2160 },
-      },
-    } as TauriMonitor);
-
-    invokeMock.mockImplementation(async (command: string) => {
-      if (command === 'fs_list_dir') {
-        return [];
-      }
-      if (command === 'screenshot_capture_preview') {
-        return {
-          captureId: 'capture-linux-hidpi',
-          previewUrl: 'data:image/png;base64,ZmFrZQ==',
-          imageWidth: 3840,
-          imageHeight: 2160,
-        };
-      }
-      return null;
-    });
-
-    render(<ScreenshotsManager />);
-
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('screenshot_capture_preview', {
-        x: 0,
-        y: 0,
-        width: 3840,
-        height: 2160,
-      });
-    });
+    expect(await screen.findByTestId('mock-shared-editor')).toBeInTheDocument();
   });
 });

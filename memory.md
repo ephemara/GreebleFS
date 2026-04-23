@@ -1,3 +1,22 @@
+# 2026-04-23 - Root Home Packs Now Ship Two Showcase Reference Packs
+
+- The managed `home-packs/` root is no longer empty. It now contains two authored reference packs meant to prove the upper bound of the Home-pack runtime rather than act like throwaway demos:
+  - `home-packs/atlas-cockpit/`
+    Dense operator wall with telemetry-first layout, quick-target grid, launchpad actions, task center, saved-search rack, and drive/root pressure matrix.
+  - `home-packs/prism-switchboard/`
+    Editorial card-switcher surface with persistent deck selection, mood-based styling, hero destination cards, launch routes, and optional telemetry strip.
+- Durable implementation shape:
+  - Both packs follow the authored-pack contract introduced with the Home runtime: `home.json` manifest plus `index.tsx` entry exporting `homePack = defineHomePack(...)`.
+  - Both packs intentionally exercise the constrained host API instead of reaching around it: bookmarks, quick access, most-used/recent telemetry, saved searches, drives, task-center state, launchpad actions, `openPanel(...)`, `openSettingsSection(...)`, `navigate(...)`, `refresh()`, and `updatePackState(...)`.
+  - Pack-local settings are part of the reference story. `Atlas Cockpit` demonstrates a dense control-deck pack with toggled telemetry lanes and optional modules, while `Prism Switchboard` demonstrates a more cinematic scene with persistent local deck state and source-lane switching.
+- Durable product note:
+  - Treat these two folders as the golden authored examples for future Home-pack work. If a new pack needs reference code, start here before copying from built-ins.
+  - Keep authored packs data-driven and host-constrained. The point of this root folder is to prove extension power without letting third-party packs own filesystem truth or shell internals.
+- Validation:
+  - passed: `bun x esbuild home-packs/atlas-cockpit/index.tsx --bundle --format=esm --external:lucide-react --external:greeblefs-home-pack --outfile=/tmp/atlas-cockpit-home-pack.js`
+  - passed: `bun x esbuild home-packs/prism-switchboard/index.tsx --bundle --format=esm --external:lucide-react --external:greeblefs-home-pack --outfile=/tmp/prism-switchboard-home-pack.js`
+  - passed: `bun x tsc --noEmit`
+
 # 2026-04-22 - Sigma Global Search Is Now Assimilated Into The Command Palette
 
 - GreebleFS now has a native indexed global filename search adapted from Sigma and surfaced through the shell command palette instead of a separate imported UI shell.

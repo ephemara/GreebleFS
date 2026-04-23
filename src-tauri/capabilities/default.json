@@ -34,6 +34,7 @@
     "shell:allow-execute",
     "shell:allow-spawn",
     "notification:default",
+    "screenshots:default",
     "global-shortcut:default",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
