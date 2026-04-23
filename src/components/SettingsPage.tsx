@@ -131,7 +131,6 @@ import {
   mobileAccessExternalLinks,
   mobileRemoteAccessModeDefinitions,
 } from '../config/mobileAccess';
-import { isExplorerTrackableFolderPath } from '../config/explorerVirtualLocations';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { InteractionMotionLab } from '../animation/MotionLab';
@@ -202,6 +201,13 @@ import { useSettingsStore, resolveSystemPresentationState, type TerminalWindowMo
 import { useExplorerStore } from '../store/explorerStore';
 import { useExplorerTaskSnapshots } from '../store/explorerTaskStore';
 import {
+  refreshMobileShareTailscaleStatus,
+  setMobileShareTailscaleStatus,
+  startMobileShareSession,
+  stopMobileShareSession,
+  useMobileShareStore,
+} from '../store/mobileShareStore';
+import {
   refreshAccelerationRuntimeStatus,
   useAccelerationRuntimeStore,
 } from '../store/accelerationRuntimeStore';
@@ -213,8 +219,7 @@ import {
   type LinuxDisplayBackendPreference,
   type LinuxDisplayBackendStatus,
 } from '../runtime/tauriClient';
-import { connectTailscale, disconnectTailscale, getTailscaleStatus } from '../runtime/tailscaleBackend';
-import type { TailscaleStatusSnapshot } from '../generated/tauri';
+import { connectTailscale, disconnectTailscale } from '../runtime/tailscaleBackend';
 import {
   clearTelemetrySessions,
   exportTelemetrySupportBundle,
@@ -1068,6 +1073,7 @@ interface SettingsSectionContentContext {
   localModelCacheFootprint: string;
   semanticIndexModelSummary: string;
   launchAtStartup: boolean;
+  startMobileShareOnBoot: boolean;
   systemPresentationState: ReturnType<typeof resolveSystemPresentationState>;
   platform: 'windows' | 'macos' | 'linux' | 'unknown';
   terminalWindowMode: TerminalWindowMode;
@@ -1122,6 +1128,7 @@ function getSettingsSectionContent(
       return {
         summary: [
           context.launchAtStartup ? 'Startup on' : 'Startup off',
+          context.startMobileShareOnBoot ? 'Mobile boot on' : 'Mobile boot off',
           context.systemPresentationState.trayVisible ? 'Tray on' : 'Tray off',
           context.systemPresentationState.taskbarVisible ? 'Taskbar on' : 'Taskbar off',
         ].join(' · '),
@@ -1543,6 +1550,19 @@ export function SettingsPage({
     [settings.system],
   );
   const {
+    mobileSharePhase,
+    mobileShareSession,
+    mobileShareNotice,
+    mobileShareError,
+    tailscaleStatus,
+  } = useMobileShareStore(useShallow(state => ({
+    mobileSharePhase: state.phase,
+    mobileShareSession: state.session,
+    mobileShareNotice: state.lastNotice,
+    mobileShareError: state.lastError,
+    tailscaleStatus: state.tailscaleStatus,
+  })));
+  const {
     snapshot: gpuRuntimeSnapshot,
     hydrationState: gpuRuntimeHydrationState,
     hydrationError: gpuRuntimeHydrationError,
@@ -1623,15 +1643,11 @@ export function SettingsPage({
   );
   const [cloudCredentialBusyProvider, setCloudCredentialBusyProvider] = useState<ExplorerCloudProviderId | null>(null);
   const [cloudCredentialBusyAction, setCloudCredentialBusyAction] = useState<'save' | 'clear' | null>(null);
-  const [tailscaleStatus, setTailscaleStatus] = useState<TailscaleStatusSnapshot | null>(null);
   const [tailscaleStatusPending, setTailscaleStatusPending] = useState(false);
   const [tailscaleActionPending, setTailscaleActionPending] = useState<'connect' | 'disconnect' | null>(null);
   const [tailscaleNotice, setTailscaleNotice] = useState<string | null>(null);
   const [tailscaleError, setTailscaleError] = useState<string | null>(null);
   const [tailscaleAuthKeyDraft, setTailscaleAuthKeyDraft] = useState('');
-  const [mobileSharePending, setMobileSharePending] = useState(false);
-  const [mobileShareNotice, setMobileShareNotice] = useState<string | null>(null);
-  const [mobileShareError, setMobileShareError] = useState<string | null>(null);
   const [wallpaperNotice, setWallpaperNotice] = useState<string | null>(null);
   const [wallpaperImportError, setWallpaperImportError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
@@ -2716,12 +2732,12 @@ export function SettingsPage({
     () => getMobileRemoteAccessModeDefinition(settings.mobile.remoteAccessMode),
     [settings.mobile.remoteAccessMode],
   );
+  const mobileSharePending = mobileSharePhase === 'starting' || mobileSharePhase === 'stopping';
 
   const refreshTailscaleStatus = useCallback(async () => {
     setTailscaleStatusPending(true);
     try {
-      const status = await getTailscaleStatus();
-      setTailscaleStatus(status);
+      await refreshMobileShareTailscaleStatus();
       setTailscaleError(null);
     } catch (error) {
       setTailscaleError(`Failed to read Tailscale status: ${String(error)}`);
@@ -2747,7 +2763,7 @@ export function SettingsPage({
         loginServer: settings.mobile.tailscaleLoginServer || null,
         authKey: tailscaleAuthKeyDraft.trim() || null,
       });
-      setTailscaleStatus(status);
+      setMobileShareTailscaleStatus(status);
       setTailscaleAuthKeyDraft('');
 
       if (status.authUrl) {
@@ -2775,7 +2791,7 @@ export function SettingsPage({
     setTailscaleNotice(null);
     try {
       const status = await disconnectTailscale();
-      setTailscaleStatus(status);
+      setMobileShareTailscaleStatus(status);
       setTailscaleNotice('Disconnected the local node from the active Tailscale session.');
     } catch (error) {
       setTailscaleError(`Failed to disconnect Tailscale: ${String(error)}`);
@@ -2785,52 +2801,23 @@ export function SettingsPage({
   }, []);
 
   const startMobileShareFromSettings = useCallback(async () => {
-    setMobileSharePending(true);
-    setMobileShareError(null);
-    setMobileShareNotice(null);
     try {
-      const requestedPath = explorerCurrentPath.trim();
-      const sharePath = isExplorerTrackableFolderPath(requestedPath)
-        ? requestedPath
-        : await getExplorerHomeDir();
-      const result = unwrapTauriResult(await commands.lanShareStart(
-        sharePath,
-        'mobile',
-        null,
-        settings.mobile.remoteAccessMode,
-      ));
-      const shareUrl = result.preferred_address;
-
-      if (navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(shareUrl);
-        } catch (error) {
-          console.warn('OverlayTerm: failed to copy mobile share URL from Settings', error);
-        }
+      await startMobileShareSession({
+        requestedPath: explorerCurrentPath,
+        remoteAccessMode: settings.mobile.remoteAccessMode,
+        copyPreferredUrl: true,
+      });
+    } catch {
+      if (settings.mobile.remoteAccessMode === 'tailscale') {
+        setActiveSection('mobile');
       }
-
-      setMobileShareNotice(
-        `Mobile share is live for ${sharePath} via ${settings.mobile.remoteAccessMode === 'tailscale' ? 'Tailscale' : 'LAN'} at ${shareUrl}.`,
-      );
-    } catch (error) {
-      setMobileShareError(`Failed to start mobile share: ${String(error)}`);
-    } finally {
-      setMobileSharePending(false);
     }
-  }, [explorerCurrentPath, settings.mobile.remoteAccessMode]);
+  }, [explorerCurrentPath, setActiveSection, settings.mobile.remoteAccessMode]);
 
   const stopMobileShareFromSettings = useCallback(async () => {
-    setMobileSharePending(true);
-    setMobileShareError(null);
-    setMobileShareNotice(null);
     try {
-      unwrapTauriResult(await commands.lanShareStop());
-      setMobileShareNotice('Stopped the active mobile share server.');
-    } catch (error) {
-      setMobileShareError(`Failed to stop mobile share: ${String(error)}`);
-    } finally {
-      setMobileSharePending(false);
-    }
+      await stopMobileShareSession();
+    } catch {}
   }, []);
 
   const handleWallpaperFileSelection = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -3103,7 +3090,9 @@ export function SettingsPage({
     {
       id: 'startup',
       label: 'Startup',
-      value: settings.system.launchAtStartup ? 'Ready at sign-in' : 'Manual launch',
+      value: settings.system.launchAtStartup
+        ? (settings.system.startMobileShareOnBoot ? 'Ready at sign-in + mobile live' : 'Ready at sign-in')
+        : 'Manual launch',
     },
     {
       id: 'source',
@@ -3115,7 +3104,13 @@ export function SettingsPage({
       label: 'Frame Telemetry',
       value: overlayFrameValue,
     },
-  ], [activeLayoutProfile.label, effectiveTheme.name, overlayFrameValue, settings.system.launchAtStartup]);
+  ], [
+    activeLayoutProfile.label,
+    effectiveTheme.name,
+    overlayFrameValue,
+    settings.system.launchAtStartup,
+    settings.system.startMobileShareOnBoot,
+  ]);
   const overviewWorkflows = useMemo(() => [
     {
       id: 'explorer-to-source',
@@ -3399,6 +3394,7 @@ export function SettingsPage({
     localModelCacheFootprint,
     semanticIndexModelSummary,
     launchAtStartup: settings.system.launchAtStartup,
+    startMobileShareOnBoot: settings.system.startMobileShareOnBoot,
     systemPresentationState,
     platform: platform as SettingsSectionContentContext['platform'],
     terminalWindowMode: settings.terminal.windowMode,
@@ -3414,6 +3410,7 @@ export function SettingsPage({
       settings.keybindings.terminalToggle,
       settings.keybindings.windowModeToggle,
       settings.keybindings.zenFocusModeToggle,
+      settings.keybindings.mobileShareToggle,
     ].map(formatHotkeyLabel),
     connectedCloudAccountCount,
     configuredCloudProviderCount,
@@ -6309,6 +6306,7 @@ export function SettingsPage({
                     .filter(definition => (
                       definition.scope === 'global'
                       || definition.scope === 'gesture'
+                      || definition.key === 'mobileShareToggle'
                       || definition.key === 'windowModeToggle'
                       || definition.key === 'zenFocusModeToggle'
                       || definition.key === 'toggleDeveloperTelemetryHud'
@@ -6872,6 +6870,19 @@ export function SettingsPage({
                   </label>
                   <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
                     <div>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Start Mobile Share On Boot</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        When the main desktop host launches, immediately bring the phone-facing mobile share online using the current Mobile routing mode and the active explorer path fallback.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.system.startMobileShareOnBoot}
+                      onChange={event => updateSystem({ startMobileShareOnBoot: event.target.checked })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                    <div>
                       <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Hide App In Tray</div>
                       <p className="mt-1 text-[11px] opacity-40">
                         Keeps a {platform === 'macos' ? 'menu bar' : 'system tray'} entry available so the overlay can stay resident when the main window is hidden.
@@ -7370,7 +7381,7 @@ export function SettingsPage({
                       ? 'Updating OS startup registration...'
                       : startupSyncError
                         ? `Startup registration failed: ${startupSyncError}`
-                        : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${systemPresentationState.trayVisible ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${systemPresentationState.taskbarVisible ? 'enabled' : 'disabled'} · recovery path ${systemPresentationState.recoveryPath === 'tray' ? (platform === 'macos' ? 'Dock' : 'tray') : platform === 'macos' ? 'Dock' : 'taskbar'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'} · deep telemetry ${settings.system.developerTelemetryEnabled ? 'enabled' : 'disabled'} · source trace ${settings.system.sourceTraceModeEnabled ? 'enabled' : 'disabled'} · consumer diagnostics ${settings.system.consumerDiagnosticsEnabled ? 'enabled' : 'disabled'}${platform === 'linux' && linuxDisplayBackendStatusSummary ? ` · ${linuxDisplayBackendStatusSummary}` : ''}`}
+                        : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · mobile share boot ${settings.system.startMobileShareOnBoot ? 'enabled' : 'disabled'} · tray ${systemPresentationState.trayVisible ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${systemPresentationState.taskbarVisible ? 'enabled' : 'disabled'} · recovery path ${systemPresentationState.recoveryPath === 'tray' ? (platform === 'macos' ? 'Dock' : 'tray') : platform === 'macos' ? 'Dock' : 'taskbar'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'} · deep telemetry ${settings.system.developerTelemetryEnabled ? 'enabled' : 'disabled'} · source trace ${settings.system.sourceTraceModeEnabled ? 'enabled' : 'disabled'} · consumer diagnostics ${settings.system.consumerDiagnosticsEnabled ? 'enabled' : 'disabled'}${platform === 'linux' && linuxDisplayBackendStatusSummary ? ` · ${linuxDisplayBackendStatusSummary}` : ''}`}
                   </div>
                 </div>
               </section>
@@ -8271,6 +8282,9 @@ export function SettingsPage({
                         <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
                           {settings.mobile.tailscaleHostname ? 'Custom Hostname' : 'Auto Hostname'}
                         </span>
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: mobileShareSession ? text : muted }}>
+                          {mobileShareSession ? 'Share Live' : mobileSharePending ? 'Updating' : 'Share Offline'}
+                        </span>
                       </div>
                     </div>
 
@@ -8284,6 +8298,18 @@ export function SettingsPage({
                         {mobileShareError}
                       </div>
                     ) : null}
+                    {mobileShareSession ? (
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Live Share Path</div>
+                          <div className="mt-2 opacity-75 break-all">{mobileShareSession.sharePath}</div>
+                        </div>
+                        <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Preferred Phone URL</div>
+                          <div className="mt-2 opacity-75 break-all">{mobileShareSession.preferredUrl}</div>
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
@@ -8293,7 +8319,11 @@ export function SettingsPage({
                         className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
                         style={{ border: `1px solid ${accent}55`, background: `${accent}18`, color: text, opacity: mobileSharePending ? 0.7 : 1 }}
                       >
-                        {mobileSharePending ? 'Starting...' : `Start ${mobileRemoteAccessDefinition.launchBadge} Share`}
+                        {mobileSharePhase === 'starting'
+                          ? 'Starting...'
+                          : mobileShareSession
+                            ? `Restart ${mobileRemoteAccessDefinition.launchBadge} Share`
+                            : `Start ${mobileRemoteAccessDefinition.launchBadge} Share`}
                       </button>
                       <button
                         type="button"
@@ -8302,7 +8332,7 @@ export function SettingsPage({
                         className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
                         style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, opacity: mobileSharePending ? 0.7 : 1 }}
                       >
-                        Stop Mobile Share
+                        {mobileSharePhase === 'stopping' ? 'Stopping...' : 'Stop Mobile Share'}
                       </button>
                     </div>
                   </div>

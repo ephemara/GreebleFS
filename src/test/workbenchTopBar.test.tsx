@@ -97,13 +97,20 @@ describe('WorkbenchTopBar', () => {
         onClose={vi.fn()}
         accent={appearance.theme.palette.accent}
         blur={false}
-        onBlurChange={vi.fn()}
         blurStrength={0}
         blurPlatform="linux"
         windowMode="overlay"
         overlayAnchor="top"
         commandPaletteShortcutLabel="Ctrl+K"
+        mobileShareShortcutLabel="Ctrl+Alt+Shift+M"
         toggleShortcutLabel="Ctrl+Space"
+        mobileShareRemoteAccessMode="lan"
+        mobileSharePhase="idle"
+        mobileShareSession={null}
+        mobileShareError={null}
+        mobileShareNotice={null}
+        onToggleMobileShare={vi.fn()}
+        onOpenMobileSettings={vi.fn()}
         zenFocusMode={false}
         zenFocusShortcutLabel="Ctrl+."
         onToggleZenFocusMode={vi.fn()}
@@ -126,5 +133,67 @@ describe('WorkbenchTopBar', () => {
 
     fireEvent.pointerEnter(notesTab);
     expect(notesTab.style.transform).toContain('translate3d');
+  });
+
+  it('replaces the blur control with the mobile share launcher and delayed QR popover', async () => {
+    const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
+    const layoutProfile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'overlay-classic');
+    const onToggleMobileShare = vi.fn();
+    const onOpenMobileSettings = vi.fn();
+
+    render(
+      <WorkbenchTopBar
+        appearance={appearance}
+        renderRuntime={renderRuntime}
+        layoutProfile={layoutProfile}
+        layoutSourcePath={null}
+        panels={[]}
+        openPanelIds={[]}
+        pinnedPanelIds={[]}
+        activePanelId={null}
+        onPanelSelect={vi.fn()}
+        onPanelToggle={vi.fn()}
+        onPanelClose={vi.fn()}
+        onPanelReorder={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onCycleLayout={vi.fn()}
+        onSetWindowMode={vi.fn()}
+        onOpenCommandPalette={vi.fn()}
+        onToggleOverlayAnchor={vi.fn()}
+        onClose={vi.fn()}
+        accent={appearance.theme.palette.accent}
+        blur={false}
+        blurStrength={0}
+        blurPlatform="linux"
+        windowMode="overlay"
+        overlayAnchor="top"
+        commandPaletteShortcutLabel="Ctrl+K"
+        mobileShareShortcutLabel="Ctrl+Alt+Shift+M"
+        toggleShortcutLabel="Ctrl+Space"
+        mobileShareRemoteAccessMode="lan"
+        mobileSharePhase="idle"
+        mobileShareSession={null}
+        mobileShareError={null}
+        mobileShareNotice={null}
+        onToggleMobileShare={onToggleMobileShare}
+        onOpenMobileSettings={onOpenMobileSettings}
+        zenFocusMode={false}
+        zenFocusShortcutLabel="Ctrl+."
+        onToggleZenFocusMode={vi.fn()}
+        topBarDefinition={{
+          ...topBarDefinition,
+          trailingControls: ['mobile-share'],
+        }}
+      />,
+    );
+
+    const mobileShareButton = screen.getByTitle('Start Mobile Share (Ctrl+Alt+Shift+M)');
+    fireEvent.click(mobileShareButton);
+    expect(onToggleMobileShare).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerEnter(mobileShareButton.parentElement as HTMLElement);
+
+    expect(await screen.findByText('Mobile Share', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /mobile settings/i })).toBeInTheDocument();
   });
 });

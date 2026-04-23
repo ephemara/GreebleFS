@@ -147,7 +147,6 @@ import {
   type SettingsSectionKey,
 } from './config/settingsNavigation';
 import {
-  isExplorerTrackableFolderPath,
   isExplorerVirtualPath,
 } from './config/explorerVirtualLocations';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
@@ -181,6 +180,7 @@ import { buildTelemetryConfigFromSettings, configureTelemetry } from './runtime/
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
+  MAIN_WINDOW_HOST_LABEL,
   DOCK_WINDOW_HOST_LABEL,
   SHOW_WINDOW_MODE_REQUEST_EVENT,
   TOGGLE_OVERLAY_REQUEST_EVENT,
@@ -198,6 +198,11 @@ import {
   retryFailedExplorerTasks,
 } from './store/explorerTaskStore';
 import { useGlobalSearchStore } from './store/globalSearchStore';
+import {
+  startMobileShareSession,
+  stopMobileShareSession,
+  useMobileShareStore,
+} from './store/mobileShareStore';
 import { createPythonRuntimeConfig } from './config/python';
 import {
   useSettingsStore,
@@ -604,7 +609,6 @@ function App() {
     systemSettings,
     setActiveSection,
     updateTerminal,
-    updateAppearance,
     updateLayout,
     updateSystem,
   } = useSettingsStore(useShallow(state => ({
@@ -617,7 +621,6 @@ function App() {
     systemSettings: state.settings.system,
     setActiveSection: state.setActiveSection,
     updateTerminal: state.updateTerminal,
-    updateAppearance: state.updateAppearance,
     updateLayout: state.updateLayout,
     updateSystem: state.updateSystem,
   })));
@@ -627,6 +630,38 @@ function App() {
     routingMode: systemSettings.accelerationRoutingMode,
     startSidecarIfNeeded: false,
   });
+  const {
+    mobileSharePhase,
+    mobileShareSession,
+    mobileShareNotice,
+    mobileShareError,
+  } = useMobileShareStore(useShallow(state => ({
+    mobileSharePhase: state.phase,
+    mobileShareSession: state.session,
+    mobileShareNotice: state.lastNotice,
+    mobileShareError: state.lastError,
+  })));
+  const settingsPersistApi = (useSettingsStore as typeof useSettingsStore & {
+    persist?: {
+      hasHydrated?: () => boolean;
+      onFinishHydration?: (callback: () => void) => () => void;
+    };
+  }).persist;
+  const [settingsHydrated, setSettingsHydrated] = useState(
+    () => settingsPersistApi?.hasHydrated?.() ?? true,
+  );
+  const mobileShareBootEvaluationRef = useRef(false);
+
+  useEffect(() => {
+    if (settingsPersistApi?.hasHydrated?.()) {
+      setSettingsHydrated(true);
+      return;
+    }
+
+    return settingsPersistApi?.onFinishHydration?.(() => {
+      setSettingsHydrated(true);
+    });
+  }, [settingsPersistApi]);
   const {
     initStore: initTerminalStore,
     addDirectoryBookmark,
@@ -2282,72 +2317,6 @@ function App() {
     setIsCommandPaletteOpen(false);
   }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const handleKeydown = (event: KeyboardEvent) => {
-      const target = event.target instanceof HTMLElement ? event.target : null;
-      if (
-        target?.isContentEditable
-        || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')
-        || Boolean(target?.closest('.monaco-editor'))
-      ) {
-        return;
-      }
-
-      if (matchesKeybinding(event, keybindings.commandPalette)) {
-        event.preventDefault();
-        event.stopPropagation();
-        handleOpenCommandPalette();
-        return;
-      }
-
-      if (matchesKeybinding(event, keybindings.windowModeToggle)) {
-        event.preventDefault();
-        event.stopPropagation();
-        handleToggleWindowMode();
-        return;
-      }
-
-      if (matchesKeybinding(event, keybindings.zenFocusModeToggle)) {
-        event.preventDefault();
-        event.stopPropagation();
-        handleToggleZenFocusMode();
-        return;
-      }
-
-      const developerTelemetryAllowed = Boolean(import.meta.env.DEV) || systemSettings.developerMode;
-      if (!developerTelemetryAllowed || !matchesKeybinding(event, keybindings.toggleDeveloperTelemetryHud)) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      const currentSystemSettings = useSettingsStore.getState().settings.system;
-      const nextHudVisible = !currentSystemSettings.devTelemetryHudVisible;
-      useSettingsStore.getState().updateSystem({
-        devTelemetryHudVisible: nextHudVisible,
-        sourceTraceModeEnabled: nextHudVisible,
-        ...(nextHudVisible ? { developerTelemetryEnabled: true } : {}),
-      });
-    };
-
-    window.addEventListener('keydown', handleKeydown, { capture: true });
-    return () => window.removeEventListener('keydown', handleKeydown, { capture: true });
-  }, [
-    handleOpenCommandPalette,
-    handleToggleWindowMode,
-    handleToggleZenFocusMode,
-    keybindings.commandPalette,
-    keybindings.toggleDeveloperTelemetryHud,
-    keybindings.windowModeToggle,
-    keybindings.zenFocusModeToggle,
-    systemSettings.developerMode,
-  ]);
-
   const handleDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const target = event.target instanceof HTMLElement ? event.target : null;
     const dragSource = target?.closest<HTMLElement>('[data-overlay-drag-source="file"]');
@@ -3762,45 +3731,174 @@ function App() {
   }, [activeLayoutProfile.id, layoutManifest, updateLayout]);
 
   const handleStartMobileShare = useCallback(async () => {
-    if (!isTauri()) {
-      window.alert('Mobile share is only available from the desktop host.');
-      return;
-    }
+    try {
+      const session = await startMobileShareSession({
+        requestedPath: explorerCurrentPath,
+        remoteAccessMode: mobileSettings.remoteAccessMode,
+        copyPreferredUrl: true,
+      });
 
-    const requestedPath = explorerCurrentPath.trim();
-    const sharePath = isExplorerTrackableFolderPath(requestedPath)
-      ? requestedPath
-      : unwrapTauriResult(await commands.fsGetHomeDir());
-    const result = unwrapTauriResult(await commands.lanShareStart(
-      sharePath,
-      'mobile',
-      null,
-      mobileSettings.remoteAccessMode,
-    ));
-    const shareUrl = result.preferred_address;
-
-    if (navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-      } catch (error) {
-        console.warn('OverlayTerm: failed to copy mobile share URL', error);
+      window.alert(
+        `Mobile share is live.\n\nPath: ${session.sharePath}\nAccess: ${mobileSettings.remoteAccessMode === 'tailscale' ? 'Tailscale' : 'LAN'}\nURL: ${session.preferredUrl}\n\nThe URL was copied to your clipboard when available.`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (mobileSettings.remoteAccessMode === 'tailscale') {
+        handleOpenSettingsSection('mobile');
       }
+      window.alert(`Failed to start mobile share.\n\n${message}`);
     }
-
-    window.alert(
-      `Mobile share is live.\n\nPath: ${sharePath}\nAccess: ${mobileSettings.remoteAccessMode === 'tailscale' ? 'Tailscale' : 'LAN'}\nURL: ${shareUrl}\n\nThe URL was copied to your clipboard when available.`,
-    );
-  }, [explorerCurrentPath, mobileSettings.remoteAccessMode]);
+  }, [
+    explorerCurrentPath,
+    handleOpenSettingsSection,
+    mobileSettings.remoteAccessMode,
+  ]);
 
   const handleStopMobileShare = useCallback(async () => {
-    if (!isTauri()) {
-      window.alert('Mobile share is only available from the desktop host.');
+    try {
+      await stopMobileShareSession();
+      window.alert('Mobile share stopped.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      window.alert(`Failed to stop mobile share.\n\n${message}`);
+    }
+  }, []);
+
+  const handleToggleMobileShare = useCallback(async () => {
+    if (mobileSharePhase === 'starting' || mobileSharePhase === 'stopping') {
       return;
     }
 
-    unwrapTauriResult(await commands.lanShareStop());
-    window.alert('Mobile share stopped.');
-  }, []);
+    if (mobileSharePhase === 'running') {
+      try {
+        await stopMobileShareSession();
+      } catch {
+        // Shared store state already captures the failure for the popover/settings surface.
+      }
+      return;
+    }
+
+    try {
+      await startMobileShareSession({
+        requestedPath: explorerCurrentPath,
+        remoteAccessMode: mobileSettings.remoteAccessMode,
+        copyPreferredUrl: true,
+      });
+    } catch {
+      if (mobileSettings.remoteAccessMode === 'tailscale') {
+        handleOpenSettingsSection('mobile');
+      }
+    }
+  }, [
+    explorerCurrentPath,
+    handleOpenSettingsSection,
+    mobileSharePhase,
+    mobileSettings.remoteAccessMode,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleKeydown = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (
+        target?.isContentEditable
+        || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')
+        || Boolean(target?.closest('.monaco-editor'))
+      ) {
+        return;
+      }
+
+      if (matchesKeybinding(event, keybindings.commandPalette)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleOpenCommandPalette();
+        return;
+      }
+
+      if (matchesKeybinding(event, keybindings.windowModeToggle)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleToggleWindowMode();
+        return;
+      }
+
+      if (matchesKeybinding(event, keybindings.zenFocusModeToggle)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleToggleZenFocusMode();
+        return;
+      }
+
+      if (matchesKeybinding(event, keybindings.mobileShareToggle)) {
+        event.preventDefault();
+        event.stopPropagation();
+        void handleToggleMobileShare();
+        return;
+      }
+
+      const developerTelemetryAllowed = Boolean(import.meta.env.DEV) || systemSettings.developerMode;
+      if (!developerTelemetryAllowed || !matchesKeybinding(event, keybindings.toggleDeveloperTelemetryHud)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const currentSystemSettings = useSettingsStore.getState().settings.system;
+      const nextHudVisible = !currentSystemSettings.devTelemetryHudVisible;
+      useSettingsStore.getState().updateSystem({
+        devTelemetryHudVisible: nextHudVisible,
+        sourceTraceModeEnabled: nextHudVisible,
+        ...(nextHudVisible ? { developerTelemetryEnabled: true } : {}),
+      });
+    };
+
+    window.addEventListener('keydown', handleKeydown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeydown, { capture: true });
+  }, [
+    handleOpenCommandPalette,
+    handleToggleMobileShare,
+    handleToggleWindowMode,
+    handleToggleZenFocusMode,
+    keybindings.commandPalette,
+    keybindings.mobileShareToggle,
+    keybindings.toggleDeveloperTelemetryHud,
+    keybindings.windowModeToggle,
+    keybindings.zenFocusModeToggle,
+    systemSettings.developerMode,
+  ]);
+
+  useEffect(() => {
+    if (!settingsHydrated || mobileShareBootEvaluationRef.current) {
+      return;
+    }
+
+    if (currentWindowHostRole !== MAIN_WINDOW_HOST_LABEL) {
+      return;
+    }
+
+    mobileShareBootEvaluationRef.current = true;
+    if (!systemSettings.startMobileShareOnBoot || !isTauri()) {
+      return;
+    }
+
+    void startMobileShareSession({
+      requestedPath: explorerCurrentPath,
+      remoteAccessMode: mobileSettings.remoteAccessMode,
+      copyPreferredUrl: false,
+    }).catch((error) => {
+      console.warn('GreebleFS: failed to auto-start mobile share on boot', error);
+    });
+  }, [
+    currentWindowHostRole,
+    explorerCurrentPath,
+    mobileSettings.remoteAccessMode,
+    settingsHydrated,
+    systemSettings.startMobileShareOnBoot,
+  ]);
 
   const globalSearchPriorityPaths = useMemo(() => {
     const candidatePaths = [
@@ -3979,13 +4077,15 @@ function App() {
       },
       {
         id: 'start-mobile-share',
-        title: 'Start Mobile Share',
+        title: mobileSharePhase === 'running' ? 'Restart Mobile Share' : 'Start Mobile Share',
         subtitle: mobileSettings.remoteAccessMode === 'tailscale'
           ? 'Serve the mobile PWA for the current explorer folder over the configured tailnet path.'
           : 'Serve the mobile PWA for the current explorer folder over the LAN share tunnel.',
         group: 'Mobile',
         keywords: ['mobile', 'pwa', 'ios', 'iphone', 'share', 'lan', 'remote', 'tailscale', 'tailnet'],
-        badge: mobileSettings.remoteAccessMode === 'tailscale' ? 'Tailnet' : 'Mobile',
+        badge: mobileSharePhase === 'running'
+          ? 'Live'
+          : mobileSettings.remoteAccessMode === 'tailscale' ? 'Tailnet' : 'Mobile',
         onSelect: handleStartMobileShare,
       },
       {
@@ -4158,6 +4258,7 @@ function App() {
     pinnedPanelIds,
     panelDefinitions,
     pluginCommands,
+    mobileSharePhase,
     mobileSettings.remoteAccessMode,
     refreshAuthoredAnimations,
     refreshAuthoredWallpapers,
@@ -4470,14 +4571,21 @@ function App() {
       onClose={() => { void hideOverlay(); }}
       accent={accent}
       blur={appBlur}
-      onBlurChange={(v) => updateAppearance({ appBlur: v })}
       blurStrength={clampedAppBlurStrength}
       blurPlatform={runtimePlatform}
       windowMode={windowMode}
       overlayAnchor={overlayAnchor}
       surfaceOwnership={activeThemeRendererSurfaceOwnership}
       commandPaletteShortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
+      mobileShareShortcutLabel={formatHotkeyLabel(keybindings.mobileShareToggle)}
       toggleShortcutLabel={formatHotkeyLabel(keybindings.terminalToggle)}
+      mobileShareRemoteAccessMode={mobileSettings.remoteAccessMode}
+      mobileSharePhase={mobileSharePhase}
+      mobileShareSession={mobileShareSession}
+      mobileShareError={mobileShareError}
+      mobileShareNotice={mobileShareNotice}
+      onToggleMobileShare={handleToggleMobileShare}
+      onOpenMobileSettings={() => handleOpenSettingsSection('mobile')}
       zenFocusMode={zenFocusMode}
       zenFocusShortcutLabel={formatHotkeyLabel(keybindings.zenFocusModeToggle)}
       onToggleZenFocusMode={handleToggleZenFocusMode}

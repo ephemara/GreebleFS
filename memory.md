@@ -1,3 +1,24 @@
+# 2026-04-23 - The Top-Bar Blur Toggle Is Now The Mobile Share Launcher
+
+- The old blur button in the global top bar is gone. Mobile share is now a first-class shell control instead of being buried behind Settings or the command palette.
+- Durable implementation shape:
+  - `src/components/WorkbenchTopBar.tsx` now treats the former blur slot as `mobile-share`. The control renders a phone glyph, uses the active theme accent when the share is live or transitioning, toggles the current mobile route on click, and opens a delayed QR popover on hover.
+  - `src/config/topBars.ts` now has a real `mobile-share` control id and normalizes the legacy `blur-toggle` id to it so existing layouts/themes keep working without hand migration.
+  - `src/runtime/mobileShareRuntime.ts`, `src/store/mobileShareStore.ts`, and `src/components/MobileSharePopover.tsx` form the shared mobile-share lane:
+    - runtime resolves the actual share path, enforces Tailscale readiness when that route is selected, starts/stops the native share, and derives usable connection targets
+    - store owns cross-surface phase/session/error/notice state so the top bar, Settings, command palette, and boot flow all stay in sync
+    - popover renders nearby QR handoff cards plus copy/open/settings affordances for LAN and tailnet targets
+  - `src/App.tsx` no longer owns ad hoc mobile-share state. It now uses the shared store/runtime for command-palette actions, the new local hotkey, and the boot-autostart path.
+  - `src/components/SettingsPage.tsx` now reflects the shared mobile state instead of maintaining its own duplicate pending/error/status state, and it exposes the new `Start Mobile Share On Boot` system toggle.
+  - `src/config/hotkeys.ts` adds `mobileShareToggle`, and Settings now exposes it in the main shell hotkeys section instead of hiding it as an unreachable local-only binding.
+  - `src/store/settingsStore.ts` persists `system.startMobileShareOnBoot`, defaulting to `false`.
+- Durable product note:
+  - Mobile share is now shell chrome, not a hidden utility. Future mobile work should extend the shared runtime/store/popover path instead of reintroducing one-off start/stop logic in Settings or palette actions.
+  - The top-bar hover contract is intentional: click is the quick toggle, hover is the pairing/QR affordance. If this changes later, preserve that separation instead of turning the launcher into another passive status icon.
+- Validation:
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/workbenchTopBar.test.tsx src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/app.dockMode.test.tsx src/test/settingsPage.behavior.test.tsx --reporter=dot`
+
 # 2026-04-23 - Restored The CropperJS Image Editor And Removed The Runtime Package Seam
 
 - The shared explorer/screenshot image editor is back on the correct implementation. The intermediate `@img-editor-runtime` / `packages/img-editor` swap was wrong for this product; the intended editor is the custom CropperJS-based lane with the exposure/filter panel and preview-first fullscreen image surface.

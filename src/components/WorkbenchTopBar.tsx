@@ -13,10 +13,11 @@ import {
 
 import {
   Check,
-  Droplet,
   LayoutGrid,
+  Loader2,
   Search,
   Settings2,
+  Smartphone,
   Terminal as TerminalIcon,
   X,
 } from '@/components/AppIcons';
@@ -29,15 +30,19 @@ import type {
   LoadedOverlayTopBarDefinition,
   OverlayTopBarControlId,
 } from '../config/topBars';
+import { mobileShareQrHoverDelayMs, type MobileRemoteAccessMode } from '../config/mobileAccess';
 import type { ResolvedWorkbenchRenderRuntime } from '../config/workbenchRenderRuntime';
 import type {
   OverlayWindowAnchor,
   TerminalWindowMode,
 } from '../store/settingsStore';
+import type { MobileSharePhase } from '../store/mobileShareStore';
 import type { OverlayThemeRendererSurfaceOwnership } from './themeRendererShellModel';
 import { useInteractionMotionController } from '../animation/interactionMotion';
+import { MobileSharePopover } from './MobileSharePopover';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { WindowControls } from './WindowControls';
+import type { MobileShareSession } from '../runtime/mobileShareRuntime';
 
 interface WorkbenchTopBarProps {
   appearance: ResolvedOverlayAppearance;
@@ -60,14 +65,21 @@ interface WorkbenchTopBarProps {
   onClose: () => void;
   accent: string;
   blur: boolean;
-  onBlurChange: (value: boolean) => void;
   blurStrength: number;
   blurPlatform: RuntimePlatform;
   windowMode: TerminalWindowMode;
   overlayAnchor: OverlayWindowAnchor;
   surfaceOwnership?: OverlayThemeRendererSurfaceOwnership | null;
   commandPaletteShortcutLabel: string;
+  mobileShareShortcutLabel: string;
   toggleShortcutLabel: string;
+  mobileShareRemoteAccessMode: MobileRemoteAccessMode;
+  mobileSharePhase: MobileSharePhase;
+  mobileShareSession: MobileShareSession | null;
+  mobileShareError: string | null;
+  mobileShareNotice: string | null;
+  onToggleMobileShare: () => void;
+  onOpenMobileSettings: () => void;
   zenFocusMode: boolean;
   zenFocusShortcutLabel: string;
   onToggleZenFocusMode: () => void;
@@ -122,14 +134,21 @@ export function WorkbenchTopBar({
   onClose,
   accent,
   blur,
-  onBlurChange,
   blurStrength,
   blurPlatform,
   windowMode,
   overlayAnchor,
   surfaceOwnership,
   commandPaletteShortcutLabel,
+  mobileShareShortcutLabel,
   toggleShortcutLabel,
+  mobileShareRemoteAccessMode,
+  mobileSharePhase,
+  mobileShareSession,
+  mobileShareError,
+  mobileShareNotice,
+  onToggleMobileShare,
+  onOpenMobileSettings,
   zenFocusMode,
   zenFocusShortcutLabel,
   onToggleZenFocusMode,
@@ -148,7 +167,10 @@ export function WorkbenchTopBar({
   const usesFloatingTopBar = effectiveTopBarStyle === 'floating' || effectiveTopBarStyle === 'glass';
   const usesInsetTopBar = usesFloatingTopBar || effectiveTopBarStyle === 'minimal';
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const mobilePopoverOpenTimerRef = useRef<number | null>(null);
+  const mobilePopoverCloseTimerRef = useRef<number | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isMobilePopoverOpen, setIsMobilePopoverOpen] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(() => ({
@@ -161,7 +183,6 @@ export function WorkbenchTopBar({
   const rendererOwnsLauncher = Boolean(surfaceOwnership?.launcher);
   const runtimeUsesTabbedNavigation = !rendererOwnsLauncher && renderRuntime.showTabStrip;
   const showPrimaryLauncherChrome = !rendererOwnsLauncher;
-  const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
   const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
   const isWindowedMode = windowMode === 'windowed';
   const windowedChromeTopInset = isWindowedMode && blurPlatform === 'windows' && !isWindowMaximized ? 10 : 0;
@@ -214,6 +235,8 @@ export function WorkbenchTopBar({
   const shouldShowLeadingWindowControls = isWindowedMode && blurPlatform === 'macos';
   const shouldShowTrailingWindowControls = isWindowedMode && blurPlatform !== 'macos';
   const showsTabStrip = runtimeUsesTabbedNavigation && topBarDefinition.navigationMode !== 'summary';
+  const isMobileShareBusy = mobileSharePhase === 'starting' || mobileSharePhase === 'stopping';
+  const isMobileShareActive = mobileSharePhase === 'running' && mobileShareSession != null;
 
   const handleStartWindowDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!isWindowedMode || event.button !== 0 || !isTauri()) {
@@ -276,6 +299,58 @@ export function WorkbenchTopBar({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const clearMobilePopoverTimers = useCallback(() => {
+    if (mobilePopoverOpenTimerRef.current != null) {
+      window.clearTimeout(mobilePopoverOpenTimerRef.current);
+      mobilePopoverOpenTimerRef.current = null;
+    }
+    if (mobilePopoverCloseTimerRef.current != null) {
+      window.clearTimeout(mobilePopoverCloseTimerRef.current);
+      mobilePopoverCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleMobilePopoverOpen = useCallback(() => {
+    if (mobilePopoverCloseTimerRef.current != null) {
+      window.clearTimeout(mobilePopoverCloseTimerRef.current);
+      mobilePopoverCloseTimerRef.current = null;
+    }
+    if (mobilePopoverOpenTimerRef.current != null) {
+      window.clearTimeout(mobilePopoverOpenTimerRef.current);
+    }
+
+    mobilePopoverOpenTimerRef.current = window.setTimeout(() => {
+      setIsMobilePopoverOpen(true);
+      mobilePopoverOpenTimerRef.current = null;
+    }, mobileShareQrHoverDelayMs);
+  }, []);
+
+  const keepMobilePopoverOpen = useCallback(() => {
+    if (mobilePopoverCloseTimerRef.current != null) {
+      window.clearTimeout(mobilePopoverCloseTimerRef.current);
+      mobilePopoverCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleMobilePopoverClose = useCallback(() => {
+    if (mobilePopoverOpenTimerRef.current != null) {
+      window.clearTimeout(mobilePopoverOpenTimerRef.current);
+      mobilePopoverOpenTimerRef.current = null;
+    }
+    if (mobilePopoverCloseTimerRef.current != null) {
+      window.clearTimeout(mobilePopoverCloseTimerRef.current);
+    }
+
+    mobilePopoverCloseTimerRef.current = window.setTimeout(() => {
+      setIsMobilePopoverOpen(false);
+      mobilePopoverCloseTimerRef.current = null;
+    }, 140);
+  }, []);
+
+  useEffect(() => () => {
+    clearMobilePopoverTimers();
+  }, [clearMobilePopoverTimers]);
 
   useEffect(() => {
     if (!isWindowedMode || !isTauri()) {
@@ -663,28 +738,70 @@ export function WorkbenchTopBar({
             <span>{overlayAnchor === 'top' ? 'Top Edge' : 'Bottom Edge'}</span>
           </button>
         );
+      case 'mobile-share':
       case 'blur-toggle':
-        if (!layoutProfile.chrome.showBlurToggle) {
-          return null;
-        }
-
-        return renderCompactButton(
-          <Droplet size={11} />,
-          {
-            key: controlId,
-            active: blur,
-            motionStepIndex,
-            title: supportsNativeBlur
-              ? (blur ? 'Disable native window blur' : 'Enable native window blur')
-              : 'Native blur is currently only available on macOS and Windows',
-            onClick: () => onBlurChange(!blur),
-            style: {
-              opacity: supportsNativeBlur ? 1 : 0.65,
-              color: blur ? accent : muted,
-              borderColor: blur ? accent : borderColor,
-              background: blur ? `${accent}22` : 'rgba(255,255,255,0.025)',
-            },
-          },
+        return (
+          <div
+            key={controlId}
+            style={{ position: 'relative', flexShrink: 0 }}
+            onPointerEnter={scheduleMobilePopoverOpen}
+            onPointerLeave={scheduleMobilePopoverClose}
+          >
+            {renderCompactButton(
+              <div
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: '999px',
+                  display: 'grid',
+                  placeItems: 'center',
+                  border: `1px solid ${isMobileShareActive || isMobileShareBusy ? accent : borderColor}`,
+                  background: isMobileShareActive || isMobileShareBusy ? `${accent}18` : 'rgba(255,255,255,0.025)',
+                  color: isMobileShareActive || isMobileShareBusy ? accent : muted,
+                }}
+              >
+                {isMobileShareBusy
+                  ? <Loader2 size={10} className="animate-spin" />
+                  : <Smartphone size={10} />}
+              </div>,
+              {
+                key: `${controlId}-button`,
+                active: isMobileShareActive || isMobileShareBusy,
+                motionStepIndex,
+                title: isMobileShareActive
+                  ? `Stop Mobile Share (${mobileShareShortcutLabel})`
+                  : `Start Mobile Share (${mobileShareShortcutLabel})`,
+                onClick: () => {
+                  setIsMobilePopoverOpen(false);
+                  clearMobilePopoverTimers();
+                  onToggleMobileShare();
+                },
+                style: {
+                  color: isMobileShareActive || isMobileShareBusy ? accent : muted,
+                  borderColor: isMobileShareActive || isMobileShareBusy ? accent : borderColor,
+                  background: isMobileShareActive || isMobileShareBusy
+                    ? `${accent}14`
+                    : 'rgba(255,255,255,0.025)',
+                  boxShadow: isMobileShareActive
+                    ? `0 0 0 1px ${accent}1f inset, 0 0 0 4px ${accent}14`
+                    : undefined,
+                },
+              },
+            )}
+            {isMobilePopoverOpen ? (
+              <MobileSharePopover
+                appearance={appearance}
+                phase={mobileSharePhase}
+                session={mobileShareSession}
+                remoteAccessMode={mobileShareRemoteAccessMode}
+                error={mobileShareError}
+                notice={mobileShareNotice}
+                onOpenMobileSettings={onOpenMobileSettings}
+                onPointerEnter={keepMobilePopoverOpen}
+                onPointerLeave={scheduleMobilePopoverClose}
+              />
+            ) : null}
+          </div>
         );
       case 'zen-mode':
         const zenModeMotion = bindTopBarButtonMotion(zenFocusMode, motionStepIndex);
@@ -825,28 +942,39 @@ export function WorkbenchTopBar({
   }, [
     accent,
     appearance.theme.palette.danger,
-    blur,
     borderColor,
+    clearMobilePopoverTimers,
     commandPaletteShortcutLabel,
+    isMobilePopoverOpen,
+    isMobileShareActive,
+    isMobileShareBusy,
     isMenuOpen,
     isWindowedMode,
+    keepMobilePopoverOpen,
     layoutButtonTitle,
-    layoutProfile.chrome.showBlurToggle,
     layoutProfile.chrome.showPanelMenu,
     layoutProfile.chrome.showShortcutBadge,
+    mobileShareError,
+    mobileShareNotice,
+    mobileSharePhase,
+    mobileShareRemoteAccessMode,
+    mobileShareSession,
+    mobileShareShortcutLabel,
     monoFont,
     muted,
-    onBlurChange,
     onClose,
     onCycleLayout,
     onOpenCommandPalette,
+    onOpenMobileSettings,
     onSetWindowMode,
+    onToggleMobileShare,
     onToggleOverlayAnchor,
     onToggleZenFocusMode,
     overlayAnchor,
     panelMenu,
+    scheduleMobilePopoverClose,
+    scheduleMobilePopoverOpen,
     showPrimaryLauncherChrome,
-    supportsNativeBlur,
     text,
     toggleShortcutLabel,
     windowMode,

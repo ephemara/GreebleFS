@@ -124,6 +124,7 @@ describe('useSettingsStore — initial state', () => {
   it('has safe default system visibility settings', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.system.launchAtStartup).toBe(false);
+    expect(settings.system.startMobileShareOnBoot).toBe(false);
     expect(settings.system.hideAppInTray).toBe(true);
     expect(settings.system.showInTaskbar).toBe(true);
     expect(settings.system.gpuTierMode).toBe('auto');
@@ -150,6 +151,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.windowModeToggle).toBe('F11');
     expect(settings.keybindings.zenFocusModeToggle).toBe('Ctrl+Alt+Z');
     expect(settings.keybindings.commandPalette).toBe('Ctrl+Shift+P');
+    expect(settings.keybindings.mobileShareToggle).toBe('Ctrl+Alt+Shift+M');
     expect(settings.keybindings.explorerMoveSelectionUp).toBe('ArrowUp');
     expect(settings.keybindings.explorerMoveSelectionDown).toBe('ArrowDown');
     expect(settings.keybindings.explorerMoveSelectionLeft).toBe('ArrowLeft');

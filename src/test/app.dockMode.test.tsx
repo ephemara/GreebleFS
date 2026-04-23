@@ -129,10 +129,19 @@ vi.mock('../runtime/useFolderPluginRuntime', () => ({
 vi.mock('../runtime/explorerBackend', () => ({
   listExplorerDir: vi.fn(async () => []),
   openExplorerPath: vi.fn(async () => undefined),
+  getExplorerHomeDir: vi.fn(async () => '/tmp'),
 }));
 
 vi.mock('../runtime/tauriClient', () => ({
   unwrapTauriResult: (value: unknown) => value,
+  events: {
+    gpuRuntimeStatusEvent: {
+      listen: vi.fn().mockResolvedValue(() => {}),
+    },
+    telemetryRecordEvent: {
+      listen: vi.fn().mockResolvedValue(() => {}),
+    },
+  },
   commands: {
     fsGetHomeDir: vi.fn(async () => '/tmp'),
     fsReadTextFile: vi.fn(async () => {
@@ -158,11 +167,46 @@ vi.mock('../runtime/tauriClient', () => ({
     windowGetLinuxDisplayServer: vi.fn(async () => 'x11'),
     windowGetWaylandDockHostStatus: vi.fn(async () => ({ enabled: false, windowLabel: null })),
     windowSetBlur: vi.fn(async () => undefined),
+    telemetryConfigure: vi.fn(async () => undefined),
+    gpuRuntimeGetStatus: vi.fn(async () => ({
+      configuredMode: 'auto',
+      effectiveTier: 'safe',
+      adapterName: null,
+      adapterType: null,
+      backendName: null,
+      softwareRenderer: false,
+      computeAvailable: false,
+      queueDepth: 0,
+      runtimeError: null,
+      workloads: [],
+    })),
+    gpuRuntimeConfigure: vi.fn(async () => ({
+      configuredMode: 'auto',
+      effectiveTier: 'safe',
+      adapterName: null,
+      adapterType: null,
+      backendName: null,
+      softwareRenderer: false,
+      computeAvailable: false,
+      queueDepth: 0,
+      runtimeError: null,
+      workloads: [],
+    })),
+    lanShareStart: vi.fn(async () => ({
+      address: 'http://192.168.1.20:55000',
+      preferred_address: 'https://sfm.local:443',
+      mdns_address: 'sfm.local:55000',
+      ios_address: 'https://sfm.local:443',
+      tailscale_address: null,
+      tailscale_https_ready: false,
+    })),
+    lanShareStop: vi.fn(async () => undefined),
   },
 }));
 
 import App from '../App';
 import { commands } from '../runtime/tauriClient';
+import { resetMobileShareState } from '../store/mobileShareStore';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
 import { SHOW_WINDOW_MODE_REQUEST_EVENT } from '../runtime/windowHost';
 
@@ -218,6 +262,7 @@ describe('App dock mode behavior', () => {
   beforeEach(() => {
     window.localStorage.clear();
     useSettingsStore.getState().resetToDefaults();
+    resetMobileShareState();
     mainHostWindow = createMockWebviewWindow('main');
     dockHostWindow = createMockWebviewWindow('dock');
     vi.mocked(getCurrentWebviewWindow).mockImplementation(() => mainHostWindow as never);
@@ -228,6 +273,11 @@ describe('App dock mode behavior', () => {
     vi.mocked(commands.windowApplyMode).mockClear();
     vi.mocked(commands.windowApplyWaylandDockLayout).mockClear();
     vi.mocked(commands.windowSetTaskbarVisibility).mockClear();
+    vi.mocked(commands.telemetryConfigure).mockClear();
+    vi.mocked(commands.gpuRuntimeGetStatus).mockClear();
+    vi.mocked(commands.gpuRuntimeConfigure).mockClear();
+    vi.mocked(commands.lanShareStart).mockClear();
+    vi.mocked(commands.lanShareStop).mockClear();
     vi.mocked(commands.startupGetLinuxDisplayBackendStatus).mockResolvedValue({
       status: 'ok',
       data: {
@@ -507,6 +557,29 @@ describe('App dock mode behavior', () => {
       expect(useSettingsStore.getState().settings.layout.zenFocusMode).toBe(false);
     });
     expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
+  });
+
+  it('toggles the mobile share from the local keybinding', async () => {
+    render(<App />);
+
+    expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'M', ctrlKey: true, altKey: true, shiftKey: true });
+
+    await waitFor(() => {
+      expect(vi.mocked(commands.lanShareStart)).toHaveBeenCalledWith(
+        '/tmp',
+        'mobile',
+        null,
+        'lan',
+      );
+    });
+
+    fireEvent.keyDown(window, { key: 'M', ctrlKey: true, altKey: true, shiftKey: true });
+
+    await waitFor(() => {
+      expect(vi.mocked(commands.lanShareStop)).toHaveBeenCalled();
+    });
   });
 
   it('reapplies window mode once when syncing tray and taskbar changes', async () => {

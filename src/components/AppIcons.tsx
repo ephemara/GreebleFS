@@ -258,6 +258,7 @@ export const SquareSplitHorizontal = createThemedIcon('square_split_horizontal',
 export const Star = createThemedIcon('star', LucideIcons.Star);
 export const StarOff = createThemedIcon('star_off', LucideIcons.StarOff);
 export const StickyNote = createThemedIcon('sticky_note', LucideIcons.StickyNote);
+export const Smartphone = createThemedIcon('smartphone', LucideIcons.Smartphone);
 export const Table = createThemedIcon('table', LucideIcons.Table);
 export const Table2 = createThemedIcon('table2', LucideIcons.Table2);
 export const Tag = createThemedIcon('tag', LucideIcons.Tag);

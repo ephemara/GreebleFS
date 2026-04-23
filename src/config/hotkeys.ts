@@ -1,6 +1,7 @@
 export type HotkeyBindingKey =
   | 'toggleDeveloperTelemetryHud'
   | 'commandPalette'
+  | 'mobileShareToggle'
   | 'terminalFocus'
   | 'terminalToggle'
   | 'windowModeToggle'
@@ -141,6 +142,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     description: 'Global shortcut used to open the overlay command palette.',
     defaultValue: 'Ctrl+Shift+P',
     scope: 'global',
+  },
+  {
+    key: 'mobileShareToggle',
+    label: 'Toggle Mobile Share',
+    description: 'Start or stop the phone-facing mobile share using the current Mobile settings route.',
+    defaultValue: 'Ctrl+Alt+Shift+M',
+    scope: 'local',
   },
   {
     key: 'saveFile',

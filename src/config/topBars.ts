@@ -9,6 +9,7 @@ export type OverlayTopBarControlId =
   | 'layout-cycle'
   | 'window-mode'
   | 'overlay-anchor'
+  | 'mobile-share'
   | 'blur-toggle'
   | 'zen-mode'
   | 'panel-menu'
@@ -73,6 +74,7 @@ const topBarControlCatalog = new Set<OverlayTopBarControlId>([
   'layout-cycle',
   'window-mode',
   'overlay-anchor',
+  'mobile-share',
   'blur-toggle',
   'zen-mode',
   'panel-menu',
@@ -88,7 +90,7 @@ const defaultTopBarControls = {
     'layout-cycle',
     'window-mode',
     'overlay-anchor',
-    'blur-toggle',
+    'mobile-share',
     'zen-mode',
     'panel-menu',
     'command-palette',
@@ -175,6 +177,12 @@ function normalizeTopBarControlList(
   }
 
   const normalized = value
+    .map((entry) => {
+      if (entry === 'blur-toggle') {
+        return 'mobile-share';
+      }
+      return entry;
+    })
     .filter((entry): entry is OverlayTopBarControlId => (
       typeof entry === 'string' && topBarControlCatalog.has(entry as OverlayTopBarControlId)
     ));
@@ -311,7 +319,7 @@ const builtInTopBarDefinitions = [
       topBarStyle: 'floating',
       leadingControls: ['panel-menu', 'command-palette', 'layout-cycle'],
       navigationShortcuts: ['settings-shortcut', 'explorer-shortcut'],
-      trailingControls: ['window-mode', 'overlay-anchor', 'blur-toggle', 'zen-mode', 'shortcut-badge', 'close-overlay'],
+      trailingControls: ['window-mode', 'overlay-anchor', 'mobile-share', 'zen-mode', 'shortcut-badge', 'close-overlay'],
       navigationMode: 'summary',
       tags: ['launcher', 'summary'],
     },
@@ -481,8 +489,10 @@ export function getTopBarControlLabel(controlId: OverlayTopBarControlId): string
       return 'Window Mode';
     case 'overlay-anchor':
       return 'Dock Edge';
+    case 'mobile-share':
+      return 'Mobile';
     case 'blur-toggle':
-      return 'Blur';
+      return 'Mobile';
     case 'zen-mode':
       return 'Zen';
     case 'panel-menu':

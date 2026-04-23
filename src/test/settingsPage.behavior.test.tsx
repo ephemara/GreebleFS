@@ -727,6 +727,18 @@ describe('SettingsPage behavior', () => {
     });
     expect(invokeMock).toHaveBeenLastCalledWith('startup_set_launch_at_startup', { enabled: false });
 
+    const mobileBootToggle = screen.getByRole('checkbox', { name: /start mobile share on boot/i });
+
+    await user.click(mobileBootToggle);
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.system.startMobileShareOnBoot).toBe(true);
+    });
+
+    await user.click(mobileBootToggle);
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.system.startMobileShareOnBoot).toBe(false);
+    });
+
     const trayToggle = screen.getByRole('checkbox', { name: /hide app in tray/i });
     const taskbarToggle = screen.getByRole('checkbox', { name: /show in taskbar/i });
 
@@ -772,6 +784,15 @@ describe('SettingsPage behavior', () => {
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.keybindings.zenFocusModeToggle).toBe('Ctrl+Shift+Z');
+    });
+
+    const mobileShareInput = screen.getByDisplayValue('Ctrl+Alt+Shift+M');
+    await user.clear(mobileShareInput);
+    await user.type(mobileShareInput, 'Ctrl + Alt + M');
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.keybindings.mobileShareToggle).toBe('Ctrl+Alt+M');
     });
 
     const toggleHotkeyCard = screen.getByText('Toggle Main Window').closest('label');

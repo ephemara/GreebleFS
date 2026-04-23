@@ -237,6 +237,7 @@ export interface HomeSettings {
 
 export interface SystemSettings {
   launchAtStartup: boolean;
+  startMobileShareOnBoot: boolean;
   hideAppInTray: boolean;
   showInTaskbar: boolean;
   gpuTierMode: GpuTierMode;
@@ -645,6 +646,7 @@ export function normalizeSystemSettings(
   const merged = { ...base, ...updates };
   const normalized: SystemSettings = {
     launchAtStartup: Boolean(merged.launchAtStartup),
+    startMobileShareOnBoot: Boolean(merged.startMobileShareOnBoot),
     hideAppInTray: merged.hideAppInTray !== false,
     showInTaskbar: Boolean(merged.showInTaskbar),
     gpuTierMode: normalizeGpuTierMode(merged.gpuTierMode),
@@ -983,6 +985,7 @@ export const defaultSettings: Settings = {
   },
   system: {
     launchAtStartup: false,
+    startMobileShareOnBoot: false,
     hideAppInTray: true,
     showInTaskbar: true,
     gpuTierMode: 'auto',
