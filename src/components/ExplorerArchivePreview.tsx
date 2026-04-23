@@ -21,7 +21,10 @@ import {
   resolveExplorerPreviewEntryIconSrc,
 } from "./explorerPreviewEntryIcons";
 import { OverlayScrollArea } from "./OverlayScrollArea";
-import { useExplorerPreviewEntryDirectDrag } from "./useExplorerPreviewEntryDirectDrag";
+import {
+  type ExplorerPreviewEntryDragRequest,
+  useExplorerPreviewEntryDirectDrag,
+} from "./useExplorerPreviewEntryDirectDrag";
 
 export interface ExplorerArchivePreviewProps {
   archivePath: string;
@@ -30,7 +33,9 @@ export interface ExplorerArchivePreviewProps {
   descriptor: ExplorerArchiveFormatDescriptor;
   onExtract: (mode: ExplorerArchiveExtractionMode) => void;
   onOpenEntry: (entry: ExplorerFileEntry) => void;
-  onStartDragOutEntry?: (entry: ExplorerFileEntry) => void;
+  onStartDragOutEntry?: (
+    request: ExplorerPreviewEntryDragRequest<ExplorerFileEntry>,
+  ) => void;
   iconTheme?: OverlayResolvedIconTheme;
   folderIconRules?: readonly FolderIconRule[];
   defaultFolderIcon?: FolderIconValue;
@@ -115,10 +120,14 @@ export function ExplorerArchivePreview({
     }),
     [defaultFolderIcon, folderIconRules, iconTheme],
   );
-  const { bindPreviewEntryDirectDrag, shouldSuppressPreviewEntryClick } =
+  const previewEntries = entries ?? [];
+  const { bindPreviewEntryDirectDrag, isPreviewEntrySelected } =
     useExplorerPreviewEntryDirectDrag<ExplorerFileEntry>({
-      onStartDrag: (entry) => {
-        onStartDragOutEntry?.(entry);
+      entries: previewEntries,
+      getEntryKey: (entry) => entry.path,
+      onOpenEntry,
+      onStartDrag: (request) => {
+        onStartDragOutEntry?.(request);
       },
     });
 
@@ -338,24 +347,17 @@ export function ExplorerArchivePreview({
             style={{ flex: 1, minHeight: 0 }}
             scrollbarStyle="explorer-file-list"
           >
-            {(entries ?? []).map((entry) => {
+            {previewEntries.map((entry) => {
               const modifiedLabel = formatModifiedLabel(entry.modified);
-              const previewEntryDragBindings = bindPreviewEntryDirectDrag(
-                entry,
-                entry.path,
-              );
+              const previewEntryDragBindings = bindPreviewEntryDirectDrag(entry);
+              const isSelected = isPreviewEntrySelected(entry.path);
               return (
                 <button
                   type="button"
                   key={entry.path}
                   data-overlay-preview-entry-path={entry.path}
                   data-overlay-preview-entry-kind={entry.is_dir ? "folder" : "file"}
-                  onClick={() => {
-                    if (shouldSuppressPreviewEntryClick(entry.path)) {
-                      return;
-                    }
-                    onOpenEntry(entry);
-                  }}
+                  data-overlay-preview-entry-selected={String(isSelected)}
                   aria-label={
                     entry.is_dir
                       ? `Open archive folder ${entry.name}`
@@ -366,6 +368,7 @@ export function ExplorerArchivePreview({
                       ? `Open archive folder ${entry.name}`
                       : `Open archive file ${entry.name}`
                   }
+                  aria-pressed={isSelected}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -377,9 +380,14 @@ export function ExplorerArchivePreview({
                     borderLeft: "none",
                     borderRight: "none",
                     borderTop: "none",
-                    background: "transparent",
+                    background: isSelected
+                      ? "var(--overlay-explorer-chip-bg)"
+                      : "transparent",
                     cursor: "pointer",
                     textAlign: "left",
+                    boxShadow: isSelected
+                      ? "inset 0 0 0 1px var(--overlay-explorer-chip-active-border)"
+                      : "none",
                   }}
                   {...previewEntryDragBindings}
                   onMouseEnter={(event) => {
@@ -387,7 +395,9 @@ export function ExplorerArchivePreview({
                       "var(--overlay-explorer-item-hover-bg)";
                   }}
                   onMouseLeave={(event) => {
-                    event.currentTarget.style.background = "transparent";
+                    event.currentTarget.style.background = isSelected
+                      ? "var(--overlay-explorer-chip-bg)"
+                      : "transparent";
                   }}
                 >
                   <ExplorerPreviewEntryIconImage
