@@ -3012,6 +3012,118 @@ const value = 1;
     );
   });
 
+  it("routes folder preview row drags through the app-owned explorer drag runtime", async () => {
+    const alphaPath = `${REPO_ROOT}\\alpha`;
+    const alphaEntries = [
+      {
+        name: "notes-a.txt",
+        path: `${alphaPath}\\notes-a.txt`,
+        is_dir: false,
+        size: 512,
+        modified: 1713400000000,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "notes-b.txt",
+        path: `${alphaPath}\\notes-b.txt`,
+        is_dir: false,
+        size: 768,
+        modified: 1713400000000,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ] as const;
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (
+          (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
+          payload?.path === alphaPath
+        ) {
+          return alphaEntries;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(screen.getByText("alpha"));
+
+    const previewPane = getPreviewPane();
+    const firstPreviewRow = await within(previewPane).findByRole("button", {
+      name: /open file notes-a\.txt/i,
+    });
+    const secondPreviewRow = within(previewPane).getByRole("button", {
+      name: /open file notes-b\.txt/i,
+    });
+
+    fireEvent.click(firstPreviewRow, { ctrlKey: true });
+    fireEvent.click(secondPreviewRow, { ctrlKey: true });
+
+    const explorerRoot = document.querySelector(
+      "[data-overlay-explorer]",
+    ) as HTMLElement | null;
+    if (!(explorerRoot instanceof HTMLElement)) {
+      throw new Error("Expected explorer root");
+    }
+
+    const originalElementFromPoint = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => explorerRoot),
+    });
+
+    try {
+      const dragGesture = startExplorerPointerDrag(secondPreviewRow, {
+        endX: 96,
+        endY: 48,
+      });
+      expect(screen.getByTestId("explorer-drag-overlay")).toHaveTextContent("2");
+      expect(screen.getByTestId("explorer-drag-overlay")).toHaveTextContent(
+        "notes-b.txt",
+      );
+      finishExplorerPointerDrag(dragGesture);
+    } finally {
+      if (originalElementFromPoint) {
+        Object.defineProperty(document, "elementFromPoint", {
+          configurable: true,
+          value: originalElementFromPoint,
+        });
+      } else {
+        Reflect.deleteProperty(document, "elementFromPoint");
+      }
+    }
+
+    await waitFor(() => {
+      const transferCalls = vi
+        .mocked(invoke)
+        .mock.calls.filter(([command]) => command === "fs_transfer_items");
+      expect(transferCalls).toHaveLength(1);
+      expect(transferCalls[0]?.[1]).toMatchObject({
+        targetDir: REPO_ROOT,
+        sources: [`${alphaPath}\\notes-a.txt`, `${alphaPath}\\notes-b.txt`],
+        operation: "move",
+      });
+    });
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(
+          ([command]) => command === "fs_start_native_file_drag",
+        ),
+    ).toBe(false);
+  });
+
   it("routes pdf files into the inline pdf workbench and surfaces pdf chrome state", async () => {
     const pdfEntry = {
       name: "forms.pdf",

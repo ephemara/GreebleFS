@@ -135,6 +135,8 @@ import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { InteractionMotionLab } from '../animation/MotionLab';
 import { useInteractionMotionController, type InteractionMotionBinding } from '../animation/interactionMotion';
+import { MobileShareConnectionCards } from './MobileShareConnectionCards';
+import { MobileShareQrDialog } from './MobileShareQrDialog';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   loadExternalLayoutManifest,
@@ -1648,6 +1650,7 @@ export function SettingsPage({
   const [tailscaleNotice, setTailscaleNotice] = useState<string | null>(null);
   const [tailscaleError, setTailscaleError] = useState<string | null>(null);
   const [tailscaleAuthKeyDraft, setTailscaleAuthKeyDraft] = useState('');
+  const [mobileQrDialogOpen, setMobileQrDialogOpen] = useState(false);
   const [wallpaperNotice, setWallpaperNotice] = useState<string | null>(null);
   const [wallpaperImportError, setWallpaperImportError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
@@ -2733,6 +2736,8 @@ export function SettingsPage({
     [settings.mobile.remoteAccessMode],
   );
   const mobileSharePending = mobileSharePhase === 'starting' || mobileSharePhase === 'stopping';
+  const mobileShareRouteMismatch = mobileShareSession != null
+    && mobileShareSession.remoteAccessMode !== settings.mobile.remoteAccessMode;
 
   const refreshTailscaleStatus = useCallback(async () => {
     setTailscaleStatusPending(true);
@@ -2819,6 +2824,17 @@ export function SettingsPage({
       await stopMobileShareSession();
     } catch {}
   }, []);
+
+  const openMobileQrDialogFromSettings = useCallback(async () => {
+    setMobileQrDialogOpen(true);
+    if (!mobileShareSession || mobileShareSession.remoteAccessMode !== settings.mobile.remoteAccessMode) {
+      await startMobileShareFromSettings();
+    }
+  }, [
+    mobileShareSession,
+    settings.mobile.remoteAccessMode,
+    startMobileShareFromSettings,
+  ]);
 
   const handleWallpaperFileSelection = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? []);
@@ -4665,6 +4681,19 @@ export function SettingsPage({
                     </div>
                   </div>
                 </div>
+                <MobileShareQrDialog
+                  open={mobileQrDialogOpen}
+                  appearance={appearance}
+                  phase={mobileSharePhase}
+                  session={mobileShareSession}
+                  remoteAccessMode={settings.mobile.remoteAccessMode}
+                  notice={mobileShareNotice}
+                  error={mobileShareError}
+                  onClose={() => setMobileQrDialogOpen(false)}
+                  onOpenMobileSettings={() => setMobileQrDialogOpen(false)}
+                  onStartOrRestartShare={startMobileShareFromSettings}
+                  onStopShare={stopMobileShareFromSettings}
+                />
               </section>
             )}
 
@@ -8334,6 +8363,66 @@ export function SettingsPage({
                       >
                         {mobileSharePhase === 'stopping' ? 'Stopping...' : 'Stop Mobile Share'}
                       </button>
+                      <button
+                        type="button"
+                        disabled={mobileSharePending}
+                        onClick={() => void openMobileQrDialogFromSettings()}
+                        className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, opacity: mobileSharePending ? 0.7 : 1 }}
+                      >
+                        <Smartphone size={11} />
+                        Show QR Codes
+                      </button>
+                    </div>
+
+                    {mobileShareRouteMismatch ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}55`, background: 'rgba(255,255,255,0.03)', color: text }}>
+                        The live share is still using
+                        {' '}
+                        <span style={{ color: accent }}>
+                          {getMobileRemoteAccessModeDefinition(mobileShareSession!.remoteAccessMode).label}
+                        </span>
+                        . Restart the share or use
+                        {' '}
+                        <span style={{ color: accent }}>Show QR Codes</span>
+                        {' '}
+                        to regenerate the pairing routes for the newly selected mode.
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="max-w-[760px]">
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Pairing Codes</div>
+                          <p className="mt-1 text-[11px] leading-5 opacity-45">
+                            The same QR surface is available here and from the phone button. Keep it live in Settings when you want a stable pairing handoff instead of relying on the top-bar chrome.
+                          </p>
+                        </div>
+                        <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: mobileShareSession ? text : muted }}>
+                          {mobileShareSession ? 'Codes Live' : 'Awaiting Share'}
+                        </span>
+                      </div>
+
+                      <div className="mt-3">
+                        <MobileShareConnectionCards
+                          appearance={appearance}
+                          session={mobileShareSession}
+                          emptyState={(
+                            <div className="rounded border px-4 py-8 text-center" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: text }}>
+                                No Live QR Cards Yet
+                              </div>
+                              <p className="mt-2 text-[11px] leading-5" style={{ color: muted }}>
+                                Start the
+                                {' '}
+                                {mobileRemoteAccessDefinition.label}
+                                {' '}
+                                share for the current explorer path and the pairing QR cards will stay visible here.
+                              </p>
+                            </div>
+                          )}
+                        />
+                      </div>
                     </div>
                   </div>
 

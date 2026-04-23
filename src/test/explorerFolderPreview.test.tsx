@@ -80,12 +80,22 @@ describe("ExplorerFolderPreview", () => {
     );
   });
 
-  it("starts a direct drag-out from preview rows without triggering open", async () => {
+  it("supports ctrl multiselect in preview rows and drags the full selected set without opening", async () => {
     const folderPath = "C:\\Assets\\alpha";
     const onOpenEntry = vi.fn();
     const onStartDragOutEntry = vi.fn();
 
     vi.mocked(listExplorerDirUncached).mockResolvedValue([
+      {
+        name: "notes.txt",
+        path: `${folderPath}\\notes.txt`,
+        is_dir: false,
+        size: 640,
+        modified: 1713400000000,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
       {
         name: "readme.md",
         path: `${folderPath}\\readme.md`,
@@ -108,9 +118,19 @@ describe("ExplorerFolderPreview", () => {
       />,
     );
 
+    const notesRow = await screen.findByRole("button", {
+      name: /open file notes\.txt/i,
+    });
     const fileRow = await screen.findByRole("button", {
       name: /open file readme\.md/i,
     });
+
+    fireEvent.click(notesRow, { ctrlKey: true });
+    fireEvent.click(fileRow, { ctrlKey: true });
+
+    expect(notesRow).toHaveAttribute("aria-pressed", "true");
+    expect(fileRow).toHaveAttribute("aria-pressed", "true");
+    expect(onOpenEntry).not.toHaveBeenCalled();
 
     fireEvent.pointerDown(fileRow, {
       button: 0,
@@ -128,8 +148,20 @@ describe("ExplorerFolderPreview", () => {
     expect(onStartDragOutEntry).toHaveBeenCalledTimes(1);
     expect(onStartDragOutEntry).toHaveBeenCalledWith(
       expect.objectContaining({
-        path: `${folderPath}\\readme.md`,
-        name: "readme.md",
+        entry: expect.objectContaining({
+          path: `${folderPath}\\readme.md`,
+          name: "readme.md",
+        }),
+        entries: [
+          expect.objectContaining({
+            path: `${folderPath}\\notes.txt`,
+            name: "notes.txt",
+          }),
+          expect.objectContaining({
+            path: `${folderPath}\\readme.md`,
+            name: "readme.md",
+          }),
+        ],
       }),
     );
     expect(onOpenEntry).not.toHaveBeenCalled();

@@ -86,7 +86,7 @@ export const mobileAccessExternalLinks = {
   tailscaleMagicDnsDocs: 'https://tailscale.com/kb/1081/magicdns',
 } as const;
 
-export const mobileShareQrHoverDelayMs = 1200;
+export const mobileShareMenuHoverDelayMs = 180;
 export const mobileShareQrCodeSizePx = 160;
 
 export function normalizeMobileRemoteAccessMode(value: unknown): MobileRemoteAccessMode {

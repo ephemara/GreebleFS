@@ -260,6 +260,7 @@ import { ExplorerFolderPreview } from "./ExplorerFolderPreview";
 import { ExplorerFontPreview } from "./ExplorerFontPreview";
 import { ExplorerSpreadsheetWorkbench } from "./ExplorerSpreadsheetWorkbench";
 import { ExplorerDocxWorkbench } from "./ExplorerDocxWorkbench";
+import type { ExplorerPreviewEntryDragRequest } from "./useExplorerPreviewEntryDirectDrag";
 import {
   ExplorerPdfWorkbench,
   type ExplorerPdfWorkbenchChromeState,
@@ -3480,7 +3481,9 @@ function PreviewPanel({
   folderIconRules: readonly FolderIconRule[];
   defaultFolderIcon: FolderIconValue;
   onOpenFolderPreviewEntry: (entry: FileEntry) => void;
-  onStartDragOutPreviewEntry: (entry: FileEntry) => void;
+  onStartDragOutPreviewEntry: (
+    request: ExplorerPreviewEntryDragRequest<FileEntry>,
+  ) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
 }) {
   const interactionMotion = useInteractionMotionController();
@@ -14330,7 +14333,7 @@ export function FileExplorer({
 
   const beginExplorerInternalPointerDrag = useCallback(
     (
-      event: PointerEvent,
+      event: Pick<PointerEvent, "altKey" | "ctrlKey">,
       candidate: ExplorerInternalPointerDragCandidate,
     ) => {
       startExplorerSharedDragSession({
@@ -14354,26 +14357,28 @@ export function FileExplorer({
     [explorerDropScopeId, runtimePlatform, suppressExplorerEntryClick],
   );
 
-  const onExplorerEntryPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLElement>, entry: FileEntry) => {
-      if (event.button !== 0 || currentPathIsHome) {
-        return;
+  const buildExplorerPointerDragCandidate = useCallback(
+    (args: {
+      pointerId: number;
+      startClientX: number;
+      startClientY: number;
+      altKey: boolean;
+      sourceEntries: FileEntry[];
+      primaryEntry: FileEntry;
+    }): ExplorerInternalPointerDragCandidate | null => {
+      const dragPaths = args.sourceEntries.map((item) => item.path);
+      if (dragPaths.length === 0) {
+        return null;
       }
 
-      const dragEntries = resolveEntriesForAction(entry);
-      const dragPaths = dragEntries.map((item) => item.path);
-      if (dragPaths.length === 0) {
-        return;
-      }
-      const dragSelectionKind = dragEntries.every((item) => item.is_dir)
+      const dragSelectionKind = args.sourceEntries.every((item) => item.is_dir)
         ? "folder"
-        : dragEntries.some((item) => item.is_dir)
+        : args.sourceEntries.some((item) => item.is_dir)
           ? "mixed"
           : "file";
-
       const requestedIntent =
-        dragEntries.some((item) => isExplorerArchiveVirtualPath(item.path)) ||
-        event.altKey
+        args.sourceEntries.some((item) => isExplorerArchiveVirtualPath(item.path)) ||
+        args.altKey
           ? "native-out"
           : "internal";
       const dragIntent =
@@ -14381,26 +14386,112 @@ export function FileExplorer({
           ? "internal"
           : requestedIntent;
 
-      internalPointerDragCandidateRef.current = {
-        pointerId: event.pointerId,
+      return {
+        pointerId: args.pointerId,
         intent: dragIntent,
-        sourceEntryPath: entry.path,
-        sourceEntries: dragEntries,
+        sourceEntryPath: args.primaryEntry.path,
+        sourceEntries: args.sourceEntries,
         sourcePaths: dragPaths,
-        primaryLabel: entry.name || getPathLeaf(entry.path) || "Item",
+        primaryLabel:
+          args.primaryEntry.name ||
+          getPathLeaf(args.primaryEntry.path) ||
+          "Item",
         sourceItemKind: dragSelectionKind,
-        sourceIconSrc: getExplorerEntryIconSrc(entry, false, false),
-        sourceStackItems: buildExplorerDragAvatarStackItems(dragEntries, entry),
+        sourceIconSrc: getExplorerEntryIconSrc(args.primaryEntry, false, false),
+        sourceStackItems: buildExplorerDragAvatarStackItems(
+          args.sourceEntries,
+          args.primaryEntry,
+        ),
         started: false,
-        startClientX: event.clientX,
-        startClientY: event.clientY,
+        startClientX: args.startClientX,
+        startClientY: args.startClientY,
       };
     },
+    [buildExplorerDragAvatarStackItems, supportsNativeDragOut],
+  );
+
+  const onExplorerEntryPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLElement>, entry: FileEntry) => {
+      if (event.button !== 0 || currentPathIsHome) {
+        return;
+      }
+
+      const dragEntries = resolveEntriesForAction(entry);
+      internalPointerDragCandidateRef.current = buildExplorerPointerDragCandidate({
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        altKey: event.altKey,
+        sourceEntries: dragEntries,
+        primaryEntry: entry,
+      });
+    },
     [
-      buildExplorerDragAvatarStackItems,
+      buildExplorerPointerDragCandidate,
       currentPathIsHome,
       resolveEntriesForAction,
-      supportsNativeDragOut,
+    ],
+  );
+
+  const startPreviewExplorerPointerDrag = useCallback(
+    (request: ExplorerPreviewEntryDragRequest<FileEntry>) => {
+      const candidate = buildExplorerPointerDragCandidate({
+        pointerId: request.pointerId,
+        startClientX: request.startClientX,
+        startClientY: request.startClientY,
+        altKey: request.altKey,
+        sourceEntries: request.entries,
+        primaryEntry: request.entry,
+      });
+      if (!candidate) {
+        return;
+      }
+
+      if (candidate.intent === "native-out") {
+        void startExplorerNativeOutDrag(candidate.sourceEntries);
+        return;
+      }
+
+      const activeCandidate: ExplorerInternalPointerDragCandidate = {
+        ...candidate,
+        started: true,
+      };
+      internalPointerDragCandidateRef.current = activeCandidate;
+      beginExplorerInternalPointerDrag(
+        { altKey: request.altKey, ctrlKey: request.ctrlKey },
+        activeCandidate,
+      );
+      updateExplorerDragInteractionFromPoint({
+        pointer: {
+          x: request.currentClientX,
+          y: request.currentClientY,
+        },
+        sourceKind: "internal",
+        sourceScopeId: explorerDropScopeId,
+        sourcePrimaryPath: activeCandidate.sourceEntryPath,
+        sourceItemKind: activeCandidate.sourceItemKind,
+        sourceIconSrc: activeCandidate.sourceIconSrc,
+        sourceStackItems: activeCandidate.sourceStackItems,
+        sourcePaths: activeCandidate.sourcePaths,
+        operation: resolveExplorerDropOperation(
+          { altKey: request.altKey, ctrlKey: request.ctrlKey },
+          runtimePlatform,
+        ),
+        platform: runtimePlatform,
+        primaryLabel: activeCandidate.primaryLabel,
+      });
+      updateExplorerInternalDragAutoScroll({
+        x: request.currentClientX,
+        y: request.currentClientY,
+      });
+    },
+    [
+      beginExplorerInternalPointerDrag,
+      buildExplorerPointerDragCandidate,
+      explorerDropScopeId,
+      runtimePlatform,
+      startExplorerNativeOutDrag,
+      updateExplorerInternalDragAutoScroll,
     ],
   );
 
@@ -22472,9 +22563,7 @@ export function FileExplorer({
         folderIconRules={explorerSettings.folderIconRules}
         defaultFolderIcon={explorerSettings.defaultFolderIcon}
         onOpenFolderPreviewEntry={openFolderPreviewEntry}
-        onStartDragOutPreviewEntry={(entry) => {
-          void startExplorerNativeOutDrag([entry]);
-        }}
+        onStartDragOutPreviewEntry={startPreviewExplorerPointerDrag}
         onExtractArchive={(mode) => {
           if (preview.type === "archive") {
             void handleArchiveAction(
@@ -22540,7 +22629,7 @@ export function FileExplorer({
     setPreviewWidth,
     shaderPerformanceMode,
     showHidden,
-    startExplorerNativeOutDrag,
+    startPreviewExplorerPointerDrag,
     stopPreviewTextScriptRun,
     togglePreviewLock,
     togglePreviewTerminal,

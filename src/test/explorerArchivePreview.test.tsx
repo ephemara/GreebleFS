@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExplorerArchivePreview } from "../components/ExplorerArchivePreview";
@@ -107,5 +107,102 @@ describe("ExplorerArchivePreview", () => {
         "overlay-scroll-area__viewport--explorer-file-list",
       ),
     ).toBe(true);
+  });
+
+  it("supports ctrl multiselect in archive preview rows and drags the full selection without opening", async () => {
+    const archivePath = "C:\\Assets\\demo.zip";
+    const onOpenEntry = vi.fn();
+    const onStartDragOutEntry = vi.fn();
+    const texturesPath = buildExplorerArchiveVirtualPath({
+      archivePath,
+      entryPath: "textures",
+    });
+    const readmePath = buildExplorerArchiveVirtualPath({
+      archivePath,
+      entryPath: "docs/readme.txt",
+    });
+
+    vi.mocked(explorerBackendContract.listArchiveDir).mockResolvedValue([
+      {
+        name: "textures",
+        path: texturesPath,
+        is_dir: true,
+        size: 0,
+        modified: 1713400000000,
+        extension: "",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "readme.txt",
+        path: readmePath,
+        is_dir: false,
+        size: 1024,
+        modified: 1713400000000,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ]);
+
+    render(
+      <ExplorerArchivePreview
+        archivePath={archivePath}
+        archiveName="demo.zip"
+        archiveSize={2048}
+        descriptor={{ id: "zip", suffixes: [".zip"], label: "Zip Archive" }}
+        onExtract={() => undefined}
+        onOpenEntry={onOpenEntry}
+        onStartDragOutEntry={onStartDragOutEntry}
+      />,
+    );
+
+    const folderRow = await screen.findByRole("button", {
+      name: /open archive folder textures/i,
+    });
+    const fileRow = screen.getByRole("button", {
+      name: /open archive file readme\.txt/i,
+    });
+
+    fireEvent.click(folderRow, { ctrlKey: true });
+    fireEvent.click(fileRow, { ctrlKey: true });
+
+    expect(folderRow).toHaveAttribute("aria-pressed", "true");
+    expect(fileRow).toHaveAttribute("aria-pressed", "true");
+    expect(onOpenEntry).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(fileRow, {
+      button: 0,
+      pointerId: 1,
+      clientX: 20,
+      clientY: 20,
+    });
+    fireEvent.pointerMove(window, {
+      pointerId: 1,
+      clientX: 34,
+      clientY: 20,
+    });
+    fireEvent.click(fileRow);
+
+    expect(onStartDragOutEntry).toHaveBeenCalledTimes(1);
+    expect(onStartDragOutEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entry: expect.objectContaining({
+          path: readmePath,
+          name: "readme.txt",
+        }),
+        entries: [
+          expect.objectContaining({
+            path: texturesPath,
+            name: "textures",
+          }),
+          expect.objectContaining({
+            path: readmePath,
+            name: "readme.txt",
+          }),
+        ],
+      }),
+    );
+    expect(onOpenEntry).not.toHaveBeenCalled();
   });
 });

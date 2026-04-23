@@ -621,6 +621,7 @@ function App() {
     setActiveSection,
     updateTerminal,
     updateLayout,
+    updateMobile,
     updateSystem,
   } = useSettingsStore(useShallow(state => ({
     settings: state.settings.terminal,
@@ -633,6 +634,7 @@ function App() {
     setActiveSection: state.setActiveSection,
     updateTerminal: state.updateTerminal,
     updateLayout: state.updateLayout,
+    updateMobile: state.updateMobile,
     updateSystem: state.updateSystem,
   })));
   useGpuRuntimeFeed(systemSettings.gpuTierMode);
@@ -3799,6 +3801,29 @@ function App() {
     });
   }, [activeLayoutProfile.id, layoutManifest, updateLayout]);
 
+  const handleStartMobileShareQuiet = useCallback(async () => {
+    try {
+      await startMobileShareSession({
+        requestedPath: explorerCurrentPath,
+        remoteAccessMode: mobileSettings.remoteAccessMode,
+        copyPreferredUrl: true,
+      });
+    } catch (error) {
+      if (mobileSettings.remoteAccessMode === 'tailscale') {
+        handleOpenSettingsSection('mobile');
+      }
+      throw error;
+    }
+  }, [
+    explorerCurrentPath,
+    handleOpenSettingsSection,
+    mobileSettings.remoteAccessMode,
+  ]);
+
+  const handleStopMobileShareQuiet = useCallback(async () => {
+    await stopMobileShareSession();
+  }, []);
+
   const handleStartMobileShare = useCallback(async () => {
     try {
       const session = await startMobileShareSession({
@@ -3833,6 +3858,10 @@ function App() {
     }
   }, []);
 
+  const handleSetMobileShareRemoteAccessMode = useCallback((mode: 'lan' | 'tailscale') => {
+    updateMobile({ remoteAccessMode: mode });
+  }, [updateMobile]);
+
   const handleToggleMobileShare = useCallback(async () => {
     if (mobileSharePhase === 'starting' || mobileSharePhase === 'stopping') {
       return;
@@ -3861,9 +3890,9 @@ function App() {
   }, [
     explorerCurrentPath,
     handleOpenSettingsSection,
-    mobileSharePhase,
-    mobileSettings.remoteAccessMode,
-  ]);
+      mobileSharePhase,
+      mobileSettings.remoteAccessMode,
+    ]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -4654,6 +4683,9 @@ function App() {
       mobileShareError={mobileShareError}
       mobileShareNotice={mobileShareNotice}
       onToggleMobileShare={handleToggleMobileShare}
+      onStartMobileShare={handleStartMobileShareQuiet}
+      onStopMobileShare={handleStopMobileShareQuiet}
+      onSetMobileShareRemoteAccessMode={handleSetMobileShareRemoteAccessMode}
       onOpenMobileSettings={() => handleOpenSettingsSection('mobile')}
       zenFocusMode={zenFocusMode}
       zenFocusShortcutLabel={formatHotkeyLabel(keybindings.zenFocusModeToggle)}

@@ -30,7 +30,7 @@ import type {
   LoadedOverlayTopBarDefinition,
   OverlayTopBarControlId,
 } from '../config/topBars';
-import { mobileShareQrHoverDelayMs, type MobileRemoteAccessMode } from '../config/mobileAccess';
+import { mobileShareMenuHoverDelayMs, type MobileRemoteAccessMode } from '../config/mobileAccess';
 import type { ResolvedWorkbenchRenderRuntime } from '../config/workbenchRenderRuntime';
 import type {
   OverlayWindowAnchor,
@@ -39,7 +39,8 @@ import type {
 import type { MobileSharePhase } from '../store/mobileShareStore';
 import type { OverlayThemeRendererSurfaceOwnership } from './themeRendererShellModel';
 import { useInteractionMotionController } from '../animation/interactionMotion';
-import { MobileSharePopover } from './MobileSharePopover';
+import { MobileShareQrDialog } from './MobileShareQrDialog';
+import { MobileShareRouteMenu } from './MobileShareRouteMenu';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { WindowControls } from './WindowControls';
 import type { MobileShareSession } from '../runtime/mobileShareRuntime';
@@ -79,6 +80,9 @@ interface WorkbenchTopBarProps {
   mobileShareError: string | null;
   mobileShareNotice: string | null;
   onToggleMobileShare: () => void;
+  onStartMobileShare: () => void | Promise<void>;
+  onStopMobileShare: () => void | Promise<void>;
+  onSetMobileShareRemoteAccessMode: (mode: MobileRemoteAccessMode) => void | Promise<void>;
   onOpenMobileSettings: () => void;
   zenFocusMode: boolean;
   zenFocusShortcutLabel: string;
@@ -148,6 +152,9 @@ export function WorkbenchTopBar({
   mobileShareError,
   mobileShareNotice,
   onToggleMobileShare,
+  onStartMobileShare,
+  onStopMobileShare,
+  onSetMobileShareRemoteAccessMode,
   onOpenMobileSettings,
   zenFocusMode,
   zenFocusShortcutLabel,
@@ -167,10 +174,12 @@ export function WorkbenchTopBar({
   const usesFloatingTopBar = effectiveTopBarStyle === 'floating' || effectiveTopBarStyle === 'glass';
   const usesInsetTopBar = usesFloatingTopBar || effectiveTopBarStyle === 'minimal';
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const mobilePopoverOpenTimerRef = useRef<number | null>(null);
-  const mobilePopoverCloseTimerRef = useRef<number | null>(null);
+  const mobileMenuRef = useRef<HTMLDivElement | null>(null);
+  const mobileMenuOpenTimerRef = useRef<number | null>(null);
+  const mobileMenuCloseTimerRef = useRef<number | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isMobilePopoverOpen, setIsMobilePopoverOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileQrDialogOpen, setIsMobileQrDialogOpen] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(() => ({
@@ -273,7 +282,7 @@ export function WorkbenchTopBar({
   }, [isWindowedMode]);
 
   useEffect(() => {
-    if (!isMenuOpen) {
+    if (!isMenuOpen && !isMobileMenuOpen) {
       return;
     }
 
@@ -282,11 +291,14 @@ export function WorkbenchTopBar({
       if (!menuRef.current?.contains(target)) {
         setIsMenuOpen(false);
       }
+      if (!mobileMenuRef.current?.contains(target)) {
+        setIsMobileMenuOpen(false);
+      }
     };
 
     window.addEventListener('pointerdown', handlePointerDown);
     return () => window.removeEventListener('pointerdown', handlePointerDown);
-  }, [isMenuOpen]);
+  }, [isMenuOpen, isMobileMenuOpen]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -300,57 +312,85 @@ export function WorkbenchTopBar({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const clearMobilePopoverTimers = useCallback(() => {
-    if (mobilePopoverOpenTimerRef.current != null) {
-      window.clearTimeout(mobilePopoverOpenTimerRef.current);
-      mobilePopoverOpenTimerRef.current = null;
+  const clearMobileMenuTimers = useCallback(() => {
+    if (mobileMenuOpenTimerRef.current != null) {
+      window.clearTimeout(mobileMenuOpenTimerRef.current);
+      mobileMenuOpenTimerRef.current = null;
     }
-    if (mobilePopoverCloseTimerRef.current != null) {
-      window.clearTimeout(mobilePopoverCloseTimerRef.current);
-      mobilePopoverCloseTimerRef.current = null;
-    }
-  }, []);
-
-  const scheduleMobilePopoverOpen = useCallback(() => {
-    if (mobilePopoverCloseTimerRef.current != null) {
-      window.clearTimeout(mobilePopoverCloseTimerRef.current);
-      mobilePopoverCloseTimerRef.current = null;
-    }
-    if (mobilePopoverOpenTimerRef.current != null) {
-      window.clearTimeout(mobilePopoverOpenTimerRef.current);
-    }
-
-    mobilePopoverOpenTimerRef.current = window.setTimeout(() => {
-      setIsMobilePopoverOpen(true);
-      mobilePopoverOpenTimerRef.current = null;
-    }, mobileShareQrHoverDelayMs);
-  }, []);
-
-  const keepMobilePopoverOpen = useCallback(() => {
-    if (mobilePopoverCloseTimerRef.current != null) {
-      window.clearTimeout(mobilePopoverCloseTimerRef.current);
-      mobilePopoverCloseTimerRef.current = null;
+    if (mobileMenuCloseTimerRef.current != null) {
+      window.clearTimeout(mobileMenuCloseTimerRef.current);
+      mobileMenuCloseTimerRef.current = null;
     }
   }, []);
 
-  const scheduleMobilePopoverClose = useCallback(() => {
-    if (mobilePopoverOpenTimerRef.current != null) {
-      window.clearTimeout(mobilePopoverOpenTimerRef.current);
-      mobilePopoverOpenTimerRef.current = null;
+  const scheduleMobileMenuOpen = useCallback(() => {
+    if (mobileMenuCloseTimerRef.current != null) {
+      window.clearTimeout(mobileMenuCloseTimerRef.current);
+      mobileMenuCloseTimerRef.current = null;
     }
-    if (mobilePopoverCloseTimerRef.current != null) {
-      window.clearTimeout(mobilePopoverCloseTimerRef.current);
+    if (mobileMenuOpenTimerRef.current != null) {
+      window.clearTimeout(mobileMenuOpenTimerRef.current);
     }
 
-    mobilePopoverCloseTimerRef.current = window.setTimeout(() => {
-      setIsMobilePopoverOpen(false);
-      mobilePopoverCloseTimerRef.current = null;
+    mobileMenuOpenTimerRef.current = window.setTimeout(() => {
+      setIsMobileMenuOpen(true);
+      mobileMenuOpenTimerRef.current = null;
+    }, mobileShareMenuHoverDelayMs);
+  }, []);
+
+  const keepMobileMenuOpen = useCallback(() => {
+    if (mobileMenuCloseTimerRef.current != null) {
+      window.clearTimeout(mobileMenuCloseTimerRef.current);
+      mobileMenuCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleMobileMenuClose = useCallback(() => {
+    if (mobileMenuOpenTimerRef.current != null) {
+      window.clearTimeout(mobileMenuOpenTimerRef.current);
+      mobileMenuOpenTimerRef.current = null;
+    }
+    if (mobileMenuCloseTimerRef.current != null) {
+      window.clearTimeout(mobileMenuCloseTimerRef.current);
+    }
+
+    mobileMenuCloseTimerRef.current = window.setTimeout(() => {
+      setIsMobileMenuOpen(false);
+      mobileMenuCloseTimerRef.current = null;
     }, 140);
   }, []);
 
   useEffect(() => () => {
-    clearMobilePopoverTimers();
-  }, [clearMobilePopoverTimers]);
+    clearMobileMenuTimers();
+  }, [clearMobileMenuTimers]);
+
+  const handleShowMobileQrDialog = useCallback(async () => {
+    clearMobileMenuTimers();
+    setIsMobileMenuOpen(false);
+    setIsMobileQrDialogOpen(true);
+    if (!mobileShareSession || mobileShareSession.remoteAccessMode !== mobileShareRemoteAccessMode) {
+      try {
+        await onStartMobileShare();
+      } catch {}
+    }
+  }, [
+    clearMobileMenuTimers,
+    mobileShareRemoteAccessMode,
+    mobileShareSession,
+    onStartMobileShare,
+  ]);
+
+  const handleStartMobileShareFromMenu = useCallback(async () => {
+    clearMobileMenuTimers();
+    setIsMobileMenuOpen(false);
+    await onStartMobileShare();
+  }, [clearMobileMenuTimers, onStartMobileShare]);
+
+  const handleStopMobileShareFromMenu = useCallback(async () => {
+    clearMobileMenuTimers();
+    setIsMobileMenuOpen(false);
+    await onStopMobileShare();
+  }, [clearMobileMenuTimers, onStopMobileShare]);
 
   useEffect(() => {
     if (!isWindowedMode || !isTauri()) {
@@ -743,9 +783,10 @@ export function WorkbenchTopBar({
         return (
           <div
             key={controlId}
+            ref={mobileMenuRef}
             style={{ position: 'relative', flexShrink: 0 }}
-            onPointerEnter={scheduleMobilePopoverOpen}
-            onPointerLeave={scheduleMobilePopoverClose}
+            onPointerEnter={scheduleMobileMenuOpen}
+            onPointerLeave={scheduleMobileMenuClose}
           >
             {renderCompactButton(
               <div
@@ -772,8 +813,8 @@ export function WorkbenchTopBar({
                   ? `Stop Mobile Share (${mobileShareShortcutLabel})`
                   : `Start Mobile Share (${mobileShareShortcutLabel})`,
                 onClick: () => {
-                  setIsMobilePopoverOpen(false);
-                  clearMobilePopoverTimers();
+                  setIsMobileMenuOpen(false);
+                  clearMobileMenuTimers();
                   onToggleMobileShare();
                 },
                 style: {
@@ -788,17 +829,21 @@ export function WorkbenchTopBar({
                 },
               },
             )}
-            {isMobilePopoverOpen ? (
-              <MobileSharePopover
+            {isMobileMenuOpen ? (
+              <MobileShareRouteMenu
                 appearance={appearance}
                 phase={mobileSharePhase}
                 session={mobileShareSession}
                 remoteAccessMode={mobileShareRemoteAccessMode}
                 error={mobileShareError}
                 notice={mobileShareNotice}
+                onSelectRemoteAccessMode={onSetMobileShareRemoteAccessMode}
+                onShowQrCodes={handleShowMobileQrDialog}
+                onStartOrRestartShare={handleStartMobileShareFromMenu}
+                onStopShare={handleStopMobileShareFromMenu}
                 onOpenMobileSettings={onOpenMobileSettings}
-                onPointerEnter={keepMobilePopoverOpen}
-                onPointerLeave={scheduleMobilePopoverClose}
+                onPointerEnter={keepMobileMenuOpen}
+                onPointerLeave={scheduleMobileMenuClose}
               />
             ) : null}
           </div>
@@ -943,14 +988,17 @@ export function WorkbenchTopBar({
     accent,
     appearance.theme.palette.danger,
     borderColor,
-    clearMobilePopoverTimers,
+    clearMobileMenuTimers,
     commandPaletteShortcutLabel,
-    isMobilePopoverOpen,
+    handleShowMobileQrDialog,
+    handleStartMobileShareFromMenu,
+    handleStopMobileShareFromMenu,
+    isMobileMenuOpen,
     isMobileShareActive,
     isMobileShareBusy,
     isMenuOpen,
     isWindowedMode,
-    keepMobilePopoverOpen,
+    keepMobileMenuOpen,
     layoutButtonTitle,
     layoutProfile.chrome.showPanelMenu,
     layoutProfile.chrome.showShortcutBadge,
@@ -966,14 +1014,15 @@ export function WorkbenchTopBar({
     onCycleLayout,
     onOpenCommandPalette,
     onOpenMobileSettings,
+    onSetMobileShareRemoteAccessMode,
     onSetWindowMode,
     onToggleMobileShare,
     onToggleOverlayAnchor,
     onToggleZenFocusMode,
     overlayAnchor,
     panelMenu,
-    scheduleMobilePopoverClose,
-    scheduleMobilePopoverOpen,
+    scheduleMobileMenuClose,
+    scheduleMobileMenuOpen,
     showPrimaryLauncherChrome,
     text,
     toggleShortcutLabel,
@@ -1270,7 +1319,7 @@ export function WorkbenchTopBar({
           : (isBottomBar
               ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
               : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)'),
-        overflow: isMobilePopoverOpen ? 'visible' : 'hidden',
+        overflow: isMobileMenuOpen ? 'visible' : 'hidden',
         backdropFilter: topBarBackdropFilter,
         WebkitBackdropFilter: topBarBackdropFilter,
       }}
@@ -1335,6 +1384,19 @@ export function WorkbenchTopBar({
           />
         </div>
       ) : null}
+      <MobileShareQrDialog
+        open={isMobileQrDialogOpen}
+        appearance={appearance}
+        phase={mobileSharePhase}
+        session={mobileShareSession}
+        remoteAccessMode={mobileShareRemoteAccessMode}
+        notice={mobileShareNotice}
+        error={mobileShareError}
+        onClose={() => setIsMobileQrDialogOpen(false)}
+        onOpenMobileSettings={onOpenMobileSettings}
+        onStartOrRestartShare={onStartMobileShare}
+        onStopShare={onStopMobileShare}
+      />
     </div>
   );
 }
