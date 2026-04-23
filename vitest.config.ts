@@ -8,6 +8,7 @@ const ignoredWatchGlobs = [
   '**/dist/**',
   '**/output/**',
   '**/release-packages/**',
+  '**/target/**',
   '**/src-tauri/target*/**',
   '**/target-tests*/**',
   '**/plugins/**/node_modules/**',

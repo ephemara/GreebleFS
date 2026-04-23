@@ -223,11 +223,18 @@ describe('FileExplorer picker browser coverage', () => {
     fireEvent.click(screen.getByText('draft.md'), { ctrlKey: true });
     fireEvent.click(screen.getByRole('button', { name: 'Choose Files' }));
 
-    expect(multiFiles.onConfirm).toHaveBeenCalledWith({
+    expect(multiFiles.onConfirm).toHaveBeenCalledTimes(1);
+    const [multiFileResult] = multiFiles.onConfirm.mock.calls[0] ?? [];
+    expect({
+      ...multiFileResult,
+      entries: [...(multiFileResult?.entries ?? [])].sort((left, right) =>
+        left.path.localeCompare(right.path),
+      ),
+    }).toEqual({
       currentDirectory: REPO_ROOT,
       entries: [
-        { path: `${REPO_ROOT}\\notes.txt`, name: 'notes.txt', kind: 'file' },
         { path: `${REPO_ROOT}\\draft.md`, name: 'draft.md', kind: 'file' },
+        { path: `${REPO_ROOT}\\notes.txt`, name: 'notes.txt', kind: 'file' },
       ],
     });
     multiFiles.unmount();

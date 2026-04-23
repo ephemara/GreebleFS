@@ -9,6 +9,7 @@ const ignoredWatchGlobs = [
   "**/dist/**",
   "**/output/**",
   "**/release-packages/**",
+  "**/target/**",
   "**/src-tauri/**",
   "**/src-tauri/target*/**",
   "**/src/test/**",
