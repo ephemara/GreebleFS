@@ -14,6 +14,7 @@ interface MobileShareQrDialogProps {
   remoteAccessMode: MobileRemoteAccessMode;
   notice: string | null;
   error: string | null;
+  showSettingsAction?: boolean;
   onClose: () => void;
   onOpenMobileSettings: () => void;
   onStartOrRestartShare: () => void | Promise<void>;
@@ -28,6 +29,7 @@ export function MobileShareQrDialog({
   remoteAccessMode,
   notice,
   error,
+  showSettingsAction = true,
   onClose,
   onOpenMobileSettings,
   onStartOrRestartShare,
@@ -56,15 +58,17 @@ export function MobileShareQrDialog({
       onClose={onClose}
       actions={(
         <>
-          <button
-            type="button"
-            onClick={onOpenMobileSettings}
-            className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, borderRadius: controlRadius }}
-          >
-            <Settings2 size={11} />
-            Mobile Settings
-          </button>
+          {showSettingsAction ? (
+            <button
+              type="button"
+              onClick={onOpenMobileSettings}
+              className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+              style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, borderRadius: controlRadius }}
+            >
+              <Settings2 size={11} />
+              Mobile Settings
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => void onStartOrRestartShare()}

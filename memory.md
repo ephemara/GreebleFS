@@ -16,6 +16,24 @@
   - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "StoragePanel.tsx|storageWorkbench.ts|globalSearchBackend.ts|tauriClient.ts|storagePanel.layout.test.tsx|storageWorkbench.test.ts" || true`
   - note: full `bunx tsc --noEmit --pretty false -p tsconfig.json` is currently blocked by unrelated pre-existing errors in `App.tsx`, `WorkbenchTopBar.tsx`, `FileExplorer.tsx`, `SettingsPage.tsx`, `settingsStore.ts`, and missing `config/explorerContextMenu` imports outside this storage/global-search slice
 
+# 2026-04-23 - Mobile Share Chrome Now Uses A Route Menu Plus Centered QR Pairing Surface
+
+- The clipped top-bar QR hover is gone. Mobile share now uses a two-step shell flow: hover the phone control to open a compact route/control menu, then launch a centered pairing dialog for the actual QR cards. The Settings page now keeps the same live QR cards visible inline so phone pairing no longer depends on the top-bar chrome at all.
+- Durable implementation shape:
+  - `src/components/MobileShareRouteMenu.tsx` is now the anchored chrome menu for the phone button. It lets the user switch the selected route between `Local LAN` and `Tailscale`, start/restart/stop the live share, open the centered QR surface, and jump into the Mobile settings section.
+  - `src/components/MobileShareQrDialog.tsx` plus `src/components/MobileShareConnectionCards.tsx` now own the real pairing surface. QR generation stays in React via `qrcode`, but the cards themselves are now a reusable component shared between the dialog and Settings.
+  - `src/components/WorkbenchTopBar.tsx` no longer renders QR cards inside the bar. It opens only the route menu from chrome hover, flips shell overflow just for that menu, and launches the centered `Phone Pairing` dialog when the user requests QR codes.
+  - `src/components/SettingsPage.tsx` now includes a persistent `Pairing Codes` block in the `Mobile` section. When a live share exists, the QR cards stay visible inline. When there is no live share yet, the section still reserves the same surface with a clear start-share call to action instead of hiding pairing behind hover chrome.
+  - `src/App.tsx` now passes dedicated mobile-share actions into the top bar: silent start/stop handlers for chrome-driven flows and a direct remote-access-mode setter so the phone menu can update the selected route without reusing the alert-heavy command-palette action path.
+  - `src/config/mobileAccess.ts` now treats the top-bar mobile hover as a lightweight menu open (`mobileShareMenuHoverDelayMs = 180`) instead of a 1+ second QR reveal.
+- Durable product note:
+  - Keep the top bar focused on route/status/control, not on rendering large pairing content. QR cards are now intentionally modal or settings-resident surfaces.
+  - The top bar and Settings page should keep using the same QR card component so labels, preferred-route badging, copy/open actions, and future pairing polish do not drift.
+- Validation:
+  - passed: `bunx vitest run src/test/workbenchTopBar.test.tsx src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/app.dockMode.test.tsx -t "toggles the mobile share from the local keybinding" --reporter=dot`
+  - note: full `bunx tsc --noEmit --pretty false -p tsconfig.json` is still blocked by unrelated pre-existing explorer context-menu/menu-pack typing errors on this branch
+
 # 2026-04-23 - Mobile Share Hover QR Now Renders Reliably And Can Show Tailnet Beside LAN
 
 - The phone button hover flow already had QR generation through the `qrcode` package, but the popover could still appear missing because the top-bar shell clipped absolutely positioned children and LAN-mode shares only surfaced a tailnet route when Tailscale mode was explicitly selected.

@@ -121,6 +121,9 @@ describe('WorkbenchTopBar', () => {
         mobileShareError={null}
         mobileShareNotice={null}
         onToggleMobileShare={vi.fn()}
+        onStartMobileShare={vi.fn()}
+        onStopMobileShare={vi.fn()}
+        onSetMobileShareRemoteAccessMode={vi.fn()}
         onOpenMobileSettings={vi.fn()}
         zenFocusMode={false}
         zenFocusShortcutLabel="Ctrl+."
@@ -146,10 +149,13 @@ describe('WorkbenchTopBar', () => {
     expect(notesTab.style.transform).toContain('translate3d');
   });
 
-  it('replaces the blur control with the mobile share launcher and delayed QR popover', async () => {
+  it('replaces the blur control with a mobile route menu and centered QR dialog', async () => {
     const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
     const layoutProfile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'overlay-classic');
     const onToggleMobileShare = vi.fn();
+    const onStartMobileShare = vi.fn(async () => undefined);
+    const onStopMobileShare = vi.fn(async () => undefined);
+    const onSetMobileShareRemoteAccessMode = vi.fn();
     const onOpenMobileSettings = vi.fn();
     const session: MobileShareSession = {
       sharePath: '/tmp/greeble-mobile',
@@ -219,6 +225,9 @@ describe('WorkbenchTopBar', () => {
         mobileShareError={null}
         mobileShareNotice={null}
         onToggleMobileShare={onToggleMobileShare}
+        onStartMobileShare={onStartMobileShare}
+        onStopMobileShare={onStopMobileShare}
+        onSetMobileShareRemoteAccessMode={onSetMobileShareRemoteAccessMode}
         onOpenMobileSettings={onOpenMobileSettings}
         zenFocusMode={false}
         zenFocusShortcutLabel="Ctrl+."
@@ -236,11 +245,18 @@ describe('WorkbenchTopBar', () => {
 
     fireEvent.pointerEnter(mobileShareButton.parentElement as HTMLElement);
 
-    expect(await screen.findByText('Mobile Share', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(await screen.findByText('Selected Route', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(container.firstElementChild).toHaveStyle({ overflow: 'visible' });
+    fireEvent.click(screen.getByRole('button', { name: /tailscale/i }));
+    expect(onSetMobileShareRemoteAccessMode).toHaveBeenCalledWith('tailscale');
+
+    fireEvent.click(screen.getByRole('button', { name: /show qr codes/i }));
+
+    expect(await screen.findByText('Phone Pairing', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(await screen.findByAltText('QR code for LAN HTTPS', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(await screen.findByAltText('QR code for Tailnet', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(qrCodeToDataUrlMock).toHaveBeenCalledTimes(2);
     expect(screen.getByRole('button', { name: /mobile settings/i })).toBeInTheDocument();
+    expect(onStartMobileShare).toHaveBeenCalledTimes(0);
   });
 });

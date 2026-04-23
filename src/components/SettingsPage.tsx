@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Bot, Camera, Cpu, Database, Download, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, VolumeX } from '@/components/AppIcons';
+import { ArrowDown, ArrowUp, Bot, Camera, Cpu, Database, Download, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, VolumeX } from '@/components/AppIcons';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import { PremiumSlider } from './PremiumSlider';
@@ -4689,6 +4689,7 @@ export function SettingsPage({
                   remoteAccessMode={settings.mobile.remoteAccessMode}
                   notice={mobileShareNotice}
                   error={mobileShareError}
+                  showSettingsAction={false}
                   onClose={() => setMobileQrDialogOpen(false)}
                   onOpenMobileSettings={() => setMobileQrDialogOpen(false)}
                   onStartOrRestartShare={startMobileShareFromSettings}

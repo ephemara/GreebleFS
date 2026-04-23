@@ -18,9 +18,20 @@ import { createLoadedTopBarDefinition } from '../config/topBars';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
 import { useAccelerationRuntimeStore } from '../store/accelerationRuntimeStore';
 import { useExplorerStore } from '../store/explorerStore';
+import { resetMobileShareState, useMobileShareStore } from '../store/mobileShareStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type { OverlayPluginContextMenuContribution, OverlayPluginExplorerActionContribution } from '../config/pluginContributions';
+
+const { qrCodeToDataUrlMock } = vi.hoisted(() => ({
+  qrCodeToDataUrlMock: vi.fn(async (url: string) => `data:image/png;base64,${Buffer.from(url).toString('base64')}`),
+}));
+
+vi.mock('qrcode', () => ({
+  default: {
+    toDataURL: qrCodeToDataUrlMock,
+  },
+}));
 
 function createThemePackageFixture(
   fixture: Omit<LoadedOverlayThemePackage, 'catalog'> & { catalog?: LoadedOverlayThemePackage['catalog'] },
@@ -136,6 +147,7 @@ describe('SettingsPage behavior', () => {
     useSettingsStore.getState().resetToDefaults();
     useSettingsStore.setState({ activeSection: 'overview' });
     useExplorerStore.getState().resetSession();
+    resetMobileShareState();
     useAccelerationRuntimeStore.setState(state => ({
       ...state,
       snapshot: {
@@ -157,6 +169,7 @@ describe('SettingsPage behavior', () => {
     });
 
     vi.mocked(invoke).mockReset();
+    qrCodeToDataUrlMock.mockClear();
     Object.defineProperty(navigator, 'platform', {
       configurable: true,
       value: 'Win32',
@@ -330,6 +343,53 @@ describe('SettingsPage behavior', () => {
     await user.click(screen.getByRole('button', { name: 'Open Top Bars Folder' }));
 
     expect(openTopBarsFolder).toHaveBeenCalledTimes(1);
+  }, 30000);
+
+  it('keeps the live mobile QR cards visible in settings', async () => {
+    useMobileShareStore.setState({
+      phase: 'running',
+      session: {
+        sharePath: '/tmp/greeble-mobile',
+        remoteAccessMode: 'lan',
+        startedAt: Date.now(),
+        preferredUrl: 'https://my.rig:8080',
+        result: {
+          address: 'http://192.168.1.4:8080',
+          preferred_address: 'https://my.rig:8080',
+          mdns_address: 'my.rig:8080',
+          ios_address: 'https://my.rig:8080',
+          tailscale_address: 'https://greeble-node.tailnet.ts.net:8080',
+          tailscale_https_ready: true,
+        },
+        connectionTargets: [
+          {
+            id: 'lan-secure',
+            label: 'LAN HTTPS',
+            description: 'Local-network HTTPS route for Safari and nearby devices.',
+            kind: 'lan',
+            url: 'https://my.rig:8080',
+            isPreferred: true,
+          },
+          {
+            id: 'tailnet',
+            label: 'Tailnet',
+            description: 'Remote path over the active tailnet when Tailscale is connected.',
+            kind: 'tailscale',
+            url: 'https://greeble-node.tailnet.ts.net:8080',
+            isPreferred: false,
+          },
+        ],
+      },
+      lastNotice: null,
+      lastError: null,
+      tailscaleStatus: null,
+    });
+    useSettingsStore.getState().setActiveSection('mobile');
+
+    renderSettingsPage();
+
+    expect(await screen.findByAltText('QR code for LAN HTTPS')).toBeInTheDocument();
+    expect(await screen.findByAltText('QR code for Tailnet')).toBeInTheDocument();
   }, 30000);
 
   it('updates explorer click mode, restores folder rules, and seeds bookmarks without duplicates', async () => {

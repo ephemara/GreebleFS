@@ -392,6 +392,13 @@ export function WorkbenchTopBar({
     await onStopMobileShare();
   }, [clearMobileMenuTimers, onStopMobileShare]);
 
+  const handleOpenMobileSettingsFromChrome = useCallback(() => {
+    clearMobileMenuTimers();
+    setIsMobileMenuOpen(false);
+    setIsMobileQrDialogOpen(false);
+    onOpenMobileSettings();
+  }, [clearMobileMenuTimers, onOpenMobileSettings]);
+
   useEffect(() => {
     if (!isWindowedMode || !isTauri()) {
       setIsWindowMaximized(false);
@@ -841,7 +848,7 @@ export function WorkbenchTopBar({
                 onShowQrCodes={handleShowMobileQrDialog}
                 onStartOrRestartShare={handleStartMobileShareFromMenu}
                 onStopShare={handleStopMobileShareFromMenu}
-                onOpenMobileSettings={onOpenMobileSettings}
+                onOpenMobileSettings={handleOpenMobileSettingsFromChrome}
                 onPointerEnter={keepMobileMenuOpen}
                 onPointerLeave={scheduleMobileMenuClose}
               />
@@ -993,6 +1000,7 @@ export function WorkbenchTopBar({
     handleShowMobileQrDialog,
     handleStartMobileShareFromMenu,
     handleStopMobileShareFromMenu,
+    handleOpenMobileSettingsFromChrome,
     isMobileMenuOpen,
     isMobileShareActive,
     isMobileShareBusy,
@@ -1013,7 +1021,6 @@ export function WorkbenchTopBar({
     onClose,
     onCycleLayout,
     onOpenCommandPalette,
-    onOpenMobileSettings,
     onSetMobileShareRemoteAccessMode,
     onSetWindowMode,
     onToggleMobileShare,
@@ -1393,7 +1400,7 @@ export function WorkbenchTopBar({
         notice={mobileShareNotice}
         error={mobileShareError}
         onClose={() => setIsMobileQrDialogOpen(false)}
-        onOpenMobileSettings={onOpenMobileSettings}
+        onOpenMobileSettings={handleOpenMobileSettingsFromChrome}
         onStartOrRestartShare={onStartMobileShare}
         onStopShare={onStopMobileShare}
       />

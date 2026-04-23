@@ -1,3 +1,4 @@
+import type { PointerEventHandler } from 'react';
 import { Check, Loader2, ScanLine, Settings2, ShieldCheck, Smartphone } from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
@@ -15,8 +16,8 @@ interface MobileShareRouteMenuProps {
   remoteAccessMode: MobileRemoteAccessMode;
   error: string | null;
   notice: string | null;
-  onPointerEnter?: React.PointerEventHandler<HTMLDivElement>;
-  onPointerLeave?: React.PointerEventHandler<HTMLDivElement>;
+  onPointerEnter?: PointerEventHandler<HTMLDivElement>;
+  onPointerLeave?: PointerEventHandler<HTMLDivElement>;
   onSelectRemoteAccessMode: (mode: MobileRemoteAccessMode) => void | Promise<void>;
   onShowQrCodes: () => void | Promise<void>;
   onStartOrRestartShare: () => void | Promise<void>;
