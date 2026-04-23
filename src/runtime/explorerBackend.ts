@@ -1,5 +1,14 @@
 import type { FileSearchResponse } from "../config/searchTelemetry";
 import type { FsRuntimeCachePolicy } from "../config/runtimeCachePolicy";
+import {
+  buildExplorerArchiveVirtualPath,
+  getExplorerArchiveContainerPath,
+  getExplorerArchiveVirtualParentPath,
+  getExplorerArchiveVirtualRootLabel,
+  isExplorerArchiveVirtualPath,
+  normalizeExplorerArchiveEntryPath,
+  parseExplorerArchiveVirtualPath,
+} from "../config/explorerArchives";
 import { isExplorerVirtualPath } from "../config/explorerVirtualLocations";
 import { commands, events, unwrapTauriResult } from "./tauriClient";
 import { useExplorerStore } from "../store/explorerStore";
@@ -34,6 +43,10 @@ import {
   type FsArchiveExtractionMode,
   type FsArchiveExtractionRequest,
   type FsArchiveExtractionResult,
+  type FsArchiveEntryListingEntry,
+  type FsArchiveEntryMaterializationMode,
+  type FsArchiveEntryMaterializationRequest,
+  type FsArchiveEntryMaterializationResult,
   type FsBatchRenamePreviewRow,
   type FsBatchRenameRecipe,
   type ExplorerTaskHistoryClearScope,
@@ -110,6 +123,13 @@ export type ExplorerSemanticFindSimilarInput =
 export type ExplorerArchiveExtractionMode = FsArchiveExtractionMode;
 export type ExplorerArchiveExtractionInput = FsArchiveExtractionRequest;
 export type ExplorerArchiveExtractionOutcome = FsArchiveExtractionResult;
+export type ExplorerArchiveListingEntry = FsArchiveEntryListingEntry;
+export type ExplorerArchiveEntryMaterializationModeValue =
+  FsArchiveEntryMaterializationMode;
+export type ExplorerArchiveEntryMaterializationInput =
+  FsArchiveEntryMaterializationRequest;
+export type ExplorerArchiveEntryMaterializationOutcome =
+  FsArchiveEntryMaterializationResult;
 export type ExplorerTrashAction = ExplorerTrashActionRecord;
 export type ExplorerTrashRestore = ExplorerTrashRestoreResult;
 export type ExplorerBatchRenameItem = FsBatchRenameItem;
@@ -138,7 +158,7 @@ export type ExplorerLocationBreadcrumb = {
 };
 
 export type ExplorerLocationListing = {
-  kind: "local" | "cloud";
+  kind: "local" | "cloud" | "archive";
   path: string;
   parentPath: string | null;
   breadcrumbs: ExplorerLocationBreadcrumb[];
@@ -338,6 +358,7 @@ function toCloudDriveInfo(
 export type ExplorerBackendContract = {
   listDir: typeof listExplorerDir;
   listDirUncached: typeof listExplorerDirUncached;
+  listArchiveDir: typeof listExplorerArchiveDir;
   listLocation: typeof listExplorerLocation;
   listLocationUncached: typeof listExplorerLocationUncached;
   getDrives: typeof getExplorerDrives;
@@ -363,6 +384,7 @@ export type ExplorerBackendContract = {
   createDir: typeof createExplorerDir;
   createFile: typeof createExplorerFile;
   extractArchive: typeof extractExplorerArchive;
+  materializeArchiveEntry: typeof materializeExplorerArchiveEntry;
   transferItems: typeof transferExplorerItems;
   listTasks: typeof listExplorerTasks;
   clearTaskHistory: typeof clearExplorerTaskHistory;
@@ -420,10 +442,95 @@ export function queueExplorerTerminalDirectorySync(args: {
   });
 }
 
+function buildExplorerArchiveBreadcrumbs(
+  location: ReturnType<typeof parseExplorerArchiveVirtualPath>,
+): ExplorerLocationBreadcrumb[] {
+  if (!location) {
+    return [];
+  }
+
+  const containerPath = getExplorerArchiveContainerPath(location.archivePath);
+  const breadcrumbs = containerPath ? buildLocalBreadcrumbs(containerPath) : [];
+  const archiveRootPath = buildExplorerArchiveVirtualPath({
+    archivePath: location.archivePath,
+    entryPath: "",
+  });
+
+  breadcrumbs.push({
+    label: getExplorerArchiveVirtualRootLabel(archiveRootPath),
+    path: archiveRootPath,
+  });
+
+  const entrySegments = location.entryPath.split("/").filter(Boolean);
+  for (let index = 0; index < entrySegments.length; index += 1) {
+    breadcrumbs.push({
+      label: entrySegments[index] ?? "",
+      path: buildExplorerArchiveVirtualPath({
+        archivePath: location.archivePath,
+        entryPath: entrySegments.slice(0, index + 1).join("/"),
+      }),
+    });
+  }
+
+  return breadcrumbs;
+}
+
+function toExplorerArchiveVirtualEntry(
+  archivePath: string,
+  entry: ExplorerArchiveListingEntry,
+): ExplorerFileEntry {
+  const normalizedRelativePath = normalizeExplorerArchiveEntryPath(
+    entry.relativePath,
+  );
+
+  return {
+    name: entry.name,
+    path: buildExplorerArchiveVirtualPath({
+      archivePath,
+      entryPath: normalizedRelativePath,
+    }),
+    is_dir: entry.isDir,
+    size: entry.size,
+    modified: entry.modified,
+    extension: entry.extension,
+    is_hidden: entry.name.startsWith("."),
+    is_symlink: false,
+  };
+}
+
+export async function listExplorerArchiveDir(
+  archivePath: string,
+  entryPath = "",
+): Promise<ExplorerFileEntry[]> {
+  const entries = unwrapTauriResult(
+    await commands.fsListArchiveDir(
+      archivePath,
+      normalizeExplorerArchiveEntryPath(entryPath),
+    ),
+  );
+
+  return entries.map((entry) => toExplorerArchiveVirtualEntry(archivePath, entry));
+}
+
 export async function listExplorerLocation(
   path: string,
   showHidden: boolean,
 ): Promise<ExplorerLocationListing> {
+  const archiveLocation = parseExplorerArchiveVirtualPath(path);
+  if (archiveLocation) {
+    const archiveVirtualPath = buildExplorerArchiveVirtualPath(archiveLocation);
+    return {
+      kind: "archive",
+      path: archiveVirtualPath,
+      parentPath: getExplorerArchiveVirtualParentPath(archiveVirtualPath),
+      breadcrumbs: buildExplorerArchiveBreadcrumbs(archiveLocation),
+      entries: await listExplorerArchiveDir(
+        archiveLocation.archivePath,
+        archiveLocation.entryPath,
+      ),
+    };
+  }
+
   if (isCloudExplorerPath(path)) {
     const listing = unwrapTauriResult(await commands.cloudListDir(path));
     return {
@@ -452,6 +559,10 @@ export async function listExplorerLocationUncached(
   path: string,
   showHidden: boolean,
 ): Promise<ExplorerLocationListing> {
+  if (isExplorerArchiveVirtualPath(path)) {
+    return listExplorerLocation(path, showHidden);
+  }
+
   if (isCloudExplorerPath(path)) {
     return listExplorerLocation(path, showHidden);
   }
@@ -699,6 +810,17 @@ export async function extractExplorerArchive(
     );
   }
   return unwrapTauriResult(await commands.fsExtractArchive(request));
+}
+
+export async function materializeExplorerArchiveEntry(
+  request: ExplorerArchiveEntryMaterializationInput,
+): Promise<ExplorerArchiveEntryMaterializationOutcome> {
+  if (isCloudExplorerPath(request.archivePath)) {
+    throw new Error(
+      "Archive entry materialization is only available for local filesystem items.",
+    );
+  }
+  return unwrapTauriResult(await commands.fsMaterializeArchiveEntry(request));
 }
 
 export async function createExplorerFile(
@@ -1035,7 +1157,11 @@ export function supportsExplorerNativeIntegration(path: string): boolean {
 }
 
 export function supportsExplorerNativeDragOut(paths: string[]): boolean {
-  return paths.every((path) => !isCloudExplorerPath(path) && !isExplorerVirtualPath(path));
+  return paths.every(
+    (path) =>
+      !isCloudExplorerPath(path) &&
+      (!isExplorerVirtualPath(path) || isExplorerArchiveVirtualPath(path)),
+  );
 }
 
 export async function listCloudAccounts(): Promise<ExplorerCloudAccountsSnapshot> {
@@ -1108,6 +1234,7 @@ export async function setExplorerTerminalPromptState(
 export const explorerBackendContract: ExplorerBackendContract = {
   listDir: listExplorerDir,
   listDirUncached: listExplorerDirUncached,
+  listArchiveDir: listExplorerArchiveDir,
   listLocation: listExplorerLocation,
   listLocationUncached: listExplorerLocationUncached,
   getDrives: getExplorerDrives,
@@ -1133,6 +1260,7 @@ export const explorerBackendContract: ExplorerBackendContract = {
   createDir: createExplorerDir,
   createFile: createExplorerFile,
   extractArchive: extractExplorerArchive,
+  materializeArchiveEntry: materializeExplorerArchiveEntry,
   transferItems: transferExplorerItems,
   listTasks: listExplorerTasks,
   clearTaskHistory: clearExplorerTaskHistory,

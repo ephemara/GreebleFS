@@ -2,6 +2,7 @@ use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, BufReader, Read};
 use std::path::{Component, Path, PathBuf};
@@ -30,6 +31,50 @@ pub struct FsArchiveExtractionResult {
     pub output_path: String,
     pub extracted_entry_count: u64,
     pub reused_cached_output: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsArchiveEntryListingEntry {
+    pub relative_path: String,
+    pub name: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: u64,
+    pub extension: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum FsArchiveEntryMaterializationMode {
+    StageTemporary,
+    ExtractHere,
+    ExtractToNewFolder,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsArchiveEntryMaterializationRequest {
+    pub archive_path: String,
+    pub entry_path: String,
+    pub entry_is_dir: bool,
+    pub mode: FsArchiveEntryMaterializationMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsArchiveEntryMaterializationResult {
+    pub output_path: String,
+    pub materialized_entry_count: u64,
+    pub reused_staging_output: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ArchiveEntryRecord {
+    relative_path: String,
+    is_dir: bool,
+    size: u64,
+    modified: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

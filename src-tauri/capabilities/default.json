@@ -33,6 +33,7 @@
     "shell:allow-open",
     "shell:allow-execute",
     "shell:allow-spawn",
+    "opener:default",
     "notification:default",
     "screenshots:default",
     "global-shortcut:default",
