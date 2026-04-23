@@ -19,6 +19,10 @@ import type {
 import type { ExplorerLayoutMode } from '../../config/layoutProfiles';
 import type { LoadedExplorerHomePack } from '../../config/homePackages';
 import {
+  EXPLORER_DRAG_DWELL_INDICATOR_HEIGHT_PX,
+  EXPLORER_TAB_AUTO_OPEN_DELAY_MS,
+} from '../../config/explorerDragInteractions';
+import {
   resolveEffectiveExplorerModeProfile,
   resolveExplorerModeProfileChromeLayoutId,
 } from '../../config/explorerModeProfiles';
@@ -60,7 +64,9 @@ import {
   getExplorerDragInteractionState,
   getExplorerDropScopeId,
   readExplorerPathsFromDataTransfer,
+  shallowEqualExplorerDragSelection,
   updateExplorerDragInteractionFromPoint,
+  useExplorerDragInteractionSelector,
 } from './explorerDragAndDrop';
 
 interface ExplorerWorkspaceProps {
@@ -342,6 +348,15 @@ export function ExplorerWorkspace({
     }
   }, []);
   const workspacePaneCount = visiblePaneIds.length as 1 | 2 | 3 | 4;
+  const workspaceDragState = useExplorerDragInteractionSelector(
+    (state) => ({
+      valid: state.valid,
+      targetSurfaceId: state.targetSurfaceId,
+      dwellSurfaceId: state.dwellSurfaceId,
+      dwellProgress: state.dwellProgress,
+    }),
+    shallowEqualExplorerDragSelection,
+  );
   const commanderTargetPaneId = useMemo(
     () => visiblePaneIds.length === 2 ? getNextVisiblePaneId(visiblePaneIds, activePane) : null,
     [activePane, visiblePaneIds],
@@ -802,15 +817,20 @@ export function ExplorerWorkspace({
                 scopeId: getExplorerDropScopeId(preferredPane.instanceId),
                 role: 'navigation-target',
                 targetPath: currentPath,
-                autoOpenDelayMs: 800,
+                autoOpenDelayMs: EXPLORER_TAB_AUTO_OPEN_DELAY_MS,
                 onAutoOpen: () => focusWorkspaceTab(tab.id),
                 label: tabLabel,
               })
               : null;
+            const tabSurfaceId = `workspace-tab-${tab.id}`;
+            const isDropTarget =
+              workspaceDragState.valid &&
+              workspaceDragState.targetSurfaceId === tabSurfaceId;
+            const isDwellTarget = workspaceDragState.dwellSurfaceId === tabSurfaceId;
             return (
               <div
                 key={tab.id}
-                style={workspaceTabChipStyle(isActive, theme.accent)}
+                style={workspaceTabChipStyle(isActive, theme.accent, isDropTarget)}
               >
                 <button
                   type="button"
@@ -821,7 +841,7 @@ export function ExplorerWorkspace({
                   data-overlay-drop-target-path={tabDropBinding?.["data-overlay-drop-target-path"]}
                   onClick={() => focusWorkspaceTab(tab.id)}
                   title={currentPath || tabLabel}
-                  style={workspaceTabButtonStyle(isActive)}
+                  style={workspaceTabButtonStyle(isActive, isDropTarget)}
                 >
                   <span
                     style={{
@@ -840,6 +860,32 @@ export function ExplorerWorkspace({
                       {tabPaneCount}
                     </span>
                   )}
+                  {isDwellTarget ? (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: 'absolute',
+                        left: 10,
+                        right: 10,
+                        bottom: 7,
+                        height: EXPLORER_DRAG_DWELL_INDICATOR_HEIGHT_PX,
+                        borderRadius: 999,
+                        overflow: 'hidden',
+                        background: 'rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          width: `${Math.max(0, Math.min(100, workspaceDragState.dwellProgress * 100))}%`,
+                          height: '100%',
+                          borderRadius: 999,
+                          background: 'color-mix(in srgb, var(--overlay-accent) 90%, white 10%)',
+                          transition: 'width 60ms linear',
+                        }}
+                      />
+                    </span>
+                  ) : null}
                 </button>
                 {workspaceTabs.length > 1 && (
                   <button
@@ -1233,7 +1279,6 @@ export function ExplorerWorkspace({
               Pane unavailable
             </div>
           </div>
-          <ExplorerDragOverlay />
         </div>
       );
     }
@@ -1265,6 +1310,7 @@ export function ExplorerWorkspace({
           externalSelectionTransferRequest={selectionTransferRequestsByInstanceId[paneSnapshot.instanceId] ?? null}
           instanceId={paneSnapshot.instanceId}
           layoutMode={layoutMode}
+          renderDragOverlayHost={false}
           workspacePaneCount={workspacePaneCount}
           onWorkspaceRuntimeSnapshotChange={publishRuntimeSnapshot}
           onWorkspaceSelectionTransferComplete={handleWorkspaceSelectionTransferComplete}
@@ -1446,6 +1492,7 @@ export function ExplorerWorkspace({
           </div>
         </div>
       )}
+      <ExplorerDragOverlay />
     </div>
   );
 }
@@ -1502,7 +1549,7 @@ function paneSwitcherCountStyle(active: boolean, accent: string): React.CSSPrope
   };
 }
 
-function workspaceTabChipStyle(active: boolean, accent: string): React.CSSProperties {
+function workspaceTabChipStyle(active: boolean, accent: string, dropTarget = false): React.CSSProperties {
   return {
     display: 'inline-flex',
     alignItems: 'center',
@@ -1510,12 +1557,17 @@ function workspaceTabChipStyle(active: boolean, accent: string): React.CSSProper
     minWidth: 0,
     padding: '6px 8px 6px 10px',
     borderRadius: 999,
-    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-border)'}`,
-    background: active ? `${accent}1b` : 'var(--overlay-explorer-chip-bg)',
+    border: `1px solid ${dropTarget ? `${accent}92` : active ? `${accent}66` : 'var(--overlay-border)'}`,
+    background: dropTarget
+      ? `color-mix(in srgb, ${accent} 18%, var(--overlay-explorer-chip-bg))`
+      : active
+        ? `${accent}1b`
+        : 'var(--overlay-explorer-chip-bg)',
+    boxShadow: dropTarget ? `0 0 0 1px ${accent}2a, 0 12px 28px ${accent}24` : undefined,
   };
 }
 
-function workspaceTabButtonStyle(active: boolean): React.CSSProperties {
+function workspaceTabButtonStyle(active: boolean, dropTarget = false): React.CSSProperties {
   return {
     display: 'inline-flex',
     alignItems: 'center',
@@ -1526,6 +1578,9 @@ function workspaceTabButtonStyle(active: boolean): React.CSSProperties {
     color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
     cursor: 'pointer',
     padding: 0,
+    position: 'relative',
+    transform: dropTarget ? 'translateY(-1px) scale(1.02)' : 'none',
+    transition: 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1), color 160ms ease',
   };
 }
 

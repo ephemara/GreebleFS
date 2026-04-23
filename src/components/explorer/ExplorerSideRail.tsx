@@ -136,6 +136,9 @@ interface TreeRowProps {
   row: ExplorerBookmarkTreeNode;
   dropTargetFolderId: string | null;
   activeFileDropTargetPath: string | null;
+  activeFileDropSurfaceId: string | null;
+  activeFileDwellSurfaceId: string | null;
+  activeFileDwellProgress: number;
   onNavigate: (path: string) => void;
   onQueueFolderCreate: (parentId: string | null) => void;
   onRenameNode: (nodeId: string, nodeName: string) => void;
@@ -157,12 +160,17 @@ interface LocalFolderTreeRowProps {
   dense: boolean;
   viewMode: ExplorerRailViewModeDefinition;
   currentPath: string;
+  dropScopeId: string;
   path: string;
   depth: number;
   expandedFolderPaths: string[];
   folderChildrenByPath: Record<string, LocalFolderTreeLoadState>;
   showSupportingMeta: boolean;
   treeIndentStep: number;
+  activeFileDropTargetPath: string | null;
+  activeFileDropSurfaceId: string | null;
+  activeFileDwellSurfaceId: string | null;
+  activeFileDwellProgress: number;
   onNavigate: (path: string) => void;
   onToggleExpand: (path: string) => void;
   onRetryLoad: (path: string) => void;
@@ -212,12 +220,19 @@ export function ExplorerSideRail({
     (state) => ({
       scopeId: state.scopeId,
       targetPath: state.valid ? state.targetPath : null,
+      targetSurfaceId: state.valid ? state.targetSurfaceId : null,
+      dwellSurfaceId: state.scopeId === dropScopeId ? state.dwellSurfaceId : null,
+      dwellProgress: state.scopeId === dropScopeId ? state.dwellProgress : 0,
     }),
     shallowEqualExplorerDragSelection,
   );
   const activeFileDropTargetPath =
     activeFileDropState.scopeId === dropScopeId
       ? activeFileDropState.targetPath
+      : null;
+  const activeFileDropSurfaceId =
+    activeFileDropState.scopeId === dropScopeId
+      ? activeFileDropState.targetSurfaceId
       : null;
   const railItemTransition = 'background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease, opacity 160ms ease';
   const bindRailMotion = useCallback((active = false, motionStepIndex = 0) => (
@@ -972,12 +987,17 @@ export function ExplorerSideRail({
                       dense={dense}
                       viewMode={railViewMode}
                       currentPath={currentPath}
+                      dropScopeId={dropScopeId}
                       path={normalizedDrivePath}
                       depth={0}
                       expandedFolderPaths={expandedFolderPaths}
                       folderChildrenByPath={folderChildrenByPath}
                       showSupportingMeta={showSupportingMeta}
                       treeIndentStep={railViewMode.treeIndentStep}
+                      activeFileDropTargetPath={activeFileDropTargetPath}
+                      activeFileDropSurfaceId={activeFileDropSurfaceId}
+                      activeFileDwellSurfaceId={activeFileDropState.dwellSurfaceId}
+                      activeFileDwellProgress={activeFileDropState.dwellProgress}
                       onNavigate={onNavigate}
                       onToggleExpand={toggleFolderExpand}
                       onRetryLoad={loadFolderChildren}
@@ -1376,6 +1396,9 @@ export function ExplorerSideRail({
                 row={row}
                 dropTargetFolderId={dropTargetFolderId}
                 activeFileDropTargetPath={activeFileDropTargetPath}
+                activeFileDropSurfaceId={activeFileDropSurfaceId}
+                activeFileDwellSurfaceId={activeFileDropState.dwellSurfaceId}
+                activeFileDwellProgress={activeFileDropState.dwellProgress}
                 onNavigate={onNavigate}
                 onQueueFolderCreate={(parentId) => {
                   setDraftFolderParentId(parentId);
@@ -1438,6 +1461,9 @@ function BookmarkTreeRow({
   row,
   dropTargetFolderId,
   activeFileDropTargetPath,
+  activeFileDropSurfaceId,
+  activeFileDwellSurfaceId,
+  activeFileDwellProgress,
   onNavigate,
   onQueueFolderCreate,
   onRenameNode,
@@ -1450,9 +1476,11 @@ function BookmarkTreeRow({
   const isFolder = row.node.kind === 'folder';
   const isExpanded = isFolder ? isExplorerBookmarkFolderExpanded(rail, row.node.id) : false;
   const bookmarkPath = row.node.kind === 'bookmark' ? row.node.path : null;
+  const bookmarkSurfaceId =
+    bookmarkPath !== null ? `explorer-rail-bookmark:${row.node.id}` : null;
   const bookmarkFileDropBinding = bookmarkPath
     ? createExplorerDropSurfaceBinding({
-      surfaceId: `explorer-rail-bookmark:${row.node.id}`,
+      surfaceId: bookmarkSurfaceId!,
       scopeId: dropScopeId,
       role: 'navigation-target',
       targetPath: bookmarkPath,
@@ -1462,8 +1490,11 @@ function BookmarkTreeRow({
     : null;
   const isDropTarget = dropTargetFolderId === row.node.id
     || (bookmarkPath !== null && activeFileDropTargetPath === bookmarkPath);
+  const isFileDropTarget = bookmarkSurfaceId !== null && activeFileDropSurfaceId === bookmarkSurfaceId;
+  const isDwellTarget = bookmarkSurfaceId !== null && activeFileDwellSurfaceId === bookmarkSurfaceId;
   const isActive = bookmarkPath !== null && isSameLocalPath(currentPath, bookmarkPath);
-  const rowState: RailSelectableRowState = isDropTarget ? 'drop-target' : isActive ? 'active' : isFolder && isExpanded ? 'ancestor' : 'idle';
+  const rowState: RailSelectableRowState =
+    isDropTarget || isFileDropTarget ? 'drop-target' : isActive ? 'active' : isFolder && isExpanded ? 'ancestor' : 'idle';
   const rowMotion = bindRailMotion(rowState !== 'idle');
 
   return (
@@ -1487,16 +1518,46 @@ function BookmarkTreeRow({
             state: rowState,
             treeDepth: row.depth,
           }),
+          position: 'relative',
           display: 'flex',
           alignItems: 'center',
           paddingLeft: (compactTree ? 6 : 8) + row.depth * treeIndentStep,
           ...rowMotion.motionStyle,
+          transform: isFileDropTarget ? 'translateY(-1px) scale(1.015)' : rowMotion.motionStyle.transform,
+          boxShadow: isFileDropTarget ? `0 0 0 1px ${accent}2a, 0 12px 26px ${accent}24` : rowMotion.motionStyle.boxShadow,
         }}
         {...getExplorerDropBindingElementProps(bookmarkFileDropBinding)}
         onDragOver={isFolder ? (event) => onDragOverFolder(event, row.node.id) : undefined}
         onDragLeave={isFolder ? onDragLeaveFolder : undefined}
         onDrop={isFolder ? (event) => onDropIntoFolder(event, row.node.id) : undefined}
       >
+        {isDwellTarget ? (
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: 10,
+              right: 10,
+              bottom: 5,
+              height: 3,
+              borderRadius: 999,
+              overflow: 'hidden',
+              background: 'rgba(255,255,255,0.08)',
+              pointerEvents: 'none',
+            }}
+          >
+            <span
+              style={{
+                display: 'block',
+                width: `${Math.max(0, Math.min(100, activeFileDwellProgress * 100))}%`,
+                height: '100%',
+                borderRadius: 999,
+                background: 'color-mix(in srgb, var(--overlay-accent) 90%, white 10%)',
+                transition: 'width 60ms linear',
+              }}
+            />
+          </span>
+        ) : null}
         {isFolder ? (
           <button
             type="button"
@@ -1588,6 +1649,9 @@ function BookmarkTreeRow({
           row={child}
           dropTargetFolderId={dropTargetFolderId}
           activeFileDropTargetPath={activeFileDropTargetPath}
+          activeFileDropSurfaceId={activeFileDropSurfaceId}
+          activeFileDwellSurfaceId={activeFileDwellSurfaceId}
+          activeFileDwellProgress={activeFileDwellProgress}
           onNavigate={onNavigate}
           onQueueFolderCreate={onQueueFolderCreate}
           onRenameNode={onRenameNode}
@@ -1607,12 +1671,17 @@ function LocalFolderTreeRow({
   dense,
   viewMode,
   currentPath,
+  dropScopeId,
   path,
   depth,
   expandedFolderPaths,
   folderChildrenByPath,
   showSupportingMeta,
   treeIndentStep,
+  activeFileDropTargetPath,
+  activeFileDropSurfaceId,
+  activeFileDwellSurfaceId,
+  activeFileDwellProgress,
   onNavigate,
   onToggleExpand,
   onRetryLoad,
@@ -1655,6 +1724,7 @@ function LocalFolderTreeRow({
     <>
       {childFolders.map((childFolder) => {
         const childPath = normalizeLocalTreePath(childFolder.path);
+        const localTreeSurfaceId = `explorer-rail-local-tree:${childPath}`;
         const childState = folderChildrenByPath[childPath];
         const isExpanded = expandedFolderPaths.includes(childPath);
         const normalizedCurrentPath = normalizeLocalTreePath(currentPath);
@@ -1667,7 +1737,23 @@ function LocalFolderTreeRow({
           && (childState.childFolders?.length ?? 0) === 0;
         const isActive = isSameAsCurrentPath || isOpenPathLeaf;
         const isAncestor = !isActive && (isStrictDescendant || isExpanded);
-        const rowState: RailSelectableRowState = isActive ? 'active' : (isAncestor || isExpanded ? 'ancestor' : 'idle');
+        const localTreeDropBinding = createExplorerDropSurfaceBinding({
+          surfaceId: localTreeSurfaceId,
+          scopeId: dropScopeId,
+          role: 'navigation-target',
+          targetPath: childPath,
+          onAutoOpen: () => onNavigate(childPath),
+          label: childFolder.name || getPathLeaf(childPath),
+        });
+        const isDropTarget = activeFileDropTargetPath === childPath;
+        const isSurfaceDropTarget = activeFileDropSurfaceId === localTreeSurfaceId;
+        const isDwellTarget = activeFileDwellSurfaceId === localTreeSurfaceId;
+        const rowState: RailSelectableRowState =
+          isDropTarget || isSurfaceDropTarget
+            ? 'drop-target'
+            : isActive
+              ? 'active'
+              : (isAncestor || isExpanded ? 'ancestor' : 'idle');
         const canExpand = isExpanded || childState?.status !== 'ready' || (childState.childFolders?.length ?? 0) > 0;
         const rowMotion = bindRailMotion(rowState !== 'idle');
 
@@ -1678,6 +1764,7 @@ function LocalFolderTreeRow({
               aria-expanded={canExpand ? isExpanded : undefined}
               aria-selected={isActive}
               data-rail-row-state={rowState}
+              {...getExplorerDropBindingElementProps(localTreeDropBinding)}
               {...rowMotion.motionDataAttributes}
               onPointerEnter={rowMotion.onPointerEnter}
               onPointerLeave={rowMotion.onPointerLeave}
@@ -1692,12 +1779,42 @@ function LocalFolderTreeRow({
                   state: rowState,
                   treeDepth: depth,
                 }),
+                position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
                 paddingLeft: (compactTree ? 6 : 8) + depth * treeIndentStep,
                 ...rowMotion.motionStyle,
+                transform: isSurfaceDropTarget ? 'translateY(-1px) scale(1.015)' : rowMotion.motionStyle.transform,
+                boxShadow: isSurfaceDropTarget ? `0 0 0 1px ${accent}2a, 0 12px 26px ${accent}24` : rowMotion.motionStyle.boxShadow,
               }}
             >
+              {isDwellTarget ? (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    left: 10,
+                    right: 10,
+                    bottom: 5,
+                    height: 3,
+                    borderRadius: 999,
+                    overflow: 'hidden',
+                    background: 'rgba(255,255,255,0.08)',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'block',
+                      width: `${Math.max(0, Math.min(100, activeFileDwellProgress * 100))}%`,
+                      height: '100%',
+                      borderRadius: 999,
+                      background: 'color-mix(in srgb, var(--overlay-accent) 90%, white 10%)',
+                      transition: 'width 60ms linear',
+                    }}
+                  />
+                </span>
+              ) : null}
               {canExpand ? (
                 <button
                   type="button"
@@ -1750,12 +1867,17 @@ function LocalFolderTreeRow({
                 dense={dense}
                 viewMode={viewMode}
                 currentPath={currentPath}
+                dropScopeId={dropScopeId}
                 path={childPath}
                 depth={depth + 1}
                 expandedFolderPaths={expandedFolderPaths}
                 folderChildrenByPath={folderChildrenByPath}
                 showSupportingMeta={showSupportingMeta}
                 treeIndentStep={treeIndentStep}
+                activeFileDropTargetPath={activeFileDropTargetPath}
+                activeFileDropSurfaceId={activeFileDropSurfaceId}
+                activeFileDwellSurfaceId={activeFileDwellSurfaceId}
+                activeFileDwellProgress={activeFileDwellProgress}
                 onNavigate={onNavigate}
                 onToggleExpand={onToggleExpand}
                 onRetryLoad={onRetryLoad}

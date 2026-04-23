@@ -1,6 +1,8 @@
 import { useRef, useSyncExternalStore } from "react";
 import type { RuntimePlatform } from "../../config/platform";
 import {
+  EXPLORER_DRAG_CANCEL_BURST_DURATION_MS,
+  EXPLORER_DRAG_DROP_BURST_DURATION_MS,
   EXPLORER_DRAG_OVERLAY_POINTER_OFFSET,
   EXPLORER_TAB_AUTO_OPEN_DELAY_MS,
   explorerAutoOpenDelayMsByRole,
@@ -12,6 +14,15 @@ import {
 export type ExplorerDragIntent = "internal" | "native-out";
 export type ExplorerDragOperation = "move" | "copy";
 export type ExplorerDragSourceKind = "internal" | "external";
+export type ExplorerDragVisualPhase =
+  | "idle"
+  | "lift"
+  | "dragging-valid"
+  | "dragging-invalid"
+  | "dwell-opening"
+  | "dropping"
+  | "cancelled";
+export type ExplorerDragAvatarKind = "file" | "folder" | "mixed" | "external";
 
 export const EXPLORER_DROP_TARGET_ATTRIBUTE = "data-overlay-drop-target-path";
 export const EXPLORER_DROP_SCOPE_ATTRIBUTE =
@@ -84,7 +95,12 @@ export type ExplorerDropSurfaceBinding = {
 
 export type ExplorerDragInteractionState = {
   active: boolean;
+  phase: ExplorerDragVisualPhase;
   sourceKind: ExplorerDragSourceKind | null;
+  sourceScopeId: string | null;
+  sourcePrimaryPath: string | null;
+  sourceItemKind: ExplorerDragAvatarKind;
+  sourceIconSrc: string | null;
   operation: ExplorerDragOperation;
   paths: string[];
   itemCount: number;
@@ -101,6 +117,11 @@ export type ExplorerDragInteractionState = {
   targetPath: string | null;
   targetKind: ExplorerResolvedDropSurfaceKind | null;
   targetSurfaceId: string | null;
+  targetSurfaceRole: ExplorerDropSurfaceRole | null;
+  presentationTargetPoint: {
+    x: number;
+    y: number;
+  } | null;
   valid: boolean;
   invalidReason: ExplorerDropValidation["reason"];
   externalWindowItemCount: number;
@@ -115,6 +136,10 @@ export function getExplorerDropScopeId(instanceId: string | number): string {
   return `explorer-drop-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
+export function getExplorerDirectoryDropSurfaceId(path: string): string {
+  return `explorer-directory:${path}`;
+}
+
 const EXPLORER_SHARED_DRAG_SESSION_LINGER_MS = 1500;
 
 const explorerDropSurfaceBehaviorById = new Map<
@@ -126,30 +151,43 @@ const explorerDropSurfaceElementById = new Map<string, HTMLElement>();
 let explorerSharedDragSession: ExplorerSharedDragSession | null = null;
 let explorerSharedDragSessionExpiryTimer: ReturnType<typeof setTimeout> | null =
   null;
+let explorerDragPresentationTimer: ReturnType<typeof setTimeout> | null = null;
 
 const explorerDragInteractionListeners = new Set<() => void>();
-let explorerDragInteractionState: ExplorerDragInteractionState = {
-  active: false,
-  sourceKind: null,
-  operation: "move",
-  paths: [],
-  itemCount: 0,
-  primaryLabel: null,
-  pointer: null,
-  overlayPointer: null,
-  scopeId: null,
-  targetPath: null,
-  targetKind: null,
-  targetSurfaceId: null,
-  valid: false,
-  invalidReason: null,
-  externalWindowItemCount: 0,
-  dwellSurfaceId: null,
-  dwellTargetPath: null,
-  dwellProgress: 0,
-  dwellDelayMs: null,
-  dwellLabel: null,
-};
+function createEmptyExplorerDragInteractionState(): ExplorerDragInteractionState {
+  return {
+    active: false,
+    phase: "idle",
+    sourceKind: null,
+    sourceScopeId: null,
+    sourcePrimaryPath: null,
+    sourceItemKind: "external",
+    sourceIconSrc: null,
+    operation: "move",
+    paths: [],
+    itemCount: 0,
+    primaryLabel: null,
+    pointer: null,
+    overlayPointer: null,
+    scopeId: null,
+    targetPath: null,
+    targetKind: null,
+    targetSurfaceId: null,
+    targetSurfaceRole: null,
+    presentationTargetPoint: null,
+    valid: false,
+    invalidReason: null,
+    externalWindowItemCount: 0,
+    dwellSurfaceId: null,
+    dwellTargetPath: null,
+    dwellProgress: 0,
+    dwellDelayMs: null,
+    dwellLabel: null,
+  };
+}
+
+let explorerDragInteractionState: ExplorerDragInteractionState =
+  createEmptyExplorerDragInteractionState();
 
 let explorerDragAutoOpenTimer: ReturnType<typeof setTimeout> | null = null;
 let explorerDragAutoOpenFrame: number | null = null;
@@ -179,6 +217,13 @@ function clearExplorerSharedDragSessionExpiryTimer(): void {
   if (explorerSharedDragSessionExpiryTimer !== null) {
     clearTimeout(explorerSharedDragSessionExpiryTimer);
     explorerSharedDragSessionExpiryTimer = null;
+  }
+}
+
+function clearExplorerDragPresentationTimer(): void {
+  if (explorerDragPresentationTimer !== null) {
+    clearTimeout(explorerDragPresentationTimer);
+    explorerDragPresentationTimer = null;
   }
 }
 
@@ -235,6 +280,27 @@ function getExplorerDropSurfaceBehavior(
     return null;
   }
   return explorerDropSurfaceBehaviorById.get(surfaceId) ?? null;
+}
+
+function stabilizeExplorerPaths(nextPaths: readonly string[]): string[] {
+  const currentPaths = explorerDragInteractionState.paths;
+  if (
+    currentPaths.length === nextPaths.length &&
+    currentPaths.every((path, index) => path === nextPaths[index])
+  ) {
+    return currentPaths;
+  }
+  return [...nextPaths];
+}
+
+function getExplorerDragPresentationTargetPoint(
+  hit: ExplorerResolvedDropHit | null,
+): { x: number; y: number } | null {
+  const targetElement = hit?.targetElement ?? hit?.scopeElement ?? null;
+  if (targetElement) {
+    return getElementCenterPoint(targetElement);
+  }
+  return hit?.point ?? null;
 }
 
 function resolveExplorerScopeElement(scopeId: string): HTMLElement | null {
@@ -347,6 +413,16 @@ function updateExplorerDragDwellState(args: {
 }): void {
   setExplorerDragInteractionState((currentState) => ({
     ...currentState,
+    phase:
+      currentState.phase === "dropping" || currentState.phase === "cancelled"
+        ? currentState.phase
+        : args.surfaceId && currentState.valid
+          ? "dwell-opening"
+          : currentState.valid
+            ? "dragging-valid"
+            : currentState.active
+              ? "dragging-invalid"
+              : "idle",
     dwellSurfaceId: args.surfaceId,
     dwellTargetPath: args.targetPath,
     dwellDelayMs: args.delayMs,
@@ -934,6 +1010,10 @@ export function getExplorerDropBindingElementProps(
 
 function buildExplorerDragSnapshot(args: {
   sourceKind: ExplorerDragSourceKind;
+  sourceScopeId?: string | null;
+  sourcePrimaryPath?: string | null;
+  sourceItemKind?: ExplorerDragAvatarKind;
+  sourceIconSrc?: string | null;
   sourcePaths: readonly string[];
   operation: ExplorerDragOperation;
   primaryLabel?: string | null;
@@ -945,12 +1025,34 @@ function buildExplorerDragSnapshot(args: {
   validation: ExplorerDropValidation;
   externalWindowItemCount?: number;
 }): ExplorerDragInteractionState {
+  const nextPaths = stabilizeExplorerPaths(args.sourcePaths);
+  const presentationTargetPoint = getExplorerDragPresentationTargetPoint(
+    args.resolvedHit,
+  );
+  const phase: ExplorerDragVisualPhase = !args.pointer
+    ? "lift"
+    : args.resolvedHit
+      ? args.validation.valid
+        ? explorerDragInteractionState.dwellSurfaceId === args.resolvedHit.surfaceId &&
+          explorerDragInteractionState.dwellDelayMs !== null
+          ? "dwell-opening"
+          : "dragging-valid"
+        : "dragging-invalid"
+      : "dragging-invalid";
   return {
     active: true,
+    phase,
     sourceKind: args.sourceKind,
+    sourceScopeId:
+      args.sourceScopeId ?? explorerDragInteractionState.sourceScopeId,
+    sourcePrimaryPath:
+      args.sourcePrimaryPath ?? explorerDragInteractionState.sourcePrimaryPath,
+    sourceItemKind:
+      args.sourceItemKind ?? explorerDragInteractionState.sourceItemKind,
+    sourceIconSrc: args.sourceIconSrc ?? explorerDragInteractionState.sourceIconSrc,
     operation: args.operation,
-    paths: [...args.sourcePaths],
-    itemCount: args.sourcePaths.length,
+    paths: nextPaths,
+    itemCount: nextPaths.length,
     primaryLabel: args.primaryLabel ?? explorerDragInteractionState.primaryLabel,
     pointer: args.pointer,
     overlayPointer: args.pointer
@@ -965,6 +1067,8 @@ function buildExplorerDragSnapshot(args: {
       : args.resolvedHit?.targetPath ?? null,
     targetKind: args.resolvedHit?.targetKind ?? null,
     targetSurfaceId: args.resolvedHit?.surfaceId ?? null,
+    targetSurfaceRole: args.resolvedHit?.surfaceRole ?? null,
+    presentationTargetPoint,
     valid: args.resolvedHit ? args.validation.valid : false,
     invalidReason: args.resolvedHit ? args.validation.reason : null,
     externalWindowItemCount: args.externalWindowItemCount ?? 0,
@@ -978,17 +1082,27 @@ function buildExplorerDragSnapshot(args: {
 
 export function beginExplorerDragInteraction(args: {
   sourceKind: ExplorerDragSourceKind;
+  sourceScopeId?: string | null;
+  sourcePrimaryPath?: string | null;
+  sourceItemKind?: ExplorerDragAvatarKind;
+  sourceIconSrc?: string | null;
   sourcePaths: readonly string[];
   operation: ExplorerDragOperation;
   primaryLabel?: string | null;
   externalWindowItemCount?: number;
 }): void {
+  clearExplorerDragPresentationTimer();
   setExplorerDragInteractionState((currentState) => ({
     ...currentState,
     active: true,
+    phase: "lift",
     sourceKind: args.sourceKind,
+    sourceScopeId: args.sourceScopeId ?? currentState.sourceScopeId,
+    sourcePrimaryPath: args.sourcePrimaryPath ?? currentState.sourcePrimaryPath,
+    sourceItemKind: args.sourceItemKind ?? currentState.sourceItemKind,
+    sourceIconSrc: args.sourceIconSrc ?? currentState.sourceIconSrc,
     operation: args.operation,
-    paths: [...args.sourcePaths],
+    paths: stabilizeExplorerPaths(args.sourcePaths),
     itemCount: args.sourcePaths.length,
     primaryLabel: args.primaryLabel ?? currentState.primaryLabel,
     externalWindowItemCount: args.externalWindowItemCount ?? 0,
@@ -998,6 +1112,10 @@ export function beginExplorerDragInteraction(args: {
 export function updateExplorerDragInteractionFromPoint(args: {
   pointer: ExplorerDropPointerLike;
   sourceKind: ExplorerDragSourceKind;
+  sourceScopeId?: string | null;
+  sourcePrimaryPath?: string | null;
+  sourceItemKind?: ExplorerDragAvatarKind;
+  sourceIconSrc?: string | null;
   sourcePaths: readonly string[];
   operation: ExplorerDragOperation;
   platform: RuntimePlatform;
@@ -1020,6 +1138,10 @@ export function updateExplorerDragInteractionFromPoint(args: {
   setExplorerDragInteractionState(
     buildExplorerDragSnapshot({
       sourceKind: args.sourceKind,
+      sourceScopeId: args.sourceScopeId,
+      sourcePrimaryPath: args.sourcePrimaryPath,
+      sourceItemKind: args.sourceItemKind,
+      sourceIconSrc: args.sourceIconSrc,
       sourcePaths: args.sourcePaths,
       operation: args.operation,
       primaryLabel: args.primaryLabel,
@@ -1042,6 +1164,10 @@ export function updateExplorerDragInteractionFromPoint(args: {
 export function updateExplorerDragInteractionFromResolvedHit(args: {
   resolvedHit: ExplorerResolvedDropHit | null;
   sourceKind: ExplorerDragSourceKind;
+  sourceScopeId?: string | null;
+  sourcePrimaryPath?: string | null;
+  sourceItemKind?: ExplorerDragAvatarKind;
+  sourceIconSrc?: string | null;
   sourcePaths: readonly string[];
   operation: ExplorerDragOperation;
   platform: RuntimePlatform;
@@ -1064,6 +1190,10 @@ export function updateExplorerDragInteractionFromResolvedHit(args: {
   setExplorerDragInteractionState(
     buildExplorerDragSnapshot({
       sourceKind: args.sourceKind,
+      sourceScopeId: args.sourceScopeId,
+      sourcePrimaryPath: args.sourcePrimaryPath,
+      sourceItemKind: args.sourceItemKind,
+      sourceIconSrc: args.sourceIconSrc,
       sourcePaths: args.sourcePaths,
       operation: args.operation,
       primaryLabel: args.primaryLabel,
@@ -1087,10 +1217,18 @@ export function clearExplorerDragInteractionTarget(): void {
   scheduleExplorerDragAutoOpen(null);
   setExplorerDragInteractionState((currentState) => ({
     ...currentState,
+    phase:
+      currentState.phase === "dropping" || currentState.phase === "cancelled"
+        ? currentState.phase
+        : currentState.active
+          ? "dragging-invalid"
+          : "idle",
     scopeId: null,
     targetPath: null,
     targetKind: null,
     targetSurfaceId: null,
+    targetSurfaceRole: null,
+    presentationTargetPoint: null,
     valid: false,
     invalidReason: null,
     dwellSurfaceId: null,
@@ -1101,30 +1239,46 @@ export function clearExplorerDragInteractionTarget(): void {
   }));
 }
 
+export function finishExplorerDragInteractionPresentation(args: {
+  phase: "dropping" | "cancelled";
+  durationMs?: number;
+  presentationTargetPoint?: {
+    x: number;
+    y: number;
+  } | null;
+}): void {
+  clearExplorerDragAutoOpenState();
+  clearExplorerDragPresentationTimer();
+  setExplorerDragInteractionState((currentState) => {
+    if (!currentState.active) {
+      return currentState;
+    }
+    return {
+      ...currentState,
+      phase: args.phase,
+      presentationTargetPoint:
+        args.presentationTargetPoint ?? currentState.presentationTargetPoint,
+    };
+  });
+
+  const fallbackDuration =
+    args.phase === "dropping"
+      ? EXPLORER_DRAG_DROP_BURST_DURATION_MS
+      : EXPLORER_DRAG_CANCEL_BURST_DURATION_MS;
+  const durationMs =
+    Number.isFinite(args.durationMs) && args.durationMs && args.durationMs > 0
+      ? Math.floor(args.durationMs)
+      : fallbackDuration;
+  explorerDragPresentationTimer = setTimeout(() => {
+    explorerDragPresentationTimer = null;
+    setExplorerDragInteractionState(createEmptyExplorerDragInteractionState());
+  }, durationMs);
+}
+
 export function endExplorerDragInteraction(): void {
   scheduleExplorerDragAutoOpen(null);
-  setExplorerDragInteractionState({
-    active: false,
-    sourceKind: null,
-    operation: "move",
-    paths: [],
-    itemCount: 0,
-    primaryLabel: null,
-    pointer: null,
-    overlayPointer: null,
-    scopeId: null,
-    targetPath: null,
-    targetKind: null,
-    targetSurfaceId: null,
-    valid: false,
-    invalidReason: null,
-    externalWindowItemCount: 0,
-    dwellSurfaceId: null,
-    dwellTargetPath: null,
-    dwellProgress: 0,
-    dwellDelayMs: null,
-    dwellLabel: null,
-  });
+  clearExplorerDragPresentationTimer();
+  setExplorerDragInteractionState(createEmptyExplorerDragInteractionState());
 }
 
 export function getExplorerDragInteractionState(): ExplorerDragInteractionState {

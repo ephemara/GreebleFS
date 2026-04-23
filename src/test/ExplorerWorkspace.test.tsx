@@ -13,6 +13,10 @@ import type {
   ExplorerWorkspaceRuntimeSnapshot,
   ExplorerWorkspaceSelectionTransferResult,
 } from '../components/FileExplorer';
+import {
+  endExplorerDragInteraction,
+  updateExplorerDragInteractionFromResolvedHit,
+} from '../components/explorer/explorerDragAndDrop';
 
 const renderedFileExplorerPropsByInstanceId = new Map<string, Record<string, unknown>>();
 
@@ -108,6 +112,7 @@ function renderWorkspace(appearance?: ReturnType<typeof resolveOverlayAppearance
 describe('ExplorerWorkspace', () => {
   beforeEach(() => {
     renderedFileExplorerPropsByInstanceId.clear();
+    endExplorerDragInteraction();
     useExplorerStore.setState({
       sessions: {
         primary: defaultExplorerSession,
@@ -128,6 +133,7 @@ describe('ExplorerWorkspace', () => {
 
   afterEach(() => {
     renderedFileExplorerPropsByInstanceId.clear();
+    endExplorerDragInteraction();
     useExplorerStore.setState({
       sessions: {
         primary: defaultExplorerSession,
@@ -151,6 +157,7 @@ describe('ExplorerWorkspace', () => {
 
     expect(screen.getByTestId('file-explorer-primary')).toBeInTheDocument();
     expect(getRenderedFileExplorerProps(PRIMARY_EXPLORER_INSTANCE_ID).workspacePaneCount).toBe(1);
+    expect(getRenderedFileExplorerProps(PRIMARY_EXPLORER_INSTANCE_ID).renderDragOverlayHost).toBe(false);
     const explorerPane = container.querySelector('[data-testid="file-explorer-primary"]')?.parentElement as HTMLDivElement | null;
     expect(explorerPane).not.toBeNull();
     expect(explorerPane?.style.height).toBe('100%');
@@ -174,6 +181,24 @@ describe('ExplorerWorkspace', () => {
     renderWorkspace(appearance);
 
     expect(getWorkspaceControl('workspacePaneActionsMenu')?.getAttribute('data-overlay-explorer-control-zone')).toBe('end');
+  });
+
+  it('mounts the shared drag overlay during normal live workspace panes', () => {
+    renderWorkspace();
+
+    act(() => {
+      updateExplorerDragInteractionFromResolvedHit({
+        resolvedHit: null,
+        sourceKind: 'internal',
+        sourcePaths: ['/workspace/notes.txt'],
+        operation: 'move',
+        platform: 'linux',
+        primaryLabel: 'notes.txt',
+        pointer: { x: 48, y: 56 },
+      });
+    });
+
+    expect(document.querySelector('[data-explorer-drag-overlay="true"]')).not.toBeNull();
   });
 
   it('routes commander sync, copy, and target refresh through the workspace bridge', async () => {

@@ -1,3 +1,20 @@
+# 2026-04-23 - Explorer Drag Presentation Is Now App-Owned, Visible, And Non-Destructive To Layout
+
+- Internal explorer drag truth still stays pointer-driven and app-owned, but the presentation layer is now first-class instead of piggybacking on browser drag visuals.
+- Durable implementation shape:
+  - `src/components/explorer/explorerDragAndDrop.ts` now carries presentation metadata alongside drag truth so the overlay, hover highlights, and dwell-progress surfaces all read from one runtime instead of local component state.
+  - `src/components/explorer/ExplorerDragOverlay.tsx` is now the shared drag avatar layer. It renders a visible stacked internal-drag card, uses the shared runtime for phase/target state, treats same-folder no-ops as a neutral themed `No change` state instead of a danger/error look, and keeps initial lift in a neutral “choose a destination” state instead of falsely showing an invalid drop.
+  - `src/components/explorer/ExplorerWorkspace.tsx` now mounts the drag overlay host unconditionally for live panes. The old invisible-drag bug came from the overlay only existing in the pane-unavailable branch.
+  - `src/components/FileExplorer.tsx` keeps folder/file panes as transport surfaces only, but now ghosts drag sources, highlights hovered folder targets, and renders the current-folder / external-import scope indicators as absolute overlay chrome inside the explorer plane instead of sticky in-flow banners. That prevents drag affordances from pushing list/table content down during active drag.
+  - `src/components/explorer/ExplorerSideRail.tsx` and workspace tabs consume the same dwell/highlight state so rail folders, breadcrumbs, and tabs all share one interaction model.
+  - `src/config/explorerDragInteractions.ts` now owns the authored drag timing defaults. Folder auto-open is deliberately slower than the first pass (`directory-target` 950ms, `navigation-target` 900ms, tabs 1050ms) so hover-open requires deliberate intent instead of twitchy flyovers.
+- Durable product note:
+  - Keep drag routing and drag presentation separate. The explorer runtime decides what move/copy/no-op means; the overlay/highlight system is just the visual expression of that truth.
+  - Scope-root/current-folder drag feedback must stay overlay-only. Do not reintroduce sticky/in-flow banners that change list geometry while the user is dragging, because that can shift destinations under the pointer.
+- Validation:
+  - passed: `bunx vitest run src/test/ExplorerWorkspace.test.tsx src/test/fileExplorer.viewModes.test.tsx -t "starts pointer-driven internal explorer drags without invoking the native drag bridge|moves multi-selected files into the hovered folder without leaking the drop to the viewport root|drops into the current folder when hovering explorer chrome outside the main file plane|mounts the shared drag overlay during normal live workspace panes|auto-opens hovered folder targets once after dwell" --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-23 - The Top-Bar Blur Toggle Is Now The Mobile Share Launcher
 
 - The old blur button in the global top bar is gone. Mobile share is now a first-class shell control instead of being buried behind Settings or the command palette.

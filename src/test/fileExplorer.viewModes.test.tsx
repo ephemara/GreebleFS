@@ -4880,6 +4880,13 @@ const value = 1;
 
     const dragGesture = startExplorerPointerDrag(dragSource);
 
+    expect(screen.getByTestId("explorer-drag-overlay")).toHaveTextContent(
+      "notes.txt",
+    );
+    expect(screen.getByTestId("explorer-drag-overlay")).toHaveTextContent(
+      "Move",
+    );
+
     expect(
       vi
         .mocked(invoke)
@@ -4894,17 +4901,18 @@ const value = 1;
   it("moves multi-selected files into the hovered folder without leaking the drop to the viewport root", async () => {
     renderExplorer();
     await screen.findByText("alpha");
-
-    fireEvent.click(screen.getByText("notes.txt"));
-    fireEvent.click(screen.getByText("preview.png"), { ctrlKey: true });
-    expect(screen.getByText(/2 selected/i)).toBeTruthy();
-
     const contentViewport = document.querySelector(
       '[data-overlay-explorer-plane="content-viewport"]',
     ) as HTMLElement | null;
     if (!(contentViewport instanceof HTMLElement)) {
       throw new Error("Expected explorer content viewport");
     }
+
+    fireEvent.click(within(contentViewport).getByText("notes.txt"));
+    fireEvent.click(within(contentViewport).getByText("preview.png"), {
+      ctrlKey: true,
+    });
+    expect(screen.getByText(/2 selected/i)).toBeTruthy();
     const dragSource = within(contentViewport)
       .getByText("preview.png")
       .closest('[data-overlay-drag-source="file"]');
@@ -4929,6 +4937,10 @@ const value = 1;
         endX: 96,
         endY: 48,
       });
+      expect(screen.getByTestId("explorer-drag-overlay")).toHaveTextContent("2");
+      expect(screen.getByTestId("explorer-drag-overlay")).toHaveTextContent(
+        "preview.png",
+      );
       finishExplorerPointerDrag(dragGesture);
     } finally {
       if (originalElementFromPoint) {
@@ -4985,6 +4997,9 @@ const value = 1;
         clientX: 28,
         clientY: 28,
       });
+      expect(
+        screen.getByTestId("explorer-window-drop-indicator"),
+      ).toHaveTextContent("Copy 1 item into this folder");
       fireEvent.drop(explorerRoot, {
         dataTransfer,
         clientX: 28,

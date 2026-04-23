@@ -140,6 +140,15 @@ import {
 } from "../config/iconTheme";
 import type { ExplorerLayoutMode } from "../config/layoutProfiles";
 import {
+  EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
+  EXPLORER_DRAG_DWELL_INDICATOR_HEIGHT_PX,
+  EXPLORER_DRAG_SOURCE_GHOST_OPACITY,
+  EXPLORER_DRAG_SOURCE_GHOST_SCALE,
+  EXPLORER_DRAG_TARGET_HIGHLIGHT_OPACITY,
+  EXPLORER_DRAG_TARGET_HIGHLIGHT_SCALE,
+  EXPLORER_NAVIGATION_AUTO_OPEN_DELAY_MS,
+} from "../config/explorerDragInteractions";
+import {
   EXPLORER_LAYOUT_ZOOM_MAX,
   EXPLORER_LAYOUT_ZOOM_MIN,
   getExplorerGridMetricsForZoom,
@@ -189,9 +198,11 @@ import {
   clearExplorerSharedDragSession,
   doesExplorerPayloadMatchSharedDragSession,
   endExplorerDragInteraction,
+  finishExplorerDragInteractionPresentation,
   getExplorerSharedDragSession,
   getExplorerDragInteractionState,
   getExplorerDropBindingElementProps,
+  getExplorerDirectoryDropSurfaceId,
   getExplorerDropScopeId,
   readExplorerPathsFromDataTransfer,
   resolveExplorerDropHitFromElement,
@@ -251,6 +262,7 @@ import {
   resolveExplorerHomePackSelection,
 } from "./home/ExplorerHomeSurface";
 import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
+import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
 import {
@@ -3010,12 +3022,56 @@ type ExplorerInternalPointerDragCandidate = {
   sourceEntryPath: string;
   sourcePaths: string[];
   primaryLabel: string;
+  sourceItemKind: "file" | "folder" | "mixed";
+  sourceIconSrc: string;
   started: boolean;
   startClientX: number;
   startClientY: number;
 };
 
 const EXPLORER_INTERNAL_POINTER_DRAG_START_DISTANCE = 6;
+
+function appendExplorerTransform(
+  baseTransform: string | undefined,
+  extraTransform: string | null,
+): string | undefined {
+  const normalizedBase = baseTransform?.trim() ?? "";
+  const normalizedExtra = extraTransform?.trim() ?? "";
+  const joined = [normalizedBase, normalizedExtra].filter(Boolean).join(" ");
+  return joined || undefined;
+}
+
+function createExplorerDwellIndicatorStyle(
+  active: boolean,
+  durationMs: number,
+): CSSProperties {
+  return {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    top: 9,
+    height: EXPLORER_DRAG_DWELL_INDICATOR_HEIGHT_PX,
+    borderRadius: 999,
+    background: "color-mix(in srgb, var(--overlay-accent) 88%, white 12%)",
+    transformOrigin: "left center",
+    transform: active ? "scaleX(1)" : "scaleX(0)",
+    transition: `transform ${durationMs}ms linear`,
+    pointerEvents: "none",
+  };
+}
+
+function createExplorerScopeDropOverlayHostStyle(): CSSProperties {
+  return {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    right: 12,
+    zIndex: 6,
+    display: "flex",
+    justifyContent: "center",
+    pointerEvents: "none",
+  };
+}
 
 function applyEditorSearchFocus(
   editor: any,
@@ -6751,6 +6807,7 @@ interface FileExplorerProps {
     onConfirm: (paths: string[]) => void;
     onCancel: () => void;
   } | null;
+  renderDragOverlayHost?: boolean;
 }
 
 export interface ExplorerWorkspaceRuntimeSelectionEntry {
@@ -6822,6 +6879,7 @@ export function FileExplorer({
   externalSelectionTransferRequest = null,
   externalRefreshRequest = null,
   repositoryPicker = null,
+  renderDragOverlayHost = true,
 }: FileExplorerProps) {
   const {
     applyBatchRenameRecipe: applyExplorerBatchRenameRecipe,
@@ -7294,9 +7352,17 @@ export function FileExplorer({
   >(new Map());
   const activeDragInteraction = useExplorerDragInteractionSelector(
     (state) => ({
+      active: state.active,
+      phase: state.phase,
       sourceKind: state.sourceKind,
+      sourceScopeId: state.sourceScopeId,
+      paths: state.paths,
+      operation: state.operation,
       scopeId: state.scopeId,
       targetPath: state.targetPath,
+      targetKind: state.targetKind,
+      targetSurfaceId: state.targetSurfaceId,
+      dwellSurfaceId: state.dwellSurfaceId,
       valid: state.valid,
       externalWindowItemCount: state.externalWindowItemCount,
     }),
@@ -7320,6 +7386,52 @@ export function FileExplorer({
     }),
     [activeDragInteraction, explorerDropScopeId],
   );
+  const internalDragSourcePathSet = useMemo(
+    () =>
+      activeDragInteraction.sourceKind === "internal" &&
+      activeDragInteraction.sourceScopeId === explorerDropScopeId
+        ? new Set(activeDragInteraction.paths)
+        : new Set<string>(),
+    [
+      activeDragInteraction.paths,
+      activeDragInteraction.sourceKind,
+      activeDragInteraction.sourceScopeId,
+      explorerDropScopeId,
+    ],
+  );
+  const activeScopedTargetSurfaceId =
+    activeDragInteraction.scopeId === explorerDropScopeId &&
+    activeDragInteraction.valid
+      ? activeDragInteraction.targetSurfaceId
+      : null;
+  const activeScopedDwellSurfaceId =
+    activeDragInteraction.scopeId === explorerDropScopeId
+      ? activeDragInteraction.dwellSurfaceId
+      : null;
+  const scopeRootDropActive =
+    activeDragInteraction.scopeId === explorerDropScopeId &&
+    activeDragInteraction.valid &&
+    activeDragInteraction.targetKind === "scope-root";
+  const invalidScopeDragActive =
+    activeDragInteraction.active &&
+    activeDragInteraction.scopeId === explorerDropScopeId &&
+    !activeDragInteraction.valid;
+  const currentFolderDropState = useMemo(() => {
+    if (!scopeRootDropActive || activeDragInteraction.sourceKind === "external") {
+      return {
+        active: false,
+        count: 0,
+        operation: activeDragInteraction.operation,
+        sourceKind: activeDragInteraction.sourceKind,
+      } as const;
+    }
+    return {
+      active: true,
+      count: activeDragInteraction.paths.length,
+      operation: activeDragInteraction.operation,
+      sourceKind: activeDragInteraction.sourceKind,
+    } as const;
+  }, [activeDragInteraction, scopeRootDropActive]);
   const lastPreviewTerminalShellReportedCwdRef = useRef<string | null>(null);
   const lastPreviewTerminalExplorerAppliedCwdRef = useRef<string | null>(null);
   const previewTerminalCommandSequenceRef = useRef(0);
@@ -13405,6 +13517,10 @@ export function FileExplorer({
       });
       beginExplorerDragInteraction({
         sourceKind: "internal",
+        sourceScopeId: explorerDropScopeId,
+        sourcePrimaryPath: candidate.sourceEntryPath,
+        sourceItemKind: candidate.sourceItemKind,
+        sourceIconSrc: candidate.sourceIconSrc,
         sourcePaths: candidate.sourcePaths,
         operation: resolveExplorerDropOperation(event, runtimePlatform),
         primaryLabel: candidate.primaryLabel,
@@ -13425,6 +13541,11 @@ export function FileExplorer({
       if (dragPaths.length === 0) {
         return;
       }
+      const dragSelectionKind = dragEntries.every((item) => item.is_dir)
+        ? "folder"
+        : dragEntries.some((item) => item.is_dir)
+          ? "mixed"
+          : "file";
 
       const requestedIntent = event.altKey ? "native-out" : "internal";
       const dragIntent =
@@ -13438,6 +13559,8 @@ export function FileExplorer({
         sourceEntryPath: entry.path,
         sourcePaths: dragPaths,
         primaryLabel: entry.name || getPathLeaf(entry.path) || "Item",
+        sourceItemKind: dragSelectionKind,
+        sourceIconSrc: getExplorerEntryIconSrc(entry, false, false),
         started: false,
         startClientX: event.clientX,
         startClientY: event.clientY,
@@ -13533,6 +13656,10 @@ export function FileExplorer({
           y: event.clientY,
         },
         sourceKind: "internal",
+        sourceScopeId: explorerDropScopeId,
+        sourcePrimaryPath: candidate.sourceEntryPath,
+        sourceItemKind: candidate.sourceItemKind,
+        sourceIconSrc: candidate.sourceIconSrc,
         sourcePaths: candidate.sourcePaths,
         operation: resolveExplorerDropOperation(event, runtimePlatform),
         platform: runtimePlatform,
@@ -13565,6 +13692,10 @@ export function FileExplorer({
       updateExplorerDragInteractionFromPoint({
         pointer,
         sourceKind: "internal",
+        sourceScopeId: explorerDropScopeId,
+        sourcePrimaryPath: candidate.sourceEntryPath,
+        sourceItemKind: candidate.sourceItemKind,
+        sourceIconSrc: candidate.sourceIconSrc,
         sourcePaths: candidate.sourcePaths,
         operation,
         platform: runtimePlatform,
@@ -13573,7 +13704,16 @@ export function FileExplorer({
 
       const interactionState = getExplorerDragInteractionState();
       const targetPath = interactionState.valid ? interactionState.targetPath : null;
-      endExplorerDragInteraction();
+      if (targetPath) {
+        finishExplorerDragInteractionPresentation({
+          phase: "dropping",
+          presentationTargetPoint: interactionState.presentationTargetPoint,
+        });
+      } else {
+        finishExplorerDragInteractionPresentation({
+          phase: "cancelled",
+        });
+      }
       clearExplorerSharedDragSession();
       if (!targetPath) {
         return;
@@ -13741,7 +13881,7 @@ export function FileExplorer({
         return null;
       }
       return createExplorerDropSurfaceBinding({
-        surfaceId: `explorer-directory:${entry.path}`,
+        surfaceId: getExplorerDirectoryDropSurfaceId(entry.path),
         scopeId: explorerDropScopeId,
         role: "directory-target",
         targetPath: entry.path,
@@ -13767,6 +13907,52 @@ export function FileExplorer({
       });
     },
     [currentPath, currentPathIsHome, explorerDropScopeId, navigate],
+  );
+  const getExplorerEntryDragPresentation = useCallback(
+    (entry: Pick<FileEntry, "path" | "is_dir">) => {
+      const surfaceId = entry.is_dir
+        ? getExplorerDirectoryDropSurfaceId(entry.path)
+        : null;
+      const isSource = internalDragSourcePathSet.has(entry.path);
+      const isDropTarget =
+        surfaceId !== null && activeScopedTargetSurfaceId === surfaceId;
+      const isDwellTarget =
+        surfaceId !== null && activeScopedDwellSurfaceId === surfaceId;
+      return {
+        isSource,
+        isDropTarget,
+        isDwellTarget,
+        opacity:
+          isSource && activeDragInteraction.phase !== "dropping"
+            ? EXPLORER_DRAG_SOURCE_GHOST_OPACITY
+            : 1,
+        filter:
+          isSource && activeDragInteraction.phase !== "dropping"
+            ? "saturate(0.82) brightness(0.9)"
+            : isDropTarget
+              ? `saturate(1.08) opacity(${EXPLORER_DRAG_TARGET_HIGHLIGHT_OPACITY})`
+              : undefined,
+        extraTransform:
+          isSource && activeDragInteraction.phase !== "dropping"
+            ? `scale(${EXPLORER_DRAG_SOURCE_GHOST_SCALE})`
+            : isDropTarget
+              ? `scale(${EXPLORER_DRAG_TARGET_HIGHLIGHT_SCALE})`
+              : null,
+        boxShadow:
+          isDropTarget || isDwellTarget
+            ? `0 0 0 1px ${accent}30, 0 16px 32px ${accent}${
+                isDwellTarget ? "30" : "22"
+              }`
+            : undefined,
+      };
+    },
+    [
+      accent,
+      activeDragInteraction.phase,
+      activeScopedDwellSurfaceId,
+      activeScopedTargetSurfaceId,
+      internalDragSourcePathSet,
+    ],
   );
 
   const effectiveModeProfile = useMemo(
@@ -15470,12 +15656,17 @@ export function FileExplorer({
                 >
                   {crumbs.length > 0 ? (
                     crumbs.map((c, i) => {
+                      const breadcrumbSurfaceId = `explorer-breadcrumb:${c.path}`;
                       const breadcrumbDropBinding =
                         getExplorerNavigationDropBinding({
-                          surfaceId: `explorer-breadcrumb:${c.path}`,
+                          surfaceId: breadcrumbSurfaceId,
                           path: c.path,
                           label: c.label,
                         });
+                      const isBreadcrumbDropTarget =
+                        activeScopedTargetSurfaceId === breadcrumbSurfaceId;
+                      const isBreadcrumbDwellTarget =
+                        activeScopedDwellSurfaceId === breadcrumbSurfaceId;
                       return (
                         <React.Fragment key={c.path}>
                           {i > 0 && (
@@ -15509,8 +15700,9 @@ export function FileExplorer({
                                 explorerTheme.breadcrumbStyle === "plain"
                                   ? 4
                                   : "var(--overlay-explorer-control-radius)",
+                              position: "relative",
                               background:
-                                dragOver === c.path
+                                isBreadcrumbDropTarget || dragOver === c.path
                                   ? "var(--overlay-explorer-chip-active-bg)"
                                   : explorerTheme.breadcrumbStyle === "plain"
                                     ? "transparent"
@@ -15520,12 +15712,32 @@ export function FileExplorer({
                               whiteSpace: "nowrap",
                               flexShrink: 0,
                               outline:
-                                dragOver === c.path
+                                isBreadcrumbDropTarget || dragOver === c.path
                                   ? `1px solid ${accent}`
                                   : "none",
+                              transform: isBreadcrumbDropTarget
+                                ? `scale(${EXPLORER_DRAG_TARGET_HIGHLIGHT_SCALE})`
+                                : "none",
+                              transition:
+                                "transform 160ms cubic-bezier(0.22, 1, 0.36, 1), outline-color 160ms ease",
                             }}
                           >
                             {c.label}
+                            {isBreadcrumbDwellTarget ? (
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  ...createExplorerDwellIndicatorStyle(
+                                    true,
+                                    EXPLORER_NAVIGATION_AUTO_OPEN_DELAY_MS,
+                                  ),
+                                  left: 6,
+                                  right: 6,
+                                  top: "auto",
+                                  bottom: 3,
+                                }}
+                              />
+                            ) : null}
                           </button>
                         </React.Fragment>
                       );
@@ -19277,6 +19489,7 @@ export function FileExplorer({
     options: { dominant: boolean },
   ) => {
     const entryDropBinding = getExplorerDirectoryDropBinding(entry);
+    const dragPresentation = getExplorerEntryDragPresentation(entry);
     const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
     const isSel = selected.has(entry.path);
     const isDrop = dragOver === entry.path && entry.is_dir;
@@ -19334,10 +19547,27 @@ export function FileExplorer({
             cursor: "pointer",
             boxSizing: "border-box",
             userSelect: "none",
-            boxShadow: semanticTableRestingSurface.boxShadow,
+            position: "relative",
+            boxShadow:
+              dragPresentation.boxShadow ?? semanticTableRestingSurface.boxShadow,
+            opacity: dragPresentation.opacity,
+            filter: dragPresentation.filter,
             ...semanticTableMotion.motionStyle,
+            transform: appendExplorerTransform(
+              semanticTableMotion.motionStyle.transform,
+              dragPresentation.extraTransform,
+            ),
           }}
         >
+          {dragPresentation.isDwellTarget ? (
+            <span
+              aria-hidden="true"
+              style={createExplorerDwellIndicatorStyle(
+                true,
+                EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
+              )}
+            />
+          ) : null}
           <div
             style={{
               minWidth: 0,
@@ -19518,10 +19748,27 @@ export function FileExplorer({
           overflow: "hidden",
           userSelect: "none",
           boxSizing: "border-box",
-          boxShadow: semanticGridRestingSurface.boxShadow,
+          position: "relative",
+          boxShadow:
+            dragPresentation.boxShadow ?? semanticGridRestingSurface.boxShadow,
+          opacity: dragPresentation.opacity,
+          filter: dragPresentation.filter,
           ...semanticGridMotion.motionStyle,
+          transform: appendExplorerTransform(
+            semanticGridMotion.motionStyle.transform,
+            dragPresentation.extraTransform,
+          ),
         }}
       >
+        {dragPresentation.isDwellTarget ? (
+          <span
+            aria-hidden="true"
+            style={createExplorerDwellIndicatorStyle(
+              true,
+              EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
+            )}
+          />
+        ) : null}
         <div
           style={{
             width: iconStageSize,
@@ -19776,6 +20023,7 @@ export function FileExplorer({
     const motionStepIndex = visibleEntryIndexLookup.get(node.entry.path) ?? 0;
     const isSel = selected.has(node.entry.path);
     const isDrop = dragOver === node.entry.path && node.entry.is_dir;
+    const dragPresentation = getExplorerEntryDragPresentation(node.entry);
     const isPinned = constellationPinnedPathSet.has(node.entry.path);
     const isRouteAnchor = constellationRouteState.anchorPath === node.entry.path;
     const isRouteTarget = constellationRouteTargetSet.has(node.entry.path);
@@ -19925,10 +20173,17 @@ export function FileExplorer({
           display: "flex",
           alignItems: "center",
           gap: showsLabel ? 8 : 0,
-          opacity: dimForHover ? 0.34 : dimForRoute ? 0.58 : 1,
+          opacity:
+            (dimForHover ? 0.34 : dimForRoute ? 0.58 : 1) *
+            dragPresentation.opacity,
+          filter: dragPresentation.filter,
           transition:
             "transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms cubic-bezier(0.22, 1, 0.36, 1)",
           ...constellationNodeMotion.motionStyle,
+          transform: appendExplorerTransform(
+            constellationNodeMotion.motionStyle.transform,
+            dragPresentation.extraTransform,
+          ),
         }}
       >
         <div
@@ -20576,6 +20831,7 @@ export function FileExplorer({
     const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
     const isSel = selected.has(entry.path);
     const isDrop = dragOver === entry.path && entry.is_dir;
+    const dragPresentation = getExplorerEntryDragPresentation(entry);
     const isRenaming = rename.active && rename.path === entry.path;
     const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDrop);
     const thumbnail = getRenderableEntryThumbnail(entry, 42);
@@ -20616,10 +20872,12 @@ export function FileExplorer({
         onPointerUp={timelineEntryMotion.onPointerUp}
         onPointerCancel={timelineEntryMotion.onPointerCancel}
         style={{
+          position: "relative",
           borderRadius: 18,
           border: `1px solid ${timelineRestingSurface.borderColor}`,
           background: timelineRestingSurface.background,
-          boxShadow: timelineRestingSurface.boxShadow,
+          boxShadow:
+            dragPresentation.boxShadow ?? timelineRestingSurface.boxShadow,
           padding: "12px 14px",
           display: "grid",
           gridTemplateColumns: "auto minmax(0, 1fr)",
@@ -20627,9 +20885,24 @@ export function FileExplorer({
           cursor: "pointer",
           userSelect: "none",
           minHeight: 92,
+          opacity: dragPresentation.opacity,
+          filter: dragPresentation.filter,
           ...timelineEntryMotion.motionStyle,
+          transform: appendExplorerTransform(
+            timelineEntryMotion.motionStyle.transform,
+            dragPresentation.extraTransform,
+          ),
         }}
       >
+        {dragPresentation.isDwellTarget ? (
+          <span
+            aria-hidden="true"
+            style={createExplorerDwellIndicatorStyle(
+              true,
+              EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
+            )}
+          />
+        ) : null}
         <div
           style={{
             width: 42,
@@ -21110,7 +21383,14 @@ export function FileExplorer({
       data-overlay-explorer-view-mode={effectiveViewMode}
       data-overlay-explorer-experimental-mode={effectiveExperimentalViewMode}
       {...getExplorerDropBindingElementProps(explorerScopeDropBinding)}
-      style={explorerRootStyle}
+      style={{
+        ...explorerRootStyle,
+        boxShadow: scopeRootDropActive
+          ? `inset 0 0 0 1px ${accent}72, inset 0 0 0 999px color-mix(in srgb, ${accent} 7%, transparent)`
+          : invalidScopeDragActive
+            ? "inset 0 0 0 1px var(--overlay-explorer-danger-soft-border)"
+            : undefined,
+      }}
       onDragOver={onExplorerDropScopeDragOver}
       onDragLeave={onExplorerDropScopeDragLeave}
       onDrop={(e) => {
@@ -21345,51 +21625,97 @@ export function FileExplorer({
                   goUp();
                 }}
               >
-                {windowDropState.active && (
-                  <div
-                    style={{
-                      position: "sticky",
-                      top: 12,
-                      zIndex: 5,
-                      margin: "0 auto 12px",
-                      width: "min(420px, calc(100% - 24px))",
-                      border: `1px solid ${accent}`,
-                      borderRadius: 10,
-                      background: `linear-gradient(180deg, ${accent}20, rgba(16,18,26,0.92))`,
-                      boxShadow: "0 18px 48px rgba(0,0,0,0.35)",
-                      padding: "14px 16px",
-                      textAlign: "center",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: "0.14em",
-                        textTransform: "uppercase",
-                        color: accent,
-                      }}
-                    >
-                      Import Files
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 6,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: EXP.text,
-                      }}
-                    >
-                      Drop {windowDropState.count} item
-                      {windowDropState.count === 1 ? "" : "s"} to copy into this
-                      folder
-                    </div>
-                    <div
-                      style={{ marginTop: 4, fontSize: 11, color: EXP.muted }}
-                    >
-                      External files are handled through the Rust transfer
-                      pipeline.
-                    </div>
+                {(currentFolderDropState.active || windowDropState.active) && (
+                  <div style={createExplorerScopeDropOverlayHostStyle()}>
+                    {currentFolderDropState.active ? (
+                      <div
+                        data-testid="explorer-current-folder-drop-indicator"
+                        style={{
+                          width: "min(420px, calc(100% - 40px))",
+                          borderRadius: 16,
+                          border: `1px solid color-mix(in srgb, ${accent} 68%, rgba(255,255,255,0.16))`,
+                          background:
+                            `linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-panel) 88%, ${accent} 12%), color-mix(in srgb, var(--overlay-bg-panel) 78%, black 22%))`,
+                          boxShadow:
+                            "0 18px 42px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.04)",
+                          backdropFilter: "blur(18px)",
+                          WebkitBackdropFilter: "blur(18px)",
+                          padding: "12px 16px 13px",
+                          textAlign: "center",
+                          color: "var(--overlay-text-primary)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            letterSpacing: "0.12em",
+                            textTransform: "uppercase",
+                            color: accent,
+                          }}
+                        >
+                          Current Folder
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "var(--overlay-text-primary)",
+                          }}
+                        >
+                          {currentFolderDropState.operation === "copy"
+                            ? "Copy"
+                            : "Move"}{" "}
+                          {currentFolderDropState.count} item
+                          {currentFolderDropState.count === 1 ? "" : "s"} into
+                          this folder
+                        </div>
+                      </div>
+                    ) : null}
+                    {!currentFolderDropState.active && windowDropState.active ? (
+                      <div
+                        data-testid="explorer-window-drop-indicator"
+                        style={{
+                          width: "min(400px, calc(100% - 40px))",
+                          borderRadius: 16,
+                          border: `1px solid color-mix(in srgb, ${accent} 62%, rgba(255,255,255,0.14))`,
+                          background:
+                            `linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-panel) 90%, ${accent} 10%), color-mix(in srgb, var(--overlay-bg-panel) 78%, black 22%))`,
+                          boxShadow:
+                            "0 18px 42px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.04)",
+                          backdropFilter: "blur(18px)",
+                          WebkitBackdropFilter: "blur(18px)",
+                          padding: "12px 16px 13px",
+                          textAlign: "center",
+                          color: "var(--overlay-text-primary)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            letterSpacing: "0.12em",
+                            textTransform: "uppercase",
+                            color: accent,
+                          }}
+                        >
+                          Import Files
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "var(--overlay-text-primary)",
+                          }}
+                        >
+                          Copy {windowDropState.count} item
+                          {windowDropState.count === 1 ? "" : "s"} into this
+                          folder
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 )}
 
@@ -21650,6 +21976,8 @@ export function FileExplorer({
                           const isSel = selected.has(entry.path);
                           const isDrop =
                             dragOver === entry.path && entry.is_dir;
+                          const dragPresentation =
+                            getExplorerEntryDragPresentation(entry);
                           const isRenaming =
                             rename.active && rename.path === entry.path;
                           const iconSrc = getExplorerEntryIconSrc(
@@ -21695,6 +22023,7 @@ export function FileExplorer({
                               onPointerUp={gridEntryMotion.onPointerUp}
                               onPointerCancel={gridEntryMotion.onPointerCancel}
                               style={{
+                                position: "relative",
                                 background: isDrop
                                   ? dropEntrySurface.background
                                   : isSel
@@ -21715,16 +22044,34 @@ export function FileExplorer({
                                 minHeight: 0,
                                 boxSizing: "border-box",
                                 overflow: "hidden",
-                                opacity: entry.is_hidden ? 0.5 : 1,
                                 userSelect: "none",
-                                boxShadow: isDrop
-                                  ? dropEntrySurface.boxShadow
-                                  : isSel
-                                    ? selectedEntrySurface.boxShadow
-                                    : idleEntrySurface.boxShadow,
+                                boxShadow:
+                                  dragPresentation.boxShadow ??
+                                  (isDrop
+                                    ? dropEntrySurface.boxShadow
+                                    : isSel
+                                      ? selectedEntrySurface.boxShadow
+                                      : idleEntrySurface.boxShadow),
+                                opacity:
+                                  (entry.is_hidden ? 0.5 : 1) *
+                                  dragPresentation.opacity,
+                                filter: dragPresentation.filter,
                                 ...gridEntryMotion.motionStyle,
+                                transform: appendExplorerTransform(
+                                  gridEntryMotion.motionStyle.transform,
+                                  dragPresentation.extraTransform,
+                                ),
                               }}
                             >
+                              {dragPresentation.isDwellTarget ? (
+                                <span
+                                  aria-hidden="true"
+                                  style={createExplorerDwellIndicatorStyle(
+                                    true,
+                                    EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
+                                  )}
+                                />
+                              ) : null}
                               <div
                                 style={{
                                   width:
@@ -21926,6 +22273,8 @@ export function FileExplorer({
                           visibleEntryIndexLookup.get(entry.path) ?? 0;
                         const isSel = selected.has(entry.path);
                         const isDrop = dragOver === entry.path && entry.is_dir;
+                        const dragPresentation =
+                          getExplorerEntryDragPresentation(entry);
                         const isRenaming =
                           rename.active && rename.path === entry.path;
                         const iconSrc = getExplorerEntryIconSrc(
@@ -21971,6 +22320,7 @@ export function FileExplorer({
                             onPointerUp={listEntryMotion.onPointerUp}
                             onPointerCancel={listEntryMotion.onPointerCancel}
                             style={{
+                              position: "relative",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "space-between",
@@ -21990,17 +22340,35 @@ export function FileExplorer({
                                   ? selectedEntrySurface.background
                                   : idleEntrySurface.background,
                               cursor: "pointer",
-                              opacity: entry.is_hidden ? 0.5 : 1,
+                              opacity:
+                                (entry.is_hidden ? 0.5 : 1) *
+                                dragPresentation.opacity,
                               userSelect: "none",
                               boxSizing: "border-box",
-                              boxShadow: isDrop
-                                ? dropEntrySurface.boxShadow
-                                : isSel
-                                  ? selectedEntrySurface.boxShadow
-                                  : idleEntrySurface.boxShadow,
+                              boxShadow:
+                                dragPresentation.boxShadow ??
+                                (isDrop
+                                  ? dropEntrySurface.boxShadow
+                                  : isSel
+                                    ? selectedEntrySurface.boxShadow
+                                    : idleEntrySurface.boxShadow),
+                              filter: dragPresentation.filter,
                               ...listEntryMotion.motionStyle,
+                              transform: appendExplorerTransform(
+                                listEntryMotion.motionStyle.transform,
+                                dragPresentation.extraTransform,
+                              ),
                             }}
                           >
+                            {dragPresentation.isDwellTarget ? (
+                              <span
+                                aria-hidden="true"
+                                style={createExplorerDwellIndicatorStyle(
+                                  true,
+                                  EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
+                                )}
+                              />
+                            ) : null}
                             <div
                               style={{
                                 minWidth: 0,
@@ -22344,6 +22712,8 @@ export function FileExplorer({
                           const isSel = selected.has(entry.path);
                           const isDrop =
                             dragOver === entry.path && entry.is_dir;
+                          const dragPresentation =
+                            getExplorerEntryDragPresentation(entry);
                           const isRenaming =
                             rename.active && rename.path === entry.path;
                           const iconSrc = getExplorerEntryIconSrc(
@@ -22396,18 +22766,27 @@ export function FileExplorer({
                                     ? selectedEntrySurface.background
                                     : idleEntrySurface.background,
                                 cursor: "pointer",
-                                opacity: entry.is_hidden ? 0.5 : 1,
+                                opacity:
+                                  (entry.is_hidden ? 0.5 : 1) *
+                                  dragPresentation.opacity,
                                 userSelect: "none",
                                 borderBottom:
                                   "1px solid var(--overlay-explorer-toolbar-border)",
                                 height: virtualWindow.rowHeight,
                                 boxSizing: "border-box",
-                                boxShadow: isDrop
-                                  ? dropEntrySurface.boxShadow
-                                  : isSel
-                                    ? selectedEntrySurface.boxShadow
-                                    : idleEntrySurface.boxShadow,
+                                boxShadow:
+                                  dragPresentation.boxShadow ??
+                                  (isDrop
+                                    ? dropEntrySurface.boxShadow
+                                    : isSel
+                                      ? selectedEntrySurface.boxShadow
+                                      : idleEntrySurface.boxShadow),
+                                filter: dragPresentation.filter,
                                 ...tableEntryMotion.motionStyle,
+                                transform: appendExplorerTransform(
+                                  tableEntryMotion.motionStyle.transform,
+                                  dragPresentation.extraTransform,
+                                ),
                               }}
                             >
                               <td
@@ -22879,6 +23258,8 @@ export function FileExplorer({
           </div>
         </div>
       )}
+
+      {renderDragOverlayHost ? <ExplorerDragOverlay /> : null}
 
       <style>{`@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }`}</style>
     </div>
