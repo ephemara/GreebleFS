@@ -246,7 +246,7 @@ pub async fn global_search_start_scan(
         let result =
             (|| -> Result<(u64, Index, IndexReader, GlobalSearchIndexFields, u64), String> {
                 let (index, reader, fields) = open_or_create_index(&index_path)?;
-                let mut writer = index
+                let writer = index
                     .writer(100_000_000)
                     .map_err(|error| error.to_string())?;
                 writer

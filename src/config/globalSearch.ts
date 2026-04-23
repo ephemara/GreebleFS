@@ -41,7 +41,7 @@ export function shouldRunGlobalSearchQuery(query: string): boolean {
 }
 
 export function createDefaultGlobalSearchQueryOptions(
-  limit = globalSearchPaletteConfig.resultLimit,
+  limit: number = globalSearchPaletteConfig.resultLimit,
 ): GlobalSearchQueryOptions {
   return {
     limit,

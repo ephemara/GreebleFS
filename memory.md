@@ -1,3 +1,22 @@
+# 2026-04-22 - Sigma Global Search Is Now Assimilated Into The Command Palette
+
+- GreebleFS now has a native indexed global filename search adapted from Sigma and surfaced through the shell command palette instead of a separate imported UI shell.
+- Durable implementation shape:
+  - Added `src-tauri/src/global_search/` as the native truth layer. It owns the Tantivy schema, app-local index storage, full-drive scan lifecycle, scan status, indexed query, and explicit priority-path query helpers.
+  - `src/runtime/globalSearchBackend.ts` is the only TS bridge for this feature. It wraps the Specta commands, resolves drive roots from the existing explorer drive inventory, and merges indexed results with a small explicit-path fallback query so the palette can still feel responsive around open/bookmarked folders.
+  - `src/store/globalSearchStore.ts` owns command-palette session behavior: one-time init, status polling, optional auto-start scan on first open when no valid index exists, debounced query dispatch, and the latest palette result set.
+  - `src/App.tsx` now treats global search as a command-palette-first shell feature. The palette shows indexed file hits ahead of normal actions, exposes scan/rebuild/cancel controls, and formats live status/error messaging through `src/config/globalSearch.ts`.
+  - `src/store/explorerStore.ts`, `src/components/explorer/ExplorerWorkspace.tsx`, and `src/components/FileExplorer.tsx` now support a host-owned "open/reveal in active explorer pane" flow. Palette results activate the explorer panel, navigate the active pane to the parent directory, clear local search state, and select the matched entry instead of opening files externally or spawning a parallel explorer shell.
+- Durable product note:
+  - Sigma's incremental `index_paths` path was intentionally not ported. In the upstream shape it deletes by a path field that is not modeled safely for descendant removal in the current schema, so porting it as-is would leave stale index rows behind. The shipped slice is full-scan plus indexed-query plus explicit priority-path fallback.
+  - Explicit priority paths are trusted user context. `global_search_query_paths(...)` no longer filters those caller-provided paths back out through the builtin ignore list, which keeps palette fallback results working for folders under locations like `/tmp` when the user explicitly opened them.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/commandPalette.test.tsx src/test/ExplorerWorkspace.test.tsx src/test/explorerStore.test.ts --reporter=dot`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml global_search -- --nocapture`
+
 # 2026-04-22 - Sovereign Mobile PWA First Slice Now Runs Through lan_share
 
 - GreebleFS now has a dedicated mobile-first share mode implemented inside the existing Axum `lan_share` subsystem instead of trying to remote the desktop Tauri shell into Safari.

@@ -1,7 +1,7 @@
 mod ignore;
 mod index;
-mod query;
-mod scan;
+pub(crate) mod query;
+pub(crate) mod scan;
 mod scoring;
 mod state;
 mod types;

@@ -800,6 +800,54 @@ async fsIsProcessElevated() : Promise<Result<boolean, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async globalSearchInit() : Promise<Result<GlobalSearchStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("global_search_init") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async globalSearchGetStatus() : Promise<Result<GlobalSearchStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("global_search_get_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async globalSearchStartScan(settings: GlobalSearchScanSettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("global_search_start_scan", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async globalSearchCancelScan() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("global_search_cancel_scan") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async globalSearchQuery(query: string, options: GlobalSearchQueryOptions) : Promise<Result<GlobalSearchResultEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("global_search_query", { query, options }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async globalSearchQueryPaths(paths: string[], query: string, options: GlobalSearchQueryOptions) : Promise<Result<GlobalSearchResultEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("global_search_query_paths", { paths, query, options }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async explorerTagsList(paths: string[] | null) : Promise<Result<ExplorerTagSnapshot, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("explorer_tags_list", { paths }) };
@@ -1610,6 +1658,11 @@ export type FsJumpFilterRequest = { query: string; entries: FsJumpFilterEntry[];
 export type FsPermissionInfo = { readonly: boolean; display: string; unixMode: number | null; unixModeOctal: string | null }
 export type FsRuntimeCachePolicy = { dirListCacheTtlMs: number; searchNameIndexCacheTtlMs: number; searchContentIndexCacheTtlMs: number; entrySizeCacheTtlMs: number; entrySizeScanBudgetMs: number; searchContentIndexTotalBytesBudget: number; maxSearchContentFileBytes: number; searchMaxIndexedEntries: number }
 export type FsWriteFileContent = { kind: "text"; value: string } | { kind: "bytes"; value: number[] }
+export type GlobalSearchDriveScanError = { driveRoot: string; message: string }
+export type GlobalSearchQueryOptions = { limit: number; includeFiles: boolean; includeDirectories: boolean; exactMatch: boolean; typoTolerance: boolean; minScoreThreshold: number | null }
+export type GlobalSearchResultEntry = { name: string; extension: string | null; path: string; size: number; modifiedTime: number; accessedTime: number; createdTime: number; isFile: boolean; isDir: boolean; isSymlink: boolean; isHidden: boolean; score: number }
+export type GlobalSearchScanSettings = { scanDepth: number; ignoredPaths: string[]; driveRoots: string[]; parallelScan: boolean }
+export type GlobalSearchStatus = { isScanInProgress: boolean; isCommitting: boolean; isParallelScan: boolean; lastScanTime: number | null; indexedItemCount: number; indexSizeBytes: number; currentDriveRoot: string | null; driveScanErrors: GlobalSearchDriveScanError[]; isIndexValid: boolean; scannedDrivesCount: number; totalDrivesCount: number }
 export type GpuEffectiveTier = "safe" | "integrated" | "discrete"
 export type GpuFallbackReason = "safeTierForcedCpu" | "adapterUnavailable" | "softwareRendererBlocked" | "computeUnsupported" | "runtimeUnavailable" | "unsupportedTier" | "workloadBudgetExceeded" | "executionFailed"
 export type GpuRuntimeConfiguration = { tierOverride: GpuTierMode }

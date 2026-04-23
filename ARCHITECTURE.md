@@ -39,11 +39,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `install.ps1`
   Root Windows local clean-install/uninstall entrypoint. It builds with Bun and Cargo, removes the previous per-user install and user-state roots on demand, and reinstalls a fresh `greeblefs.exe` plus current-user Start Menu/Desktop shortcuts.
 - `src/App.tsx`
-  Overlay window shell, theme/runtime discovery, panel orchestration, and shell-level utilities such as the command-palette launchers for the mobile share server.
+  Overlay window shell, theme/runtime discovery, panel orchestration, and shell-level utilities such as the command-palette launchers for the mobile share server. The command palette now also hosts indexed global file search plus scan/rebuild controls, using host-owned stores/runtime seams instead of letting the explorer or an imported search package own shell truth.
 - `src/panels/panelRegistry.tsx`
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
-  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video/audio editor paths, the shared preview-header workflow-tab system (`Preview` / `Edit` plus lane-owned wildcard tabs), the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode.
+  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video/audio editor paths, the shared preview-header workflow-tab system (`Preview` / `Edit` plus lane-owned wildcard tabs), the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode. It also accepts workspace-owned external reveal/navigation requests so shell-level actions such as command-palette global-search results can reopen the active pane at a directory and select a concrete entry without bypassing explorer state.
 - `src/components/OverlayScrollArea.tsx`
   Shared overlay scroll host. It owns the explicit scrollbar contract for shipping-shell panes (`hidden`, `themed`, `explorer-file-list`) so explorer lists, popouts, and workbench/detail surfaces can share themed scroll behavior without per-component scrollbar CSS.
 - `src/components/ExplorerImageEditor.tsx`
@@ -182,6 +182,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Typed frontend seam for shared local-model management. It owns the curated model catalog status, cache-summary reads, and prewarm/download calls so Settings and future AI surfaces do not need to hand-roll Python-sidecar model-management requests.
 - `src/runtime/explorerBackend.ts`
   Typed explorer bridge for filesystem/search/task work. In addition to classic name/content search, it now owns the semantic-search command surface (`getSemanticIndexSummary`, `buildSemanticIndex`, `searchSemantic`, `findSemanticSimilar`) so Explorer React code never needs raw invoke strings for AI indexing or similarity work.
+- `src/runtime/globalSearchBackend.ts`
+  Typed TS bridge for the native global filename index. It wraps the Tauri/Specta commands, resolves local drive roots, merges indexed Tantivy hits with explicit priority-path fallback results, and keeps command-palette consumers out of generated-command details.
 - `src/runtime/modelThumbnailBackend.ts` and `src/runtime/modelThumbnailRenderer.ts`
   Frontend GPU-backed 3D model thumbnail generation for the explorer grid. The backend turns file metadata into cache keys, stores rendered poster data URLs through `src/components/explorer/explorerPreviewCache.ts`, and returns a normal `ExplorerEntryThumbnail` with `kind: "image"` so 3D model posters do not require a new explorer thumbnail contract.
 - `src/config/accelerationRuntime.ts`
@@ -212,6 +214,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Persisted explorer rail, named explorer session snapshots, and explorer-local workspace state for tabs plus slot-based workspace layouts.
 - `src/store/explorerTaskStore.ts`
   Explorer-local task-center store. It hydrates durable task history from the Rust backend, subscribes to live explorer task progress events, and owns the open/close state plus retry/cancel/clear helpers used by the explorer toolbar badge and command palette.
+- `src/store/globalSearchStore.ts`
+  Palette-scoped global-search state. It owns first-open initialization, status polling, debounced queries, scan lifecycle, and the latest indexed results shown in the shell command palette.
 - `src/store/settingsStore.ts`
   Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, machine-level developer-mode behavior, and the new `settings.home` contract (active Home pack id, usage-telemetry toggle, per-pack state blobs, and active preset selection by pack id). Home configuration should live here rather than inside ad hoc component-local storage.
 - `src/store/explorerStore.ts`
@@ -552,6 +556,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   `src-tauri/src/python_commands.rs` is the managed-runtime truth layer for interpreter discovery, virtualenv bootstrap, package installation, and direct Python execution.
   `src-tauri/src/python_sidecar.rs` owns the persistent managed sidecar lifecycle, workspace sync, stdio protocol, typed sidecar call/start/stop commands, and the backend-facing typed helper API (`action_ids`, decoded JSON helpers) for other Rust modules.
   `src-tauri/src/acceleration_runtime.rs` owns the cross-provider acceleration snapshot surfaced to the shell. It reads the native GPU runtime, optionally probes the Python sidecar for CUDA/Torch/ONNX capability, and turns those signals into a reusable provider catalog for future workload routing.
+  `src-tauri/src/global_search/` is the native indexed filename-search subsystem adapted from Sigma. It owns Tantivy schema/index lifecycle, full-drive scans, status tracking, indexed query, and explicit priority-path query helpers; the app intentionally does not expose Sigma's incremental `index_paths` flow because the upstream delete-by-path approach is unsafe for descendant cleanup in the current schema.
   `src-tauri/src/semantic_search.rs` is the explorer semantic-search orchestrator. It validates local-only roots/files, owns the app-local SQLite index contract plus manual task lifecycle, routes embedding/query/similarity work through the Python sidecar, and exposes the typed `build/query/find-similar/status` command surface through Specta.
   `src-tauri/src/python_pyo3.rs` owns the embedded `pyo3` seam for lightweight in-process Python helpers that do not need the long-lived sidecar, including decoded JSON helper functions for backend callers.
   `src-tauri/src/storage_commands.rs` is the storage-tab truth layer for native drive scans. It walks the filesystem on a background thread, tracks progress/cancellation, records logical vs allocated size, aggregates file-type buckets, caches direct child listings for the matrix view, builds a condensed tree plus largest-entry summaries, and prunes completed scan snapshots when newer scans start.
@@ -565,8 +570,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run test:unit src/test/filePreview.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx`
 - `npx vitest run src/test/panelRegistry.test.tsx src/test/storageTreemap.test.ts src/test/storageWorkbench.test.ts src/test/storageStore.test.ts --reporter=dot`
 - `bun run test:browser`
+- `bunx vitest run src/test/commandPalette.test.tsx src/test/ExplorerWorkspace.test.tsx src/test/explorerStore.test.ts --reporter=dot`
 - `bun run build:mobile`
 - `bun run build`
+- `cargo test --manifest-path src-tauri/Cargo.toml global_search -- --nocapture`
 - `python3 -m py_compile src-python/greeblefs_sidecar/*.py`
 - `node scripts/run-cargo-tests.mjs`
 - `cargo check --manifest-path src-tauri/Cargo.toml --quiet`

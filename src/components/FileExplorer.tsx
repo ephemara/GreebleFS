@@ -1672,9 +1672,9 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 }
 
 function resolveExplorerDragIntent(
-  event: Pick<React.DragEvent, "shiftKey" | "altKey" | "ctrlKey">,
+  event: Pick<React.DragEvent, "altKey">,
 ): ExplorerDragIntent {
-  return event.shiftKey ? "internal" : "native-out";
+  return event.altKey ? "native-out" : "internal";
 }
 
 function fitExplorerDragPreviewLabel(
@@ -8752,6 +8752,11 @@ export function FileExplorer({
     }
   }, [currentPath, externalRevealRequest, navigate]);
 
+  const currentDirectoryEntryLookup = useMemo(
+    () => new Map(entries.map((entry) => [entry.path, entry] as const)),
+    [entries],
+  );
+
   useEffect(() => {
     const pendingRevealRequest = pendingWorkspaceRevealRef.current;
     if (!pendingRevealRequest) {
@@ -9085,10 +9090,6 @@ export function FileExplorer({
   const visibleEntryLookup = useMemo(
     () => new Map(visibleEntries.map((entry) => [entry.path, entry] as const)),
     [visibleEntries],
-  );
-  const currentDirectoryEntryLookup = useMemo(
-    () => new Map(entries.map((entry) => [entry.path, entry] as const)),
-    [entries],
   );
   const visibleEntryIndexLookup = useMemo(
     () =>
@@ -21095,6 +21096,7 @@ export function FileExplorer({
       data-overlay-explorer
       data-overlay-explorer-view-mode={effectiveViewMode}
       data-overlay-explorer-experimental-mode={effectiveExperimentalViewMode}
+      {...getExplorerDropBindingElementProps(explorerScopeDropBinding)}
       style={explorerRootStyle}
       onDragOver={onExplorerDropScopeDragOver}
       onDragLeave={onExplorerDropScopeDragLeave}
@@ -21129,7 +21131,6 @@ export function FileExplorer({
       {/* ══ MAIN ══ */}
       <div
         data-overlay-explorer-plane="main"
-        {...getExplorerDropBindingElementProps(explorerScopeDropBinding)}
         style={mainColumnStyle}
       >
         {/* Toolbar */}

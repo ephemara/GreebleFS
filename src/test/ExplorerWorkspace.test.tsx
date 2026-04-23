@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { defaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
@@ -122,6 +122,7 @@ describe('ExplorerWorkspace', () => {
         hasBackup: false,
       },
       chromeEditSession: null,
+      pendingOpenRequest: null,
     });
   });
 
@@ -141,6 +142,7 @@ describe('ExplorerWorkspace', () => {
         hasBackup: false,
       },
       chromeEditSession: null,
+      pendingOpenRequest: null,
     });
   });
 
@@ -234,6 +236,28 @@ describe('ExplorerWorkspace', () => {
     });
     await waitFor(() => {
       expect(getRenderedFileExplorerProps(targetInstanceId as string).externalRefreshRequest).toBeTruthy();
+    });
+  });
+
+  it('forwards store reveal requests into the active pane explorer instance', async () => {
+    renderWorkspace();
+
+    act(() => {
+      useExplorerStore.getState().requestOpenInExplorer({
+        directoryPath: ' /workspace/target ',
+        selectionPath: ' /workspace/target/alpha.txt ',
+        pushHistory: false,
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        getRenderedFileExplorerProps(PRIMARY_EXPLORER_INSTANCE_ID).externalRevealRequest,
+      ).toMatchObject({
+        directoryPath: '/workspace/target',
+        selectionPath: '/workspace/target/alpha.txt',
+        pushHistory: false,
+      });
     });
   });
 

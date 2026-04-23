@@ -29,12 +29,11 @@ use crate::cloud_commands::{
 use crate::desktop_integration::{NativeIconRequest, NativeIconResponse};
 use crate::explorer_pro_commands::{
     ExplorerDuplicateGroup, ExplorerDuplicateScanStartResponse, ExplorerDuplicateScanStatus,
-    ExplorerHomeUsageRecord, ExplorerHomeUsageSnapshot, ExplorerPathTagAssignment,
-    ExplorerSavedSearchRecord, ExplorerSavedSearchSaveRequest, ExplorerSearchMode,
-    ExplorerTagMutationMode, ExplorerTagMutationRequest, ExplorerTagRecord, ExplorerTagSnapshot,
-    ExplorerTrashActionRecord, ExplorerTrashRestoreResult, ExplorerTrashedEntryRecord,
-    FsBatchRenameItem, FsBatchRenameMode, FsBatchRenamePreviewRow, FsBatchRenameRecipe,
-    FsBatchRenameResult,
+    ExplorerPathTagAssignment, ExplorerSavedSearchRecord, ExplorerSavedSearchSaveRequest,
+    ExplorerSearchMode, ExplorerTagMutationMode, ExplorerTagMutationRequest, ExplorerTagRecord,
+    ExplorerTagSnapshot, ExplorerTrashActionRecord, ExplorerTrashRestoreResult,
+    ExplorerTrashedEntryRecord, FsBatchRenameItem, FsBatchRenameMode, FsBatchRenamePreviewRow,
+    FsBatchRenameRecipe, FsBatchRenameResult,
 };
 use crate::fs_commands::{
     DriveInfo, EntryStorageInfo, ExplorerTaskHistoryClearScope, ExplorerTaskKind,
@@ -44,10 +43,6 @@ use crate::fs_commands::{
     FileTransferResult, FsChecksumEntryInfo, FsItemPropertiesInfo, FsJumpFilterEntry,
     FsJumpFilterMatch, FsJumpFilterRequest, FsPermissionInfo, FsRuntimeCachePolicy,
     FsWriteFileContent,
-};
-use crate::global_search::{
-    GlobalSearchDriveScanError, GlobalSearchQueryOptions, GlobalSearchResultEntry,
-    GlobalSearchScanSettings, GlobalSearchStatus,
 };
 use crate::gpu_runtime::{
     GpuEffectiveTier, GpuFallbackReason, GpuRuntimeConfiguration, GpuRuntimeStatusEvent,
@@ -252,12 +247,12 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::git_exec,
             crate::fs_commands::fs_get_home_dir,
             crate::fs_commands::fs_is_process_elevated,
-            crate::global_search::global_search_init,
-            crate::global_search::global_search_get_status,
-            crate::global_search::global_search_start_scan,
-            crate::global_search::global_search_cancel_scan,
-            crate::global_search::global_search_query,
-            crate::global_search::global_search_query_paths,
+            crate::global_search::scan::global_search_init,
+            crate::global_search::scan::global_search_get_status,
+            crate::global_search::scan::global_search_start_scan,
+            crate::global_search::scan::global_search_cancel_scan,
+            crate::global_search::query::global_search_query,
+            crate::global_search::query::global_search_query_paths,
             crate::explorer_pro_commands::explorer_tags_list,
             crate::explorer_pro_commands::explorer_tags_set_for_paths,
             crate::explorer_pro_commands::explorer_saved_searches_list,

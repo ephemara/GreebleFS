@@ -458,6 +458,36 @@ describe('explorerStore persistence', () => {
 });
 
 describe('explorerStore transient explorer state', () => {
+  it('stores trimmed pending explorer open requests with monotonic sequence ids', () => {
+    const store = useExplorerStore.getState();
+
+    store.requestOpenInExplorer({
+      directoryPath: '  C:\\Workspace\\Repo  ',
+      selectionPath: '  C:\\Workspace\\Repo\\notes.md  ',
+      pushHistory: false,
+    });
+
+    const firstRequest = useExplorerStore.getState().pendingOpenRequest;
+    expect(firstRequest).toMatchObject({
+      directoryPath: 'C:\\Workspace\\Repo',
+      selectionPath: 'C:\\Workspace\\Repo\\notes.md',
+      pushHistory: false,
+    });
+
+    store.requestOpenInExplorer({ directoryPath: '   ' });
+    expect(useExplorerStore.getState().pendingOpenRequest).toEqual(firstRequest);
+
+    store.requestOpenInExplorer({ directoryPath: 'C:\\Workspace\\Next' });
+    const secondRequest = useExplorerStore.getState().pendingOpenRequest;
+
+    expect(secondRequest).toMatchObject({
+      directoryPath: 'C:\\Workspace\\Next',
+      selectionPath: null,
+      pushHistory: true,
+    });
+    expect(secondRequest?.sequence ?? 0).toBeGreaterThan(firstRequest?.sequence ?? 0);
+  });
+
   it('stores and clears jump-filter state in a single transition', () => {
     const store = useExplorerStore.getState();
 

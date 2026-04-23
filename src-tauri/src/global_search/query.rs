@@ -5,7 +5,7 @@ use super::state::{GlobalSearchIndexFields, GLOBAL_SEARCH_STATE};
 use super::types::{GlobalSearchQueryOptions, GlobalSearchResultEntry};
 use super::utils::{is_hidden_path, metadata_times_unix_ms, path_extension_lowercase};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tantivy::collector::TopDocs;
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Query, TermQuery};
 use tantivy::schema::{IndexRecordOption, Value};
@@ -216,7 +216,6 @@ pub async fn global_search_query_paths(
     let min_score = options
         .min_score_threshold
         .unwrap_or_else(|| get_min_score_for_query_length(normalized_query.len()));
-    let ignored_paths = build_ignored_path_list(&[]);
 
     let mut searchable_paths = Vec::new();
     for path_string in paths {
@@ -239,10 +238,6 @@ pub async fn global_search_query_paths(
     let mut unique_results = BTreeMap::new();
     for path in searchable_paths {
         let path_string = path.to_string_lossy().to_string();
-        if is_ignored_path(&path_string, &ignored_paths) {
-            continue;
-        }
-
         let name = match path.file_name().and_then(|segment| segment.to_str()) {
             Some(name) => name.to_string(),
             None => continue,
