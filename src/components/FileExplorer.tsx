@@ -124,7 +124,12 @@ import {
   stepConstellationLens,
   type ConstellationLensId,
 } from "../config/constellationGraph";
-import { getFolderIconSrc, resolveFolderIcon } from "../config/folderIcons";
+import {
+  getFolderIconSrc,
+  resolveFolderIcon,
+  type FolderIconRule,
+  type FolderIconValue,
+} from "../config/folderIcons";
 import type { InteractionMotionTriggerState } from "../config/interactionMotion";
 import {
   getBuiltInIconTheme,
@@ -3238,6 +3243,9 @@ function PreviewPanel({
   showHiddenFiles,
   editorSettings,
   shaderPerformanceMode,
+  iconTheme,
+  folderIconRules,
+  defaultFolderIcon,
   onOpenFolderPreviewEntry,
   onExtractArchive,
 }: {
@@ -3299,6 +3307,9 @@ function PreviewPanel({
   showHiddenFiles: boolean;
   editorSettings: import("../store/settingsStore").EditorSettings;
   shaderPerformanceMode: ShaderPerformanceMode;
+  iconTheme: OverlayResolvedIconTheme;
+  folderIconRules: readonly FolderIconRule[];
+  defaultFolderIcon: FolderIconValue;
   onOpenFolderPreviewEntry: (entry: FileEntry) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
 }) {
@@ -4565,6 +4576,9 @@ function PreviewPanel({
               archiveSize={preview.size}
               descriptor={preview.descriptor}
               onExtract={onExtractArchive}
+              iconTheme={iconTheme}
+              folderIconRules={folderIconRules}
+              defaultFolderIcon={defaultFolderIcon}
             />
           )}
           {preview.type === "folder" && (
@@ -4573,6 +4587,9 @@ function PreviewPanel({
               folderName={preview.name}
               showHiddenFiles={showHiddenFiles}
               onOpenEntry={onOpenFolderPreviewEntry}
+              iconTheme={iconTheme}
+              folderIconRules={folderIconRules}
+              defaultFolderIcon={defaultFolderIcon}
             />
           )}
           {preview.type === "font" && (
@@ -21007,6 +21024,9 @@ export function FileExplorer({
         showHiddenFiles={showHidden}
         editorSettings={editorSettings}
         shaderPerformanceMode={shaderPerformanceMode}
+        iconTheme={themeIconTheme}
+        folderIconRules={explorerSettings.folderIconRules}
+        defaultFolderIcon={explorerSettings.defaultFolderIcon}
         onOpenFolderPreviewEntry={openFolderPreviewEntry}
         onExtractArchive={(mode) => {
           if (preview.type === "archive") {

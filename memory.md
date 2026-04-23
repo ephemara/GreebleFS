@@ -1,3 +1,19 @@
+# 2026-04-23 - Folder And Archive Preview Rows Now Use Icon-Theme Glyphs Instead Of Generic Preview Icons
+
+- Explorer preview-pane folder listings and archive listings no longer render generic Lucide file/folder placeholders for every row.
+- Durable implementation shape:
+  - Added `src/components/explorerPreviewEntryIcons.tsx` as the shared helper for preview-pane row icons. It resolves file glyphs through the active icon theme, resolves folder glyphs through the explorer folder-icon rules/default folder icon, and normalizes archive entry metadata before the lane renders.
+  - `src/components/ExplorerFolderPreview.tsx` now renders icon-theme-backed row icons for folder contents and uses the same folder-icon configuration for its header/empty states. This lane still only calls `listExplorerDirUncached(...)`; it does not trigger thumbnail/native-preview generation.
+  - `src/components/ExplorerArchivePreview.tsx` now infers archive row metadata from the inspected archive path list, detects directory rows from explicit separators plus parent-path hints, and renders folder/file icons through the same helper instead of a one-size-fits-all `FileSearch` glyph.
+  - `src/components/FileExplorer.tsx` now passes the active `themeIconTheme`, `folderIconRules`, and `defaultFolderIcon` into both preview lanes so the preview pane stays aligned with the explorer’s current icon-theme/folder-icon setup.
+- Durable product note:
+  - Treat folder/archive preview row icons as icon-theme territory, not thumbnail territory. If future work wants richer preview chrome here, keep these lanes on managed icon resolution unless the user explicitly opts into heavier preview generation.
+  - Archive directory detection is heuristic because `fs_inspect_archive(...)` returns paths, not typed entry metadata. The current rule is: explicit trailing slash/backslash wins, otherwise any path that is a parent of another archive entry is treated as a directory.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerArchivePreview.test.tsx src/test/explorerFolderPreview.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "shows folder contents in preview pane when a folder is single-clicked in double-click mode" --reporter=dot --pool=forks`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-23 - Root Home Packs Now Ship Two Showcase Reference Packs
 
 - The managed `home-packs/` root is no longer empty. It now contains two authored reference packs meant to prove the upper bound of the Home-pack runtime rather than act like throwaway demos:

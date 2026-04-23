@@ -1,7 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FolderArchive, FileSearch, ArrowDownToLine, Loader, HardDriveDownload } from "@/components/AppIcons";
 import type { ExplorerArchiveFormatDescriptor } from "../config/explorerArchives";
+import type { FolderIconRule, FolderIconValue } from "../config/folderIcons";
+import type { OverlayResolvedIconTheme } from "../config/iconTheme";
 import { explorerBackendContract, type ExplorerArchiveExtractionMode } from "../runtime/explorerBackend";
+import {
+  buildArchivePreviewEntryMetadata,
+  ExplorerPreviewEntryIconImage,
+  resolveArchivePreviewEntryIconSrc,
+} from "./explorerPreviewEntryIcons";
 import { OverlayScrollArea } from "./OverlayScrollArea";
 
 export interface ExplorerArchivePreviewProps {
@@ -10,6 +17,9 @@ export interface ExplorerArchivePreviewProps {
   archiveSize: number;
   descriptor: ExplorerArchiveFormatDescriptor;
   onExtract: (mode: ExplorerArchiveExtractionMode) => void;
+  iconTheme?: OverlayResolvedIconTheme;
+  folderIconRules?: readonly FolderIconRule[];
+  defaultFolderIcon?: FolderIconValue;
 }
 
 export function ExplorerArchivePreview({
@@ -18,6 +28,9 @@ export function ExplorerArchivePreview({
   archiveSize,
   descriptor,
   onExtract,
+  iconTheme,
+  folderIconRules,
+  defaultFolderIcon,
 }: ExplorerArchivePreviewProps) {
   const [contents, setContents] = useState<string[] | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -57,8 +70,20 @@ export function ExplorerArchivePreview({
 
   const sortedContents = contents ? [...contents].sort() : [];
   const displayCount = 500;
+  const previewIconOptions = useMemo(
+    () => ({
+      iconTheme,
+      folderIconRules,
+      defaultFolderIcon,
+    }),
+    [defaultFolderIcon, folderIconRules, iconTheme],
+  );
+  const archivePreviewEntries = useMemo(
+    () => buildArchivePreviewEntryMetadata(sortedContents),
+    [sortedContents],
+  );
   const isTruncated = sortedContents.length > displayCount;
-  const renderContents = sortedContents.slice(0, displayCount);
+  const renderContents = archivePreviewEntries.slice(0, displayCount);
 
   return (
     <div
@@ -206,14 +231,18 @@ export function ExplorerArchivePreview({
             style={{ flex: 1, minHeight: 0 }}
             scrollbarStyle="explorer-file-list"
           >
-            {renderContents.map((path, index) => {
-              const segments = path.split(/[/\\]/);
-              const name = segments.pop() || path;
-              const dir = segments.join("/");
-              
+            {renderContents.map((entry) => {
+              const iconSrc = resolveArchivePreviewEntryIconSrc(
+                entry,
+                previewIconOptions,
+              );
               return (
                 <div
-                  key={index}
+                  key={entry.originalPath}
+                  data-overlay-preview-entry-path={entry.originalPath}
+                  data-overlay-preview-entry-kind={
+                    entry.isDirectory ? "folder" : "file"
+                  }
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -223,14 +252,14 @@ export function ExplorerArchivePreview({
                     fontSize: 12,
                   }}
                 >
-                  <FileSearch size={14} color="var(--overlay-text-dim)" />
+                  <ExplorerPreviewEntryIconImage src={iconSrc} size={16} />
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={name}>
-                      {name}
+                    <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={entry.name}>
+                      {entry.name}
                     </div>
-                    {dir && (
-                      <div style={{ fontSize: 10, color: "var(--overlay-text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={dir}>
-                        {dir}
+                    {entry.parentPath && (
+                      <div style={{ fontSize: 10, color: "var(--overlay-text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={entry.parentPath}>
+                        {entry.parentPath}
                       </div>
                     )}
                   </div>

@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { File, Folder, FolderOpen, Loader } from "@/components/AppIcons";
+import { Loader } from "@/components/AppIcons";
+import type { FolderIconRule, FolderIconValue } from "../config/folderIcons";
+import type { OverlayResolvedIconTheme } from "../config/iconTheme";
 import {
   listExplorerDirUncached,
   type ExplorerFileEntry,
 } from "../runtime/explorerBackend";
+import {
+  ExplorerPreviewEntryIconImage,
+  resolveExplorerPreviewEntryIconSrc,
+  resolveExplorerPreviewFolderIconSrc,
+} from "./explorerPreviewEntryIcons";
 import { OverlayScrollArea } from "./OverlayScrollArea";
 
 export interface ExplorerFolderPreviewProps {
@@ -11,6 +18,9 @@ export interface ExplorerFolderPreviewProps {
   folderName: string;
   showHiddenFiles: boolean;
   onOpenEntry: (entry: ExplorerFileEntry) => void;
+  iconTheme?: OverlayResolvedIconTheme;
+  folderIconRules?: readonly FolderIconRule[];
+  defaultFolderIcon?: FolderIconValue;
 }
 
 const FOLDER_PREVIEW_ENTRY_LIMIT = 500;
@@ -48,6 +58,9 @@ export function ExplorerFolderPreview({
   folderName,
   showHiddenFiles,
   onOpenEntry,
+  iconTheme,
+  folderIconRules,
+  defaultFolderIcon,
 }: ExplorerFolderPreviewProps) {
   const [entries, setEntries] = useState<ExplorerFileEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,6 +112,19 @@ export function ExplorerFolderPreview({
   const renderEntries = entries?.slice(0, FOLDER_PREVIEW_ENTRY_LIMIT) ?? [];
   const isTruncated =
     entries != null && entries.length > FOLDER_PREVIEW_ENTRY_LIMIT;
+  const previewIconOptions = useMemo(
+    () => ({
+      iconTheme,
+      folderIconRules,
+      defaultFolderIcon,
+    }),
+    [defaultFolderIcon, folderIconRules, iconTheme],
+  );
+  const folderHeaderIconSrc = useMemo(
+    () =>
+      resolveExplorerPreviewFolderIconSrc(folderPath, true, previewIconOptions),
+    [folderPath, previewIconOptions],
+  );
 
   return (
     <div
@@ -134,7 +160,7 @@ export function ExplorerFolderPreview({
             color: "var(--overlay-accent)",
           }}
         >
-          <FolderOpen size={28} strokeWidth={1.5} />
+          <ExplorerPreviewEntryIconImage src={folderHeaderIconSrc} size={28} />
         </div>
         <div style={{ textAlign: "center", display: "grid", gap: 4 }}>
           <div
@@ -251,7 +277,15 @@ export function ExplorerFolderPreview({
                 gap: 12,
               }}
             >
-              <Folder size={32} opacity={0.5} />
+              <ExplorerPreviewEntryIconImage
+                src={resolveExplorerPreviewFolderIconSrc(
+                  folderPath,
+                  false,
+                  previewIconOptions,
+                )}
+                size={32}
+                style={{ opacity: 0.5 }}
+              />
               <div style={{ fontSize: 13 }}>Empty Folder</div>
             </div>
           </div>
@@ -267,6 +301,8 @@ export function ExplorerFolderPreview({
                 <button
                   type="button"
                   key={entry.path}
+                  data-overlay-preview-entry-path={entry.path}
+                  data-overlay-preview-entry-kind={entry.is_dir ? "folder" : "file"}
                   onClick={() => onOpenEntry(entry)}
                   aria-label={
                     entry.is_dir
@@ -301,20 +337,13 @@ export function ExplorerFolderPreview({
                     event.currentTarget.style.background = "transparent";
                   }}
                 >
-                  <div
-                    style={{
-                      width: 20,
-                      height: 20,
-                      display: "grid",
-                      placeItems: "center",
-                      color: entry.is_dir
-                        ? "var(--overlay-accent)"
-                        : "var(--overlay-text-dim)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {entry.is_dir ? <Folder size={15} /> : <File size={15} />}
-                  </div>
+                  <ExplorerPreviewEntryIconImage
+                    src={resolveExplorerPreviewEntryIconSrc(
+                      entry,
+                      previewIconOptions,
+                    )}
+                    size={18}
+                  />
                   <div
                     style={{
                       minWidth: 0,
