@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 pub(super) const MDNS_SERVICE_TYPE: &str = "_http._tcp.local.";
 pub(super) const MDNS_HOSTNAME: &str = "sfm.local.";
@@ -45,6 +45,84 @@ pub(super) struct ActiveServer {
 
 pub(super) static ACTIVE_SERVER: once_cell::sync::Lazy<Arc<Mutex<Option<ActiveServer>>>> =
     once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(None)));
+
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MobileThemePaletteSnapshot {
+    pub app_background: String,
+    pub app_background_alt: String,
+    pub shell_background: String,
+    pub top_bar_background: String,
+    pub panel_background: String,
+    pub input_background: String,
+    pub text_primary: String,
+    pub text_muted: String,
+    pub border: String,
+    pub border_strong: String,
+    pub accent: String,
+    pub accent_strong: String,
+    pub accent_soft: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MobileThemeMetricsSnapshot {
+    pub control_radius: f64,
+    pub panel_radius: f64,
+    pub page_padding: f64,
+    pub panel_gap: f64,
+}
+
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MobileThemeSnapshot {
+    pub theme_id: String,
+    pub theme_name: String,
+    pub ui_font_family: String,
+    pub mono_font_family: String,
+    pub palette: MobileThemePaletteSnapshot,
+    pub metrics: MobileThemeMetricsSnapshot,
+    pub shadow: String,
+}
+
+impl Default for MobileThemeSnapshot {
+    fn default() -> Self {
+        Self {
+            theme_id: "operator".to_string(),
+            theme_name: "Operator".to_string(),
+            ui_font_family: "\"Avenir Next\", \"SF Pro Display\", \"Helvetica Neue\", sans-serif"
+                .to_string(),
+            mono_font_family:
+                "\"JetBrains Mono\", \"Fira Code\", \"Cascadia Code\", monospace".to_string(),
+            palette: MobileThemePaletteSnapshot {
+                app_background: "#07111a".to_string(),
+                app_background_alt: "#04070b".to_string(),
+                shell_background: "rgba(10, 18, 28, 0.9)".to_string(),
+                top_bar_background: "#101010".to_string(),
+                panel_background: "rgba(16, 28, 40, 0.96)".to_string(),
+                input_background: "rgba(8, 15, 24, 0.86)".to_string(),
+                text_primary: "#edf4ff".to_string(),
+                text_muted: "rgba(218, 232, 247, 0.74)".to_string(),
+                border: "rgba(121, 167, 216, 0.18)".to_string(),
+                border_strong: "rgba(121, 167, 216, 0.32)".to_string(),
+                accent: "#79d6ff".to_string(),
+                accent_strong: "#4fb8ff".to_string(),
+                accent_soft: "rgba(121, 214, 255, 0.12)".to_string(),
+            },
+            metrics: MobileThemeMetricsSnapshot {
+                control_radius: 16.0,
+                panel_radius: 24.0,
+                page_padding: 16.0,
+                panel_gap: 14.0,
+            },
+            shadow: "0 18px 48px rgba(0, 0, 0, 0.34)".to_string(),
+        }
+    }
+}
+
+pub(crate) static ACTIVE_MOBILE_THEME_SNAPSHOT: once_cell::sync::Lazy<
+    Arc<RwLock<MobileThemeSnapshot>>,
+> = once_cell::sync::Lazy::new(|| Arc::new(RwLock::new(MobileThemeSnapshot::default())));
 
 #[derive(Serialize, Deserialize, specta::Type)]
 pub struct LanShareResult {

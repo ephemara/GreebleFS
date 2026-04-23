@@ -116,6 +116,7 @@ import {
   globalSearchPaletteConfig,
 } from './config/globalSearch';
 import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './config/hotkeys';
+import { createMobileShareThemeSnapshot } from './config/mobileTheme';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   getNextLayoutProfileId,
@@ -203,6 +204,10 @@ import {
   stopMobileShareSession,
   useMobileShareStore,
 } from './store/mobileShareStore';
+import {
+  setActiveMobileShareThemeSnapshot,
+  syncMobileShareThemeSnapshot,
+} from './runtime/mobileShareThemeRuntime';
 import { createPythonRuntimeConfig } from './config/python';
 import {
   useSettingsStore,
@@ -790,6 +795,10 @@ function App() {
   const theme = resolvedAppearance.theme;
   const accent = theme.palette.accent;
   const workbench = resolvedAppearance.workbenchTheme;
+  const mobileShareThemeSnapshot = useMemo(
+    () => createMobileShareThemeSnapshot(resolvedAppearance),
+    [resolvedAppearance],
+  );
   const resolvedTopBarSelection = useMemo(
     () => resolveActiveTopBarSelection({
       requestedTopBarId: appearance.activeTopBarId,
@@ -838,6 +847,11 @@ function App() {
   const shouldWaitForWindowRouting = runtimePlatform === 'linux'
     && (!linuxDisplayServerResolved || (linuxDisplayServer === 'wayland' && !waylandDockHostStatusResolved));
   const canResizeOverlayShell = !currentHostUsesWaylandDockLayerShell;
+
+  useEffect(() => {
+    setActiveMobileShareThemeSnapshot(mobileShareThemeSnapshot);
+    void syncMobileShareThemeSnapshot(mobileShareThemeSnapshot);
+  }, [mobileShareThemeSnapshot]);
   const systemPresentationState = useMemo(
     () => resolveSystemPresentationState(systemSettings),
     [systemSettings],

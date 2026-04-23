@@ -12,6 +12,7 @@ import {
 } from '../config/mobileAccess';
 import { isExplorerTrackableFolderPath } from '../config/explorerVirtualLocations';
 import { getExplorerHomeDir } from './explorerBackend';
+import { ensureMobileShareThemeSnapshotSynced } from './mobileShareThemeRuntime';
 import { getTailscaleStatus } from './tailscaleBackend';
 import { commands, unwrapTauriResult } from './tauriClient';
 
@@ -247,6 +248,7 @@ export async function startMobileShareRuntime(
   }
 
   const sharePath = await resolveMobileSharePath(args.requestedPath);
+  await ensureMobileShareThemeSnapshotSynced();
   const tailscaleStatus = await ensureMobileShareRemoteAccessReady(args.remoteAccessMode);
   const result = unwrapTauriResult(await commands.lanShareStart(
     sharePath,

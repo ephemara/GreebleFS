@@ -15,7 +15,10 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 use super::streaming::{resolve_sub_path, share_root_label, stream_file_response};
-use super::types::{APP_ICON_PNG, APPLE_TOUCH_ICON_PNG, ShareState};
+use super::types::{
+    MobileThemeSnapshot, ACTIVE_MOBILE_THEME_SNAPSHOT, APP_ICON_PNG, APPLE_TOUCH_ICON_PNG,
+    ShareState,
+};
 
 const MOBILE_DEFAULT_PAGE_SIZE: usize = 160;
 const MOBILE_MAX_PAGE_SIZE: usize = 320;
@@ -56,6 +59,7 @@ struct MobileListResponse {
 pub(super) fn build_mobile_router(state: ShareState) -> Router {
     Router::new()
         .route("/api/list", get(mobile_list_handler))
+        .route("/api/theme", get(mobile_theme_handler))
         .route("/files/{*path}", get(mobile_file_handler))
         .route("/app-icon.png", get(app_icon_handler))
         .route("/apple-touch-icon.png", get(apple_touch_icon_handler))
@@ -70,6 +74,11 @@ async fn app_icon_handler() -> Response {
 
 async fn apple_touch_icon_handler() -> Response {
     build_icon_response(APPLE_TOUCH_ICON_PNG)
+}
+
+async fn mobile_theme_handler() -> Response {
+    let snapshot: MobileThemeSnapshot = ACTIVE_MOBILE_THEME_SNAPSHOT.read().await.clone();
+    axum::Json(snapshot).into_response()
 }
 
 fn build_icon_response(bytes: &'static [u8]) -> Response {

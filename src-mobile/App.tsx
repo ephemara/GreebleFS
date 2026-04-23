@@ -9,10 +9,11 @@ import {
 import {
   buildMobileFileUrl,
   fetchMobileListing,
+  fetchMobileThemeSnapshot,
   guessMediaKind,
   MOBILE_PAGE_SIZE,
 } from "./mobileApi";
-import type { MobileShareEntry } from "./types";
+import type { MobileShareEntry, MobileShareThemeSnapshot } from "./types";
 
 const MOBILE_ROW_HEIGHT = 72;
 const MOBILE_OVERSCAN_ROWS = 8;
@@ -57,6 +58,44 @@ function isIosSafari(): boolean {
   return isAppleMobile && isSafariEngine;
 }
 
+function buildMobileThemeCssVars(snapshot: MobileShareThemeSnapshot): Record<string, string> {
+  return {
+    "--mobile-font-ui": snapshot.uiFontFamily,
+    "--mobile-font-mono": snapshot.monoFontFamily,
+    "--mobile-bg": snapshot.palette.appBackground,
+    "--mobile-bg-alt": snapshot.palette.appBackgroundAlt,
+    "--mobile-surface": snapshot.palette.shellBackground,
+    "--mobile-surface-strong": snapshot.palette.panelBackground,
+    "--mobile-topbar-bg": snapshot.palette.topBarBackground,
+    "--mobile-input-bg": snapshot.palette.inputBackground,
+    "--mobile-border": snapshot.palette.border,
+    "--mobile-border-strong": snapshot.palette.borderStrong,
+    "--mobile-text": snapshot.palette.textPrimary,
+    "--mobile-text-muted": snapshot.palette.textMuted,
+    "--mobile-accent": snapshot.palette.accent,
+    "--mobile-accent-strong": snapshot.palette.accentStrong,
+    "--mobile-accent-soft": snapshot.palette.accentSoft,
+    "--mobile-shadow": snapshot.shadow,
+    "--mobile-control-radius": `${snapshot.metrics.controlRadius}px`,
+    "--mobile-panel-radius": `${snapshot.metrics.panelRadius}px`,
+    "--mobile-page-padding": `${snapshot.metrics.pagePadding}px`,
+    "--mobile-panel-gap": `${snapshot.metrics.panelGap}px`,
+  };
+}
+
+function applyMobileThemeSnapshot(snapshot: MobileShareThemeSnapshot): void {
+  const root = document.documentElement;
+  const themeVars = buildMobileThemeCssVars(snapshot);
+  Object.entries(themeVars).forEach(([key, value]) => {
+    root.style.setProperty(key, value);
+  });
+
+  const themeColorMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (themeColorMeta) {
+    themeColorMeta.content = snapshot.palette.appBackground;
+  }
+}
+
 function entryGlyph(entry: MobileShareEntry): string {
   if (entry.isDir) {
     return "▣";
@@ -84,9 +123,9 @@ export default function App() {
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [overlayEntry, setOverlayEntry] = useState<MobileShareEntry | null>(null);
   const [filterInput, setFilterInput] = useState("");
-  const [showInstallTip, setShowInstallTip] = useState(
-    isIosSafari() && !isStandaloneWebApp(),
-  );
+  const [isStandalone, setIsStandalone] = useState(isStandaloneWebApp());
+  const [installTipDismissed, setInstallTipDismissed] = useState(false);
+  const [themeSnapshot, setThemeSnapshot] = useState<MobileShareThemeSnapshot | null>(null);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const loadedPageKeysRef = useRef<Set<string>>(new Set());
@@ -94,6 +133,7 @@ export default function App() {
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const deferredFilterInput = useDeferredValue(filterInput.trim().toLowerCase());
+  const showInstallTip = !installTipDismissed && isIosSafari() && !isStandalone;
 
   const resetListingState = (nextPath: string) => {
     pendingPathRef.current = nextPath;
@@ -165,6 +205,68 @@ export default function App() {
     window.addEventListener("resize", updateViewportHeight);
     return () => {
       window.removeEventListener("resize", updateViewportHeight);
+    };
+  }, []);
+
+  useEffect(() => {
+    const syncStandaloneMode = () => {
+      setIsStandalone(isStandaloneWebApp());
+    };
+
+    const displayModeQuery = window.matchMedia("(display-mode: standalone)");
+    syncStandaloneMode();
+    if (typeof displayModeQuery.addEventListener === "function") {
+      displayModeQuery.addEventListener("change", syncStandaloneMode);
+    } else {
+      displayModeQuery.addListener(syncStandaloneMode);
+    }
+    window.addEventListener("pageshow", syncStandaloneMode);
+    document.addEventListener("visibilitychange", syncStandaloneMode);
+
+    return () => {
+      if (typeof displayModeQuery.removeEventListener === "function") {
+        displayModeQuery.removeEventListener("change", syncStandaloneMode);
+      } else {
+        displayModeQuery.removeListener(syncStandaloneMode);
+      }
+      window.removeEventListener("pageshow", syncStandaloneMode);
+      document.removeEventListener("visibilitychange", syncStandaloneMode);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTheme = async () => {
+      try {
+        const snapshot = await fetchMobileThemeSnapshot();
+        if (!cancelled) {
+          setThemeSnapshot(snapshot);
+          applyMobileThemeSnapshot(snapshot);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("GreebleFS Mobile: failed to load paired theme snapshot", error);
+        }
+      }
+    };
+
+    void loadTheme();
+
+    const intervalId = window.setInterval(() => {
+      void loadTheme();
+    }, 15000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadTheme();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -269,6 +371,14 @@ export default function App() {
         <div>
           <div className="mobile-topbar__eyebrow">Sovereign Mobile Link</div>
           <h1 className="mobile-topbar__title">{shareName}</h1>
+          <div className="mobile-topbar__meta">
+            <span className={`mobile-status-chip${isStandalone ? " mobile-status-chip--accent" : ""}`}>
+              {isStandalone ? "Home Screen App" : "Safari Preview"}
+            </span>
+            {themeSnapshot ? (
+              <span className="mobile-status-chip">{themeSnapshot.themeName}</span>
+            ) : null}
+          </div>
         </div>
         <button
           type="button"
@@ -283,12 +393,12 @@ export default function App() {
         <section className="install-tip">
           <div className="install-tip__title">Install as an app</div>
           <div className="install-tip__body">
-            In Safari, tap Share, then choose Add to Home Screen.
+            In Safari, tap Share, then choose Add to Home Screen so GreebleFS opens in standalone app mode with its own task switcher card and persistent mobile shell.
           </div>
           <button
             type="button"
             className="install-tip__dismiss"
-            onClick={() => setShowInstallTip(false)}
+            onClick={() => setInstallTipDismissed(true)}
           >
             Dismiss
           </button>

@@ -240,6 +240,842 @@ pub fn inspect_archive(path: &Path) -> Result<Vec<String>, String> {
     }
 }
 
+pub fn list_archive_dir(
+    path: &Path,
+    directory_path: &str,
+) -> Result<Vec<FsArchiveEntryListingEntry>, String> {
+    validate_archive_path(path)?;
+    let format = detect_archive_format(path).ok_or_else(|| unsupported_archive_error(path))?;
+    let normalized_directory_path = normalize_archive_entry_path(directory_path)?;
+    let directory_prefix = if normalized_directory_path.is_empty() {
+        String::new()
+    } else {
+        format!("{normalized_directory_path}/")
+    };
+
+    let mut visible_children = BTreeMap::<String, FsArchiveEntryListingEntry>::new();
+    for record in collect_archive_entry_records(path, format)? {
+        if !normalized_directory_path.is_empty()
+            && record.relative_path == normalized_directory_path
+        {
+            continue;
+        }
+
+        let child_remainder = if directory_prefix.is_empty() {
+            record.relative_path.as_str()
+        } else if let Some(remainder) = record.relative_path.strip_prefix(&directory_prefix) {
+            remainder
+        } else {
+            continue;
+        };
+
+        if child_remainder.is_empty() {
+            continue;
+        }
+
+        let mut child_segments = child_remainder.split('/').filter(|segment| !segment.is_empty());
+        let child_name = match child_segments.next() {
+            Some(value) => value,
+            None => continue,
+        };
+        let child_relative_path = if normalized_directory_path.is_empty() {
+            child_name.to_string()
+        } else {
+            format!("{normalized_directory_path}/{child_name}")
+        };
+        let is_direct_child = child_segments.next().is_none();
+        let is_directory = if is_direct_child { record.is_dir } else { true };
+
+        visible_children
+            .entry(child_relative_path.clone())
+            .and_modify(|entry| {
+                if is_directory {
+                    entry.is_dir = true;
+                    entry.size = 0;
+                    entry.extension.clear();
+                } else {
+                    entry.size = record.size;
+                    entry.modified = record.modified;
+                    entry.extension = archive_entry_extension(child_name);
+                }
+            })
+            .or_insert_with(|| FsArchiveEntryListingEntry {
+                relative_path: child_relative_path,
+                name: child_name.to_string(),
+                is_dir: is_directory,
+                size: if is_directory { 0 } else { record.size },
+                modified: if is_direct_child { record.modified } else { 0 },
+                extension: if is_directory {
+                    String::new()
+                } else {
+                    archive_entry_extension(child_name)
+                },
+            });
+    }
+
+    Ok(visible_children.into_values().collect())
+}
+
+pub fn materialize_archive_entry(
+    request: &FsArchiveEntryMaterializationRequest,
+) -> Result<FsArchiveEntryMaterializationResult, String> {
+    let archive_path = PathBuf::from(&request.archive_path);
+    validate_archive_path(&archive_path)?;
+    let format = detect_archive_format(&archive_path)
+        .ok_or_else(|| unsupported_archive_error(&archive_path))?;
+    let normalized_entry_path = normalize_archive_entry_path(&request.entry_path)?;
+
+    if normalized_entry_path.is_empty() {
+        let mode = match request.mode {
+            FsArchiveEntryMaterializationMode::StageTemporary => FsArchiveExtractionMode::OpenCached,
+            FsArchiveEntryMaterializationMode::ExtractHere => FsArchiveExtractionMode::ExtractHere,
+            FsArchiveEntryMaterializationMode::ExtractToNewFolder => {
+                FsArchiveExtractionMode::ExtractToNewFolder
+            }
+        };
+        let result = extract_archive(&FsArchiveExtractionRequest {
+            archive_path: request.archive_path.clone(),
+            mode,
+        })?;
+        return Ok(FsArchiveEntryMaterializationResult {
+            output_path: result.output_path,
+            materialized_entry_count: result.extracted_entry_count,
+            reused_staging_output: result.reused_cached_output,
+        });
+    }
+
+    let output_path = materialized_archive_entry_output_path(
+        &archive_path,
+        format,
+        &normalized_entry_path,
+        request.entry_is_dir,
+        request.mode,
+    )?;
+
+    if request.mode == FsArchiveEntryMaterializationMode::StageTemporary && output_path.exists() {
+        return Ok(FsArchiveEntryMaterializationResult {
+            output_path: output_path.to_string_lossy().into_owned(),
+            materialized_entry_count: 0,
+            reused_staging_output: true,
+        });
+    }
+
+    if request.mode == FsArchiveEntryMaterializationMode::StageTemporary {
+        let staging_root = output_path
+            .parent()
+            .ok_or_else(|| format!("Unable to derive archive staging root for {}", output_path.display()))?
+            .to_path_buf();
+        if staging_root.exists() {
+            let _ = fs::remove_dir_all(&staging_root);
+        }
+        fs::create_dir_all(&staging_root).map_err(|error| {
+            format!(
+                "Failed to create archive staging directory {}: {error}",
+                staging_root.display()
+            )
+        })?;
+    }
+
+    let materialized_entry_count = extract_archive_entry_to_path(
+        &archive_path,
+        format,
+        &normalized_entry_path,
+        request.entry_is_dir,
+        &output_path,
+    )?;
+
+    Ok(FsArchiveEntryMaterializationResult {
+        output_path: output_path.to_string_lossy().into_owned(),
+        materialized_entry_count,
+        reused_staging_output: false,
+    })
+}
+
+fn collect_archive_entry_records(
+    archive_path: &Path,
+    format: ArchiveFormat,
+) -> Result<Vec<ArchiveEntryRecord>, String> {
+    match format {
+        ArchiveFormat::Zip => collect_zip_archive_entry_records(archive_path),
+        ArchiveFormat::SevenZip => collect_seven_zip_archive_entry_records(archive_path),
+        ArchiveFormat::Tar => collect_tar_archive_entry_records(
+            File::open(archive_path)
+                .map(BufReader::new)
+                .map_err(|error| {
+                    format!("Failed to open archive {}: {error}", archive_path.display())
+                })?,
+        ),
+        ArchiveFormat::TarGz => collect_tar_archive_entry_records(GzDecoder::new(
+            File::open(archive_path)
+                .map(BufReader::new)
+                .map_err(|error| {
+                    format!("Failed to open archive {}: {error}", archive_path.display())
+                })?,
+        )),
+        ArchiveFormat::TarBz2 => collect_tar_archive_entry_records(BzDecoder::new(
+            File::open(archive_path)
+                .map(BufReader::new)
+                .map_err(|error| {
+                    format!("Failed to open archive {}: {error}", archive_path.display())
+                })?,
+        )),
+        ArchiveFormat::TarXz => collect_tar_archive_entry_records(XzDecoder::new(
+            File::open(archive_path)
+                .map(BufReader::new)
+                .map_err(|error| {
+                    format!("Failed to open archive {}: {error}", archive_path.display())
+                })?,
+        )),
+        ArchiveFormat::Gzip => Ok(vec![ArchiveEntryRecord {
+            relative_path: single_stream_output_name(archive_path, ".gz"),
+            is_dir: false,
+            size: fs::metadata(archive_path).map(|metadata| metadata.len()).unwrap_or(0),
+            modified: 0,
+        }]),
+        ArchiveFormat::Bzip2 => Ok(vec![ArchiveEntryRecord {
+            relative_path: single_stream_output_name(archive_path, ".bz2"),
+            is_dir: false,
+            size: fs::metadata(archive_path).map(|metadata| metadata.len()).unwrap_or(0),
+            modified: 0,
+        }]),
+        ArchiveFormat::Xz => Ok(vec![ArchiveEntryRecord {
+            relative_path: single_stream_output_name(archive_path, ".xz"),
+            is_dir: false,
+            size: fs::metadata(archive_path).map(|metadata| metadata.len()).unwrap_or(0),
+            modified: 0,
+        }]),
+    }
+}
+
+fn collect_zip_archive_entry_records(archive_path: &Path) -> Result<Vec<ArchiveEntryRecord>, String> {
+    let archive_file = File::open(archive_path)
+        .map(BufReader::new)
+        .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?;
+    let mut archive = ZipArchive::new(archive_file).map_err(|error| {
+        format!(
+            "Failed to read zip archive {}: {error}",
+            archive_path.display()
+        )
+    })?;
+
+    let mut records = Vec::new();
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index).map_err(|error| {
+            format!(
+                "Failed to inspect zip archive entry {} in {}: {error}",
+                index,
+                archive_path.display()
+            )
+        })?;
+        let relative_path = entry
+            .enclosed_name()
+            .map(path_to_archive_relative_string)
+            .ok_or_else(|| {
+                format!(
+                    "Zip archive contains an unsafe path and cannot be inspected: {}",
+                    entry.name()
+                )
+            })?;
+        records.push(ArchiveEntryRecord {
+            relative_path,
+            is_dir: entry.is_dir(),
+            size: entry.size(),
+            modified: 0,
+        });
+    }
+    Ok(records)
+}
+
+fn collect_tar_archive_entry_records<R: Read>(
+    reader: R,
+) -> Result<Vec<ArchiveEntryRecord>, String> {
+    let mut archive = Archive::new(reader);
+    let mut records = Vec::new();
+    let entries = archive
+        .entries()
+        .map_err(|error| format!("Failed to read tar archive entries: {error}"))?;
+
+    for entry_result in entries {
+        let entry = entry_result
+            .map_err(|error| format!("Failed to inspect tar archive entry: {error}"))?;
+        let relative_path = entry
+            .path()
+            .map_err(|error| format!("Failed to read tar archive entry path: {error}"))
+            .and_then(|path| {
+                sanitize_relative_path(path.as_ref())
+                    .ok_or_else(|| {
+                        format!(
+                            "Tar archive contains an unsafe path and cannot be inspected: {}",
+                            path.display()
+                        )
+                    })
+                    .map(|path| path_to_archive_relative_string(&path))
+            })?;
+        let entry_type = entry.header().entry_type();
+        if !(entry_type.is_dir() || entry_type.is_file()) {
+            continue;
+        }
+        records.push(ArchiveEntryRecord {
+            relative_path,
+            is_dir: entry_type.is_dir(),
+            size: entry.size(),
+            modified: 0,
+        });
+    }
+
+    Ok(records)
+}
+
+fn collect_seven_zip_archive_entry_records(
+    archive_path: &Path,
+) -> Result<Vec<ArchiveEntryRecord>, String> {
+    let archive = sevenz_rust::Archive::open(archive_path).map_err(|error| {
+        format!(
+            "Failed to read 7z archive {}: {error}",
+            archive_path.display()
+        )
+    })?;
+
+    let mut records = Vec::new();
+    for entry in &archive.files {
+        let relative_path = sanitize_relative_path(Path::new(entry.name()))
+            .ok_or_else(|| {
+                format!(
+                    "7z archive contains an unsafe path and cannot be inspected: {}",
+                    entry.name()
+                )
+            })
+            .map(|path| path_to_archive_relative_string(&path))?;
+        records.push(ArchiveEntryRecord {
+            relative_path,
+            is_dir: entry.is_directory(),
+            size: entry.size(),
+            modified: 0,
+        });
+    }
+
+    Ok(records)
+}
+
+fn materialized_archive_entry_output_path(
+    archive_path: &Path,
+    format: ArchiveFormat,
+    entry_path: &str,
+    entry_is_dir: bool,
+    mode: FsArchiveEntryMaterializationMode,
+) -> Result<PathBuf, String> {
+    let entry_name = archive_entry_leaf_name(entry_path).unwrap_or_else(|| {
+        if entry_is_dir {
+            archive_default_folder_name(archive_path, format)
+        } else {
+            "archive-entry".to_string()
+        }
+    });
+
+    match mode {
+        FsArchiveEntryMaterializationMode::StageTemporary => {
+            let staging_root = archive_cache_root()?
+                .join(cache_key_for_archive(archive_path)?)
+                .join("entry-stage")
+                .join(archive_entry_cache_key(entry_path, entry_is_dir));
+            Ok(staging_root.join(entry_name))
+        }
+        FsArchiveEntryMaterializationMode::ExtractHere => {
+            let parent_dir = archive_path.parent().ok_or_else(|| {
+                format!(
+                    "Archive path does not have a parent directory: {}",
+                    archive_path.display()
+                )
+            })?;
+            Ok(collision_free_destination(parent_dir.join(entry_name)))
+        }
+        FsArchiveEntryMaterializationMode::ExtractToNewFolder => {
+            let parent_dir = archive_path.parent().ok_or_else(|| {
+                format!(
+                    "Archive path does not have a parent directory: {}",
+                    archive_path.display()
+                )
+            })?;
+            let wrapper_root = collision_free_destination(
+                parent_dir.join(archive_default_folder_name(archive_path, format)),
+            );
+            Ok(wrapper_root.join(entry_name))
+        }
+    }
+}
+
+fn extract_archive_entry_to_path(
+    archive_path: &Path,
+    format: ArchiveFormat,
+    entry_path: &str,
+    entry_is_dir: bool,
+    output_path: &Path,
+) -> Result<u64, String> {
+    match format {
+        ArchiveFormat::Zip => {
+            extract_zip_archive_entry_to_path(archive_path, entry_path, entry_is_dir, output_path)
+        }
+        ArchiveFormat::SevenZip => extract_seven_zip_archive_entry_to_path(
+            archive_path,
+            entry_path,
+            entry_is_dir,
+            output_path,
+        ),
+        ArchiveFormat::Tar => extract_tar_archive_entry_to_path(
+            File::open(archive_path)
+                .map(BufReader::new)
+                .map_err(|error| {
+                    format!("Failed to open archive {}: {error}", archive_path.display())
+                })?,
+            entry_path,
+            entry_is_dir,
+            output_path,
+        ),
+        ArchiveFormat::TarGz => extract_tar_archive_entry_to_path(
+            GzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            entry_path,
+            entry_is_dir,
+            output_path,
+        ),
+        ArchiveFormat::TarBz2 => extract_tar_archive_entry_to_path(
+            BzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            entry_path,
+            entry_is_dir,
+            output_path,
+        ),
+        ArchiveFormat::TarXz => extract_tar_archive_entry_to_path(
+            XzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            entry_path,
+            entry_is_dir,
+            output_path,
+        ),
+        ArchiveFormat::Gzip => extract_single_stream_archive_entry_to_path(
+            GzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            single_stream_output_name(archive_path, ".gz"),
+            entry_path,
+            entry_is_dir,
+            output_path,
+        ),
+        ArchiveFormat::Bzip2 => extract_single_stream_archive_entry_to_path(
+            BzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            single_stream_output_name(archive_path, ".bz2"),
+            entry_path,
+            entry_is_dir,
+            output_path,
+        ),
+        ArchiveFormat::Xz => extract_single_stream_archive_entry_to_path(
+            XzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            single_stream_output_name(archive_path, ".xz"),
+            entry_path,
+            entry_is_dir,
+            output_path,
+        ),
+    }
+}
+
+fn extract_zip_archive_entry_to_path(
+    archive_path: &Path,
+    entry_path: &str,
+    entry_is_dir: bool,
+    output_path: &Path,
+) -> Result<u64, String> {
+    let archive_file = File::open(archive_path)
+        .map(BufReader::new)
+        .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?;
+    let mut archive = ZipArchive::new(archive_file).map_err(|error| {
+        format!(
+            "Failed to read zip archive {}: {error}",
+            archive_path.display()
+        )
+    })?;
+
+    let mut matched_any = false;
+    let mut extracted_entry_count = 0;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|error| {
+            format!(
+                "Failed to inspect zip archive entry {} in {}: {error}",
+                index,
+                archive_path.display()
+            )
+        })?;
+        let relative_path = entry
+            .enclosed_name()
+            .map(path_to_archive_relative_string)
+            .ok_or_else(|| {
+                format!(
+                    "Zip archive contains an unsafe path and cannot be extracted: {}",
+                    entry.name()
+                )
+            })?;
+        if !archive_record_matches_target(&relative_path, entry_path, entry_is_dir) {
+            continue;
+        }
+        matched_any = true;
+
+        let relative_output_path =
+            relative_path_within_archive_target(&relative_path, entry_path);
+        let destination_path =
+            materialized_archive_destination_path(output_path, relative_output_path);
+        if entry.is_dir() {
+            fs::create_dir_all(&destination_path).map_err(|error| {
+                format!(
+                    "Failed to create extracted directory {}: {error}",
+                    destination_path.display()
+                )
+            })?;
+            continue;
+        }
+
+        write_archive_reader_to_file(&mut entry, &destination_path)?;
+        extracted_entry_count += 1;
+    }
+
+    if !matched_any {
+        return Err(format!(
+            "Archive entry was not found: {} in {}",
+            entry_path,
+            archive_path.display()
+        ));
+    }
+
+    if entry_is_dir && !output_path.exists() {
+        fs::create_dir_all(output_path).map_err(|error| {
+            format!(
+                "Failed to create extracted directory {}: {error}",
+                output_path.display()
+            )
+        })?;
+    }
+
+    Ok(extracted_entry_count)
+}
+
+fn extract_tar_archive_entry_to_path<R: Read>(
+    reader: R,
+    entry_path: &str,
+    entry_is_dir: bool,
+    output_path: &Path,
+) -> Result<u64, String> {
+    let mut archive = Archive::new(reader);
+    let entries = archive
+        .entries()
+        .map_err(|error| format!("Failed to read tar archive entries: {error}"))?;
+
+    let mut matched_any = false;
+    let mut extracted_entry_count = 0;
+    for entry_result in entries {
+        let mut entry = entry_result
+            .map_err(|error| format!("Failed to inspect tar archive entry: {error}"))?;
+        let relative_path = entry
+            .path()
+            .map_err(|error| format!("Failed to read tar archive entry path: {error}"))
+            .and_then(|path| {
+                sanitize_relative_path(path.as_ref())
+                    .ok_or_else(|| {
+                        format!(
+                            "Tar archive contains an unsafe path and cannot be extracted: {}",
+                            path.display()
+                        )
+                    })
+                    .map(|path| path_to_archive_relative_string(&path))
+            })?;
+        if !archive_record_matches_target(&relative_path, entry_path, entry_is_dir) {
+            continue;
+        }
+        matched_any = true;
+
+        let relative_output_path =
+            relative_path_within_archive_target(&relative_path, entry_path);
+        let destination_path =
+            materialized_archive_destination_path(output_path, relative_output_path);
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_dir() {
+            fs::create_dir_all(&destination_path).map_err(|error| {
+                format!(
+                    "Failed to create extracted directory {}: {error}",
+                    destination_path.display()
+                )
+            })?;
+            continue;
+        }
+        if !entry_type.is_file() {
+            continue;
+        }
+
+        write_archive_reader_to_file(&mut entry, &destination_path)?;
+        extracted_entry_count += 1;
+    }
+
+    if !matched_any {
+        return Err(format!("Archive entry was not found: {entry_path}"));
+    }
+
+    if entry_is_dir && !output_path.exists() {
+        fs::create_dir_all(output_path).map_err(|error| {
+            format!(
+                "Failed to create extracted directory {}: {error}",
+                output_path.display()
+            )
+        })?;
+    }
+
+    Ok(extracted_entry_count)
+}
+
+fn extract_seven_zip_archive_entry_to_path(
+    archive_path: &Path,
+    entry_path: &str,
+    entry_is_dir: bool,
+    output_path: &Path,
+) -> Result<u64, String> {
+    let mut matched_any = false;
+    let mut extracted_entry_count = 0;
+
+    sevenz_rust::decompress_file_with_extract_fn(
+        archive_path,
+        output_path
+            .parent()
+            .unwrap_or_else(|| Path::new(".")),
+        |entry, reader, _| {
+            let relative_path = sanitize_relative_path(Path::new(entry.name()))
+                .ok_or_else(|| {
+                    sevenz_rust::Error::other(format!(
+                        "7z archive contains an unsafe path and cannot be extracted: {}",
+                        entry.name()
+                    ))
+                })
+                .map(|path| path_to_archive_relative_string(&path))?;
+            if !archive_record_matches_target(&relative_path, entry_path, entry_is_dir) {
+                return Ok(false);
+            }
+            matched_any = true;
+
+            let relative_output_path =
+                relative_path_within_archive_target(&relative_path, entry_path);
+            let destination_path =
+                materialized_archive_destination_path(output_path, relative_output_path);
+            if entry.is_directory() {
+                fs::create_dir_all(&destination_path)
+                    .map_err(sevenz_rust::Error::io)?;
+                return Ok(true);
+            }
+
+            write_archive_reader_to_file(reader, &destination_path)
+                .map_err(sevenz_rust::Error::other)?;
+            extracted_entry_count += 1;
+            Ok(true)
+        },
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to extract 7z archive entry {} from {}: {error}",
+            entry_path,
+            archive_path.display()
+        )
+    })?;
+
+    if !matched_any {
+        return Err(format!(
+            "Archive entry was not found: {} in {}",
+            entry_path,
+            archive_path.display()
+        ));
+    }
+
+    if entry_is_dir && !output_path.exists() {
+        fs::create_dir_all(output_path).map_err(|error| {
+            format!(
+                "Failed to create extracted directory {}: {error}",
+                output_path.display()
+            )
+        })?;
+    }
+
+    Ok(extracted_entry_count)
+}
+
+fn extract_single_stream_archive_entry_to_path<R: Read>(
+    mut reader: R,
+    output_name: String,
+    entry_path: &str,
+    entry_is_dir: bool,
+    output_path: &Path,
+) -> Result<u64, String> {
+    if entry_is_dir {
+        return Err("Single-stream archives do not contain directories.".to_string());
+    }
+    if entry_path != output_name {
+        return Err(format!(
+            "Archive entry was not found: {} (available entry: {})",
+            entry_path, output_name
+        ));
+    }
+
+    write_archive_reader_to_file(&mut reader, output_path)?;
+    Ok(1)
+}
+
+fn archive_record_matches_target(
+    record_path: &str,
+    target_path: &str,
+    target_is_dir: bool,
+) -> bool {
+    if target_path.is_empty() {
+        return true;
+    }
+
+    if target_is_dir {
+        return record_path == target_path
+            || record_path
+                .strip_prefix(target_path)
+                .and_then(|suffix| suffix.strip_prefix('/'))
+                .is_some();
+    }
+
+    record_path == target_path
+}
+
+fn relative_path_within_archive_target<'a>(
+    record_path: &'a str,
+    target_path: &str,
+) -> &'a str {
+    if target_path.is_empty() {
+        return record_path;
+    }
+
+    if record_path == target_path {
+        return "";
+    }
+
+    record_path
+        .strip_prefix(target_path)
+        .and_then(|suffix| suffix.strip_prefix('/'))
+        .unwrap_or(record_path)
+}
+
+fn materialized_archive_destination_path(
+    output_path: &Path,
+    relative_output_path: &str,
+) -> PathBuf {
+    if relative_output_path.is_empty() {
+        return output_path.to_path_buf();
+    }
+
+    output_path.join(relative_output_path)
+}
+
+fn write_archive_reader_to_file<R: Read>(
+    reader: &mut R,
+    output_path: &Path,
+) -> Result<(), String> {
+    if let Some(parent_dir) = output_path.parent() {
+        fs::create_dir_all(parent_dir).map_err(|error| {
+            format!(
+                "Failed to create extracted parent {}: {error}",
+                parent_dir.display()
+            )
+        })?;
+    }
+
+    let mut output_file = File::create(output_path).map_err(|error| {
+        format!(
+            "Failed to create extracted file {}: {error}",
+            output_path.display()
+        )
+    })?;
+    io::copy(reader, &mut output_file).map_err(|error| {
+        format!(
+            "Failed to write extracted file {}: {error}",
+            output_path.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn normalize_archive_entry_path(value: &str) -> Result<String, String> {
+    let normalized_value = value.trim().replace('\\', "/");
+    if normalized_value.is_empty() {
+        return Ok(String::new());
+    }
+
+    sanitize_relative_path(Path::new(&normalized_value))
+        .ok_or_else(|| format!("Archive entry contains an unsafe path: {value}"))
+        .map(|path| path_to_archive_relative_string(&path))
+}
+
+fn path_to_archive_relative_string(path: &Path) -> String {
+    path.components()
+        .filter_map(|component| match component {
+            Component::Normal(value) => Some(value.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn archive_entry_leaf_name(entry_path: &str) -> Option<String> {
+    entry_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .last()
+        .map(|segment| segment.to_string())
+}
+
+fn archive_entry_extension(entry_name: &str) -> String {
+    entry_name
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_lowercase())
+        .unwrap_or_default()
+}
+
+fn archive_entry_cache_key(entry_path: &str, entry_is_dir: bool) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(entry_path.as_bytes());
+    hasher.update([entry_is_dir as u8]);
+    hasher
+        .finalize()
+        .iter()
+        .map(|value| format!("{value:02x}"))
+        .collect()
+}
+
 fn extract_archive_to_directory(
     archive_path: &Path,
     format: ArchiveFormat,

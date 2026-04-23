@@ -1,15 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { FolderArchive, FileSearch, ArrowDownToLine, Loader, HardDriveDownload } from "@/components/AppIcons";
+
+import {
+  ArrowDownToLine,
+  FileSearch,
+  FolderArchive,
+  HardDriveDownload,
+  Loader,
+} from "@/components/AppIcons";
+
 import type { ExplorerArchiveFormatDescriptor } from "../config/explorerArchives";
 import type { FolderIconRule, FolderIconValue } from "../config/folderIcons";
 import type { OverlayResolvedIconTheme } from "../config/iconTheme";
-import { explorerBackendContract, type ExplorerArchiveExtractionMode } from "../runtime/explorerBackend";
 import {
-  buildArchivePreviewEntryMetadata,
+  explorerBackendContract,
+  type ExplorerArchiveExtractionMode,
+  type ExplorerFileEntry,
+} from "../runtime/explorerBackend";
+import {
   ExplorerPreviewEntryIconImage,
-  resolveArchivePreviewEntryIconSrc,
+  resolveExplorerPreviewEntryIconSrc,
 } from "./explorerPreviewEntryIcons";
 import { OverlayScrollArea } from "./OverlayScrollArea";
+import { useExplorerPreviewEntryDirectDrag } from "./useExplorerPreviewEntryDirectDrag";
 
 export interface ExplorerArchivePreviewProps {
   archivePath: string;
@@ -17,9 +29,30 @@ export interface ExplorerArchivePreviewProps {
   archiveSize: number;
   descriptor: ExplorerArchiveFormatDescriptor;
   onExtract: (mode: ExplorerArchiveExtractionMode) => void;
+  onOpenEntry: (entry: ExplorerFileEntry) => void;
+  onStartDragOutEntry?: (entry: ExplorerFileEntry) => void;
   iconTheme?: OverlayResolvedIconTheme;
   folderIconRules?: readonly FolderIconRule[];
   defaultFolderIcon?: FolderIconValue;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes < 1024 ** 4) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
+}
+
+function formatModifiedLabel(timestampMs: number): string | null {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(timestampMs));
 }
 
 export function ExplorerArchivePreview({
@@ -28,11 +61,13 @@ export function ExplorerArchivePreview({
   archiveSize,
   descriptor,
   onExtract,
+  onOpenEntry,
+  onStartDragOutEntry,
   iconTheme,
   folderIconRules,
   defaultFolderIcon,
 }: ExplorerArchivePreviewProps) {
-  const [contents, setContents] = useState<string[] | null>(null);
+  const [entries, setEntries] = useState<ExplorerFileEntry[] | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,18 +75,22 @@ export function ExplorerArchivePreview({
     let active = true;
     setLoading(true);
     setError(null);
-    setContents(null);
+    setEntries(null);
 
     explorerBackendContract
-      .inspectArchive(archivePath)
-      .then((items) => {
-        if (!active) return;
-        setContents(items);
+      .listArchiveDir(archivePath, "")
+      .then((nextEntries) => {
+        if (!active) {
+          return;
+        }
+        setEntries(nextEntries);
         setLoading(false);
       })
-      .catch((err) => {
-        if (!active) return;
-        setError(String(err));
+      .catch((nextError) => {
+        if (!active) {
+          return;
+        }
+        setError(String(nextError));
         setLoading(false);
       });
 
@@ -60,16 +99,14 @@ export function ExplorerArchivePreview({
     };
   }, [archivePath]);
 
-  function formatSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-    if (bytes < 1024 ** 4) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-    return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
-  }
-
-  const sortedContents = contents ? [...contents].sort() : [];
-  const displayCount = 500;
+  const folderCount = useMemo(
+    () => entries?.filter((entry) => entry.is_dir).length ?? 0,
+    [entries],
+  );
+  const fileCount = useMemo(
+    () => entries?.filter((entry) => !entry.is_dir).length ?? 0,
+    [entries],
+  );
   const previewIconOptions = useMemo(
     () => ({
       iconTheme,
@@ -78,12 +115,12 @@ export function ExplorerArchivePreview({
     }),
     [defaultFolderIcon, folderIconRules, iconTheme],
   );
-  const archivePreviewEntries = useMemo(
-    () => buildArchivePreviewEntryMetadata(sortedContents),
-    [sortedContents],
-  );
-  const isTruncated = sortedContents.length > displayCount;
-  const renderContents = archivePreviewEntries.slice(0, displayCount);
+  const { bindPreviewEntryDirectDrag, shouldSuppressPreviewEntryClick } =
+    useExplorerPreviewEntryDirectDrag<ExplorerFileEntry>({
+      onStartDrag: (entry) => {
+        onStartDragOutEntry?.(entry);
+      },
+    });
 
   return (
     <div
@@ -97,7 +134,6 @@ export function ExplorerArchivePreview({
         overflow: "hidden",
       }}
     >
-      {/* Header Info */}
       <div
         style={{
           padding: "24px",
@@ -144,25 +180,22 @@ export function ExplorerArchivePreview({
               alignItems: "center",
               justifyContent: "center",
               gap: 8,
+              flexWrap: "wrap",
             }}
           >
             <span>{descriptor.label}</span>
             <span>·</span>
             <span>{formatSize(archiveSize)}</span>
-            {contents && (
-              <>
-                <span>·</span>
-                <span>
-                  {contents.length} item{contents.length === 1 ? "" : "s"}
-                </span>
-              </>
-            )}
+            <span>·</span>
+            <span>{folderCount} folder{folderCount === 1 ? "" : "s"}</span>
+            <span>·</span>
+            <span>{fileCount} file{fileCount === 1 ? "" : "s"}</span>
           </div>
         </div>
 
-        {/* Actions */}
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <button
+            type="button"
             onClick={() => onExtract("extractHere")}
             style={{
               display: "flex",
@@ -182,6 +215,7 @@ export function ExplorerArchivePreview({
             Extract Here
           </button>
           <button
+            type="button"
             onClick={() => onExtract("extractToNewFolder")}
             style={{
               display: "flex",
@@ -203,25 +237,78 @@ export function ExplorerArchivePreview({
         </div>
       </div>
 
-      {/* Loading / Error / Contents */}
-      <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--overlay-explorer-preview-border)", fontSize: 11, fontWeight: 700, color: "var(--overlay-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", background: "var(--overlay-bg-panel)" }}>
-          Archive Contents
+      <div
+        style={{
+          flex: 1,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <div
+          style={{
+            padding: "12px 16px",
+            borderBottom: "1px solid var(--overlay-explorer-preview-border)",
+            fontSize: 11,
+            fontWeight: 700,
+            color: "var(--overlay-text-muted)",
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+            background: "var(--overlay-bg-panel)",
+          }}
+        >
+          Archive Root
         </div>
 
         {loading ? (
-          <div style={{ flex: 1, display: "grid", placeItems: "center", color: "var(--overlay-text-dim)", gap: 12 }}>
+          <div
+            style={{
+              flex: 1,
+              display: "grid",
+              placeItems: "center",
+              color: "var(--overlay-text-dim)",
+              gap: 12,
+            }}
+          >
             <Loader className="animate-spin" size={24} />
             <div style={{ fontSize: 12 }}>Inspecting archive...</div>
           </div>
         ) : error ? (
-          <div style={{ flex: 1, display: "grid", placeItems: "center", padding: 24, textAlign: "center", color: "var(--overlay-danger)", gap: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Failed to read archive</div>
-            <div style={{ fontSize: 12, opacity: 0.8, maxWidth: 300 }}>{error}</div>
+          <div
+            style={{
+              flex: 1,
+              display: "grid",
+              placeItems: "center",
+              padding: 24,
+              textAlign: "center",
+              color: "var(--overlay-danger)",
+              gap: 8,
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 600 }}>
+              Failed to read archive
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.8, maxWidth: 300 }}>
+              {error}
+            </div>
           </div>
-        ) : contents && contents.length === 0 ? (
-          <div style={{ flex: 1, display: "grid", placeItems: "center", color: "var(--overlay-text-dim)" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+        ) : entries && entries.length === 0 ? (
+          <div
+            style={{
+              flex: 1,
+              display: "grid",
+              placeItems: "center",
+              color: "var(--overlay-text-dim)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
               <FileSearch size={32} opacity={0.5} />
               <div style={{ fontSize: 13 }}>Empty Archive</div>
             </div>
@@ -231,46 +318,126 @@ export function ExplorerArchivePreview({
             style={{ flex: 1, minHeight: 0 }}
             scrollbarStyle="explorer-file-list"
           >
-            {renderContents.map((entry) => {
-              const iconSrc = resolveArchivePreviewEntryIconSrc(
+            {(entries ?? []).map((entry) => {
+              const modifiedLabel = formatModifiedLabel(entry.modified);
+              const previewEntryDragBindings = bindPreviewEntryDirectDrag(
                 entry,
-                previewIconOptions,
+                entry.path,
               );
               return (
-                <div
-                  key={entry.originalPath}
-                  data-overlay-preview-entry-path={entry.originalPath}
-                  data-overlay-preview-entry-kind={
-                    entry.isDirectory ? "folder" : "file"
+                <button
+                  type="button"
+                  key={entry.path}
+                  data-overlay-preview-entry-path={entry.path}
+                  data-overlay-preview-entry-kind={entry.is_dir ? "folder" : "file"}
+                  onClick={() => {
+                    if (shouldSuppressPreviewEntryClick(entry.path)) {
+                      return;
+                    }
+                    onOpenEntry(entry);
+                  }}
+                  aria-label={
+                    entry.is_dir
+                      ? `Open archive folder ${entry.name}`
+                      : `Open archive file ${entry.name}`
+                  }
+                  title={
+                    entry.is_dir
+                      ? `Open archive folder ${entry.name}`
+                      : `Open archive file ${entry.name}`
                   }
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
+                    gap: 10,
                     padding: "8px 16px",
                     borderBottom: "1px solid var(--overlay-border)",
                     fontSize: 12,
+                    width: "100%",
+                    borderLeft: "none",
+                    borderRight: "none",
+                    borderTop: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                  {...previewEntryDragBindings}
+                  onMouseEnter={(event) => {
+                    event.currentTarget.style.background =
+                      "var(--overlay-explorer-item-hover-bg)";
+                  }}
+                  onMouseLeave={(event) => {
+                    event.currentTarget.style.background = "transparent";
                   }}
                 >
-                  <ExplorerPreviewEntryIconImage src={iconSrc} size={16} />
-                  <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={entry.name}>
+                  <ExplorerPreviewEntryIconImage
+                    src={resolveExplorerPreviewEntryIconSrc(
+                      entry,
+                      previewIconOptions,
+                    )}
+                    size={18}
+                  />
+                  <div
+                    style={{
+                      minWidth: 0,
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 2,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 500,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={entry.name}
+                    >
                       {entry.name}
                     </div>
-                    {entry.parentPath && (
-                      <div style={{ fontSize: 10, color: "var(--overlay-text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={entry.parentPath}>
-                        {entry.parentPath}
+                    {modifiedLabel && (
+                      <div
+                        style={{
+                          color: "var(--overlay-text-dim)",
+                          fontSize: 10,
+                        }}
+                      >
+                        {modifiedLabel}
                       </div>
                     )}
                   </div>
-                </div>
+                  <div
+                    style={{
+                      flexShrink: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      color: "var(--overlay-text-dim)",
+                      fontSize: 10,
+                    }}
+                  >
+                    {!entry.is_dir && entry.extension && (
+                      <span
+                        style={{
+                          padding: "2px 6px",
+                          borderRadius: 999,
+                          border: "1px solid var(--overlay-explorer-chip-border)",
+                          background: "var(--overlay-explorer-chip-bg)",
+                          color: "var(--overlay-text-muted)",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        {entry.extension}
+                      </span>
+                    )}
+                    <span>{entry.is_dir ? "Folder" : formatSize(entry.size)}</span>
+                  </div>
+                </button>
               );
             })}
-            {isTruncated && (
-              <div style={{ padding: "16px", textAlign: "center", color: "var(--overlay-text-dim)", fontSize: 11, fontStyle: "italic" }}>
-                ... and {contents!.length - displayCount} more items
-              </div>
-            )}
           </OverlayScrollArea>
         )}
       </div>

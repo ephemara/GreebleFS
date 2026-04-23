@@ -29,6 +29,7 @@ import type { EditorProps as MonacoEditorProps } from "@monaco-editor/react";
 import {
   ChevronRight,
   ChevronLeft,
+  ArrowDownToLine,
   ArrowUp,
   Search,
   RefreshCw,
@@ -56,9 +57,11 @@ import {
   Waves,
   FilePlus,
   FolderPlus,
+  HardDriveDownload,
   CopyPlus,
   LayoutGrid,
   List,
+  MoreHorizontal,
   Save,
   SquareSplitHorizontal,
   Settings2,
@@ -79,8 +82,15 @@ import {
   type ExplorerContextMenuItemGroup,
 } from "../config/explorerContextMenu";
 import {
+  buildExplorerArchiveVirtualPath,
+  getExplorerArchiveContainerPath,
+  getExplorerArchiveVirtualCurrentFolderName,
+  getExplorerArchiveVirtualParentPath,
+  getExplorerArchiveVirtualRootLabel,
   getExplorerArchiveExtractToFolderLabel,
+  isExplorerArchiveVirtualPath,
   isExplorerArchiveEntry,
+  parseExplorerArchiveVirtualPath,
   type ExplorerArchiveFormatDescriptor,
 } from "../config/explorerArchives";
 import type {
@@ -1093,6 +1103,9 @@ function getPathLeaf(path: string): string {
   if (!trimmed || isExplorerHomePath(trimmed)) {
     return "Home";
   }
+  if (isExplorerArchiveVirtualPath(trimmed)) {
+    return getExplorerArchiveVirtualCurrentFolderName(trimmed);
+  }
   const parts = trimmed.split(/[\\/]/).filter(Boolean);
   return parts.length > 0 ? (parts[parts.length - 1] ?? trimmed) : trimmed;
 }
@@ -1101,6 +1114,9 @@ function getPathParent(path: string): string | null {
   const trimmed = path.trim().replace(/[/\\]+$/, "");
   if (!trimmed) {
     return null;
+  }
+  if (isExplorerArchiveVirtualPath(trimmed)) {
+    return getExplorerArchiveVirtualParentPath(trimmed);
   }
 
   if (/^[A-Za-z]:$/.test(trimmed)) {
@@ -1931,10 +1947,25 @@ function normalizeExplorerPath(path: string): string {
   if (path.startsWith("cloud://")) {
     return path.replace(/\/+$/, "") || path;
   }
+  if (isExplorerArchiveVirtualPath(path)) {
+    const archiveLocation = parseExplorerArchiveVirtualPath(path);
+    return archiveLocation
+      ? buildExplorerArchiveVirtualPath(archiveLocation)
+      : path.trim();
+  }
   return /^[A-Za-z]:$/.test(path) ? `${path}\\` : path;
 }
 
 function getExplorerParentPath(path: string): string {
+  if (isExplorerArchiveVirtualPath(path)) {
+    return (
+      getExplorerArchiveVirtualParentPath(path) ??
+      getExplorerArchiveContainerPath(
+        parseExplorerArchiveVirtualPath(path)?.archivePath ?? "",
+      ) ??
+      path
+    );
+  }
   if (path.startsWith("cloud://")) {
     const trimmed = path.replace(/\/+$/, "");
     const segments = trimmed.split("/");
@@ -2417,6 +2448,7 @@ function isLikelyExplorerPathInput(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
   if (trimmed.startsWith("cloud://")) return true;
+  if (isExplorerArchiveVirtualPath(trimmed)) return true;
   if (/^[A-Za-z]:[\\/]/.test(trimmed) || /^[A-Za-z]:$/.test(trimmed))
     return true;
   if (trimmed.startsWith("\\\\")) return true;
@@ -2433,6 +2465,9 @@ function resolveExplorerPathInput(
 ): string {
   const trimmed = input.trim();
   if (trimmed.startsWith("cloud://")) {
+    return normalizeExplorerPath(trimmed);
+  }
+  if (isExplorerArchiveVirtualPath(trimmed)) {
     return normalizeExplorerPath(trimmed);
   }
   const separator = getPlatformPathSeparator(runtimePlatform);
@@ -6951,6 +6986,7 @@ export function FileExplorer({
     createFile: createExplorerFile,
     deletePath: deleteExplorerPath,
     extractArchive: extractExplorerArchive,
+    materializeArchiveEntry: materializeExplorerArchiveEntry,
     getDrives: getExplorerDrives,
     getHomeDir: getExplorerHomeDir,
     getItemProperties: getExplorerItemProperties,
@@ -7289,6 +7325,7 @@ export function FileExplorer({
   });
   const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
+  const [showArchiveActionsMenu, setShowArchiveActionsMenu] = useState(false);
   const [rename, setRename] = useState<RenameState>({
     active: false,
     path: "",
@@ -7560,6 +7597,7 @@ export function FileExplorer({
   const explorerViewportScrollTopRef = useRef(0);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
+  const archiveActionsMenuAnchorRef = useRef<HTMLDivElement>(null);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
   const [zoomHudVisible, setZoomHudVisible] = useState(false);
@@ -7594,6 +7632,11 @@ export function FileExplorer({
       clientWidth: 0,
     });
   const currentPathIsHome = isExplorerHomePath(currentPath);
+  const currentArchiveVirtualLocation = useMemo(
+    () => parseExplorerArchiveVirtualPath(currentPath),
+    [currentPath],
+  );
+  const currentPathIsArchiveVirtual = currentArchiveVirtualLocation != null;
   const currentPathIsVirtual = isExplorerVirtualPath(currentPath);
   const currentPathIsCloud =
     currentPath.length > 0 && isCloudExplorerPath(currentPath);
@@ -8018,13 +8061,17 @@ export function FileExplorer({
   }, [preview]);
 
   useEffect(() => {
+    setShowArchiveActionsMenu(false);
+  }, [currentPath]);
+
+  useEffect(() => {
     if (preview.type !== "pdf") {
       setPdfPreviewChromeState(null);
     }
   }, [preview.path, preview.type]);
 
   useEffect(() => {
-    if (!showModeProfileMenu && !showLayoutMenu) {
+    if (!showModeProfileMenu && !showLayoutMenu && !showArchiveActionsMenu) {
       return undefined;
     }
 
@@ -8035,13 +8082,17 @@ export function FileExplorer({
       if (layoutMenuAnchorRef.current?.contains(event.target as Node)) {
         return;
       }
+      if (archiveActionsMenuAnchorRef.current?.contains(event.target as Node)) {
+        return;
+      }
       setShowModeProfileMenu(false);
       setShowLayoutMenu(false);
+      setShowArchiveActionsMenu(false);
     };
 
     window.addEventListener("mousedown", handlePointerDown);
     return () => window.removeEventListener("mousedown", handlePointerDown);
-  }, [showLayoutMenu, showModeProfileMenu]);
+  }, [showArchiveActionsMenu, showLayoutMenu, showModeProfileMenu]);
 
   const flushPendingExplorerMetrics = useCallback(
     (runtimePolicyMetadata: RuntimeCachePolicyTelemetryMetadata) => {
@@ -9919,6 +9970,95 @@ export function FileExplorer({
       void Promise.resolve(onAddBookmark(name, path)).catch(() => {});
     },
     [onAddBookmark],
+  );
+  const materializeArchiveVirtualEntry = useCallback(
+    async (
+      path: string,
+      entryIsDir: boolean,
+      mode:
+        | "stageTemporary"
+        | "extractHere"
+        | "extractToNewFolder" = "stageTemporary",
+    ) => {
+      const archiveLocation = parseExplorerArchiveVirtualPath(path);
+      if (!archiveLocation) {
+        return path;
+      }
+
+      const result = await materializeArchiveEntry({
+        archivePath: archiveLocation.archivePath,
+        entryPath: archiveLocation.entryPath,
+        entryIsDir,
+        mode,
+      });
+      return result.outputPath;
+    },
+    [materializeArchiveEntry],
+  );
+  const resolveExplorerEntryNativeDragPath = useCallback(
+    async (entry: FileEntry) =>
+      isExplorerArchiveVirtualPath(entry.path)
+        ? materializeArchiveVirtualEntry(entry.path, entry.is_dir, "stageTemporary")
+        : entry.path,
+    [materializeArchiveVirtualEntry],
+  );
+  const resolveExplorerEntriesNativeDragPaths = useCallback(
+    async (entries: readonly FileEntry[]) => {
+      const dragPaths = await Promise.all(
+        entries.map((entry) => resolveExplorerEntryNativeDragPath(entry)),
+      );
+      return dragPaths.filter(
+        (path): path is string => typeof path === "string" && path.trim().length > 0,
+      );
+    },
+    [resolveExplorerEntryNativeDragPath],
+  );
+  const extractCurrentArchiveFolder = useCallback(
+    async (
+      mode: "extractHere" | "extractToNewFolder",
+      trashSourceArchive = false,
+    ) => {
+      if (!currentArchiveVirtualLocation) {
+        return;
+      }
+
+      const result = await materializeArchiveEntry({
+        archivePath: currentArchiveVirtualLocation.archivePath,
+        entryPath: currentArchiveVirtualLocation.entryPath,
+        entryIsDir: true,
+        mode,
+      });
+
+      if (trashSourceArchive) {
+        await trashExplorerPaths([currentArchiveVirtualLocation.archivePath]);
+      }
+
+      invalidateExplorerResultCaches();
+      await navigate(result.outputPath, true);
+      await refresh();
+    },
+    [
+      currentArchiveVirtualLocation,
+      materializeArchiveEntry,
+      navigate,
+      refresh,
+      trashExplorerPaths,
+    ],
+  );
+  const runArchiveToolbarAction = useCallback(
+    async (
+      mode: "extractHere" | "extractToNewFolder",
+      trashSourceArchive = false,
+    ) => {
+      try {
+        await extractCurrentArchiveFolder(mode, trashSourceArchive);
+      } catch (actionError) {
+        setError(String(actionError));
+      } finally {
+        setShowArchiveActionsMenu(false);
+      }
+    },
+    [extractCurrentArchiveFolder],
   );
   const resolveDroppedBookmarkSources = useCallback(
     (paths: string[]) =>

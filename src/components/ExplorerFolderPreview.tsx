@@ -12,12 +12,14 @@ import {
   resolveExplorerPreviewFolderIconSrc,
 } from "./explorerPreviewEntryIcons";
 import { OverlayScrollArea } from "./OverlayScrollArea";
+import { useExplorerPreviewEntryDirectDrag } from "./useExplorerPreviewEntryDirectDrag";
 
 export interface ExplorerFolderPreviewProps {
   folderPath: string;
   folderName: string;
   showHiddenFiles: boolean;
   onOpenEntry: (entry: ExplorerFileEntry) => void;
+  onStartDragOutEntry?: (entry: ExplorerFileEntry) => void;
   iconTheme?: OverlayResolvedIconTheme;
   folderIconRules?: readonly FolderIconRule[];
   defaultFolderIcon?: FolderIconValue;
@@ -58,6 +60,7 @@ export function ExplorerFolderPreview({
   folderName,
   showHiddenFiles,
   onOpenEntry,
+  onStartDragOutEntry,
   iconTheme,
   folderIconRules,
   defaultFolderIcon,
@@ -125,6 +128,12 @@ export function ExplorerFolderPreview({
       resolveExplorerPreviewFolderIconSrc(folderPath, true, previewIconOptions),
     [folderPath, previewIconOptions],
   );
+  const { bindPreviewEntryDirectDrag, shouldSuppressPreviewEntryClick } =
+    useExplorerPreviewEntryDirectDrag<ExplorerFileEntry>({
+      onStartDrag: (entry) => {
+        onStartDragOutEntry?.(entry);
+      },
+    });
 
   return (
     <div
@@ -297,13 +306,22 @@ export function ExplorerFolderPreview({
             {renderEntries.map((entry) => {
               const modifiedLabel = formatModifiedLabel(entry.modified);
               const parentLabel = getEntryParentLabel(entry.path);
+              const previewEntryDragBindings = bindPreviewEntryDirectDrag(
+                entry,
+                entry.path,
+              );
               return (
                 <button
                   type="button"
                   key={entry.path}
                   data-overlay-preview-entry-path={entry.path}
                   data-overlay-preview-entry-kind={entry.is_dir ? "folder" : "file"}
-                  onClick={() => onOpenEntry(entry)}
+                  onClick={() => {
+                    if (shouldSuppressPreviewEntryClick(entry.path)) {
+                      return;
+                    }
+                    onOpenEntry(entry);
+                  }}
                   aria-label={
                     entry.is_dir
                       ? `Open folder ${entry.name}`
@@ -329,6 +347,7 @@ export function ExplorerFolderPreview({
                     cursor: "pointer",
                     textAlign: "left",
                   }}
+                  {...previewEntryDragBindings}
                   onMouseEnter={(event) => {
                     event.currentTarget.style.background =
                       "var(--overlay-explorer-item-hover-bg)";

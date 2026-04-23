@@ -3,7 +3,9 @@
 // open-with-default-app, open-as-admin (runas), delete, rename, copy.
 
 use crate::archive_ops::{
-    self, FsArchiveExtractionMode, FsArchiveExtractionRequest, FsArchiveExtractionResult,
+    self, FsArchiveEntryListingEntry, FsArchiveEntryMaterializationRequest,
+    FsArchiveEntryMaterializationResult, FsArchiveExtractionMode, FsArchiveExtractionRequest,
+    FsArchiveExtractionResult,
 };
 use crate::entry_size_cache::{
     delete_entry_size_subtree, load_entry_size_cache, mark_path_and_ancestors_dirty,
@@ -4278,6 +4280,30 @@ pub async fn fs_inspect_archive(path: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || archive_ops::inspect_archive(&target))
         .await
         .map_err(|error| format!("Archive inspect task join failure: {error}"))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_list_archive_dir(
+    archive_path: String,
+    directory_path: String,
+) -> Result<Vec<FsArchiveEntryListingEntry>, String> {
+    let target = PathBuf::from(archive_path);
+    tauri::async_runtime::spawn_blocking(move || {
+        archive_ops::list_archive_dir(&target, &directory_path)
+    })
+    .await
+    .map_err(|error| format!("Archive list task join failure: {error}"))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_materialize_archive_entry(
+    request: FsArchiveEntryMaterializationRequest,
+) -> Result<FsArchiveEntryMaterializationResult, String> {
+    tauri::async_runtime::spawn_blocking(move || archive_ops::materialize_archive_entry(&request))
+        .await
+        .map_err(|error| format!("Archive materialize task join failure: {error}"))?
 }
 
 #[tauri::command]

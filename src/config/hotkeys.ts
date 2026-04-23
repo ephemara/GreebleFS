@@ -35,6 +35,8 @@ export type HotkeyBindingKey =
   | 'calculateRecursiveSize'
   | 'revealInExplorer'
   | 'openAsAdmin'
+  | 'extractArchiveFolderHere'
+  | 'extractArchiveFolderToNewFolder'
   | 'goUpDirectory'
   | 'copyPath'
   | 'copySelection'
@@ -351,6 +353,20 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Open as Admin',
     description: 'Open the selected item with elevated permissions.',
     defaultValue: 'Ctrl+Alt+Enter',
+    scope: 'local',
+  },
+  {
+    key: 'extractArchiveFolderHere',
+    label: 'Extract Archive Folder Here',
+    description: 'Extract the current archive folder into the archive container directory.',
+    defaultValue: 'Ctrl+Alt+E',
+    scope: 'local',
+  },
+  {
+    key: 'extractArchiveFolderToNewFolder',
+    label: 'Extract Archive Folder to New Folder',
+    description: 'Extract the current archive folder into a fresh wrapper folder beside the archive.',
+    defaultValue: 'Ctrl+Alt+Shift+E',
     scope: 'local',
   },
   {

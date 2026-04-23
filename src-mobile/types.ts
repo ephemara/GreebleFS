@@ -1,3 +1,5 @@
+export type { MobileShareThemeSnapshot } from "../src/config/mobileTheme";
+
 export interface MobileShareEntry {
   name: string;
   relativePath: string;

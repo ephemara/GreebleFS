@@ -1,6 +1,7 @@
 import type {
   MobileShareEntry,
   MobileShareListingResponse,
+  MobileShareThemeSnapshot,
 } from "./types";
 
 export const MOBILE_PAGE_SIZE = 160;
@@ -98,4 +99,19 @@ export async function fetchMobileListing(
   }
 
   return (await response.json()) as MobileShareListingResponse;
+}
+
+export async function fetchMobileThemeSnapshot(): Promise<MobileShareThemeSnapshot> {
+  const response = await fetch('/api/theme', {
+    headers: {
+      Accept: 'application/json',
+      'Cache-Control': 'no-cache',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load mobile theme (${response.status})`);
+  }
+
+  return (await response.json()) as MobileShareThemeSnapshot;
 }
