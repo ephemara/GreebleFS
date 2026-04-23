@@ -63,7 +63,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/ExplorerShaderWorkbench.tsx`
   Shell-owned wrapper for the embedded shader preview/editor surface. It renders WGSL/HLSL/SPIR-V documents inside the explorer preview pane, owns edit-vs-preview presentation, exposes stage/entrypoint pickers plus scene-mode controls, renders the WebGPU host canvas when available, and falls back to diagnostics plus inspection output when live preview is unsupported.
 - `src/components/StoragePanel.tsx`
-  First-class storage forensics tab. It now follows the Explorer shell contract more closely: left drive/context rail, dense matrix-first workspace, optional split-map/types/focus modes, preview-pane-style inspector, keyboard navigation, and a visible batch cleanup queue for staged trash/delete actions.
+  First-class storage forensics tab. It now follows the Explorer shell contract more closely: left drive/context rail, dense matrix-first workspace, optional split-map/types/focus modes, a scroll-safe preview-pane-style inspector with a `Current Context` lane, keyboard navigation, indexed jump/search inside the active storage scope, and a visible batch cleanup queue for staged trash/delete actions.
 - `src/components/storage/storageTreemap.ts`
   Pure treemap layout helper for the storage tab. It turns the condensed native storage tree into deterministic SVG rectangles weighted by allocated bytes without mixing layout math into the panel component.
 - `src/components/storage/storageWorkbench.ts`

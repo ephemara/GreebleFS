@@ -48,12 +48,15 @@ import {
 } from '../runtime/storageBackend';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
+import { shouldRunGlobalSearchQuery } from '../config/globalSearch';
 import { layoutStorageTreemap } from './storage/storageTreemap';
 import {
+  buildStorageAncestorDirectoryChain,
   buildStorageMatrixRows,
   createStorageRootSummary,
   getParentPath,
   isStorageSnapshotReadyForDirectoryLoads,
+  isStoragePathWithinRoot,
   normalizeStorageWorkbenchPath,
   resolveTreemapFocusNode,
   sortStorageTypeBuckets,
@@ -72,6 +75,10 @@ import {
 import { ExplorerFolderPreview } from './ExplorerFolderPreview';
 import { ExplorerTaskStatusBadge } from './explorer/ExplorerTaskStatusBadge';
 import { useExplorerTaskProgressFeed } from '../store/explorerTaskStore';
+import {
+  queryGlobalSearch,
+  type GlobalSearchResultValue,
+} from '../runtime/globalSearchBackend';
 
 const POLL_INTERVAL_MS = 450;
 const TREEMAP_WIDTH = 960;
@@ -80,6 +87,7 @@ const STORAGE_RAIL_WIDTH_KEY = 'greeblefs-storage-rail-width-v2';
 const STORAGE_RAIL_WIDTH_DEFAULT = 268;
 const STORAGE_RAIL_WIDTH_MIN = 220;
 const STORAGE_RAIL_WIDTH_MAX = 360;
+const STORAGE_CONTEXT_SEARCH_RESULT_LIMIT = 24;
 
 interface StorageContextMenuState {
   path: string;
@@ -106,6 +114,16 @@ function formatPercent(value: number): string {
 
 function formatCount(value: number): string {
   return new Intl.NumberFormat().format(Math.max(0, value));
+}
+
+function formatModifiedLabel(timestampMs: number): string | null {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
+    return null;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(timestampMs));
 }
 
 function hashString(value: string): number {
@@ -387,6 +405,40 @@ function matchesQueueFilter(item: StorageQueuedItem, query: string): boolean {
   return item.name.toLowerCase().includes(normalizedQuery)
     || item.path.toLowerCase().includes(normalizedQuery)
     || (item.extension ?? '').toLowerCase().includes(normalizedQuery);
+}
+
+function formatRelativeStoragePath(path: string, rootPath: string | null): string {
+  if (!rootPath) {
+    return path;
+  }
+
+  const normalizedPath = normalizeStorageWorkbenchPath(path);
+  const normalizedRootPath = normalizeStorageWorkbenchPath(rootPath);
+  if (!normalizedPath || !normalizedRootPath || !isStoragePathWithinRoot(normalizedPath, normalizedRootPath)) {
+    return path;
+  }
+  if (normalizedPath === normalizedRootPath) {
+    return '.';
+  }
+
+  const separator = normalizedRootPath.includes('\\') ? '\\' : '/';
+  const prefix = normalizedRootPath.endsWith(separator)
+    ? normalizedRootPath
+    : `${normalizedRootPath}${separator}`;
+  return normalizedPath.slice(prefix.length) || '.';
+}
+
+function resolveStorageContextPath(
+  activeRootPath: string | null,
+  selectedEntry: StorageScanEntry | null,
+): string | null {
+  if (selectedEntry?.kind === 'directory') {
+    return selectedEntry.path;
+  }
+  if (selectedEntry) {
+    return getParentPath(selectedEntry.path) ?? activeRootPath;
+  }
+  return activeRootPath;
 }
 
 function StorageStatusBanner({
@@ -1056,30 +1108,315 @@ function StorageTypesSurface({
   );
 }
 
+function StorageCurrentContextPane({
+  activeRootPath,
+  contextSearchError,
+  contextSearchQuery,
+  contextSearchResults,
+  contextSearchScopePath,
+  isSearchingContext,
+  onContextSearchQueryChange,
+  onOpenSearchResult,
+  onSelectSearchResult,
+  selectedEntry,
+  selectedPathSet,
+}: {
+  activeRootPath: string | null;
+  contextSearchError: string | null;
+  contextSearchQuery: string;
+  contextSearchResults: GlobalSearchResultValue[];
+  contextSearchScopePath: string | null;
+  isSearchingContext: boolean;
+  onContextSearchQueryChange: (query: string) => void;
+  onOpenSearchResult: (result: GlobalSearchResultValue) => void;
+  onSelectSearchResult: (result: GlobalSearchResultValue) => void;
+  selectedEntry: StorageScanEntry | null;
+  selectedPathSet: Set<string>;
+}) {
+  const trimmedQuery = contextSearchQuery.trim();
+  const shouldRunQuery = shouldRunGlobalSearchQuery(trimmedQuery);
+  const scopeLabel = contextSearchScopePath
+    ? formatRelativeStoragePath(contextSearchScopePath, activeRootPath)
+    : null;
+  const scopeDescription = scopeLabel && scopeLabel !== '.'
+    ? scopeLabel
+    : 'scanned root';
+
+  return (
+    <SurfaceCard
+      title="Current Context"
+      subtitle={trimmedQuery
+        ? contextSearchScopePath
+          ? `Indexed jump inside ${scopeDescription}`
+          : 'Pick a scanned path to search'
+        : selectedEntry
+          ? selectedEntry.path
+          : 'Select a file or folder to inspect its local context.'}
+      style={{ minHeight: 0, minWidth: 0, height: '100%' }}
+    >
+      <div
+        data-testid="storage-current-context"
+        style={{
+          display: 'grid',
+          gridTemplateRows: 'auto minmax(0, 1fr)',
+          minHeight: 0,
+          minWidth: 0,
+          height: '100%',
+        }}
+      >
+        <div
+          style={{
+            display: 'grid',
+            gap: 8,
+            padding: 12,
+            borderBottom: '1px solid var(--overlay-border)',
+            background: 'rgba(255,255,255,0.02)',
+          }}
+        >
+          <input
+            data-testid="storage-context-search-input"
+            value={contextSearchQuery}
+            onChange={(event) => onContextSearchQueryChange(event.target.value)}
+            placeholder={contextSearchScopePath
+              ? 'Jump with indexed search inside this context'
+              : 'Pick a scanned path first'}
+            disabled={!contextSearchScopePath}
+            style={{
+              width: '100%',
+              minHeight: 34,
+              borderRadius: 10,
+              border: '1px solid var(--overlay-border)',
+              background: contextSearchScopePath
+                ? 'rgba(255,255,255,0.03)'
+                : 'rgba(255,255,255,0.02)',
+              color: contextSearchScopePath
+                ? 'var(--overlay-text-primary)'
+                : 'var(--overlay-text-muted)',
+              padding: '0 12px',
+              outline: 'none',
+            }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 10.5, color: 'var(--overlay-text-secondary)' }}>
+              {!contextSearchScopePath
+                ? 'Current context appears after the scan and selection settle.'
+                : trimmedQuery.length === 0
+                  ? `Browsing ${scopeDescription}. Type 2+ characters to jump with the indexed file search.`
+                  : !shouldRunQuery
+                    ? 'Type at least 2 characters to run indexed jump.'
+                    : isSearchingContext
+                      ? `Searching ${scopeDescription} through the new global index...`
+                      : `${formatCount(contextSearchResults.length)} indexed match${contextSearchResults.length === 1 ? '' : 'es'} in ${scopeDescription}.`}
+            </div>
+            {contextSearchScopePath ? (
+              <div
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 999,
+                  border: '1px solid color-mix(in srgb, var(--overlay-accent) 34%, var(--overlay-border))',
+                  background: 'color-mix(in srgb, var(--overlay-accent) 10%, rgba(255,255,255,0.02))',
+                  color: 'var(--overlay-accent)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                Indexed Jump
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+          {trimmedQuery.length > 0 ? (
+            !contextSearchScopePath ? (
+              <div style={{ padding: 18, fontSize: 11.5, color: 'var(--overlay-text-muted)' }}>
+                Pick a scanned path before running indexed jump from the storage context lane.
+              </div>
+            ) : !shouldRunQuery ? (
+              <div style={{ padding: 18, fontSize: 11.5, color: 'var(--overlay-text-muted)' }}>
+                Keep typing to search the indexed file graph inside this context.
+              </div>
+            ) : contextSearchError ? (
+              <div style={{ padding: 18, fontSize: 11.5, color: '#ffb0b0', lineHeight: 1.5 }}>
+                {contextSearchError}
+              </div>
+            ) : isSearchingContext ? (
+              <div style={{ minHeight: 0, height: '100%', display: 'grid', placeItems: 'center', color: 'var(--overlay-text-muted)' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                  <LoaderCircle size={15} className="spin" />
+                  Searching indexed results...
+                </span>
+              </div>
+            ) : contextSearchResults.length === 0 ? (
+              <div style={{ padding: 18, fontSize: 11.5, color: 'var(--overlay-text-muted)', lineHeight: 1.6 }}>
+                No indexed matches landed in this storage context. Try a broader term, switch selection, or rebuild the global index from the command palette if this scope is new.
+              </div>
+            ) : (
+              <OverlayScrollArea
+                style={{ minHeight: 0, height: '100%' }}
+                scrollbarStyle="explorer-file-list"
+                viewportStyle={{ padding: 8 }}
+              >
+                <div data-testid="storage-context-search-results" style={{ display: 'grid', gap: 8 }}>
+                  {contextSearchResults.map((result) => {
+                    const normalizedPath = normalizeStorageWorkbenchPath(result.path);
+                    const selected = selectedPathSet.has(normalizedPath);
+                    const relativePath = formatRelativeStoragePath(result.path, contextSearchScopePath);
+                    const modifiedLabel = formatModifiedLabel(result.modifiedTime);
+
+                    return (
+                      <button
+                        key={result.path}
+                        type="button"
+                        onClick={() => onSelectSearchResult(result)}
+                        onDoubleClick={() => onOpenSearchResult(result)}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'minmax(0, 1fr) auto',
+                          gap: 10,
+                          padding: '10px 12px',
+                          borderRadius: 12,
+                          border: selected
+                            ? '1px solid color-mix(in srgb, var(--overlay-accent) 62%, var(--overlay-border))'
+                            : '1px solid var(--overlay-border)',
+                          background: selected
+                            ? 'color-mix(in srgb, var(--overlay-accent) 10%, rgba(255,255,255,0.03))'
+                            : 'rgba(255,255,255,0.03)',
+                          color: 'var(--overlay-text-primary)',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div style={{ minWidth: 0, display: 'grid', gap: 4 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <div style={{ color: result.isDir ? 'var(--overlay-accent)' : 'var(--overlay-text-secondary)' }}>
+                              {result.isDir ? <Folder size={14} /> : <File size={14} />}
+                            </div>
+                            <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {result.name}
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 10.5, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {relativePath}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 10.5, color: 'var(--overlay-text-muted)' }}>
+                            <span>{result.isDir ? 'Folder' : formatBytes(result.size)}</span>
+                            {modifiedLabel ? <span>{modifiedLabel}</span> : null}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            alignSelf: 'start',
+                            padding: '3px 7px',
+                            borderRadius: 999,
+                            border: '1px solid var(--overlay-border)',
+                            background: 'rgba(255,255,255,0.04)',
+                            color: 'var(--overlay-text-secondary)',
+                            fontSize: 10,
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                          }}
+                        >
+                          {result.isDir ? 'Dir' : result.extension?.toUpperCase() ?? 'File'}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </OverlayScrollArea>
+            )
+          ) : selectedEntry?.kind === 'directory' ? (
+            <div style={{ minHeight: 0, minWidth: 0, height: '100%', overflow: 'hidden' }}>
+              <ExplorerFolderPreview
+                folderPath={selectedEntry.path}
+                folderName={selectedEntry.name}
+                showHiddenFiles
+                onOpenEntry={(entry) => {
+                  void openStorageEntry(entry.path);
+                }}
+              />
+            </div>
+          ) : (
+            <OverlayScrollArea
+              style={{ minHeight: 0, height: '100%' }}
+              scrollbarStyle="explorer-file-list"
+              viewportStyle={{ padding: 18 }}
+            >
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--overlay-text-primary)' }}>
+                  {selectedEntry?.name ?? 'Current context is standing by'}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--overlay-text-secondary)', lineHeight: 1.6 }}>
+                  {selectedEntry
+                    ? 'Files still use the storage inspector actions for open, reveal, trash, and delete. Use indexed jump above to pivot quickly through the current subtree.'
+                    : 'Select any file or folder from the storage workbench to inspect it here.'}
+                </div>
+                {selectedEntry ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                    <StorageMetric label="Path" value={formatRelativeStoragePath(selectedEntry.path, activeRootPath)} detail={selectedEntry.path} />
+                    <StorageMetric
+                      label="Modified View"
+                      value={selectedEntry.extension?.toUpperCase() ?? 'File'}
+                      detail={`${formatBytes(selectedEntry.allocatedBytes)} allocated · ${formatBytes(selectedEntry.logicalBytes)} logical`}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </OverlayScrollArea>
+          )}
+        </div>
+      </div>
+    </SurfaceCard>
+  );
+}
+
 function StorageInspectorPane({
+  activeRootPath,
   busyAction,
+  contextSearchError,
+  contextSearchQuery,
+  contextSearchResults,
+  contextSearchScopePath,
+  isSearchingContext,
   onAddSelectionToQueue,
+  onContextSearchQueryChange,
   onRemoveSelectionFromQueue,
   onDelete,
   onOpen,
+  onOpenSearchResult,
   onReveal,
   onRescanHere,
+  onSelectSearchResult,
   onTrash,
   selectionInQueue,
   selectedEntry,
   selectedEntries,
+  selectedPathSet,
 }: {
+  activeRootPath: string | null;
   busyAction: 'delete' | 'trash' | 'queue' | null;
+  contextSearchError: string | null;
+  contextSearchQuery: string;
+  contextSearchResults: GlobalSearchResultValue[];
+  contextSearchScopePath: string | null;
+  isSearchingContext: boolean;
   onAddSelectionToQueue: () => void;
+  onContextSearchQueryChange: (query: string) => void;
   onRemoveSelectionFromQueue: () => void;
   onDelete: () => void;
   onOpen: () => void;
+  onOpenSearchResult: (result: GlobalSearchResultValue) => void;
   onReveal: () => void;
   onRescanHere: () => void;
+  onSelectSearchResult: (result: GlobalSearchResultValue) => void;
   onTrash: () => void;
   selectionInQueue: boolean;
   selectedEntry: StorageScanEntry | null;
   selectedEntries: StorageScanEntry[];
+  selectedPathSet: Set<string>;
 }) {
   const aggregateAllocated = selectedEntries.reduce((sum, entry) => sum + entry.allocatedBytes, 0);
   const aggregateLogical = selectedEntries.reduce((sum, entry) => sum + entry.logicalBytes, 0);
@@ -1090,7 +1427,7 @@ function StorageInspectorPane({
       style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 12, minHeight: 0, minWidth: 0, height: '100%', overflow: 'hidden' }}
     >
       <SurfaceCard
-        title="Inspector"
+        title="Selection"
         subtitle={selectedEntry ? selectedEntry.path : 'Select a path to inspect.'}
       >
         <div style={{ display: 'grid', gap: 10, padding: 12 }}>
@@ -1142,29 +1479,19 @@ function StorageInspectorPane({
           </div>
         </div>
       </SurfaceCard>
-      <SurfaceCard title="Preview" subtitle={selectedEntry ? selectedEntry.path : 'No active selection.'}>
-        {selectedEntry?.kind === 'directory' ? (
-          <ExplorerFolderPreview
-            folderPath={selectedEntry.path}
-            folderName={selectedEntry.name}
-            showHiddenFiles
-            onOpenEntry={(entry) => {
-              void openStorageEntry(entry.path);
-            }}
-          />
-        ) : (
-          <div style={{ padding: 18, display: 'grid', gap: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--overlay-text-primary)' }}>
-              {selectedEntry?.name ?? 'Preview is standing by'}
-            </div>
-            <div style={{ fontSize: 11.5, color: 'var(--overlay-text-secondary)', lineHeight: 1.6 }}>
-              {selectedEntry
-                ? `Inline file preview is not wired for this storage lane yet, but the item stays fully operable from here. Use Open or Reveal for direct file workflows.`
-                : 'Select any file or folder to inspect it here.'}
-            </div>
-          </div>
-        )}
-      </SurfaceCard>
+      <StorageCurrentContextPane
+        activeRootPath={activeRootPath}
+        contextSearchError={contextSearchError}
+        contextSearchQuery={contextSearchQuery}
+        contextSearchResults={contextSearchResults}
+        contextSearchScopePath={contextSearchScopePath}
+        isSearchingContext={isSearchingContext}
+        onContextSearchQueryChange={onContextSearchQueryChange}
+        onOpenSearchResult={onOpenSearchResult}
+        onSelectSearchResult={onSelectSearchResult}
+        selectedEntry={selectedEntry}
+        selectedPathSet={selectedPathSet}
+      />
     </div>
   );
 }
@@ -1310,6 +1637,10 @@ export function StoragePanel() {
   const [panelError, setPanelError] = useState<string | null>(null);
   const [panelNotice, setPanelNotice] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<'delete' | 'trash' | 'queue' | null>(null);
+  const [contextSearchQuery, setContextSearchQuery] = useState('');
+  const [contextSearchResults, setContextSearchResults] = useState<GlobalSearchResultValue[]>([]);
+  const [contextSearchError, setContextSearchError] = useState<string | null>(null);
+  const [isSearchingContext, setIsSearchingContext] = useState(false);
   const [directoryEntriesByPath, setDirectoryEntriesByPath] = useState<Record<string, StorageScanEntry[]>>({});
   const [directoryLoadState, setDirectoryLoadState] = useState<Record<string, 'loading' | 'ready' | 'error'>>({});
   const [contextMenu, setContextMenu] = useState<StorageContextMenuState | null>(null);
@@ -1528,6 +1859,10 @@ export function StoragePanel() {
   }, [treemapFocusNode]);
 
   const activeRootPath = scanStatus?.rootPath ?? null;
+  const contextSearchScopePath = useMemo(
+    () => resolveStorageContextPath(activeRootPath, selectedEntry),
+    [activeRootPath, selectedEntry],
+  );
   const queueItems = useMemo(
     () => queue.itemOrder.map((path) => queue.itemsByPath[path]).filter((item): item is StorageQueuedItem => Boolean(item)),
     [queue.itemOrder, queue.itemsByPath],
@@ -1537,6 +1872,62 @@ export function StoragePanel() {
     () => selectedPaths.some((path) => queuePathSet.has(path)),
     [queuePathSet, selectedPaths],
   );
+
+  useEffect(() => {
+    const trimmedQuery = contextSearchQuery.trim();
+    if (!contextSearchScopePath || trimmedQuery.length === 0) {
+      setContextSearchResults([]);
+      setContextSearchError(null);
+      setIsSearchingContext(false);
+      return;
+    }
+    if (!shouldRunGlobalSearchQuery(trimmedQuery)) {
+      setContextSearchResults([]);
+      setContextSearchError(null);
+      setIsSearchingContext(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSearchingContext(true);
+    setContextSearchError(null);
+
+    const priorityPaths = [...new Set([
+      contextSearchScopePath,
+      activeRootPath,
+    ].filter((path): path is string => Boolean(path)))];
+
+    void queryGlobalSearch({
+      query: trimmedQuery,
+      limit: STORAGE_CONTEXT_SEARCH_RESULT_LIMIT,
+      priorityPaths,
+    })
+      .then((results) => {
+        if (cancelled) {
+          return;
+        }
+
+        setContextSearchResults(
+          results
+            .filter((result) => isStoragePathWithinRoot(result.path, contextSearchScopePath))
+            .slice(0, STORAGE_CONTEXT_SEARCH_RESULT_LIMIT),
+        );
+        setIsSearchingContext(false);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+
+        setContextSearchResults([]);
+        setContextSearchError(error instanceof Error ? error.message : String(error));
+        setIsSearchingContext(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRootPath, contextSearchQuery, contextSearchScopePath]);
 
   const applyQueueSelection = useCallback(() => {
     if (selectedEntries.length === 0) {
@@ -1635,6 +2026,34 @@ export function StoragePanel() {
       setBusyAction(null);
     }
   }, [activeRootPath, beginScan, selectedEntries, selectedEntry]);
+
+  const handleSelectIndexedResult = useCallback(async (result: GlobalSearchResultValue) => {
+    const normalizedPath = normalizeStorageWorkbenchPath(result.path);
+    if (!normalizedPath) {
+      return;
+    }
+
+    if (activeRootPath) {
+      const targetDirectoryPath = result.isDir
+        ? normalizedPath
+        : getParentPath(normalizedPath) ?? activeRootPath;
+      const ancestorChain = buildStorageAncestorDirectoryChain(activeRootPath, targetDirectoryPath);
+      if (ancestorChain.length > 0) {
+        setExpandedPaths([...new Set([...expandedPaths, ...ancestorChain])]);
+        for (const directoryPath of ancestorChain) {
+          await loadDirectory(directoryPath);
+        }
+      }
+    }
+
+    setSelectedPaths([normalizedPath], normalizedPath);
+    setFocusPath(normalizedPath);
+    matrixContainerRef.current?.focus();
+  }, [activeRootPath, expandedPaths, loadDirectory, setExpandedPaths, setFocusPath, setSelectedPaths]);
+
+  const handleOpenIndexedResult = useCallback((result: GlobalSearchResultValue) => {
+    void openStorageEntry(result.path);
+  }, []);
 
   const handleRowClick = useCallback((row: StorageMatrixRow, event: ReactMouseEvent<HTMLDivElement>) => {
     const orderedPaths = matrixRows.map((candidate) => candidate.path);
@@ -1965,17 +2384,27 @@ export function StoragePanel() {
   );
   const inspectorPane = (
     <StorageInspectorPane
+      activeRootPath={activeRootPath}
       busyAction={busyAction}
+      contextSearchError={contextSearchError}
+      contextSearchQuery={contextSearchQuery}
+      contextSearchResults={contextSearchResults}
+      contextSearchScopePath={contextSearchScopePath}
+      isSearchingContext={isSearchingContext}
       onAddSelectionToQueue={applyQueueSelection}
+      onContextSearchQueryChange={setContextSearchQuery}
       onRemoveSelectionFromQueue={handleRemoveSelectionFromQueue}
       onDelete={() => { void handleDelete(); }}
       onOpen={() => { void handleOpen(); }}
+      onOpenSearchResult={handleOpenIndexedResult}
       onReveal={() => { void handleReveal(); }}
       onRescanHere={() => { if (selectedEntry?.kind === 'directory') { void beginScan(selectedEntry.path); } }}
+      onSelectSearchResult={(result) => { void handleSelectIndexedResult(result); }}
       onTrash={() => { void handleTrash(); }}
       selectionInQueue={selectionInQueue}
       selectedEntry={selectedEntry}
       selectedEntries={selectedEntries}
+      selectedPathSet={selectedPathSet}
     />
   );
 

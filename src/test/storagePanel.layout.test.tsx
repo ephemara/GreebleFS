@@ -31,6 +31,10 @@ const storageBackendMocks = vi.hoisted(() => ({
   deleteStorageEntries: vi.fn(),
 }));
 
+const globalSearchBackendMocks = vi.hoisted(() => ({
+  queryGlobalSearch: vi.fn(),
+}));
+
 vi.mock('../runtime/storageBackend', () => ({
   getStorageRoots: storageBackendMocks.getStorageRoots,
   isStorageProcessElevated: storageBackendMocks.isStorageProcessElevated,
@@ -43,6 +47,10 @@ vi.mock('../runtime/storageBackend', () => ({
   trashStorageEntries: storageBackendMocks.trashStorageEntries,
   deleteStorageEntry: storageBackendMocks.deleteStorageEntry,
   deleteStorageEntries: storageBackendMocks.deleteStorageEntries,
+}));
+
+vi.mock('../runtime/globalSearchBackend', () => ({
+  queryGlobalSearch: globalSearchBackendMocks.queryGlobalSearch,
 }));
 
 describe('StoragePanel layout shell', () => {
@@ -181,6 +189,7 @@ describe('StoragePanel layout shell', () => {
     storageBackendMocks.trashStorageEntries.mockResolvedValue(undefined);
     storageBackendMocks.deleteStorageEntry.mockResolvedValue(undefined);
     storageBackendMocks.deleteStorageEntries.mockResolvedValue(undefined);
+    globalSearchBackendMocks.queryGlobalSearch.mockResolvedValue([]);
   });
 
   it('keeps the body constrained so matrix expansion stays inside the storage workbench viewport', async () => {
@@ -218,6 +227,104 @@ describe('StoragePanel layout shell', () => {
       gridTemplateRows: 'auto minmax(0, 1fr)',
       overflow: 'hidden',
       height: '100%',
+    });
+    expect(screen.getByTestId('storage-current-context')).toHaveStyle({
+      gridTemplateRows: 'auto minmax(0, 1fr)',
+      height: '100%',
+    });
+  });
+
+  it('uses indexed jump to reveal deeper matches inside the current storage context', async () => {
+    globalSearchBackendMocks.queryGlobalSearch.mockResolvedValue([
+      {
+        name: 'project.bin',
+        extension: 'bin',
+        path: '/home/alice/Dev/src/project.bin',
+        size: 160,
+        modifiedTime: 1_700_000_000_000,
+        accessedTime: 0,
+        createdTime: 0,
+        isFile: true,
+        isDir: false,
+        isSymlink: false,
+        isHidden: false,
+        score: 0.92,
+      },
+    ]);
+    storageBackendMocks.listStorageDirectory.mockImplementation(async (_scanId: string, path: string) => {
+      if (path === '/home/alice') {
+        return [
+          {
+            path: '/home/alice/Dev',
+            name: 'Dev',
+            kind: 'directory',
+            logicalBytes: 600,
+            allocatedBytes: 700,
+            wasteBytes: 100,
+            fileCount: 20,
+            directoryCount: 5,
+            depth: 1,
+            extension: null,
+          },
+        ];
+      }
+
+      if (path === '/home/alice/Dev') {
+        return [
+          {
+            path: '/home/alice/Dev/src',
+            name: 'src',
+            kind: 'directory',
+            logicalBytes: 256,
+            allocatedBytes: 320,
+            wasteBytes: 64,
+            fileCount: 8,
+            directoryCount: 1,
+            depth: 2,
+            extension: null,
+          },
+        ];
+      }
+
+      if (path === '/home/alice/Dev/src') {
+        return [
+          {
+            path: '/home/alice/Dev/src/project.bin',
+            name: 'project.bin',
+            kind: 'file',
+            logicalBytes: 128,
+            allocatedBytes: 160,
+            wasteBytes: 32,
+            fileCount: 1,
+            directoryCount: 0,
+            depth: 3,
+            extension: 'bin',
+          },
+        ];
+      }
+
+      return [];
+    });
+
+    render(<StoragePanel />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /home/i }));
+    fireEvent.click(await screen.findByText('Dev'));
+
+    const searchInput = await screen.findByTestId('storage-context-search-input');
+    fireEvent.change(searchInput, { target: { value: 'project' } });
+
+    await waitFor(() => {
+      expect(globalSearchBackendMocks.queryGlobalSearch).toHaveBeenCalledWith(expect.objectContaining({
+        query: 'project',
+        priorityPaths: ['/home/alice/Dev', '/home/alice'],
+      }));
+    });
+
+    fireEvent.click(await screen.findByText('project.bin'));
+
+    await waitFor(() => {
+      expect(storageBackendMocks.listStorageDirectory).toHaveBeenCalledWith('scan-1', '/home/alice/Dev/src');
     });
   });
 });

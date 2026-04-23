@@ -1,3 +1,18 @@
+# 2026-04-23 - Storage Tab Now Has Indexed Jump In Current Context And Its Inspector Scroll Owns The Pane
+
+- The storage workbench no longer feels trapped in the matrix when you move into the inspector side. The right-hand lane now has an explicit `Current Context` surface with its own scroll boundary, and it can use the new Everything-style global index to jump around the active storage scope quickly.
+- Durable implementation shape:
+  - `src/components/StoragePanel.tsx` now splits the inspector into a `Selection` card plus a `Current Context` card. The current-context card owns its own `auto + minmax(0, 1fr)` layout, keeps the preview/results viewport clipped to the inspector lane, and routes its scroll through dedicated overlay scroll hosts instead of relying on outer panel overflow.
+  - The same panel now wires a local indexed-jump flow through `src/runtime/globalSearchBackend.ts`. Typing 2+ characters in the current-context lane queries the new global filename index, filters hits back down to the active storage scope, and renders fast path results without pretending the index replaces storage-size truth.
+  - Clicking an indexed result now reveals it back into the storage matrix by expanding and loading the ancestor directory chain before selecting the target path. That reveal/routing math lives in `src/components/storage/storageWorkbench.ts` through the new root-membership and ancestor-chain helpers, so the panel does not hand-roll path ancestry logic inline.
+  - The inspector still falls back to the existing directory preview shell when no search query is active. File selections keep their action-oriented summary state there instead of trying to fake a heavy inline file preview for the storage lane.
+- Durable product note:
+  - Keep storage scan truth and indexed filename search distinct. The storage scan still owns allocated/logical bytes, subtree shares, treemap state, and type buckets; the global index is now the fast navigation layer for jumping around that scanned truth.
+  - The inspector lane should remain an independent scroll surface. Regressions that make wheel/trackpad input leak back into the main matrix again are storage-lane bugs, not explorer-preview niceties.
+- Validation:
+  - passed: `bunx vitest run src/test/storageWorkbench.test.ts src/test/storagePanel.layout.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-23 - Mobile Share Hover QR Now Renders Reliably And Can Show Tailnet Beside LAN
 
 - The phone button hover flow already had QR generation through the `qrcode` package, but the popover could still appear missing because the top-bar shell clipped absolutely positioned children and LAN-mode shares only surfaced a tailnet route when Tailscale mode was explicitly selected.

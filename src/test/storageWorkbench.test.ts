@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildStorageAncestorDirectoryChain,
   buildStorageMatrixRows,
   createStorageRootSummary,
   isStorageSnapshotReadyForDirectoryLoads,
+  isStoragePathWithinRoot,
   normalizeStorageWorkbenchPath,
   summarizeQueueEntries,
 } from '../components/storage/storageWorkbench';
@@ -106,6 +108,28 @@ describe('storageWorkbench', () => {
     expect(normalizeStorageWorkbenchPath('C:/Users/alice/')).toBe('C:\\Users\\alice');
     expect(normalizeStorageWorkbenchPath('/')).toBe('/');
     expect(normalizeStorageWorkbenchPath('/run/media/alice/Archive/')).toBe('/run/media/alice/Archive');
+  });
+
+  it('matches storage paths against roots across posix and windows separators', () => {
+    expect(isStoragePathWithinRoot('/home/alice/Dev/project.bin', '/home/alice/Dev')).toBe(true);
+    expect(isStoragePathWithinRoot('/home/alice/Downloads', '/home/alice/Dev')).toBe(false);
+    expect(isStoragePathWithinRoot('C:/Users/Alice/Project/file.bin', 'C:\\Users\\Alice')).toBe(true);
+    expect(isStoragePathWithinRoot('D:\\Scratch\\cache.bin', 'C:\\Users\\Alice')).toBe(false);
+  });
+
+  it('builds the ancestor chain needed to reveal indexed matches inside the matrix', () => {
+    expect(buildStorageAncestorDirectoryChain('/home/alice', '/home/alice/Dev/src')).toEqual([
+      '/home/alice',
+      '/home/alice/Dev',
+      '/home/alice/Dev/src',
+    ]);
+    expect(buildStorageAncestorDirectoryChain('C:\\', 'C:/Users/Alice/Projects')).toEqual([
+      'C:\\',
+      'C:\\Users',
+      'C:\\Users\\Alice',
+      'C:\\Users\\Alice\\Projects',
+    ]);
+    expect(buildStorageAncestorDirectoryChain('/home/alice', '/srv/data')).toEqual([]);
   });
 
   it('only loads directory entries for the active completed scan snapshot', () => {

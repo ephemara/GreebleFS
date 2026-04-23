@@ -21,6 +21,17 @@ function isWindowsStoragePath(path: string): boolean {
   return /^[A-Za-z]:/.test(path.trim());
 }
 
+function normalizeStorageComparisonPath(path: string): string {
+  const normalizedPath = normalizeStorageWorkbenchPath(path);
+  if (!normalizedPath) {
+    return '';
+  }
+
+  return isWindowsStoragePath(normalizedPath)
+    ? normalizedPath.toLowerCase()
+    : normalizedPath;
+}
+
 export function normalizeStorageWorkbenchPath(path: string): string {
   const trimmed = path.trim();
   if (!trimmed) {
@@ -238,6 +249,54 @@ export function sortStorageTypeBuckets(
   return [...buckets].sort((left, right) => {
     return right.allocatedBytes - left.allocatedBytes || left.label.localeCompare(right.label);
   });
+}
+
+export function isStoragePathWithinRoot(
+  candidatePath: string,
+  rootPath: string,
+): boolean {
+  const normalizedCandidatePath = normalizeStorageComparisonPath(candidatePath);
+  const normalizedRootPath = normalizeStorageComparisonPath(rootPath);
+  if (!normalizedCandidatePath || !normalizedRootPath) {
+    return false;
+  }
+  if (normalizedCandidatePath === normalizedRootPath) {
+    return true;
+  }
+
+  const boundary = normalizedRootPath.endsWith('\\') || normalizedRootPath.endsWith('/')
+    ? normalizedRootPath
+    : `${normalizedRootPath}${isWindowsStoragePath(normalizedRootPath) ? '\\' : '/'}`;
+  return normalizedCandidatePath.startsWith(boundary);
+}
+
+export function buildStorageAncestorDirectoryChain(
+  rootPath: string,
+  targetDirectoryPath: string,
+): string[] {
+  const normalizedRootPath = normalizeStorageWorkbenchPath(rootPath);
+  const normalizedTargetPath = normalizeStorageWorkbenchPath(targetDirectoryPath);
+  if (!normalizedRootPath || !normalizedTargetPath) {
+    return [];
+  }
+  if (!isStoragePathWithinRoot(normalizedTargetPath, normalizedRootPath)) {
+    return [];
+  }
+  if (normalizedTargetPath === normalizedRootPath) {
+    return [normalizedRootPath];
+  }
+
+  const reverseChain: string[] = [];
+  let currentPath: string | null = normalizedTargetPath;
+  while (currentPath) {
+    reverseChain.push(currentPath);
+    if (normalizeStorageComparisonPath(currentPath) === normalizeStorageComparisonPath(normalizedRootPath)) {
+      return reverseChain.reverse();
+    }
+    currentPath = getParentPath(currentPath);
+  }
+
+  return [];
 }
 
 export function getParentPath(path: string): string | null {
