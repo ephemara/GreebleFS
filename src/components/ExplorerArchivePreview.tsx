@@ -216,6 +216,26 @@ export function ExplorerArchivePreview({
           </button>
           <button
             type="button"
+            onClick={() => onExtract("extractToDirectory")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "var(--overlay-explorer-chip-bg)",
+              border: "1px solid var(--overlay-explorer-chip-border)",
+              color: "var(--overlay-text-primary)",
+              padding: "6px 12px",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            <FileSearch size={14} />
+            Extract To...
+          </button>
+          <button
+            type="button"
             onClick={() => onExtract("extractToNewFolder")}
             style={{
               display: "flex",
@@ -232,7 +252,7 @@ export function ExplorerArchivePreview({
             }}
           >
             <HardDriveDownload size={14} />
-            Extract to Folder
+            Extract to New Folder
           </button>
         </div>
       </div>

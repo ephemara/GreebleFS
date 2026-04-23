@@ -4971,6 +4971,7 @@ fn archive_task_initial_output_path(request: &FsArchiveExtractionRequest) -> Opt
         FsArchiveExtractionMode::ExtractHere => Path::new(&request.archive_path)
             .parent()
             .map(|path| path.to_string_lossy().into_owned()),
+        FsArchiveExtractionMode::ExtractToDirectory => request.target_directory.clone(),
         FsArchiveExtractionMode::OpenCached | FsArchiveExtractionMode::ExtractToNewFolder => None,
     }
 }
@@ -4984,6 +4985,7 @@ fn archive_task_registration(
     let (title_prefix, detail_suffix) = match request.mode {
         FsArchiveExtractionMode::OpenCached => ("Open", "cached contents"),
         FsArchiveExtractionMode::ExtractHere => ("Extract", "here"),
+        FsArchiveExtractionMode::ExtractToDirectory => ("Extract", "to selected folder"),
         FsArchiveExtractionMode::ExtractToNewFolder => ("Extract", "to a new folder"),
     };
     let detail = output_path
@@ -8745,5 +8747,35 @@ mod tests {
 
         let error = result.expect_err("slow fake git should time out");
         assert!(error.contains("timed out"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn archive_task_initial_output_path_uses_explicit_target_directory() {
+        let request = FsArchiveExtractionRequest {
+            archive_path: "/tmp/demo.zip".to_string(),
+            mode: FsArchiveExtractionMode::ExtractToDirectory,
+            target_directory: Some("/tmp/out".to_string()),
+        };
+
+        assert_eq!(
+            archive_task_initial_output_path(&request),
+            Some("/tmp/out".to_string())
+        );
+    }
+
+    #[test]
+    fn archive_task_registration_describes_selected_folder_extraction() {
+        let request = FsArchiveExtractionRequest {
+            archive_path: "/tmp/demo.zip".to_string(),
+            mode: FsArchiveExtractionMode::ExtractToDirectory,
+            target_directory: Some("/tmp/out".to_string()),
+        };
+
+        let registration =
+            archive_task_registration(&request, Some("/tmp/out".to_string()));
+
+        assert_eq!(registration.destination_path, Some("/tmp/out".to_string()));
+        assert!(registration.detail.contains("/tmp/out"));
+        assert!(registration.title.contains("Extract"));
     }
 }

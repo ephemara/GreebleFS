@@ -1,3 +1,24 @@
+# 2026-04-23 - Archives Now Browse As Read-Only Virtual Folders With Direct Drag-Out
+
+- Archive files no longer need to be fully extracted before they feel explorable. Opening a supported archive now enters a `greeblefs://archive?...` location from the current explorer cwd, and the preview pane can drag individual files out on demand.
+- Durable implementation shape:
+  - `src/config/explorerArchives.ts` is now the TS source of truth for archive virtual paths, parent-path resolution, breadcrumb segments, and human labels for archive roots/current folders.
+  - `src-tauri/src/archive_ops.rs` plus `src-tauri/src/fs_commands.rs` now expose typed archive directory listing and per-entry materialization. The Rust layer can stage a single file/folder temporarily, extract the current archive folder here, extract to a new folder, or extract to an explicit selected directory.
+  - `src/runtime/explorerBackend.ts` now treats archive virtual locations as a first-class explorer listing kind and adds the `listArchiveDir(...)` plus `materializeArchiveEntry(...)` bridge used by the shell.
+  - `src/components/FileExplorer.tsx` now opens supported archive files by navigating into the archive virtual route instead of immediately expanding the whole archive into cache-backed output. Nested archives inside an archive are staged temporarily, then reopened as their own archive virtual route.
+  - Archive-backed previews now keep two paths in play: the logical archive path for explorer identity/selection/history, and a staged real filesystem path for actual readers/editors/players when bytes must be materialized.
+  - `src/components/ExplorerArchivePreview.tsx` now renders from the typed archive-listing bridge, and both `ExplorerArchivePreview.tsx` and `ExplorerFolderPreview.tsx` support direct drag-out from preview rows via `src/components/useExplorerPreviewEntryDirectDrag.ts`.
+  - Explorer chrome now exposes an `archiveActions` toolbar control when the current location is an archive virtual folder. It lets the user extract the current virtual folder here or to a new folder, with optional trashing of the source archive after extraction. Matching hotkeys live in `src/config/hotkeys.ts` (`Ctrl+Alt+E` and `Ctrl+Alt+Shift+E`).
+  - Archive virtual locations are treated as read-only shells. `FileExplorer.tsx` now blocks mutation verbs and inbound drop targets there, and archive contents must leave the archive through direct drag-out, OS open, or explicit extract actions instead of copy/move/rename/paste.
+- Durable product note:
+  - Preserve the “virtual folder first, materialize on demand” model. The user should be able to navigate archives like normal folders, but the app should not silently spill archive contents into the working directory just to browse them.
+  - Keep logical archive paths stable in explorer state even when a preview/editor needs a staged real path underneath. Losing the logical path breaks breadcrumbs, selection, history, and the ability to return to the same archive entry after staging.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml archive -- --nocapture`
+  - passed: `bunx vitest run src/test/explorerArchivePreview.test.tsx src/test/explorerFolderPreview.test.tsx src/test/explorerBackend.bindings.test.ts src/test/hotkeys.test.ts --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-23 - Explorer Drag Hover Now Opens Folder Glyphs, Autoscrolls The Viewport, And Carries Real Stack Previews
 
 - The premium drag pass now has the three missing interaction pieces: destination folders feel alive before navigation, long lists can scroll under an active drag, and multi-file drags show a more truthful bundle preview.

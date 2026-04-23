@@ -171,6 +171,12 @@ import {
 } from './runtime/pluginPanelRequests';
 import { openFileOperationsWindow } from './runtime/fileOperationsWindow';
 import {
+  listenToExplorerPickerRequests,
+  openExplorerPicker,
+  publishExplorerPickerResult,
+  type ExplorerPickerRequest,
+} from './runtime/explorerPicker';
+import {
   listExplorerDir,
   openExplorerPath,
   queueExplorerTerminalDirectorySync,
@@ -582,8 +588,8 @@ function App() {
   const [homePacksError, setHomePacksError] = useState<string | null>(null);
   const [homePacksWarnings, setHomePacksWarnings] = useState<string[]>([]);
   const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
-  const [repositoryPickerRequestId, setRepositoryPickerRequestId] = useState(0);
-  const [isRepositoryPickerActive, setIsRepositoryPickerActive] = useState(false);
+  const [activeExplorerPickerRequest, setActiveExplorerPickerRequest] =
+    useState<ExplorerPickerRequest | null>(null);
   const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
 
@@ -1119,25 +1125,81 @@ function App() {
   }, [activeLayoutProfile.id, activePinnedPanelIds]);
   const handleRequestRepositoryImport = useCallback(() => {
     setPendingRepositoryImports([]);
-    setRepositoryPickerRequestId(current => current + 1);
-    setIsRepositoryPickerActive(true);
-    setPanelOpenStateDirectly('explorer');
-  }, [setPanelOpenStateDirectly]);
-  const handleCancelRepositoryImport = useCallback(() => {
-    setIsRepositoryPickerActive(false);
-  }, []);
-  const handleConfirmRepositoryImport = useCallback((paths: string[]) => {
-    const normalizedPaths = Array.from(new Set(paths.map(path => path.trim()).filter(Boolean)));
-    setIsRepositoryPickerActive(false);
-    if (normalizedPaths.length === 0) {
+    void openExplorerPicker({
+      kind: 'openFolders',
+      presentation: 'embedded',
+      title: 'Import Git Repositories',
+      confirmLabel: 'Add Repositories',
+      allowCreateDirectory: false,
+      startPath: explorerCurrentPath || null,
+    })
+      .then((pickerResult) => {
+        const normalizedPaths = Array.from(
+          new Set(
+            (pickerResult?.entries ?? [])
+              .map(entry => entry.path.trim())
+              .filter(Boolean),
+          ),
+        );
+        if (normalizedPaths.length === 0) {
+          return;
+        }
+        setPendingRepositoryImports(normalizedPaths);
+        setPanelOpenStateDirectly('git');
+      })
+      .catch((error) => {
+        console.error('OverlayTerm: failed to open repository import picker', error);
+      });
+  }, [explorerCurrentPath, setPanelOpenStateDirectly]);
+  const handleEmbeddedExplorerPickerCancel = useCallback(() => {
+    if (!activeExplorerPickerRequest) {
       return;
     }
-    setPendingRepositoryImports(normalizedPaths);
-    setPanelOpenStateDirectly('git');
-  }, [setPanelOpenStateDirectly]);
+
+    const fallbackDirectory =
+      activeExplorerPickerRequest.startPath
+      ?? explorerCurrentPath
+      ?? joinPlatformPath(
+        runtimePlatform === 'windows' ? 'C:\\' : '/',
+        '',
+      );
+
+    setActiveExplorerPickerRequest(null);
+    void publishExplorerPickerResult({
+      cancelled: true,
+      currentDirectory: fallbackDirectory,
+      nonce: activeExplorerPickerRequest.nonce,
+    });
+  }, [activeExplorerPickerRequest, explorerCurrentPath, runtimePlatform]);
+  const handleEmbeddedExplorerPickerConfirm = useCallback((result: {
+    currentDirectory: string;
+    entries: Array<{ path: string; name: string; kind: 'file' | 'folder' }>;
+  }) => {
+    if (!activeExplorerPickerRequest) {
+      return;
+    }
+
+    setActiveExplorerPickerRequest(null);
+    void publishExplorerPickerResult({
+      currentDirectory: result.currentDirectory,
+      entries: result.entries,
+      nonce: activeExplorerPickerRequest.nonce,
+    });
+  }, [activeExplorerPickerRequest]);
   const handleRepositoryImportsHandled = useCallback(() => {
     setPendingRepositoryImports([]);
   }, []);
+
+  useEffect(() => {
+    return listenToExplorerPickerRequests((request) => {
+      if (request.presentation !== 'embedded') {
+        return;
+      }
+
+      setActiveExplorerPickerRequest(request);
+      setPanelOpenStateDirectly('explorer');
+    });
+  }, [setPanelOpenStateDirectly]);
 
   // ── Boot store ──
   useEffect(() => { initTerminalStore(); }, [initTerminalStore]);
@@ -3230,15 +3292,7 @@ function App() {
         appearance: resolvedAppearance,
         explorerChromeControlSurface: 'toolbar',
         explorerLayoutMode: explorerPanelLayoutMode,
-        explorerRepoPicker: isRepositoryPickerActive
-          ? {
-              active: true,
-              allowMultiple: true,
-              requestId: repositoryPickerRequestId,
-              onConfirm: handleConfirmRepositoryImport,
-              onCancel: handleCancelRepositoryImport,
-            }
-          : null,
+        explorerPicker: activeExplorerPickerRequest,
         isOpen: isOverlayVisible,
         hideOverlay,
         pluginCommands,
@@ -3303,6 +3357,8 @@ function App() {
         onSetWindowMode: requestWindowModeChange,
         onActivatePanel: (panelId) => activatePanelRef.current(panelId),
         onOpenSettingsSection: (section) => openSettingsSectionRef.current(section),
+        onExplorerPickerConfirm: handleEmbeddedExplorerPickerConfirm,
+        onExplorerPickerCancel: handleEmbeddedExplorerPickerCancel,
         renderPluginsManager: () => (
           <PluginsManager
             appearance={resolvedAppearance}
@@ -3327,15 +3383,15 @@ function App() {
       folderPluginsError,
       folderPluginsLoading,
       handleAddBookmark,
-      handleCancelRepositoryImport,
-      handleConfirmRepositoryImport,
+      handleEmbeddedExplorerPickerCancel,
+      handleEmbeddedExplorerPickerConfirm,
       handleOpenInTerminal,
       handleOpenInFilesystemAquarium,
       handleRepositoryImportsHandled,
       handleRequestRepositoryImport,
       hideOverlay,
       isOverlayVisible,
-      isRepositoryPickerActive,
+      activeExplorerPickerRequest,
       authoredAnimations,
       authoredAnimationsError,
       authoredAnimationsLoading,
@@ -3374,7 +3430,6 @@ function App() {
       refreshAuthoredShaders,
       refreshFolderPlugins,
       requestWindowModeChange,
-      repositoryPickerRequestId,
       resolvedAppearance,
       combinedThemePackages,
       iconThemePackages,

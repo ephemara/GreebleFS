@@ -57,6 +57,8 @@ describe('hotkey config helpers', () => {
     expect(defaults.togglePreviewTerminal).toBe('Ctrl+Alt+T');
     expect(defaults.revealInExplorer).toBe('Ctrl+Alt+R');
     expect(defaults.openAsAdmin).toBe('Ctrl+Alt+Enter');
+    expect(defaults.extractArchiveFolderHere).toBe('Ctrl+Alt+E');
+    expect(defaults.extractArchiveFolderToNewFolder).toBe('Ctrl+Alt+Shift+E');
     expect(defaults.focusExplorerAddressBar).toBe('Ctrl+L');
     expect(defaults.toggleExplorerLayout).toBe('Ctrl+Shift+L');
     expect(defaults.searchExplorer).toBe('Ctrl+F');

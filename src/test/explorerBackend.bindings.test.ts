@@ -12,6 +12,8 @@ import {
   cancelExplorerTask,
   clearExplorerTaskHistory,
   extractExplorerArchive,
+  listExplorerArchiveDir,
+  materializeExplorerArchiveEntry,
   didExplorerTaskFail,
   getExplorerTaskProgressPercent,
   getExplorerTaskStatusLabel,
@@ -101,6 +103,8 @@ describe('explorer backend task bindings', () => {
     expect(typeof commands.fsCancelExplorerTask).toBe('function');
     expect(typeof commands.fsOpenArchive).toBe('function');
     expect(typeof commands.fsExtractArchive).toBe('function');
+    expect(typeof commands.fsListArchiveDir).toBe('function');
+    expect(typeof commands.fsMaterializeArchiveEntry).toBe('function');
     expect(typeof events.videoEngineStateEvent.listen).toBe('function');
     expect(typeof events.videoEngineStateEvent.emit).toBe('function');
     expect(typeof commands.videoResolvePreviewSource).toBe('function');
@@ -119,6 +123,8 @@ describe('explorer backend task bindings', () => {
     expect(typeof cancelExplorerTask).toBe('function');
     expect(typeof openExplorerArchive).toBe('function');
     expect(typeof extractExplorerArchive).toBe('function');
+    expect(typeof listExplorerArchiveDir).toBe('function');
+    expect(typeof materializeExplorerArchiveEntry).toBe('function');
   });
 
   it('forwards archive open and extraction requests through the generated Tauri contract', async () => {
@@ -138,20 +144,61 @@ describe('explorer backend task bindings', () => {
         reusedCachedOutput: false,
       },
     });
+    const listArchiveSpy = vi.spyOn(commands, 'fsListArchiveDir').mockResolvedValue({
+      status: 'ok',
+      data: [
+        {
+          relativePath: 'textures',
+          name: 'textures',
+          isDir: true,
+          size: 0,
+          modified: 1_700_000_000_000,
+          extension: '',
+        },
+      ],
+    });
+    const materializeSpy = vi
+      .spyOn(commands, 'fsMaterializeArchiveEntry')
+      .mockResolvedValue({
+        status: 'ok',
+        data: {
+          outputPath: '/tmp/archive-open/demo/textures',
+          materializedEntryCount: 1,
+          reusedStagingOutput: false,
+        },
+      });
 
     const openResult = await openExplorerArchive('/tmp/demo.zip');
     const extractResult = await extractExplorerArchive({
       archivePath: '/tmp/demo.zip',
-      mode: 'extractToNewFolder',
+      mode: 'extractToDirectory',
+      targetDirectory: '/tmp/out',
+    });
+    const listedEntries = await listExplorerArchiveDir('/tmp/demo.zip', 'textures');
+    const materializedEntry = await materializeExplorerArchiveEntry({
+      archivePath: '/tmp/demo.zip',
+      entryPath: 'textures',
+      entryIsDir: true,
+      mode: 'extractHere',
     });
 
     expect(openSpy).toHaveBeenCalledWith('/tmp/demo.zip');
     expect(extractSpy).toHaveBeenCalledWith({
       archivePath: '/tmp/demo.zip',
-      mode: 'extractToNewFolder',
+      mode: 'extractToDirectory',
+      targetDirectory: '/tmp/out',
+    });
+    expect(listArchiveSpy).toHaveBeenCalledWith('/tmp/demo.zip', 'textures');
+    expect(materializeSpy).toHaveBeenCalledWith({
+      archivePath: '/tmp/demo.zip',
+      entryPath: 'textures',
+      entryIsDir: true,
+      mode: 'extractHere',
     });
     expect(openResult.outputPath).toBe('/tmp/archive-open/demo');
     expect(extractResult.extractedEntryCount).toBe(3);
+    expect(listedEntries[0]?.name).toBe('textures');
+    expect(materializedEntry.outputPath).toBe('/tmp/archive-open/demo/textures');
   });
 
   it('preserves scoped search and cancel argument forwarding through the generated Tauri contract', async () => {

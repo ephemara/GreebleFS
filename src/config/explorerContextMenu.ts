@@ -31,6 +31,7 @@ export type ExplorerBuiltInContextMenuActionId =
   | 'copy-to'
   | 'move-to'
   | 'extract-here'
+  | 'extract-to'
   | 'extract-new-folder'
   | 'duplicate'
   | 'find-similar'
@@ -348,12 +349,23 @@ export const BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerBuiltInContextMenuCat
     execution: { kind: 'built-in', actionId: 'extract-here' },
   },
   {
+    id: 'built-in.extract-to',
+    title: 'Extract To...',
+    contexts: ['entry'],
+    appliesTo: 'file',
+    group: 'organize',
+    defaultOrder: 156,
+    source: 'built-in',
+    iconName: 'CopyPlus',
+    execution: { kind: 'built-in', actionId: 'extract-to' },
+  },
+  {
     id: 'built-in.extract-new-folder',
     title: 'Extract to New Folder',
     contexts: ['entry'],
     appliesTo: 'file',
     group: 'organize',
-    defaultOrder: 156,
+    defaultOrder: 157,
     source: 'built-in',
     iconName: 'CopyPlus',
     execution: { kind: 'built-in', actionId: 'extract-new-folder' },

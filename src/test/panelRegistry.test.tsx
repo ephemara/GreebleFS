@@ -52,7 +52,7 @@ describe('createBuiltInPanelDefinitions', () => {
         },
       } as never,
       explorerLayoutMode: 'full',
-      explorerRepoPicker: null,
+      explorerPicker: null,
       isOpen: true,
       hideOverlay: () => {},
       pluginCommands: [],
@@ -131,7 +131,7 @@ describe('createBuiltInPanelDefinitions', () => {
         },
       } as never,
       explorerLayoutMode: 'full',
-      explorerRepoPicker: null,
+      explorerPicker: null,
       isOpen: true,
       hideOverlay: () => {},
       pluginCommands: [],
@@ -214,12 +214,19 @@ describe('createBuiltInPanelDefinitions', () => {
     const onCancel = vi.fn();
     const onRequestRepositoryImport = vi.fn();
     const onPendingRepositoryImportsHandled = vi.fn();
-    const repositoryPicker = {
-      active: true,
-      allowMultiple: true,
-      requestId: 7,
-      onConfirm,
-      onCancel,
+    const explorerPicker = {
+      allowCreateDirectory: false,
+      allowedExtensions: [],
+      confirmLabel: 'Add Repositories',
+      defaultExtension: null,
+      initialFileName: null,
+      kind: 'openFolders' as const,
+      nonce: 'picker-7',
+      presentation: 'embedded' as const,
+      requestedAt: 7,
+      sourceWindowLabel: 'main',
+      startPath: 'C:\\repo',
+      title: 'Import Git Repositories',
     };
     const pendingRepositoryImports = ['C:\\repo\\nested'];
 
@@ -237,7 +244,7 @@ describe('createBuiltInPanelDefinitions', () => {
         },
       } as never,
       explorerLayoutMode: 'full',
-      explorerRepoPicker: repositoryPicker,
+      explorerPicker,
       isOpen: true,
       hideOverlay: () => {},
       pluginCommands: [],
@@ -293,13 +300,15 @@ describe('createBuiltInPanelDefinitions', () => {
       onOpenWallpapersFolder: async () => {},
       onImportWallpaperFiles: async () => {},
       onSetWindowMode: async () => {},
+      onExplorerPickerConfirm: onConfirm,
+      onExplorerPickerCancel: onCancel,
       renderPluginsManager: () => null,
     });
 
     const explorer = panels.find(panel => panel.id === 'explorer');
     const git = panels.find(panel => panel.id === 'git');
 
-    const explorerElement = explorer?.render() as React.ReactElement<{ repositoryPicker: typeof repositoryPicker }>;
+    const explorerElement = explorer?.render() as React.ReactElement<{ explorerPicker: typeof explorerPicker }>;
     const gitPanelElement = git?.render() as React.ReactElement<{ children: React.ReactNode }>;
     const gitElement = gitPanelElement.props.children as React.ReactElement<{
       pendingRepositoryImports: string[];
@@ -307,7 +316,7 @@ describe('createBuiltInPanelDefinitions', () => {
       onRequestRepositoryImport: () => void;
     }>;
 
-    expect(explorerElement.props.repositoryPicker).toBe(repositoryPicker);
+    expect(explorerElement.props.explorerPicker).toBe(explorerPicker);
     expect(gitElement.props.pendingRepositoryImports).toEqual(pendingRepositoryImports);
     expect(gitElement.props.onPendingRepositoryImportsHandled).toBe(onPendingRepositoryImportsHandled);
     expect(gitElement.props.onRequestRepositoryImport).toBe(onRequestRepositoryImport);

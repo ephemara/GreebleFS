@@ -116,7 +116,7 @@ export function createBuiltInPanelDefinitions({
   appearance,
   explorerChromeControlSurface,
   explorerLayoutMode,
-  explorerRepoPicker,
+  explorerPicker,
   isOpen,
   hideOverlay,
   pluginCommands,
@@ -181,18 +181,19 @@ export function createBuiltInPanelDefinitions({
   onSetWindowMode,
   onActivatePanel = () => {},
   onOpenSettingsSection = () => {},
+  onExplorerPickerConfirm = () => undefined,
+  onExplorerPickerCancel = () => undefined,
   renderPluginsManager,
 }: {
   appearance: ResolvedOverlayAppearance;
   explorerChromeControlSurface?: 'toolbar' | 'topbar';
   explorerLayoutMode?: ExplorerLayoutMode;
-  explorerRepoPicker?: {
-    active: boolean;
-    allowMultiple: boolean;
-    requestId: number;
-    onConfirm: (paths: string[]) => void;
-    onCancel: () => void;
-  } | null;
+  explorerPicker?: ExplorerPickerRequest | null;
+  onExplorerPickerConfirm?: (result: {
+    currentDirectory: string;
+    entries: Array<{ path: string; name: string; kind: 'file' | 'folder' }>;
+  }) => void;
+  onExplorerPickerCancel?: () => void;
   isOpen: boolean;
   hideOverlay: () => void;
   pluginCommands: OverlayPluginCommandContribution[];
@@ -289,7 +290,7 @@ export function createBuiltInPanelDefinitions({
           appearance={appearance}
           chromeControlSurface={explorerChromeControlSurface}
           layoutMode={explorerLayoutMode}
-          repositoryPicker={explorerRepoPicker}
+          explorerPicker={explorerPicker}
           theme={explorerTheme}
           onOpenInTerminal={onOpenInTerminal}
           onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
@@ -297,6 +298,8 @@ export function createBuiltInPanelDefinitions({
           homePacks={homePacks}
           onOpenPanel={onActivatePanel}
           onOpenSettingsSection={onOpenSettingsSection}
+          onExplorerPickerConfirm={onExplorerPickerConfirm}
+          onExplorerPickerCancel={onExplorerPickerCancel}
           pluginActions={pluginExplorerActions}
           pluginContextMenuItems={pluginContextMenuItems}
         />

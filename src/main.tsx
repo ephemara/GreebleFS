@@ -13,6 +13,7 @@ import {
 } from "./runtime/globalErrorPanel";
 import { initializeManagedContentDirectories } from "./config/appContentDirectories";
 import { FILE_OPERATIONS_WINDOW_LABEL } from "./runtime/fileOperationsWindow";
+import { EXPLORER_PICKER_WINDOW_LABEL } from "./runtime/explorerPicker";
 
 window.addEventListener("error", (event) => {
     reportGlobalError(
@@ -62,8 +63,12 @@ document.addEventListener('keydown', (e) => {
 async function resolveBootstrapComponent() {
     if (isTauri()) {
         try {
-            if (getCurrentWebviewWindow().label === FILE_OPERATIONS_WINDOW_LABEL) {
+            const windowLabel = getCurrentWebviewWindow().label;
+            if (windowLabel === FILE_OPERATIONS_WINDOW_LABEL) {
                 return import("./windows/FileOperationsWindowApp");
+            }
+            if (windowLabel === EXPLORER_PICKER_WINDOW_LABEL) {
+                return import("./windows/PickerWindowApp");
             }
         } catch {
             // Fall back to the main app bootstrap when the webview label is unavailable.

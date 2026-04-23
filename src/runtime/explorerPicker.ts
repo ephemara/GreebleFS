@@ -484,15 +484,17 @@ function getDefaultExplorerPickerTitle(kind: ExplorerPickerRequestKind): string 
 function getDefaultExplorerPickerConfirmLabel(kind: ExplorerPickerRequestKind): string {
   switch (kind) {
     case 'openFile':
+      return 'Choose File';
     case 'openFiles':
-      return 'Select File';
+      return 'Choose Files';
     case 'openFolder':
-    case 'openFolders':
-      return 'Select Folder';
-    case 'pickDestinationFolder':
       return 'Choose Folder';
+    case 'openFolders':
+      return 'Choose Folders';
+    case 'pickDestinationFolder':
+      return 'Choose Destination';
     case 'saveFile':
-      return 'Save';
+      return 'Save File';
   }
 }
 

@@ -7050,7 +7050,7 @@ export function FileExplorer({
     createFile: createExplorerFile,
     deletePath: deleteExplorerPath,
     extractArchive: extractExplorerArchive,
-    materializeArchiveEntry: materializeExplorerArchiveEntry,
+    materializeArchiveEntry,
     getDrives: getExplorerDrives,
     getHomeDir: getExplorerHomeDir,
     getItemProperties: getExplorerItemProperties,
@@ -7406,6 +7406,7 @@ export function FileExplorer({
     });
   const [pickerOverwriteTargetPath, setPickerOverwriteTargetPath] =
     useState<string | null>(null);
+  const initializedExplorerPickerNonceRef = useRef<string | null>(null);
   const [transferConflictPolicy, setTransferConflictPolicy] =
     useState<ExplorerFileTransferCollisionPolicy>("keep_both");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -9558,7 +9559,11 @@ export function FileExplorer({
     [visibleEntries, selected],
   );
   const semanticSelectionCandidate = useMemo(() => {
-    if (currentPathIsCloud || selectedEntries.length !== 1) {
+    if (
+      currentPathIsCloud ||
+      currentPathIsVirtual ||
+      selectedEntries.length !== 1
+    ) {
       return null;
     }
     const candidate = selectedEntries[0];
@@ -9568,7 +9573,7 @@ export function FileExplorer({
     return isSemanticSearchTextLikeExtension(candidate.extension)
       ? candidate
       : null;
-  }, [currentPathIsCloud, selectedEntries]);
+  }, [currentPathIsCloud, currentPathIsVirtual, selectedEntries]);
   const constellationSelectionIsFullyPinned = useMemo(
     () =>
       selectedEntries.length > 0 &&
@@ -10087,7 +10092,7 @@ export function FileExplorer({
     [materializeArchiveVirtualEntry],
   );
   const resolveExplorerEntryNativeDragPath = useCallback(
-    async (entry: FileEntry) =>
+    async (entry: FileEntry): Promise<string> =>
       isExplorerArchiveVirtualPath(entry.path)
         ? materializeArchiveVirtualEntry(entry.path, entry.is_dir, "stageTemporary")
         : entry.path,
@@ -10095,7 +10100,7 @@ export function FileExplorer({
   );
   const resolveExplorerEntriesNativeDragPaths = useCallback(
     async (entries: readonly FileEntry[]) => {
-      const dragPaths = await Promise.all(
+      const dragPaths: string[] = await Promise.all(
         entries.map((entry) => resolveExplorerEntryNativeDragPath(entry)),
       );
       return dragPaths.filter(
@@ -10347,6 +10352,7 @@ export function FileExplorer({
 
   useEffect(() => {
     if (!explorerPicker) {
+      initializedExplorerPickerNonceRef.current = null;
       return;
     }
     setSelected(new Set());
@@ -10359,10 +10365,29 @@ export function FileExplorer({
         explorerPicker.defaultExtension,
       ),
     );
-    if (explorerPicker.startPath) {
-      void navigate(explorerPicker.startPath, false);
-    }
   }, [explorerPicker, navigate]);
+
+  useEffect(() => {
+    if (!explorerPicker) {
+      initializedExplorerPickerNonceRef.current = null;
+      return;
+    }
+
+    if (initializedExplorerPickerNonceRef.current === explorerPicker.nonce) {
+      return;
+    }
+
+    const requestedStartPath = explorerPicker.startPath?.trim() ?? '';
+    const fallbackStartPath =
+      currentPathIsHome || !currentPath.trim() ? userHomePath.trim() : '';
+    const initialPickerPath = requestedStartPath || fallbackStartPath;
+    if (!initialPickerPath) {
+      return;
+    }
+
+    initializedExplorerPickerNonceRef.current = explorerPicker.nonce;
+    void navigate(initialPickerPath, false);
+  }, [currentPath, currentPathIsHome, explorerPicker, navigate, userHomePath]);
 
   const getEntryStorageLabel = useCallback(
     (entry: FileEntry) => {
@@ -10745,6 +10770,16 @@ export function FileExplorer({
     ): Promise<FileTransferResult[] | null> => {
       if (request.sources.length === 0) {
         return [];
+      }
+      if (isExplorerVirtualPath(request.targetDir)) {
+        throw new Error(
+          "Archive and virtual explorer locations are read-only.",
+        );
+      }
+      if (request.sources.some((source) => isExplorerArchiveVirtualPath(source))) {
+        throw new Error(
+          "Archive items support direct drag-out and extraction, not copy/move transfers.",
+        );
       }
 
       const isLocalTransfer =
@@ -13186,7 +13221,7 @@ export function FileExplorer({
   );
 
   const startDuplicateFinder = useCallback(async () => {
-    if (!currentPath || currentPathIsCloud || currentPathIsHome) {
+    if (!currentPath || currentPathIsCloud || currentPathIsHome || currentPathIsVirtual) {
       return;
     }
     setDuplicateFinder({
@@ -13212,7 +13247,13 @@ export function FileExplorer({
         loading: false,
       });
     }
-  }, [currentPath, currentPathIsCloud, currentPathIsHome, startExplorerDuplicateScan]);
+  }, [
+    currentPath,
+    currentPathIsCloud,
+    currentPathIsHome,
+    currentPathIsVirtual,
+    startExplorerDuplicateScan,
+  ]);
 
   useEffect(() => {
     if (!duplicateFinder.visible || !duplicateFinder.scanId) {
@@ -13474,7 +13515,8 @@ export function FileExplorer({
                   ]
                 : [];
             case "open-admin":
-              return canUseNativeIntegration
+              return canUseNativeIntegration &&
+                !isExplorerArchiveVirtualPath(entry.path)
                 ? [
                     {
                       ...sharedItem,
@@ -13486,7 +13528,9 @@ export function FileExplorer({
                   ]
                 : [];
             case "open-terminal":
-              return entry.is_dir && !isCloudExplorerPath(entry.path)
+              return entry.is_dir &&
+                !isCloudExplorerPath(entry.path) &&
+                !isExplorerArchiveVirtualPath(entry.path)
                 ? [
                     {
                       ...sharedItem,
@@ -13512,7 +13556,8 @@ export function FileExplorer({
                   ]
                 : [];
             case "reveal":
-              return canUseNativeIntegration
+              return canUseNativeIntegration &&
+                !isExplorerArchiveVirtualPath(entry.path)
                 ? [
                     {
                       ...sharedItem,
@@ -13541,37 +13586,45 @@ export function FileExplorer({
                 },
               ];
             case "copy":
-              return [
-                {
-                  ...sharedItem,
-                  label: "Copy",
-                  action: () => queueClipboard("copy", entry),
-                },
-              ];
+              return currentLocationSupportsMutation
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Copy",
+                      action: () => queueClipboard("copy", entry),
+                    },
+                  ]
+                : [];
             case "cut":
-              return [
-                {
-                  ...sharedItem,
-                  label: "Cut",
-                  action: () => queueClipboard("cut", entry),
-                },
-              ];
+              return currentLocationSupportsMutation
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Cut",
+                      action: () => queueClipboard("cut", entry),
+                    },
+                  ]
+                : [];
             case "copy-to":
-              return [
-                {
-                  ...sharedItem,
-                  label: "Copy To...",
-                  action: () => requestTransferDestination("copy", entry),
-                },
-              ];
+              return currentLocationSupportsMutation
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Copy To...",
+                      action: () => requestTransferDestination("copy", entry),
+                    },
+                  ]
+                : [];
             case "move-to":
-              return [
-                {
-                  ...sharedItem,
-                  label: "Move To...",
-                  action: () => requestTransferDestination("move", entry),
-                },
-              ];
+              return currentLocationSupportsMutation
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Move To...",
+                      action: () => requestTransferDestination("move", entry),
+                    },
+                  ]
+                : [];
             case "extract-here":
               return isArchive
                 ? [
@@ -13609,13 +13662,15 @@ export function FileExplorer({
                   ]
                 : [];
             case "duplicate":
-              return [
-                {
-                  ...sharedItem,
-                  label: "Duplicate",
-                  action: () => duplicate(entry),
-                },
-              ];
+              return currentLocationSupportsMutation
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Duplicate",
+                      action: () => duplicate(entry),
+                    },
+                  ]
+                : [];
             case "find-similar":
               return !currentPathIsCloud &&
                 !entry.is_dir &&
@@ -13629,40 +13684,46 @@ export function FileExplorer({
                   ]
                 : [];
             case "rename":
-              return [
-                {
-                  ...sharedItem,
-                  label: "Rename (F2)",
-                  action: () =>
-                    setRename({
-                      active: true,
-                      path: entry.path,
-                      name: entry.name,
-                    }),
-                },
-              ];
+              return currentLocationSupportsMutation
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Rename (F2)",
+                      action: () =>
+                        setRename({
+                          active: true,
+                          path: entry.path,
+                          name: entry.name,
+                        }),
+                    },
+                  ]
+                : [];
             case "add-tags":
-              return [
-                {
-                  ...sharedItem,
-                  label: "Add Tags...",
-                  action: () =>
-                    openTagDialog([entry.path], "add", {
-                      description: `Enter comma-separated tags to add to ${entry.name}.`,
-                    }),
-                },
-              ];
+              return currentLocationSupportsMutation
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Add Tags...",
+                      action: () =>
+                        openTagDialog([entry.path], "add", {
+                          description: `Enter comma-separated tags to add to ${entry.name}.`,
+                        }),
+                    },
+                  ]
+                : [];
             case "remove-tags":
-              return [
-                {
-                  ...sharedItem,
-                  label: "Remove Tags...",
-                  action: () =>
-                    openTagDialog([entry.path], "remove", {
-                      description: `Enter comma-separated tags to remove from ${entry.name}.`,
-                    }),
-                },
-              ];
+              return currentLocationSupportsMutation
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Remove Tags...",
+                      action: () =>
+                        openTagDialog([entry.path], "remove", {
+                          description: `Enter comma-separated tags to remove from ${entry.name}.`,
+                        }),
+                    },
+                  ]
+                : [];
             case "bookmark-toggle":
               return [
                 {
@@ -13694,14 +13755,16 @@ export function FileExplorer({
                 },
               ];
             case "move-trash":
-              return [
-                {
-                  ...sharedItem,
-                  label: "Move to Trash",
-                  danger: true,
-                  action: () => openTrashDialog([entry]),
-                },
-              ];
+              return currentLocationSupportsMutation
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Move to Trash",
+                      danger: true,
+                      action: () => openTrashDialog([entry]),
+                    },
+                  ]
+                : [];
             default:
               return [];
           }
@@ -13852,7 +13915,8 @@ export function FileExplorer({
 
         switch (item.execution.actionId) {
           case "new-folder":
-            return explorerPicker?.allowCreateDirectory
+            return currentLocationSupportsMutation &&
+              explorerPicker?.allowCreateDirectory
               ? [
                   {
                     ...sharedItem,
@@ -13862,7 +13926,7 @@ export function FileExplorer({
                 ]
               : [];
           case "new-file":
-            return explorerPicker
+            return explorerPicker || !currentLocationSupportsMutation
               ? []
               : [
                   {
@@ -13872,7 +13936,7 @@ export function FileExplorer({
                   },
                 ];
           case "paste":
-            return clipboard
+            return clipboard && currentLocationSupportsMutation
               ? [{ ...sharedItem, label: "Paste", action: () => paste() }]
               : [];
           case "open-aquarium":
@@ -16794,6 +16858,154 @@ export function FileExplorer({
         ),
       },
       {
+        id: "archiveActions",
+        label: "Archive Actions",
+        surfaces: ["explorerToolbar"],
+        isVisible: () =>
+          currentPathIsArchiveVirtual && !usesWorkspaceCompactChrome,
+        render: () => (
+          <div
+            ref={archiveActionsMenuAnchorRef}
+            style={{ position: "relative" }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={showArchiveActionsMenu}
+              onClick={() => {
+                setShowLayoutMenu(false);
+                setShowModeProfileMenu(false);
+                setShowArchiveActionsMenu((current) => !current);
+              }}
+              title={`Archive actions for ${archiveVirtualFolderLabel ?? archiveVirtualRootLabel ?? "archive"}`}
+              style={{
+                ...toolbarToggleButtonStyle(showArchiveActionsMenu),
+                gap: 6,
+                color: showArchiveActionsMenu ? EXP.text : EXP.muted,
+              }}
+            >
+              <HardDriveDownload size={12} />
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 6,
+                  minWidth: 0,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Extract
+                </span>
+                {showToolbarTextLabels ? (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: EXP.muted2,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      maxWidth: isCompactDock ? 96 : 160,
+                    }}
+                  >
+                    {archiveVirtualFolderLabel ?? archiveVirtualRootLabel}
+                  </span>
+                ) : null}
+              </span>
+              <MoreHorizontal size={12} />
+            </button>
+            {showArchiveActionsMenu ? (
+              <div
+                role="menu"
+                aria-label="Archive actions menu"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  right: 0,
+                  zIndex: 40,
+                  minWidth: 260,
+                  borderRadius: "var(--overlay-explorer-panel-radius)",
+                  border: "1px solid var(--overlay-explorer-toolbar-border)",
+                  background: "var(--overlay-explorer-toolbar-bg)",
+                  boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
+                  padding: 8,
+                }}
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 2,
+                    padding: "2px 4px 8px",
+                    borderBottom:
+                      "1px solid var(--overlay-explorer-toolbar-border)",
+                    marginBottom: 8,
+                  }}
+                >
+                  <span style={{ fontSize: 10, fontWeight: 700, color: EXP.text }}>
+                    {archiveVirtualFolderLabel ?? "Archive Folder"}
+                  </span>
+                  <span style={{ fontSize: 10, color: EXP.muted2 }}>
+                    Source archive: {archiveVirtualRootLabel ?? "Archive"}
+                  </span>
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void runArchiveToolbarAction("extractHere")}
+                    style={toolbarActionButtonStyle()}
+                  >
+                    <ArrowDownToLine size={12} />
+                    Extract Here
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() =>
+                      void runArchiveToolbarAction("extractToNewFolder")
+                    }
+                    style={toolbarActionButtonStyle()}
+                  >
+                    <HardDriveDownload size={12} />
+                    Extract to New Folder
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() =>
+                      void runArchiveToolbarAction("extractHere", true)
+                    }
+                    style={toolbarActionButtonStyle()}
+                  >
+                    <ArrowDownToLine size={12} />
+                    Extract Here + Trash Archive
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() =>
+                      void runArchiveToolbarAction("extractToNewFolder", true)
+                    }
+                    style={toolbarActionButtonStyle()}
+                  >
+                    <Trash2 size={12} />
+                    Extract Folder + Trash Archive
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ),
+      },
+      {
         id: "folderSizeSummary",
         label: "Folder Size Summary",
         surfaces: ["explorerToolbar"],
@@ -17163,7 +17375,7 @@ export function FileExplorer({
         id: "batchRename",
         label: "Batch Rename",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !currentPathIsCloud && !currentPathIsHome,
+        isVisible: () => currentLocationSupportsMutation,
         render: () => (
           <button
             type="button"
@@ -17191,7 +17403,8 @@ export function FileExplorer({
         id: "tagSelection",
         label: "Tag Selection",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !currentPathIsCloud && !currentPathIsHome && !usesWorkspaceDenseChrome,
+        isVisible: () =>
+          currentLocationSupportsMutation && !usesWorkspaceDenseChrome,
         render: () => (
           <button
             type="button"
@@ -17222,7 +17435,8 @@ export function FileExplorer({
         id: "duplicateScan",
         label: "Find Duplicates",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !currentPathIsCloud && !currentPathIsHome && !usesWorkspaceDenseChrome,
+        isVisible: () =>
+          currentLocationSupportsMutation && !usesWorkspaceDenseChrome,
         render: () => (
           <button
             type="button"
@@ -17265,7 +17479,7 @@ export function FileExplorer({
         id: "undoTrash",
         label: "Undo Trash",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !currentPathIsCloud && !currentPathIsHome,
+        isVisible: () => currentLocationSupportsMutation,
         render: () => (
           <button
             type="button"
@@ -17931,7 +18145,9 @@ export function FileExplorer({
         id: "newFolder",
         label: "New Folder",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !explorerPicker || explorerPicker.allowCreateDirectory,
+        isVisible: () =>
+          currentLocationSupportsMutation &&
+          (!explorerPicker || explorerPicker.allowCreateDirectory),
         render: () => (
           <button
             type="button"
@@ -17958,7 +18174,7 @@ export function FileExplorer({
         id: "newFile",
         label: "New File",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !explorerPicker,
+        isVisible: () => currentLocationSupportsMutation && !explorerPicker,
         render: () => (
           <button
             type="button"
@@ -17985,7 +18201,7 @@ export function FileExplorer({
         id: "pasteClipboard",
         label: "Paste Clipboard",
         surfaces: ["explorerToolbar"],
-        isVisible: () => Boolean(clipboard),
+        isVisible: () => Boolean(clipboard) && currentLocationSupportsMutation,
         render: () =>
           clipboard ? (
             <button
@@ -18319,6 +18535,8 @@ export function FileExplorer({
       addressEditing,
       applyModeProfilePreset,
       applyTagsToPaths,
+      archiveVirtualFolderLabel,
+      archiveVirtualRootLabel,
       batchRenameTargetCount,
       beginExplorerChromeCustomization,
       beginAddressEdit,
@@ -18327,7 +18545,9 @@ export function FileExplorer({
       clipboard,
       crumbs,
       currentFolderSizeSummary,
+      currentLocationSupportsMutation,
       currentPath,
+      currentPathIsArchiveVirtual,
       currentPathIsCloud,
       experimentalDensityDescriptor,
       experimentalDensityPercent,
@@ -18359,6 +18579,7 @@ export function FileExplorer({
       refresh,
       requestSemanticIndexBuild,
       resetExplorerChromeCustomization,
+      runArchiveToolbarAction,
       saveExplorerChromeCustomization,
       search,
       searchMode,
@@ -18377,9 +18598,11 @@ export function FileExplorer({
       setBatchRename,
       setSaveSearchState,
       setSearchMode,
+      setShowArchiveActionsMenu,
       setShowLayoutMenu,
       setShowModeProfileMenu,
       showExperimentalHud,
+      showArchiveActionsMenu,
       showModeProfileMenu,
       showLayoutMenu,
       showToolbarLocationStrips,
@@ -19321,6 +19544,22 @@ export function FileExplorer({
         return;
       }
       if (
+        currentPathIsArchiveVirtual &&
+        matchesKeybinding(e, keybindings.extractArchiveFolderHere)
+      ) {
+        e.preventDefault();
+        void runArchiveToolbarAction("extractHere");
+        return;
+      }
+      if (
+        currentPathIsArchiveVirtual &&
+        matchesKeybinding(e, keybindings.extractArchiveFolderToNewFolder)
+      ) {
+        e.preventDefault();
+        void runArchiveToolbarAction("extractToNewFolder");
+        return;
+      }
+      if (
         matchesKeybinding(e, keybindings.goBackDirectory) &&
         isExplorerFocus
       ) {
@@ -19346,6 +19585,9 @@ export function FileExplorer({
       }
       if (matchesKeybinding(e, keybindings.renameItem) && selected.size === 1) {
         e.preventDefault();
+        if (!currentLocationSupportsMutation) {
+          return;
+        }
         if (selectedEntry) {
           setRename({
             active: true,
@@ -19357,6 +19599,9 @@ export function FileExplorer({
       }
       if (matchesKeybinding(e, keybindings.deleteItem) && selected.size > 0) {
         e.preventDefault();
+        if (!currentLocationSupportsMutation) {
+          return;
+        }
         if (selectedEntries.length > 0) {
           openTrashDialog(selectedEntries);
         }
@@ -19449,20 +19694,29 @@ export function FileExplorer({
       }
       if (
         matchesKeybinding(e, keybindings.openInTerminal) &&
-        selectedEntry?.is_dir
+        selectedEntry?.is_dir &&
+        !isExplorerArchiveVirtualPath(selectedEntry.path)
       ) {
         e.preventDefault();
         onOpenInTerminal(selectedEntry.path);
         return;
       }
-      if (matchesKeybinding(e, keybindings.revealInExplorer) && selectedEntry) {
+      if (
+        matchesKeybinding(e, keybindings.revealInExplorer) &&
+        selectedEntry &&
+        !isExplorerArchiveVirtualPath(selectedEntry.path)
+      ) {
         e.preventDefault();
         void revealExplorerPath(selectedEntry.path).catch((error) =>
           setError(String(error)),
         );
         return;
       }
-      if (matchesKeybinding(e, keybindings.openAsAdmin) && selectedEntry) {
+      if (
+        matchesKeybinding(e, keybindings.openAsAdmin) &&
+        selectedEntry &&
+        !isExplorerArchiveVirtualPath(selectedEntry.path)
+      ) {
         e.preventDefault();
         void openAsAdmin(selectedEntry.path);
         return;
@@ -19595,16 +19849,25 @@ export function FileExplorer({
       }
       if (matchesKeybinding(e, keybindings.copySelection)) {
         e.preventDefault();
+        if (!currentLocationSupportsMutation) {
+          return;
+        }
         queueClipboard("copy");
         return;
       }
       if (matchesKeybinding(e, keybindings.cutSelection)) {
         e.preventDefault();
+        if (!currentLocationSupportsMutation) {
+          return;
+        }
         queueClipboard("cut");
         return;
       }
       if (matchesKeybinding(e, keybindings.pasteSelection)) {
         e.preventDefault();
+        if (!currentLocationSupportsMutation) {
+          return;
+        }
         void paste();
       }
     };
@@ -19616,6 +19879,8 @@ export function FileExplorer({
     clearExplorerSelection,
     cancelExplorerPicker,
     confirmExplorerPickerSelection,
+    currentLocationSupportsMutation,
+    currentPathIsArchiveVirtual,
     cycleActiveConstellationLens,
     duplicate,
     effectiveViewModeDefinition.presentation,
@@ -19643,6 +19908,7 @@ export function FileExplorer({
     previewTerminalWorkingDirectory,
     queueClipboard,
     refresh,
+    runArchiveToolbarAction,
     toggleActiveConstellationRouteMode,
     toggleConstellationSelectionPinState,
     rename.active,
@@ -22303,7 +22569,7 @@ export function FileExplorer({
       onDragOver={onExplorerDropScopeDragOver}
       onDragLeave={onExplorerDropScopeDragLeave}
       onDrop={(e) => {
-        if (currentPathIsHome) {
+        if (currentPathIsHome || !currentLocationSupportsMutation) {
           return;
         }
         void onExplorerDropScopeDrop(e);

@@ -30,56 +30,39 @@ describe('fileOperationsWindow', () => {
     }
   });
 
-  it('creates normalized transfer window requests', () => {
+  it('creates normalized task window requests', () => {
     const request = createFileOperationsWindowRequest({
-      view: 'transfer',
-      operation: 'move',
-      sourcePaths: [' /tmp/source-a ', '/tmp/source-a', ' /tmp/source-b '],
-      suggestedTargetDir: ' /tmp/destination ',
+      view: 'tasks',
     });
 
     expect(request).toMatchObject({
-      view: 'transfer',
-      operation: 'move',
-      sourcePaths: ['/tmp/source-a', '/tmp/source-b'],
-      suggestedTargetDir: '/tmp/destination',
+      view: 'tasks',
       sourceWindowLabel: 'main',
     });
     expect(request?.nonce).toBeTruthy();
   });
 
-  it('persists requests, dispatches browser listeners, and creates a popout window', async () => {
+  it('persists task requests, dispatches browser listeners, and creates a popout window', async () => {
     const receivedRequests: Array<ReturnType<typeof readFileOperationsWindowRequest>> = [];
     const stopListening = listenToFileOperationsWindowRequests((request) => {
       receivedRequests.push(request);
     });
 
-    const request = await openFileOperationsWindow({
-      view: 'transfer',
-      operation: 'copy',
-      sourcePaths: [' /tmp/a ', ' /tmp/b '],
-      suggestedTargetDir: ' /tmp/out ',
-    });
+    const request = await openFileOperationsWindow({ view: 'tasks' });
 
     stopListening();
 
     expect(request).toMatchObject({
-      view: 'transfer',
-      operation: 'copy',
-      sourcePaths: ['/tmp/a', '/tmp/b'],
-      suggestedTargetDir: '/tmp/out',
+      view: 'tasks',
     });
     expect(readFileOperationsWindowRequest()).toMatchObject({
-      view: 'transfer',
-      operation: 'copy',
-      sourcePaths: ['/tmp/a', '/tmp/b'],
-      suggestedTargetDir: '/tmp/out',
+      view: 'tasks',
     });
     expect(receivedRequests).toHaveLength(1);
-    expect(window.localStorage.getItem(FILE_OPERATIONS_WINDOW_REQUEST_STORAGE_KEY)).toContain('/tmp/out');
+    expect(window.localStorage.getItem(FILE_OPERATIONS_WINDOW_REQUEST_STORAGE_KEY)).toContain('"view":"tasks"');
     expect(vi.mocked(getCurrentWindow().emit)).toHaveBeenCalledWith(
       FILE_OPERATIONS_WINDOW_REQUEST_EVENT,
-      expect.objectContaining({ view: 'transfer' }),
+      expect.objectContaining({ view: 'tasks' }),
     );
     expect(await WebviewWindow.getByLabel(FILE_OPERATIONS_WINDOW_LABEL)).not.toBeNull();
   });

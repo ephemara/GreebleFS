@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExplorerFolderPreview } from "../components/ExplorerFolderPreview";
@@ -78,5 +78,60 @@ describe("ExplorerFolderPreview", () => {
       folderPath,
       false,
     );
+  });
+
+  it("starts a direct drag-out from preview rows without triggering open", async () => {
+    const folderPath = "C:\\Assets\\alpha";
+    const onOpenEntry = vi.fn();
+    const onStartDragOutEntry = vi.fn();
+
+    vi.mocked(listExplorerDirUncached).mockResolvedValue([
+      {
+        name: "readme.md",
+        path: `${folderPath}\\readme.md`,
+        is_dir: false,
+        size: 1024,
+        modified: 1713400000000,
+        extension: "md",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ]);
+
+    render(
+      <ExplorerFolderPreview
+        folderPath={folderPath}
+        folderName="alpha"
+        showHiddenFiles={false}
+        onOpenEntry={onOpenEntry}
+        onStartDragOutEntry={onStartDragOutEntry}
+      />,
+    );
+
+    const fileRow = await screen.findByRole("button", {
+      name: /open file readme\.md/i,
+    });
+
+    fireEvent.pointerDown(fileRow, {
+      button: 0,
+      pointerId: 1,
+      clientX: 20,
+      clientY: 20,
+    });
+    fireEvent.pointerMove(window, {
+      pointerId: 1,
+      clientX: 34,
+      clientY: 20,
+    });
+    fireEvent.click(fileRow);
+
+    expect(onStartDragOutEntry).toHaveBeenCalledTimes(1);
+    expect(onStartDragOutEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: `${folderPath}\\readme.md`,
+        name: "readme.md",
+      }),
+    );
+    expect(onOpenEntry).not.toHaveBeenCalled();
   });
 });

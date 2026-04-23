@@ -1,10 +1,7 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import type {
-  ExplorerFileTransferOperation,
-  ExplorerFileTransferResult,
-} from './explorerBackend';
+import type { ExplorerFileTransferOperation, ExplorerFileTransferResult } from './explorerBackend';
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -42,19 +39,7 @@ export interface FileOperationsTaskWindowRequest {
   view: 'tasks';
 }
 
-export interface FileOperationsTransferWindowRequest {
-  nonce: string;
-  operation: ExplorerFileTransferOperation;
-  requestedAt: number;
-  sourcePaths: string[];
-  sourceWindowLabel: string | null;
-  suggestedTargetDir: string | null;
-  view: 'transfer';
-}
-
-export type FileOperationsWindowRequest =
-  | FileOperationsTaskWindowRequest
-  | FileOperationsTransferWindowRequest;
+export type FileOperationsWindowRequest = FileOperationsTaskWindowRequest;
 
 export interface FileOperationsTransferCompletedEventDetail {
   completedAt: number;
@@ -79,53 +64,23 @@ export function isCurrentFileOperationsWindow(): boolean {
 }
 
 export function describeFileOperationsWindowRequest(
-  request: FileOperationsWindowRequest | null | undefined,
+  _request: FileOperationsWindowRequest | null | undefined,
 ): string {
-  if (!request || request.view === 'tasks') {
-    return FILE_OPERATIONS_WINDOW_BASE_TITLE;
-  }
-
-  const actionLabel = request.operation === 'move' ? 'Move' : 'Copy';
-  const itemLabel = `${request.sourcePaths.length} item${request.sourcePaths.length === 1 ? '' : 's'}`;
-  return `${actionLabel} ${itemLabel}`;
+  return FILE_OPERATIONS_WINDOW_BASE_TITLE;
 }
 
 export function createFileOperationsWindowRequest(
-  value: {
-    operation?: ExplorerFileTransferOperation;
-    sourcePaths?: string[];
-    suggestedTargetDir?: string | null;
-    view: 'tasks' | 'transfer';
-  },
+  _value: { view: 'tasks' },
 ): FileOperationsWindowRequest | null {
   const sourceWindowLabel = getCurrentWindowLabel();
   const requestedAt = Date.now();
   const nonce = `${requestedAt}-${Math.random().toString(36).slice(2, 10)}`;
 
-  if (value.view === 'tasks') {
-    return {
-      nonce,
-      requestedAt,
-      sourceWindowLabel,
-      view: 'tasks',
-    };
-  }
-
-  const sourcePaths = Array.from(
-    new Set((value.sourcePaths ?? []).map((path) => path.trim()).filter(Boolean)),
-  );
-  if (sourcePaths.length === 0) {
-    return null;
-  }
-
   return {
     nonce,
-    operation: value.operation === 'move' ? 'move' : 'copy',
     requestedAt,
-    sourcePaths,
     sourceWindowLabel,
-    suggestedTargetDir: normalizeOptionalPath(value.suggestedTargetDir),
-    view: 'transfer',
+    view: 'tasks',
   };
 }
 
@@ -168,12 +123,7 @@ export function readFileOperationsTransferCompletedEvent(
 }
 
 export async function openFileOperationsWindow(
-  value: {
-    operation?: ExplorerFileTransferOperation;
-    sourcePaths?: string[];
-    suggestedTargetDir?: string | null;
-    view: 'tasks' | 'transfer';
-  },
+  value: { view: 'tasks' },
 ): Promise<FileOperationsWindowRequest | null> {
   const request = createFileOperationsWindowRequest(value);
   if (!request) {
@@ -309,28 +259,7 @@ function parseFileOperationsWindowRequest(value: unknown): FileOperationsWindowR
     };
   }
 
-  if (record.view !== 'transfer') {
-    return null;
-  }
-
-  const sourcePaths = Array.isArray(record.sourcePaths)
-    ? Array.from(
-      new Set(record.sourcePaths.filter((entry): entry is string => typeof entry === 'string').map((entry) => entry.trim()).filter(Boolean)),
-    )
-    : [];
-  if (sourcePaths.length === 0) {
-    return null;
-  }
-
-  return {
-    nonce,
-    operation: record.operation === 'move' ? 'move' : 'copy',
-    requestedAt,
-    sourcePaths,
-    sourceWindowLabel,
-    suggestedTargetDir: normalizeOptionalPath(record.suggestedTargetDir),
-    view: 'transfer',
-  };
+  return null;
 }
 
 function parseFileOperationsTransferCompletedEvent(
@@ -515,10 +444,6 @@ async function invokeOptionalWindowMethod(
   } catch {
     // Best-effort only. Window restoration should not surface as an unhandled rejection.
   }
-}
-
-function normalizeOptionalPath(value: unknown): string | null {
-  return typeof value === 'string' ? value.trim() || null : null;
 }
 
 function persistJsonValue(key: string, value: unknown): void {

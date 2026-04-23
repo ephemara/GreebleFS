@@ -15,6 +15,7 @@ use zip::read::ZipArchive;
 pub enum FsArchiveExtractionMode {
     OpenCached,
     ExtractHere,
+    ExtractToDirectory,
     ExtractToNewFolder,
 }
 
@@ -23,6 +24,7 @@ pub enum FsArchiveExtractionMode {
 pub struct FsArchiveExtractionRequest {
     pub archive_path: String,
     pub mode: FsArchiveExtractionMode,
+    pub target_directory: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -204,6 +206,35 @@ pub fn extract_archive(
                 }
             }
         }
+        FsArchiveExtractionMode::ExtractToDirectory => {
+            let target_dir = request
+                .target_directory
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+                .ok_or_else(|| "Archive extraction target directory is required.".to_string())?;
+            if !target_dir.exists() {
+                return Err(format!(
+                    "Archive extraction target directory does not exist: {}",
+                    target_dir.display()
+                ));
+            }
+            if !target_dir.is_dir() {
+                return Err(format!(
+                    "Archive extraction target directory is not a folder: {}",
+                    target_dir.display()
+                ));
+            }
+
+            let extracted_entry_count =
+                extract_archive_to_directory(&archive_path, format, &target_dir)?;
+            Ok(FsArchiveExtractionResult {
+                output_path: target_dir.to_string_lossy().into_owned(),
+                extracted_entry_count,
+                reused_cached_output: false,
+            })
+        }
     }
 }
 
@@ -336,6 +367,7 @@ pub fn materialize_archive_entry(
         let result = extract_archive(&FsArchiveExtractionRequest {
             archive_path: request.archive_path.clone(),
             mode,
+            target_directory: None,
         })?;
         return Ok(FsArchiveEntryMaterializationResult {
             output_path: result.output_path,
@@ -469,6 +501,7 @@ fn collect_zip_archive_entry_records(archive_path: &Path) -> Result<Vec<ArchiveE
         })?;
         let relative_path = entry
             .enclosed_name()
+            .as_deref()
             .map(path_to_archive_relative_string)
             .ok_or_else(|| {
                 format!(
@@ -737,6 +770,7 @@ fn extract_zip_archive_entry_to_path(
         })?;
         let relative_path = entry
             .enclosed_name()
+            .as_deref()
             .map(path_to_archive_relative_string)
             .ok_or_else(|| {
                 format!(
@@ -1001,7 +1035,7 @@ fn materialized_archive_destination_path(
     output_path.join(relative_output_path)
 }
 
-fn write_archive_reader_to_file<R: Read>(
+fn write_archive_reader_to_file<R: Read + ?Sized>(
     reader: &mut R,
     output_path: &Path,
 ) -> Result<(), String> {
@@ -1814,6 +1848,7 @@ mod tests {
         let result = extract_archive(&FsArchiveExtractionRequest {
             archive_path: archive_path.to_string_lossy().into_owned(),
             mode: FsArchiveExtractionMode::ExtractToNewFolder,
+            target_directory: None,
         })
         .expect("extract zip to new folder");
 
@@ -1839,6 +1874,7 @@ mod tests {
         let result = extract_archive(&FsArchiveExtractionRequest {
             archive_path: archive_path.to_string_lossy().into_owned(),
             mode: FsArchiveExtractionMode::ExtractHere,
+            target_directory: None,
         })
         .expect("extract zip here");
 
@@ -1852,5 +1888,43 @@ mod tests {
                 .expect("read collision-safe extracted file"),
             "from archive"
         );
+    }
+
+    #[test]
+    fn extracts_zip_into_a_specific_directory() {
+        let workspace = tempdir().expect("tempdir");
+        let archive_path = workspace.path().join("sample.zip");
+        let target_dir = workspace.path().join("custom-out");
+        fs::create_dir_all(&target_dir).expect("create target dir");
+        create_zip_archive(&archive_path, &[("nested/alpha.txt", "hello")]);
+
+        let result = extract_archive(&FsArchiveExtractionRequest {
+            archive_path: archive_path.to_string_lossy().into_owned(),
+            mode: FsArchiveExtractionMode::ExtractToDirectory,
+            target_directory: Some(target_dir.to_string_lossy().into_owned()),
+        })
+        .expect("extract zip to explicit directory");
+
+        assert_eq!(PathBuf::from(&result.output_path), target_dir);
+        assert_eq!(
+            fs::read_to_string(target_dir.join("nested/alpha.txt")).expect("read extracted file"),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn rejects_extract_to_directory_without_a_target() {
+        let workspace = tempdir().expect("tempdir");
+        let archive_path = workspace.path().join("sample.zip");
+        create_zip_archive(&archive_path, &[("alpha.txt", "hello")]);
+
+        let error = extract_archive(&FsArchiveExtractionRequest {
+            archive_path: archive_path.to_string_lossy().into_owned(),
+            mode: FsArchiveExtractionMode::ExtractToDirectory,
+            target_directory: None,
+        })
+        .expect_err("missing target directory should fail");
+
+        assert!(error.contains("target directory is required"));
     }
 }

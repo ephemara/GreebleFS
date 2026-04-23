@@ -12,6 +12,7 @@ import {
 } from '../../store/explorerStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useExplorerStore } from '../../store/explorerStore';
+import { createExplorerPickerRequest, type ExplorerPickerRequestKind } from '../../runtime/explorerPicker';
 
 interface TestFileEntry {
   name: string;
@@ -58,6 +59,16 @@ const EXPLORER_ENTRIES: TestFileEntry[] = [
     is_hidden: false,
     is_symlink: false,
   },
+  {
+    name: 'draft.md',
+    path: `${REPO_ROOT}\\draft.md`,
+    is_dir: false,
+    size: 42,
+    modified: 0,
+    extension: 'md',
+    is_hidden: false,
+    is_symlink: false,
+  },
 ];
 
 function buildEntrySizeResults(paths: string[]) {
@@ -80,13 +91,34 @@ function resetOverlayTermStorage(storage: Storage) {
   storage.removeItem(EXPLORER_PERFORMANCE_HISTORY_KEY);
 }
 
-function renderRepositoryPicker(options?: {
-  allowMultiple?: boolean;
-  requestId?: number;
-  onConfirm?: (paths: string[]) => void;
+function renderExplorerPicker(options: {
+  kind: ExplorerPickerRequestKind;
+  initialFileName?: string;
+  defaultExtension?: string;
+  allowedExtensions?: string[];
 }) {
   const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
-  const onConfirm = options?.onConfirm ?? vi.fn();
+  const onConfirm = vi.fn();
+
+  const request = createExplorerPickerRequest({
+    kind: options.kind,
+    presentation: 'embedded',
+    initialFileName: options.initialFileName,
+    defaultExtension: options.defaultExtension,
+    allowedExtensions: options.allowedExtensions,
+    confirmLabel:
+      options.kind === 'openFile'
+        ? 'Choose File'
+        : options.kind === 'openFiles'
+          ? 'Choose Files'
+          : options.kind === 'openFolder'
+            ? 'Choose Folder'
+            : options.kind === 'openFolders'
+              ? 'Choose Folders'
+              : options.kind === 'pickDestinationFolder'
+                ? 'Choose Destination'
+                : 'Save File',
+  });
 
   const renderResult = render(
     <FileExplorer
@@ -102,20 +134,16 @@ function renderRepositoryPicker(options?: {
       onOpenInFilesystemAquarium={() => {}}
       onOpenInTerminal={() => {}}
       onAddBookmark={async () => {}}
-      repositoryPicker={{
-        active: true,
-        allowMultiple: options?.allowMultiple ?? true,
-        requestId: options?.requestId ?? 1,
-        onConfirm,
-        onCancel: vi.fn(),
-      }}
+      explorerPicker={request}
+      onExplorerPickerConfirm={onConfirm}
+      onExplorerPickerCancel={vi.fn()}
     />,
   );
 
   return { onConfirm, unmount: renderResult.unmount };
 }
 
-describe('FileExplorer repository picker browser coverage', () => {
+describe('FileExplorer picker browser coverage', () => {
   beforeEach(() => {
     resetOverlayTermStorage(window.localStorage);
     useSettingsStore.getState().resetToDefaults();
@@ -173,37 +201,99 @@ describe('FileExplorer repository picker browser coverage', () => {
     });
   });
 
-  it('confirms the current folder directly when repository-picker mode starts without a selection', async () => {
-    const { onConfirm, unmount } = renderRepositoryPicker();
+  it('confirms a single file selection', async () => {
+    const { onConfirm, unmount } = renderExplorerPicker({ kind: 'openFile' });
 
-    await screen.findByText('alpha');
-    expect(screen.getByRole('button', { name: 'Add Current Folder' })).toBeEnabled();
-    expect(screen.getByText(/No folders selected yet, so OverlayTerm can add the current folder directly\./)).toBeInTheDocument();
-    expect(screen.getByText(/^Current folder:/)).toBeInTheDocument();
+    await screen.findByText('notes.txt');
+    fireEvent.click(screen.getByText('notes.txt'));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose File' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Current Folder' }));
-
-    expect(onConfirm).toHaveBeenCalledWith([REPO_ROOT]);
+    expect(onConfirm).toHaveBeenCalledWith({
+      currentDirectory: REPO_ROOT,
+      entries: [{ path: `${REPO_ROOT}\\notes.txt`, name: 'notes.txt', kind: 'file' }],
+    });
     unmount();
   });
 
-  it('keeps repository-picker selection truly single-choice when multi-select is disabled', async () => {
-    const { onConfirm, unmount } = renderRepositoryPicker({
-      allowMultiple: false,
-      requestId: 2,
+  it('confirms multi-file and single-folder picker constraints', async () => {
+    const multiFiles = renderExplorerPicker({ kind: 'openFiles' });
+
+    await screen.findByText('notes.txt');
+    fireEvent.click(screen.getByText('notes.txt'));
+    fireEvent.click(screen.getByText('draft.md'), { ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Files' }));
+
+    expect(multiFiles.onConfirm).toHaveBeenCalledWith({
+      currentDirectory: REPO_ROOT,
+      entries: [
+        { path: `${REPO_ROOT}\\notes.txt`, name: 'notes.txt', kind: 'file' },
+        { path: `${REPO_ROOT}\\draft.md`, name: 'draft.md', kind: 'file' },
+      ],
     });
+    multiFiles.unmount();
+
+    const singleFolder = renderExplorerPicker({ kind: 'openFolder' });
+    await screen.findByText('alpha');
+    fireEvent.click(screen.getByText('alpha'));
+    fireEvent.click(screen.getByText('nested'), { ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Folder' }));
+
+    expect(singleFolder.onConfirm).toHaveBeenCalledWith({
+      currentDirectory: REPO_ROOT,
+      entries: [{ path: `${REPO_ROOT}\\nested`, name: 'nested', kind: 'folder' }],
+    });
+    singleFolder.unmount();
+  });
+
+  it('confirms multi-folder selection and current-folder fallback', async () => {
+    const multiFolder = renderExplorerPicker({ kind: 'openFolders' });
 
     await screen.findByText('alpha');
     fireEvent.click(screen.getByText('alpha'));
     fireEvent.click(screen.getByText('nested'), { ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Folders' }));
 
-    await waitFor(() => {
-      expect(screen.getByText(/1 folder selected\./)).toBeInTheDocument();
+    expect(multiFolder.onConfirm).toHaveBeenCalledWith({
+      currentDirectory: REPO_ROOT,
+      entries: [
+        { path: `${REPO_ROOT}\\alpha`, name: 'alpha', kind: 'folder' },
+        { path: `${REPO_ROOT}\\nested`, name: 'nested', kind: 'folder' },
+      ],
+    });
+    multiFolder.unmount();
+
+    const destinationPicker = renderExplorerPicker({ kind: 'pickDestinationFolder' });
+    await screen.findByText('alpha');
+    expect(screen.getByText(/current folder will be used/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Destination' }));
+
+    expect(destinationPicker.onConfirm).toHaveBeenCalledWith({
+      currentDirectory: REPO_ROOT,
+      entries: [{ path: REPO_ROOT, name: 'repo', kind: 'folder' }],
+    });
+    destinationPicker.unmount();
+  });
+
+  it('confirms save mode, appends the default extension, and gates overwrite with a dialog', async () => {
+    const { onConfirm, unmount } = renderExplorerPicker({
+      kind: 'saveFile',
+      initialFileName: 'notes',
+      defaultExtension: 'txt',
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Selected Folder' }));
+    await screen.findByText('notes.txt');
+    fireEvent.click(screen.getByRole('button', { name: 'Save File' }));
 
-    expect(onConfirm).toHaveBeenCalledWith([`${REPO_ROOT}\\nested`]);
+    expect(screen.getByText(/overwrite existing file/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Overwrite' }));
+
+    await waitFor(() => {
+      expect(onConfirm).toHaveBeenCalledWith({
+        currentDirectory: REPO_ROOT,
+        entries: [{ path: `${REPO_ROOT}\\notes.txt`, name: 'notes.txt', kind: 'file' }],
+      });
+    });
+
     unmount();
   });
 });
