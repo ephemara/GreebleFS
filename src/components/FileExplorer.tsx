@@ -356,9 +356,11 @@ import {
   upsertExplorerBookmark,
 } from "./explorer/explorerRailState";
 import {
-  getRepositoryPickerConfirmLabel,
-  resolveRepositoryPickerConfirmationPaths,
-} from "./explorer/repositoryPickerState";
+  allowsExplorerPickerMultipleSelection,
+  buildExplorerPickerSavePath,
+  normalizeSaveFileName,
+  resolveExplorerPickerEntries,
+} from "./explorer/explorerPickerState";
 import { ResizablePane } from "./ResizablePane";
 import {
   PRIMARY_EXPLORER_INSTANCE_ID,
@@ -448,6 +450,10 @@ import {
   queueExplorerTerminalDirectorySync,
 } from "../runtime/explorerBackend";
 import { runExplorerAudioBatchProcess } from "../runtime/audioWorkbenchBackend";
+import {
+  openExplorerPicker,
+  type ExplorerPickerRequest,
+} from "../runtime/explorerPicker";
 import { readExplorerModelThumbnail } from "../runtime/modelThumbnailBackend";
 import {
   openExplorerPdfPreviewDocument,
@@ -3065,6 +3071,7 @@ type ExplorerInternalPointerDragCandidate = {
   pointerId: number;
   intent: ExplorerDragIntent;
   sourceEntryPath: string;
+  sourceEntries: FileEntry[];
   sourcePaths: string[];
   primaryLabel: string;
   sourceItemKind: "file" | "folder" | "mixed";
@@ -3397,6 +3404,7 @@ function PreviewPanel({
   folderIconRules,
   defaultFolderIcon,
   onOpenFolderPreviewEntry,
+  onStartDragOutPreviewEntry,
   onExtractArchive,
 }: {
   preview: PreviewState;
@@ -3461,6 +3469,7 @@ function PreviewPanel({
   folderIconRules: readonly FolderIconRule[];
   defaultFolderIcon: FolderIconValue;
   onOpenFolderPreviewEntry: (entry: FileEntry) => void;
+  onStartDragOutPreviewEntry: (entry: FileEntry) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
 }) {
   const interactionMotion = useInteractionMotionController();
@@ -4726,6 +4735,8 @@ function PreviewPanel({
               archiveSize={preview.size}
               descriptor={preview.descriptor}
               onExtract={onExtractArchive}
+              onOpenEntry={onOpenFolderPreviewEntry}
+              onStartDragOutEntry={onStartDragOutPreviewEntry}
               iconTheme={iconTheme}
               folderIconRules={folderIconRules}
               defaultFolderIcon={defaultFolderIcon}
@@ -4737,6 +4748,7 @@ function PreviewPanel({
               folderName={preview.name}
               showHiddenFiles={showHiddenFiles}
               onOpenEntry={onOpenFolderPreviewEntry}
+              onStartDragOutEntry={onStartDragOutPreviewEntry}
               iconTheme={iconTheme}
               folderIconRules={folderIconRules}
               defaultFolderIcon={defaultFolderIcon}
@@ -6894,13 +6906,12 @@ interface FileExplorerProps {
   externalRevealRequest?: ExplorerWorkspaceRevealRequest | null;
   externalSelectionTransferRequest?: ExplorerWorkspaceSelectionTransferRequest | null;
   externalRefreshRequest?: ExplorerWorkspaceRefreshRequest | null;
-  repositoryPicker?: {
-    active: boolean;
-    allowMultiple: boolean;
-    requestId: number;
-    onConfirm: (paths: string[]) => void;
-    onCancel: () => void;
-  } | null;
+  explorerPicker?: ExplorerPickerRequest | null;
+  onExplorerPickerConfirm?: (result: {
+    currentDirectory: string;
+    entries: Array<{ path: string; name: string; kind: "file" | "folder" }>;
+  }) => void;
+  onExplorerPickerCancel?: () => void;
   renderDragOverlayHost?: boolean;
 }
 
@@ -6972,7 +6983,9 @@ export function FileExplorer({
   externalRevealRequest = null,
   externalSelectionTransferRequest = null,
   externalRefreshRequest = null,
-  repositoryPicker = null,
+  explorerPicker = null,
+  onExplorerPickerConfirm = () => undefined,
+  onExplorerPickerCancel = () => undefined,
   renderDragOverlayHost = true,
 }: FileExplorerProps) {
   const {
@@ -10083,57 +10096,65 @@ export function FileExplorer({
   );
   const isProcessElevatedRef = useRef(false);
   const lastObservedFileTransferNonceRef = useRef<string | null>(null);
+  const [pickerSaveFileName, setPickerSaveFileName] = useState('');
   const selectedDirectoryEntries = useMemo(
     () => selectedEntries.filter((entry) => entry.is_dir),
     [selectedEntries],
   );
-  const repositoryPickerConfirmationPaths = useMemo(
+  const explorerPickerSelections = useMemo(
     () =>
-      resolveRepositoryPickerConfirmationPaths({
-        allowMultiple: repositoryPicker?.allowMultiple ?? true,
+      resolveExplorerPickerEntries({
         currentPath,
         hasAnySelection: selectedEntries.length > 0,
-        selectedDirectoryPaths: selectedDirectoryEntries.map(
-          (entry) => entry.path,
-        ),
+        request: explorerPicker,
+        saveFileName: pickerSaveFileName,
+        selectedEntries: selectedEntries.map((entry) => ({
+          isDirectory: entry.is_dir,
+          name: entry.name,
+          path: entry.path,
+        })),
       }),
-    [
-      currentPath,
-      repositoryPicker?.allowMultiple,
-      selectedDirectoryEntries,
-      selectedEntries.length,
-    ],
+    [currentPath, explorerPicker, pickerSaveFileName, selectedEntries],
   );
-  const canConfirmRepositorySelection =
-    repositoryPickerConfirmationPaths.length > 0;
-  const isRepositoryPickerUsingCurrentPath =
+  const explorerPickerAllowsMultiple = explorerPicker
+    ? allowsExplorerPickerMultipleSelection(explorerPicker.kind)
+    : true;
+  const canConfirmExplorerPickerSelection =
+    explorerPickerSelections.length > 0;
+  const isExplorerPickerUsingCurrentPath =
     selectedEntries.length === 0 &&
-    repositoryPickerConfirmationPaths.length === 1 &&
-    repositoryPickerConfirmationPaths[0] === currentPath.trim();
-  const repositoryPickerConfirmLabel = useMemo(
+    explorerPickerSelections.length === 1 &&
+    explorerPickerSelections[0]?.kind === 'folder' &&
+    explorerPickerSelections[0]?.path === currentPath.trim();
+  const pickerSaveTargetPath = useMemo(
     () =>
-      getRepositoryPickerConfirmLabel({
-        allowMultiple: repositoryPicker?.allowMultiple ?? true,
-        currentPath,
-        hasAnySelection: selectedEntries.length > 0,
-        selectedDirectoryCount: selectedDirectoryEntries.length,
-      }),
-    [
-      currentPath,
-      repositoryPicker?.allowMultiple,
-      selectedDirectoryEntries.length,
-      selectedEntries.length,
-    ],
+      explorerPicker?.kind === 'saveFile'
+        ? buildExplorerPickerSavePath({
+            currentPath,
+            defaultExtension: explorerPicker.defaultExtension,
+            fileName: pickerSaveFileName,
+          })
+        : null,
+    [currentPath, explorerPicker, pickerSaveFileName],
   );
 
   useEffect(() => {
-    if (!repositoryPicker?.active) {
+    if (!explorerPicker) {
       return;
     }
     setSelected(new Set());
     setCtxMenu({ visible: false, x: 0, y: 0, entry: null });
     setDeleteTargets([]);
-  }, [repositoryPicker?.active, repositoryPicker?.requestId]);
+    setPickerSaveFileName(
+      normalizeSaveFileName(
+        explorerPicker.initialFileName ?? '',
+        explorerPicker.defaultExtension,
+      ),
+    );
+    if (explorerPicker.startPath) {
+      void navigate(explorerPicker.startPath, false);
+    }
+  }, [explorerPicker, navigate]);
 
   const getEntryStorageLabel = useCallback(
     (entry: FileEntry) => {
@@ -12081,7 +12102,7 @@ export function FileExplorer({
 
   const previewExplorerSelectionTarget = useCallback(
     (entry: FileEntry) => {
-      if (repositoryPicker?.active || !previewEnabled || isCompactDock) {
+      if (explorerPicker || !previewEnabled || isCompactDock) {
         return;
       }
       void previewEntry(entry, getSearchFocusTarget(entry), "selection");
@@ -12091,7 +12112,7 @@ export function FileExplorer({
       isCompactDock,
       previewEnabled,
       previewEntry,
-      repositoryPicker?.active,
+      explorerPicker,
     ],
   );
 
@@ -13470,21 +13491,25 @@ export function FileExplorer({
 
         switch (item.execution.actionId) {
           case "new-folder":
-            return [
-              {
-                ...sharedItem,
-                label: "New Folder",
-                action: () => openNew("folder"),
-              },
-            ];
+            return explorerPicker?.allowCreateDirectory
+              ? [
+                  {
+                    ...sharedItem,
+                    label: "New Folder",
+                    action: () => openNew("folder"),
+                  },
+                ]
+              : [];
           case "new-file":
-            return [
-              {
-                ...sharedItem,
-                label: "New File...",
-                action: () => openNew("file"),
-              },
-            ];
+            return explorerPicker
+              ? []
+              : [
+                  {
+                    ...sharedItem,
+                    label: "New File...",
+                    action: () => openNew("file"),
+                  },
+                ];
           case "paste":
             return clipboard
               ? [{ ...sharedItem, label: "Paste", action: () => paste() }]
@@ -13573,6 +13598,7 @@ export function FileExplorer({
     clipboard,
     currentPath,
     currentPathIsHome,
+    explorerPicker,
     executePluginContextMenuItem,
     finalizeContextMenuItems,
     navigate,
@@ -13618,10 +13644,15 @@ export function FileExplorer({
     }
     mainRef.current?.focus();
     setJumpFilter(null);
-    if (repositoryPicker?.active && !repositoryPicker.allowMultiple) {
+    if (explorerPicker && !explorerPickerAllowsMultiple) {
       setSelected(new Set([entry.path]));
       lastSelected.current = entry.path;
       selectionRangeAnchorPathRef.current = entry.path;
+      if (explorerPicker.kind === 'saveFile' && !entry.is_dir) {
+        setPickerSaveFileName(
+          normalizeSaveFileName(entry.name, explorerPicker.defaultExtension),
+        );
+      }
       return;
     }
     const plainClick = !e.shiftKey && !e.ctrlKey && !e.metaKey;
@@ -13659,7 +13690,12 @@ export function FileExplorer({
       selectionRangeAnchorPathRef.current = entry.path;
     }
     lastSelected.current = entry.path;
-    if (repositoryPicker?.active) {
+    if (explorerPicker) {
+      if (explorerPicker.kind === 'saveFile' && !entry.is_dir) {
+        setPickerSaveFileName(
+          normalizeSaveFileName(entry.name, explorerPicker.defaultExtension),
+        );
+      }
       return;
     }
     if (
@@ -13685,9 +13721,14 @@ export function FileExplorer({
 
   const onEntryDoubleClick = useCallback(
     (entry: FileEntry) => {
-      if (repositoryPicker?.active) {
+      if (explorerPicker) {
         if (entry.is_dir) {
           void openEntry(entry);
+          if (explorerPicker.kind === 'saveFile') {
+            setPickerSaveFileName(
+              normalizeSaveFileName(entry.name, explorerPicker.defaultExtension),
+            );
+          }
         }
         return;
       }
@@ -13705,7 +13746,7 @@ export function FileExplorer({
 
       void openEntry(entry);
     },
-    [folderClickMode, openEntry, repositoryPicker?.active],
+    [explorerPicker, folderClickMode, openEntry],
   );
 
   // ── Breadcrumbs ──
@@ -13727,6 +13768,12 @@ export function FileExplorer({
       const cloudSegments = currentPath.split("/").filter(Boolean);
       return cloudSegments[cloudSegments.length - 1] ?? "Cloud";
     })();
+  const archiveVirtualFolderLabel = currentPathIsArchiveVirtual
+    ? getExplorerArchiveVirtualCurrentFolderName(currentPath)
+    : null;
+  const archiveVirtualRootLabel = currentPathIsArchiveVirtual
+    ? getExplorerArchiveVirtualRootLabel(currentPath)
+    : null;
 
   // ── Inline new item creation ──
   const openNew = (kind: "file" | "folder") => {
@@ -13814,8 +13861,14 @@ export function FileExplorer({
   }, []);
 
   const startExplorerNativeOutDrag = useCallback(
-    async (dragPaths: string[]) => {
-      if (dragPaths.length === 0 || !isTauri()) {
+    async (dragEntries: readonly FileEntry[]) => {
+      if (dragEntries.length === 0 || !isTauri()) {
+        return;
+      }
+
+      const logicalPaths = dragEntries.map((entry) => entry.path);
+      const dragPaths = await resolveExplorerEntriesNativeDragPaths(dragEntries);
+      if (dragPaths.length === 0) {
         return;
       }
 
@@ -13826,7 +13879,7 @@ export function FileExplorer({
       }
 
       startExplorerSharedDragSession({
-        paths: dragPaths,
+        paths: logicalPaths,
         intent: "native-out",
         sourceScopeId: explorerDropScopeId,
       });
@@ -13848,7 +13901,7 @@ export function FileExplorer({
         endExplorerDragInteraction();
       }
     },
-    [explorerDropScopeId, runtimePlatform],
+    [explorerDropScopeId, resolveExplorerEntriesNativeDragPaths, runtimePlatform],
   );
 
   const beginExplorerInternalPointerDrag = useCallback(
@@ -13894,7 +13947,11 @@ export function FileExplorer({
           ? "mixed"
           : "file";
 
-      const requestedIntent = event.altKey ? "native-out" : "internal";
+      const requestedIntent =
+        dragEntries.some((item) => isExplorerArchiveVirtualPath(item.path)) ||
+        event.altKey
+          ? "native-out"
+          : "internal";
       const dragIntent =
         requestedIntent === "native-out" && !supportsNativeDragOut(dragPaths)
           ? "internal"
@@ -13904,6 +13961,7 @@ export function FileExplorer({
         pointerId: event.pointerId,
         intent: dragIntent,
         sourceEntryPath: entry.path,
+        sourceEntries: dragEntries,
         sourcePaths: dragPaths,
         primaryLabel: entry.name || getPathLeaf(entry.path) || "Item",
         sourceItemKind: dragSelectionKind,
@@ -13992,7 +14050,7 @@ export function FileExplorer({
         internalPointerDragCandidateRef.current = candidate;
 
         if (candidate.intent === "native-out") {
-          void startExplorerNativeOutDrag(candidate.sourcePaths);
+          void startExplorerNativeOutDrag(candidate.sourceEntries);
           internalPointerDragCandidateRef.current = null;
           return;
         }
@@ -18471,7 +18529,7 @@ export function FileExplorer({
   );
 
   useEffect(() => {
-    if (repositoryPicker?.active) {
+    if (explorerPicker) {
       if (previewWarmupTimerRef.current != null) {
         window.clearTimeout(previewWarmupTimerRef.current);
         previewWarmupTimerRef.current = null;
@@ -18498,7 +18556,7 @@ export function FileExplorer({
       }
       previewWarmupStartedRef.current = false;
     };
-  }, [repositoryPicker?.active]);
+  }, [explorerPicker]);
   const virtualizedViewportWidth = explorerViewportMetrics.clientWidth;
   const measuredVirtualizedViewportHeight =
     explorerViewportMetrics.clientHeight;
