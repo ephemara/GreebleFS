@@ -5,6 +5,7 @@
 pub mod commands;
 pub mod handlers;
 pub mod mdns;
+pub mod mobile;
 pub mod network;
 pub mod server;
 pub mod streaming;

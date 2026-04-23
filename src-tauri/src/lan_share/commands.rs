@@ -4,14 +4,16 @@
 
 use super::server;
 use super::types::LanShareResult;
+use tauri::AppHandle;
 
 #[tauri::command]
 pub async fn start_lan_share(
+    app: AppHandle,
     path: String,
     share_mode: String,
     hub_paths: Option<Vec<String>>,
 ) -> Result<LanShareResult, String> {
-    server::start_lan_share(path, share_mode, hub_paths).await
+    server::start_lan_share(app, path, share_mode, hub_paths).await
 }
 
 #[tauri::command]

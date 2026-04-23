@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
 use tokio::sync::Mutex;
 
 pub(super) const MDNS_SERVICE_TYPE: &str = "_http._tcp.local.";
@@ -24,9 +25,12 @@ pub(super) static FTP_HTML: &str =
 pub(super) static STREAM_HTML: &str =
     include_str!("../../assets/lan_share/lan_share_stream.html");
 pub(super) static APP_ICON_PNG: &[u8] = include_bytes!("../../icons/128x128.png");
+pub(super) static APPLE_TOUCH_ICON_PNG: &[u8] =
+    include_bytes!("../../icons/128x128@2x.png");
 
 #[derive(Clone)]
 pub(super) struct ShareState {
+    pub(super) app_handle: AppHandle,
     pub(super) share_path: PathBuf,
     pub(super) file_hub: Option<Vec<PathBuf>>,
 }

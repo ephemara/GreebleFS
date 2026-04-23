@@ -1,0 +1,22 @@
+{
+  "name": "GreebleFS Mobile",
+  "short_name": "GreebleFS",
+  "description": "Private mobile file navigation streamed from the GreebleFS desktop engine.",
+  "display": "standalone",
+  "background_color": "#07111a",
+  "theme_color": "#07111a",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/app-icon.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    }
+  ]
+}

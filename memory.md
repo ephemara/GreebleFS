@@ -1,3 +1,28 @@
+# 2026-04-22 - Sovereign Mobile PWA First Slice Now Runs Through lan_share
+
+- GreebleFS now has a dedicated mobile-first share mode implemented inside the existing Axum `lan_share` subsystem instead of trying to remote the desktop Tauri shell into Safari.
+- Durable implementation shape:
+  - Added a separate Vite/React build surface for mobile in `src-mobile/` plus `vite.mobile.config.ts`. This bundle is browser-safe by design and must stay free of `@tauri-apps/api` imports.
+  - `package.json` now exposes `build:mobile`, and the main `build` script also emits `dist-mobile/` so release builds generate the mobile bundle alongside the desktop bundle.
+  - `src-tauri/src/lan_share/mobile.rs` now owns the mobile share router:
+    - serves the compiled mobile SPA shell and static assets
+    - exposes paged `GET /api/list` responses for large directories
+    - exposes direct `GET /files/*path` media/file transport over the share tunnel
+    - falls back to a clear “run bun run build:mobile” HTML message when the mobile bundle is missing in dev
+  - `src-tauri/src/lan_share/server.rs` now supports a real `mobile` share mode. It accepts directory shares plus multi-file hub shares and routes them through the mobile router.
+  - `src-tauri/src/lan_share/types.rs` `ShareState` now carries the `AppHandle`, which the mobile router uses to resolve bundled mobile assets from app resources or the repo-local `dist-mobile/` dev output.
+  - `src-tauri/tauri.conf.json` now bundles `../dist-mobile/` into app resources as `mobile-dist/` so installed builds can resolve the mobile bundle from `resource_dir/mobile-dist`.
+  - `src/runtime/lanShareRuntimeBackend.ts` now defaults `lanShareStart(...)` to `mobile` instead of the old invalid `"Share"` placeholder.
+- Durable product note:
+  - This first slice is intentionally a separate mobile surface, not a port of `src/App.tsx` or the desktop explorer runtime. Future mobile work should extend `src-mobile/` and the `lan_share/mobile.rs` API contract, not try to make the browser talk to Tauri IPC.
+  - The mobile API is paged, but it still enumerates and sorts each directory server-side before slicing. If truly massive directories become a bottleneck, the next step is a native cursor/window listing contract rather than pushing more UI tricks into the browser.
+  - The current mobile UI supports folder navigation, virtualized row rendering, local filtering over loaded rows, media overlay viewing, and streamed file opens. It does not yet reuse native thumbnail generation, task progress feeds, or authenticated overlay-network identity; those are the next high-value extensions.
+- Validation:
+  - passed: `bun run build:mobile`
+  - passed: `bunx tsc --noEmit --pretty false --target ES2020 --module ESNext --lib ES2020,DOM,DOM.Iterable --moduleResolution bundler --allowImportingTsExtensions --resolveJsonModule --isolatedModules --jsx react-jsx --skipLibCheck --types node src-mobile/main.tsx src-mobile/App.tsx src-mobile/mobileApi.ts src-mobile/types.ts`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - note: repo-wide `bunx tsc --noEmit --pretty false` still reports an unrelated pre-existing error in `src/components/explorer/ExplorerWorkspace.tsx`, so the mobile pass used a targeted TypeScript proof instead of altering the user’s active explorer branch work.
+
 # GreebleFS Memory
 
 # 2026-04-22 - Explorer Drag/Drop Now Uses A Central Interaction Runtime

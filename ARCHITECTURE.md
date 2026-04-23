@@ -32,12 +32,14 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 - `src/main.tsx`
   Frontend bootstrap. It now selects the root app by webview label, rendering `App` for the main shell and `src/windows/FileOperationsWindowApp.tsx` for the dedicated `file-operations` popout.
+- `vite.mobile.config.ts`, `src-mobile/main.tsx`, and `src-mobile/App.tsx`
+  The browser-safe mobile/PWA surface. This is a separate Vite entrypoint that builds `dist-mobile/` for Axum to serve over LAN/mobile sharing; it must stay free of Tauri-only runtime assumptions and talks to the desktop host through HTTP endpoints instead of direct `invoke()` calls.
 - `install.sh`
   Root Linux local-install wrapper. It delegates to `scripts/build-and-install-linux-local-release.sh`, which builds the app and installs a per-user release on Linux.
 - `install.ps1`
   Root Windows local clean-install/uninstall entrypoint. It builds with Bun and Cargo, removes the previous per-user install and user-state roots on demand, and reinstalls a fresh `greeblefs.exe` plus current-user Start Menu/Desktop shortcuts.
 - `src/App.tsx`
-  Overlay window shell, theme/runtime discovery, panel orchestration.
+  Overlay window shell, theme/runtime discovery, panel orchestration, and shell-level utilities such as the command-palette launchers for the mobile share server.
 - `src/panels/panelRegistry.tsx`
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
@@ -144,6 +146,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Browser-worker orchestration layer for frontend CPU-heavy tasks. It owns worker-lane lifecycle, per-lane telemetry, fallback-to-main-thread behavior, and the shared request/response bridge used by runtime module compilation.
 - `src/runtime/tauriClient.ts` and `src/runtime/explorerBackend.ts`
   Typed frontend bridge for native explorer/media commands. Large 3D preview reads now use raw-byte preview transport commands (`fs_read_preview_bytes` / `cloud_read_preview_bytes`) that return `Uint8Array` payloads instead of base64 strings.
+- `src-tauri/src/lan_share/mobile.rs`
+  Browser-facing Axum surface for the sovereign mobile share. It serves the compiled `dist-mobile/` bundle, exposes the paged `/api/list` directory feed, falls back cleanly when the mobile bundle is missing, and reuses the existing file/Range streaming lane for direct media playback from the desktop host.
 - `src/runtime/gitPanelBackend.ts`
   Shared Git-panel runtime seam. It wraps the existing `git_exec` command for repo-overview loading, local-branch metadata, upstream ahead/behind counts, commit-history parsing, changed-file parsing, and commit patch loading so Git React surfaces do not each reinvent their own git-log parsers.
 - `src/components/DevPerformanceHud.tsx`
@@ -561,6 +565,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run test:unit src/test/filePreview.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx`
 - `npx vitest run src/test/panelRegistry.test.tsx src/test/storageTreemap.test.ts src/test/storageWorkbench.test.ts src/test/storageStore.test.ts --reporter=dot`
 - `bun run test:browser`
+- `bun run build:mobile`
 - `bun run build`
 - `python3 -m py_compile src-python/greeblefs_sidecar/*.py`
 - `node scripts/run-cargo-tests.mjs`

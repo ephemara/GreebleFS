@@ -5,8 +5,11 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use tauri::AppHandle;
+
 use super::handlers::{build_ftp_router, build_stream_dir_router, build_stream_router};
 use super::mdns::{register_mdns, unregister_mdns};
+use super::mobile::build_mobile_router;
 use super::network::{
     find_available_port, format_host_port, format_http_url, format_https_url, get_local_ipv4,
 };
@@ -18,6 +21,7 @@ use super::types::{
 };
 
 pub async fn start_lan_share(
+    app_handle: AppHandle,
     path: String,
     share_mode: String,
     hub_paths: Option<Vec<String>>,
@@ -27,8 +31,8 @@ pub async fn start_lan_share(
     let hub_paths = hub_paths.filter(|paths| paths.len() >= 2);
 
     let state = if let Some(paths) = hub_paths {
-        if share_mode != "stream" {
-            return Err("Multi-file share requires stream mode".into());
+        if share_mode != "stream" && share_mode != "mobile" {
+            return Err("Multi-file share requires stream or mobile mode".into());
         }
         let canonical = canonicalize_hub_paths(&paths)?;
         let share_path = canonical[0]
@@ -36,6 +40,7 @@ pub async fn start_lan_share(
             .ok_or_else(|| "Invalid hub path".to_string())?
             .to_path_buf();
         ShareState {
+            app_handle: app_handle.clone(),
             share_path,
             file_hub: Some(canonical),
         }
@@ -45,6 +50,7 @@ pub async fn start_lan_share(
             return Err("Path does not exist".into());
         }
         ShareState {
+            app_handle: app_handle.clone(),
             share_path,
             file_hub: None,
         }
@@ -59,6 +65,11 @@ pub async fn start_lan_share(
         "stream" if is_directory => build_stream_dir_router(state.clone()),
         "stream" => build_stream_router(state.clone()),
         "ftp" => build_ftp_router(state.clone()),
+        "mobile" if state.file_hub.is_some() => build_mobile_router(state.clone()),
+        "mobile" if is_directory => build_mobile_router(state.clone()),
+        "mobile" => {
+            return Err("Mobile share requires a directory or a multi-file hub".to_string())
+        }
         _ => return Err(format!("Unknown share mode: {share_mode}")),
     };
 

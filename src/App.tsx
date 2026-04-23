@@ -138,6 +138,7 @@ import {
   settingsSectionCatalog,
   type SettingsSectionKey,
 } from './config/settingsNavigation';
+import { isExplorerTrackableFolderPath } from './config/explorerVirtualLocations';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
 import { WorkbenchTopBar } from './components/WorkbenchTopBar';
@@ -193,6 +194,7 @@ import {
   type OverlayWindowAnchor,
   type TerminalWindowMode,
 } from './store/settingsStore';
+import { useExplorerStore } from './store/explorerStore';
 import { useAccelerationRuntimeFeed } from './store/accelerationRuntimeStore';
 import { useGpuRuntimeFeed } from './store/gpuRuntimeStore';
 import { useTerminalStore } from './store/terminalStore';
@@ -604,6 +606,7 @@ function App() {
     initStore: state.initStore,
     addDirectoryBookmark: state.addDirectoryBookmark,
   })));
+  const explorerCurrentPath = useExplorerStore(state => state.session.currentPath);
   const {
     folderPlugins,
     pluginContributedShaders,
@@ -3697,6 +3700,42 @@ function App() {
     });
   }, [activeLayoutProfile.id, layoutManifest, updateLayout]);
 
+  const handleStartMobileShare = useCallback(async () => {
+    if (!isTauri()) {
+      window.alert('Mobile share is only available from the desktop host.');
+      return;
+    }
+
+    const requestedPath = explorerCurrentPath.trim();
+    const sharePath = isExplorerTrackableFolderPath(requestedPath)
+      ? requestedPath
+      : unwrapTauriResult(await commands.fsGetHomeDir());
+    const result = unwrapTauriResult(await commands.lanShareStart(sharePath, 'mobile', null));
+    const shareUrl = result.ios_address ?? result.mdns_address ?? result.address;
+
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+      } catch (error) {
+        console.warn('OverlayTerm: failed to copy mobile share URL', error);
+      }
+    }
+
+    window.alert(
+      `Mobile share is live.\n\nPath: ${sharePath}\nURL: ${shareUrl}\n\nThe URL was copied to your clipboard when available.`,
+    );
+  }, [explorerCurrentPath]);
+
+  const handleStopMobileShare = useCallback(async () => {
+    if (!isTauri()) {
+      window.alert('Mobile share is only available from the desktop host.');
+      return;
+    }
+
+    unwrapTauriResult(await commands.lanShareStop());
+    window.alert('Mobile share stopped.');
+  }, []);
+
   useEffect(() => {
     if (!isOverlayVisible && isCommandPaletteOpen) {
       setIsCommandPaletteOpen(false);
@@ -3794,6 +3833,24 @@ function App() {
         keywords: ['wallpapers', 'backgrounds', 'reload'],
         badge: 'Refresh',
         onSelect: () => refreshAuthoredWallpapers(true),
+      },
+      {
+        id: 'start-mobile-share',
+        title: 'Start Mobile Share',
+        subtitle: 'Serve the mobile PWA for the current explorer folder over the LAN share tunnel.',
+        group: 'Mobile',
+        keywords: ['mobile', 'pwa', 'ios', 'iphone', 'share', 'lan', 'remote'],
+        badge: 'Mobile',
+        onSelect: handleStartMobileShare,
+      },
+      {
+        id: 'stop-mobile-share',
+        title: 'Stop Mobile Share',
+        subtitle: 'Shut down the active mobile PWA share server.',
+        group: 'Mobile',
+        keywords: ['mobile', 'pwa', 'ios', 'iphone', 'share', 'lan', 'stop'],
+        badge: 'Mobile',
+        onSelect: handleStopMobileShare,
       },
       {
         id: 'cycle-layout',
@@ -3902,6 +3959,8 @@ function App() {
     handleCycleLayout,
     handleOpenSettings,
     handleOpenSettingsSection,
+    handleStartMobileShare,
+    handleStopMobileShare,
     handleToggleOverlayAnchor,
     handleToggleZenFocusMode,
     handleToggleWindowMode,

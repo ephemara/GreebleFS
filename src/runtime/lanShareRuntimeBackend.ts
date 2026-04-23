@@ -4,7 +4,7 @@ import type { LanShareResult } from "../generated/tauri";
 
 export async function lanShareStart(
   path: string,
-  shareMode: string = "Share",
+  shareMode: string = "mobile",
   hubPaths: string[] | null = null
 ): Promise<LanShareResult> {
   return invoke<LanShareResult>("lan_share_start", { path, shareMode, hubPaths });
