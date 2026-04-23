@@ -1,3 +1,37 @@
+# 2026-04-23 - Mobile Settings Now Own Tailscale-Aware Remote Share Routing
+
+- The sovereign mobile PWA is no longer hard-wired to LAN-only launch assumptions. There is now a first-class `Mobile` settings slice plus a native Tailscale command surface so the desktop can prefer a tailnet URL when launching the mobile share.
+- Durable implementation shape:
+  - Added `src-tauri/src/tailscale_commands.rs` as the native Tailscale integration layer. It owns CLI status reads (`tailscale status --json` / `tailscale version --json`), best-effort connect/disconnect flows, and the helper used by `lan_share` to resolve a tailnet host plus HTTPS certificate domain.
+  - `src-tauri/src/lan_share/server.rs` and `src-tauri/src/share_commands.rs` now accept a remote-access mode for mobile shares. LAN launches keep the old local-IP/mDNS behavior, while Tailscale launches prefer a tailnet URL and attempt to load a Tailscale-issued certificate with `tailscale cert` when the tailnet is HTTPS-ready.
+  - `src/config/mobileAccess.ts` is now the TS source of truth for the mobile remote-access modes (`lan` / `tailscale`) plus the small set of external docs/installation links used by Settings.
+  - `src/store/settingsStore.ts` now persists `settings.mobile.remoteAccessMode`, `settings.mobile.tailscaleLoginServer`, and `settings.mobile.tailscaleHostname`, and `src/config/settingsNavigation.ts` adds the new `Mobile` settings section.
+  - `src/components/SettingsPage.tsx` now exposes the operator-facing mobile control surface: launch mode selection, Tailscale status, hostname/control-server fields, an ephemeral auth-key field, connect/disconnect/refresh actions, and inline start/stop mobile-share actions that reuse the current explorer folder.
+  - `src/App.tsx` command-palette mobile share launch now reads `settings.mobile.remoteAccessMode` and uses the backend-provided `preferred_address` instead of guessing between LAN URLs in the frontend.
+- Durable product note:
+  - Treat this as the accountless remote-access control plane for the mobile PWA, not as a replacement for Tailscale itself. The desktop host still depends on the local Tailscale daemon/CLI for transport identity and HTTPS certificate issuance.
+  - The current Tailscale integration is intentionally CLI-driven and desktop-first. It is good enough for built-in pairing/launch routing and remote share delivery, but deeper automation such as fully headless onboarding, QR-led VPN profile install, or relayless custom transport still belongs in a later pairing/discovery phase.
+- Validation:
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/settingsStore.test.ts src/test/settingsPage.behavior.test.tsx`
+  - passed: `bun run build`
+
+# 2026-04-23 - Cloud OAuth Credentials Can Now Be Bundled From Ignored Env Files
+
+- Google Drive / Dropbox sign-in already existed through the native cloud runtime, but shipping app-owned OAuth credentials still depended on per-user Settings or ad hoc runtime environment variables. That is now fixed for local/release builds.
+- Durable implementation shape:
+  - `src-tauri/build.rs` now scans ignored `.env` / `.env.local` files in the repo root and `src-tauri/`, plus any real process environment values, for the `GREEBLE_*` cloud OAuth keys and forwards them into the Tauri build with `cargo:rustc-env`.
+  - `src-tauri/src/cloud_commands.rs` now treats those compile-time values as the environment-backed provider configuration fallback after saved Settings credentials, so built apps can open the browser-based Google Drive auth flow without asking each user to paste a client ID first.
+  - `src/components/SettingsPage.tsx` now labels that source as `Bundled / Environment` and explicitly tells operators that ignored `.env` files can seed build-time credentials while still allowing per-machine overrides in Settings.
+  - Added `.env.example` as the canonical template for the supported cloud provider keys. The real `.env` stays ignored so live secrets do not enter git.
+- Durable product note:
+  - Build-time bundled OAuth credentials are appropriate for shipping one app-owned Google/Dropbox client to many users, but saved Settings credentials still deliberately override the bundled defaults. Clearing a saved provider config should fall back to the bundled build credentials again.
+- Validation:
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "saves cloud provider credentials from settings and enables the provider login action" --reporter=dot`
+
 # 2026-04-23 - Shell Transition Motion Now Starts Disabled Until The User Opts In
 
 - First-run `Ctrl+Space` no longer inherits theme open/close motion automatically. The persisted `appearance.animations` default is now `false`, and the runtime fallback in `App.tsx` treats missing legacy values as disabled instead of enabled.

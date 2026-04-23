@@ -940,7 +940,7 @@ fn provider_config(app: &AppHandle, provider: CloudProviderId) -> Result<Provide
     let resolved = resolved_provider_configuration(app, provider)?;
     let Some(client_id) = resolved.client_id else {
         return Err(format!(
-            "{} is not configured. Add a client ID in Settings > Cloud Accounts or provide {}.",
+            "{} is not configured. Add a client ID in Settings > Cloud Accounts, provide {}, or bundle it from .env before building.",
             provider_label(provider),
             provider_client_id_env_key(provider),
         ));
@@ -957,6 +957,24 @@ fn env_trimmed(key: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn bundled_provider_client_id(provider: CloudProviderId) -> Option<String> {
+    match provider {
+        CloudProviderId::GoogleDrive => option_env!("GREEBLE_GOOGLE_DRIVE_CLIENT_ID"),
+        CloudProviderId::Dropbox => option_env!("GREEBLE_DROPBOX_CLIENT_ID"),
+    }
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+}
+
+fn bundled_provider_client_secret(provider: CloudProviderId) -> Option<String> {
+    match provider {
+        CloudProviderId::GoogleDrive => option_env!("GREEBLE_GOOGLE_DRIVE_CLIENT_SECRET"),
+        CloudProviderId::Dropbox => option_env!("GREEBLE_DROPBOX_CLIENT_SECRET"),
+    }
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
 }
 
 fn random_token(length: usize) -> String {
@@ -1281,8 +1299,10 @@ fn resolved_provider_configuration(
         });
     }
 
-    let client_id = env_trimmed(provider_client_id_env_key(provider));
-    let client_secret = env_trimmed(provider_client_secret_env_key(provider));
+    let client_id = env_trimmed(provider_client_id_env_key(provider))
+        .or_else(|| bundled_provider_client_id(provider));
+    let client_secret = env_trimmed(provider_client_secret_env_key(provider))
+        .or_else(|| bundled_provider_client_secret(provider));
     let source = if client_id.is_some() || client_secret.is_some() {
         CloudProviderConfigurationSource::Environment
     } else {

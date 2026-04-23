@@ -28,6 +28,12 @@ GreebleFS is a Tauri desktop workbench that keeps the terminal, file explorer, s
 - Animations: `animations/`
 - Shaders: `shaders/`
 
+## Cloud OAuth
+
+- Google Drive and Dropbox login already use the system browser plus a localhost callback from `Settings > Cloud Accounts`.
+- To ship app-owned OAuth credentials with a build, copy `.env.example` to `.env` or `.env.local`, fill the `GREEBLE_*` cloud keys, then rebuild the Tauri app.
+- Saved credentials from `Settings > Cloud Accounts` still override bundled/environment credentials on that machine.
+
 ## Verification
 
 - Unit tests: `bun run test:unit` or `npm run test:unit`
