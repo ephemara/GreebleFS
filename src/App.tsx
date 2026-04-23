@@ -109,6 +109,11 @@ import {
   loadExplorerHomePacks as discoverExplorerHomePacks,
   type LoadedExplorerHomePack,
 } from './config/homePackages';
+import {
+  loadExplorerMenuPacks as discoverExplorerMenuPacks,
+  menuPackSystemConfig,
+  type LoadedExplorerMenuPack,
+} from './config/menuPacks';
 import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
 import { dispatchTerminalCommand } from './config/pluginContributions';
 import {
@@ -539,6 +544,7 @@ function App() {
   const themePackagesSignatureRef = useRef('');
   const iconThemePackagesSignatureRef = useRef('');
   const homePacksSignatureRef = useRef('');
+  const menuPacksSignatureRef = useRef('');
   const authoredAnimationsRefreshInFlightRef = useRef(false);
   const authoredAnimationsRefreshQueuedRef = useRef(false);
   const authoredShadersRefreshInFlightRef = useRef(false);
@@ -553,6 +559,8 @@ function App() {
   const iconThemePackagesRefreshQueuedRef = useRef(false);
   const homePacksRefreshInFlightRef = useRef(false);
   const homePacksRefreshQueuedRef = useRef(false);
+  const menuPacksRefreshInFlightRef = useRef(false);
+  const menuPacksRefreshQueuedRef = useRef(false);
   const frameTelemetryContextRef = useRef<{
     activePanelId: string | null;
     openPanelCount: number;
@@ -587,6 +595,10 @@ function App() {
   const [homePacksLoading, setHomePacksLoading] = useState(true);
   const [homePacksError, setHomePacksError] = useState<string | null>(null);
   const [homePacksWarnings, setHomePacksWarnings] = useState<string[]>([]);
+  const [menuPacks, setMenuPacks] = useState<LoadedExplorerMenuPack[]>([]);
+  const [menuPacksLoading, setMenuPacksLoading] = useState(true);
+  const [menuPacksError, setMenuPacksError] = useState<string | null>(null);
+  const [menuPacksWarnings, setMenuPacksWarnings] = useState<string[]>([]);
   const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
   const [activeExplorerPickerRequest, setActiveExplorerPickerRequest] =
     useState<ExplorerPickerRequest | null>(null);
@@ -2794,6 +2806,69 @@ function App() {
     }
   }, []);
 
+  const refreshMenuPacks = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setMenuPacks([]);
+      setMenuPacksError(null);
+      setMenuPacksWarnings([]);
+      setMenuPacksLoading(false);
+      return;
+    }
+
+    if (force) {
+      menuPacksRefreshQueuedRef.current = true;
+    }
+    if (menuPacksRefreshInFlightRef.current) {
+      menuPacksRefreshQueuedRef.current = true;
+      return;
+    }
+
+    menuPacksRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || menuPacksRefreshQueuedRef.current;
+        menuPacksRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          menuPacksSignatureRef.current = '';
+        }
+
+        setMenuPacksLoading((prev) => prev && !nextForce);
+        try {
+          await ensureDir(menuPackSystemConfig.menuPacksDirectory);
+          const listed = await listExplorerDir(
+            menuPackSystemConfig.menuPacksDirectory,
+            false,
+          );
+          const nextSignature = listed
+            .map((entry) => `${entry.path}:${entry.modified}`)
+            .sort()
+            .join('|');
+
+          if (!nextForce && nextSignature === menuPacksSignatureRef.current) {
+            setMenuPacksLoading(false);
+            continue;
+          }
+
+          menuPacksSignatureRef.current = nextSignature;
+          const result = await discoverExplorerMenuPacks();
+          setMenuPacks(result.packs);
+          setMenuPacksError(result.sourceError);
+          setMenuPacksWarnings(result.warnings);
+        } catch (error) {
+          setMenuPacks([]);
+          setMenuPacksError(String(error));
+          setMenuPacksWarnings([]);
+        } finally {
+          setMenuPacksLoading(false);
+        }
+      } while (menuPacksRefreshQueuedRef.current);
+    } finally {
+      menuPacksRefreshInFlightRef.current = false;
+    }
+  }, []);
+
   const refreshThemePackages = useCallback(async (force = false) => {
     if (!isTauri()) {
       setThemePackages([]);
@@ -2943,6 +3018,10 @@ function App() {
 
   const openHomePacksFolder = useCallback(async () => {
     await openManagedContentDirectory('homePacks');
+  }, [openManagedContentDirectory]);
+
+  const openMenuPacksFolder = useCallback(async () => {
+    await openManagedContentDirectory('menuPacks');
   }, [openManagedContentDirectory]);
 
   const openThemesFolder = useCallback(async () => {
@@ -3258,6 +3337,22 @@ function App() {
   }, [isOverlayVisible, liveReloadEnabled, refreshHomePacks]);
 
   useEffect(() => {
+    void refreshMenuPacks(true);
+  }, [refreshMenuPacks]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !menuPackSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshMenuPacks();
+    }, menuPackSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshMenuPacks]);
+
+  useEffect(() => {
     void refreshThemePackages(true);
   }, [refreshThemePackages]);
 
@@ -3312,10 +3407,15 @@ function App() {
         topBarPackagesError,
         topBarPackagesWarnings,
         homePacks: combinedHomePacks,
+        menuPacks,
         homePacksDirectory: homePackSystemConfig.homePacksDirectory,
+        menuPacksDirectory: menuPackSystemConfig.menuPacksDirectory,
         homePacksLoading,
+        menuPacksLoading,
         homePacksError,
+        menuPacksError,
         homePacksWarnings,
+        menuPacksWarnings,
         themePackages: combinedThemePackages,
         themePackagesDirectory: themeSystemConfig.themesDirectory,
         themePackagesLoading,
@@ -3324,7 +3424,9 @@ function App() {
         onRefreshTopBars: refreshTopBarCatalog,
         onOpenTopBarsFolder: openTopBarsFolder,
         onRefreshHomePacks: () => refreshHomePacks(true),
+        onRefreshMenuPacks: () => refreshMenuPacks(true),
         onOpenHomePacksFolder: openHomePacksFolder,
+        onOpenMenuPacksFolder: openMenuPacksFolder,
         iconThemePackages,
         iconThemePackagesDirectory: iconThemeSystemConfig.iconThemesDirectory,
         iconThemePackagesLoading,
@@ -3413,6 +3515,7 @@ function App() {
       pluginContextMenuItems,
       openAnimationsFolder,
       openHomePacksFolder,
+      openMenuPacksFolder,
       openShadersFolder,
       openPluginsFolder,
       openTopBarsFolder,
@@ -3434,6 +3537,7 @@ function App() {
       requestWindowModeChange,
       resolvedAppearance,
       combinedThemePackages,
+      menuPacks,
       iconThemePackages,
       importWallpaperFiles,
       explorerPanelLayoutMode,
@@ -3447,6 +3551,10 @@ function App() {
       homePacksLoading,
       homePacksWarnings,
       refreshHomePacks,
+      menuPacksError,
+      menuPacksLoading,
+      menuPacksWarnings,
+      refreshMenuPacks,
     ],
   );
   const panelLookup = useMemo(

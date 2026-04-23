@@ -9,6 +9,7 @@ import { useExplorerStore } from '../store/explorerStore';
 import { overlayWindowGeometry } from '../config/overlayWindow';
 import { defaultExplorerThumbnailSettings } from '../config/explorerThumbnails';
 import { semanticIndexingCapabilityId } from '../config/localModels';
+import { DEFAULT_EXPLORER_MENU_PACK_ID } from '../config/menuPacks';
 
 beforeEach(() => {
   useSettingsStore.getState().resetToDefaults();
@@ -86,6 +87,8 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.thumbnails).toEqual(defaultExplorerThumbnailSettings);
     expect(settings.explorer.modeProfileOverridesByThemeId).toEqual({});
     expect(settings.explorer.chromeLayoutOverridesByThemeId).toEqual({});
+    expect(settings.explorer.activeMenuPackId).toBe(DEFAULT_EXPLORER_MENU_PACK_ID);
+    expect(settings.explorer.contextMenuLayoutOverridesByContext).toEqual({});
   });
 
   it('has the correct default appearance settings', () => {
@@ -1040,6 +1043,32 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.explorer.contextMenuItemOverrides).toEqual({
       'built-in.open': { enabled: false, order: 28 },
     });
+  });
+
+  it('migrates legacy flat context-menu overrides into layout overrides when no menu-layout overrides exist', () => {
+    const merged = mergeSettingsWithDefaults({
+      explorer: {
+        contextMenuItemOverrides: {
+          'built-in.open': { enabled: false, order: 30 },
+          'built-in.open-with': { order: 10 },
+        },
+      } as unknown as typeof defaultSettings.explorer,
+    });
+
+    expect(merged.explorer.activeMenuPackId).toBe(DEFAULT_EXPLORER_MENU_PACK_ID);
+    expect(merged.explorer.contextMenuLayoutOverridesByContext.entry?.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'command',
+          commandId: 'built-in.open',
+          enabled: false,
+        }),
+        expect.objectContaining({
+          kind: 'command',
+          commandId: 'built-in.open-with',
+        }),
+      ]),
+    );
   });
 
   it('normalizes imported local model bindings and semantic root overrides', () => {

@@ -18,6 +18,7 @@ import type {
 } from '../../config/pluginContributions';
 import type { ExplorerLayoutMode } from '../../config/layoutProfiles';
 import type { LoadedExplorerHomePack } from '../../config/homePackages';
+import type { LoadedExplorerMenuPack } from '../../config/menuPacks';
 import {
   EXPLORER_DRAG_DWELL_INDICATOR_HEIGHT_PX,
   EXPLORER_TAB_AUTO_OPEN_DELAY_MS,
@@ -77,6 +78,7 @@ interface ExplorerWorkspaceProps {
   onOpenInFilesystemAquarium?: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void | Promise<void>;
   homePacks?: LoadedExplorerHomePack[];
+  menuPacks?: LoadedExplorerMenuPack[];
   onOpenPanel?: (panelId: string) => void;
   onOpenSettingsSection?: (section: SettingsSectionKey) => void;
   pluginActions?: OverlayPluginExplorerActionContribution[];
@@ -185,6 +187,7 @@ export function ExplorerWorkspace({
   onOpenInFilesystemAquarium = () => undefined,
   onAddBookmark,
   homePacks = [],
+  menuPacks = [],
   onOpenPanel = () => undefined,
   onOpenSettingsSection = () => undefined,
   pluginActions = [],
@@ -1322,9 +1325,10 @@ export function ExplorerWorkspace({
           onExplorerPickerConfirm={onExplorerPickerConfirm}
           onExplorerPickerCancel={onExplorerPickerCancel}
           theme={theme}
-          onAddBookmark={onAddBookmark}
-          homePacks={homePacks}
-          onOpenPanel={onOpenPanel}
+              onAddBookmark={onAddBookmark}
+              homePacks={homePacks}
+              menuPacks={menuPacks}
+              onOpenPanel={onOpenPanel}
           onOpenSettingsSection={onOpenSettingsSection}
           onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
           onOpenInTerminal={onOpenInTerminal}

@@ -901,7 +901,7 @@ function getEntryIconSrc(entryName: string): string {
     throw new Error(`Explorer label not found for ${entryName}`);
   }
   const entryRow = entryLabel.closest(
-    'tr, [draggable="true"]',
+    '[data-entry-path], tr, [draggable="true"]',
   ) as HTMLElement | null;
   if (!entryRow) {
     throw new Error(`Explorer row not found for ${entryName}`);
@@ -925,7 +925,7 @@ function getEntryThumbnailBadgeSrc(entryName: string): string {
     throw new Error(`Explorer label not found for ${entryName}`);
   }
   const entryRow = entryLabel.closest(
-    'tr, [draggable="true"]',
+    '[data-entry-path], tr, [draggable="true"]',
   ) as HTMLElement | null;
   if (!entryRow) {
     throw new Error(`Explorer row not found for ${entryName}`);
@@ -3270,6 +3270,251 @@ const value = 1;
           ([command]) => command === "fs_start_native_file_drag",
         ),
     ).toBe(false);
+  });
+
+  it("drops explorer files into the previewed folder and refreshes the preview lane", async () => {
+    const alphaPath = `${REPO_ROOT}\\alpha`;
+    let alphaEntries: Array<{
+      name: string;
+      path: string;
+      is_dir: boolean;
+      size: number;
+      modified: number;
+      extension: string;
+      is_hidden: boolean;
+      is_symlink: boolean;
+    }> = [];
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as
+          | {
+              path?: string;
+              targetDir?: string;
+              sources?: string[];
+            }
+          | undefined;
+        if (
+          (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
+          payload?.path === alphaPath
+        ) {
+          return alphaEntries;
+        }
+        if (command === "fs_transfer_items" && payload?.targetDir === alphaPath) {
+          alphaEntries = [
+            ...alphaEntries,
+            ...(payload.sources ?? []).map((sourcePath) => {
+              const sourceName = sourcePath.split("\\").pop() ?? "item";
+              const sourceEntry = ENTRIES.find(
+                (entry) => entry.path === sourcePath,
+              );
+              return {
+                name: sourceName,
+                path: `${alphaPath}\\${sourceName}`,
+                is_dir: false,
+                size: sourceEntry?.size ?? 0,
+                modified: 1713400000000,
+                extension:
+                  sourceEntry?.extension ??
+                  sourceName.split(".").pop() ??
+                  "",
+                is_hidden: false,
+                is_symlink: false,
+              };
+            }),
+          ];
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(screen.getByText("alpha"));
+
+    const previewPane = getPreviewPane();
+    await within(previewPane).findByText("Empty Folder");
+
+    const dragSource = screen
+      .getByText("notes.txt")
+      .closest('[data-overlay-drag-source="file"]');
+    if (!(dragSource instanceof HTMLElement)) {
+      throw new Error("Expected draggable explorer entry");
+    }
+
+    const originalElementFromPoint = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => previewPane),
+    });
+
+    try {
+      const dragGesture = startExplorerPointerDrag(dragSource, {
+        endX: 96,
+        endY: 48,
+      });
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-drop-active",
+        "true",
+      );
+      finishExplorerPointerDrag(dragGesture);
+    } finally {
+      if (originalElementFromPoint) {
+        Object.defineProperty(document, "elementFromPoint", {
+          configurable: true,
+          value: originalElementFromPoint,
+        });
+      } else {
+        Reflect.deleteProperty(document, "elementFromPoint");
+      }
+    }
+
+    await waitFor(() => {
+      const transferCalls = vi
+        .mocked(invoke)
+        .mock.calls.filter(([command]) => command === "fs_transfer_items");
+      expect(transferCalls).toHaveLength(1);
+      expect(transferCalls[0]?.[1]).toMatchObject({
+        targetDir: alphaPath,
+        sources: [`${REPO_ROOT}\\notes.txt`],
+        operation: "move",
+      });
+    });
+    await within(getPreviewPane()).findByRole("button", {
+      name: /open file notes\.txt/i,
+    });
+  });
+
+  it("copies native external drops into the previewed folder and refreshes the preview lane", async () => {
+    const currentWindow = getCurrentWindow();
+    const alphaPath = `${REPO_ROOT}\\alpha`;
+    let alphaEntries: Array<{
+      name: string;
+      path: string;
+      is_dir: boolean;
+      size: number;
+      modified: number;
+      extension: string;
+      is_hidden: boolean;
+      is_symlink: boolean;
+    }> = [];
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as
+          | {
+              path?: string;
+              targetDir?: string;
+              sources?: string[];
+            }
+          | undefined;
+        if (
+          (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
+          payload?.path === alphaPath
+        ) {
+          return alphaEntries;
+        }
+        if (command === "fs_transfer_items" && payload?.targetDir === alphaPath) {
+          alphaEntries = [
+            ...alphaEntries,
+            ...(payload.sources ?? []).map((sourcePath) => {
+              const sourceName = sourcePath.split("\\").pop() ?? "item";
+              return {
+                name: sourceName,
+                path: `${alphaPath}\\${sourceName}`,
+                is_dir: false,
+                size: 0,
+                modified: 1713400000000,
+                extension: sourceName.split(".").pop() ?? "",
+                is_hidden: false,
+                is_symlink: false,
+              };
+            }),
+          ];
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(screen.getByText("alpha"));
+
+    const previewPane = getPreviewPane();
+    await within(previewPane).findByText("Empty Folder");
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(currentWindow.onDragDropEvent).mock.calls.length,
+      ).toBeGreaterThan(0);
+    });
+
+    const dragDropCalls = vi.mocked(currentWindow.onDragDropEvent).mock.calls;
+    const nativeDragHandler = dragDropCalls[dragDropCalls.length - 1]?.[0];
+    if (!nativeDragHandler) {
+      throw new Error("Expected native drag-drop listener");
+    }
+
+    const position = {
+      x: 88,
+      y: 44,
+      toLogical: vi.fn().mockReturnValue({ x: 88, y: 44 }),
+    };
+    const originalElementFromPoint = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => previewPane),
+    });
+
+    try {
+      await nativeDragHandler({
+        payload: {
+          type: "enter",
+          position,
+        },
+      } as never);
+      await nativeDragHandler({
+        payload: {
+          type: "drop",
+          paths: ["C:\\incoming\\dropped.txt"],
+          position,
+        },
+      } as never);
+    } finally {
+      if (originalElementFromPoint) {
+        Object.defineProperty(document, "elementFromPoint", {
+          configurable: true,
+          value: originalElementFromPoint,
+        });
+      } else {
+        Reflect.deleteProperty(document, "elementFromPoint");
+      }
+    }
+
+    await waitFor(() => {
+      const transferCalls = vi
+        .mocked(invoke)
+        .mock.calls.filter(([command]) => command === "fs_transfer_items");
+      expect(transferCalls).toHaveLength(1);
+      expect(transferCalls[0]?.[1]).toMatchObject({
+        targetDir: alphaPath,
+        sources: ["C:\\incoming\\dropped.txt"],
+        operation: "copy",
+      });
+    });
+    await within(getPreviewPane()).findByRole("button", {
+      name: /open file dropped\.txt/i,
+    });
   });
 
   it("routes pdf files into the inline pdf workbench and surfaces pdf chrome state", async () => {

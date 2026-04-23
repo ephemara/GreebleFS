@@ -18,6 +18,10 @@ describe('managed content directories', () => {
     expect(getManagedContentDirectory('topBars')).toBe('top-bars');
   });
 
+  it('defaults menu-pack storage to a portable managed directory name', () => {
+    expect(getManagedContentDirectory('menuPacks')).toBe('menu-packs');
+  });
+
   it('respects a notes directory override', () => {
     vi.stubEnv('VITE_GREEBLEFS_NOTES_DIR', '/tmp/greeblefs-notes');
 
@@ -36,6 +40,12 @@ describe('managed content directories', () => {
     expect(getManagedContentDirectory('iconThemes')).toBe('/tmp/greeblefs-icon-themes');
   });
 
+  it('respects a menu-pack directory override', () => {
+    vi.stubEnv('VITE_GREEBLEFS_MENU_PACKS_DIR', '/tmp/greeblefs-menu-packs');
+
+    expect(getManagedContentDirectory('menuPacks')).toBe('/tmp/greeblefs-menu-packs');
+  });
+
   it('still honors the legacy notes directory override', () => {
     vi.stubEnv('VITE_OVERLAYTERM_NOTES_DIR', '/tmp/overlayterm-notes');
 
@@ -52,5 +62,11 @@ describe('managed content directories', () => {
     vi.stubEnv('VITE_OVERLAYTERM_TOP_BARS_DIR', '/tmp/overlayterm-top-bars');
 
     expect(getManagedContentDirectory('topBars')).toBe('/tmp/overlayterm-top-bars');
+  });
+
+  it('still honors the legacy menu-pack directory override', () => {
+    vi.stubEnv('VITE_OVERLAYTERM_MENU_PACKS_DIR', '/tmp/overlayterm-menu-packs');
+
+    expect(getManagedContentDirectory('menuPacks')).toBe('/tmp/overlayterm-menu-packs');
   });
 });

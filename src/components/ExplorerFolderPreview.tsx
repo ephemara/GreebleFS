@@ -20,6 +20,7 @@ import {
 export interface ExplorerFolderPreviewProps {
   folderPath: string;
   folderName: string;
+  refreshRevision?: number;
   showHiddenFiles: boolean;
   onOpenEntry: (entry: ExplorerFileEntry) => void;
   onStartDragOutEntry?: (
@@ -63,6 +64,7 @@ function getEntryParentLabel(path: string): string | null {
 export function ExplorerFolderPreview({
   folderPath,
   folderName,
+  refreshRevision = 0,
   showHiddenFiles,
   onOpenEntry,
   onStartDragOutEntry,
@@ -99,7 +101,7 @@ export function ExplorerFolderPreview({
     return () => {
       active = false;
     };
-  }, [folderPath, showHiddenFiles]);
+  }, [folderPath, refreshRevision, showHiddenFiles]);
 
   const folderCount = useMemo(
     () => entries?.filter((entry) => entry.is_dir).length ?? 0,

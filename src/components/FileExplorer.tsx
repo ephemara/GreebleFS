@@ -36,7 +36,6 @@ import {
   RotateCcw,
   X,
   Star,
-  StarOff,
   Terminal,
   TerminalSquare,
   Trash2,
@@ -55,7 +54,6 @@ import {
   PinOff,
   Puzzle,
   Sparkles,
-  Waves,
   FilePlus,
   FolderPlus,
   HardDriveDownload,
@@ -75,12 +73,10 @@ import {
   type ResolvedOverlayAppearance,
 } from "../config/appearance";
 import {
-  BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
   createLegacyExplorerActionContextMenuContributions,
-  isExplorerContextMenuItemEnabled,
-  normalizePluginContextMenuContributions,
-  sortExplorerContextMenuItems,
-  type ExplorerContextMenuItemGroup,
+  type ExplorerMenuInvocationContext,
+  type ExplorerMenuInvocationEntry,
+  type ExplorerResolvedPluginContextMenuContribution,
 } from "../config/explorerContextMenu";
 import {
   buildExplorerArchiveVirtualPath,
@@ -88,7 +84,6 @@ import {
   getExplorerArchiveVirtualCurrentFolderName,
   getExplorerArchiveVirtualParentPath,
   getExplorerArchiveVirtualRootLabel,
-  getExplorerArchiveExtractToFolderLabel,
   isExplorerArchiveVirtualPath,
   isExplorerArchiveEntry,
   parseExplorerArchiveVirtualPath,
@@ -98,6 +93,7 @@ import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
 } from "../config/pluginContributions";
+import type { LoadedExplorerMenuPack } from "../config/menuPacks";
 import { getExplorerRailWidthBounds } from "../config/explorerRail";
 import {
   explorerExperimentalModes,
@@ -223,6 +219,7 @@ import {
   getExplorerDragInteractionState,
   getExplorerDropBindingElementProps,
   getExplorerDirectoryDropSurfaceId,
+  getExplorerPreviewDropSurfaceId,
   getExplorerDropScopeId,
   readExplorerPathsFromDataTransfer,
   resolveExplorerDropHitFromElement,
@@ -237,6 +234,7 @@ import {
   type ExplorerDragIntent,
   type ExplorerDragSourceKind,
   type ExplorerDropPointerLike,
+  type ExplorerDropSurfaceBinding,
 } from "./explorer/explorerDragAndDrop";
 import {
   recordExplorerPerformanceSample,
@@ -258,6 +256,7 @@ import { ExplorerShaderWorkbench } from "./ExplorerShaderWorkbench";
 import { ExplorerVideoEditor } from "./ExplorerVideoEditor";
 import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
 import { ExplorerFolderPreview } from "./ExplorerFolderPreview";
+import { ExplorerContextMenu } from "./explorer/ExplorerContextMenu";
 import { ExplorerFontPreview } from "./ExplorerFontPreview";
 import { ExplorerSpreadsheetWorkbench } from "./ExplorerSpreadsheetWorkbench";
 import { ExplorerDocxWorkbench } from "./ExplorerDocxWorkbench";
@@ -285,6 +284,10 @@ import {
 } from "./home/ExplorerHomeSurface";
 import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
 import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
+import {
+  buildExplorerRuntimeMenu,
+  resolveMenuInvocationInputModality,
+} from "./explorer/explorerMenuRuntime";
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
 import {
@@ -427,6 +430,7 @@ import {
 } from "../config/pluginContributions";
 import {
   explorerBackendContract,
+  isCloudExplorerPath,
   type ExplorerBatchRenamePreview,
   type ExplorerBatchRenameRecipeInput,
   type ExplorerBackendContract,
@@ -869,7 +873,7 @@ interface ContextMenuState {
   visible: boolean;
   x: number;
   y: number;
-  entry: FileEntry | null;
+  invocation: ExplorerMenuInvocationContext | null;
 }
 interface RenameState {
   active: boolean;
@@ -1041,6 +1045,11 @@ type PreviewState =
 type PreviewCloseGuard = () => Promise<boolean>;
 type PreviewSurfaceMode = "content" | "terminal";
 type ExplorerEmbeddedTerminalPlacement = "preview" | "bottom";
+type ExplorerPreviewDropTarget = {
+  surfaceId: string;
+  targetPath: string;
+  label: string;
+};
 type ExplorerShaderSelectionMemory = {
   selectedStage: ExplorerShaderPreviewStage | null;
   selectedEntryPoint: string | null;
@@ -1059,6 +1068,51 @@ interface PendingExplorerTransferRequest {
   sources: string[];
   operation: FileTransferOperation;
   collisionPolicy?: ExplorerFileTransferCollisionPolicy;
+}
+
+function resolveExplorerPreviewDropTarget(
+  preview: PreviewState,
+): ExplorerPreviewDropTarget | null {
+  if (preview.type !== "folder") {
+    return null;
+  }
+
+  const targetPath = preview.path.trim();
+  if (!targetPath || isCloudExplorerPath(targetPath) || isExplorerVirtualPath(targetPath)) {
+    return null;
+  }
+
+  return {
+    surfaceId: getExplorerPreviewDropSurfaceId(targetPath),
+    targetPath,
+    label: preview.name || getPathLeaf(targetPath) || "Folder",
+  };
+}
+
+function collectExplorerTransferAffectedDirectories(args: {
+  targetDir: string;
+  sources: readonly string[];
+}): string[] {
+  const affectedDirectories = new Set<string>();
+  const normalizedTargetDir = normalizeExplorerPath(args.targetDir.trim());
+  if (normalizedTargetDir) {
+    affectedDirectories.add(normalizedTargetDir);
+  }
+
+  for (const sourcePath of args.sources) {
+    const sourceParentPath = getPathParent(sourcePath);
+    if (!sourceParentPath) {
+      continue;
+    }
+    const normalizedSourceParentPath = normalizeExplorerPath(
+      sourceParentPath.trim(),
+    );
+    if (normalizedSourceParentPath) {
+      affectedDirectories.add(normalizedSourceParentPath);
+    }
+  }
+
+  return [...affectedDirectories];
 }
 
 const EXPLORER_EMBEDDED_TERMINAL_HEIGHT_BOUNDS = {
@@ -2582,17 +2636,6 @@ function SvgIcon({ src, size = 20 }: { src: string; size?: number }) {
 
 // ─── Context menu ─────────────────────────────────────────────────────────────
 
-interface CtxItem {
-  id: string;
-  group: ExplorerContextMenuItemGroup;
-  defaultOrder: number;
-  label: string;
-  icon: React.ReactNode;
-  danger?: boolean;
-  divider?: boolean;
-  action: () => void | Promise<void>;
-}
-
 function resolveContextMenuIcon(iconName?: string): React.ReactNode {
   switch (iconName) {
     case "Clipboard":
@@ -2634,111 +2677,6 @@ function resolveContextMenuIcon(iconName?: string): React.ReactNode {
     default:
       return <Puzzle size={13} />;
   }
-}
-
-function ContextMenu({
-  state,
-  items,
-  onClose,
-}: {
-  state: ContextMenuState;
-  items: CtxItem[];
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!state.visible) return;
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    setTimeout(() => window.addEventListener("mousedown", h), 0);
-    return () => window.removeEventListener("mousedown", h);
-  }, [state.visible, onClose]);
-
-  useEffect(() => {
-    if (state.visible && ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      let newX = state.x;
-      let newY = state.y;
-
-      if (newX + rect.width > window.innerWidth) {
-        newX = window.innerWidth - rect.width - 8;
-      }
-      if (newY + rect.height > window.innerHeight) {
-        newY = window.innerHeight - rect.height - 8;
-      }
-
-      newX = Math.max(8, newX);
-      newY = Math.max(8, newY);
-
-      ref.current.style.left = `${newX}px`;
-      ref.current.style.top = `${newY}px`;
-      ref.current.style.opacity = "1";
-    }
-  }, [state]);
-
-  if (!state.visible) return null;
-  return (
-    <div
-      ref={ref}
-      style={{
-        position: "fixed",
-        left: state.x,
-        top: state.y,
-        zIndex: 9999,
-        opacity: 0,
-        background: "var(--overlay-explorer-preview-bg)",
-        border: "1px solid var(--overlay-explorer-preview-border)",
-        borderRadius: "var(--overlay-explorer-panel-radius)",
-        boxShadow: "var(--overlay-explorer-ctx-menu-shadow)",
-        minWidth: 210,
-        padding: "4px 0",
-        fontFamily: "Inter,system-ui,sans-serif",
-      }}
-    >
-      {items.map((item, i) =>
-        item.divider ? (
-          <div
-            key={i}
-            style={{ height: 1, background: EXP.border, margin: "3px 0" }}
-          />
-        ) : (
-          <button
-            key={i}
-            onClick={() => {
-              item.action();
-              onClose();
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              width: "100%",
-              padding: "6px 14px",
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              color: item.danger ? EXP.red : EXP.text,
-              fontSize: 12,
-              textAlign: "left",
-            }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.background = item.danger
-                ? "var(--overlay-explorer-danger-soft-bg)"
-                : "var(--overlay-explorer-chip-active-bg)")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.background = "transparent")
-            }
-          >
-            <span style={{ opacity: 0.7, display: "flex" }}>{item.icon}</span>
-            {item.label}
-          </button>
-        ),
-      )}
-    </div>
-  );
 }
 
 function ExplorerLayoutGlyph({
@@ -3430,7 +3368,12 @@ function PreviewPanel({
   presentationMode,
   previewLocked,
   previewSurfaceMode,
+  refreshRevision,
   previewContentHostRef,
+  previewDropBinding,
+  previewDropTarget,
+  previewDropTargetActive,
+  previewDropTargetDwell,
   explorerTerminalWorkingDirectory,
   explorerTerminalReportedWorkingDirectory,
   onClose,
@@ -3470,6 +3413,7 @@ function PreviewPanel({
   onOpenFolderPreviewEntry,
   onStartDragOutPreviewEntry,
   onExtractArchive,
+  onContextMenu,
 }: {
   preview: PreviewState;
   width: number;
@@ -3477,7 +3421,12 @@ function PreviewPanel({
   presentationMode: ExplorerPreviewSplitMode;
   previewLocked: boolean;
   previewSurfaceMode: PreviewSurfaceMode;
+  refreshRevision: number;
   previewContentHostRef: React.RefObject<HTMLDivElement | null>;
+  previewDropBinding: ExplorerDropSurfaceBinding | null;
+  previewDropTarget: ExplorerPreviewDropTarget | null;
+  previewDropTargetActive: boolean;
+  previewDropTargetDwell: boolean;
   explorerTerminalWorkingDirectory: string | null;
   explorerTerminalReportedWorkingDirectory: string | null;
   onClose: () => void;
@@ -3533,6 +3482,7 @@ function PreviewPanel({
     request: ExplorerPreviewEntryDragRequest<FileEntry>,
   ) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
+  onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
 }) {
   const interactionMotion = useInteractionMotionController();
   const dragging = useRef(false);
@@ -3556,6 +3506,10 @@ function PreviewPanel({
       column: 1,
     });
   const dragHandleSide = placement === "leading" ? "right" : "left";
+  const previewDropLabel = previewDropTarget?.label ?? null;
+  const previewDropHighlightActive =
+    previewDropTarget != null &&
+    (previewDropTargetActive || previewDropTargetDwell);
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
     startX.current = e.clientX;
@@ -4692,6 +4646,27 @@ function PreviewPanel({
             boxShadow: "var(--overlay-explorer-toolbar-shadow)",
             ...previewGlassBlurStyle,
           };
+  const previewDropOverlayStyle: CSSProperties = {
+    position: "absolute",
+    inset: presentationMode === "pane" ? 10 : 12,
+    borderRadius: presentationMode === "pane" ? 16 : 14,
+    border: `1px dashed ${previewDropTargetDwell ? `${EXP.accent}88` : `${EXP.accent}66`}`,
+    background: `color-mix(in srgb, ${EXP.accent} ${previewDropTargetDwell ? "10%" : "7%"}, transparent)`,
+    boxShadow: previewDropTargetDwell
+      ? `0 0 0 1px ${EXP.accent}28, 0 24px 48px ${EXP.accent}24`
+      : `0 0 0 1px ${EXP.accent}18`,
+    opacity: previewDropHighlightActive ? 1 : 0,
+    transform: previewDropTargetDwell ? "scale(1.008)" : "scale(1)",
+    transformOrigin: "center",
+    transition:
+      "opacity 140ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background 180ms ease",
+    pointerEvents: "none",
+    zIndex: 2,
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    padding: 16,
+  };
   const getPreviewSurfaceLayerStyle = useCallback(
     (surfaceMode: PreviewSurfaceMode): CSSProperties => {
       const isVisible =
@@ -4716,7 +4691,17 @@ function PreviewPanel({
       data-overlay-explorer-preview-locked={previewLocked ? "true" : "false"}
       data-overlay-explorer-preview-split-mode={presentationMode}
       data-overlay-explorer-preview-surface-mode={previewSurfaceMode}
-      style={previewShellStyle}
+      data-overlay-explorer-preview-drop-active={
+        previewDropTargetActive ? "true" : "false"
+      }
+      {...getExplorerDropBindingElementProps(previewDropBinding)}
+      onContextMenu={onContextMenu}
+      style={{
+        ...previewShellStyle,
+        boxShadow: previewDropHighlightActive
+          ? `${previewShellStyle.boxShadow ? `${previewShellStyle.boxShadow}, ` : ""}inset 0 0 0 1px ${previewDropTargetDwell ? `${EXP.accent}72` : `${EXP.accent}58`}`
+          : previewShellStyle.boxShadow,
+      }}
     >
       {/* Drag handle */}
       <div
@@ -4762,6 +4747,25 @@ function PreviewPanel({
         ref={previewContentHostRef}
         style={{ flex: 1, overflow: "hidden", position: "relative" }}
       >
+        {previewDropLabel ? (
+          <div aria-hidden style={previewDropOverlayStyle}>
+            <div
+              style={{
+                borderRadius: 999,
+                border: `1px solid ${previewDropTargetDwell ? `${EXP.accent}7a` : `${EXP.accent}5c`}`,
+                background: "var(--overlay-explorer-chip-bg)",
+                color: EXP.text,
+                padding: "8px 14px",
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.02em",
+                boxShadow: `0 12px 24px ${EXP.accent}18`,
+              }}
+            >
+              Drop into {previewDropLabel}
+            </div>
+          </div>
+        ) : null}
         <div
           data-overlay-explorer-preview-surface="content"
           style={getPreviewSurfaceLayerStyle("content")}
@@ -4824,6 +4828,7 @@ function PreviewPanel({
             <ExplorerFolderPreview
               folderPath={previewResolvedPath}
               folderName={preview.name}
+              refreshRevision={refreshRevision}
               showHiddenFiles={showHiddenFiles}
               onOpenEntry={onOpenFolderPreviewEntry}
               onStartDragOutEntry={onStartDragOutPreviewEntry}
@@ -7245,6 +7250,7 @@ interface FileExplorerProps {
   onOpenInFilesystemAquarium?: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void;
   homePacks?: LoadedExplorerHomePack[];
+  menuPacks?: LoadedExplorerMenuPack[];
   onOpenPanel?: (panelId: string) => void;
   onOpenSettingsSection?: (section: SettingsSectionKey) => void;
   pluginActions?: OverlayPluginExplorerActionContribution[];
@@ -7326,6 +7332,7 @@ export function FileExplorer({
   onOpenInFilesystemAquarium = () => undefined,
   onAddBookmark,
   homePacks = [],
+  menuPacks = [],
   onOpenPanel = () => undefined,
   onOpenSettingsSection = () => undefined,
   pluginActions = [],
@@ -7692,7 +7699,7 @@ export function FileExplorer({
     visible: false,
     x: 0,
     y: 0,
-    entry: null,
+    invocation: null,
   });
   const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
@@ -7814,6 +7821,10 @@ export function FileExplorer({
   const lastSelected = useRef<string | null>(null);
   const selectionRangeAnchorPathRef = useRef<string | null>(null);
   const previewRef = useRef(preview);
+  const activePreviewDropTarget = useMemo(
+    () => resolveExplorerPreviewDropTarget(preview),
+    [preview],
+  );
   const previewCloseGuardRef = useRef<PreviewCloseGuard | null>(null);
   const previewReopenOnSelectionRef = useRef(false);
   const allowPreviewLoadWhileClosedRef = useRef(false);
@@ -7889,6 +7900,12 @@ export function FileExplorer({
     activeDragInteraction.scopeId === explorerDropScopeId
       ? activeDragInteraction.dwellSurfaceId
       : null;
+  const previewDropTargetActive =
+    activePreviewDropTarget != null &&
+    activeScopedTargetSurfaceId === activePreviewDropTarget.surfaceId;
+  const previewDropTargetDwell =
+    activePreviewDropTarget != null &&
+    activeScopedDwellSurfaceId === activePreviewDropTarget.surfaceId;
   const scopeRootDropActive =
     activeDragInteraction.scopeId === explorerDropScopeId &&
     activeDragInteraction.valid &&
@@ -8007,6 +8024,7 @@ export function FileExplorer({
   const [experimentalHudVisible, setExperimentalHudVisible] = useState(false);
   const experimentalHudTimerRef = useRef<number | null>(null);
   const [localTreeRefreshRevision, setLocalTreeRefreshRevision] = useState(0);
+  const [previewRefreshRevision, setPreviewRefreshRevision] = useState(0);
   const [explorerViewportMetrics, setExplorerViewportMetrics] =
     useState<ViewportMetrics>({
       scrollTop: 0,
@@ -8027,6 +8045,8 @@ export function FileExplorer({
     !currentPathIsCloud &&
     !currentPathIsHome &&
     !currentPathIsVirtual;
+  const explorerSupportsAnyDropTarget =
+    currentLocationSupportsMutation || activePreviewDropTarget != null;
   const explorerTerminalNamespace = useMemo(
     () => `explorer-terminal-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
     [instanceId],
@@ -9646,6 +9666,16 @@ export function FileExplorer({
     () => new Map(visibleEntries.map((entry) => [entry.path, entry] as const)),
     [visibleEntries],
   );
+  const contextMenuEntryLookup = useMemo(() => {
+    const entryLookup = new Map<
+      string,
+      FileEntry | ExplorerNormalizedSearchResult
+    >();
+    [...entries, ...searchResults, ...visibleEntries].forEach((entry) => {
+      entryLookup.set(entry.path, entry);
+    });
+    return entryLookup;
+  }, [entries, searchResults, visibleEntries]);
   const visibleEntryIndexLookup = useMemo(
     () =>
       new Map(
@@ -10677,7 +10707,7 @@ export function FileExplorer({
       return;
     }
     setSelected(new Set());
-    setCtxMenu({ visible: false, x: 0, y: 0, entry: null });
+    setCtxMenu({ visible: false, x: 0, y: 0, invocation: null });
     setDeleteTargets([]);
     setPickerOverwriteTargetPath(null);
     setPickerSaveFileName(
@@ -10783,54 +10813,6 @@ export function FileExplorer({
       openExplorerArchive,
       refresh,
     ],
-  );
-
-  const resolveAudioBatchTargets = useCallback(
-    (entry?: FileEntry) => {
-      const entriesForAction = resolveEntriesForAction(entry);
-      if (entriesForAction.length === 0) {
-        return null;
-      }
-      const includesUnsupportedFile = entriesForAction.some(
-        (candidate) =>
-          !candidate.is_dir &&
-          !isAudioPreviewExtension(getEntryExtension(candidate)),
-      );
-      const hasAudioCandidate = entriesForAction.some(
-        (candidate) =>
-          candidate.is_dir ||
-          isAudioPreviewExtension(getEntryExtension(candidate)),
-      );
-      if (includesUnsupportedFile || !hasAudioCandidate) {
-        return null;
-      }
-      return entriesForAction.map((candidate) => candidate.path);
-    },
-    [resolveEntriesForAction],
-  );
-
-  const handleAudioBatchAction = useCallback(
-    async (mode: "convert" | "normalize", entry?: FileEntry) => {
-      const inputPaths = resolveAudioBatchTargets(entry);
-      if (!inputPaths) {
-        return;
-      }
-      try {
-        await runExplorerAudioBatchProcess({
-          inputPaths,
-          recurseDirectories: true,
-          mode: mode === "convert" ? "convert" : "normalize",
-          outputFormat: mode === "convert" ? "wav" : null,
-          overwriteExisting: false,
-          outputDirectory: null,
-        });
-        invalidateExplorerResultCaches();
-        await refresh();
-      } catch (audioBatchError) {
-        setError(String(audioBatchError));
-      }
-    },
-    [refresh, resolveAudioBatchTargets],
   );
 
   const shouldUseManagedIconSrc = useCallback(
@@ -11143,52 +11125,28 @@ export function FileExplorer({
     [finalizeTransferResults, planExplorerItemTransfer, transferIntoDirectory],
   );
 
-  const requestTransferDestination = useCallback(
-    (operation: FileTransferOperation, entry?: FileEntry) => {
-      if (!currentLocationSupportsMutation) {
-        setError("Archive and virtual explorer locations are read-only.");
+  const refreshExplorerAfterTransferRequest = useCallback(
+    async (request: Pick<PendingExplorerTransferRequest, "targetDir" | "sources">) => {
+      const affectedDirectories =
+        collectExplorerTransferAffectedDirectories(request);
+      for (const affectedDirectory of affectedDirectories) {
+        invalidateExplorerResultCaches(affectedDirectory);
+      }
+
+      await refresh();
+
+      if (!activePreviewDropTarget) {
         return;
       }
 
-      const sourcePaths = resolveEntriesForAction(entry).map(
-        (item) => item.path,
+      const normalizedPreviewTargetPath = normalizeExplorerPath(
+        activePreviewDropTarget.targetPath,
       );
-      if (sourcePaths.length === 0) {
-        return;
+      if (affectedDirectories.includes(normalizedPreviewTargetPath)) {
+        setPreviewRefreshRevision((current) => current + 1);
       }
-
-      void openExplorerPicker({
-        kind: "pickDestinationFolder",
-        presentation: "window",
-        title: operation === "move" ? "Move To…" : "Copy To…",
-        confirmLabel: operation === "move" ? "Move Here" : "Copy Here",
-        startPath: currentPath,
-      })
-        .then((pickerResult) => {
-          const targetDir =
-            pickerResult?.entries[0]?.path?.trim()
-            ?? pickerResult?.currentDirectory.trim()
-            ?? "";
-          if (!targetDir) {
-            return;
-          }
-
-          return executeTransferRequest({
-            operation,
-            sources: sourcePaths,
-            targetDir,
-          });
-        })
-        .catch((transferError) => {
-          setError(String(transferError));
-        });
     },
-    [
-      currentLocationSupportsMutation,
-      currentPath,
-      executeTransferRequest,
-      resolveEntriesForAction,
-    ],
+    [activePreviewDropTarget, refresh],
   );
 
   const resetTransferConflictDialog = useCallback(() => {
@@ -11345,9 +11303,7 @@ export function FileExplorer({
           if (
             !event.payload.position ||
             typeof event.payload.position !== "object" ||
-            currentPathIsHome ||
-            !currentLocationSupportsMutation ||
-            !currentPath.trim()
+            !explorerSupportsAnyDropTarget
           ) {
             clearExplorerDragInteractionTarget();
             return;
@@ -11410,7 +11366,7 @@ export function FileExplorer({
           endExplorerDragInteraction();
           if (
             !targetPath ||
-            !currentLocationSupportsMutation ||
+            !explorerSupportsAnyDropTarget ||
             !dragPayload.sourcePaths.length ||
             (hoveredHit && hoveredHit.scopeId !== explorerDropScopeId)
           ) {
@@ -11425,7 +11381,11 @@ export function FileExplorer({
                 operation: dragPayload.operation,
               },
               {
-                onSuccess: () => refresh(),
+                onSuccess: () =>
+                  refreshExplorerAfterTransferRequest({
+                    targetDir: targetPath,
+                    sources: dragPayload.sourcePaths,
+                  }),
               },
             );
             if (results !== null && dragPayload.isInternalDrag) {
@@ -11452,11 +11412,10 @@ export function FileExplorer({
     };
   }, [
     currentPath,
-    currentLocationSupportsMutation,
-    currentPathIsHome,
+    explorerSupportsAnyDropTarget,
     executeTransferRequest,
     explorerDropScopeId,
-    refresh,
+    refreshExplorerAfterTransferRequest,
     runtimePlatform,
   ]);
 
@@ -13713,72 +13672,19 @@ export function FileExplorer({
     }
   }, [refresh, restoreExplorerTrashAction]);
 
-  const revealPathLabel =
-    runtimePlatform === "macos"
-      ? "Reveal in Finder"
-      : runtimePlatform === "linux"
-        ? "Show in File Manager"
-        : "Reveal in Explorer";
-  const propertiesLabel =
-    runtimePlatform === "macos" ? "Get Info" : "Properties";
-  const supportsNativeOpenWith = runtimePlatform !== "linux";
-  const supportsNativeProperties = runtimePlatform !== "linux";
-  const resolvedPluginContextMenuItems = useMemo(
-    () =>
-      normalizePluginContextMenuContributions([
-        ...pluginContextMenuItems,
-        ...createLegacyExplorerActionContextMenuContributions(pluginActions),
-      ]),
-    [pluginActions, pluginContextMenuItems],
-  );
-  const finalizeContextMenuItems = useCallback(
-    (items: CtxItem[]): CtxItem[] => {
-      const visibleItems = items.filter((item) =>
-        isExplorerContextMenuItemEnabled(
-          item.id,
-          explorerSettings.contextMenuItemOverrides,
-        ),
-      );
-      const sortedItems = sortExplorerContextMenuItems(
-        visibleItems,
-        explorerSettings.contextMenuItemOverrides,
-      );
-      const finalizedItems: CtxItem[] = [];
-
-      sortedItems.forEach((item, index) => {
-        const previousItem = sortedItems[index - 1];
-        if (previousItem && previousItem.group !== item.group) {
-          finalizedItems.push({
-            id: `divider-${previousItem.id}-${item.id}`,
-            group: item.group,
-            defaultOrder: item.defaultOrder - 1,
-            label: "",
-            icon: null,
-            divider: true,
-            action: () => undefined,
-          });
-        }
-        finalizedItems.push(item);
-      });
-
-      return finalizedItems;
-    },
-    [explorerSettings.contextMenuItemOverrides],
-  );
   const executePluginContextMenuItem = useCallback(
     async (
-      contribution: ReturnType<
-        typeof normalizePluginContextMenuContributions
-      >[number],
-      context: {
-        path: string;
-        name: string;
-        parent: string;
-        extension: string;
-        stem: string;
-        isDirectory: boolean;
-      },
+      contribution: ExplorerResolvedPluginContextMenuContribution,
+      entry: ExplorerMenuInvocationEntry,
     ) => {
+      const context = {
+        path: entry.path,
+        name: entry.name,
+        parent: entry.parentPath,
+        extension: entry.extension,
+        stem: entry.stem,
+        isDirectory: entry.isDirectory,
+      };
       if (contribution.execution.kind === "plugin-backend") {
         const resolvedArgs = contribution.execution.args.map((argument) =>
           resolvePluginCommandTemplate(argument, {
@@ -13846,597 +13752,590 @@ export function FileExplorer({
     [],
   );
 
-  // ── Context menu builder ──
-  const buildCtxItems = useCallback(
-    (entry: FileEntry): CtxItem[] => {
-      const isArchive = isExplorerArchiveEntry(entry);
-      const isBookmarked = bookmarkPathSet.has(entry.path);
-      const parentPath = entry.path.replace(/[/\\\\][^/\\\\]+$/, "");
-      const stem = entry.name.replace(/\.[^.]+$/, "");
-      const canUseNativeIntegration = supportsNativeIntegration(entry.path);
-      const audioBatchTargets = resolveAudioBatchTargets(entry);
-      const builtInItems = BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS.flatMap(
-        (item) => {
-          if (!item.contexts.includes("entry")) {
-            return [];
-          }
-          if (item.appliesTo === "directory" && !entry.is_dir) {
-            return [];
-          }
-          if (item.appliesTo === "file" && entry.is_dir) {
-            return [];
-          }
-
-          const sharedItem = {
-            id: item.id,
-            group: item.group,
-            defaultOrder: item.defaultOrder,
-            icon: resolveContextMenuIcon(item.iconName),
-          };
-
-          switch (item.execution.actionId) {
-            case "open":
-              return [
-                {
-                  ...sharedItem,
-                  label: isArchive ? "Open Extracted Contents" : "Open",
-                  action: () => openEntry(entry),
-                },
-              ];
-            case "open-with":
-              return supportsNativeOpenWith && canUseNativeIntegration
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Open With...",
-                      action: () => openWithSystemPicker(entry.path),
-                    },
-                  ]
-                : [];
-            case "open-admin":
-              return canUseNativeIntegration &&
-                !isExplorerArchiveVirtualPath(entry.path)
-                ? [
-                    {
-                      ...sharedItem,
-                      label: entry.is_dir
-                        ? "Open Folder as Admin"
-                        : "Open as Admin",
-                      action: () => openAsAdmin(entry.path),
-                    },
-                  ]
-                : [];
-            case "open-terminal":
-              return entry.is_dir &&
-                !isCloudExplorerPath(entry.path) &&
-                !isExplorerArchiveVirtualPath(entry.path)
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Open in Terminal",
-                      action: () => onOpenInTerminal(entry.path),
-                    },
-                  ]
-                : [];
-            case "open-aquarium":
-              return !isCloudExplorerPath(entry.path) &&
-                (entry.is_dir || parentPath)
-                ? [
-                    {
-                      ...sharedItem,
-                      label: entry.is_dir
-                        ? "Open Habitat in Filesystem Aquarium"
-                        : "Open Parent Habitat in Filesystem Aquarium",
-                      action: () =>
-                        onOpenInFilesystemAquarium(
-                          entry.is_dir ? entry.path : parentPath,
-                        ),
-                    },
-                  ]
-                : [];
-            case "reveal":
-              return canUseNativeIntegration &&
-                !isExplorerArchiveVirtualPath(entry.path)
-                ? [
-                    {
-                      ...sharedItem,
-                      label: revealPathLabel,
-                      action: () =>
-                        revealExplorerPath(entry.path).catch((e) =>
-                          setError(String(e)),
-                        ),
-                    },
-                  ]
-                : [];
-            case "properties":
-              return [
-                {
-                  ...sharedItem,
-                  label: propertiesLabel,
-                  action: () => openExplorerPropertiesPanel([entry.path]),
-                },
-              ];
-            case "copy-path":
-              return [
-                {
-                  ...sharedItem,
-                  label: "Copy Path",
-                  action: () => copyToSysClipboard(entry.path),
-                },
-              ];
-            case "copy":
-              return currentLocationSupportsMutation
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Copy",
-                      action: () => queueClipboard("copy", entry),
-                    },
-                  ]
-                : [];
-            case "cut":
-              return currentLocationSupportsMutation
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Cut",
-                      action: () => queueClipboard("cut", entry),
-                    },
-                  ]
-                : [];
-            case "copy-to":
-              return currentLocationSupportsMutation
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Copy To...",
-                      action: () => requestTransferDestination("copy", entry),
-                    },
-                  ]
-                : [];
-            case "move-to":
-              return currentLocationSupportsMutation
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Move To...",
-                      action: () => requestTransferDestination("move", entry),
-                    },
-                  ]
-                : [];
-            case "extract-here":
-              return isArchive
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Extract Here",
-                      action: () => {
-                        void handleArchiveAction(entry, "extractHere");
-                      },
-                    },
-                  ]
-                : [];
-            case "extract-new-folder":
-              return isArchive
-                ? [
-                    {
-                      ...sharedItem,
-                      label: getExplorerArchiveExtractToFolderLabel(entry),
-                      action: () => {
-                        void handleArchiveAction(entry, "extractToNewFolder");
-                      },
-                    },
-                  ]
-                : [];
-            case "extract-to":
-              return isArchive
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Extract To...",
-                      action: () => {
-                        void handleArchiveAction(entry, "extractToDirectory");
-                      },
-                    },
-                  ]
-                : [];
-            case "duplicate":
-              return currentLocationSupportsMutation
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Duplicate",
-                      action: () => duplicate(entry),
-                    },
-                  ]
-                : [];
-            case "find-similar":
-              return !currentPathIsCloud &&
-                !entry.is_dir &&
-                isSemanticSearchTextLikeExtension(entry.extension)
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Find Similar",
-                      action: () => triggerFindSimilarForPath(entry.path),
-                    },
-                  ]
-                : [];
-            case "rename":
-              return currentLocationSupportsMutation
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Rename (F2)",
-                      action: () =>
-                        setRename({
-                          active: true,
-                          path: entry.path,
-                          name: entry.name,
-                        }),
-                    },
-                  ]
-                : [];
-            case "add-tags":
-              return currentLocationSupportsMutation
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Add Tags...",
-                      action: () =>
-                        openTagDialog([entry.path], "add", {
-                          description: `Enter comma-separated tags to add to ${entry.name}.`,
-                        }),
-                    },
-                  ]
-                : [];
-            case "remove-tags":
-              return currentLocationSupportsMutation
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Remove Tags...",
-                      action: () =>
-                        openTagDialog([entry.path], "remove", {
-                          description: `Enter comma-separated tags to remove from ${entry.name}.`,
-                        }),
-                    },
-                  ]
-                : [];
-            case "bookmark-toggle":
-              return [
-                {
-                  ...sharedItem,
-                  icon: isBookmarked ? (
-                    <StarOff size={13} />
-                  ) : (
-                    <Star size={13} />
-                  ),
-                  label: isBookmarked ? "Remove Bookmark" : "Add to Bookmarks",
-                  action: () => {
-                    if (isBookmarked) {
-                      updateExplorerRail(
-                        removeExplorerBookmarksByPath(explorerRail, entry.path),
-                      );
-                      return;
-                    }
-
-                    const result = upsertExplorerBookmark(explorerRail, {
-                      path: entry.path,
-                      name: entry.name,
-                      isDirectory: entry.is_dir,
-                    });
-                    updateExplorerRail(result.snapshot);
-                    if (result.created) {
-                      handleBookmarkCreated(entry.name, entry.path);
-                    }
-                  },
-                },
-              ];
-            case "move-trash":
-              return currentLocationSupportsMutation
-                ? [
-                    {
-                      ...sharedItem,
-                      label: "Move to Trash",
-                      danger: true,
-                      action: () => openTrashDialog([entry]),
-                    },
-                  ]
-                : [];
-            default:
-              return [];
-          }
-        },
-      );
-      const audioBatchItems = audioBatchTargets
-        ? [
-            {
-              id: "audio.batch-convert",
-              group: "library" as const,
-              defaultOrder: 336,
-              icon: <Waves size={13} />,
-              label: "Batch Convert Audio",
-              action: () => {
-                void handleAudioBatchAction("convert", entry);
-              },
-            },
-            {
-              id: "audio.batch-normalize",
-              group: "library" as const,
-              defaultOrder: 337,
-              icon: <Sparkles size={13} />,
-              label: "Batch Normalize Audio",
-              action: () => {
-                void handleAudioBatchAction("normalize", entry);
-              },
-            },
-          ]
-        : [];
-      const pluginItems = resolvedPluginContextMenuItems
-        .filter((item) => item.contexts.includes("entry"))
-        .filter(
-          (item) =>
-            item.appliesTo === "any" ||
-            (item.appliesTo === "directory" && entry.is_dir) ||
-            (item.appliesTo === "file" && !entry.is_dir),
-        )
-        .map((item) => ({
-          id: item.id,
-          group: item.group,
-          defaultOrder: item.defaultOrder,
-          label: item.title,
-          icon: resolveContextMenuIcon(item.iconName),
-          action: () =>
-            executePluginContextMenuItem(item, {
-              path: entry.path,
-              name: entry.name,
-              parent: parentPath,
-              extension: entry.extension,
-              stem,
-              isDirectory: entry.is_dir,
-            }).catch((error) => setError(String(error))),
-        }));
-
-      return finalizeContextMenuItems([
-        ...builtInItems,
-        ...audioBatchItems,
-        ...pluginItems,
-      ]);
-    },
-    [
-      bookmarkPathSet,
-      copyToSysClipboard,
-      duplicate,
-      executePluginContextMenuItem,
-      explorerRail,
-      explorerSettings.contextMenuItemOverrides,
-      finalizeContextMenuItems,
-      handleArchiveAction,
-      handleAudioBatchAction,
-      handleBookmarkCreated,
-      isCloudExplorerPath,
-      onOpenInFilesystemAquarium,
-      onOpenInTerminal,
-      openAsAdmin,
-      openEntry,
-      openExplorerPropertiesPanel,
-      openTagDialog,
-      openTrashDialog,
-      openWithSystemPicker,
-      propertiesLabel,
-      queueClipboard,
-      requestTransferDestination,
-      resolveAudioBatchTargets,
-      resolvedPluginContextMenuItems,
-      revealExplorerPath,
-      revealPathLabel,
-      supportsNativeIntegration,
-      supportsNativeOpenWith,
-      supportsNativeProperties,
-      updateExplorerRail,
+  const revealPathLabel =
+    runtimePlatform === "macos"
+      ? "Reveal in Finder"
+      : runtimePlatform === "linux"
+        ? "Show in File Manager"
+        : "Reveal in Explorer";
+  const explorerMenuRuntimePlatform =
+    runtimePlatform === "windows" ||
+    runtimePlatform === "macos" ||
+    runtimePlatform === "linux"
+      ? runtimePlatform
+      : "linux";
+  const propertiesLabel =
+    runtimePlatform === "macos" ? "Get Info" : "Properties";
+  const supportsNativeOpenWith = runtimePlatform !== "linux";
+  const supportsNativeProperties = runtimePlatform !== "linux";
+  const combinedPluginContextMenuItems = useMemo(
+    () => [
+      ...pluginContextMenuItems,
+      ...createLegacyExplorerActionContextMenuContributions(pluginActions),
     ],
+    [pluginActions, pluginContextMenuItems],
   );
-
-  const buildEmptyCtxItems = useCallback((): CtxItem[] => {
-    if (currentPathIsHome) {
-      const homeItems: CtxItem[] = [
-        {
-          id: "home.customize",
-          group: "system",
-          defaultOrder: 10,
-          icon: <Settings2 size={13} />,
-          label: "Customize Home",
-          action: () => onOpenSettingsSection("home"),
-        },
-        {
-          id: "home.refresh",
-          group: "system",
-          defaultOrder: 20,
-          icon: <RefreshCw size={13} />,
-          label: "Refresh Home",
-          action: () => {
-            void refresh();
-          },
-        },
-      ];
-      if (userHomePath) {
-        homeItems.push({
-          id: "home.open-user-home",
-          group: "open",
-          defaultOrder: 30,
-          icon: <FolderOpen size={13} />,
-          label: "Open User Home",
-          action: () => {
-            void navigate(userHomePath);
-          },
-        });
+  const explorerMenuCapabilities = useMemo(
+    () => ({
+      mouse: true,
+      touch:
+        typeof navigator !== "undefined" ? navigator.maxTouchPoints > 0 : false,
+      pen: false,
+      keyboard: true,
+    }),
+    [],
+  );
+  const reducedMotionPreference = useMemo(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return false;
+    }
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
+  const contextMenuSearchResult = useMemo(
+    () =>
+      isSearchActive
+        ? {
+            query: search.trim() || semanticSearchSourcePath?.trim() || "",
+            searchMode,
+          }
+        : null,
+    [isSearchActive, search, searchMode, semanticSearchSourcePath],
+  );
+  const toMenuInvocationEntry = useCallback(
+    (
+      entry: Pick<
+        FileEntry | ExplorerNormalizedSearchResult,
+        "path" | "name" | "extension" | "is_dir"
+      >,
+    ): ExplorerMenuInvocationEntry => ({
+      path: entry.path,
+      name: entry.name,
+      parentPath: getPathParent(entry.path) ?? "",
+      extension: getEntryExtension(entry),
+      stem: entry.is_dir ? entry.name : entry.name.replace(/\.[^.]+$/, ""),
+      isDirectory: entry.is_dir,
+    }),
+    [],
+  );
+  const resolveContextMenuFileEntry = useCallback(
+    (entry: ExplorerMenuInvocationEntry): FileEntry => {
+      const resolvedEntry = contextMenuEntryLookup.get(entry.path);
+      if (resolvedEntry) {
+        return {
+          name: resolvedEntry.name,
+          path: resolvedEntry.path,
+          is_dir: resolvedEntry.is_dir,
+          size: resolvedEntry.size,
+          modified: resolvedEntry.modified,
+          extension: resolvedEntry.extension,
+          is_hidden: resolvedEntry.is_hidden,
+          is_symlink: resolvedEntry.is_symlink,
+        };
       }
-      return finalizeContextMenuItems(homeItems);
+
+      return {
+        name: entry.name,
+        path: entry.path,
+        is_dir: entry.isDirectory,
+        size: 0,
+        modified: Date.now(),
+        extension: entry.extension,
+        is_hidden: false,
+        is_symlink: false,
+      };
+    },
+    [contextMenuEntryLookup],
+  );
+  const resolvePreviewContextMenuEntry = useCallback(() => {
+    if (preview.type === "none") {
+      return null;
     }
 
-    const canUseNativeIntegration = supportsNativeIntegration(currentPath);
-    const pathSegments = currentPath.split(/[/\\]/).filter(Boolean);
-    const pathName = pathSegments[pathSegments.length - 1] ?? currentPath;
-    const pathParent = currentPath.replace(/[/\\][^/\\]+$/, "");
-    const builtInItems = BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS.flatMap(
-      (item) => {
-        if (!item.contexts.includes("background")) {
-          return [];
-        }
+    const previewPath = getPreviewStateResolvedPath(preview).trim();
+    if (!previewPath) {
+      return null;
+    }
 
-        const sharedItem = {
-          id: item.id,
-          group: item.group,
-          defaultOrder: item.defaultOrder,
-          icon: resolveContextMenuIcon(item.iconName),
-        };
+    const existingEntry =
+      contextMenuEntryLookup.get(previewPath) ??
+      contextMenuEntryLookup.get(preview.path);
+    if (existingEntry) {
+      return toMenuInvocationEntry(existingEntry);
+    }
 
-        switch (item.execution.actionId) {
-          case "new-folder":
-            return currentLocationSupportsMutation &&
-              explorerPicker?.allowCreateDirectory
-              ? [
-                  {
-                    ...sharedItem,
-                    label: "New Folder",
-                    action: () => openNew("folder"),
-                  },
-                ]
-              : [];
-          case "new-file":
-            return explorerPicker || !currentLocationSupportsMutation
-              ? []
-              : [
-                  {
-                    ...sharedItem,
-                    label: "New File...",
-                    action: () => openNew("file"),
-                  },
-                ];
-          case "paste":
-            return clipboard && currentLocationSupportsMutation
-              ? [{ ...sharedItem, label: "Paste", action: () => paste() }]
-              : [];
-          case "open-aquarium":
-            return !isCloudExplorerPath(currentPath)
-              ? [
-                  {
-                    ...sharedItem,
-                    label: "Open Habitat in Filesystem Aquarium",
-                    action: () => onOpenInFilesystemAquarium(currentPath),
-                  },
-                ]
-              : [];
-          case "open-admin":
-            return canUseNativeIntegration
-              ? [
-                  {
-                    ...sharedItem,
-                    label: "Open Folder as Admin",
-                    action: () => openAsAdmin(currentPath),
-                  },
-                ]
-              : [];
-          case "reveal":
-            return canUseNativeIntegration
-              ? [
-                  {
-                    ...sharedItem,
-                    label: revealPathLabel,
-                    action: () =>
-                      revealExplorerPath(currentPath).catch((e) =>
-                        setError(String(e)),
-                      ),
-                  },
-                ]
-              : [];
-          case "open-with":
-            return supportsNativeOpenWith && canUseNativeIntegration
-              ? [
-                  {
-                    ...sharedItem,
-                    label: "Open With...",
-                    action: () => openWithSystemPicker(currentPath),
-                  },
-                ]
-              : [];
-          case "properties":
-            return [
-              {
-                ...sharedItem,
-                label: propertiesLabel,
-                action: () => openExplorerPropertiesPanel([currentPath]),
-              },
-            ];
-          case "refresh":
-            return [
-              { ...sharedItem, label: "Refresh", action: () => refresh() },
-            ];
-          default:
-            return [];
-        }
+    const previewName =
+      "name" in preview ? preview.name : getPathLeaf(previewPath);
+    const isDirectory = preview.type === "folder";
+    return {
+      path: previewPath,
+      name: previewName,
+      parentPath: getPathParent(previewPath) ?? "",
+      extension: isDirectory
+        ? ""
+        : getEntryExtension({
+            name: previewName,
+            extension: previewName.split(".").pop() ?? "",
+            is_dir: false,
+          }),
+      stem: isDirectory
+        ? previewName
+        : previewName.replace(/\.[^.]+$/, ""),
+      isDirectory,
+    } satisfies ExplorerMenuInvocationEntry;
+  }, [contextMenuEntryLookup, preview, toMenuInvocationEntry]);
+  const buildContextMenuInvocation = useCallback(
+    (
+      kind: ExplorerMenuInvocationContext["kind"],
+      options: {
+        inputModality: ExplorerMenuInvocationContext["inputModality"];
+        selectedEntries?: ExplorerMenuInvocationEntry[];
+        primaryEntry?: ExplorerMenuInvocationEntry | null;
+        previewTarget?: ExplorerMenuInvocationEntry | null;
       },
-    );
-    const pluginItems = resolvedPluginContextMenuItems
-      .filter((item) => item.contexts.includes("background"))
-      .map((item) => ({
-        id: item.id,
-        group: item.group,
-        defaultOrder: item.defaultOrder,
-        label: item.title,
-        icon: resolveContextMenuIcon(item.iconName),
-        action: () =>
-          executePluginContextMenuItem(item, {
-            path: currentPath,
-            name: pathName,
-            parent: pathParent,
-            extension: "",
-            stem: pathName,
-            isDirectory: true,
-          }).catch((error) => setError(String(error))),
-      }));
+    ): ExplorerMenuInvocationContext => ({
+      kind,
+      currentLocation: currentPath,
+      selectedEntries: options.selectedEntries ?? [],
+      primaryEntry: options.primaryEntry ?? null,
+      searchResult: contextMenuSearchResult,
+      previewTarget: options.previewTarget ?? null,
+      inputModality: options.inputModality,
+      reducedMotion: reducedMotionPreference,
+      capabilities: explorerMenuCapabilities,
+    }),
+    [
+      contextMenuSearchResult,
+      currentPath,
+      explorerMenuCapabilities,
+      reducedMotionPreference,
+    ],
+  );
+  const closeContextMenu = useCallback(() => {
+    setCtxMenu({
+      visible: false,
+      x: 0,
+      y: 0,
+      invocation: null,
+    });
+  }, []);
+  const openContextMenu = useCallback(
+    (
+      event: Pick<React.MouseEvent, "clientX" | "clientY">,
+      invocation: ExplorerMenuInvocationContext,
+    ) => {
+      setCtxMenu({
+        visible: true,
+        x: event.clientX,
+        y: event.clientY,
+        invocation,
+      });
+    },
+    [],
+  );
+  const queueClipboardEntries = useCallback(
+    (action: "copy" | "cut", entries: ExplorerMenuInvocationEntry[]) => {
+      if (currentPathIsArchiveVirtual) {
+        setError(
+          "Archive folders support direct drag-out and extraction, not copy/cut queueing.",
+        );
+        return;
+      }
+      if (entries.length === 0) {
+        return;
+      }
 
-    return finalizeContextMenuItems([...builtInItems, ...pluginItems]);
+      setClipboard({
+        action,
+        entries: entries.map((entry) => ({
+          path: entry.path,
+          name: entry.name,
+          is_dir: entry.isDirectory,
+        })),
+      });
+    },
+    [currentPathIsArchiveVirtual, setClipboard],
+  );
+  const requestTransferDestinationEntries = useCallback(
+    (operation: FileTransferOperation, entries: ExplorerMenuInvocationEntry[]) => {
+      if (!currentLocationSupportsMutation) {
+        setError("Archive and virtual explorer locations are read-only.");
+        return;
+      }
+
+      const sourcePaths = entries.map((entry) => entry.path).filter(Boolean);
+      if (sourcePaths.length === 0) {
+        return;
+      }
+
+      void openExplorerPicker({
+        kind: "pickDestinationFolder",
+        presentation: "window",
+        title: operation === "move" ? "Move To…" : "Copy To…",
+        confirmLabel: operation === "move" ? "Move Here" : "Copy Here",
+        startPath: currentPath,
+      })
+        .then((pickerResult) => {
+          const targetDir =
+            pickerResult?.entries[0]?.path?.trim() ??
+            pickerResult?.currentDirectory.trim() ??
+            "";
+          if (!targetDir) {
+            return;
+          }
+
+          return executeTransferRequest({
+            operation,
+            sources: sourcePaths,
+            targetDir,
+          });
+        })
+        .catch((transferError) => {
+          setError(String(transferError));
+        });
+    },
+    [currentLocationSupportsMutation, currentPath, executeTransferRequest],
+  );
+  const duplicateMenuEntries = useCallback(
+    async (entries: ExplorerMenuInvocationEntry[]) => {
+      if (!currentLocationSupportsMutation) {
+        setError("Archive and virtual explorer locations are read-only.");
+        return;
+      }
+
+      const sourcePaths = entries.map((entry) => entry.path).filter(Boolean);
+      if (sourcePaths.length === 0) {
+        return;
+      }
+
+      try {
+        await executeTransferRequest(
+          {
+            targetDir: currentPath,
+            sources: sourcePaths,
+            operation: "copy",
+          },
+          {
+            onSuccess: () => refresh(),
+          },
+        );
+      } catch (duplicateError) {
+        setError(String(duplicateError));
+      }
+    },
+    [
+      currentLocationSupportsMutation,
+      currentPath,
+      executeTransferRequest,
+      refresh,
+    ],
+  );
+  const toggleBookmarkMenuEntry = useCallback(
+    (entry: ExplorerMenuInvocationEntry) => {
+      if (bookmarkPathSet.has(entry.path)) {
+        updateExplorerRail(
+          removeExplorerBookmarksByPath(explorerRail, entry.path),
+        );
+        return;
+      }
+
+      const result = upsertExplorerBookmark(explorerRail, {
+        path: entry.path,
+        name: entry.name,
+        isDirectory: entry.isDirectory,
+      });
+      updateExplorerRail(result.snapshot);
+      if (result.created) {
+        handleBookmarkCreated(entry.name, entry.path);
+      }
+    },
+    [bookmarkPathSet, explorerRail, handleBookmarkCreated, updateExplorerRail],
+  );
+  const canRunAudioBatchEntries = useCallback(
+    (entries: ExplorerMenuInvocationEntry[]) => {
+      if (entries.length === 0) {
+        return false;
+      }
+
+      const includesUnsupportedFile = entries.some(
+        (entry) =>
+          !entry.isDirectory && !isAudioPreviewExtension(entry.extension),
+      );
+      const hasAudioCandidate = entries.some(
+        (entry) => entry.isDirectory || isAudioPreviewExtension(entry.extension),
+      );
+      return !includesUnsupportedFile && hasAudioCandidate;
+    },
+    [],
+  );
+  const runAudioBatchForEntries = useCallback(
+    async (
+      mode: "convert" | "normalize",
+      entries: ExplorerMenuInvocationEntry[],
+    ) => {
+      const inputPaths = entries.map((entry) => entry.path).filter(Boolean);
+      if (inputPaths.length === 0) {
+        return;
+      }
+
+      try {
+        await runExplorerAudioBatchProcess({
+          inputPaths,
+          recurseDirectories: true,
+          mode: mode === "convert" ? "convert" : "normalize",
+          outputFormat: mode === "convert" ? "wav" : null,
+          overwriteExisting: false,
+          outputDirectory: null,
+        });
+        invalidateExplorerResultCaches();
+        await refresh();
+      } catch (audioBatchError) {
+        setError(String(audioBatchError));
+      }
+    },
+    [refresh],
+  );
+  const resolvedContextMenu = useMemo(() => {
+    if (!ctxMenu.visible || !ctxMenu.invocation) {
+      return null;
+    }
+
+    return buildExplorerRuntimeMenu({
+      invocation: ctxMenu.invocation,
+      menuPacks,
+      activeMenuPackId: explorerSettings.activeMenuPackId,
+      layoutOverridesByContext:
+        explorerSettings.contextMenuLayoutOverridesByContext,
+      themeRendererPreference: explorerTheme.menuPresentation.renderer,
+      pluginContextMenuItems: combinedPluginContextMenuItems,
+      environment: {
+        currentPath,
+        currentPathIsCloud,
+        currentPathIsHome,
+        currentLocationSupportsMutation,
+        currentPathIsArchiveVirtual,
+        userHomePath,
+        runtimePlatform: explorerMenuRuntimePlatform,
+        clipboardAvailable: Boolean(clipboard),
+        canCreateDirectory: explorerPicker?.allowCreateDirectory ?? true,
+        canCreateFile: explorerPicker == null,
+        revealPathLabel,
+        propertiesLabel,
+        supportsNativeOpenWith,
+        supportsNativeProperties,
+        supportsNativeIntegration,
+        isCloudExplorerPath,
+        isExplorerArchiveVirtualPath,
+        isSemanticSearchTextLikeExtension,
+        isExplorerArchiveEntry: (entry) =>
+          isExplorerArchiveEntry({
+            name: entry.name,
+            is_dir: entry.isDirectory,
+          }),
+        isBookmarked: (path) => bookmarkPathSet.has(path),
+        canRunAudioBatch: canRunAudioBatchEntries,
+        openEntry: (entry) => openEntry(resolveContextMenuFileEntry(entry)),
+        openWithSystemPicker,
+        openAsAdmin,
+        openInTerminal: onOpenInTerminal,
+        openInFilesystemAquarium: onOpenInFilesystemAquarium,
+        revealExplorerPath: (path) =>
+          revealExplorerPath(path).catch((error) => {
+            setError(String(error));
+            throw error;
+          }),
+        openExplorerPropertiesPanel,
+        copyToSysClipboard,
+        queueClipboard: queueClipboardEntries,
+        requestTransferDestination: requestTransferDestinationEntries,
+        extractArchive: (entry, mode) =>
+          handleArchiveAction(resolveContextMenuFileEntry(entry), mode),
+        duplicateEntries: duplicateMenuEntries,
+        findSimilar: triggerFindSimilarForPath,
+        startRename: (entry) =>
+          setRename({
+            active: true,
+            path: entry.path,
+            name: entry.name,
+          }),
+        openTagDialog,
+        toggleBookmark: toggleBookmarkMenuEntry,
+        openTrashDialog: (entries) =>
+          openTrashDialog(entries.map(resolveContextMenuFileEntry)),
+        openNew: (kind) => {
+          if (!currentLocationSupportsMutation) {
+            setError("Archive and virtual explorer locations are read-only.");
+            return;
+          }
+          setNewItemName(kind === "folder" ? "New Folder" : "untitled.txt");
+          setNewItem({ visible: true, kind });
+        },
+        paste,
+        refresh,
+        navigate,
+        openSettingsSection: (section) =>
+          onOpenSettingsSection(section as SettingsSectionKey),
+        runAudioBatch: runAudioBatchForEntries,
+        executePluginCommand: async (command, entry) => {
+          try {
+            await executePluginContextMenuItem(command, entry);
+          } catch (error) {
+            setError(String(error));
+          }
+        },
+        onError: (message) => setError(message),
+      },
+    });
   }, [
+    bookmarkPathSet,
+    canRunAudioBatchEntries,
     clipboard,
+    combinedPluginContextMenuItems,
+    copyToSysClipboard,
+    ctxMenu.invocation,
+    ctxMenu.visible,
+    currentLocationSupportsMutation,
     currentPath,
+    currentPathIsArchiveVirtual,
+    currentPathIsCloud,
     currentPathIsHome,
-    explorerPicker,
+    duplicateMenuEntries,
     executePluginContextMenuItem,
-    finalizeContextMenuItems,
-    navigate,
+    explorerPicker,
+    explorerSettings.activeMenuPackId,
+    explorerSettings.contextMenuLayoutOverridesByContext,
+    explorerTheme.menuPresentation.renderer,
+    handleArchiveAction,
     isCloudExplorerPath,
+    menuPacks,
+    navigate,
     onOpenInFilesystemAquarium,
+    onOpenInTerminal,
     onOpenSettingsSection,
     openAsAdmin,
+    openEntry,
     openExplorerPropertiesPanel,
+    openTagDialog,
+    openTrashDialog,
     openWithSystemPicker,
     paste,
     propertiesLabel,
+    queueClipboardEntries,
     refresh,
-    resolvedPluginContextMenuItems,
+    requestTransferDestinationEntries,
+    resolveContextMenuFileEntry,
     revealExplorerPath,
     revealPathLabel,
+    runAudioBatchForEntries,
+    explorerMenuRuntimePlatform,
     supportsNativeIntegration,
     supportsNativeOpenWith,
     supportsNativeProperties,
+    toggleBookmarkMenuEntry,
+    triggerFindSimilarForPath,
     userHomePath,
   ]);
+  const resolveContextMenuInputModality = useCallback(
+    (event: React.MouseEvent) =>
+      resolveMenuInvocationInputModality(
+        typeof PointerEvent !== "undefined" &&
+          event.nativeEvent instanceof PointerEvent
+          ? event.nativeEvent
+          : null,
+      ),
+    [],
+  );
 
   // ── Right-click ──
-  const onRightClick = (e: React.MouseEvent, entry: FileEntry) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Don't lose multi-selection if right-clicking already-selected item
-    setJumpFilter(null);
-    if (!selected.has(entry.path)) {
-      setSelected(new Set([entry.path]));
-      lastSelected.current = entry.path;
-      selectionRangeAnchorPathRef.current = entry.path;
-    }
-    setCtxMenu({ visible: true, x: e.clientX, y: e.clientY, entry });
-  };
+  const onRightClick = useCallback(
+    (e: React.MouseEvent, entry: FileEntry) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setJumpFilter(null);
+
+      const entryWasSelected = selected.has(entry.path);
+      const actionEntries =
+        entryWasSelected && selectedEntries.length > 0 ? selectedEntries : [entry];
+
+      if (!entryWasSelected) {
+        setSelected(new Set([entry.path]));
+        lastSelected.current = entry.path;
+        selectionRangeAnchorPathRef.current = entry.path;
+      }
+
+      openContextMenu(
+        e,
+        buildContextMenuInvocation(
+          actionEntries.length > 1
+            ? "multi-select"
+            : isSearchActive
+              ? "search-result"
+              : "entry",
+          {
+            inputModality: resolveContextMenuInputModality(e),
+            selectedEntries: actionEntries.map(toMenuInvocationEntry),
+            primaryEntry: toMenuInvocationEntry(entry),
+          },
+        ),
+      );
+    },
+    [
+      buildContextMenuInvocation,
+      isSearchActive,
+      openContextMenu,
+      resolveContextMenuInputModality,
+      selected,
+      selectedEntries,
+      toMenuInvocationEntry,
+    ],
+  );
+  const onBackgroundContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setJumpFilter(null);
+      setSelected(new Set());
+      openContextMenu(
+        e,
+        buildContextMenuInvocation("background", {
+          inputModality: resolveContextMenuInputModality(e),
+        }),
+      );
+    },
+    [
+      buildContextMenuInvocation,
+      openContextMenu,
+      resolveContextMenuInputModality,
+    ],
+  );
+  const onPreviewContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const previewTarget = resolvePreviewContextMenuEntry();
+      if (!previewTarget) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+      openContextMenu(
+        e,
+        buildContextMenuInvocation("preview-pane", {
+          inputModality: resolveContextMenuInputModality(e),
+          selectedEntries: [previewTarget],
+          primaryEntry: previewTarget,
+          previewTarget,
+        }),
+      );
+    },
+    [
+      buildContextMenuInvocation,
+      openContextMenu,
+      resolveContextMenuInputModality,
+      resolvePreviewContextMenuEntry,
+    ],
+  );
 
   // ── Click with shift-select support ──
   const onEntryClick = (e: React.MouseEvent, entry: FileEntry) => {
@@ -14908,14 +14807,18 @@ export function FileExplorer({
           operation,
         },
         {
-          onSuccess: () => refresh(),
+          onSuccess: () =>
+            refreshExplorerAfterTransferRequest({
+              targetDir,
+              sources,
+            }),
         },
       );
       if (results !== null) {
         clearExplorerSharedDragSession();
       }
     },
-    [executeTransferRequest, refresh],
+    [executeTransferRequest, refreshExplorerAfterTransferRequest],
   );
 
   useEffect(() => {
@@ -15036,7 +14939,11 @@ export function FileExplorer({
           operation: interactionState.operation,
         },
         {
-          onSuccess: () => refresh(),
+          onSuccess: () =>
+            refreshExplorerAfterTransferRequest({
+              targetDir: targetPath,
+              sources: candidate.sourcePaths,
+            }),
         },
       ).catch((error) => {
         setError(String(error));
@@ -15080,14 +14987,14 @@ export function FileExplorer({
     beginExplorerInternalPointerDrag,
     clearExplorerInternalDragAutoScroll,
     executeTransferRequest,
-    refresh,
+    refreshExplorerAfterTransferRequest,
     runtimePlatform,
     startExplorerNativeOutDrag,
     updateExplorerInternalDragAutoScroll,
   ]);
 
   const onExplorerDropScopeDragOver = (e: React.DragEvent<HTMLElement>) => {
-    if (currentPathIsHome || !currentPath.trim()) {
+    if (!explorerSupportsAnyDropTarget) {
       clearExplorerDragInteractionTarget();
       return;
     }
@@ -15193,6 +15100,19 @@ export function FileExplorer({
       currentPathIsHome,
       explorerDropScopeId,
     ],
+  );
+  const previewDropBinding = useMemo(
+    () =>
+      activePreviewDropTarget
+        ? createExplorerDropSurfaceBinding({
+            surfaceId: activePreviewDropTarget.surfaceId,
+            scopeId: explorerDropScopeId,
+            role: "directory-target",
+            targetPath: activePreviewDropTarget.targetPath,
+            label: activePreviewDropTarget.label,
+          })
+        : null,
+    [activePreviewDropTarget, explorerDropScopeId],
   );
 
   const getExplorerDirectoryDropBinding = useCallback(
@@ -22926,7 +22846,12 @@ export function FileExplorer({
         presentationMode={previewSplitMode}
         previewLocked={previewLocked}
         previewSurfaceMode={previewSurfaceMode}
+        refreshRevision={previewRefreshRevision}
         previewContentHostRef={previewContentHostRef}
+        previewDropBinding={previewDropBinding}
+        previewDropTarget={activePreviewDropTarget}
+        previewDropTargetActive={previewDropTargetActive}
+        previewDropTargetDwell={previewDropTargetDwell}
         explorerTerminalWorkingDirectory={explorerTerminalWorkingDirectory}
         explorerTerminalReportedWorkingDirectory={
           explorerTerminalReportedWorkingDirectory
@@ -22970,6 +22895,7 @@ export function FileExplorer({
         defaultFolderIcon={explorerSettings.defaultFolderIcon}
         onOpenFolderPreviewEntry={openFolderPreviewEntry}
         onStartDragOutPreviewEntry={startPreviewExplorerPointerDrag}
+        onContextMenu={onPreviewContextMenu}
         onExtractArchive={(mode) => {
           if (preview.type === "archive") {
             void handleArchiveAction(
@@ -23010,16 +22936,22 @@ export function FileExplorer({
     handleArchiveAction,
     handlePdfPreviewChromeStateChange,
     openFolderPreviewEntry,
+    onPreviewContextMenu,
     persistPreviewText,
     persistShaderPreviewSource,
     preview,
     previewLocked,
     previewPanelVisible,
     previewPlacement,
+    previewRefreshRevision,
     previewSplitMode,
     previewSurfaceMode,
+    previewDropBinding,
+    previewDropTargetActive,
+    previewDropTargetDwell,
     explorerTerminalReportedWorkingDirectory,
     explorerTerminalWorkingDirectory,
+    activePreviewDropTarget,
     previewContentHostRef,
     previewWidth,
     refresh,
@@ -23061,14 +22993,14 @@ export function FileExplorer({
       onDragOver={onExplorerDropScopeDragOver}
       onDragLeave={onExplorerDropScopeDragLeave}
       onDrop={(e) => {
-        if (currentPathIsHome || !currentLocationSupportsMutation) {
+        if (!explorerSupportsAnyDropTarget) {
           return;
         }
         void onExplorerDropScopeDrop(e);
       }}
       onClick={() => {
         setSelected(new Set());
-        setCtxMenu((c) => ({ ...c, visible: false }));
+        closeContextMenu();
       }}
       onContextMenu={(e) => {
         const target = e.target instanceof HTMLElement ? e.target : null;
@@ -23079,9 +23011,7 @@ export function FileExplorer({
         ) {
           return;
         }
-        e.preventDefault();
-        setSelected(new Set());
-        setCtxMenu({ visible: true, x: e.clientX, y: e.clientY, entry: null });
+        onBackgroundContextMenu(e);
       }}
     >
       <div style={explorerContentRowStyle}>
@@ -23299,14 +23229,7 @@ export function FileExplorer({
                 onClick={() => mainRef.current?.focus()}
                 onContextMenu={(e) => {
                   if (e.target !== e.currentTarget) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setCtxMenu({
-                    visible: true,
-                    x: e.clientX,
-                    y: e.clientY,
-                    entry: null,
-                  });
+                  onBackgroundContextMenu(e);
                 }}
                 onDoubleClick={(e) => {
                   if (
@@ -24785,12 +24708,13 @@ export function FileExplorer({
       )}
 
       {/* Context menu */}
-      <ContextMenu
-        state={ctxMenu}
-        items={
-          ctxMenu.entry ? buildCtxItems(ctxMenu.entry) : buildEmptyCtxItems()
-        }
-        onClose={() => setCtxMenu((c) => ({ ...c, visible: false }))}
+      <ExplorerContextMenu
+        visible={ctxMenu.visible}
+        x={ctxMenu.x}
+        y={ctxMenu.y}
+        nodes={resolvedContextMenu?.nodes ?? []}
+        onClose={closeContextMenu}
+        renderIcon={resolveContextMenuIcon}
       />
 
       {deleteTargets.length > 0 && (

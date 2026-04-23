@@ -237,8 +237,19 @@ function createEntry(
         id,
         kind,
         group:
-          options && 'group' in options && typeof options.group === 'string'
-            ? (options.group as ExplorerMenuLayoutEntry & { group: string })['group']
+          options &&
+          'group' in options &&
+          (
+            options.group === 'create' ||
+            options.group === 'open' ||
+            options.group === 'system' ||
+            options.group === 'clipboard' ||
+            options.group === 'organize' ||
+            options.group === 'library' ||
+            options.group === 'plugin' ||
+            options.group === 'danger'
+          )
+            ? options.group
             : 'plugin',
         sourceFilter:
           options && 'sourceFilter' in options && typeof options.sourceFilter === 'string'

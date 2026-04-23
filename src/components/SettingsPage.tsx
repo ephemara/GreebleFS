@@ -89,14 +89,23 @@ import {
 } from '../config/explorerViewModes';
 import { clampVideoHoverScrubFrameCount } from '../config/explorerThumbnails';
 import {
+  EXPLORER_MENU_CONTEXT_KINDS,
   BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
-  buildExplorerContextMenuOverrideMap,
+  createExplorerMenuSubmenuEntry,
   createLegacyExplorerActionContextMenuContributions,
-  isExplorerContextMenuItemEnabled,
-  moveExplorerContextMenuItem,
+  moveExplorerMenuLayoutEntry,
   normalizePluginContextMenuContributions,
-  sortExplorerContextMenuItems,
-  withExplorerContextMenuItemEnabled,
+  removeExplorerMenuLayoutEntry,
+  sortExplorerMenuLayoutEntries,
+  upsertExplorerMenuSubmenuEntry,
+  withExplorerMenuLayoutEntryEnabled,
+  withExplorerMenuLayoutEntryParent,
+  withExplorerMenuLayoutEntryPlacement,
+  type ExplorerMenuContextKind,
+  type ExplorerMenuContextLayout,
+  type ExplorerMenuFallbackBucket,
+  type ExplorerMenuLayoutEntry,
+  type ExplorerMenuQuickSlot,
 } from '../config/explorerContextMenu';
 import { getBuiltInIconTheme, resolveFileIconSrc } from '../config/iconTheme';
 import { animationSystemConfig, resolvePreferredAnimationId } from '../config/animations';
@@ -146,6 +155,7 @@ import {
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import type { LoadedExplorerHomePack } from '../config/homePackages';
+import type { LoadedExplorerMenuPack } from '../config/menuPacks';
 import {
   iconThemeSystemConfig,
   normalizeIconThemePackageSelectionId,
@@ -1387,6 +1397,35 @@ function mapExplorerHomeBookmarks(
     }));
 }
 
+const explorerMenuQuickSlotOptions: ExplorerMenuQuickSlot[] = [
+  'none',
+  'primary',
+  'secondary',
+  'quick-left',
+  'quick-right',
+];
+
+const explorerMenuFallbackBucketOptions: ExplorerMenuFallbackBucket[] = [
+  'default',
+  'touch',
+  'keyboard',
+  'reduced-motion',
+  'overflow',
+];
+
+const explorerMenuGroupOptions: Array<
+  Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['group']
+> = [
+  'create',
+  'open',
+  'system',
+  'clipboard',
+  'organize',
+  'library',
+  'plugin',
+  'danger',
+];
+
 
 export function SettingsPage({
   appearance,
@@ -1396,10 +1435,15 @@ export function SettingsPage({
   topBarPackagesError,
   topBarPackagesWarnings,
   homePacks = [],
+  menuPacks = [],
   homePacksDirectory = '',
+  menuPacksDirectory = '',
   homePacksLoading = false,
+  menuPacksLoading = false,
   homePacksError = null,
+  menuPacksError = null,
   homePacksWarnings = [],
+  menuPacksWarnings = [],
   themePackages,
   themePackagesDirectory,
   themePackagesLoading,
@@ -1413,7 +1457,9 @@ export function SettingsPage({
   onRefreshTopBars,
   onOpenTopBarsFolder,
   onRefreshHomePacks = async () => { },
+  onRefreshMenuPacks = async () => { },
   onOpenHomePacksFolder = async () => { },
+  onOpenMenuPacksFolder = async () => { },
   onRefreshThemes,
   onOpenThemesFolder,
   onRefreshIconThemes = async () => { },
@@ -1451,10 +1497,15 @@ export function SettingsPage({
   topBarPackagesError: string | null;
   topBarPackagesWarnings: string[];
   homePacks?: LoadedExplorerHomePack[];
+  menuPacks?: LoadedExplorerMenuPack[];
   homePacksDirectory?: string;
+  menuPacksDirectory?: string;
   homePacksLoading?: boolean;
+  menuPacksLoading?: boolean;
   homePacksError?: string | null;
+  menuPacksError?: string | null;
   homePacksWarnings?: string[];
+  menuPacksWarnings?: string[];
   themePackages: LoadedOverlayThemePackage[];
   themePackagesDirectory: string;
   themePackagesLoading: boolean;
@@ -1468,7 +1519,9 @@ export function SettingsPage({
   onRefreshTopBars: () => Promise<void>;
   onOpenTopBarsFolder: () => Promise<void>;
   onRefreshHomePacks?: () => Promise<void>;
+  onRefreshMenuPacks?: () => Promise<void>;
   onOpenHomePacksFolder?: () => Promise<void>;
+  onOpenMenuPacksFolder?: () => Promise<void>;
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
   onRefreshIconThemes?: () => Promise<void>;
@@ -2020,21 +2073,104 @@ export function SettingsPage({
   }, [activeSection]);
 
   const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
-  const contextMenuCatalog = useMemo(
-    () => sortExplorerContextMenuItems(
+  const [activeContextMenuContext, setActiveContextMenuContext] =
+    useState<ExplorerMenuContextKind>('entry');
+  const [contextMenuCommandDraftByContext, setContextMenuCommandDraftByContext] =
+    useState<Partial<Record<ExplorerMenuContextKind, string>>>({});
+  const [contextMenuGroupDraftByContext, setContextMenuGroupDraftByContext] =
+    useState<
+      Partial<
+        Record<
+          ExplorerMenuContextKind,
+          Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['group']
+        >
+      >
+    >({});
+  const contextMenuCommandCatalog = useMemo(
+    () => (
       [
         ...BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
         ...normalizePluginContextMenuContributions([
           ...pluginContextMenuItems,
           ...createLegacyExplorerActionContextMenuContributions(pluginExplorerActions),
         ]),
-      ],
-      settings.explorer.contextMenuItemOverrides,
+      ].sort((left, right) => {
+        if (left.priority !== right.priority) {
+          return left.priority - right.priority;
+        }
+        return left.id.localeCompare(right.id);
+      })
+    ),
+    [pluginContextMenuItems, pluginExplorerActions],
+  );
+  const contextMenuCommandLookup = useMemo(
+    () => new Map(contextMenuCommandCatalog.map(command => [command.id, command] as const)),
+    [contextMenuCommandCatalog],
+  );
+  const menuPackLookup = useMemo(
+    () => new Map(menuPacks.map(pack => [pack.id, pack] as const)),
+    [menuPacks],
+  );
+  const activeMenuPack = useMemo(
+    () => {
+      const requestedId = settings.explorer.activeMenuPackId;
+      if (requestedId && menuPackLookup.has(requestedId)) {
+        return menuPackLookup.get(requestedId) ?? null;
+      }
+      return menuPacks[0] ?? null;
+    },
+    [menuPackLookup, menuPacks, settings.explorer.activeMenuPackId],
+  );
+  const activeContextMenuLayout = useMemo<ExplorerMenuContextLayout>(
+    () => (
+      settings.explorer.contextMenuLayoutOverridesByContext[activeContextMenuContext]
+      ?? activeMenuPack?.contexts[activeContextMenuContext]
+      ?? {
+        renderer: 'classic',
+        entries: [],
+      }
     ),
     [
-      pluginContextMenuItems,
-      pluginExplorerActions,
-      settings.explorer.contextMenuItemOverrides,
+      activeContextMenuContext,
+      activeMenuPack,
+      settings.explorer.contextMenuLayoutOverridesByContext,
+    ],
+  );
+  const activeContextMenuEntries = useMemo(
+    () => sortExplorerMenuLayoutEntries(activeContextMenuLayout.entries),
+    [activeContextMenuLayout.entries],
+  );
+  const activeContextMenuSubmenus = useMemo(
+    () => activeContextMenuEntries.filter(
+      (
+        entry,
+      ): entry is Extract<ExplorerMenuLayoutEntry, { kind: 'submenu' }> =>
+        entry.kind === 'submenu',
+    ),
+    [activeContextMenuEntries],
+  );
+  const activeContextMenuCommandIds = useMemo(
+    () => new Set(
+      activeContextMenuEntries
+        .filter(
+          (
+            entry,
+          ): entry is Extract<ExplorerMenuLayoutEntry, { kind: 'command' }> =>
+            entry.kind === 'command',
+        )
+        .map(entry => entry.commandId),
+    ),
+    [activeContextMenuEntries],
+  );
+  const availableContextMenuCommandsForActiveContext = useMemo(
+    () => contextMenuCommandCatalog.filter(command => (
+      command.contexts.includes(activeContextMenuContext)
+      && !activeContextMenuCommandIds.has(command.id)
+    )),
+    [
+      activeContextMenuCommandIds,
+      activeContextMenuContext,
+      contextMenuCommandCatalog,
     ],
   );
   const availableAnimations = useMemo(
@@ -2483,51 +2619,231 @@ export function SettingsPage({
   const applyIconThemeSelection = useCallback((iconThemeId: string | null) => {
     updateAppearance({ activeIconThemeId: iconThemeId });
   }, [updateAppearance]);
-  const toggleContextMenuItemEnabled = useCallback((itemId: string, enabled: boolean) => {
-    const item = contextMenuCatalog.find(entry => entry.id === itemId);
-    if (!item) {
+  const setActiveMenuPackId = useCallback((packId: string) => {
+    updateExplorer({ activeMenuPackId: packId });
+  }, [updateExplorer]);
+  const writeContextMenuLayoutOverride = useCallback((
+    contextKind: ExplorerMenuContextKind,
+    nextLayout: ExplorerMenuContextLayout,
+  ) => {
+    updateExplorer({
+      contextMenuLayoutOverridesByContext: {
+        ...settings.explorer.contextMenuLayoutOverridesByContext,
+        [contextKind]: {
+          renderer: nextLayout.renderer,
+          entries: sortExplorerMenuLayoutEntries(nextLayout.entries),
+        },
+      },
+    });
+  }, [settings.explorer.contextMenuLayoutOverridesByContext, updateExplorer]);
+  const updateContextMenuLayoutForContext = useCallback((
+    contextKind: ExplorerMenuContextKind,
+    updater: (layout: ExplorerMenuContextLayout) => ExplorerMenuContextLayout,
+  ) => {
+    const baseLayout =
+      settings.explorer.contextMenuLayoutOverridesByContext[contextKind]
+      ?? activeMenuPack?.contexts[contextKind]
+      ?? {
+        renderer: 'classic',
+        entries: [],
+      };
+    writeContextMenuLayoutOverride(
+      contextKind,
+      updater({
+        renderer: baseLayout.renderer ?? 'classic',
+        entries: [...baseLayout.entries],
+      }),
+    );
+  }, [
+    activeMenuPack,
+    settings.explorer.contextMenuLayoutOverridesByContext,
+    writeContextMenuLayoutOverride,
+  ]);
+  const updateContextMenuEntriesForContext = useCallback((
+    contextKind: ExplorerMenuContextKind,
+    updater: (entries: ExplorerMenuLayoutEntry[]) => ExplorerMenuLayoutEntry[],
+  ) => {
+    updateContextMenuLayoutForContext(contextKind, layout => ({
+      ...layout,
+      entries: updater(layout.entries),
+    }));
+  }, [updateContextMenuLayoutForContext]);
+  const updateActiveContextMenuEntries = useCallback((
+    updater: (entries: ExplorerMenuLayoutEntry[]) => ExplorerMenuLayoutEntry[],
+  ) => {
+    updateContextMenuEntriesForContext(activeContextMenuContext, updater);
+  }, [activeContextMenuContext, updateContextMenuEntriesForContext]);
+  const toggleContextMenuLayoutEntryEnabled = useCallback((entryId: string, enabled: boolean) => {
+    updateActiveContextMenuEntries(entries =>
+      withExplorerMenuLayoutEntryEnabled(entries, entryId, enabled),
+    );
+  }, [updateActiveContextMenuEntries]);
+  const moveContextMenuLayoutEntry = useCallback((entryId: string, direction: 'up' | 'down') => {
+    updateActiveContextMenuEntries(entries =>
+      moveExplorerMenuLayoutEntry(entries, entryId, direction),
+    );
+  }, [updateActiveContextMenuEntries]);
+  const setContextMenuLayoutEntryParent = useCallback((entryId: string, parentEntryId: string | null) => {
+    updateActiveContextMenuEntries(entries =>
+      withExplorerMenuLayoutEntryParent(entries, entryId, parentEntryId),
+    );
+  }, [updateActiveContextMenuEntries]);
+  const setContextMenuLayoutEntryQuickSlot = useCallback((entryId: string, quickSlot: ExplorerMenuQuickSlot) => {
+    updateActiveContextMenuEntries(entries =>
+      withExplorerMenuLayoutEntryPlacement(entries, entryId, { quickSlot }),
+    );
+  }, [updateActiveContextMenuEntries]);
+  const setContextMenuLayoutEntryFallbackBucket = useCallback((entryId: string, fallbackBucket: ExplorerMenuFallbackBucket) => {
+    updateActiveContextMenuEntries(entries =>
+      withExplorerMenuLayoutEntryPlacement(entries, entryId, { fallbackBucket }),
+    );
+  }, [updateActiveContextMenuEntries]);
+  const setContextMenuSubmenuTitle = useCallback((entryId: string, title: string) => {
+    updateActiveContextMenuEntries(entries => {
+      const existingEntry = entries.find(
+        (entry): entry is Extract<ExplorerMenuLayoutEntry, { kind: 'submenu' }> =>
+          entry.id === entryId && entry.kind === 'submenu',
+      );
+      if (!existingEntry) {
+        return entries;
+      }
+      return upsertExplorerMenuSubmenuEntry(entries, {
+        ...existingEntry,
+        title: title.trim() || existingEntry.title,
+      });
+    });
+  }, [updateActiveContextMenuEntries]);
+  const setContextMenuGroupSlotGroup = useCallback((
+    entryId: string,
+    group: Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['group'],
+  ) => {
+    updateActiveContextMenuEntries(entries => sortExplorerMenuLayoutEntries(
+      entries.map(entry => (
+        entry.id === entryId && entry.kind === 'group-slot'
+          ? { ...entry, group }
+          : entry
+      )),
+    ));
+  }, [updateActiveContextMenuEntries]);
+  const setContextMenuGroupSlotSourceFilter = useCallback((
+    entryId: string,
+    sourceFilter: Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['sourceFilter'],
+  ) => {
+    updateActiveContextMenuEntries(entries => sortExplorerMenuLayoutEntries(
+      entries.map(entry => (
+        entry.id === entryId && entry.kind === 'group-slot'
+          ? { ...entry, sourceFilter }
+          : entry
+      )),
+    ));
+  }, [updateActiveContextMenuEntries]);
+  const removeContextMenuLayoutEntry = useCallback((entryId: string) => {
+    updateActiveContextMenuEntries(entries =>
+      removeExplorerMenuLayoutEntry(entries, entryId),
+    );
+  }, [updateActiveContextMenuEntries]);
+  const setContextMenuRendererForActiveContext = useCallback((renderer: ExplorerMenuContextLayout['renderer']) => {
+    updateContextMenuLayoutForContext(activeContextMenuContext, layout => ({
+      ...layout,
+      renderer,
+    }));
+  }, [activeContextMenuContext, updateContextMenuLayoutForContext]);
+  const resetContextMenuLayout = useCallback(() => {
+    const nextOverrides = { ...settings.explorer.contextMenuLayoutOverridesByContext };
+    delete nextOverrides[activeContextMenuContext];
+    updateExplorer({ contextMenuLayoutOverridesByContext: nextOverrides });
+  }, [
+    activeContextMenuContext,
+    settings.explorer.contextMenuLayoutOverridesByContext,
+    updateExplorer,
+  ]);
+  const resetAllContextMenuLayouts = useCallback(() => {
+    updateExplorer({ contextMenuLayoutOverridesByContext: {} });
+  }, [updateExplorer]);
+  const addContextMenuCommandEntry = useCallback(() => {
+    const commandId =
+      contextMenuCommandDraftByContext[activeContextMenuContext]
+      ?? availableContextMenuCommandsForActiveContext[0]?.id
+      ?? '';
+    if (!commandId) {
       return;
     }
 
-    updateExplorer({
-      contextMenuItemOverrides: withExplorerContextMenuItemEnabled(
-        settings.explorer.contextMenuItemOverrides,
-        item,
-        enabled,
-      ),
+    updateActiveContextMenuEntries(entries => {
+      if (entries.some(entry => entry.kind === 'command' && entry.commandId === commandId)) {
+        return entries;
+      }
+      const nextOrder = (
+        Math.max(0, ...entries.filter(entry => entry.parentEntryId == null).map(entry => entry.order))
+        + 10
+      );
+      return [
+        ...entries,
+        {
+          id: `${activeContextMenuContext}.command.${commandId.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${Date.now()}`,
+          kind: 'command',
+          commandId,
+          parentEntryId: null,
+          order: nextOrder,
+          enabled: true,
+          quickSlot: 'none',
+          fallbackBucket: 'default',
+        },
+      ];
     });
-  }, [contextMenuCatalog, settings.explorer.contextMenuItemOverrides, updateExplorer]);
-  const moveContextMenuItem = useCallback((itemId: string, direction: 'up' | 'down') => {
-    updateExplorer({
-      contextMenuItemOverrides: moveExplorerContextMenuItem(
-        contextMenuCatalog,
-        settings.explorer.contextMenuItemOverrides,
-        itemId,
-        direction,
-      ),
+
+    setContextMenuCommandDraftByContext(current => ({
+      ...current,
+      [activeContextMenuContext]: '',
+    }));
+  }, [
+    activeContextMenuContext,
+    availableContextMenuCommandsForActiveContext,
+    contextMenuCommandDraftByContext,
+    updateActiveContextMenuEntries,
+  ]);
+  const addContextMenuSubmenu = useCallback(() => {
+    updateActiveContextMenuEntries(entries => {
+      const nextOrder = (
+        Math.max(0, ...entries.filter(entry => entry.parentEntryId == null).map(entry => entry.order))
+        + 10
+      );
+      return upsertExplorerMenuSubmenuEntry(
+        entries,
+        createExplorerMenuSubmenuEntry({
+          contextKind: activeContextMenuContext,
+          title: 'New Submenu',
+          order: nextOrder,
+        }),
+      );
     });
-  }, [contextMenuCatalog, settings.explorer.contextMenuItemOverrides, updateExplorer]);
-  const resetContextMenuLayout = useCallback(() => {
-    updateExplorer({
-      contextMenuItemOverrides: buildExplorerContextMenuOverrideMap(
-        sortExplorerContextMenuItems(
-          [
-            ...BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
-            ...normalizePluginContextMenuContributions([
-              ...pluginContextMenuItems,
-              ...createLegacyExplorerActionContextMenuContributions(pluginExplorerActions),
-            ]),
-          ],
-          {},
-        ),
-        settings.explorer.contextMenuItemOverrides,
-      ),
+  }, [activeContextMenuContext, updateActiveContextMenuEntries]);
+  const addContextMenuGroupSlot = useCallback(() => {
+    const group = contextMenuGroupDraftByContext[activeContextMenuContext] ?? 'plugin';
+    updateActiveContextMenuEntries(entries => {
+      const nextOrder = (
+        Math.max(0, ...entries.filter(entry => entry.parentEntryId == null).map(entry => entry.order))
+        + 10
+      );
+      return [
+        ...entries,
+        {
+          id: `${activeContextMenuContext}.group.${group}-${Date.now()}`,
+          kind: 'group-slot',
+          group,
+          sourceFilter: 'any',
+          parentEntryId: null,
+          order: nextOrder,
+          enabled: true,
+          quickSlot: 'none',
+          fallbackBucket: 'default',
+        },
+      ];
     });
   }, [
-    pluginContextMenuItems,
-    pluginExplorerActions,
-    settings.explorer.contextMenuItemOverrides,
-    updateExplorer,
+    activeContextMenuContext,
+    contextMenuGroupDraftByContext,
+    updateActiveContextMenuEntries,
   ]);
 
   const updateThemePalette = useCallback((patch: Partial<OverlayThemeDefinition['palette']>) => {
@@ -7712,72 +8028,356 @@ export function SettingsPage({
                   </div>
 
                   <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
                         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Context Menu Composer</div>
-                        <p className="mt-1 text-[11px] opacity-40">
-                          Every explorer menu item now resolves through a typed catalog. Built-ins and plugin items share the same ordering and visibility controls.
+                        <p className="mt-1 max-w-[760px] text-[11px] opacity-40">
+                          Explorer menus now resolve through command registry metadata, authored menu packs, per-context layout overrides, and theme-driven presentation hints. This editor works on the active pack plus your user-layer overrides.
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={resetContextMenuLayout}
-                        className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
-                      >
-                        Normalize Order
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void onRefreshMenuPacks()}
+                          className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          Refresh Packs
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void onOpenMenuPacksFolder()}
+                          className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                          style={{ border: `1px solid ${accent}55`, background: `${accent}14`, color: text }}
+                        >
+                          Open Menu Packs Folder
+                        </button>
+                        <button
+                          type="button"
+                          onClick={resetContextMenuLayout}
+                          className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          Reset Context
+                        </button>
+                        <button
+                          type="button"
+                          onClick={resetAllContextMenuLayouts}
+                          className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          Reset All Overrides
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <label className="space-y-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                        <span>Active Menu Pack</span>
+                        <select
+                          value={activeMenuPack?.id ?? ''}
+                          onChange={event => setActiveMenuPackId(event.target.value)}
+                          className="w-full rounded border px-3 py-2 text-[12px]"
+                          style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          {menuPacks.map(pack => (
+                            <option key={pack.id} value={pack.id}>
+                              {pack.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="space-y-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                        <span>Context Renderer</span>
+                        <select
+                          value={activeContextMenuLayout.renderer ?? 'classic'}
+                          onChange={event => setContextMenuRendererForActiveContext(event.target.value as ExplorerMenuContextLayout['renderer'])}
+                          className="w-full rounded border px-3 py-2 text-[12px]"
+                          style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          {['classic', 'hybrid', 'radial', 'sheet', 'hud'].map(renderer => (
+                            <option key={renderer} value={renderer}>
+                              {renderer}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                        <div className="font-semibold">{activeMenuPack?.name ?? 'No Pack Loaded'}</div>
+                        <div className="mt-1 opacity-55">
+                          {menuPacksLoading ? 'Scanning menu packs…' : `${menuPacks.length} pack${menuPacks.length === 1 ? '' : 's'} available`}
+                        </div>
+                        <div className="mt-1 text-[10px] opacity-45">
+                          {menuPacksDirectory}
+                        </div>
+                        {menuPacksError ? (
+                          <div className="mt-1 text-[10px]" style={{ color: 'var(--overlay-danger)' }}>
+                            {menuPacksError}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {menuPacksWarnings.length > 0 ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${border}aa`, background: 'rgba(255,255,255,0.02)' }}>
+                        {menuPacksWarnings.map(warning => (
+                          <div key={warning} className="opacity-55">
+                            {warning}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {EXPLORER_MENU_CONTEXT_KINDS.map(contextKind => (
+                        <button
+                          key={contextKind}
+                          type="button"
+                          onClick={() => setActiveContextMenuContext(contextKind)}
+                          className="rounded px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{
+                            border: `1px solid ${activeContextMenuContext === contextKind ? accent : border}`,
+                            background: activeContextMenuContext === contextKind ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                            color: text,
+                          }}
+                        >
+                          {contextKind}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">Add Command</div>
+                        <select
+                          value={contextMenuCommandDraftByContext[activeContextMenuContext] ?? ''}
+                          onChange={event => setContextMenuCommandDraftByContext(current => ({
+                            ...current,
+                            [activeContextMenuContext]: event.target.value,
+                          }))}
+                          className="mt-2 w-full rounded border px-3 py-2 text-[12px]"
+                          style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          <option value="">
+                            {availableContextMenuCommandsForActiveContext.length > 0 ? 'Choose command…' : 'No more commands for this context'}
+                          </option>
+                          {availableContextMenuCommandsForActiveContext.map(command => (
+                            <option key={command.id} value={command.id}>
+                              {command.title}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={addContextMenuCommandEntry}
+                          className="mt-2 w-full rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          Add Command Node
+                        </button>
+                      </div>
+
+                      <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">Add Group Slot</div>
+                        <select
+                          value={contextMenuGroupDraftByContext[activeContextMenuContext] ?? 'plugin'}
+                          onChange={event => setContextMenuGroupDraftByContext(current => ({
+                            ...current,
+                            [activeContextMenuContext]: event.target.value as (typeof explorerMenuGroupOptions)[number],
+                          }))}
+                          className="mt-2 w-full rounded border px-3 py-2 text-[12px]"
+                          style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          {explorerMenuGroupOptions.map(group => (
+                            <option key={group} value={group}>
+                              {group}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={addContextMenuGroupSlot}
+                          className="mt-2 w-full rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          Add Group Slot
+                        </button>
+                      </div>
+
+                      <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">Hierarchy</div>
+                        <p className="mt-2 text-[11px] opacity-50">
+                          Submenus, quick slots, fallback buckets, and parent placement all live in this context-scoped override layer.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={addContextMenuSubmenu}
+                          className="mt-2 w-full rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          Create Submenu
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-3 space-y-2">
-                      {contextMenuCatalog.map((item, index) => {
-                        const enabled = isExplorerContextMenuItemEnabled(item.id, settings.explorer.contextMenuItemOverrides);
+                      {activeContextMenuEntries.length === 0 ? (
+                        <div className="rounded border px-3 py-4 text-[11px] opacity-50" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                          No entries defined for <code>{activeContextMenuContext}</code>. Add command nodes, group slots, or submenus to start composing this context.
+                        </div>
+                      ) : activeContextMenuEntries.map((entry, index) => {
+                        const enabled = entry.enabled !== false;
                         const isFirst = index === 0;
-                        const isLast = index === contextMenuCatalog.length - 1;
-                        const sourceLabel = item.source === 'built-in'
-                          ? 'Built-in'
-                          : `Plugin · ${item.pluginName}`;
-                        const contextLabel = item.contexts.join(' + ');
-                        const executionLabel = item.execution.kind === 'plugin-backend'
-                          ? `Backend · ${item.execution.entry}`
-                          : item.execution.kind === 'terminal-template'
-                            ? 'Terminal Template'
-                            : item.execution.kind === 'panel-request'
-                              ? `Panel Request · ${item.execution.panelId}`
-                              : 'Host Action';
+                        const isLast = index === activeContextMenuEntries.length - 1;
+                        const resolvedCommand = entry.kind === 'command'
+                          ? (contextMenuCommandLookup.get(entry.commandId) ?? null)
+                          : null;
+                        const title = entry.kind === 'command'
+                          ? (resolvedCommand?.title ?? entry.commandId)
+                          : entry.kind === 'submenu'
+                            ? entry.title
+                            : entry.kind === 'group-slot'
+                              ? `Group Slot · ${entry.group}`
+                              : 'Separator';
 
                         return (
                           <div
-                            key={item.id}
+                            key={entry.id}
                             className="rounded border px-3 py-3"
-                            style={{ borderColor: enabled ? border : `${border}99`, background: enabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.015)', opacity: enabled ? 1 : 0.78 }}
+                            style={{
+                              borderColor: enabled ? border : `${border}99`,
+                              background: enabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.015)',
+                              opacity: enabled ? 1 : 0.78,
+                            }}
                           >
-                            <div className="flex items-start justify-between gap-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
                               <div className="min-w-0">
-                                <div className="text-[11px] font-semibold">{item.title}</div>
+                                <div className="text-[11px] font-semibold">{title}</div>
                                 <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] opacity-60">
-                                  <ThemeBadge label={sourceLabel} />
-                                  <ThemeBadge label={contextLabel} />
-                                  <ThemeBadge label={executionLabel} />
+                                  <ThemeBadge label={entry.kind} />
+                                  {entry.kind === 'command' && resolvedCommand ? (
+                                    <ThemeBadge label={resolvedCommand.source === 'built-in' ? 'Built-in' : `Plugin · ${resolvedCommand.pluginName}`} />
+                                  ) : null}
+                                  {entry.kind === 'command' && resolvedCommand ? (
+                                    <ThemeBadge label={resolvedCommand.contexts.join(' + ')} />
+                                  ) : null}
                                 </div>
-                                {item.description && (
-                                  <p className="mt-2 text-[11px] opacity-45">{item.description}</p>
-                                )}
+                                {resolvedCommand?.description ? (
+                                  <p className="mt-2 text-[11px] opacity-45">{resolvedCommand.description}</p>
+                                ) : null}
                               </div>
                               <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
                                 <span>Enabled</span>
                                 <input
                                   type="checkbox"
                                   checked={enabled}
-                                  onChange={event => toggleContextMenuItemEnabled(item.id, event.target.checked)}
+                                  onChange={event => toggleContextMenuLayoutEntryEnabled(entry.id, event.target.checked)}
                                 />
                               </label>
                             </div>
 
-                            <div className="mt-3 flex items-center gap-2">
+                            {entry.kind === 'submenu' ? (
+                              <label className="mt-3 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                                <span>Submenu Title</span>
+                                <input
+                                  value={entry.title}
+                                  onChange={event => setContextMenuSubmenuTitle(entry.id, event.target.value)}
+                                  className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
+                                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                                />
+                              </label>
+                            ) : null}
+
+                            {entry.kind === 'group-slot' ? (
+                              <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                                <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                                  <span>Group</span>
+                                  <select
+                                    value={entry.group}
+                                    onChange={event => setContextMenuGroupSlotGroup(entry.id, event.target.value as (typeof explorerMenuGroupOptions)[number])}
+                                    className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
+                                    style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                                  >
+                                    {explorerMenuGroupOptions.map(group => (
+                                      <option key={group} value={group}>
+                                        {group}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                                  <span>Source Filter</span>
+                                  <select
+                                    value={entry.sourceFilter ?? 'any'}
+                                    onChange={event => setContextMenuGroupSlotSourceFilter(entry.id, event.target.value as Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['sourceFilter'])}
+                                    className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
+                                    style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                                  >
+                                    {['any', 'built-in', 'plugin'].map(sourceFilter => (
+                                      <option key={sourceFilter} value={sourceFilter}>
+                                        {sourceFilter}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+                            ) : null}
+
+                            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                              <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                                <span>Parent</span>
+                                <select
+                                  value={entry.parentEntryId ?? ''}
+                                  onChange={event => setContextMenuLayoutEntryParent(entry.id, event.target.value || null)}
+                                  className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
+                                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                                >
+                                  <option value="">Root</option>
+                                  {activeContextMenuSubmenus
+                                    .filter(submenu => submenu.id !== entry.id)
+                                    .map(submenu => (
+                                      <option key={submenu.id} value={submenu.id}>
+                                        {submenu.title}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                              <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                                <span>Quick Slot</span>
+                                <select
+                                  value={entry.quickSlot ?? 'none'}
+                                  onChange={event => setContextMenuLayoutEntryQuickSlot(entry.id, event.target.value as ExplorerMenuQuickSlot)}
+                                  className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
+                                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                                >
+                                  {explorerMenuQuickSlotOptions.map(option => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                                <span>Fallback Bucket</span>
+                                <select
+                                  value={entry.fallbackBucket ?? 'default'}
+                                  onChange={event => setContextMenuLayoutEntryFallbackBucket(entry.id, event.target.value as ExplorerMenuFallbackBucket)}
+                                  className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
+                                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                                >
+                                  {explorerMenuFallbackBucketOptions.map(option => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => moveContextMenuItem(item.id, 'up')}
+                                onClick={() => moveContextMenuLayoutEntry(entry.id, 'up')}
                                 disabled={isFirst}
                                 className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
                                 style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: isFirst ? muted : text, opacity: isFirst ? 0.5 : 1 }}
@@ -7787,7 +8387,7 @@ export function SettingsPage({
                               </button>
                               <button
                                 type="button"
-                                onClick={() => moveContextMenuItem(item.id, 'down')}
+                                onClick={() => moveContextMenuLayoutEntry(entry.id, 'down')}
                                 disabled={isLast}
                                 className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
                                 style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: isLast ? muted : text, opacity: isLast ? 0.5 : 1 }}
@@ -7795,8 +8395,16 @@ export function SettingsPage({
                                 <ArrowDown size={11} />
                                 Down
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => removeContextMenuLayoutEntry(entry.id)}
+                                className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                                style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                              >
+                                Remove
+                              </button>
                               <span className="text-[10px] opacity-45">
-                                Slot {(index + 1).toString().padStart(2, '0')}
+                                Order {entry.order}
                               </span>
                             </div>
                           </div>

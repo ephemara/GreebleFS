@@ -1035,9 +1035,11 @@ export function normalizePluginContextMenuContributions(
         source: 'plugin' as const,
         iconName: sanitizeContextMenuString(contribution.iconName, 'Puzzle'),
         execution,
-        tone: sanitizeMenuTone((contribution as Record<string, unknown>).tone),
+        tone: sanitizeMenuTone(
+          (contribution as unknown as Record<string, unknown>).tone,
+        ),
         shortcutId: sanitizeContextMenuString(
-          (contribution as Record<string, unknown>).shortcutId,
+          (contribution as unknown as Record<string, unknown>).shortcutId,
         ) || undefined,
         themeHints: undefined,
         supportsQuickSlot: true,
@@ -1466,4 +1468,3 @@ export function resolveExplorerCommandDefinitionById(
     null
   );
 }
-

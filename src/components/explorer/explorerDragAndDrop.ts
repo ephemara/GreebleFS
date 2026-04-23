@@ -147,6 +147,10 @@ export function getExplorerDirectoryDropSurfaceId(path: string): string {
   return `explorer-directory:${path}`;
 }
 
+export function getExplorerPreviewDropSurfaceId(path: string): string {
+  return `explorer-preview:${path}`;
+}
+
 const EXPLORER_SHARED_DRAG_SESSION_LINGER_MS = 1500;
 
 const explorerDropSurfaceBehaviorById = new Map<

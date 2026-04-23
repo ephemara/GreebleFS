@@ -5,7 +5,6 @@ import {
   sortExplorerMenuLayoutEntries,
   type ExplorerBuiltInContextMenuActionId,
   type ExplorerCommandDefinition,
-  type ExplorerContextMenuItemGroup,
   type ExplorerMenuContextKind,
   type ExplorerMenuContextLayout,
   type ExplorerMenuContextLayoutOverrideMap,
@@ -14,9 +13,7 @@ import {
   type ExplorerMenuInvocationEntry,
   type ExplorerMenuLayoutEntry,
   type ExplorerMenuRendererKind,
-  type ExplorerMenuTone,
   type ExplorerResolvedMenuCommandNode,
-  type ExplorerResolvedMenuNode,
   type ExplorerResolvedMenuSeparatorNode,
   type ExplorerResolvedMenuSubmenuNode,
   type ExplorerResolvedPluginContextMenuContribution,
@@ -392,7 +389,7 @@ function canShowBuiltInCommand(
       return targetEntries.length === 1
         && !primaryEntry?.isDirectory
         && !environment.currentPathIsCloud
-        && environment.isSemanticSearchTextLikeExtension(primaryEntry.extension);
+        && environment.isSemanticSearchTextLikeExtension(primaryEntry?.extension ?? '');
     case 'rename':
       return targetEntries.length === 1 && environment.currentLocationSupportsMutation;
     case 'add-tags':
@@ -467,17 +464,37 @@ function executeBuiltInLeaf(
     case 'move-to':
       return () => environment.requestTransferDestination('move', targetEntries);
     case 'extract-here':
-      return () => primaryEntry && environment.extractArchive(primaryEntry, 'extractHere');
+      return () => {
+        if (primaryEntry) {
+          return environment.extractArchive(primaryEntry, 'extractHere');
+        }
+      };
     case 'extract-to':
-      return () => primaryEntry && environment.extractArchive(primaryEntry, 'extractToDirectory');
+      return () => {
+        if (primaryEntry) {
+          return environment.extractArchive(primaryEntry, 'extractToDirectory');
+        }
+      };
     case 'extract-new-folder':
-      return () => primaryEntry && environment.extractArchive(primaryEntry, 'extractToNewFolder');
+      return () => {
+        if (primaryEntry) {
+          return environment.extractArchive(primaryEntry, 'extractToNewFolder');
+        }
+      };
     case 'duplicate':
       return () => environment.duplicateEntries(targetEntries);
     case 'find-similar':
-      return () => primaryEntry && environment.findSimilar(primaryEntry.path);
+      return () => {
+        if (primaryEntry) {
+          return environment.findSimilar(primaryEntry.path);
+        }
+      };
     case 'rename':
-      return () => primaryEntry && environment.startRename(primaryEntry);
+      return () => {
+        if (primaryEntry) {
+          environment.startRename(primaryEntry);
+        }
+      };
     case 'add-tags':
       return () =>
         environment.openTagDialog(targetPaths, 'add', {
@@ -495,7 +512,11 @@ function executeBuiltInLeaf(
               : `Enter comma-separated tags to remove from ${targetEntries.length} selected items.`,
         });
     case 'bookmark-toggle':
-      return () => primaryEntry && environment.toggleBookmark(primaryEntry);
+      return () => {
+        if (primaryEntry) {
+          environment.toggleBookmark(primaryEntry);
+        }
+      };
     case 'move-trash':
       return () => environment.openTrashDialog(targetEntries);
     case 'refresh':
@@ -642,8 +663,8 @@ function createRuntimeLeafNode(
 
 function createResolverChildren(
   command: ExplorerCommandDefinition,
-  invocation: ExplorerMenuInvocationContext,
-  targetEntries: ExplorerMenuInvocationEntry[],
+  _invocation: ExplorerMenuInvocationContext,
+  _targetEntries: ExplorerMenuInvocationEntry[],
   primaryEntry: ExplorerMenuInvocationEntry | null,
   environment: ExplorerMenuRuntimeEnvironment,
   depth: number,

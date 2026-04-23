@@ -14,6 +14,7 @@ import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayWallpaper } from '../components/wallpaperRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import type { LoadedExplorerHomePack } from '../config/homePackages';
+import type { LoadedExplorerMenuPack } from '../config/menuPacks';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import {
@@ -134,10 +135,15 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesError,
   topBarPackagesWarnings,
   homePacks = [],
+  menuPacks = [],
   homePacksDirectory = '',
+  menuPacksDirectory = '',
   homePacksLoading = false,
+  menuPacksLoading = false,
   homePacksError = null,
+  menuPacksError = null,
   homePacksWarnings = [],
+  menuPacksWarnings = [],
   themePackages,
   themePackagesDirectory,
   themePackagesLoading,
@@ -146,7 +152,9 @@ export function createBuiltInPanelDefinitions({
   onRefreshTopBars,
   onOpenTopBarsFolder,
   onRefreshHomePacks = async () => {},
+  onRefreshMenuPacks = async () => {},
   onOpenHomePacksFolder = async () => {},
+  onOpenMenuPacksFolder = async () => {},
   iconThemePackages = [],
   iconThemePackagesDirectory = iconThemeSystemConfig.iconThemesDirectory,
   iconThemePackagesLoading = false,
@@ -211,10 +219,15 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesError: string | null;
   topBarPackagesWarnings: string[];
   homePacks?: LoadedExplorerHomePack[];
+  menuPacks?: LoadedExplorerMenuPack[];
   homePacksDirectory?: string;
+  menuPacksDirectory?: string;
   homePacksLoading?: boolean;
+  menuPacksLoading?: boolean;
   homePacksError?: string | null;
+  menuPacksError?: string | null;
   homePacksWarnings?: string[];
+  menuPacksWarnings?: string[];
   themePackages: LoadedOverlayThemePackage[];
   themePackagesDirectory: string;
   themePackagesLoading: boolean;
@@ -223,7 +236,9 @@ export function createBuiltInPanelDefinitions({
   onRefreshTopBars: () => Promise<void>;
   onOpenTopBarsFolder: () => Promise<void>;
   onRefreshHomePacks?: () => Promise<void>;
+  onRefreshMenuPacks?: () => Promise<void>;
   onOpenHomePacksFolder?: () => Promise<void>;
+  onOpenMenuPacksFolder?: () => Promise<void>;
   iconThemePackages?: LoadedIconThemePackage[];
   iconThemePackagesDirectory?: string;
   iconThemePackagesLoading?: boolean;
@@ -296,6 +311,7 @@ export function createBuiltInPanelDefinitions({
           onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
           onAddBookmark={onAddBookmark}
           homePacks={homePacks}
+          menuPacks={menuPacks}
           onOpenPanel={onActivatePanel}
           onOpenSettingsSection={onOpenSettingsSection}
           onExplorerPickerConfirm={onExplorerPickerConfirm}
@@ -434,10 +450,15 @@ export function createBuiltInPanelDefinitions({
             topBarPackagesError={topBarPackagesError}
             topBarPackagesWarnings={topBarPackagesWarnings}
             homePacks={homePacks}
+            menuPacks={menuPacks}
             homePacksDirectory={homePacksDirectory}
+            menuPacksDirectory={menuPacksDirectory}
             homePacksLoading={homePacksLoading}
+            menuPacksLoading={menuPacksLoading}
             homePacksError={homePacksError}
+            menuPacksError={menuPacksError}
             homePacksWarnings={homePacksWarnings}
+            menuPacksWarnings={menuPacksWarnings}
             themePackages={themePackages}
             themePackagesDirectory={themePackagesDirectory}
             themePackagesLoading={themePackagesLoading}
@@ -446,7 +467,9 @@ export function createBuiltInPanelDefinitions({
             onRefreshTopBars={onRefreshTopBars}
             onOpenTopBarsFolder={onOpenTopBarsFolder}
             onRefreshHomePacks={onRefreshHomePacks}
+            onRefreshMenuPacks={onRefreshMenuPacks}
             onOpenHomePacksFolder={onOpenHomePacksFolder}
+            onOpenMenuPacksFolder={onOpenMenuPacksFolder}
             iconThemePackages={iconThemePackages}
             iconThemePackagesDirectory={iconThemePackagesDirectory}
             iconThemePackagesLoading={iconThemePackagesLoading}

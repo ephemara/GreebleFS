@@ -1,3 +1,15 @@
+# 2026-04-23 - Preview Panes Now Expose A Shared Drop-Target Contract
+
+- Folder previews no longer rely on one-off row handlers for reverse drag/drop. `src/components/FileExplorer.tsx` now resolves a reusable `ExplorerPreviewDropTarget` from the active preview state, registers it as a real explorer drop surface, and feeds that into `PreviewPanel` so future preview lanes can opt into the same target model instead of inventing their own drag plumbing.
+- Durable implementation shape:
+  - `src/components/explorer/explorerDragAndDrop.ts` now exports `getExplorerPreviewDropSurfaceId(...)` so preview-target surfaces have stable ids inside the shared explorer drag runtime.
+  - `src/components/FileExplorer.tsx` now computes `activePreviewDropTarget`, `previewDropBinding`, and preview-target active state from the existing drag-interaction store. The preview shell root itself owns the drop binding, highlight state, and target messaging, so dragging into a previewed folder routes through the exact same explorer drop-resolution path as folder cards, breadcrumbs, and the viewport root.
+  - Transfer success paths now call a shared `refreshExplorerAfterTransferRequest(...)` helper that invalidates affected directories, refreshes the active explorer listing, and bumps a preview refresh revision whenever the previewed folder was either the transfer target or the source parent. That fixed both drag-into-preview and drag-out-from-preview staleness.
+  - `src/components/ExplorerFolderPreview.tsx` accepts `refreshRevision` and re-runs its uncached listing effect when the explorer says the previewed folder changed underneath it.
+- Durable product note:
+  - Treat preview-pane drop support as pane infrastructure, not lane-local behavior. If a future preview wants to accept drops, extend `resolveExplorerPreviewDropTarget(...)` and let `PreviewPanel` inherit the same shell-level binding and visual treatment.
+  - Refreshing previewed directories after transfer work belongs in the shared post-transfer helper, not in individual drag handlers. Otherwise preview rows will drift stale the next time a folder preview is both a drag source and a drag destination.
+
 # 2026-04-23 - Explorer Now Shares One Embedded Terminal Between Preview And A Bottom Drawer
 
 - The explorer-local embedded terminal no longer lives only inside the preview pane. Each `FileExplorer` instance now owns one reusable embedded terminal session that can surface either in the preview lane or as a bottom drawer above the explorer status area.
