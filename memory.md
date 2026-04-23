@@ -1,3 +1,17 @@
+# 2026-04-23 - Shell Transition Motion Now Starts Disabled Until The User Opts In
+
+- First-run `Ctrl+Space` no longer inherits theme open/close motion automatically. The persisted `appearance.animations` default is now `false`, and the runtime fallback in `App.tsx` treats missing legacy values as disabled instead of enabled.
+- Durable implementation shape:
+  - `src/store/settingsStore.ts` now seeds shell transition motion off by default and normalizes the `appearance.animations` flag explicitly instead of letting malformed imported data bleed through.
+  - `src/components/SettingsPage.tsx` now exposes a dedicated `Enable Shell Transition Motion` toggle inside `Animations`, plus copy that explains the current business-focused default and that theme/default open-close bindings are merely parked while disabled.
+  - Theme defaults and per-user `appOpenAnimation` / `appCloseAnimation` overrides are intentionally preserved while the toggle is off. Re-enabling motion resumes the selected theme/default choreography without forcing the user to re-pick modules.
+- Durable product note:
+  - Treat shell transition motion like the shader lane's performance-off default: a theme can still advertise rich motion, but the shell should not force that first impression. If future enterprise-facing presets need a calmer baseline, prefer this central gate over stripping motion data out of themes.
+- Validation:
+  - passed: `bunx vitest run src/test/settingsStore.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-23 - Folder And Archive Preview Rows Now Use Icon-Theme Glyphs Instead Of Generic Preview Icons
 
 - Explorer preview-pane folder listings and archive listings no longer render generic Lucide file/folder placeholders for every row.

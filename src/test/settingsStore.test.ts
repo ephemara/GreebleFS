@@ -104,7 +104,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.appearance.shaderControlValues).toEqual({});
     expect(settings.appearance.uiFontFamily).toBe('system-ui, sans-serif');
     expect(settings.appearance.useNativeOsIcons).toBe(false);
-    expect(settings.appearance.animations).toBe(true);
+    expect(settings.appearance.animations).toBe(false);
     expect(settings.appearance.panelTransparency).toBe(0);
     expect(settings.appearance.appBlur).toBe(false);
     expect(settings.appearance.appBlurStrength).toBe(18);

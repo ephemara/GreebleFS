@@ -2214,6 +2214,7 @@ export function SettingsPage({
     }),
     [appAppearance.baseTheme.defaultCloseAnimationId, availableCloseAnimationIds, settings.appearance.appCloseAnimation],
   );
+  const shellTransitionsEnabled = settings.appearance.animations;
   const settingsInteractionMotion = useInteractionMotionController(appAppearance);
   const settingsCardTransition = 'background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, opacity 0.16s ease';
   const themeInteractionMotionPresetId = useMemo(
@@ -5550,11 +5551,18 @@ export function SettingsPage({
                       <div>
                         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shell Transitions</div>
                         <p className="mt-1 text-[11px] opacity-40">
-                          Keep window open and close choreography separate from interaction motion. Browse authored modules here, assign live bindings, and manage the animation folder without crowding the rest of Appearance.
+                          Keep window open and close choreography separate from interaction motion. The shell now starts with transition motion parked, so first-run `Ctrl+Space` feels cleaner and more enterprise-leaning until you opt back into theme-driven motion.
                         </p>
                       </div>
-                      <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                        Transition Lane
+                      <span
+                        className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                        style={{
+                          borderColor: shellTransitionsEnabled ? `${accent}66` : border,
+                          background: shellTransitionsEnabled ? `${accent}16` : 'rgba(255,255,255,0.04)',
+                          color: shellTransitionsEnabled ? accent : text,
+                        }}
+                      >
+                        {shellTransitionsEnabled ? 'Enabled' : 'Disabled by Default'}
                       </span>
                     </div>
 
@@ -5583,6 +5591,26 @@ export function SettingsPage({
                         </button>
                       </div>
                     </div>
+
+                    <label className="mt-3 flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                      <div>
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Enable Shell Transition Motion</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          When off, `Ctrl+Space` opens and closes without the theme open/close choreography. Theme defaults and your selected motion modules stay parked and resume when you turn this back on.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          aria-label="Enable shell transition animations"
+                          checked={shellTransitionsEnabled}
+                          onChange={event => updateAppearance({ animations: event.target.checked })}
+                        />
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: shellTransitionsEnabled ? accent : muted }}>
+                          {shellTransitionsEnabled ? 'On' : 'Off'}
+                        </span>
+                      </div>
+                    </label>
 
                     <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
                       <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Authoring Folder</div>
@@ -5636,6 +5664,7 @@ export function SettingsPage({
                               {editableTheme.defaultOpenAnimationId
                                 ? `Active theme ${editableTheme.name} defaults open motion to ${editableTheme.defaultOpenAnimationId}.`
                                 : `Active theme ${editableTheme.name} does not define open motion, so GreebleFS falls back to ${animationSystemConfig.defaultOpenAnimationId}.`}
+                              {!shellTransitionsEnabled ? ' Shell transition motion is currently off, so this stays parked until you enable it.' : ''}
                             </p>
                           </button>
                           {openAnimationOptions.map(animation => {
@@ -5691,6 +5720,7 @@ export function SettingsPage({
                               {editableTheme.defaultCloseAnimationId
                                 ? `Active theme ${editableTheme.name} defaults close motion to ${editableTheme.defaultCloseAnimationId}.`
                                 : `Active theme ${editableTheme.name} does not define close motion, so GreebleFS falls back to ${animationSystemConfig.defaultCloseAnimationId}.`}
+                              {!shellTransitionsEnabled ? ' Shell transition motion is currently off, so this stays parked until you enable it.' : ''}
                             </p>
                           </button>
                           {closeAnimationOptions.map(animation => {

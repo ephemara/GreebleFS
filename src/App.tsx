@@ -811,7 +811,7 @@ function App() {
   const appZoom = appearance.appZoom ?? 1.0;
   const appBlur = appearance.appBlur ?? true;
   const appBlurStrength = appearance.appBlurStrength ?? overlayVisualControls.blurStrength.defaultValue;
-  const animationsEnabled = appearance.animations ?? true;
+  const animationsEnabled = appearance.animations ?? false;
   const appAnimationDurationMs = animationsEnabled
     ? clampOverlayAnimationDuration(appearance.appAnimationDurationMs ?? 320)
     : 140;

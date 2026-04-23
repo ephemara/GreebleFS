@@ -1144,6 +1144,25 @@ describe('SettingsPage behavior', () => {
     expect(appearanceSettings.useNativeOsIcons).toBe(true);
   });
 
+  it('starts shell transition motion disabled and lets the animations panel enable it without clearing theme-driven selections', async () => {
+    const user = userEvent.setup();
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Animations'));
+
+    const toggle = screen.getByRole('checkbox', { name: 'Enable shell transition animations' });
+    expect(toggle).not.toBeChecked();
+    expect(useSettingsStore.getState().settings.appearance.animations).toBe(false);
+    expect(screen.getByText('Disabled by Default')).toBeInTheDocument();
+
+    await user.click(toggle);
+
+    expect(useSettingsStore.getState().settings.appearance.animations).toBe(true);
+    expect(toggle).toBeChecked();
+    expect(screen.getByText('Enabled')).toBeInTheDocument();
+  });
+
   it('applies the pilot light baseline when selecting the built-in default theme', async () => {
     const user = userEvent.setup();
 
