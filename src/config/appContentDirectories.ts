@@ -55,6 +55,16 @@ export const managedContentDirectoryCatalog = [
     order: 28,
   },
   {
+    id: 'menuPacks',
+    label: 'Menu Packs',
+    description: 'Author explorer menu layouts, submenus, and presentation-ready packs here.',
+    keywords: ['menu', 'context menu', 'submenu', 'explorer menu'],
+    releaseDirectoryName: 'menu-packs',
+    legacyRelativeDirectoryName: 'menu-packs',
+    envVarSuffix: 'MENU_PACKS',
+    order: 29,
+  },
+  {
     id: 'iconThemes',
     label: 'Icon Themes',
     description: 'Drop VS Code-style icon-theme manifests here for explorer and shell icon swaps.',

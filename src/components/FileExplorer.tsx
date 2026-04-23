@@ -38,6 +38,7 @@ import {
   Star,
   StarOff,
   Terminal,
+  TerminalSquare,
   Trash2,
   Copy,
   Scissors,
@@ -1039,6 +1040,7 @@ type PreviewState =
     } & PreviewResolvedPathState);
 type PreviewCloseGuard = () => Promise<boolean>;
 type PreviewSurfaceMode = "content" | "terminal";
+type ExplorerEmbeddedTerminalPlacement = "preview" | "bottom";
 type ExplorerShaderSelectionMemory = {
   selectedStage: ExplorerShaderPreviewStage | null;
   selectedEntryPoint: string | null;
@@ -1058,6 +1060,12 @@ interface PendingExplorerTransferRequest {
   operation: FileTransferOperation;
   collisionPolicy?: ExplorerFileTransferCollisionPolicy;
 }
+
+const EXPLORER_EMBEDDED_TERMINAL_HEIGHT_BOUNDS = {
+  min: 180,
+  max: 480,
+  default: 260,
+} as const;
 
 interface ExplorerChromeEditModeState {
   active: boolean;
@@ -1260,6 +1268,54 @@ function toolbarActionButtonStyle(): CSSProperties {
     fontSize: "var(--overlay-explorer-toolbar-font-size)",
     flexShrink: 0,
   };
+}
+
+function explorerEmbeddedTerminalToggleButtonStyle(
+  active = false,
+): CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: active
+      ? "var(--overlay-explorer-chip-active-bg)"
+      : "var(--overlay-explorer-chip-bg)",
+    border: "1px solid var(--overlay-explorer-chip-border)",
+    borderRadius: "var(--overlay-explorer-control-radius)",
+    cursor: "pointer",
+    color: active ? EXP.text : EXP.muted,
+    width: 28,
+    height: 28,
+    padding: 0,
+    flexShrink: 0,
+  };
+}
+
+function ExplorerEmbeddedTerminalToggleButton({
+  active,
+  icon: Icon,
+  ariaLabel,
+  title,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ComponentType<{ size?: number }>;
+  ariaLabel: string;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      aria-pressed={active}
+      title={title}
+      style={explorerEmbeddedTerminalToggleButtonStyle(active)}
+    >
+      <Icon size={12} />
+    </button>
+  );
 }
 
 interface ExplorerEntrySurfaceState {
@@ -3374,11 +3430,9 @@ function PreviewPanel({
   presentationMode,
   previewLocked,
   previewSurfaceMode,
-  previewTerminalMounted,
-  previewTerminalCommandRequest,
-  previewTerminalWorkingDirectory,
-  previewTerminalReportedWorkingDirectory,
-  previewTerminalNamespace,
+  previewContentHostRef,
+  explorerTerminalWorkingDirectory,
+  explorerTerminalReportedWorkingDirectory,
   onClose,
   onWidthChange,
   onTextChange,
@@ -3398,8 +3452,6 @@ function PreviewPanel({
   onTogglePreviewTerminal,
   onRunTextScript,
   onStopTextScriptRun,
-  onPreviewTerminalCommandHandled,
-  onPreviewTerminalReportedWorkingDirectoryChange,
   viewMode,
   onViewModeChange,
   activeWorkflowTabId,
@@ -3425,11 +3477,9 @@ function PreviewPanel({
   presentationMode: ExplorerPreviewSplitMode;
   previewLocked: boolean;
   previewSurfaceMode: PreviewSurfaceMode;
-  previewTerminalMounted: boolean;
-  previewTerminalCommandRequest: TerminalOverlayCommandRequest | null;
-  previewTerminalWorkingDirectory: string | null;
-  previewTerminalReportedWorkingDirectory: string | null;
-  previewTerminalNamespace: string;
+  previewContentHostRef: React.RefObject<HTMLDivElement | null>;
+  explorerTerminalWorkingDirectory: string | null;
+  explorerTerminalReportedWorkingDirectory: string | null;
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
@@ -3463,8 +3513,6 @@ function PreviewPanel({
     scriptPreview: ExplorerResolvedScriptPreview,
   ) => Promise<void>;
   onStopTextScriptRun: () => void;
-  onPreviewTerminalCommandHandled: (requestId: string) => void;
-  onPreviewTerminalReportedWorkingDirectoryChange: (cwd: string) => void;
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
   activeWorkflowTabId: string | null;
@@ -3688,8 +3736,8 @@ function PreviewPanel({
     : "Lock preview to the current item";
   const isPreviewTerminalMode = previewSurfaceMode === "terminal";
   const previewTerminalDisplayPath =
-    previewTerminalReportedWorkingDirectory?.trim() ||
-    previewTerminalWorkingDirectory ||
+    explorerTerminalReportedWorkingDirectory?.trim() ||
+    explorerTerminalWorkingDirectory ||
     "";
   const previewTerminalToggleTitle = isPreviewTerminalMode
     ? "Show file preview"
@@ -4486,32 +4534,15 @@ function PreviewPanel({
         isVisible: () =>
           preview.type !== "none" &&
           !isScriptTextPreview &&
-          Boolean(previewTerminalWorkingDirectory),
+          Boolean(explorerTerminalWorkingDirectory),
         render: () => (
-          <button
-            type="button"
-            onClick={onTogglePreviewTerminal}
-            aria-label="Toggle preview terminal"
-            aria-pressed={isPreviewTerminalMode}
+          <ExplorerEmbeddedTerminalToggleButton
+            active={isPreviewTerminalMode}
+            icon={Terminal}
+            ariaLabel="Toggle preview terminal"
             title={previewTerminalToggleTitle}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: isPreviewTerminalMode
-                ? "var(--overlay-explorer-chip-active-bg)"
-                : "var(--overlay-explorer-chip-bg)",
-              border: "1px solid var(--overlay-explorer-chip-border)",
-              borderRadius: "var(--overlay-explorer-control-radius)",
-              cursor: "pointer",
-              color: isPreviewTerminalMode ? EXP.text : EXP.muted,
-              width: 28,
-              height: 28,
-              padding: 0,
-            }}
-          >
-            <Terminal size={12} />
-          </button>
+            onClick={onTogglePreviewTerminal}
+          />
         ),
       },
       {
@@ -4565,7 +4596,7 @@ function PreviewPanel({
       previewSurfaceMode,
       previewTerminalDisplayPath,
       previewTerminalToggleTitle,
-      previewTerminalWorkingDirectory,
+      explorerTerminalWorkingDirectory,
       previewTitle,
       isScriptTextPreview,
       onRunTextScript,
@@ -4664,11 +4695,8 @@ function PreviewPanel({
   const getPreviewSurfaceLayerStyle = useCallback(
     (surfaceMode: PreviewSurfaceMode): CSSProperties => {
       const isContentSurface = surfaceMode === "content";
-      const isVisible = isContentSurface
-        ? preview.type === "none" || previewSurfaceMode === surfaceMode
-        : preview.type !== "none" &&
-          previewTerminalMounted &&
-          previewSurfaceMode === surfaceMode;
+      const isVisible =
+        preview.type === "none" || previewSurfaceMode === surfaceMode;
 
       return {
         position: "absolute",
@@ -4680,7 +4708,7 @@ function PreviewPanel({
         transition: "opacity 140ms ease",
       };
     },
-    [preview.type, previewSurfaceMode, previewTerminalMounted],
+    [preview.type, previewSurfaceMode],
   );
 
   return (
@@ -4731,7 +4759,10 @@ function PreviewPanel({
         />
       </div>
       {/* Content */}
-      <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+      <div
+        ref={previewContentHostRef}
+        style={{ flex: 1, overflow: "hidden", position: "relative" }}
+      >
         <div
           data-overlay-explorer-preview-surface="content"
           style={getPreviewSurfaceLayerStyle("content")}
@@ -4954,26 +4985,6 @@ function PreviewPanel({
             </div>
           )}
         </div>
-        {previewTerminalMounted && preview.type !== "none" && (
-          <div
-            data-overlay-explorer-preview-surface="terminal"
-            style={getPreviewSurfaceLayerStyle("terminal")}
-          >
-            <TerminalOverlay
-              isOpen
-              embedded
-              onClose={() => {}}
-              terminalIdNamespace={previewTerminalNamespace}
-              workingDirectory={previewTerminalWorkingDirectory}
-              consumeExplorerCwdSync={false}
-              pendingCommandRequest={previewTerminalCommandRequest}
-              onCommandRequestHandled={onPreviewTerminalCommandHandled}
-              onReportedWorkingDirectoryChange={
-                onPreviewTerminalReportedWorkingDirectoryChange
-              }
-            />
-          </div>
-        )}
       </div>
       {previewSurfaceMode === "content" && preview.type === "text" && (
         <div
@@ -5075,6 +5086,300 @@ function PreviewPanel({
           </span>
         </div>
       )}
+    </div>
+  );
+}
+
+function ExplorerEmbeddedTerminalLayer({
+  rootRef,
+  previewContentRef,
+  bottomAnchorRef,
+  mounted,
+  visible,
+  placement,
+  bottomHeight,
+  onBottomHeightChange,
+  explorerTheme,
+  blurEnabled,
+  appearance,
+  terminalIdNamespace,
+  workingDirectory,
+  pendingCommandRequest,
+  onCommandRequestHandled,
+  onReportedWorkingDirectoryChange,
+  focusRequestKey,
+}: {
+  rootRef: React.RefObject<HTMLDivElement | null>;
+  previewContentRef: React.RefObject<HTMLDivElement | null>;
+  bottomAnchorRef: React.RefObject<HTMLDivElement | null>;
+  mounted: boolean;
+  visible: boolean;
+  placement: ExplorerEmbeddedTerminalPlacement;
+  bottomHeight: number;
+  onBottomHeightChange: (height: number) => void;
+  explorerTheme: ResolvedExplorerThemeRecipe;
+  blurEnabled: boolean;
+  appearance?: ResolvedOverlayAppearance;
+  terminalIdNamespace: string;
+  workingDirectory: string | null;
+  pendingCommandRequest: TerminalOverlayCommandRequest | null;
+  onCommandRequestHandled: (requestId: string) => void;
+  onReportedWorkingDirectoryChange: (cwd: string) => void;
+  focusRequestKey: number;
+}) {
+  const [previewRect, setPreviewRect] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [bottomAnchorTop, setBottomAnchorTop] = useState<number | null>(null);
+  const resizeStateRef = useRef<{
+    pointerId: number;
+    startY: number;
+    startHeight: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!mounted) {
+      setPreviewRect(null);
+      setBottomAnchorTop(null);
+      return;
+    }
+
+    const measure = () => {
+      const rootElement = rootRef.current;
+      if (!rootElement) {
+        setPreviewRect(null);
+        setBottomAnchorTop(null);
+        return;
+      }
+
+      const rootRect = rootElement.getBoundingClientRect();
+      const previewContentElement = previewContentRef.current;
+      if (previewContentElement) {
+        const contentRect = previewContentElement.getBoundingClientRect();
+        setPreviewRect({
+          left: contentRect.left - rootRect.left,
+          top: contentRect.top - rootRect.top,
+          width: contentRect.width,
+          height: contentRect.height,
+        });
+      } else {
+        setPreviewRect(null);
+      }
+
+      const bottomAnchorElement = bottomAnchorRef.current;
+      if (bottomAnchorElement) {
+        const anchorRect = bottomAnchorElement.getBoundingClientRect();
+        setBottomAnchorTop(anchorRect.top - rootRect.top);
+      } else {
+        setBottomAnchorTop(null);
+      }
+    };
+
+    measure();
+
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            measure();
+          })
+        : null;
+    const rootElement = rootRef.current;
+    const previewContentElement = previewContentRef.current;
+    const bottomAnchorElement = bottomAnchorRef.current;
+    if (rootElement) {
+      resizeObserver?.observe(rootElement);
+    }
+    if (previewContentElement) {
+      resizeObserver?.observe(previewContentElement);
+    }
+    if (bottomAnchorElement) {
+      resizeObserver?.observe(bottomAnchorElement);
+    }
+    window.addEventListener("resize", measure);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [bottomAnchorRef, mounted, placement, previewContentRef, rootRef, visible]);
+
+  const handleBottomResizePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!visible || placement !== "bottom") {
+        return;
+      }
+
+      resizeStateRef.current = {
+        pointerId: event.pointerId,
+        startY: event.clientY,
+        startHeight: bottomHeight,
+      };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    },
+    [bottomHeight, placement, visible],
+  );
+
+  const handleBottomResizePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const resizeState = resizeStateRef.current;
+      if (
+        !resizeState
+        || resizeState.pointerId !== event.pointerId
+        || placement !== "bottom"
+      ) {
+        return;
+      }
+
+      const delta = resizeState.startY - event.clientY;
+      onBottomHeightChange(
+        Math.max(
+          EXPLORER_EMBEDDED_TERMINAL_HEIGHT_BOUNDS.min,
+          Math.min(
+            EXPLORER_EMBEDDED_TERMINAL_HEIGHT_BOUNDS.max,
+            resizeState.startHeight + delta,
+          ),
+        ),
+      );
+    },
+    [onBottomHeightChange, placement],
+  );
+
+  const resetBottomResizeState = useCallback(() => {
+    resizeStateRef.current = null;
+  }, []);
+
+  const hiddenLayerStyle = useMemo<CSSProperties>(
+    () => ({
+      position: "absolute",
+      left: -99999,
+      top: -99999,
+      width: 1,
+      height: 1,
+      opacity: 0,
+      pointerEvents: "none",
+      zIndex: 16,
+    }),
+    [],
+  );
+
+  const activeLayerStyle = useMemo<CSSProperties>(() => {
+    if (!mounted || !visible) {
+      return hiddenLayerStyle;
+    }
+
+    if (placement === "preview") {
+      if (!previewRect) {
+        return hiddenLayerStyle;
+      }
+
+      return {
+        position: "absolute",
+        left: previewRect.left,
+        top: previewRect.top,
+        width: previewRect.width,
+        height: previewRect.height,
+        zIndex: 16,
+        pointerEvents: "auto",
+      };
+    }
+
+    if (bottomAnchorTop == null) {
+      return hiddenLayerStyle;
+    }
+
+    const horizontalInset =
+      explorerTheme.statusBarStyle === "floating"
+        ? "var(--overlay-explorer-chrome-inset)"
+        : 0;
+
+    return {
+      position: "absolute",
+      left: horizontalInset,
+      right: horizontalInset,
+      top: Math.max(0, bottomAnchorTop - bottomHeight),
+      height: bottomHeight,
+      zIndex: 16,
+      pointerEvents: "auto",
+      borderRadius: "var(--overlay-explorer-panel-radius)",
+      boxShadow: "var(--overlay-explorer-toolbar-shadow)",
+    };
+  }, [
+    bottomAnchorTop,
+    bottomHeight,
+    explorerTheme.statusBarStyle,
+    hiddenLayerStyle,
+    mounted,
+    placement,
+    previewRect,
+    visible,
+  ]);
+
+  if (!mounted) {
+    return null;
+  }
+
+  return (
+    <div
+      data-overlay-explorer-plane="embedded-terminal"
+      data-overlay-explorer-terminal-placement={placement}
+      data-overlay-explorer-terminal-visible={visible ? "true" : "false"}
+      style={activeLayerStyle}
+    >
+      {visible && placement === "bottom" ? (
+        <div
+          data-overlay-explorer-terminal-resize-handle="true"
+          onPointerDown={handleBottomResizePointerDown}
+          onPointerMove={handleBottomResizePointerMove}
+          onPointerUp={resetBottomResizeState}
+          onPointerCancel={resetBottomResizeState}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 6,
+            cursor: "ns-resize",
+            zIndex: 2,
+            background:
+              "linear-gradient(180deg, color-mix(in srgb, var(--overlay-accent) 38%, transparent), transparent)",
+          }}
+        />
+      ) : null}
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          minWidth: 0,
+          minHeight: 0,
+          overflow: "hidden",
+          backdropFilter:
+            blurEnabled && explorerTheme.previewStyle === "glass"
+              ? "blur(18px)"
+              : "none",
+          WebkitBackdropFilter:
+            blurEnabled && explorerTheme.previewStyle === "glass"
+              ? "blur(18px)"
+              : "none",
+        }}
+      >
+        <TerminalOverlay
+          isOpen
+          embedded
+          onClose={() => {}}
+          appearance={appearance}
+          terminalIdNamespace={terminalIdNamespace}
+          workingDirectory={workingDirectory}
+          consumeExplorerCwdSync={false}
+          pendingCommandRequest={pendingCommandRequest}
+          onCommandRequestHandled={onCommandRequestHandled}
+          onReportedWorkingDirectoryChange={onReportedWorkingDirectoryChange}
+          focusRequestKey={focusRequestKey}
+        />
+      </div>
     </div>
   );
 }
@@ -7413,15 +7718,20 @@ export function FileExplorer({
   const [transferConflictPolicy, setTransferConflictPolicy] =
     useState<ExplorerFileTransferCollisionPolicy>("keep_both");
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewSurfaceMode, setPreviewSurfaceMode] =
-    useState<PreviewSurfaceMode>("content");
-  const [previewTerminalMounted, setPreviewTerminalMounted] = useState(false);
-  const [previewTerminalCommandRequest, setPreviewTerminalCommandRequest] =
+  const [explorerTerminalMounted, setExplorerTerminalMounted] = useState(false);
+  const [explorerTerminalVisible, setExplorerTerminalVisible] = useState(false);
+  const [explorerTerminalPlacement, setExplorerTerminalPlacement] =
+    useState<ExplorerEmbeddedTerminalPlacement>("preview");
+  const [explorerTerminalBottomHeight, setExplorerTerminalBottomHeight] =
+    useState<number>(EXPLORER_EMBEDDED_TERMINAL_HEIGHT_BOUNDS.default);
+  const [explorerTerminalCommandRequest, setExplorerTerminalCommandRequest] =
     useState<TerminalOverlayCommandRequest | null>(null);
   const [
-    previewTerminalReportedWorkingDirectory,
-    setPreviewTerminalReportedWorkingDirectory,
+    explorerTerminalReportedWorkingDirectory,
+    setExplorerTerminalReportedWorkingDirectory,
   ] = useState<string | null>(null);
+  const [explorerTerminalFocusRequestKey, setExplorerTerminalFocusRequestKey] =
+    useState(0);
   const [pdfPreviewChromeState, setPdfPreviewChromeState] =
     useState<ExplorerPdfWorkbenchChromeState | null>(null);
   const [newItem, setNewItem] = useState<NewItemState>({
@@ -7604,9 +7914,9 @@ export function FileExplorer({
       sourceKind: activeDragInteraction.sourceKind,
     } as const;
   }, [activeDragInteraction, scopeRootDropActive]);
-  const lastPreviewTerminalShellReportedCwdRef = useRef<string | null>(null);
-  const lastPreviewTerminalExplorerAppliedCwdRef = useRef<string | null>(null);
-  const previewTerminalCommandSequenceRef = useRef(0);
+  const lastExplorerTerminalShellReportedCwdRef = useRef<string | null>(null);
+  const lastExplorerTerminalExplorerAppliedCwdRef = useRef<string | null>(null);
+  const explorerTerminalCommandSequenceRef = useRef(0);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
   const lastWorkspaceRevealSequenceRef = useRef(0);
@@ -7661,8 +7971,11 @@ export function FileExplorer({
     recent: [],
   });
 
+  const explorerRootRef = useRef<HTMLDivElement | null>(null);
   const explorerFileAreaRef = useRef<HTMLDivElement | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
+  const previewContentHostRef = useRef<HTMLDivElement | null>(null);
+  const bottomTerminalAnchorRef = useRef<HTMLDivElement | null>(null);
   const explorerViewportRef = useRef<HTMLDivElement | null>(null);
   const explorerViewportScrollTopRef = useRef(0);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
@@ -7715,15 +8028,21 @@ export function FileExplorer({
     !currentPathIsCloud &&
     !currentPathIsHome &&
     !currentPathIsVirtual;
-  const previewTerminalNamespace = useMemo(
-    () => `preview-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+  const explorerTerminalNamespace = useMemo(
+    () => `explorer-terminal-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
     [instanceId],
   );
-  const previewTerminalWorkingDirectory = currentPathIsCloud || currentPathIsVirtual
+  const explorerTerminalWorkingDirectory = currentPathIsCloud || currentPathIsVirtual
     ? null
     : preview.type === "text" && preview.scriptPreview != null
       ? (getPathParent(preview.path) ?? currentPath)
       : currentPath;
+  const previewSurfaceMode: PreviewSurfaceMode =
+    explorerTerminalVisible && explorerTerminalPlacement === "preview"
+      ? "terminal"
+      : "content";
+  const bottomTerminalVisible =
+    explorerTerminalVisible && explorerTerminalPlacement === "bottom";
   const previewPanelVisible =
     !isCompactDock && previewEnabled && !usesWorkspaceCompactChrome;
   const hasPreview = previewPanelVisible && preview.type !== "none";
@@ -11462,34 +11781,75 @@ export function FileExplorer({
     },
     [],
   );
-  const queuePreviewTerminalCommand = useCallback(
+  const bumpExplorerTerminalFocusRequest = useCallback(() => {
+    setExplorerTerminalFocusRequestKey((current) => current + 1);
+  }, []);
+  const queueExplorerTerminalCommand = useCallback(
     (command: string) => {
       const trimmedCommand = command.trim();
       if (!trimmedCommand) {
         return;
       }
 
-      previewTerminalCommandSequenceRef.current += 1;
-      setPreviewTerminalCommandRequest({
-        id: `${previewTerminalNamespace}:${previewTerminalCommandSequenceRef.current}`,
+      explorerTerminalCommandSequenceRef.current += 1;
+      setExplorerTerminalCommandRequest({
+        id: `${explorerTerminalNamespace}:${explorerTerminalCommandSequenceRef.current}`,
         command: trimmedCommand,
         run: true,
       });
     },
-    [previewTerminalNamespace],
+    [explorerTerminalNamespace],
   );
-  const handlePreviewTerminalCommandHandled = useCallback(
+  const handleExplorerTerminalCommandHandled = useCallback(
     (requestId: string) => {
-      setPreviewTerminalCommandRequest((current) =>
+      setExplorerTerminalCommandRequest((current) =>
         current?.id === requestId ? null : current,
       );
     },
     [],
   );
+  const revealExplorerEmbeddedTerminal = useCallback(
+    (placement: ExplorerEmbeddedTerminalPlacement) => {
+      if (!explorerTerminalWorkingDirectory) {
+        return;
+      }
+
+      setExplorerTerminalMounted(true);
+      setExplorerTerminalPlacement(placement);
+      setExplorerTerminalVisible(true);
+      bumpExplorerTerminalFocusRequest();
+    },
+    [bumpExplorerTerminalFocusRequest, explorerTerminalWorkingDirectory],
+  );
+  const toggleExplorerEmbeddedTerminal = useCallback(
+    (placement: ExplorerEmbeddedTerminalPlacement) => {
+      if (!explorerTerminalWorkingDirectory) {
+        return;
+      }
+
+      setExplorerTerminalMounted(true);
+      if (explorerTerminalVisible && explorerTerminalPlacement === placement) {
+        setExplorerTerminalVisible(false);
+        return;
+      }
+
+      setExplorerTerminalPlacement(placement);
+      setExplorerTerminalVisible(true);
+      bumpExplorerTerminalFocusRequest();
+    },
+    [
+      bumpExplorerTerminalFocusRequest,
+      explorerTerminalPlacement,
+      explorerTerminalVisible,
+      explorerTerminalWorkingDirectory,
+    ],
+  );
   const stopPreviewTextScriptRun = useCallback(() => {
     setDocumentViewMode("edit");
-    setPreviewSurfaceMode("content");
-  }, []);
+    if (explorerTerminalVisible && explorerTerminalPlacement === "preview") {
+      setExplorerTerminalVisible(false);
+    }
+  }, [explorerTerminalPlacement, explorerTerminalVisible]);
   const runPreviewTextScript = useCallback(
     async (path: string, scriptPreview: ExplorerResolvedScriptPreview) => {
       const currentPreview = previewRef.current;
@@ -11518,38 +11878,35 @@ export function FileExplorer({
       }
 
       setDocumentViewMode("preview");
-      setPreviewTerminalMounted(true);
-      setPreviewSurfaceMode("terminal");
-      queuePreviewTerminalCommand(command);
+      revealExplorerEmbeddedTerminal("preview");
+      queueExplorerTerminalCommand(command);
     },
-    [persistPreviewText, queuePreviewTerminalCommand],
+    [
+      persistPreviewText,
+      queueExplorerTerminalCommand,
+      revealExplorerEmbeddedTerminal,
+    ],
   );
-  const resetPreviewTerminalState = useCallback(() => {
-    setPreviewSurfaceMode("content");
-    setPreviewTerminalMounted(false);
-    setPreviewTerminalCommandRequest(null);
-    setPreviewTerminalReportedWorkingDirectory(null);
-    lastPreviewTerminalShellReportedCwdRef.current = null;
-    lastPreviewTerminalExplorerAppliedCwdRef.current = null;
-  }, []);
   const clearPreviewSurface = useCallback(() => {
     previewCloseGuardRef.current = null;
-    resetPreviewTerminalState();
+    if (explorerTerminalVisible && explorerTerminalPlacement === "preview") {
+      setExplorerTerminalVisible(false);
+    }
     setPreview({ type: "none", path: "" });
     setPreviewLoading(false);
     setPdfPreviewChromeState(null);
     setPreviewLocked(false);
-  }, [resetPreviewTerminalState]);
+  }, [explorerTerminalPlacement, explorerTerminalVisible]);
   const togglePreviewTerminal = useCallback(() => {
-    if (!previewTerminalWorkingDirectory) {
-      return;
-    }
-    setPreviewTerminalMounted(true);
-    setPreviewSurfaceMode((current) =>
-      current === "terminal" ? "content" : "terminal",
-    );
-  }, [previewTerminalWorkingDirectory]);
-  const handlePreviewTerminalReportedWorkingDirectoryChange = useCallback(
+    toggleExplorerEmbeddedTerminal("preview");
+  }, [toggleExplorerEmbeddedTerminal]);
+  const toggleBottomExplorerTerminal = useCallback(() => {
+    toggleExplorerEmbeddedTerminal("bottom");
+  }, [toggleExplorerEmbeddedTerminal]);
+  const revealBottomExplorerTerminal = useCallback(() => {
+    revealExplorerEmbeddedTerminal("bottom");
+  }, [revealExplorerEmbeddedTerminal]);
+  const handleExplorerTerminalReportedWorkingDirectoryChange = useCallback(
     (cwd: string) => {
       const trimmedCwd = cwd.trim();
       if (!trimmedCwd) {
@@ -11564,19 +11921,19 @@ export function FileExplorer({
         return;
       }
 
-      setPreviewTerminalReportedWorkingDirectory(trimmedCwd);
+      setExplorerTerminalReportedWorkingDirectory(trimmedCwd);
       if (
-        lastPreviewTerminalShellReportedCwdRef.current === normalizedReportedCwd
+        lastExplorerTerminalShellReportedCwdRef.current === normalizedReportedCwd
       ) {
         return;
       }
-      lastPreviewTerminalShellReportedCwdRef.current = normalizedReportedCwd;
+      lastExplorerTerminalShellReportedCwdRef.current = normalizedReportedCwd;
 
       if (normalizeExplorerPath(currentPath) === normalizedReportedCwd) {
         return;
       }
 
-      lastPreviewTerminalExplorerAppliedCwdRef.current = normalizedReportedCwd;
+      lastExplorerTerminalExplorerAppliedCwdRef.current = normalizedReportedCwd;
       void navigate(normalizedReportedCwd, true).catch(() => {});
     },
     [currentPath, navigate],
@@ -11623,23 +11980,43 @@ export function FileExplorer({
   }, [closePreview, previewEnabled]);
 
   useEffect(() => {
-    if (!previewTerminalReportedWorkingDirectory) {
+    if (!explorerTerminalReportedWorkingDirectory) {
       return;
     }
 
     const normalizedCurrentPath = normalizeExplorerPath(currentPath);
     const normalizedReportedPath = normalizeExplorerPath(
-      previewTerminalReportedWorkingDirectory,
+      explorerTerminalReportedWorkingDirectory,
     );
     if (
-      lastPreviewTerminalExplorerAppliedCwdRef.current === normalizedCurrentPath
+      lastExplorerTerminalExplorerAppliedCwdRef.current === normalizedCurrentPath
     ) {
       return;
     }
     if (normalizedReportedPath !== normalizedCurrentPath) {
-      setPreviewTerminalReportedWorkingDirectory(null);
+      setExplorerTerminalReportedWorkingDirectory(null);
     }
-  }, [currentPath, previewTerminalReportedWorkingDirectory]);
+  }, [currentPath, explorerTerminalReportedWorkingDirectory]);
+
+  useEffect(() => {
+    if (explorerTerminalWorkingDirectory) {
+      return;
+    }
+
+    setExplorerTerminalVisible(false);
+    setExplorerTerminalCommandRequest(null);
+    setExplorerTerminalReportedWorkingDirectory(null);
+    lastExplorerTerminalShellReportedCwdRef.current = null;
+    lastExplorerTerminalExplorerAppliedCwdRef.current = null;
+  }, [explorerTerminalWorkingDirectory]);
+
+  useEffect(() => {
+    if (previewPanelVisible || explorerTerminalPlacement !== "preview") {
+      return;
+    }
+
+    setExplorerTerminalVisible(false);
+  }, [explorerTerminalPlacement, previewPanelVisible]);
 
   const applyModeProfilePreset = useCallback(
     (nextModeProfile: ExplorerModeProfileDefinition) => {
@@ -18508,6 +18885,25 @@ export function FileExplorer({
         },
       },
       {
+        id: "terminalDrawerToggle",
+        label: "Terminal Drawer Toggle",
+        surfaces: ["explorerStatusBar"],
+        isVisible: () => Boolean(explorerTerminalWorkingDirectory),
+        render: () => (
+          <ExplorerEmbeddedTerminalToggleButton
+            active={bottomTerminalVisible}
+            icon={TerminalSquare}
+            ariaLabel="Toggle bottom terminal drawer"
+            title={
+              bottomTerminalVisible
+                ? "Hide bottom terminal drawer"
+                : "Show bottom terminal drawer"
+            }
+            onClick={toggleBottomExplorerTerminal}
+          />
+        ),
+      },
+      {
         id: "statusPreviewSummary",
         label: "Status Preview Summary",
         surfaces: ["explorerStatusBar"],
@@ -18646,6 +19042,8 @@ export function FileExplorer({
       effectiveChromeLayoutId,
       effectiveModeProfile,
       effectiveShellLayout,
+      bottomTerminalVisible,
+      explorerTerminalWorkingDirectory,
       explorerFooterViewSwitcherButtons,
       focusExplorerAddressBar,
       goBack,
@@ -18702,6 +19100,7 @@ export function FileExplorer({
       startDuplicateFinder,
       submitAddressDraft,
       triggerFindSimilarForPath,
+      toggleBottomExplorerTerminal,
       toggleSourcesPanel,
       shouldRenderRail,
       togglePreviewEnabled,
@@ -19439,7 +19838,15 @@ export function FileExplorer({
       }
       if (isEditableKeyboardTarget(e.target)) return;
 
-      const isExplorerFocus = document.activeElement === mainRef.current;
+      const activeElement = document.activeElement;
+      const isExplorerFocus = activeElement === mainRef.current;
+      const isExplorerActive =
+        activeElement instanceof HTMLElement &&
+        explorerRootRef.current?.contains(activeElement);
+      const isEmbeddedExplorerTerminalFocus =
+        activeElement instanceof HTMLElement &&
+        activeElement.closest('[data-testid="terminal-overlay-embedded-root"]') !=
+          null;
       const selectedEntry =
         (lastSelected.current
           ? (visibleEntryLookup.get(lastSelected.current) ?? null)
@@ -19478,7 +19885,6 @@ export function FileExplorer({
         return;
       }
 
-      const activeElement = document.activeElement;
       const isTypingInEmbeddedEditor =
         activeElement instanceof HTMLInputElement ||
         activeElement instanceof HTMLTextAreaElement ||
@@ -19764,6 +20170,16 @@ export function FileExplorer({
         focusExplorerPreview();
         return;
       }
+      if (
+        matchesKeybinding(e, keybindings.terminalFocus) &&
+        isExplorerActive &&
+        !isEmbeddedExplorerTerminalFocus &&
+        explorerTerminalWorkingDirectory
+      ) {
+        e.preventDefault();
+        revealBottomExplorerTerminal();
+        return;
+      }
       if (matchesKeybinding(e, keybindings.toggleExplorerSources)) {
         e.preventDefault();
         toggleSourcesPanel();
@@ -19777,7 +20193,7 @@ export function FileExplorer({
       if (
         matchesKeybinding(e, keybindings.togglePreviewTerminal) &&
         hasPreview &&
-        previewTerminalWorkingDirectory
+        explorerTerminalWorkingDirectory
       ) {
         e.preventDefault();
         togglePreviewTerminal();
@@ -19983,6 +20399,7 @@ export function FileExplorer({
     focusExplorerAddressBar,
     focusExplorerList,
     focusExplorerPreview,
+    revealBottomExplorerTerminal,
     hasPreview,
     goBack,
     goForward,
@@ -19996,7 +20413,7 @@ export function FileExplorer({
     persistPreviewText,
     persistShaderPreviewSource,
     preview,
-    previewTerminalWorkingDirectory,
+    explorerTerminalWorkingDirectory,
     queueClipboard,
     refresh,
     runArchiveToolbarAction,
@@ -22514,13 +22931,11 @@ export function FileExplorer({
         presentationMode={previewSplitMode}
         previewLocked={previewLocked}
         previewSurfaceMode={previewSurfaceMode}
-        previewTerminalMounted={previewTerminalMounted}
-        previewTerminalCommandRequest={previewTerminalCommandRequest}
-        previewTerminalWorkingDirectory={previewTerminalWorkingDirectory}
-        previewTerminalReportedWorkingDirectory={
-          previewTerminalReportedWorkingDirectory
+        previewContentHostRef={previewContentHostRef}
+        explorerTerminalWorkingDirectory={explorerTerminalWorkingDirectory}
+        explorerTerminalReportedWorkingDirectory={
+          explorerTerminalReportedWorkingDirectory
         }
-        previewTerminalNamespace={previewTerminalNamespace}
         onWidthChange={setPreviewWidth}
         onTextChange={updatePreviewTextContent}
         onTextSave={persistPreviewText}
@@ -22543,10 +22958,6 @@ export function FileExplorer({
         onTogglePreviewTerminal={togglePreviewTerminal}
         onRunTextScript={runPreviewTextScript}
         onStopTextScriptRun={stopPreviewTextScriptRun}
-        onPreviewTerminalCommandHandled={handlePreviewTerminalCommandHandled}
-        onPreviewTerminalReportedWorkingDirectoryChange={
-          handlePreviewTerminalReportedWorkingDirectoryChange
-        }
         viewMode={documentViewMode}
         onViewModeChange={setDocumentViewMode}
         activeWorkflowTabId={activePreviewWorkflowTabId}
@@ -22603,8 +23014,6 @@ export function FileExplorer({
     explorerTheme,
     handleArchiveAction,
     handlePdfPreviewChromeStateChange,
-    handlePreviewTerminalCommandHandled,
-    handlePreviewTerminalReportedWorkingDirectoryChange,
     openFolderPreviewEntry,
     persistPreviewText,
     persistShaderPreviewSource,
@@ -22614,11 +23023,9 @@ export function FileExplorer({
     previewPlacement,
     previewSplitMode,
     previewSurfaceMode,
-    previewTerminalCommandRequest,
-    previewTerminalMounted,
-    previewTerminalNamespace,
-    previewTerminalReportedWorkingDirectory,
-    previewTerminalWorkingDirectory,
+    explorerTerminalReportedWorkingDirectory,
+    explorerTerminalWorkingDirectory,
+    previewContentHostRef,
     previewWidth,
     refresh,
     registerPreviewCloseGuard,
@@ -22643,6 +23050,7 @@ export function FileExplorer({
 
   return (
     <div
+      ref={explorerRootRef}
       data-overlay-explorer
       data-overlay-explorer-view-mode={effectiveViewMode}
       data-overlay-explorer-experimental-mode={effectiveExperimentalViewMode}
@@ -24316,42 +24724,70 @@ export function FileExplorer({
       </div>
       </div>
 
-        {/* Status bar */}
-        {shouldRenderStatusBar && (
-          <div data-overlay-explorer-plane="status" style={statusBarStyle}>
-            <ExplorerChromeSurface
-              surface={explorerStatusBarSurface}
-              style={{ width: "100%", minWidth: 0 }}
-              getRowStyle={getExplorerStatusBarRowStyle}
-              getZoneStyle={getExplorerStatusBarZoneStyle}
-              renderControl={renderExplorerChromeControl}
-              editMode={explorerChromeEditMode}
+      <ExplorerEmbeddedTerminalLayer
+        rootRef={explorerRootRef}
+        previewContentRef={previewContentHostRef}
+        bottomAnchorRef={bottomTerminalAnchorRef}
+        mounted={explorerTerminalMounted}
+        visible={explorerTerminalVisible}
+        placement={explorerTerminalPlacement}
+        bottomHeight={explorerTerminalBottomHeight}
+        onBottomHeightChange={setExplorerTerminalBottomHeight}
+        explorerTheme={explorerTheme}
+        blurEnabled={explorerBlurEnabled}
+        appearance={appearance}
+        terminalIdNamespace={explorerTerminalNamespace}
+        workingDirectory={explorerTerminalWorkingDirectory}
+        pendingCommandRequest={explorerTerminalCommandRequest}
+        onCommandRequestHandled={handleExplorerTerminalCommandHandled}
+        onReportedWorkingDirectoryChange={
+          handleExplorerTerminalReportedWorkingDirectoryChange
+        }
+        focusRequestKey={explorerTerminalFocusRequestKey}
+      />
+
+      <div
+        ref={bottomTerminalAnchorRef}
+        aria-hidden="true"
+        style={{ position: "relative", flexShrink: 0, height: 0 }}
+      />
+
+      {/* Status bar */}
+      {shouldRenderStatusBar && (
+        <div data-overlay-explorer-plane="status" style={statusBarStyle}>
+          <ExplorerChromeSurface
+            surface={explorerStatusBarSurface}
+            style={{ width: "100%", minWidth: 0 }}
+            getRowStyle={getExplorerStatusBarRowStyle}
+            getZoneStyle={getExplorerStatusBarZoneStyle}
+            renderControl={renderExplorerChromeControl}
+            editMode={explorerChromeEditMode}
+          />
+          <div
+            data-overlay-explorer-status-task-anchor="true"
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              zIndex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "auto",
+            }}
+          >
+            <ExplorerTaskStatusBadge
+              accent={accent}
+              text={EXP.text}
+              muted={EXP.muted}
+              border={EXP.border}
+              danger={EXP.red}
+              background="rgba(255,255,255,0.02)"
             />
-            <div
-              data-overlay-explorer-status-task-anchor="true"
-              style={{
-                position: "absolute",
-                left: "50%",
-                top: "50%",
-                transform: "translate(-50%, -50%)",
-                zIndex: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                pointerEvents: "auto",
-              }}
-            >
-              <ExplorerTaskStatusBadge
-                accent={accent}
-                text={EXP.text}
-                muted={EXP.muted}
-                border={EXP.border}
-                danger={EXP.red}
-                background="rgba(255,255,255,0.02)"
-              />
-            </div>
           </div>
-        )}
+        </div>
+      )}
 
       {/* Context menu */}
       <ContextMenu

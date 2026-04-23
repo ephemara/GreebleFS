@@ -367,6 +367,7 @@ interface TerminalOverlayProps {
   onReportedWorkingDirectoryChange?: (cwd: string) => void;
   pendingCommandRequest?: TerminalOverlayCommandRequest | null;
   onCommandRequestHandled?: (requestId: string) => void;
+  focusRequestKey?: number;
 }
 
 export interface TerminalOverlayCommandRequest {
@@ -1578,6 +1579,7 @@ export function TerminalOverlay({
   onReportedWorkingDirectoryChange,
   pendingCommandRequest = null,
   onCommandRequestHandled,
+  focusRequestKey = 0,
 }: TerminalOverlayProps) {
   const { settings, appearanceSettings, keybindings, updateTerminal } = useSettingsStore(useShallow(state => ({
     settings: state.settings.terminal,
@@ -2351,6 +2353,7 @@ export function TerminalOverlay({
     [activePaneId, activeTab],
   );
   const activeTerminalReady = isPaneReady(activePaneId);
+  const lastHandledFocusRequestKeyRef = useRef(focusRequestKey);
   const activeTabReadyCount = activeTabPaneIds.filter(isPaneReady).length;
   const activeTabLabel = activeTab?.label ?? 'terminal';
   const geometryByTab = useMemo(
@@ -2364,6 +2367,24 @@ export function TerminalOverlay({
         : tab
     )));
   }, []);
+
+  useEffect(() => {
+    if (
+      focusRequestKey === lastHandledFocusRequestKeyRef.current
+      || !activePaneId
+      || !activeTerminalReady
+    ) {
+      return;
+    }
+
+    const entry = xtermRegistry.get(activePaneId);
+    if (!entry) {
+      return;
+    }
+
+    lastHandledFocusRequestKeyRef.current = focusRequestKey;
+    requestAnimationFrame(() => entry.xterm.focus());
+  }, [activePaneId, activeTerminalReady, focusRequestKey]);
   const setPaneSurfaceElement = useCallback((tabId: string, paneId: string, element: HTMLDivElement | null) => {
     const key = getTerminalPaneDomKey(tabId, paneId);
     if (element) {

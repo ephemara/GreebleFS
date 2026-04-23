@@ -14,6 +14,10 @@ import type {
   ExplorerViewMode,
 } from './explorerViewModes';
 import {
+  normalizeExplorerMenuPresentationRecipe,
+  type ExplorerMenuPresentationRecipe,
+} from './explorerContextMenu';
+import {
   readThemeNumberProp,
   readThemeStringProp,
   resolveThemeEngineBindings,
@@ -116,6 +120,7 @@ export interface OverlayExplorerThemeRecipe {
   labelMode?: OverlayExplorerLabelMode;
   preferredViewMode?: ExplorerViewMode;
   preferredExperimentalViewMode?: ExplorerExperimentalViewMode;
+  menuPresentation?: ExplorerMenuPresentationRecipe;
   metrics?: OverlayExplorerThemeMetrics;
   surfaces?: OverlayExplorerThemeSurfaces;
   typography?: OverlayExplorerThemeTypography;
@@ -140,6 +145,7 @@ export interface ResolvedExplorerThemeRecipe {
   labelMode: OverlayExplorerLabelMode;
   preferredViewMode: ExplorerViewMode | null;
   preferredExperimentalViewMode: ExplorerExperimentalViewMode | null;
+  menuPresentation: ExplorerMenuPresentationRecipe;
   metrics: Required<OverlayExplorerThemeMetrics>;
   surfaces: Required<OverlayExplorerThemeSurfaces>;
   typography: Required<OverlayExplorerThemeTypography>;
@@ -294,6 +300,7 @@ export function normalizeExplorerThemeRecipe(
     preferredExperimentalViewMode: isExplorerExperimentalViewMode(source?.preferredExperimentalViewMode)
       ? source.preferredExperimentalViewMode
       : undefined,
+    menuPresentation: normalizeExplorerMenuPresentationRecipe(source?.menuPresentation),
     metrics: {
       railWidth: asFiniteNumber(mergedMetrics.railWidth),
       previewWidth: asFiniteNumber(mergedMetrics.previewWidth),
@@ -976,6 +983,15 @@ export function resolveExplorerThemeRecipe(
     ?? engineRecipe.preferredExperimentalViewMode
     ?? presetRecipe.preferredExperimentalViewMode
     ?? null;
+  const menuPresentation = normalizeExplorerMenuPresentationRecipe(
+    userRecipe?.menuPresentation
+      ?? engineRecipe.menuPresentation
+      ?? presetRecipe.menuPresentation
+      ?? {
+        renderer: 'classic',
+        fallbackRenderer: 'classic',
+      },
+  );
   const defaultModeProfileId = normalizeExplorerModeProfileId(
     userRecipe?.defaultModeProfileId
       ?? engineRecipe.defaultModeProfileId
@@ -1083,6 +1099,7 @@ export function resolveExplorerThemeRecipe(
     preferredExperimentalViewMode: preferredExperimentalViewMode && isExplorerExperimentalViewMode(preferredExperimentalViewMode)
       ? preferredExperimentalViewMode
       : null,
+    menuPresentation,
     metrics,
     surfaces,
     typography,

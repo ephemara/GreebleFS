@@ -46,9 +46,16 @@ import {
   type ExplorerThumbnailSettings,
 } from '../config/explorerThumbnails';
 import {
+  BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
+  normalizeExplorerMenuContextLayoutOverrideMap,
   normalizeExplorerContextMenuItemOverrideMap,
+  sortExplorerContextMenuItems,
+  type ExplorerMenuContextKind,
+  type ExplorerMenuContextLayoutOverrideMap,
+  type ExplorerMenuLayoutEntry,
   type ExplorerContextMenuItemOverrideMap,
 } from '../config/explorerContextMenu';
+import { DEFAULT_EXPLORER_MENU_PACK_ID } from '../config/menuPacks';
 import {
   createDefaultKeybindingSettings,
   normalizeKeybindingSettings,
@@ -187,6 +194,8 @@ export interface ExplorerSettings {
   thumbnails: ExplorerThumbnailSettings;
   modeProfileOverridesByThemeId: Record<string, ExplorerModeProfileId>;
   chromeLayoutOverridesByThemeId: Record<string, Record<string, ExplorerChromeOverrideSnapshot>>;
+  activeMenuPackId: string | null;
+  contextMenuLayoutOverridesByContext: ExplorerMenuContextLayoutOverrideMap;
   contextMenuItemOverrides: ExplorerContextMenuItemOverrideMap;
 }
 
@@ -425,6 +434,10 @@ function normalizeExplorerSettings(
     && Object.prototype.hasOwnProperty.call(updates, 'modeProfileOverridesByThemeId');
   const hasExplicitChromeLayoutOverrides = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'chromeLayoutOverridesByThemeId');
+  const hasExplicitActiveMenuPackId = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'activeMenuPackId');
+  const hasExplicitContextMenuLayoutOverrides = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'contextMenuLayoutOverridesByContext');
   const hasExplicitContextMenuItemOverrides = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'contextMenuItemOverrides');
   const hasExplicitThumbnailSettings = updates != null
@@ -454,10 +467,79 @@ function normalizeExplorerSettings(
     chromeLayoutOverridesByThemeId: hasExplicitChromeLayoutOverrides
       ? normalizeExplorerChromeOverrideSnapshotMap(updates?.chromeLayoutOverridesByThemeId)
       : base.chromeLayoutOverridesByThemeId,
+    activeMenuPackId: hasExplicitActiveMenuPackId
+      ? normalizeExplorerMenuPackId(updates?.activeMenuPackId)
+      : base.activeMenuPackId,
+    contextMenuLayoutOverridesByContext: hasExplicitContextMenuLayoutOverrides
+      ? normalizeExplorerMenuContextLayoutOverrideMap(updates?.contextMenuLayoutOverridesByContext)
+      : base.contextMenuLayoutOverridesByContext,
     contextMenuItemOverrides: hasExplicitContextMenuItemOverrides
       ? normalizeExplorerContextMenuItemOverrideMap(updates?.contextMenuItemOverrides)
       : base.contextMenuItemOverrides,
   };
+}
+
+function normalizeExplorerMenuPackId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return value === null ? null : null;
+  }
+
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+function buildLegacyLayoutEntriesForContext(
+  contextKind: ExplorerMenuContextKind,
+  overrides: ExplorerContextMenuItemOverrideMap,
+): ExplorerMenuLayoutEntry[] {
+  const legacyTarget = contextKind === 'background' ? 'background' : 'entry';
+  return sortExplorerContextMenuItems(
+    BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS.filter((item) => {
+      if (!item.contexts.includes(contextKind)) {
+        return false;
+      }
+      if (legacyTarget === 'background') {
+        return item.contexts.includes('background');
+      }
+      return item.contexts.includes('entry');
+    }),
+    overrides,
+  ).map((item, index) => ({
+    id: `${contextKind}.legacy.${item.id}`,
+    kind: 'command' as const,
+    commandId: item.id,
+    parentEntryId: null,
+    order: (index + 1) * 10,
+    enabled: overrides[item.id]?.enabled ?? true,
+    quickSlot: 'none',
+    fallbackBucket: 'default',
+  }));
+}
+
+function migrateLegacyContextMenuOverridesToLayouts(
+  overrides: ExplorerContextMenuItemOverrideMap,
+): ExplorerMenuContextLayoutOverrideMap {
+  const normalizedOverrides = normalizeExplorerContextMenuItemOverrideMap(overrides);
+  if (Object.keys(normalizedOverrides).length === 0) {
+    return {};
+  }
+
+  const entryLayout = buildLegacyLayoutEntriesForContext('entry', normalizedOverrides);
+  const backgroundLayout = buildLegacyLayoutEntriesForContext('background', normalizedOverrides);
+  const result: ExplorerMenuContextLayoutOverrideMap = {};
+  if (entryLayout.length > 0) {
+    result.entry = {
+      renderer: 'classic',
+      entries: entryLayout,
+    };
+  }
+  if (backgroundLayout.length > 0) {
+    result.background = {
+      renderer: 'classic',
+      entries: backgroundLayout,
+    };
+  }
+  return result;
 }
 
 function normalizeHomePackId(value: unknown): string | null {
@@ -938,6 +1020,8 @@ export const defaultSettings: Settings = {
     thumbnails: defaultExplorerThumbnailSettings,
     modeProfileOverridesByThemeId: {},
     chromeLayoutOverridesByThemeId: {},
+    activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
+    contextMenuLayoutOverridesByContext: {},
     contextMenuItemOverrides: {},
   },
   home: {
@@ -1097,6 +1181,15 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
         saveDirectory: base.screenshots.saveDirectory,
       }
     : importedScreenshots;
+  const normalizedLegacyContextMenuItemOverrides = normalizeExplorerContextMenuItemOverrideMap(
+    imported?.explorer?.contextMenuItemOverrides ?? base.explorer.contextMenuItemOverrides,
+  );
+  const normalizedImportedContextMenuLayouts = normalizeExplorerMenuContextLayoutOverrideMap(
+    imported?.explorer?.contextMenuLayoutOverridesByContext ?? base.explorer.contextMenuLayoutOverridesByContext,
+  );
+  const migratedContextMenuLayouts = Object.keys(normalizedImportedContextMenuLayouts).length > 0
+    ? normalizedImportedContextMenuLayouts
+    : migrateLegacyContextMenuOverridesToLayouts(normalizedLegacyContextMenuItemOverrides);
 
   return {
     ...base,
@@ -1130,9 +1223,11 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       chromeLayoutOverridesByThemeId: normalizeExplorerChromeOverrideSnapshotMap(
         imported?.explorer?.chromeLayoutOverridesByThemeId ?? base.explorer.chromeLayoutOverridesByThemeId,
       ),
-      contextMenuItemOverrides: normalizeExplorerContextMenuItemOverrideMap(
-        imported?.explorer?.contextMenuItemOverrides ?? base.explorer.contextMenuItemOverrides,
-      ),
+      activeMenuPackId: normalizeExplorerMenuPackId(
+        imported?.explorer?.activeMenuPackId ?? base.explorer.activeMenuPackId,
+      ) ?? base.explorer.activeMenuPackId,
+      contextMenuLayoutOverridesByContext: migratedContextMenuLayouts,
+      contextMenuItemOverrides: normalizedLegacyContextMenuItemOverrides,
     },
     home: normalizeHomeSettings(base.home, (imported as Partial<Settings> | undefined)?.home),
     appearance: {

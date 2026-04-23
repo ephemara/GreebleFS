@@ -106,7 +106,7 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
   {
     key: 'terminalFocus',
     label: 'Focus Terminal',
-    description: 'Global shortcut used to jump directly into the terminal panel.',
+    description: 'Jump directly into the terminal panel, or reveal the explorer bottom terminal drawer when an explorer has focus.',
     defaultValue: 'Ctrl+J',
     scope: 'global',
   },

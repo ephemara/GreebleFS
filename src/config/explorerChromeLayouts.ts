@@ -98,6 +98,7 @@ export type BuiltInExplorerChromeControlId =
   | 'statusTaskBadge'
   | 'statusClipboardQueue'
   | 'statusPreviewLoading'
+  | 'terminalDrawerToggle'
   | 'statusViewToggles';
 
 export type ExplorerChromeControlId = BuiltInExplorerChromeControlId | `plugin:${string}`;
@@ -463,6 +464,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       statusTaskBadge: {
         explorerStatusBar: { zone: 'end', order: 10 },
       },
+      terminalDrawerToggle: {
+        explorerStatusBar: { zone: 'end', order: 15 },
+      },
       statusClipboardQueue: {
         explorerStatusBar: { zone: 'center', order: 40, shrink: 1, collapsePriority: 10, overflowEligible: true },
       },
@@ -708,6 +712,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       statusTaskBadge: {
         explorerStatusBar: { zone: 'end', order: 10 },
+      },
+      terminalDrawerToggle: {
+        explorerStatusBar: { zone: 'end', order: 15 },
       },
       statusClipboardQueue: {
         explorerStatusBar: { zone: 'center', order: 50, shrink: 1, collapsePriority: 10, overflowEligible: true },

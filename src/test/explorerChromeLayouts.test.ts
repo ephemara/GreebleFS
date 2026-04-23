@@ -18,6 +18,7 @@ const toolbarDefinitions: ExplorerChromeControlDefinition[] = [
   { id: 'previewIdentity', label: 'Preview Identity', surfaces: ['previewHeader'] },
   { id: 'previewClose', label: 'Preview Close', surfaces: ['previewHeader'] },
   { id: 'statusItemCount', label: 'Status Item Count', surfaces: ['explorerStatusBar'] },
+  { id: 'terminalDrawerToggle', label: 'Terminal Drawer Toggle', surfaces: ['explorerStatusBar'] },
   { id: 'statusViewToggles', label: 'Status View Toggles', surfaces: ['explorerStatusBar'] },
   { id: 'statusClipboardQueue', label: 'Status Clipboard Queue', surfaces: ['explorerStatusBar'] },
   { id: 'statusPreviewLoading', label: 'Status Preview Loading', surfaces: ['explorerStatusBar'] },
@@ -118,6 +119,7 @@ describe('explorer chrome layout resolver', () => {
       'statusPreviewLoading',
     ]);
     expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toEqual([
+      'terminalDrawerToggle',
       'statusViewToggles',
     ]);
   });
