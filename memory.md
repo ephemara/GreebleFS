@@ -3392,3 +3392,23 @@
   - passed: `bunx vitest run src/test/explorerStore.test.ts src/test/ExplorerWorkspace.test.tsx --reporter=dot`
   - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "multi-pane|aggressive compact|remembered preview|local pane without mutating workspace layout|keeps split pdf previews|closes split previews cleanly" --reporter=dot`
   - note: the full `src/test/fileExplorer.viewModes.test.tsx` file still hit a Vitest worker OOM when run as one large worker-thread batch in this environment, but the behavior slices touched by the refactor passed in isolation.
+
+## 2026-04-23 — Screenshot Capture Swapped To Tauri Plugin + Shared Editor
+
+- Replaced the old custom screenshot capture path with a file-backed plugin/stage pipeline.
+- Durable implementation shape:
+  - `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs`, and `src-tauri/capabilities/default.json` now register `tauri-plugin-screenshots` and grant `screenshots:default`.
+  - Raw monitor capture no longer lives in Rust `xcap` commands. `src/runtime/screenshotBackend.ts` now bridges the JS guest API (`tauri-plugin-screenshots-api`) with typed Rust helpers for `screenshot_prepare_image_stage`, `screenshot_finalize_image`, `screenshot_copy_image_to_clipboard`, and `screenshot_delete_image_stage`.
+  - `src-tauri/src/screenshot_commands.rs` is now intentionally narrow: it prepares a staged working file from a plugin capture, optionally crops that stage, finalizes the stage into the screenshot library, copies images to the system clipboard, and deletes staged files. The raw plugin capture must remain immutable during an edit session.
+  - `src/components/ScreenshotsManager.tsx` no longer captures every monitor up front, no longer ships full-monitor base64 PNGs over IPC, and no longer owns a separate annotation canvas/editor. It now lazily captures the active monitor, lets the user define a region in a lightweight selection view, then opens the staged file in the shared image editor.
+  - `src/components/ExplorerImageEditor.tsx` now uses the shared `@img-editor-runtime` path again for both explorer preview editing and screenshot editing. The screenshot tool and the preview pane now share the same editor component, save semantics, and object/shape/history model.
+- Durable product notes:
+  - Keep screenshot capture and screenshot editing as separate phases. Plugin capture is the raw source; Rust stage files are the editable working copy; the saved screenshot library entry is the finalized artifact.
+  - Do not reintroduce eager multi-monitor capture on panel load. Capture should stay lazy so the tool feels instant on first open.
+  - Do not reintroduce browser-owned annotated export or cropper-only preview editing. The stable direction is one shared runtime-backed editor plus typed file-stage helpers.
+- Validation:
+  - passed: `bun install`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx src/test/screenshotsManager.test.tsx --reporter=dot`
