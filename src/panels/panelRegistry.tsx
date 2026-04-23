@@ -22,6 +22,7 @@ import {
 } from '../config/iconThemePackages';
 import type { TerminalWindowMode } from '../store/settingsStore';
 import type { SettingsSectionKey } from '../config/settingsNavigation';
+import type { ExplorerPickerRequest } from '../runtime/explorerPicker';
 import type {
   LoadedOverlayPlugin,
   OverlayPluginApi,

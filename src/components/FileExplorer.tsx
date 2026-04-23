@@ -250,7 +250,7 @@ import {
 } from "../config/runtimeCachePolicy";
 import { getExplorerSearchTelemetryMetadata } from "../config/searchTelemetry";
 import { OverlayScrollArea } from "./OverlayScrollArea";
-import { AppPromptDialog } from "./AppModal";
+import { AppConfirmDialog, AppPromptDialog } from "./AppModal";
 import { ExplorerAudioWorkbench } from "./ExplorerAudioWorkbench";
 import { ExplorerImageEditor } from "./ExplorerImageEditor";
 import { ExplorerShaderWorkbench } from "./ExplorerShaderWorkbench";
@@ -909,24 +909,27 @@ interface TransferConflictDialogState {
   sources: string[];
   operation: FileTransferOperation;
 }
+type PreviewResolvedPathState = {
+  resolvedPath?: string;
+};
 type PreviewState =
   | { type: "none"; path: string }
-  | {
+  | ({
       type: "image";
       path: string;
       name: string;
       extension: string;
       content: string;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "spreadsheet";
       path: string;
       name: string;
       extension: string;
       size: number;
       fileKind: "workbook" | "tabular";
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "audio";
       path: string;
       name: string;
@@ -934,8 +937,8 @@ type PreviewState =
       extension: string;
       mimeType: string | null;
       size: number;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "video";
       path: string;
       name: string;
@@ -943,29 +946,29 @@ type PreviewState =
       extension: string;
       mimeType: string | null;
       size: number;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "font";
       path: string;
       name: string;
       source: string;
       extension: string;
       size: number;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "sqlite";
       path: string;
       name: string;
       size: number;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "pdf";
       path: string;
       name: string;
       size: number;
       document: ExplorerPdfPreviewDocument;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "text";
       path: string;
       name: string;
@@ -978,8 +981,8 @@ type PreviewState =
       isSaving: boolean;
       lastSavedAt: number | null;
       error: string | null;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "shader";
       path: string;
       name: string;
@@ -999,40 +1002,40 @@ type PreviewState =
       isDirty: boolean;
       isSaving: boolean;
       error: string | null;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "model3d";
       path: string;
       format: ModelPreviewFormat;
       name: string;
       size: number;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "folder";
       path: string;
       name: string;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "archive";
       path: string;
       name: string;
       size: number;
       descriptor: ExplorerArchiveFormatDescriptor;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "docx";
       path: string;
       name: string;
       extension: string;
       size: number;
-    }
-  | {
+    } & PreviewResolvedPathState)
+  | ({
       type: "fallback";
       path: string;
       name: string;
       label: string;
       detail?: string;
-    };
+    } & PreviewResolvedPathState);
 type PreviewCloseGuard = () => Promise<boolean>;
 type PreviewSurfaceMode = "content" | "terminal";
 type ExplorerShaderSelectionMemory = {
@@ -3084,6 +3087,14 @@ type ExplorerInternalPointerDragCandidate = {
 
 const EXPLORER_INTERNAL_POINTER_DRAG_START_DISTANCE = 6;
 
+function getPreviewStateResolvedPath(preview: PreviewState): string {
+  if (preview.type === "none") {
+    return preview.path;
+  }
+
+  return preview.resolvedPath ?? preview.path;
+}
+
 function appendExplorerTransform(
   baseTransform: string | undefined,
   extraTransform: string | null,
@@ -3582,6 +3593,9 @@ function PreviewPanel({
   );
 
   const previewTitle = preview.type === "none" ? "Preview" : preview.name;
+  const previewResolvedPath = getPreviewStateResolvedPath(preview);
+  const previewBackedByArchiveVirtual =
+    preview.type !== "none" && isExplorerArchiveVirtualPath(preview.path);
   const isPdfPreview = preview.type === "pdf";
   const isShaderPreview = preview.type === "shader";
   const isSpreadsheetPreview = preview.type === "spreadsheet";
@@ -3703,13 +3717,22 @@ function PreviewPanel({
     isSpreadsheetPreview ||
     isEditableImagePreview ||
     wildcardWorkflowTabs.length > 0;
+  const previewSupportsEditableWorkflowTabs =
+    !previewBackedByArchiveVirtual ||
+    preview.type === "text" ||
+    preview.type === "shader";
   const previewWorkflowTabs = useMemo(
     () =>
       buildExplorerPreviewWorkflowTabs({
         previewLabel: isScriptTextPreview ? "Run" : "Preview",
+        includeEditTab: previewSupportsEditableWorkflowTabs,
         wildcardTabs: wildcardWorkflowTabs,
       }),
-    [isScriptTextPreview, wildcardWorkflowTabs],
+    [
+      isScriptTextPreview,
+      previewSupportsEditableWorkflowTabs,
+      wildcardWorkflowTabs,
+    ],
   );
   const activePreviewWorkflowTab = useMemo(
     () =>
@@ -4091,7 +4114,7 @@ function PreviewPanel({
                   {canSave ? (
                     <button
                       type="button"
-                      onClick={() => void onShaderSave(preview.path)}
+                    onClick={() => void onShaderSave(preview.path)}
                       disabled={!preview.isDirty || preview.isSaving}
                       style={previewChipButtonStyle(
                         preview.isDirty && !preview.isSaving,
@@ -4153,10 +4176,18 @@ function PreviewPanel({
                   <button
                     type="button"
                     onClick={() => void onTextSave(preview.path)}
-                    disabled={!preview.isDirty || preview.isSaving}
+                    disabled={
+                      previewBackedByArchiveVirtual ||
+                      !preview.isDirty ||
+                      preview.isSaving
+                    }
                     style={previewChipButtonStyle(
-                      preview.isDirty && !preview.isSaving,
-                      !preview.isDirty || preview.isSaving,
+                      !previewBackedByArchiveVirtual &&
+                        preview.isDirty &&
+                        !preview.isSaving,
+                      previewBackedByArchiveVirtual ||
+                        !preview.isDirty ||
+                        preview.isSaving,
                     )}
                   >
                     <Save size={11} />
@@ -4312,10 +4343,10 @@ function PreviewPanel({
                       pdfWorkbenchController?.toggleEditMode();
                     }
                   }}
-                  disabled={!hasPdfController}
+                  disabled={!hasPdfController || previewBackedByArchiveVirtual}
                   style={previewChipButtonStyle(
                     pdfIsEditMode,
-                    !hasPdfController,
+                    !hasPdfController || previewBackedByArchiveVirtual,
                   )}
                 >
                   Edit
@@ -4323,10 +4354,20 @@ function PreviewPanel({
                 <button
                   type="button"
                   onClick={() => void pdfWorkbenchController?.save()}
-                  disabled={!hasPdfController || !pdfIsDirty || pdfIsSaving}
+                  disabled={
+                    !hasPdfController ||
+                    previewBackedByArchiveVirtual ||
+                    !pdfIsDirty ||
+                    pdfIsSaving
+                  }
                   style={previewChipButtonStyle(
-                    pdfIsDirty && !pdfIsSaving,
-                    !hasPdfController || !pdfIsDirty || pdfIsSaving,
+                    !previewBackedByArchiveVirtual &&
+                      pdfIsDirty &&
+                      !pdfIsSaving,
+                    !hasPdfController ||
+                      previewBackedByArchiveVirtual ||
+                      !pdfIsDirty ||
+                      pdfIsSaving,
                   )}
                 >
                   <Save size={11} />
@@ -4526,8 +4567,10 @@ function PreviewPanel({
       isScriptTextPreview,
       onRunTextScript,
       onStopTextScriptRun,
+      previewBackedByArchiveVirtual,
       supportsRenderedPreview,
       supportsPreviewModeToggle,
+      previewSupportsEditableWorkflowTabs,
       viewMode,
       previewLocked,
     ],
@@ -4693,11 +4736,13 @@ function PreviewPanel({
           {preview.type === "none" && <PreviewIdleState />}
           {preview.type === "image" && preview.content && (
             <ExplorerImageEditor
-              imagePath={preview.path}
+              imagePath={previewResolvedPath}
               imageName={preview.name}
               imageSource={preview.content}
               mode={
-                isEditableImagePreview && viewMode === "edit"
+                isEditableImagePreview &&
+                viewMode === "edit" &&
+                !previewBackedByArchiveVirtual
                   ? "edit"
                   : "preview"
               }
@@ -4706,7 +4751,7 @@ function PreviewPanel({
           )}
           {preview.type === "audio" && (
             <ExplorerAudioWorkbench
-              audioPath={preview.path}
+              audioPath={previewResolvedPath}
               audioName={preview.name}
               audioExtension={preview.extension}
               audioSize={preview.size}
@@ -4718,7 +4763,7 @@ function PreviewPanel({
           )}
           {preview.type === "video" && (
             <ExplorerVideoEditor
-              videoPath={preview.path}
+              videoPath={previewResolvedPath}
               videoName={preview.name}
               videoSource={preview.source}
               videoExtension={preview.extension}
@@ -4730,7 +4775,7 @@ function PreviewPanel({
           )}
           {preview.type === "archive" && (
             <ExplorerArchivePreview
-              archivePath={preview.path}
+              archivePath={previewResolvedPath}
               archiveName={preview.name}
               archiveSize={preview.size}
               descriptor={preview.descriptor}
@@ -4744,7 +4789,7 @@ function PreviewPanel({
           )}
           {preview.type === "folder" && (
             <ExplorerFolderPreview
-              folderPath={preview.path}
+              folderPath={previewResolvedPath}
               folderName={preview.name}
               showHiddenFiles={showHiddenFiles}
               onOpenEntry={onOpenFolderPreviewEntry}
@@ -4756,7 +4801,7 @@ function PreviewPanel({
           )}
           {preview.type === "font" && (
             <ExplorerFontPreview
-              fontPath={preview.path}
+              fontPath={previewResolvedPath}
               fontName={preview.name}
               fontSource={preview.source}
               fontExtension={preview.extension}
@@ -4774,11 +4819,11 @@ function PreviewPanel({
           )}
           {preview.type === "spreadsheet" && (
             <ExplorerSpreadsheetWorkbench
-              path={preview.path}
+              path={previewResolvedPath}
               name={preview.name}
               sourceExtension={preview.extension}
               fileKind={preview.fileKind}
-              mode={viewMode}
+              mode={previewBackedByArchiveVirtual ? "preview" : viewMode}
               onModeChange={onViewModeChange}
               onRefreshPreviewEntry={onRefreshPreviewEntry}
               onRegisterCloseGuard={onRegisterCloseGuard}
@@ -4787,13 +4832,13 @@ function PreviewPanel({
           )}
           {preview.type === "sqlite" && (
             <ExplorerSqlitePreview
-              dbPath={preview.path}
+              dbPath={previewResolvedPath}
               dbName={preview.name}
             />
           )}
           {preview.type === "docx" && (
             <ExplorerDocxWorkbench
-              path={preview.path}
+              path={previewResolvedPath}
               name={preview.name}
               extension={preview.extension}
               onRefreshPreviewEntry={onRefreshPreviewEntry}
@@ -4801,12 +4846,12 @@ function PreviewPanel({
           )}
           {preview.type === "shader" && (
             <ExplorerShaderWorkbench
-              path={preview.path}
+              path={previewResolvedPath}
               name={preview.name}
               format={preview.format}
               editableSource={preview.editableSource}
               inspectionSource={preview.inspectionSource}
-              isReadOnly={preview.isReadOnly}
+              isReadOnly={preview.isReadOnly || previewBackedByArchiveVirtual}
               normalizedWgsl={preview.normalizedWgsl}
               diagnostics={preview.diagnostics}
               entryPoints={preview.entryPoints}
@@ -4819,9 +4864,15 @@ function PreviewPanel({
               viewMode={viewMode}
               editorSettings={editorSettings}
               shaderPerformanceMode={shaderPerformanceMode}
-              onSourceChange={onShaderSourceChange}
-              onSelectionChange={onShaderSelectionChange}
-              onCompileResult={onShaderCompileResult}
+              onSourceChange={(_path, value) =>
+                onShaderSourceChange(preview.path, value)
+              }
+              onSelectionChange={(_path, selection) =>
+                onShaderSelectionChange(preview.path, selection)
+              }
+              onCompileResult={(_path, result) =>
+                onShaderCompileResult(preview.path, result)
+              }
               onRegisterCloseGuard={onRegisterCloseGuard}
             />
           )}
@@ -4836,7 +4887,7 @@ function PreviewPanel({
                 <LazyTextDocumentPreview
                   kind={preview.renderKind}
                   content={preview.content}
-                  sourcePath={preview.path}
+                  sourcePath={previewResolvedPath}
                 />
               </Suspense>
             )}
@@ -4844,7 +4895,7 @@ function PreviewPanel({
             (viewMode === "edit" ||
               (preview.scriptPreview == null && !supportsRenderedPreview)) && (
               <SearchAwareCodeView
-                path={preview.path}
+                path={previewResolvedPath}
                 value={preview.content || ""}
                 language={preview.language || "plaintext"}
                 focusTarget={preview.focusTarget}
@@ -4853,7 +4904,7 @@ function PreviewPanel({
                 options={buildExplorerMonacoPreviewOptions({
                   editorSettings,
                   lineCount: textPreviewMetrics?.lineCount ?? 1,
-                  readOnly: false,
+                  readOnly: previewBackedByArchiveVirtual,
                   allowFolding: false,
                   topPadding: 8,
                 })}
@@ -4871,7 +4922,7 @@ function PreviewPanel({
               <LazyModelPreview
                 entryName={preview.name}
                 format={preview.format}
-                sourcePath={preview.path}
+                sourcePath={previewResolvedPath}
                 sourceBytes={preview.size}
               />
             </Suspense>
@@ -7353,6 +7404,8 @@ export function FileExplorer({
       sources: [],
       operation: "copy",
     });
+  const [pickerOverwriteTargetPath, setPickerOverwriteTargetPath] =
+    useState<string | null>(null);
   const [transferConflictPolicy, setTransferConflictPolicy] =
     useState<ExplorerFileTransferCollisionPolicy>("keep_both");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -7653,6 +7706,11 @@ export function FileExplorer({
   const currentPathIsVirtual = isExplorerVirtualPath(currentPath);
   const currentPathIsCloud =
     currentPath.length > 0 && isCloudExplorerPath(currentPath);
+  const currentLocationSupportsMutation =
+    Boolean(currentPath) &&
+    !currentPathIsCloud &&
+    !currentPathIsHome &&
+    !currentPathIsVirtual;
   const previewTerminalNamespace = useMemo(
     () => `preview-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
     [instanceId],
@@ -9111,7 +9169,7 @@ export function FileExplorer({
     if (currentPathIsHome) {
       return;
     }
-    if (currentPathIsCloud) {
+    if (currentPathIsCloud || currentPathIsVirtual) {
       if (locationParentPath) {
         void navigate(locationParentPath);
       }
@@ -10008,6 +10066,26 @@ export function FileExplorer({
     },
     [materializeArchiveEntry],
   );
+  const resolveExplorerArchiveNavigationPath = useCallback(
+    async (entry: FileEntry) => {
+      if (!isExplorerArchiveEntry(entry)) {
+        return null;
+      }
+
+      const archivePath = isExplorerArchiveVirtualPath(entry.path)
+        ? await materializeArchiveVirtualEntry(
+            entry.path,
+            false,
+            "stageTemporary",
+          )
+        : entry.path;
+      return buildExplorerArchiveVirtualPath({
+        archivePath,
+        entryPath: "",
+      });
+    },
+    [materializeArchiveVirtualEntry],
+  );
   const resolveExplorerEntryNativeDragPath = useCallback(
     async (entry: FileEntry) =>
       isExplorerArchiveVirtualPath(entry.path)
@@ -10097,10 +10175,6 @@ export function FileExplorer({
   const isProcessElevatedRef = useRef(false);
   const lastObservedFileTransferNonceRef = useRef<string | null>(null);
   const [pickerSaveFileName, setPickerSaveFileName] = useState('');
-  const selectedDirectoryEntries = useMemo(
-    () => selectedEntries.filter((entry) => entry.is_dir),
-    [selectedEntries],
-  );
   const explorerPickerSelections = useMemo(
     () =>
       resolveExplorerPickerEntries({
@@ -10137,6 +10211,139 @@ export function FileExplorer({
         : null,
     [currentPath, explorerPicker, pickerSaveFileName],
   );
+  const explorerPickerHeading = explorerPicker?.title ?? "Explorer Picker";
+  const explorerPickerSelectionSummary = useMemo(() => {
+    if (!explorerPicker) {
+      return "";
+    }
+
+    const selectionCount = explorerPickerSelections.length;
+    switch (explorerPicker.kind) {
+      case "openFile":
+        return selectionCount > 0
+          ? `Selected file: ${explorerPickerSelections[0]?.name ?? "file"}.`
+          : "Select a file to continue.";
+      case "openFiles":
+        return selectionCount > 0
+          ? `${selectionCount} file${selectionCount === 1 ? "" : "s"} selected.`
+          : "Select one or more files to continue.";
+      case "openFolder":
+        return selectionCount > 0
+          ? isExplorerPickerUsingCurrentPath
+            ? "No folder selected yet, so the current folder will be used."
+            : `Selected folder: ${explorerPickerSelections[0]?.name ?? "folder"}.`
+          : "Select a folder to continue.";
+      case "openFolders":
+        return selectionCount > 0
+          ? isExplorerPickerUsingCurrentPath
+            ? "No folders selected yet, so the current folder will be used."
+            : `${selectionCount} folder${selectionCount === 1 ? "" : "s"} selected.`
+          : "Select one or more folders to continue.";
+      case "pickDestinationFolder":
+        return selectionCount > 0
+          ? isExplorerPickerUsingCurrentPath
+            ? "No destination selected yet, so the current folder will be used."
+            : `Destination: ${explorerPickerSelections[0]?.name ?? "folder"}.`
+          : "Choose the destination folder.";
+      case "saveFile":
+        return pickerSaveTargetPath
+          ? `Save target: ${pickerSaveTargetPath}`
+          : "Enter a file name to continue.";
+      default:
+        return "";
+    }
+  }, [
+    explorerPicker,
+    explorerPickerSelections,
+    isExplorerPickerUsingCurrentPath,
+    pickerSaveTargetPath,
+  ]);
+  const explorerPickerDescription = useMemo(() => {
+    if (!explorerPicker) {
+      return "";
+    }
+
+    const extensionLabel =
+      explorerPicker.allowedExtensions.length > 0
+        ? ` Matching .${explorerPicker.allowedExtensions.join(", .")} files only.`
+        : "";
+    switch (explorerPicker.kind) {
+      case "openFile":
+        return `Choose a file from the explorer.${extensionLabel}`;
+      case "openFiles":
+        return `Choose one or more files from the explorer.${extensionLabel}`;
+      case "openFolder":
+        return "Choose a folder from the explorer.";
+      case "openFolders":
+        return "Choose one or more folders from the explorer.";
+      case "pickDestinationFolder":
+        return "Pick the folder that should receive the selected items.";
+      case "saveFile":
+        return "Choose a folder, then enter the file name to save.";
+      default:
+        return "";
+    }
+  }, [explorerPicker]);
+
+  const commitExplorerPickerSelection = useCallback(() => {
+    if (!explorerPicker) {
+      return;
+    }
+
+    onExplorerPickerConfirm({
+      currentDirectory: currentPath.trim(),
+      entries: explorerPickerSelections,
+    });
+  }, [
+    currentPath,
+    explorerPicker,
+    explorerPickerSelections,
+    onExplorerPickerConfirm,
+  ]);
+
+  const cancelExplorerPicker = useCallback(() => {
+    setPickerOverwriteTargetPath(null);
+    onExplorerPickerCancel();
+  }, [onExplorerPickerCancel]);
+
+  const confirmExplorerPickerSelection = useCallback(() => {
+    if (!explorerPicker || !canConfirmExplorerPickerSelection) {
+      return;
+    }
+
+    if (explorerPicker.kind === "saveFile") {
+      const normalizedTargetPath = pickerSaveTargetPath?.trim() ?? "";
+      if (!normalizedTargetPath) {
+        return;
+      }
+
+      const existingEntry = entries.find(
+        (entry) => entry.path.trim() === normalizedTargetPath,
+      );
+      if (existingEntry?.is_dir) {
+        setError("A folder with that name already exists in this location.");
+        return;
+      }
+
+      if (existingEntry) {
+        setPickerOverwriteTargetPath(normalizedTargetPath);
+        return;
+      }
+    }
+
+    commitExplorerPickerSelection();
+  }, [
+    canConfirmExplorerPickerSelection,
+    commitExplorerPickerSelection,
+    entries,
+    explorerPicker,
+    pickerSaveTargetPath,
+  ]);
+
+  const confirmExplorerPickerOverwrite = useCallback(() => {
+    setPickerOverwriteTargetPath(null);
+    commitExplorerPickerSelection();
+  }, [commitExplorerPickerSelection]);
 
   useEffect(() => {
     if (!explorerPicker) {
@@ -10145,6 +10352,7 @@ export function FileExplorer({
     setSelected(new Set());
     setCtxMenu({ visible: false, x: 0, y: 0, entry: null });
     setDeleteTargets([]);
+    setPickerOverwriteTargetPath(null);
     setPickerSaveFileName(
       normalizeSaveFileName(
         explorerPicker.initialFileName ?? '',
@@ -10184,25 +10392,6 @@ export function FileExplorer({
     [selected, selectedEntries],
   );
 
-  const requestTransferDestination = useCallback(
-    (operation: FileTransferOperation, entry?: FileEntry) => {
-      const sourcePaths = resolveEntriesForAction(entry).map(
-        (item) => item.path,
-      );
-      if (sourcePaths.length === 0) {
-        return;
-      }
-
-      void openFileOperationsWindow({
-        view: "transfer",
-        operation,
-        sourcePaths,
-        suggestedTargetDir: currentPath,
-      });
-    },
-    [currentPath, resolveEntriesForAction],
-  );
-
   const handleArchiveAction = useCallback(
     async (entry: FileEntry, mode: ExplorerArchiveExtractionMode) => {
       try {
@@ -10212,9 +10401,28 @@ export function FileExplorer({
           return;
         }
 
+        let targetDirectory: string | null = null;
+        if (mode === "extractToDirectory") {
+          const pickerResult = await openExplorerPicker({
+            kind: "pickDestinationFolder",
+            presentation: "window",
+            title: `Extract ${entry.name}`,
+            confirmLabel: "Extract Here",
+            startPath: currentPath,
+          });
+          targetDirectory =
+            pickerResult?.entries[0]?.path?.trim()
+            ?? pickerResult?.currentDirectory.trim()
+            ?? null;
+          if (!targetDirectory) {
+            return;
+          }
+        }
+
         await extractExplorerArchive({
           archivePath: entry.path,
           mode,
+          targetDirectory,
         });
         invalidateExplorerResultCaches();
         await refresh();
@@ -10222,7 +10430,13 @@ export function FileExplorer({
         setError(String(archiveError));
       }
     },
-    [extractExplorerArchive, navigate, openExplorerArchive, refresh],
+    [
+      currentPath,
+      extractExplorerArchive,
+      navigate,
+      openExplorerArchive,
+      refresh,
+    ],
   );
 
   const resolveAudioBatchTargets = useCallback(
@@ -10408,6 +10622,10 @@ export function FileExplorer({
 
   const queueClipboard = useCallback(
     (action: "copy" | "cut", entry?: FileEntry) => {
+      if (currentPathIsArchiveVirtual) {
+        setError("Archive folders support direct drag-out and extraction, not copy/cut queueing.");
+        return;
+      }
       const entriesForAction = resolveEntriesForAction(entry);
       if (entriesForAction.length === 0) return;
       setClipboard({
@@ -10419,7 +10637,7 @@ export function FileExplorer({
         })),
       });
     },
-    [resolveEntriesForAction, setClipboard],
+    [currentPathIsArchiveVirtual, resolveEntriesForAction, setClipboard],
   );
 
   const openAsAdmin = useCallback(async (path: string) => {
@@ -10567,6 +10785,54 @@ export function FileExplorer({
       return results;
     },
     [finalizeTransferResults, planExplorerItemTransfer, transferIntoDirectory],
+  );
+
+  const requestTransferDestination = useCallback(
+    (operation: FileTransferOperation, entry?: FileEntry) => {
+      if (!currentLocationSupportsMutation) {
+        setError("Archive and virtual explorer locations are read-only.");
+        return;
+      }
+
+      const sourcePaths = resolveEntriesForAction(entry).map(
+        (item) => item.path,
+      );
+      if (sourcePaths.length === 0) {
+        return;
+      }
+
+      void openExplorerPicker({
+        kind: "pickDestinationFolder",
+        presentation: "window",
+        title: operation === "move" ? "Move To…" : "Copy To…",
+        confirmLabel: operation === "move" ? "Move Here" : "Copy Here",
+        startPath: currentPath,
+      })
+        .then((pickerResult) => {
+          const targetDir =
+            pickerResult?.entries[0]?.path?.trim()
+            ?? pickerResult?.currentDirectory.trim()
+            ?? "";
+          if (!targetDir) {
+            return;
+          }
+
+          return executeTransferRequest({
+            operation,
+            sources: sourcePaths,
+            targetDir,
+          });
+        })
+        .catch((transferError) => {
+          setError(String(transferError));
+        });
+    },
+    [
+      currentLocationSupportsMutation,
+      currentPath,
+      executeTransferRequest,
+      resolveEntriesForAction,
+    ],
   );
 
   const resetTransferConflictDialog = useCallback(() => {
@@ -10724,6 +10990,7 @@ export function FileExplorer({
             !event.payload.position ||
             typeof event.payload.position !== "object" ||
             currentPathIsHome ||
+            !currentLocationSupportsMutation ||
             !currentPath.trim()
           ) {
             clearExplorerDragInteractionTarget();
@@ -10787,6 +11054,7 @@ export function FileExplorer({
           endExplorerDragInteraction();
           if (
             !targetPath ||
+            !currentLocationSupportsMutation ||
             !dragPayload.sourcePaths.length ||
             (hoveredHit && hoveredHit.scopeId !== explorerDropScopeId)
           ) {
@@ -10828,6 +11096,7 @@ export function FileExplorer({
     };
   }, [
     currentPath,
+    currentLocationSupportsMutation,
     currentPathIsHome,
     executeTransferRequest,
     explorerDropScopeId,
@@ -10863,8 +11132,12 @@ export function FileExplorer({
     if (currentPreview.type !== "text" || currentPreview.path !== path) {
       return false;
     }
+    if (isExplorerArchiveVirtualPath(currentPreview.path)) {
+      return false;
+    }
 
     const contentAtSave = currentPreview.content;
+    const writePath = currentPreview.resolvedPath ?? path;
     setPreview((prev) =>
       prev.type === "text" && prev.path === path
         ? { ...prev, isSaving: true, error: null }
@@ -10872,7 +11145,7 @@ export function FileExplorer({
     );
 
     try {
-      await writeExplorerFile(path, contentAtSave);
+      await writeExplorerFile(writePath, contentAtSave);
       invalidateExplorerResultCaches();
       clearExplorerEditDraft(EXPLORER_TEXT_DRAFT_SCOPE, path);
       setPreview((prev) => {
@@ -11198,7 +11471,7 @@ export function FileExplorer({
       }
 
       const command = buildTerminalScriptRunCommand({
-        path,
+        path: currentPreview.resolvedPath ?? path,
         shell: useSettingsStore.getState().settings.terminal.shell,
         runner: scriptPreview.runner,
       });
@@ -11439,6 +11712,21 @@ export function FileExplorer({
           return;
         }
       }
+      const previewResolvedPath =
+        !entry.is_dir && isExplorerArchiveVirtualPath(entry.path)
+          ? await materializeArchiveVirtualEntry(
+              entry.path,
+              false,
+              "stageTemporary",
+            )
+          : entry.path;
+      if (!isCurrentPreviewRequest()) {
+        return;
+      }
+      const previewResolvedPathProps =
+        previewResolvedPath !== entry.path
+          ? { resolvedPath: previewResolvedPath }
+          : {};
       const resolvedPreview = resolveExplorerPreviewDescriptor(entry, {
         assetUrlResolver: getPreviewAssetUrl,
         documentPreviewKindResolver: getDocumentPreviewKind,
@@ -11449,7 +11737,10 @@ export function FileExplorer({
       ) {
         const executableTextScriptProbe =
           await probeExecutableTextScriptPreview({
-            entry,
+            entry: {
+              ...entry,
+              path: previewResolvedPath,
+            },
             runtimePlatform,
             getItemProperties: getExplorerItemProperties,
             readTextFile: readExplorerTextFile,
@@ -11473,6 +11764,7 @@ export function FileExplorer({
           setPreview({
             type: "text",
             path: entry.path,
+            ...previewResolvedPathProps,
             name: entry.name,
             content: resolvedContent,
             language: executableTextScriptProbe.preview.language,
@@ -11496,6 +11788,7 @@ export function FileExplorer({
           setPreview({
             type: "fallback",
             path: entry.path,
+            ...previewResolvedPathProps,
             name: entry.name,
             label: fallback.label,
             detail: fallback.detail,
@@ -11511,6 +11804,7 @@ export function FileExplorer({
             setPreview({
               type: "folder",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
             });
             setPreviewLoading(false);
@@ -11521,6 +11815,7 @@ export function FileExplorer({
             setPreview({
               type: "model3d",
               path: entry.path,
+              ...previewResolvedPathProps,
               format: resolvedPreview.format,
               name: entry.name,
               size: entry.size,
@@ -11533,6 +11828,7 @@ export function FileExplorer({
             setPreview({
               type: "archive",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               size: entry.size,
               descriptor: resolvedPreview.descriptor,
@@ -11546,6 +11842,7 @@ export function FileExplorer({
             setPreview({
               type: "audio",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               source: resolvedPreview.source,
               extension: resolvedPreview.extension,
@@ -11561,6 +11858,7 @@ export function FileExplorer({
             setPreview({
               type: "video",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               source: resolvedPreview.source,
               extension: resolvedPreview.extension,
@@ -11579,6 +11877,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: loadingFallback.label,
               detail: loadingFallback.detail,
@@ -11603,7 +11902,7 @@ export function FileExplorer({
           }
 
           try {
-            const dataUri = await readExplorerFileBase64(entry.path);
+            const dataUri = await readExplorerFileBase64(previewResolvedPath);
             storeCachedExplorerPreview({
               key: previewCacheKey,
               path: entry.path,
@@ -11616,6 +11915,7 @@ export function FileExplorer({
             setPreview({
               type: "image",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               extension: resolvedPreview.extension,
               content: dataUri,
@@ -11631,6 +11931,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: errorFallback.label,
               detail: errorFallback.detail,
@@ -11647,6 +11948,7 @@ export function FileExplorer({
             setPreview({
               type: "font",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               source: resolvedPreview.source,
               extension: resolvedPreview.extension,
@@ -11660,6 +11962,7 @@ export function FileExplorer({
             setPreview({
               type: "sqlite",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               size: entry.size,
             });
@@ -11677,6 +11980,7 @@ export function FileExplorer({
                 prev.type === "pdf" && prev.path === entry.path
                   ? {
                       ...prev,
+                      ...previewResolvedPathProps,
                       name: entry.name,
                       size: entry.size,
                     }
@@ -11694,6 +11998,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: loadingFallback.label,
               detail: loadingFallback.detail,
@@ -11701,13 +12006,16 @@ export function FileExplorer({
           }
 
           try {
-            const document = await openExplorerPdfPreviewDocument(entry.path);
+            const document = await openExplorerPdfPreviewDocument(
+              previewResolvedPath,
+            );
             if (!isCurrentPreviewRequest()) {
               return;
             }
             setPreview({
               type: "pdf",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               size: entry.size,
               document,
@@ -11723,6 +12031,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: errorFallback.label,
               detail: errorFallback.detail,
@@ -11740,6 +12049,7 @@ export function FileExplorer({
             setPreview({
               type: "spreadsheet",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               extension: resolvedPreview.extension,
               size: entry.size,
@@ -11753,6 +12063,7 @@ export function FileExplorer({
             setPreview({
               type: "docx",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               extension: resolvedPreview.extension,
               size: entry.size,
@@ -11771,6 +12082,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: loadingFallback.label,
               detail: loadingFallback.detail,
@@ -11779,7 +12091,7 @@ export function FileExplorer({
 
           try {
             const document = await inspectExplorerShaderPreviewDocument(
-              entry.path,
+              previewResolvedPath,
             );
             if (!isCurrentPreviewRequest()) {
               return;
@@ -11812,12 +12124,14 @@ export function FileExplorer({
             setPreview({
               type: "shader",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               size: entry.size,
               format: resolvedPreview.format ?? document.format,
               editableSource: resolvedEditableSource,
               inspectionSource: resolvedInspectionSource,
-              isReadOnly: document.isReadOnly,
+              isReadOnly:
+                document.isReadOnly || isExplorerArchiveVirtualPath(entry.path),
               selectedScene:
                 currentPreview.type === "shader" &&
                 currentPreview.path === entry.path
@@ -11845,6 +12159,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: errorFallback.label,
               detail: errorFallback.detail,
@@ -11867,6 +12182,7 @@ export function FileExplorer({
                 prev.type === "text" && prev.path === entry.path
                   ? {
                       ...prev,
+                      ...previewResolvedPathProps,
                       name: entry.name,
                       language: resolvedPreview.language,
                       renderKind: "none",
@@ -11897,6 +12213,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: loadingFallback.label,
               detail: loadingFallback.detail,
@@ -11907,7 +12224,7 @@ export function FileExplorer({
             const previewCacheKey = `${resolvedPreview.kind}:${entry.path}`;
             let content = readCachedExplorerPreview<string>(previewCacheKey);
             if (content == null) {
-              content = await readExplorerTextFile(entry.path);
+              content = await readExplorerTextFile(previewResolvedPath);
               storeCachedExplorerPreview({
                 key: previewCacheKey,
                 path: entry.path,
@@ -11930,6 +12247,7 @@ export function FileExplorer({
             setPreview({
               type: "text",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               content: resolvedContent,
               language: resolvedPreview.language,
@@ -11956,6 +12274,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: errorFallback.label,
               detail: errorFallback.detail,
@@ -11980,6 +12299,7 @@ export function FileExplorer({
                 prev.type === "text" && prev.path === entry.path
                   ? {
                       ...prev,
+                      ...previewResolvedPathProps,
                       name: entry.name,
                       language: resolvedPreview.language,
                       renderKind: resolvedPreview.renderKind,
@@ -12000,6 +12320,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: loadingFallback.label,
               detail: loadingFallback.detail,
@@ -12010,7 +12331,7 @@ export function FileExplorer({
             const previewCacheKey = `${resolvedPreview.kind}:${entry.path}`;
             let content = readCachedExplorerPreview<string>(previewCacheKey);
             if (content == null) {
-              content = await readExplorerTextFile(entry.path);
+              content = await readExplorerTextFile(previewResolvedPath);
               storeCachedExplorerPreview({
                 key: previewCacheKey,
                 path: entry.path,
@@ -12033,6 +12354,7 @@ export function FileExplorer({
             setPreview({
               type: "text",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               content: resolvedContent,
               language: resolvedPreview.language,
@@ -12055,6 +12377,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: errorFallback.label,
               detail: errorFallback.detail,
@@ -12072,6 +12395,7 @@ export function FileExplorer({
             setPreview({
               type: "fallback",
               path: entry.path,
+              ...previewResolvedPathProps,
               name: entry.name,
               label: fallback.label,
               detail: fallback.detail,
@@ -12090,6 +12414,7 @@ export function FileExplorer({
       isCompactDock,
       openExplorerPdfPreviewDocument,
       clearPreviewSurface,
+      materializeArchiveVirtualEntry,
       previewRef,
       previewEnabled,
       readExplorerTextFile,
@@ -12177,11 +12502,10 @@ export function FileExplorer({
       }
 
       if (isExplorerArchiveEntry(entry)) {
-        const canInlinePreview = previewEnabled && !isCompactDock;
-        if (canInlinePreview) {
-          await previewEntry(entry, null, "explicit");
-        } else {
-          await handleArchiveAction(entry, "openCached");
+        const archiveNavigationPath =
+          await resolveExplorerArchiveNavigationPath(entry);
+        if (archiveNavigationPath) {
+          await navigate(archiveNavigationPath);
         }
         return;
       }
@@ -12189,6 +12513,13 @@ export function FileExplorer({
       const focusTarget = getSearchFocusTarget(entry);
       const canInlinePreview = previewEnabled && !isCompactDock;
       const entryExtension = getEntryExtension(entry);
+      const resolvedOpenPath = isExplorerArchiveVirtualPath(entry.path)
+        ? await materializeArchiveVirtualEntry(
+            entry.path,
+            false,
+            "stageTemporary",
+          )
+        : entry.path;
 
       if (canInlinePreview && !isExecutableBinaryExtension(entryExtension)) {
         await previewEntry(entry, focusTarget, "explicit");
@@ -12196,20 +12527,23 @@ export function FileExplorer({
       }
 
       if (isExecutableBinaryExtension(entryExtension)) {
-        await openExplorerPath(entry.path).catch((e) => setError(String(e)));
+        await openExplorerPath(resolvedOpenPath).catch((e) =>
+          setError(String(e)),
+        );
         return;
       }
 
-      await openExplorerPath(entry.path).catch((e) => setError(String(e)));
+      await openExplorerPath(resolvedOpenPath).catch((e) => setError(String(e)));
     },
     [
       getSearchFocusTarget,
-      handleArchiveAction,
       isCompactDock,
+      materializeArchiveVirtualEntry,
       navigate,
       openExplorerPath,
       previewEnabled,
       previewEntry,
+      resolveExplorerArchiveNavigationPath,
     ],
   );
 
@@ -12241,6 +12575,10 @@ export function FileExplorer({
   // ── Duplicate ──
   const duplicate = useCallback(
     async (entry: FileEntry) => {
+      if (!currentLocationSupportsMutation) {
+        setError("Archive and virtual explorer locations are read-only.");
+        return;
+      }
       try {
         await executeTransferRequest(
           {
@@ -12256,7 +12594,7 @@ export function FileExplorer({
         setError(String(e));
       }
     },
-    [currentPath, executeTransferRequest, refresh],
+    [currentLocationSupportsMutation, currentPath, executeTransferRequest, refresh],
   );
 
   // ── Clipboard (system) ──
@@ -12269,6 +12607,10 @@ export function FileExplorer({
   // ── Paste ──
   const paste = useCallback(async () => {
     if (!clipboard) return;
+    if (!currentLocationSupportsMutation) {
+      setError("Archive and virtual explorer locations are read-only.");
+      return;
+    }
     try {
       await executeTransferRequest(
         {
@@ -12288,7 +12630,14 @@ export function FileExplorer({
     } catch (e) {
       setError(String(e));
     }
-  }, [clipboard, currentPath, executeTransferRequest, refresh, setClipboard]);
+  }, [
+    clipboard,
+    currentLocationSupportsMutation,
+    currentPath,
+    executeTransferRequest,
+    refresh,
+    setClipboard,
+  ]);
 
   useEffect(() => {
     if (!externalSelectionTransferRequest) {
@@ -13247,6 +13596,18 @@ export function FileExplorer({
                     },
                   ]
                 : [];
+            case "extract-to":
+              return isArchive
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Extract To...",
+                      action: () => {
+                        void handleArchiveAction(entry, "extractToDirectory");
+                      },
+                    },
+                  ]
+                : [];
             case "duplicate":
               return [
                 {
@@ -13724,11 +14085,6 @@ export function FileExplorer({
       if (explorerPicker) {
         if (entry.is_dir) {
           void openEntry(entry);
-          if (explorerPicker.kind === 'saveFile') {
-            setPickerSaveFileName(
-              normalizeSaveFileName(entry.name, explorerPicker.defaultExtension),
-            );
-          }
         }
         return;
       }
@@ -13777,6 +14133,10 @@ export function FileExplorer({
 
   // ── Inline new item creation ──
   const openNew = (kind: "file" | "folder") => {
+    if (!currentLocationSupportsMutation) {
+      setError("Archive and virtual explorer locations are read-only.");
+      return;
+    }
     setNewItemName(kind === "folder" ? "New Folder" : "untitled.txt");
     setNewItem({ visible: true, kind });
   };
@@ -13787,7 +14147,7 @@ export function FileExplorer({
       setNewItem({ visible: false, kind: "folder" });
       return;
     }
-    if (currentPathIsHome) {
+    if (!currentLocationSupportsMutation) {
       setNewItem({ visible: false, kind: "folder" });
       return;
     }
@@ -14292,14 +14652,26 @@ export function FileExplorer({
         scopeId: explorerDropScopeId,
         role: "scope-root",
         rootPath:
-          currentPathIsHome || !currentPath.trim() ? null : currentPath,
+          currentPathIsHome || !currentLocationSupportsMutation || !currentPath.trim()
+            ? null
+            : currentPath,
       }),
-    [currentPath, currentPathIsHome, explorerDropScopeId],
+    [
+      currentLocationSupportsMutation,
+      currentPath,
+      currentPathIsHome,
+      explorerDropScopeId,
+    ],
   );
 
   const getExplorerDirectoryDropBinding = useCallback(
     (entry: Pick<FileEntry, "path" | "name" | "is_dir">) => {
-      if (!entry.is_dir || currentPathIsHome || !currentPath.trim()) {
+      if (
+        !entry.is_dir ||
+        currentPathIsHome ||
+        !currentLocationSupportsMutation ||
+        !currentPath.trim()
+      ) {
         return null;
       }
       return createExplorerDropSurfaceBinding({
@@ -14311,12 +14683,23 @@ export function FileExplorer({
         label: entry.name || getPathLeaf(entry.path) || "Folder",
       });
     },
-    [currentPath, currentPathIsHome, explorerDropScopeId, navigate],
+    [
+      currentLocationSupportsMutation,
+      currentPath,
+      currentPathIsHome,
+      explorerDropScopeId,
+      navigate,
+    ],
   );
 
   const getExplorerNavigationDropBinding = useCallback(
     (args: { surfaceId: string; path: string; label: string }) => {
-      if (currentPathIsHome || !currentPath.trim() || !args.path.trim()) {
+      if (
+        currentPathIsHome ||
+        !currentLocationSupportsMutation ||
+        !currentPath.trim() ||
+        !args.path.trim()
+      ) {
         return null;
       }
       return createExplorerDropSurfaceBinding({
@@ -14328,7 +14711,13 @@ export function FileExplorer({
         label: args.label,
       });
     },
-    [currentPath, currentPathIsHome, explorerDropScopeId, navigate],
+    [
+      currentLocationSupportsMutation,
+      currentPath,
+      currentPathIsHome,
+      explorerDropScopeId,
+      navigate,
+    ],
   );
   const getExplorerEntryDragPresentation = useCallback(
     (entry: Pick<FileEntry, "path" | "is_dir">) => {
@@ -17542,7 +17931,7 @@ export function FileExplorer({
         id: "newFolder",
         label: "New Folder",
         surfaces: ["explorerToolbar"],
-        isVisible: () => true,
+        isVisible: () => !explorerPicker || explorerPicker.allowCreateDirectory,
         render: () => (
           <button
             type="button"
@@ -17569,7 +17958,7 @@ export function FileExplorer({
         id: "newFile",
         label: "New File",
         surfaces: ["explorerToolbar"],
-        isVisible: () => true,
+        isVisible: () => !explorerPicker,
         render: () => (
           <button
             type="button"
@@ -18860,6 +19249,20 @@ export function FileExplorer({
         return;
       }
 
+      if (explorerPicker) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancelExplorerPicker();
+          return;
+        }
+
+        if (e.key === "Enter" && !isEditableKeyboardTarget(e.target)) {
+          e.preventDefault();
+          confirmExplorerPickerSelection();
+          return;
+        }
+      }
+
       if (
         preview.type === "text" &&
         matchesKeybinding(e, keybindings.saveFile)
@@ -18961,12 +19364,16 @@ export function FileExplorer({
       }
       if (matchesKeybinding(e, keybindings.newFolder)) {
         e.preventDefault();
-        openNew("folder");
+        if (!explorerPicker || explorerPicker.allowCreateDirectory) {
+          openNew("folder");
+        }
         return;
       }
       if (matchesKeybinding(e, keybindings.newFile)) {
         e.preventDefault();
-        openNew("file");
+        if (!explorerPicker) {
+          openNew("file");
+        }
         return;
       }
       if (
@@ -19207,9 +19614,12 @@ export function FileExplorer({
     addressEditing,
     beginAddressEdit,
     clearExplorerSelection,
+    cancelExplorerPicker,
+    confirmExplorerPickerSelection,
     cycleActiveConstellationLens,
     duplicate,
     effectiveViewModeDefinition.presentation,
+    explorerPicker,
     experimentalDensity,
     experimentalViewMode,
     effectiveExperimentalViewMode,
@@ -21796,11 +22206,14 @@ export function FileExplorer({
         folderIconRules={explorerSettings.folderIconRules}
         defaultFolderIcon={explorerSettings.defaultFolderIcon}
         onOpenFolderPreviewEntry={openFolderPreviewEntry}
+        onStartDragOutPreviewEntry={(entry) => {
+          void startExplorerNativeOutDrag([entry]);
+        }}
         onExtractArchive={(mode) => {
           if (preview.type === "archive") {
             void handleArchiveAction(
               {
-                path: preview.path,
+                path: getPreviewStateResolvedPath(preview),
                 name: preview.name,
                 size: preview.size,
                 is_dir: false,
@@ -21861,6 +22274,7 @@ export function FileExplorer({
     setPreviewWidth,
     shaderPerformanceMode,
     showHidden,
+    startExplorerNativeOutDrag,
     stopPreviewTextScriptRun,
     togglePreviewLock,
     togglePreviewTerminal,
@@ -21923,7 +22337,7 @@ export function FileExplorer({
       >
         {/* Toolbar */}
         {explorerToolbarPane}
-        {repositoryPicker?.active && (
+        {explorerPicker && (
           <div
             style={{
               display: "flex",
@@ -21945,21 +22359,53 @@ export function FileExplorer({
                   color: accent,
                 }}
               >
-                Repository Picker
+                {explorerPickerHeading}
               </div>
               <div style={{ marginTop: 3, fontSize: 11, color: EXP.muted }}>
-                Select{" "}
-                {repositoryPicker.allowMultiple
-                  ? "one or more folders"
-                  : "a folder"}{" "}
-                in Explorer, then confirm them into Source Control.
-                {selectedDirectoryEntries.length > 0
-                  ? ` ${selectedDirectoryEntries.length} folder${selectedDirectoryEntries.length !== 1 ? "s" : ""} selected.`
-                  : isRepositoryPickerUsingCurrentPath
-                    ? " No folders selected yet, so OverlayTerm can add the current folder directly."
-                    : " Only directories can be added."}
+                {explorerPickerDescription}
+                {explorerPickerSelectionSummary
+                  ? ` ${explorerPickerSelectionSummary}`
+                  : ""}
               </div>
-              {isRepositoryPickerUsingCurrentPath ? (
+              {explorerPicker.kind === "saveFile" ? (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginTop: 8,
+                  }}
+                >
+                  <input
+                    value={pickerSaveFileName}
+                    onChange={(event) => setPickerSaveFileName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        confirmExplorerPickerSelection();
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelExplorerPicker();
+                      }
+                    }}
+                    placeholder={explorerPicker.initialFileName ?? "untitled"}
+                    style={{
+                      flex: 1,
+                      minWidth: 180,
+                      height: 32,
+                      background: "var(--overlay-explorer-input-bg)",
+                      border: "1px solid var(--overlay-explorer-input-border)",
+                      borderRadius: "var(--overlay-explorer-control-radius)",
+                      color: EXP.text,
+                      fontSize: 12,
+                      padding: "0 10px",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+              ) : null}
+              {(isExplorerPickerUsingCurrentPath || explorerPicker.kind === "saveFile") ? (
                 <div
                   style={{
                     marginTop: 4,
@@ -21980,31 +22426,29 @@ export function FileExplorer({
             </div>
             <button
               type="button"
-              onClick={() =>
-                repositoryPicker.onConfirm(repositoryPickerConfirmationPaths)
-              }
-              disabled={!canConfirmRepositorySelection}
+              onClick={confirmExplorerPickerSelection}
+              disabled={!canConfirmExplorerPickerSelection}
               style={{
                 minHeight: 30,
                 padding: "0 12px",
                 borderRadius: "var(--overlay-explorer-control-radius)",
-                border: `1px solid ${canConfirmRepositorySelection ? accent : EXP.border}`,
-                background: canConfirmRepositorySelection
+                border: `1px solid ${canConfirmExplorerPickerSelection ? accent : EXP.border}`,
+                background: canConfirmExplorerPickerSelection
                   ? accent
                   : "var(--overlay-explorer-chip-bg)",
-                color: canConfirmRepositorySelection
+                color: canConfirmExplorerPickerSelection
                   ? "var(--overlay-accent-contrast)"
                   : EXP.muted,
-                cursor: canConfirmRepositorySelection ? "pointer" : "default",
+                cursor: canConfirmExplorerPickerSelection ? "pointer" : "default",
                 fontSize: 11,
                 fontWeight: 700,
               }}
             >
-              {repositoryPickerConfirmLabel}
+              {explorerPicker.confirmLabel}
             </button>
             <button
               type="button"
-              onClick={repositoryPicker.onCancel}
+              onClick={cancelExplorerPicker}
               style={{
                 minHeight: 30,
                 padding: "0 12px",
@@ -23585,6 +24029,20 @@ export function FileExplorer({
           onCancel={closeTransferConflictDialog}
         />
       )}
+
+      <AppConfirmDialog
+        open={pickerOverwriteTargetPath != null}
+        title="Overwrite Existing File?"
+        description={
+          pickerOverwriteTargetPath
+            ? `A file already exists at ${pickerOverwriteTargetPath}. Replace it with the new save target?`
+            : undefined
+        }
+        confirmLabel="Overwrite"
+        tone="danger"
+        onConfirm={confirmExplorerPickerOverwrite}
+        onCancel={() => setPickerOverwriteTargetPath(null)}
+      />
 
       {saveSearchState.visible && (
         <SaveSearchDialog

@@ -26,6 +26,7 @@ export type BuiltInExplorerChromeControlId =
   | 'addressBar'
   | 'recentLocations'
   | 'pinnedLocations'
+  | 'archiveActions'
   | 'folderSizeSummary'
   | 'selectionSizeSummary'
   | 'pinLocation'
@@ -245,6 +246,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       pinnedLocations: {
         explorerToolbar: { zone: 'secondaryStart', order: 20, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
+      archiveActions: {
+        explorerToolbar: { zone: 'secondaryStart', order: 25, shrink: 1, collapsePriority: 15, overflowEligible: true },
       },
       folderSizeSummary: {
         explorerToolbar: { zone: 'secondaryStart', order: 30, shrink: 1, collapsePriority: 40, overflowEligible: true },
@@ -488,6 +492,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       pinnedLocations: {
         explorerToolbar: { zone: 'primaryEnd', order: 20, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
+      archiveActions: {
+        explorerToolbar: { zone: 'primaryEnd', order: 25, shrink: 1, collapsePriority: 15, overflowEligible: true },
       },
       folderSizeSummary: {
         explorerToolbar: { zone: 'secondaryStart', order: 10, shrink: 1, collapsePriority: 40, overflowEligible: true },

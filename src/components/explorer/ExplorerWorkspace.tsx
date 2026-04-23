@@ -44,6 +44,7 @@ import {
 } from '../../store/explorerStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import type { SettingsSectionKey } from '../../config/settingsNavigation';
+import type { ExplorerPickerRequest } from '../../runtime/explorerPicker';
 import { ExplorerChromeSurface } from './ExplorerChromeSurface';
 import { ExplorerDragOverlay } from './ExplorerDragOverlay';
 import { FileExplorer } from '../FileExplorer';
@@ -82,13 +83,12 @@ interface ExplorerWorkspaceProps {
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
   chromeControlSurface?: 'toolbar' | 'topbar';
-  repositoryPicker?: {
-    active: boolean;
-    allowMultiple: boolean;
-    requestId: number;
-    onConfirm: (paths: string[]) => void;
-    onCancel: () => void;
-  } | null;
+  explorerPicker?: ExplorerPickerRequest | null;
+  onExplorerPickerConfirm?: (result: {
+    currentDirectory: string;
+    entries: Array<{ path: string; name: string; kind: 'file' | 'folder' }>;
+  }) => void;
+  onExplorerPickerCancel?: () => void;
 }
 
 function getPathLeaf(path: string): string {
@@ -191,7 +191,9 @@ export function ExplorerWorkspace({
   pluginContextMenuItems = [],
   layoutMode = 'full',
   chromeControlSurface = 'toolbar',
-  repositoryPicker = null,
+  explorerPicker = null,
+  onExplorerPickerConfirm = () => undefined,
+  onExplorerPickerCancel = () => undefined,
 }: ExplorerWorkspaceProps) {
   const {
     sessions,
@@ -1316,7 +1318,9 @@ export function ExplorerWorkspace({
           onWorkspaceSelectionTransferComplete={handleWorkspaceSelectionTransferComplete}
           pluginActions={pluginActions}
           pluginContextMenuItems={pluginContextMenuItems}
-          repositoryPicker={repositoryPicker}
+          explorerPicker={isActivePane ? explorerPicker : null}
+          onExplorerPickerConfirm={onExplorerPickerConfirm}
+          onExplorerPickerCancel={onExplorerPickerCancel}
           theme={theme}
           onAddBookmark={onAddBookmark}
           homePacks={homePacks}
@@ -1341,12 +1345,14 @@ export function ExplorerWorkspace({
     onOpenInTerminal,
     onOpenPanel,
     onOpenSettingsSection,
+    onExplorerPickerCancel,
+    onExplorerPickerConfirm,
     pluginActions,
     pluginContextMenuItems,
     publishRuntimeSnapshot,
     refreshRequestsByInstanceId,
     revealRequestsByInstanceId,
-    repositoryPicker,
+    explorerPicker,
     selectionTransferRequestsByInstanceId,
     setFocusedPane,
     theme,
