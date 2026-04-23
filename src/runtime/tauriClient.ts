@@ -145,6 +145,15 @@ const baseCommands = {
       "audio_engine_set_plugin_parameter",
       { request },
     ),
+  globalSearchQueryUnderPath: (
+    rootPath: string,
+    query: string,
+    options: tauriBindings.GlobalSearchQueryOptions,
+  ) =>
+    invoke<Result<tauriBindings.GlobalSearchResultEntry[], string>>(
+      "global_search_query_under_path",
+      { rootPath, query, options },
+    ),
 };
 
 export const commands = Object.fromEntries(

@@ -3,7 +3,8 @@
 - The storage workbench no longer feels trapped in the matrix when you move into the inspector side. The right-hand lane now has an explicit `Current Context` surface with its own scroll boundary, and it can use the new Everything-style global index to jump around the active storage scope quickly.
 - Durable implementation shape:
   - `src/components/StoragePanel.tsx` now splits the inspector into a `Selection` card plus a `Current Context` card. The current-context card owns its own `auto + minmax(0, 1fr)` layout, keeps the preview/results viewport clipped to the inspector lane, and routes its scroll through dedicated overlay scroll hosts instead of relying on outer panel overflow.
-  - The same panel now wires a local indexed-jump flow through `src/runtime/globalSearchBackend.ts`. Typing 2+ characters in the current-context lane queries the new global filename index, filters hits back down to the active storage scope, and renders fast path results without pretending the index replaces storage-size truth.
+  - The indexed-jump path is now scoped natively instead of querying the whole index and trimming in React. `src-tauri/src/global_search/query.rs` adds `global_search_query_under_path(...)`, `src/runtime/tauriClient.ts` exposes the raw Tauri bridge for it, and `src/runtime/globalSearchBackend.ts` now gives the storage lane a direct "query under this path" helper.
+  - `src/components/StoragePanel.tsx` now debounces the current-context search with the shared global-search debounce policy and calls that native scoped query directly, so the storage lane no longer does whole-index work on every keystroke just to search a subtree.
   - Clicking an indexed result now reveals it back into the storage matrix by expanding and loading the ancestor directory chain before selecting the target path. That reveal/routing math lives in `src/components/storage/storageWorkbench.ts` through the new root-membership and ancestor-chain helpers, so the panel does not hand-roll path ancestry logic inline.
   - The inspector still falls back to the existing directory preview shell when no search query is active. File selections keep their action-oriented summary state there instead of trying to fake a heavy inline file preview for the storage lane.
 - Durable product note:
@@ -11,7 +12,9 @@
   - The inspector lane should remain an independent scroll surface. Regressions that make wheel/trackpad input leak back into the main matrix again are storage-lane bugs, not explorer-preview niceties.
 - Validation:
   - passed: `bunx vitest run src/test/storageWorkbench.test.ts src/test/storagePanel.layout.test.tsx --reporter=dot`
-  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml global_search -- --nocapture`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "StoragePanel.tsx|storageWorkbench.ts|globalSearchBackend.ts|tauriClient.ts|storagePanel.layout.test.tsx|storageWorkbench.test.ts" || true`
+  - note: full `bunx tsc --noEmit --pretty false -p tsconfig.json` is currently blocked by unrelated pre-existing errors in `App.tsx`, `WorkbenchTopBar.tsx`, `FileExplorer.tsx`, `SettingsPage.tsx`, `settingsStore.ts`, and missing `config/explorerContextMenu` imports outside this storage/global-search slice
 
 # 2026-04-23 - Mobile Share Hover QR Now Renders Reliably And Can Show Tailnet Beside LAN
 
@@ -28,6 +31,23 @@
   - passed: `bunx vitest run src/test/workbenchTopBar.test.tsx --reporter=dot`
   - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
   - note: full `bunx tsc --noEmit --pretty false -p tsconfig.json` is currently blocked by unrelated pre-existing `src/components/StoragePanel.tsx` errors on this branch
+
+# 2026-04-23 - Preview-Row Dragging Now Uses The Explorer Pointer Runtime And Supports Ctrl Multiselect
+
+- Folder-preview and archive-preview rows no longer behave like ad hoc mini-buttons that immediately kick off their own bespoke drag-out path. Their selection and drag-start behavior now matches the flagship explorer more closely.
+- Durable implementation shape:
+  - `src/components/useExplorerPreviewEntryDirectDrag.ts` is no longer just a threshold-to-callback helper. It now owns preview-row ctrl/meta multiselect state, click suppression after drag start, and grouped drag-request payloads (`entry` + `entries` + pointer/modifier metadata) so both preview lanes share one interaction model.
+  - `src/components/ExplorerFolderPreview.tsx` and `src/components/ExplorerArchivePreview.tsx` now route row clicks through that shared hook, expose pressed/selected row styling, keep ctrl/meta clicks local to selection instead of opening/navigating, and start drags with the full selected set when the dragged row is already selected.
+  - `src/components/FileExplorer.tsx` now consumes preview drag requests through the same explorer pointer-drag runtime used by the main file list. Preview rows build an `ExplorerInternalPointerDragCandidate`, feed the shared drag overlay/runtime, and only fall back to native-out when the dragged sources are archive-virtual or the user explicitly requests native-out through the existing intent rules.
+  - Folder-preview drags now stay on the app-owned internal drag system by default, which means dropping a preview row onto explorer targets uses the existing internal transfer path instead of trying to initiate a browser/HTML-style drag.
+- Durable product note:
+  - Treat preview rows as secondary explorer surfaces, not as standalone HTML drag widgets. If preview-row drag behavior changes later, route it through the same shared pointer/runtime contract as the main explorer list instead of inventing another drag subsystem inside the preview pane.
+  - Ctrl/meta multiselect in preview lanes is intentionally local selection state. It should not open/navigate rows, and dragging any selected row should carry the whole selected set.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerFolderPreview.test.tsx src/test/explorerArchivePreview.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/explorerFolderPreview.test.tsx src/test/explorerArchivePreview.test.tsx src/test/fileExplorer.viewModes.test.tsx -t "supports ctrl multiselect in preview rows and drags the full selected set without opening|supports ctrl multiselect in archive preview rows and drags the full selection without opening|routes folder preview row drags through the app-owned explorer drag runtime" --reporter=dot --pool=forks`
+  - note: full `bunx tsc --noEmit --pretty false -p tsconfig.json` is currently blocked by an unrelated `src/components/MobileShareRouteMenu.tsx` `QrCode` import error outside this slice
+  - passed: touched-file type surface grep for `ExplorerFolderPreview|ExplorerArchivePreview|useExplorerPreviewEntryDirectDrag|FileExplorer|fileExplorer.viewModes|explorerFolderPreview|explorerArchivePreview`
 
 # 2026-04-23 - Archives Now Browse As Read-Only Virtual Folders With Direct Drag-Out
 

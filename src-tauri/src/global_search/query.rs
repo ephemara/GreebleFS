@@ -4,10 +4,12 @@ use super::scoring::{calculate_similarity_score, get_min_score_for_query_length}
 use super::state::{GlobalSearchIndexFields, GLOBAL_SEARCH_STATE};
 use super::types::{GlobalSearchQueryOptions, GlobalSearchResultEntry};
 use super::utils::{is_hidden_path, metadata_times_unix_ms, path_extension_lowercase};
+use regex::escape as escape_regex;
 use std::collections::BTreeMap;
 use std::path::Path;
+use tantivy::IndexReader;
 use tantivy::collector::TopDocs;
-use tantivy::query::{BooleanQuery, FuzzyTermQuery, Query, TermQuery};
+use tantivy::query::{BooleanQuery, FuzzyTermQuery, Query, RegexQuery, TermQuery};
 use tantivy::schema::{IndexRecordOption, Value};
 use tantivy::Term;
 use tauri::Manager;
@@ -69,6 +71,70 @@ fn candidate_limit(limit: usize) -> usize {
     limit.saturating_mul(64).clamp(256, 20_000)
 }
 
+fn normalize_scope_root_path(raw_root_path: &str) -> String {
+    let trimmed = raw_root_path.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let without_trailing = trimmed.trim_end_matches(['/', '\\']);
+        if without_trailing.len() == 2 {
+            let bytes = without_trailing.as_bytes();
+            if bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+                return format!("{without_trailing}\\");
+            }
+        }
+    }
+
+    if trimmed == "/" {
+        return "/".to_string();
+    }
+
+    trimmed.trim_end_matches(['/', '\\']).to_string()
+}
+
+fn build_scope_query(
+    fields: &GlobalSearchIndexFields,
+    raw_root_path: &str,
+) -> Option<Box<dyn Query>> {
+    let normalized_root_path = normalize_scope_root_path(raw_root_path);
+    if normalized_root_path.is_empty() {
+        return None;
+    }
+
+    let exact_path_query = TermQuery::new(
+        Term::from_field_text(fields.path, &normalized_root_path),
+        IndexRecordOption::Basic,
+    );
+    let descendant_pattern = if normalized_root_path == "/" {
+        "^/.*$".to_string()
+    } else if normalized_root_path.ends_with('\\') || normalized_root_path.ends_with('/') {
+        format!("^{}.*$", escape_regex(&normalized_root_path))
+    } else if normalized_root_path.contains('\\') {
+        format!("^{}(?:$|[\\\\/].*)", escape_regex(&normalized_root_path))
+    } else {
+        format!("^{}(?:$|/.*)", escape_regex(&normalized_root_path))
+    };
+    let descendant_path_query =
+        match RegexQuery::from_pattern(&descendant_pattern, fields.path) {
+            Ok(query) => query,
+            Err(_) => return None,
+        };
+
+    Some(Box::new(BooleanQuery::from(vec![
+        (
+            tantivy::query::Occur::Should,
+            Box::new(exact_path_query) as Box<dyn Query>,
+        ),
+        (
+            tantivy::query::Occur::Should,
+            Box::new(descendant_path_query) as Box<dyn Query>,
+        ),
+    ])))
+}
+
 fn sort_results(results: &mut [GlobalSearchResultEntry]) {
     results.sort_by(|left, right| {
         right
@@ -80,25 +146,16 @@ fn sort_results(results: &mut [GlobalSearchResultEntry]) {
     });
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn global_search_query(
-    app: tauri::AppHandle,
-    query: String,
-    options: GlobalSearchQueryOptions,
-) -> Result<Vec<GlobalSearchResultEntry>, String> {
-    let trimmed_query = query.trim();
-    if trimmed_query.is_empty() {
-        return Ok(Vec::new());
-    }
-
+fn open_search_reader(
+    app: &tauri::AppHandle,
+) -> Result<(IndexReader, GlobalSearchIndexFields), String> {
     let base_dir = app
         .path()
         .app_data_dir()
         .map_err(|error: tauri::Error| error.to_string())?;
     let index_path = global_search_index_dir(&base_dir);
 
-    let (_index, reader, fields) = {
+    let (reader, fields) = {
         let mut state = GLOBAL_SEARCH_STATE
             .write()
             .map_err(|error| error.to_string())?;
@@ -110,7 +167,6 @@ pub async fn global_search_query(
         }
 
         (
-            state.index.as_ref().expect("global search index initialized").clone(),
             state
                 .reader
                 .as_ref()
@@ -123,16 +179,34 @@ pub async fn global_search_query(
         )
     };
 
+    Ok((reader, fields))
+}
+
+fn execute_index_query(
+    reader: &IndexReader,
+    fields: &GlobalSearchIndexFields,
+    query: &str,
+    options: &GlobalSearchQueryOptions,
+    scope_root_path: Option<&str>,
+) -> Result<Vec<GlobalSearchResultEntry>, String> {
     let searcher = reader.searcher();
-    let normalized_query = normalize_case(trimmed_query);
+    let normalized_query = normalize_case(query);
     let min_score = options
         .min_score_threshold
         .unwrap_or_else(|| get_min_score_for_query_length(normalized_query.len()));
     let ignored_paths = build_ignored_path_list(&[]);
 
-    let query_boxed = build_query(&fields, trimmed_query, &options);
+    let text_query = build_query(fields, query, options);
+    let final_query: Box<dyn Query> = match scope_root_path.and_then(|value| build_scope_query(fields, value)) {
+        Some(scope_query) => Box::new(BooleanQuery::from(vec![
+            (tantivy::query::Occur::Must, text_query),
+            (tantivy::query::Occur::Must, scope_query),
+        ])),
+        None => text_query,
+    };
+
     let top_docs = searcher
-        .search(&query_boxed, &TopDocs::with_limit(candidate_limit(options.limit)))
+        .search(&final_query, &TopDocs::with_limit(candidate_limit(options.limit)))
         .map_err(|error| error.to_string())?;
 
     let mut results = Vec::new();
@@ -166,7 +240,7 @@ pub async fn global_search_query(
             .and_then(|value| value.as_u64())
             .unwrap_or(0);
 
-        if !matches_type(document_is_file, document_is_dir, &options) {
+        if !matches_type(document_is_file, document_is_dir, options) {
             continue;
         }
 
@@ -198,6 +272,45 @@ pub async fn global_search_query(
     sort_results(&mut results);
     results.truncate(options.limit);
     Ok(results)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn global_search_query(
+    app: tauri::AppHandle,
+    query: String,
+    options: GlobalSearchQueryOptions,
+) -> Result<Vec<GlobalSearchResultEntry>, String> {
+    let trimmed_query = query.trim();
+    if trimmed_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let (reader, fields) = open_search_reader(&app)?;
+    execute_index_query(&reader, &fields, trimmed_query, &options, None)
+}
+
+#[tauri::command]
+pub async fn global_search_query_under_path(
+    app: tauri::AppHandle,
+    root_path: String,
+    query: String,
+    options: GlobalSearchQueryOptions,
+) -> Result<Vec<GlobalSearchResultEntry>, String> {
+    let trimmed_query = query.trim();
+    let normalized_root_path = normalize_scope_root_path(&root_path);
+    if trimmed_query.is_empty() || normalized_root_path.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let (reader, fields) = open_search_reader(&app)?;
+    execute_index_query(
+        &reader,
+        &fields,
+        trimmed_query,
+        &options,
+        Some(&normalized_root_path),
+    )
 }
 
 #[tauri::command]

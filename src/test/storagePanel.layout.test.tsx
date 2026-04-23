@@ -32,7 +32,7 @@ const storageBackendMocks = vi.hoisted(() => ({
 }));
 
 const globalSearchBackendMocks = vi.hoisted(() => ({
-  queryGlobalSearch: vi.fn(),
+  queryGlobalSearchUnderPath: vi.fn(),
 }));
 
 vi.mock('../runtime/storageBackend', () => ({
@@ -50,7 +50,7 @@ vi.mock('../runtime/storageBackend', () => ({
 }));
 
 vi.mock('../runtime/globalSearchBackend', () => ({
-  queryGlobalSearch: globalSearchBackendMocks.queryGlobalSearch,
+  queryGlobalSearchUnderPath: globalSearchBackendMocks.queryGlobalSearchUnderPath,
 }));
 
 describe('StoragePanel layout shell', () => {
@@ -189,7 +189,7 @@ describe('StoragePanel layout shell', () => {
     storageBackendMocks.trashStorageEntries.mockResolvedValue(undefined);
     storageBackendMocks.deleteStorageEntry.mockResolvedValue(undefined);
     storageBackendMocks.deleteStorageEntries.mockResolvedValue(undefined);
-    globalSearchBackendMocks.queryGlobalSearch.mockResolvedValue([]);
+    globalSearchBackendMocks.queryGlobalSearchUnderPath.mockResolvedValue([]);
   });
 
   it('keeps the body constrained so matrix expansion stays inside the storage workbench viewport', async () => {
@@ -235,7 +235,7 @@ describe('StoragePanel layout shell', () => {
   });
 
   it('uses indexed jump to reveal deeper matches inside the current storage context', async () => {
-    globalSearchBackendMocks.queryGlobalSearch.mockResolvedValue([
+    globalSearchBackendMocks.queryGlobalSearchUnderPath.mockResolvedValue([
       {
         name: 'project.bin',
         extension: 'bin',
@@ -315,9 +315,9 @@ describe('StoragePanel layout shell', () => {
     fireEvent.change(searchInput, { target: { value: 'project' } });
 
     await waitFor(() => {
-      expect(globalSearchBackendMocks.queryGlobalSearch).toHaveBeenCalledWith(expect.objectContaining({
+      expect(globalSearchBackendMocks.queryGlobalSearchUnderPath).toHaveBeenCalledWith(expect.objectContaining({
+        rootPath: '/home/alice/Dev',
         query: 'project',
-        priorityPaths: ['/home/alice/Dev', '/home/alice'],
       }));
     });
 

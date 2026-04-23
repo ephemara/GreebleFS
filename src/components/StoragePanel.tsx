@@ -1,5 +1,6 @@
 import {
   startTransition,
+  useDeferredValue,
   useCallback,
   useEffect,
   useMemo,
@@ -48,7 +49,10 @@ import {
 } from '../runtime/storageBackend';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
-import { shouldRunGlobalSearchQuery } from '../config/globalSearch';
+import {
+  globalSearchPaletteConfig,
+  shouldRunGlobalSearchQuery,
+} from '../config/globalSearch';
 import { layoutStorageTreemap } from './storage/storageTreemap';
 import {
   buildStorageAncestorDirectoryChain,
@@ -76,7 +80,7 @@ import { ExplorerFolderPreview } from './ExplorerFolderPreview';
 import { ExplorerTaskStatusBadge } from './explorer/ExplorerTaskStatusBadge';
 import { useExplorerTaskProgressFeed } from '../store/explorerTaskStore';
 import {
-  queryGlobalSearch,
+  queryGlobalSearchUnderPath,
   type GlobalSearchResultValue,
 } from '../runtime/globalSearchBackend';
 
@@ -1651,6 +1655,7 @@ export function StoragePanel() {
     STORAGE_RAIL_WIDTH_MAX,
   );
   const matrixContainerRef = useRef<HTMLDivElement | null>(null);
+  const deferredContextSearchQuery = useDeferredValue(contextSearchQuery);
 
   const loadRoots = useCallback(async () => {
     setRootsLoading(true);
@@ -1874,7 +1879,7 @@ export function StoragePanel() {
   );
 
   useEffect(() => {
-    const trimmedQuery = contextSearchQuery.trim();
+    const trimmedQuery = deferredContextSearchQuery.trim();
     if (!contextSearchScopePath || trimmedQuery.length === 0) {
       setContextSearchResults([]);
       setContextSearchError(null);
@@ -1889,45 +1894,43 @@ export function StoragePanel() {
     }
 
     let cancelled = false;
-    setIsSearchingContext(true);
-    setContextSearchError(null);
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
 
-    const priorityPaths = [...new Set([
-      contextSearchScopePath,
-      activeRootPath,
-    ].filter((path): path is string => Boolean(path)))];
+      setIsSearchingContext(true);
+      setContextSearchError(null);
 
-    void queryGlobalSearch({
-      query: trimmedQuery,
-      limit: STORAGE_CONTEXT_SEARCH_RESULT_LIMIT,
-      priorityPaths,
-    })
-      .then((results) => {
-        if (cancelled) {
-          return;
-        }
-
-        setContextSearchResults(
-          results
-            .filter((result) => isStoragePathWithinRoot(result.path, contextSearchScopePath))
-            .slice(0, STORAGE_CONTEXT_SEARCH_RESULT_LIMIT),
-        );
-        setIsSearchingContext(false);
+      void queryGlobalSearchUnderPath({
+        rootPath: contextSearchScopePath,
+        query: trimmedQuery,
+        limit: STORAGE_CONTEXT_SEARCH_RESULT_LIMIT,
       })
-      .catch((error) => {
-        if (cancelled) {
-          return;
-        }
+        .then((results) => {
+          if (cancelled) {
+            return;
+          }
 
-        setContextSearchResults([]);
-        setContextSearchError(error instanceof Error ? error.message : String(error));
-        setIsSearchingContext(false);
-      });
+          setContextSearchResults(results.slice(0, STORAGE_CONTEXT_SEARCH_RESULT_LIMIT));
+          setIsSearchingContext(false);
+        })
+        .catch((error) => {
+          if (cancelled) {
+            return;
+          }
+
+          setContextSearchResults([]);
+          setContextSearchError(error instanceof Error ? error.message : String(error));
+          setIsSearchingContext(false);
+        });
+    }, globalSearchPaletteConfig.searchDebounceMs);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
     };
-  }, [activeRootPath, contextSearchQuery, contextSearchScopePath]);
+  }, [contextSearchScopePath, deferredContextSearchQuery]);
 
   const applyQueueSelection = useCallback(() => {
     if (selectedEntries.length === 0) {

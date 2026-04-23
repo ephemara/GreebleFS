@@ -60,30 +60,38 @@ struct PreviewBytesInvokeArgs {
     max_bytes: Option<u64>,
 }
 
-fn parse_preview_bytes_invoke_args(
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GlobalSearchQueryUnderPathInvokeArgs {
+    root_path: String,
+    query: String,
+    options: crate::global_search::GlobalSearchQueryOptions,
+}
+
+fn parse_json_invoke_args<T: for<'de> serde::Deserialize<'de>>(
     message: &tauri::ipc::InvokeMessage<tauri::Wry>,
-) -> Result<PreviewBytesInvokeArgs, String> {
+) -> Result<T, String> {
     match message.payload() {
         tauri::ipc::InvokeBody::Json(payload) => serde_json::from_value(payload.clone())
-            .map_err(|error| format!("Invalid preview transport payload: {error}")),
+            .map_err(|error| format!("Invalid command payload: {error}")),
         tauri::ipc::InvokeBody::Raw(_) => {
-            Err("Preview transport expects JSON arguments.".to_string())
+            Err("Command expects JSON arguments.".to_string())
         }
     }
 }
 
 fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
     let command = invoke.message.command().to_string();
-    let args = match parse_preview_bytes_invoke_args(&invoke.message) {
-        Ok(args) => args,
-        Err(error) => {
-            invoke.resolver.reject(error);
-            return true;
-        }
-    };
 
     match command.as_str() {
         "fs_read_preview_bytes" => {
+            let args = match parse_json_invoke_args::<PreviewBytesInvokeArgs>(&invoke.message) {
+                Ok(args) => args,
+                Err(error) => {
+                    invoke.resolver.reject(error);
+                    return true;
+                }
+            };
             let resolver = invoke.resolver;
             tauri::async_runtime::spawn(async move {
                 resolver.respond(
@@ -95,6 +103,13 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
             true
         }
         "cloud_read_preview_bytes" => {
+            let args = match parse_json_invoke_args::<PreviewBytesInvokeArgs>(&invoke.message) {
+                Ok(args) => args,
+                Err(error) => {
+                    invoke.resolver.reject(error);
+                    return true;
+                }
+            };
             let resolver = invoke.resolver;
             let app = invoke.message.webview().app_handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -102,6 +117,32 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
                     cloud_commands::cloud_read_preview_bytes(app, args.path, args.max_bytes)
                         .await
                         .map_err(Into::into),
+                );
+            });
+            true
+        }
+        "global_search_query_under_path" => {
+            let args =
+                match parse_json_invoke_args::<GlobalSearchQueryUnderPathInvokeArgs>(&invoke.message)
+                {
+                    Ok(args) => args,
+                    Err(error) => {
+                        invoke.resolver.reject(error);
+                        return true;
+                    }
+                };
+            let resolver = invoke.resolver;
+            let app = invoke.message.webview().app_handle().clone();
+            tauri::async_runtime::spawn(async move {
+                resolver.respond(
+                    global_search::query::global_search_query_under_path(
+                        app,
+                        args.root_path,
+                        args.query,
+                        args.options,
+                    )
+                    .await
+                    .map_err(Into::into),
                 );
             });
             true
@@ -126,7 +167,9 @@ pub fn run() {
         .message
         .command()
     {
-        "fs_read_preview_bytes" | "cloud_read_preview_bytes" => raw_preview_invoke_handler(invoke),
+        "fs_read_preview_bytes" | "cloud_read_preview_bytes" | "global_search_query_under_path" => {
+            raw_preview_invoke_handler(invoke)
+        }
         _ => specta_invoke_handler(invoke),
     };
 

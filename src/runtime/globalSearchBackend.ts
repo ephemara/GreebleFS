@@ -137,3 +137,25 @@ export async function queryGlobalSearch(args: {
     limit,
   });
 }
+
+export async function queryGlobalSearchUnderPath(args: {
+  rootPath: string;
+  query: string;
+  limit?: number;
+  queryOptions?: Partial<GlobalSearchQueryOptionsValue>;
+}): Promise<GlobalSearchResultValue[]> {
+  const limit = args.limit ?? globalSearchPaletteConfig.resultLimit;
+  const queryOptions: GlobalSearchQueryOptionsValue = {
+    ...createDefaultGlobalSearchQueryOptions(limit),
+    ...args.queryOptions,
+    limit,
+  };
+
+  return unwrapTauriResult(
+    await commands.globalSearchQueryUnderPath(
+      args.rootPath,
+      args.query,
+      queryOptions,
+    ),
+  );
+}
