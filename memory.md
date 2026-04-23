@@ -1,3 +1,18 @@
+# 2026-04-23 - Explorer Drag Hover Now Opens Folder Glyphs, Autoscrolls The Viewport, And Carries Real Stack Previews
+
+- The premium drag pass now has the three missing interaction pieces: destination folders feel alive before navigation, long lists can scroll under an active drag, and multi-file drags show a more truthful bundle preview.
+- Durable implementation shape:
+  - `src/config/explorerDragInteractions.ts` now owns the authored drag-autoscroll and folder-inhale tuning, not just dwell timing. Edge size, activation outset, min/max autoscroll speed, and folder icon/stage inhale scales all live there as explorer interaction constants.
+  - `src/components/FileExplorer.tsx` now drives internal drag autoscroll from the app-owned pointer runtime. While an internal drag is active near the top or bottom of the file viewport, the scroll area advances on `requestAnimationFrame`, updates `scrollTop`, and re-resolves the drop hit under the stationary pointer so the target/highlight track the scrolled content instead of freezing.
+  - Folder hover-open is now expressed through the real icon/theme path instead of a fake one-off animation. Entry renderers in the main explorer views use the drag target/dwell state to request the open-folder icon variant and a stronger icon-stage inhale/lift when a folder is the active drag destination.
+  - `src/components/explorer/explorerDragAndDrop.ts` now carries a small `sourceStackItems` preview payload in the shared drag state, and `src/components/explorer/ExplorerDragOverlay.tsx` uses that payload to render richer multi-file avatar stacks with real per-item preview icons instead of anonymous paper layers only.
+- Durable product note:
+  - Internal drag autoscroll is intentionally owned by the explorer pointer runtime, not by DOM drag events. Keep it tied to the app-owned internal drag path unless external/native drags prove they need the same treatment.
+  - Folder hover “alive” feedback should continue to come from the actual open-folder glyph path plus subtle stage motion. Do not replace it with generic scale/glow-only effects that ignore the icon theme system.
+- Validation:
+  - passed: `bunx vitest run src/test/ExplorerWorkspace.test.tsx src/test/fileExplorer.viewModes.test.tsx -t "starts pointer-driven internal explorer drags without invoking the native drag bridge|moves multi-selected files into the hovered folder without leaking the drop to the viewport root|drops into the current folder when hovering explorer chrome outside the main file plane|mounts the shared drag overlay during normal live workspace panes|auto-opens hovered folder targets once after dwell" --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-23 - Explorer Drag Presentation Is Now App-Owned, Visible, And Non-Destructive To Layout
 
 - Internal explorer drag truth still stays pointer-driven and app-owned, but the presentation layer is now first-class instead of piggybacking on browser drag visuals.

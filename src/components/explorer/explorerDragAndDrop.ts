@@ -23,6 +23,12 @@ export type ExplorerDragVisualPhase =
   | "dropping"
   | "cancelled";
 export type ExplorerDragAvatarKind = "file" | "folder" | "mixed" | "external";
+export type ExplorerDragAvatarStackItem = {
+  path: string;
+  label: string;
+  iconSrc: string | null;
+  itemKind: ExplorerDragAvatarKind;
+};
 
 export const EXPLORER_DROP_TARGET_ATTRIBUTE = "data-overlay-drop-target-path";
 export const EXPLORER_DROP_SCOPE_ATTRIBUTE =
@@ -101,6 +107,7 @@ export type ExplorerDragInteractionState = {
   sourcePrimaryPath: string | null;
   sourceItemKind: ExplorerDragAvatarKind;
   sourceIconSrc: string | null;
+  sourceStackItems: ExplorerDragAvatarStackItem[];
   operation: ExplorerDragOperation;
   paths: string[];
   itemCount: number;
@@ -163,6 +170,7 @@ function createEmptyExplorerDragInteractionState(): ExplorerDragInteractionState
     sourcePrimaryPath: null,
     sourceItemKind: "external",
     sourceIconSrc: null,
+    sourceStackItems: [],
     operation: "move",
     paths: [],
     itemCount: 0,
@@ -291,6 +299,25 @@ function stabilizeExplorerPaths(nextPaths: readonly string[]): string[] {
     return currentPaths;
   }
   return [...nextPaths];
+}
+
+function stabilizeExplorerDragAvatarStackItems(
+  nextItems: readonly ExplorerDragAvatarStackItem[],
+): ExplorerDragAvatarStackItem[] {
+  const currentItems = explorerDragInteractionState.sourceStackItems;
+  if (
+    currentItems.length === nextItems.length &&
+    currentItems.every(
+      (item, index) =>
+        item.path === nextItems[index]?.path &&
+        item.label === nextItems[index]?.label &&
+        item.iconSrc === nextItems[index]?.iconSrc &&
+        item.itemKind === nextItems[index]?.itemKind,
+    )
+  ) {
+    return currentItems;
+  }
+  return nextItems.map((item) => ({ ...item }));
 }
 
 function getExplorerDragPresentationTargetPoint(
@@ -1014,6 +1041,7 @@ function buildExplorerDragSnapshot(args: {
   sourcePrimaryPath?: string | null;
   sourceItemKind?: ExplorerDragAvatarKind;
   sourceIconSrc?: string | null;
+  sourceStackItems?: readonly ExplorerDragAvatarStackItem[];
   sourcePaths: readonly string[];
   operation: ExplorerDragOperation;
   primaryLabel?: string | null;
@@ -1050,6 +1078,10 @@ function buildExplorerDragSnapshot(args: {
     sourceItemKind:
       args.sourceItemKind ?? explorerDragInteractionState.sourceItemKind,
     sourceIconSrc: args.sourceIconSrc ?? explorerDragInteractionState.sourceIconSrc,
+    sourceStackItems:
+      args.sourceStackItems != null
+        ? stabilizeExplorerDragAvatarStackItems(args.sourceStackItems)
+        : explorerDragInteractionState.sourceStackItems,
     operation: args.operation,
     paths: nextPaths,
     itemCount: nextPaths.length,
@@ -1086,6 +1118,7 @@ export function beginExplorerDragInteraction(args: {
   sourcePrimaryPath?: string | null;
   sourceItemKind?: ExplorerDragAvatarKind;
   sourceIconSrc?: string | null;
+  sourceStackItems?: readonly ExplorerDragAvatarStackItem[];
   sourcePaths: readonly string[];
   operation: ExplorerDragOperation;
   primaryLabel?: string | null;
@@ -1101,6 +1134,10 @@ export function beginExplorerDragInteraction(args: {
     sourcePrimaryPath: args.sourcePrimaryPath ?? currentState.sourcePrimaryPath,
     sourceItemKind: args.sourceItemKind ?? currentState.sourceItemKind,
     sourceIconSrc: args.sourceIconSrc ?? currentState.sourceIconSrc,
+    sourceStackItems:
+      args.sourceStackItems != null
+        ? stabilizeExplorerDragAvatarStackItems(args.sourceStackItems)
+        : currentState.sourceStackItems,
     operation: args.operation,
     paths: stabilizeExplorerPaths(args.sourcePaths),
     itemCount: args.sourcePaths.length,
@@ -1116,6 +1153,7 @@ export function updateExplorerDragInteractionFromPoint(args: {
   sourcePrimaryPath?: string | null;
   sourceItemKind?: ExplorerDragAvatarKind;
   sourceIconSrc?: string | null;
+  sourceStackItems?: readonly ExplorerDragAvatarStackItem[];
   sourcePaths: readonly string[];
   operation: ExplorerDragOperation;
   platform: RuntimePlatform;
@@ -1142,6 +1180,7 @@ export function updateExplorerDragInteractionFromPoint(args: {
       sourcePrimaryPath: args.sourcePrimaryPath,
       sourceItemKind: args.sourceItemKind,
       sourceIconSrc: args.sourceIconSrc,
+      sourceStackItems: args.sourceStackItems,
       sourcePaths: args.sourcePaths,
       operation: args.operation,
       primaryLabel: args.primaryLabel,
@@ -1168,6 +1207,7 @@ export function updateExplorerDragInteractionFromResolvedHit(args: {
   sourcePrimaryPath?: string | null;
   sourceItemKind?: ExplorerDragAvatarKind;
   sourceIconSrc?: string | null;
+  sourceStackItems?: readonly ExplorerDragAvatarStackItem[];
   sourcePaths: readonly string[];
   operation: ExplorerDragOperation;
   platform: RuntimePlatform;
@@ -1194,6 +1234,7 @@ export function updateExplorerDragInteractionFromResolvedHit(args: {
       sourcePrimaryPath: args.sourcePrimaryPath,
       sourceItemKind: args.sourceItemKind,
       sourceIconSrc: args.sourceIconSrc,
+      sourceStackItems: args.sourceStackItems,
       sourcePaths: args.sourcePaths,
       operation: args.operation,
       primaryLabel: args.primaryLabel,

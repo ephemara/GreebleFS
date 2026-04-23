@@ -188,16 +188,25 @@ export function ExplorerDragOverlay(): React.ReactElement | null {
           Math.max(1, state.itemCount),
         )
       : 1;
-  const stackOffsets = Array.from({ length: stackDepth }, (_, index) => {
-    const depth = stackDepth - index - 1;
-    return {
-      key: depth,
-      offsetX: depth * -12,
-      offsetY: depth * 10,
-      scale: 1 - depth * 0.045,
-      opacity: 0.2 + depth * 0.18,
-    };
-  });
+  const previewStackItems = state.sourceStackItems.slice(0, stackDepth);
+  const stackOffsets = Array.from(
+    { length: Math.max(0, stackDepth - 1) },
+    (_, index) => {
+      const depth = stackDepth - index - 1;
+      const previewItem = previewStackItems[index + 1] ?? null;
+      const rotation = depth % 2 === 0 ? -3.5 : 2.5;
+      return {
+        key: depth,
+        offsetX: depth * -14,
+        offsetY: depth * 11,
+        scale: 1 - depth * 0.05,
+        opacity: 0.18 + depth * 0.18,
+        previewItem,
+        rotation,
+      };
+    },
+  );
+  const overflowPreviewCount = Math.max(0, state.itemCount - previewStackItems.length);
 
   const primaryLabel =
     state.primaryLabel?.trim() ||
@@ -275,7 +284,7 @@ export function ExplorerDragOverlay(): React.ReactElement | null {
               style={{
                 position: "absolute",
                 inset: "12px 0 0 0",
-                transform: `translate(${layer.offsetX}px, ${layer.offsetY}px) scale(${layer.scale})`,
+                transform: `translate(${layer.offsetX}px, ${layer.offsetY}px) rotate(${layer.rotation}deg) scale(${layer.scale})`,
                 transformOrigin: "top left",
                 borderRadius: 22,
                 border: "1px solid rgba(255,255,255,0.08)",
@@ -287,7 +296,31 @@ export function ExplorerDragOverlay(): React.ReactElement | null {
                 WebkitBackdropFilter: "blur(14px)",
                 opacity: layer.opacity,
               }}
-            />
+            >
+              {layer.previewItem ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 14,
+                    left: 14,
+                    width: 28,
+                    height: 28,
+                    borderRadius: 10,
+                    display: "grid",
+                    placeItems: "center",
+                    background: "rgba(255,255,255,0.08)",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+                  }}
+                >
+                  {renderAvatarIcon({
+                    iconSrc: layer.previewItem.iconSrc,
+                    itemKind: layer.previewItem.itemKind,
+                    size: 16,
+                    color: "var(--overlay-text-primary)",
+                  })}
+                </div>
+              ) : null}
+            </div>
           ))}
         <div
           style={{
@@ -410,6 +443,58 @@ export function ExplorerDragOverlay(): React.ReactElement | null {
               >
                 {operationChipLabel}
               </div>
+              {previewStackItems.length > 1 ? (
+                <div
+                  style={{
+                    marginTop: 9,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    minWidth: 0,
+                  }}
+                >
+                  {previewStackItems.slice(1).map((item) => (
+                    <div
+                      key={item.path}
+                      title={item.label}
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 8,
+                        display: "grid",
+                        placeItems: "center",
+                        background: "rgba(255,255,255,0.06)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {renderAvatarIcon({
+                        iconSrc: item.iconSrc,
+                        itemKind: item.itemKind,
+                        size: 14,
+                        color: "var(--overlay-text-primary)",
+                      })}
+                    </div>
+                  ))}
+                  {overflowPreviewCount > 0 ? (
+                    <div
+                      style={{
+                        borderRadius: 999,
+                        padding: "3px 8px",
+                        background: "rgba(255,255,255,0.06)",
+                        color: "var(--overlay-text-muted)",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: "0.06em",
+                        flexShrink: 0,
+                      }}
+                    >
+                      +{overflowPreviewCount}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
 

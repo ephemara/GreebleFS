@@ -141,7 +141,16 @@ import {
 import type { ExplorerLayoutMode } from "../config/layoutProfiles";
 import {
   EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
+  EXPLORER_DRAG_AUTOSCROLL_EDGE_PX,
+  EXPLORER_DRAG_AUTOSCROLL_MAX_SPEED_PX_PER_SECOND,
+  EXPLORER_DRAG_AUTOSCROLL_MIN_SPEED_PX_PER_SECOND,
+  EXPLORER_DRAG_AUTOSCROLL_OUTSET_PX,
   EXPLORER_DRAG_DWELL_INDICATOR_HEIGHT_PX,
+  EXPLORER_DRAG_FOLDER_DWELL_LIFT_PX,
+  EXPLORER_DRAG_FOLDER_DWELL_SCALE,
+  EXPLORER_DRAG_FOLDER_INHALE_LIFT_PX,
+  EXPLORER_DRAG_FOLDER_INHALE_SCALE,
+  EXPLORER_DRAG_OVERLAY_MAX_STACK_DEPTH,
   EXPLORER_DRAG_SOURCE_GHOST_OPACITY,
   EXPLORER_DRAG_SOURCE_GHOST_SCALE,
   EXPLORER_DRAG_TARGET_HIGHLIGHT_OPACITY,
@@ -213,6 +222,7 @@ import {
   updateExplorerDragInteractionFromPoint,
   updateExplorerDragInteractionFromResolvedHit,
   useExplorerDragInteractionSelector,
+  type ExplorerDragAvatarStackItem,
   type ExplorerDragIntent,
   type ExplorerDragSourceKind,
   type ExplorerDropPointerLike,
@@ -3024,6 +3034,7 @@ type ExplorerInternalPointerDragCandidate = {
   primaryLabel: string;
   sourceItemKind: "file" | "folder" | "mixed";
   sourceIconSrc: string;
+  sourceStackItems: ExplorerDragAvatarStackItem[];
   started: boolean;
   startClientX: number;
   startClientY: number;
@@ -3071,6 +3082,54 @@ function createExplorerScopeDropOverlayHostStyle(): CSSProperties {
     justifyContent: "center",
     pointerEvents: "none",
   };
+}
+
+function getExplorerDragAutoScrollVelocity(args: {
+  viewport: HTMLDivElement;
+  pointer: { x: number; y: number };
+}): number {
+  const rect = args.viewport.getBoundingClientRect();
+  const withinHorizontalBounds =
+    args.pointer.x >= rect.left - EXPLORER_DRAG_AUTOSCROLL_OUTSET_PX &&
+    args.pointer.x <= rect.right + EXPLORER_DRAG_AUTOSCROLL_OUTSET_PX;
+  const withinVerticalBounds =
+    args.pointer.y >= rect.top - EXPLORER_DRAG_AUTOSCROLL_OUTSET_PX &&
+    args.pointer.y <= rect.bottom + EXPLORER_DRAG_AUTOSCROLL_OUTSET_PX;
+  if (!withinHorizontalBounds || !withinVerticalBounds) {
+    return 0;
+  }
+
+  const maxScrollTop = args.viewport.scrollHeight - args.viewport.clientHeight;
+  if (maxScrollTop <= 0) {
+    return 0;
+  }
+
+  const topDistance = args.pointer.y - rect.top;
+  const bottomDistance = rect.bottom - args.pointer.y;
+  const edgeSize = EXPLORER_DRAG_AUTOSCROLL_EDGE_PX;
+
+  const resolveVelocity = (distance: number, direction: 1 | -1): number => {
+    const clampedDistance = Math.max(0, Math.min(edgeSize, distance));
+    const intensity = 1 - clampedDistance / edgeSize;
+    if (intensity <= 0) {
+      return 0;
+    }
+    const speed =
+      EXPLORER_DRAG_AUTOSCROLL_MIN_SPEED_PX_PER_SECOND +
+      (EXPLORER_DRAG_AUTOSCROLL_MAX_SPEED_PX_PER_SECOND -
+        EXPLORER_DRAG_AUTOSCROLL_MIN_SPEED_PX_PER_SECOND) *
+        intensity *
+        intensity;
+    return speed * direction;
+  };
+
+  if (topDistance <= edgeSize && args.viewport.scrollTop > 0) {
+    return resolveVelocity(topDistance, -1);
+  }
+  if (bottomDistance <= edgeSize && args.viewport.scrollTop < maxScrollTop) {
+    return resolveVelocity(bottomDistance, 1);
+  }
+  return 0;
 }
 
 function applyEditorSearchFocus(
@@ -7345,6 +7404,12 @@ export function FileExplorer({
   const previewSaveTimer = useRef<number | null>(null);
   const internalPointerDragCandidateRef =
     useRef<ExplorerInternalPointerDragCandidate | null>(null);
+  const internalDragAutoScrollFrameRef = useRef<number | null>(null);
+  const internalDragAutoScrollLastFrameRef = useRef<number | null>(null);
+  const internalDragAutoScrollPointerRef = useRef<{
+    x: number;
+    y: number;
+  } | null>(null);
   const suppressExplorerEntryClickPathRef = useRef<string | null>(null);
   const suppressExplorerEntryClickTimerRef = useRef<number | null>(null);
   const shaderPreviewSelectionMemoryRef = useRef<
@@ -7611,6 +7676,123 @@ export function FileExplorer({
       commitExplorerViewportScrollTop(scrollTop);
     },
     [commitExplorerViewportScrollTop],
+  );
+
+  const clearExplorerInternalDragAutoScroll = useCallback(() => {
+    if (
+      internalDragAutoScrollFrameRef.current !== null &&
+      typeof cancelAnimationFrame === "function"
+    ) {
+      cancelAnimationFrame(internalDragAutoScrollFrameRef.current);
+    }
+    internalDragAutoScrollFrameRef.current = null;
+    internalDragAutoScrollLastFrameRef.current = null;
+    internalDragAutoScrollPointerRef.current = null;
+  }, []);
+
+  const stepExplorerInternalDragAutoScroll = useCallback(
+    (frameTime: number) => {
+      const viewport = explorerViewportRef.current;
+      const pointer = internalDragAutoScrollPointerRef.current;
+      const candidate = internalPointerDragCandidateRef.current;
+      if (
+        !viewport ||
+        !pointer ||
+        !candidate ||
+        !candidate.started ||
+        candidate.intent !== "internal"
+      ) {
+        clearExplorerInternalDragAutoScroll();
+        return;
+      }
+
+      const velocity = getExplorerDragAutoScrollVelocity({
+        viewport,
+        pointer,
+      });
+      if (Math.abs(velocity) < 0.5) {
+        clearExplorerInternalDragAutoScroll();
+        return;
+      }
+
+      const lastFrameTime = internalDragAutoScrollLastFrameRef.current;
+      const deltaMs =
+        lastFrameTime == null
+          ? 16
+          : Math.max(12, Math.min(32, frameTime - lastFrameTime));
+      internalDragAutoScrollLastFrameRef.current = frameTime;
+
+      const maxScrollTop = Math.max(
+        0,
+        viewport.scrollHeight - viewport.clientHeight,
+      );
+      const nextScrollTop = Math.max(
+        0,
+        Math.min(
+          maxScrollTop,
+          viewport.scrollTop + (velocity * deltaMs) / 1000,
+        ),
+      );
+      if (Math.abs(nextScrollTop - viewport.scrollTop) > 0.5) {
+        setExplorerViewportScrollTop(nextScrollTop);
+      }
+
+      updateExplorerDragInteractionFromPoint({
+        pointer,
+        sourceKind: "internal",
+        sourceScopeId: explorerDropScopeId,
+        sourcePrimaryPath: candidate.sourceEntryPath,
+        sourceItemKind: candidate.sourceItemKind,
+        sourceIconSrc: candidate.sourceIconSrc,
+        sourceStackItems: candidate.sourceStackItems,
+        sourcePaths: candidate.sourcePaths,
+        operation: getExplorerDragInteractionState().operation,
+        platform: runtimePlatform,
+        primaryLabel: candidate.primaryLabel,
+      });
+
+      if (typeof requestAnimationFrame === "function") {
+        internalDragAutoScrollFrameRef.current = requestAnimationFrame(
+          stepExplorerInternalDragAutoScroll,
+        );
+      } else {
+        internalDragAutoScrollFrameRef.current = null;
+      }
+    },
+    [
+      clearExplorerInternalDragAutoScroll,
+      explorerDropScopeId,
+      runtimePlatform,
+      setExplorerViewportScrollTop,
+    ],
+  );
+
+  const updateExplorerInternalDragAutoScroll = useCallback(
+    (pointer: { x: number; y: number }) => {
+      internalDragAutoScrollPointerRef.current = pointer;
+      const viewport = explorerViewportRef.current;
+      if (!viewport) {
+        return;
+      }
+      const velocity = getExplorerDragAutoScrollVelocity({
+        viewport,
+        pointer,
+      });
+      if (Math.abs(velocity) < 0.5) {
+        clearExplorerInternalDragAutoScroll();
+        return;
+      }
+      if (
+        internalDragAutoScrollFrameRef.current === null &&
+        typeof requestAnimationFrame === "function"
+      ) {
+        internalDragAutoScrollLastFrameRef.current = null;
+        internalDragAutoScrollFrameRef.current = requestAnimationFrame(
+          stepExplorerInternalDragAutoScroll,
+        );
+      }
+    },
+    [clearExplorerInternalDragAutoScroll, stepExplorerInternalDragAutoScroll],
   );
 
   const shouldHandleExplorerLayoutWheelEvent = useCallback(
@@ -9997,6 +10179,30 @@ export function FileExplorer({
         }),
       ),
     [folderClickMode, getRenderableIconSrc],
+  );
+
+  const buildExplorerDragAvatarStackItems = useCallback(
+    (
+      dragEntries: readonly FileEntry[],
+      primaryEntry: FileEntry,
+    ): ExplorerDragAvatarStackItem[] => {
+      const orderedEntries = [
+        primaryEntry,
+        ...dragEntries.filter((candidate) => candidate.path !== primaryEntry.path),
+      ].slice(0, EXPLORER_DRAG_OVERLAY_MAX_STACK_DEPTH);
+
+      return orderedEntries.map((candidate) => ({
+        path: candidate.path,
+        label: candidate.name || getPathLeaf(candidate.path) || "Item",
+        iconSrc: getExplorerEntryIconSrc(
+          candidate,
+          selected.has(candidate.path),
+          false,
+        ),
+        itemKind: candidate.is_dir ? "folder" : "file",
+      }));
+    },
+    [getExplorerEntryIconSrc, selected],
   );
 
   const canRenderEntryThumbnail = useCallback(
@@ -13521,6 +13727,7 @@ export function FileExplorer({
         sourcePrimaryPath: candidate.sourceEntryPath,
         sourceItemKind: candidate.sourceItemKind,
         sourceIconSrc: candidate.sourceIconSrc,
+        sourceStackItems: candidate.sourceStackItems,
         sourcePaths: candidate.sourcePaths,
         operation: resolveExplorerDropOperation(event, runtimePlatform),
         primaryLabel: candidate.primaryLabel,
@@ -13561,12 +13768,18 @@ export function FileExplorer({
         primaryLabel: entry.name || getPathLeaf(entry.path) || "Item",
         sourceItemKind: dragSelectionKind,
         sourceIconSrc: getExplorerEntryIconSrc(entry, false, false),
+        sourceStackItems: buildExplorerDragAvatarStackItems(dragEntries, entry),
         started: false,
         startClientX: event.clientX,
         startClientY: event.clientY,
       };
     },
-    [currentPathIsHome, resolveEntriesForAction, supportsNativeDragOut],
+    [
+      buildExplorerDragAvatarStackItems,
+      currentPathIsHome,
+      resolveEntriesForAction,
+      supportsNativeDragOut,
+    ],
   );
 
   const onExplorerEntryPointerCancel = useCallback(
@@ -13577,10 +13790,11 @@ export function FileExplorer({
       }
 
       internalPointerDragCandidateRef.current = null;
+      clearExplorerInternalDragAutoScroll();
       clearExplorerSharedDragSession();
       endExplorerDragInteraction();
     },
-    [],
+    [clearExplorerInternalDragAutoScroll],
   );
 
   const executeExplorerDropTransfer = useCallback(
@@ -13660,10 +13874,15 @@ export function FileExplorer({
         sourcePrimaryPath: candidate.sourceEntryPath,
         sourceItemKind: candidate.sourceItemKind,
         sourceIconSrc: candidate.sourceIconSrc,
+        sourceStackItems: candidate.sourceStackItems,
         sourcePaths: candidate.sourcePaths,
         operation: resolveExplorerDropOperation(event, runtimePlatform),
         platform: runtimePlatform,
         primaryLabel: candidate.primaryLabel,
+      });
+      updateExplorerInternalDragAutoScroll({
+        x: event.clientX,
+        y: event.clientY,
       });
     };
 
@@ -13674,6 +13893,7 @@ export function FileExplorer({
       }
 
       internalPointerDragCandidateRef.current = null;
+      clearExplorerInternalDragAutoScroll();
 
       if (!candidate.started || candidate.intent !== "internal") {
         clearExplorerSharedDragSession();
@@ -13696,6 +13916,7 @@ export function FileExplorer({
         sourcePrimaryPath: candidate.sourceEntryPath,
         sourceItemKind: candidate.sourceItemKind,
         sourceIconSrc: candidate.sourceIconSrc,
+        sourceStackItems: candidate.sourceStackItems,
         sourcePaths: candidate.sourcePaths,
         operation,
         platform: runtimePlatform,
@@ -13759,6 +13980,7 @@ export function FileExplorer({
     window.addEventListener("keydown", handleEscape);
 
     return () => {
+      clearExplorerInternalDragAutoScroll();
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
@@ -13767,10 +13989,12 @@ export function FileExplorer({
     };
   }, [
     beginExplorerInternalPointerDrag,
+    clearExplorerInternalDragAutoScroll,
     executeTransferRequest,
     refresh,
     runtimePlatform,
     startExplorerNativeOutDrag,
+    updateExplorerInternalDragAutoScroll,
   ]);
 
   const onExplorerDropScopeDragOver = (e: React.DragEvent<HTMLElement>) => {
@@ -13953,6 +14177,46 @@ export function FileExplorer({
       activeScopedTargetSurfaceId,
       internalDragSourcePathSet,
     ],
+  );
+  const getExplorerEntryIconStageStyle = useCallback(
+    (
+      entry: Pick<FileEntry, "is_dir">,
+      dragPresentation: {
+        isDropTarget: boolean;
+        isDwellTarget: boolean;
+      },
+      hasThumbnail: boolean,
+    ): CSSProperties | undefined => {
+      if (
+        !entry.is_dir ||
+        (!dragPresentation.isDropTarget && !dragPresentation.isDwellTarget)
+      ) {
+        return undefined;
+      }
+
+      const scale = dragPresentation.isDwellTarget
+        ? EXPLORER_DRAG_FOLDER_DWELL_SCALE
+        : EXPLORER_DRAG_FOLDER_INHALE_SCALE;
+      const liftPx = dragPresentation.isDwellTarget
+        ? EXPLORER_DRAG_FOLDER_DWELL_LIFT_PX
+        : EXPLORER_DRAG_FOLDER_INHALE_LIFT_PX;
+
+      return {
+        transform: `translateY(-${liftPx}px) scale(${scale})`,
+        filter: dragPresentation.isDwellTarget
+          ? "saturate(1.08) brightness(1.06)"
+          : "saturate(1.04) brightness(1.03)",
+        boxShadow: hasThumbnail
+          ? `0 14px 28px ${accent}26, inset 0 1px 0 rgba(255,255,255,0.08)`
+          : `0 12px 24px ${accent}20`,
+        background: hasThumbnail
+          ? undefined
+          : `color-mix(in srgb, ${accent} 10%, transparent)`,
+        transition:
+          "transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 160ms ease, box-shadow 160ms ease, background 140ms ease",
+      };
+    },
+    [accent],
   );
 
   const effectiveModeProfile = useMemo(
@@ -19493,14 +19757,20 @@ export function FileExplorer({
     const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
     const isSel = selected.has(entry.path);
     const isDrop = dragOver === entry.path && entry.is_dir;
+    const isDragHoverTarget = isDrop || dragPresentation.isDwellTarget;
     const isRenaming = rename.active && rename.path === entry.path;
-    const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDrop);
+    const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDragHoverTarget);
     const tableThumbnailStageSize = densityStop.table
       ? Math.max(densityStop.table.iconSize + 10, 28)
       : 0;
     const tableThumbnail = densityStop.table
       ? getRenderableEntryThumbnail(entry, tableThumbnailStageSize)
       : null;
+    const iconStagePresentation = getExplorerEntryIconStageStyle(
+      entry,
+      dragPresentation,
+      Boolean(tableThumbnail),
+    );
     const semanticTableBaseSurface = idleEntrySurface;
     const semanticTableRestingSurface = isDrop
       ? dropEntrySurface
@@ -19510,7 +19780,7 @@ export function FileExplorer({
     const semanticTableMotion = bindExplorerEntryMotion({
       entry,
       isSelected: isSel,
-      isDropTarget: isDrop,
+      isDropTarget: isDragHoverTarget,
       baseTransform: semanticTableRestingSurface.transform,
       motionStepIndex,
       restingSurface: semanticTableBaseSurface,
@@ -19595,6 +19865,7 @@ export function FileExplorer({
                 boxShadow: tableThumbnail
                   ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
                   : undefined,
+                ...(iconStagePresentation ?? {}),
               }}
             >
               <ExplorerEntryThumbnailStageContent
@@ -19605,7 +19876,10 @@ export function FileExplorer({
                 iconTheme={themeIconTheme}
                 motionAppearance={appearance}
                 motionStepIndex={motionStepIndex}
-                motionTriggerState={{ select: isSel, dropHover: isDrop }}
+                motionTriggerState={{
+                  select: isSel,
+                  dropHover: isDragHoverTarget,
+                }}
                 stageSize={tableThumbnailStageSize}
                 thumbnail={tableThumbnail}
               />
@@ -19713,7 +19987,7 @@ export function FileExplorer({
     const semanticGridMotion = bindExplorerEntryMotion({
       entry,
       isSelected: isSel,
-      isDropTarget: isDrop,
+      isDropTarget: isDragHoverTarget,
       baseTransform: semanticGridRestingSurface.transform,
       motionStepIndex,
       restingSurface: semanticGridBaseSurface,
@@ -19789,6 +20063,11 @@ export function FileExplorer({
             boxShadow: gridThumbnail
               ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
               : undefined,
+            ...(getExplorerEntryIconStageStyle(
+              entry,
+              dragPresentation,
+              Boolean(gridThumbnail),
+            ) ?? {}),
           }}
         >
           <ExplorerEntryThumbnailStageContent
@@ -19799,7 +20078,10 @@ export function FileExplorer({
             iconTheme={themeIconTheme}
             motionAppearance={appearance}
             motionStepIndex={motionStepIndex}
-            motionTriggerState={{ select: isSel, dropHover: isDrop }}
+            motionTriggerState={{
+              select: isSel,
+              dropHover: isDragHoverTarget,
+            }}
             stageSize={iconStageSize}
             thumbnail={gridThumbnail}
           />
@@ -20024,6 +20306,7 @@ export function FileExplorer({
     const isSel = selected.has(node.entry.path);
     const isDrop = dragOver === node.entry.path && node.entry.is_dir;
     const dragPresentation = getExplorerEntryDragPresentation(node.entry);
+    const isDragHoverTarget = isDrop || dragPresentation.isDwellTarget;
     const isPinned = constellationPinnedPathSet.has(node.entry.path);
     const isRouteAnchor = constellationRouteState.anchorPath === node.entry.path;
     const isRouteTarget = constellationRouteTargetSet.has(node.entry.path);
@@ -20036,7 +20319,17 @@ export function FileExplorer({
       !isRouteTarget &&
       !isSel;
     const isRenaming = rename.active && rename.path === node.entry.path;
-    const iconSrc = getExplorerEntryIconSrc(node.entry, isSel, isDrop);
+    const iconSrc = getExplorerEntryIconSrc(
+      node.entry,
+      isSel,
+      isDragHoverTarget,
+    );
+    const thumbnail = getRenderableEntryThumbnail(node.entry, node.size);
+    const iconStagePresentation = getExplorerEntryIconStageStyle(
+      node.entry,
+      dragPresentation,
+      Boolean(thumbnail),
+    );
     const showsLabel =
       node.labelVisible || isSel || isDrop || isPinned || isRouteTarget || isRouteAnchor;
     const highlightBackground = isDrop
@@ -20086,7 +20379,7 @@ export function FileExplorer({
     const constellationNodeMotion = bindExplorerEntryMotion({
       entry: node.entry,
       isSelected: isSel,
-      isDropTarget: isDrop,
+      isDropTarget: isDragHoverTarget,
       baseTransform: `translate(-50%, -50%) ${restingTransform}`,
       motionStepIndex,
       restingSurface: idleEntrySurface,
@@ -20202,30 +20495,24 @@ export function FileExplorer({
             overflow: "hidden",
             boxShadow:
               node.emphasis === "selected" ? `0 0 0 1px ${accent}55` : "none",
+            ...(iconStagePresentation ?? {}),
           }}
         >
-          {(() => {
-            const thumbnail = getRenderableEntryThumbnail(
-              node.entry,
-              node.size,
-            );
-            return (
-              <ExplorerEntryThumbnailStageContent
-                entry={node.entry}
-                fallbackIconSize={Math.max(14, node.size - 12)}
-                fallbackIconSrc={iconSrc}
-                hoverScrubEnabled={
-                  hoveredVideoThumbnailPath === node.entry.path
-                }
-                iconTheme={themeIconTheme}
-                motionAppearance={appearance}
-                motionStepIndex={motionStepIndex}
-                motionTriggerState={{ select: isSel, dropHover: isDrop }}
-                stageSize={node.size}
-                thumbnail={thumbnail}
-              />
-            );
-          })()}
+          <ExplorerEntryThumbnailStageContent
+            entry={node.entry}
+            fallbackIconSize={Math.max(14, node.size - 12)}
+            fallbackIconSrc={iconSrc}
+            hoverScrubEnabled={hoveredVideoThumbnailPath === node.entry.path}
+            iconTheme={themeIconTheme}
+            motionAppearance={appearance}
+            motionStepIndex={motionStepIndex}
+            motionTriggerState={{
+              select: isSel,
+              dropHover: isDragHoverTarget,
+            }}
+            stageSize={node.size}
+            thumbnail={thumbnail}
+          />
         </div>
         {showsLabel && (
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -20832,9 +21119,15 @@ export function FileExplorer({
     const isSel = selected.has(entry.path);
     const isDrop = dragOver === entry.path && entry.is_dir;
     const dragPresentation = getExplorerEntryDragPresentation(entry);
+    const isDragHoverTarget = isDrop || dragPresentation.isDwellTarget;
     const isRenaming = rename.active && rename.path === entry.path;
-    const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDrop);
+    const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDragHoverTarget);
     const thumbnail = getRenderableEntryThumbnail(entry, 42);
+    const iconStagePresentation = getExplorerEntryIconStageStyle(
+      entry,
+      dragPresentation,
+      Boolean(thumbnail),
+    );
     const timelineBaseSurface: ExplorerEntrySurfaceState = {
       background: "var(--overlay-explorer-chip-bg)",
       borderColor: "var(--overlay-explorer-chip-border)",
@@ -20849,7 +21142,7 @@ export function FileExplorer({
     const timelineEntryMotion = bindExplorerEntryMotion({
       entry,
       isSelected: isSel,
-      isDropTarget: isDrop,
+      isDropTarget: isDragHoverTarget,
       baseTransform: timelineRestingSurface.transform,
       motionStepIndex,
       restingSurface: timelineBaseSurface,
@@ -20913,6 +21206,7 @@ export function FileExplorer({
             justifyContent: "center",
             background: "rgba(255,255,255,0.05)",
             overflow: "hidden",
+            ...(iconStagePresentation ?? {}),
           }}
         >
           <ExplorerEntryThumbnailStageContent
@@ -20923,7 +21217,10 @@ export function FileExplorer({
             iconTheme={themeIconTheme}
             motionAppearance={appearance}
             motionStepIndex={motionStepIndex}
-            motionTriggerState={{ select: isSel, dropHover: isDrop }}
+            motionTriggerState={{
+              select: isSel,
+              dropHover: isDragHoverTarget,
+            }}
             stageSize={42}
             thumbnail={thumbnail}
           />
@@ -21978,21 +22275,29 @@ export function FileExplorer({
                             dragOver === entry.path && entry.is_dir;
                           const dragPresentation =
                             getExplorerEntryDragPresentation(entry);
+                          const isDragHoverTarget =
+                            isDrop || dragPresentation.isDwellTarget;
                           const isRenaming =
                             rename.active && rename.path === entry.path;
                           const iconSrc = getExplorerEntryIconSrc(
                             entry,
                             isSel,
-                            isDrop,
+                            isDragHoverTarget,
                           );
                           const thumbnail = getRenderableEntryThumbnail(
                             entry,
                             activeGridMetrics.iconStageSize,
                           );
+                          const iconStagePresentation =
+                            getExplorerEntryIconStageStyle(
+                              entry,
+                              dragPresentation,
+                              Boolean(thumbnail),
+                            );
                           const gridEntryMotion = bindExplorerEntryMotion({
                             entry,
                             isSelected: isSel,
-                            isDropTarget: isDrop,
+                            isDropTarget: isDragHoverTarget,
                             baseTransform: isDrop
                               ? dropEntrySurface.transform
                               : isSel
@@ -22098,6 +22403,7 @@ export function FileExplorer({
                                     ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
                                     : undefined,
                                   transition: explorerGridStageSizeTransition,
+                                  ...(iconStagePresentation ?? {}),
                                 }}
                               >
                                 <ExplorerEntryThumbnailStageContent
@@ -22110,7 +22416,10 @@ export function FileExplorer({
                                   iconTheme={themeIconTheme}
                                   motionAppearance={appearance}
                                   motionStepIndex={motionStepIndex}
-                                  motionTriggerState={{ select: isSel, dropHover: isDrop }}
+                                  motionTriggerState={{
+                                    select: isSel,
+                                    dropHover: isDragHoverTarget,
+                                  }}
                                   stageSize={activeGridMetrics.iconStageSize}
                                   thumbnail={thumbnail}
                                 />
@@ -22275,12 +22584,14 @@ export function FileExplorer({
                         const isDrop = dragOver === entry.path && entry.is_dir;
                         const dragPresentation =
                           getExplorerEntryDragPresentation(entry);
+                        const isDragHoverTarget =
+                          isDrop || dragPresentation.isDwellTarget;
                         const isRenaming =
                           rename.active && rename.path === entry.path;
                         const iconSrc = getExplorerEntryIconSrc(
                           entry,
                           isSel,
-                          isDrop,
+                          isDragHoverTarget,
                         );
                         const rowThumbnailStageSize = Math.max(
                           (activeRowMetrics?.iconSize ?? 16) + 12,
@@ -22290,10 +22601,16 @@ export function FileExplorer({
                           entry,
                           rowThumbnailStageSize,
                         );
+                        const iconStagePresentation =
+                          getExplorerEntryIconStageStyle(
+                            entry,
+                            dragPresentation,
+                            Boolean(thumbnail),
+                          );
                         const listEntryMotion = bindExplorerEntryMotion({
                           entry,
                           isSelected: isSel,
-                          isDropTarget: isDrop,
+                          isDropTarget: isDragHoverTarget,
                           baseTransform: isDrop
                             ? dropEntrySurface.transform
                             : isSel
@@ -22401,6 +22718,7 @@ export function FileExplorer({
                                     ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
                                     : undefined,
                                   flexShrink: 0,
+                                  ...(iconStagePresentation ?? {}),
                                 }}
                               >
                                 <ExplorerEntryThumbnailStageContent
@@ -22415,7 +22733,10 @@ export function FileExplorer({
                                   iconTheme={themeIconTheme}
                                   motionAppearance={appearance}
                                   motionStepIndex={motionStepIndex}
-                                  motionTriggerState={{ select: isSel, dropHover: isDrop }}
+                                  motionTriggerState={{
+                                    select: isSel,
+                                    dropHover: isDragHoverTarget,
+                                  }}
                                   stageSize={rowThumbnailStageSize}
                                   thumbnail={thumbnail}
                                 />
@@ -22714,12 +23035,14 @@ export function FileExplorer({
                             dragOver === entry.path && entry.is_dir;
                           const dragPresentation =
                             getExplorerEntryDragPresentation(entry);
+                          const isDragHoverTarget =
+                            isDrop || dragPresentation.isDwellTarget;
                           const isRenaming =
                             rename.active && rename.path === entry.path;
                           const iconSrc = getExplorerEntryIconSrc(
                             entry,
                             isSel,
-                            isDrop,
+                            isDragHoverTarget,
                           );
                           const rowThumbnailStageSize = Math.max(
                             (activeRowMetrics?.iconSize ?? 16) + 12,
@@ -22729,11 +23052,17 @@ export function FileExplorer({
                             entry,
                             rowThumbnailStageSize,
                           );
+                          const iconStagePresentation =
+                            getExplorerEntryIconStageStyle(
+                              entry,
+                              dragPresentation,
+                              Boolean(thumbnail),
+                            );
                           const isDetailsMode = effectiveViewMode === "details";
                           const tableEntryMotion = bindExplorerEntryMotion({
                             entry,
                             isSelected: isSel,
-                            isDropTarget: isDrop,
+                            isDropTarget: isDragHoverTarget,
                             baseTransform: isDrop
                               ? dropEntrySurface.transform
                               : isSel
@@ -22826,6 +23155,7 @@ export function FileExplorer({
                                         ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
                                         : undefined,
                                       flexShrink: 0,
+                                      ...(iconStagePresentation ?? {}),
                                     }}
                                   >
                                     <ExplorerEntryThumbnailStageContent
@@ -22840,7 +23170,10 @@ export function FileExplorer({
                                       iconTheme={themeIconTheme}
                                       motionAppearance={appearance}
                                       motionStepIndex={motionStepIndex}
-                                      motionTriggerState={{ select: isSel, dropHover: isDrop }}
+                                      motionTriggerState={{
+                                        select: isSel,
+                                        dropHover: isDragHoverTarget,
+                                      }}
                                       stageSize={rowThumbnailStageSize}
                                       thumbnail={thumbnail}
                                     />
