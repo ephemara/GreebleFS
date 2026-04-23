@@ -15,6 +15,7 @@
         "title": "GreebleFS",
         "width": 1000,
         "height": 500,
+        "dragDropEnabled": false,
         "transparent": true,
         "decorations": false,
         "visible": false,

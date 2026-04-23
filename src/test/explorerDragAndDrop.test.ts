@@ -229,6 +229,30 @@ describe("explorerDragAndDrop", () => {
     ).toEqual(["/workspace/from-session.txt"]);
   });
 
+  it("reads external file paths from text/uri-list before falling back to plain text", () => {
+    const uriListTransfer = {
+      files: [],
+      getData: vi.fn((kind: string) => {
+        if (kind === "text/uri-list") {
+          return "file:///workspace/alpha%20beta.txt\r\n# comment\r\nfile:///workspace/gamma.txt";
+        }
+        if (kind === "text/plain") {
+          return "/workspace/plain-text.txt";
+        }
+        return "";
+      }),
+    } as unknown as DataTransfer;
+
+    expect(
+      readExplorerPathsFromDataTransfer({
+        dataTransfer: uriListTransfer,
+      }),
+    ).toEqual([
+      "/workspace/alpha beta.txt",
+      "/workspace/gamma.txt",
+    ]);
+  });
+
   it("rejects descendant drops before the transfer path runs", () => {
     expect(
       validateExplorerDropTarget({

@@ -19,6 +19,26 @@
 
 # 2026-04-22 - Sovereign Mobile PWA First Slice Now Runs Through lan_share
 
+# 2026-04-22 - Explorer Drag/Drop Is DOM-First Again On Linux And Tauri Dev
+
+- The previous explorer drag runtime was structurally better than the old pane-local handlers, but it still felt broken on KDE Plasma / Wayland because two lower-level assumptions were wrong:
+  - plain in-app drags defaulted to the native drag-out bridge instead of staying internal to the explorer surface
+  - the registered `scope-root` only covered the main file plane, so toolbar / preview / rail / other explorer chrome still produced dead zones or random fallback behavior
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now treats plain entry drags as `internal` by default. Native drag-out is explicit (`Alt` on drag start) instead of hijacking every in-app drag.
+  - The explorer `scope-root` binding now lives on the outer `data-overlay-explorer` shell, not just the main file plane. Any pointer position inside the explorer can now fall back to the current folder when no explicit directory/navigation target wins.
+  - DOM drop routing now keeps external drops as `copy` by default while internal explorer moves still use the existing move/copy modifier rules.
+  - `src/components/explorer/explorerDragAndDrop.ts` now reads external file paths from `text/uri-list` and `DataTransfer.files[*].path` before falling back to `text/plain` or the shared session, so DOM-first drops from desktop file managers still resolve concrete filesystem paths.
+  - `src-tauri/tauri.conf.json` now sets `dragDropEnabled: false` on the main webview. This is intentional: Tauri's internal file-drop system conflicts with HTML5 draggable surfaces and was the wrong ownership model for explorer-internal drag interactions.
+- Durable product note:
+  - For explorer file moves, treat DOM drag/drop as the primary interaction system and Tauri native drag-drop events as optional supplemental input, not the source of truth.
+  - If someone is tempted to flip `dragDropEnabled` back on to "fix" external file imports, they will likely break in-app draggable behavior again. Extend the DOM payload parsing or add a dedicated native bridge instead of re-enabling Tauri's webview-owned drag system by default.
+  - Current-folder fallback should stay attached to the whole explorer shell. Do not re-scope it back down to only the content pane unless the UX explicitly wants chrome/preview/rail areas to reject drops.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerDragAndDrop.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "keeps plain explorer drags internal while keeping in-app payloads available|moves multi-selected files into the hovered folder without leaking the drop to the viewport root|drops into the current folder when hovering explorer chrome outside the main file plane|moves native same-window drags into the hovered folder via the Tauri drag-drop listener|drops native same-window drags into the current folder when the pointer is over a file card|starts the native drag bridge only when Alt is held for supported local entries" --pool=forks --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json` with no touched-file errors in the explorer drag path
+
 - GreebleFS now has a dedicated mobile-first share mode implemented inside the existing Axum `lan_share` subsystem instead of trying to remote the desktop Tauri shell into Safari.
 - Durable implementation shape:
   - Added a separate Vite/React build surface for mobile in `src-mobile/` plus `vite.mobile.config.ts`. This bundle is browser-safe by design and must stay free of `@tauri-apps/api` imports.

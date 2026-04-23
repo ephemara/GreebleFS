@@ -198,6 +198,7 @@ import {
   updateExplorerDragInteractionFromResolvedHit,
   useExplorerDragInteractionSelector,
   type ExplorerDragIntent,
+  type ExplorerDragSourceKind,
   type ExplorerDropPointerLike,
 } from "./explorer/explorerDragAndDrop";
 import {
@@ -1902,6 +1903,18 @@ function resolveExplorerDropOperation(
   }
 
   return event.ctrlKey ? "copy" : "move";
+}
+
+function resolveExplorerDropOperationForSource(
+  event: Pick<React.DragEvent, "altKey" | "ctrlKey">,
+  sourceKind: ExplorerDragSourceKind,
+  platform: RuntimePlatform,
+): FileTransferOperation {
+  if (sourceKind === "external") {
+    return "copy";
+  }
+
+  return resolveExplorerDropOperation(event, platform);
 }
 
 function formatExplorerNativeDragError(error: unknown): string {
@@ -13631,7 +13644,11 @@ export function FileExplorer({
       return;
     }
     const dragPayload = resolveExplorerDragPayload(e.dataTransfer);
-    const dropOperation = resolveExplorerDropOperation(e, runtimePlatform);
+    const dropOperation = resolveExplorerDropOperationForSource(
+      e,
+      dragPayload.sourceKind,
+      runtimePlatform,
+    );
     const fallbackEventHit = resolveExplorerDropHitFromElement(
       e.target instanceof Element ? e.target : e.currentTarget,
     );
@@ -13704,7 +13721,7 @@ export function FileExplorer({
       await executeExplorerDropTransfer(
         targetPath,
         e.dataTransfer,
-        resolveExplorerDropOperation(e, runtimePlatform),
+        interactionState.operation,
       );
     } catch (dropError) {
       setError(String(dropError));

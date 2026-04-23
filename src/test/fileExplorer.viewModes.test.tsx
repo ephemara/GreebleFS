@@ -4813,7 +4813,7 @@ const value = 1;
     });
   });
 
-  it("starts native drag on plain explorer drags while keeping in-app payloads available", async () => {
+  it("keeps plain explorer drags internal while keeping in-app payloads available", async () => {
     renderExplorer();
     const entry = await screen.findByText("notes.txt");
     const dataTransfer = createDataTransfer();
@@ -4827,7 +4827,7 @@ const value = 1;
 
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       "application/x-overlayterm-drag-intent",
-      "native-out",
+      "internal",
     );
     expect(dataTransfer.setDragImage).toHaveBeenCalledTimes(1);
     const [dragImage] =
@@ -4839,7 +4839,7 @@ const value = 1;
         .mock.calls.some(
           ([command]) => command === "fs_start_native_file_drag",
         ),
-    ).toBe(true);
+    ).toBe(false);
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       "application/x-overlayterm-paths",
       JSON.stringify([`${REPO_ROOT}\\notes.txt`]),
@@ -4887,6 +4887,66 @@ const value = 1;
         targetDir: `${REPO_ROOT}\\alpha`,
         sources: [`${REPO_ROOT}\\notes.txt`, `${REPO_ROOT}\\preview.png`],
         operation: "move",
+      });
+    });
+  });
+
+  it("drops into the current folder when hovering explorer chrome outside the main file plane", async () => {
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const dataTransfer = createDataTransfer();
+    const explorerRoot = document.querySelector(
+      "[data-overlay-explorer]",
+    ) as HTMLElement | null;
+    if (!(explorerRoot instanceof HTMLElement)) {
+      throw new Error("Expected explorer root");
+    }
+    vi.mocked(dataTransfer.getData).mockImplementation((kind: string) => {
+      if (kind === "text/uri-list") {
+        return "file:///C:/incoming/drop-me.txt";
+      }
+      return "";
+    });
+
+    const originalElementFromPoint = document.elementFromPoint;
+    const mockElementFromPoint = vi.fn(() => explorerRoot);
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: mockElementFromPoint,
+    });
+
+    try {
+      fireEvent.dragOver(explorerRoot, {
+        dataTransfer,
+        clientX: 28,
+        clientY: 28,
+      });
+      fireEvent.drop(explorerRoot, {
+        dataTransfer,
+        clientX: 28,
+        clientY: 28,
+      });
+    } finally {
+      if (originalElementFromPoint) {
+        Object.defineProperty(document, "elementFromPoint", {
+          configurable: true,
+          value: originalElementFromPoint,
+        });
+      } else {
+        Reflect.deleteProperty(document, "elementFromPoint");
+      }
+    }
+
+    await waitFor(() => {
+      const transferCalls = vi
+        .mocked(invoke)
+        .mock.calls.filter(([command]) => command === "fs_transfer_items");
+      expect(transferCalls).toHaveLength(1);
+      expect(transferCalls[0]?.[1]).toMatchObject({
+        targetDir: REPO_ROOT,
+        sources: ["C:\\incoming\\drop-me.txt"],
+        operation: "copy",
       });
     });
   });
@@ -5063,7 +5123,7 @@ const value = 1;
     });
   });
 
-  it("keeps explorer drags internal when Shift is held", async () => {
+  it("starts the native drag bridge only when Alt is held for supported local entries", async () => {
     renderExplorer();
     const entry = await screen.findByText("notes.txt");
     const dataTransfer = createDataTransfer();
@@ -5073,12 +5133,12 @@ const value = 1;
     }
 
     const event = createEvent.dragStart(dragSource, { dataTransfer });
-    Object.defineProperty(event, "shiftKey", { value: true });
+    Object.defineProperty(event, "altKey", { value: true });
     fireEvent(dragSource, event);
 
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       "application/x-overlayterm-drag-intent",
-      "internal",
+      "native-out",
     );
     expect(
       vi
@@ -5086,7 +5146,7 @@ const value = 1;
         .mock.calls.some(
           ([command]) => command === "fs_start_native_file_drag",
         ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("opens an in-app tag dialog and applies comma-separated tags to the current selection", async () => {

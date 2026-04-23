@@ -741,6 +741,71 @@ export function readExplorerPathsFromDataTransfer(args: {
     return [...normalizedFallbackPaths];
   }
 
+  const dedupePaths = (paths: readonly string[]): string[] =>
+    Array.from(
+      new Set(
+        paths.filter(
+          (path): path is string =>
+            typeof path === "string" && path.trim().length > 0,
+        ),
+      ),
+    );
+
+  const readPathsFromUriList = (value: string): string[] => {
+    if (!value.trim()) {
+      return [];
+    }
+
+    return dedupePaths(
+      value
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith("#"))
+        .map((line) => {
+          if (!/^file:/i.test(line)) {
+            return null;
+          }
+
+          try {
+            const url = new URL(line);
+            if (url.protocol !== "file:") {
+              return null;
+            }
+
+            const decodedPathname = decodeURIComponent(url.pathname);
+            if (!decodedPathname) {
+              return null;
+            }
+
+            const windowsPath = decodedPathname.match(/^\/([a-zA-Z]:\/.*)$/);
+            if (windowsPath) {
+              return windowsPath[1].replace(/\//g, "\\");
+            }
+
+            return decodedPathname;
+          } catch {
+            return null;
+          }
+        })
+        .filter((path): path is string => typeof path === "string"),
+    );
+  };
+
+  const readPathsFromFiles = (): string[] => {
+    const fileList = Array.from(dataTransfer.files ?? []);
+    return dedupePaths(
+      fileList
+        .map((file) => {
+          const filePath =
+            typeof (file as File & { path?: string }).path === "string"
+              ? (file as File & { path: string }).path
+              : null;
+          return filePath?.trim() ? filePath : null;
+        })
+        .filter((path): path is string => typeof path === "string"),
+    );
+  };
+
   const payload = dataTransfer.getData("application/x-overlayterm-paths");
   if (payload) {
     try {
@@ -757,6 +822,18 @@ export function readExplorerPathsFromDataTransfer(args: {
     } catch {
       // Keep falling through to plain-text or fallback paths.
     }
+  }
+
+  const uriListPaths = readPathsFromUriList(
+    dataTransfer.getData("text/uri-list"),
+  );
+  if (uriListPaths.length > 0) {
+    return uriListPaths;
+  }
+
+  const fileListPaths = readPathsFromFiles();
+  if (fileListPaths.length > 0) {
+    return fileListPaths;
   }
 
   const plainTextPath = dataTransfer.getData("text/plain").trim();
