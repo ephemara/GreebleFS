@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Bot, Camera, Cpu, Database, Download, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, VolumeX } from '@/components/AppIcons';
+import { ArrowDown, ArrowUp, Bot, Camera, Cpu, Database, Download, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, VolumeX } from '@/components/AppIcons';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import { PremiumSlider } from './PremiumSlider';
@@ -126,6 +126,12 @@ import {
   settingsSectionCatalog,
   type SettingsSectionKey,
 } from '../config/settingsNavigation';
+import {
+  getMobileRemoteAccessModeDefinition,
+  mobileAccessExternalLinks,
+  mobileRemoteAccessModeDefinitions,
+} from '../config/mobileAccess';
+import { isExplorerTrackableFolderPath } from '../config/explorerVirtualLocations';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { InteractionMotionLab } from '../animation/MotionLab';
@@ -207,6 +213,8 @@ import {
   type LinuxDisplayBackendPreference,
   type LinuxDisplayBackendStatus,
 } from '../runtime/tauriClient';
+import { connectTailscale, disconnectTailscale, getTailscaleStatus } from '../runtime/tailscaleBackend';
+import type { TailscaleStatusSnapshot } from '../generated/tauri';
 import {
   clearTelemetrySessions,
   exportTelemetrySupportBundle,
@@ -1025,6 +1033,8 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <SlidersHorizontal size={14} />;
     case 'cloud':
       return <HardDrive size={14} />;
+    case 'mobile':
+      return <ShieldCheck size={14} />;
     case 'screenshots':
       return <Camera size={14} />;
     case 'audio':
@@ -1072,6 +1082,7 @@ interface SettingsSectionContentContext {
   hotkeyLabels: string[];
   connectedCloudAccountCount: number;
   configuredCloudProviderCount: number;
+  mobileRemoteAccessSummary: string;
   screenshotDefaultCaptureMode: ScreenshotCaptureModeId;
   screenshotDefaultOutputAction: ScreenshotOutputActionId;
   screenshotShowGrid: boolean;
@@ -1150,6 +1161,11 @@ function getSettingsSectionContent(
       return {
         summary: `${context.connectedCloudAccountCount} connected · ${context.configuredCloudProviderCount}/2 providers configured`,
         detail: 'Manage provider credentials from Settings or the runtime environment, keep account tokens off the settings store, and surface each connected account as an explorer drive.',
+      };
+    case 'mobile':
+      return {
+        summary: context.mobileRemoteAccessSummary,
+        detail: 'Choose whether the mobile PWA launches over the local network or a tailnet URL, then manage Tailscale status and phone-facing remote access from one place.',
       };
     case 'screenshots':
       return {
@@ -1302,7 +1318,7 @@ function getCloudProviderConfigurationSourceLabel(
     case 'settings':
       return 'Saved in Settings';
     case 'environment':
-      return 'Runtime Environment';
+      return 'Bundled / Environment';
     default:
       return 'Not Configured';
   }
@@ -1495,6 +1511,7 @@ export function SettingsPage({
     updateKeybindings,
     updateScreenshots,
     updateSystem,
+    updateMobile,
     updateModels,
     updateAudio,
     setHomePackState,
@@ -1514,6 +1531,7 @@ export function SettingsPage({
     updateKeybindings: state.updateKeybindings,
     updateScreenshots: state.updateScreenshots,
     updateSystem: state.updateSystem,
+    updateMobile: state.updateMobile,
     updateModels: state.updateModels,
     updateAudio: state.updateAudio,
     setHomePackState: state.setHomePackState,
@@ -1551,6 +1569,7 @@ export function SettingsPage({
     addDirectoryBookmark: state.addDirectoryBookmark,
   })));
   const explorerRail = useExplorerStore((state) => state.rail);
+  const explorerCurrentPath = useExplorerStore((state) => state.session.currentPath);
   const homeTasks = useExplorerTaskSnapshots();
 
   const profileOptions = useMemo(() => getExternalTerminalProfileOptions(platform), [platform]);
@@ -1604,6 +1623,15 @@ export function SettingsPage({
   );
   const [cloudCredentialBusyProvider, setCloudCredentialBusyProvider] = useState<ExplorerCloudProviderId | null>(null);
   const [cloudCredentialBusyAction, setCloudCredentialBusyAction] = useState<'save' | 'clear' | null>(null);
+  const [tailscaleStatus, setTailscaleStatus] = useState<TailscaleStatusSnapshot | null>(null);
+  const [tailscaleStatusPending, setTailscaleStatusPending] = useState(false);
+  const [tailscaleActionPending, setTailscaleActionPending] = useState<'connect' | 'disconnect' | null>(null);
+  const [tailscaleNotice, setTailscaleNotice] = useState<string | null>(null);
+  const [tailscaleError, setTailscaleError] = useState<string | null>(null);
+  const [tailscaleAuthKeyDraft, setTailscaleAuthKeyDraft] = useState('');
+  const [mobileSharePending, setMobileSharePending] = useState(false);
+  const [mobileShareNotice, setMobileShareNotice] = useState<string | null>(null);
+  const [mobileShareError, setMobileShareError] = useState<string | null>(null);
   const [wallpaperNotice, setWallpaperNotice] = useState<string | null>(null);
   const [wallpaperImportError, setWallpaperImportError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
@@ -2684,6 +2712,127 @@ export function SettingsPage({
     }
   }, [refreshCloudAccounts]);
 
+  const mobileRemoteAccessDefinition = useMemo(
+    () => getMobileRemoteAccessModeDefinition(settings.mobile.remoteAccessMode),
+    [settings.mobile.remoteAccessMode],
+  );
+
+  const refreshTailscaleStatus = useCallback(async () => {
+    setTailscaleStatusPending(true);
+    try {
+      const status = await getTailscaleStatus();
+      setTailscaleStatus(status);
+      setTailscaleError(null);
+    } catch (error) {
+      setTailscaleError(`Failed to read Tailscale status: ${String(error)}`);
+    } finally {
+      setTailscaleStatusPending(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection !== 'mobile') {
+      return;
+    }
+    void refreshTailscaleStatus();
+  }, [activeSection, refreshTailscaleStatus]);
+
+  const connectMobileTailscale = useCallback(async () => {
+    setTailscaleActionPending('connect');
+    setTailscaleError(null);
+    setTailscaleNotice(null);
+    try {
+      const status = await connectTailscale({
+        hostname: settings.mobile.tailscaleHostname || null,
+        loginServer: settings.mobile.tailscaleLoginServer || null,
+        authKey: tailscaleAuthKeyDraft.trim() || null,
+      });
+      setTailscaleStatus(status);
+      setTailscaleAuthKeyDraft('');
+
+      if (status.authUrl) {
+        await openUrl(status.authUrl);
+        setTailscaleNotice('Opened the Tailscale browser login flow. Finish sign-in there, then refresh this page if the status does not update automatically.');
+      } else if (status.connected) {
+        setTailscaleNotice(`Tailscale is connected${status.tailnetName ? ` to ${status.tailnetName}` : ''}.`);
+      } else {
+        setTailscaleNotice(status.diagnosticMessage ?? 'Tailscale updated its local state.');
+      }
+    } catch (error) {
+      setTailscaleError(`Failed to connect Tailscale: ${String(error)}`);
+    } finally {
+      setTailscaleActionPending(null);
+    }
+  }, [
+    settings.mobile.tailscaleHostname,
+    settings.mobile.tailscaleLoginServer,
+    tailscaleAuthKeyDraft,
+  ]);
+
+  const disconnectMobileTailscale = useCallback(async () => {
+    setTailscaleActionPending('disconnect');
+    setTailscaleError(null);
+    setTailscaleNotice(null);
+    try {
+      const status = await disconnectTailscale();
+      setTailscaleStatus(status);
+      setTailscaleNotice('Disconnected the local node from the active Tailscale session.');
+    } catch (error) {
+      setTailscaleError(`Failed to disconnect Tailscale: ${String(error)}`);
+    } finally {
+      setTailscaleActionPending(null);
+    }
+  }, []);
+
+  const startMobileShareFromSettings = useCallback(async () => {
+    setMobileSharePending(true);
+    setMobileShareError(null);
+    setMobileShareNotice(null);
+    try {
+      const requestedPath = explorerCurrentPath.trim();
+      const sharePath = isExplorerTrackableFolderPath(requestedPath)
+        ? requestedPath
+        : await getExplorerHomeDir();
+      const result = unwrapTauriResult(await commands.lanShareStart(
+        sharePath,
+        'mobile',
+        null,
+        settings.mobile.remoteAccessMode,
+      ));
+      const shareUrl = result.preferred_address;
+
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+        } catch (error) {
+          console.warn('OverlayTerm: failed to copy mobile share URL from Settings', error);
+        }
+      }
+
+      setMobileShareNotice(
+        `Mobile share is live for ${sharePath} via ${settings.mobile.remoteAccessMode === 'tailscale' ? 'Tailscale' : 'LAN'} at ${shareUrl}.`,
+      );
+    } catch (error) {
+      setMobileShareError(`Failed to start mobile share: ${String(error)}`);
+    } finally {
+      setMobileSharePending(false);
+    }
+  }, [explorerCurrentPath, settings.mobile.remoteAccessMode]);
+
+  const stopMobileShareFromSettings = useCallback(async () => {
+    setMobileSharePending(true);
+    setMobileShareError(null);
+    setMobileShareNotice(null);
+    try {
+      unwrapTauriResult(await commands.lanShareStop());
+      setMobileShareNotice('Stopped the active mobile share server.');
+    } catch (error) {
+      setMobileShareError(`Failed to stop mobile share: ${String(error)}`);
+    } finally {
+      setMobileSharePending(false);
+    }
+  }, []);
+
   const handleWallpaperFileSelection = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? []);
     event.target.value = '';
@@ -3268,6 +3417,11 @@ export function SettingsPage({
     ].map(formatHotkeyLabel),
     connectedCloudAccountCount,
     configuredCloudProviderCount,
+    mobileRemoteAccessSummary: [
+      mobileRemoteAccessDefinition.label,
+      settings.mobile.remoteAccessMode === 'tailscale' ? 'Tailnet delivery' : 'Same-network delivery',
+      settings.mobile.tailscaleHostname ? 'custom hostname' : 'auto hostname',
+    ].join(' · '),
     screenshotDefaultCaptureMode: settings.screenshots.defaultCaptureMode,
     screenshotDefaultOutputAction: settings.screenshots.defaultOutputAction,
     screenshotShowGrid: settings.screenshots.showGrid,
@@ -3300,6 +3454,7 @@ export function SettingsPage({
     availableWallpapers.length,
     connectedCloudAccountCount,
     configuredCloudProviderCount,
+    mobileRemoteAccessDefinition.label,
     effectiveTheme.name,
     effectiveInteractionMotionProfileLabel,
     followThemeTopBarDetail,
@@ -3324,6 +3479,8 @@ export function SettingsPage({
     settings.keybindings.windowModeToggle,
     settings.keybindings.zenFocusModeToggle,
     settings.layout.zenFocusMode,
+    settings.mobile.remoteAccessMode,
+    settings.mobile.tailscaleHostname,
     settings.screenshots.defaultCaptureMode,
     settings.screenshots.defaultOutputAction,
     settings.screenshots.showGrid,
@@ -8025,7 +8182,7 @@ export function SettingsPage({
                             <div className="space-y-1 text-[11px] opacity-45" style={{ color: muted }}>
                               {providerId === 'google-drive' ? (
                                 <p>
-                                  Use a Google Cloud OAuth desktop client. This flow uses the system browser, PKCE, and a localhost callback.
+                                  Use a Google Cloud OAuth desktop client. This flow uses the system browser, PKCE, and a localhost callback. Bundled credentials can come from ignored <span style={{ fontFamily: appearance.fonts.mono }}>.env</span> files at build time, or you can override them here per machine.
                                 </p>
                               ) : (
                                 <p>
@@ -8086,6 +8243,259 @@ export function SettingsPage({
                     <RefreshCw size={11} />
                     Refresh Cloud Status
                   </button>
+                </div>
+              </section>
+            )}
+
+            {activeSection === 'mobile' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<ShieldCheck size={12} />}
+                  title="Mobile Access"
+                  subtitle="Serve the mobile PWA over the local network or a tailnet URL, then keep the desktop-hosted file explorer reachable from the phone."
+                />
+
+                <div className="mt-4 space-y-4">
+                  <div className="rounded border p-3" style={{ borderColor: `${accent}44`, background: `${accent}0d` }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="max-w-[760px]">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Mobile Delivery Path</div>
+                        <p className="mt-1 text-[11px] leading-5" style={{ color: muted }}>
+                          The mobile share launcher reads this section directly. Pick the network path first, then start the share for the current explorer folder when you want the phone shell to come online.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {mobileRemoteAccessDefinition.label}
+                        </span>
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {settings.mobile.tailscaleHostname ? 'Custom Hostname' : 'Auto Hostname'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {mobileShareNotice ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}55`, background: `${accent}10`, color: text }}>
+                        {mobileShareNotice}
+                      </div>
+                    ) : null}
+                    {mobileShareError ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: 'rgba(248,113,113,0.4)', background: 'rgba(248,113,113,0.12)', color: '#fecaca' }}>
+                        {mobileShareError}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={mobileSharePending}
+                        onClick={() => void startMobileShareFromSettings()}
+                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{ border: `1px solid ${accent}55`, background: `${accent}18`, color: text, opacity: mobileSharePending ? 0.7 : 1 }}
+                      >
+                        {mobileSharePending ? 'Starting...' : `Start ${mobileRemoteAccessDefinition.launchBadge} Share`}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={mobileSharePending}
+                        onClick={() => void stopMobileShareFromSettings()}
+                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, opacity: mobileSharePending ? 0.7 : 1 }}
+                      >
+                        Stop Mobile Share
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Remote Access Mode</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        `Local LAN` keeps the current hotspot or same-network path. `Tailscale` makes the launcher prefer a tailnet URL and tries to use a Tailscale-issued HTTPS certificate when the tailnet is configured for it.
+                      </p>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                      {mobileRemoteAccessModeDefinitions.map(option => {
+                        const active = settings.mobile.remoteAccessMode === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => updateMobile({ remoteAccessMode: option.id })}
+                            className="rounded px-3 py-3 text-left transition-colors"
+                            style={{
+                              border: `1px solid ${active ? accent : border}`,
+                              background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="text-[11px] font-semibold">{option.label}</div>
+                            <p className="mt-1 text-[11px] opacity-45">{option.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="max-w-[760px]">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Tailscale Control</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          This does not replace Tailscale itself. It uses the local CLI if installed, lets you keep a hostname and optional custom control server in settings, and surfaces the status that matters for mobile share routing.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: tailscaleStatus?.cliAvailable ? text : '#fda4af' }}>
+                          {tailscaleStatus?.cliAvailable ? 'CLI Ready' : tailscaleStatusPending ? 'Checking' : 'CLI Missing'}
+                        </span>
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: tailscaleStatus?.connected ? text : muted }}>
+                          {tailscaleStatus?.connected ? 'Connected' : tailscaleStatus?.running ? 'Running' : 'Disconnected'}
+                        </span>
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: tailscaleStatus?.certHttpsReady ? text : muted }}>
+                          {tailscaleStatus?.certHttpsReady ? 'HTTPS Ready' : 'HTTPS Pending'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {tailscaleNotice ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}55`, background: `${accent}10`, color: text }}>
+                        {tailscaleNotice}
+                      </div>
+                    ) : null}
+                    {tailscaleError ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: 'rgba(248,113,113,0.4)', background: 'rgba(248,113,113,0.12)', color: '#fecaca' }}>
+                        {tailscaleError}
+                      </div>
+                    ) : null}
+                    {!tailscaleError && tailscaleStatus?.diagnosticMessage ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}>
+                        {tailscaleStatus.diagnosticMessage}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Hostname Override</div>
+                        <p className="mt-1 opacity-40">Optional. Leave blank to keep whatever Tailscale currently resolves for this machine.</p>
+                        <input
+                          value={settings.mobile.tailscaleHostname}
+                          onChange={event => updateMobile({ tailscaleHostname: event.target.value })}
+                          placeholder="ephemara-rig"
+                          className="mt-3 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                          style={settingsMonoFieldStyle}
+                        />
+                      </label>
+                      <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Control Server</div>
+                        <p className="mt-1 opacity-40">Blank means stock Tailscale. Set a URL here later if you want the UI to target a custom Headscale-style control plane.</p>
+                        <input
+                          value={settings.mobile.tailscaleLoginServer}
+                          onChange={event => updateMobile({ tailscaleLoginServer: event.target.value })}
+                          placeholder="https://headscale.example.com"
+                          className="mt-3 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                          style={settingsMonoFieldStyle}
+                        />
+                      </label>
+                    </div>
+
+                    <label className="mt-3 block rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">One-Time Auth Key</div>
+                      <p className="mt-1 opacity-40">Optional. This input is not saved to the settings store. Use it when you want to bring a disconnected node online without stepping through the browser login flow.</p>
+                      <input
+                        type="password"
+                        value={tailscaleAuthKeyDraft}
+                        onChange={event => setTailscaleAuthKeyDraft(event.target.value)}
+                        placeholder="tskey-..."
+                        className="mt-3 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                        style={settingsMonoFieldStyle}
+                      />
+                    </label>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={tailscaleActionPending != null}
+                        onClick={() => void refreshTailscaleStatus()}
+                        className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, opacity: tailscaleActionPending != null ? 0.7 : 1 }}
+                      >
+                        <RefreshCw size={11} />
+                        Refresh Status
+                      </button>
+                      <button
+                        type="button"
+                        disabled={tailscaleActionPending != null}
+                        onClick={() => void connectMobileTailscale()}
+                        className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{ border: `1px solid ${accent}55`, background: `${accent}18`, color: text, opacity: tailscaleActionPending != null ? 0.7 : 1 }}
+                      >
+                        {tailscaleActionPending === 'connect' ? <Loader2 size={11} className="animate-spin" /> : null}
+                        {tailscaleStatus?.connected ? 'Apply Hostname' : 'Connect Tailscale'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={tailscaleActionPending != null}
+                        onClick={() => void disconnectMobileTailscale()}
+                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, opacity: tailscaleActionPending != null ? 0.7 : 1 }}
+                      >
+                        {tailscaleActionPending === 'disconnect' ? 'Disconnecting...' : 'Disconnect Node'}
+                      </button>
+                      {tailscaleStatus?.authUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => void openUrl(tailscaleStatus.authUrl!)}
+                          className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          Open Auth URL
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void openUrl(mobileAccessExternalLinks.tailscaleDownload)}
+                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                      >
+                        Get Tailscale
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void openUrl(mobileAccessExternalLinks.tailscaleHttpsDocs)}
+                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                      >
+                        HTTPS Docs
+                      </button>
+                    </div>
+
+                    {tailscaleStatus ? (
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Resolved Tailnet Status</div>
+                          <div className="mt-2 space-y-1.5 opacity-75">
+                            <div>Version: {tailscaleStatus.version ?? 'unknown'}</div>
+                            <div>Backend: {tailscaleStatus.backendState ?? 'unknown'}</div>
+                            <div>DNS name: {tailscaleStatus.dnsName ?? 'unavailable'}</div>
+                            <div>IPv4: {tailscaleStatus.tailscaleIpv4 ?? 'unavailable'}</div>
+                            <div>Tailnet: {tailscaleStatus.tailnetName ?? 'unknown'}</div>
+                            <div>User: {tailscaleStatus.userLoginName ?? tailscaleStatus.userDisplayName ?? 'unknown'}</div>
+                          </div>
+                        </div>
+                        <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Mobile Share Readiness</div>
+                          <div className="mt-2 space-y-1.5 opacity-75">
+                            <div>MagicDNS: {tailscaleStatus.magicDnsEnabled ? 'enabled' : 'disabled'}</div>
+                            <div>Cert domain: {tailscaleStatus.certDomains[0] ?? 'none yet'}</div>
+                            <div>Peers: {tailscaleStatus.onlinePeerCount}/{tailscaleStatus.peerCount} online</div>
+                            <div>Health: {tailscaleStatus.healthMessages.length > 0 ? tailscaleStatus.healthMessages[0] : 'no active warnings'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </section>
             )}

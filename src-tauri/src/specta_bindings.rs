@@ -14,6 +14,7 @@ use crate::audio_commands::{
     AudioTransformRequest, AudioTransformResult, AudioWaveformBucket,
 };
 use crate::lan_share::types::LanShareResult;
+use crate::tailscale_commands::{TailscaleConnectRequest, TailscaleStatusSnapshot};
 use crate::audio_engine::{
     AudioDeckId, AudioDeckState, AudioEngineDeckRequest, AudioEngineGainRequest,
     AudioEngineLoadDeckRequest, AudioEngineLoadPluginRequest, AudioEngineLoopRegion,
@@ -172,6 +173,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::share_commands::lan_share_start,
             crate::share_commands::lan_share_stop,
             crate::share_commands::lan_share_get_local_ip,
+            crate::tailscale_commands::tailscale_get_status,
+            crate::tailscale_commands::tailscale_connect,
+            crate::tailscale_commands::tailscale_disconnect,
             crate::sqlite_commands::sqlite_get_info,
             crate::sqlite_commands::sqlite_query_table,
             crate::sqlite_commands::sqlite_query_table_window,
@@ -369,6 +373,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<TelemetrySupportBundleResult>()
         .typ::<FileEntry>()
         .typ::<LanShareResult>()
+        .typ::<TailscaleStatusSnapshot>()
+        .typ::<TailscaleConnectRequest>()
         .typ::<FsArchiveExtractionMode>()
         .typ::<FsArchiveExtractionRequest>()
         .typ::<FsArchiveExtractionResult>()

@@ -91,6 +91,15 @@ export const settingsSectionCatalog = [
     order: 70,
   },
   {
+    key: 'mobile',
+    label: 'Mobile',
+    subtitle: 'Mobile PWA delivery, tailnet access, and iPhone-facing remote paths.',
+    keywords: ['mobile', 'pwa', 'tailscale', 'iphone', 'remote access', 'tailnet'],
+    overviewSummary: 'Phone access mode, Tailscale pairing status, and remote-share launch behavior.',
+    featuredInOverview: true,
+    order: 75,
+  },
+  {
     key: 'screenshots',
     label: 'Screenshots',
     subtitle: 'Capture defaults, save path, and proof-focused editor behavior.',

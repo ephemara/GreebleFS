@@ -49,8 +49,11 @@ pub(super) static ACTIVE_SERVER: once_cell::sync::Lazy<Arc<Mutex<Option<ActiveSe
 #[derive(Serialize, Deserialize, specta::Type)]
 pub struct LanShareResult {
     pub address: String,
+    pub preferred_address: String,
     pub mdns_address: Option<String>,
     pub ios_address: Option<String>,
+    pub tailscale_address: Option<String>,
+    pub tailscale_https_ready: bool,
 }
 
 #[derive(Serialize)]

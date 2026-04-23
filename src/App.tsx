@@ -599,6 +599,7 @@ function App() {
     appearance,
     keybindings,
     layoutSettings,
+    mobileSettings,
     pythonSettings,
     systemSettings,
     setActiveSection,
@@ -611,6 +612,7 @@ function App() {
     appearance: state.settings.appearance,
     keybindings: state.settings.keybindings,
     layoutSettings: state.settings.layout,
+    mobileSettings: state.settings.mobile,
     pythonSettings: state.settings.python,
     systemSettings: state.settings.system,
     setActiveSection: state.setActiveSection,
@@ -3769,8 +3771,13 @@ function App() {
     const sharePath = isExplorerTrackableFolderPath(requestedPath)
       ? requestedPath
       : unwrapTauriResult(await commands.fsGetHomeDir());
-    const result = unwrapTauriResult(await commands.lanShareStart(sharePath, 'mobile', null));
-    const shareUrl = result.ios_address ?? result.mdns_address ?? result.address;
+    const result = unwrapTauriResult(await commands.lanShareStart(
+      sharePath,
+      'mobile',
+      null,
+      mobileSettings.remoteAccessMode,
+    ));
+    const shareUrl = result.preferred_address;
 
     if (navigator.clipboard?.writeText) {
       try {
@@ -3781,9 +3788,9 @@ function App() {
     }
 
     window.alert(
-      `Mobile share is live.\n\nPath: ${sharePath}\nURL: ${shareUrl}\n\nThe URL was copied to your clipboard when available.`,
+      `Mobile share is live.\n\nPath: ${sharePath}\nAccess: ${mobileSettings.remoteAccessMode === 'tailscale' ? 'Tailscale' : 'LAN'}\nURL: ${shareUrl}\n\nThe URL was copied to your clipboard when available.`,
     );
-  }, [explorerCurrentPath]);
+  }, [explorerCurrentPath, mobileSettings.remoteAccessMode]);
 
   const handleStopMobileShare = useCallback(async () => {
     if (!isTauri()) {
@@ -3973,10 +3980,12 @@ function App() {
       {
         id: 'start-mobile-share',
         title: 'Start Mobile Share',
-        subtitle: 'Serve the mobile PWA for the current explorer folder over the LAN share tunnel.',
+        subtitle: mobileSettings.remoteAccessMode === 'tailscale'
+          ? 'Serve the mobile PWA for the current explorer folder over the configured tailnet path.'
+          : 'Serve the mobile PWA for the current explorer folder over the LAN share tunnel.',
         group: 'Mobile',
-        keywords: ['mobile', 'pwa', 'ios', 'iphone', 'share', 'lan', 'remote'],
-        badge: 'Mobile',
+        keywords: ['mobile', 'pwa', 'ios', 'iphone', 'share', 'lan', 'remote', 'tailscale', 'tailnet'],
+        badge: mobileSettings.remoteAccessMode === 'tailscale' ? 'Tailnet' : 'Mobile',
         onSelect: handleStartMobileShare,
       },
       {
@@ -4149,6 +4158,7 @@ function App() {
     pinnedPanelIds,
     panelDefinitions,
     pluginCommands,
+    mobileSettings.remoteAccessMode,
     refreshAuthoredAnimations,
     refreshAuthoredWallpapers,
     refreshAuthoredShaders,

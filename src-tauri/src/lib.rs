@@ -26,6 +26,7 @@ pub mod specta_bindings;
 pub mod sqlite_commands;
 pub mod startup_commands;
 pub mod storage_commands;
+pub mod tailscale_commands;
 pub mod telemetry;
 pub mod terminal;
 pub mod thumbnail_commands;

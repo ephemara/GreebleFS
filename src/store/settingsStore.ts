@@ -103,6 +103,10 @@ import {
   type SettingsSectionKey,
 } from '../config/settingsNavigation';
 import { normalizeIconThemePackageSelectionId } from '../config/iconThemePackages';
+import {
+  normalizeMobileRemoteAccessMode,
+  type MobileRemoteAccessMode,
+} from '../config/mobileAccess';
 import { EXPLORER_HOME_PATH } from '../config/explorerVirtualLocations';
 import {
   DEFAULT_PILOT_ACCENT_COLOR,
@@ -261,6 +265,12 @@ export interface ScreenshotSettings {
   closeEditorAfterAction: boolean;
 }
 
+export interface MobileSettings {
+  remoteAccessMode: MobileRemoteAccessMode;
+  tailscaleLoginServer: string;
+  tailscaleHostname: string;
+}
+
 export type KeybindingSettings = HotkeyBindingSettings;
 export type DockThemeMode = 'follow-app' | 'override';
 export type LinuxDisplayBackendPreference = 'auto' | 'wayland' | 'x11';
@@ -305,6 +315,7 @@ export interface Settings {
   home: HomeSettings;
   appearance: AppearanceSettings;
   system: SystemSettings;
+  mobile: MobileSettings;
   screenshots: ScreenshotSettings;
   keybindings: KeybindingSettings;
   polygemini: PolyGeminiSettings;
@@ -811,6 +822,24 @@ function normalizeShaderControlValuesMap(
   return Object.fromEntries(normalizedEntries);
 }
 
+function normalizeMobileSettings(
+  base: MobileSettings,
+  updates?: Partial<MobileSettings>,
+): MobileSettings {
+  const merged = { ...base, ...updates };
+  return {
+    remoteAccessMode: normalizeMobileRemoteAccessMode(
+      merged.remoteAccessMode ?? base.remoteAccessMode,
+    ),
+    tailscaleLoginServer: typeof merged.tailscaleLoginServer === 'string'
+      ? merged.tailscaleLoginServer.trim()
+      : base.tailscaleLoginServer,
+    tailscaleHostname: typeof merged.tailscaleHostname === 'string'
+      ? merged.tailscaleHostname.trim()
+      : base.tailscaleHostname,
+  };
+}
+
 function normalizeScreenshotSettings(
   base: ScreenshotSettings,
   updates?: Partial<ScreenshotSettings>,
@@ -973,6 +1002,11 @@ export const defaultSettings: Settings = {
     consumerDiagnosticsIncludePerfSamples: true,
     linuxDisplayBackendPreference: 'auto',
   },
+  mobile: {
+    remoteAccessMode: 'lan',
+    tailscaleLoginServer: '',
+    tailscaleHostname: '',
+  },
   screenshots: {
     saveDirectory: screenshotFeatureConfig.defaultSaveDirectory,
     defaultCaptureMode: screenshotFeatureConfig.defaultCaptureMode,
@@ -1106,6 +1140,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       }),
     },
     system: normalizeSystemSettings(base.system, (imported as Partial<Settings> | undefined)?.system),
+    mobile: normalizeMobileSettings(base.mobile, (imported as Partial<Settings> | undefined)?.mobile),
     screenshots: normalizeScreenshotSettings(base.screenshots, migratedImportedScreenshots),
     keybindings: normalizeKeybindingSettings({ ...base.keybindings, ...imported?.keybindings }),
     polygemini: { ...base.polygemini, ...imported?.polygemini },
@@ -1161,6 +1196,7 @@ interface SettingsState {
   ) => void;
   applyDockThemeSelection: (themeId: string) => void;
   updateSystem: (updates: Partial<SystemSettings>) => void;
+  updateMobile: (updates: Partial<MobileSettings>) => void;
   updateScreenshots: (updates: Partial<ScreenshotSettings>) => void;
   updateKeybindings: (updates: Partial<KeybindingSettings>) => void;
   updatePolyGemini: (updates: Partial<PolyGeminiSettings>) => void;
@@ -1424,6 +1460,13 @@ export const useSettingsStore = create<SettingsState>()(
         settings: {
           ...state.settings,
           system: normalizeSystemSettings(state.settings.system, updates),
+        },
+      })),
+
+      updateMobile: (updates) => set((state) => ({
+        settings: {
+          ...state.settings,
+          mobile: normalizeMobileSettings(state.settings.mobile, updates),
         },
       })),
 

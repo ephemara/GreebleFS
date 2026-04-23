@@ -189,6 +189,13 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.screenshots.showGrid).toBe(true);
     expect(settings.screenshots.closeEditorAfterAction).toBe(true);
   });
+
+  it('has safe default mobile access settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.mobile.remoteAccessMode).toBe('lan');
+    expect(settings.mobile.tailscaleLoginServer).toBe('');
+    expect(settings.mobile.tailscaleHostname).toBe('');
+  });
 });
 
 describe('useSettingsStore.updateTerminal()', () => {
@@ -270,6 +277,22 @@ describe('useSettingsStore.updateTerminal()', () => {
     expect(settings.terminal.showSidebar).toBe(false);
     expect(settings.terminal.fontSize).toBe(13);
     expect(settings.terminal.windowMode).toBe('windowed');
+  });
+});
+
+describe('useSettingsStore.updateMobile()', () => {
+  it('updates the mobile remote-access mode and trims tailscale fields', () => {
+    const store = useSettingsStore.getState();
+    store.updateMobile({
+      remoteAccessMode: 'tailscale',
+      tailscaleLoginServer: ' https://headscale.example.com ',
+      tailscaleHostname: ' greeble-rig ',
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.mobile.remoteAccessMode).toBe('tailscale');
+    expect(settings.mobile.tailscaleLoginServer).toBe('https://headscale.example.com');
+    expect(settings.mobile.tailscaleHostname).toBe('greeble-rig');
   });
 });
 

@@ -12,8 +12,9 @@ pub async fn lan_share_start(
     path: String,
     share_mode: String,
     hub_paths: Option<Vec<String>>,
+    remote_access_mode: Option<String>,
 ) -> Result<LanShareResult, String> {
-    start_lan_share(app, path, share_mode, hub_paths).await
+    start_lan_share(app, path, share_mode, hub_paths, remote_access_mode).await
 }
 
 #[command]

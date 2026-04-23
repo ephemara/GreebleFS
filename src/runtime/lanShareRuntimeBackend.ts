@@ -1,13 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { LanShareResult } from "../generated/tauri";
+import type { MobileRemoteAccessMode } from "../config/mobileAccess";
 
 export async function lanShareStart(
   path: string,
   shareMode: string = "mobile",
-  hubPaths: string[] | null = null
+  hubPaths: string[] | null = null,
+  remoteAccessMode: MobileRemoteAccessMode | null = null,
 ): Promise<LanShareResult> {
-  return invoke<LanShareResult>("lan_share_start", { path, shareMode, hubPaths });
+  return invoke<LanShareResult>("lan_share_start", {
+    path,
+    shareMode,
+    hubPaths,
+    remoteAccessMode,
+  });
 }
 
 export async function lanShareStop(): Promise<void> {
