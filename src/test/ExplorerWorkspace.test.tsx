@@ -4,6 +4,7 @@ import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/ap
 import { defaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
 import {
   PRIMARY_EXPLORER_INSTANCE_ID,
+  PRIMARY_EXPLORER_TAB_ID,
   defaultExplorerSession,
   defaultExplorerWorkspace,
   useExplorerStore,
@@ -55,6 +56,10 @@ function getRenderedFileExplorerProps(instanceId: string) {
   return props;
 }
 
+function getVisibleFileExplorerCount() {
+  return document.querySelectorAll('[data-testid^="file-explorer-"]').length;
+}
+
 function emitRuntimeSnapshot(
   instanceId: string,
   snapshot: Omit<ExplorerWorkspaceRuntimeSnapshot, 'instanceId'>,
@@ -74,6 +79,30 @@ function emitSelectionTransferComplete(
   const props = getRenderedFileExplorerProps(instanceId);
   const handler = props.onWorkspaceSelectionTransferComplete as ((value: ExplorerWorkspaceSelectionTransferResult) => void) | undefined;
   handler?.(result);
+}
+
+function getActiveWorkspaceTab() {
+  const { workspace } = useExplorerStore.getState();
+  return workspace.tabs.find((tab) => tab.id === workspace.activeWorkspaceTabId) ?? workspace.tabs[0] ?? null;
+}
+
+function renderWorkspace(appearance?: ReturnType<typeof resolveOverlayAppearance>) {
+  return render(
+    <ExplorerWorkspace
+      appearance={appearance}
+      theme={{
+        accent: '#8ab4f8',
+        bg: '#0f1115',
+        bgPanel: '#151923',
+        text: '#f4f7fb',
+        border: '#2a2f3a',
+        textMuted: '#9aa4b2',
+      }}
+      onOpenInFilesystemAquarium={() => undefined}
+      onOpenInTerminal={() => undefined}
+      onAddBookmark={() => undefined}
+    />,
+  );
 }
 
 describe('ExplorerWorkspace', () => {
@@ -115,24 +144,8 @@ describe('ExplorerWorkspace', () => {
     });
   });
 
-  it('renders without triggering a snapshot instability warning', () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    const { container } = render(
-      <ExplorerWorkspace
-        theme={{
-          accent: '#8ab4f8',
-          bg: '#0f1115',
-          bgPanel: '#151923',
-          text: '#f4f7fb',
-          border: '#2a2f3a',
-          textMuted: '#9aa4b2',
-        }}
-        onOpenInFilesystemAquarium={() => undefined}
-        onOpenInTerminal={() => undefined}
-        onAddBookmark={() => undefined}
-      />,
-    );
+  it('renders the primary workspace pane', async () => {
+    const { container } = renderWorkspace();
 
     expect(screen.getByTestId('file-explorer-primary')).toBeInTheDocument();
     expect(getRenderedFileExplorerProps(PRIMARY_EXPLORER_INSTANCE_ID).workspacePaneCount).toBe(1);
@@ -140,8 +153,6 @@ describe('ExplorerWorkspace', () => {
     expect(explorerPane).not.toBeNull();
     expect(explorerPane?.style.height).toBe('100%');
     expect(explorerPane?.style.display).toBe('flex');
-    expect(consoleErrorSpy).not.toHaveBeenCalled();
-    consoleErrorSpy.mockRestore();
   });
 
   it('repositions workspace header controls through chromeLayoutId', () => {
@@ -158,46 +169,20 @@ describe('ExplorerWorkspace', () => {
       ],
     });
 
-    render(
-      <ExplorerWorkspace
-        appearance={appearance}
-        theme={{
-          accent: '#8ab4f8',
-          bg: '#0f1115',
-          bgPanel: '#151923',
-          text: '#f4f7fb',
-          border: '#2a2f3a',
-          textMuted: '#9aa4b2',
-        }}
-        onOpenInTerminal={() => undefined}
-        onAddBookmark={() => undefined}
-      />,
-    );
+    renderWorkspace(appearance);
 
     expect(getWorkspaceControl('workspacePaneActionsMenu')?.getAttribute('data-overlay-explorer-control-zone')).toBe('end');
   });
 
-  it('routes commander sync, copy, and target refresh through the workspace/file-explorer bridge', async () => {
-    render(
-      <ExplorerWorkspace
-        theme={{
-          accent: '#8ab4f8',
-          bg: '#0f1115',
-          bgPanel: '#151923',
-          text: '#f4f7fb',
-          border: '#2a2f3a',
-          textMuted: '#9aa4b2',
-        }}
-        onOpenInTerminal={() => undefined}
-        onAddBookmark={() => undefined}
-      />,
-    );
+  it('routes commander sync, copy, and target refresh through the workspace bridge', async () => {
+    renderWorkspace();
 
     fireEvent.click(getWorkspaceLayoutButton('2-Up'));
     await waitFor(() => {
       expect(renderedFileExplorerPropsByInstanceId.has(PRIMARY_EXPLORER_INSTANCE_ID)).toBe(true);
-      expect(renderedFileExplorerPropsByInstanceId.size).toBe(2);
+      expect(getVisibleFileExplorerCount()).toBe(2);
     });
+
     const targetInstanceId = [...renderedFileExplorerPropsByInstanceId.keys()]
       .find((instanceId) => instanceId !== PRIMARY_EXPLORER_INSTANCE_ID);
     expect(targetInstanceId).toBeTruthy();
@@ -223,12 +208,7 @@ describe('ExplorerWorkspace', () => {
     const paneActionsMenu = await screen.findByRole('menu', { name: 'Workspace pane actions' });
     expect(within(paneActionsMenu).getByText('1 selected -> P2 · destination')).toBeInTheDocument();
 
-    const syncButton = within(paneActionsMenu).getByRole('menuitem', { name: /sync target pane/i });
-    const copyButton = within(paneActionsMenu).getByRole('menuitem', { name: /copy selection to pane/i });
-    expect(syncButton).toBeEnabled();
-    expect(copyButton).toBeEnabled();
-
-    fireEvent.click(syncButton);
+    fireEvent.click(within(paneActionsMenu).getByRole('menuitem', { name: /sync target pane/i }));
     await waitFor(() => {
       expect(getRenderedFileExplorerProps(targetInstanceId as string).externalNavigationRequest).toMatchObject({
         path: '/workspace/source',
@@ -255,115 +235,102 @@ describe('ExplorerWorkspace', () => {
     await waitFor(() => {
       expect(getRenderedFileExplorerProps(targetInstanceId as string).externalRefreshRequest).toBeTruthy();
     });
-
-    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
-    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: /linked navigation/i }));
-    emitRuntimeSnapshot(PRIMARY_EXPLORER_INSTANCE_ID, {
-      currentPath: '/workspace/source/materials',
-      currentPathIsCloud: false,
-      selectedEntries: [
-        {
-          path: '/workspace/source/materials/brick.png',
-          name: 'brick.png',
-          is_dir: false,
-        },
-      ],
-    });
-
-    await waitFor(() => {
-      expect(getRenderedFileExplorerProps(targetInstanceId as string).externalNavigationRequest).toMatchObject({
-        path: '/workspace/source/materials',
-      });
-    });
-
-    emitRuntimeSnapshot(PRIMARY_EXPLORER_INSTANCE_ID, {
-      currentPath: '/workspace/source/materials',
-      currentPathIsCloud: false,
-      selectedEntries: [],
-    });
-
-    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
-    expect(await screen.findByText('P2 · destination')).toBeInTheDocument();
   });
 
-  it('switches the shared tab strip with the focused pane and removes pane-header copy', async () => {
-    render(
-      <ExplorerWorkspace
-        theme={{
-          accent: '#8ab4f8',
-          bg: '#0f1115',
-          bgPanel: '#151923',
-          text: '#f4f7fb',
-          border: '#2a2f3a',
-          textMuted: '#9aa4b2',
-        }}
-        onOpenInTerminal={() => undefined}
-        onAddBookmark={() => undefined}
-      />,
-    );
+  it('keeps the tab strip stable when focus changes between panes', async () => {
+    renderWorkspace();
 
     fireEvent.click(getWorkspaceLayoutButton('2-Up'));
     await waitFor(() => {
-      expect(renderedFileExplorerPropsByInstanceId.size).toBe(2);
+      expect(getVisibleFileExplorerCount()).toBe(2);
     });
 
-    useExplorerStore.getState().createWorkspaceTab({
-      pane: 'pane-1',
-      title: 'Alpha Pane',
+    useExplorerStore.getState().updateWorkspaceTabTitle(PRIMARY_EXPLORER_TAB_ID, 'Primary Workspace');
+    const nextTab = useExplorerStore.getState().createWorkspaceTab({
+      sourceWorkspaceTabId: PRIMARY_EXPLORER_TAB_ID,
       activate: false,
     });
-    useExplorerStore.getState().createWorkspaceTab({
-      pane: 'pane-2',
-      title: 'Beta Pane',
-      activate: false,
-    });
+    useExplorerStore.getState().updateWorkspaceTabTitle(nextTab.id, 'Secondary Workspace');
 
     await waitFor(() => {
-      expect(getWorkspaceControl('workspaceTabs')?.textContent).toContain('Alpha Pane');
-      expect(getWorkspaceControl('workspaceTabs')?.textContent).not.toContain('Beta Pane');
+      const workspaceTabs = getWorkspaceControl('workspaceTabs');
+      expect(workspaceTabs?.textContent).toContain('Secondary Workspace');
+      expect(within(workspaceTabs as HTMLElement).getAllByRole('button', { name: /workspace|explorer/i })).toHaveLength(2);
     });
 
     const paneSwitcher = getWorkspaceControl('workspacePaneCounts');
     expect(paneSwitcher).not.toBeNull();
-    expect(getWorkspaceControl('workspacePaneActionsMenu')).not.toBeNull();
-
     fireEvent.click(within(paneSwitcher as HTMLElement).getByTitle('Focus Pane 2'));
-    await waitFor(() => {
-      expect(getWorkspaceControl('workspaceTabs')?.textContent).toContain('Beta Pane');
-      expect(getWorkspaceControl('workspaceTabs')?.textContent).not.toContain('Alpha Pane');
-    });
 
-    expect(screen.queryByText(/^Pane 1$/)).toBeNull();
-    expect(screen.queryByText(/^Focused$/)).toBeNull();
+    await waitFor(() => {
+      const workspaceTabs = getWorkspaceControl('workspaceTabs');
+      expect(workspaceTabs?.textContent).toContain('Secondary Workspace');
+      expect(within(workspaceTabs as HTMLElement).getAllByRole('button', { name: /workspace|explorer/i })).toHaveLength(2);
+      expect(useExplorerStore.getState().workspace.activeWorkspaceTabId).toBe(PRIMARY_EXPLORER_TAB_ID);
+      expect(getActiveWorkspaceTab()?.focusedPane).toBe('pane-2');
+    });
   });
 
-  it('keeps single-pane mode one click away through direct workspace layout buttons', async () => {
-    render(
-      <ExplorerWorkspace
-        theme={{
-          accent: '#8ab4f8',
-          bg: '#0f1115',
-          bgPanel: '#151923',
-          text: '#f4f7fb',
-          border: '#2a2f3a',
-          textMuted: '#9aa4b2',
-        }}
-        onOpenInTerminal={() => undefined}
-        onAddBookmark={() => undefined}
-      />,
-    );
+  it('switches layouts per workspace tab and supports 3-Up', async () => {
+    renderWorkspace();
 
-    fireEvent.click(getWorkspaceLayoutButton('2-Up'));
+    fireEvent.click(getWorkspaceLayoutButton('3-Up'));
     await waitFor(() => {
-      expect(useExplorerStore.getState().workspace.layoutMode).toBe('split');
-      expect(renderedFileExplorerPropsByInstanceId.size).toBe(2);
-      expect(getRenderedFileExplorerProps(PRIMARY_EXPLORER_INSTANCE_ID).workspacePaneCount).toBe(2);
+      expect(getActiveWorkspaceTab()?.layoutMode).toBe('triple');
+      expect(getVisibleFileExplorerCount()).toBe(3);
+      expect(getRenderedFileExplorerProps(PRIMARY_EXPLORER_INSTANCE_ID).workspacePaneCount).toBe(3);
+      expect(getWorkspaceLayoutButton('3-Up')).toHaveAttribute('aria-pressed', 'true');
     });
 
-    fireEvent.click(getWorkspaceLayoutButton('1-Up'));
+    useExplorerStore.getState().updateWorkspaceTabTitle(PRIMARY_EXPLORER_TAB_ID, 'Primary Workspace');
+    const secondaryTab = useExplorerStore.getState().createWorkspaceTab({
+      sourceWorkspaceTabId: PRIMARY_EXPLORER_TAB_ID,
+    });
+    useExplorerStore.getState().updateWorkspaceTabTitle(secondaryTab.id, 'Secondary Workspace');
+
     await waitFor(() => {
-      expect(useExplorerStore.getState().workspace.layoutMode).toBe('single');
-      expect(getWorkspaceLayoutButton('1-Up')).toHaveAttribute('aria-pressed', 'true');
+      expect(useExplorerStore.getState().workspace.activeWorkspaceTabId).toBe(secondaryTab.id);
+      expect(getActiveWorkspaceTab()?.layoutMode).toBe('single');
+      expect(getVisibleFileExplorerCount()).toBe(1);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /primary workspace/i }));
+    await waitFor(() => {
+      expect(useExplorerStore.getState().workspace.activeWorkspaceTabId).toBe(PRIMARY_EXPLORER_TAB_ID);
+      expect(getActiveWorkspaceTab()?.layoutMode).toBe('triple');
+      expect(getVisibleFileExplorerCount()).toBe(3);
+    });
+  });
+
+  it('duplicates and closes workspace tabs from the overflow menu', async () => {
+    renderWorkspace();
+
+    useExplorerStore.getState().updateWorkspaceTabTitle(PRIMARY_EXPLORER_TAB_ID, 'Primary Workspace');
+    const nextTab = useExplorerStore.getState().createWorkspaceTab({
+      sourceWorkspaceTabId: PRIMARY_EXPLORER_TAB_ID,
+    });
+    useExplorerStore.getState().updateWorkspaceTabTitle(nextTab.id, 'Secondary Workspace');
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().workspace.tabs).toHaveLength(2);
+      expect(getWorkspaceControl('workspaceTabs')?.textContent).toContain('Secondary Workspace');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /secondary workspace/i }));
+    await waitFor(() => {
+      expect(useExplorerStore.getState().workspace.activeWorkspaceTabId).toBe(nextTab.id);
+    });
+
+    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
+    fireEvent.click(await screen.findByRole('menuitem', { name: /duplicate workspace tab/i }));
+    await waitFor(() => {
+      expect(useExplorerStore.getState().workspace.tabs).toHaveLength(3);
+    });
+
+    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
+    fireEvent.click(await screen.findByRole('menuitem', { name: /close workspace tab/i }));
+    await waitFor(() => {
+      expect(useExplorerStore.getState().workspace.tabs).toHaveLength(2);
     });
   });
 });

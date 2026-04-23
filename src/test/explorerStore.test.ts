@@ -21,6 +21,11 @@ beforeEach(() => {
   useExplorerStore.getState().clearPersistenceNotice();
 });
 
+function getActiveWorkspaceTab() {
+  const { workspace } = useExplorerStore.getState();
+  return workspace.tabs.find((tab) => tab.id === workspace.activeWorkspaceTabId) ?? workspace.tabs[0] ?? null;
+}
+
 describe('explorerStore persistence', () => {
   it('starts with the default explorer session snapshot', () => {
     expect(useExplorerStore.getState().session).toEqual(defaultExplorerSession);
@@ -253,59 +258,202 @@ describe('explorerStore persistence', () => {
     expect(reparsed.sessions?.[secondaryInstanceId]?.searchMode).toBe('name');
   });
 
-  it('creates, focuses, and closes explorer workspace tabs across panes', () => {
+  it('migrates legacy pane-local tabs into workspace-owned tabs', () => {
+    window.localStorage.setItem(EXPLORER_STATE_STORAGE_KEY, JSON.stringify({
+      version: 8,
+      session: defaultExplorerSession,
+      sessions: {
+        [PRIMARY_EXPLORER_INSTANCE_ID]: {
+          ...defaultExplorerSession,
+          currentPath: 'C:\\primary',
+        },
+        secondary: {
+          ...defaultExplorerSession,
+          currentPath: 'C:\\secondary',
+        },
+        extra: {
+          ...defaultExplorerSession,
+          currentPath: 'C:\\extra',
+        },
+      },
+      workspace: {
+        layoutMode: 'split',
+        focusedPane: 'pane-2',
+        columnSplitRatio: 0.61,
+        rowSplitRatio: 0.54,
+        nextTabOrdinal: 4,
+        activeTabIdByPane: {
+          'pane-1': PRIMARY_EXPLORER_TAB_ID,
+          'pane-2': 'secondary-tab',
+        },
+        tabs: [
+          {
+            id: PRIMARY_EXPLORER_TAB_ID,
+            instanceId: PRIMARY_EXPLORER_INSTANCE_ID,
+            pane: 'pane-1',
+            title: 'Primary',
+          },
+          {
+            id: 'secondary-tab',
+            instanceId: 'secondary',
+            pane: 'pane-2',
+            title: 'Secondary',
+          },
+          {
+            id: 'extra-tab',
+            instanceId: 'extra',
+            pane: 'pane-1',
+            title: 'Extra',
+          },
+        ],
+      },
+      rail: createDefaultExplorerRailSnapshot(),
+    }));
+
+    const hydrated = loadExplorerPersistedState(window.localStorage);
+    const activeWorkspaceTab = hydrated.workspace.tabs.find(
+      (tab) => tab.id === hydrated.workspace.activeWorkspaceTabId,
+    );
+
+    expect(hydrated.workspace.activeWorkspaceTabId).toBe(PRIMARY_EXPLORER_TAB_ID);
+    expect(activeWorkspaceTab).toMatchObject({
+      id: PRIMARY_EXPLORER_TAB_ID,
+      layoutMode: 'split',
+      focusedPane: 'pane-2',
+      columnSplitRatio: 0.61,
+      rowSplitRatio: 0.54,
+    });
+    expect(activeWorkspaceTab?.panes['pane-1']).toMatchObject({
+      instanceId: PRIMARY_EXPLORER_INSTANCE_ID,
+      title: 'Primary',
+    });
+    expect(activeWorkspaceTab?.panes['pane-2']).toMatchObject({
+      instanceId: 'secondary',
+      title: 'Secondary',
+    });
+    expect(hydrated.workspace.tabs[1]).toMatchObject({
+      id: 'extra-tab',
+      layoutMode: 'single',
+      focusedPane: 'pane-1',
+    });
+    expect(hydrated.workspace.tabs[1]?.panes['pane-1']).toMatchObject({
+      instanceId: 'extra',
+      title: 'Extra',
+    });
+  });
+
+  it('creates, focuses, and closes explorer workspace tabs', () => {
     const store = useExplorerStore.getState();
     store.setWorkspaceLayoutMode('split');
-    const nextTab = store.createWorkspaceTab({
-      sourceInstanceId: PRIMARY_EXPLORER_INSTANCE_ID,
-      pane: 'pane-2',
-    });
+    store.setFocusedPane('pane-2');
+    const nextTab = store.createWorkspaceTab({ sourceWorkspaceTabId: PRIMARY_EXPLORER_TAB_ID });
 
     expect(useExplorerStore.getState().workspace.tabs).toHaveLength(2);
-    expect(useExplorerStore.getState().workspace.activeTabIdByPane['pane-2']).toBe(nextTab.id);
+    expect(useExplorerStore.getState().workspace.activeWorkspaceTabId).toBe(nextTab.id);
+    expect(nextTab.layoutMode).toBe('single');
+    expect(nextTab.focusedPane).toBe('pane-1');
+    expect(nextTab.panes['pane-1']).not.toBeNull();
 
     store.focusWorkspaceTab(PRIMARY_EXPLORER_TAB_ID);
-    expect(useExplorerStore.getState().workspace.activeTabIdByPane['pane-1']).toBe(PRIMARY_EXPLORER_TAB_ID);
+    expect(useExplorerStore.getState().workspace.activeWorkspaceTabId).toBe(PRIMARY_EXPLORER_TAB_ID);
 
     store.closeWorkspaceTab(nextTab.id);
     expect(useExplorerStore.getState().workspace.tabs).toHaveLength(1);
-    expect(useExplorerStore.getState().workspace.activeTabIdByPane['pane-2']).toBeNull();
+    expect(useExplorerStore.getState().workspace.activeWorkspaceTabId).toBe(PRIMARY_EXPLORER_TAB_ID);
   });
 
   it('persists split workspace layout state', () => {
     const store = useExplorerStore.getState();
     store.setWorkspaceLayoutMode('split');
-    const paneTwoTab = store.createWorkspaceTab({ pane: 'pane-2' });
     store.setFocusedPane('pane-2');
     store.setWorkspaceColumnSplitRatio(0.61);
 
     const hydrated = loadExplorerPersistedState(window.localStorage);
-    expect(hydrated.workspace.layoutMode).toBe('split');
-    expect(hydrated.workspace.focusedPane).toBe('pane-2');
-    expect(hydrated.workspace.activeTabIdByPane['pane-2']).toBe(paneTwoTab.id);
-    expect(hydrated.workspace.columnSplitRatio).toBe(0.61);
+    const activeWorkspaceTab = hydrated.workspace.tabs.find(
+      (tab) => tab.id === hydrated.workspace.activeWorkspaceTabId,
+    );
+    expect(activeWorkspaceTab?.layoutMode).toBe('split');
+    expect(activeWorkspaceTab?.focusedPane).toBe('pane-2');
+    expect(activeWorkspaceTab?.panes['pane-2']).not.toBeNull();
+    expect(activeWorkspaceTab?.columnSplitRatio).toBe(0.61);
   });
 
-  it('reassigns hidden pane tabs back into visible panes when layouts collapse', () => {
+  it('preserves hidden pane sessions when moving 4-Up to 3-Up and back', () => {
     const store = useExplorerStore.getState();
     store.setWorkspaceLayoutMode('quad');
-    store.createWorkspaceTab({ pane: 'pane-2' });
-    store.createWorkspaceTab({ pane: 'pane-3' });
-    store.createWorkspaceTab({ pane: 'pane-4' });
+    const quadWorkspaceTab = getActiveWorkspaceTab();
+    expect(quadWorkspaceTab?.panes['pane-3']).not.toBeNull();
+    expect(quadWorkspaceTab?.panes['pane-4']).not.toBeNull();
+    const paneThreeInstanceId = quadWorkspaceTab?.panes['pane-3']?.instanceId;
+    const paneFourInstanceId = quadWorkspaceTab?.panes['pane-4']?.instanceId;
+
+    store.setWorkspaceLayoutMode('triple');
+    const tripleWorkspaceTab = getActiveWorkspaceTab();
+    expect(tripleWorkspaceTab?.layoutMode).toBe('triple');
+    expect(tripleWorkspaceTab?.panes['pane-3']?.instanceId).toBe(paneThreeInstanceId);
+    expect(tripleWorkspaceTab?.panes['pane-4']?.instanceId).toBe(paneFourInstanceId);
+
+    store.setWorkspaceLayoutMode('quad');
+    const restoredWorkspaceTab = getActiveWorkspaceTab();
+    expect(restoredWorkspaceTab?.layoutMode).toBe('quad');
+    expect(restoredWorkspaceTab?.panes['pane-3']?.instanceId).toBe(paneThreeInstanceId);
+    expect(restoredWorkspaceTab?.panes['pane-4']?.instanceId).toBe(paneFourInstanceId);
+  });
+
+  it('preserves hidden pane sessions when moving 3-Up to 2-Up and back', () => {
+    const store = useExplorerStore.getState();
+    store.setWorkspaceLayoutMode('triple');
+    const tripleWorkspaceTab = getActiveWorkspaceTab();
+    const paneTwoInstanceId = tripleWorkspaceTab?.panes['pane-2']?.instanceId;
+    const paneThreeInstanceId = tripleWorkspaceTab?.panes['pane-3']?.instanceId;
 
     store.setWorkspaceLayoutMode('split');
+    const splitWorkspaceTab = getActiveWorkspaceTab();
+    expect(splitWorkspaceTab?.layoutMode).toBe('split');
+    expect(splitWorkspaceTab?.panes['pane-2']?.instanceId).toBe(paneTwoInstanceId);
+    expect(splitWorkspaceTab?.panes['pane-3']?.instanceId).toBe(paneThreeInstanceId);
 
-    const splitWorkspace = useExplorerStore.getState().workspace;
-    expect(splitWorkspace.layoutMode).toBe('split');
-    expect(splitWorkspace.tabs).toHaveLength(4);
-    expect(splitWorkspace.tabs.every((tab) => tab.pane === 'pane-1' || tab.pane === 'pane-2')).toBe(true);
+    store.setWorkspaceLayoutMode('triple');
+    const restoredWorkspaceTab = getActiveWorkspaceTab();
+    expect(restoredWorkspaceTab?.layoutMode).toBe('triple');
+    expect(restoredWorkspaceTab?.panes['pane-2']?.instanceId).toBe(paneTwoInstanceId);
+    expect(restoredWorkspaceTab?.panes['pane-3']?.instanceId).toBe(paneThreeInstanceId);
+  });
 
-    store.setWorkspaceLayoutMode('single');
+  it('creates a new single-pane workspace tab from the focused pane in a multi-pane workspace', () => {
+    const store = useExplorerStore.getState();
+    store.setWorkspaceLayoutMode('split');
+    store.setFocusedPane('pane-2');
 
-    const singleWorkspace = useExplorerStore.getState().workspace;
-    expect(singleWorkspace.layoutMode).toBe('single');
-    expect(singleWorkspace.tabs).toHaveLength(4);
-    expect(singleWorkspace.tabs.every((tab) => tab.pane === 'pane-1')).toBe(true);
+    const sourceWorkspaceTab = getActiveWorkspaceTab();
+    const sourcePane = sourceWorkspaceTab?.panes['pane-2'];
+    expect(sourcePane).not.toBeNull();
+    store.updateSessionForInstance(sourcePane?.instanceId ?? '', {
+      currentPath: 'C:\\focused-pane',
+      history: ['C:\\', 'C:\\focused-pane'],
+      historyIdx: 1,
+    });
+
+    const nextWorkspaceTab = store.createWorkspaceTab({
+      sourceWorkspaceTabId: sourceWorkspaceTab?.id,
+    });
+
+    const createdWorkspaceTab = useExplorerStore.getState().workspace.tabs.find(
+      (tab) => tab.id === nextWorkspaceTab.id,
+    );
+    const createdPane = createdWorkspaceTab?.panes['pane-1'];
+
+    expect(createdWorkspaceTab).toMatchObject({
+      id: nextWorkspaceTab.id,
+      layoutMode: 'single',
+      focusedPane: 'pane-1',
+    });
+    expect(createdPane?.instanceId).not.toBe(sourcePane?.instanceId);
+    expect(useExplorerStore.getState().sessions[createdPane?.instanceId ?? '']).toMatchObject({
+      currentPath: 'C:\\focused-pane',
+      history: ['C:\\', 'C:\\focused-pane'],
+      historyIdx: 1,
+    });
   });
 });
 

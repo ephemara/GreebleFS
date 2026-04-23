@@ -1,5 +1,5 @@
 export type ExplorerPaneId = 'pane-1' | 'pane-2' | 'pane-3' | 'pane-4';
-export type ExplorerWorkspaceLayoutMode = 'single' | 'split' | 'quad';
+export type ExplorerWorkspaceLayoutMode = 'single' | 'split' | 'triple' | 'quad';
 
 export interface ExplorerWorkspaceLayoutDefinition {
   id: ExplorerWorkspaceLayoutMode;
@@ -37,6 +37,15 @@ const builtInExplorerWorkspaceLayouts: Record<ExplorerWorkspaceLayoutMode, Explo
     supportsColumnSplit: true,
     supportsRowSplit: false,
   },
+  triple: {
+    id: 'triple',
+    label: 'Triple',
+    shortLabel: '3-Up',
+    description: 'One full-width top pane with two panes below.',
+    visiblePaneIds: ['pane-1', 'pane-2', 'pane-3'],
+    supportsColumnSplit: true,
+    supportsRowSplit: true,
+  },
   quad: {
     id: 'quad',
     label: 'Quad',
@@ -56,6 +65,9 @@ export function normalizeExplorerWorkspaceLayoutMode(
 ): ExplorerWorkspaceLayoutMode {
   if (value === 'split' || value === 'dual') {
     return 'split';
+  }
+  if (value === 'triple' || value === 'triad') {
+    return 'triple';
   }
   if (value === 'quad') {
     return 'quad';

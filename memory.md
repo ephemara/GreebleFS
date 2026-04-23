@@ -3300,3 +3300,30 @@
   - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
   - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
   - passed: `bunx vitest run src/test/settingsStore.test.ts src/test/gpuRuntimeStore.test.ts src/test/settingsPage.behavior.test.tsx --reporter=dot`
+
+## 2026-04-22 — Explorer Workspace Tabs Became Workspace-Owned
+
+- The explorer workspace no longer treats tabs as pane-local stacks. `src/store/explorerStore.ts` now persists workspace tabs as whole explorer workspaces, where each tab owns:
+  - its own layout mode (`single`, `split`, `triple`, `quad`)
+  - focused pane
+  - split ratios
+  - stable pane slots (`pane-1` through `pane-4`) and their explorer session ids
+- Durable implementation shape:
+  - `src/config/explorerWorkspaceLayouts.ts` now includes `triple` as the built-in `3-Up` layout: one full-width top pane above a split lower row.
+  - `src/store/explorerStore.ts` migrated from the old `tabs[] + activeTabIdByPane + global layout` model to `workspace.tabs[] + activeWorkspaceTabId`. Legacy persisted state is upgraded deterministically:
+    - the old active pane tabs become one active multi-pane workspace tab
+    - leftover pane-local tabs become their own single-pane workspace tabs
+  - Layout changes now preserve hidden pane sessions instead of collapsing them. Moving `4-Up -> 3-Up -> 4-Up` or `3-Up -> 2-Up -> 3-Up` restores the same pane sessions.
+  - New tabs created from a multi-pane workspace intentionally reset to a fresh `1-Up` workspace tab cloned from the focused pane session.
+  - `src/components/explorer/ExplorerWorkspace.tsx` now renders a single workspace-tab strip plus a separate visible-pane switcher. Pane switching no longer swaps the tab strip.
+  - The workspace header overflow actions now operate on workspace tabs, not pane-local tabs. The old "move tab to next pane" behavior was removed because it no longer fits the model.
+  - `src/components/FileExplorer.tsx` now accepts `workspacePaneCount` values `1 | 2 | 3 | 4`. `paneCount > 1` still suppresses preview/status chrome, and `paneCount >= 3` now uses the aggressive compact treatment that used to be `4-Up` only.
+  - The "tab resets to home folder" bug was fixed by making `ExplorerWorkspace` mount each `FileExplorer` with `key={instanceId}` and by stopping `FileExplorer` from pinning its initial store session behind a mount-only ref keyed to the first render.
+- Durable product note:
+  - Treat workspace tabs as the user-facing container and panes as layout-owned detail inside that tab. If future work adds drag-reorder, saved workspaces, pinned tabs, or pane templates, that behavior should extend the workspace-tab snapshot model rather than reviving pane-local tab stacks.
+  - The tab label is intentionally derived from the focused pane within a workspace tab. A tab can therefore rename itself when focus moves between panes; that is expected under the new model.
+- Validation:
+  - passed: `bunx tsc --noEmit --pretty false`
+  - passed: `bunx vitest run src/test/explorerStore.test.ts src/test/ExplorerWorkspace.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "multi-pane|aggressive compact|remembered preview|local pane without mutating workspace layout|keeps split pdf previews|closes split previews cleanly" --reporter=dot`
+  - note: the full `src/test/fileExplorer.viewModes.test.tsx` file still hit a Vitest worker OOM when run as one large worker-thread batch in this environment, but the behavior slices touched by the refactor passed in isolation.

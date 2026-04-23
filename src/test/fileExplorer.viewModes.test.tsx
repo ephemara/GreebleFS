@@ -575,7 +575,7 @@ function renderExplorer(
     appearance?: ReturnType<typeof resolveOverlayAppearance>;
     chromeControlSurface?: "toolbar" | "topbar";
     layoutMode?: "full" | "dock";
-    workspacePaneCount?: 1 | 2 | 4;
+    workspacePaneCount?: 1 | 2 | 3 | 4;
   } = {},
 ) {
   const appearance =
@@ -602,6 +602,13 @@ function renderExplorer(
       />,
     ),
   };
+}
+
+function getActiveWorkspaceLayoutMode() {
+  const { workspace } = useExplorerStore.getState();
+  return workspace.tabs.find((tab) => tab.id === workspace.activeWorkspaceTabId)?.layoutMode
+    ?? workspace.tabs[0]?.layoutMode
+    ?? "single";
 }
 
 function getChromeControl(controlId: string) {
@@ -1471,6 +1478,17 @@ describe("FileExplorer view modes", () => {
     ).toBeNull();
   });
 
+  it("applies the aggressive compact preset in three-pane workspace mode", async () => {
+    renderExplorer({ workspacePaneCount: 3 });
+    await screen.findByText("notes.txt");
+
+    expect(getChromeControl("saveSearch")).toBeNull();
+    expect(getChromeControl("duplicateScan")).toBeNull();
+    expect(getChromeControl("experimentalModes")).toBeNull();
+    expect(getChromeControl("viewLayout")).toBeNull();
+    expect(getChromeControl("togglePreview")).toBeNull();
+  });
+
   it("applies the aggressive compact preset in four-pane workspace mode", async () => {
     renderExplorer({ workspacePaneCount: 4 });
     await screen.findByText("notes.txt");
@@ -1699,7 +1717,7 @@ describe("FileExplorer view modes", () => {
 
     await waitFor(() => {
       expect(useExplorerStore.getState().session.previewSplitMode).toBe("pane");
-      expect(useExplorerStore.getState().workspace.layoutMode).toBe("single");
+      expect(getActiveWorkspaceLayoutMode()).toBe("single");
       expect(
         document.querySelectorAll('[data-overlay-explorer-plane="file-area"]'),
       ).toHaveLength(1);
@@ -1715,7 +1733,7 @@ describe("FileExplorer view modes", () => {
       "hello from preview",
     );
     expect(useExplorerStore.getState().session.previewSplitMode).toBe("pane");
-    expect(useExplorerStore.getState().workspace.layoutMode).toBe("single");
+    expect(getActiveWorkspaceLayoutMode()).toBe("single");
   });
 
   it("preserves preview width drag resize behavior while split mode is active", async () => {
@@ -1820,7 +1838,7 @@ describe("FileExplorer view modes", () => {
       expect(
         screen.getByTestId("mock-explorer-pdf-workbench"),
       ).toHaveTextContent("forms.pdf");
-      expect(useExplorerStore.getState().workspace.layoutMode).toBe("single");
+      expect(getActiveWorkspaceLayoutMode()).toBe("single");
     });
 
     fireEvent.click(getToolbarPreviewToggleButton());
@@ -1854,7 +1872,7 @@ describe("FileExplorer view modes", () => {
       expect(getChromeControl("previewSplitToggle")).toBeNull();
     });
 
-    expect(useExplorerStore.getState().workspace.layoutMode).toBe("single");
+    expect(getActiveWorkspaceLayoutMode()).toBe("single");
 
     fireEvent.click(screen.getByText("preview.png"));
     expect(

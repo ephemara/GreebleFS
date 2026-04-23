@@ -6918,7 +6918,7 @@ interface FileExplorerProps {
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
   instanceId?: ExplorerInstanceId;
-  workspacePaneCount?: 1 | 2 | 4;
+  workspacePaneCount?: 1 | 2 | 3 | 4;
   chromeControlSurface?: "toolbar" | "topbar";
   focusAddressBarSignal?: number;
   onWorkspaceRuntimeSnapshotChange?: (
@@ -6928,6 +6928,7 @@ interface FileExplorerProps {
     result: ExplorerWorkspaceSelectionTransferResult,
   ) => void;
   externalNavigationRequest?: ExplorerWorkspaceNavigationRequest | null;
+  externalRevealRequest?: ExplorerWorkspaceRevealRequest | null;
   externalSelectionTransferRequest?: ExplorerWorkspaceSelectionTransferRequest | null;
   externalRefreshRequest?: ExplorerWorkspaceRefreshRequest | null;
   repositoryPicker?: {
@@ -6955,6 +6956,13 @@ export interface ExplorerWorkspaceRuntimeSnapshot {
 export interface ExplorerWorkspaceNavigationRequest {
   sequence: number;
   path: string;
+  pushHistory?: boolean;
+}
+
+export interface ExplorerWorkspaceRevealRequest {
+  sequence: number;
+  directoryPath: string;
+  selectionPath: string | null;
   pushHistory?: boolean;
 }
 
@@ -6997,6 +7005,7 @@ export function FileExplorer({
   onWorkspaceRuntimeSnapshotChange,
   onWorkspaceSelectionTransferComplete,
   externalNavigationRequest = null,
+  externalRevealRequest = null,
   externalSelectionTransferRequest = null,
   externalRefreshRequest = null,
   repositoryPicker = null,
@@ -7173,7 +7182,7 @@ export function FileExplorer({
   const isCompactDock = layoutMode === "dock";
   const showsGlobalChromeControls = chromeControlSurface === "topbar";
   const usesWorkspaceCompactChrome = workspacePaneCount > 1;
-  const usesWorkspaceQuadChrome = workspacePaneCount === 4;
+  const usesWorkspaceDenseChrome = workspacePaneCount >= 3;
   const explorerTheme = useMemo(
     () => appearance?.explorerTheme ?? resolveExplorerThemeRecipe(appearance),
     [appearance],
@@ -7207,10 +7216,10 @@ export function FileExplorer({
   const doubleClickEmptyToGoBack = explorerSettings.doubleClickEmptyToGoBack;
   // Session is only used to seed the explorer's local state. Avoid subscribing to it
   // so high-frequency local changes (typing, resizing) don't force extra store-driven renders.
-  const initialSessionRef = useRef(
-    useExplorerStore.getState().getSession(instanceId),
+  const initialSession = useMemo(
+    () => useExplorerStore.getState().getSession(instanceId),
+    [instanceId],
   );
-  const initialSession = initialSessionRef.current;
   const initialSessionPathRef = useRef(initialSession.currentPath.trim());
   const [currentPath, setCurrentPath] = useState(
     () => initialSession.currentPath,
@@ -7499,6 +7508,9 @@ export function FileExplorer({
   const previewTerminalCommandSequenceRef = useRef(0);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
+  const lastWorkspaceRevealSequenceRef = useRef(0);
+  const pendingWorkspaceRevealRef =
+    useRef<ExplorerWorkspaceRevealRequest | null>(null);
   const jumpFilterRequestIdRef = useRef(0);
   const batchRenamePreviewRequestIdRef = useRef(0);
   const recursiveSizeRequestIdRef = useRef(0);
@@ -8708,6 +8720,68 @@ export function FileExplorer({
   }, [currentPath, externalNavigationRequest, navigate]);
 
   useEffect(() => {
+    if (!externalRevealRequest) {
+      return;
+    }
+    if (
+      externalRevealRequest.sequence ===
+      lastWorkspaceRevealSequenceRef.current
+    ) {
+      return;
+    }
+
+    lastWorkspaceRevealSequenceRef.current = externalRevealRequest.sequence;
+
+    const directoryPath = externalRevealRequest.directoryPath.trim();
+    if (!directoryPath) {
+      return;
+    }
+
+    pendingWorkspaceRevealRef.current = externalRevealRequest;
+    searchRequestIdRef.current += 1;
+    setSearch("");
+    setSearchResults([]);
+
+    if (directoryPath !== currentPath) {
+      void navigate(directoryPath, externalRevealRequest.pushHistory ?? true);
+      return;
+    }
+
+    if (!externalRevealRequest.selectionPath) {
+      pendingWorkspaceRevealRef.current = null;
+    }
+  }, [currentPath, externalRevealRequest, navigate]);
+
+  useEffect(() => {
+    const pendingRevealRequest = pendingWorkspaceRevealRef.current;
+    if (!pendingRevealRequest) {
+      return;
+    }
+    if (pendingRevealRequest.directoryPath.trim() !== currentPath.trim()) {
+      return;
+    }
+
+    const selectionPath = pendingRevealRequest.selectionPath?.trim();
+    if (!selectionPath) {
+      pendingWorkspaceRevealRef.current = null;
+      return;
+    }
+
+    const targetEntry = currentDirectoryEntryLookup.get(selectionPath);
+    if (targetEntry) {
+      setSelected(new Set([selectionPath]));
+      lastSelected.current = selectionPath;
+      selectionRangeAnchorPathRef.current = selectionPath;
+      pendingWorkspaceRevealRef.current = null;
+      return;
+    }
+
+    if (!loading) {
+      pendingWorkspaceRevealRef.current = null;
+    }
+  }, [currentDirectoryEntryLookup, currentPath, loading]);
+
+  useEffect(() => {
     if (!externalRefreshRequest) {
       return;
     }
@@ -9011,6 +9085,10 @@ export function FileExplorer({
   const visibleEntryLookup = useMemo(
     () => new Map(visibleEntries.map((entry) => [entry.path, entry] as const)),
     [visibleEntries],
+  );
+  const currentDirectoryEntryLookup = useMemo(
+    () => new Map(entries.map((entry) => [entry.path, entry] as const)),
+    [entries],
   );
   const visibleEntryIndexLookup = useMemo(
     () =>
@@ -14141,7 +14219,7 @@ export function FileExplorer({
     : "width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)";
   const showToolbarLocationStrips =
     !isCompactDock && !usesWorkspaceCompactChrome;
-  const showToolbarTextLabels = !isCompactDock && !usesWorkspaceQuadChrome;
+  const showToolbarTextLabels = !isCompactDock && !usesWorkspaceDenseChrome;
   const usesConstellationCanvas =
     effectiveExperimentalViewMode === "constellation";
   const explorerFooterViewSwitcherButtons = useMemo(() => {
@@ -14912,12 +14990,12 @@ export function FileExplorer({
       explorerTheme.toolbarStyle === "glass";
     const usesInset =
       usesFloatingShell || explorerTheme.toolbarStyle === "minimal";
-    const compactToolbarGap = usesWorkspaceQuadChrome
+    const compactToolbarGap = usesWorkspaceDenseChrome
       ? 4
       : usesWorkspaceCompactChrome
         ? 6
         : "var(--overlay-explorer-toolbar-gap)";
-    const compactToolbarPadding = usesWorkspaceQuadChrome
+    const compactToolbarPadding = usesWorkspaceDenseChrome
       ? "6px 8px"
       : usesWorkspaceCompactChrome
         ? "7px 9px"
@@ -14971,13 +15049,13 @@ export function FileExplorer({
     explorerBlurEnabled,
     explorerTheme.toolbarStyle,
     usesWorkspaceCompactChrome,
-    usesWorkspaceQuadChrome,
+    usesWorkspaceDenseChrome,
   ]);
   const toolbarPrimaryRowStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
       alignItems: "center",
-      gap: usesWorkspaceQuadChrome
+      gap: usesWorkspaceDenseChrome
         ? 4
         : usesWorkspaceCompactChrome
           ? 6
@@ -14985,18 +15063,18 @@ export function FileExplorer({
       flexWrap: "wrap",
       minWidth: 0,
     }),
-    [usesWorkspaceCompactChrome, usesWorkspaceQuadChrome],
+    [usesWorkspaceCompactChrome, usesWorkspaceDenseChrome],
   );
   const toolbarPrimaryControlsStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
       alignItems: "center",
       justifyContent: "flex-end",
-      gap: usesWorkspaceQuadChrome ? 4 : 6,
+      gap: usesWorkspaceDenseChrome ? 4 : 6,
       flexWrap: "wrap",
       minWidth: 0,
     }),
-    [usesWorkspaceQuadChrome],
+    [usesWorkspaceDenseChrome],
   );
   const toolbarSecondaryRowStyle = useMemo<CSSProperties>(
     () => ({
@@ -15005,32 +15083,32 @@ export function FileExplorer({
       justifyContent: usesWorkspaceCompactChrome
         ? "flex-start"
         : "space-between",
-      gap: usesWorkspaceQuadChrome ? 4 : 8,
+      gap: usesWorkspaceDenseChrome ? 4 : 8,
       flexWrap: "wrap",
       minWidth: 0,
     }),
-    [usesWorkspaceCompactChrome, usesWorkspaceQuadChrome],
+    [usesWorkspaceCompactChrome, usesWorkspaceDenseChrome],
   );
   const toolbarSecondaryLocationGroupStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
       alignItems: "center",
-      gap: usesWorkspaceQuadChrome ? 4 : 8,
+      gap: usesWorkspaceDenseChrome ? 4 : 8,
       flex: 1,
       flexWrap: "wrap",
       minWidth: 0,
     }),
-    [usesWorkspaceQuadChrome],
+    [usesWorkspaceDenseChrome],
   );
   const toolbarSecondaryActionGroupStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
       alignItems: "center",
-      gap: usesWorkspaceQuadChrome ? 4 : 6,
+      gap: usesWorkspaceDenseChrome ? 4 : 6,
       flexWrap: "wrap",
       minWidth: 0,
     }),
-    [usesWorkspaceQuadChrome],
+    [usesWorkspaceDenseChrome],
   );
   const mainColumnStyle = useMemo<CSSProperties>(
     () => ({
@@ -15966,7 +16044,7 @@ export function FileExplorer({
         id: "saveSearch",
         label: "Save Search",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !currentPathIsCloud && !currentPathIsHome && !usesWorkspaceQuadChrome,
+        isVisible: () => !currentPathIsCloud && !currentPathIsHome && !usesWorkspaceDenseChrome,
         render: () => (
           <button
             type="button"
@@ -16021,7 +16099,7 @@ export function FileExplorer({
         id: "tagSelection",
         label: "Tag Selection",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !currentPathIsCloud && !currentPathIsHome && !usesWorkspaceQuadChrome,
+        isVisible: () => !currentPathIsCloud && !currentPathIsHome && !usesWorkspaceDenseChrome,
         render: () => (
           <button
             type="button"
@@ -16052,7 +16130,7 @@ export function FileExplorer({
         id: "duplicateScan",
         label: "Find Duplicates",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !currentPathIsCloud && !currentPathIsHome && !usesWorkspaceQuadChrome,
+        isVisible: () => !currentPathIsCloud && !currentPathIsHome && !usesWorkspaceDenseChrome,
         render: () => (
           <button
             type="button"
@@ -16197,7 +16275,7 @@ export function FileExplorer({
         label: "Explorer Mode",
         surfaces: ["explorerToolbar", "explorerTopbar"],
         isVisible: (surfaceId) =>
-          !usesWorkspaceQuadChrome && isGlobalChromeSurfaceActive(surfaceId),
+          !usesWorkspaceDenseChrome && isGlobalChromeSurfaceActive(surfaceId),
         render: () => (
           <div
             ref={modeProfileMenuAnchorRef}
@@ -16421,7 +16499,7 @@ export function FileExplorer({
         label: "View Layout",
         surfaces: ["explorerToolbar", "explorerTopbar"],
         isVisible: (surfaceId) =>
-          !usesWorkspaceQuadChrome && isGlobalChromeSurfaceActive(surfaceId),
+          !usesWorkspaceDenseChrome && isGlobalChromeSurfaceActive(surfaceId),
         render: () => (
           <div
             ref={layoutMenuAnchorRef}
@@ -17234,7 +17312,7 @@ export function FileExplorer({
       searchModeLabel,
       sourceEntryCount,
       usesWorkspaceCompactChrome,
-      usesWorkspaceQuadChrome,
+      usesWorkspaceDenseChrome,
     ],
   );
   const explorerChromeControlRegistryById = useMemo(

@@ -9,6 +9,7 @@ pub mod entry_size_cache;
 pub mod explorer_pro_commands;
 pub mod fs_commands;
 pub mod gpu_runtime;
+pub mod global_search;
 pub mod image_commands;
 pub mod lan_share;
 mod linux_graphics;

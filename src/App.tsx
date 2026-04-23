@@ -14,7 +14,11 @@ import {
   type OverlayPanelDefinition,
 } from './panels/panelRegistry';
 import { FolderPluginRenderer, PluginsManager } from './components/PluginsManager';
-import { CommandPalette, type OverlayCommandPaletteAction } from './components/CommandPalette';
+import {
+  CommandPalette,
+  type OverlayCommandPaletteAction,
+  type OverlayCommandPaletteStatusMessage,
+} from './components/CommandPalette';
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
 import {
   getManagedContentDirectory,
@@ -107,6 +111,10 @@ import {
 } from './config/homePackages';
 import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
 import { dispatchTerminalCommand } from './config/pluginContributions';
+import {
+  describeGlobalSearchPaletteStatus,
+  globalSearchPaletteConfig,
+} from './config/globalSearch';
 import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './config/hotkeys';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
@@ -138,7 +146,10 @@ import {
   settingsSectionCatalog,
   type SettingsSectionKey,
 } from './config/settingsNavigation';
-import { isExplorerTrackableFolderPath } from './config/explorerVirtualLocations';
+import {
+  isExplorerTrackableFolderPath,
+  isExplorerVirtualPath,
+} from './config/explorerVirtualLocations';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
 import { WorkbenchTopBar } from './components/WorkbenchTopBar';
@@ -186,6 +197,7 @@ import {
   clearCompletedExplorerTasks,
   retryFailedExplorerTasks,
 } from './store/explorerTaskStore';
+import { useGlobalSearchStore } from './store/globalSearchStore';
 import { createPythonRuntimeConfig } from './config/python';
 import {
   useSettingsStore,
@@ -198,6 +210,7 @@ import { useExplorerStore } from './store/explorerStore';
 import { useAccelerationRuntimeFeed } from './store/accelerationRuntimeStore';
 import { useGpuRuntimeFeed } from './store/gpuRuntimeStore';
 import { useTerminalStore } from './store/terminalStore';
+import type { GlobalSearchResultValue } from './runtime/globalSearchBackend';
 
 const FRAME_PROBE_OUTPUT_PATH = (() => {
   if (typeof window !== 'undefined') {
@@ -218,6 +231,18 @@ function clampValue(value: number, min: number, max: number): number {
 
 function clampUnit(value: number): number {
   return clampValue(value, 0, 1);
+}
+
+function getParentDirectoryPath(path: string): string {
+  const trimmed = path.replace(/[/\\]+$/, '');
+  const parentPath = trimmed.replace(/[/\\][^/\\]+$/, '');
+  if (parentPath === trimmed) {
+    return path;
+  }
+  if (/^[A-Za-z]:$/.test(parentPath)) {
+    return `${parentPath}\\`;
+  }
+  return parentPath || '/';
 }
 
 function sanitizeImportedWallpaperFileName(fileName: string): string {
@@ -550,6 +575,7 @@ function App() {
   const [repositoryPickerRequestId, setRepositoryPickerRequestId] = useState(0);
   const [isRepositoryPickerActive, setIsRepositoryPickerActive] = useState(false);
   const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -606,7 +632,40 @@ function App() {
     initStore: state.initStore,
     addDirectoryBookmark: state.addDirectoryBookmark,
   })));
-  const explorerCurrentPath = useExplorerStore(state => state.session.currentPath);
+  const {
+    explorerCurrentPath,
+    explorerSessions,
+    explorerRailNodes,
+    requestOpenInExplorer,
+  } = useExplorerStore(useShallow(state => ({
+    explorerCurrentPath: state.session.currentPath,
+    explorerSessions: state.sessions,
+    explorerRailNodes: state.rail.nodes,
+    requestOpenInExplorer: state.requestOpenInExplorer,
+  })));
+  const {
+    openPaletteSession: openGlobalSearchPaletteSession,
+    closePaletteSession: closeGlobalSearchPaletteSession,
+    startScan: startGlobalSearchScan,
+    cancelScan: cancelGlobalSearchScan,
+    setQuery: setGlobalSearchQuery,
+    clearQuery: clearGlobalSearchQuery,
+    results: globalSearchResults,
+    status: globalSearchStatus,
+    isSearching: isGlobalSearchSearching,
+    lastError: globalSearchLastError,
+  } = useGlobalSearchStore(useShallow(state => ({
+    openPaletteSession: state.openPaletteSession,
+    closePaletteSession: state.closePaletteSession,
+    startScan: state.startScan,
+    cancelScan: state.cancelScan,
+    setQuery: state.setQuery,
+    clearQuery: state.clearQuery,
+    results: state.results,
+    status: state.status,
+    isSearching: state.isSearching,
+    lastError: state.lastError,
+  })));
   const {
     folderPlugins,
     pluginContributedShaders,
@@ -3736,6 +3795,83 @@ function App() {
     window.alert('Mobile share stopped.');
   }, []);
 
+  const globalSearchPriorityPaths = useMemo(() => {
+    const candidatePaths = [
+      ...Object.values(explorerSessions).map((session) => session.currentPath),
+      ...explorerRailNodes
+        .filter(
+          (
+            node,
+          ): node is (typeof explorerRailNodes)[number] & {
+            kind: 'bookmark';
+            path: string;
+          } => node.kind === 'bookmark' && typeof node.path === 'string',
+        )
+        .map((node) => node.path),
+    ];
+
+    return candidatePaths.filter((path) => {
+      const trimmedPath = path.trim();
+      return (
+        trimmedPath.length > 0
+        && !trimmedPath.startsWith('cloud://')
+        && !isExplorerVirtualPath(trimmedPath)
+      );
+    });
+  }, [explorerRailNodes, explorerSessions]);
+
+  const handleOpenGlobalSearchResult = useCallback((result: GlobalSearchResultValue) => {
+    handleActivatePanel('explorer');
+    requestOpenInExplorer({
+      directoryPath: result.isDir ? result.path : getParentDirectoryPath(result.path),
+      selectionPath: result.isDir ? null : result.path,
+      pushHistory: true,
+    });
+  }, [handleActivatePanel, requestOpenInExplorer]);
+
+  const commandPaletteStatusMessage =
+    useMemo<OverlayCommandPaletteStatusMessage | null>(() => (
+      describeGlobalSearchPaletteStatus({
+        status: globalSearchStatus,
+        lastError: globalSearchLastError,
+        isSearching: isGlobalSearchSearching,
+        query: commandPaletteQuery,
+      })
+    ), [
+      commandPaletteQuery,
+      globalSearchLastError,
+      globalSearchStatus,
+      isGlobalSearchSearching,
+    ]);
+
+  useEffect(() => {
+    if (isCommandPaletteOpen) {
+      void openGlobalSearchPaletteSession();
+      return;
+    }
+
+    closeGlobalSearchPaletteSession();
+    clearGlobalSearchQuery();
+  }, [
+    clearGlobalSearchQuery,
+    closeGlobalSearchPaletteSession,
+    isCommandPaletteOpen,
+    openGlobalSearchPaletteSession,
+  ]);
+
+  useEffect(() => {
+    if (!isCommandPaletteOpen) {
+      return;
+    }
+
+    setGlobalSearchQuery(commandPaletteQuery, globalSearchPriorityPaths);
+  }, [
+    commandPaletteQuery,
+    globalSearchPriorityPaths,
+    isCommandPaletteOpen,
+    setGlobalSearchQuery,
+  ]);
+
   useEffect(() => {
     if (!isOverlayVisible && isCommandPaletteOpen) {
       setIsCommandPaletteOpen(false);
@@ -3946,7 +4082,46 @@ function App() {
       onSelect: () => dispatchTerminalCommand(command.command, command.runOnSelect),
     }));
 
+    const globalSearchFileActions = commandPaletteQuery.trim().length > 0
+      ? globalSearchResults.map<OverlayCommandPaletteAction>((result) => ({
+        id: `global-search-result:${result.path}`,
+        title: result.name,
+        subtitle: result.path,
+        group: result.isDir ? 'Folders' : 'Files',
+        keywords: [
+          'global search',
+          result.path,
+          result.extension ?? '',
+          result.isDir ? 'folder' : 'file',
+        ],
+        badge: result.isDir ? 'Folder' : (result.extension?.toUpperCase() || 'File'),
+        onSelect: () => handleOpenGlobalSearchResult(result),
+      }))
+      : [];
+
+    const globalSearchControlAction: OverlayCommandPaletteAction = {
+      id: 'global-search-toggle-scan',
+      title: globalSearchStatus?.isScanInProgress || globalSearchStatus?.isCommitting
+        ? 'Cancel Global Search Scan'
+        : globalSearchStatus?.isIndexValid && globalSearchStatus.indexedItemCount > 0
+          ? 'Rebuild Global Search Index'
+          : 'Build Global Search Index',
+      subtitle: globalSearchStatus?.isScanInProgress || globalSearchStatus?.isCommitting
+        ? 'Stop the active machine-wide filename indexing pass.'
+        : 'Index local drive roots so the command palette can jump to files instantly.',
+      group: 'Search',
+      keywords: ['global search', 'files', 'index', 'scan', 'reindex', 'palette'],
+      badge: 'Search',
+      onSelect: () => (
+        globalSearchStatus?.isScanInProgress || globalSearchStatus?.isCommitting
+          ? cancelGlobalSearchScan()
+          : startGlobalSearchScan()
+      ),
+    };
+
     return [
+      ...globalSearchFileActions,
+      globalSearchControlAction,
       ...builtInActions,
       ...settingsSectionActions,
       ...managedContentDirectoryActions,
@@ -3955,8 +4130,13 @@ function App() {
     ];
   }, [
     activeLayoutProfile.label,
+    cancelGlobalSearchScan,
+    commandPaletteQuery,
+    globalSearchResults,
+    globalSearchStatus,
     handleActivatePanel,
     handleCycleLayout,
+    handleOpenGlobalSearchResult,
     handleOpenSettings,
     handleOpenSettingsSection,
     handleStartMobileShare,
@@ -3974,6 +4154,7 @@ function App() {
     refreshAuthoredShaders,
     refreshFolderPlugins,
     refreshThemePackages,
+    startGlobalSearchScan,
     windowMode,
     zenFocusMode,
   ]);
@@ -4785,6 +4966,9 @@ function App() {
         blurEnabled={appBlur}
         actions={commandPaletteActions}
         shortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
+        queryPlaceholder={globalSearchPaletteConfig.commandPalettePlaceholder}
+        statusMessage={commandPaletteStatusMessage}
+        onQueryChange={setCommandPaletteQuery}
         onClose={handleCloseCommandPalette}
       />
       </div>

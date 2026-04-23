@@ -13,12 +13,20 @@ export interface OverlayCommandPaletteAction {
   onSelect: () => void | Promise<void>;
 }
 
+export interface OverlayCommandPaletteStatusMessage {
+  text: string;
+  tone?: 'muted' | 'accent' | 'warning' | 'error';
+}
+
 export function CommandPalette({
   isOpen,
   appearance,
   blurEnabled,
   actions,
   shortcutLabel,
+  queryPlaceholder = 'Search commands, panels, plugin actions...',
+  statusMessage = null,
+  onQueryChange,
   onClose,
 }: {
   isOpen: boolean;
@@ -26,6 +34,9 @@ export function CommandPalette({
   blurEnabled: boolean;
   actions: OverlayCommandPaletteAction[];
   shortcutLabel: string;
+  queryPlaceholder?: string;
+  statusMessage?: OverlayCommandPaletteStatusMessage | null;
+  onQueryChange?: (query: string) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -35,6 +46,7 @@ export function CommandPalette({
   useEffect(() => {
     if (!isOpen) {
       setQuery('');
+      onQueryChange?.('');
       setSelectedIndex(0);
       return;
     }
@@ -45,7 +57,7 @@ export function CommandPalette({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [isOpen]);
+  }, [isOpen, onQueryChange]);
 
   const filteredActions = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -192,10 +204,12 @@ export function CommandPalette({
             ref={inputRef}
             value={query}
             onChange={event => {
-              setQuery(event.target.value);
+              const nextQuery = event.target.value;
+              setQuery(nextQuery);
+              onQueryChange?.(nextQuery);
               setSelectedIndex(0);
             }}
-            placeholder="Search commands, panels, plugin actions..."
+            placeholder={queryPlaceholder}
             style={{
               flex: 1,
               minWidth: 0,
@@ -224,6 +238,26 @@ export function CommandPalette({
             {shortcutLabel}
           </kbd>
         </div>
+
+        {statusMessage && (
+          <div
+            style={{
+              padding: '8px 16px',
+              borderBottom: '1px solid var(--overlay-workbench-command-palette-border)',
+              fontSize: 11,
+              color: statusMessage.tone === 'error'
+                ? '#ff8b8b'
+                : statusMessage.tone === 'warning'
+                  ? '#f6c177'
+                  : statusMessage.tone === 'accent'
+                    ? accent
+                    : muted,
+              background: 'var(--overlay-workbench-command-palette-item-bg)',
+            }}
+          >
+            {statusMessage.text}
+          </div>
+        )}
 
         <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 8 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

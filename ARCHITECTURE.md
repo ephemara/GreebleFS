@@ -73,7 +73,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/storageStore.ts`
   Persisted storage-workbench session state. It owns active mode, selected root/path set, expanded tree paths, sort state, preview split mode, focus path, and the staged cleanup queue snapshot.
 - `src/components/explorer/ExplorerWorkspace.tsx`
-  Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, adaptive split sizing, and one shared workspace strip that always shows the focused pane's tab set. This layer still owns top-level multi-pane explorer topology; the newer preview split stays inside a single `FileExplorer` instance instead of routing through workspace panes.
+  Explorer-local workspace shell that wraps `FileExplorer` instances with workspace-owned tabs, slot-based `1-Up` / `2-Up` / `3-Up` / `4-Up` pane layouts, pane focus, adaptive split sizing, and a single workspace tab strip. Each workspace tab owns its own pane topology plus per-pane explorer sessions; pane switching does not swap the tab strip. This layer still owns top-level multi-pane explorer topology; the newer preview split stays inside a single `FileExplorer` instance instead of routing through workspace panes.
 - `src/components/explorer/ExplorerSideRail.tsx`
   Explorer rail, drives, bookmarks, saved searches, and tag-filter browsing.
 - `src/components/home/ExplorerHomeSurface.tsx`, `src/components/home/homePackRuntime.tsx`, and `src/config/homePackages.ts`
@@ -426,10 +426,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/store/settingsStore.ts` and `src/store/explorerStore.ts` rehydrate persisted state on `storage` events so the hidden host stays in sync with the active host during mode handoff
 - `src/store/explorerStore.ts` supports named explorer sessions, and the dock now reuses those sessions through its own appearance/layout lane rather than through a separate drawer subsystem.
 - The explorer now has a local workspace shell separate from the global workbench tabs:
-  - `ExplorerWorkspace.tsx` owns explorer tabs, the shared focused-pane workspace strip, and slot-based `single` / `split` / `quad` rendering
-  - each tab maps to a distinct `ExplorerInstanceId`, so the existing `FileExplorer` session model still owns path/history/search/preview state
-  - `explorerStore.ts` persists the workspace snapshot (`tabs`, pane activity, layout mode, focused pane, column split ratio, row split ratio) alongside the underlying named sessions
-  - workspace normalization is collapse-safe: when the UI drops from `quad` to `split` or `single`, tabs from hidden panes are reassigned into visible panes instead of being stranded in invisible left/right slots
+  - `ExplorerWorkspace.tsx` owns workspace tabs, the separate visible-pane switcher, and slot-based `single` / `split` / `triple` / `quad` rendering
+  - each workspace tab owns a stable set of pane slots (`pane-1` through `pane-4`) and each occupied pane slot maps to its own `ExplorerInstanceId`, so `FileExplorer` still owns path/history/search/preview state at the session level
+  - `explorerStore.ts` persists the workspace snapshot as `workspace.tabs[] + activeWorkspaceTabId`, where each workspace tab stores its own layout mode, focused pane, split ratios, and pane-slot session bindings
+  - workspace normalization is collapse-safe: when the UI drops from `quad` to `triple` / `split` / `single`, hidden pane sessions stay attached to their slots and are restored when the layout expands again
   - commander-style cross-pane actions are an explicit bridge, not header-owned filesystem logic: `FileExplorer.tsx` publishes live pane path/selection snapshots upward, and `ExplorerWorkspace.tsx` sends navigation / refresh / selection-transfer requests back down into the active explorer instance
 - `FileExplorer.tsx` now takes `workspacePaneCount` from `ExplorerWorkspace.tsx` so multi-pane layouts can compact toolbar chrome, suppress the explorer status bar, and hide the side preview surface until the workspace returns to `1-Up`.
 - `FileExplorer.tsx` shares directory/search result caches across explorer sessions so alternate surfaces do not duplicate backend reads unless a mutation invalidates the cache.
