@@ -602,7 +602,7 @@ export function ExplorerSideRail({
           </span>
           {showVerboseDragGuide && (
             <span style={railMetaPillStyle}>
-              Plain drag exports files. Hold Shift to keep drag inside the explorer.
+              Plain drag stays inside the explorer. Hold Alt to drag files out.
             </span>
           )}
         </>

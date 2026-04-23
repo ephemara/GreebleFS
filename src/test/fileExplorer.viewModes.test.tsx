@@ -548,6 +548,63 @@ function createDataTransfer() {
   };
 }
 
+function startExplorerPointerDrag(
+  dragSource: HTMLElement,
+  options?: {
+    pointerId?: number;
+    startX?: number;
+    startY?: number;
+    endX?: number;
+    endY?: number;
+    altKey?: boolean;
+    ctrlKey?: boolean;
+  },
+) {
+  const pointerId = options?.pointerId ?? 1;
+  const startX = options?.startX ?? 24;
+  const startY = options?.startY ?? 24;
+  const endX = options?.endX ?? startX + 18;
+  const endY = options?.endY ?? startY + 18;
+
+  fireEvent.pointerDown(dragSource, {
+    pointerId,
+    button: 0,
+    clientX: startX,
+    clientY: startY,
+    altKey: options?.altKey,
+    ctrlKey: options?.ctrlKey,
+  });
+  fireEvent.pointerMove(window, {
+    pointerId,
+    clientX: endX,
+    clientY: endY,
+    altKey: options?.altKey,
+    ctrlKey: options?.ctrlKey,
+  });
+
+  return {
+    pointerId,
+    endX,
+    endY,
+  };
+}
+
+function finishExplorerPointerDrag(args: {
+  pointerId?: number;
+  endX?: number;
+  endY?: number;
+  altKey?: boolean;
+  ctrlKey?: boolean;
+}) {
+  fireEvent.pointerUp(window, {
+    pointerId: args.pointerId ?? 1,
+    clientX: args.endX ?? 42,
+    clientY: args.endY ?? 42,
+    altKey: args.altKey,
+    ctrlKey: args.ctrlKey,
+  });
+}
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -4813,26 +4870,16 @@ const value = 1;
     });
   });
 
-  it("keeps plain explorer drags internal while keeping in-app payloads available", async () => {
+  it("starts pointer-driven internal explorer drags without invoking the native drag bridge", async () => {
     renderExplorer();
     const entry = await screen.findByText("notes.txt");
-    const dataTransfer = createDataTransfer();
     const dragSource = entry.closest('[data-overlay-drag-source="file"]');
     if (!(dragSource instanceof HTMLElement)) {
       throw new Error("Expected draggable explorer entry");
     }
 
-    const event = createEvent.dragStart(dragSource, { dataTransfer });
-    fireEvent(dragSource, event);
+    const dragGesture = startExplorerPointerDrag(dragSource);
 
-    expect(dataTransfer.setData).toHaveBeenCalledWith(
-      "application/x-overlayterm-drag-intent",
-      "internal",
-    );
-    expect(dataTransfer.setDragImage).toHaveBeenCalledTimes(1);
-    const [dragImage] =
-      vi.mocked(dataTransfer.setDragImage).mock.calls[0] ?? [];
-    expect(dragImage).toBeInstanceOf(HTMLCanvasElement);
     expect(
       vi
         .mocked(invoke)
@@ -4840,10 +4887,8 @@ const value = 1;
           ([command]) => command === "fs_start_native_file_drag",
         ),
     ).toBe(false);
-    expect(dataTransfer.setData).toHaveBeenCalledWith(
-      "application/x-overlayterm-paths",
-      JSON.stringify([`${REPO_ROOT}\\notes.txt`]),
-    );
+
+    finishExplorerPointerDrag(dragGesture);
   });
 
   it("moves multi-selected files into the hovered folder without leaking the drop to the viewport root", async () => {
@@ -4854,7 +4899,6 @@ const value = 1;
     fireEvent.click(screen.getByText("preview.png"), { ctrlKey: true });
     expect(screen.getByText(/2 selected/i)).toBeTruthy();
 
-    const dataTransfer = createDataTransfer();
     const contentViewport = document.querySelector(
       '[data-overlay-explorer-plane="content-viewport"]',
     ) as HTMLElement | null;
@@ -4874,9 +4918,28 @@ const value = 1;
       throw new Error("Expected draggable explorer entries");
     }
 
-    fireEvent(dragSource, createEvent.dragStart(dragSource, { dataTransfer }));
-    fireEvent.dragOver(folderTarget, { dataTransfer });
-    fireEvent.drop(folderTarget, { dataTransfer });
+    const originalElementFromPoint = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => folderTarget),
+    });
+
+    try {
+      const dragGesture = startExplorerPointerDrag(dragSource, {
+        endX: 96,
+        endY: 48,
+      });
+      finishExplorerPointerDrag(dragGesture);
+    } finally {
+      if (originalElementFromPoint) {
+        Object.defineProperty(document, "elementFromPoint", {
+          configurable: true,
+          value: originalElementFromPoint,
+        });
+      } else {
+        Reflect.deleteProperty(document, "elementFromPoint");
+      }
+    }
 
     await waitFor(() => {
       const transferCalls = vi
@@ -4951,26 +5014,16 @@ const value = 1;
     });
   });
 
-  it("moves native same-window drags into the hovered folder via the Tauri drag-drop listener", async () => {
+  it("copies native external drops into the hovered folder via the Tauri drag-drop listener", async () => {
     const currentWindow = getCurrentWindow();
     renderExplorer();
     await screen.findByText("alpha");
-
-    const dataTransfer = createDataTransfer();
-    const dragSource = screen
-      .getByText("notes.txt")
-      .closest('[data-overlay-drag-source="file"]');
     const folderTarget = screen
       .getByText("alpha")
       .closest('[data-overlay-drag-source="file"]');
-    if (
-      !(dragSource instanceof HTMLElement) ||
-      !(folderTarget instanceof HTMLElement)
-    ) {
-      throw new Error("Expected draggable explorer entries");
+    if (!(folderTarget instanceof HTMLElement)) {
+      throw new Error("Expected folder target");
     }
-
-    fireEvent(dragSource, createEvent.dragStart(dragSource, { dataTransfer }));
 
     await waitFor(() => {
       expect(
@@ -5035,31 +5088,21 @@ const value = 1;
       expect(transferCalls[0]?.[1]).toMatchObject({
         targetDir: expectedTargetDir,
         sources: [`${REPO_ROOT}\\\\notes.txt`],
-        operation: "move",
+        operation: "copy",
       });
     });
   });
 
-  it("drops native same-window drags into the current folder when the pointer is over a file card", async () => {
+  it("drops native external drags into the current folder when the pointer is over a file card", async () => {
     const currentWindow = getCurrentWindow();
     renderExplorer();
     await screen.findByText("alpha");
-
-    const dataTransfer = createDataTransfer();
-    const dragSource = screen
-      .getByText("notes.txt")
-      .closest('[data-overlay-drag-source="file"]');
     const fileTarget = screen
       .getByText("preview.png")
       .closest('[data-overlay-drag-source="file"]');
-    if (
-      !(dragSource instanceof HTMLElement) ||
-      !(fileTarget instanceof HTMLElement)
-    ) {
-      throw new Error("Expected draggable explorer entries");
+    if (!(fileTarget instanceof HTMLElement)) {
+      throw new Error("Expected file target");
     }
-
-    fireEvent(dragSource, createEvent.dragStart(dragSource, { dataTransfer }));
 
     await waitFor(() => {
       expect(
@@ -5118,7 +5161,7 @@ const value = 1;
       expect(transferCalls[0]?.[1]).toMatchObject({
         targetDir: REPO_ROOT,
         sources: [`${REPO_ROOT}\\\\notes.txt`],
-        operation: "move",
+        operation: "copy",
       });
     });
   });
@@ -5126,20 +5169,12 @@ const value = 1;
   it("starts the native drag bridge only when Alt is held for supported local entries", async () => {
     renderExplorer();
     const entry = await screen.findByText("notes.txt");
-    const dataTransfer = createDataTransfer();
     const dragSource = entry.closest('[data-overlay-drag-source=\"file\"]');
     if (!(dragSource instanceof HTMLElement)) {
       throw new Error("Expected draggable explorer entry");
     }
 
-    const event = createEvent.dragStart(dragSource, { dataTransfer });
-    Object.defineProperty(event, "altKey", { value: true });
-    fireEvent(dragSource, event);
-
-    expect(dataTransfer.setData).toHaveBeenCalledWith(
-      "application/x-overlayterm-drag-intent",
-      "native-out",
-    );
+    const dragGesture = startExplorerPointerDrag(dragSource, { altKey: true });
     expect(
       vi
         .mocked(invoke)
@@ -5147,6 +5182,7 @@ const value = 1;
           ([command]) => command === "fs_start_native_file_drag",
         ),
     ).toBe(true);
+    finishExplorerPointerDrag({ ...dragGesture, altKey: true });
   });
 
   it("opens an in-app tag dialog and applies comma-separated tags to the current selection", async () => {

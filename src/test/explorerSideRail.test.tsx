@@ -243,7 +243,7 @@ describe('ExplorerSideRail', () => {
     );
 
     expect(screen.getByText('0 pinned')).toBeInTheDocument();
-    expect(screen.queryByText(/hold shift to keep drag inside the explorer/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/hold alt to drag files out/i)).not.toBeInTheDocument();
 
     rerender(
       <ExplorerSideRail
@@ -252,7 +252,7 @@ describe('ExplorerSideRail', () => {
       />,
     );
 
-    expect(screen.getByText(/plain drag exports files/i)).toBeInTheDocument();
+    expect(screen.getByText(/plain drag stays inside the explorer/i)).toBeInTheDocument();
   }, 20000);
 
   it('stores collapsed section state when sections are toggled', () => {

@@ -484,14 +484,6 @@ const EXPLORER_TEXT_DRAFT_SCOPE = "text";
 const EXPLORER_SHADER_DRAFT_SCOPE = "shader";
 const explorerStringDraftSerializer = createStringExplorerDraftSerializer();
 
-type ExplorerDragPreviewContent = {
-  primaryLabel: string;
-  itemCount: number;
-};
-
-let transparentExplorerDragImage: HTMLCanvasElement | null = null;
-let explorerDragPreviewCanvas: HTMLCanvasElement | null = null;
-
 type ExplorerNormalizedSearchResult = {
   name: string;
   path: string;
@@ -1670,228 +1662,6 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
     ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName) ||
     Boolean(element.closest(".monaco-editor"))
   );
-}
-
-function resolveExplorerDragIntent(
-  event: Pick<React.DragEvent, "altKey">,
-): ExplorerDragIntent {
-  return event.altKey ? "native-out" : "internal";
-}
-
-function fitExplorerDragPreviewLabel(
-  context: CanvasRenderingContext2D,
-  value: string,
-  maxWidth: number,
-): string {
-  if (context.measureText(value).width <= maxWidth) {
-    return value;
-  }
-
-  const ellipsis = "...";
-  for (let index = value.length - 1; index > 0; index -= 1) {
-    const nextValue = `${value.slice(0, index)}${ellipsis}`;
-    if (context.measureText(nextValue).width <= maxWidth) {
-      return nextValue;
-    }
-  }
-
-  return ellipsis;
-}
-
-function drawExplorerDragPreviewRoundedRect(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-): void {
-  const safeRadius = Math.min(radius, width / 2, height / 2);
-  context.beginPath();
-  context.moveTo(x + safeRadius, y);
-  context.lineTo(x + width - safeRadius, y);
-  context.arcTo(x + width, y, x + width, y + safeRadius, safeRadius);
-  context.lineTo(x + width, y + height - safeRadius);
-  context.arcTo(
-    x + width,
-    y + height,
-    x + width - safeRadius,
-    y + height,
-    safeRadius,
-  );
-  context.lineTo(x + safeRadius, y + height);
-  context.arcTo(x, y + height, x, y + height - safeRadius, safeRadius);
-  context.lineTo(x, y + safeRadius);
-  context.arcTo(x, y, x + safeRadius, y, safeRadius);
-  context.closePath();
-}
-
-function renderExplorerDragPreviewCanvas(
-  content: ExplorerDragPreviewContent,
-): HTMLCanvasElement | null {
-  if (typeof document === "undefined") {
-    return null;
-  }
-
-  if (!explorerDragPreviewCanvas) {
-    explorerDragPreviewCanvas = document.createElement("canvas");
-  }
-
-  const label = content.primaryLabel.trim() || "Item";
-  const additionalItemCount = Math.max(0, content.itemCount - 1);
-  const badgeText = additionalItemCount > 0 ? `+${additionalItemCount}` : "";
-  const paddingX = 12;
-  const previewHeight = 34;
-  const dotSize = 8;
-  const gap = 8;
-  const labelMaxWidth = 220;
-  const badgeHorizontalPadding = 7;
-  const badgeVerticalPadding = 4;
-  const devicePixelRatio =
-    typeof window === "undefined"
-      ? 1
-      : Math.max(1, window.devicePixelRatio || 1);
-
-  const previewContext = explorerDragPreviewCanvas.getContext("2d");
-  if (!previewContext) {
-    explorerDragPreviewCanvas.width = 1;
-    explorerDragPreviewCanvas.height = 1;
-    return explorerDragPreviewCanvas;
-  }
-
-  previewContext.font = "600 13px system-ui";
-  const fittedLabel = fitExplorerDragPreviewLabel(
-    previewContext,
-    label,
-    labelMaxWidth,
-  );
-  const labelWidth = Math.ceil(previewContext.measureText(fittedLabel).width);
-  const badgeWidth = badgeText
-    ? Math.ceil(previewContext.measureText(badgeText).width) +
-      badgeHorizontalPadding * 2
-    : 0;
-  const previewWidth =
-    paddingX * 2 +
-    dotSize +
-    gap +
-    labelWidth +
-    (badgeText ? gap + badgeWidth : 0);
-
-  explorerDragPreviewCanvas.width = Math.ceil(previewWidth * devicePixelRatio);
-  explorerDragPreviewCanvas.height = Math.ceil(
-    previewHeight * devicePixelRatio,
-  );
-  explorerDragPreviewCanvas.style.width = `${previewWidth}px`;
-  explorerDragPreviewCanvas.style.height = `${previewHeight}px`;
-
-  previewContext.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-  previewContext.clearRect(0, 0, previewWidth, previewHeight);
-  previewContext.font = "600 13px system-ui";
-  previewContext.textBaseline = "middle";
-
-  // Read drag preview theme tokens from CSS vars at paint time
-  const dragPreviewStyles =
-    typeof document !== "undefined"
-      ? getComputedStyle(document.documentElement)
-      : null;
-  const dragPreviewBg =
-    dragPreviewStyles
-      ?.getPropertyValue("--overlay-explorer-drag-preview-bg")
-      .trim() || "rgba(18,18,24,0.96)";
-  const dragPreviewBorder =
-    dragPreviewStyles
-      ?.getPropertyValue("--overlay-explorer-drag-preview-border")
-      .trim() || "rgba(255,255,255,0.14)";
-  const dragPreviewDot =
-    dragPreviewStyles
-      ?.getPropertyValue("--overlay-explorer-drag-preview-dot")
-      .trim() || "#5aa2ff";
-
-  previewContext.shadowColor = "rgba(0, 0, 0, 0.35)";
-  previewContext.shadowBlur = 12;
-  previewContext.shadowOffsetY = 8;
-  drawExplorerDragPreviewRoundedRect(
-    previewContext,
-    0.5,
-    0.5,
-    previewWidth - 1,
-    previewHeight - 1,
-    12,
-  );
-  previewContext.fillStyle = dragPreviewBg;
-  previewContext.fill();
-  previewContext.shadowColor = "transparent";
-  previewContext.shadowBlur = 0;
-  previewContext.shadowOffsetY = 0;
-  previewContext.strokeStyle = dragPreviewBorder;
-  previewContext.lineWidth = 1;
-  previewContext.stroke();
-
-  previewContext.beginPath();
-  previewContext.arc(
-    paddingX + dotSize / 2,
-    previewHeight / 2,
-    dotSize / 2,
-    0,
-    Math.PI * 2,
-  );
-  previewContext.fillStyle = dragPreviewDot;
-  previewContext.fill();
-
-  const labelX = paddingX + dotSize + gap;
-  previewContext.fillStyle = "rgba(255, 255, 255, 0.96)";
-  previewContext.fillText(fittedLabel, labelX, previewHeight / 2);
-
-  if (badgeText) {
-    const badgeX = labelX + labelWidth + gap;
-    const badgeHeight = 13 + badgeVerticalPadding * 2;
-    const badgeY = (previewHeight - badgeHeight) / 2;
-    drawExplorerDragPreviewRoundedRect(
-      previewContext,
-      badgeX,
-      badgeY,
-      badgeWidth,
-      badgeHeight,
-      badgeHeight / 2,
-    );
-    previewContext.fillStyle = "rgba(255, 255, 255, 0.08)";
-    previewContext.fill();
-    previewContext.fillStyle = "rgba(255, 255, 255, 0.72)";
-    previewContext.fillText(
-      badgeText,
-      badgeX + badgeHorizontalPadding,
-      previewHeight / 2,
-    );
-  }
-
-  return explorerDragPreviewCanvas;
-}
-
-function applyExplorerNativeFeelingDragImage(
-  dataTransfer: DataTransfer | null | undefined,
-  content: ExplorerDragPreviewContent,
-): void {
-  if (
-    !dataTransfer ||
-    typeof dataTransfer.setDragImage !== "function" ||
-    typeof document === "undefined"
-  ) {
-    return;
-  }
-
-  const dragPreviewCanvas = renderExplorerDragPreviewCanvas(content);
-  if (dragPreviewCanvas) {
-    dataTransfer.setDragImage(dragPreviewCanvas, 18, 18);
-    return;
-  }
-
-  if (!transparentExplorerDragImage) {
-    transparentExplorerDragImage = document.createElement("canvas");
-    transparentExplorerDragImage.width = 1;
-    transparentExplorerDragImage.height = 1;
-  }
-
-  dataTransfer.setDragImage(transparentExplorerDragImage, 0, 0);
 }
 
 function resolveExplorerDropOperation(
@@ -3228,6 +2998,19 @@ type EditorCursorPosition = {
   lineNumber: number;
   column: number;
 };
+
+type ExplorerInternalPointerDragCandidate = {
+  pointerId: number;
+  intent: ExplorerDragIntent;
+  sourceEntryPath: string;
+  sourcePaths: string[];
+  primaryLabel: string;
+  started: boolean;
+  startClientX: number;
+  startClientY: number;
+};
+
+const EXPLORER_INTERNAL_POINTER_DRAG_START_DISTANCE = 6;
 
 function applyEditorSearchFocus(
   editor: any,
@@ -7485,6 +7268,10 @@ export function FileExplorer({
   const previewReopenOnSelectionRef = useRef(false);
   const allowPreviewLoadWhileClosedRef = useRef(false);
   const previewSaveTimer = useRef<number | null>(null);
+  const internalPointerDragCandidateRef =
+    useRef<ExplorerInternalPointerDragCandidate | null>(null);
+  const suppressExplorerEntryClickPathRef = useRef<string | null>(null);
+  const suppressExplorerEntryClickTimerRef = useRef<number | null>(null);
   const shaderPreviewSelectionMemoryRef = useRef<
     Map<string, ExplorerShaderSelectionMemory>
   >(new Map());
@@ -13349,6 +13136,11 @@ export function FileExplorer({
   // ── Click with shift-select support ──
   const onEntryClick = (e: React.MouseEvent, entry: FileEntry) => {
     e.stopPropagation();
+    if (suppressExplorerEntryClickPathRef.current === entry.path) {
+      suppressExplorerEntryClickPathRef.current = null;
+      e.preventDefault();
+      return;
+    }
     mainRef.current?.focus();
     setJumpFilter(null);
     if (repositoryPicker?.active && !repositoryPicker.allowMultiple) {
@@ -13527,84 +13319,129 @@ export function FileExplorer({
     [runtimePlatform],
   );
 
-  const onDragStart = (e: React.DragEvent<HTMLElement>, entry: FileEntry) => {
-    const dragEntries = resolveEntriesForAction(entry);
-    const dragPaths = dragEntries.map((item) => item.path);
-    const requestedDragIntent = resolveExplorerDragIntent(e);
-    const dragIntent =
-      requestedDragIntent === "native-out" && !supportsNativeDragOut(dragPaths)
-        ? "internal"
-        : requestedDragIntent;
-    startExplorerSharedDragSession({
-      paths: dragPaths,
-      intent: dragIntent,
-      sourceScopeId: explorerDropScopeId,
-    });
-    beginExplorerDragInteraction({
-      sourceKind: "internal",
-      sourcePaths: dragPaths,
-      operation: resolveExplorerDropOperation(e, runtimePlatform),
-      primaryLabel: entry.name || getPathLeaf(entry.path) || "Item",
-    });
-    e.currentTarget.dataset.overlayDragIntent = dragIntent;
-    // Keep explorer surface alive during native drag so in-app folder drops do not
-    // collapse overlay shell before the drop target resolves.
-    e.currentTarget.dataset.overlayDragHide = "false";
-    applyExplorerNativeFeelingDragImage(e.dataTransfer, {
-      primaryLabel: entry.name || getPathLeaf(entry.path) || "Item",
-      itemCount: dragEntries.length,
-    });
-    e.dataTransfer.setData("text/plain", dragPaths[0] ?? entry.path);
-    e.dataTransfer.setData(
-      "application/x-overlayterm-paths",
-      JSON.stringify(dragPaths),
-    );
-    e.dataTransfer.setData("application/x-overlayterm-drag-intent", dragIntent);
-    if (dragIntent === "native-out") {
-      const toFileUri = (value: string) => {
-        const normalized = value.replace(/\\/g, "/");
-        return normalized.startsWith("/")
-          ? `file://${encodeURI(normalized)}`
-          : `file:///${encodeURI(normalized)}`;
-      };
-      const uriList = dragPaths.map(toFileUri).join("\r\n");
-      e.dataTransfer.setData("text/uri-list", uriList);
-      if (isTauri() && dragPaths.length > 0) {
+  const suppressExplorerEntryClick = useCallback((path: string | null) => {
+    if (suppressExplorerEntryClickTimerRef.current !== null) {
+      window.clearTimeout(suppressExplorerEntryClickTimerRef.current);
+      suppressExplorerEntryClickTimerRef.current = null;
+    }
+
+    suppressExplorerEntryClickPathRef.current = path;
+    if (!path) {
+      return;
+    }
+
+    suppressExplorerEntryClickTimerRef.current = window.setTimeout(() => {
+      if (suppressExplorerEntryClickPathRef.current === path) {
+        suppressExplorerEntryClickPathRef.current = null;
+      }
+      suppressExplorerEntryClickTimerRef.current = null;
+    }, 180);
+  }, []);
+
+  const startExplorerNativeOutDrag = useCallback(
+    async (dragPaths: string[]) => {
+      if (dragPaths.length === 0 || !isTauri()) {
+        return;
+      }
+
+      if (runtimePlatform === "windows" && isProcessElevatedRef.current) {
+        setError(
+          "GreebleFS is running as Administrator, so Windows may block dragging files into normal Explorer/Desktop windows. Run GreebleFS without elevation for drag-out support.",
+        );
+      }
+
+      startExplorerSharedDragSession({
+        paths: dragPaths,
+        intent: "native-out",
+        sourceScopeId: explorerDropScopeId,
+      });
+
+      try {
+        const result = await commands.fsStartNativeFileDrag(dragPaths);
+        unwrapTauriResult(result);
+      } catch (error) {
+        const fallback = formatExplorerNativeDragError(error);
         if (runtimePlatform === "windows" && isProcessElevatedRef.current) {
           setError(
-            "GreebleFS is running as Administrator, so Windows may block dragging files into normal Explorer/Desktop windows. Run GreebleFS without elevation for drag-out support.",
+            "GreebleFS is running as Administrator, so Windows blocked native drag into a non-elevated target. Run GreebleFS without elevation for drag-out support.",
           );
+        } else {
+          setError(fallback);
         }
-        void commands
-          .fsStartNativeFileDrag(dragPaths)
-          .then((result) => {
-            unwrapTauriResult(result);
-          })
-          .catch((error) => {
-            const fallback = formatExplorerNativeDragError(error);
-            if (runtimePlatform === "windows" && isProcessElevatedRef.current) {
-              setError(
-                "GreebleFS is running as Administrator, so Windows blocked native drag into a non-elevated target. Run GreebleFS without elevation for drag-out support.",
-              );
-              return;
-            }
-            setError(fallback);
-          });
+      } finally {
+        settleExplorerSharedDragSessionAfterDragEnd("native-out");
+        endExplorerDragInteraction();
       }
-    }
-    e.dataTransfer.effectAllowed = "copyMove";
-  };
+    },
+    [explorerDropScopeId, runtimePlatform],
+  );
 
-  const onDragEnd = (e: React.DragEvent<HTMLElement>) => {
-    const dragIntent =
-      e.currentTarget.dataset.overlayDragIntent === "native-out"
-        ? "native-out"
-        : "internal";
-    delete e.currentTarget.dataset.overlayDragIntent;
-    delete e.currentTarget.dataset.overlayDragHide;
-    settleExplorerSharedDragSessionAfterDragEnd(dragIntent);
-    endExplorerDragInteraction();
-  };
+  const beginExplorerInternalPointerDrag = useCallback(
+    (
+      event: PointerEvent,
+      candidate: ExplorerInternalPointerDragCandidate,
+    ) => {
+      startExplorerSharedDragSession({
+        paths: candidate.sourcePaths,
+        intent: "internal",
+        sourceScopeId: explorerDropScopeId,
+      });
+      beginExplorerDragInteraction({
+        sourceKind: "internal",
+        sourcePaths: candidate.sourcePaths,
+        operation: resolveExplorerDropOperation(event, runtimePlatform),
+        primaryLabel: candidate.primaryLabel,
+      });
+      suppressExplorerEntryClick(candidate.sourceEntryPath);
+    },
+    [explorerDropScopeId, runtimePlatform, suppressExplorerEntryClick],
+  );
+
+  const onExplorerEntryPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLElement>, entry: FileEntry) => {
+      if (event.button !== 0 || currentPathIsHome) {
+        return;
+      }
+
+      const dragEntries = resolveEntriesForAction(entry);
+      const dragPaths = dragEntries.map((item) => item.path);
+      if (dragPaths.length === 0) {
+        return;
+      }
+
+      const requestedIntent = event.altKey ? "native-out" : "internal";
+      const dragIntent =
+        requestedIntent === "native-out" && !supportsNativeDragOut(dragPaths)
+          ? "internal"
+          : requestedIntent;
+
+      internalPointerDragCandidateRef.current = {
+        pointerId: event.pointerId,
+        intent: dragIntent,
+        sourceEntryPath: entry.path,
+        sourcePaths: dragPaths,
+        primaryLabel: entry.name || getPathLeaf(entry.path) || "Item",
+        started: false,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+      };
+    },
+    [currentPathIsHome, resolveEntriesForAction, supportsNativeDragOut],
+  );
+
+  const onExplorerEntryPointerCancel = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      const candidate = internalPointerDragCandidateRef.current;
+      if (!candidate || candidate.pointerId !== event.pointerId) {
+        return;
+      }
+
+      internalPointerDragCandidateRef.current = null;
+      clearExplorerSharedDragSession();
+      endExplorerDragInteraction();
+    },
+    [],
+  );
 
   const executeExplorerDropTransfer = useCallback(
     async (
@@ -13637,6 +13474,147 @@ export function FileExplorer({
     },
     [executeTransferRequest, refresh],
   );
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const candidate = internalPointerDragCandidateRef.current;
+      if (!candidate || candidate.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const movedDistance = Math.hypot(
+        event.clientX - candidate.startClientX,
+        event.clientY - candidate.startClientY,
+      );
+      if (
+        !candidate.started &&
+        movedDistance < EXPLORER_INTERNAL_POINTER_DRAG_START_DISTANCE
+      ) {
+        return;
+      }
+
+      if (!candidate.started) {
+        candidate.started = true;
+        internalPointerDragCandidateRef.current = candidate;
+
+        if (candidate.intent === "native-out") {
+          void startExplorerNativeOutDrag(candidate.sourcePaths);
+          internalPointerDragCandidateRef.current = null;
+          return;
+        }
+
+        beginExplorerInternalPointerDrag(event, candidate);
+      }
+
+      if (candidate.intent !== "internal") {
+        return;
+      }
+
+      updateExplorerDragInteractionFromPoint({
+        pointer: {
+          x: event.clientX,
+          y: event.clientY,
+        },
+        sourceKind: "internal",
+        sourcePaths: candidate.sourcePaths,
+        operation: resolveExplorerDropOperation(event, runtimePlatform),
+        platform: runtimePlatform,
+        primaryLabel: candidate.primaryLabel,
+      });
+    };
+
+    const finalizeInternalPointerDrag = (event: PointerEvent | null) => {
+      const candidate = internalPointerDragCandidateRef.current;
+      if (!candidate || (event && candidate.pointerId !== event.pointerId)) {
+        return;
+      }
+
+      internalPointerDragCandidateRef.current = null;
+
+      if (!candidate.started || candidate.intent !== "internal") {
+        clearExplorerSharedDragSession();
+        endExplorerDragInteraction();
+        return;
+      }
+
+      const pointer =
+        event === null
+          ? { x: candidate.startClientX, y: candidate.startClientY }
+          : { x: event.clientX, y: event.clientY };
+      const operation = resolveExplorerDropOperation(
+        event ?? { altKey: false, ctrlKey: false },
+        runtimePlatform,
+      );
+      updateExplorerDragInteractionFromPoint({
+        pointer,
+        sourceKind: "internal",
+        sourcePaths: candidate.sourcePaths,
+        operation,
+        platform: runtimePlatform,
+        primaryLabel: candidate.primaryLabel,
+      });
+
+      const interactionState = getExplorerDragInteractionState();
+      const targetPath = interactionState.valid ? interactionState.targetPath : null;
+      endExplorerDragInteraction();
+      clearExplorerSharedDragSession();
+      if (!targetPath) {
+        return;
+      }
+
+      void executeTransferRequest(
+        {
+          targetDir: targetPath,
+          sources: candidate.sourcePaths,
+          operation: interactionState.operation,
+        },
+        {
+          onSuccess: () => refresh(),
+        },
+      ).catch((error) => {
+        setError(String(error));
+      });
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      finalizeInternalPointerDrag(event);
+    };
+
+    const handlePointerCancel = (event: PointerEvent) => {
+      finalizeInternalPointerDrag(event);
+    };
+
+    const handleWindowBlur = () => {
+      finalizeInternalPointerDrag(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      finalizeInternalPointerDrag(null);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [
+    beginExplorerInternalPointerDrag,
+    executeTransferRequest,
+    refresh,
+    runtimePlatform,
+    startExplorerNativeOutDrag,
+  ]);
 
   const onExplorerDropScopeDragOver = (e: React.DragEvent<HTMLElement>) => {
     if (currentPathIsHome || !currentPath.trim()) {
@@ -14916,6 +14894,9 @@ export function FileExplorer({
       onPointerEnter?: React.PointerEventHandler<HTMLElement>;
       onPointerLeave?: React.PointerEventHandler<HTMLElement>;
       onPointerMove?: React.PointerEventHandler<HTMLElement>;
+      onPointerDown?: React.PointerEventHandler<HTMLElement>;
+      onPointerUp?: React.PointerEventHandler<HTMLElement>;
+      onPointerCancel?: React.PointerEventHandler<HTMLElement>;
     }) => {
       const binding = interactionMotion.bindSurface({
         surfaceId: "explorerEntry",
@@ -14945,6 +14926,17 @@ export function FileExplorer({
           );
           args.onPointerLeave?.(event);
         },
+        onPointerDown: (event) => {
+          onExplorerEntryPointerDown(event, args.entry);
+          args.onPointerDown?.(event);
+        },
+        onPointerUp: (event) => {
+          args.onPointerUp?.(event);
+        },
+        onPointerCancel: (event) => {
+          onExplorerEntryPointerCancel(event);
+          args.onPointerCancel?.(event);
+        },
       });
 
       return {
@@ -14958,6 +14950,8 @@ export function FileExplorer({
       handleEntryPointerLeave,
       idleEntrySurface,
       interactionMotion,
+      onExplorerEntryPointerCancel,
+      onExplorerEntryPointerDown,
     ],
   );
   const explorerRootStyle = useMemo<CSSProperties>(
@@ -19296,11 +19290,8 @@ export function FileExplorer({
       return (
         <div
           key={entry.path}
-          draggable
           data-overlay-drag-source="file"
           {...getExplorerDropBindingElementProps(entryDropBinding)}
-          onDragStart={(e) => onDragStart(e, entry)}
-          onDragEnd={onDragEnd}
           onClick={(e) => onEntryClick(e, entry)}
           onDoubleClick={() => onEntryDoubleClick(entry)}
           onContextMenu={(e) => onRightClick(e, entry)}
@@ -19484,11 +19475,8 @@ export function FileExplorer({
     return (
       <div
         key={entry.path}
-        draggable
         data-overlay-drag-source="file"
         {...getExplorerDropBindingElementProps(entryDropBinding)}
-        onDragStart={(e) => onDragStart(e, entry)}
-        onDragEnd={onDragEnd}
         onClick={(e) => onEntryClick(e, entry)}
         onDoubleClick={() => onEntryDoubleClick(entry)}
         onContextMenu={(e) => onRightClick(e, entry)}
@@ -19872,7 +19860,6 @@ export function FileExplorer({
     return (
       <div
         key={node.entry.path}
-        draggable
         data-overlay-constellation-band={band.id}
         data-overlay-constellation-node={node.entry.path}
         data-overlay-constellation-emphasis={node.emphasis}
@@ -19884,14 +19871,6 @@ export function FileExplorer({
         {...getExplorerDropBindingElementProps(
           getExplorerDirectoryDropBinding(node.entry),
         )}
-        onDragStart={(e) => {
-          if (constellationPanGestureRef.current?.moved) {
-            e.preventDefault();
-            return;
-          }
-          onDragStart(e, node.entry);
-        }}
-        onDragEnd={onDragEnd}
         onClick={(e) => {
           if (constellationSuppressClickPathRef.current === node.entry.path) {
             constellationSuppressClickPathRef.current = null;
@@ -20605,13 +20584,10 @@ export function FileExplorer({
     return (
       <div
         key={entry.path}
-        draggable
         data-overlay-drag-source="file"
         {...getExplorerDropBindingElementProps(
           getExplorerDirectoryDropBinding(entry),
         )}
-        onDragStart={(e) => onDragStart(e, entry)}
-        onDragEnd={onDragEnd}
         onClick={(e) => onEntryClick(e, entry)}
         onDoubleClick={() => onEntryDoubleClick(entry)}
         onContextMenu={(e) => onRightClick(e, entry)}
@@ -21683,14 +21659,11 @@ export function FileExplorer({
                           return (
                             <div
                               key={entry.path}
-                              draggable
                               data-entry-path={entry.path}
                               data-overlay-drag-source="file"
                               {...getExplorerDropBindingElementProps(
                                 getExplorerDirectoryDropBinding(entry),
                               )}
-                              onDragStart={(e) => onDragStart(e, entry)}
-                              onDragEnd={onDragEnd}
                               onClick={(e) => onEntryClick(e, entry)}
                               onDoubleClick={() => onEntryDoubleClick(entry)}
                               onContextMenu={(e) => onRightClick(e, entry)}
@@ -21962,14 +21935,11 @@ export function FileExplorer({
                         return (
                           <div
                             key={entry.path}
-                            draggable
                             data-entry-path={entry.path}
                             data-overlay-drag-source="file"
                             {...getExplorerDropBindingElementProps(
                               getExplorerDirectoryDropBinding(entry),
                             )}
-                            onDragStart={(e) => onDragStart(e, entry)}
-                            onDragEnd={onDragEnd}
                             onClick={(e) => onEntryClick(e, entry)}
                             onDoubleClick={() => onEntryDoubleClick(entry)}
                             onContextMenu={(e) => onRightClick(e, entry)}
@@ -22384,14 +22354,11 @@ export function FileExplorer({
                           return (
                             <tr
                               key={entry.path}
-                              draggable
                               data-entry-path={entry.path}
                               data-overlay-drag-source="file"
                               {...getExplorerDropBindingElementProps(
                                 getExplorerDirectoryDropBinding(entry),
                               )}
-                              onDragStart={(e) => onDragStart(e, entry)}
-                              onDragEnd={onDragEnd}
                               onClick={(e) => onEntryClick(e, entry)}
                               onDoubleClick={() => onEntryDoubleClick(entry)}
                               onContextMenu={(e) => onRightClick(e, entry)}
