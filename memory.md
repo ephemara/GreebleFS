@@ -1,3 +1,22 @@
+# 2026-04-23 - Explorer Now Shares One Embedded Terminal Between Preview And A Bottom Drawer
+
+- The explorer-local embedded terminal no longer lives only inside the preview pane. Each `FileExplorer` instance now owns one reusable embedded terminal session that can surface either in the preview lane or as a bottom drawer above the explorer status area.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now keeps explorer-local terminal state in placement-aware form instead of preview-only booleans. The explorer owns `mounted`, `visible`, `placement`, pending command injection, reported cwd sync, focus request sequencing, and bottom-drawer height for one shared embedded terminal session.
+  - The preview-pane terminal is no longer rendered inline inside `PreviewPanel`. `FileExplorer.tsx` now mounts one shared `ExplorerEmbeddedTerminalLayer` that reuses the same `TerminalOverlay` instance for both `preview` and `bottom` placement, so moving between surfaces does not create a second terminal session.
+  - Script-preview runs still force the explorer terminal into `preview` placement, but the new explorer bottom drawer can be opened independently from the status bar or `Ctrl+J`. `Ctrl+Alt+T` remains preview-specific.
+  - `src/components/TerminalOverlay.tsx` now accepts an optional `focusRequestKey` so parent surfaces can explicitly refocus the active xterm pane without tearing down the terminal session.
+  - `src/config/explorerChromeLayouts.ts` now registers `terminalDrawerToggle` as a built-in chrome control on `explorerStatusBar`, which keeps the new bottom-terminal trigger layout-driven instead of hardcoding another footer button.
+  - `src/config/hotkeys.ts` still keeps `terminalFocus = Ctrl+J`, but the description now reflects the explorer-local override path for the bottom drawer.
+- Durable product note:
+  - Treat the explorer embedded terminal as one movable surface, not as separate preview and footer terminals that must be synchronized. If future work adds more explorer terminal placements, it should still preserve one explorer-local session and move the mounted terminal between authored shells.
+  - The bottom drawer trigger belongs in chrome layout/config, not in bespoke `FileExplorer` footer markup. Future modular shell work should keep terminal accessors data-driven through the explorer chrome registry.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot`
+  - passed: targeted `src/test/fileExplorer.viewModes.test.tsx` coverage for preview terminal toggle, script-run preview terminal, bottom drawer button, preview/bottom session reuse, `Ctrl+J` reveal, and cwd-sync navigation
+  - note: full `bunx tsc --noEmit -p tsconfig.json` is still blocked by unrelated pre-existing errors in explorer menu/context-menu typing, `config/menuPacks.ts`, and other existing branch issues outside this bottom-drawer slice
+
 # 2026-04-23 - Storage Tab Now Has Indexed Jump In Current Context And Its Inspector Scroll Owns The Pane
 
 - The storage workbench no longer feels trapped in the matrix when you move into the inspector side. The right-hand lane now has an explicit `Current Context` surface with its own scroll boundary, and it can use the new Everything-style global index to jump around the active storage scope quickly.

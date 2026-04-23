@@ -4694,7 +4694,6 @@ function PreviewPanel({
           };
   const getPreviewSurfaceLayerStyle = useCallback(
     (surfaceMode: PreviewSurfaceMode): CSSProperties => {
-      const isContentSurface = surfaceMode === "content";
       const isVisible =
         preview.type === "none" || previewSurfaceMode === surfaceMode;
 
@@ -19840,9 +19839,6 @@ export function FileExplorer({
 
       const activeElement = document.activeElement;
       const isExplorerFocus = activeElement === mainRef.current;
-      const isExplorerActive =
-        activeElement instanceof HTMLElement &&
-        explorerRootRef.current?.contains(activeElement);
       const isEmbeddedExplorerTerminalFocus =
         activeElement instanceof HTMLElement &&
         activeElement.closest('[data-testid="terminal-overlay-embedded-root"]') !=
@@ -20172,7 +20168,6 @@ export function FileExplorer({
       }
       if (
         matchesKeybinding(e, keybindings.terminalFocus) &&
-        isExplorerActive &&
         !isEmbeddedExplorerTerminalFocus &&
         explorerTerminalWorkingDirectory
       ) {

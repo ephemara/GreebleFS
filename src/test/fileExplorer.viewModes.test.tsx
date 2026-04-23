@@ -1895,9 +1895,7 @@ describe("FileExplorer view modes", () => {
     fireEvent.click(getPreviewTerminalToggleButton());
 
     await screen.findByTestId("mock-preview-terminal");
-    await userEvent.click(
-      screen.getByRole("button", { name: "Report Alpha Cwd" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Report Alpha Cwd" }));
 
     await waitFor(() => {
       expect(useExplorerStore.getState().session.currentPath).toBe(
