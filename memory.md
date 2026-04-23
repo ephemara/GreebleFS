@@ -1,3 +1,51 @@
+# 2026-04-23 - Explorer Context Menus Now Use Menu Packs, Typed Runtime Resolution, And A Classic Nested Renderer
+
+- Explorer context menus no longer come from the old flat `CtxItem[]` flow inside `FileExplorer.tsx`. The explorer now resolves menus through four layers: a typed command graph in `src/config/explorerContextMenu.ts`, declarative authored packs in `src/config/menuPacks.ts`, theme presentation hints in `src/config/explorerTheme.ts`, and the runtime/renderer pair in `src/components/explorer/explorerMenuRuntime.ts` plus `src/components/explorer/ExplorerContextMenu.tsx`.
+- Durable implementation shape:
+  - `FileExplorer.tsx` now builds an `ExplorerMenuInvocationContext` for `entry`, `background`, `multi-select`, `search-result`, and `preview-pane`, then hands that snapshot to `buildExplorerRuntimeMenu(...)` instead of assembling menu JSX inline.
+  - `src/config/menuPacks.ts` adds the new managed `menu-packs/` root plus the built-in `GreebleFS Classic Explorer Menu` authored pack. Packs own per-context layout trees, submenus, group slots, quick-slot/fallback placement, and optional renderer hints, but not execution code.
+  - `src/store/settingsStore.ts` now persists `settings.explorer.activeMenuPackId` and `contextMenuLayoutOverridesByContext`. Legacy `contextMenuItemOverrides` is kept only as migration input and hydrates forward into the new per-context layout override model.
+  - `src/components/SettingsPage.tsx` now exposes a context-aware `Context Menu Composer` with active-pack selection, per-context renderer selection, command/group-slot/submenu authoring, parent placement, quick slots, fallback buckets, and reset controls.
+  - `src/components/explorer/ExplorerContextMenu.tsx` is the first production renderer. It ships the classic nested menu path now, and keyboard-opened submenus now remember an anchor rect so the submenu can render instead of only updating hidden state.
+- Durable product note:
+  - Themes choose how menus look and which renderer family they prefer, but packs choose which commands appear where. Do not collapse menu content back into theme files or component JSX.
+  - Only the classic nested renderer is fully shipped in this slice. `hybrid`, `radial`, `sheet`, and `hud` already exist in the schema/runtime as future-capability targets, so new work should preserve those typed paths even if the UI still falls back to `classic`.
+- Validation:
+  - passed: `bunx vitest run src/test/appContentDirectories.test.ts src/test/settingsStore.test.ts src/test/explorerContextMenu.test.ts src/test/menuPacks.test.ts src/test/explorerMenuRuntime.test.ts src/test/explorerContextMenuRenderer.test.tsx src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - passed: filtered touched-path typecheck via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "src/components/explorer/ExplorerContextMenu\\.tsx|src/test/explorerContextMenuRenderer\\.test\\.tsx|src/test/explorerMenuRuntime\\.test\\.ts|src/test/menuPacks\\.test\\.ts|src/test/settingsPage\\.behavior\\.test\\.tsx|src/config/menuPacks\\.ts|src/components/explorer/explorerMenuRuntime\\.ts|src/config/explorerContextMenu\\.ts|src/store/settingsStore\\.ts" || true`
+  - note: a later repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` run is currently blocked by unrelated mobile-share errors in `src-mobile/App.tsx` and `src-mobile/mobileShared.ts`
+
+# 2026-04-23 - Audio VST Workflow Now Keeps Preview Context And Uses A Live Deck Host
+
+- The audio `VST` workflow no longer hides the playback/waveform preview just because the user switched into plugin tweaking. It now keeps the shared preview-overview surface visible above the plugin lane so transport, scrub state, stats, and waveform context stay in view while VST controls are open.
+- Durable implementation shape:
+  - `src/components/ExplorerAudioWorkbench.tsx` now renders the same compact preview-overview card in both `Preview` and `VST` workflows. `Edit` still owns trim/fade/export, but `VST` no longer feels like a blank context switch away from the current audio file.
+  - `crates/vst-host/src/lib.rs` now exposes live controller-backed parameter snapshots plus `set_parameter_value(...)`, and its parameter records carry current normalized values instead of assuming the default value is the active one forever.
+  - `src-tauri/src/audio_engine.rs` now keeps a per-deck live `HeadlessVstHost` alongside the existing deck metadata. Loading a plugin stores that host, and parameter edits now round-trip through the live plugin controller before the deck snapshot is refreshed.
+  - `src/test/explorerAudioWorkbench.test.tsx` now locks both user-visible guarantees: the `VST` workflow still shows the audio preview overview, and a parameter control updates through the deck bridge and reflects the new normalized value in the UI.
+- Current limitation:
+  - This still does not insert VST DSP into the realtime audio render path, and the native editor-session bridge still honestly reports inline attachment as unavailable. The fix here makes the headless control path real and keeps preview context visible, but true inline editor embedding and realtime processing are still separate backend work.
+- Validation:
+  - passed: `cargo test --manifest-path Cargo.toml -p vst-host -- --nocapture`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - passed: `bunx vitest run src/test/explorerAudioWorkbench.test.tsx --reporter=dot`
+  - note: `bunx tsc --noEmit --pretty false -p tsconfig.json` is still blocked by a pre-existing unrelated error in `src/test/explorerContextMenuRenderer.test.tsx` (`'this' implicitly has type 'any'`)
+
+# 2026-04-23 - Mobile QR Pairing Dialog Now Honors Wide Layouts And Viewport Bounds
+
+- The centered phone-pairing surface no longer gets trapped inside the old narrow dialog shell. `src/components/AppModal.tsx` now lets callers provide an explicit `maxWidth`, clamps dialogs to the viewport height, enables dialog-body scrolling when content is tall, and allows action rows to wrap instead of overflowing on tighter DPI-scaled desktops.
+- Durable implementation shape:
+  - `src/components/MobileShareQrDialog.tsx` now opts into the wider pairing width explicitly (`width/maxWidth = 980`) so the mobile-share dialog can use a horizontal desktop layout when the viewport allows it.
+  - `src/components/MobileShareConnectionCards.tsx` no longer hardcodes a rigid two-column card grid with fixed on-screen QR sizing. The shared card surface now uses an auto-fit grid, exposes the cards as an accessible list, and scales the displayed QR artwork down with `clamp(...)` so 2- and 3-route layouts stay inside smaller high-DPI desktop viewports.
+  - QR generation still uses the existing 160px source asset from `qrcode`; only the presentation shell became responsive, so scan reliability is preserved while the desktop dialog stops bloating.
+- Durable product note:
+  - Treat phone pairing as a responsive desktop surface, not a fixed-pixel modal. If future pairing controls are added, keep them inside the shared dialog/card shells and preserve viewport clamping instead of reintroducing hardcoded wide-or-tall assumptions.
+  - If a future dialog truly needs to be wider than the default shell, set both `width` and `maxWidth` on `AppDialogFrame`; the default modal contract still stays compact for the rest of the product.
+- Validation:
+  - passed: `bunx vitest run src/test/workbenchTopBar.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "keeps the live mobile QR cards visible in settings" --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "AppModal.tsx|MobileShareQrDialog.tsx|MobileShareConnectionCards.tsx|workbenchTopBar.test.tsx" || true`
+
 # 2026-04-23 - Preview Panes Now Expose A Shared Drop-Target Contract
 
 - Folder previews no longer rely on one-off row handlers for reverse drag/drop. `src/components/FileExplorer.tsx` now resolves a reusable `ExplorerPreviewDropTarget` from the active preview state, registers it as a real explorer drop surface, and feeds that into `PreviewPanel` so future preview lanes can opt into the same target model instead of inventing their own drag plumbing.

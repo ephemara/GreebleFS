@@ -178,6 +178,7 @@ function MenuPanel({
           return (
             <button
               key={node.id}
+              data-overlay-explorer-context-menu-node={node.id}
               type="button"
               onMouseEnter={(event) => {
                 onActivateIndex(pathKey, index);
@@ -331,6 +332,16 @@ export function ExplorerContextMenu({
     return null;
   }
 
+  const rememberNodeAnchorRect = (nodeId: string) => {
+    const nodeElement = Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>('[data-overlay-explorer-context-menu-node]')
+      ?? [],
+    ).find((element) => element.dataset.overlayExplorerContextMenuNode === nodeId);
+    if (nodeElement) {
+      anchorRectsByNodeIdRef.current[nodeId] = nodeElement.getBoundingClientRect();
+    }
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const currentPath = openSubmenuPath;
     const currentPathKey = getPathKey(currentPath);
@@ -371,6 +382,7 @@ export function ExplorerContextMenu({
     if (event.key === 'ArrowRight') {
       if (activeNode?.kind === 'submenu') {
         event.preventDefault();
+        rememberNodeAnchorRect(activeNode.id);
         setOpenSubmenuPath([...currentPath, activeNode.id]);
         setActiveIndexByPath((current) => ({
           ...current,
@@ -396,6 +408,7 @@ export function ExplorerContextMenu({
       }
       event.preventDefault();
       if (activeNode.kind === 'submenu') {
+        rememberNodeAnchorRect(activeNode.id);
         setOpenSubmenuPath([...currentPath, activeNode.id]);
         setActiveIndexByPath((current) => ({
           ...current,

@@ -9,6 +9,7 @@ import { createBuiltInOverlayShaders } from '../components/shaderRuntime';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultFolderIconRules } from '../config/folderIcons';
 import { homePackSystemConfig, type LoadedExplorerHomePack } from '../config/homePackages';
+import { createBuiltInExplorerMenuPack, menuPackSystemConfig, type LoadedExplorerMenuPack } from '../config/menuPacks';
 import { resolveThemeCatalogPackageMetadata } from '../config/themeCatalogCuration';
 import { pluginSystemConfig } from '../config/plugins';
 import { screenshotFeatureConfig } from '../config/screenshots';
@@ -58,6 +59,10 @@ const BUILT_IN_HOME_PACK_FIXTURES: LoadedExplorerHomePack[] = getBuiltInExplorer
   runtime,
 }));
 
+const BUILT_IN_MENU_PACK_FIXTURES: LoadedExplorerMenuPack[] = [
+  createBuiltInExplorerMenuPack(),
+];
+
 function findSectionButton(label: string): HTMLButtonElement {
   const button = screen.getAllByRole('button').find(entry => entry.textContent?.includes(label));
   if (!button) {
@@ -70,6 +75,7 @@ function renderSettingsPage(options?: {
   appearanceThemeId?: string;
   topBarPackages?: LoadedOverlayTopBarPackage[];
   homePacks?: LoadedExplorerHomePack[];
+  menuPacks?: LoadedExplorerMenuPack[];
   themePackages?: LoadedOverlayThemePackage[];
   onRefreshTopBars?: () => Promise<void>;
   onOpenTopBarsFolder?: () => Promise<void>;
@@ -103,6 +109,11 @@ function renderSettingsPage(options?: {
       homePacksLoading={false}
       homePacksError={null}
       homePacksWarnings={[]}
+      menuPacks={options?.menuPacks ?? BUILT_IN_MENU_PACK_FIXTURES}
+      menuPacksDirectory={menuPackSystemConfig.menuPacksDirectory}
+      menuPacksLoading={false}
+      menuPacksError={null}
+      menuPacksWarnings={[]}
       themePackages={options?.themePackages ?? []}
       themePackagesDirectory="themes"
       themePackagesLoading={false}
@@ -112,6 +123,8 @@ function renderSettingsPage(options?: {
       onOpenTopBarsFolder={options?.onOpenTopBarsFolder ?? (async () => {})}
       onRefreshHomePacks={options?.onRefreshHomePacks ?? (async () => {})}
       onOpenHomePacksFolder={options?.onOpenHomePacksFolder ?? (async () => {})}
+      onRefreshMenuPacks={async () => {}}
+      onOpenMenuPacksFolder={async () => {}}
       onRefreshThemes={async () => {}}
       onOpenThemesFolder={async () => {}}
       shaders={createBuiltInOverlayShaders()}
@@ -617,7 +630,7 @@ describe('SettingsPage behavior', () => {
     expect(telemetryCaptureSelect.style.backgroundImage).not.toBe('');
   });
 
-  it('lets the explorer context menu composer disable and reorder plugin menu items', async () => {
+  it('lets the explorer context menu composer add, disable, and reorder plugin menu items', async () => {
     const user = userEvent.setup();
     renderSettingsPage({
       pluginContextMenuItems: [
@@ -641,30 +654,81 @@ describe('SettingsPage behavior', () => {
 
     await user.click(findSectionButton('Explorer'));
     expect(screen.getByText('Context Menu Composer')).toBeInTheDocument();
-    expect(screen.getByText('Capture Memory Snapshot')).toBeInTheDocument();
-    expect(screen.getByText('Plugin · Sample Tools')).toBeInTheDocument();
-    expect(screen.getByText('Backend · backend/capture-snapshot')).toBeInTheDocument();
+    const activePackSelect = screen.getByRole('combobox', { name: 'Active Menu Pack' });
+    expect(activePackSelect).toHaveValue(BUILT_IN_MENU_PACK_FIXTURES[0]?.id ?? '');
 
-    const contextMenuCheckboxes = screen.getAllByRole('checkbox');
-    const pluginCheckbox = contextMenuCheckboxes[contextMenuCheckboxes.length - 1] as HTMLInputElement | undefined;
-    if (!pluginCheckbox) {
-      throw new Error('Expected plugin context menu checkbox');
+    const addCommandButton = screen.getByRole('button', { name: 'Add Command Node' });
+    const addCommandCard = addCommandButton.closest('div');
+    if (!addCommandCard) {
+      throw new Error('Expected add-command card');
+    }
+    const addCommandSelect = within(addCommandCard).getByRole('combobox');
+    await user.selectOptions(addCommandSelect, 'sample-plugin.context-menu.capture');
+    await user.click(addCommandButton);
+
+    let pluginCard: HTMLElement | null = screen.getByText('Capture Memory Snapshot').parentElement;
+    while (
+      pluginCard
+      && (
+        pluginCard.querySelector('input[type="checkbox"]') == null
+        || !Array.from(pluginCard.querySelectorAll('button')).some(
+          button => button.textContent?.trim() === 'Up',
+        )
+      )
+    ) {
+      pluginCard = pluginCard.parentElement;
+    }
+    if (!pluginCard) {
+      throw new Error('Expected plugin command card');
+    }
+    expect(pluginCard.textContent).toContain('Plugin · Sample Tools');
+
+    const initialPluginEntry = useSettingsStore
+      .getState()
+      .settings.explorer.contextMenuLayoutOverridesByContext.entry?.entries
+      .find((entry) => entry.kind === 'command' && entry.commandId === 'sample-plugin.context-menu.capture');
+    expect(initialPluginEntry).toMatchObject({
+      kind: 'command',
+      commandId: 'sample-plugin.context-menu.capture',
+      enabled: true,
+    });
+    if (!initialPluginEntry) {
+      throw new Error('Expected plugin command entry override');
     }
 
+    const pluginCheckbox = pluginCard.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    if (!pluginCheckbox) {
+      throw new Error('Expected plugin command checkbox');
+    }
     expect(pluginCheckbox.checked).toBe(true);
     await user.click(pluginCheckbox);
 
-    expect(useSettingsStore.getState().settings.explorer.contextMenuItemOverrides['sample-plugin.context-menu.capture']).toEqual({
+    const disabledPluginEntry = useSettingsStore
+      .getState()
+      .settings.explorer.contextMenuLayoutOverridesByContext.entry?.entries
+      .find((entry) => entry.kind === 'command' && entry.commandId === 'sample-plugin.context-menu.capture');
+    expect(disabledPluginEntry).toMatchObject({
+      kind: 'command',
+      commandId: 'sample-plugin.context-menu.capture',
       enabled: false,
-      order: expect.any(Number),
     });
+    if (!disabledPluginEntry) {
+      throw new Error('Expected disabled plugin command entry override');
+    }
 
-    await user.click(screen.getByRole('button', { name: 'Normalize Order' }));
+    const moveUpButton = Array.from(pluginCard.querySelectorAll('button')).find(
+      button => button.textContent?.trim() === 'Up',
+    ) as HTMLButtonElement | undefined;
+    if (!moveUpButton) {
+      throw new Error('Expected move-up button');
+    }
+    await user.click(moveUpButton);
 
-    expect(useSettingsStore.getState().settings.explorer.contextMenuItemOverrides['sample-plugin.context-menu.capture']).toEqual({
-      enabled: false,
-      order: expect.any(Number),
-    });
+    const movedPluginEntry = useSettingsStore
+      .getState()
+      .settings.explorer.contextMenuLayoutOverridesByContext.entry?.entries
+      .find((entry) => entry.kind === 'command' && entry.commandId === 'sample-plugin.context-menu.capture');
+    expect(movedPluginEntry?.order).toBeLessThan(initialPluginEntry.order);
   });
 
   it('saves cloud provider credentials from settings and enables the provider login action', async () => {
