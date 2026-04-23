@@ -47,7 +47,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/OverlayScrollArea.tsx`
   Shared overlay scroll host. It owns the explicit scrollbar contract for shipping-shell panes (`hidden`, `themed`, `explorer-file-list`) so explorer lists, popouts, and workbench/detail surfaces can share themed scroll behavior without per-component scrollbar CSS.
 - `src/components/ExplorerImageEditor.tsx`
-  Shell-owned wrapper for the embedded preview-pane image lane. Editable raster files now open in fullscreen preview mode first and only reveal the heavier save/crop/filter chrome when `FileExplorer.tsx` switches the document into explicit `edit` mode. The component still provides GreebleFS-native toolbar/status chrome, live scroll-to-zoom and drag-to-pan preview interaction, save/reset wiring that restores the preview fit state, resize adaptation, and the static-preview fallback for unsupported image formats. Local saves may attempt the Tauri fs plugin path when it is available, but the durable write contract is the typed explorer backend fallback so missing plugin registration does not strand image edits.
+  Shell-owned CropperJS image editor for the embedded preview-pane image lane. Editable raster files open in fullscreen preview mode first, then reveal the exposure/filter/crop tool deck when `FileExplorer.tsx` switches the document into explicit `edit` mode. The component owns the fullscreen pannable/zoomable preview, CropperJS crop session, filter baking on save, reset-to-last-saved behavior, static-preview fallback for unsupported formats, and the imperative save/reset surface that `ScreenshotsManager.tsx` also uses. Local saves may attempt the Tauri fs plugin path when it is available, but the durable write contract is still the typed explorer backend fallback so missing plugin registration does not strand image edits.
 - `src/components/ExplorerVideoEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane video surface. It now defaults to a playback-first preview surface and only reveals the heavier trim/inspector editing chrome when Explorer switches the document into explicit edit mode. It mounts a real media-element preview that is driven by the Rust video engine/store, resolves direct-safe sources or ffmpeg-generated MP4 proxies through the typed backend, and exposes loop-aware transport plus non-destructive trim export.
 - `src/components/ExplorerAudioWorkbench.tsx`
@@ -162,8 +162,6 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   TS bridge for the storage tab. It exposes typed native scan start/poll/list-directory calls, filters local storage roots from the explorer drive inventory, and reuses existing explorer open/reveal/trash/delete operations plus batch delete wiring for storage cleanup actions.
 - `src/runtime/fileOperationsWindow.ts`
   Shared file-operations popout bridge. It owns the `file-operations` window label, persisted request/completion payloads, cross-window event names, and the helper that creates or focuses the dedicated popout window.
-- `src/runtime/imageEditorRuntime.ts`
-  Runtime seam for the embedded preview-pane image editor. It loads the local editor package through the `@img-editor-runtime` alias so the shell can consume the editor at runtime without importing the package internals into the main app typecheck.
 - `src/runtime/videoEditorBackend.ts`
   TS bridge for preview-source resolution, ffmpeg proxy generation, and trim export in the preview-pane video flow. Realtime transport still lives in the native video engine bridge and store.
 - `src/runtime/videoEngineBackend.ts`
@@ -443,7 +441,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `FileExplorer.tsx` now settle-batches viewport enrichment work so visible-entry size measurement and native-icon resolution only launch after a short scroll idle window instead of hammering Tauri on every transient virtualized viewport shift.
 - `FileExplorer.tsx` owns both file-centric actions and explorer-local shell controls, so the shared top bar stays panel-agnostic while the explorer keeps its mode/source/preview controls adjacent to the path/search field.
 - Previewable media is now split into three host-owned explorer lanes instead of one generic browser fallback:
-  - image editing stays in `ExplorerImageEditor.tsx` through the local package seam
+  - image editing stays in `ExplorerImageEditor.tsx` through the shared CropperJS-based editor used by both explorer preview and screenshots
   - audio playback/editing now lives in `ExplorerAudioWorkbench.tsx`, with a preview-first player surface, an explicit edit-mode workbench, and a wildcard `VST` workflow tab; transport truth still lives in `src-tauri/src/audio_engine.rs` and flows through `src/store/audioEngineStore.ts`
   - the browser `<audio>` lane and preview-proxy workaround are no longer the explorer playback path; the preview pane now talks to a CPAL + Symphonia native engine and only uses SoX for offline mutation
   - video playback/editing now lives in `ExplorerVideoEditor.tsx`, but transport truth lives in `src-tauri/src/video_engine.rs` and flows through `src/store/videoEngineStore.ts`
@@ -622,7 +620,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - If a user wants to edit a region, crop into a staged working file first. Do not mutate the raw plugin capture in place or you lose the full-monitor source for recrop/re-edit.
 - Screenshot editing is now shared with the preview pane:
   - `src/components/ExplorerImageEditor.tsx` is the shared image editor surface for both explorer preview editing and screenshot editing.
-  - Do not reintroduce the old cropper-only preview lane for explorer images or the old custom annotation canvas inside `ScreenshotsManager.tsx`; both paths should stay on the same runtime-backed editor.
+  - Do not split explorer images and screenshots onto different editors again, and do not reintroduce the old screenshot-only annotation canvas inside `ScreenshotsManager.tsx`; both paths should stay on the same CropperJS-based editor surface.
 - Avoid sending screenshot previews through Rust as base64 PNG payloads again. The current screenshot path is intentionally file-backed so capture stays fast, monitor previews can use asset URLs, and final output only crosses the bridge as small typed commands.
 - Explorer interaction tests that need DOM drag/drop still need a browser-like environment, so the current JSDOM dependency failure blocks the most relevant explorer UI regressions even when the narrowed TypeScript pass is green.
 - Audio workbench playback state should not be tied to parent React state churn. Keep playhead motion on an imperative RAF path and keep waveform/spectral subsurfaces memoized so shell-level rerenders do not consume the frame budget.

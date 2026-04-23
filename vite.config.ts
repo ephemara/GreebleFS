@@ -1,7 +1,7 @@
-import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import path from "node:path";
 
 const ignoredWatchGlobs = [
   "**/.git/**",
@@ -23,7 +23,6 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": "/src",
-      "@img-editor-runtime": path.resolve("packages/img-editor/src/main.ts"),
     },
   },
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

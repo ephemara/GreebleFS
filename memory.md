@@ -1,3 +1,17 @@
+# 2026-04-23 - Restored The CropperJS Image Editor And Removed The Runtime Package Seam
+
+- The shared explorer/screenshot image editor is back on the correct implementation. The intermediate `@img-editor-runtime` / `packages/img-editor` swap was wrong for this product; the intended editor is the custom CropperJS-based lane with the exposure/filter panel and preview-first fullscreen image surface.
+- Durable implementation shape:
+  - `src/components/ExplorerImageEditor.tsx` now again owns the CropperJS preview/edit flow: fullscreen pannable/zoomable preview in `Preview` mode, filter/exposure controls plus crop session in `Edit`, save-time filter baking, static fallback for unsupported formats, and an imperative `save / hasUnsavedChanges / resetToSavedState` surface so `ScreenshotsManager.tsx` can keep sharing the same editor component.
+  - `ScreenshotsManager.tsx` still uses the screenshot plugin capture pipeline, but its editing phase is now once again the shared CropperJS editor instead of the abandoned runtime package wrapper.
+  - Removed the dead runtime integration seam by deleting `src/runtime/imageEditorRuntime.ts`, deleting `src/types/imgEditorRuntime.d.ts`, and removing the `@img-editor-runtime` alias from `vite.config.ts` so future work does not drift back toward the wrong editor stack.
+  - Re-added `cropperjs` plus `@types/cropperjs` to the workspace dependencies because that package had been dropped when the runtime-package detour landed.
+- Durable product note:
+  - The screenshot capture backend and the screenshot editor are separate decisions. Keep `tauri-plugin-screenshots` for fast file-backed capture, but keep CropperJS as the shared explorer/screenshot editing surface unless the product explicitly replaces the filter/crop UX with something better.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx src/test/screenshotsManager.test.tsx --reporter=dot`
+  - passed: filtered `tsc --noEmit -p tsconfig.json` grep reported no touched-file errors for `ExplorerImageEditor`, `cropperjs`, `imgEditorRuntime`, or `vite.config.ts`
+
 # 2026-04-23 - Mobile Settings Now Own Tailscale-Aware Remote Share Routing
 
 - The sovereign mobile PWA is no longer hard-wired to LAN-only launch assumptions. There is now a first-class `Mobile` settings slice plus a native Tailscale command surface so the desktop can prefer a tailnet URL when launching the mobile share.

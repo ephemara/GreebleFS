@@ -2,38 +2,43 @@ import {
   forwardRef,
   useCallback,
   useEffect,
-  useId,
   useImperativeHandle,
   useRef,
   useState,
-} from 'react';
-import { Redo2, ZoomIn } from 'lucide-react';
+} from "react";
+import Cropper from "cropperjs";
+import "cropperjs/dist/cropper.css";
 
 import {
+  ArrowUpLeft,
   ArrowUpRight,
-  Circle,
-  Maximize2,
+  Check,
+  Crop,
+  ImageIcon,
   RotateCcw,
   Save,
-  Square,
-  Trash2,
-  Type,
-  Undo2,
-} from '@/components/AppIcons';
-import { matchesKeybinding } from '../config/hotkeys';
-import { getImageEditorContentType } from '../config/filePreview';
-import { writeExplorerFile } from '../runtime/explorerBackend';
+  X,
+} from "@/components/AppIcons";
+import { writeFile } from "@tauri-apps/plugin-fs";
+
+import { getImageEditorContentType } from "../config/filePreview";
+import { matchesKeybinding } from "../config/hotkeys";
 import {
-  initExplorerImageEditor,
-  type ExplorerImageEditorHandle,
-} from '../runtime/imageEditorRuntime';
-import { useSettingsStore } from '../store/settingsStore';
+  buildCSSFilterString,
+  createDefaultImageFiltersState,
+  imageEditorFilterDefinitions,
+  type ExplorerImageFiltersState,
+} from "../config/imageEditorFilters";
+import { writeExplorerFile } from "../runtime/explorerBackend";
+import { useSettingsStore } from "../store/settingsStore";
+import { OverlayScrollArea } from "./OverlayScrollArea";
+import { PremiumSlider as PremiumSliderControl } from "./PremiumSlider";
 
 type ExplorerImageEditorProps = {
   imagePath: string;
   imageName: string;
   imageSource: string;
-  mode?: 'preview' | 'edit';
+  mode?: "preview" | "edit";
   onSaved?: () => Promise<void> | void;
 };
 
@@ -43,18 +48,85 @@ export interface ExplorerImageEditorRef {
   resetToSavedState: () => Promise<void>;
 }
 
-type ImageEditorSaveState = 'loading' | 'saved' | 'dirty' | 'saving' | 'error';
+type ImageEditorSaveState = "idle" | "saving" | "dirty" | "saved" | "error";
+
+type ImagePreviewTransform = {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+};
+
+const DEFAULT_IMAGE_PREVIEW_TRANSFORM: ImagePreviewTransform = {
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+};
+
+const IMAGE_PREVIEW_MIN_SCALE = 0.5;
+const IMAGE_PREVIEW_MAX_SCALE = 6;
+const IMAGE_PREVIEW_ZOOM_SENSITIVITY = 0.0015;
+
+function clampValue(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeImagePreviewTransform(
+  transform: ImagePreviewTransform,
+  viewport: HTMLDivElement | null,
+  image: HTMLImageElement | null,
+): ImagePreviewTransform {
+  const nextScale = Number(
+    clampValue(
+      transform.scale,
+      IMAGE_PREVIEW_MIN_SCALE,
+      IMAGE_PREVIEW_MAX_SCALE,
+    ).toFixed(2),
+  );
+
+  if (!viewport || !image) {
+    return {
+      scale: nextScale,
+      offsetX: Number(transform.offsetX.toFixed(2)),
+      offsetY: Number(transform.offsetY.toFixed(2)),
+    };
+  }
+
+  const viewportWidth = viewport.clientWidth;
+  const viewportHeight = viewport.clientHeight;
+  const baseWidth = image.clientWidth;
+  const baseHeight = image.clientHeight;
+
+  if (
+    viewportWidth <= 0 ||
+    viewportHeight <= 0 ||
+    baseWidth <= 0 ||
+    baseHeight <= 0
+  ) {
+    return {
+      scale: nextScale,
+      offsetX: Number(transform.offsetX.toFixed(2)),
+      offsetY: Number(transform.offsetY.toFixed(2)),
+    };
+  }
+
+  const scaledWidth = baseWidth * nextScale;
+  const scaledHeight = baseHeight * nextScale;
+  const maxOffsetX = Math.max(0, (scaledWidth - viewportWidth) / 2);
+  const maxOffsetY = Math.max(0, (scaledHeight - viewportHeight) / 2);
+
+  return {
+    scale: nextScale,
+    offsetX: Number(
+      clampValue(transform.offsetX, -maxOffsetX, maxOffsetX).toFixed(2),
+    ),
+    offsetY: Number(
+      clampValue(transform.offsetY, -maxOffsetY, maxOffsetY).toFixed(2),
+    ),
+  };
+}
 
 function getImageExtension(name: string): string {
-  return name.trim().split('.').pop()?.toLowerCase() ?? '';
-}
-
-function cloneEditorState<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-async function blobToByteArray(blob: Blob): Promise<number[]> {
-  return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  return name.trim().split(".").pop()?.toLowerCase() ?? "";
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null): boolean {
@@ -65,62 +137,136 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 
   return (
     element.isContentEditable ||
-    ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(element.tagName) ||
-    Boolean(element.closest('[contenteditable="true"]'))
+    ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName) ||
+    Boolean(element.closest(".monaco-editor"))
   );
 }
 
-function toolbarButtonStyle(
-  variant: 'primary' | 'default' | 'danger' | 'subtle' = 'default',
+function buttonStyle(
+  variant: "primary" | "default" | "danger" | "ghost" = "default",
 ) {
-  const baseStyle = {
-    appearance: 'none' as const,
-    display: 'inline-flex',
-    alignItems: 'center',
+  const base = {
+    appearance: "none" as const,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 6,
-    padding: '7px 10px',
-    borderRadius: 10,
+    padding: "6px 10px",
+    borderRadius: 6,
     fontSize: 11,
-    fontWeight: 700,
-    cursor: 'pointer',
-    transition: 'transform 120ms ease, background 120ms ease, border-color 120ms ease',
-    boxShadow: '0 10px 24px rgba(0, 0, 0, 0.22)',
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "all 120ms ease",
+    border: "1px solid transparent",
   };
 
-  if (variant === 'primary') {
-    return {
-      ...baseStyle,
-      background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.34), rgba(59, 130, 246, 0.22))',
-      border: '1px solid rgba(129, 140, 248, 0.45)',
-      color: '#f8fbff',
-    };
+  switch (variant) {
+    case "primary":
+      return {
+        ...base,
+        background: "rgba(59, 130, 246, 0.9)",
+        borderColor: "rgba(59, 130, 246, 1)",
+        color: "#fff",
+        boxShadow: "0 2px 8px rgba(59, 130, 246, 0.25)",
+      };
+    case "danger":
+      return {
+        ...base,
+        background: "rgba(239, 68, 68, 0.15)",
+        borderColor: "rgba(239, 68, 68, 0.3)",
+        color: "#fca5a5",
+      };
+    case "ghost":
+      return {
+        ...base,
+        background: "transparent",
+        borderColor: "transparent",
+        color: "var(--overlay-text-muted)",
+      };
+    case "default":
+    default:
+      return {
+        ...base,
+        background: "rgba(255, 255, 255, 0.06)",
+        borderColor: "rgba(255, 255, 255, 0.12)",
+        color: "var(--overlay-text-primary)",
+      };
   }
+}
 
-  if (variant === 'danger') {
-    return {
-      ...baseStyle,
-      background: 'rgba(239, 68, 68, 0.14)',
-      border: '1px solid rgba(248, 113, 113, 0.28)',
-      color: '#fecaca',
-    };
-  }
+function cloneImageFiltersState(
+  state: ExplorerImageFiltersState,
+): ExplorerImageFiltersState {
+  return imageEditorFilterDefinitions.reduce((result, definition) => {
+    result[definition.key] = state[definition.key];
+    return result;
+  }, {} as ExplorerImageFiltersState);
+}
 
-  if (variant === 'subtle') {
-    return {
-      ...baseStyle,
-      background: 'rgba(255, 255, 255, 0.035)',
-      border: '1px solid rgba(255, 255, 255, 0.08)',
-      color: 'var(--overlay-text-muted)',
-      boxShadow: 'none',
-    };
-  }
+function areImageFiltersEqual(
+  left: ExplorerImageFiltersState,
+  right: ExplorerImageFiltersState,
+): boolean {
+  return imageEditorFilterDefinitions.every(
+    (definition) => left[definition.key] === right[definition.key],
+  );
+}
 
-  return {
-    ...baseStyle,
-    background: 'rgba(255, 255, 255, 0.05)',
-    border: '1px solid rgba(255, 255, 255, 0.10)',
-    color: 'var(--overlay-text-primary)',
-  };
+async function loadPreviewImage(source: string): Promise<HTMLImageElement> {
+  const image = new window.Image();
+  return await new Promise((resolve, reject) => {
+    image.onload = () => resolve(image as HTMLImageElement);
+    image.onerror = () =>
+      reject(new Error("Failed to parse image for editing."));
+    image.src = source;
+  });
+}
+
+function ImageFilterSlider({
+  def,
+  value,
+  onChange,
+}: {
+  def: import("../config/imageEditorFilters").ImageEditorFilterDefinition;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const isDefault = value === def.default;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 10,
+          fontWeight: 600,
+          color: isDefault ? "var(--overlay-text-muted)" : "#f8fafc",
+          transition: "color 0.2s ease",
+        }}
+      >
+        <label style={{ letterSpacing: "0.02em" }}>{def.label}</label>
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {value}
+          {def.unit}
+        </span>
+      </div>
+      <div
+        style={{ padding: "6px 0", display: "flex", alignItems: "center" }}
+      >
+        <PremiumSliderControl
+          ariaLabel={def.label}
+          ariaValueText={`${value}${def.unit}`}
+          min={def.min}
+          max={def.max}
+          step={def.step}
+          value={value}
+          density="compact"
+          onChange={onChange}
+        />
+      </div>
+    </div>
+  );
 }
 
 export const ExplorerImageEditor = forwardRef<
@@ -131,48 +277,121 @@ export const ExplorerImageEditor = forwardRef<
     imagePath,
     imageName,
     imageSource,
-    mode = 'edit',
+    mode = "edit",
     onSaved,
   },
   forwardedRef,
 ) {
-  const editorContainerId = useId().replace(/:/g, '_');
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const editorHostRef = useRef<HTMLDivElement | null>(null);
-  const editorRef = useRef<ExplorerImageEditorHandle | null>(null);
-  const savedEditorStateRef = useRef<unknown>(null);
-  const savedStateSignatureRef = useRef('');
+  const previewViewportRef = useRef<HTMLDivElement | null>(null);
+  const previewImageRef = useRef<HTMLImageElement | null>(null);
+  const cropperImageRef = useRef<HTMLImageElement | null>(null);
+  const cropperRef = useRef<Cropper | null>(null);
+  const savedImageSourceRef = useRef<string | null>(null);
+  const savedFiltersRef = useRef<ExplorerImageFiltersState>(
+    createDefaultImageFiltersState(),
+  );
   const dirtyRef = useRef(false);
   const mountedRef = useRef(true);
+  const blobUrlsRef = useRef<Set<string>>(new Set());
+  const savedStatusTimeoutRef = useRef<number | null>(null);
 
-  const [saveState, setSaveState] = useState<ImageEditorSaveState>('loading');
-  const [statusMessage, setStatusMessage] = useState('Loading editor…');
-  const [initError, setInitError] = useState<string | null>(null);
+  const [baseImage, setBaseImage] = useState<HTMLImageElement | null>(null);
+  const [filters, setFilters] = useState<ExplorerImageFiltersState>(
+    createDefaultImageFiltersState(),
+  );
+  const [previewTransform, setPreviewTransform] =
+    useState<ImagePreviewTransform>(DEFAULT_IMAGE_PREVIEW_TRANSFORM);
+  const [isPreviewDragging, setIsPreviewDragging] = useState(false);
+  const [isCropping, setIsCropping] = useState(false);
+  const [saveState, setSaveState] = useState<ImageEditorSaveState>("idle");
+  const [statusMessage, setStatusMessage] = useState("");
 
-  const keybindings = useSettingsStore((state) => state.settings.keybindings);
   const contentType = getImageEditorContentType(getImageExtension(imageName));
   const isEditableFormat = contentType !== null;
-  const showEditingChrome = isEditableFormat && mode === 'edit';
+  const showEditingChrome = mode === "edit" && isEditableFormat;
+  const keybindings = useSettingsStore((state) => state.settings.keybindings);
 
-  const setDirtyState = useCallback((nextDirty: boolean, nextMessage?: string) => {
-    dirtyRef.current = nextDirty;
-    setSaveState(nextDirty ? 'dirty' : 'saved');
-    setStatusMessage(nextMessage ?? (nextDirty ? 'Unsaved changes' : 'Saved to disk'));
-  }, []);
-
-  const syncDirtyState = useCallback((editorOverride?: ExplorerImageEditorHandle | null) => {
-    const editor = editorOverride ?? editorRef.current;
-    if (!editor || !savedEditorStateRef.current) {
+  const clearSavedStatusTimeout = useCallback(() => {
+    if (savedStatusTimeoutRef.current == null) {
       return;
     }
 
-    const nextSignature = JSON.stringify(editor.historyManager.getFullState());
-    setDirtyState(nextSignature !== savedStateSignatureRef.current);
-  }, [setDirtyState]);
+    window.clearTimeout(savedStatusTimeoutRef.current);
+    savedStatusTimeoutRef.current = null;
+  }, []);
 
-  const performSave = useCallback(async (): Promise<boolean> => {
-    const editor = editorRef.current;
-    if (!editor || !contentType) {
+  const revokeTrackedBlobUrl = useCallback((value: string | null) => {
+    if (!value || !value.startsWith("blob:")) {
+      return;
+    }
+
+    if (blobUrlsRef.current.delete(value)) {
+      URL.revokeObjectURL(value);
+    }
+  }, []);
+
+  const registerTrackedBlobUrl = useCallback((value: string): string => {
+    if (value.startsWith("blob:")) {
+      blobUrlsRef.current.add(value);
+    }
+    return value;
+  }, []);
+
+  const clearCropperInstance = useCallback(() => {
+    cropperRef.current?.destroy();
+    cropperRef.current = null;
+  }, []);
+
+  const resetPreviewViewport = useCallback(() => {
+    setPreviewTransform(DEFAULT_IMAGE_PREVIEW_TRANSFORM);
+    setIsPreviewDragging(false);
+  }, []);
+
+  const restoreSavedState = useCallback(async (): Promise<void> => {
+    const savedImageSource = savedImageSourceRef.current;
+    if (!savedImageSource) {
+      return;
+    }
+
+    clearSavedStatusTimeout();
+    clearCropperInstance();
+    setIsCropping(false);
+    setStatusMessage("Restoring saved image…");
+
+    try {
+      const restoredImage = await loadPreviewImage(savedImageSource);
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setBaseImage(restoredImage);
+      setFilters(cloneImageFiltersState(savedFiltersRef.current));
+      resetPreviewViewport();
+      dirtyRef.current = false;
+      setSaveState("idle");
+      setStatusMessage("");
+    } catch (error) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setSaveState("error");
+      setStatusMessage(String(error));
+    }
+  }, [clearCropperInstance, clearSavedStatusTimeout, resetPreviewViewport]);
+
+  const handleReset = useCallback(() => {
+    void restoreSavedState();
+  }, [restoreSavedState]);
+
+  const saveImage = useCallback(async (): Promise<boolean> => {
+    if (
+      !showEditingChrome ||
+      !contentType ||
+      saveState === "saving" ||
+      !baseImage
+    ) {
       return false;
     }
 
@@ -180,307 +399,377 @@ export const ExplorerImageEditor = forwardRef<
       return true;
     }
 
-    setSaveState('saving');
-    setStatusMessage('Writing image…');
+    clearSavedStatusTimeout();
+    setSaveState("saving");
+    setStatusMessage("Saving to disk...");
 
     try {
-      const exportResult = await editor.imageManager.exportCanvasAsImageFile({
-        fileName: imageName,
-        contentType,
-        exportAsBlob: true,
-      });
+      const offscreen = document.createElement("canvas");
+      offscreen.width = baseImage.width;
+      offscreen.height = baseImage.height;
 
-      if (!exportResult || !(exportResult.image instanceof Blob)) {
-        throw new Error('Image export returned no binary payload.');
+      const context = offscreen.getContext("2d");
+      if (!context) {
+        throw new Error("Could not create offscreen context");
       }
 
-      await writeExplorerFile(imagePath, await blobToByteArray(exportResult.image));
+      context.filter = buildCSSFilterString(filters);
+      context.drawImage(baseImage, 0, 0);
 
-      const savedSnapshot = cloneEditorState(editor.historyManager.getFullState());
-      savedEditorStateRef.current = savedSnapshot;
-      savedStateSignatureRef.current = JSON.stringify(savedSnapshot);
-      setDirtyState(false);
+      const blob = await new Promise<Blob | null>((resolve) => {
+        offscreen.toBlob((value) => resolve(value), contentType, 0.95);
+      });
+
+      if (!blob) {
+        throw new Error("Failed to generate image blob");
+      }
+
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      if (imagePath.startsWith("cloud://")) {
+        await writeExplorerFile(imagePath, Array.from(uint8Array));
+      } else {
+        try {
+          await writeFile(imagePath, uint8Array);
+        } catch {
+          await writeExplorerFile(imagePath, Array.from(uint8Array));
+        }
+      }
+
+      const nextSource = registerTrackedBlobUrl(URL.createObjectURL(blob));
+      const nextImage = await loadPreviewImage(nextSource);
+      if (!mountedRef.current) {
+        return true;
+      }
+
+      revokeTrackedBlobUrl(savedImageSourceRef.current);
+      savedImageSourceRef.current = nextSource;
+      savedFiltersRef.current = createDefaultImageFiltersState();
+      dirtyRef.current = false;
+
+      setBaseImage(nextImage);
+      setFilters(createDefaultImageFiltersState());
+      resetPreviewViewport();
+      setSaveState("saved");
+      setStatusMessage("Saved successfully");
+
+      savedStatusTimeoutRef.current = window.setTimeout(() => {
+        if (!mountedRef.current || dirtyRef.current) {
+          return;
+        }
+        setSaveState("idle");
+        setStatusMessage("");
+      }, 3000);
+
       await onSaved?.();
       return true;
     } catch (error) {
-      setSaveState('error');
+      if (!mountedRef.current) {
+        return false;
+      }
+
+      setSaveState("error");
       setStatusMessage(String(error));
       return false;
     }
-  }, [contentType, imageName, imagePath, onSaved, setDirtyState]);
+  }, [
+    baseImage,
+    clearSavedStatusTimeout,
+    contentType,
+    filters,
+    imagePath,
+    onSaved,
+    registerTrackedBlobUrl,
+    resetPreviewViewport,
+    revokeTrackedBlobUrl,
+    saveState,
+    showEditingChrome,
+  ]);
 
-  const resetToSavedState = useCallback(async () => {
-    const editor = editorRef.current;
-    const savedState = savedEditorStateRef.current;
-    if (!editor || !savedState) {
+  const startCropping = useCallback(() => {
+    if (!showEditingChrome || !baseImage || isCropping) {
       return;
     }
 
-    setStatusMessage('Resetting changes…');
+    clearSavedStatusTimeout();
+    setIsCropping(true);
+
+    window.setTimeout(() => {
+      const target = cropperImageRef.current;
+      if (!target || !mountedRef.current) {
+        return;
+      }
+
+      target.src = baseImage.src;
+      target.style.filter = buildCSSFilterString(filters);
+
+      cropperRef.current = new Cropper(target, {
+        viewMode: 2,
+        background: false,
+        autoCropArea: 0.9,
+        responsive: true,
+        restore: false,
+      });
+    }, 0);
+  }, [
+    baseImage,
+    clearSavedStatusTimeout,
+    filters,
+    isCropping,
+    showEditingChrome,
+  ]);
+
+  const cancelCropping = useCallback(() => {
+    clearCropperInstance();
+    setIsCropping(false);
+  }, [clearCropperInstance]);
+
+  const applyCropping = useCallback(async () => {
+    if (!cropperRef.current) {
+      return;
+    }
+
+    const croppedCanvas = cropperRef.current.getCroppedCanvas({
+      imageSmoothingEnabled: true,
+      imageSmoothingQuality: "high",
+    });
+    const nextSource = croppedCanvas.toDataURL(contentType ?? "image/png");
+
     try {
-      await editor.historyManager.loadStateFromFullState(
-        cloneEditorState(savedState),
-      );
-      setDirtyState(false);
+      const nextImage = await loadPreviewImage(nextSource);
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setBaseImage(nextImage);
+      resetPreviewViewport();
+      clearCropperInstance();
+      setIsCropping(false);
+      dirtyRef.current = true;
+      setSaveState("dirty");
+      setStatusMessage("Unsaved crop changes");
     } catch (error) {
-      setSaveState('error');
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setSaveState("error");
       setStatusMessage(String(error));
     }
-  }, [setDirtyState]);
+  }, [clearCropperInstance, contentType, resetPreviewViewport]);
 
-  const handleUndo = useCallback(async () => {
-    const editor = editorRef.current;
-    if (!editor) {
-      return;
-    }
+  const handlePreviewWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (!baseImage || isCropping) {
+        return;
+      }
 
-    await editor.historyManager.undo();
-    syncDirtyState(editor);
-  }, [syncDirtyState]);
+      const viewport = previewViewportRef.current;
+      if (!viewport) {
+        return;
+      }
 
-  const handleRedo = useCallback(async () => {
-    const editor = editorRef.current;
-    if (!editor) {
-      return;
-    }
+      event.preventDefault();
+      event.stopPropagation();
 
-    await editor.historyManager.redo();
-    syncDirtyState(editor);
-  }, [syncDirtyState]);
+      const zoomFactor = Math.exp(
+        -event.deltaY * IMAGE_PREVIEW_ZOOM_SENSITIVITY,
+      );
+      const viewportRect = viewport.getBoundingClientRect();
+      const focusX = event.clientX - viewportRect.left - viewportRect.width / 2;
+      const focusY = event.clientY - viewportRect.top - viewportRect.height / 2;
 
-  const handleAddText = useCallback(() => {
-    const editor = editorRef.current;
-    if (!editor) {
-      return;
-    }
+      setPreviewTransform((current) => {
+        const nextScale = Number(
+          clampValue(
+            current.scale * zoomFactor,
+            IMAGE_PREVIEW_MIN_SCALE,
+            IMAGE_PREVIEW_MAX_SCALE,
+          ).toFixed(2),
+        );
+        if (nextScale === current.scale) {
+          return current;
+        }
 
-    editor.textManager.addText();
-    syncDirtyState(editor);
-  }, [syncDirtyState]);
+        const scaleRatio = nextScale / current.scale;
+        return normalizeImagePreviewTransform(
+          {
+            scale: nextScale,
+            offsetX:
+              current.offsetX * scaleRatio + (1 - scaleRatio) * focusX,
+            offsetY:
+              current.offsetY * scaleRatio + (1 - scaleRatio) * focusY,
+          },
+          viewport,
+          previewImageRef.current,
+        );
+      });
+    },
+    [baseImage, isCropping],
+  );
 
-  const handleAddSquare = useCallback(async () => {
-    const editor = editorRef.current;
-    if (!editor) {
-      return;
-    }
+  const handlePreviewMouseDown = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (!baseImage || isCropping || event.button !== 0) {
+        return;
+      }
 
-    await editor.shapeManager.add({ presetKey: 'square' });
-    syncDirtyState(editor);
-  }, [syncDirtyState]);
+      const viewport = previewViewportRef.current;
+      if (!viewport) {
+        return;
+      }
 
-  const handleAddCircle = useCallback(async () => {
-    const editor = editorRef.current;
-    if (!editor) {
-      return;
-    }
+      event.preventDefault();
 
-    await editor.shapeManager.add({ presetKey: 'circle' });
-    syncDirtyState(editor);
-  }, [syncDirtyState]);
+      const startTransform = previewTransform;
+      const startClientX = event.clientX;
+      const startClientY = event.clientY;
 
-  const handleAddArrow = useCallback(async () => {
-    const editor = editorRef.current;
-    if (!editor) {
-      return;
-    }
+      setIsPreviewDragging(true);
 
-    await editor.shapeManager.add({ presetKey: 'arrow-right-fat' });
-    syncDirtyState(editor);
-  }, [syncDirtyState]);
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        setPreviewTransform(
+          normalizeImagePreviewTransform(
+            {
+              scale: startTransform.scale,
+              offsetX: startTransform.offsetX + (moveEvent.clientX - startClientX),
+              offsetY: startTransform.offsetY + (moveEvent.clientY - startClientY),
+            },
+            viewport,
+            previewImageRef.current,
+          ),
+        );
+      };
 
-  const handleDeleteSelection = useCallback(() => {
-    const editor = editorRef.current;
-    if (!editor) {
-      return;
-    }
+      const stopDragging = () => {
+        setIsPreviewDragging(false);
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseup", stopDragging);
+        window.removeEventListener("blur", stopDragging);
+      };
 
-    editor.deletionManager.deleteSelectedObjects();
-    syncDirtyState(editor);
-  }, [syncDirtyState]);
-
-  const handleZoomIn = useCallback(() => {
-    editorRef.current?.zoomManager.zoom(0.12);
-  }, []);
-
-  const handleResetZoom = useCallback(() => {
-    editorRef.current?.zoomManager.resetZoom();
-  }, []);
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", stopDragging);
+      window.addEventListener("blur", stopDragging);
+    },
+    [baseImage, isCropping, previewTransform],
+  );
 
   useImperativeHandle(
     forwardedRef,
     () => ({
-      save: performSave,
+      save: saveImage,
       hasUnsavedChanges: () => dirtyRef.current,
-      resetToSavedState,
+      resetToSavedState: restoreSavedState,
     }),
-    [performSave, resetToSavedState],
+    [restoreSavedState, saveImage],
   );
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      clearSavedStatusTimeout();
+      clearCropperInstance();
+
+      for (const value of blobUrlsRef.current) {
+        URL.revokeObjectURL(value);
+      }
+      blobUrlsRef.current.clear();
     };
-  }, []);
+  }, [clearCropperInstance, clearSavedStatusTimeout]);
 
   useEffect(() => {
-    if (!isEditableFormat || !editorHostRef.current) {
-      setInitError(null);
-      setSaveState('saved');
-      setStatusMessage('Static preview');
+    if (!isEditableFormat) {
       dirtyRef.current = false;
       return;
     }
 
-    const host = editorHostRef.current;
-    host.innerHTML = '';
-    setInitError(null);
-    setSaveState('loading');
-    setStatusMessage('Loading editor…');
-    dirtyRef.current = false;
-    savedEditorStateRef.current = null;
-    savedStateSignatureRef.current = '';
-
     let cancelled = false;
-    let resizeObserver: ResizeObserver | null = null;
-    let eventBindings: Array<{
-      eventName: string;
-      handler: (payload?: unknown) => void;
-    }> = [];
+    const defaultFilters = createDefaultImageFiltersState();
 
-    void initExplorerImageEditor(editorContainerId, {
-      editorContainerWidth: '100%',
-      editorContainerHeight: '100%',
-      canvasWrapperWidth: '100%',
-      canvasWrapperHeight: '100%',
-      canvasCSSWidth: '100%',
-      canvasCSSHeight: '100%',
-      adaptCanvasToContainerOnResize: true,
-      canvasDragging: true,
-      mouseWheelZooming: true,
-      undoRedoByHotKeys: false,
-      copyObjectsByHotkey: false,
-      pasteImageFromClipboard: false,
-      selectAllByHotkey: false,
-      deleteObjectsByHotkey: false,
-      resetObjectFitByDoubleClick: true,
-      defaultScale: 0.92,
-      minZoom: 0.05,
-      maxZoom: 8,
-      scaleType: 'contain',
-      showToolbar: false,
-      overlayMaskColor: 'rgba(8, 10, 14, 0.68)',
-      keyboardIgnoreSelectors: ['input', 'textarea', 'button', '[contenteditable="true"]'],
-      initialImage: {
-        source: imageSource,
-        scale: 'scale-montage',
-        withoutSave: true,
-      },
-    })
-      .then((editor) => {
+    clearSavedStatusTimeout();
+    clearCropperInstance();
+    revokeTrackedBlobUrl(savedImageSourceRef.current);
+    savedImageSourceRef.current = imageSource;
+    savedFiltersRef.current = cloneImageFiltersState(defaultFilters);
+    dirtyRef.current = false;
+
+    setBaseImage(null);
+    setFilters(defaultFilters);
+    resetPreviewViewport();
+    setIsCropping(false);
+    setSaveState("idle");
+    setStatusMessage("");
+
+    void loadPreviewImage(imageSource)
+      .then((image) => {
         if (cancelled || !mountedRef.current) {
-          editor.destroy();
           return;
         }
 
-        editorRef.current = editor;
-        const savedSnapshot = cloneEditorState(editor.historyManager.getFullState());
-        savedEditorStateRef.current = savedSnapshot;
-        savedStateSignatureRef.current = JSON.stringify(savedSnapshot);
-        dirtyRef.current = false;
-        setSaveState('saved');
-        setStatusMessage(showEditingChrome ? 'Saved to disk' : 'Preview ready');
-
-        const syncHandler = () => syncDirtyState(editor);
-        const warningHandler = (payload?: unknown) => {
-          if (!mountedRef.current || dirtyRef.current) {
-            return;
-          }
-
-          setStatusMessage(
-            typeof payload === 'object' && payload && 'message' in payload
-              ? String(payload.message ?? 'Editor warning')
-              : 'Editor warning',
-          );
-        };
-        const errorHandler = (payload?: unknown) => {
-          if (!mountedRef.current) {
-            return;
-          }
-
-          setSaveState('error');
-          setStatusMessage(
-            typeof payload === 'object' && payload && 'message' in payload
-              ? String(payload.message ?? 'Editor error')
-              : 'Editor error',
-          );
-        };
-
-        const dirtyEvents = [
-          'object:added',
-          'object:modified',
-          'object:removed',
-          'editor:history-state-loaded',
-          'editor:undo',
-          'editor:redo',
-          'editor:text-added',
-          'editor:text-updated',
-          'editor:shape-added',
-        ];
-
-        eventBindings = [
-          ...dirtyEvents.map((eventName) => ({ eventName, handler: syncHandler })),
-          { eventName: 'editor:warning', handler: warningHandler },
-          { eventName: 'editor:error', handler: errorHandler },
-        ];
-
-        for (const binding of eventBindings) {
-          editor.canvas.on(binding.eventName, binding.handler);
-        }
-
-        if (typeof ResizeObserver !== 'undefined') {
-          resizeObserver = new ResizeObserver(() => {
-            editor.canvasManager.updateCanvas();
-          });
-          resizeObserver.observe(host);
-        }
+        setBaseImage(image);
+        resetPreviewViewport();
       })
       .catch((error) => {
         if (cancelled || !mountedRef.current) {
           return;
         }
 
-        setInitError(String(error));
-        setSaveState('error');
-        setStatusMessage('Image editor unavailable');
+        setSaveState("error");
+        setStatusMessage(String(error));
       });
 
     return () => {
       cancelled = true;
-      resizeObserver?.disconnect();
-
-      const editor = editorRef.current;
-      if (editor) {
-        for (const binding of eventBindings) {
-          editor.canvas.off(binding.eventName, binding.handler);
-        }
-        editor.destroy();
-      }
-
-      editorRef.current = null;
-      savedEditorStateRef.current = null;
-      savedStateSignatureRef.current = '';
-      dirtyRef.current = false;
-      host.innerHTML = '';
     };
-  }, [editorContainerId, imageSource, isEditableFormat, showEditingChrome, syncDirtyState]);
+  }, [
+    clearCropperInstance,
+    clearSavedStatusTimeout,
+    imagePath,
+    imageSource,
+    isEditableFormat,
+    resetPreviewViewport,
+    revokeTrackedBlobUrl,
+  ]);
 
   useEffect(() => {
-    if (!showEditingChrome) {
+    if (!isEditableFormat) {
       return;
     }
 
+    const nextDirty =
+      Boolean(baseImage) &&
+      ((baseImage?.src ?? null) !== savedImageSourceRef.current ||
+        !areImageFiltersEqual(filters, savedFiltersRef.current));
+
+    dirtyRef.current = nextDirty;
+
+    if (saveState === "saving" || saveState === "error" || saveState === "saved") {
+      return;
+    }
+
+    if (nextDirty) {
+      if (saveState !== "dirty") {
+        setSaveState("dirty");
+        setStatusMessage("Unsaved changes");
+      }
+      return;
+    }
+
+    if (saveState === "dirty") {
+      setSaveState("idle");
+      setStatusMessage("");
+    }
+  }, [baseImage, filters, isEditableFormat, saveState]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!showEditingChrome) {
+        return;
+      }
+
       const root = rootRef.current;
       const activeElement = document.activeElement;
       const hasEditorFocus = Boolean(
@@ -491,116 +780,123 @@ export const ExplorerImageEditor = forwardRef<
         return;
       }
 
-      if (matchesKeybinding(event, keybindings.saveFile)) {
+      if (
+        matchesKeybinding(event, keybindings.saveFile) &&
+        !isCropping &&
+        isEditableFormat
+      ) {
         event.preventDefault();
-        void performSave();
-        return;
+        void saveImage();
       }
 
-      if (matchesKeybinding(event, keybindings.imageEditorUndo)) {
+      if (matchesKeybinding(event, keybindings.imageEditorReset) && !isCropping) {
         event.preventDefault();
-        void handleUndo();
-        return;
-      }
-
-      if (matchesKeybinding(event, keybindings.imageEditorRedo)) {
-        event.preventDefault();
-        void handleRedo();
-        return;
-      }
-
-      if (matchesKeybinding(event, keybindings.imageEditorReset)) {
-        event.preventDefault();
-        void resetToSavedState();
+        handleReset();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    handleRedo,
-    handleUndo,
-    keybindings.imageEditorRedo,
+    handleReset,
+    isCropping,
+    isEditableFormat,
     keybindings.imageEditorReset,
-    keybindings.imageEditorUndo,
     keybindings.saveFile,
-    performSave,
-    resetToSavedState,
+    saveImage,
     showEditingChrome,
   ]);
 
-  const statusTone = saveState === 'error'
-    ? '#fecaca'
-    : saveState === 'dirty'
-      ? '#fde68a'
-      : saveState === 'saving'
-        ? '#bfdbfe'
-        : '#bbf7d0';
+  useEffect(() => {
+    if (!showEditingChrome && isCropping) {
+      clearCropperInstance();
+      setIsCropping(false);
+    }
+  }, [clearCropperInstance, isCropping, showEditingChrome]);
+
+  const statusTone =
+    saveState === "error"
+      ? "#fca5a5"
+      : saveState === "saving"
+        ? "#93c5fd"
+        : saveState === "dirty"
+          ? "#fde047"
+          : saveState === "saved"
+            ? "#86efac"
+            : "transparent";
 
   if (!isEditableFormat) {
     return (
       <div
         style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
           background:
-            'radial-gradient(circle at top, rgba(255,255,255,0.08), transparent 50%), var(--overlay-explorer-preview-bg)',
+            "radial-gradient(circle at top, rgba(255,255,255,0.08), transparent 50%), var(--overlay-explorer-preview-bg)",
         }}
       >
         <div
           style={{
-            padding: '12px 14px',
-            borderBottom: '1px solid var(--overlay-explorer-preview-border)',
-            background: 'rgba(255,255,255,0.03)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            padding: "12px 14px",
+            borderBottom: "1px solid var(--overlay-explorer-preview-border)",
+            background: "rgba(255,255,255,0.03)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
             gap: 12,
           }}
         >
-          <div style={{ display: 'grid', gap: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--overlay-text-primary)' }}>
+          <div style={{ display: "grid", gap: 4 }}>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: "var(--overlay-text-primary)",
+              }}
+            >
               Static image preview
             </span>
-            <span style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>
+            <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>
               Live editor is available for PNG, JPG, and WebP files.
             </span>
           </div>
           <span
             style={{
-              padding: '4px 8px',
+              padding: "4px 8px",
               borderRadius: 999,
               fontSize: 10,
               fontWeight: 700,
-              color: 'var(--overlay-text-muted)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(255,255,255,0.04)',
+              color: "var(--overlay-text-muted)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.04)",
             }}
           >
-            {getImageExtension(imageName).toUpperCase() || 'IMAGE'}
+            {getImageExtension(imageName).toUpperCase() || "IMAGE"}
           </span>
         </div>
         <div
           style={{
             flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             padding: 16,
-            boxSizing: 'border-box',
+            boxSizing: "border-box",
           }}
         >
           <img
             src={imageSource}
             alt={imageName}
             style={{
-              maxWidth: '100%',
-              maxHeight: '100%',
-              objectFit: 'contain',
-              borderRadius: 'var(--overlay-explorer-control-radius)',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
+              maxWidth: "100%",
+              maxHeight: "100%",
+              objectFit: "contain",
+              borderRadius: "var(--overlay-explorer-control-radius)",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.6)",
             }}
           />
         </div>
@@ -608,188 +904,370 @@ export const ExplorerImageEditor = forwardRef<
     );
   }
 
+  const checkerboardCSS = `
+    linear-gradient(45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.02) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.02) 75%)
+  `;
+
   return (
     <div
       ref={rootRef}
       data-testid="explorer-image-editor"
       style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        background:
-          'radial-gradient(circle at top, rgba(255,255,255,0.08), transparent 52%), linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)), var(--overlay-explorer-preview-bg)',
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        position: "absolute",
+        inset: 0,
+        overflow: "hidden",
+        background: "var(--overlay-explorer-preview-bg, #111827)",
       }}
     >
       <div
         style={{
-          padding: '12px 14px',
-          borderBottom: '1px solid var(--overlay-explorer-preview-border)',
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {showEditingChrome ? (
-            <>
-              <button type="button" onClick={() => void performSave()} style={toolbarButtonStyle('primary')}>
-                <Save size={14} />
-                Save
-              </button>
-              <button type="button" onClick={() => void resetToSavedState()} style={toolbarButtonStyle()}>
-                <RotateCcw size={14} />
-                Reset
-              </button>
-              <button type="button" onClick={() => void handleUndo()} style={toolbarButtonStyle()}>
-                <Undo2 size={14} />
-                Undo
-              </button>
-              <button type="button" onClick={() => void handleRedo()} style={toolbarButtonStyle()}>
-                <Redo2 size={14} />
-                Redo
-              </button>
-              <button type="button" onClick={handleAddText} style={toolbarButtonStyle()}>
-                <Type size={14} />
-                Text
-              </button>
-              <button type="button" onClick={() => void handleAddSquare()} style={toolbarButtonStyle()}>
-                <Square size={14} />
-                Square
-              </button>
-              <button type="button" onClick={() => void handleAddCircle()} style={toolbarButtonStyle()}>
-                <Circle size={14} />
-                Circle
-              </button>
-              <button type="button" onClick={() => void handleAddArrow()} style={toolbarButtonStyle()}>
-                <ArrowUpRight size={14} />
-                Arrow
-              </button>
-              <button type="button" onClick={handleDeleteSelection} style={toolbarButtonStyle('danger')}>
-                <Trash2 size={14} />
-                Delete
-              </button>
-            </>
-          ) : (
-            <div style={{ display: 'grid', gap: 4 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--overlay-text-primary)' }}>
-                Interactive image preview
-              </span>
-              <span style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>
-                Drag to pan, scroll to zoom, double-click to refit the image.
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" onClick={handleZoomIn} style={toolbarButtonStyle(showEditingChrome ? 'default' : 'subtle')}>
-            <ZoomIn size={14} />
-            Zoom
-          </button>
-          <button type="button" onClick={handleResetZoom} style={toolbarButtonStyle(showEditingChrome ? 'default' : 'subtle')}>
-            <Maximize2 size={14} />
-            Fit
-          </button>
-          <span
-            style={{
-              padding: '5px 10px',
-              borderRadius: 999,
-              fontSize: 10,
-              fontWeight: 800,
-              color: statusTone,
-              border: '1px solid rgba(255,255,255,0.14)',
-              background: 'rgba(5, 8, 12, 0.46)',
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-            }}
-          >
-            {statusMessage}
-          </span>
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: 'relative',
           flex: 1,
-          minHeight: 0,
-          padding: 12,
+          position: "relative",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16,
+          minHeight: showEditingChrome ? "40%" : "100%",
+          borderBottom: showEditingChrome
+            ? "1px solid var(--overlay-explorer-preview-border, rgba(255,255,255,0.1))"
+            : "none",
+          backgroundImage: checkerboardCSS,
+          backgroundSize: "16px 16px",
+          backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
+          backgroundColor: "rgba(0,0,0,0.4)",
         }}
       >
-        <div
-          style={{
-            position: 'absolute',
-            inset: 12,
-            borderRadius: 'calc(var(--overlay-explorer-control-radius) + 6px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            background:
-              'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)), rgba(3, 5, 8, 0.52)',
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 22px 44px rgba(0,0,0,0.28)',
-            overflow: 'hidden',
-          }}
-        >
-          {initError ? (
-            <div
-              style={{
-                width: '100%',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 18,
-                boxSizing: 'border-box',
-              }}
-            >
-              <img
-                src={imageSource}
-                alt={imageName}
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  objectFit: 'contain',
-                  borderRadius: 'var(--overlay-explorer-control-radius)',
-                }}
-              />
-            </div>
-          ) : (
-            <div
-              id={editorContainerId}
-              ref={editorHostRef}
-              data-testid="explorer-image-editor-canvas"
-              style={{ width: '100%', height: '100%' }}
-            />
-          )}
-        </div>
-
-        {(saveState === 'loading' || initError) && (
+        {!isCropping && (
           <div
+            ref={previewViewportRef}
+            data-testid="explorer-image-editor-preview"
+            onWheel={handlePreviewWheel}
+            onMouseDown={handlePreviewMouseDown}
             style={{
-              position: 'absolute',
-              inset: 12,
-              display: 'grid',
-              placeItems: 'center',
-              padding: 24,
-              textAlign: 'center',
-              borderRadius: 'calc(var(--overlay-explorer-control-radius) + 6px)',
-              background: 'rgba(4, 6, 10, 0.72)',
-              color: 'var(--overlay-text-primary)',
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              position: "relative",
+              overflow: "hidden",
+              userSelect: "none",
+              cursor: baseImage
+                ? isPreviewDragging
+                  ? "grabbing"
+                  : "grab"
+                : "default",
             }}
           >
-            <div style={{ display: 'grid', gap: 8, maxWidth: 320 }}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>
-                {initError ? 'Image editor unavailable' : 'Loading image editor'}
+            {!baseImage && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  color: "var(--overlay-text-muted)",
+                }}
+              >
+                <ImageIcon size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
+                <span style={{ fontSize: 13, fontWeight: 500 }}>
+                  Loading image...
+                </span>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)', lineHeight: 1.5 }}>
-                {initError ?? 'Spinning up the shared image editing surface for this preview.'}
+            )}
+
+            {baseImage && (
+              <img
+                ref={previewImageRef}
+                data-testid="explorer-image-editor-preview-image"
+                src={baseImage.src}
+                draggable={false}
+                onDragStart={(event) => event.preventDefault()}
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  objectFit: "contain",
+                  borderRadius: 4,
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                  filter: buildCSSFilterString(filters),
+                  transform: `translate(${previewTransform.offsetX}px, ${previewTransform.offsetY}px) scale(${previewTransform.scale})`,
+                  transformOrigin: "center center",
+                  willChange: "transform, filter",
+                }}
+                alt="Hardware Preview"
+              />
+            )}
+
+            {baseImage && (
+              <div
+                data-testid="explorer-image-editor-preview-zoom"
+                style={{
+                  position: "absolute",
+                  right: 12,
+                  bottom: 12,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  background: "rgba(10, 14, 24, 0.58)",
+                  border: "1px solid rgba(255, 255, 255, 0.14)",
+                  boxShadow: "0 8px 24px rgba(0, 0, 0, 0.24)",
+                  color: "var(--overlay-text-primary)",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.03em",
+                  pointerEvents: "none",
+                  backdropFilter: "blur(12px)",
+                }}
+              >
+                <span style={{ opacity: 0.72 }}>Preview</span>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {Math.round(previewTransform.scale * 100)}%
+                </span>
               </div>
-            </div>
+            )}
           </div>
         )}
+
+        <div
+          style={{
+            display: isCropping ? "flex" : "none",
+            width: "100%",
+            height: "100%",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <img
+            ref={cropperImageRef}
+            style={{ maxWidth: "100%", maxHeight: "100%" }}
+            alt="cropper interface"
+          />
+        </div>
       </div>
+
+      {showEditingChrome && (
+        <div
+          style={{
+            width: "100%",
+            maxHeight: "55%",
+            display: "flex",
+            flexDirection: "column",
+            flexShrink: 0,
+            background: "var(--overlay-explorer-preview-bg, #1f2937)",
+          }}
+        >
+          <div
+            style={{
+              padding: "8px 12px",
+              borderBottom:
+                "1px solid var(--overlay-explorer-preview-border, rgba(255,255,255,0.08))",
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              position: "sticky",
+              top: 0,
+              zIndex: 20,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                disabled={isCropping || !baseImage}
+                onClick={() => void saveImage()}
+                style={{
+                  ...buttonStyle("primary"),
+                  opacity: isCropping || !baseImage ? 0.5 : 1,
+                }}
+              >
+                <Save size={13} />
+                Save
+              </button>
+              <button
+                disabled={isCropping}
+                onClick={handleReset}
+                style={{
+                  ...buttonStyle("default"),
+                  opacity: isCropping ? 0.5 : 1,
+                }}
+              >
+                <RotateCcw size={13} />
+                Reset All
+              </button>
+              <button
+                disabled={isCropping}
+                onClick={startCropping}
+                style={{
+                  ...buttonStyle("default"),
+                  opacity: isCropping ? 0.5 : 1,
+                }}
+              >
+                <Crop size={13} />
+                Crop Tool
+              </button>
+            </div>
+
+            {statusMessage && (
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: statusTone,
+                  padding: "4px 8px",
+                  background: "rgba(0,0,0,0.3)",
+                  borderRadius: 4,
+                  border: `1px solid ${statusTone}40`,
+                }}
+              >
+                {statusMessage}
+              </div>
+            )}
+          </div>
+
+          <OverlayScrollArea
+            style={{ flex: 1, minHeight: 0 }}
+            viewportStyle={{ padding: "16px" }}
+            scrollbarStyle="themed"
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div
+                style={{
+                  display: isCropping ? "none" : "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color: "var(--overlay-text-muted)",
+                    paddingBottom: 4,
+                    borderBottom: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  Adjustments
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                    gap: "16px 24px",
+                  }}
+                >
+                  {imageEditorFilterDefinitions.map((definition) => (
+                    <ImageFilterSlider
+                      key={definition.key}
+                      def={definition}
+                      value={filters[definition.key]}
+                      onChange={(value) =>
+                        setFilters((current) => ({
+                          ...current,
+                          [definition.key]: value,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: isCropping ? "flex" : "none",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color: "var(--overlay-text-muted)",
+                    paddingBottom: 4,
+                    borderBottom: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  Crop &amp; Rotate Tools
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => cropperRef.current?.setAspectRatio(Number.NaN)}
+                    style={buttonStyle("default")}
+                  >
+                    Free
+                  </button>
+                  <button
+                    onClick={() => cropperRef.current?.setAspectRatio(1)}
+                    style={buttonStyle("default")}
+                  >
+                    1:1
+                  </button>
+                  <button
+                    onClick={() => cropperRef.current?.setAspectRatio(4 / 3)}
+                    style={buttonStyle("default")}
+                  >
+                    4:3
+                  </button>
+                  <button
+                    onClick={() => cropperRef.current?.setAspectRatio(16 / 9)}
+                    style={buttonStyle("default")}
+                  >
+                    16:9
+                  </button>
+
+                  <div
+                    style={{
+                      width: 1,
+                      background: "rgba(255,255,255,0.1)",
+                      margin: "0 8px",
+                    }}
+                  />
+
+                  <button
+                    onClick={() => cropperRef.current?.rotate(-90)}
+                    style={buttonStyle("default")}
+                  >
+                    <ArrowUpLeft size={13} />
+                    Left
+                  </button>
+                  <button
+                    onClick={() => cropperRef.current?.rotate(90)}
+                    style={buttonStyle("default")}
+                  >
+                    <ArrowUpRight size={13} />
+                    Right
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                  <button onClick={cancelCropping} style={buttonStyle("danger")}>
+                    <X size={13} />
+                    Cancel
+                  </button>
+                  <button onClick={() => void applyCropping()} style={buttonStyle("primary")}>
+                    <Check size={13} />
+                    Apply Crop
+                  </button>
+                </div>
+              </div>
+            </div>
+          </OverlayScrollArea>
+        </div>
+      )}
     </div>
   );
 });
