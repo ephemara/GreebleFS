@@ -30,6 +30,28 @@
   - passed: `bunx vitest run src/test/ExplorerWorkspace.test.tsx src/test/fileExplorer.viewModes.test.tsx -t "starts pointer-driven internal explorer drags without invoking the native drag bridge|moves multi-selected files into the hovered folder without leaking the drop to the viewport root|drops into the current folder when hovering explorer chrome outside the main file plane|mounts the shared drag overlay during normal live workspace panes|auto-opens hovered folder targets once after dwell" --reporter=dot`
   - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
 
+# 2026-04-23 - Mobile PWA Now Mirrors The Desktop Theme And Registers A Real Service Worker
+
+- The mobile share is no longer visually orphaned from the main shell. It now pulls a paired theme snapshot from the desktop host and applies it to the phone UI, while also registering a service worker so the Home Screen install path is a real PWA lane instead of just a manifest bookmark.
+- Durable implementation shape:
+  - `src/config/mobileTheme.ts` is now the shared TS contract for the phone-facing theme snapshot. It derives a compact mobile-safe payload from `ResolvedOverlayAppearance`: theme identity, font families, palette colors, workbench radii/spacing, and the shell shadow.
+  - `src/runtime/mobileShareThemeRuntime.ts` keeps the active mobile theme snapshot in the desktop frontend and syncs it to the native host through the new `mobile_share_set_theme_snapshot` command. `src/App.tsx` now updates that snapshot whenever the resolved desktop appearance changes, so the active shell theme becomes the source of truth for the mobile share.
+  - The native host now stores and serves that snapshot:
+    - `src-tauri/src/share_commands.rs` exposes `mobile_share_set_theme_snapshot`
+    - `src-tauri/src/lan_share/types.rs` owns the serializable `MobileThemeSnapshot` plus the process-global active snapshot
+    - `src-tauri/src/lan_share/mobile.rs` now serves `GET /api/theme`
+  - `src-mobile/App.tsx` now fetches `/api/theme`, applies the returned colors/fonts/metrics as CSS variables, refreshes the paired theme on an interval + visibility resume, and surfaces standalone-mode state (`Home Screen App` vs `Safari Preview`) in the phone UI.
+  - `src-mobile/public/sw.js` plus the registration in `src-mobile/main.tsx` give the mobile bundle a real app-shell service worker. It caches the shell paths/assets, keeps navigation working offline for the cached shell, and deliberately leaves `/api/*` and `/files/*` on the live network path.
+  - `src-mobile/public/manifest.webmanifest` already had `display: "standalone"` before this pass; it now also includes `id` and `display_override`, while `src-mobile/index.html` continues to carry the Apple web-app meta tags.
+- Durable product note:
+  - The mobile UI now shares the desktop theme mood, but it is still a curated mobile surface, not a 1:1 CSS transplant of the desktop shell. Keep using theme snapshots and mobile-owned layout treatment instead of trying to render the full desktop chrome on iPhone.
+  - The service worker is intentionally shell-focused. Do not cache file-stream responses or directory APIs aggressively there; the desktop engine remains the live source of truth for file listings and range-streamed media.
+- Validation:
+  - passed: `bun run build:mobile`
+  - passed: `bunx vitest run src/test/mobileTheme.test.ts src/test/workbenchTopBar.test.tsx src/test/app.dockMode.test.tsx --reporter=dot`
+  - note: full `bunx tsc --noEmit --pretty false -p tsconfig.json` is still blocked by unrelated pre-existing explorer/generated binding errors outside this slice
+  - note: full `cargo check --manifest-path src-tauri/Cargo.toml -q` is still blocked by unrelated pre-existing `src-tauri/src/archive_ops.rs` errors outside this slice
+
 # 2026-04-23 - The Top-Bar Blur Toggle Is Now The Mobile Share Launcher
 
 - The old blur button in the global top bar is gone. Mobile share is now a first-class shell control instead of being buried behind Settings or the command palette.
