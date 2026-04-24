@@ -288,6 +288,7 @@ import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
 import {
   buildExplorerRuntimeMenu,
   resolveMenuInvocationInputModality,
+  type ExplorerOpenWithProgramsState,
 } from "./explorer/explorerMenuRuntime";
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
@@ -7458,6 +7459,7 @@ export function FileExplorer({
     getDrives: getExplorerDrives,
     getHomeDir: getExplorerHomeDir,
     getItemProperties: getExplorerItemProperties,
+    getAssociatedPrograms: getExplorerAssociatedPrograms,
     getRuntimeCachePolicy: getExplorerRuntimeCachePolicy,
     isCloudPath: isCloudExplorerPath,
     listLocation: listExplorerLocation,
@@ -7466,6 +7468,7 @@ export function FileExplorer({
     openArchive: openExplorerArchive,
     openPath: openExplorerPath,
     openWithDialog: openExplorerPathWithDialog,
+    openPathWithProgram: openExplorerPathWithProgram,
     openPathAsAdmin: openExplorerPathAsAdmin,
     readFileBase64: readExplorerFileBase64,
     readEntryThumbnail: readExplorerEntryThumbnail,
@@ -7791,6 +7794,9 @@ export function FileExplorer({
     y: 0,
     invocation: null,
   });
+  const [openWithProgramsByPath, setOpenWithProgramsByPath] = useState<
+    Record<string, ExplorerOpenWithProgramsState | undefined>
+  >({});
   const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showArchiveActionsMenu, setShowArchiveActionsMenu] = useState(false);
@@ -11071,6 +11077,90 @@ export function FileExplorer({
     },
     [openExplorerPathWithDialog],
   );
+  const supportsNativeOpenWith =
+    runtimePlatform === "windows" ||
+    runtimePlatform === "macos" ||
+    runtimePlatform === "linux";
+  const supportsOpenWithSystemPicker =
+    runtimePlatform === "windows" || runtimePlatform === "macos";
+  const openWithProgram = useCallback(
+    async (
+      path: string,
+      programPath: string,
+      launchArguments: string[] = [],
+    ) => {
+      await openExplorerPathWithProgram(
+        path,
+        programPath,
+        launchArguments,
+      ).catch((error) => setError(String(error)));
+    },
+    [openExplorerPathWithProgram],
+  );
+  const requestOpenWithPrograms = useCallback(
+    async (path: string) => {
+      if (
+        !supportsNativeOpenWith ||
+        !supportsNativeIntegration(path) ||
+        isCloudExplorerPath(path) ||
+        isExplorerArchiveVirtualPath(path)
+      ) {
+        return;
+      }
+
+      let shouldLoad = false;
+      setOpenWithProgramsByPath((current) => {
+        const existing = current[path];
+        if (
+          existing?.status === "loading" ||
+          existing?.status === "ready"
+        ) {
+          return current;
+        }
+
+        shouldLoad = true;
+        return {
+          ...current,
+          [path]: {
+            status: "loading",
+            catalog: existing?.catalog ?? null,
+            error: null,
+          },
+        };
+      });
+
+      if (!shouldLoad) {
+        return;
+      }
+
+      try {
+        const catalog = await getExplorerAssociatedPrograms(path);
+        setOpenWithProgramsByPath((current) => ({
+          ...current,
+          [path]: {
+            status: "ready",
+            catalog,
+            error: null,
+          },
+        }));
+      } catch (error) {
+        setOpenWithProgramsByPath((current) => ({
+          ...current,
+          [path]: {
+            status: "error",
+            catalog: null,
+            error: String(error),
+          },
+        }));
+      }
+    },
+    [
+      getExplorerAssociatedPrograms,
+      isCloudExplorerPath,
+      supportsNativeIntegration,
+      supportsNativeOpenWith,
+    ],
+  );
 
   const openNativeProperties = useCallback(
     async (path: string) => {
@@ -13993,7 +14083,6 @@ export function FileExplorer({
       : "linux";
   const propertiesLabel =
     runtimePlatform === "macos" ? "Get Info" : "Properties";
-  const supportsNativeOpenWith = runtimePlatform !== "linux";
   const supportsNativeProperties = runtimePlatform !== "linux";
   const combinedPluginContextMenuItems = useMemo(
     () => [
@@ -14324,6 +14413,34 @@ export function FileExplorer({
     },
     [refresh],
   );
+  const activeOpenWithTargetPath = useMemo(() => {
+    if (!ctxMenu.visible || !ctxMenu.invocation) {
+      return null;
+    }
+
+    if (ctxMenu.invocation.primaryEntry?.path) {
+      return ctxMenu.invocation.primaryEntry.path;
+    }
+
+    if (ctxMenu.invocation.previewTarget?.path) {
+      return ctxMenu.invocation.previewTarget.path;
+    }
+
+    if (ctxMenu.invocation.kind === "background") {
+      return currentPath;
+    }
+
+    return ctxMenu.invocation.selectedEntries[0]?.path ?? null;
+  }, [ctxMenu.invocation, ctxMenu.visible, currentPath]);
+
+  useEffect(() => {
+    if (!activeOpenWithTargetPath) {
+      return;
+    }
+
+    void requestOpenWithPrograms(activeOpenWithTargetPath);
+  }, [activeOpenWithTargetPath, requestOpenWithPrograms]);
+
   const resolvedContextMenu = useMemo(() => {
     if (!ctxMenu.visible || !ctxMenu.invocation) {
       return null;
@@ -14351,7 +14468,9 @@ export function FileExplorer({
         revealPathLabel,
         propertiesLabel,
         supportsNativeOpenWith,
+        supportsOpenWithSystemPicker,
         supportsNativeProperties,
+        openWithProgramsByPath,
         supportsNativeIntegration,
         isCloudExplorerPath,
         isExplorerArchiveVirtualPath,
@@ -14365,6 +14484,7 @@ export function FileExplorer({
         canRunAudioBatch: canRunAudioBatchEntries,
         openEntry: (entry) => openEntry(resolveContextMenuFileEntry(entry)),
         openWithSystemPicker,
+        openWithProgram,
         openAsAdmin,
         openInTerminal: onOpenInTerminal,
         openInFilesystemAquarium: onOpenInFilesystemAquarium,
@@ -14446,6 +14566,8 @@ export function FileExplorer({
     openExplorerPropertiesPanel,
     openTagDialog,
     openTrashDialog,
+    openWithProgram,
+    openWithProgramsByPath,
     openWithSystemPicker,
     paste,
     propertiesLabel,
@@ -14459,6 +14581,7 @@ export function FileExplorer({
     explorerMenuRuntimePlatform,
     supportsNativeIntegration,
     supportsNativeOpenWith,
+    supportsOpenWithSystemPicker,
     supportsNativeProperties,
     toggleBookmarkMenuEntry,
     triggerFindSimilarForPath,

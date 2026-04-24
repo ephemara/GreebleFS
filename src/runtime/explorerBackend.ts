@@ -22,6 +22,8 @@ import {
   type CloudProviderConfigurationSource,
   type CloudProviderConfigurationStatus,
   type CloudProviderId,
+  type AssociatedProgram,
+  type AssociatedProgramsCatalog,
   type DriveInfo,
   type EntryStorageInfo,
   type ExplorerDuplicateScanStartResponse,
@@ -104,6 +106,8 @@ export type ExplorerCloudProviderConfigurationSource =
   CloudProviderConfigurationSource;
 export type ExplorerCloudProviderConfigurationStatus =
   CloudProviderConfigurationStatus;
+export type ExplorerAssociatedProgram = AssociatedProgram;
+export type ExplorerAssociatedProgramsCatalog = AssociatedProgramsCatalog;
 export type ExplorerTagMetadataSnapshot = ExplorerTagSnapshot;
 export type ExplorerTagMutation = ExplorerTagMutationRequest;
 export type ExplorerSavedSearch = ExplorerSavedSearchRecord;
@@ -378,6 +382,8 @@ export type ExplorerBackendContract = {
   openArchive: typeof openExplorerArchive;
   inspectArchive: typeof inspectExplorerArchive;
   openWithDialog: typeof openExplorerPathWithDialog;
+  getAssociatedPrograms: typeof getExplorerAssociatedPrograms;
+  openPathWithProgram: typeof openExplorerPathWithProgram;
   revealPath: typeof revealExplorerPath;
   showPathProperties: typeof showExplorerPathProperties;
   openPathAsAdmin: typeof openExplorerPathAsAdmin;
@@ -759,6 +765,28 @@ export async function openExplorerPathWithDialog(path: string): Promise<void> {
     throw new Error("Open With is only available for local filesystem items.");
   }
   unwrapTauriResult(await commands.fsOpenWithDialog(path));
+}
+
+export async function getExplorerAssociatedPrograms(
+  path: string,
+): Promise<ExplorerAssociatedProgramsCatalog> {
+  if (isCloudExplorerPath(path)) {
+    throw new Error("Open With is only available for local filesystem items.");
+  }
+  return unwrapTauriResult(await commands.openWithGetAssociatedPrograms(path));
+}
+
+export async function openExplorerPathWithProgram(
+  path: string,
+  programPath: string,
+  launchArguments: string[] = [],
+): Promise<void> {
+  if (isCloudExplorerPath(path)) {
+    throw new Error("Open With is only available for local filesystem items.");
+  }
+  unwrapTauriResult(
+    await commands.openWithLaunchProgram(path, programPath, launchArguments),
+  );
 }
 
 export async function revealExplorerPath(path: string): Promise<void> {
@@ -1254,6 +1282,8 @@ export const explorerBackendContract: ExplorerBackendContract = {
   openArchive: openExplorerArchive,
   inspectArchive: inspectExplorerArchive,
   openWithDialog: openExplorerPathWithDialog,
+  getAssociatedPrograms: getExplorerAssociatedPrograms,
+  openPathWithProgram: openExplorerPathWithProgram,
   revealPath: revealExplorerPath,
   showPathProperties: showExplorerPathProperties,
   openPathAsAdmin: openExplorerPathAsAdmin,

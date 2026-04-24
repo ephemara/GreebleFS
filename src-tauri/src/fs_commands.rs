@@ -4047,42 +4047,8 @@ fn escape_powershell_single_quoted_string(value: &str) -> String {
 }
 
 fn open_with_system_picker(path: &Path) -> Result<(), String> {
-    let _ = path;
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("rundll32.exe")
-            .arg("shell32.dll,OpenAs_RunDLL")
-            .arg(path)
-            .spawn()
-            .map_err(|error| error.to_string())?;
-        return Ok(());
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let script = format!(
-            "set targetFile to POSIX file \"{}\"\nset chosenApp to choose application with prompt \"Open With\"\ntell application chosenApp\n  activate\n  open targetFile\nend tell",
-            escape_applescript_string(&path.to_string_lossy())
-        );
-
-        std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(script)
-            .spawn()
-            .map_err(|error| error.to_string())?;
-        return Ok(());
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        Err("Native Open With dialogs are not currently supported on Linux.".to_string())
-    }
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    {
-        Err("Open With is not supported on this platform.".to_string())
-    }
+    crate::open_with::open_native_open_with_dialog(path.to_string_lossy().into_owned())
+        .into_result()
 }
 
 fn show_path_properties(path: &Path) -> Result<(), String> {
@@ -8771,8 +8737,7 @@ mod tests {
             target_directory: Some("/tmp/out".to_string()),
         };
 
-        let registration =
-            archive_task_registration(&request, Some("/tmp/out".to_string()));
+        let registration = archive_task_registration(&request, Some("/tmp/out".to_string()));
 
         assert_eq!(registration.destination_path, Some("/tmp/out".to_string()));
         assert!(registration.detail.contains("/tmp/out"));

@@ -557,6 +557,22 @@ async audioEngineSyncSelectionToArmedDeck(request: AudioEngineSyncSelectionReque
     else return { status: "error", error: e  as any };
 }
 },
+async openWithGetAssociatedPrograms(filePath: string) : Promise<Result<AssociatedProgramsCatalog, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_with_get_associated_programs", { filePath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openWithLaunchProgram(filePath: string, programPath: string, launchArguments: string[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_with_launch_program", { filePath, programPath, launchArguments }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async fsOpenWithDialog(path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("fs_open_with_dialog", { path }) };
@@ -1581,6 +1597,8 @@ export type AccelerationRoutingMode = "auto" | "preferNative" | "preferCuda" | "
 export type AccelerationRuntimeRequest = { config: PythonRuntimeConfig | null; routingMode: AccelerationRoutingMode; startSidecarIfNeeded: boolean | null }
 export type AccelerationRuntimeStatusSnapshot = { routingMode: AccelerationRoutingMode; lastRefreshedAtEpochMs: number; nativeGpu: GpuRuntimeStatusSnapshot; pythonSidecarRunning: boolean; pythonSidecarActionAvailable: boolean; pythonProbeAttempted: boolean; pythonProbeError: string | null; pythonProbe: PythonAccelerationProbe | null; providers: AccelerationProviderStatus[] }
 export type AccelerationWorkloadId = "thumbnails" | "mediaPipelines" | "highVolumePreviews" | "aiIndexing" | "localInference" | "similaritySearch" | "directStorage" | "fileHashing"
+export type AssociatedProgram = { name: string; path: string; icon: string | null; isDefault: boolean }
+export type AssociatedProgramsCatalog = { recommendedPrograms: AssociatedProgram[]; otherPrograms: AssociatedProgram[]; defaultProgram: AssociatedProgram | null }
 export type AudioBatchProcessMode = "convert" | "normalize"
 export type AudioBatchProcessRequest = { inputPaths: string[]; recurseDirectories: boolean | null; mode: AudioBatchProcessMode; outputFormat: string | null; overwriteExisting: boolean | null; outputDirectory: string | null }
 export type AudioBatchProcessResult = { taskId: string; processedPaths: string[]; skippedPaths: string[]; failedPaths: string[]; outputDirectory: string | null; soxBinary: string }

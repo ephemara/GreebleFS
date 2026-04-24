@@ -175,12 +175,17 @@ function MenuPanel({
 
           const active = activeIndex === index;
           const submenuOpen = openSubmenuId === node.id && node.kind === 'submenu';
+          const disabled = node.kind === 'command' && node.disabled;
           return (
             <button
               key={node.id}
               data-overlay-explorer-context-menu-node={node.id}
               type="button"
+              disabled={disabled}
               onMouseEnter={(event) => {
+                if (disabled) {
+                  return;
+                }
                 onActivateIndex(pathKey, index);
                 if (node.kind === 'submenu') {
                   anchorRectsByNodeId[node.id] = event.currentTarget.getBoundingClientRect();
@@ -190,6 +195,9 @@ function MenuPanel({
                 onSetOpenPath(path);
               }}
               onClick={() => {
+                if (disabled) {
+                  return;
+                }
                 if (node.kind === 'submenu') {
                   onSetOpenPath([...path, node.id]);
                   return;
@@ -214,9 +222,10 @@ function MenuPanel({
                   node.tone === 'danger'
                     ? 'var(--overlay-explorer-danger-text)'
                     : 'var(--overlay-text-primary)',
-                cursor: 'pointer',
+                cursor: disabled ? 'default' : 'pointer',
                 fontSize: 12,
                 textAlign: 'left',
+                opacity: disabled ? 0.55 : 1,
               }}
             >
               <span style={{ display: 'flex', alignItems: 'center', opacity: 0.78 }}>

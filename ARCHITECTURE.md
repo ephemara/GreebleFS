@@ -153,13 +153,15 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/runtime/workerHost.ts`
   Browser-worker orchestration layer for frontend CPU-heavy tasks. It owns worker-lane lifecycle, per-lane telemetry, fallback-to-main-thread behavior, and the shared request/response bridge used by runtime module compilation.
 - `src/runtime/tauriClient.ts` and `src/runtime/explorerBackend.ts`
-  Typed frontend bridge for native explorer/media commands. Large 3D preview reads now use raw-byte preview transport commands (`fs_read_preview_bytes` / `cloud_read_preview_bytes`) that return `Uint8Array` payloads instead of base64 strings.
+  Typed frontend bridge for native explorer/media commands. Large 3D preview reads now use raw-byte preview transport commands (`fs_read_preview_bytes` / `cloud_read_preview_bytes`) that return `Uint8Array` payloads instead of base64 strings. Explorer `Open With` association lookup and explicit app launch also belong here through the `open_with_*` commands; React should not reintroduce raw platform pickers or per-component shelling-out.
 - `src-tauri/src/lan_share/mobile.rs`
   Browser-facing Axum surface for the sovereign mobile share. It serves the compiled `dist-mobile/` bundle, exposes the full mobile control plane (`/api/list`, `/api/theme`, `/api/search`, `/api/search/status`, `/api/search/scan`, `/api/search/cancel`, `/api/preview`, `/api/thumbnail`, `/api/icon`, `/api/upload`), falls back cleanly when the mobile bundle is missing, and reuses the existing file/Range streaming lane for direct media playback from the desktop host. This layer is now also the resolver for mobile presentation metadata such as entry kind, icon ids, thumbnail URLs, preview capability, and desktop-authored icon-theme/folder-icon rules.
 - `src-tauri/src/tailscale_commands.rs`
   Native Tailscale integration seam for the mobile share. It owns CLI-backed tailnet status, connect/disconnect flows, and the tailnet host/certificate resolution used when the mobile share needs a remote-safe URL instead of a LAN-only address.
 - `src/runtime/gitPanelBackend.ts`
   Shared Git-panel runtime seam. It wraps the existing `git_exec` command for repo-overview loading, local-branch metadata, upstream ahead/behind counts, commit-history parsing, changed-file parsing, and commit patch loading so Git React surfaces do not each reinvent their own git-log parsers.
+- `src-tauri/src/open_with/`
+  Native `Open With` subsystem. It wraps the vendored platform association/runtime crate, resolves associated apps for Windows/Linux/macOS, launches a selected app against a file, and backs the system picker fallback used by explorer context menus.
 - `src/components/DevPerformanceHud.tsx`
   Fixed dev-only diagnostics HUD rendered by `App.tsx` whenever the frontend runs in `import.meta.env.DEV` or explicit developer mode. It shows live frame, navigation, CLS, INP, long-task, memory, and frontend worker telemetry for local development, and its visibility now rides a persisted system flag plus a local shell hotkey instead of being permanently forced on in dev sessions.
 - `src/components/wallpaperRuntime.tsx`
@@ -395,6 +397,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `SettingsPage.tsx` now exposes a dedicated top-level `Context Menus` settings section for pack selection, command placement, submenus, quick slots, fallback buckets, and per-context renderer overrides. The Explorer section should only link to that lane; do not bury future menu authoring UI back under generic explorer settings.
   - `settings.explorer.contextMenuItemOverrides` is now legacy migration input only; new work should persist `activeMenuPackId` and `contextMenuLayoutOverridesByContext`.
   - Current ship constraint: only the classic nested renderer is fully implemented. The runtime/schema already carries `hybrid`, `radial`, `sheet`, and `hud` as presentation targets for future work.
+  - `open-with` is now a first-class resolver-backed submenu, not a hardcoded menu branch. The runtime reads associated apps from `src/runtime/explorerBackend.ts`, renders those as stable command nodes, and keeps the native system picker as a fallback action instead of the only action.
 - `settings.system.developerMode` is now the live-reload gate for expensive development-only watchers:
   - plugin directory watch / fallback polling in `useFolderPluginRuntime.ts`
   - authored shader polling in `App.tsx`
@@ -481,6 +484,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Explorer Pro metadata and long-running utilities now route through Rust instead of TS-only persistence:
   - `src-tauri/src/explorer_pro_commands.rs` owns app-managed trash + undo, batch rename, duplicate-scan lifecycle, tags, and saved searches
   - `src-tauri/src/fs_commands.rs` now also owns the durable explorer task registry used by copy/move/delete jobs plus the retry/cancel/history command surface exposed through Specta
+- Native `Open With` is now an explorer-owned workflow instead of a Windows-only picker affordance:
+  - `src-tauri/src/open_with/` wraps the vendored cross-platform association/runtime layer and now supports Windows, Linux desktop ids, and macOS app ids plus native picker fallback where the OS exposes one
+  - `src-tauri/src/fs_commands.rs` still owns the durable `fs_open_with_dialog` shell command, but it delegates actual picker behavior to `src-tauri/src/open_with/` instead of duplicating per-platform launch logic locally
+  - `src/runtime/explorerBackend.ts` is the only TS bridge for associated-program lookup and explicit app launch; React surfaces should call `getExplorerAssociatedPrograms(...)` / `openExplorerPathWithProgram(...)` there instead of shelling out directly
+  - `src/components/explorer/explorerMenuRuntime.ts` resolves `Open With` children lazily from cached association state so the classic context menu can show real apps, loading/error placeholders, and the system picker fallback without hardcoded JSX branches
   - `src-tauri/src/fs_commands.rs` also owns explorer metadata helpers for recursive sizes, checksums, item-property snapshots, and fuzzy jump filtering
   - `src-tauri/src/audio_engine.rs` owns native explorer playback through a CPAL output stream, Symphonia decode with an ffmpeg fallback for formats Symphonia cannot open directly, rubato resampling, deck mixing, loop/gain/rate transport state, and `AudioEngineStateEvent`
   - the audio engine snapshot now also carries `activePluginPath` plus live `vstParameters` per deck, and VST load failures now flow back through deck error state instead of rejecting the whole preview workflow

@@ -1,3 +1,39 @@
+# 2026-04-24 - Native Open With Is Now A Real Explorer Submenu With macOS Support
+
+- Explorer `Open With` is no longer just a thin system-picker action. The explorer menu runtime now resolves a real submenu of associated apps from a host-owned native subsystem, while keeping the system picker as a fallback action where the platform supports it.
+- Durable implementation shape:
+  - `src-tauri/src/open_with/` is now wired into the live host through `src-tauri/src/lib.rs`, `src-tauri/src/specta_bindings.rs`, and `src-tauri/Cargo.toml`. The vendored subsystem now exports typed associated-program lookup plus explicit app launch commands for the frontend, and macOS support is provided through the existing `file_opening_macos` / `sd-desktop-macos` lane rather than a one-off shell script path.
+  - `src-tauri/src/open_with/macos.rs` is the new macOS adapter for the vendored runtime. It maps macOS app associations into the shared `AssociatedProgramsCatalog`, launches a selected app by app id, and provides a native picker fallback through AppleScript when the user chooses the system picker path.
+  - `src-tauri/src/fs_commands.rs` still exposes `fs_open_with_dialog`, but it now delegates to `src-tauri/src/open_with/` so the picker path and explicit app-launch path share one native subsystem instead of drifting apart by platform.
+  - `src/runtime/explorerBackend.ts` is now the only TS bridge for open-with association lookup and explicit app launch. React surfaces should use `getExplorerAssociatedPrograms(...)`, `openExplorerPathWithProgram(...)`, and `openExplorerPathWithDialog(...)` there instead of inventing local platform logic.
+  - `src/components/explorer/explorerMenuRuntime.ts` now treats `open-with` as a resolver-backed submenu. It reads cached app catalogs from the runtime environment, resolves real app entries plus loading/error/empty placeholders, and only appends `System Picker…` as a fallback item when the platform actually supports it.
+  - `src/components/FileExplorer.tsx` now owns the cache/fetch path for associated programs keyed by target path and passes that state into the menu runtime environment. This keeps context-menu composition in the authored menu runtime while keeping async fetch state in the explorer shell that already owns the invocation snapshot.
+  - `src/components/explorer/ExplorerContextMenu.tsx` now honors disabled command nodes, which the runtime uses for loading/error/empty submenu placeholders.
+- Durable product note:
+  - Keep `Open With` as a host-owned explorer workflow, not a React-only branch. Platform association lookup, native picker fallback, and explicit app launch should continue to live under `src-tauri/src/open_with/` plus `src/runtime/explorerBackend.ts`.
+  - If future menu renderers such as radial or hybrid need `Open With`, they should consume the same resolved submenu tree. Do not special-case `Open With` back into a renderer or into `FileExplorer.tsx`.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `bunx vitest run src/test/explorerMenuRuntime.test.ts src/test/explorerContextMenuRenderer.test.tsx --reporter=dot`
+  - blocked currently: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails in unrelated vendored `src/vendor/tiptap/**` paths
+
+# 2026-04-24 - Shell Animation Progress Is Now Leaf-Local, Shell Effects Are Tiered, And Command Palette Search Is Deferred
+
+- The main shell no longer pays the old `App.tsx` 120 Hz root-state tax during overlay animation. Frame-driven progress is now isolated in a dedicated shell scene leaf, while the root only changes coarse animation phase.
+- Durable implementation shape:
+  - `src/components/OverlayShellScene.tsx` is now the shell-animation leaf. It owns folder-authored animation progress with a local `requestAnimationFrame` loop and keeps built-in animation behavior on the existing CSS-transition path. Future shell-motion work should extend this leaf instead of reintroducing frame-by-frame `useState` at the `App.tsx` root.
+  - `src/App.tsx` no longer stores `animationProgress` or a root progress frame ref. It now assembles shell frame/container/background/content surfaces once, passes them into `OverlayShellScene`, and only updates overlay phase/direction plus other real shell state.
+  - `src/config/workbenchPerformance.ts` is now the runtime-only shell-effects policy seam. It resolves `full | reduced | minimal` shell tiers from platform plus `overlay_frame_time` telemetry, defaults Linux to `reduced`, caps blur in reduced mode, and gates wallpaper/theme-effect/shader/animation-overlay layers in lower tiers.
+  - Heavy shell surfaces now declare `contain: layout paint style` and `isolation: isolate` in the main shell content container, pinned panel slots, and managed panel shells so browser layout/paint work stays more local when the compositor stack is already expensive.
+  - The command palette now defers the query before sending it into global indexed search. `App.tsx` still uses the live query for local palette filtering/status, but the backend-facing `setGlobalSearchQuery(...)` call now consumes `useDeferredValue(commandPaletteQuery)` so typing stays ahead of the search lane.
+  - `src/test/overlayShellScene.test.tsx` locks the key perf contract: stable shell content should not rerender on local folder-animation progress ticks. `src/test/workbenchPerformance.test.ts` locks the Linux default reduced tier and the minimal-tier downgrade under sustained frame pressure.
+- Durable product note:
+  - If shell smoothness regresses, inspect root-level React animation state and compositor-heavy shell layers before touching explorer internals. The first-line rule is now: shell motion belongs in leaf-local animation surfaces or CSS transitions, not in `App.tsx` root state.
+  - `contain`/`isolation` help browser-side layout/paint scope, but they do not erase the OS compositor cost of transparent undecorated windows with blur/shaders/wallpapers. Keep adaptive shell-effect downgrades as a real runtime safety valve, especially on Linux and Windows.
+- Validation:
+  - passed: `bunx vitest run src/test/workbenchPerformance.test.ts src/test/overlayShellScene.test.tsx src/test/frameTelemetry.test.ts src/test/app.dockMode.test.tsx src/test/commandPalette.test.tsx --reporter=dot`
+  - blocked currently: `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails in pre-existing vendored `src/vendor/tiptap/**` typing/dependency paths unrelated to this shell-performance slice
+
 # 2026-04-24 - Notes Panel Is Now A Folder-First Markdown Workspace Backed By Vendored Tiptap
 
 - The notes surface no longer behaves like a hardcoded notes/todos/bugs/prompts board. It is now a real folder/document workspace over the managed `notes/` root, with empty-state-first behavior and no category-specific icons or app logic.

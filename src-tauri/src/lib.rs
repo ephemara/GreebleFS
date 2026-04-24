@@ -8,11 +8,12 @@ pub mod domain_commands;
 pub mod entry_size_cache;
 pub mod explorer_pro_commands;
 pub mod fs_commands;
-pub mod gpu_runtime;
 pub mod global_search;
+pub mod gpu_runtime;
 pub mod image_commands;
 pub mod lan_share;
 mod linux_graphics;
+pub mod open_with;
 pub mod pdf_commands;
 pub mod plugin_commands;
 pub mod python_commands;
@@ -74,9 +75,7 @@ fn parse_json_invoke_args<T: for<'de> serde::Deserialize<'de>>(
     match message.payload() {
         tauri::ipc::InvokeBody::Json(payload) => serde_json::from_value(payload.clone())
             .map_err(|error| format!("Invalid command payload: {error}")),
-        tauri::ipc::InvokeBody::Raw(_) => {
-            Err("Command expects JSON arguments.".to_string())
-        }
+        tauri::ipc::InvokeBody::Raw(_) => Err("Command expects JSON arguments.".to_string()),
     }
 }
 
@@ -122,15 +121,15 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
             true
         }
         "global_search_query_under_path" => {
-            let args =
-                match parse_json_invoke_args::<GlobalSearchQueryUnderPathInvokeArgs>(&invoke.message)
-                {
-                    Ok(args) => args,
-                    Err(error) => {
-                        invoke.resolver.reject(error);
-                        return true;
-                    }
-                };
+            let args = match parse_json_invoke_args::<GlobalSearchQueryUnderPathInvokeArgs>(
+                &invoke.message,
+            ) {
+                Ok(args) => args,
+                Err(error) => {
+                    invoke.resolver.reject(error);
+                    return true;
+                }
+            };
             let resolver = invoke.resolver;
             let app = invoke.message.webview().app_handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -163,15 +162,13 @@ pub fn run() {
 
     let builder = specta_bindings::app_specta_builder();
     let specta_invoke_handler = builder.invoke_handler();
-    let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::Wry>| match invoke
-        .message
-        .command()
-    {
-        "fs_read_preview_bytes" | "cloud_read_preview_bytes" | "global_search_query_under_path" => {
-            raw_preview_invoke_handler(invoke)
-        }
-        _ => specta_invoke_handler(invoke),
-    };
+    let invoke_handler =
+        move |invoke: tauri::ipc::Invoke<tauri::Wry>| match invoke.message.command() {
+            "fs_read_preview_bytes"
+            | "cloud_read_preview_bytes"
+            | "global_search_query_under_path" => raw_preview_invoke_handler(invoke),
+            _ => specta_invoke_handler(invoke),
+        };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(

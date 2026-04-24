@@ -13,15 +13,12 @@ use crate::audio_commands::{
     AudioBatchProcessRequest, AudioBatchProcessResult, AudioPreviewAnalysis, AudioSilenceRegion,
     AudioTransformRequest, AudioTransformResult, AudioWaveformBucket,
 };
-use crate::lan_share::types::LanShareResult;
-use crate::tailscale_commands::{TailscaleConnectRequest, TailscaleStatusSnapshot};
 use crate::audio_engine::{
     AudioDeckId, AudioDeckState, AudioEngineDeckRequest, AudioEngineGainRequest,
     AudioEngineLoadDeckRequest, AudioEngineLoadPluginRequest, AudioEngineLoopRegion,
     AudioEngineLoopRegionRequest, AudioEngineRateRequest, AudioEngineSeekRequest,
-    AudioEngineSetArmedDeckRequest, AudioEngineSetPluginParameterRequest,
-    AudioEngineStateEvent, AudioEngineStateSnapshot, AudioEngineSyncSelectionRequest,
-    VstParameterState,
+    AudioEngineSetArmedDeckRequest, AudioEngineSetPluginParameterRequest, AudioEngineStateEvent,
+    AudioEngineStateSnapshot, AudioEngineSyncSelectionRequest, VstParameterState,
 };
 use crate::cloud_commands::{
     CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus, CloudBreadcrumb,
@@ -54,6 +51,7 @@ use crate::image_commands::{
     ImageEditorPreviewRequest, ImageEditorPreviewResult, ImageEditorSessionBootstrap,
     ImageEditorSessionCreateRequest, ImageFilterPresetDefinition, ImageFilterPresetId,
 };
+use crate::lan_share::types::LanShareResult;
 use crate::linux_graphics::{
     LinuxDisplayBackend, LinuxDisplayBackendPreference, LinuxDisplayBackendStatus,
 };
@@ -80,8 +78,8 @@ use crate::semantic_search::{
     ExplorerSemanticFindSimilarRequest, ExplorerSemanticIndexBuildMode,
     ExplorerSemanticIndexBuildRequest, ExplorerSemanticIndexBuildStartResponse,
     ExplorerSemanticIndexSummary, ExplorerSemanticSearchDiagnostics,
-    ExplorerSemanticSearchQueryKind, ExplorerSemanticSearchRequest,
-    ExplorerSemanticSearchResponse, ExplorerSemanticSearchResult,
+    ExplorerSemanticSearchQueryKind, ExplorerSemanticSearchRequest, ExplorerSemanticSearchResponse,
+    ExplorerSemanticSearchResult,
 };
 use crate::shader_preview_commands::{
     ExplorerShaderCompileRequest, ExplorerShaderCompileResult, ExplorerShaderDiagnostic,
@@ -92,6 +90,7 @@ use crate::storage_commands::{
     StorageNodeKind, StoragePathSummary, StorageScanStartResponse, StorageScanStatus,
     StorageTreeNode, StorageTypeBucketSummary,
 };
+use crate::tailscale_commands::{TailscaleConnectRequest, TailscaleStatusSnapshot};
 use crate::telemetry::{
     TelemetryCaptureMode, TelemetryConfig, TelemetryPayloadMode, TelemetryRecord,
     TelemetrySessionStatus, TelemetrySupportBundleResult,
@@ -214,6 +213,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::audio_engine::audio_engine_clear_deck_plugin,
             crate::audio_engine::audio_engine_set_plugin_parameter,
             crate::audio_engine::audio_engine_sync_selection_to_armed_deck,
+            crate::open_with::open_with_get_associated_programs,
+            crate::open_with::open_with_launch_program,
             crate::fs_commands::fs_open_with_dialog,
             crate::fs_commands::fs_open_as_admin,
             crate::fs_commands::fs_reveal_in_explorer,

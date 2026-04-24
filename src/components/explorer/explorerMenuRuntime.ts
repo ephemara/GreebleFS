@@ -24,6 +24,10 @@ import {
   type LoadedExplorerMenuPack,
 } from '../../config/menuPacks';
 import type { OverlayPluginContextMenuContribution } from '../../config/pluginContributions';
+import type {
+  ExplorerAssociatedProgram,
+  ExplorerAssociatedProgramsCatalog,
+} from '../../runtime/explorerBackend';
 
 export interface ExplorerRuntimeMenuCommandNode
   extends ExplorerResolvedMenuCommandNode {
@@ -50,6 +54,12 @@ export interface ExplorerRuntimeMenuPresentation {
   fallbackRenderer: ExplorerMenuRendererKind;
 }
 
+export interface ExplorerOpenWithProgramsState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  catalog: ExplorerAssociatedProgramsCatalog | null;
+  error: string | null;
+}
+
 export interface ExplorerMenuRuntimeActionContext {
   invocation: ExplorerMenuInvocationContext;
   targetEntries: ExplorerMenuInvocationEntry[];
@@ -70,7 +80,9 @@ export interface ExplorerMenuRuntimeEnvironment {
   revealPathLabel: string;
   propertiesLabel: string;
   supportsNativeOpenWith: boolean;
+  supportsOpenWithSystemPicker: boolean;
   supportsNativeProperties: boolean;
+  openWithProgramsByPath: Record<string, ExplorerOpenWithProgramsState | undefined>;
   supportsNativeIntegration: (path: string) => boolean;
   isCloudExplorerPath: (path: string) => boolean;
   isExplorerArchiveVirtualPath: (path: string) => boolean;
@@ -80,6 +92,11 @@ export interface ExplorerMenuRuntimeEnvironment {
   canRunAudioBatch: (entries: ExplorerMenuInvocationEntry[]) => boolean;
   openEntry: (entry: ExplorerMenuInvocationEntry) => void | Promise<void>;
   openWithSystemPicker: (path: string) => Promise<void>;
+  openWithProgram: (
+    path: string,
+    programPath: string,
+    launchArguments?: string[],
+  ) => Promise<void>;
   openAsAdmin: (path: string) => Promise<void>;
   openInTerminal: (path: string) => void | Promise<void>;
   openInFilesystemAquarium: (path: string) => void | Promise<void>;
@@ -199,6 +216,78 @@ function resolveCurrentPathEntry(
     stem: name,
     isDirectory: true,
   };
+}
+
+function createDisabledResolverNode(
+  id: string,
+  label: string,
+  description: string | undefined,
+  command: ExplorerCommandDefinition,
+  depth: number,
+): ExplorerRuntimeMenuCommandNode {
+  return {
+    kind: 'command',
+    id,
+    commandId: command.id,
+    label,
+    description,
+    depth,
+    iconName: command.iconName,
+    tone: 'safe',
+    source: 'layout',
+    quickSlot: 'none',
+    fallbackBucket: 'default',
+    disabled: true,
+    shortcutId: undefined,
+    command,
+    onSelect: () => undefined,
+  };
+}
+
+function createOpenWithProgramNode(
+  command: ExplorerCommandDefinition,
+  entryPath: string,
+  program: ExplorerAssociatedProgram,
+  depth: number,
+  environment: ExplorerMenuRuntimeEnvironment,
+  labelOverride?: string,
+  descriptionOverride?: string,
+): ExplorerRuntimeMenuCommandNode {
+  return {
+    kind: 'command',
+    id: `${command.id}.program.${program.path}`,
+    commandId: command.id,
+    label: labelOverride ?? program.name,
+    description: descriptionOverride,
+    depth,
+    iconName: command.iconName,
+    tone: 'safe',
+    source: 'layout',
+    quickSlot: 'none',
+    fallbackBucket: 'default',
+    disabled: false,
+    shortcutId: undefined,
+    command,
+    onSelect: () => environment.openWithProgram(entryPath, program.path, []),
+  };
+}
+
+function dedupeOpenWithPrograms(
+  programs: ExplorerAssociatedProgram[],
+  seenProgramKeys: Set<string>,
+): ExplorerAssociatedProgram[] {
+  const deduped: ExplorerAssociatedProgram[] = [];
+
+  for (const program of programs) {
+    const programKey = `${program.path}\u0000${program.name}`.toLowerCase();
+    if (seenProgramKeys.has(programKey)) {
+      continue;
+    }
+    seenProgramKeys.add(programKey);
+    deduped.push(program);
+  }
+
+  return deduped;
 }
 
 function getPrimaryActionEntry(
@@ -676,8 +765,118 @@ function createResolverChildren(
   switch (command.execution.actionId) {
     case 'open-with': {
       const entry = primaryEntry ?? resolveCurrentPathEntry(environment);
-      return [
-        {
+      const state = environment.openWithProgramsByPath[entry.path];
+      const children: ExplorerRuntimeMenuNode[] = [];
+      const seenProgramKeys = new Set<string>();
+      const pushSeparatorIfNeeded = () => {
+        const lastNode = children[children.length - 1];
+        if (children.length > 0 && lastNode?.kind !== 'separator') {
+          children.push({
+            kind: 'separator',
+            id: `${command.id}.separator.${children.length}`,
+            label: '',
+            depth,
+            tone: 'muted',
+            source: 'layout',
+            quickSlot: 'none',
+            fallbackBucket: 'default',
+          });
+        }
+      };
+
+      if (state?.status === 'ready' && state.catalog) {
+        const { catalog } = state;
+        if (catalog.defaultProgram) {
+          const [defaultProgram] = dedupeOpenWithPrograms(
+            [{ ...catalog.defaultProgram, isDefault: true }],
+            seenProgramKeys,
+          );
+          if (defaultProgram) {
+            children.push(
+              createOpenWithProgramNode(
+                command,
+                entry.path,
+                defaultProgram,
+                depth,
+                environment,
+                `${defaultProgram.name} (Default)`,
+                'Default application for this file type.',
+              ),
+            );
+          }
+        }
+
+        const recommendedPrograms = dedupeOpenWithPrograms(
+          catalog.recommendedPrograms,
+          seenProgramKeys,
+        );
+        for (const program of recommendedPrograms) {
+          children.push(
+            createOpenWithProgramNode(
+              command,
+              entry.path,
+              program,
+              depth,
+              environment,
+            ),
+          );
+        }
+
+        const otherPrograms = dedupeOpenWithPrograms(
+          catalog.otherPrograms,
+          seenProgramKeys,
+        );
+        if (otherPrograms.length > 0 && children.length > 0) {
+          pushSeparatorIfNeeded();
+        }
+        for (const program of otherPrograms) {
+          children.push(
+            createOpenWithProgramNode(
+              command,
+              entry.path,
+              program,
+              depth,
+              environment,
+            ),
+          );
+        }
+      } else if (state?.status === 'error') {
+        children.push(
+          createDisabledResolverNode(
+            `${command.id}.error`,
+            'Unable to Load Apps',
+            state.error ?? 'The operating system did not return any compatible apps.',
+            command,
+            depth,
+          ),
+        );
+      } else {
+        children.push(
+          createDisabledResolverNode(
+            `${command.id}.loading`,
+            'Loading Compatible Apps…',
+            'Resolving applications that can open this item.',
+            command,
+            depth,
+          ),
+        );
+      }
+
+      if (children.length === 0) {
+        children.push(
+          createDisabledResolverNode(
+            `${command.id}.empty`,
+            'No Compatible Apps Found',
+            'No associated applications were reported for this item.',
+            command,
+            depth,
+          ),
+        );
+      }
+
+      if (environment.supportsOpenWithSystemPicker) {
+        pushSeparatorIfNeeded();
+        children.push({
           kind: 'command',
           id: `${command.id}.system-picker`,
           commandId: command.id,
@@ -693,8 +892,10 @@ function createResolverChildren(
           shortcutId: undefined,
           command,
           onSelect: () => environment.openWithSystemPicker(entry.path),
-        },
-      ];
+        });
+      }
+
+      return children;
     }
     default:
       return [];

@@ -67,7 +67,9 @@ function createEnvironment(
     revealPathLabel: 'Reveal in Explorer',
     propertiesLabel: 'Properties',
     supportsNativeOpenWith: true,
+    supportsOpenWithSystemPicker: true,
     supportsNativeProperties: true,
+    openWithProgramsByPath: {},
     supportsNativeIntegration: vi.fn(() => true),
     isCloudExplorerPath: vi.fn(() => false),
     isExplorerArchiveVirtualPath: vi.fn(() => false),
@@ -77,6 +79,7 @@ function createEnvironment(
     canRunAudioBatch: vi.fn(() => false),
     openEntry: vi.fn(),
     openWithSystemPicker: vi.fn(async () => {}),
+    openWithProgram: vi.fn(async () => {}),
     openAsAdmin: vi.fn(async () => {}),
     openInTerminal: vi.fn(),
     openInFilesystemAquarium: vi.fn(),
@@ -191,6 +194,86 @@ describe('explorerMenuRuntime', () => {
     expect(menu.presentation.renderer).toBe('classic');
     expect(menu.presentation.fallbackRenderer).toBe('classic');
     expect(menu.primaryEntry?.path).toBe(previewTarget.path);
+  });
+
+  it('renders associated programs ahead of the system picker for open-with submenus', async () => {
+    const targetEntry = createEntry({
+      path: '/workspace/notes/demo.txt',
+      name: 'demo.txt',
+      stem: 'demo',
+    });
+    const environment = createEnvironment({
+      runtimePlatform: 'macos',
+      supportsOpenWithSystemPicker: true,
+      openWithProgramsByPath: {
+        [targetEntry.path]: {
+          status: 'ready',
+          error: null,
+          catalog: {
+            defaultProgram: {
+              name: 'Preview',
+              path: 'com.apple.Preview',
+              icon: null,
+              isDefault: true,
+            },
+            recommendedPrograms: [
+              {
+                name: 'TextEdit',
+                path: 'com.apple.TextEdit',
+                icon: null,
+                isDefault: false,
+              },
+            ],
+            otherPrograms: [
+              {
+                name: 'VS Code',
+                path: 'com.microsoft.VSCode',
+                icon: null,
+                isDefault: false,
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const menu = buildExplorerRuntimeMenu({
+      invocation: createInvocation({
+        kind: 'entry',
+        primaryEntry: targetEntry,
+        selectedEntries: [targetEntry],
+      }),
+      menuPacks: [createBuiltInExplorerMenuPack()],
+      activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
+      layoutOverridesByContext: {},
+      themeRendererPreference: 'classic',
+      pluginContextMenuItems: [],
+      environment,
+    });
+
+    const openWithNode = findNodeByLabel(menu.nodes, 'Open With');
+    expect(openWithNode?.kind).toBe('submenu');
+    if (!openWithNode || openWithNode.kind !== 'submenu') {
+      throw new Error('Expected Open With submenu');
+    }
+
+    expect(findNodeByLabel(openWithNode.children, 'Preview (Default)')).not.toBeNull();
+    expect(findNodeByLabel(openWithNode.children, 'TextEdit')).not.toBeNull();
+    expect(findNodeByLabel(openWithNode.children, 'VS Code')).not.toBeNull();
+
+    const textEditNode = findNodeByLabel(openWithNode.children, 'TextEdit');
+    expect(textEditNode?.kind).toBe('command');
+    if (!textEditNode || textEditNode.kind !== 'command') {
+      throw new Error('Expected TextEdit command');
+    }
+
+    await textEditNode.onSelect();
+
+    expect(environment.openWithProgram).toHaveBeenCalledWith(
+      targetEntry.path,
+      'com.apple.TextEdit',
+      [],
+    );
   });
 
   it('dispatches multi-select menus without falling back to the entry layout', () => {

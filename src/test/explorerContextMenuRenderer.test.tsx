@@ -123,6 +123,41 @@ describe('ExplorerContextMenu', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('does not trigger disabled command nodes', () => {
+    const onClose = vi.fn();
+    const onSelect = vi.fn();
+
+    render(
+      <ExplorerContextMenu
+        visible
+        x={24}
+        y={24}
+        nodes={[
+          createCommandNode({
+            id: 'command.open.disabled',
+            label: 'Loading Compatible Apps…',
+            disabled: true,
+            onSelect,
+          }),
+        ]}
+        onClose={onClose}
+        renderIcon={() => null}
+      />,
+    );
+
+    const disabledButton = document.querySelector(
+      '[data-overlay-explorer-context-menu-node="command.open.disabled"]',
+    );
+    if (!(disabledButton instanceof HTMLButtonElement)) {
+      throw new Error('Expected disabled command button');
+    }
+
+    fireEvent.click(disabledButton);
+
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('clamps the root panel inside the viewport bounds', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 300 });
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 200 });
