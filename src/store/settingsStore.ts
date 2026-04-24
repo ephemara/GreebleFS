@@ -319,6 +319,16 @@ export interface LayoutSettings {
 }
 
 export interface AudioSettings {
+  activeSoundPackId: string | null;
+  soundEffectsEnabled: boolean;
+  soundEffectsVolume: number;
+  buttonSoundsEnabled: boolean;
+  navigationSoundsEnabled: boolean;
+  taskSoundsEnabled: boolean;
+  notificationSoundsEnabled: boolean;
+  nativeNotificationsEnabled: boolean;
+  nativeTaskSuccessNotificationsEnabled: boolean;
+  nativeTaskFailureNotificationsEnabled: boolean;
   vst3AdditionalFolders: string[];
 }
 
@@ -992,6 +1002,22 @@ export function normalizeAudioSettings(
 ): AudioSettings {
   const merged = { ...base, ...updates };
   return {
+    activeSoundPackId: typeof merged.activeSoundPackId === 'string'
+      ? merged.activeSoundPackId.trim() || null
+      : merged.activeSoundPackId === null
+        ? null
+        : base.activeSoundPackId,
+    soundEffectsEnabled: merged.soundEffectsEnabled !== false,
+    soundEffectsVolume: typeof merged.soundEffectsVolume === 'number' && Number.isFinite(merged.soundEffectsVolume)
+      ? Math.min(Math.max(merged.soundEffectsVolume, 0), 1)
+      : base.soundEffectsVolume,
+    buttonSoundsEnabled: merged.buttonSoundsEnabled !== false,
+    navigationSoundsEnabled: merged.navigationSoundsEnabled !== false,
+    taskSoundsEnabled: merged.taskSoundsEnabled !== false,
+    notificationSoundsEnabled: merged.notificationSoundsEnabled !== false,
+    nativeNotificationsEnabled: merged.nativeNotificationsEnabled !== false,
+    nativeTaskSuccessNotificationsEnabled: merged.nativeTaskSuccessNotificationsEnabled !== false,
+    nativeTaskFailureNotificationsEnabled: merged.nativeTaskFailureNotificationsEnabled !== false,
     vst3AdditionalFolders: Array.isArray(merged.vst3AdditionalFolders)
       ? merged.vst3AdditionalFolders.filter((s): s is string => typeof s === 'string')
       : base.vst3AdditionalFolders,
@@ -1163,6 +1189,16 @@ export const defaultSettings: Settings = {
     zenFocusMode: false,
   },
   audio: {
+    activeSoundPackId: null,
+    soundEffectsEnabled: true,
+    soundEffectsVolume: 0.72,
+    buttonSoundsEnabled: true,
+    navigationSoundsEnabled: true,
+    taskSoundsEnabled: true,
+    notificationSoundsEnabled: true,
+    nativeNotificationsEnabled: true,
+    nativeTaskSuccessNotificationsEnabled: true,
+    nativeTaskFailureNotificationsEnabled: true,
     vst3AdditionalFolders: [],
   },
 };

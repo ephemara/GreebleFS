@@ -116,6 +116,13 @@ import {
   type LoadedExplorerHomePack,
 } from './config/homePackages';
 import {
+  DEFAULT_SOUND_PACK_ID,
+  loadSoundPacks as discoverSoundPacks,
+  resolveLoadedSoundPack,
+  soundPackSystemConfig,
+  type LoadedOverlaySoundPack,
+} from './config/soundPacks';
+import {
   loadExplorerMenuPacks as discoverExplorerMenuPacks,
   menuPackSystemConfig,
   type LoadedExplorerMenuPack,
@@ -204,9 +211,12 @@ import {
   queueExplorerTerminalDirectorySync,
   writeExplorerFile,
 } from './runtime/explorerBackend';
+import type { ExplorerTaskSnapshot } from './runtime/explorerBackend';
 import { installFrontendTelemetryObservers } from './runtime/telemetry';
 import { buildTelemetryConfigFromSettings, configureTelemetry } from './runtime/telemetryBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
+import { sendNativeNotification } from './runtime/nativeNotifications';
+import { configureSoundEffectsRuntime, playSoundEffect } from './runtime/soundEffects';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
   MAIN_WINDOW_HOST_LABEL,
@@ -225,6 +235,8 @@ import {
 import {
   clearCompletedExplorerTasks,
   retryFailedExplorerTasks,
+  useExplorerTaskProgressFeed,
+  useExplorerTaskSnapshots,
 } from './store/explorerTaskStore';
 import { useGlobalSearchStore } from './store/globalSearchStore';
 import {
@@ -265,6 +277,62 @@ const FRAME_PROBE_OUTPUT_PATH = (() => {
 
 const APP_THEME_BUNDLE_OVERRIDE_ID = 'settings:active-theme-bundle-overrides';
 const DOCK_THEME_BUNDLE_OVERRIDE_ID = 'settings:active-dock-theme-bundle-overrides';
+const ANNOUNCED_EXPLORER_TASK_KINDS = new Set<ExplorerTaskSnapshot['kind']>([
+  'copy',
+  'move',
+  'delete',
+  'trash',
+  'extractArchive',
+  'audioTransform',
+  'audioBatchProcess',
+]);
+
+function shouldAnnounceExplorerTask(task: ExplorerTaskSnapshot): boolean {
+  return ANNOUNCED_EXPLORER_TASK_KINDS.has(task.kind);
+}
+
+function getExplorerTaskKindLabel(task: ExplorerTaskSnapshot): string {
+  switch (task.kind) {
+    case 'copy':
+      return 'Copy';
+    case 'move':
+      return 'Move';
+    case 'delete':
+      return 'Delete';
+    case 'trash':
+      return 'Trash';
+    case 'extractArchive':
+      return 'Archive Extract';
+    case 'audioTransform':
+      return 'Audio Transform';
+    case 'audioBatchProcess':
+      return 'Audio Batch';
+    default:
+      return task.title || 'Explorer Task';
+  }
+}
+
+function buildExplorerTaskNotificationPayload(task: ExplorerTaskSnapshot): { title: string; body: string } {
+  const kindLabel = getExplorerTaskKindLabel(task);
+  if (task.status === 'succeeded') {
+    return {
+      title: `${kindLabel} Complete`,
+      body: task.detail?.trim() || task.title || 'The explorer task finished successfully.',
+    };
+  }
+
+  if (task.status === 'cancelled') {
+    return {
+      title: `${kindLabel} Cancelled`,
+      body: task.detail?.trim() || task.title || 'The explorer task was cancelled.',
+    };
+  }
+
+  return {
+    title: `${kindLabel} Failed`,
+    body: task.errorMessage?.trim() || task.detail?.trim() || task.title || 'The explorer task did not finish successfully.',
+  };
+}
 
 function hasPinnedThemeBundleLaneOverrides(overrides: {
   activeAppearancePackId?: string | null;
@@ -598,6 +666,7 @@ function App() {
   const topBarPackagesSignatureRef = useRef('');
   const themePackagesSignatureRef = useRef('');
   const iconThemePackagesSignatureRef = useRef('');
+  const soundPacksSignatureRef = useRef('');
   const homePacksSignatureRef = useRef('');
   const menuPacksSignatureRef = useRef('');
   const authoredAnimationsRefreshInFlightRef = useRef(false);
@@ -612,6 +681,8 @@ function App() {
   const themePackagesRefreshQueuedRef = useRef(false);
   const iconThemePackagesRefreshInFlightRef = useRef(false);
   const iconThemePackagesRefreshQueuedRef = useRef(false);
+  const soundPacksRefreshInFlightRef = useRef(false);
+  const soundPacksRefreshQueuedRef = useRef(false);
   const homePacksRefreshInFlightRef = useRef(false);
   const homePacksRefreshQueuedRef = useRef(false);
   const menuPacksRefreshInFlightRef = useRef(false);
@@ -649,6 +720,10 @@ function App() {
   const [iconThemePackagesLoading, setIconThemePackagesLoading] = useState(true);
   const [iconThemePackagesError, setIconThemePackagesError] = useState<string | null>(null);
   const [iconThemePackagesWarnings, setIconThemePackagesWarnings] = useState<string[]>([]);
+  const [soundPacks, setSoundPacks] = useState<LoadedOverlaySoundPack[]>([]);
+  const [soundPacksLoading, setSoundPacksLoading] = useState(true);
+  const [soundPacksError, setSoundPacksError] = useState<string | null>(null);
+  const [soundPacksWarnings, setSoundPacksWarnings] = useState<string[]>([]);
   const [authoredHomePacks, setAuthoredHomePacks] = useState<LoadedExplorerHomePack[]>([]);
   const [homePacksLoading, setHomePacksLoading] = useState(true);
   const [homePacksError, setHomePacksError] = useState<string | null>(null);
@@ -663,6 +738,10 @@ function App() {
   const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
   const deferredCommandPaletteQuery = useDeferredValue(commandPaletteQuery);
+  const explorerTasks = useExplorerTaskSnapshots();
+  useExplorerTaskProgressFeed();
+  const explorerTaskTransitionReadyRef = useRef(false);
+  const previousExplorerTasksByIdRef = useRef<Record<string, ExplorerTaskSnapshot>>({});
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -689,6 +768,7 @@ function App() {
     explorerSettings,
     mobileSettings,
     pythonSettings,
+    audioSettings,
     systemSettings,
     setActiveSection,
     updateTerminal,
@@ -703,6 +783,7 @@ function App() {
     explorerSettings: state.settings.explorer,
     mobileSettings: state.settings.mobile,
     pythonSettings: state.settings.python,
+    audioSettings: state.settings.audio,
     systemSettings: state.settings.system,
     setActiveSection: state.setActiveSection,
     updateTerminal: state.updateTerminal,
@@ -876,6 +957,18 @@ function App() {
     }
     return [...packMap.values()].sort((left, right) => left.name.localeCompare(right.name));
   }, [combinedThemePackages, menuPacks]);
+  const combinedSoundPacks = useMemo(() => {
+    const packMap = new Map<string, LoadedOverlaySoundPack>();
+    for (const pack of soundPacks) {
+      packMap.set(pack.id, pack);
+    }
+    for (const themePackage of combinedThemePackages) {
+      for (const pack of themePackage.localCatalogs?.soundPacks ?? []) {
+        packMap.set(pack.id, pack);
+      }
+    }
+    return [...packMap.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [combinedThemePackages, soundPacks]);
   const combinedTopBarPackageSources = useMemo(
     () => [...topBarPackages, ...combinedThemePackages],
     [combinedThemePackages, topBarPackages],
@@ -1026,6 +1119,104 @@ function App() {
   );
   const theme = resolvedAppearance.theme;
   const accent = theme.palette.accent;
+  const resolvedSoundPack = useMemo(() => {
+    const requestedSoundPackId = audioSettings.activeSoundPackId
+      ?? resolvedAppearance.baseTheme.defaultSoundPackId
+      ?? DEFAULT_SOUND_PACK_ID;
+    return resolveLoadedSoundPack(combinedSoundPacks, requestedSoundPackId)
+      ?? resolveLoadedSoundPack(combinedSoundPacks, DEFAULT_SOUND_PACK_ID);
+  }, [
+    audioSettings.activeSoundPackId,
+    combinedSoundPacks,
+    resolvedAppearance.baseTheme.defaultSoundPackId,
+  ]);
+  useEffect(() => {
+    configureSoundEffectsRuntime({
+      enabled: audioSettings.soundEffectsEnabled,
+      volume: audioSettings.soundEffectsVolume,
+      pack: resolvedSoundPack ?? null,
+      groupEnabled: {
+        button: audioSettings.buttonSoundsEnabled,
+        navigation: audioSettings.navigationSoundsEnabled,
+        task: audioSettings.taskSoundsEnabled,
+        notification: audioSettings.notificationSoundsEnabled,
+      },
+    });
+  }, [
+    audioSettings.buttonSoundsEnabled,
+    audioSettings.navigationSoundsEnabled,
+    audioSettings.notificationSoundsEnabled,
+    audioSettings.soundEffectsEnabled,
+    audioSettings.soundEffectsVolume,
+    audioSettings.taskSoundsEnabled,
+    resolvedSoundPack,
+  ]);
+
+  useEffect(() => {
+    const nextTasksById = Object.fromEntries(
+      explorerTasks.map(task => [task.id, task] as const),
+    );
+
+    if (!explorerTaskTransitionReadyRef.current) {
+      previousExplorerTasksByIdRef.current = nextTasksById;
+      explorerTaskTransitionReadyRef.current = true;
+      return;
+    }
+
+    const previousTasksById = previousExplorerTasksByIdRef.current;
+    previousExplorerTasksByIdRef.current = nextTasksById;
+
+    for (const task of explorerTasks) {
+      if (!shouldAnnounceExplorerTask(task)) {
+        continue;
+      }
+
+      const previousTask = previousTasksById[task.id];
+      if (!previousTask) {
+        if (task.status === 'running') {
+          void playSoundEffect('task-start');
+        }
+        continue;
+      }
+
+      if (previousTask.status === task.status) {
+        continue;
+      }
+
+      if (task.status === 'running') {
+        void playSoundEffect('task-start');
+        continue;
+      }
+
+      if (task.status === 'succeeded') {
+        void playSoundEffect('task-success');
+        if (audioSettings.nativeNotificationsEnabled && audioSettings.nativeTaskSuccessNotificationsEnabled) {
+          const notification = buildExplorerTaskNotificationPayload(task);
+          void sendNativeNotification({
+            ...notification,
+            requestPermission: false,
+          });
+        }
+        continue;
+      }
+
+      if (task.status === 'failed' || task.status === 'cancelled') {
+        void playSoundEffect('task-failure');
+        if (audioSettings.nativeNotificationsEnabled && audioSettings.nativeTaskFailureNotificationsEnabled) {
+          const notification = buildExplorerTaskNotificationPayload(task);
+          void sendNativeNotification({
+            ...notification,
+            requestPermission: false,
+          });
+        }
+      }
+    }
+  }, [
+    audioSettings.nativeNotificationsEnabled,
+    audioSettings.nativeTaskFailureNotificationsEnabled,
+    audioSettings.nativeTaskSuccessNotificationsEnabled,
+    explorerTasks,
+  ]);
   const workbench = resolvedAppearance.workbenchTheme;
   const mobileShareThemeSnapshot = useMemo(
     () => createMobileShareThemeSnapshot(resolvedAppearance, {
@@ -2901,6 +3092,68 @@ function App() {
     }
   }, []);
 
+  const refreshSoundPacks = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      const result = await discoverSoundPacks();
+      setSoundPacks(result.packs);
+      setSoundPacksError(result.sourceError);
+      setSoundPacksWarnings(result.warnings);
+      setSoundPacksLoading(false);
+      return;
+    }
+
+    if (force) {
+      soundPacksRefreshQueuedRef.current = true;
+    }
+    if (soundPacksRefreshInFlightRef.current) {
+      soundPacksRefreshQueuedRef.current = true;
+      return;
+    }
+
+    soundPacksRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || soundPacksRefreshQueuedRef.current;
+        soundPacksRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          soundPacksSignatureRef.current = '';
+        }
+
+        setSoundPacksLoading(prev => prev && !nextForce);
+        try {
+          await ensureDir(soundPackSystemConfig.soundPacksDirectory);
+          const listed = await listExplorerDir(soundPackSystemConfig.soundPacksDirectory, false);
+          const nextSignature = listed
+            .map(entry => `${entry.path}:${entry.modified}`)
+            .sort()
+            .join('|');
+
+          if (!nextForce && nextSignature === soundPacksSignatureRef.current) {
+            setSoundPacksLoading(false);
+            continue;
+          }
+
+          soundPacksSignatureRef.current = nextSignature;
+          const result = await discoverSoundPacks();
+          setSoundPacks(result.packs);
+          setSoundPacksError(result.sourceError);
+          setSoundPacksWarnings(result.warnings);
+        } catch (error) {
+          const fallbackResult = await discoverSoundPacks();
+          setSoundPacks(fallbackResult.packs);
+          setSoundPacksError(String(error));
+          setSoundPacksWarnings(fallbackResult.warnings);
+        } finally {
+          setSoundPacksLoading(false);
+        }
+      } while (soundPacksRefreshQueuedRef.current);
+    } finally {
+      soundPacksRefreshInFlightRef.current = false;
+    }
+  }, []);
+
   const refreshHomePacks = useCallback(async (force = false) => {
     if (!isTauri()) {
       setAuthoredHomePacks([]);
@@ -3160,6 +3413,13 @@ function App() {
     ]);
   }, [refreshThemePackages, refreshTopBarPackages]);
 
+  const refreshSoundPackCatalog = useCallback(async () => {
+    await Promise.all([
+      refreshSoundPacks(true),
+      refreshThemePackages(true),
+    ]);
+  }, [refreshSoundPacks, refreshThemePackages]);
+
   const openManagedContentDirectory = useCallback(async (directoryId: ManagedContentDirectoryId) => {
     if (!isTauri()) {
       return;
@@ -3172,6 +3432,10 @@ function App() {
 
   const openIconThemesFolder = useCallback(async () => {
     await openManagedContentDirectory('iconThemes');
+  }, [openManagedContentDirectory]);
+
+  const openSoundPacksFolder = useCallback(async () => {
+    await openManagedContentDirectory('soundPacks');
   }, [openManagedContentDirectory]);
 
   const openHomePacksFolder = useCallback(async () => {
@@ -3488,6 +3752,10 @@ function App() {
   }, [refreshIconThemePackages]);
 
   useEffect(() => {
+    void refreshSoundPacks(true);
+  }, [refreshSoundPacks]);
+
+  useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !iconThemeSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
@@ -3497,6 +3765,18 @@ function App() {
 
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshIconThemePackages]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !soundPackSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshSoundPacks();
+    }, soundPackSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshSoundPacks]);
 
   useEffect(() => {
     void refreshHomePacks(true);
@@ -3645,10 +3925,17 @@ function App() {
         iconThemePackagesLoading,
         iconThemePackagesError,
         iconThemePackagesWarnings,
+        soundPacks,
+        soundPacksDirectory: soundPackSystemConfig.soundPacksDirectory,
+        soundPacksLoading,
+        soundPacksError,
+        soundPacksWarnings,
         onRefreshThemes: refreshThemePackages,
         onOpenThemesFolder: openThemesFolder,
         onRefreshIconThemes: () => refreshIconThemePackages(true),
         onOpenIconThemesFolder: openIconThemesFolder,
+        onRefreshSoundPacks: refreshSoundPackCatalog,
+        onOpenSoundPacksFolder: openSoundPacksFolder,
         shaders: availableShaders,
         shaderDiagnostics: [...authoredShaders, ...pluginContributedShaders].filter(shader => Boolean(shader.error)),
         shadersDirectory: shaderSystemConfig.shadersDirectory,

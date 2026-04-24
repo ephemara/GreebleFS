@@ -40,6 +40,11 @@ import {
   loadExplorerHomePacksFromDirectoryEntries,
   type LoadedExplorerHomePack,
 } from './homePackages';
+import {
+  loadSoundPacks,
+  loadSoundPacksFromDirectoryEntries,
+  type LoadedOverlaySoundPack,
+} from './soundPacks';
 import { joinPlatformPath } from './platform';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import {
@@ -108,6 +113,7 @@ export interface OverlayThemeBundleManifest {
   topBarId?: string;
   iconThemeId?: string;
   wallpaperId?: string;
+  soundPackId?: string;
   shaderId?: string;
   openAnimationId?: string;
   closeAnimationId?: string;
@@ -164,6 +170,7 @@ export interface ThemeBundleLocalCatalogs {
   shellRenderers: LoadedThemeShellRendererPack[];
   themeRecipePacks: LoadedThemeRecipePack[];
   themeEnginePacks: LoadedThemeEnginePack[];
+  soundPacks: LoadedOverlaySoundPack[];
   iconThemePackages: LoadedThemeBundleLocalIconTheme[];
   wallpapers: LoadedThemeBundleLocalWallpaper[];
   homePacks: LoadedThemeBundleLocalHomePack[];
@@ -178,6 +185,7 @@ export interface ThemeBundleDependencyCatalogs {
   shellRenderers?: LoadedThemeShellRendererPack[];
   themeRecipePacks?: LoadedThemeRecipePack[];
   themeEnginePacks?: LoadedThemeEnginePack[];
+  soundPacks?: LoadedOverlaySoundPack[];
   iconThemePackages?: LoadedIconThemePackage[];
   wallpapers?: LoadedOverlayWallpaper[];
 }
@@ -223,6 +231,7 @@ export interface GlobalThemeBundleCatalogs {
   shellRenderers: LoadedThemeShellRendererPack[];
   themeRecipePacks: LoadedThemeRecipePack[];
   themeEnginePacks: LoadedThemeEnginePack[];
+  soundPacks: LoadedOverlaySoundPack[];
   warnings: string[];
 }
 
@@ -255,6 +264,7 @@ export const themeSystemConfig = {
     shaders: 'shaders',
     animations: 'animations',
     interactionMotion: 'interaction-motion',
+    soundPacks: 'sound-packs',
     shellRenderers: 'shell-renderers',
     themeRecipes: 'theme-recipes',
     themeEngines: 'theme-engines',
@@ -272,6 +282,7 @@ function emptyLocalCatalogs(): ThemeBundleLocalCatalogs {
     shellRenderers: [],
     themeRecipePacks: [],
     themeEnginePacks: [],
+    soundPacks: [],
     iconThemePackages: [],
     wallpapers: [],
     homePacks: [],
@@ -288,6 +299,7 @@ export function createEmptyGlobalThemeBundleCatalogs(): GlobalThemeBundleCatalog
     shellRenderers: [],
     themeRecipePacks: [],
     themeEnginePacks: [],
+    soundPacks: [],
     warnings: [],
   };
 }
@@ -450,6 +462,7 @@ function parseThemeBundleManifestText(text: string, filePath: string): OverlayTh
     topBarId: asString(source.topBarId),
     iconThemeId: asString(source.iconThemeId),
     wallpaperId: asString(source.wallpaperId),
+    soundPackId: asString(source.soundPackId),
     shaderId: asString(source.shaderId),
     openAnimationId: asString(source.openAnimationId),
     closeAnimationId: asString(source.closeAnimationId),
@@ -623,6 +636,7 @@ interface CollectedPackageLocalCatalogs {
   shellRenderers: LoadedThemeShellRendererPack[];
   themeRecipePacks: LoadedThemeRecipePack[];
   themeEnginePacks: LoadedThemeEnginePack[];
+  soundPacks: LoadedOverlaySoundPack[];
   topBars: LoadedOverlayTopBarDefinition[];
   iconThemePackages: LoadedThemeBundleLocalIconTheme[];
   wallpapers: LoadedThemeBundleLocalWallpaper[];
@@ -676,6 +690,7 @@ function collectPackageLocalCatalogs(packages: LoadedOverlayThemePackage[]): Col
     shellRenderers: packages.flatMap(pkg => pkg.localCatalogs?.shellRenderers ?? []),
     themeRecipePacks: packages.flatMap(pkg => pkg.localCatalogs?.themeRecipePacks ?? []),
     themeEnginePacks: packages.flatMap(pkg => pkg.localCatalogs?.themeEnginePacks ?? []),
+    soundPacks: packages.flatMap(pkg => pkg.localCatalogs?.soundPacks ?? []),
     topBars: packages.flatMap(pkg => pkg.topBars ?? []),
     iconThemePackages: packages.flatMap(pkg => pkg.localCatalogs?.iconThemePackages ?? []),
     wallpapers: packages.flatMap(pkg => pkg.localCatalogs?.wallpapers ?? []),
@@ -721,6 +736,10 @@ export function resolveLoadedThemePackages(
   const shellRendererEntries = [
     ...(dependencies.shellRenderers ?? []).map(pack => buildLocalCatalogEntry(pack, pack.localId)),
     ...localCatalogs.shellRenderers.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+  ];
+  const soundPackEntries = [
+    ...(dependencies.soundPacks ?? []).map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+    ...localCatalogs.soundPacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
   ];
   const themeRecipeEntries = [
     ...(dependencies.themeRecipePacks ?? []).map(pack => buildLocalCatalogEntry(pack, pack.localId)),
@@ -826,6 +845,15 @@ export function resolveLoadedThemePackages(
       resolutionWarnings.push(`Shell renderer "${manifest.rendererId}" was not found.`);
     }
 
+    const soundPack = resolveReferencedCatalogValue(
+      manifest.soundPackId,
+      packageLocalCatalogs.soundPacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+      soundPackEntries,
+    );
+    if (manifest.soundPackId && !soundPack) {
+      resolutionWarnings.push(`Sound pack "${manifest.soundPackId}" was not found.`);
+    }
+
     const iconThemePackage = resolveReferencedCatalogValue(
       manifest.iconThemeId,
       packageLocalCatalogs.iconThemePackages.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
@@ -865,6 +893,8 @@ export function resolveLoadedThemePackages(
       defaultTopBarId: resolvedDefaultTopBarId,
       defaultHomePackId: resolveScopedSelectionId(manifest.homePackId, packageLocalCatalogs.homePacks),
       defaultMenuPackId: resolveScopedSelectionId(manifest.menuPackId, packageLocalCatalogs.menuPacks),
+      defaultSoundPackId: resolveScopedSelectionId(manifest.soundPackId, packageLocalCatalogs.soundPacks)
+        ?? soundPack?.id,
       defaultShaderId: resolveScopedSelectionId(manifest.shaderId, packageLocalCatalogs.shaders),
       defaultOpenAnimationId: resolveScopedSelectionId(manifest.openAnimationId, packageLocalCatalogs.animations),
       defaultCloseAnimationId: resolveScopedSelectionId(manifest.closeAnimationId, packageLocalCatalogs.animations),
@@ -1010,7 +1040,7 @@ async function buildThemeBundlePackage(
     return loadChildDirectoryEntries(childDirectoryPath);
   };
 
-  const [appearanceEntries, topBarEntries, iconThemeEntries, wallpaperEntries, shaderEntries, animationEntries, interactionMotionEntries, shellRendererEntries, themeRecipeEntries, themeEngineEntries, homePackEntries, menuPackEntries] = await Promise.all([
+  const [appearanceEntries, topBarEntries, iconThemeEntries, wallpaperEntries, shaderEntries, animationEntries, interactionMotionEntries, soundPackEntries, shellRendererEntries, themeRecipeEntries, themeEngineEntries, homePackEntries, menuPackEntries] = await Promise.all([
     loadEntries(themeSystemConfig.childDirectoryNames.appearancePacks),
     loadEntries(themeSystemConfig.childDirectoryNames.topBars),
     loadEntries(themeSystemConfig.childDirectoryNames.iconThemes),
@@ -1018,6 +1048,7 @@ async function buildThemeBundlePackage(
     loadEntries(themeSystemConfig.childDirectoryNames.shaders),
     loadEntries(themeSystemConfig.childDirectoryNames.animations),
     loadEntries(themeSystemConfig.childDirectoryNames.interactionMotion),
+    loadEntries(themeSystemConfig.childDirectoryNames.soundPacks),
     loadEntries(themeSystemConfig.childDirectoryNames.shellRenderers),
     loadEntries(themeSystemConfig.childDirectoryNames.themeRecipes),
     loadEntries(themeSystemConfig.childDirectoryNames.themeEngines),
@@ -1030,6 +1061,7 @@ async function buildThemeBundlePackage(
     topBarPackageResult,
     iconThemePackageResult,
     interactionMotionResult,
+    soundPackResult,
     shellRendererResult,
     themeRecipeResult,
     themeEngineResult,
@@ -1048,6 +1080,12 @@ async function buildThemeBundlePackage(
     loadThemeInteractionMotionPacksFromDirectoryEntries(interactionMotionEntries, {
       scopeId: bundleId,
       virtualRoot: record.directoryPath,
+    }),
+    loadSoundPacksFromDirectoryEntries(soundPackEntries, record.directoryPath, {
+      includeBuiltIns: false,
+      scopeId: bundleId,
+      sourceKind: 'sound-pack-directory',
+      sourceLabel: bundleName,
     }),
     loadThemeShellRendererPacksFromDirectoryEntries(shellRendererEntries, {
       scopeId: bundleId,
@@ -1070,6 +1108,7 @@ async function buildThemeBundlePackage(
 
   localCatalogs.appearancePacks.push(...appearanceResult.packs);
   localCatalogs.interactionMotionPacks.push(...interactionMotionResult.packs);
+  localCatalogs.soundPacks.push(...soundPackResult.packs);
   localCatalogs.shellRenderers.push(...shellRendererResult.packs);
   localCatalogs.themeRecipePacks.push(...themeRecipeResult.packs);
   localCatalogs.themeEnginePacks.push(...themeEngineResult.packs);
@@ -1090,6 +1129,7 @@ async function buildThemeBundlePackage(
   packageWarnings.push(
     ...appearanceResult.warnings,
     ...interactionMotionResult.warnings,
+    ...soundPackResult.warnings,
     ...shellRendererResult.warnings,
     ...themeRecipeResult.warnings,
     ...themeEngineResult.warnings,
@@ -1167,9 +1207,10 @@ async function buildThemeBundlePackage(
 }
 
 export async function loadGlobalThemeBundleCatalogs(): Promise<GlobalThemeBundleCatalogs> {
-  const [appearanceResult, interactionMotionResult, shellRendererResult, themeRecipeResult, themeEngineResult] = await Promise.all([
+  const [appearanceResult, interactionMotionResult, soundPackResult, shellRendererResult, themeRecipeResult, themeEngineResult] = await Promise.all([
     loadThemeAppearancePacks(),
     loadThemeInteractionMotionPacks(),
+    loadSoundPacks(),
     loadThemeShellRendererPacks(),
     loadThemeRecipePacks(),
     loadThemeEnginePacks(),
@@ -1178,12 +1219,14 @@ export async function loadGlobalThemeBundleCatalogs(): Promise<GlobalThemeBundle
   return {
     appearancePacks: appearanceResult.packs,
     interactionMotionPacks: interactionMotionResult.packs,
+    soundPacks: soundPackResult.packs,
     shellRenderers: shellRendererResult.packs,
     themeRecipePacks: themeRecipeResult.packs,
     themeEnginePacks: themeEngineResult.packs,
     warnings: [
       ...appearanceResult.warnings,
       ...interactionMotionResult.warnings,
+      ...soundPackResult.warnings,
       ...shellRendererResult.warnings,
       ...themeRecipeResult.warnings,
       ...themeEngineResult.warnings,
@@ -1351,6 +1394,7 @@ export function createThemeBundleManifestFromThemeDefinition(
     closeAnimationId: theme.defaultCloseAnimationId,
     homePackId: theme.defaultHomePackId,
     menuPackId: theme.defaultMenuPackId,
+    soundPackId: theme.defaultSoundPackId,
     appearancePackId,
     interactionMotionPackId,
     themeRecipeId,

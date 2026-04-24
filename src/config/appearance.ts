@@ -34,6 +34,7 @@ import {
   normalizeInteractionMotionThemeRecipe,
   type OverlayInteractionMotionThemeRecipe,
 } from './interactionMotion';
+import { DEFAULT_SOUND_PACK_ID } from './soundPacks';
 import { clampOverlayVisualControlValue } from './overlayWindow';
 import {
   DEFAULT_PILOT_DARK_THEME_ID,
@@ -168,6 +169,7 @@ export interface OverlayThemeDefinition {
   defaultTopBarId?: string;
   defaultHomePackId?: string;
   defaultMenuPackId?: string;
+  defaultSoundPackId?: string;
   defaultShaderId?: string;
   defaultOpenAnimationId?: string;
   defaultCloseAnimationId?: string;
@@ -471,6 +473,7 @@ function createTheme(
     name,
     description,
     source: 'built-in',
+    defaultSoundPackId: DEFAULT_SOUND_PACK_ID,
     palette: {
       appBackground: '#07070f',
       appBackgroundAlt: '#0b0b18',
@@ -1331,6 +1334,9 @@ export function normalizeThemeDefinition(
     defaultMenuPackId: typeof theme.defaultMenuPackId === 'string'
       ? theme.defaultMenuPackId.trim() || undefined
       : fallbackTheme?.defaultMenuPackId,
+    defaultSoundPackId: typeof theme.defaultSoundPackId === 'string'
+      ? theme.defaultSoundPackId.trim() || undefined
+      : fallback.defaultSoundPackId,
     defaultShaderId: typeof theme.defaultShaderId === 'string'
       ? theme.defaultShaderId.trim() || undefined
       : fallback.defaultShaderId,

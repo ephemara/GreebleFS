@@ -120,9 +120,9 @@ export const settingsSectionCatalog = [
   {
     key: 'audio',
     label: 'Audio',
-    subtitle: 'Audio pathing and VST3 integration.',
-    keywords: ['audio', 'vst', 'vst3', 'plugin'],
-    overviewSummary: 'Audio scan paths and plugin discovery.',
+    subtitle: 'Theme-driven shell sound packs, native notifications, and VST3 integration.',
+    keywords: ['audio', 'sound pack', 'ui sounds', 'notifications', 'vst', 'vst3', 'plugin'],
+    overviewSummary: 'Shell feedback sounds, native task notifications, and audio plugin discovery.',
     featuredInOverview: false,
     order: 90,
   },

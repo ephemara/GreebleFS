@@ -95,6 +95,16 @@ export const managedContentDirectoryCatalog = [
     order: 35,
   },
   {
+    id: 'soundPacks',
+    label: 'Sound Packs',
+    description: 'Author theme-selectable shell sound packs and notification cues here.',
+    keywords: ['sound', 'sound pack', 'audio cue', 'notification sound', 'ui sound'],
+    releaseDirectoryName: 'sound-packs',
+    legacyRelativeDirectoryName: 'sound-packs',
+    envVarSuffix: 'SOUND_PACKS',
+    order: 36,
+  },
+  {
     id: 'shaders',
     label: 'Shaders',
     description: 'Author shell shader profiles with surface-level controls.',
