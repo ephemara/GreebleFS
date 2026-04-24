@@ -21,13 +21,10 @@ pub(super) const PORT_RANGE_START: u16 = 55000;
 pub(super) const PORT_RANGE_END: u16 = 55999;
 pub(super) const FTP_MAX_UPLOAD_BYTES: usize = 512 * 1024 * 1024;
 
-pub(super) static FTP_HTML: &str =
-    include_str!("../../assets/lan_share/lan_share_ftp.html");
-pub(super) static STREAM_HTML: &str =
-    include_str!("../../assets/lan_share/lan_share_stream.html");
+pub(super) static FTP_HTML: &str = include_str!("../../assets/lan_share/lan_share_ftp.html");
+pub(super) static STREAM_HTML: &str = include_str!("../../assets/lan_share/lan_share_stream.html");
 pub(super) static APP_ICON_PNG: &[u8] = include_bytes!("../../icons/128x128.png");
-pub(super) static APPLE_TOUCH_ICON_PNG: &[u8] =
-    include_bytes!("../../icons/128x128@2x.png");
+pub(super) static APPLE_TOUCH_ICON_PNG: &[u8] = include_bytes!("../../icons/128x128@2x.png");
 
 #[derive(Clone)]
 pub(super) struct ShareState {
@@ -159,8 +156,8 @@ impl Default for MobileThemeSnapshot {
             theme_name: "Operator".to_string(),
             ui_font_family: "\"Avenir Next\", \"SF Pro Display\", \"Helvetica Neue\", sans-serif"
                 .to_string(),
-            mono_font_family:
-                "\"JetBrains Mono\", \"Fira Code\", \"Cascadia Code\", monospace".to_string(),
+            mono_font_family: "\"JetBrains Mono\", \"Fira Code\", \"Cascadia Code\", monospace"
+                .to_string(),
             palette: MobileThemePaletteSnapshot {
                 app_background: "#07111a".to_string(),
                 app_background_alt: "#04070b".to_string(),

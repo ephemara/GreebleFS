@@ -39,7 +39,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `install.ps1`
   Root Windows local clean-install/uninstall entrypoint. It builds with Bun and Cargo, removes the previous per-user install and user-state roots on demand, and reinstalls a fresh `greeblefs.exe` plus current-user Start Menu/Desktop shortcuts.
 - `src/App.tsx`
-  Overlay window shell, theme/runtime discovery, panel orchestration, and shell-level utilities such as the command-palette launchers for the mobile share server. The command palette now also hosts indexed global file search plus scan/rebuild controls, using host-owned stores/runtime seams instead of letting the explorer or an imported search package own shell truth.
+  Overlay window shell, theme/runtime discovery, panel orchestration, and shell-level utilities such as the command-palette launchers for the mobile share server. The command palette now also hosts indexed global file search plus scan/rebuild controls, using host-owned stores/runtime seams instead of letting the explorer or an imported search package own shell truth. Root overlay animation progress no longer lives here; `App.tsx` now assembles the shell scene and changes only coarse overlay phase/direction, while command-palette global-search queries are deferred before they hit the backend path.
+- `src/components/OverlayShellScene.tsx`
+  Leaf shell-animation surface for the overlay/app shell. It owns folder-authored animation progress locally with `requestAnimationFrame`, keeps built-in animation behavior on the existing CSS-transition path, and prevents frame-rate animation progress from forcing the full `App.tsx` tree to reconcile.
 - `src/panels/panelRegistry.tsx`
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
@@ -106,6 +108,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shared engine-manifest binding helpers for layout/navigation/render-driven recipe defaults.
 - `src/config/workbenchRenderRuntime.ts`
   Resolves the active workbench interaction runtime from the theme engine manifest and layout profile.
+- `src/config/workbenchPerformance.ts`
+  Runtime-only shell-performance policy for adaptive effects tiers. It resolves `full | reduced | minimal` shell visuals from platform plus overlay frame telemetry, caps blur on reduced tiers, and gates wallpaper/theme-effect/shader/animation-overlay layers before those costs spill across the whole shell.
 - `src/config/layoutProfiles.ts`
   Built-in and external layout manifest normalization for shell blueprints, pinned panels, control docks, and top/bottom chrome behavior.
 - `src/config/themePackages.ts`
@@ -156,12 +160,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Typed frontend bridge for native explorer/media commands. Large 3D preview reads now use raw-byte preview transport commands (`fs_read_preview_bytes` / `cloud_read_preview_bytes`) that return `Uint8Array` payloads instead of base64 strings. Explorer `Open With` association lookup and explicit app launch also belong here through the `open_with_*` commands; React should not reintroduce raw platform pickers or per-component shelling-out.
 - `src-tauri/src/lan_share/mobile.rs`
   Browser-facing Axum surface for the sovereign mobile share. It serves the compiled `dist-mobile/` bundle, exposes the full mobile control plane (`/api/list`, `/api/theme`, `/api/search`, `/api/search/status`, `/api/search/scan`, `/api/search/cancel`, `/api/preview`, `/api/thumbnail`, `/api/icon`, `/api/upload`), falls back cleanly when the mobile bundle is missing, and reuses the existing file/Range streaming lane for direct media playback from the desktop host. This layer is now also the resolver for mobile presentation metadata such as entry kind, icon ids, thumbnail URLs, preview capability, and desktop-authored icon-theme/folder-icon rules.
+- `src-tauri/src/open_with/`
+  Native `Open With` subsystem. It wraps the vendored platform association/runtime crate, resolves associated apps for Windows/Linux/macOS, launches a selected app against a file, and backs the system picker fallback used by explorer context menus.
 - `src-tauri/src/tailscale_commands.rs`
   Native Tailscale integration seam for the mobile share. It owns CLI-backed tailnet status, connect/disconnect flows, and the tailnet host/certificate resolution used when the mobile share needs a remote-safe URL instead of a LAN-only address.
 - `src/runtime/gitPanelBackend.ts`
   Shared Git-panel runtime seam. It wraps the existing `git_exec` command for repo-overview loading, local-branch metadata, upstream ahead/behind counts, commit-history parsing, changed-file parsing, and commit patch loading so Git React surfaces do not each reinvent their own git-log parsers.
-- `src-tauri/src/open_with/`
-  Native `Open With` subsystem. It wraps the vendored platform association/runtime crate, resolves associated apps for Windows/Linux/macOS, launches a selected app against a file, and backs the system picker fallback used by explorer context menus.
 - `src/components/DevPerformanceHud.tsx`
   Fixed dev-only diagnostics HUD rendered by `App.tsx` whenever the frontend runs in `import.meta.env.DEV` or explicit developer mode. It shows live frame, navigation, CLS, INP, long-task, memory, and frontend worker telemetry for local development, and its visibility now rides a persisted system flag plus a local shell hotkey instead of being permanently forced on in dev sessions.
 - `src/components/wallpaperRuntime.tsx`
@@ -393,11 +397,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/config/menuPacks.ts` owns the declarative `menu-packs/` loader plus the built-in submenu-aware classic pack. Menu packs place command ids, submenus, group slots, separators, quick slots, fallback buckets, and optional per-context renderer hints, but they do not own execution code.
   - `src/config/explorerTheme.ts` resolves `theme.explorer.menuPresentation`, which is presentation-only: renderer preference, materials, motion, density, focus treatment, submenu behavior, and capability routing. Themes can bias `classic` / `hybrid` / `radial` / `sheet` / `hud`, but the active menu pack still owns content.
   - `src/components/explorer/explorerMenuRuntime.ts` combines the invocation snapshot, command registry, active menu pack, and per-context user overrides into resolved runtime nodes, then hands those nodes to `src/components/explorer/ExplorerContextMenu.tsx`.
+  - `open-with` is now a first-class resolver-backed submenu, not a hardcoded menu branch. The runtime reads associated apps from `src/runtime/explorerBackend.ts`, renders those as stable command nodes, and keeps the native system picker as a fallback action instead of the only action.
   - `FileExplorer.tsx` should only create the invocation context and call the runtime. Do not rebuild menu trees inline there.
   - `SettingsPage.tsx` now exposes a dedicated top-level `Context Menus` settings section for pack selection, command placement, submenus, quick slots, fallback buckets, and per-context renderer overrides. The Explorer section should only link to that lane; do not bury future menu authoring UI back under generic explorer settings.
   - `settings.explorer.contextMenuItemOverrides` is now legacy migration input only; new work should persist `activeMenuPackId` and `contextMenuLayoutOverridesByContext`.
   - Current ship constraint: only the classic nested renderer is fully implemented. The runtime/schema already carries `hybrid`, `radial`, `sheet`, and `hud` as presentation targets for future work.
-  - `open-with` is now a first-class resolver-backed submenu, not a hardcoded menu branch. The runtime reads associated apps from `src/runtime/explorerBackend.ts`, renders those as stable command nodes, and keeps the native system picker as a fallback action instead of the only action.
 - `settings.system.developerMode` is now the live-reload gate for expensive development-only watchers:
   - plugin directory watch / fallback polling in `useFolderPluginRuntime.ts`
   - authored shader polling in `App.tsx`
@@ -480,15 +484,15 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/runtime/explorerBackend.ts` is the only TS bridge for archive open/extract/list/materialize work; React should consume archive entries and staged real paths there instead of calling raw commands
   - `FileExplorer.tsx` now treats archive virtual locations as read-only explorer folders: opening a supported archive enters the virtual route from the current cwd, breadcrumbs/history work like a normal folder, nested archives stage temporarily before re-entering another archive route, and preview/editor lanes read from staged real paths while keeping the logical archive path as explorer identity
   - archive contents are intentionally materialize-on-demand: direct drag-out, OS open, or explicit extract actions create real filesystem output, while copy/move/rename/paste remain disabled inside archive virtual routes until native writeback exists
-- `FileExplorer.tsx` had a dev-only infinite update loop risk in the virtualized entry-size and native-icon batching effects because in-flight `Set` state was being cleared/re-added on every render. Those effects now leave in-flight batches intact until async completion.
-- Explorer Pro metadata and long-running utilities now route through Rust instead of TS-only persistence:
-  - `src-tauri/src/explorer_pro_commands.rs` owns app-managed trash + undo, batch rename, duplicate-scan lifecycle, tags, and saved searches
-  - `src-tauri/src/fs_commands.rs` now also owns the durable explorer task registry used by copy/move/delete jobs plus the retry/cancel/history command surface exposed through Specta
 - Native `Open With` is now an explorer-owned workflow instead of a Windows-only picker affordance:
   - `src-tauri/src/open_with/` wraps the vendored cross-platform association/runtime layer and now supports Windows, Linux desktop ids, and macOS app ids plus native picker fallback where the OS exposes one
   - `src-tauri/src/fs_commands.rs` still owns the durable `fs_open_with_dialog` shell command, but it delegates actual picker behavior to `src-tauri/src/open_with/` instead of duplicating per-platform launch logic locally
   - `src/runtime/explorerBackend.ts` is the only TS bridge for associated-program lookup and explicit app launch; React surfaces should call `getExplorerAssociatedPrograms(...)` / `openExplorerPathWithProgram(...)` there instead of shelling out directly
   - `src/components/explorer/explorerMenuRuntime.ts` resolves `Open With` children lazily from cached association state so the classic context menu can show real apps, loading/error placeholders, and the system picker fallback without hardcoded JSX branches
+- `FileExplorer.tsx` had a dev-only infinite update loop risk in the virtualized entry-size and native-icon batching effects because in-flight `Set` state was being cleared/re-added on every render. Those effects now leave in-flight batches intact until async completion.
+- Explorer Pro metadata and long-running utilities now route through Rust instead of TS-only persistence:
+  - `src-tauri/src/explorer_pro_commands.rs` owns app-managed trash + undo, batch rename, duplicate-scan lifecycle, tags, and saved searches
+  - `src-tauri/src/fs_commands.rs` now also owns the durable explorer task registry used by copy/move/delete jobs plus the retry/cancel/history command surface exposed through Specta
   - `src-tauri/src/fs_commands.rs` also owns explorer metadata helpers for recursive sizes, checksums, item-property snapshots, and fuzzy jump filtering
   - `src-tauri/src/audio_engine.rs` owns native explorer playback through a CPAL output stream, Symphonia decode with an ffmpeg fallback for formats Symphonia cannot open directly, rubato resampling, deck mixing, loop/gain/rate transport state, and `AudioEngineStateEvent`
   - the audio engine snapshot now also carries `activePluginPath` plus live `vstParameters` per deck, and VST load failures now flow back through deck error state instead of rejecting the whole preview workflow
@@ -679,6 +683,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Packaged theme SVG previews and wallpapers are safest when inlined to data URLs before they reach the frontend. In this workspace, Tauri/WebKit can intermittently fail on filesystem-backed SVG theme assets and spam `Failed to load resource` errors if they stay on raw asset URLs.
 - `fs_read_file_base64` already returns a complete data URL for small files in this workspace. Do not wrap its result in another `data:image/...;base64,` prefix inside icon/theme/media loaders, or browsers will reject the nested URL with `Data URL decoding failed`.
 - Theme renderer motion should prefer CSS animation for decorative effects. Renderer-local React state that ticks every frame can force mounted heavy panels like `FileExplorer` through avoidable rerender pressure and can resurrect update-depth problems.
+- Do not put shell animation-progress state back into `App.tsx` root state. Folder-authored animation progress now belongs in `src/components/OverlayShellScene.tsx`, and built-in shell motion should stay on CSS transitions. A root `requestAnimationFrame` + `useState` loop will immediately reintroduce frame-budget collapse across the whole shell.
+- Shell containment and adaptive effects are complementary, not interchangeable. `contain: layout paint style` / `isolation: isolate` help localize browser layout and paint work, but transparent undecorated windows with blur, wallpapers, and shaders still pay an OS compositor tax. If shell FPS drops, inspect `src/config/workbenchPerformance.ts` and the active wallpaper/shader/theme-effect stack before adding more visual layers.
+- Command-palette typing should stay ahead of indexed search. `App.tsx` now uses the live query for local palette UI but defers the backend-facing global-search query. Do not route every keystroke straight into synchronous or eagerly blocking search work again.
 - The local Linux installer now avoids the old Node/Tauri wrapper path. `install.sh` and `scripts/build-and-install-linux-local-release.sh` build with Bun + Cargo directly, then install into `~/.local/opt/greeblefs`.
 - Do not keep `build.devUrl` in the base `src-tauri/tauri.conf.json` for release-capable paths. In this workspace, a direct `cargo build --release` will otherwise compile a binary that keeps trying to boot from `http://localhost:1420`. `scripts/run-platform-tauri.mjs` now injects `devUrl` only for the `tauri dev` command.
 - This repo is a Cargo workspace, so release binaries land under the workspace-level `target/` directory, not `src-tauri/target/`. Linux install scripts should resolve `cargo metadata` `target_directory` before copying binaries, or they can silently reinstall a stale executable from an old path or from the wrong binary name.

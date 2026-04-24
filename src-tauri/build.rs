@@ -10,7 +10,8 @@ const CLOUD_PROVIDER_ENV_KEYS: [&str; 4] = [
 ];
 
 fn main() {
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("missing CARGO_MANIFEST_DIR"));
+    let manifest_dir =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("missing CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()
         .map(Path::to_path_buf)

@@ -34,12 +34,18 @@ pub(super) fn builtin_ignored_paths() -> &'static [&'static str] {
 pub(super) fn build_ignored_path_list(custom_paths: &[String]) -> Vec<String> {
     custom_paths
         .iter()
-        .map(|path| normalize_path_for_match(path).trim().trim_end_matches('/').to_string())
-        .chain(
-            builtin_ignored_paths()
-                .iter()
-                .map(|path| normalize_path_for_match(path).trim().trim_end_matches('/').to_string()),
-        )
+        .map(|path| {
+            normalize_path_for_match(path)
+                .trim()
+                .trim_end_matches('/')
+                .to_string()
+        })
+        .chain(builtin_ignored_paths().iter().map(|path| {
+            normalize_path_for_match(path)
+                .trim()
+                .trim_end_matches('/')
+                .to_string()
+        }))
         .filter(|path| !path.is_empty())
         .collect()
 }

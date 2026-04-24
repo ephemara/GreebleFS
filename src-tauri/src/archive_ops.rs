@@ -304,7 +304,9 @@ pub fn list_archive_dir(
             continue;
         }
 
-        let mut child_segments = child_remainder.split('/').filter(|segment| !segment.is_empty());
+        let mut child_segments = child_remainder
+            .split('/')
+            .filter(|segment| !segment.is_empty());
         let child_name = match child_segments.next() {
             Some(value) => value,
             None => continue,
@@ -358,7 +360,9 @@ pub fn materialize_archive_entry(
 
     if normalized_entry_path.is_empty() {
         let mode = match request.mode {
-            FsArchiveEntryMaterializationMode::StageTemporary => FsArchiveExtractionMode::OpenCached,
+            FsArchiveEntryMaterializationMode::StageTemporary => {
+                FsArchiveExtractionMode::OpenCached
+            }
             FsArchiveEntryMaterializationMode::ExtractHere => FsArchiveExtractionMode::ExtractHere,
             FsArchiveEntryMaterializationMode::ExtractToNewFolder => {
                 FsArchiveExtractionMode::ExtractToNewFolder
@@ -395,7 +399,12 @@ pub fn materialize_archive_entry(
     if request.mode == FsArchiveEntryMaterializationMode::StageTemporary {
         let staging_root = output_path
             .parent()
-            .ok_or_else(|| format!("Unable to derive archive staging root for {}", output_path.display()))?
+            .ok_or_else(|| {
+                format!(
+                    "Unable to derive archive staging root for {}",
+                    output_path.display()
+                )
+            })?
             .to_path_buf();
         if staging_root.exists() {
             let _ = fs::remove_dir_all(&staging_root);
@@ -461,25 +470,33 @@ fn collect_archive_entry_records(
         ArchiveFormat::Gzip => Ok(vec![ArchiveEntryRecord {
             relative_path: single_stream_output_name(archive_path, ".gz"),
             is_dir: false,
-            size: fs::metadata(archive_path).map(|metadata| metadata.len()).unwrap_or(0),
+            size: fs::metadata(archive_path)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0),
             modified: 0,
         }]),
         ArchiveFormat::Bzip2 => Ok(vec![ArchiveEntryRecord {
             relative_path: single_stream_output_name(archive_path, ".bz2"),
             is_dir: false,
-            size: fs::metadata(archive_path).map(|metadata| metadata.len()).unwrap_or(0),
+            size: fs::metadata(archive_path)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0),
             modified: 0,
         }]),
         ArchiveFormat::Xz => Ok(vec![ArchiveEntryRecord {
             relative_path: single_stream_output_name(archive_path, ".xz"),
             is_dir: false,
-            size: fs::metadata(archive_path).map(|metadata| metadata.len()).unwrap_or(0),
+            size: fs::metadata(archive_path)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0),
             modified: 0,
         }]),
     }
 }
 
-fn collect_zip_archive_entry_records(archive_path: &Path) -> Result<Vec<ArchiveEntryRecord>, String> {
+fn collect_zip_archive_entry_records(
+    archive_path: &Path,
+) -> Result<Vec<ArchiveEntryRecord>, String> {
     let archive_file = File::open(archive_path)
         .map(BufReader::new)
         .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?;
@@ -783,8 +800,7 @@ fn extract_zip_archive_entry_to_path(
         }
         matched_any = true;
 
-        let relative_output_path =
-            relative_path_within_archive_target(&relative_path, entry_path);
+        let relative_output_path = relative_path_within_archive_target(&relative_path, entry_path);
         let destination_path =
             materialized_archive_destination_path(output_path, relative_output_path);
         if entry.is_dir() {
@@ -855,8 +871,7 @@ fn extract_tar_archive_entry_to_path<R: Read>(
         }
         matched_any = true;
 
-        let relative_output_path =
-            relative_path_within_archive_target(&relative_path, entry_path);
+        let relative_output_path = relative_path_within_archive_target(&relative_path, entry_path);
         let destination_path =
             materialized_archive_destination_path(output_path, relative_output_path);
         let entry_type = entry.header().entry_type();
@@ -904,9 +919,7 @@ fn extract_seven_zip_archive_entry_to_path(
 
     sevenz_rust::decompress_file_with_extract_fn(
         archive_path,
-        output_path
-            .parent()
-            .unwrap_or_else(|| Path::new(".")),
+        output_path.parent().unwrap_or_else(|| Path::new(".")),
         |entry, reader, _| {
             let relative_path = sanitize_relative_path(Path::new(entry.name()))
                 .ok_or_else(|| {
@@ -926,8 +939,7 @@ fn extract_seven_zip_archive_entry_to_path(
             let destination_path =
                 materialized_archive_destination_path(output_path, relative_output_path);
             if entry.is_directory() {
-                fs::create_dir_all(&destination_path)
-                    .map_err(sevenz_rust::Error::io)?;
+                fs::create_dir_all(&destination_path).map_err(sevenz_rust::Error::io)?;
                 return Ok(true);
             }
 
@@ -1006,10 +1018,7 @@ fn archive_record_matches_target(
     record_path == target_path
 }
 
-fn relative_path_within_archive_target<'a>(
-    record_path: &'a str,
-    target_path: &str,
-) -> &'a str {
+fn relative_path_within_archive_target<'a>(record_path: &'a str, target_path: &str) -> &'a str {
     if target_path.is_empty() {
         return record_path;
     }

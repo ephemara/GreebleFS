@@ -1,8 +1,7 @@
 use crate::acceleration_runtime::AccelerationRoutingMode;
 use crate::fs_commands::{
-    complete_manual_explorer_task, create_manual_explorer_task_with_id,
-    fail_manual_explorer_task, update_manual_explorer_task, ExplorerTaskKind,
-    ExplorerTaskRegistration,
+    complete_manual_explorer_task, create_manual_explorer_task_with_id, fail_manual_explorer_task,
+    update_manual_explorer_task, ExplorerTaskKind, ExplorerTaskRegistration,
 };
 use crate::python_commands::PythonRuntimeConfig;
 use crate::python_sidecar::{self, PythonSidecarDecodedActionResponse};
@@ -639,9 +638,7 @@ fn semantic_index_task_registration(
         ExplorerSemanticIndexBuildMode::Build => {
             "Preparing manual semantic-index build".to_string()
         }
-        ExplorerSemanticIndexBuildMode::Rebuild => {
-            "Preparing semantic-index rebuild".to_string()
-        }
+        ExplorerSemanticIndexBuildMode::Rebuild => "Preparing semantic-index rebuild".to_string(),
         ExplorerSemanticIndexBuildMode::Clear => {
             "Removing semantic-index data for this root".to_string()
         }
@@ -689,12 +686,14 @@ fn run_semantic_index_task(
                         root_path: root_path_string.clone(),
                     }),
                     Some(root_path_string.clone()),
-                    Some(BTreeMap::from([(
-                        "TOKENIZERS_PARALLELISM".to_string(),
-                        "false".to_string(),
-                    )])
-                    .into_iter()
-                    .collect()),
+                    Some(
+                        BTreeMap::from([(
+                            "TOKENIZERS_PARALLELISM".to_string(),
+                            "false".to_string(),
+                        )])
+                        .into_iter()
+                        .collect(),
+                    ),
                     Some(true),
                 )?;
             let _ = complete_manual_explorer_task(
@@ -730,12 +729,11 @@ fn run_semantic_index_task(
                 backend_preference: request.backend_preference.clone(),
             }),
             Some(root_path_string.clone()),
-            Some(BTreeMap::from([(
-                "TOKENIZERS_PARALLELISM".to_string(),
-                "false".to_string(),
-            )])
-            .into_iter()
-            .collect()),
+            Some(
+                BTreeMap::from([("TOKENIZERS_PARALLELISM".to_string(), "false".to_string())])
+                    .into_iter()
+                    .collect(),
+            ),
             Some(true),
         )?;
 
@@ -815,7 +813,8 @@ pub async fn explorer_semantic_index_build(
     };
     let thread_task_id = task_id.clone();
     thread::spawn(move || {
-        if let Err(error) = run_semantic_index_task(thread_app, thread_task_id.clone(), thread_request)
+        if let Err(error) =
+            run_semantic_index_task(thread_app, thread_task_id.clone(), thread_request)
         {
             let _ = fail_manual_explorer_task(&thread_task_id, error);
         }
@@ -887,12 +886,11 @@ pub async fn explorer_semantic_search(
             backend_preference: request.backend_preference.clone(),
         }),
         Some(semantic_search_path_to_string(&canonical_root)),
-        Some(BTreeMap::from([(
-            "TOKENIZERS_PARALLELISM".to_string(),
-            "false".to_string(),
-        )])
-        .into_iter()
-        .collect()),
+        Some(
+            BTreeMap::from([("TOKENIZERS_PARALLELISM".to_string(), "false".to_string())])
+                .into_iter()
+                .collect(),
+        ),
         Some(true),
     )
     .map(|response| {
@@ -972,12 +970,11 @@ pub async fn explorer_semantic_find_similar(
             backend_preference: request.backend_preference.clone(),
         }),
         Some(semantic_search_path_to_string(&canonical_root)),
-        Some(BTreeMap::from([(
-            "TOKENIZERS_PARALLELISM".to_string(),
-            "false".to_string(),
-        )])
-        .into_iter()
-        .collect()),
+        Some(
+            BTreeMap::from([("TOKENIZERS_PARALLELISM".to_string(), "false".to_string())])
+                .into_iter()
+                .collect(),
+        ),
         Some(true),
     )
     .map(|response| {
@@ -1009,8 +1006,8 @@ pub async fn explorer_semantic_find_similar(
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_root_source_signature, is_indexable_semantic_file,
-        normalize_result_limit, semantic_search_extensions, ExplorerSemanticIndexSummary,
+        compute_root_source_signature, is_indexable_semantic_file, normalize_result_limit,
+        semantic_search_extensions, ExplorerSemanticIndexSummary,
     };
     use std::fs;
     use std::path::Path;
@@ -1035,7 +1032,10 @@ mod tests {
     fn semantic_search_rejects_large_or_unknown_files() {
         assert!(is_indexable_semantic_file(Path::new("example.rs"), 128));
         assert!(!is_indexable_semantic_file(Path::new("example.bin"), 128));
-        assert!(!is_indexable_semantic_file(Path::new("example.rs"), 3 * 1024 * 1024));
+        assert!(!is_indexable_semantic_file(
+            Path::new("example.rs"),
+            3 * 1024 * 1024
+        ));
     }
 
     #[test]

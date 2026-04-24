@@ -5,15 +5,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 
-use include_dir::{Dir, DirEntry, include_dir};
+use include_dir::{include_dir, Dir, DirEntry};
 use serde::de::DeserializeOwned;
 use tauri::{AppHandle, Manager};
 
 use crate::python_commands::{
-    PythonRuntimeConfig, PythonRuntimeStatus, RuntimePaths, build_runtime_paths,
-    ensure_runtime_directories, managed_python_path, path_to_string,
+    build_runtime_paths, ensure_runtime_directories, managed_python_path, path_to_string,
     prepare_managed_python_runtime, pythonpath_environment, resolve_runtime_config,
-    runtime_status_with_base_interpreter, seed_boilerplate_files,
+    runtime_status_with_base_interpreter, seed_boilerplate_files, PythonRuntimeConfig,
+    PythonRuntimeStatus, RuntimePaths,
 };
 
 const PYTHON_SIDECAR_MANIFEST_FILENAME: &str = "greeblefs-python-sidecar.json";
@@ -1048,18 +1048,14 @@ mod tests {
         let manifest = load_sidecar_manifest().expect("manifest should parse");
         assert_eq!(manifest.id, "greeblefs-python-sidecar");
         assert_eq!(manifest.module_name, "greeblefs_sidecar");
-        assert!(
-            manifest
-                .actions
-                .iter()
-                .any(|action| action.id == action_ids::ML_PROBE)
-        );
-        assert!(
-            manifest
-                .actions
-                .iter()
-                .any(|action| action.id == action_ids::RUNTIME_SUMMARY)
-        );
+        assert!(manifest
+            .actions
+            .iter()
+            .any(|action| action.id == action_ids::ML_PROBE));
+        assert!(manifest
+            .actions
+            .iter()
+            .any(|action| action.id == action_ids::RUNTIME_SUMMARY));
     }
 
     #[test]

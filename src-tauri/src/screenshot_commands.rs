@@ -60,9 +60,22 @@ pub async fn screenshot_prepare_image_stage(
         validate_capture_region(region.width, region.height)?;
 
         let source_image = read_image_from_disk(&source_path)?;
-        validate_crop_region(&source_image, region.x, region.y, region.width, region.height)?;
+        validate_crop_region(
+            &source_image,
+            region.x,
+            region.y,
+            region.width,
+            region.height,
+        )?;
 
-        let cropped = crop_imm(&source_image, region.x, region.y, region.width, region.height).to_image();
+        let cropped = crop_imm(
+            &source_image,
+            region.x,
+            region.y,
+            region.width,
+            region.height,
+        )
+        .to_image();
         cropped.save(&stage_path).map_err(|error| {
             format!(
                 "Failed to write cropped screenshot stage '{}': {error}",
@@ -256,8 +269,8 @@ fn copy_rgba_image_to_clipboard(image: RgbaImage) -> Result<(), String> {
         bytes: Cow::Owned(image_data),
     };
 
-    let mut clipboard = Clipboard::new()
-        .map_err(|error| format!("Failed to access system clipboard: {error}"))?;
+    let mut clipboard =
+        Clipboard::new().map_err(|error| format!("Failed to access system clipboard: {error}"))?;
     clipboard
         .set_image(clipboard_image)
         .map_err(|error| format!("Failed to copy screenshot image to clipboard: {error}"))

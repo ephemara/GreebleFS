@@ -148,10 +148,7 @@ pub fn vst_host_focus_editor_session(
 
 #[tauri::command]
 #[specta::specta]
-pub fn vst_host_destroy_editor_session(
-    app: AppHandle,
-    session_id: String,
-) -> Result<(), String> {
+pub fn vst_host_destroy_editor_session(app: AppHandle, session_id: String) -> Result<(), String> {
     manager(&app)
         .sessions
         .lock()

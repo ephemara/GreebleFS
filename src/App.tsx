@@ -1,4 +1,12 @@
-import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react';
+import {
+  useDeferredValue,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  type CSSProperties,
+} from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useShallow } from 'zustand/react/shallow';
@@ -37,13 +45,11 @@ import {
   type OverlayFrameTelemetryStats,
 } from './config/frameTelemetry';
 import {
-  AnimationOverlayLayer,
   createBuiltInOverlayAnimations,
   isFrontendAnimationFile,
   loadAnimationFromSource,
   mergeOverlayAnimations,
   resolveAnimationDurationMs,
-  resolveAnimationShellStyle,
   type LoadedOverlayAnimation,
 } from './components/animationRuntime';
 import { shaderSystemConfig, resolvePreferredShaderId } from './config/shaders';
@@ -157,6 +163,7 @@ import {
 import { resolveConditionalBlurFilter } from './config/chromeEffects';
 import { detectClientPlatform, joinPlatformPath } from './config/platform';
 import { resolveActiveTopBarSelection } from './config/topBars';
+import { resolveOverlayShellEffectsPolicy } from './config/workbenchPerformance';
 import {
   settingsSectionCatalog,
   type SettingsSectionKey,
@@ -164,6 +171,7 @@ import {
 import {
   isExplorerVirtualPath,
 } from './config/explorerVirtualLocations';
+import { OverlayShellScene } from './components/OverlayShellScene';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
 import { WorkbenchTopBar } from './components/WorkbenchTopBar';
@@ -530,6 +538,8 @@ function LayoutPinnedPanelSlot({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        contain: 'layout paint style',
+        isolation: 'isolate',
       }}
     >
       {definition.render()}
@@ -543,7 +553,6 @@ function App() {
   const [overlayPhase, setOverlayPhase] = useState<OverlayAnimationPhase>('closed');
   const [overlayAnimationDirection, setOverlayAnimationDirection] = useState<OverlayAnimationDirection>('enter');
   const [activeAnimation, setActiveAnimation] = useState<LoadedOverlayAnimation | null>(null);
-  const [animationProgress, setAnimationProgress] = useState(0);
   const [authoredAnimations, setAuthoredAnimations] = useState<LoadedOverlayAnimation[]>([]);
   const [authoredAnimationsError, setAuthoredAnimationsError] = useState<string | null>(null);
   const [authoredAnimationsLoading, setAuthoredAnimationsLoading] = useState(true);
@@ -575,7 +584,6 @@ function App() {
   const animationTimerRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const animationCommitTimerRef = useRef<number | null>(null);
-  const progressFrameRef = useRef<number | null>(null);
   const lastTerminalFocusAtRef = useRef(0);
   const isProgrammaticResizeRef = useRef(false);
   const runtimeOverlayBoundsRef = useRef<OverlayWindowBounds | null>(null);
@@ -654,6 +662,7 @@ function App() {
     useState<ExplorerPickerRequest | null>(null);
   const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
+  const deferredCommandPaletteQuery = useDeferredValue(commandPaletteQuery);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1103,19 +1112,30 @@ function App() {
   const clampedPanelTransparency = clampOverlayVisualControlValue('panelTransparency', panelTransparency);
   const clampedAppZoom = clampOverlayVisualControlValue('zoom', appZoom);
   const clampedAppBlurStrength = clampOverlayVisualControlValue('blurStrength', appBlurStrength);
+  const shellEffectsPolicy = useMemo(
+    () => resolveOverlayShellEffectsPolicy({
+      runtimePlatform,
+      frameStats: latestOverlayFrameStats,
+      requestedBlurEnabled: appBlur,
+      requestedBlurStrength: clampedAppBlurStrength,
+    }),
+    [appBlur, clampedAppBlurStrength, latestOverlayFrameStats, runtimePlatform],
+  );
+  const effectiveShellBlurEnabled = shellEffectsPolicy.blurEnabled;
+  const effectiveShellBlurStrength = shellEffectsPolicy.blurStrength;
   const wallpaperOpacity = clampOverlayVisualControlValue('opacity', appearance.wallpaperOpacity ?? 1);
   const overlayAnchor: OverlayWindowAnchor = settings.overlayAnchor === 'top' ? 'top' : 'bottom';
   const isTopAnchored = !isWindowedMode && overlayAnchor === 'top';
   const effectiveWindowZoom = isWindowedMode && isWindowMaximized ? 1 : clampedAppZoom;
   const scaledWidth = `${100 / effectiveWindowZoom}%`;
   const scaledHeight = `${100 / effectiveWindowZoom}%`;
-  const shellBackgroundColor = appBlur
-    ? resolveShellBackgroundColor(theme.palette.shellBackground, theme.palette.shellBackgroundSolid, clampedAppBlurStrength)
+  const shellBackgroundColor = effectiveShellBlurEnabled
+    ? resolveShellBackgroundColor(theme.palette.shellBackground, theme.palette.shellBackgroundSolid, effectiveShellBlurStrength)
     : theme.palette.shellBackgroundSolid;
   const shellBackdropFilter = resolveConditionalBlurFilter({
-    enabled: appBlur,
-    blurPx: clampedAppBlurStrength,
-    saturateBoost: 0.35,
+    enabled: effectiveShellBlurEnabled,
+    blurPx: effectiveShellBlurStrength,
+    saturateBoost: shellEffectsPolicy.tier === 'full' ? 0.35 : 0.18,
   });
   const availableAnimations = useMemo(
     () => mergeOverlayAnimations(builtInAnimations, [...authoredAnimations, ...themeContributedAnimations]),
@@ -1170,8 +1190,8 @@ function App() {
     },
     theme,
     viewport: {
-      width: typeof window === 'undefined' ? 0 : window.innerWidth,
-      height: typeof window === 'undefined' ? 0 : window.innerHeight,
+      width: themeRendererViewport.width,
+      height: themeRendererViewport.height,
     },
     fitMode: appearance.wallpaperFitMode ?? 'cover',
     opacity: wallpaperOpacity,
@@ -1184,6 +1204,8 @@ function App() {
     appearance.wallpaperMuted,
     theme,
     themeWallpaper,
+    themeRendererViewport.height,
+    themeRendererViewport.width,
     wallpaperOpacity,
   ]);
   const shellThemeEffectBackgroundImage = isThemeAssetDuplicatedInEffects(
@@ -1260,48 +1282,6 @@ function App() {
     overlayAnimationDirection,
     appAnimationDurationMs,
   );
-  const shellAnimationContext = useMemo(() => ({
-    animation: shellAnimation ?? {
-      id: animationSystemConfig.defaultOpenAnimationId,
-      name: 'Animation',
-      filePath: 'builtin:animation',
-      animationRoot: 'builtin',
-      source: 'built-in' as const,
-    },
-    phase: overlayPhase,
-    direction: overlayAnimationDirection,
-    progress: animationProgress,
-    durationMs: shellAnimationDurationMs,
-    baseOpacity: clampedAppOpacity,
-    intensity: appAnimationIntensity,
-    verticalOrigin: overlayAnchor,
-    accentColor: accent,
-    blurStrength: clampedAppBlurStrength,
-    zoom: effectiveWindowZoom,
-    theme,
-    viewport: {
-      width: typeof window === 'undefined' ? 0 : window.innerWidth,
-      height: typeof window === 'undefined' ? 0 : window.innerHeight,
-      anchoredTo: overlayAnchor,
-    },
-  }), [
-    accent,
-    animationProgress,
-    appAnimationIntensity,
-    clampedAppBlurStrength,
-    clampedAppOpacity,
-    effectiveWindowZoom,
-    overlayAnimationDirection,
-    overlayAnchor,
-    overlayPhase,
-    shellAnimation,
-    shellAnimationDurationMs,
-    theme,
-  ]);
-  const shellAnimationStyle = resolveAnimationShellStyle(shellAnimation, shellAnimationContext);
-  const combinedShellTransform = typeof shellAnimationStyle.transform === 'string'
-    ? `${shellAnimationStyle.transform} scale(${effectiveWindowZoom})`
-    : `scale(${effectiveWindowZoom})`;
   const activeLayoutProfile = useMemo(
     () => resolveLayoutProfile(layoutManifest, layoutSettings.activeProfileId),
     [layoutManifest, layoutSettings.activeProfileId],
@@ -1638,28 +1618,6 @@ function App() {
       window.clearTimeout(animationCommitTimerRef.current);
       animationCommitTimerRef.current = null;
     }
-    if (progressFrameRef.current !== null) {
-      window.cancelAnimationFrame(progressFrameRef.current);
-      progressFrameRef.current = null;
-    }
-  }, []);
-
-  const startAnimationProgress = useCallback((durationMs: number) => {
-    setAnimationProgress(0);
-    const safeDurationMs = Math.max(durationMs, 1);
-    const startedAt = performance.now();
-
-    const tick = (frameNow: number) => {
-      const nextProgress = clampValue((frameNow - startedAt) / safeDurationMs, 0, 1);
-      setAnimationProgress(nextProgress);
-      if (nextProgress >= 1) {
-        progressFrameRef.current = null;
-        return;
-      }
-      progressFrameRef.current = window.requestAnimationFrame(tick);
-    };
-
-    progressFrameRef.current = window.requestAnimationFrame(tick);
   }, []);
 
   const markOverlayRuntimePhase = useCallback((phase: OverlayAnimationPhase, visible: boolean) => {
@@ -1692,7 +1650,6 @@ function App() {
     setIsCommandPaletteOpen(false);
     markOverlayRuntimePhase('closed', false);
     setOverlayPhase('closed');
-    setAnimationProgress(0);
     try {
       await getCurrentWindow().hide();
     } catch {
@@ -1706,7 +1663,6 @@ function App() {
     await win.setFocus();
     markOverlayRuntimePhase('open', true);
     setOverlayPhase('open');
-    setAnimationProgress(1);
   }, [markOverlayRuntimePhase]);
 
   const resolvePreferredMonitor = useCallback(async () => {
@@ -1983,7 +1939,6 @@ function App() {
 
       setOverlayAnimationDirection('enter');
       setActiveAnimation(nextAnimation);
-      setAnimationProgress(0);
       markOverlayRuntimePhase('opening', true);
       interactionLockUntilRef.current = Date.now() + nextDurationMs + 80;
       setOverlayPhase('closed');
@@ -2041,11 +1996,9 @@ function App() {
         isProgrammaticResizeRef.current = false;
         markOverlayRuntimePhase('opening', true);
         setOverlayPhase('opening');
-        startAnimationProgress(nextDurationMs);
         animationTimerRef.current = window.setTimeout(() => {
           markOverlayRuntimePhase('open', true);
           setOverlayPhase('open');
-          setAnimationProgress(1);
           animationTimerRef.current = null;
         }, nextDurationMs);
       };
@@ -2058,10 +2011,9 @@ function App() {
     } catch (e) {
       isProgrammaticResizeRef.current = false;
       markOverlayRuntimePhase('closed', false);
-      setAnimationProgress(0);
       console.warn('OverlayTerm: failed to position/show', e);
     }
-  }, [appAnimationDurationMs, applyDockOverlayLayout, clearAnimationClock, isWaylandOverlaySession, markOverlayRuntimePhase, openWithoutMonitorLayout, resolveAnimationById, resolveDockOverlayLayout, resolvedOpenAnimationId, runtimePlatform, startAnimationProgress]);
+  }, [appAnimationDurationMs, applyDockOverlayLayout, clearAnimationClock, isWaylandOverlaySession, markOverlayRuntimePhase, openWithoutMonitorLayout, resolveAnimationById, resolveDockOverlayLayout, resolvedOpenAnimationId, runtimePlatform]);
 
   const showWindowedPanel = useCallback(async () => {
     clearAnimationClock();
@@ -2093,7 +2045,6 @@ function App() {
 
       setOverlayAnimationDirection('enter');
       setActiveAnimation(nextAnimation);
-      setAnimationProgress(0);
       markOverlayRuntimePhase('opening', true);
       interactionLockUntilRef.current = Date.now() + nextDurationMs + 80;
       setOverlayPhase('closed');
@@ -2153,11 +2104,9 @@ function App() {
         isProgrammaticResizeRef.current = false;
         markOverlayRuntimePhase('opening', true);
         setOverlayPhase('opening');
-        startAnimationProgress(nextDurationMs);
         animationTimerRef.current = window.setTimeout(() => {
           markOverlayRuntimePhase('open', true);
           setOverlayPhase('open');
-          setAnimationProgress(1);
           animationTimerRef.current = null;
         }, nextDurationMs);
       };
@@ -2170,7 +2119,6 @@ function App() {
     } catch (error) {
       isProgrammaticResizeRef.current = false;
       markOverlayRuntimePhase('closed', false);
-      setAnimationProgress(0);
       console.warn('OverlayTerm: failed to show regular window mode', error);
     }
   }, [
@@ -2180,7 +2128,6 @@ function App() {
     openWithoutMonitorLayout,
     resolveAnimationById,
     resolvedOpenAnimationId,
-    startAnimationProgress,
   ]);
 
   const showCurrentPresentation = useCallback(async () => {
@@ -2279,23 +2226,20 @@ function App() {
     );
     setOverlayAnimationDirection('exit');
     setActiveAnimation(nextAnimation);
-    setAnimationProgress(0);
     markOverlayRuntimePhase('closing', true);
     interactionLockUntilRef.current = Date.now() + nextDurationMs + 80;
     setOverlayPhase('closing');
-    startAnimationProgress(nextDurationMs);
     animationTimerRef.current = window.setTimeout(async () => {
       animationTimerRef.current = null;
       markOverlayRuntimePhase('closed', false);
       setOverlayPhase('closed');
-      setAnimationProgress(0);
       try {
         await getCurrentWindow().hide();
       } catch {
         // Ignore hide failures during teardown.
       }
     }, nextDurationMs);
-  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, resolvedCloseAnimationId, startAnimationProgress]);
+  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, resolvedCloseAnimationId]);
 
   const requestWindowModeChange = useCallback(async (nextWindowMode: TerminalWindowMode) => {
     const currentWindowMode = windowModeRef.current;
@@ -2520,7 +2464,6 @@ function App() {
     clearAnimationClock();
     markOverlayRuntimePhase('closed', false);
     setOverlayPhase('closed');
-    setAnimationProgress(0);
     try {
       await getCurrentWindow().hide();
     } catch {
@@ -4451,9 +4394,9 @@ function App() {
       return;
     }
 
-    setGlobalSearchQuery(commandPaletteQuery, globalSearchPriorityPaths);
+    setGlobalSearchQuery(deferredCommandPaletteQuery, globalSearchPriorityPaths);
   }, [
-    commandPaletteQuery,
+    deferredCommandPaletteQuery,
     globalSearchPriorityPaths,
     isCommandPaletteOpen,
     setGlobalSearchQuery,
@@ -4758,8 +4701,8 @@ function App() {
     const syncNativeBlur = async () => {
       try {
         unwrapTauriResult(await commands.windowSetBlur(
-          appBlur && overlayPhase !== 'closed',
-          clampedAppBlurStrength,
+          effectiveShellBlurEnabled && overlayPhase !== 'closed',
+          effectiveShellBlurStrength,
         ));
       } catch (error) {
         if (!cancelled) {
@@ -4773,7 +4716,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [appBlur, clampedAppBlurStrength, overlayPhase]);
+  }, [effectiveShellBlurEnabled, effectiveShellBlurStrength, overlayPhase]);
 
   const activeContentPanel = activePanelId ? panelLookup.get(activePanelId) ?? null : null;
   const usesNavigationSidebar = renderRuntime.launcherPlacement === 'sidebar';
@@ -4791,6 +4734,8 @@ function App() {
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        contain: 'layout paint style',
+        isolation: 'isolate',
         margin: contentStagePadding,
         border: '1px solid var(--overlay-workbench-chrome-border)',
         borderRadius: workbench.metrics.panelRadius,
@@ -4798,11 +4743,11 @@ function App() {
           ? 'var(--overlay-workbench-shell-bg)'
           : 'var(--overlay-bg-panel)',
         boxShadow: 'var(--overlay-workbench-shell-shadow)',
-        backdropFilter: appBlur && workbench.panelStyle === 'glass'
-          ? resolveConditionalBlurFilter({ enabled: true, blurPx: Math.min(clampedAppBlurStrength, 18) })
+        backdropFilter: effectiveShellBlurEnabled && workbench.panelStyle === 'glass'
+          ? resolveConditionalBlurFilter({ enabled: true, blurPx: Math.min(effectiveShellBlurStrength, 18) })
           : 'none',
-        WebkitBackdropFilter: appBlur && workbench.panelStyle === 'glass'
-          ? resolveConditionalBlurFilter({ enabled: true, blurPx: Math.min(clampedAppBlurStrength, 18) })
+        WebkitBackdropFilter: effectiveShellBlurEnabled && workbench.panelStyle === 'glass'
+          ? resolveConditionalBlurFilter({ enabled: true, blurPx: Math.min(effectiveShellBlurStrength, 18) })
           : 'none',
       }
     : {
@@ -4812,6 +4757,8 @@ function App() {
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        contain: 'layout paint style',
+        isolation: 'isolate',
       };
   const shellShaderContext = useMemo<OverlayShaderShellContext>(() => ({
     ...(activeShader ?? {
@@ -4822,13 +4769,13 @@ function App() {
       source: 'built-in' as const,
     }),
     viewport: {
-      width: typeof window === 'undefined' ? 0 : window.innerWidth,
-      height: typeof window === 'undefined' ? 0 : window.innerHeight,
+      width: themeRendererViewport.width,
+      height: themeRendererViewport.height,
     },
     accentColor: accent,
     theme,
     panelTransparency: clampedPanelTransparency,
-    blurStrength: clampedAppBlurStrength,
+    blurStrength: effectiveShellBlurStrength,
     zoom: clampedAppZoom,
     isSettingsActive: activePanelId === 'settings',
     shaderControlValues: activeShaderControlValues,
@@ -4837,10 +4784,12 @@ function App() {
     activeShader,
     activeShaderControlValues,
     accent,
-    clampedAppBlurStrength,
     clampedAppZoom,
     clampedPanelTransparency,
+    effectiveShellBlurStrength,
     theme,
+    themeRendererViewport.height,
+    themeRendererViewport.width,
   ]);
   const renderWallpaperBackground = useCallback((contextOverrides?: Partial<OverlayWallpaperRenderContext>) => (
     <WallpaperBackgroundLayer
@@ -4854,7 +4803,7 @@ function App() {
   const renderWallpaperBackdropStack = useCallback(() => (
     <>
       {renderWallpaperBackground()}
-      {shellThemeEffectBackgroundImage ? (
+      {shellEffectsPolicy.showThemeEffectBackdrop && shellThemeEffectBackgroundImage ? (
         <div
           aria-hidden
           style={{
@@ -4871,6 +4820,7 @@ function App() {
     </>
   ), [
     renderWallpaperBackground,
+    shellEffectsPolicy.showThemeEffectBackdrop,
     shellThemeEffectBackgroundImage,
     theme.effects.backgroundPosition,
     theme.effects.backgroundSize,
@@ -4952,6 +4902,8 @@ function App() {
           display: shouldDisplay ? 'flex' : 'none',
           flexDirection: 'column',
           overflow: 'hidden',
+          contain: 'layout paint style',
+          isolation: 'isolate',
           ...(options?.style ?? {}),
         }}
       >
@@ -5052,8 +5004,8 @@ function App() {
       onToggleOverlayAnchor={handleToggleOverlayAnchor}
       onClose={() => { void hideOverlay(); }}
       accent={accent}
-      blur={appBlur}
-      blurStrength={clampedAppBlurStrength}
+      blur={effectiveShellBlurEnabled}
+      blurStrength={effectiveShellBlurStrength}
       blurPlatform={runtimePlatform}
       windowMode={windowMode}
       overlayAnchor={overlayAnchor}
@@ -5074,13 +5026,15 @@ function App() {
       zenFocusMode={zenFocusMode}
       zenFocusShortcutLabel={formatHotkeyLabel(keybindings.zenFocusModeToggle)}
       onToggleZenFocusMode={handleToggleZenFocusMode}
-      topBarShaderLayer={(
-        <ShaderSurfaceLayer
-          shader={activeShader}
-          shellContext={shellShaderContext}
-          surface="topBar"
-        />
-      )}
+      topBarShaderLayer={shellEffectsPolicy.showTopBarShader
+        ? (
+          <ShaderSurfaceLayer
+            shader={activeShader}
+            shellContext={shellShaderContext}
+            surface="topBar"
+          />
+          )
+        : null}
       topBarDefinition={resolvedTopBarSelection.topBar}
     />
   );
@@ -5330,8 +5284,20 @@ function App() {
               letterSpacing: '0.08em',
               textTransform: 'uppercase',
               cursor: 'pointer',
-              backdropFilter: appBlur ? 'blur(12px)' : undefined,
-              WebkitBackdropFilter: appBlur ? 'blur(12px)' : undefined,
+              backdropFilter: effectiveShellBlurEnabled
+                ? resolveConditionalBlurFilter({
+                    enabled: true,
+                    blurPx: Math.min(effectiveShellBlurStrength, 12),
+                    saturateBoost: 0.18,
+                  })
+                : undefined,
+              WebkitBackdropFilter: effectiveShellBlurEnabled
+                ? resolveConditionalBlurFilter({
+                    enabled: true,
+                    blurPx: Math.min(effectiveShellBlurStrength, 12),
+                    saturateBoost: 0.18,
+                  })
+                : undefined,
               boxShadow: action.isActive ? `0 12px 28px ${accent}22` : 'none',
             }}
           >
@@ -5353,7 +5319,8 @@ function App() {
     );
   }, [
     accent,
-    appBlur,
+    effectiveShellBlurEnabled,
+    effectiveShellBlurStrength,
     resolvedAppearance.fonts.ui,
     theme.palette.border,
     theme.palette.textMuted,
@@ -5468,6 +5435,92 @@ function App() {
       />
       )
     : defaultShellBody;
+  const shellSceneFrameStyle = useMemo<CSSProperties>(() => ({
+    position: 'absolute',
+    left: 0,
+    top: isWindowedMode ? 0 : (isTopAnchored ? 0 : 'auto'),
+    bottom: isWindowedMode ? 'auto' : (isTopAnchored ? 'auto' : 0),
+    width: scaledWidth,
+    height: scaledHeight,
+  }), [isTopAnchored, isWindowedMode, scaledHeight, scaledWidth]);
+  const shellSceneContainerStyle = useMemo<CSSProperties>(() => ({
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    width: '100%',
+    height: '100%',
+    backgroundColor: shellBackgroundColor,
+    backdropFilter: shellBackdropFilter,
+    WebkitBackdropFilter: shellBackdropFilter,
+    color: theme.palette.textPrimary,
+    fontFamily: resolvedAppearance.fonts.ui,
+    boxShadow: isWindowedMode && isWindowMaximized ? 'none' : 'var(--overlay-workbench-shell-shadow)',
+    borderTop: isWindowedMode
+      ? (isWindowMaximized ? 'none' : '1px solid var(--overlay-workbench-chrome-border)')
+      : (isTopAnchored ? 'none' : '1px solid var(--overlay-workbench-chrome-border)'),
+    borderBottom: isWindowedMode
+      ? (isWindowMaximized ? 'none' : '1px solid var(--overlay-workbench-chrome-border)')
+      : (isTopAnchored ? '1px solid var(--overlay-workbench-chrome-border)' : 'none'),
+    borderLeft: isWindowedMode && !isWindowMaximized ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+    borderRight: isWindowedMode && !isWindowMaximized ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+    borderTopLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? 0 : workbench.metrics.panelRadius),
+    borderTopRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? 0 : workbench.metrics.panelRadius),
+    borderBottomLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
+    borderBottomRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
+    isolation: 'isolate',
+  }), [
+    isTopAnchored,
+    isWindowMaximized,
+    isWindowedMode,
+    resolvedAppearance.fonts.ui,
+    shellBackgroundColor,
+    shellBackdropFilter,
+    theme.palette.textPrimary,
+    workbench.metrics.panelRadius,
+  ]);
+  const shellSceneBackgroundLayers = useMemo(() => (
+    <>
+      {!themeRendererControlsWallpaper && shellEffectsPolicy.showWallpaperBackdrop ? renderWallpaperBackdropStack() : null}
+      {shellEffectsPolicy.showBackgroundShader ? (
+        <ShaderSurfaceLayer
+          shader={activeShader}
+          shellContext={shellShaderContext}
+          surface="background"
+        />
+      ) : null}
+      {shellEffectsPolicy.showThemeVisuals
+        ? (theme.visuals ?? []).map(layer => (
+          <div key={layer.id} aria-hidden style={buildThemeVisualStyle(layer)} />
+        ))
+        : null}
+      {shellEffectsPolicy.showBorderShader ? (
+        <ShaderSurfaceLayer
+          shader={activeShader}
+          shellContext={shellShaderContext}
+          surface="border"
+        />
+      ) : null}
+    </>
+  ), [
+    activeShader,
+    renderWallpaperBackdropStack,
+    shellEffectsPolicy.showBackgroundShader,
+    shellEffectsPolicy.showBorderShader,
+    shellEffectsPolicy.showThemeVisuals,
+    shellEffectsPolicy.showWallpaperBackdrop,
+    shellShaderContext,
+    theme.visuals,
+    themeRendererControlsWallpaper,
+  ]);
+  const shellSceneContentLayer = useMemo(() => (
+    <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      {shellBody}
+    </div>
+  ), [shellBody]);
+  const shellSceneTransformOrigin = isWindowedMode
+    ? 'center center'
+    : (isTopAnchored ? 'top left' : 'bottom left');
   const devHudEnabled = (Boolean(import.meta.env.DEV) || systemSettings.developerMode)
     && systemSettings.devTelemetryHudVisible;
   return (
@@ -5483,97 +5536,46 @@ function App() {
         onDragEndCapture={handleDragEndCapture}
         onDropCapture={handleDropCapture}
       >
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: isWindowedMode ? 0 : (isTopAnchored ? 0 : 'auto'),
-          bottom: isWindowedMode ? 'auto' : (isTopAnchored ? 'auto' : 0),
-          width: scaledWidth,
-          height: scaledHeight,
-        }}
-      >
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            ...shellAnimationStyle,
-            transform: combinedShellTransform,
-            transformOrigin: isWindowedMode ? 'center center' : (isTopAnchored ? 'top left' : 'bottom left'),
-          }}
-        >
-          <div
-            style={{
-              position: 'relative',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              width: '100%',
-              height: '100%',
-              backgroundColor: shellBackgroundColor,
-              backdropFilter: shellBackdropFilter,
-              WebkitBackdropFilter: shellBackdropFilter,
-              color: theme.palette.textPrimary,
-              fontFamily: resolvedAppearance.fonts.ui,
-              boxShadow: isWindowedMode && isWindowMaximized ? 'none' : 'var(--overlay-workbench-shell-shadow)',
-              borderTop: isWindowedMode
-                ? (isWindowMaximized ? 'none' : '1px solid var(--overlay-workbench-chrome-border)')
-                : (isTopAnchored ? 'none' : '1px solid var(--overlay-workbench-chrome-border)'),
-              borderBottom: isWindowedMode
-                ? (isWindowMaximized ? 'none' : '1px solid var(--overlay-workbench-chrome-border)')
-                : (isTopAnchored ? '1px solid var(--overlay-workbench-chrome-border)' : 'none'),
-              borderLeft: isWindowedMode && !isWindowMaximized ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
-              borderRight: isWindowedMode && !isWindowMaximized ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
-              borderTopLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? 0 : workbench.metrics.panelRadius),
-              borderTopRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? 0 : workbench.metrics.panelRadius),
-              borderBottomLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
-              borderBottomRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
-            }}
-          >
-            {!themeRendererControlsWallpaper && renderWallpaperBackdropStack()}
-            <ShaderSurfaceLayer
-              shader={activeShader}
-              shellContext={shellShaderContext}
-              surface="background"
-            />
-            {(theme.visuals ?? []).map(layer => (
-              <div key={layer.id} aria-hidden style={buildThemeVisualStyle(layer)} />
-            ))}
-            <ShaderSurfaceLayer
-              shader={activeShader}
-              shellContext={shellShaderContext}
-              surface="border"
-            />
-            <AnimationOverlayLayer
-              animation={shellAnimation}
-              context={shellAnimationContext}
-            />
-
-            <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              {shellBody}
-            </div>
-          </div>
-        </div>
-      </div>
-      <DevPerformanceHud
-        enabled={devHudEnabled}
-        appearance={resolvedAppearance}
-        activePanelLabel={activePanelId ?? 'none'}
-        openPanelCount={openPanelIds.length}
-        frameStats={latestOverlayFrameStats}
-        sourceTraceEnabled={systemSettings.sourceTraceModeEnabled}
-      />
-      <CommandPalette
-        isOpen={isCommandPaletteOpen}
-        appearance={resolvedAppearance}
-        blurEnabled={appBlur}
-        actions={commandPaletteActions}
-        shortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
-        queryPlaceholder={globalSearchPaletteConfig.commandPalettePlaceholder}
-        statusMessage={commandPaletteStatusMessage}
-        onQueryChange={setCommandPaletteQuery}
-        onClose={handleCloseCommandPalette}
-      />
+        <OverlayShellScene
+          animation={shellAnimation}
+          phase={overlayPhase}
+          direction={overlayAnimationDirection}
+          durationMs={shellAnimationDurationMs}
+          baseOpacity={clampedAppOpacity}
+          intensity={appAnimationIntensity}
+          verticalOrigin={overlayAnchor}
+          accentColor={accent}
+          blurStrength={effectiveShellBlurStrength}
+          zoom={effectiveWindowZoom}
+          theme={theme}
+          viewportWidth={themeRendererViewport.width}
+          viewportHeight={themeRendererViewport.height}
+          frameStyle={shellSceneFrameStyle}
+          transformOrigin={shellSceneTransformOrigin}
+          containerStyle={shellSceneContainerStyle}
+          backgroundLayers={shellSceneBackgroundLayers}
+          contentLayer={shellSceneContentLayer}
+          showAnimationOverlay={shellEffectsPolicy.showAnimationOverlay}
+        />
+        <DevPerformanceHud
+          enabled={devHudEnabled}
+          appearance={resolvedAppearance}
+          activePanelLabel={activePanelId ?? 'none'}
+          openPanelCount={openPanelIds.length}
+          frameStats={latestOverlayFrameStats}
+          sourceTraceEnabled={systemSettings.sourceTraceModeEnabled}
+        />
+        <CommandPalette
+          isOpen={isCommandPaletteOpen}
+          appearance={resolvedAppearance}
+          blurEnabled={effectiveShellBlurEnabled}
+          actions={commandPaletteActions}
+          shortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
+          queryPlaceholder={globalSearchPaletteConfig.commandPalettePlaceholder}
+          statusMessage={commandPaletteStatusMessage}
+          onQueryChange={setCommandPaletteQuery}
+          onClose={handleCloseCommandPalette}
+        />
       </div>
     </IconThemeProvider>
   );

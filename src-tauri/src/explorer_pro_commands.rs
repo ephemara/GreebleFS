@@ -1325,7 +1325,10 @@ pub async fn explorer_saved_searches_list(
 ) -> Result<Vec<ExplorerSavedSearchRecord>, String> {
     let mut searches = read_explorer_metadata(&app)?.saved_searches;
     searches.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
-    Ok(searches.into_iter().map(|search| search.into_public()).collect())
+    Ok(searches
+        .into_iter()
+        .map(|search| search.into_public())
+        .collect())
 }
 
 #[tauri::command]
@@ -1395,9 +1398,7 @@ pub async fn explorer_saved_searches_delete(app: AppHandle, id: String) -> Resul
 
 #[tauri::command]
 #[specta::specta]
-pub async fn explorer_home_usage_list(
-    app: AppHandle,
-) -> Result<ExplorerHomeUsageSnapshot, String> {
+pub async fn explorer_home_usage_list(app: AppHandle) -> Result<ExplorerHomeUsageSnapshot, String> {
     Ok(build_home_usage_snapshot(&read_explorer_metadata(&app)?))
 }
 

@@ -2,8 +2,8 @@
 // License: GNU GPLv3 or later. See the license file in the project root for more information.
 // Copyright © 2021 - present Aleksey Hoffman. All rights reserved.
 
-use std::collections::HashMap;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -25,9 +25,8 @@ use super::handlers::handle_multipart_upload;
 use super::streaming::{resolve_sub_path, share_root_label, stream_file_response};
 use super::types::{
     MobileFolderIconRuleSnapshot, MobileIconThemeSnapshot, MobileLayoutSortBy,
-    MobileLayoutSortOrder, MobileThemeSnapshot,
-    ACTIVE_MOBILE_THEME_SNAPSHOT, APP_ICON_PNG, APPLE_TOUCH_ICON_PNG, FTP_MAX_UPLOAD_BYTES,
-    ShareState,
+    MobileLayoutSortOrder, MobileThemeSnapshot, ShareState, ACTIVE_MOBILE_THEME_SNAPSHOT,
+    APPLE_TOUCH_ICON_PNG, APP_ICON_PNG, FTP_MAX_UPLOAD_BYTES,
 };
 use crate::archive_ops::{self, FsArchiveEntryListingEntry};
 use crate::global_search::{
@@ -306,9 +305,7 @@ async fn mobile_search_status_handler(State(state): State<ShareState>) -> Respon
             share_name: share_root_label(&state.share_path),
             scope_path: String::new(),
             search_available: false,
-            message: Some(
-                "Indexed search is unavailable for multi-file mobile hubs.".to_string(),
-            ),
+            message: Some("Indexed search is unavailable for multi-file mobile hubs.".to_string()),
             status: None,
         };
         return (StatusCode::OK, axum::Json(response)).into_response();
@@ -364,13 +361,8 @@ async fn mobile_search_handler(
     }
 
     if let Some(hub) = &state.file_hub {
-        let entries = build_hub_search_entries(
-            hub,
-            trimmed_query,
-            search_limit,
-            browse_policy,
-            &snapshot,
-        );
+        let entries =
+            build_hub_search_entries(hub, trimmed_query, search_limit, browse_policy, &snapshot);
         let response = MobileSearchResponse {
             query: trimmed_query.to_string(),
             share_name: share_root_label(&state.share_path),
@@ -513,11 +505,11 @@ async fn mobile_preview_handler(
         Err(status) => return (status, "Invalid path").into_response(),
     };
 
-    let metadata = match build_target_metadata(&resolved.absolute_path, resolved.relative_path.clone())
-    {
-        Ok(metadata) => metadata,
-        Err(status) => return (status, "Preview target not found").into_response(),
-    };
+    let metadata =
+        match build_target_metadata(&resolved.absolute_path, resolved.relative_path.clone()) {
+            Ok(metadata) => metadata,
+            Err(status) => return (status, "Preview target not found").into_response(),
+        };
 
     let entry = build_mobile_entry_info(metadata, &snapshot);
     let preview_kind = entry.preview_kind;
@@ -640,8 +632,11 @@ async fn mobile_thumbnail_handler(
         video_hover_frame_count: Some(0),
     };
 
-    let thumbnail = match thumbnail_commands::fs_read_entry_thumbnail(state.app_handle.clone(), request)
-        .await
+    let thumbnail = match thumbnail_commands::fs_read_entry_thumbnail(
+        state.app_handle.clone(),
+        request,
+    )
+    .await
     {
         Ok(thumbnail) => thumbnail,
         Err(error) => {
@@ -858,22 +853,21 @@ async fn mobile_list_handler(
         .clamp(1, MOBILE_MAX_PAGE_SIZE);
 
     let current_relative_path = compute_relative_path(&state.share_path, &target);
-    let mut entries =
-        match collect_mobile_entries_for_directory(
-            &target,
-            &current_relative_path,
-            browse_policy,
-            &snapshot,
-        ) {
-            Ok(entries) => entries,
-            Err(_) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to read directory",
-                )
-                    .into_response()
-            }
-        };
+    let mut entries = match collect_mobile_entries_for_directory(
+        &target,
+        &current_relative_path,
+        browse_policy,
+        &snapshot,
+    ) {
+        Ok(entries) => entries,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to read directory",
+            )
+                .into_response()
+        }
+    };
     sort_mobile_entries(&mut entries, browse_policy);
 
     build_mobile_list_response(
@@ -963,7 +957,9 @@ fn build_mobile_list_response(
 }
 
 fn compute_relative_path(base_path: &Path, target_path: &Path) -> String {
-    let canonical_base = base_path.canonicalize().unwrap_or_else(|_| base_path.to_path_buf());
+    let canonical_base = base_path
+        .canonicalize()
+        .unwrap_or_else(|_| base_path.to_path_buf());
     let canonical_target = target_path
         .canonicalize()
         .unwrap_or_else(|_| target_path.to_path_buf());
@@ -983,9 +979,7 @@ fn resolve_mobile_browse_policy(
             .show_hidden_files
             .unwrap_or(snapshot.layout.show_hidden_files),
         sort_by: query.sort_by.unwrap_or(snapshot.layout.sort_by),
-        sort_order: query
-            .sort_order
-            .unwrap_or(snapshot.layout.sort_order),
+        sort_order: query.sort_order.unwrap_or(snapshot.layout.sort_order),
         directories_first: query
             .directories_first
             .unwrap_or(snapshot.layout.directories_first),
@@ -1065,7 +1059,9 @@ fn build_mobile_search_entry_from_result(
     }
 
     let name = result.name;
-    let extension = result.extension.unwrap_or_else(|| normalized_extension_from_name(&name));
+    let extension = result
+        .extension
+        .unwrap_or_else(|| normalized_extension_from_name(&name));
     let mime_type = if result.is_dir {
         None
     } else {
@@ -1290,8 +1286,17 @@ fn classify_mobile_entry_kind(
     if lower_mime.starts_with("image/")
         || matches!(
             normalized_extension.as_str(),
-            "jpg" | "jpeg" | "png" | "gif" | "webp" | "svg" | "bmp" | "ico" | "avif"
-                | "tiff" | "tif"
+            "jpg"
+                | "jpeg"
+                | "png"
+                | "gif"
+                | "webp"
+                | "svg"
+                | "bmp"
+                | "ico"
+                | "avif"
+                | "tiff"
+                | "tif"
         )
     {
         return MobileEntryKind::Image;
@@ -1300,8 +1305,7 @@ fn classify_mobile_entry_kind(
     if lower_mime.starts_with("video/")
         || matches!(
             normalized_extension.as_str(),
-            "mp4" | "m4v" | "mov" | "webm" | "ogv" | "mkv" | "avi" | "wmv" | "mpeg"
-                | "mpg"
+            "mp4" | "m4v" | "mov" | "webm" | "ogv" | "mkv" | "avi" | "wmv" | "mpeg" | "mpg"
         )
     {
         return MobileEntryKind::Video;
@@ -1310,8 +1314,7 @@ fn classify_mobile_entry_kind(
     if lower_mime.starts_with("audio/")
         || matches!(
             normalized_extension.as_str(),
-            "mp3" | "wav" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "aiff" | "aif"
-                | "weba"
+            "mp3" | "wav" | "flac" | "ogg" | "opus" | "m4a" | "aac" | "aiff" | "aif" | "weba"
         )
     {
         return MobileEntryKind::Audio;
@@ -1330,9 +1333,32 @@ fn classify_mobile_entry_kind(
 
     if matches!(
         normalized_extension.as_str(),
-        "rs" | "ts" | "tsx" | "js" | "jsx" | "json" | "toml" | "yaml" | "yml" | "md"
-            | "py" | "go" | "lua" | "java" | "kt" | "c" | "cpp" | "h" | "hpp"
-            | "swift" | "css" | "scss" | "html" | "xml" | "sh" | "bash" | "zsh"
+        "rs" | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "json"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "md"
+            | "py"
+            | "go"
+            | "lua"
+            | "java"
+            | "kt"
+            | "c"
+            | "cpp"
+            | "h"
+            | "hpp"
+            | "swift"
+            | "css"
+            | "scss"
+            | "html"
+            | "xml"
+            | "sh"
+            | "bash"
+            | "zsh"
     ) {
         return MobileEntryKind::Code;
     }
@@ -1353,7 +1379,10 @@ fn classify_mobile_entry_kind(
         return MobileEntryKind::Model;
     }
 
-    if matches!(normalized_extension.as_str(), "ttf" | "otf" | "woff" | "woff2") {
+    if matches!(
+        normalized_extension.as_str(),
+        "ttf" | "otf" | "woff" | "woff2"
+    ) {
         return MobileEntryKind::Font;
     }
 
@@ -1418,7 +1447,10 @@ fn build_mobile_thumbnail_url(relative_path: &str) -> String {
 }
 
 fn parent_relative_path(relative_path: &str) -> String {
-    let mut segments = relative_path.split('/').filter(|segment| !segment.is_empty()).collect::<Vec<_>>();
+    let mut segments = relative_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
     if segments.len() <= 1 {
         return String::new();
     }
@@ -1569,12 +1601,24 @@ fn natural_case_insensitive_cmp(left: &str, right: &str) -> Ordering {
                 right_index += 1;
             }
 
-            let left_digits = left_chars[left_start..left_index].iter().collect::<String>();
-            let right_digits = right_chars[right_start..right_index].iter().collect::<String>();
+            let left_digits = left_chars[left_start..left_index]
+                .iter()
+                .collect::<String>();
+            let right_digits = right_chars[right_start..right_index]
+                .iter()
+                .collect::<String>();
             let left_trimmed = left_digits.trim_start_matches('0');
             let right_trimmed = right_digits.trim_start_matches('0');
-            let left_normalized = if left_trimmed.is_empty() { "0" } else { left_trimmed };
-            let right_normalized = if right_trimmed.is_empty() { "0" } else { right_trimmed };
+            let left_normalized = if left_trimmed.is_empty() {
+                "0"
+            } else {
+                left_trimmed
+            };
+            let right_normalized = if right_trimmed.is_empty() {
+                "0"
+            } else {
+                right_trimmed
+            };
 
             let numeric_order = left_normalized
                 .len()
@@ -1651,8 +1695,8 @@ fn read_text_excerpt(path: &Path) -> (String, bool) {
         Err(error) => return (format!("Failed to read preview text: {error}"), false),
     };
     let truncated = bytes_read > MOBILE_PREVIEW_TEXT_BYTES;
-    let excerpt = String::from_utf8_lossy(&buffer[..bytes_read.min(MOBILE_PREVIEW_TEXT_BYTES)])
-        .to_string();
+    let excerpt =
+        String::from_utf8_lossy(&buffer[..bytes_read.min(MOBILE_PREVIEW_TEXT_BYTES)]).to_string();
     (excerpt, truncated)
 }
 
@@ -1673,7 +1717,12 @@ fn build_folder_preview_summary(
         browse_policy,
         snapshot,
     )
-    .map_err(|error| format!("Failed to read folder preview '{}': {error}", folder_path.display()))?;
+    .map_err(|error| {
+        format!(
+            "Failed to read folder preview '{}': {error}",
+            folder_path.display()
+        )
+    })?;
     let mut folder_count = 0_usize;
     let mut file_count = 0_usize;
     let mut total_visible_file_bytes = 0_u64;
@@ -1709,7 +1758,9 @@ fn build_archive_preview_summary(
     let entries = archive_ops::list_archive_dir(archive_path, "")?;
     let mut visible_entries = entries
         .into_iter()
-        .filter(|entry| browse_policy.show_hidden_files || !mobile_relative_path_is_hidden(&entry.relative_path))
+        .filter(|entry| {
+            browse_policy.show_hidden_files || !mobile_relative_path_is_hidden(&entry.relative_path)
+        })
         .collect::<Vec<_>>();
     visible_entries.sort_by(|left, right| {
         compare_mobile_entry_fields(
@@ -1855,11 +1906,18 @@ fn resolve_mobile_icon_id(
     }
 
     let normalized_name = name.trim().to_ascii_lowercase();
-    let normalized_extension = extension.trim().trim_start_matches('.').to_ascii_lowercase();
+    let normalized_extension = extension
+        .trim()
+        .trim_start_matches('.')
+        .to_ascii_lowercase();
     if let Some(icon_id) = snapshot.icon_theme.file_names.get(&normalized_name) {
         return normalize_mobile_icon_candidate(snapshot, icon_id, &snapshot.icon_theme.file);
     }
-    if let Some(icon_id) = snapshot.icon_theme.file_extensions.get(&normalized_extension) {
+    if let Some(icon_id) = snapshot
+        .icon_theme
+        .file_extensions
+        .get(&normalized_extension)
+    {
         return normalize_mobile_icon_candidate(snapshot, icon_id, &snapshot.icon_theme.file);
     }
 
@@ -1869,13 +1927,14 @@ fn resolve_mobile_icon_id(
         }
     }
 
-    normalize_mobile_icon_candidate(snapshot, &snapshot.icon_theme.file, &snapshot.icon_theme.file)
+    normalize_mobile_icon_candidate(
+        snapshot,
+        &snapshot.icon_theme.file,
+        &snapshot.icon_theme.file,
+    )
 }
 
-fn resolve_mobile_folder_icon_id(
-    snapshot: &MobileThemeSnapshot,
-    folder_path: &str,
-) -> String {
+fn resolve_mobile_folder_icon_id(snapshot: &MobileThemeSnapshot, folder_path: &str) -> String {
     let effective_rules = build_effective_folder_icon_rules(snapshot);
     let candidates = build_folder_icon_candidate_matchers(folder_path);
 
@@ -1994,7 +2053,9 @@ fn normalize_folder_icon_matcher(value: &str) -> String {
                 expanded.push(' ');
             } else if previous.is_ascii_uppercase()
                 && character.is_ascii_uppercase()
-                && next.map(|value| value.is_ascii_lowercase()).unwrap_or(false)
+                && next
+                    .map(|value| value.is_ascii_lowercase())
+                    .unwrap_or(false)
             {
                 expanded.push(' ');
             }

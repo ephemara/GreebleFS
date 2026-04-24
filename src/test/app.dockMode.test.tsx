@@ -95,19 +95,27 @@ vi.mock('../components/shaderRuntime', () => ({
   resolveShaderControlValues: () => ({}),
 }));
 
-vi.mock('../config/themePackages', () => ({
-  loadThemePackages: vi.fn(async () => ({
-    packages: [],
-    shaders: [],
-    animations: [],
-    directory: '/tmp/themes',
-    warnings: [],
-    sourceError: null,
-  })),
-  themeSystemConfig: {
-    themesDirectory: '/tmp/themes',
-  },
-}));
+vi.mock('../config/themePackages', async importOriginal => {
+  const actual = await importOriginal<typeof import('../config/themePackages')>();
+  const dependencyCatalogs = actual.createEmptyGlobalThemeBundleCatalogs();
+
+  return {
+    ...actual,
+    loadThemePackages: vi.fn(async () => ({
+      packages: [],
+      shaders: [],
+      animations: [],
+      directory: '/tmp/themes',
+      warnings: [],
+      sourceError: null,
+      dependencyCatalogs,
+    })),
+    themeSystemConfig: {
+      ...actual.themeSystemConfig,
+      themesDirectory: '/tmp/themes',
+    },
+  };
+});
 
 vi.mock('../runtime/useFolderPluginRuntime', () => ({
   useFolderPluginRuntime: () => ({

@@ -16,19 +16,13 @@ pub(super) fn calculate_similarity_score(query: &str, name: &str) -> f32 {
 
     let query_tokens: Vec<&str> = query_lower
         .split(|character: char| {
-            character.is_whitespace()
-                || character == '.'
-                || character == '_'
-                || character == '-'
+            character.is_whitespace() || character == '.' || character == '_' || character == '-'
         })
         .filter(|segment| !segment.is_empty())
         .collect();
     let name_tokens: Vec<&str> = name_lower
         .split(|character: char| {
-            character.is_whitespace()
-                || character == '.'
-                || character == '_'
-                || character == '-'
+            character.is_whitespace() || character == '.' || character == '_' || character == '-'
         })
         .filter(|segment| !segment.is_empty())
         .collect();

@@ -58,11 +58,9 @@ pub async fn tailscale_connect(
 ) -> Result<TailscaleStatusSnapshot, String> {
     let status_before = get_tailscale_status_snapshot();
     if !status_before.cli_available {
-        return Err(
-            status_before
-                .diagnostic_message
-                .unwrap_or_else(|| "Tailscale CLI is not installed or not on PATH.".to_string()),
-        );
+        return Err(status_before
+            .diagnostic_message
+            .unwrap_or_else(|| "Tailscale CLI is not installed or not on PATH.".to_string()));
     }
 
     let hostname = normalize_cli_string(request.hostname);
@@ -131,11 +129,9 @@ pub async fn tailscale_connect(
 pub async fn tailscale_disconnect() -> Result<TailscaleStatusSnapshot, String> {
     let status_before = get_tailscale_status_snapshot();
     if !status_before.cli_available {
-        return Err(
-            status_before
-                .diagnostic_message
-                .unwrap_or_else(|| "Tailscale CLI is not installed or not on PATH.".to_string()),
-        );
+        return Err(status_before
+            .diagnostic_message
+            .unwrap_or_else(|| "Tailscale CLI is not installed or not on PATH.".to_string()));
     }
 
     run_tailscale_command("tailscale down", &["down".to_string()])?;
@@ -145,11 +141,9 @@ pub async fn tailscale_disconnect() -> Result<TailscaleStatusSnapshot, String> {
 pub(crate) fn get_tailscale_share_target() -> Result<TailscaleShareTarget, String> {
     let status = get_tailscale_status_snapshot();
     if !status.cli_available {
-        return Err(
-            status
-                .diagnostic_message
-                .unwrap_or_else(|| "Tailscale CLI is not installed or not on PATH.".to_string()),
-        );
+        return Err(status
+            .diagnostic_message
+            .unwrap_or_else(|| "Tailscale CLI is not installed or not on PATH.".to_string()));
     }
 
     if !status.connected {
@@ -169,8 +163,7 @@ pub(crate) fn get_tailscale_share_target() -> Result<TailscaleShareTarget, Strin
         .or_else(|| status.dns_name.clone())
         .or_else(|| status.tailscale_ipv4.clone())
         .ok_or_else(|| {
-            "Tailscale is connected, but no reachable tailnet hostname or IP was found."
-                .to_string()
+            "Tailscale is connected, but no reachable tailnet hostname or IP was found.".to_string()
         })?;
 
     Ok(TailscaleShareTarget {
@@ -244,10 +237,10 @@ pub(crate) fn get_tailscale_status_snapshot() -> TailscaleStatusSnapshot {
         diagnostic_message: None,
     };
 
-    match run_tailscale_command("tailscale version --json", &[
-        "version".to_string(),
-        "--json".to_string(),
-    ]) {
+    match run_tailscale_command(
+        "tailscale version --json",
+        &["version".to_string(), "--json".to_string()],
+    ) {
         Ok(output) => {
             snapshot.cli_available = true;
             if let Ok(value) = serde_json::from_slice::<Value>(&output.stdout) {
@@ -262,17 +255,16 @@ pub(crate) fn get_tailscale_status_snapshot() -> TailscaleStatusSnapshot {
         }
     }
 
-    match run_tailscale_command("tailscale status --json", &[
-        "status".to_string(),
-        "--json".to_string(),
-    ]) {
+    match run_tailscale_command(
+        "tailscale status --json",
+        &["status".to_string(), "--json".to_string()],
+    ) {
         Ok(output) => {
             let parsed = match serde_json::from_slice::<Value>(&output.stdout) {
                 Ok(value) => value,
                 Err(error) => {
-                    snapshot.diagnostic_message = Some(format!(
-                        "Failed to parse tailscale status output: {error}"
-                    ));
+                    snapshot.diagnostic_message =
+                        Some(format!("Failed to parse tailscale status output: {error}"));
                     return snapshot;
                 }
             };
@@ -467,7 +459,9 @@ fn trim_dns_name(value: impl AsRef<str>) -> String {
 fn extract_auth_url_from_text(value: &str) -> Option<String> {
     value
         .split_whitespace()
-        .map(|token| token.trim_matches(|char: char| matches!(char, '"' | '\'' | ',' | ';' | ')' | '(')))
+        .map(|token| {
+            token.trim_matches(|char: char| matches!(char, '"' | '\'' | ',' | ';' | ')' | '('))
+        })
         .find(|token| token.starts_with("https://"))
         .map(ToOwned::to_owned)
 }

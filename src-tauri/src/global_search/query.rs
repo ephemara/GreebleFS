@@ -7,10 +7,10 @@ use super::utils::{is_hidden_path, metadata_times_unix_ms, path_extension_lowerc
 use regex::escape as escape_regex;
 use std::collections::BTreeMap;
 use std::path::Path;
-use tantivy::IndexReader;
 use tantivy::collector::TopDocs;
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Query, RegexQuery, TermQuery};
 use tantivy::schema::{IndexRecordOption, Value};
+use tantivy::IndexReader;
 use tantivy::Term;
 use tauri::Manager;
 
@@ -22,10 +22,7 @@ fn build_query(
     let normalized = normalize_case(query);
     let normalized_words: Vec<String> = normalized
         .split(|character: char| {
-            character.is_whitespace()
-                || character == '.'
-                || character == '_'
-                || character == '-'
+            character.is_whitespace() || character == '.' || character == '_' || character == '-'
         })
         .filter(|segment| !segment.is_empty())
         .map(|segment| segment.to_string())
@@ -117,11 +114,10 @@ fn build_scope_query(
     } else {
         format!("^{}(?:$|/.*)", escape_regex(&normalized_root_path))
     };
-    let descendant_path_query =
-        match RegexQuery::from_pattern(&descendant_pattern, fields.path) {
-            Ok(query) => query,
-            Err(_) => return None,
-        };
+    let descendant_path_query = match RegexQuery::from_pattern(&descendant_pattern, fields.path) {
+        Ok(query) => query,
+        Err(_) => return None,
+    };
 
     Some(Box::new(BooleanQuery::from(vec![
         (
@@ -197,24 +193,32 @@ fn execute_index_query(
     let ignored_paths = build_ignored_path_list(&[]);
 
     let text_query = build_query(fields, query, options);
-    let final_query: Box<dyn Query> = match scope_root_path.and_then(|value| build_scope_query(fields, value)) {
-        Some(scope_query) => Box::new(BooleanQuery::from(vec![
-            (tantivy::query::Occur::Must, text_query),
-            (tantivy::query::Occur::Must, scope_query),
-        ])),
-        None => text_query,
-    };
+    let final_query: Box<dyn Query> =
+        match scope_root_path.and_then(|value| build_scope_query(fields, value)) {
+            Some(scope_query) => Box::new(BooleanQuery::from(vec![
+                (tantivy::query::Occur::Must, text_query),
+                (tantivy::query::Occur::Must, scope_query),
+            ])),
+            None => text_query,
+        };
 
     let top_docs = searcher
-        .search(&final_query, &TopDocs::with_limit(candidate_limit(options.limit)))
+        .search(
+            &final_query,
+            &TopDocs::with_limit(candidate_limit(options.limit)),
+        )
         .map_err(|error| error.to_string())?;
 
     let mut results = Vec::new();
     for (_tantivy_score, doc_address) in top_docs {
-        let retrieved: tantivy::TantivyDocument =
-            searcher.doc(doc_address).map_err(|error| error.to_string())?;
+        let retrieved: tantivy::TantivyDocument = searcher
+            .doc(doc_address)
+            .map_err(|error| error.to_string())?;
 
-        let path_value = match retrieved.get_first(fields.path).and_then(|value| value.as_str()) {
+        let path_value = match retrieved
+            .get_first(fields.path)
+            .and_then(|value| value.as_str())
+        {
             Some(path) => path.to_string(),
             None => continue,
         };
@@ -222,7 +226,10 @@ fn execute_index_query(
             continue;
         }
 
-        let name_value = match retrieved.get_first(fields.name).and_then(|value| value.as_str()) {
+        let name_value = match retrieved
+            .get_first(fields.name)
+            .and_then(|value| value.as_str())
+        {
             Some(name) => name.to_string(),
             None => continue,
         };

@@ -1,9 +1,9 @@
-use tauri::command;
-use tauri::AppHandle;
 use crate::lan_share::{
-    server::{start_lan_share, stop_lan_share_inner, get_local_ip},
+    server::{get_local_ip, start_lan_share, stop_lan_share_inner},
     types::{LanShareResult, MobileThemeSnapshot, ACTIVE_MOBILE_THEME_SNAPSHOT},
 };
+use tauri::command;
+use tauri::AppHandle;
 
 #[command]
 #[specta::specta]
@@ -31,9 +31,7 @@ pub fn lan_share_get_local_ip() -> Result<String, String> {
 
 #[command]
 #[specta::specta]
-pub async fn mobile_share_set_theme_snapshot(
-    snapshot: MobileThemeSnapshot,
-) -> Result<(), String> {
+pub async fn mobile_share_set_theme_snapshot(snapshot: MobileThemeSnapshot) -> Result<(), String> {
     let mut active_snapshot = ACTIVE_MOBILE_THEME_SNAPSHOT.write().await;
     *active_snapshot = snapshot;
     Ok(())

@@ -4,9 +4,7 @@ use super::index::{
     validate_index, write_meta, GlobalSearchMeta, GLOBAL_SEARCH_SCHEMA_VERSION,
 };
 use super::state::{now_millis, GlobalSearchIndexFields, GlobalSearchState, GLOBAL_SEARCH_STATE};
-use super::types::{
-    GlobalSearchDriveScanError, GlobalSearchScanSettings, GlobalSearchStatus,
-};
+use super::types::{GlobalSearchDriveScanError, GlobalSearchScanSettings, GlobalSearchStatus};
 use super::utils::metadata_modified_time_unix_ms;
 use ignore::WalkBuilder;
 use std::path::{Path, PathBuf};
@@ -273,7 +271,9 @@ pub async fn global_search_start_scan(
                         state.status.total_drives_count = 0;
                         state.status.current_drive_root = None;
                     }
-                    return Err("No valid drive roots were available for global search.".to_string());
+                    return Err(
+                        "No valid drive roots were available for global search.".to_string()
+                    );
                 }
 
                 if let Ok(mut state) = GLOBAL_SEARCH_STATE.write() {
