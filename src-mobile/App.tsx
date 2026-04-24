@@ -1,11 +1,13 @@
 import * as LucideIcons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
-  startTransition,
   useDeferredValue,
   useEffect,
+  useMemo,
   useRef,
   useState,
+  type CSSProperties,
+  type UIEvent,
 } from "react";
 
 import {
@@ -20,9 +22,17 @@ import {
   fetchMobileThemeSnapshot,
   startMobileSearchScan,
   startMobileUpload,
+  type MobileBrowseRequestOptions,
 } from "./mobileApi";
 import {
-  buildParentPath,
+  defaultMobileLayoutSettings,
+  isMobileGridViewMode,
+  normalizeMobileGridZoom,
+  normalizeMobileLayoutSettings,
+  type MobileLayoutSettings,
+  type MobileLayoutViewMode,
+} from "../src/config/mobileLayout";
+import {
   buildMobileIconUrl,
   formatBytes,
   formatModifiedLabel,
@@ -42,8 +52,76 @@ import type {
   MobileShareThemeSnapshot,
 } from "./types";
 
-const MOBILE_ROW_HEIGHT = 80;
-const MOBILE_OVERSCAN_ROWS = 8;
+interface MobileLocationState {
+  tab: MobileTabId;
+  path: string;
+}
+
+const BOTTOM_DOCK_TABS = [
+  {
+    id: "explorer",
+    label: "Explorer",
+    slotId: "folder_tree",
+    fallback: LucideIcons.FolderTree,
+  },
+  {
+    id: "search",
+    label: "Search",
+    slotId: "search",
+    fallback: LucideIcons.Search,
+  },
+  {
+    id: "transfers",
+    label: "Transfers",
+    slotId: "download",
+    fallback: LucideIcons.ArrowDownToLine,
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    slotId: "settings",
+    fallback: LucideIcons.Settings2,
+  },
+] satisfies Array<{
+  id: MobileTabId;
+  label: string;
+  slotId: string;
+  fallback: LucideIcon;
+}>;
+
+const MOBILE_VIEW_MODE_BUTTONS = [
+  {
+    id: "icons-l",
+    label: "Large",
+    icon: LucideIcons.LayoutGrid,
+  },
+  {
+    id: "icons-m",
+    label: "Medium",
+    icon: LucideIcons.Grid2x2,
+  },
+  {
+    id: "icons-s",
+    label: "Compact",
+    icon: LucideIcons.Grid3x3,
+  },
+  {
+    id: "list",
+    label: "List",
+    icon: LucideIcons.List,
+  },
+] satisfies Array<{
+  id: MobileLayoutViewMode;
+  label: string;
+  icon: LucideIcon;
+}>;
+
+const SORT_CYCLE: MobileLayoutSettings["sortBy"][] = [
+  "name",
+  "date",
+  "size",
+  "type",
+];
 
 function buildMobileThemeCssVars(
   snapshot: MobileShareThemeSnapshot,
@@ -84,6 +162,97 @@ function applyMobileThemeSnapshot(snapshot: MobileShareThemeSnapshot): void {
   if (themeColorMeta) {
     themeColorMeta.content = snapshot.palette.appBackground;
   }
+}
+
+function readMobileLocationState(): MobileLocationState {
+  const params = new URLSearchParams(window.location.search);
+  const tabParam = params.get("tab");
+  const normalizedTab = BOTTOM_DOCK_TABS.some((tab) => tab.id === tabParam)
+    ? (tabParam as MobileTabId)
+    : "explorer";
+  const path = params.get("path")?.trim() ?? "";
+  return {
+    tab: normalizedTab,
+    path,
+  };
+}
+
+function buildMobileLocationUrl(state: MobileLocationState): string {
+  const params = new URLSearchParams();
+  if (state.tab !== "explorer") {
+    params.set("tab", state.tab);
+  }
+  if (state.path.length > 0) {
+    params.set("path", state.path);
+  }
+  const search = params.toString();
+  return search.length > 0
+    ? `${window.location.pathname}?${search}`
+    : window.location.pathname;
+}
+
+function buildLocationKey(state: MobileLocationState): string {
+  return `${state.tab}::${state.path}`;
+}
+
+function buildBrowseRequestOptions(
+  layout: MobileLayoutSettings,
+): MobileBrowseRequestOptions {
+  return {
+    showHiddenFiles: layout.showHiddenFiles,
+    sortBy: layout.sortBy,
+    sortOrder: layout.sortOrder,
+    directoriesFirst: layout.directoriesFirst,
+  };
+}
+
+function buildListingKey(
+  currentPath: string,
+  options: MobileBrowseRequestOptions,
+): string {
+  return JSON.stringify({
+    currentPath,
+    ...options,
+  });
+}
+
+function getGridMinWidth(layout: MobileLayoutSettings): number {
+  const baseWidth =
+    layout.viewMode === "icons-l"
+      ? 172
+      : layout.viewMode === "icons-s"
+        ? 92
+        : 128;
+  return Math.round(baseWidth * layout.gridZoom);
+}
+
+function getGridIconSize(layout: MobileLayoutSettings): number {
+  const baseSize =
+    layout.viewMode === "icons-l"
+      ? 76
+      : layout.viewMode === "icons-s"
+        ? 46
+        : 60;
+  return Math.round(baseSize * layout.gridZoom);
+}
+
+function formatSortLabel(sortBy: MobileLayoutSettings["sortBy"]): string {
+  switch (sortBy) {
+    case "date":
+      return "Date";
+    case "size":
+      return "Size";
+    case "type":
+      return "Type";
+    case "name":
+    default:
+      return "Name";
+  }
+}
+
+function cycleSortBy(current: MobileLayoutSettings["sortBy"]): MobileLayoutSettings["sortBy"] {
+  const currentIndex = SORT_CYCLE.indexOf(current);
+  return SORT_CYCLE[(currentIndex + 1) % SORT_CYCLE.length];
 }
 
 function matchesExplorerFilter(
@@ -166,10 +335,12 @@ function MobileEntryIcon({
   entry,
   themeSnapshot,
   openFolder = false,
+  size = 56,
 }: {
   entry: MobileShareEntry;
   themeSnapshot: MobileShareThemeSnapshot | null;
   openFolder?: boolean;
+  size?: number;
 }) {
   const iconUrl = resolveMobileEntryIconUrl(entry, themeSnapshot, openFolder);
   const FallbackIcon =
@@ -186,7 +357,14 @@ function MobileEntryIcon({
               : LucideIcons.FileText;
 
   return (
-    <div className="mobile-entry-icon">
+    <div
+      className="mobile-entry-icon"
+      style={
+        {
+          "--mobile-entry-icon-size": `${size}px`,
+        } as CSSProperties
+      }
+    >
       {entry.thumbnailUrl ? (
         <img
           className="mobile-entry-icon__thumbnail"
@@ -207,10 +385,12 @@ function MobileTransferRow({
   transfer,
   onRetry,
   onCancel,
+  onReveal,
 }: {
   transfer: ReturnType<typeof useMobileStore.getState>["transfers"][number];
   onRetry: () => void;
   onCancel: () => void;
+  onReveal: () => void;
 }) {
   const phaseLabel =
     transfer.phase === "handoff"
@@ -231,9 +411,14 @@ function MobileTransferRow({
           {phaseLabel}
         </div>
       </div>
-      <div className="mobile-transfer-card__path" title={transfer.targetPath}>
+      <button
+        type="button"
+        className="mobile-transfer-card__path"
+        title={transfer.targetPath}
+        onClick={onReveal}
+      >
         {formatRelativePath(transfer.targetPath)}
-      </div>
+      </button>
       {transfer.bytesTotal != null ? (
         <div className="mobile-transfer-card__progress">
           <div className="mobile-transfer-card__progress-track">
@@ -254,6 +439,9 @@ function MobileTransferRow({
         <div className="mobile-transfer-card__note">{transfer.message}</div>
       ) : null}
       <div className="mobile-transfer-card__actions">
+        <button className="mobile-action-button" type="button" onClick={onReveal}>
+          Show Folder
+        </button>
         {transfer.phase === "error" || transfer.phase === "canceled" ? (
           <button className="mobile-action-button" type="button" onClick={onRetry}>
             Retry
@@ -274,27 +462,33 @@ export default function App() {
     activeTab,
     explorerPath,
     transfers,
+    layoutOverrides,
     setActiveTab,
     setExplorerPath,
+    patchLayoutOverrides,
     createTransfer,
     patchTransfer,
     clearFinishedTransfers,
   } = useMobileStore();
 
-  const [currentPath, setCurrentPath] = useState(explorerPath);
+  const initialLocationStateRef = useRef<MobileLocationState>(readMobileLocationState());
+  const [currentPath, setCurrentPath] = useState(
+    initialLocationStateRef.current.path || explorerPath,
+  );
+  const [parentPath, setParentPath] = useState("");
   const [shareName, setShareName] = useState("GreebleFS");
   const [canGoUp, setCanGoUp] = useState(false);
   const [hubMode, setHubMode] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [entries, setEntries] = useState<Array<MobileShareEntry | null>>([]);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [isListingLoading, setIsListingLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [filterInput, setFilterInput] = useState("");
   const [installTipDismissed, setInstallTipDismissed] = useState(false);
   const [themeSnapshot, setThemeSnapshot] =
     useState<MobileShareThemeSnapshot | null>(null);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
   const [previewState, setPreviewState] = useState<{
     entry: MobileShareEntry | null;
     preview: MobilePreviewResponse | null;
@@ -321,115 +515,214 @@ export default function App() {
   });
   const [isStandalone, setIsStandalone] = useState(isStandaloneWebApp());
 
-  const listRef = useRef<HTMLDivElement | null>(null);
+  const explorerListRef = useRef<HTMLDivElement | null>(null);
   const generalUploadInputRef = useRef<HTMLInputElement | null>(null);
   const mediaUploadInputRef = useRef<HTMLInputElement | null>(null);
   const loadedPageKeysRef = useRef<Set<string>>(new Set());
-  const pendingPathRef = useRef(currentPath);
+  const activeListingKeyRef = useRef("");
+  const pendingScrollRestorePathRef = useRef<string | null>(currentPath);
+  const scrollPositionsRef = useRef<Map<string, number>>(new Map());
   const uploadCancellationRef = useRef<Map<string, () => void>>(new Map());
+  const historyWriteModeRef = useRef<"push" | "replace">("replace");
+  const lastLocationKeyRef = useRef("");
+  const isApplyingPopStateRef = useRef(false);
+
   const deferredFilterInput = useDeferredValue(filterInput.trim().toLowerCase());
   const showInstallTip = !installTipDismissed && isIosSafari() && !isStandalone;
 
-  const loadedEntries = entries.filter(
-    (entry): entry is MobileShareEntry => entry !== null,
+  const resolvedLayout = useMemo(
+    () =>
+      normalizeMobileLayoutSettings(
+        themeSnapshot?.layout ?? defaultMobileLayoutSettings,
+        layoutOverrides,
+      ),
+    [layoutOverrides, themeSnapshot?.layout],
   );
-  const filteredEntries = deferredFilterInput
-    ? loadedEntries.filter((entry) =>
-        matchesExplorerFilter(entry, deferredFilterInput),
-      )
-    : entries;
+  const browseRequestOptions = useMemo(
+    () => buildBrowseRequestOptions(resolvedLayout),
+    [resolvedLayout],
+  );
+  const browsePolicyKey = useMemo(
+    () => buildListingKey(currentPath, browseRequestOptions),
+    [browseRequestOptions, currentPath],
+  );
+  const loadedEntries = useMemo(
+    () => entries.filter((entry): entry is MobileShareEntry => entry !== null),
+    [entries],
+  );
+  const filteredEntries = useMemo(() => {
+    if (!deferredFilterInput) {
+      return loadedEntries;
+    }
+    return loadedEntries.filter((entry) =>
+      matchesExplorerFilter(entry, deferredFilterInput),
+    );
+  }, [deferredFilterInput, loadedEntries]);
+  const breadcrumbSegments = useMemo(
+    () => currentPath.split("/").filter(Boolean),
+    [currentPath],
+  );
+  const gridCardSize = getGridIconSize(resolvedLayout);
+  const gridStyle = useMemo(
+    () =>
+      ({
+        "--mobile-grid-min-width": `${getGridMinWidth(resolvedLayout)}px`,
+      }) as CSSProperties,
+    [resolvedLayout],
+  );
 
-  const totalRows = filteredEntries.length;
-  const visibleRowCount = Math.ceil(viewportHeight / MOBILE_ROW_HEIGHT);
-  const startIndex = Math.max(
-    0,
-    Math.floor(scrollTop / MOBILE_ROW_HEIGHT) - MOBILE_OVERSCAN_ROWS,
-  );
-  const endIndex = Math.min(
-    totalRows,
-    startIndex + visibleRowCount + MOBILE_OVERSCAN_ROWS * 2,
-  );
-  const visibleRows = filteredEntries.slice(startIndex, endIndex);
-  const topSpacerHeight = startIndex * MOBILE_ROW_HEIGHT;
-  const bottomSpacerHeight = Math.max(
-    0,
-    (totalRows - endIndex) * MOBILE_ROW_HEIGHT,
-  );
+  function commitLocationState(
+    nextState: MobileLocationState,
+    mode: "push" | "replace",
+  ): void {
+    const nextKey = buildLocationKey(nextState);
+    const nextUrl = buildMobileLocationUrl(nextState);
 
-  function resetListingState(nextPath: string) {
-    pendingPathRef.current = nextPath;
-    loadedPageKeysRef.current = new Set();
-    setEntries([]);
-    setTotalCount(0);
-    setCanGoUp(false);
-    setHubMode(false);
-    setNextOffset(null);
-    setLoadingError(null);
+    if (mode === "push" && nextKey !== lastLocationKeyRef.current) {
+      window.history.pushState(nextState, "", nextUrl);
+    } else {
+      window.history.replaceState(nextState, "", nextUrl);
+    }
+
+    lastLocationKeyRef.current = nextKey;
+  }
+
+  function writeLocationState(mode: "push" | "replace"): void {
+    commitLocationState(
+      {
+        tab: activeTab,
+        path: currentPath,
+      },
+      mode,
+    );
+  }
+
+  function saveExplorerScrollPosition(path: string = currentPath): void {
+    if (!path && !hubMode) {
+      scrollPositionsRef.current.set("", explorerListRef.current?.scrollTop ?? 0);
+      return;
+    }
+    scrollPositionsRef.current.set(path, explorerListRef.current?.scrollTop ?? 0);
+  }
+
+  function clearPreview(): void {
     setPreviewState({
       entry: null,
       preview: null,
       loading: false,
       error: null,
     });
-    setScrollTop(0);
-    if (listRef.current) {
-      listRef.current.scrollTop = 0;
-    }
   }
 
-  async function loadPage(path: string, offset: number) {
-    const pageKey = `${path}::${offset}`;
+  function resetListingState(nextPath: string): void {
+    loadedPageKeysRef.current = new Set();
+    activeListingKeyRef.current = buildListingKey(nextPath, browseRequestOptions);
+    pendingScrollRestorePathRef.current = nextPath;
+    setEntries([]);
+    setParentPath("");
+    setTotalCount(0);
+    setCanGoUp(false);
+    setHubMode(false);
+    setNextOffset(null);
+    setLoadingError(null);
+    clearPreview();
+  }
+
+  async function loadDirectoryPage(path: string, offset: number): Promise<void> {
+    const listingKey = buildListingKey(path, browseRequestOptions);
+    const pageKey = `${listingKey}::${offset}`;
     if (loadedPageKeysRef.current.has(pageKey)) {
       return;
     }
+
     loadedPageKeysRef.current.add(pageKey);
+    if (offset === 0) {
+      setIsListingLoading(true);
+    } else {
+      setIsLoadingMore(true);
+    }
 
     try {
-      const response = await fetchMobileListing(path, offset, MOBILE_PAGE_SIZE);
-      if (pendingPathRef.current !== path) {
+      const response = await fetchMobileListing(
+        path,
+        offset,
+        browseRequestOptions,
+        MOBILE_PAGE_SIZE,
+      );
+      if (activeListingKeyRef.current !== listingKey) {
         return;
       }
 
-      startTransition(() => {
-        setShareName(response.shareName);
-        setCanGoUp(response.canGoUp);
-        setHubMode(response.hubMode);
-        setTotalCount(response.totalCount);
-        setNextOffset(response.nextOffset);
-        setEntries((current) => {
-          const nextEntries: Array<MobileShareEntry | null> =
-            current.length === response.totalCount
-              ? [...current]
-              : Array.from({ length: response.totalCount }, (_, index) => {
-                  return current[index] ?? null;
-                });
-          response.entries.forEach((entry, index) => {
-            nextEntries[response.offset + index] = entry;
-          });
-          return nextEntries;
+      setShareName(response.shareName);
+      setParentPath(response.parentPath);
+      setCanGoUp(response.canGoUp);
+      setHubMode(response.hubMode);
+      setTotalCount(response.totalCount);
+      setNextOffset(response.nextOffset);
+      setEntries((current) => {
+        const nextEntries: Array<MobileShareEntry | null> =
+          current.length === response.totalCount
+            ? [...current]
+            : Array.from({ length: response.totalCount }, (_, index) => {
+                return current[index] ?? null;
+              });
+        response.entries.forEach((entry, index) => {
+          nextEntries[response.offset + index] = entry;
         });
+        return nextEntries;
       });
+      setLoadingError(null);
     } catch (error) {
       loadedPageKeysRef.current.delete(pageKey);
-      if (pendingPathRef.current === path) {
+      if (activeListingKeyRef.current === listingKey) {
         setLoadingError(
           error instanceof Error
             ? error.message
-            : "Failed to load the mobile share.",
+            : "Failed to load the paired explorer.",
         );
+      }
+    } finally {
+      if (activeListingKeyRef.current === listingKey) {
+        setIsListingLoading(false);
+        setIsLoadingMore(false);
       }
     }
   }
 
-  async function refreshCurrentDirectory(nextPath: string = currentPath) {
+  function navigateTo(nextState: MobileLocationState, mode: "push" | "replace" = "push"): void {
+    historyWriteModeRef.current = mode;
+    commitLocationState(nextState, mode);
+    if (activeTab !== nextState.tab) {
+      setActiveTab(nextState.tab);
+    }
+    if (currentPath !== nextState.path) {
+      saveExplorerScrollPosition();
+      setCurrentPath(nextState.path);
+    }
+    if (activeTab === nextState.tab && currentPath === nextState.path) {
+      writeLocationState(mode);
+    }
+  }
+
+  function navigateToExplorerPath(nextPath: string, mode: "push" | "replace" = "push"): void {
+    navigateTo(
+      {
+        tab: "explorer",
+        path: nextPath,
+      },
+      mode,
+    );
+  }
+
+  async function refreshCurrentDirectory(nextPath: string = currentPath): Promise<void> {
     resetListingState(nextPath);
-    await loadPage(nextPath, 0);
+    await loadDirectoryPage(nextPath, 0);
   }
 
   async function openPreviewForPath(
     relativePath: string,
     fallbackEntry: MobileShareEntry | null,
-  ) {
+  ): Promise<void> {
     setPreviewState({
       entry: fallbackEntry,
       preview: null,
@@ -438,7 +731,9 @@ export default function App() {
     });
 
     try {
-      const preview = await fetchMobilePreview(relativePath);
+      const preview = await fetchMobilePreview(relativePath, {
+        showHiddenFiles: resolvedLayout.showHiddenFiles,
+      });
       setPreviewState({
         entry: preview.entry,
         preview,
@@ -481,7 +776,13 @@ export default function App() {
     patchTransfer(transferId, {
       phase: "completed",
     });
-    setActiveTab("transfers");
+    navigateTo(
+      {
+        tab: "transfers",
+        path: currentPath,
+      },
+      "push",
+    );
   }
 
   function beginUploadTransfer(
@@ -559,7 +860,13 @@ export default function App() {
         });
     }
 
-    setActiveTab("transfers");
+    navigateTo(
+      {
+        tab: "transfers",
+        path: currentPath,
+      },
+      "push",
+    );
   }
 
   function handleUploadSelection(
@@ -595,26 +902,99 @@ export default function App() {
     }
   }
 
+  function revealTransferPath(targetPath: string): void {
+    const parentTargetPath =
+      targetPath.split("/").filter(Boolean).length > 1 && !targetPath.endsWith("/")
+        ? targetPath.split("/").slice(0, -1).join("/")
+        : targetPath;
+    navigateToExplorerPath(parentTargetPath, "push");
+  }
+
+  function handleExplorerScroll(event: UIEvent<HTMLDivElement>): void {
+    const container = event.currentTarget;
+    scrollPositionsRef.current.set(currentPath, container.scrollTop);
+
+    if (
+      nextOffset != null
+      && !isLoadingMore
+      && container.scrollTop + container.clientHeight >= container.scrollHeight - 240
+    ) {
+      void loadDirectoryPage(currentPath, nextOffset);
+    }
+  }
+
+  useEffect(() => {
+    if (lastLocationKeyRef.current.length > 0) {
+      return;
+    }
+
+    const initialState = initialLocationStateRef.current;
+    if (activeTab !== initialState.tab) {
+      setActiveTab(initialState.tab);
+    }
+    if (explorerPath !== initialState.path) {
+      setExplorerPath(initialState.path);
+    }
+    lastLocationKeyRef.current = buildLocationKey(initialState);
+    window.history.replaceState(initialState, "", buildMobileLocationUrl(initialState));
+  }, []);
+
   useEffect(() => {
     resetListingState(currentPath);
-    void loadPage(currentPath, 0);
-  }, [currentPath]);
+    void loadDirectoryPage(currentPath, 0);
+  }, [browsePolicyKey]);
 
   useEffect(() => {
     setExplorerPath(currentPath);
   }, [currentPath, setExplorerPath]);
 
   useEffect(() => {
-    const updateViewportHeight = () => {
-      setViewportHeight(listRef.current?.clientHeight ?? 0);
+    const nextState = {
+      tab: activeTab,
+      path: currentPath,
+    } satisfies MobileLocationState;
+
+    if (isApplyingPopStateRef.current) {
+      isApplyingPopStateRef.current = false;
+      lastLocationKeyRef.current = buildLocationKey(nextState);
+      return;
+    }
+
+    writeLocationState(historyWriteModeRef.current);
+    historyWriteModeRef.current = "replace";
+  }, [activeTab, currentPath]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const nextState = readMobileLocationState();
+      isApplyingPopStateRef.current = true;
+      setActiveTab(nextState.tab);
+      setCurrentPath(nextState.path);
     };
 
-    updateViewportHeight();
-    window.addEventListener("resize", updateViewportHeight);
+    window.addEventListener("popstate", handlePopState);
     return () => {
-      window.removeEventListener("resize", updateViewportHeight);
+      window.removeEventListener("popstate", handlePopState);
     };
-  }, []);
+  }, [setActiveTab]);
+
+  useEffect(() => {
+    if (
+      pendingScrollRestorePathRef.current !== currentPath
+      || isListingLoading
+      || explorerListRef.current == null
+    ) {
+      return;
+    }
+
+    const targetScrollTop = scrollPositionsRef.current.get(currentPath) ?? 0;
+    window.requestAnimationFrame(() => {
+      if (explorerListRef.current) {
+        explorerListRef.current.scrollTop = targetScrollTop;
+      }
+    });
+    pendingScrollRestorePathRef.current = null;
+  }, [currentPath, entries.length, isListingLoading]);
 
   useEffect(() => {
     const syncStandaloneMode = () => {
@@ -676,34 +1056,6 @@ export default function App() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
-
-  useEffect(() => {
-    if (nextOffset == null || listRef.current == null || deferredFilterInput) {
-      return;
-    }
-
-    const shouldLoadNextPage =
-      scrollTop + viewportHeight >=
-      Math.max(0, totalCount * MOBILE_ROW_HEIGHT - MOBILE_ROW_HEIGHT * 6);
-
-    if (shouldLoadNextPage) {
-      void loadPage(currentPath, nextOffset);
-    }
-  }, [
-    currentPath,
-    deferredFilterInput,
-    nextOffset,
-    scrollTop,
-    totalCount,
-    viewportHeight,
-  ]);
-
-  useEffect(() => {
-    if (!deferredFilterInput || nextOffset == null) {
-      return;
-    }
-    void loadPage(currentPath, nextOffset);
-  }, [currentPath, deferredFilterInput, nextOffset]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -777,7 +1129,10 @@ export default function App() {
       error: null,
     }));
 
-    void fetchMobileSearchResults(searchQuery)
+    void fetchMobileSearchResults(searchQuery, {
+      showHiddenFiles: resolvedLayout.showHiddenFiles,
+      limit: 48,
+    })
       .then((response) => {
         if (cancelled) {
           return;
@@ -804,16 +1159,14 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [searchQuery]);
+  }, [resolvedLayout.showHiddenFiles, searchQuery]);
 
-  const breadcrumbSegments = currentPath.split("/").filter(Boolean);
-
-  function renderExplorerList() {
+  function renderExplorerEntries() {
     if (loadingError) {
       return <div className="mobile-empty-state">{loadingError}</div>;
     }
 
-    if (entries.length === 0 && nextOffset === null && totalCount === 0) {
+    if (isListingLoading && entries.length === 0) {
       return <div className="mobile-empty-state">Loading explorer…</div>;
     }
 
@@ -827,53 +1180,26 @@ export default function App() {
       );
     }
 
-    return (
-      <div
-        className="mobile-list__virtual-space"
-        style={{ height: totalRows * MOBILE_ROW_HEIGHT }}
-      >
-        <div style={{ height: topSpacerHeight }} />
-        {visibleRows.map((entry, visibleIndex) => {
-          if (!entry) {
-            return (
-              <div
-                key={`placeholder-${startIndex + visibleIndex}`}
-                className="mobile-row mobile-row--placeholder"
-                style={{ height: MOBILE_ROW_HEIGHT }}
-              >
-                <div className="mobile-entry-icon mobile-entry-icon--placeholder">
-                  …
-                </div>
-                <div className="mobile-row__content">
-                  <div className="mobile-row__name">Loading entry…</div>
-                </div>
-              </div>
-            );
-          }
-
-          const rowMeta = getRowMetaLabel(entry);
-
-          return (
-            <div
-              key={entry.relativePath}
-              className="mobile-row"
-              style={{ height: MOBILE_ROW_HEIGHT }}
-            >
+    if (!isMobileGridViewMode(resolvedLayout.viewMode)) {
+      return (
+        <div className="mobile-list-surface">
+          {filteredEntries.map((entry) => (
+            <article className="mobile-row" key={entry.relativePath}>
               <button
                 type="button"
                 className="mobile-row__main"
                 onClick={() => {
                   if (entry.isDir) {
-                    setCurrentPath(entry.relativePath);
+                    navigateToExplorerPath(entry.relativePath, "push");
                     return;
                   }
                   void openPreviewForPath(entry.relativePath, entry);
                 }}
               >
-                <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} />
+                <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} size={52} />
                 <div className="mobile-row__content">
                   <div className="mobile-row__name">{entry.name}</div>
-                  <div className="mobile-row__meta">{rowMeta}</div>
+                  <div className="mobile-row__meta">{getRowMetaLabel(entry)}</div>
                 </div>
               </button>
               <div className="mobile-row__actions">
@@ -906,10 +1232,54 @@ export default function App() {
                   </span>
                 )}
               </div>
+            </article>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className={`mobile-grid mobile-grid--${resolvedLayout.viewMode}`}
+        style={gridStyle}
+      >
+        {filteredEntries.map((entry) => (
+          <button
+            key={entry.relativePath}
+            type="button"
+            className={`mobile-grid-card${
+              entry.isDir ? " mobile-grid-card--directory" : ""
+            }`}
+            onClick={() => {
+              if (entry.isDir) {
+                navigateToExplorerPath(entry.relativePath, "push");
+                return;
+              }
+              void openPreviewForPath(entry.relativePath, entry);
+            }}
+          >
+            <div className="mobile-grid-card__icon-wrap">
+              <MobileEntryIcon
+                entry={entry}
+                themeSnapshot={themeSnapshot}
+                openFolder={entry.isDir}
+                size={gridCardSize}
+              />
             </div>
-          );
-        })}
-        <div style={{ height: bottomSpacerHeight }} />
+            <div className="mobile-grid-card__content">
+              <div className="mobile-grid-card__name">{entry.name}</div>
+              <div className="mobile-grid-card__meta">
+                {entry.isDir
+                  ? entry.isHidden
+                    ? "Hidden folder"
+                    : "Folder"
+                  : entry.size > 0
+                    ? formatBytes(entry.size)
+                    : getRowMetaLabel(entry)}
+              </div>
+            </div>
+          </button>
+        ))}
       </div>
     );
   }
@@ -946,20 +1316,18 @@ export default function App() {
           className="mobile-search-result__main"
           onClick={() => {
             if (entry.isDir) {
-              setCurrentPath(entry.relativePath);
-              setActiveTab("explorer");
+              navigateToExplorerPath(entry.relativePath, "push");
               return;
             }
-            setCurrentPath(entry.parentRelativePath);
+            navigateToExplorerPath(entry.parentRelativePath, "push");
             void openPreviewForPath(entry.relativePath, entry);
           }}
         >
-          <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} />
+          <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} size={52} />
           <div className="mobile-search-result__content">
             <div className="mobile-search-result__name">{entry.name}</div>
             <div className="mobile-search-result__meta">
-              {formatRelativePath(entry.parentRelativePath)} ·{" "}
-              {getRowMetaLabel(entry)}
+              {formatRelativePath(entry.parentRelativePath)} · {getRowMetaLabel(entry)}
             </div>
           </div>
         </button>
@@ -980,8 +1348,10 @@ export default function App() {
             type="button"
             className="mobile-icon-button"
             onClick={() => {
-              setCurrentPath(entry.parentRelativePath);
-              setActiveTab("explorer");
+              navigateToExplorerPath(
+                entry.isDir ? entry.relativePath : entry.parentRelativePath,
+                "push",
+              );
             }}
             aria-label={`Jump to ${entry.name}`}
           >
@@ -1069,19 +1439,14 @@ export default function App() {
                   className="mobile-preview-summary__row"
                   onClick={() => {
                     if (entry.isDir) {
-                      setCurrentPath(entry.relativePath);
-                      setPreviewState({
-                        entry: null,
-                        preview: null,
-                        loading: false,
-                        error: null,
-                      });
+                      clearPreview();
+                      navigateToExplorerPath(entry.relativePath, "push");
                       return;
                     }
                     void openPreviewForPath(entry.relativePath, entry);
                   }}
                 >
-                  <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} />
+                  <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} size={46} />
                   <div className="mobile-preview-summary__row-content">
                     <div>{entry.name}</div>
                     <div className="mobile-preview-summary__row-meta">
@@ -1093,7 +1458,7 @@ export default function App() {
             </div>
             {preview.folderSummary?.truncated ? (
               <div className="mobile-preview-summary__footnote">
-                Folder preview is capped to keep the phone surface fast.
+                Folder preview is capped so the phone stays fast.
               </div>
             ) : null}
           </div>
@@ -1112,7 +1477,7 @@ export default function App() {
                   key={entry.relativePath}
                   className="mobile-preview-summary__row mobile-preview-summary__row--static"
                 >
-                  <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} />
+                  <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} size={46} />
                   <div className="mobile-preview-summary__row-content">
                     <div>{entry.name}</div>
                     <div className="mobile-preview-summary__row-meta">
@@ -1142,6 +1507,7 @@ export default function App() {
   return (
     <div className="mobile-shell">
       <div className="mobile-shell__backdrop" />
+
       <header className="mobile-topbar">
         <div>
           <div className="mobile-topbar__eyebrow">Sovereign Mobile Link</div>
@@ -1179,7 +1545,7 @@ export default function App() {
           <div className="mobile-hero__title">Install the paired shell</div>
           <div className="mobile-hero__body">
             In Safari, tap Share, then choose Add to Home Screen so GreebleFS opens
-            as its own app card with the full standalone shell.
+            as its own task-switcher card with standalone chrome.
           </div>
           <button
             type="button"
@@ -1195,114 +1561,117 @@ export default function App() {
 
       <main className="mobile-main">
         {activeTab === "explorer" ? (
-          <section className="mobile-tab">
-            <div className="mobile-toolbar">
-              <button
-                type="button"
-                className="mobile-pill-button"
-                disabled={!canGoUp}
-                onClick={() => {
-                  setCurrentPath(buildParentPath(currentPath));
-                }}
-              >
-                <LucideIcons.ChevronUp size={18} strokeWidth={1.7} />
-                Up
-              </button>
-              <button
-                type="button"
-                className="mobile-pill-button"
-                onClick={() => {
-                  generalUploadInputRef.current?.click();
-                }}
-              >
-                <LucideIcons.Upload size={18} strokeWidth={1.7} />
-                Files
-              </button>
-              <button
-                type="button"
-                className="mobile-pill-button"
-                onClick={() => {
-                  mediaUploadInputRef.current?.click();
-                }}
-              >
-                <LucideIcons.Images size={18} strokeWidth={1.7} />
-                Photos
-              </button>
-            </div>
-
-            <div className="mobile-toolbar__path" title={formatRelativePath(currentPath)}>
-              {formatRelativePath(currentPath)}
-            </div>
-
-            <nav className="mobile-breadcrumbs" aria-label="Current path">
-              <button
-                type="button"
-                className={`mobile-breadcrumbs__segment${
-                  currentPath.length === 0
-                    ? " mobile-breadcrumbs__segment--current"
-                    : ""
-                }`}
-                onClick={() => {
-                  setCurrentPath("");
-                }}
-              >
-                Shared
-              </button>
-              {breadcrumbSegments.map((segment, index) => {
-                const segmentPath = breadcrumbSegments.slice(0, index + 1).join("/");
-                return (
+          <section className="mobile-tab mobile-tab--explorer">
+            <div className="mobile-explorer-header">
+              <div className="mobile-explorer-header__top">
+                <div>
+                  <div className="mobile-explorer-header__title">Browse</div>
+                  <div className="mobile-explorer-header__meta">
+                    {deferredFilterInput
+                      ? `${filteredEntries.length} visible of ${totalCount}`
+                      : `${loadedEntries.length} loaded of ${totalCount}`}
+                    {" · "}
+                    {formatSortLabel(resolvedLayout.sortBy)}
+                    {" · "}
+                    {resolvedLayout.sortOrder === "asc" ? "Asc" : "Desc"}
+                  </div>
+                </div>
+                <div className="mobile-explorer-header__controls">
                   <button
-                    key={segmentPath}
                     type="button"
-                    className={`mobile-breadcrumbs__segment${
-                      index === breadcrumbSegments.length - 1
-                        ? " mobile-breadcrumbs__segment--current"
-                        : ""
-                    }`}
+                    className="mobile-icon-button"
                     onClick={() => {
-                      setCurrentPath(segmentPath);
+                      window.history.back();
                     }}
+                    aria-label="Go back"
                   >
-                    {segment}
+                    <LucideIcons.ChevronLeft size={18} strokeWidth={1.7} />
                   </button>
-                );
-              })}
-            </nav>
+                  <button
+                    type="button"
+                    className="mobile-icon-button"
+                    disabled={!canGoUp}
+                    onClick={() => {
+                      navigateToExplorerPath(parentPath, "push");
+                    }}
+                    aria-label="Go up"
+                  >
+                    <LucideIcons.ChevronUp size={18} strokeWidth={1.7} />
+                  </button>
+                  <button
+                    type="button"
+                    className="mobile-icon-button"
+                    onClick={() => {
+                      navigateToExplorerPath("", "push");
+                    }}
+                    aria-label="Go to root"
+                  >
+                    <LucideIcons.House size={18} strokeWidth={1.7} />
+                  </button>
+                </div>
+              </div>
 
-            <div className="mobile-search">
-              <input
-                value={filterInput}
-                onChange={(event) => {
-                  setFilterInput(event.target.value);
-                }}
-                className="mobile-search__input"
-                placeholder="Quick filter this folder"
-                type="search"
-              />
+              <div className="mobile-breadcrumbs mobile-breadcrumbs--scroll">
+                <button
+                  type="button"
+                  className={`mobile-breadcrumbs__segment${
+                    currentPath.length === 0 ? " mobile-breadcrumbs__segment--current" : ""
+                  }`}
+                  onClick={() => {
+                    navigateToExplorerPath("", "push");
+                  }}
+                >
+                  Shared
+                </button>
+                {breadcrumbSegments.map((segment, index) => {
+                  const segmentPath = breadcrumbSegments.slice(0, index + 1).join("/");
+                  return (
+                    <button
+                      key={segmentPath}
+                      type="button"
+                      className={`mobile-breadcrumbs__segment${
+                        index === breadcrumbSegments.length - 1
+                          ? " mobile-breadcrumbs__segment--current"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        navigateToExplorerPath(segmentPath, "push");
+                      }}
+                    >
+                      {segment}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mobile-search">
+                <input
+                  value={filterInput}
+                  onChange={(event) => {
+                    setFilterInput(event.target.value);
+                  }}
+                  className="mobile-search__input"
+                  placeholder="Quick filter this folder"
+                  type="search"
+                />
+              </div>
             </div>
 
             <section
-              className="mobile-list"
-              ref={listRef}
-              onScroll={(event) => {
-                setScrollTop(event.currentTarget.scrollTop);
-              }}
+              className="mobile-explorer-list"
+              ref={explorerListRef}
+              onScroll={handleExplorerScroll}
             >
-              <div className="mobile-list__metrics">
-                <div>
-                  {deferredFilterInput
-                    ? `${filteredEntries.length} visible of ${totalCount}`
-                    : `${totalCount} entries`}
-                </div>
-                <div>{hubMode ? "Hub mode" : formatRelativePath(currentPath)}</div>
-              </div>
-              {renderExplorerList()}
+              {renderExplorerEntries()}
+              {isLoadingMore ? (
+                <div className="mobile-list-loading">Loading more entries…</div>
+              ) : null}
             </section>
           </section>
         ) : null}
 
         {activeTab === "search" ? (
-          <section className="mobile-tab">
+          <section className="mobile-tab mobile-tab--scroll">
             <div className="mobile-hero mobile-hero--compact">
               <div className="mobile-hero__title">Indexed Search</div>
               <div className="mobile-hero__body">
@@ -1387,7 +1756,7 @@ export default function App() {
         ) : null}
 
         {activeTab === "transfers" ? (
-          <section className="mobile-tab">
+          <section className="mobile-tab mobile-tab--scroll">
             <div className="mobile-hero mobile-hero--compact">
               <div className="mobile-hero__title">Transfers</div>
               <div className="mobile-hero__body">
@@ -1422,6 +1791,9 @@ export default function App() {
                     onCancel={() => {
                       cancelTransfer(transfer.id);
                     }}
+                    onReveal={() => {
+                      revealTransferPath(transfer.targetPath);
+                    }}
                   />
                 ))
               )}
@@ -1430,7 +1802,7 @@ export default function App() {
         ) : null}
 
         {activeTab === "settings" ? (
-          <section className="mobile-tab">
+          <section className="mobile-tab mobile-tab--scroll">
             <div className="mobile-stack">
               <article className="mobile-settings-card">
                 <div className="mobile-settings-card__title">Pair State</div>
@@ -1449,6 +1821,32 @@ export default function App() {
                 <div className="mobile-settings-card__row">
                   <span>URL</span>
                   <span>{window.location.origin}</span>
+                </div>
+              </article>
+
+              <article className="mobile-settings-card">
+                <div className="mobile-settings-card__title">Layout</div>
+                <div className="mobile-settings-card__row">
+                  <span>View mode</span>
+                  <span>{resolvedLayout.viewMode}</span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Grid zoom</span>
+                  <span>{resolvedLayout.gridZoom.toFixed(2)}x</span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Sort</span>
+                  <span>
+                    {resolvedLayout.sortBy} · {resolvedLayout.sortOrder}
+                  </span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Hidden files</span>
+                  <span>{resolvedLayout.showHiddenFiles ? "Visible" : "Hidden"}</span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Dock labels</span>
+                  <span>{resolvedLayout.showTabLabels ? "Shown" : "Icons only"}</span>
                 </div>
               </article>
 
@@ -1491,40 +1889,142 @@ export default function App() {
         ) : null}
       </main>
 
+      {activeTab === "explorer" ? (
+        <div className="mobile-explorer-actions" aria-label="Explorer actions">
+          <div className="mobile-explorer-actions__scroller">
+            <div className="mobile-segment-group">
+              {MOBILE_VIEW_MODE_BUTTONS.map((option) => {
+                const Icon = option.icon;
+                const active = resolvedLayout.viewMode === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`mobile-segment-button${
+                      active ? " mobile-segment-button--active" : ""
+                    }`}
+                    onClick={() => {
+                      patchLayoutOverrides({
+                        viewMode: option.id,
+                      });
+                    }}
+                    aria-label={`Switch to ${option.label} view`}
+                  >
+                    <Icon size={15} strokeWidth={1.7} />
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mobile-segment-group">
+              <button
+                type="button"
+                className="mobile-segment-button"
+                onClick={() => {
+                  patchLayoutOverrides({
+                    gridZoom: normalizeMobileGridZoom(resolvedLayout.gridZoom - 0.1),
+                  });
+                }}
+                disabled={!isMobileGridViewMode(resolvedLayout.viewMode)}
+                aria-label="Zoom grid out"
+              >
+                <LucideIcons.ZoomOut size={15} strokeWidth={1.7} />
+              </button>
+              <span className="mobile-segment-badge">
+                {resolvedLayout.gridZoom.toFixed(1)}x
+              </span>
+              <button
+                type="button"
+                className="mobile-segment-button"
+                onClick={() => {
+                  patchLayoutOverrides({
+                    gridZoom: normalizeMobileGridZoom(resolvedLayout.gridZoom + 0.1),
+                  });
+                }}
+                disabled={!isMobileGridViewMode(resolvedLayout.viewMode)}
+                aria-label="Zoom grid in"
+              >
+                <LucideIcons.ZoomIn size={15} strokeWidth={1.7} />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className="mobile-toolbar-chip"
+              onClick={() => {
+                patchLayoutOverrides({
+                  sortBy: cycleSortBy(resolvedLayout.sortBy),
+                });
+              }}
+            >
+              <LucideIcons.ArrowUpDown size={15} strokeWidth={1.7} />
+              Sort {formatSortLabel(resolvedLayout.sortBy)}
+            </button>
+
+            <button
+              type="button"
+              className="mobile-toolbar-chip"
+              onClick={() => {
+                patchLayoutOverrides({
+                  sortOrder: resolvedLayout.sortOrder === "asc" ? "desc" : "asc",
+                });
+              }}
+            >
+              {resolvedLayout.sortOrder === "asc" ? (
+                <LucideIcons.ArrowUp size={15} strokeWidth={1.7} />
+              ) : (
+                <LucideIcons.ArrowDown size={15} strokeWidth={1.7} />
+              )}
+              {resolvedLayout.sortOrder === "asc" ? "Ascending" : "Descending"}
+            </button>
+
+            <button
+              type="button"
+              className={`mobile-toolbar-chip${
+                resolvedLayout.showHiddenFiles ? " mobile-toolbar-chip--active" : ""
+              }`}
+              onClick={() => {
+                patchLayoutOverrides({
+                  showHiddenFiles: !resolvedLayout.showHiddenFiles,
+                });
+              }}
+            >
+              {resolvedLayout.showHiddenFiles ? (
+                <LucideIcons.Eye size={15} strokeWidth={1.7} />
+              ) : (
+                <LucideIcons.EyeOff size={15} strokeWidth={1.7} />
+              )}
+              Hidden {resolvedLayout.showHiddenFiles ? "On" : "Off"}
+            </button>
+
+            <button
+              type="button"
+              className="mobile-toolbar-chip mobile-toolbar-chip--accent"
+              onClick={() => {
+                generalUploadInputRef.current?.click();
+              }}
+            >
+              <LucideIcons.Upload size={15} strokeWidth={1.7} />
+              Upload
+            </button>
+
+            <button
+              type="button"
+              className="mobile-toolbar-chip"
+              onClick={() => {
+                mediaUploadInputRef.current?.click();
+              }}
+            >
+              <LucideIcons.Images size={15} strokeWidth={1.7} />
+              Photos
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <nav className="mobile-bottom-nav" aria-label="Mobile sections">
-        {(
-          [
-            {
-              id: "explorer",
-              label: "Explorer",
-              slotId: "folder_tree",
-              fallback: LucideIcons.FolderTree,
-            },
-            {
-              id: "search",
-              label: "Search",
-              slotId: "search",
-              fallback: LucideIcons.Search,
-            },
-            {
-              id: "transfers",
-              label: "Transfers",
-              slotId: "download",
-              fallback: LucideIcons.ArrowDownToLine,
-            },
-            {
-              id: "settings",
-              label: "Settings",
-              slotId: "settings",
-              fallback: LucideIcons.Settings2,
-            },
-          ] satisfies Array<{
-            id: MobileTabId;
-            label: string;
-            slotId: string;
-            fallback: LucideIcon;
-          }>
-        ).map((tab) => (
+        {BOTTOM_DOCK_TABS.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -1532,8 +2032,15 @@ export default function App() {
               activeTab === tab.id ? " mobile-bottom-nav__item--active" : ""
             }`}
             onClick={() => {
-              setActiveTab(tab.id);
+              navigateTo(
+                {
+                  tab: tab.id,
+                  path: currentPath,
+                },
+                "push",
+              );
             }}
+            aria-label={tab.label}
           >
             <span className="mobile-bottom-nav__icon">
               {renderThemedIcon({
@@ -1543,7 +2050,9 @@ export default function App() {
                 className: "mobile-bottom-nav__icon-svg",
               })}
             </span>
-            <span>{tab.label}</span>
+            {resolvedLayout.showTabLabels ? (
+              <span className="mobile-bottom-nav__label">{tab.label}</span>
+            ) : null}
           </button>
         ))}
       </nav>
@@ -1583,12 +2092,7 @@ export default function App() {
               type="button"
               className="mobile-pill-button"
               onClick={() => {
-                setPreviewState({
-                  entry: null,
-                  preview: null,
-                  loading: false,
-                  error: null,
-                });
+                clearPreview();
               }}
             >
               Close

@@ -1022,13 +1022,13 @@ function App() {
     () => createMobileShareThemeSnapshot(resolvedAppearance, {
       folderIconRules: explorerSettings.folderIconRules,
       defaultFolderIcon: explorerSettings.defaultFolderIcon,
-      layout: settings.mobile.layout,
+      layout: mobileSettings.layout,
     }),
     [
       resolvedAppearance,
       explorerSettings.defaultFolderIcon,
       explorerSettings.folderIconRules,
-      settings.mobile.layout,
+      mobileSettings.layout,
     ],
   );
   const resolvedTopBarSelection = useMemo(

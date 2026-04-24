@@ -1,3 +1,19 @@
+# 2026-04-23 - Settings Now Exposes Modular Theme Bundle Lanes As First-Class Menus
+
+- The bundle-first theme refactor is now surfaced directly in Settings instead of being hidden behind `theme.json` and bundle manifests only. The bottom appearance cluster now has dedicated rail sections for `Appearance Packs`, `Theme Recipes`, `Theme Engines`, and `Shell Renderers`, while `Interaction Motion` also shows the new standalone motion-pack catalog root.
+- Durable implementation shape:
+  - `src/components/SettingsPage.tsx` now treats the modular theme lanes as first-class catalog sections. Each new section follows the existing authored-catalog pattern: current resolved selection, `Follow Theme` vs `Pinned` mode, standalone/theme-contributed counts, refresh/open-folder actions, warnings/errors, and catalog cards that pin a lane-specific pack id back into `settings.appearance`.
+  - `src/store/settingsStore.ts` now persists lane-level pack overrides for `activeAppearancePackId`, `activeThemeRecipeId`, `activeThemeEngineId`, and `activeShellRendererId`. Those overrides remain independent of the active theme bundle, so explicit user pins still win until cleared.
+  - `src/App.tsx` now synthesizes temporary theme-bundle override manifests whenever those lane pins are active. The runtime still resolves through the bundle system instead of bypassing it, which keeps downstream `OverlayThemeDefinition` consumers stable while letting Settings pin modular lanes independently.
+  - `src/panels/panelRegistry.tsx` now threads the new modular pack catalogs and authoring-root actions into `SettingsPage`, and `src/config/settingsNavigation.ts` includes the new sections in the canonical catalog ordering.
+  - `src/test/settingsPage.behavior.test.tsx` now covers the new modular settings lanes by pinning appearance packs, recipe packs, theme engines, and shell renderers through their dedicated sections.
+- Durable product note:
+  - Treat the global theme as the orchestrator and the new settings sections as lane overrides, not as alternate theme systems. `Follow Theme` means "use the active bundle's effective composed default", even when that default comes through inheritance or embedded synthesized packs.
+  - If future bundle lanes become user-pinnable, add them the same way: persist the lane override in `settings.appearance`, synthesize a temporary override bundle in `App.tsx`, and let Settings render the lane from its authored catalog root instead of inventing a second runtime path.
+- Validation:
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - blocked currently: `bunx tsc --noEmit --pretty false` still fails only on unrelated mobile-share and mobile test typing drift in `src-mobile/App.tsx`, `src/App.tsx`, and `src/test/mobileApp.test.tsx`
+
 # 2026-04-23 - Queue Intake Now Has A Repo-Local Analyzer And A Dedicated Agent Skill
 
 - GreebleFS now has a durable queue-intake workflow for dragged-in code folders under `queue/`. The queue is intentionally gitignored, but it is not throwaway scratch space: it is the repo-local intake lane for user-owned code that may donate systems into the app.
@@ -3829,3 +3845,25 @@
 - Validation:
   - passed: `bunx vitest run src/test/themePackages.test.ts --reporter=dot`
   - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`
+
+## 2026-04-23 — Mobile Explorer Polish Phase 1
+
+- The mobile PWA explorer now behaves like a real mobile browser instead of a raw list dump. The active desktop theme still owns palette, fonts, icon theme, folder-icon rules, thumbnails, and preview resources, but mobile now owns a small layout/browse contract tuned for phone ergonomics.
+- Durable implementation shape:
+  - `src/config/mobileLayout.ts` is now the shared mobile layout contract for both desktop settings and the browser shell. It owns `viewMode`, `gridZoom`, `showHiddenFiles`, `sortBy`, `sortOrder`, `directoriesFirst`, and `showTabLabels`, plus the default/normalization rules.
+  - `src/store/settingsStore.ts`, `src/config/mobileTheme.ts`, and `src/App.tsx` now carry that layout subtree through `settings.mobile.layout` and into the mobile theme snapshot, so the phone shell can inherit desktop-owned presentation while still having its own layout lane.
+  - `src-mobile/App.tsx` was rebuilt into a grid-first mobile explorer shell with a fixed Files-style bottom dock, compact explorer header, quick filter, view/sort/hidden/upload action strip, folder navigation, preview routing, transfer reveal, and per-folder scroll preservation.
+  - Mobile navigation now routes through explicit history state (`tab` + `path`) rather than hover-only UI assumptions. The phone shell commits navigation intent immediately and keeps the browser state in sync for tab/path restoration.
+  - `src-tauri/src/lan_share/mobile.rs` now treats `/api/list`, search, preview summaries, and icon resolution as browse-policy-aware surfaces. Hidden files are off by default, mobile list/search routes honor `showHiddenFiles`, sorting is data-driven (`name/date/size/type`, `asc/desc`, `directoriesFirst`), and list responses now include `parentPath` plus entry-level `isHidden`.
+  - Mobile icon resolution is now safer. The host validates icon ids against the active icon theme before emitting them, and the phone-side browser-safe resolver still treats desktop folder/icon rules as source-of-truth with fallbacks when an icon id is missing or invalid.
+  - `src/test/mobileApp.test.tsx`, `src/test/mobileTheme.test.ts`, and `src/test/settingsStore.test.ts` now cover the layout contract, mobile browse-policy wiring, grid/list mode toggles, and the new theme snapshot shape.
+- Durable product notes:
+  - Hidden files should stay opt-in on mobile. If future browse presets or mobile “pro” modes are added, keep the default conservative and route any changes through the shared mobile layout contract instead of hardcoding dotfile behavior inside the React shell.
+  - Treat mobile history sync as part of the explorer experience, not as an afterthought. Folder traversal, deep-link restore, and browser back/forward should continue to flow through one location-state contract rather than separate UI-only history stacks.
+  - Keep mobile and desktop icon behavior intertwined through shared resolvers and authored icon metadata. Do not let the phone shell drift into a separate icon-guessing system.
+- Validation:
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml lan_share::mobile -- --nocapture`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/mobileApp.test.tsx src/test/mobileTheme.test.ts src/test/settingsStore.test.ts --reporter=dot`
+  - passed: `bun run build:mobile`

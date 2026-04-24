@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultFolderIconRules } from '../config/folderIcons';
+import { defaultMobileLayoutSettings } from '../config/mobileLayout';
 import { createMobileShareThemeSnapshot } from '../config/mobileTheme';
 
 describe('mobile theme snapshot builder', () => {
@@ -23,5 +24,6 @@ describe('mobile theme snapshot builder', () => {
     expect(snapshot.iconTheme.iconDefinitions.folder).toBeTruthy();
     expect(snapshot.folderIconRules.length).toBeGreaterThan(0);
     expect(snapshot.defaultFolderIcon).toBe('folder_src');
+    expect(snapshot.layout).toEqual(defaultMobileLayoutSettings);
   });
 });

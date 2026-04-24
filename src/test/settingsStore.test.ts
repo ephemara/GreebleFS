@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSettingsStore, defaultSettings, mergeSettingsWithDefaults, resolveSystemPresentationState } from '../store/settingsStore';
 import { useExplorerStore } from '../store/explorerStore';
+import { defaultMobileLayoutSettings } from '../config/mobileLayout';
 import { overlayWindowGeometry } from '../config/overlayWindow';
 import { defaultExplorerThumbnailSettings } from '../config/explorerThumbnails';
 import { semanticIndexingCapabilityId } from '../config/localModels';
@@ -202,6 +203,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.mobile.remoteAccessMode).toBe('lan');
     expect(settings.mobile.tailscaleLoginServer).toBe('');
     expect(settings.mobile.tailscaleHostname).toBe('');
+    expect(settings.mobile.layout).toEqual(defaultMobileLayoutSettings);
   });
 });
 
@@ -300,6 +302,32 @@ describe('useSettingsStore.updateMobile()', () => {
     expect(settings.mobile.remoteAccessMode).toBe('tailscale');
     expect(settings.mobile.tailscaleLoginServer).toBe('https://headscale.example.com');
     expect(settings.mobile.tailscaleHostname).toBe('greeble-rig');
+  });
+
+  it('normalizes the mobile layout subtree without disturbing the route settings', () => {
+    const store = useSettingsStore.getState();
+    store.updateMobile({
+      layout: {
+        ...store.settings.mobile.layout,
+        viewMode: 'list',
+        gridZoom: 9,
+        showHiddenFiles: true,
+        sortBy: 'size',
+        sortOrder: 'desc',
+        directoriesFirst: false,
+        showTabLabels: false,
+      },
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.mobile.remoteAccessMode).toBe('lan');
+    expect(settings.mobile.layout.viewMode).toBe('list');
+    expect(settings.mobile.layout.gridZoom).toBe(1.8);
+    expect(settings.mobile.layout.showHiddenFiles).toBe(true);
+    expect(settings.mobile.layout.sortBy).toBe('size');
+    expect(settings.mobile.layout.sortOrder).toBe('desc');
+    expect(settings.mobile.layout.directoriesFirst).toBe(false);
+    expect(settings.mobile.layout.showTabLabels).toBe(false);
   });
 });
 

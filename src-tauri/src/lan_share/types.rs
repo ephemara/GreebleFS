@@ -74,7 +74,7 @@ pub struct MobileThemeMetricsSnapshot {
     pub panel_gap: f64,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum MobileLayoutViewMode {
     IconsL,
@@ -83,7 +83,7 @@ pub enum MobileLayoutViewMode {
     List,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum MobileLayoutSortBy {
     Name,
@@ -92,7 +92,7 @@ pub enum MobileLayoutSortBy {
     Type,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum MobileLayoutSortOrder {
     Asc,

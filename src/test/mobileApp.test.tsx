@@ -77,10 +77,20 @@ const mobileThemeSnapshot: MobileShareThemeSnapshot = {
     },
   ],
   defaultFolderIcon: "folder",
+  layout: {
+    viewMode: "icons-m",
+    gridZoom: 1,
+    showHiddenFiles: false,
+    sortBy: "name",
+    sortOrder: "asc",
+    directoriesFirst: true,
+    showTabLabels: true,
+  },
 };
 
 const listingResponse: MobileShareListingResponse = {
   currentPath: "",
+  parentPath: "",
   canGoUp: false,
   shareName: "GreebleFS",
   hubMode: false,
@@ -93,6 +103,7 @@ const listingResponse: MobileShareListingResponse = {
       name: "photos",
       relativePath: "photos",
       isDir: true,
+      isHidden: false,
       size: 0,
       extension: "",
       mimeType: null,
@@ -110,6 +121,7 @@ const listingResponse: MobileShareListingResponse = {
       name: "photo.png",
       relativePath: "photo.png",
       isDir: false,
+      isHidden: false,
       size: 2048,
       extension: "png",
       mimeType: "image/png",
@@ -184,11 +196,13 @@ function jsonResponse(body: unknown): Response {
 
 describe("mobile app shell", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/");
     useMobileStore.setState((state) => ({
       ...state,
       activeTab: "explorer",
       explorerPath: "",
       transfers: [],
+      layoutOverrides: {},
     }));
 
     vi.spyOn(window, "open").mockImplementation(() => null);
@@ -232,16 +246,50 @@ describe("mobile app shell", () => {
     expect(screen.getByText("Pair State")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Explorer" }));
-    await user.click(screen.getByRole("button", { name: "Preview photo.png" }));
+    await user.click(screen.getByRole("button", { name: /photo\.png/i }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("Download")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /download photo\.png/i }));
+    await user.click(screen.getByRole("button", { name: "Download" }));
     await user.click(screen.getByRole("button", { name: "Transfers" }));
     expect(
       await screen.findByText("Sent to the browser download manager."),
     ).toBeInTheDocument();
     expect(screen.getAllByText("photo.png").length).toBeGreaterThan(0);
+  });
+
+  it("navigates into folders, syncs the URL, and sends the browse policy", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /photos folder/i }),
+    );
+
+    let listRequest: URL | undefined;
+    await waitFor(() => {
+      listRequest = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
+        .map(([input]) => new URL(String(input), "https://mobile.greeblefs.test"))
+        .find((url) => url.pathname === "/api/list" && url.searchParams.get("path") === "photos");
+      expect(listRequest).toBeDefined();
+    });
+
+    expect(listRequest?.searchParams.get("showHiddenFiles")).toBe("false");
+    expect(listRequest?.searchParams.get("sortBy")).toBe("name");
+    expect(listRequest?.searchParams.get("sortOrder")).toBe("asc");
+    expect(listRequest?.searchParams.get("directoriesFirst")).toBe("true");
+  });
+
+  it("updates the active mobile layout from the explorer action strip", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await screen.findByText("photo.png");
+    await user.click(screen.getByRole("button", { name: "Switch to List view" }));
+
+    expect(useMobileStore.getState().layoutOverrides.viewMode).toBe("list");
   });
 
   it("queries indexed search results from the dedicated search tab", async () => {

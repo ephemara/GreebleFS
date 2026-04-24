@@ -1748,12 +1748,14 @@ fn build_mobile_entry_from_archive(
     entry: FsArchiveEntryListingEntry,
     snapshot: &MobileThemeSnapshot,
 ) -> MobileEntryInfo {
+    let relative_path = entry.relative_path;
+    let is_hidden = mobile_relative_path_is_hidden(&relative_path);
     let metadata = MobileEntryMetadata {
         name: entry.name,
-        relative_path: entry.relative_path,
+        relative_path,
         absolute_path: None,
         is_dir: entry.is_dir,
-        is_hidden: mobile_relative_path_is_hidden(&entry.relative_path),
+        is_hidden,
         size: if entry.is_dir { 0 } else { entry.size },
         extension: entry.extension,
         mime_type: None,
@@ -2186,7 +2188,28 @@ mod tests {
                 file: "txt".to_string(),
                 folder: "folder".to_string(),
                 folder_expanded: "folder_open".to_string(),
-                icon_definitions: BTreeMap::new(),
+                icon_definitions: BTreeMap::from([
+                    ("txt".to_string(), "/icons/txt.svg".to_string()),
+                    ("folder".to_string(), "/icons/folder.svg".to_string()),
+                    (
+                        "folder_open".to_string(),
+                        "/icons/folder_open.svg".to_string(),
+                    ),
+                    ("rust".to_string(), "/icons/rust.svg".to_string()),
+                    (
+                        "dockerfile".to_string(),
+                        "/icons/dockerfile.svg".to_string(),
+                    ),
+                    (
+                        "folder_src".to_string(),
+                        "/icons/folder_src.svg".to_string(),
+                    ),
+                    (
+                        "folder_docs".to_string(),
+                        "/icons/folder_docs.svg".to_string(),
+                    ),
+                    ("image".to_string(), "/icons/image.svg".to_string()),
+                ]),
                 file_extensions: BTreeMap::from([
                     ("rs".to_string(), "rust".to_string()),
                     ("png".to_string(), "image".to_string()),
