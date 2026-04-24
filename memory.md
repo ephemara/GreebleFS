@@ -1,3 +1,25 @@
+# 2026-04-24 - Explorer Images Now Have A Host-Owned Cutout Workflow Tab
+
+- Editable explorer images no longer stop at `Preview` and `Edit`. The shared preview header now exposes a new `Cutout` wildcard tab for raster images, and that lane is built as a host-owned session flow instead of a browser-only export trick.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` still owns the shared preview shell, but image wildcard tabs now register from the mounted `ExplorerImageEditor.tsx` surface instead of being hardcoded in the preview panel. That keeps `Preview | Edit | Cutout` aligned with the actual mounted workbench and matches the existing audio/Python wildcard-tab model.
+  - `src/components/ExplorerImageEditor.tsx` now multiplexes three image workflows: fullscreen preview, CropperJS edit, and the new `Cutout` lane. It stays the shared image surface for both explorer preview and screenshots, but only explorer image previews currently register the `Cutout` wildcard tab.
+  - `src/components/ExplorerImageCutoutSurface.tsx` is the new React cutout lane. It opens a host session, mirrors current filter state, supports positive click prompts plus `Alt+Click` or right-click negative prompts, renders a marching-ants boundary overlay, and wires cutout-focused undo/redo/reset plus `Ctrl+C` / `Ctrl+S` / drag-out behavior.
+  - `src/runtime/imageCutoutBackend.ts` is the only TypeScript bridge for cutout sessions. React should use its typed `open/apply/reset/stage/copy/close/startNativeDrag` helpers instead of invoking raw commands.
+  - `src-tauri/src/image_cutout_commands.rs` is the native contract. It owns session ids, safe temp/sibling output preparation, clipboard image copy, drag artifact staging, and Python-sidecar dispatch through Specta-exported commands and types.
+  - `src-python/greeblefs_sidecar/cutout_runtime.py` is the current sidecar implementation. It keeps per-session caches plus prompt history and returns mask previews/export artifacts through manifest-registered actions. The shipping v1 runtime is intentionally heuristic and contract-ready: the catalog/default model now reserves the `image-cutout` capability for a future SAM2-class managed-weights lane, but the actual sidecar still uses a fast Pillow-based saliency/mask heuristic today instead of pretending real neural segmentation already landed.
+  - `src/config/localModelCatalog.json` and `src/config/localModels.ts` now include the `image-cutout` capability with `auto` / `cpu` / `cuda` backend preferences so the cutout lane rides the existing local-model settings surface instead of inventing a private GPU toggle.
+  - `src/config/hotkeys.ts`, `src/components/SettingsPage.tsx`, and the local preview key guard in `FileExplorer.tsx` now reserve `imageCutoutCopy` on `Ctrl+C`, reuse `saveFile` for sibling PNG save, and prevent explorer transfer-queue copy from firing while the cutout surface owns keyboard focus.
+- Durable implementation lesson:
+  - Lane-owned wildcard tabs must register from the mounted surface, and the preview-header control registry must depend on the workflow-toggle renderer. We hit a real stale-closure regression where the header kept showing only `Preview | Edit` after the image lane registered `Cutout` because `previewChromeControlRegistry` was memoized without `renderPreviewWorkflowToggle`. If wildcard tabs disappear again, inspect preview-header memo dependencies before blaming the lane component.
+- Validation:
+  - passed: `python3 -m py_compile src-python/greeblefs_sidecar/*.py`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml image_cutout --quiet`
+  - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "image" --reporter=dot`
+  - passed: `bunx vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot`
+
 # 2026-04-24 - Rust Workspace Loads Cleanly On Linux Again For Serena And Tauri
 
 - The Linux Rust workspace is valid again for Cargo tooling, rust-analyzer, and Serena indexing. The prior failure was not one bug but two stacked workspace hazards.

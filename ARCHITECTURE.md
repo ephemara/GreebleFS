@@ -49,7 +49,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/OverlayScrollArea.tsx`
   Shared overlay scroll host. It owns the explicit scrollbar contract for shipping-shell panes (`hidden`, `themed`, `explorer-file-list`) so explorer lists, popouts, and workbench/detail surfaces can share themed scroll behavior without per-component scrollbar CSS.
 - `src/components/ExplorerImageEditor.tsx`
-  Shell-owned CropperJS image editor for the embedded preview-pane image lane. Editable raster files open in fullscreen preview mode first, then reveal the exposure/filter/crop tool deck when `FileExplorer.tsx` switches the document into explicit `edit` mode. The component owns the fullscreen pannable/zoomable preview, CropperJS crop session, filter baking on save, reset-to-last-saved behavior, static-preview fallback for unsupported formats, and the imperative save/reset surface that `ScreenshotsManager.tsx` also uses. Local saves may attempt the Tauri fs plugin path when it is available, but the durable write contract is still the typed explorer backend fallback so missing plugin registration does not strand image edits.
+  Shell-owned image workbench for the embedded preview-pane raster lane. Editable images now stay on the shared workflow-tab system: `Preview` keeps the fullscreen pannable/zoomable surface, `Edit` keeps the CropperJS filter/crop deck, and `Cutout` mounts the dedicated subject-extraction lane instead of forking a second preview shell. The component still owns the shared save/reset surface that `ScreenshotsManager.tsx` uses, but cutout/copy/drag/save now route through host-owned cutout sessions instead of the old browser-only image-export path.
+- `src/components/ExplorerImageCutoutSurface.tsx`
+  Shell-owned cutout lane for explorer images. It opens a native cutout session, renders the live transparent preview plus marching-ants mask overlay, applies positive/negative prompt clicks, mirrors the shared image-filter state, and owns the lazy drag/copy/save affordances for transparent PNG output. Undo/redo/reset in this lane rebuild prompt history against the host session instead of mutating pixels locally.
 - `src/components/ExplorerVideoEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane video surface. It now defaults to a playback-first preview surface and only reveals the heavier trim/inspector editing chrome when Explorer switches the document into explicit edit mode. It mounts a real media-element preview that is driven by the Rust video engine/store, resolves direct-safe sources or ffmpeg-generated MP4 proxies through the typed backend, and exposes loop-aware transport plus non-destructive trim export.
 - `src/components/ExplorerAudioWorkbench.tsx`
@@ -149,7 +151,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/python.ts`
   Data-driven Python runtime config, example presets, sidecar action catalog, and package presets. The `src-python/greeblefs-python-sidecar.json` manifest is the source of truth for the sidecar action list and quick-install package presets exposed to React.
 - `src/config/localModels.ts` and `src/config/localModelCatalog.json`
-  Data-driven local-model catalog plus typed normalization helpers. This is the canonical source for curated local models, backend-option labels (`auto` / `cpu` / `onnx` / `cuda`), hardware-profile metadata, capability ids, default bindings, and semantic per-root override resolution used by Settings and semantic-search routing.
+  Data-driven local-model catalog plus typed normalization helpers. This is the canonical source for curated local models, backend-option labels (`auto` / `cpu` / `onnx` / `cuda`), hardware-profile metadata, capability ids, default bindings, and per-root override resolution used by Settings plus local AI surfaces. Semantic search still rides this catalog, and the explorer image-cutout lane now uses the same model/capability system through the `image-cutout` capability instead of inventing a feature-local accelerator toggle.
 - `src/config/semanticSearch.ts`
   Data-driven explorer semantic-search config. It owns the canonical `name` / `content` / `semantic` search-mode contract, the search-mode labels/descriptions, the text/code extension registry loaded from `semanticSearchFileTypes.json`, and the runtime defaults loaded from `semanticSearchRuntime.json` for chunking/model/backend selection.
 - `src/runtime/moduleRuntime.ts`
@@ -194,6 +196,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Typed frontend seam for the managed Python runtime, persistent sidecar lifecycle, manifest-backed sidecar actions, and embedded `pyo3` execution. New React surfaces should call this layer instead of invoking Python Tauri commands directly.
 - `src/runtime/modelManagementBackend.ts`
   Typed frontend seam for shared local-model management. It owns the curated model catalog status, cache-summary reads, and prewarm/download calls so Settings and future AI surfaces do not need to hand-roll Python-sidecar model-management requests.
+- `src/runtime/imageCutoutBackend.ts`
+  Typed frontend seam for explorer image cutout sessions. It owns session open/prompt/reset/export/copy/close commands plus native drag-start staging so React cutout surfaces never issue raw image-cutout invokes or local temp-file logic.
 - `src/runtime/explorerBackend.ts`
   Typed explorer bridge for filesystem/search/task work. In addition to classic name/content search, it now owns the semantic-search command surface (`getSemanticIndexSummary`, `buildSemanticIndex`, `searchSemantic`, `findSemanticSimilar`) so Explorer React code never needs raw invoke strings for AI indexing or similarity work.
 - `src/runtime/globalSearchBackend.ts`
@@ -623,8 +627,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Native host and Rust-side integration.
   `src-tauri/src/cloud_commands.rs` is the cloud-drive truth layer for provider credential resolution, OAuth callback handling, account metadata persistence, keychain refresh-token storage, and cloud-backed explorer file operations.
   `src-tauri/src/explorer_pro_commands.rs` is the explorer-pro feature backend for trash/undo, batch rename, duplicate scans, tags, and saved searches.
+  `src-tauri/src/image_cutout_commands.rs` is the host-owned explorer image-cutout contract. It owns cutout session bookkeeping, Python-sidecar dispatch, transparent PNG staging, sibling save naming, clipboard copy, and native drag-prep for the `Cutout` workflow tab.
   `src-tauri/src/python_commands.rs` is the managed-runtime truth layer for interpreter discovery, virtualenv bootstrap, package installation, and direct Python execution.
-  `src-tauri/src/python_sidecar.rs` owns the persistent managed sidecar lifecycle, workspace sync, stdio protocol, typed sidecar call/start/stop commands, and the backend-facing typed helper API (`action_ids`, decoded JSON helpers) for other Rust modules.
+  `src-tauri/src/python_sidecar.rs` owns the persistent managed sidecar lifecycle, workspace sync, stdio protocol, typed sidecar call/start/stop commands, and the backend-facing typed helper API (`action_ids`, decoded JSON helpers) for other Rust modules. The explorer cutout lane now rides that same manifest-backed action system instead of launching a separate Python process per click.
   `src-tauri/src/acceleration_runtime.rs` owns the cross-provider acceleration snapshot surfaced to the shell. It reads the native GPU runtime, optionally probes the Python sidecar for CUDA/Torch/ONNX capability, and turns those signals into a reusable provider catalog for future workload routing.
   `src-tauri/src/global_search/` is the native indexed filename-search subsystem adapted from Sigma. It owns Tantivy schema/index lifecycle, full-drive scans, status tracking, indexed query, and explicit priority-path query helpers; the app intentionally does not expose Sigma's incremental `index_paths` flow because the upstream delete-by-path approach is unsafe for descendant cleanup in the current schema.
   `src-tauri/src/semantic_search.rs` is the explorer semantic-search orchestrator. It validates local-only roots/files, owns the app-local SQLite index contract plus manual task lifecycle, routes embedding/query/similarity work through the Python sidecar, and exposes the typed `build/query/find-similar/status` command surface through Specta.
@@ -651,6 +656,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `cargo test --manifest-path src-tauri/Cargo.toml storage_scan_ -- --nocapture`
 - `bunx vitest run src/test/pythonConfig.test.ts src/test/pythonRuntimeBackend.test.ts src/test/terminalOverlay.test.tsx -t "Python" --reporter=dot`
 - `bunx vitest run src/test/hotkeys.test.ts src/test/explorerStore.test.ts src/test/fileExplorer.searchTelemetry.test.tsx --reporter=dot`
+- `bunx vitest run src/test/explorerImageEditor.test.tsx --reporter=dot`
+- `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "image" --reporter=dot`
 - `python3 -m unittest discover -s tests_python -p 'test_*.py' -v`
 - `python3 reference_scrub.py --all --skip-repomix`
 - `python3 reference_scrub.py --all --apply`
@@ -698,6 +705,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Screenshot editing is now shared with the preview pane:
   - `src/components/ExplorerImageEditor.tsx` is the shared image editor surface for both explorer preview editing and screenshot editing.
   - Do not split explorer images and screenshots onto different editors again, and do not reintroduce the old screenshot-only annotation canvas inside `ScreenshotsManager.tsx`; both paths should stay on the same CropperJS-based editor surface.
+- Preview wildcard tabs must be registered by the mounted lane surface, not guessed only from `FileExplorer.tsx`.
+  - `ExplorerAudioWorkbench.tsx`, `ExplorerPythonWorkbench.tsx`, and the image cutout path all rely on lane-owned wildcard registration.
+  - if the preview header stops reflecting a lane-owned tab, inspect memo dependencies around `renderPreviewWorkflowToggle` and the preview-chrome registry before assuming the lane forgot to register tabs.
 - Avoid sending screenshot previews through Rust as base64 PNG payloads again. The current screenshot path is intentionally file-backed so capture stays fast, monitor previews can use asset URLs, and final output only crosses the bridge as small typed commands.
 - Explorer interaction tests that need DOM drag/drop still need a browser-like environment, so the current JSDOM dependency failure blocks the most relevant explorer UI regressions even when the narrowed TypeScript pass is green.
 - Audio workbench playback state should not be tied to parent React state churn. Keep playhead motion on an imperative RAF path and keep waveform/spectral subsurfaces memoized so shell-level rerenders do not consume the frame budget.
