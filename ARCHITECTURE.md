@@ -241,7 +241,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - Theme packages can still contribute top bars and choose `theme.defaultTopBarId`; the authored `top-bars/` root and theme package contributions both flow through the same resolver
 - Settings navigation is now catalog-driven instead of hardcoded section ids:
   - `src/config/settingsNavigation.ts` defines the canonical settings-section keys, labels, ordering, overview summaries, and keyword metadata used by the rail, overview cards, and command palette
-  - `src/store/settingsStore.ts` persists `activeSection` as a typed `SettingsSectionKey`, and `SettingsPage.tsx` reads that store value directly so palette deep-links can land on sections like `Icons` or `Top Bars` without component-local routing state
+  - `src/store/settingsStore.ts` persists `activeSection` as a typed `SettingsSectionKey`, and `SettingsPage.tsx` reads that store value directly so palette deep-links can land on sections like `Icons`, `Top Bars`, or `Context Menus` without component-local routing state
   - `src/App.tsx` builds section-jump command-palette entries from the same catalog instead of hardcoding menu paths, which keeps future settings sections discoverable as soon as they are added to the catalog
 - Explorer Home is now a first-class app-owned surface instead of a synonym for the OS home directory:
   - the canonical startup route is `greeblefs://home`
@@ -380,7 +380,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/config/explorerTheme.ts` resolves `theme.explorer.menuPresentation`, which is presentation-only: renderer preference, materials, motion, density, focus treatment, submenu behavior, and capability routing. Themes can bias `classic` / `hybrid` / `radial` / `sheet` / `hud`, but the active menu pack still owns content.
   - `src/components/explorer/explorerMenuRuntime.ts` combines the invocation snapshot, command registry, active menu pack, and per-context user overrides into resolved runtime nodes, then hands those nodes to `src/components/explorer/ExplorerContextMenu.tsx`.
   - `FileExplorer.tsx` should only create the invocation context and call the runtime. Do not rebuild menu trees inline there.
-  - `SettingsPage.tsx` now exposes a context-aware composer for pack selection, command placement, submenus, quick slots, fallback buckets, and per-context renderer overrides. `settings.explorer.contextMenuItemOverrides` is now legacy migration input only; new work should persist `activeMenuPackId` and `contextMenuLayoutOverridesByContext`.
+  - `SettingsPage.tsx` now exposes a dedicated top-level `Context Menus` settings section for pack selection, command placement, submenus, quick slots, fallback buckets, and per-context renderer overrides. The Explorer section should only link to that lane; do not bury future menu authoring UI back under generic explorer settings.
+  - `settings.explorer.contextMenuItemOverrides` is now legacy migration input only; new work should persist `activeMenuPackId` and `contextMenuLayoutOverridesByContext`.
   - Current ship constraint: only the classic nested renderer is fully implemented. The runtime/schema already carries `hybrid`, `radial`, `sheet`, and `hud` as presentation targets for future work.
 - `settings.system.developerMode` is now the live-reload gate for expensive development-only watchers:
   - plugin directory watch / fallback polling in `useFolderPluginRuntime.ts`

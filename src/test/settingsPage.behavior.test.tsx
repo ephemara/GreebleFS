@@ -630,7 +630,7 @@ describe('SettingsPage behavior', () => {
     expect(telemetryCaptureSelect.style.backgroundImage).not.toBe('');
   });
 
-  it('lets the explorer context menu composer add, disable, and reorder plugin menu items', async () => {
+  it('lets the dedicated context menu composer add, disable, and reorder plugin menu items', async () => {
     const user = userEvent.setup();
     renderSettingsPage({
       pluginContextMenuItems: [
@@ -652,7 +652,7 @@ describe('SettingsPage behavior', () => {
       ],
     });
 
-    await user.click(findSectionButton('Explorer'));
+    await user.click(findSectionButton('Context Menus'));
     expect(screen.getByText('Context Menu Composer')).toBeInTheDocument();
     const activePackSelect = screen.getByRole('combobox', { name: 'Active Menu Pack' });
     expect(activePackSelect).toHaveValue(BUILT_IN_MENU_PACK_FIXTURES[0]?.id ?? '');
@@ -729,6 +729,19 @@ describe('SettingsPage behavior', () => {
       .settings.explorer.contextMenuLayoutOverridesByContext.entry?.entries
       .find((entry) => entry.kind === 'command' && entry.commandId === 'sample-plugin.context-menu.capture');
     expect(movedPluginEntry?.order).toBeLessThan(initialPluginEntry.order);
+  });
+
+  it('opens the dedicated context menu section from the explorer CTA', async () => {
+    const user = userEvent.setup();
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Explorer'));
+    await user.click(screen.getByRole('button', { name: 'Open Context Menus' }));
+
+    expect(screen.getByText('Explorer Menu Runtime')).toBeInTheDocument();
+    expect(screen.getByText('Context Menu Composer')).toBeInTheDocument();
+    expect(screen.getByText('Context menus are now a first-class authored system. Menu packs define the structure, the command graph defines behavior, themes can steer renderer presentation, and user overrides own the composer layer for shareable setups and future renderer/layout packs.')).toBeInTheDocument();
   });
 
   it('saves cloud provider credentials from settings and enables the provider login action', async () => {

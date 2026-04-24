@@ -55,6 +55,15 @@ export const settingsSectionCatalog = [
     order: 40,
   },
   {
+    key: 'context-menus',
+    label: 'Context Menus',
+    subtitle: 'Menu packs, composer layouts, renderers, and shareable authoring surfaces.',
+    keywords: ['context menus', 'menu packs', 'radial menu', 'composer', 'submenu', 'renderer'],
+    overviewSummary: 'Explorer menu packs, renderer choices, and context-specific composer overrides.',
+    featuredInOverview: true,
+    order: 42,
+  },
+  {
     key: 'home',
     label: 'Home',
     subtitle: 'Explorer home packs, presets, telemetry, and launch surfaces.',
