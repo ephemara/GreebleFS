@@ -1,35 +1,41 @@
 import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
-  useState,
 } from "react";
 
 import {
   Copy,
-  Loader2,
-  MousePointer2,
+  Eraser,
+  Pencil,
   RefreshCw,
-  RotateCcw,
-  Scissors,
+  Save,
+  Sliders,
   Undo2,
 } from "@/components/AppIcons";
 
-import {
-  DEFAULT_IMAGE_CUTOUT_TOOL_ID,
-  imageCutoutToolDefinitions,
-  type ExplorerImageCutoutToolId,
-} from "../config/imageCutoutTools";
+import { useInteractionMotionController } from "../animation/interactionMotion";
 import { matchesKeybinding } from "../config/hotkeys";
+import {
+  DEFAULT_IMAGE_CUTOUT_REFINE_TOOL_ID,
+  imageCutoutRefineToolDefinitions,
+  resolveExplorerImageIsolationLaneDefinition,
+  type ExplorerImageCutoutRefineToolId,
+  type ExplorerImageIsolationLaneDefinition,
+  type ExplorerImageCutoutWorkflowMode,
+} from "../config/imageCutoutTools";
 import {
   buildCSSFilterString,
   type ExplorerImageFiltersState,
 } from "../config/imageEditorFilters";
 import type { LocalModelBackendPreference } from "../config/localModels";
 import {
+  applyExplorerImageCutoutPrompts,
   closeExplorerImageCutoutSession,
   copyExplorerImageCutoutToClipboard,
   openExplorerImageCutoutSession,
@@ -40,8 +46,14 @@ import {
 } from "../runtime/imageCutoutBackend";
 import type { ManagedPythonRuntimeConfig } from "../runtime/pythonRuntimeBackend";
 import { useSettingsStore } from "../store/settingsStore";
+import { PremiumSlider } from "./PremiumSlider";
 import {
-  applySparkSelection,
+  applyExplorerImageStageWheelZoom,
+  DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM,
+  normalizeExplorerImageStageTransform,
+  type ExplorerImageStageTransform,
+} from "./explorer/explorerImageStage";
+import {
   applySweepSelectionInPlace,
   buildCutoutBoundaryPoints,
   cloneCutoutMaskAlpha,
@@ -53,8 +65,10 @@ import {
   type ExplorerImageCutoutEditMode,
   type ExplorerImageCutoutSourcePixels,
 } from "./explorer/explorerImageCutoutMask";
+import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 
 type ExplorerImageCutoutSurfaceProps = {
+  workflowMode: ExplorerImageCutoutWorkflowMode;
   imageName: string;
   imagePath: string;
   logicalOutputPath?: string;
@@ -63,9 +77,18 @@ type ExplorerImageCutoutSurfaceProps = {
   pythonRuntimeConfig?: ManagedPythonRuntimeConfig | null;
   cutoutModelId?: string | null;
   cutoutBackendPreference?: LocalModelBackendPreference | null;
+  onRegisterContextMenuRegistration?: (
+    registration: ExplorerPreviewContextMenuRegistration | null,
+  ) => void;
 };
 
 type CutoutStatusTone = "neutral" | "success" | "warning" | "error";
+
+type ExplorerImageCutoutStageToolId =
+  | "selection"
+  | "pan"
+  | "brush"
+  | "erase";
 
 type CutoutBoundarySnapshot = {
   width: number;
@@ -73,7 +96,48 @@ type CutoutBoundarySnapshot = {
   points: ExplorerImageCutoutBoundaryPoint[];
 };
 
-type ActiveSweepStroke = {
+type ExplorerImageCutoutLaneState = {
+  workflowMode: ExplorerImageCutoutWorkflowMode;
+  sessionSnapshot: ExplorerImageCutoutSessionSnapshot | null;
+  sourcePixels: ExplorerImageCutoutSourcePixels | null;
+  sourcePreviewCanvas: HTMLCanvasElement | null;
+  baseMask: ExplorerImageCutoutAlphaMask | null;
+  resolvedMask: ExplorerImageCutoutAlphaMask | null;
+  boundary: CutoutBoundarySnapshot | null;
+  history: Uint8ClampedArray[];
+  historyIndex: number;
+  previewReady: boolean;
+  usedSourcePreviewFallback: boolean;
+  isBooting: boolean;
+  isMutating: boolean;
+  statusTone: CutoutStatusTone;
+  statusMessage: string;
+  transform: ExplorerImageStageTransform;
+  showRefinePanel: boolean;
+  refineToolId: ExplorerImageCutoutRefineToolId;
+  activeStageTool: ExplorerImageCutoutStageToolId;
+  brushTolerance: number;
+  brushSize: number;
+  brushSoftness: number;
+  edgeSoftness: number;
+  edgePull: number;
+  bootRequestId: number;
+};
+
+type PendingStagePointerInteraction = {
+  workflowMode: ExplorerImageCutoutWorkflowMode;
+  pointerId: number;
+  dragIntent: "selectionCandidate" | "pan" | "nativeDrag";
+  negativePrompt: boolean;
+  startClientX: number;
+  startClientY: number;
+  startTransform: ExplorerImageStageTransform;
+  hasDragged: boolean;
+  nativeDragStarted: boolean;
+};
+
+type ActiveBrushStroke = {
+  workflowMode: ExplorerImageCutoutWorkflowMode;
   pointerId: number;
   mode: ExplorerImageCutoutEditMode;
   workingMask: ExplorerImageCutoutAlphaMask;
@@ -83,179 +147,95 @@ type ActiveSweepStroke = {
 
 const DEFAULT_PREVIEW_MAX_DIMENSION = 960;
 const HISTORY_LIMIT = 32;
+const POINTER_CLICK_THRESHOLD_PX = 6;
 const MARCHING_ANTS_WIDTH = 4;
 const MARCHING_ANTS_SPEED = 20;
-const DEFAULT_SPARK_TOLERANCE = 26;
-const DEFAULT_SWEEP_TOLERANCE = 30;
-const DEFAULT_SWEEP_SIZE = 34;
-const DEFAULT_SWEEP_SOFTNESS = 42;
+const DEFAULT_BRUSH_TOLERANCE = 30;
+const DEFAULT_BRUSH_SIZE = 34;
+const DEFAULT_BRUSH_SOFTNESS = 42;
 const DEFAULT_EDGE_SOFTNESS = 2;
 const DEFAULT_EDGE_PULL = 0;
 
-function buttonStyle(
-  variant: "primary" | "default" | "ghost" = "default",
-): CSSProperties {
-  const base = {
-    appearance: "none" as const,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    borderRadius: 999,
-    border: "1px solid transparent",
-    padding: "7px 11px",
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: "0.02em",
-    cursor: "pointer",
-    transition:
-      "background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease",
-  };
-
-  switch (variant) {
-    case "primary":
-      return {
-        ...base,
-        background: "rgba(59, 130, 246, 0.22)",
-        borderColor: "rgba(96, 165, 250, 0.48)",
-        color: "#f8fbff",
-      };
-    case "ghost":
-      return {
-        ...base,
-        background: "transparent",
-        borderColor: "rgba(255,255,255,0.08)",
-        color: "var(--overlay-text-muted)",
-      };
-    case "default":
-    default:
-      return {
-        ...base,
-        background: "rgba(255,255,255,0.05)",
-        borderColor: "rgba(255,255,255,0.12)",
-        color: "var(--overlay-text-primary)",
-      };
-  }
+function resolveDefaultStageTool(
+  workflowMode: ExplorerImageCutoutWorkflowMode,
+): ExplorerImageCutoutStageToolId {
+  return workflowMode === "cutout" ? "selection" : "pan";
 }
 
-function toneColor(tone: CutoutStatusTone): string {
-  switch (tone) {
-    case "success":
-      return "#86efac";
-    case "warning":
-      return "#fde68a";
-    case "error":
-      return "#fca5a5";
-    case "neutral":
-    default:
-      return "var(--overlay-text-muted)";
-  }
-}
-
-function overlayPanelStyle(): CSSProperties {
+function cloneMask(
+  mask: ExplorerImageCutoutAlphaMask,
+): ExplorerImageCutoutAlphaMask {
   return {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: 8,
-    borderRadius: 14,
-    border: "1px solid var(--overlay-explorer-preview-border, rgba(255,255,255,0.12))",
-    background:
-      "linear-gradient(180deg, rgba(10,14,24,0.82), rgba(10,14,24,0.68))",
-    boxShadow: "0 18px 34px rgba(0,0,0,0.28)",
-    backdropFilter: "blur(14px)",
+    width: mask.width,
+    height: mask.height,
+    alpha: cloneCutoutMaskAlpha(mask.alpha),
   };
 }
 
-function sliderStyle(): CSSProperties {
+function hasVisibleBoundary(boundary: CutoutBoundarySnapshot | null): boolean {
+  return (boundary?.points.length ?? 0) > 0;
+}
+
+function resolveLaneCopy(
+  workflowMode: ExplorerImageCutoutWorkflowMode,
+): ExplorerImageIsolationLaneDefinition {
+  return resolveExplorerImageIsolationLaneDefinition(workflowMode);
+}
+
+function resolveWorkflowTabIdForIsolationMode(
+  workflowMode: ExplorerImageCutoutWorkflowMode,
+): string {
+  return workflowMode === "cutout" ? "cutout" : "remove-background";
+}
+
+function createDefaultLaneState(
+  workflowMode: ExplorerImageCutoutWorkflowMode,
+): ExplorerImageCutoutLaneState {
+  const lane = resolveLaneCopy(workflowMode);
   return {
-    width: "100%",
-    accentColor: "#60a5fa",
+    workflowMode,
+    sessionSnapshot: null,
+    sourcePixels: null,
+    sourcePreviewCanvas: null,
+    baseMask: null,
+    resolvedMask: null,
+    boundary: null,
+    history: [],
+    historyIndex: 0,
+    previewReady: false,
+    usedSourcePreviewFallback: false,
+    isBooting: false,
+    isMutating: false,
+    statusTone: "neutral",
+    statusMessage: `Preparing ${lane.label.toLowerCase()}…`,
+    transform: { ...DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM },
+    showRefinePanel: false,
+    refineToolId: DEFAULT_IMAGE_CUTOUT_REFINE_TOOL_ID,
+    activeStageTool: resolveDefaultStageTool(workflowMode),
+    brushTolerance: DEFAULT_BRUSH_TOLERANCE,
+    brushSize: DEFAULT_BRUSH_SIZE,
+    brushSoftness: DEFAULT_BRUSH_SOFTNESS,
+    edgeSoftness: DEFAULT_EDGE_SOFTNESS,
+    edgePull: DEFAULT_EDGE_PULL,
+    bootRequestId: 0,
   };
 }
 
-function segmentedButtonStyle(active: boolean): CSSProperties {
-  return {
-    appearance: "none",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    borderRadius: 999,
-    border: active
-      ? "1px solid rgba(96, 165, 250, 0.42)"
-      : "1px solid rgba(255,255,255,0.12)",
-    background: active
-      ? "rgba(59, 130, 246, 0.2)"
-      : "rgba(255,255,255,0.04)",
-    color: active ? "#f8fbff" : "var(--overlay-text-muted)",
-    padding: "7px 12px",
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: "0.02em",
-    cursor: "pointer",
-    transition:
-      "background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease",
-  };
-}
-
-function ControlSlider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  helper,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-  helper?: string;
-}) {
-  return (
-    <label style={{ display: "grid", gap: 6 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          fontSize: 10,
-          color: "var(--overlay-text-muted)",
-        }}
-      >
-        <span>{label}</span>
-        <span style={{ color: "var(--overlay-text-primary)", fontVariantNumeric: "tabular-nums" }}>
-          {value}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
-        style={sliderStyle()}
-      />
-      {helper ? (
-        <span style={{ fontSize: 10, color: "var(--overlay-text-dim, rgba(255,255,255,0.5))" }}>
-          {helper}
-        </span>
-      ) : null}
-    </label>
-  );
+function collectOpenSessionIds(
+  laneStates: Record<ExplorerImageCutoutWorkflowMode, ExplorerImageCutoutLaneState>,
+): string[] {
+  const openSessionIds = Object.values(laneStates)
+    .map((lane) => lane.sessionSnapshot?.sessionId ?? null)
+    .filter((sessionId): sessionId is string => Boolean(sessionId));
+  return Array.from(new Set(openSessionIds));
 }
 
 async function loadImageElement(source: string): Promise<HTMLImageElement> {
   const image = new window.Image();
   return await new Promise((resolve, reject) => {
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Failed to decode the cutout preview source image."));
+    image.onerror = () =>
+      reject(new Error("Failed to decode the cutout preview source image."));
     image.src = source;
   });
 }
@@ -268,7 +248,8 @@ async function convertBlobUrlToDataUrl(blobUrl: string): Promise<string> {
   const blob = await response.blob();
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Failed to convert the image blob to a data URL."));
+    reader.onerror = () =>
+      reject(new Error("Failed to convert the image blob to a data URL."));
     reader.onload = () => resolve(String(reader.result ?? ""));
     reader.readAsDataURL(blob);
   });
@@ -362,7 +343,7 @@ async function buildPreviewSourcePixelsWithFallback(
   }
 }
 
-async function buildInitialMaskFromDataUrl(
+async function buildMaskFromDataUrl(
   dataUrl: string,
   width: number,
   height: number,
@@ -399,15 +380,288 @@ function maskToDataUrl(mask: ExplorerImageCutoutAlphaMask): string {
   return canvas.toDataURL("image/png");
 }
 
-function describeToolInteraction(toolId: ExplorerImageCutoutToolId): string {
-  if (toolId === "spark") {
-    return "Click to grab a connected color island near the cursor.";
-  }
-  return "Drag to sweep across similar pixels. Alt-drag or right-drag trims the mask.";
+function surfaceRootStyle(): CSSProperties {
+  return {
+    width: "100%",
+    height: "100%",
+    position: "relative",
+    overflow: "hidden",
+    background:
+      "linear-gradient(180deg, color-mix(in srgb, var(--overlay-explorer-preview-bg) 92%, black 8%), color-mix(in srgb, var(--overlay-explorer-preview-bg) 84%, black 16%))",
+    border: "1px solid var(--overlay-explorer-preview-border)",
+    borderRadius: "var(--overlay-explorer-panel-radius, 12px)",
+    boxShadow: "var(--overlay-explorer-toolbar-shadow, 0 18px 48px rgba(0,0,0,0.28))",
+    isolation: "isolate",
+  };
+}
+
+function floatingPanelStyle(): CSSProperties {
+  return {
+    borderRadius: "calc(var(--overlay-explorer-control-radius, 10px) + 4px)",
+    border: "1px solid var(--overlay-explorer-preview-border)",
+    background:
+      "linear-gradient(180deg, color-mix(in srgb, var(--overlay-explorer-preview-bg) 88%, white 12%), var(--overlay-explorer-preview-bg))",
+    boxShadow: "0 18px 48px rgba(0,0,0,0.26)",
+    backdropFilter: "blur(18px)",
+  };
+}
+
+function controlGroupStyle(): CSSProperties {
+  return {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    padding: 2,
+    borderRadius: "calc(var(--overlay-explorer-control-radius, 10px) + 2px)",
+    border: "1px solid var(--overlay-explorer-chip-border)",
+    background: "var(--overlay-explorer-chip-bg)",
+    flexWrap: "wrap",
+  };
+}
+
+function stageViewportStyle(cursor: string): CSSProperties {
+  const checkerboardCss = `
+    linear-gradient(45deg, rgba(255,255,255,0.035) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255,255,255,0.035) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.035) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.035) 75%)
+  `;
+  return {
+    position: "absolute",
+    inset: 0,
+    overflow: "hidden",
+    cursor,
+    backgroundImage: checkerboardCss,
+    backgroundSize: "24px 24px",
+    backgroundPosition: "0 0, 0 12px, 12px -12px, -12px 0",
+  };
+}
+
+function stageContentStyle(
+  transform: ExplorerImageStageTransform,
+): CSSProperties {
+  return {
+    position: "absolute",
+    inset: "50% auto auto 50%",
+    transform: `translate(calc(-50% + ${transform.offsetX}px), calc(-50% + ${transform.offsetY}px)) scale(${transform.scale})`,
+    transformOrigin: "center center",
+    willChange: "transform",
+    maxWidth: "min(100%, calc(100% - 48px))",
+    maxHeight: "min(100%, calc(100% - 48px))",
+  };
+}
+
+function previewCanvasStyle(filterCss: string): CSSProperties {
+  return {
+    display: "block",
+    maxWidth: "min(100%, 1000px)",
+    maxHeight: "min(100%, 1000px)",
+    objectFit: "contain",
+    filter: filterCss,
+    imageRendering: "auto",
+    userSelect: "none",
+    WebkitUserSelect: "none",
+    pointerEvents: "none",
+  };
+}
+
+function marchingAntsCanvasStyle(hasBoundary: boolean): CSSProperties {
+  return {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+    imageRendering: "pixelated",
+    opacity: hasBoundary ? 1 : 0,
+    transition: "opacity 120ms ease",
+  };
+}
+
+type ExplorerIsolationButtonProps = {
+  ariaLabel: string;
+  title?: string;
+  active?: boolean;
+  disabled?: boolean;
+  variant?: "chip" | "action";
+  motionSurfaceId?: "previewWorkflowTab" | "actionButton";
+  motionStepIndex?: number;
+  onClick?: () => void;
+  children: ReactNode;
+};
+
+function ExplorerIsolationButton({
+  ariaLabel,
+  title,
+  active = false,
+  disabled = false,
+  variant = "chip",
+  motionSurfaceId,
+  motionStepIndex = 0,
+  onClick,
+  children,
+}: ExplorerIsolationButtonProps) {
+  const interactionMotion = useInteractionMotionController();
+  const surfaceId = motionSurfaceId ?? (variant === "chip" ? "previewWorkflowTab" : "actionButton");
+  const motionBinding = useMemo(
+    () =>
+      interactionMotion.bindSurface({
+        surfaceId,
+        triggerState: active ? { activate: true } : undefined,
+        motionStepIndex,
+        baseTransition:
+          "background 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease",
+      }),
+    [active, interactionMotion, motionStepIndex, surfaceId],
+  );
+
+  const baseStyle: CSSProperties =
+    variant === "chip"
+      ? {
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          minHeight: 30,
+          minWidth: 30,
+          padding: "0 10px",
+          borderRadius: "var(--overlay-explorer-control-radius, 8px)",
+          border: active
+            ? "1px solid var(--overlay-explorer-chip-active-border)"
+            : "1px solid var(--overlay-explorer-chip-border)",
+          background: active
+            ? "var(--overlay-explorer-chip-active-bg)"
+            : "var(--overlay-explorer-chip-bg)",
+          color: active
+            ? "var(--overlay-explorer-chip-active-text)"
+            : "var(--overlay-text-primary)",
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: "0.02em",
+          cursor: disabled ? "default" : "pointer",
+          opacity: disabled ? 0.52 : 1,
+        }
+      : {
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 7,
+          minHeight: 32,
+          minWidth: 32,
+          padding: 0,
+          borderRadius: "var(--overlay-explorer-control-radius, 8px)",
+          border: active
+            ? "1px solid var(--overlay-explorer-chip-active-border)"
+            : "1px solid var(--overlay-explorer-preview-border)",
+          background: active
+            ? "var(--overlay-explorer-chip-active-bg)"
+            : "color-mix(in srgb, var(--overlay-explorer-chip-bg) 76%, transparent)",
+          color: active
+            ? "var(--overlay-explorer-chip-active-text)"
+            : "var(--overlay-text-primary)",
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: "0.02em",
+          cursor: disabled ? "default" : "pointer",
+          opacity: disabled ? 0.52 : 1,
+          boxShadow: active
+            ? "0 10px 26px color-mix(in srgb, var(--overlay-accent) 12%, transparent)"
+            : "none",
+        };
+
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      title={title ?? ariaLabel}
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) {
+          onClick?.();
+        }
+      }}
+      {...motionBinding.motionDataAttributes}
+      onPointerEnter={motionBinding.onPointerEnter}
+      onPointerLeave={motionBinding.onPointerLeave}
+      onPointerDown={motionBinding.onPointerDown}
+      onPointerUp={motionBinding.onPointerUp}
+      onPointerCancel={motionBinding.onPointerCancel}
+      style={{
+        ...baseStyle,
+        ...motionBinding.motionStyle,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CutoutSliderField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  helper,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+  helper: string;
+}) {
+  return (
+    <label style={{ display: "grid", gap: 6 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          fontSize: 10,
+          color: "var(--overlay-text-muted)",
+        }}
+      >
+        <span>{label}</span>
+        <span
+          style={{
+            color: "var(--overlay-text-primary)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {value}
+        </span>
+      </div>
+      <PremiumSlider
+        ariaLabel={label}
+        ariaValueText={String(value)}
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        density="compact"
+        onChange={onChange}
+      />
+      <span
+        style={{
+          fontSize: 10,
+          lineHeight: 1.45,
+          color: "var(--overlay-text-dim, rgba(255,255,255,0.52))",
+        }}
+      >
+        {helper}
+      </span>
+    </label>
+  );
 }
 
 export function ExplorerImageCutoutSurface({
-  imageName,
+  workflowMode,
+  imageName: _imageName,
   imagePath,
   logicalOutputPath,
   sourceImageUrl,
@@ -415,77 +669,77 @@ export function ExplorerImageCutoutSurface({
   pythonRuntimeConfig = null,
   cutoutModelId = null,
   cutoutBackendPreference = "auto",
+  onRegisterContextMenuRegistration,
 }: ExplorerImageCutoutSurfaceProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const frameRef = useRef<HTMLDivElement | null>(null);
+  const stageViewportRef = useRef<HTMLDivElement | null>(null);
+  const stageContentRef = useRef<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const marchingAntsCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const sourcePreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const resolvedMaskCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
   const refreshPreviewFrameRef = useRef(0);
-  const baseMaskRef = useRef<ExplorerImageCutoutAlphaMask | null>(null);
-  const resolvedMaskRef = useRef<ExplorerImageCutoutAlphaMask | null>(null);
-  const sourcePixelsRef = useRef<ExplorerImageCutoutSourcePixels | null>(null);
-  const historyRef = useRef<Uint8ClampedArray[]>([]);
-  const historyIndexRef = useRef(0);
-  const activeSweepStrokeRef = useRef<ActiveSweepStroke | null>(null);
-  const boundaryRef = useRef<CutoutBoundarySnapshot | null>(null);
-  const edgeSoftnessRef = useRef(DEFAULT_EDGE_SOFTNESS);
-  const edgePullRef = useRef(DEFAULT_EDGE_PULL);
+  const sourceGenerationRef = useRef(0);
+  const activeBrushStrokeRef = useRef<ActiveBrushStroke | null>(null);
+  const pendingStageInteractionRef =
+    useRef<PendingStagePointerInteraction | null>(null);
+  const laneStatesRef = useRef<
+    Record<ExplorerImageCutoutWorkflowMode, ExplorerImageCutoutLaneState>
+  >({
+    cutout: createDefaultLaneState("cutout"),
+    removeBackground: createDefaultLaneState("removeBackground"),
+  });
+  const [, requestRender] = useReducer((value: number) => value + 1, 0);
   const keybindings = useSettingsStore((state) => state.settings.keybindings);
 
-  const [sessionSnapshot, setSessionSnapshot] =
-    useState<ExplorerImageCutoutSessionSnapshot | null>(null);
-  const [statusTone, setStatusTone] = useState<CutoutStatusTone>("neutral");
-  const [statusMessage, setStatusMessage] = useState("Booting cutout session…");
-  const [isBooting, setIsBooting] = useState(true);
-  const [isMutating, setIsMutating] = useState(false);
-  const [historyIndex, setHistoryIndex] = useState(0);
-  const [historyLength, setHistoryLength] = useState(1);
-  const [activeToolId, setActiveToolId] = useState<ExplorerImageCutoutToolId>(
-    DEFAULT_IMAGE_CUTOUT_TOOL_ID,
+  const activeLaneDefinition = useMemo(
+    () => resolveExplorerImageIsolationLaneDefinition(workflowMode),
+    [workflowMode],
   );
-  const [activeEditMode, setActiveEditMode] =
-    useState<ExplorerImageCutoutEditMode>("add");
-  const [activeInspectorTab, setActiveInspectorTab] = useState<
-    "select" | "refine"
-  >("select");
-  const [sparkTolerance, setSparkTolerance] = useState(DEFAULT_SPARK_TOLERANCE);
-  const [sweepTolerance, setSweepTolerance] = useState(DEFAULT_SWEEP_TOLERANCE);
-  const [sweepSize, setSweepSize] = useState(DEFAULT_SWEEP_SIZE);
-  const [sweepSoftness, setSweepSoftness] = useState(DEFAULT_SWEEP_SOFTNESS);
-  const [edgeSoftness, setEdgeSoftness] = useState(DEFAULT_EDGE_SOFTNESS);
-  const [edgePull, setEdgePull] = useState(DEFAULT_EDGE_PULL);
-  const [previewReady, setPreviewReady] = useState(false);
-  const [usedSourcePreviewFallback, setUsedSourcePreviewFallback] =
-    useState(false);
+  const activeLane = laneStatesRef.current[workflowMode];
+  const filterCss = buildCSSFilterString(filterState);
+  const exportFilters = useMemo(() => buildExportFilters(filterState), [filterState]);
 
   const focusSurface = useCallback(() => {
     rootRef.current?.focus();
   }, []);
 
-  const schedulePreviewRefresh = useCallback(() => {
-    if (refreshPreviewFrameRef.current !== 0) {
-      return;
-    }
+  const getLaneState = useCallback(
+    (mode: ExplorerImageCutoutWorkflowMode) => laneStatesRef.current[mode],
+    [],
+  );
 
-    refreshPreviewFrameRef.current = window.requestAnimationFrame(() => {
-      refreshPreviewFrameRef.current = 0;
+  const invalidateActiveLane = useCallback(() => {
+    requestRender();
+  }, []);
 
-      const baseMask = baseMaskRef.current;
-      const sourcePreviewCanvas = sourcePreviewCanvasRef.current;
+  const renderLanePreview = useCallback(
+    (mode: ExplorerImageCutoutWorkflowMode) => {
+      if (mode !== workflowMode) {
+        return;
+      }
+
+      const lane = laneStatesRef.current[mode];
       const previewCanvas = previewCanvasRef.current;
-      if (!baseMask || !sourcePreviewCanvas || !previewCanvas) {
+      const baseMask = lane.baseMask;
+      const sourcePreviewCanvas = lane.sourcePreviewCanvas;
+      if (!previewCanvas || !baseMask || !sourcePreviewCanvas) {
+        const previewContext = previewCanvas?.getContext("2d");
+        if (previewCanvas && previewContext) {
+          previewContext.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+        }
+        lane.resolvedMask = null;
+        lane.boundary = null;
+        lane.previewReady = false;
+        invalidateActiveLane();
         return;
       }
 
       const resolvedMask = resolveAdjustedCutoutMask({
         baseMask,
-        edgeSoftness: edgeSoftnessRef.current,
-        edgePull: edgePullRef.current,
+        edgeSoftness: lane.edgeSoftness,
+        edgePull: lane.edgePull,
       });
-      resolvedMaskRef.current = resolvedMask;
+      lane.resolvedMask = resolvedMask;
 
       if (!resolvedMaskCanvasRef.current) {
         resolvedMaskCanvasRef.current = document.createElement("canvas");
@@ -496,12 +750,21 @@ export function ExplorerImageCutoutSurface({
       previewCanvas.height = resolvedMask.height;
       const previewContext = previewCanvas.getContext("2d");
       if (!previewContext) {
+        lane.previewReady = false;
+        lane.boundary = null;
+        invalidateActiveLane();
         return;
       }
 
       previewContext.clearRect(0, 0, resolvedMask.width, resolvedMask.height);
       previewContext.globalCompositeOperation = "source-over";
-      previewContext.drawImage(sourcePreviewCanvas, 0, 0, resolvedMask.width, resolvedMask.height);
+      previewContext.drawImage(
+        sourcePreviewCanvas,
+        0,
+        0,
+        resolvedMask.width,
+        resolvedMask.height,
+      );
       previewContext.globalCompositeOperation = "destination-in";
       previewContext.drawImage(
         resolvedMaskCanvasRef.current,
@@ -512,418 +775,642 @@ export function ExplorerImageCutoutSurface({
       );
       previewContext.globalCompositeOperation = "source-over";
 
-      boundaryRef.current = {
+      lane.boundary = {
         width: resolvedMask.width,
         height: resolvedMask.height,
         points: buildCutoutBoundaryPoints(resolvedMask),
       };
-      setPreviewReady(true);
-    });
-  }, []);
+      lane.previewReady = true;
+      invalidateActiveLane();
+    },
+    [invalidateActiveLane, workflowMode],
+  );
 
-  const resetHistoryState = useCallback((mask: ExplorerImageCutoutAlphaMask) => {
-    baseMaskRef.current = {
-      width: mask.width,
-      height: mask.height,
-      alpha: cloneCutoutMaskAlpha(mask.alpha),
-    };
-    historyRef.current = [cloneCutoutMaskAlpha(mask.alpha)];
-    historyIndexRef.current = 0;
-    setHistoryIndex(0);
-    setHistoryLength(1);
-    schedulePreviewRefresh();
-  }, [schedulePreviewRefresh]);
+  const schedulePreviewRefresh = useCallback(
+    (mode: ExplorerImageCutoutWorkflowMode = workflowMode) => {
+      if (mode !== workflowMode) {
+        return;
+      }
+      if (refreshPreviewFrameRef.current !== 0) {
+        return;
+      }
+      refreshPreviewFrameRef.current = window.requestAnimationFrame(() => {
+        refreshPreviewFrameRef.current = 0;
+        renderLanePreview(mode);
+      });
+    },
+    [renderLanePreview, workflowMode],
+  );
+
+  const syncLaneVisuals = useCallback(
+    (mode: ExplorerImageCutoutWorkflowMode) => {
+      if (mode === workflowMode) {
+        invalidateActiveLane();
+        schedulePreviewRefresh(mode);
+      }
+    },
+    [invalidateActiveLane, schedulePreviewRefresh, workflowMode],
+  );
+
+  const resetHistoryState = useCallback(
+    (
+      mode: ExplorerImageCutoutWorkflowMode,
+      mask: ExplorerImageCutoutAlphaMask,
+    ) => {
+      const lane = getLaneState(mode);
+      lane.baseMask = cloneMask(mask);
+      lane.resolvedMask = null;
+      lane.boundary = null;
+      lane.history = [cloneCutoutMaskAlpha(mask.alpha)];
+      lane.historyIndex = 0;
+      lane.previewReady = false;
+      syncLaneVisuals(mode);
+    },
+    [getLaneState, syncLaneVisuals],
+  );
 
   const commitMaskHistory = useCallback(
     (
+      mode: ExplorerImageCutoutWorkflowMode,
       mask: ExplorerImageCutoutAlphaMask,
       status: string,
       tone: CutoutStatusTone = "success",
     ) => {
-      const nextMask = {
-        width: mask.width,
-        height: mask.height,
-        alpha: cloneCutoutMaskAlpha(mask.alpha),
-      };
-      baseMaskRef.current = nextMask;
-
+      const lane = getLaneState(mode);
+      const nextMask = cloneMask(mask);
+      lane.baseMask = nextMask;
+      lane.resolvedMask = null;
+      lane.boundary = null;
       const nextHistory = [
-        ...historyRef.current.slice(0, historyIndexRef.current + 1),
+        ...lane.history.slice(0, lane.historyIndex + 1),
         cloneCutoutMaskAlpha(nextMask.alpha),
       ];
       while (nextHistory.length > HISTORY_LIMIT) {
         nextHistory.shift();
       }
-      historyRef.current = nextHistory;
-      historyIndexRef.current = nextHistory.length - 1;
-      setHistoryIndex(historyIndexRef.current);
-      setHistoryLength(nextHistory.length);
-      setStatusTone(tone);
-      setStatusMessage(status);
-      schedulePreviewRefresh();
+      lane.history = nextHistory;
+      lane.historyIndex = nextHistory.length - 1;
+      lane.previewReady = false;
+      lane.statusTone = tone;
+      lane.statusMessage = status;
+      syncLaneVisuals(mode);
     },
-    [schedulePreviewRefresh],
+    [getLaneState, syncLaneVisuals],
   );
 
   const previewMaskDuringStroke = useCallback(
-    (mask: ExplorerImageCutoutAlphaMask, status: string) => {
-      baseMaskRef.current = mask;
-      setStatusTone("neutral");
-      setStatusMessage(status);
-      schedulePreviewRefresh();
+    (
+      mode: ExplorerImageCutoutWorkflowMode,
+      mask: ExplorerImageCutoutAlphaMask,
+      status: string,
+    ) => {
+      const lane = getLaneState(mode);
+      lane.baseMask = mask;
+      lane.resolvedMask = null;
+      lane.boundary = null;
+      lane.previewReady = false;
+      lane.statusTone = "neutral";
+      lane.statusMessage = status;
+      syncLaneVisuals(mode);
     },
-    [schedulePreviewRefresh],
+    [getLaneState, syncLaneVisuals],
   );
 
   const restoreHistoryIndex = useCallback(
-    (nextIndex: number) => {
-      const currentMask = baseMaskRef.current;
-      const snapshot = historyRef.current[nextIndex];
+    (mode: ExplorerImageCutoutWorkflowMode, nextIndex: number) => {
+      const lane = getLaneState(mode);
+      const currentMask = lane.baseMask;
+      const snapshot = lane.history[nextIndex];
       if (!currentMask || !snapshot) {
         return;
       }
 
-      baseMaskRef.current = {
+      lane.baseMask = {
         width: currentMask.width,
         height: currentMask.height,
         alpha: cloneCutoutMaskAlpha(snapshot),
       };
-      historyIndexRef.current = nextIndex;
-      setHistoryIndex(nextIndex);
-      setHistoryLength(historyRef.current.length);
-      setStatusTone("success");
-      setStatusMessage(
+      lane.resolvedMask = null;
+      lane.boundary = null;
+      lane.historyIndex = nextIndex;
+      lane.previewReady = false;
+      lane.statusTone = "success";
+      lane.statusMessage =
         nextIndex === 0
-          ? "Restored the auto cutout."
-          : `Restored edit ${nextIndex + 1} of ${historyRef.current.length}.`,
-      );
-      schedulePreviewRefresh();
+          ? resolveLaneCopy(mode).resetLabel
+          : `Restored edit ${nextIndex + 1} of ${lane.history.length}.`;
+      syncLaneVisuals(mode);
     },
-    [schedulePreviewRefresh],
+    [getLaneState, syncLaneVisuals],
   );
 
-  const resolveMaskPoint = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>): { x: number; y: number } | null => {
-      const frame = frameRef.current;
-      const baseMask = baseMaskRef.current;
-      if (!frame || !baseMask) {
+  const resolveMaskPointFromClient = useCallback(
+    (
+      mode: ExplorerImageCutoutWorkflowMode,
+      clientX: number,
+      clientY: number,
+    ): { x: number; y: number; xNorm: number; yNorm: number } | null => {
+      const content = stageContentRef.current;
+      const lane = getLaneState(mode);
+      const baseMask = lane.baseMask;
+      if (!content || !baseMask) {
         return null;
       }
-      const rect = frame.getBoundingClientRect();
+
+      const rect = content.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) {
         return null;
       }
-      const xRatio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-      const yRatio = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+
+      const xNorm = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const yNorm = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
       return {
-        x: Math.max(0, Math.min(baseMask.width - 1, Math.round(xRatio * (baseMask.width - 1)))),
-        y: Math.max(0, Math.min(baseMask.height - 1, Math.round(yRatio * (baseMask.height - 1)))),
+        x: Math.max(
+          0,
+          Math.min(baseMask.width - 1, Math.round(xNorm * (baseMask.width - 1))),
+        ),
+        y: Math.max(
+          0,
+          Math.min(baseMask.height - 1, Math.round(yNorm * (baseMask.height - 1))),
+        ),
+        xNorm,
+        yNorm,
       };
     },
-    [],
+    [getLaneState],
   );
 
-  const resolveEditModeFromPointer = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>): ExplorerImageCutoutEditMode =>
-      event.altKey || event.button === 2 ? "subtract" : activeEditMode,
-    [activeEditMode],
-  );
-
-  const applySparkAtPointer = useCallback(
-    (point: { x: number; y: number }, mode: ExplorerImageCutoutEditMode) => {
-      const baseMask = baseMaskRef.current;
-      const sourcePixels = sourcePixelsRef.current;
-      if (!baseMask || !sourcePixels) {
-        return;
-      }
-      const nextMask = applySparkSelection({
-        baseMask,
-        sourcePixels,
-        centerX: point.x,
-        centerY: point.y,
-        tolerance: sparkTolerance,
-        mode,
-      });
-      commitMaskHistory(
-        nextMask,
-        mode === "add" ? "Spark added a color island." : "Spark trimmed a color island.",
-      );
-    },
-    [commitMaskHistory, sparkTolerance],
-  );
-
-  const applySweepPoint = useCallback(
+  const applyRefinePoint = useCallback(
     (
+      lane: ExplorerImageCutoutLaneState,
       mask: ExplorerImageCutoutAlphaMask,
       point: { x: number; y: number },
       mode: ExplorerImageCutoutEditMode,
     ) => {
-      const sourcePixels = sourcePixelsRef.current;
-      if (!sourcePixels) {
+      if (!lane.sourcePixels) {
         return;
       }
       applySweepSelectionInPlace({
         targetMask: mask,
-        sourcePixels,
+        sourcePixels: lane.sourcePixels,
         centerX: point.x,
         centerY: point.y,
-        radius: sweepSize,
-        tolerance: sweepTolerance,
-        softness: sweepSoftness,
+        radius: lane.brushSize,
+        tolerance: lane.brushTolerance,
+        softness: lane.brushSoftness,
         mode,
       });
     },
-    [sweepSize, sweepSoftness, sweepTolerance],
+    [],
   );
 
-  const beginSweepStroke = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>, point: { x: number; y: number }) => {
-      const baseMask = baseMaskRef.current;
+  const resolveExportMaskDataUrl = useCallback(
+    (mode: ExplorerImageCutoutWorkflowMode): string | null => {
+      const lane = getLaneState(mode);
+      const baseMask = lane.baseMask;
       if (!baseMask) {
-        return;
+        return null;
       }
-      const workingMask = {
-        width: baseMask.width,
-        height: baseMask.height,
-        alpha: cloneCutoutMaskAlpha(baseMask.alpha),
+      const resolvedMask =
+        lane.resolvedMask ??
+        resolveAdjustedCutoutMask({
+          baseMask,
+          edgeSoftness: lane.edgeSoftness,
+          edgePull: lane.edgePull,
+        });
+      lane.resolvedMask = resolvedMask;
+      lane.boundary = {
+        width: resolvedMask.width,
+        height: resolvedMask.height,
+        points: buildCutoutBoundaryPoints(resolvedMask),
       };
-      const mode = resolveEditModeFromPointer(event);
-      applySweepPoint(workingMask, point, mode);
-      activeSweepStrokeRef.current = {
-        pointerId: event.pointerId,
-        mode,
-        workingMask,
-        lastX: point.x,
-        lastY: point.y,
-      };
-      event.currentTarget.setPointerCapture(event.pointerId);
-      previewMaskDuringStroke(
-        workingMask,
-        mode === "add" ? "Sweeping the selection outward…" : "Sweeping the selection inward…",
-      );
+      return maskToDataUrl(resolvedMask);
     },
-    [applySweepPoint, previewMaskDuringStroke, resolveEditModeFromPointer],
+    [getLaneState],
   );
 
-  const continueSweepStroke = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      const activeStroke = activeSweepStrokeRef.current;
-      if (!activeStroke || event.pointerId !== activeStroke.pointerId) {
+  const stageNativeDrag = useCallback(
+    async (mode: ExplorerImageCutoutWorkflowMode) => {
+      const lane = getLaneState(mode);
+      const snapshot = lane.sessionSnapshot;
+      if (!snapshot || lane.isMutating) {
         return;
       }
-      const point = resolveMaskPoint(event);
-      if (!point) {
-        return;
-      }
-      const deltaX = point.x - activeStroke.lastX;
-      const deltaY = point.y - activeStroke.lastY;
-      const distance = Math.hypot(deltaX, deltaY);
-      const stepCount = Math.max(1, Math.ceil(distance / Math.max(2, sweepSize / 3)));
 
-      for (let stepIndex = 1; stepIndex <= stepCount; stepIndex += 1) {
-        const stepPoint = {
-          x: Math.round(activeStroke.lastX + (deltaX * stepIndex) / stepCount),
-          y: Math.round(activeStroke.lastY + (deltaY * stepIndex) / stepCount),
-        };
-        applySweepPoint(activeStroke.workingMask, stepPoint, activeStroke.mode);
-      }
+      lane.isMutating = true;
+      lane.statusTone = "neutral";
+      lane.statusMessage = "Staging a drag-ready cutout PNG…";
+      syncLaneVisuals(mode);
 
-      activeStroke.lastX = point.x;
-      activeStroke.lastY = point.y;
-      previewMaskDuringStroke(
-        activeStroke.workingMask,
-        activeStroke.mode === "add"
-          ? "Sweeping the selection outward…"
-          : "Sweeping the selection inward…",
-      );
-    },
-    [applySweepPoint, previewMaskDuringStroke, resolveMaskPoint, sweepSize],
-  );
-
-  const endSweepStroke = useCallback(() => {
-    const activeStroke = activeSweepStrokeRef.current;
-    if (!activeStroke) {
-      return;
-    }
-    activeSweepStrokeRef.current = null;
-    commitMaskHistory(
-      activeStroke.workingMask,
-      activeStroke.mode === "add"
-        ? "Sweep added to the selection."
-        : "Sweep trimmed the selection.",
-    );
-  }, [commitMaskHistory]);
-
-  const handleSurfacePointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      focusSurface();
-      if (
-        isBooting ||
-        isMutating ||
-        event.button > 2 ||
-        baseMaskRef.current == null ||
-        sourcePixelsRef.current == null
-      ) {
-        return;
+      try {
+        const exportArtifact = await stageExplorerImageCutoutExport({
+          sessionId: snapshot.sessionId,
+          exportMode: "staging",
+          logicalOutputPath: logicalOutputPath ?? imagePath,
+          filters: exportFilters,
+          overrideMaskDataUrl: resolveExportMaskDataUrl(mode),
+        });
+        await startExplorerImageCutoutNativeDrag(exportArtifact.outputPath);
+        lane.statusTone = "success";
+        lane.statusMessage = "Native drag staged. Drop the PNG into Explorer or the desktop.";
+      } catch (error) {
+        lane.statusTone = "error";
+        lane.statusMessage = String(error);
+      } finally {
+        lane.isMutating = false;
+        syncLaneVisuals(mode);
       }
-      const point = resolveMaskPoint(event);
-      if (!point) {
-        return;
-      }
-      event.preventDefault();
-
-      if (activeToolId === "spark") {
-        applySparkAtPointer(point, resolveEditModeFromPointer(event));
-        return;
-      }
-      beginSweepStroke(event, point);
     },
     [
-      activeToolId,
-      applySparkAtPointer,
-      beginSweepStroke,
-      focusSurface,
-      isBooting,
-      isMutating,
-      resolveEditModeFromPointer,
-      resolveMaskPoint,
+      exportFilters,
+      getLaneState,
+      imagePath,
+      logicalOutputPath,
+      resolveExportMaskDataUrl,
+      syncLaneVisuals,
     ],
   );
 
-  useEffect(() => {
-    edgeSoftnessRef.current = edgeSoftness;
-    schedulePreviewRefresh();
-  }, [edgeSoftness, schedulePreviewRefresh]);
+  const handleResetLane = useCallback(
+    async (mode: ExplorerImageCutoutWorkflowMode) => {
+      const lane = getLaneState(mode);
+      const snapshot = lane.sessionSnapshot;
+      if (!snapshot || lane.isMutating) {
+        return;
+      }
 
-  useEffect(() => {
-    edgePullRef.current = edgePull;
-    schedulePreviewRefresh();
-  }, [edgePull, schedulePreviewRefresh]);
+      lane.isMutating = true;
+      lane.statusTone = "neutral";
+      lane.statusMessage =
+        mode === "cutout"
+          ? "Clearing Cutout prompts and local refinements…"
+          : "Refreshing automatic background removal…";
+      syncLaneVisuals(mode);
 
-  useEffect(() => {
-    let cancelled = false;
-    let staleSessionId: string | null = null;
-
-    setIsBooting(true);
-    setIsMutating(false);
-    setStatusTone("neutral");
-    setStatusMessage("Booting cutout session…");
-    setSessionSnapshot(null);
-    sourcePixelsRef.current = null;
-    sourcePreviewCanvasRef.current = null;
-    baseMaskRef.current = null;
-    resolvedMaskRef.current = null;
-    historyRef.current = [];
-    historyIndexRef.current = 0;
-    boundaryRef.current = null;
-    activeSweepStrokeRef.current = null;
-    setPreviewReady(false);
-    setUsedSourcePreviewFallback(false);
-    setHistoryIndex(0);
-    setHistoryLength(1);
-
-    void (async () => {
       try {
-        const sessionInput = await resolveCutoutSessionInput(sourceImageUrl, imagePath);
-        const snapshot = await openExplorerImageCutoutSession({
-          inputDataUrl: sessionInput.inputDataUrl,
-          inputPath: sessionInput.inputPath,
-          logicalOutputPath: logicalOutputPath ?? imagePath,
-          previewMaxDimension: DEFAULT_PREVIEW_MAX_DIMENSION,
-          config: pythonRuntimeConfig,
-          modelId: cutoutModelId,
-          backendPreference: cutoutBackendPreference,
-        });
-
-        if (cancelled) {
-          staleSessionId = snapshot.sessionId;
-          return;
-        }
-
-        const [sourcePreview, initialMask] = await Promise.all([
-          buildPreviewSourcePixelsWithFallback(
-            sourceImageUrl,
-            snapshot.cutoutPreviewDataUrl,
-            snapshot.previewWidth,
-            snapshot.previewHeight,
-          ),
-          buildInitialMaskFromDataUrl(
-            snapshot.previewMask.dataUrl,
-            snapshot.previewWidth,
-            snapshot.previewHeight,
-          ),
-        ]);
-
-        if (cancelled) {
-          staleSessionId = snapshot.sessionId;
-          return;
-        }
-
-        sessionIdRef.current = snapshot.sessionId;
-        sourcePixelsRef.current = sourcePreview.pixels;
-        sourcePreviewCanvasRef.current = sourcePreview.canvas;
-        setUsedSourcePreviewFallback(sourcePreview.usedFallback);
-        resetHistoryState(initialMask);
-        setSessionSnapshot(snapshot);
-        setStatusTone(sourcePreview.usedFallback ? "warning" : "success");
-        setStatusMessage(
-          sourcePreview.usedFallback
-            ? "Auto cutout ready. Source preview fallback is active, so selection expansion may feel less precise."
-            : snapshot.diagnostics.message?.trim() ||
-                "Auto cutout ready. Use Spark or Sweep to tighten the subject, then refine the edge.",
+        const nextSnapshot = await resetExplorerImageCutoutSession(snapshot.sessionId);
+        const nextMask = await buildMaskFromDataUrl(
+          nextSnapshot.previewMask.dataUrl,
+          nextSnapshot.previewWidth,
+          nextSnapshot.previewHeight,
         );
-        setIsBooting(false);
-        focusSurface();
+        lane.sessionSnapshot = nextSnapshot;
+        lane.statusTone = "success";
+        lane.statusMessage = resolveLaneCopy(mode).resetLabel;
+        resetHistoryState(mode, nextMask);
       } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        setStatusTone("error");
-        setStatusMessage(String(error));
-        setIsBooting(false);
+        lane.statusTone = "error";
+        lane.statusMessage = String(error);
+      } finally {
+        lane.isMutating = false;
+        syncLaneVisuals(mode);
       }
-    })();
+    },
+    [getLaneState, resetHistoryState, syncLaneVisuals],
+  );
 
-    return () => {
-      cancelled = true;
-      const closingSessionId = staleSessionId ?? sessionIdRef.current;
-      sessionIdRef.current = null;
-      if (closingSessionId) {
-        void closeExplorerImageCutoutSession(closingSessionId).catch(() => {});
-      }
-    };
+  const handleSaveSibling = useCallback(async () => {
+    const lane = getLaneState(workflowMode);
+    const snapshot = lane.sessionSnapshot;
+    if (!snapshot || lane.isMutating) {
+      return;
+    }
+
+    lane.isMutating = true;
+    lane.statusTone = "neutral";
+    lane.statusMessage = "Saving sibling cutout PNG…";
+    syncLaneVisuals(workflowMode);
+
+    try {
+      const exportArtifact = await stageExplorerImageCutoutExport({
+        sessionId: snapshot.sessionId,
+        exportMode: "siblingPng",
+        logicalOutputPath: logicalOutputPath ?? imagePath,
+        filters: exportFilters,
+        overrideMaskDataUrl: resolveExportMaskDataUrl(workflowMode),
+      });
+      lane.statusTone = "success";
+      lane.statusMessage = `Saved ${exportArtifact.fileName}.`;
+    } catch (error) {
+      lane.statusTone = "error";
+      lane.statusMessage = String(error);
+    } finally {
+      lane.isMutating = false;
+      syncLaneVisuals(workflowMode);
+    }
   }, [
-    cutoutBackendPreference,
-    cutoutModelId,
-    focusSurface,
+    exportFilters,
+    getLaneState,
     imagePath,
     logicalOutputPath,
+    resolveExportMaskDataUrl,
+    syncLaneVisuals,
+    workflowMode,
+  ]);
+
+  const handleCopyToClipboard = useCallback(async () => {
+    const lane = getLaneState(workflowMode);
+    const snapshot = lane.sessionSnapshot;
+    if (!snapshot || lane.isMutating) {
+      return;
+    }
+
+    lane.isMutating = true;
+    lane.statusTone = "neutral";
+    lane.statusMessage = "Copying the current cutout to the system clipboard…";
+    syncLaneVisuals(workflowMode);
+
+    try {
+      await copyExplorerImageCutoutToClipboard({
+        sessionId: snapshot.sessionId,
+        logicalOutputPath: logicalOutputPath ?? imagePath,
+        filters: exportFilters,
+        overrideMaskDataUrl: resolveExportMaskDataUrl(workflowMode),
+      });
+      lane.statusTone = "success";
+      lane.statusMessage = "Cutout copied to the clipboard.";
+    } catch (error) {
+      lane.statusTone = "error";
+      lane.statusMessage = String(error);
+    } finally {
+      lane.isMutating = false;
+      syncLaneVisuals(workflowMode);
+    }
+  }, [
+    exportFilters,
+    getLaneState,
+    imagePath,
+    logicalOutputPath,
+    resolveExportMaskDataUrl,
+    syncLaneVisuals,
+    workflowMode,
+  ]);
+
+  const handleApplyPrompt = useCallback(
+    async (kind: "positive" | "negative", xNorm: number, yNorm: number) => {
+      const lane = getLaneState(workflowMode);
+      const snapshot = lane.sessionSnapshot;
+      if (!snapshot || lane.isMutating) {
+        return;
+      }
+
+      lane.isMutating = true;
+      lane.statusTone = "neutral";
+      lane.statusMessage =
+        kind === "positive"
+          ? "Expanding the selection from your prompt…"
+          : "Subtracting the background from your prompt…";
+      syncLaneVisuals(workflowMode);
+
+      try {
+        const nextSnapshot = await applyExplorerImageCutoutPrompts({
+          sessionId: snapshot.sessionId,
+          prompts: [{ xNorm, yNorm, kind }],
+        });
+        const nextMask = await buildMaskFromDataUrl(
+          nextSnapshot.previewMask.dataUrl,
+          nextSnapshot.previewWidth,
+          nextSnapshot.previewHeight,
+        );
+        lane.sessionSnapshot = nextSnapshot;
+        commitMaskHistory(
+          workflowMode,
+          nextMask,
+          kind === "positive"
+            ? "Prompt added to the selection."
+            : "Prompt removed from the selection.",
+        );
+      } catch (error) {
+        lane.statusTone = "error";
+        lane.statusMessage = String(error);
+      } finally {
+        lane.isMutating = false;
+        syncLaneVisuals(workflowMode);
+      }
+    },
+    [commitMaskHistory, getLaneState, syncLaneVisuals, workflowMode],
+  );
+
+  const bootLane = useCallback(
+    (mode: ExplorerImageCutoutWorkflowMode) => {
+      const lane = getLaneState(mode);
+      const laneDefinition = resolveLaneCopy(mode);
+      if (lane.isBooting || lane.sessionSnapshot) {
+        syncLaneVisuals(mode);
+        return;
+      }
+
+      const generation = sourceGenerationRef.current;
+      const requestId = lane.bootRequestId + 1;
+      lane.bootRequestId = requestId;
+      lane.isBooting = true;
+      lane.isMutating = false;
+      lane.statusTone = "neutral";
+      lane.statusMessage =
+        mode === "cutout"
+          ? "Preparing prompt-first Cutout…"
+          : "Preparing automatic background removal…";
+      lane.previewReady = false;
+      lane.usedSourcePreviewFallback = false;
+      lane.sessionSnapshot = null;
+      lane.sourcePixels = null;
+      lane.sourcePreviewCanvas = null;
+      lane.baseMask = null;
+      lane.resolvedMask = null;
+      lane.boundary = null;
+      lane.history = [];
+      lane.historyIndex = 0;
+      lane.showRefinePanel = false;
+      lane.activeStageTool = resolveDefaultStageTool(mode);
+      syncLaneVisuals(mode);
+
+      void (async () => {
+        let openedSessionId: string | null = null;
+        try {
+          const sessionInput = await resolveCutoutSessionInput(sourceImageUrl, imagePath);
+          const snapshot = await openExplorerImageCutoutSession({
+            inputDataUrl: sessionInput.inputDataUrl,
+            inputPath: sessionInput.inputPath,
+            logicalOutputPath: logicalOutputPath ?? imagePath,
+            previewMaxDimension: DEFAULT_PREVIEW_MAX_DIMENSION,
+            config: pythonRuntimeConfig,
+            modelId: cutoutModelId,
+            backendPreference: cutoutBackendPreference,
+            workflowMode: mode,
+          });
+          openedSessionId = snapshot.sessionId;
+
+          const [sourcePreview, initialMask] = await Promise.all([
+            buildPreviewSourcePixelsWithFallback(
+              sourceImageUrl,
+              snapshot.cutoutPreviewDataUrl,
+              snapshot.previewWidth,
+              snapshot.previewHeight,
+            ),
+            buildMaskFromDataUrl(
+              snapshot.previewMask.dataUrl,
+              snapshot.previewWidth,
+              snapshot.previewHeight,
+            ),
+          ]);
+
+          const currentLane = laneStatesRef.current[mode];
+          const isStale =
+            sourceGenerationRef.current !== generation ||
+            currentLane.bootRequestId !== requestId;
+          if (isStale) {
+            if (openedSessionId) {
+              await closeExplorerImageCutoutSession(openedSessionId).catch(() => {});
+            }
+            return;
+          }
+
+          currentLane.sessionSnapshot = snapshot;
+          currentLane.sourcePixels = sourcePreview.pixels;
+          currentLane.sourcePreviewCanvas = sourcePreview.canvas;
+          currentLane.usedSourcePreviewFallback = sourcePreview.usedFallback;
+          currentLane.statusTone = sourcePreview.usedFallback ? "warning" : "success";
+          currentLane.statusMessage = sourcePreview.usedFallback
+            ? `${laneDefinition.readyMessage} Source preview fallback is active, so prompt placement may feel slightly softer.`
+            : snapshot.diagnostics.message?.trim() || laneDefinition.readyMessage;
+          currentLane.isBooting = false;
+          resetHistoryState(mode, initialMask);
+          if (mode === workflowMode) {
+            focusSurface();
+          }
+          syncLaneVisuals(mode);
+        } catch (error) {
+          const currentLane = laneStatesRef.current[mode];
+          const isStale =
+            sourceGenerationRef.current !== generation ||
+            currentLane.bootRequestId !== requestId;
+          if (isStale) {
+            if (openedSessionId) {
+              void closeExplorerImageCutoutSession(openedSessionId).catch(() => {});
+            }
+            return;
+          }
+          if (openedSessionId) {
+            void closeExplorerImageCutoutSession(openedSessionId).catch(() => {});
+          }
+          currentLane.isBooting = false;
+          currentLane.statusTone = "error";
+          currentLane.statusMessage = String(error);
+          currentLane.sessionSnapshot = null;
+          syncLaneVisuals(mode);
+        }
+      })();
+    },
+    [
+      cutoutBackendPreference,
+      cutoutModelId,
+      focusSurface,
+      getLaneState,
+      imagePath,
+      logicalOutputPath,
+      pythonRuntimeConfig,
+      resetHistoryState,
+      sourceImageUrl,
+      syncLaneVisuals,
+      workflowMode,
+    ],
+  );
+
+  const clearInteractivePointers = useCallback(
+    (mode: ExplorerImageCutoutWorkflowMode) => {
+      const activeBrushStroke = activeBrushStrokeRef.current;
+      if (activeBrushStroke?.workflowMode === mode) {
+        activeBrushStrokeRef.current = null;
+      }
+      const pendingInteraction = pendingStageInteractionRef.current;
+      if (pendingInteraction?.workflowMode === mode) {
+        pendingStageInteractionRef.current = null;
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const previousLaneStates = laneStatesRef.current;
+    const openSessionIds = collectOpenSessionIds(previousLaneStates);
+    sourceGenerationRef.current += 1;
+    laneStatesRef.current = {
+      cutout: createDefaultLaneState("cutout"),
+      removeBackground: createDefaultLaneState("removeBackground"),
+    };
+    clearInteractivePointers("cutout");
+    clearInteractivePointers("removeBackground");
+    if (refreshPreviewFrameRef.current !== 0) {
+      window.cancelAnimationFrame(refreshPreviewFrameRef.current);
+      refreshPreviewFrameRef.current = 0;
+    }
+    const previewCanvas = previewCanvasRef.current;
+    const previewContext = previewCanvas?.getContext("2d");
+    if (previewCanvas && previewContext) {
+      previewContext.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+    }
+    const antsCanvas = marchingAntsCanvasRef.current;
+    const antsContext = antsCanvas?.getContext("2d");
+    if (antsCanvas && antsContext) {
+      antsContext.clearRect(0, 0, antsCanvas.width, antsCanvas.height);
+    }
+    invalidateActiveLane();
+    for (const sessionId of openSessionIds) {
+      void closeExplorerImageCutoutSession(sessionId).catch(() => {});
+    }
+  }, [
+    clearInteractivePointers,
+    cutoutBackendPreference,
+    cutoutModelId,
+    imagePath,
+    invalidateActiveLane,
+    logicalOutputPath,
     pythonRuntimeConfig,
-    resetHistoryState,
     sourceImageUrl,
   ]);
 
   useEffect(() => {
-    schedulePreviewRefresh();
-  }, [historyIndex, schedulePreviewRefresh, sessionSnapshot]);
+    bootLane(workflowMode);
+    schedulePreviewRefresh(workflowMode);
+    invalidateActiveLane();
+  }, [bootLane, invalidateActiveLane, schedulePreviewRefresh, workflowMode]);
+
+  useEffect(() => {
+    return () => {
+      const openSessionIds = collectOpenSessionIds(laneStatesRef.current);
+      if (refreshPreviewFrameRef.current !== 0) {
+        window.cancelAnimationFrame(refreshPreviewFrameRef.current);
+      }
+      for (const sessionId of openSessionIds) {
+        void closeExplorerImageCutoutSession(sessionId).catch(() => {});
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let animationFrameId = 0;
 
     const render = (now: number) => {
-      const canvas = marchingAntsCanvasRef.current;
-      const boundary = boundaryRef.current;
-      if (!canvas || !boundary) {
+      const antsCanvas = marchingAntsCanvasRef.current;
+      const boundary = laneStatesRef.current[workflowMode].boundary;
+      if (!antsCanvas || !boundary || !hasVisibleBoundary(boundary)) {
+        const context = antsCanvas?.getContext("2d");
+        if (context && antsCanvas) {
+          context.clearRect(0, 0, antsCanvas.width, antsCanvas.height);
+        }
         animationFrameId = window.requestAnimationFrame(render);
         return;
       }
 
-      if (canvas.width !== boundary.width || canvas.height !== boundary.height) {
-        canvas.width = boundary.width;
-        canvas.height = boundary.height;
+      if (
+        antsCanvas.width !== boundary.width ||
+        antsCanvas.height !== boundary.height
+      ) {
+        antsCanvas.width = boundary.width;
+        antsCanvas.height = boundary.height;
       }
 
-      const context = canvas.getContext("2d");
+      const context = antsCanvas.getContext("2d");
       if (!context) {
         animationFrameId = window.requestAnimationFrame(render);
         return;
@@ -931,9 +1418,9 @@ export function ExplorerImageCutoutSurface({
 
       const imageData = context.createImageData(boundary.width, boundary.height);
       const phase = (now / 1000) * MARCHING_ANTS_SPEED;
-
       for (const [x, y] of boundary.points) {
-        const stripe = (((x + y - phase) / (MARCHING_ANTS_WIDTH * 2)) % 2 + 2) % 2;
+        const stripe =
+          (((x + y - phase) / (MARCHING_ANTS_WIDTH * 2)) % 2 + 2) % 2;
         const channel = stripe < 1 ? 0 : 255;
         const offset = (y * boundary.width + x) * 4;
         imageData.data[offset] = channel;
@@ -951,146 +1438,52 @@ export function ExplorerImageCutoutSurface({
     return () => {
       window.cancelAnimationFrame(animationFrameId);
     };
-  }, []);
+  }, [workflowMode]);
 
-  useEffect(() => {
-    return () => {
-      if (refreshPreviewFrameRef.current !== 0) {
-        window.cancelAnimationFrame(refreshPreviewFrameRef.current);
+  const handleWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      const lane = getLaneState(workflowMode);
+      if (!lane.sessionSnapshot) {
+        return;
       }
-    };
-  }, []);
 
-  const exportFilters = useMemo(() => buildExportFilters(filterState), [filterState]);
-  const filterCss = buildCSSFilterString(filterState);
+      event.preventDefault();
+      event.stopPropagation();
 
-  const buildOverrideMaskDataUrl = useCallback(() => {
-    const resolvedMask = resolvedMaskRef.current;
-    return resolvedMask ? maskToDataUrl(resolvedMask) : null;
-  }, []);
-
-  const handleResetToAutoCutout = useCallback(async () => {
-    const snapshot = sessionSnapshot;
-    if (!snapshot) {
-      return;
-    }
-    setIsMutating(true);
-    setStatusTone("neutral");
-    setStatusMessage("Restoring the auto cutout…");
-    try {
-      const nextSnapshot = await resetExplorerImageCutoutSession(snapshot.sessionId);
-      const nextMask = await buildInitialMaskFromDataUrl(
-        nextSnapshot.previewMask.dataUrl,
-        nextSnapshot.previewWidth,
-        nextSnapshot.previewHeight,
-      );
-      resetHistoryState(nextMask);
-      setSessionSnapshot(nextSnapshot);
-      setStatusTone("success");
-      setStatusMessage("Back to the initial auto cutout.");
-    } catch (error) {
-      setStatusTone("error");
-      setStatusMessage(String(error));
-    } finally {
-      setIsMutating(false);
-    }
-  }, [resetHistoryState, sessionSnapshot]);
-
-  const handleSaveSibling = useCallback(async () => {
-    const snapshot = sessionSnapshot;
-    if (!snapshot) {
-      return;
-    }
-    setIsMutating(true);
-    setStatusTone("neutral");
-    setStatusMessage("Saving sibling cutout PNG…");
-    try {
-      const exportArtifact = await stageExplorerImageCutoutExport({
-        sessionId: snapshot.sessionId,
-        exportMode: "siblingPng",
-        logicalOutputPath: logicalOutputPath ?? imagePath,
-        filters: exportFilters,
-        overrideMaskDataUrl: buildOverrideMaskDataUrl(),
+      lane.transform = applyExplorerImageStageWheelZoom({
+        currentTransform: lane.transform,
+        viewport: stageViewportRef.current,
+        content: stageContentRef.current,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        deltaY: event.deltaY,
       });
-      setStatusTone("success");
-      setStatusMessage(`Saved ${exportArtifact.fileName}.`);
-    } catch (error) {
-      setStatusTone("error");
-      setStatusMessage(String(error));
-    } finally {
-      setIsMutating(false);
-    }
-  }, [
-    buildOverrideMaskDataUrl,
-    exportFilters,
-    imagePath,
-    logicalOutputPath,
-    sessionSnapshot,
-  ]);
+      invalidateActiveLane();
+    },
+    [getLaneState, invalidateActiveLane, workflowMode],
+  );
 
-  const handleCopyToClipboard = useCallback(async () => {
-    const snapshot = sessionSnapshot;
-    if (!snapshot) {
+  const handleUndo = useCallback(() => {
+    const lane = getLaneState(workflowMode);
+    if (lane.historyIndex <= 0 || lane.isMutating) {
       return;
     }
-    setIsMutating(true);
-    setStatusTone("neutral");
-    setStatusMessage("Copying the current cutout to the system clipboard…");
-    try {
-      await copyExplorerImageCutoutToClipboard({
-        sessionId: snapshot.sessionId,
-        logicalOutputPath: logicalOutputPath ?? imagePath,
-        filters: exportFilters,
-        overrideMaskDataUrl: buildOverrideMaskDataUrl(),
-      });
-      setStatusTone("success");
-      setStatusMessage("Cutout copied to the clipboard.");
-    } catch (error) {
-      setStatusTone("error");
-      setStatusMessage(String(error));
-    } finally {
-      setIsMutating(false);
-    }
-  }, [
-    buildOverrideMaskDataUrl,
-    exportFilters,
-    imagePath,
-    logicalOutputPath,
-    sessionSnapshot,
-  ]);
+    restoreHistoryIndex(workflowMode, lane.historyIndex - 1);
+  }, [getLaneState, restoreHistoryIndex, workflowMode]);
 
-  const handleNativeDrag = useCallback(async () => {
-    const snapshot = sessionSnapshot;
-    if (!snapshot) {
+  const handleRedo = useCallback(() => {
+    const lane = getLaneState(workflowMode);
+    if (lane.historyIndex + 1 >= lane.history.length || lane.isMutating) {
       return;
     }
-    setIsMutating(true);
-    setStatusTone("neutral");
-    setStatusMessage("Staging a drag-ready cutout PNG…");
-    try {
-      const exportArtifact = await stageExplorerImageCutoutExport({
-        sessionId: snapshot.sessionId,
-        exportMode: "staging",
-        logicalOutputPath: logicalOutputPath ?? imagePath,
-        filters: exportFilters,
-        overrideMaskDataUrl: buildOverrideMaskDataUrl(),
-      });
-      await startExplorerImageCutoutNativeDrag(exportArtifact.outputPath);
-      setStatusTone("success");
-      setStatusMessage("Drag the cutout into Explorer or the desktop.");
-    } catch (error) {
-      setStatusTone("error");
-      setStatusMessage(String(error));
-    } finally {
-      setIsMutating(false);
-    }
-  }, [
-    buildOverrideMaskDataUrl,
-    exportFilters,
-    imagePath,
-    logicalOutputPath,
-    sessionSnapshot,
-  ]);
+    restoreHistoryIndex(workflowMode, lane.historyIndex + 1);
+  }, [getLaneState, restoreHistoryIndex, workflowMode]);
+
+  const handleResetStageView = useCallback(() => {
+    const lane = getLaneState(workflowMode);
+    lane.transform = { ...DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM };
+    syncLaneVisuals(workflowMode);
+  }, [getLaneState, syncLaneVisuals, workflowMode]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1116,23 +1509,19 @@ export function ExplorerImageCutoutSurface({
       if (matchesKeybinding(event, keybindings.imageEditorUndo)) {
         event.preventDefault();
         event.stopPropagation();
-        if (historyIndexRef.current > 0) {
-          restoreHistoryIndex(historyIndexRef.current - 1);
-        }
+        handleUndo();
         return;
       }
       if (matchesKeybinding(event, keybindings.imageEditorRedo)) {
         event.preventDefault();
         event.stopPropagation();
-        if (historyIndexRef.current + 1 < historyRef.current.length) {
-          restoreHistoryIndex(historyIndexRef.current + 1);
-        }
+        handleRedo();
         return;
       }
       if (matchesKeybinding(event, keybindings.imageEditorReset)) {
         event.preventDefault();
         event.stopPropagation();
-        void handleResetToAutoCutout();
+        void handleResetLane(workflowMode);
       }
     };
 
@@ -1140,38 +1529,478 @@ export function ExplorerImageCutoutSurface({
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [
     handleCopyToClipboard,
-    handleResetToAutoCutout,
+    handleRedo,
+    handleResetLane,
     handleSaveSibling,
+    handleUndo,
     keybindings.imageCutoutCopy,
     keybindings.imageEditorRedo,
     keybindings.imageEditorReset,
     keybindings.imageEditorUndo,
     keybindings.saveFile,
-    restoreHistoryIndex,
+    workflowMode,
   ]);
 
-  const activeToolDefinition = useMemo(
-    () =>
-      imageCutoutToolDefinitions.find((tool) => tool.id === activeToolId) ??
-      imageCutoutToolDefinitions[0],
-    [activeToolId],
+  const handleRefineToggle = useCallback(() => {
+    const lane = getLaneState(workflowMode);
+    const nextShowRefinePanel = !lane.showRefinePanel;
+    lane.showRefinePanel = nextShowRefinePanel;
+    if (!nextShowRefinePanel) {
+      lane.activeStageTool = resolveDefaultStageTool(workflowMode);
+    } else if (lane.activeStageTool === "selection" || lane.activeStageTool === "pan") {
+      lane.activeStageTool =
+        lane.refineToolId === "erase" ? "erase" : "brush";
+    }
+    invalidateActiveLane();
+  }, [getLaneState, invalidateActiveLane, workflowMode]);
+
+  const handleSelectStageTool = useCallback(
+    (nextTool: ExplorerImageCutoutStageToolId) => {
+      const lane = getLaneState(workflowMode);
+      lane.activeStageTool = nextTool;
+      if (nextTool === "selection" || nextTool === "pan") {
+        lane.showRefinePanel = false;
+      }
+      if (nextTool === "brush" || nextTool === "erase") {
+        lane.showRefinePanel = true;
+        lane.refineToolId = nextTool === "erase" ? "erase" : "brush";
+      }
+      invalidateActiveLane();
+    },
+    [getLaneState, invalidateActiveLane, workflowMode],
   );
 
-  const hasSession = sessionSnapshot != null && baseMaskRef.current != null;
-  const canUseInteractiveTools = hasSession && sourcePixelsRef.current != null;
-  const checkerboardCSS = `
-    linear-gradient(45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.02) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.02) 75%)
-  `;
-  const stageCursor = isMutating
+  useEffect(() => {
+    if (!onRegisterContextMenuRegistration) {
+      return;
+    }
+
+    const cutoutLane = resolveLaneCopy("cutout");
+    const removeBackgroundLane = resolveLaneCopy("removeBackground");
+
+    onRegisterContextMenuRegistration({
+      previewKind: "image",
+      baseActions: [
+        {
+          id: "image-cutout.reset-view",
+          title: "Reset View",
+          description: "Restore the cutout stage zoom and pan.",
+          iconName: "RotateCcw",
+          group: "preview",
+          defaultOrder: 10,
+          priority: 10,
+          onSelect: () => handleResetStageView(),
+        },
+        {
+          id: "image-cutout.reset-workflow",
+          title: "Reset Isolation",
+          description: "Re-run the current isolation workflow from its source mask.",
+          iconName: "RefreshCw",
+          group: "preview",
+          defaultOrder: 20,
+          priority: 20,
+          onSelect: () => handleResetLane(workflowMode),
+        },
+        {
+          id: "image-cutout.refine.toggle",
+          title: activeLane.showRefinePanel ? "Hide Refine Controls" : "Show Refine Controls",
+          description: "Reveal the compact edge and brush refinement controls.",
+          iconName: "Sliders",
+          group: "preview",
+          defaultOrder: 30,
+          priority: 30,
+          onSelect: () => handleRefineToggle(),
+        },
+        {
+          id: "image-cutout.refine.brush",
+          title: "Refine With Brush",
+          description: "Switch into additive brush refinement.",
+          iconName: "Pencil",
+          group: "preview",
+          defaultOrder: 40,
+          priority: 40,
+          onSelect: () => handleSelectStageTool("brush"),
+        },
+        {
+          id: "image-cutout.refine.erase",
+          title: "Refine With Erase",
+          description: "Switch into subtractive brush refinement.",
+          iconName: "Eraser",
+          group: "preview",
+          defaultOrder: 50,
+          priority: 50,
+          onSelect: () => handleSelectStageTool("erase"),
+        },
+      ],
+      workflowOverlays: [
+        {
+          workflowTabId: resolveWorkflowTabIdForIsolationMode("cutout"),
+          actions: [
+            {
+              id: "image-cutout.reset-workflow",
+              title: cutoutLane.resetLabel,
+              onSelect: () => handleResetLane("cutout"),
+            },
+            {
+              id: "image-cutout.selection.activate",
+              title: "Return to Prompt Selection",
+              description: "Switch back to semantic positive and negative prompt clicks.",
+              iconName: "Sparkles",
+              group: "preview",
+              defaultOrder: 35,
+              priority: 35,
+              onSelect: () => handleSelectStageTool("selection"),
+            },
+          ],
+        },
+        {
+          workflowTabId: resolveWorkflowTabIdForIsolationMode("removeBackground"),
+          actions: [
+            {
+              id: "image-cutout.reset-workflow",
+              title: removeBackgroundLane.resetLabel,
+              onSelect: () => handleResetLane("removeBackground"),
+            },
+            {
+              id: "image-cutout.selection.activate",
+              hidden: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    return () => {
+      onRegisterContextMenuRegistration(null);
+    };
+  }, [
+    activeLane.showRefinePanel,
+    handleRefineToggle,
+    handleResetLane,
+    handleResetStageView,
+    handleSelectStageTool,
+    onRegisterContextMenuRegistration,
+    workflowMode,
+  ]);
+
+  const beginBrushStroke = useCallback(
+    (
+      event: ReactPointerEvent<HTMLDivElement>,
+      point: { x: number; y: number },
+      stageTool: "brush" | "erase",
+    ) => {
+      const lane = getLaneState(workflowMode);
+      const baseMask = lane.baseMask;
+      if (!baseMask) {
+        return;
+      }
+
+      const workingMask = cloneMask(baseMask);
+      const editMode: ExplorerImageCutoutEditMode =
+        stageTool === "erase" ? "subtract" : "add";
+      applyRefinePoint(lane, workingMask, point, editMode);
+      activeBrushStrokeRef.current = {
+        workflowMode,
+        pointerId: event.pointerId,
+        mode: editMode,
+        workingMask,
+        lastX: point.x,
+        lastY: point.y,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      previewMaskDuringStroke(
+        workflowMode,
+        workingMask,
+        editMode === "add"
+          ? "Refining the mask…"
+          : "Trimming the mask…",
+      );
+    },
+    [applyRefinePoint, getLaneState, previewMaskDuringStroke, workflowMode],
+  );
+
+  const continueBrushStroke = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const activeBrushStroke = activeBrushStrokeRef.current;
+      if (
+        !activeBrushStroke ||
+        activeBrushStroke.workflowMode !== workflowMode ||
+        event.pointerId !== activeBrushStroke.pointerId
+      ) {
+        return;
+      }
+
+      const point = resolveMaskPointFromClient(
+        workflowMode,
+        event.clientX,
+        event.clientY,
+      );
+      if (!point) {
+        return;
+      }
+
+      const lane = getLaneState(workflowMode);
+      const deltaX = point.x - activeBrushStroke.lastX;
+      const deltaY = point.y - activeBrushStroke.lastY;
+      const distance = Math.hypot(deltaX, deltaY);
+      const stepCount = Math.max(
+        1,
+        Math.ceil(distance / Math.max(2, lane.brushSize / 3)),
+      );
+
+      for (let stepIndex = 1; stepIndex <= stepCount; stepIndex += 1) {
+        const stepPoint = {
+          x: Math.round(
+            activeBrushStroke.lastX + (deltaX * stepIndex) / stepCount,
+          ),
+          y: Math.round(
+            activeBrushStroke.lastY + (deltaY * stepIndex) / stepCount,
+          ),
+        };
+        applyRefinePoint(
+          lane,
+          activeBrushStroke.workingMask,
+          stepPoint,
+          activeBrushStroke.mode,
+        );
+      }
+
+      activeBrushStroke.lastX = point.x;
+      activeBrushStroke.lastY = point.y;
+      previewMaskDuringStroke(
+        workflowMode,
+        activeBrushStroke.workingMask,
+        activeBrushStroke.mode === "add"
+          ? "Refining the mask…"
+          : "Trimming the mask…",
+      );
+    },
+    [
+      applyRefinePoint,
+      getLaneState,
+      previewMaskDuringStroke,
+      resolveMaskPointFromClient,
+      workflowMode,
+    ],
+  );
+
+  const endBrushStroke = useCallback(() => {
+    const activeBrushStroke = activeBrushStrokeRef.current;
+    if (!activeBrushStroke || activeBrushStroke.workflowMode !== workflowMode) {
+      return;
+    }
+    activeBrushStrokeRef.current = null;
+    commitMaskHistory(
+      workflowMode,
+      activeBrushStroke.workingMask,
+      activeBrushStroke.mode === "add"
+        ? "Brush refinement added to the mask."
+        : "Brush refinement trimmed the mask.",
+    );
+  }, [commitMaskHistory, workflowMode]);
+
+  const handleStagePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      focusSurface();
+
+      const lane = getLaneState(workflowMode);
+      if (
+        lane.isBooting ||
+        lane.isMutating ||
+        !lane.sessionSnapshot ||
+        !lane.baseMask ||
+        event.button > 2
+      ) {
+        return;
+      }
+
+      const point = resolveMaskPointFromClient(
+        workflowMode,
+        event.clientX,
+        event.clientY,
+      );
+      if (!point) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (lane.activeStageTool === "brush" || lane.activeStageTool === "erase") {
+        beginBrushStroke(event, point, lane.activeStageTool);
+        return;
+      }
+
+      const selectionToolActive =
+        workflowMode === "cutout" && lane.activeStageTool === "selection";
+      const negativePrompt = selectionToolActive && (event.altKey || event.button === 2);
+      const dragIntent = event.shiftKey
+        ? "nativeDrag"
+        : selectionToolActive
+          ? "selectionCandidate"
+          : "pan";
+
+      pendingStageInteractionRef.current = {
+        workflowMode,
+        pointerId: event.pointerId,
+        dragIntent,
+        negativePrompt,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startTransform: lane.transform,
+        hasDragged: false,
+        nativeDragStarted: false,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [
+      beginBrushStroke,
+      focusSurface,
+      getLaneState,
+      resolveMaskPointFromClient,
+      workflowMode,
+    ],
+  );
+
+  const handleStagePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      continueBrushStroke(event);
+
+      const pendingInteraction = pendingStageInteractionRef.current;
+      if (
+        !pendingInteraction ||
+        pendingInteraction.workflowMode !== workflowMode ||
+        event.pointerId !== pendingInteraction.pointerId
+      ) {
+        return;
+      }
+
+      const lane = getLaneState(workflowMode);
+      const deltaX = event.clientX - pendingInteraction.startClientX;
+      const deltaY = event.clientY - pendingInteraction.startClientY;
+      const distance = Math.hypot(deltaX, deltaY);
+      if (distance < POINTER_CLICK_THRESHOLD_PX) {
+        return;
+      }
+
+      pendingInteraction.hasDragged = true;
+
+      if (pendingInteraction.dragIntent === "nativeDrag") {
+        if (!pendingInteraction.nativeDragStarted) {
+          pendingInteraction.nativeDragStarted = true;
+          void stageNativeDrag(workflowMode);
+        }
+        return;
+      }
+
+      lane.transform = normalizeExplorerImageStageTransform(
+        {
+          scale: pendingInteraction.startTransform.scale,
+          offsetX: pendingInteraction.startTransform.offsetX + deltaX,
+          offsetY: pendingInteraction.startTransform.offsetY + deltaY,
+        },
+        stageViewportRef.current,
+        stageContentRef.current,
+      );
+      invalidateActiveLane();
+    },
+    [
+      continueBrushStroke,
+      getLaneState,
+      invalidateActiveLane,
+      stageNativeDrag,
+      workflowMode,
+    ],
+  );
+
+  const clearStagePointer = useCallback(() => {
+    pendingStageInteractionRef.current = null;
+  }, []);
+
+  const handleStagePointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const activeBrushStroke = activeBrushStrokeRef.current;
+      if (
+        activeBrushStroke &&
+        activeBrushStroke.workflowMode === workflowMode &&
+        event.pointerId === activeBrushStroke.pointerId
+      ) {
+        endBrushStroke();
+      }
+
+      const pendingInteraction = pendingStageInteractionRef.current;
+      if (
+        !pendingInteraction ||
+        pendingInteraction.workflowMode !== workflowMode ||
+        event.pointerId !== pendingInteraction.pointerId
+      ) {
+        clearStagePointer();
+        return;
+      }
+
+      clearStagePointer();
+
+      if (
+        pendingInteraction.dragIntent === "selectionCandidate" &&
+        !pendingInteraction.hasDragged
+      ) {
+        const point = resolveMaskPointFromClient(
+          workflowMode,
+          event.clientX,
+          event.clientY,
+        );
+        if (point) {
+          void handleApplyPrompt(
+            pendingInteraction.negativePrompt ? "negative" : "positive",
+            point.xNorm,
+            point.yNorm,
+          );
+        }
+      }
+    },
+    [
+      clearStagePointer,
+      endBrushStroke,
+      handleApplyPrompt,
+      resolveMaskPointFromClient,
+      workflowMode,
+    ],
+  );
+
+  const handleStagePointerCancel = useCallback(() => {
+    endBrushStroke();
+    clearStagePointer();
+  }, [clearStagePointer, endBrushStroke]);
+
+  const handleRefineSliderChange = useCallback(
+    (
+      key:
+        | "brushTolerance"
+        | "brushSize"
+        | "brushSoftness"
+        | "edgeSoftness"
+        | "edgePull",
+      value: number,
+    ) => {
+      const lane = getLaneState(workflowMode);
+      lane[key] = value;
+      lane.previewReady = false;
+      syncLaneVisuals(workflowMode);
+    },
+    [getLaneState, syncLaneVisuals, workflowMode],
+  );
+
+  const activeBoundaryVisible = hasVisibleBoundary(activeLane.boundary);
+  const activeHistoryLength = activeLane.history.length;
+  const canUndo = activeLane.historyIndex > 0;
+  const canRedo = activeLane.historyIndex + 1 < activeHistoryLength;
+  const stageCursor = activeLane.isMutating
     ? "progress"
-    : !canUseInteractiveTools
-      ? "default"
-      : activeToolId === "spark"
+    : activeLane.activeStageTool === "brush" || activeLane.activeStageTool === "erase"
+      ? "crosshair"
+      : activeLane.activeStageTool === "selection"
         ? "cell"
-        : "crosshair";
+        : "grab";
+  const zoomPercent = Math.round(activeLane.transform.scale * 100);
 
   return (
     <div
@@ -1180,327 +2009,180 @@ export function ExplorerImageCutoutSurface({
       data-testid="explorer-image-cutout-surface"
       data-explorer-preview-keyboard-owner="image-cutout"
       onPointerDown={() => focusSurface()}
-      style={{
-        width: "100%",
-        height: "100%",
-        position: "absolute",
-        inset: 0,
-        overflow: "hidden",
-        outline: "none",
-        background: "var(--overlay-explorer-preview-bg, #111827)",
-      }}
+      style={surfaceRootStyle()}
     >
       <div
         style={{
           position: "absolute",
-          inset: 0,
-          backgroundImage:
-            `radial-gradient(circle at top, rgba(255,255,255,0.06), transparent 52%), ${checkerboardCSS}`,
-          backgroundSize: "auto, 16px 16px, 16px 16px, 16px 16px, 16px 16px",
-          backgroundPosition: "0 0, 0 0, 0 8px, 8px -8px, -8px 0px",
-          backgroundColor: "rgba(0,0,0,0.38)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 16,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          ref={frameRef}
-          onPointerDown={handleSurfacePointerDown}
-          onPointerMove={continueSweepStroke}
-          onPointerUp={endSweepStroke}
-          onPointerCancel={endSweepStroke}
-          onLostPointerCapture={endSweepStroke}
-          onContextMenu={(event) => event.preventDefault()}
-          style={{
-            position: "relative",
-            display: "grid",
-            alignItems: "center",
-            justifyContent: "center",
-            maxWidth: "100%",
-            maxHeight: "100%",
-            overflow: "hidden",
-            userSelect: "none",
-            cursor: stageCursor,
-          }}
-        >
-          {isBooting && !sessionSnapshot ? (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 12,
-                color: "var(--overlay-text-muted)",
-              }}
-            >
-              <Loader2 size={26} className="animate-spin" />
-              <span style={{ fontSize: 12 }}>Building the initial subject cutout…</span>
-            </div>
-          ) : sessionSnapshot ? (
-            <>
-              {!previewReady ? (
-                <img
-                  src={sessionSnapshot.cutoutPreviewDataUrl}
-                  alt={`${imageName} cutout preview`}
-                  draggable={false}
-                  style={{
-                    gridArea: "1 / 1",
-                    display: "block",
-                    maxWidth: "100%",
-                    maxHeight: "100%",
-                    objectFit: "contain",
-                    filter: filterCss,
-                    boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
-                  }}
-                />
-              ) : null}
-              <canvas
-                ref={previewCanvasRef}
-                aria-label={`${imageName} cutout preview`}
-                style={{
-                  gridArea: "1 / 1",
-                  display: "block",
-                  maxWidth: "100%",
-                  maxHeight: "100%",
-                  objectFit: "contain",
-                  filter: filterCss,
-                  boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
-                  opacity: previewReady ? 1 : 0,
-                  transition: "opacity 120ms ease",
-                }}
-              />
-              <canvas
-                ref={marchingAntsCanvasRef}
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  width: "100%",
-                  height: "100%",
-                  pointerEvents: "none",
-                  imageRendering: "pixelated",
-                  opacity: previewReady ? 1 : 0,
-                  transition: "opacity 120ms ease",
-                }}
-              />
-            </>
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 12,
-                color: "#fca5a5",
-                padding: 24,
-              }}
-            >
-              <Scissors size={26} />
-              <span style={{ fontSize: 12 }}>{statusMessage}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          inset: "12px 12px auto 12px",
+          inset: 12,
           display: "flex",
           alignItems: "flex-start",
-          justifyContent: "space-between",
+          justifyContent: "flex-end",
           gap: 12,
           pointerEvents: "none",
+          zIndex: 3,
         }}
       >
         <div
           style={{
-            display: "grid",
-            gap: 8,
-            maxWidth: "min(420px, calc(100% - 120px))",
-            pointerEvents: "auto",
-          }}
-        >
-          <div
-            style={{
-              ...overlayPanelStyle(),
-              alignItems: "center",
-              minWidth: 0,
-            }}
-          >
-            <Scissors size={13} />
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: "0.03em",
-                color: "var(--overlay-text-primary)",
-              }}
-            >
-              Cutout
-            </span>
-            <span
-              style={{
-                minWidth: 0,
-                fontSize: 10,
-                color: toneColor(statusTone),
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {statusMessage}
-            </span>
-          </div>
-
-          <div
-            style={{
-              ...overlayPanelStyle(),
-              flexDirection: "column",
-              alignItems: "stretch",
-              gap: 8,
-            }}
-          >
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {imageCutoutToolDefinitions.map((tool) => (
-                <button
-                  key={tool.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveToolId(tool.id);
-                    setActiveInspectorTab("select");
-                  }}
-                  style={segmentedButtonStyle(tool.id === activeToolId)}
-                >
-                  {tool.label}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => setActiveEditMode("add")}
-                style={segmentedButtonStyle(activeEditMode === "add")}
-              >
-                Add
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveEditMode("subtract")}
-                style={segmentedButtonStyle(activeEditMode === "subtract")}
-              >
-                Trim
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
+            ...floatingPanelStyle(),
             display: "flex",
             alignItems: "center",
-            justifyContent: "flex-end",
             gap: 8,
-            flexWrap: "wrap",
+            padding: "10px 12px",
             pointerEvents: "auto",
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
           }}
         >
-          <button
-            type="button"
-            onClick={() => restoreHistoryIndex(Math.max(0, historyIndex - 1))}
-            disabled={isBooting || isMutating || historyIndex <= 0}
-            style={{
-              ...buttonStyle("ghost"),
-              opacity: isBooting || isMutating || historyIndex <= 0 ? 0.5 : 1,
+          <ExplorerIsolationButton
+            ariaLabel="Undo"
+            title="Undo"
+            variant="action"
+            disabled={!canUndo || activeLane.isMutating}
+            motionStepIndex={0}
+            onClick={handleUndo}
+          >
+            <Undo2 size={15} />
+          </ExplorerIsolationButton>
+
+          <ExplorerIsolationButton
+            ariaLabel="Redo"
+            title="Redo"
+            variant="action"
+            disabled={!canRedo || activeLane.isMutating}
+            motionStepIndex={1}
+            onClick={handleRedo}
+          >
+            <Undo2 size={15} style={{ transform: "scaleX(-1)" }} />
+          </ExplorerIsolationButton>
+
+          <ExplorerIsolationButton
+            ariaLabel="Reset isolation lane"
+            title="Reset isolation lane"
+            variant="action"
+            disabled={activeLane.isBooting || activeLane.isMutating}
+            motionStepIndex={2}
+            onClick={() => {
+              void handleResetLane(workflowMode);
             }}
           >
-            <Undo2 size={13} />
-            Undo
-          </button>
-          <button
-            type="button"
-            onClick={() => restoreHistoryIndex(historyIndex + 1)}
-            disabled={isBooting || isMutating || historyIndex + 1 >= historyLength}
-            style={{
-              ...buttonStyle("ghost"),
-              opacity:
-                isBooting || isMutating || historyIndex + 1 >= historyLength ? 0.5 : 1,
+            <RefreshCw size={15} />
+          </ExplorerIsolationButton>
+
+          <ExplorerIsolationButton
+            ariaLabel="Toggle refine controls"
+            title="Toggle refine controls"
+            active={activeLane.showRefinePanel}
+            variant="action"
+            disabled={activeLane.isBooting || activeLane.isMutating}
+            motionStepIndex={3}
+            onClick={handleRefineToggle}
+          >
+            <Sliders size={15} />
+          </ExplorerIsolationButton>
+
+          <ExplorerIsolationButton
+            ariaLabel="Save sibling PNG"
+            title="Save sibling PNG"
+            variant="action"
+            disabled={!activeLane.sessionSnapshot || activeLane.isMutating}
+            motionStepIndex={4}
+            onClick={() => {
+              void handleSaveSibling();
             }}
           >
-            <RefreshCw size={13} />
-            Redo
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleResetToAutoCutout()}
-            disabled={isBooting || isMutating || !hasSession}
-            style={{
-              ...buttonStyle("ghost"),
-              opacity: isBooting || isMutating || !hasSession ? 0.5 : 1,
+            <Save size={15} />
+          </ExplorerIsolationButton>
+
+          <ExplorerIsolationButton
+            ariaLabel="Copy cutout to clipboard"
+            title="Copy cutout to clipboard"
+            variant="action"
+            disabled={!activeLane.sessionSnapshot || activeLane.isMutating}
+            motionStepIndex={5}
+            onClick={() => {
+              void handleCopyToClipboard();
             }}
           >
-            <RotateCcw size={13} />
-            Reset
-          </button>
-          <button
-            type="button"
-            onPointerDown={(event) => {
-              event.preventDefault();
-              void handleNativeDrag();
-            }}
-            disabled={isBooting || isMutating || !hasSession}
-            style={{
-              ...buttonStyle("primary"),
-              opacity: isBooting || isMutating || !hasSession ? 0.5 : 1,
-            }}
-          >
-            <MousePointer2 size={13} />
-            Drag Out
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleCopyToClipboard()}
-            disabled={isBooting || isMutating || !hasSession}
-            style={{
-              ...buttonStyle("default"),
-              opacity: isBooting || isMutating || !hasSession ? 0.5 : 1,
-            }}
-          >
-            <Copy size={13} />
-            Copy
-          </button>
+            <Copy size={15} />
+          </ExplorerIsolationButton>
         </div>
       </div>
 
-      {hasSession ? (
+      <div
+        ref={stageViewportRef}
+        data-testid="explorer-image-cutout-stage"
+        onWheel={handleWheel}
+        onPointerDown={handleStagePointerDown}
+        onPointerMove={handleStagePointerMove}
+        onPointerUp={handleStagePointerUp}
+        onPointerCancel={handleStagePointerCancel}
+        onLostPointerCapture={handleStagePointerCancel}
+        onContextMenu={(event) => event.preventDefault()}
+        style={stageViewportStyle(stageCursor)}
+      >
+        <div
+          ref={stageContentRef}
+          data-testid="explorer-image-cutout-stage-content"
+          style={stageContentStyle(activeLane.transform)}
+        >
+          <canvas
+            ref={previewCanvasRef}
+            aria-hidden
+            style={previewCanvasStyle(filterCss)}
+          />
+          <canvas
+            ref={marchingAntsCanvasRef}
+            aria-hidden
+            data-testid="explorer-image-cutout-marching-ants"
+            data-has-boundary={activeBoundaryVisible ? "true" : "false"}
+            style={marchingAntsCanvasStyle(activeBoundaryVisible)}
+          />
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          left: 12,
+          bottom: 12,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "8px 10px",
+          borderRadius: 999,
+          border: "1px solid var(--overlay-explorer-preview-border)",
+          background:
+            "color-mix(in srgb, var(--overlay-explorer-preview-bg) 86%, black 14%)",
+          color: "var(--overlay-text-muted)",
+          fontSize: 11,
+          fontVariantNumeric: "tabular-nums",
+          boxShadow: "0 14px 30px rgba(0,0,0,0.26)",
+          zIndex: 2,
+        }}
+      >
+        <span data-testid="explorer-image-cutout-zoom">{zoomPercent}%</span>
+        <span>{activeBoundaryVisible ? `${activeLaneDefinition.label} ready` : "Awaiting subject"}</span>
+        <span>{activeLane.sessionSnapshot ? `${activeLane.sessionSnapshot.previewWidth}×${activeLane.sessionSnapshot.previewHeight}` : "—"}</span>
+      </div>
+
+      {activeLane.showRefinePanel ? (
         <div
           style={{
             position: "absolute",
-            inset: "auto 12px 12px 12px",
-            display: "flex",
-            justifyContent: "center",
-            pointerEvents: "none",
+            inset: "auto 12px 12px auto",
+            zIndex: 2,
+            maxWidth: "min(560px, calc(100% - 24px))",
           }}
         >
           <div
+            data-testid="explorer-image-cutout-refine-panel"
             style={{
-              ...overlayPanelStyle(),
-              width: "min(620px, 100%)",
-              maxWidth: "100%",
-              flexDirection: "column",
-              alignItems: "stretch",
-              gap: 10,
-              pointerEvents: "auto",
+              ...floatingPanelStyle(),
+              display: "grid",
+              gap: 12,
+              padding: "14px 16px",
             }}
           >
             <div
@@ -1508,154 +2190,112 @@ export function ExplorerImageCutoutSurface({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: 10,
+                gap: 12,
                 flexWrap: "wrap",
               }}
             >
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  onClick={() => setActiveInspectorTab("select")}
-                  style={segmentedButtonStyle(activeInspectorTab === "select")}
-                >
-                  Select
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveInspectorTab("refine")}
-                  style={segmentedButtonStyle(activeInspectorTab === "refine")}
-                >
-                  Refine
-                </button>
+              <div style={controlGroupStyle()}>
+                {imageCutoutRefineToolDefinitions.map((toolDefinition, index) => {
+                  const isActive =
+                    activeLane.activeStageTool ===
+                    (toolDefinition.id === "erase" ? "erase" : "brush");
+                  const ToolIcon = toolDefinition.id === "erase" ? Eraser : Pencil;
+                  return (
+                    <ExplorerIsolationButton
+                      key={toolDefinition.id}
+                      ariaLabel={toolDefinition.ariaLabel}
+                      title={toolDefinition.description}
+                      active={isActive}
+                      disabled={activeLane.isBooting || activeLane.isMutating}
+                      motionStepIndex={index}
+                      onClick={() =>
+                        handleSelectStageTool(
+                          toolDefinition.id === "erase" ? "erase" : "brush",
+                        )
+                      }
+                    >
+                      <ToolIcon size={15} />
+                    </ExplorerIsolationButton>
+                  );
+                })}
               </div>
 
               <div
                 style={{
-                  display: "inline-flex",
+                  display: "flex",
                   alignItems: "center",
-                  gap: 8,
-                  flexWrap: "wrap",
-                  fontSize: 10,
+                  gap: 10,
                   color: "var(--overlay-text-muted)",
+                  fontSize: 11,
                 }}
               >
-                <span style={{ color: "var(--overlay-text-primary)" }}>
-                  {activeInspectorTab === "select" ? activeToolDefinition.label : "Edge Finish"}
+                <span>
+                  {activeLane.activeStageTool === "erase" ? "Erase" : "Brush"}
                 </span>
-                <span>{activeEditMode === "add" ? "Add" : "Trim"}</span>
-                {sessionSnapshot ? (
-                  <span>
-                    {sessionSnapshot.previewWidth}×{sessionSnapshot.previewHeight}
-                  </span>
-                ) : null}
+                <span>
+                  Shift-drag to drag out the transparent PNG.
+                </span>
               </div>
-            </div>
-
-            <div
-              style={{
-                fontSize: 10,
-                color: "var(--overlay-text-muted)",
-              }}
-            >
-              {activeInspectorTab === "select"
-                ? describeToolInteraction(activeToolId)
-                : "Dial in the edge only after the subject selection feels right."}
             </div>
 
             <div
               style={{
                 display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
                 gap: 12,
-                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
               }}
             >
-              {activeInspectorTab === "select" ? (
-                activeToolId === "spark" ? (
-                  <ControlSlider
-                    label="Color Reach"
-                    value={sparkTolerance}
-                    min={0}
-                    max={100}
-                    step={1}
-                    onChange={setSparkTolerance}
-                    helper="Higher values let Spark jump across looser color matches."
-                  />
-                ) : (
-                  <>
-                    <ControlSlider
-                      label="Sweep Size"
-                      value={sweepSize}
-                      min={6}
-                      max={140}
-                      step={1}
-                      onChange={setSweepSize}
-                      helper="Larger sweeps cover more pixels per pass."
-                    />
-                    <ControlSlider
-                      label="Sweep Reach"
-                      value={sweepTolerance}
-                      min={0}
-                      max={100}
-                      step={1}
-                      onChange={setSweepTolerance}
-                      helper="Higher reach accepts a wider range of nearby colors."
-                    />
-                    <ControlSlider
-                      label="Sweep Softness"
-                      value={sweepSoftness}
-                      min={0}
-                      max={100}
-                      step={1}
-                      onChange={setSweepSoftness}
-                      helper="Soft sweeps taper their edge instead of carving hard circles."
-                    />
-                  </>
-                )
-              ) : (
-                <>
-                  <ControlSlider
-                    label="Soft Edge"
-                    value={edgeSoftness}
-                    min={0}
-                    max={24}
-                    step={1}
-                    onChange={setEdgeSoftness}
-                    helper="Adds feather-like softness around the matte edge."
-                  />
-                  <ControlSlider
-                    label="Edge Pull"
-                    value={edgePull}
-                    min={-24}
-                    max={24}
-                    step={1}
-                    onChange={setEdgePull}
-                    helper="Negative values tighten. Positive values expand."
-                  />
-                </>
-              )}
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 10,
-                flexWrap: "wrap",
-                fontSize: 10,
-                color: "var(--overlay-text-dim, rgba(255,255,255,0.56))",
-              }}
-            >
-              <span>
-                {activeInspectorTab === "select"
-                  ? "Hold Alt or use right-click to trim temporarily without leaving Add mode."
-                  : "Refine stays local until you copy, drag, or save the cutout."}
-              </span>
-              {usedSourcePreviewFallback ? (
-                <span style={{ color: toneColor("warning") }}>
-                  Using host preview fallback
-                </span>
-              ) : null}
+              <CutoutSliderField
+                label="Brush Size"
+                value={activeLane.brushSize}
+                min={4}
+                max={96}
+                step={1}
+                onChange={(value) => handleRefineSliderChange("brushSize", value)}
+                helper="Larger brushes cover more nearby pixels per stroke."
+              />
+              <CutoutSliderField
+                label="Brush Reach"
+                value={activeLane.brushTolerance}
+                min={4}
+                max={100}
+                step={1}
+                onChange={(value) =>
+                  handleRefineSliderChange("brushTolerance", value)
+                }
+                helper="Higher reach accepts a wider color range around the stroke."
+              />
+              <CutoutSliderField
+                label="Brush Softness"
+                value={activeLane.brushSoftness}
+                min={0}
+                max={100}
+                step={1}
+                onChange={(value) =>
+                  handleRefineSliderChange("brushSoftness", value)
+                }
+                helper="Soft brushes taper the edge instead of carving a hard circle."
+              />
+              <CutoutSliderField
+                label="Edge Softness"
+                value={activeLane.edgeSoftness}
+                min={0}
+                max={18}
+                step={1}
+                onChange={(value) =>
+                  handleRefineSliderChange("edgeSoftness", value)
+                }
+                helper="Smooth the resolved edge without changing the core selection."
+              />
+              <CutoutSliderField
+                label="Edge Pull"
+                value={activeLane.edgePull}
+                min={-24}
+                max={24}
+                step={1}
+                onChange={(value) => handleRefineSliderChange("edgePull", value)}
+                helper="Push the visible edge inward or outward after mask smoothing."
+              />
             </div>
           </div>
         </div>

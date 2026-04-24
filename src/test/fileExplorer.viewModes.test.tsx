@@ -15,12 +15,16 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const {
   pdfPreviewMockState,
+  previewContextMenuMockState,
   previewTerminalMockState,
   spreadsheetWorkbenchMockState,
   shaderWorkbenchMockState,
 } = vi.hoisted(() => ({
   pdfPreviewMockState: {
     closeGuardResult: true,
+  },
+  previewContextMenuMockState: {
+    stopPropagationOnImageEditorContextMenu: false,
   },
   previewTerminalMockState: {
     mountCount: 0,
@@ -55,6 +59,7 @@ vi.mock("../components/ExplorerImageEditor", () => ({
     mode = "edit",
     workflowTabId,
     onRegisterWorkflowTabs,
+    onRegisterContextMenuRegistration,
   }: {
     imageName: string;
     mode?: "preview" | "edit";
@@ -66,6 +71,22 @@ vi.mock("../components/ExplorerImageEditor", () => ({
         baseMode: "preview" | "edit";
       }> | null,
     ) => void;
+    onRegisterContextMenuRegistration?: (
+      registration:
+        | {
+            previewKind: string;
+            baseActions: Array<{
+              id: string;
+              title: string;
+              onSelect: () => void;
+            }>;
+            workflowOverlays?: Array<{
+              workflowTabId: string;
+              actions: Array<Record<string, unknown>>;
+            }>;
+          }
+        | null,
+    ) => void;
   }) => {
     React.useEffect(() => {
       onRegisterWorkflowTabs?.([
@@ -74,15 +95,71 @@ vi.mock("../components/ExplorerImageEditor", () => ({
           label: "Cutout",
           baseMode: "edit",
         },
+        {
+          id: "remove-background",
+          label: "Remove BG",
+          baseMode: "edit",
+        },
       ]);
       return () => onRegisterWorkflowTabs?.(null);
     }, [onRegisterWorkflowTabs]);
+
+    React.useEffect(() => {
+      onRegisterContextMenuRegistration?.({
+        previewKind: "image",
+        baseActions: [
+          {
+            id: "mock.image.base",
+            title: "Image Menu Action",
+            onSelect: () => {},
+          },
+        ],
+        workflowOverlays: [
+          {
+            workflowTabId: "cutout",
+            actions: [
+              {
+                id: "mock.image.base",
+                title: "Image Cutout Menu Action",
+              },
+              {
+                id: "mock.image.cutout",
+                title: "Cutout Menu Action",
+                onSelect: () => {},
+              },
+            ],
+          },
+          {
+            workflowTabId: "remove-background",
+            actions: [
+              {
+                id: "mock.image.cutout",
+                hidden: true,
+              },
+              {
+                id: "mock.image.remove-background",
+                title: "Remove BG Menu Action",
+                onSelect: () => {},
+              },
+            ],
+          },
+        ],
+      });
+      return () => onRegisterContextMenuRegistration?.(null);
+    }, [onRegisterContextMenuRegistration]);
 
     return (
       <div
         data-testid="mock-explorer-image-editor"
         data-image-mode={mode}
         data-image-workflow-tab={workflowTabId ?? mode}
+        onContextMenu={(event) => {
+          if (!previewContextMenuMockState.stopPropagationOnImageEditorContextMenu) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+        }}
       >{`${imageName}:${workflowTabId ?? mode}`}</div>
     );
   },
@@ -984,6 +1061,7 @@ describe("FileExplorer view modes", () => {
   beforeEach(() => {
     const currentWindow = getCurrentWindow();
     pdfPreviewMockState.closeGuardResult = true;
+    previewContextMenuMockState.stopPropagationOnImageEditorContextMenu = false;
     previewTerminalMockState.mountCount = 0;
     previewTerminalMockState.lastProps = null;
     spreadsheetWorkbenchMockState.lastMode = "preview";
@@ -1710,6 +1788,16 @@ describe("FileExplorer view modes", () => {
       expect(
         previewTerminalMockState.lastProps?.pendingCommandRequest?.command,
       ).toContain("runner.py");
+    });
+
+    fireEvent.click(getPreviewTerminalToggleButton());
+
+    await waitFor(() => {
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-surface-mode",
+        "content",
+      );
+      expect(getChromeControl("previewModeToggle")).not.toBeNull();
     });
 
     fireEvent.click(
@@ -5669,7 +5757,12 @@ const value = 1;
     await waitFor(() => {
       const previewModeToggle = getChromeControl("previewModeToggle");
       expect(previewModeToggle).not.toBeNull();
-      expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit", "Cutout"]);
+      expectChromeControlButtonOrder("previewModeToggle", [
+        "Preview",
+        "Edit",
+        "Cutout",
+        "Remove BG",
+      ]);
     });
     const previewModeToggle = getChromeControl("previewModeToggle");
 
@@ -5712,6 +5805,90 @@ const value = 1;
         "cutout",
       );
     });
+
+    fireEvent.click(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Remove BG",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("mock-explorer-image-editor"),
+      ).toHaveTextContent("preview.png:remove-background");
+      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
+        "data-image-mode",
+        "edit",
+      );
+      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
+        "data-image-workflow-tab",
+        "remove-background",
+      );
+    });
+  });
+
+  it("adapts preview-pane context-menu actions to the active image workflow tab", async () => {
+    renderExplorer();
+    fireEvent.click(await screen.findByText("preview.png"));
+
+    const imageEditor = await screen.findByTestId("mock-explorer-image-editor");
+    fireEvent.contextMenu(imageEditor);
+
+    await screen.findByText("Image Menu Action");
+    expect(screen.queryByText("Cutout Menu Action")).not.toBeInTheDocument();
+    expect(screen.queryByText("Remove BG Menu Action")).not.toBeInTheDocument();
+
+    const previewModeToggle = getChromeControl("previewModeToggle");
+    fireEvent.click(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Cutout",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
+        "data-image-workflow-tab",
+        "cutout",
+      );
+    });
+
+    fireEvent.contextMenu(screen.getByTestId("mock-explorer-image-editor"));
+    await screen.findByText("Image Cutout Menu Action");
+    expect(screen.getByText("Cutout Menu Action")).toBeInTheDocument();
+    expect(screen.queryByText("Remove BG Menu Action")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Remove BG",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
+        "data-image-workflow-tab",
+        "remove-background",
+      );
+    });
+
+    fireEvent.contextMenu(screen.getByTestId("mock-explorer-image-editor"));
+    await screen.findByText("Image Menu Action");
+    expect(screen.getByText("Remove BG Menu Action")).toBeInTheDocument();
+    expect(screen.queryByText("Cutout Menu Action")).not.toBeInTheDocument();
+  });
+
+  it("lets child preview surfaces suppress the shared preview-pane context menu", async () => {
+    previewContextMenuMockState.stopPropagationOnImageEditorContextMenu = true;
+
+    renderExplorer();
+    fireEvent.click(await screen.findByText("preview.png"));
+
+    const imageEditor = await screen.findByTestId("mock-explorer-image-editor");
+    fireEvent.contextMenu(imageEditor);
+
+    expect(screen.queryByText("Image Menu Action")).not.toBeInTheDocument();
+    expect(
+      document.querySelector("[data-overlay-explorer-context-menu-node]"),
+    ).toBeNull();
   });
 
   it("starts pointer-driven internal explorer drags without invoking the native drag bridge", async () => {

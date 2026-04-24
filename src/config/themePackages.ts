@@ -35,6 +35,10 @@ import {
   loadIconThemePackagesFromDirectoryEntries,
   type LoadedIconThemePackage,
 } from './iconThemePackages';
+import {
+  mergeResolvedIconThemes,
+  type OverlayResolvedIconTheme,
+} from './iconTheme';
 import { getManagedContentDirectory } from './appContentDirectories';
 import {
   loadExplorerHomePacksFromDirectoryEntries,
@@ -88,6 +92,11 @@ import {
   resolveThemeCatalogPackageMetadata,
   type ThemeCatalogPackageMetadata,
 } from './themeCatalogCuration';
+import {
+  loadVsCodeColorThemeContributionsFromEntry,
+  type LoadedVsCodeColorThemeContribution,
+  type ManagedPackageSourceInfo,
+} from './vscodeThemeCompatibility';
 
 interface FileEntry {
   name: string;
@@ -141,6 +150,9 @@ interface OverlayThemeBundleRecord {
 export interface ThemePackageDirectoryEntry {
   name: string;
   path: string;
+  isDirectory?: boolean;
+  extension?: string;
+  modified?: number;
 }
 
 export interface LoadedThemeBundleLocalId {
@@ -196,8 +208,9 @@ export interface LoadedOverlayThemePackage {
   version: number;
   directoryPath: string;
   manifestPath: string;
-  sourceKind: 'theme-directory' | 'plugin-package';
+  sourceKind: 'theme-directory' | 'plugin-package' | 'vscode-theme-directory' | 'vscode-theme-vsix';
   sourceLabel: string;
+  sourceInfo?: ManagedPackageSourceInfo;
   description?: string;
   author?: string;
   homepage?: string;
@@ -301,6 +314,53 @@ export function createEmptyGlobalThemeBundleCatalogs(): GlobalThemeBundleCatalog
     themeEnginePacks: [],
     soundPacks: [],
     warnings: [],
+  };
+}
+
+function normalizeThemePackageDirectoryEntry(
+  entry: ThemePackageDirectoryEntry,
+): Required<Pick<ThemePackageDirectoryEntry, 'name' | 'path' | 'extension'>> & { isDirectory: boolean; modified: number } {
+  return {
+    name: entry.name,
+    path: entry.path,
+    isDirectory: entry.isDirectory ?? true,
+    extension: (entry.extension ?? '').trim().toLowerCase(),
+    modified: entry.modified ?? 0,
+  };
+}
+
+function mergeResolvedThemeAssets(
+  baseAssets: OverlayThemeDefinition['assets'],
+  nextAssets: OverlayThemeDefinition['assets'],
+): OverlayThemeDefinition['assets'] {
+  if (!baseAssets && !nextAssets) {
+    return undefined;
+  }
+
+  return {
+    ...baseAssets,
+    ...nextAssets,
+    iconTheme: baseAssets?.iconTheme && nextAssets?.iconTheme
+      ? mergeResolvedIconThemes(baseAssets.iconTheme, nextAssets.iconTheme)
+      : (nextAssets?.iconTheme ?? baseAssets?.iconTheme),
+    iconEntries: {
+      ...(baseAssets?.iconEntries ?? {}),
+      ...(nextAssets?.iconEntries ?? {}),
+    },
+    monacoTheme: baseAssets?.monacoTheme || nextAssets?.monacoTheme
+      ? {
+          ...baseAssets?.monacoTheme,
+          ...nextAssets?.monacoTheme,
+          colors: {
+            ...(baseAssets?.monacoTheme?.colors ?? {}),
+            ...(nextAssets?.monacoTheme?.colors ?? {}),
+          },
+          rules: [
+            ...(baseAssets?.monacoTheme?.rules ?? []),
+            ...(nextAssets?.monacoTheme?.rules ?? []),
+          ],
+        }
+      : undefined,
   };
 }
 

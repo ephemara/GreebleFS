@@ -406,27 +406,31 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
     createEntry('preview.send-to-mobile', 'command', 30, {
       commandId: 'built-in.send-to-mobile-download',
     }),
-    createEntry('preview.system.slot', 'group-slot', 40, {
+    createEntry('preview.preview.slot', 'group-slot', 40, {
+      group: 'preview',
+      sourceFilter: 'preview',
+    } as Partial<ExplorerMenuLayoutEntry>),
+    createEntry('preview.system.slot', 'group-slot', 50, {
       group: 'system',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.clipboard.slot', 'group-slot', 50, {
+    createEntry('preview.clipboard.slot', 'group-slot', 60, {
       group: 'clipboard',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.organize.slot', 'group-slot', 60, {
+    createEntry('preview.organize.slot', 'group-slot', 70, {
       group: 'organize',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.library.slot', 'group-slot', 70, {
+    createEntry('preview.library.slot', 'group-slot', 80, {
       group: 'library',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.plugins.slot', 'group-slot', 80, {
+    createEntry('preview.plugins.slot', 'group-slot', 90, {
       group: 'plugin',
       sourceFilter: 'plugin',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.danger.slot', 'group-slot', 90, {
+    createEntry('preview.danger.slot', 'group-slot', 100, {
       group: 'danger',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),

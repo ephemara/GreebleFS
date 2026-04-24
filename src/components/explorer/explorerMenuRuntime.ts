@@ -1,7 +1,6 @@
 import {
   BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
   normalizePluginContextMenuContributions,
-  resolveExplorerCommandDefinitionById,
   sortExplorerMenuLayoutEntries,
   type ExplorerBuiltInContextMenuActionId,
   type ExplorerCommandDefinition,
@@ -13,6 +12,7 @@ import {
   type ExplorerMenuInvocationEntry,
   type ExplorerMenuLayoutEntry,
   type ExplorerMenuRendererKind,
+  type ExplorerPreviewContextMenuCatalogItem,
   type ExplorerResolvedMenuCommandNode,
   type ExplorerResolvedMenuSeparatorNode,
   type ExplorerResolvedMenuSubmenuNode,
@@ -28,6 +28,11 @@ import type {
   ExplorerAssociatedProgram,
   ExplorerAssociatedProgramsCatalog,
 } from '../../runtime/explorerBackend';
+import {
+  resolveExplorerPreviewContextMenuActions,
+  type ExplorerPreviewContextMenuRegistration,
+  type ExplorerResolvedPreviewContextMenuAction,
+} from './explorerPreviewContextMenu';
 
 export interface ExplorerRuntimeMenuCommandNode
   extends ExplorerResolvedMenuCommandNode {
@@ -156,7 +161,16 @@ export interface BuildExplorerRuntimeMenuOptions {
   layoutOverridesByContext: ExplorerMenuContextLayoutOverrideMap;
   themeRendererPreference?: ExplorerMenuRendererKind;
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
+  previewContextMenuRegistration?: ExplorerPreviewContextMenuRegistration | null;
   environment: ExplorerMenuRuntimeEnvironment;
+}
+
+interface ExplorerRuntimePreviewContextMenuCatalogItem
+  extends ExplorerPreviewContextMenuCatalogItem {
+  execution: {
+    kind: 'preview';
+    onSelect: ExplorerResolvedPreviewContextMenuAction['onSelect'];
+  };
 }
 
 function getActionEntries(
@@ -405,6 +419,42 @@ function createDynamicAudioCommands(
   ];
 }
 
+function createPreviewContextMenuCommands(
+  invocation: ExplorerMenuInvocationContext,
+  registration: ExplorerPreviewContextMenuRegistration | null | undefined,
+): ExplorerRuntimePreviewContextMenuCatalogItem[] {
+  if (invocation.kind !== 'preview-pane' || !invocation.previewContext || !registration) {
+    return [];
+  }
+  if (registration.previewKind !== invocation.previewContext.previewKind) {
+    return [];
+  }
+
+  return resolveExplorerPreviewContextMenuActions(
+    registration,
+    invocation.previewContext.workflowTabId,
+  ).map((action) => ({
+    id: action.id,
+    title: action.title,
+    description: action.description,
+    contexts: action.contexts,
+    appliesTo: action.appliesTo,
+    group: action.group,
+    defaultOrder: action.defaultOrder,
+    priority: action.priority,
+    source: 'preview',
+    iconName: action.iconName,
+    tone: action.tone,
+    shortcutId: action.shortcutId,
+    supportsQuickSlot: false,
+    behavior: 'leaf',
+    execution: {
+      kind: 'preview',
+      onSelect: action.onSelect,
+    },
+  }));
+}
+
 function canShowBuiltInCommand(
   command: ExplorerCommandDefinition,
   invocation: ExplorerMenuInvocationContext,
@@ -419,7 +469,7 @@ function canShowBuiltInCommand(
     return false;
   }
 
-  if (command.source === 'plugin') {
+  if (command.source === 'plugin' || command.source === 'preview') {
     return true;
   }
 
@@ -636,7 +686,7 @@ function resolveBuiltInLabel(
   primaryEntry: ExplorerMenuInvocationEntry | null,
   environment: ExplorerMenuRuntimeEnvironment,
 ): string {
-  if (command.source === 'plugin') {
+  if (command.source !== 'built-in') {
     return command.title;
   }
 
@@ -737,6 +787,32 @@ function createRuntimeLeafNode(
           command as ExplorerResolvedPluginContextMenuContribution,
           primaryEntry,
         ),
+    };
+  }
+
+  if (command.source === 'preview') {
+    const previewCommand = command as ExplorerRuntimePreviewContextMenuCatalogItem;
+    return {
+      kind: 'command',
+      id: command.id,
+      commandId: command.id,
+      label: command.title,
+      description: command.description,
+      depth,
+      iconName: command.iconName,
+      tone: command.tone,
+      source: command.source,
+      quickSlot: 'none',
+      fallbackBucket: 'default',
+      disabled: false,
+      shortcutId: command.shortcutId,
+      command,
+      onSelect: () =>
+        previewCommand.execution.onSelect({
+          invocation,
+          targetEntries,
+          primaryEntry,
+        }),
     };
   }
 
@@ -1076,13 +1152,7 @@ function buildNodesForLayout(
       return;
     }
 
-    const command = resolveExplorerCommandDefinitionById(
-      entry.commandId,
-      commandRegistry.filter(
-        (candidate): candidate is ExplorerResolvedPluginContextMenuContribution =>
-          candidate.source === 'plugin',
-      ),
-    );
+    const command = commandRegistry.find((candidate) => candidate.id === entry.commandId) ?? null;
     if (!command) {
       return;
     }
@@ -1106,6 +1176,98 @@ function buildNodesForLayout(
   });
 
   return sanitizeNodeList(nodes);
+}
+
+function layoutHasGroupSlot(
+  layout: ExplorerMenuContextLayout,
+  group: Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['group'],
+): boolean {
+  return layout.entries.some(
+    (entry) => entry.kind === 'group-slot' && entry.group === group,
+  );
+}
+
+function createFallbackSeparatorNode(id: string): ExplorerRuntimeMenuSeparatorNode {
+  return {
+    kind: 'separator',
+    id,
+    label: '',
+    depth: 0,
+    tone: 'muted',
+    source: 'layout',
+    quickSlot: 'none',
+    fallbackBucket: 'default',
+  };
+}
+
+function injectFallbackPreviewNodes(
+  nodes: ExplorerRuntimeMenuNode[],
+  layout: ExplorerMenuContextLayout,
+  commandRegistry: ExplorerCommandDefinition[],
+  invocation: ExplorerMenuInvocationContext,
+  targetEntries: ExplorerMenuInvocationEntry[],
+  primaryEntry: ExplorerMenuInvocationEntry | null,
+  environment: ExplorerMenuRuntimeEnvironment,
+  handledCommandIds: Set<string>,
+): ExplorerRuntimeMenuNode[] {
+  if (invocation.kind !== 'preview-pane' || layoutHasGroupSlot(layout, 'preview')) {
+    return nodes;
+  }
+
+  const previewNodes = commandRegistry
+    .filter((command) => command.source === 'preview' && !handledCommandIds.has(command.id))
+    .sort((left, right) => left.priority - right.priority)
+    .flatMap((command) => {
+      const node = createRuntimeNodeForCommand(
+        command,
+        invocation,
+        targetEntries,
+        primaryEntry,
+        environment,
+        0,
+      );
+      if (!node) {
+        return [];
+      }
+      handledCommandIds.add(command.id);
+      return [node];
+    });
+  const sanitizedPreviewNodes = sanitizeNodeList(previewNodes);
+  if (sanitizedPreviewNodes.length === 0) {
+    return nodes;
+  }
+
+  const pinnedTopCommandIds = new Set([
+    'built-in.open',
+    'built-in.open-with',
+    'built-in.send-to-mobile-download',
+  ]);
+  let insertionIndex = 0;
+  while (insertionIndex < nodes.length) {
+    const node = nodes[insertionIndex];
+    const matchesPinnedTopCommand =
+      (node.kind === 'command' && pinnedTopCommandIds.has(node.commandId)) ||
+      (node.kind === 'submenu' && pinnedTopCommandIds.has(node.id));
+    if (!matchesPinnedTopCommand) {
+      break;
+    }
+    insertionIndex += 1;
+  }
+
+  const prefix = nodes.slice(0, insertionIndex);
+  const suffix = nodes.slice(insertionIndex);
+  const mergedNodes: ExplorerRuntimeMenuNode[] = [...prefix];
+
+  if (prefix.length > 0 && prefix[prefix.length - 1]?.kind !== 'separator') {
+    mergedNodes.push(createFallbackSeparatorNode('preview.fallback.leading-separator'));
+  }
+  mergedNodes.push(...sanitizedPreviewNodes);
+  if (suffix.length > 0) {
+    mergedNodes.push(createFallbackSeparatorNode('preview.fallback.trailing-separator'));
+    mergedNodes.push(...suffix);
+  }
+
+  return sanitizeNodeList(mergedNodes);
 }
 
 function resolveActiveMenuPack(
@@ -1157,9 +1319,14 @@ export function buildExplorerRuntimeMenu(
     options.invocation,
     options.environment,
   );
+  const previewCommands = createPreviewContextMenuCommands(
+    options.invocation,
+    options.previewContextMenuRegistration,
+  );
   const commandRegistry: ExplorerCommandDefinition[] = [
     ...BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
     ...dynamicCommands,
+    ...previewCommands,
     ...pluginCommands,
   ];
   const layout = getLayoutForContext(
@@ -1168,7 +1335,7 @@ export function buildExplorerRuntimeMenu(
     options.invocation.kind,
   );
   const handledCommandIds = new Set<string>();
-  const nodes = buildNodesForLayout(
+  const layoutNodes = buildNodesForLayout(
     layout,
     commandRegistry,
     options.invocation,
@@ -1177,6 +1344,16 @@ export function buildExplorerRuntimeMenu(
     options.environment,
     null,
     0,
+    handledCommandIds,
+  );
+  const nodes = injectFallbackPreviewNodes(
+    layoutNodes,
+    layout,
+    commandRegistry,
+    options.invocation,
+    targetEntries,
+    primaryEntry,
+    options.environment,
     handledCommandIds,
   );
 

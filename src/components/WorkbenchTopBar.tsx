@@ -955,6 +955,7 @@ export function WorkbenchTopBar({
                 remoteAccessMode={mobileShareRemoteAccessMode}
                 error={mobileShareError}
                 notice={mobileShareNotice}
+                triggerRef={mobileMenuRef}
                 onSelectRemoteAccessMode={onSetMobileShareRemoteAccessMode}
                 onShowQrCodes={handleShowMobileQrDialog}
                 onStartOrRestartShare={handleStartMobileShareFromMenu}

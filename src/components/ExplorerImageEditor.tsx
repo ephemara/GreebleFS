@@ -39,6 +39,7 @@ import { writeExplorerFile } from "../runtime/explorerBackend";
 import type { ManagedPythonRuntimeConfig } from "../runtime/pythonRuntimeBackend";
 import { useSettingsStore } from "../store/settingsStore";
 import { ExplorerImageCutoutSurface } from "./ExplorerImageCutoutSurface";
+import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 import type { ExplorerPreviewWildcardWorkflowTab } from "./explorer/explorerPreviewWorkflowTabs";
 import {
   applyExplorerImageStageWheelZoom,
@@ -61,6 +62,9 @@ type ExplorerImageEditorProps = {
   cutoutBackendPreference?: LocalModelBackendPreference | null;
   onRegisterWorkflowTabs?: (
     tabs: ExplorerPreviewWildcardWorkflowTab[] | null,
+  ) => void;
+  onRegisterContextMenuRegistration?: (
+    registration: ExplorerPreviewContextMenuRegistration | null,
   ) => void;
   onSaved?: () => Promise<void> | void;
 };
@@ -234,6 +238,7 @@ export const ExplorerImageEditor = forwardRef<
     cutoutModelId = null,
     cutoutBackendPreference = "auto",
     onRegisterWorkflowTabs,
+    onRegisterContextMenuRegistration,
     onSaved,
   },
   forwardedRef,
@@ -395,6 +400,59 @@ export const ExplorerImageEditor = forwardRef<
   const handleReset = useCallback(() => {
     void restoreSavedState();
   }, [restoreSavedState]);
+
+  useEffect(() => {
+    if (!onRegisterContextMenuRegistration) {
+      return;
+    }
+    if (!isEditableFormat || isImageIsolationMode) {
+      onRegisterContextMenuRegistration(null);
+      return;
+    }
+
+    onRegisterContextMenuRegistration({
+      previewKind: "image",
+      baseActions: [
+        {
+          id: "image.reset-view",
+          title: "Reset View",
+          description: "Restore the preview zoom and pan.",
+          iconName: "RotateCcw",
+          group: "preview",
+          defaultOrder: 10,
+          priority: 10,
+          onSelect: () => resetPreviewViewport(),
+        },
+      ],
+      workflowOverlays: [
+        {
+          workflowTabId: "edit",
+          actions: [
+            {
+              id: "image.reset-edits",
+              title: "Reset Image Edits",
+              description: "Restore the saved crop and filter state.",
+              iconName: "RefreshCw",
+              group: "preview",
+              defaultOrder: 20,
+              priority: 20,
+              onSelect: () => handleReset(),
+            },
+          ],
+        },
+      ],
+    });
+
+    return () => {
+      onRegisterContextMenuRegistration(null);
+    };
+  }, [
+    handleReset,
+    isEditableFormat,
+    isImageIsolationMode,
+    onRegisterContextMenuRegistration,
+    resetPreviewViewport,
+  ]);
 
   const saveImage = useCallback(async (): Promise<boolean> => {
     if (
@@ -929,6 +987,7 @@ export const ExplorerImageEditor = forwardRef<
         pythonRuntimeConfig={pythonRuntimeConfig}
         cutoutModelId={cutoutModelId}
         cutoutBackendPreference={cutoutBackendPreference}
+        onRegisterContextMenuRegistration={onRegisterContextMenuRegistration}
       />
     );
   }

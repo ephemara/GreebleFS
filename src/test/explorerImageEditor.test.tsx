@@ -317,6 +317,7 @@ describe("ExplorerImageEditor", () => {
 
   it("routes the cutout workflow through the dedicated surface with the current editor state", async () => {
     const registerWorkflowTabs = vi.fn();
+    const registerContextMenu = vi.fn();
     render(
       <ExplorerImageEditor
         imagePath="/tmp/resolved-preview.png"
@@ -328,6 +329,7 @@ describe("ExplorerImageEditor", () => {
         cutoutModelId="image-cutout-sam2-small"
         cutoutBackendPreference="cpu"
         onRegisterWorkflowTabs={registerWorkflowTabs}
+        onRegisterContextMenuRegistration={registerContextMenu}
       />,
     );
 
@@ -336,6 +338,7 @@ describe("ExplorerImageEditor", () => {
     ).toHaveTextContent("preview.png:/tmp/original-preview.png");
     expect(registerWorkflowTabs).toHaveBeenCalledWith([
       { id: "cutout", label: "Cutout", baseMode: "edit" },
+      { id: "remove-background", label: "Remove BG", baseMode: "edit" },
     ]);
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(
@@ -343,12 +346,67 @@ describe("ExplorerImageEditor", () => {
     ).not.toBeInTheDocument();
 
     expect(cutoutSurfaceMockState.lastProps).toMatchObject({
+      workflowMode: "cutout",
       imageName: "preview.png",
       imagePath: "/tmp/resolved-preview.png",
       logicalOutputPath: "/tmp/original-preview.png",
       cutoutModelId: "image-cutout-sam2-small",
       cutoutBackendPreference: "cpu",
+      onRegisterContextMenuRegistration: expect.any(Function),
     });
+  });
+
+  it("routes the remove-background workflow through the shared isolation surface", async () => {
+    render(
+      <ExplorerImageEditor
+        imagePath="/tmp/resolved-preview.png"
+        logicalImagePath="/tmp/original-preview.png"
+        imageName="preview.png"
+        imageSource="data:image/png;base64,ZmFrZQ=="
+        mode="edit"
+        workflowTabId="remove-background"
+      />,
+    );
+
+    expect(
+      await screen.findByTestId("mock-explorer-image-cutout-surface"),
+    ).toHaveTextContent("preview.png:/tmp/original-preview.png");
+    expect(cutoutSurfaceMockState.lastProps).toMatchObject({
+      workflowMode: "removeBackground",
+      imageName: "preview.png",
+      imagePath: "/tmp/resolved-preview.png",
+      logicalOutputPath: "/tmp/original-preview.png",
+    });
+  });
+
+  it("registers adaptive image preview context-menu actions outside isolation mode", async () => {
+    const registerContextMenu = vi.fn();
+    const { unmount } = render(
+      <ExplorerImageEditor
+        imagePath="/tmp/preview.png"
+        imageName="preview.png"
+        imageSource="data:image/png;base64,ZmFrZQ=="
+        mode="preview"
+        onRegisterContextMenuRegistration={registerContextMenu}
+      />,
+    );
+
+    await screen.findByTestId("explorer-image-editor-preview-image");
+
+    expect(registerContextMenu).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previewKind: "image",
+        baseActions: expect.arrayContaining([
+          expect.objectContaining({ id: "image.reset-view" }),
+        ]),
+        workflowOverlays: expect.arrayContaining([
+          expect.objectContaining({ workflowTabId: "edit" }),
+        ]),
+      }),
+    );
+
+    unmount();
+    expect(registerContextMenu).toHaveBeenLastCalledWith(null);
   });
 
   it("exposes imperative save/reset hooks for the shared screenshot editor flow", async () => {

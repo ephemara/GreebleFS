@@ -18,6 +18,10 @@ import {
   type OverlayResolvedIconTheme,
 } from './iconTheme';
 import {
+  loadVsCodeIconThemeContributionsFromEntry,
+  type ManagedPackageSourceInfo,
+} from './vscodeThemeCompatibility';
+import {
   commands,
   unwrapTauriResult,
 } from '../runtime/tauriClient';
@@ -37,7 +41,8 @@ export interface LoadedIconThemePackage {
   description?: string;
   directoryPath: string;
   manifestPath: string;
-  sourceKind: 'built-in' | 'icon-theme-directory';
+  sourceKind: 'built-in' | 'icon-theme-directory' | 'vscode-icon-theme-directory' | 'vscode-icon-theme-vsix';
+  sourceInfo?: ManagedPackageSourceInfo;
   warnings: string[];
   iconTheme: OverlayResolvedIconTheme;
   capabilitySummary: {
@@ -134,6 +139,11 @@ function createBuiltInIconThemePackage(): LoadedIconThemePackage {
     directoryPath: iconThemeSystemConfig.iconThemesDirectory,
     manifestPath: 'built-in',
     sourceKind: 'built-in',
+    sourceInfo: {
+      compatibility: 'native',
+      source: 'built-in',
+      originalPath: iconThemeSystemConfig.iconThemesDirectory,
+    },
     warnings: [],
     iconTheme: builtInIconTheme,
     capabilitySummary: buildCapabilitySummary(builtInIconTheme),
@@ -209,6 +219,12 @@ async function buildLoadedIconThemePackage(record: IconThemePackageRecord): Prom
     directoryPath: record.directoryPath,
     manifestPath: record.manifestPath,
     sourceKind: 'icon-theme-directory',
+    sourceInfo: {
+      compatibility: 'native',
+      source: 'folder',
+      originalPath: record.directoryPath,
+      resolvedRootPath: record.directoryPath,
+    },
     warnings: [],
     iconTheme: resolvedIconTheme,
     capabilitySummary: buildCapabilitySummary(resolvedIconTheme),
@@ -258,14 +274,37 @@ export async function loadIconThemePackagesFromDirectoryEntries(
 
     for (const entry of directoryEntries) {
       const record = await readPackageRecord(entry);
-      if (!record) {
+      if (record) {
+        try {
+          loadedPackages.push(await buildLoadedIconThemePackage(record));
+        } catch (error) {
+          warnings.push(`${record.fileName}: ${String(error)}`);
+        }
         continue;
       }
 
       try {
-        loadedPackages.push(await buildLoadedIconThemePackage(record));
+        const compatibilityResult = await loadVsCodeIconThemeContributionsFromEntry(entry);
+        warnings.push(...compatibilityResult.warnings.map(warning => `${entry.name}: ${warning}`));
+        loadedPackages.push(
+          ...compatibilityResult.packages.map(packageInfo => ({
+            id: packageInfo.id,
+            name: packageInfo.name,
+            version: packageInfo.version,
+            description: packageInfo.description,
+            directoryPath: packageInfo.directoryPath,
+            manifestPath: packageInfo.manifestPath,
+            sourceKind: packageInfo.sourceInfo.source === 'vsix'
+              ? 'vscode-icon-theme-vsix'
+              : 'vscode-icon-theme-directory',
+            sourceInfo: packageInfo.sourceInfo,
+            warnings: packageInfo.warnings,
+            iconTheme: packageInfo.iconTheme,
+            capabilitySummary: buildCapabilitySummary(packageInfo.iconTheme),
+          })),
+        );
       } catch (error) {
-        warnings.push(`${record.fileName}: ${String(error)}`);
+        warnings.push(`${entry.name}: ${String(error)}`);
       }
     }
 

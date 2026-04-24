@@ -16,6 +16,7 @@ import {
   type ExplorerMenuRuntimeEnvironment,
   type ExplorerRuntimeMenuNode,
 } from '../components/explorer/explorerMenuRuntime';
+import type { ExplorerPreviewContextMenuRegistration } from '../components/explorer/explorerPreviewContextMenu';
 
 function createEntry(overrides?: Partial<ExplorerMenuInvocationEntry>): ExplorerMenuInvocationEntry {
   return {
@@ -39,6 +40,7 @@ function createInvocation(
     primaryEntry: overrides?.primaryEntry ?? null,
     searchResult: overrides?.searchResult ?? null,
     previewTarget: overrides?.previewTarget ?? null,
+    previewContext: overrides?.previewContext ?? null,
     inputModality: overrides?.inputModality ?? 'mouse',
     reducedMotion: overrides?.reducedMotion ?? false,
     capabilities: overrides?.capabilities ?? {
@@ -113,6 +115,7 @@ function buildMenu(options?: {
   environment?: Partial<ExplorerMenuRuntimeEnvironment>;
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutOverridesByContext?: ExplorerMenuContextLayoutOverrideMap;
+  previewContextMenuRegistration?: ExplorerPreviewContextMenuRegistration | null;
 }) {
   return buildExplorerRuntimeMenu({
     invocation: createInvocation(options?.invocation),
@@ -121,6 +124,7 @@ function buildMenu(options?: {
     layoutOverridesByContext: options?.layoutOverridesByContext ?? {},
     themeRendererPreference: 'radial',
     pluginContextMenuItems: options?.pluginContextMenuItems ?? [],
+    previewContextMenuRegistration: options?.previewContextMenuRegistration,
     environment: createEnvironment(options?.environment),
   });
 }
@@ -433,6 +437,221 @@ describe('explorerMenuRuntime', () => {
       label: 'Copy Path',
       commandId: 'built-in.copy-path',
     });
+  });
+
+  it('resolves preview-lane base actions for preview-pane invocations', async () => {
+    const previewTarget = createEntry({
+      path: '/workspace/notes/poster.png',
+      name: 'poster.png',
+      extension: 'png',
+      stem: 'poster',
+    });
+    const resetView = vi.fn();
+    const menu = buildMenu({
+      invocation: {
+        kind: 'preview-pane',
+        previewTarget,
+        primaryEntry: null,
+        selectedEntries: [],
+        previewContext: {
+          previewKind: 'image',
+          workflowTabId: 'preview',
+          workflowBaseMode: 'preview',
+        },
+      },
+      previewContextMenuRegistration: {
+        previewKind: 'image',
+        baseActions: [
+          {
+            id: 'image.reset-view',
+            title: 'Reset View',
+            onSelect: resetView,
+          },
+        ],
+      },
+    });
+
+    const resetViewNode = findNodeByLabel(menu.nodes, 'Reset View');
+    expect(resetViewNode?.kind).toBe('command');
+    if (!resetViewNode || resetViewNode.kind !== 'command') {
+      throw new Error('Expected Reset View command');
+    }
+
+    await resetViewNode.onSelect();
+    expect(resetView).toHaveBeenCalledTimes(1);
+  });
+
+  it('merges workflow overlays by id and hides inherited preview actions when requested', () => {
+    const previewTarget = createEntry({
+      path: '/workspace/notes/poster.png',
+      name: 'poster.png',
+      extension: 'png',
+      stem: 'poster',
+    });
+    const registration = {
+      previewKind: 'image',
+      baseActions: [
+        {
+          id: 'image.base',
+          title: 'Image Action',
+          onSelect: () => undefined,
+        },
+        {
+          id: 'image.selection',
+          title: 'Prompt Selection',
+          onSelect: () => undefined,
+        },
+      ],
+      workflowOverlays: [
+        {
+          workflowTabId: 'cutout',
+          actions: [
+            {
+              id: 'image.base',
+              title: 'Cutout Action',
+            },
+          ],
+        },
+        {
+          workflowTabId: 'remove-background',
+          actions: [
+            {
+              id: 'image.selection',
+              hidden: true,
+            },
+            {
+              id: 'image.remove-background',
+              title: 'Remove BG Action',
+              onSelect: () => undefined,
+            },
+          ],
+        },
+      ],
+    };
+
+    const cutoutMenu = buildMenu({
+      invocation: {
+        kind: 'preview-pane',
+        previewTarget,
+        primaryEntry: null,
+        selectedEntries: [],
+        previewContext: {
+          previewKind: 'image',
+          workflowTabId: 'cutout',
+          workflowBaseMode: 'edit',
+        },
+      },
+      previewContextMenuRegistration: registration,
+    });
+    expect(findNodeByLabel(cutoutMenu.nodes, 'Cutout Action')).not.toBeNull();
+    expect(findNodeByLabel(cutoutMenu.nodes, 'Prompt Selection')).not.toBeNull();
+
+    const removeBackgroundMenu = buildMenu({
+      invocation: {
+        kind: 'preview-pane',
+        previewTarget,
+        primaryEntry: null,
+        selectedEntries: [],
+        previewContext: {
+          previewKind: 'image',
+          workflowTabId: 'remove-background',
+          workflowBaseMode: 'edit',
+        },
+      },
+      previewContextMenuRegistration: registration,
+    });
+    expect(findNodeByLabel(removeBackgroundMenu.nodes, 'Prompt Selection')).toBeNull();
+    expect(findNodeByLabel(removeBackgroundMenu.nodes, 'Remove BG Action')).not.toBeNull();
+  });
+
+  it('falls back to injected preview actions when a preview-pane layout has no preview slot', () => {
+    const previewTarget = createEntry({
+      path: '/workspace/notes/poster.png',
+      name: 'poster.png',
+      extension: 'png',
+      stem: 'poster',
+    });
+    const menu = buildMenu({
+      invocation: {
+        kind: 'preview-pane',
+        previewTarget,
+        primaryEntry: null,
+        selectedEntries: [],
+        previewContext: {
+          previewKind: 'image',
+          workflowTabId: 'preview',
+          workflowBaseMode: 'preview',
+        },
+      },
+      layoutOverridesByContext: {
+        'preview-pane': {
+          renderer: 'classic',
+          entries: [
+            {
+              id: 'preview.open',
+              kind: 'command',
+              commandId: 'built-in.open',
+              parentEntryId: null,
+              order: 10,
+              enabled: true,
+              quickSlot: 'none',
+              fallbackBucket: 'default',
+            },
+            {
+              id: 'preview.open-with',
+              kind: 'command',
+              commandId: 'built-in.open-with',
+              parentEntryId: null,
+              order: 20,
+              enabled: true,
+              quickSlot: 'none',
+              fallbackBucket: 'default',
+            },
+          ],
+        },
+      },
+      previewContextMenuRegistration: {
+        previewKind: 'image',
+        baseActions: [
+          {
+            id: 'image.reset-view',
+            title: 'Reset View',
+            onSelect: () => undefined,
+          },
+        ],
+      },
+    });
+
+    expect(findNodeByLabel(menu.nodes, 'Open')).not.toBeNull();
+    expect(findNodeByLabel(menu.nodes, 'Open With')).not.toBeNull();
+    expect(findNodeByLabel(menu.nodes, 'Reset View')).not.toBeNull();
+  });
+
+  it('falls back to the generic preview menu when no preview registration is active', () => {
+    const previewTarget = createEntry({
+      path: '/workspace/notes/poster.png',
+      name: 'poster.png',
+      extension: 'png',
+      stem: 'poster',
+    });
+    const menu = buildMenu({
+      invocation: {
+        kind: 'preview-pane',
+        previewTarget,
+        primaryEntry: null,
+        selectedEntries: [],
+        previewContext: {
+          previewKind: 'image',
+          workflowTabId: 'preview',
+          workflowBaseMode: 'preview',
+        },
+      },
+      previewContextMenuRegistration: null,
+    });
+
+    expect(findNodeByLabel(menu.nodes, 'Open')).not.toBeNull();
+    expect(findNodeByLabel(menu.nodes, 'Open With')).not.toBeNull();
+    expect(findNodeByLabel(menu.nodes, 'Reset View')).toBeNull();
   });
 
   it('derives the invocation modality from pointer types', () => {

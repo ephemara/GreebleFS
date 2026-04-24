@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { WorkbenchTopBar } from '../components/WorkbenchTopBar';
@@ -255,9 +255,29 @@ describe('WorkbenchTopBar', () => {
     fireEvent.click(mobileShareButton);
     expect(onToggleMobileShare).toHaveBeenCalledTimes(1);
 
-    fireEvent.pointerEnter(mobileShareButton.parentElement as HTMLElement);
+    const mobileShareMenuAnchor = mobileShareButton.parentElement as HTMLElement;
+    vi.spyOn(mobileShareMenuAnchor, 'getBoundingClientRect').mockReturnValue({
+      x: 20,
+      y: 18,
+      left: 20,
+      top: 18,
+      right: 56,
+      bottom: 40,
+      width: 36,
+      height: 22,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    fireEvent.pointerEnter(mobileShareMenuAnchor);
 
     expect(await screen.findByText('Selected Route', {}, { timeout: 4000 })).toBeInTheDocument();
+    const routeMenu = container.querySelector('[data-overlay-mobile-share-route-menu]') as HTMLElement | null;
+    expect(routeMenu).not.toBeNull();
+    await waitFor(() => {
+      expect(routeMenu).toHaveStyle({ position: 'fixed' });
+      expect(routeMenu?.style.left).toBe('20px');
+      expect(routeMenu?.style.top).toBe('48px');
+    });
     expect(container.firstElementChild).toHaveStyle({ overflow: 'visible' });
     const showQrCodesButton = screen.getByRole('button', { name: /show qr codes/i });
     expect(showQrCodesButton).toHaveAttribute('data-interaction-motion-surface', 'actionButton');

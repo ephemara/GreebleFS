@@ -1,4 +1,4 @@
-import type { PointerEventHandler } from 'react';
+import { useLayoutEffect, useState, type PointerEventHandler, type RefObject } from 'react';
 import { Check, Loader2, ScanLine, Settings2, ShieldCheck, Smartphone } from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
@@ -17,6 +17,7 @@ interface MobileShareRouteMenuProps {
   remoteAccessMode: MobileRemoteAccessMode;
   error: string | null;
   notice: string | null;
+  triggerRef: RefObject<HTMLDivElement | null>;
   onPointerEnter?: PointerEventHandler<HTMLDivElement>;
   onPointerLeave?: PointerEventHandler<HTMLDivElement>;
   onSelectRemoteAccessMode: (mode: MobileRemoteAccessMode) => void | Promise<void>;
@@ -33,6 +34,7 @@ export function MobileShareRouteMenu({
   remoteAccessMode,
   error,
   notice,
+  triggerRef,
   onPointerEnter,
   onPointerLeave,
   onSelectRemoteAccessMode,
@@ -50,17 +52,63 @@ export function MobileShareRouteMenu({
   const remoteAccessDefinition = getMobileRemoteAccessModeDefinition(remoteAccessMode);
   const isPending = phase === 'starting' || phase === 'stopping';
   const liveSessionMismatch = session != null && session.remoteAccessMode !== remoteAccessMode;
+  const [menuPosition, setMenuPosition] = useState(() => ({
+    left: 8,
+    top: 8,
+    width: 344,
+    maxHeight: 520,
+  }));
+
+  useLayoutEffect(() => {
+    const syncMenuPosition = () => {
+      const anchorRect = triggerRef.current?.getBoundingClientRect() ?? null;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const menuWidth = Math.min(344, Math.max(248, viewportWidth - 16));
+      const menuMaxHeight = Math.max(220, Math.min(520, viewportHeight - 16));
+
+      let left = anchorRect?.left ?? 8;
+      if (left + menuWidth > viewportWidth - 8) {
+        left = (anchorRect?.right ?? left) - menuWidth;
+      }
+      left = Math.max(8, Math.min(left, viewportWidth - menuWidth - 8));
+
+      let top = (anchorRect?.bottom ?? 8) + 8;
+      if (top + menuMaxHeight > viewportHeight - 8) {
+        const aboveAnchor = (anchorRect?.top ?? 8) - 8 - menuMaxHeight;
+        top = aboveAnchor >= 8 ? aboveAnchor : viewportHeight - menuMaxHeight - 8;
+      }
+      top = Math.max(8, Math.min(top, viewportHeight - menuMaxHeight - 8));
+
+      setMenuPosition({
+        left,
+        top,
+        width: menuWidth,
+        maxHeight: menuMaxHeight,
+      });
+    };
+
+    syncMenuPosition();
+    window.addEventListener('resize', syncMenuPosition);
+    window.addEventListener('scroll', syncMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', syncMenuPosition);
+      window.removeEventListener('scroll', syncMenuPosition, true);
+    };
+  }, [triggerRef, phase, session, remoteAccessMode, error, notice]);
 
   return (
     <div
+      data-overlay-mobile-share-route-menu
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       style={{
-        position: 'absolute',
-        top: 'calc(100% + 8px)',
-        right: 0,
-        width: 344,
-        maxWidth: 'calc(100vw - 24px)',
+        position: 'fixed',
+        left: menuPosition.left,
+        top: menuPosition.top,
+        width: menuPosition.width,
+        maxWidth: 'calc(100vw - 16px)',
+        maxHeight: menuPosition.maxHeight,
         padding: 12,
         borderRadius: panelRadius,
         border: '1px solid var(--overlay-workbench-chrome-border)',

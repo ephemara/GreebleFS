@@ -1,3 +1,44 @@
+# 2026-04-24 - Image Isolation Is Now Split Into Real `Cutout` And `Remove BG` Lanes
+
+- Explorer image isolation no longer pretends that prompt-driven cutout and automatic background removal are the same workflow. Editable raster images now register two wildcard tabs: `Cutout` and `Remove BG`.
+- Durable implementation shape:
+  - `src/components/ExplorerImageEditor.tsx` now registers `Preview | Edit | Cutout | Remove BG` for editable raster images and routes both isolation tabs through the same `ExplorerImageCutoutSurface` mount using a required `workflowMode` prop (`cutout` or `removeBackground`).
+  - `src/components/explorer/explorerImageStage.ts` is now the shared zoom/pan transform seam for both normal image preview and isolation preview. Future image-stage interaction changes should go there instead of forking preview math inside each lane.
+  - `src/components/ExplorerImageCutoutSurface.tsx` was rebuilt into a compact explorer-native isolation surface instead of the old `Spark` / `Sweep` / `Add` / `Trim` toy shell. `Cutout` is prompt-first, plain click adds a positive prompt, `Alt`/right-click adds a negative prompt, plain drag pans, `Shift+drag` stages a transparent PNG for native drag-out, and refine controls stay collapsed behind `Refine` with `PremiumSlider` plus icon-first brush/erase controls. The cutout lane no longer mounts a floating explainer card; the only persistent chrome is the icon-first top-right action bar plus the compact bottom status pill.
+  - `src/config/imageCutoutTools.ts` is now lane metadata rather than a text-tool catalog. It owns the workflow tab registration plus the lane copy/reset labels and the refine-tool definitions used by the isolation surface.
+  - `src-tauri/src/image_cutout_commands.rs`, `src/generated/tauri.ts`, and `src/runtime/imageCutoutBackend.ts` now treat `workflowMode` as part of the typed contract, so the host/runtime seam can distinguish semantic `Cutout` sessions from explicit `Remove BG` sessions.
+  - `src-python/greeblefs_sidecar/cutout_runtime.py` now boots and resets sessions by workflow mode: `cutout` starts from an empty mask with no automatic background removal, while `removeBackground` still uses the current heuristic auto-mask path and labels that path honestly as heuristic auto removal rather than semantic cutout.
+- Durable product note:
+  - Do not collapse `Cutout` back into “open tab and instantly auto-remove background.” Prompt-first isolation and one-click remove-background are separate workflows now, even if they share the same export/copy/drag plumbing.
+  - The marching-ants overlay is currently a stage-local canvas effect, not a committed shader asset. If future polish revisits it, keep the mask-boundary visibility first-class instead of hiding it behind a theme-only experiment.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `python3 -m py_compile src-python/greeblefs_sidecar/*.py tests_python/test_cutout_runtime.py`
+  - passed: `python3 -m unittest discover -s tests_python -p 'test_*.py' -v`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml image_cutout --quiet`
+  - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx src/test/explorerImageCutoutSurface.test.tsx src/test/explorerImageCutoutMask.test.ts --reporter=dot`
+  - blocked currently: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails in pre-existing vendored `src/vendor/tiptap/**` typing/dependency paths unrelated to this image-isolation rewrite
+
+# 2026-04-24 - Explorer Preview Terminal And Bottom Drawer Are Separate Again
+
+- The shared explorer-terminal refactor was reverted at the product-architecture level. The preview pane terminal and the bottom drawer are no longer one movable explorer-local terminal session.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now keeps two explicit embedded-terminal lanes:
+    - a preview-owned terminal lane driven by `previewSurfaceMode`, `previewTerminalMounted`, `previewTerminalCommandRequest`, and preview-specific cwd-sync refs
+    - a bottom-drawer terminal lane driven by `explorerTerminalMounted` / `explorerTerminalVisible`
+  - Preview actions such as script runs, Python `Run in Terminal`, and managed REPL handoff now route back into the preview terminal lane instead of forcing the bottom drawer.
+  - The bottom status-bar drawer remains its own integrated terminal surface and still uses the explorer-local `Ctrl+J` reveal path plus the `terminalDrawerToggle` chrome control.
+  - Terminal-to-explorer cwd sync is preserved in both lanes: preview terminal shell cwd changes still navigate the explorer, and the bottom drawer keeps its own reported-cwd sync path.
+- Durable product note:
+  - Do not recombine the preview terminal and bottom drawer into one placement-swapping session unless the product explicitly changes direction. They serve different workflows, and the shared-session version regressed real preview-terminal behavior.
+  - If preview-terminal behavior looks dead in tests or runtime, check whether preview actions are routing into the preview lane helpers (`revealPreviewTerminal`, `togglePreviewTerminal`, preview command queue) before blaming `TerminalOverlay`.
+- Durable validation note:
+  - A malformed generated bridge file can block explorer validation entirely. This pass had to remove merge-conflict markers from `src/generated/tauri.ts` before `src/test/fileExplorer.viewModes.test.tsx` could import again.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "terminal" --reporter=dot --pool=forks`
+  - passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot --pool=forks`
+  - passed: targeted `bunx tsc --noEmit --pretty false -p tsconfig.json` grep for `src/components/FileExplorer.tsx|src/components/TerminalOverlay.tsx|src/test/fileExplorer.viewModes.test.tsx|src/generated/tauri.ts`
+
 # 2026-04-24 - Explorer Images Now Have A Host-Owned Cutout Workflow Tab
 
 - Editable explorer images no longer stop at `Preview` and `Edit`. The shared preview header now exposes a new `Cutout` wildcard tab for raster images, and that lane is built as a host-owned session flow instead of a browser-only export trick.

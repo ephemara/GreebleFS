@@ -136,6 +136,19 @@ export interface OverlayThemeVisualLayer {
   animation?: OverlayThemeVisualAnimation;
 }
 
+export interface OverlayMonacoThemeCompatibilityRule {
+  token: string;
+  foreground?: string;
+  background?: string;
+  fontStyle?: string;
+}
+
+export interface OverlayMonacoThemeCompatibility {
+  baseTheme?: 'vs' | 'vs-dark' | 'hc-black';
+  colors?: Record<string, string>;
+  rules?: OverlayMonacoThemeCompatibilityRule[];
+}
+
 export interface OverlayThemeAssets {
   packageRoot?: string;
   manifestPath?: string;
@@ -143,6 +156,7 @@ export interface OverlayThemeAssets {
   previewUrl?: string;
   iconTheme?: OverlayResolvedIconTheme;
   iconEntries?: Record<string, string>;
+  monacoTheme?: OverlayMonacoThemeCompatibility;
 }
 
 export interface OverlayThemeFonts {
@@ -1143,6 +1157,20 @@ function mergeThemeAssets(
       ...(fallbackAssets?.iconEntries ?? {}),
       ...(themeAssets?.iconEntries ?? {}),
     },
+    monacoTheme: fallbackAssets?.monacoTheme || themeAssets?.monacoTheme
+      ? {
+          ...fallbackAssets?.monacoTheme,
+          ...themeAssets?.monacoTheme,
+          colors: {
+            ...(fallbackAssets?.monacoTheme?.colors ?? {}),
+            ...(themeAssets?.monacoTheme?.colors ?? {}),
+          },
+          rules: [
+            ...(fallbackAssets?.monacoTheme?.rules ?? []),
+            ...(themeAssets?.monacoTheme?.rules ?? []),
+          ],
+        }
+      : undefined,
   };
 }
 

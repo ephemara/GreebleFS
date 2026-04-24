@@ -723,6 +723,7 @@ fn current_timestamp_millis() -> Result<u128, String> {
 mod tests {
     use std::path::PathBuf;
 
+    use serde_json::json;
     use super::{
         create_cutout_stage_path, normalize_local_output_source_path,
         resolve_cutout_sibling_output_path, resolve_cutout_stage_root_under,
@@ -785,5 +786,12 @@ mod tests {
             request.workflow_mode,
             super::ImageCutoutWorkflowMode::RemoveBackground
         );
+    }
+
+    #[test]
+    fn workflow_mode_serializes_with_camel_case_contract() {
+        let serialized = serde_json::to_value(super::ImageCutoutWorkflowMode::RemoveBackground)
+            .expect("serialize workflow mode");
+        assert_eq!(serialized, json!("removeBackground"));
     }
 }

@@ -33,6 +33,7 @@ export type ExplorerMenuFallbackBucket =
 export type ExplorerContextMenuItemGroup =
   | 'create'
   | 'open'
+  | 'preview'
   | 'system'
   | 'clipboard'
   | 'organize'
@@ -117,6 +118,12 @@ export interface ExplorerMenuInvocationEntry {
   isDirectory: boolean;
 }
 
+export interface ExplorerMenuPreviewContext {
+  previewKind: string;
+  workflowTabId: string | null;
+  workflowBaseMode: 'preview' | 'edit' | null;
+}
+
 export interface ExplorerMenuInvocationContext {
   kind: ExplorerMenuContextKind;
   currentLocation: string;
@@ -127,6 +134,7 @@ export interface ExplorerMenuInvocationContext {
     searchMode: string;
   } | null;
   previewTarget: ExplorerMenuInvocationEntry | null;
+  previewContext: ExplorerMenuPreviewContext | null;
   inputModality: ExplorerMenuInputModality;
   reducedMotion: boolean;
   capabilities: {
@@ -146,7 +154,7 @@ export interface ExplorerContextMenuCatalogItemBase {
   group: ExplorerContextMenuItemGroup;
   defaultOrder: number;
   priority: number;
-  source: 'built-in' | 'plugin';
+  source: 'built-in' | 'plugin' | 'preview';
   iconName?: string;
   tone: ExplorerMenuTone;
   shortcutId?: string;
@@ -172,9 +180,18 @@ export interface ExplorerResolvedPluginContextMenuContribution
   execution: OverlayPluginContextMenuContribution['execution'];
 }
 
+export interface ExplorerPreviewContextMenuCatalogItem
+  extends ExplorerContextMenuCatalogItemBase {
+  source: 'preview';
+  execution: {
+    kind: 'preview';
+  };
+}
+
 export type ExplorerCommandDefinition =
   | ExplorerBuiltInContextMenuCatalogItem
-  | ExplorerResolvedPluginContextMenuContribution;
+  | ExplorerResolvedPluginContextMenuContribution
+  | ExplorerPreviewContextMenuCatalogItem;
 export type ExplorerContextMenuCatalogItem = ExplorerCommandDefinition;
 
 export interface ExplorerSortableContextMenuItem {
@@ -210,7 +227,7 @@ export interface ExplorerMenuSeparatorEntry extends ExplorerMenuLayoutEntryBase 
 export interface ExplorerMenuGroupSlotEntry extends ExplorerMenuLayoutEntryBase {
   kind: 'group-slot';
   group: ExplorerContextMenuItemGroup;
-  sourceFilter?: 'any' | 'built-in' | 'plugin';
+  sourceFilter?: 'any' | 'built-in' | 'plugin' | 'preview';
 }
 
 export type ExplorerMenuLayoutEntry =
@@ -246,7 +263,7 @@ export interface ExplorerResolvedMenuNodeBase {
   depth: number;
   iconName?: string;
   tone: ExplorerMenuTone;
-  source: 'built-in' | 'plugin' | 'layout';
+  source: 'built-in' | 'plugin' | 'preview' | 'layout';
   quickSlot: ExplorerMenuQuickSlot;
   fallbackBucket: ExplorerMenuFallbackBucket;
 }
@@ -288,6 +305,7 @@ export const EXPLORER_MENU_CONTEXT_KINDS: ExplorerMenuContextKind[] = [
 const EXPLORER_CONTEXT_MENU_GROUPS: ExplorerContextMenuItemGroup[] = [
   'create',
   'open',
+  'preview',
   'system',
   'clipboard',
   'organize',
@@ -598,7 +616,8 @@ export function normalizeExplorerMenuLayoutEntry(
       group: group as ExplorerContextMenuItemGroup,
       sourceFilter:
         record.sourceFilter === 'built-in' ||
-        record.sourceFilter === 'plugin'
+        record.sourceFilter === 'plugin' ||
+        record.sourceFilter === 'preview'
           ? record.sourceFilter
           : 'any',
     };

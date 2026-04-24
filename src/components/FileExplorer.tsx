@@ -48,10 +48,12 @@ import {
   Shield,
   Eye,
   Info,
+  Eraser,
   FolderTree,
   Loader,
   Pin,
   PinOff,
+  Pencil,
   Puzzle,
   Sparkles,
   FilePlus,
@@ -62,6 +64,7 @@ import {
   List,
   MoreHorizontal,
   Save,
+  Sliders,
   SquareSplitHorizontal,
   Settings2,
   Tags,
@@ -291,6 +294,7 @@ import {
   resolveMenuInvocationInputModality,
   type ExplorerOpenWithProgramsState,
 } from "./explorer/explorerMenuRuntime";
+import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
 import {
@@ -2705,6 +2709,8 @@ function resolveContextMenuIcon(iconName?: string): React.ReactNode {
       return <CopyPlus size={13} />;
     case "Edit3":
       return <Edit3 size={13} />;
+    case "Eraser":
+      return <Eraser size={13} />;
     case "ExternalLink":
       return <ExternalLink size={13} />;
     case "Eye":
@@ -2715,16 +2721,24 @@ function resolveContextMenuIcon(iconName?: string): React.ReactNode {
       return <FolderPlus size={13} />;
     case "Info":
       return <Info size={13} />;
+    case "Pencil":
+      return <Pencil size={13} />;
     case "Puzzle":
       return <Puzzle size={13} />;
     case "RefreshCw":
       return <RefreshCw size={13} />;
+    case "RotateCcw":
+      return <RotateCcw size={13} />;
     case "Scissors":
       return <Scissors size={13} />;
     case "Shield":
       return <Shield size={13} />;
     case "Sparkles":
       return <Sparkles size={13} />;
+    case "Sliders":
+      return <Sliders size={13} />;
+    case "Save":
+      return <Save size={13} />;
     case "Star":
       return <Star size={13} />;
     case "Tags":
@@ -2733,6 +2747,8 @@ function resolveContextMenuIcon(iconName?: string): React.ReactNode {
       return <Terminal size={13} />;
     case "Trash2":
       return <Trash2 size={13} />;
+    case "Undo2":
+      return <Undo2 size={13} />;
     default:
       return <Puzzle size={13} />;
   }
@@ -3581,6 +3597,8 @@ function PreviewPanel({
   const [wildcardWorkflowTabs, setWildcardWorkflowTabs] = useState<
     ExplorerPreviewWildcardWorkflowTab[]
   >([]);
+  const [previewContextMenuRegistration, setPreviewContextMenuRegistration] =
+    useState<ExplorerPreviewContextMenuRegistration | null>(null);
   const currentViewModeRef = useRef(viewMode);
   const [pdfPageInputValue, setPdfPageInputValue] = useState("1");
   const [textPreviewCursor, setTextPreviewCursor] =
@@ -3670,6 +3688,7 @@ function PreviewPanel({
 
   useLayoutEffect(() => {
     setWildcardWorkflowTabs([]);
+    setPreviewContextMenuRegistration(null);
     onWorkflowTabChange(currentViewModeRef.current);
   }, [onWorkflowTabChange, preview.path, preview.type]);
 
@@ -3687,6 +3706,12 @@ function PreviewPanel({
   const handleWildcardWorkflowTabsChange = useCallback(
     (tabs: ExplorerPreviewWildcardWorkflowTab[] | null) => {
       setWildcardWorkflowTabs(tabs ?? []);
+    },
+    [],
+  );
+  const handlePreviewContextMenuRegistrationChange = useCallback(
+    (registration: ExplorerPreviewContextMenuRegistration | null) => {
+      setPreviewContextMenuRegistration(registration);
     },
     [],
   );
@@ -3841,6 +3866,17 @@ function PreviewPanel({
         activeWorkflowTabId,
       ),
     [activeWorkflowTabId, previewWorkflowTabs],
+  );
+  const previewMenuContext = useMemo(
+    () =>
+      preview.type === "none"
+        ? null
+        : {
+            previewKind: preview.type,
+            workflowTabId: activePreviewWorkflowTab.id,
+            workflowBaseMode: activePreviewWorkflowTab.baseMode,
+          },
+    [activePreviewWorkflowTab.baseMode, activePreviewWorkflowTab.id, preview.type],
   );
   const isPythonRunWorkflowTab =
     isPythonTextPreview && activePreviewWorkflowTab.id === "run";
@@ -4907,6 +4943,9 @@ function PreviewPanel({
               cutoutModelId={imageCutoutModelBinding.modelId}
               cutoutBackendPreference={imageCutoutModelBinding.backendPreference}
               onRegisterWorkflowTabs={handleWildcardWorkflowTabsChange}
+              onRegisterContextMenuRegistration={
+                handlePreviewContextMenuRegistrationChange
+              }
               onSaved={onRefreshPreviewEntry}
             />
           )}
@@ -14445,6 +14484,7 @@ export function FileExplorer({
         selectedEntries?: ExplorerMenuInvocationEntry[];
         primaryEntry?: ExplorerMenuInvocationEntry | null;
         previewTarget?: ExplorerMenuInvocationEntry | null;
+        previewContext?: ExplorerMenuInvocationContext["previewContext"];
       },
     ): ExplorerMenuInvocationContext => ({
       kind,
@@ -14453,6 +14493,7 @@ export function FileExplorer({
       primaryEntry: options.primaryEntry ?? null,
       searchResult: contextMenuSearchResult,
       previewTarget: options.previewTarget ?? null,
+      previewContext: options.previewContext ?? null,
       inputModality: options.inputModality,
       reducedMotion: reducedMotionPreference,
       capabilities: explorerMenuCapabilities,
@@ -14754,6 +14795,7 @@ export function FileExplorer({
         explorerSettings.contextMenuLayoutOverridesByContext,
       themeRendererPreference: explorerTheme.menuPresentation.renderer,
       pluginContextMenuItems: combinedPluginContextMenuItems,
+      previewContextMenuRegistration,
       environment: {
         currentPath,
         currentPathIsCloud,
@@ -14872,6 +14914,7 @@ export function FileExplorer({
     openWithSystemPicker,
     paste,
     propertiesLabel,
+    previewContextMenuRegistration,
     queueClipboardEntries,
     refresh,
     requestTransferDestinationEntries,
@@ -14978,12 +15021,14 @@ export function FileExplorer({
           selectedEntries: [previewTarget],
           primaryEntry: previewTarget,
           previewTarget,
+          previewContext: previewMenuContext,
         }),
       );
     },
     [
       buildContextMenuInvocation,
       openContextMenu,
+      previewMenuContext,
       resolveContextMenuInputModality,
       resolvePreviewContextMenuEntry,
     ],
