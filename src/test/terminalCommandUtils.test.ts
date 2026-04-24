@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildTerminalCdCommand,
+  buildTerminalPythonRunCommand,
   buildTerminalScriptRunCommand,
 } from '../components/terminalCommandUtils';
 
@@ -94,5 +95,38 @@ describe('buildTerminalScriptRunCommand', () => {
         runner: 'zsh',
       }),
     ).toBe("zsh '/workspace/repo/build.zsh'");
+  });
+});
+
+describe('buildTerminalPythonRunCommand', () => {
+  it('prefers python and falls back to py inside PowerShell terminals', () => {
+    expect(
+      buildTerminalPythonRunCommand({
+        path: "C:\\Dev\\Taloor's Lab\\tool.py",
+        shell: 'pwsh.exe',
+      }),
+    ).toBe(
+      "if (Get-Command python -ErrorAction SilentlyContinue) { & python 'C:\\Dev\\Taloor''s Lab\\tool.py' } elseif (Get-Command py -ErrorAction SilentlyContinue) { & py -3 'C:\\Dev\\Taloor''s Lab\\tool.py' } else { Write-Host 'Python is not available in PATH.' }",
+    );
+  });
+
+  it('uses python then py -3 inside cmd terminals', () => {
+    expect(
+      buildTerminalPythonRunCommand({
+        path: 'C:\\Work\\OverlayTerm\\tool.py',
+        shell: 'cmd.exe',
+      }),
+    ).toBe('python "C:\\Work\\OverlayTerm\\tool.py" || py -3 "C:\\Work\\OverlayTerm\\tool.py"');
+  });
+
+  it('prefers python3 then python inside unix shells', () => {
+    expect(
+      buildTerminalPythonRunCommand({
+        path: "/workspace/overlay's/tool.py",
+        shell: '/bin/bash',
+      }),
+    ).toBe(
+      "if command -v python3 >/dev/null 2>&1; then python3 '/workspace/overlay'\"'\"'s/tool.py'; elif command -v python >/dev/null 2>&1; then python '/workspace/overlay'\"'\"'s/tool.py'; else echo 'Python is not available in PATH.'; fi",
+    );
   });
 });

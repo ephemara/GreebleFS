@@ -18,6 +18,7 @@ import {
   isImagePreviewExtension,
   isModelPreviewExtension,
   isPdfPreviewExtension,
+  isPythonPreviewExtension,
   isShaderPreviewExtension,
   isSpreadsheetPreviewExtension,
   isVideoPreviewExtension,
@@ -109,6 +110,13 @@ describe("filePreview config", () => {
     expect(isEditableTextExtension("wgsl", 1024)).toBe(false);
     expect(isEditableTextExtension("hlsl", 1024)).toBe(false);
     expect(isEditableTextExtension("spv", 1024)).toBe(false);
+  });
+
+  it("identifies Python files for the dedicated preview workbench lane", () => {
+    expect(isPythonPreviewExtension("py")).toBe(true);
+    expect(isPythonPreviewExtension(".pyw")).toBe(true);
+    expect(isPythonPreviewExtension("txt")).toBe(false);
+    expect(isEditableTextExtension("py", 1024)).toBe(true);
   });
 
   it("maps supported 3d extensions to model formats", () => {

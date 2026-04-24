@@ -2,16 +2,16 @@ use libloading::{Library, Symbol};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use vst3::Class;
 use vst3::Steinberg::Vst::{
     IAudioProcessor, IComponent, IComponentTrait, IEditController, IEditControllerTrait,
     IHostApplication, IHostApplicationTrait, String128,
 };
 use vst3::Steinberg::{
-    kInvalidArgument, kNoInterface, kNotImplemented, kResultOk, tresult, FUnknown, IPluginBaseTrait,
-    IPluginFactory, IPluginFactory3Trait, IPluginFactoryTrait, PClassInfo, TUID,
+    FUnknown, IPluginBaseTrait, IPluginFactory, IPluginFactory3Trait, IPluginFactoryTrait,
+    PClassInfo, TUID, kInvalidArgument, kNoInterface, kNotImplemented, kResultOk, tresult,
 };
 use vst3::com_scrape_types::{ComPtr, ComWrapper, Interface};
-use vst3::Class;
 
 #[derive(Debug, Clone)]
 pub struct VstParameterDef {
@@ -22,6 +22,7 @@ pub struct VstParameterDef {
     pub default_normalized: f64,
     pub min: f64,
     pub max: f64,
+    pub value_normalized: f64,
 }
 
 fn parse_tchar(chars: &[u16]) -> String {
@@ -273,8 +274,7 @@ fn load_dynamic_library_with_raw_handle(
     let raw_library =
         unsafe { libloading::os::windows::Library::new(path).map_err(|error| error.to_string())? };
     let raw_handle = raw_library.into_raw();
-    let library =
-        Library::from(unsafe { libloading::os::windows::Library::from_raw(raw_handle) });
+    let library = Library::from(unsafe { libloading::os::windows::Library::from_raw(raw_handle) });
     Ok((library, raw_handle as *mut std::ffi::c_void))
 }
 
@@ -290,13 +290,19 @@ type ModuleEntryProc = unsafe extern "system" fn(*mut std::ffi::c_void) -> bool;
 type ModuleEntryProc = unsafe extern "system" fn() -> bool;
 
 fn load_required_symbol<T: Copy>(library: &Library, symbol_name: &[u8]) -> Result<T, String> {
-    let symbol: Symbol<T> =
-        unsafe { library.get(symbol_name).map_err(|error| error.to_string())? };
+    let symbol: Symbol<T> = unsafe {
+        library
+            .get(symbol_name)
+            .map_err(|error| error.to_string())?
+    };
     Ok(*symbol)
 }
 
 #[cfg(target_os = "windows")]
-fn load_optional_symbol<T: Copy>(library: &Library, symbol_name: &[u8]) -> Result<Option<T>, String> {
+fn load_optional_symbol<T: Copy>(
+    library: &Library,
+    symbol_name: &[u8],
+) -> Result<Option<T>, String> {
     match unsafe { library.get::<T>(symbol_name) } {
         Ok(symbol) => Ok(Some(*symbol)),
         Err(_) => Ok(None),
@@ -320,9 +326,8 @@ fn activate_vst_module(
 
     #[cfg(target_os = "macos")]
     {
-        let bundle_entry: ModuleEntryProc =
-            load_required_symbol(library, b"bundleEntry\0")
-                .or_else(|_| load_required_symbol(library, b"BundleEntry\0"))?;
+        let bundle_entry: ModuleEntryProc = load_required_symbol(library, b"bundleEntry\0")
+            .or_else(|_| load_required_symbol(library, b"BundleEntry\0"))?;
         let bundle_exit: ModuleExitProc = load_required_symbol(library, b"bundleExit\0")
             .or_else(|_| load_required_symbol(library, b"BundleExit\0"))?;
         if unsafe { bundle_entry(raw_handle) } {
@@ -429,7 +434,13 @@ pub struct HeadlessVstHost {
 
 type GetPluginFactoryProc = unsafe extern "system" fn() -> *mut IPluginFactory;
 
+unsafe impl Send for HeadlessVstHost {}
+
 impl HeadlessVstHost {
+    fn current_parameter_value(controller: &ComPtr<IEditController>, parameter_id: u32) -> f64 {
+        unsafe { controller.getParamNormalized(parameter_id) }.clamp(0.0, 1.0)
+    }
+
     pub fn load_plugin<P: AsRef<Path>>(path: P) -> Result<Self, String> {
         let load_target_path = resolve_vst3_module_path(path.as_ref())?;
         let (lib, raw_module_handle) = load_dynamic_library_with_raw_handle(&load_target_path)?;
@@ -518,6 +529,7 @@ impl HeadlessVstHost {
                         default_normalized: info.defaultNormalizedValue,
                         min: 0.0,
                         max: 1.0,
+                        value_normalized: Self::current_parameter_value(controller, info.id),
                     });
                 }
             }
@@ -537,6 +549,40 @@ impl HeadlessVstHost {
                 module_exit,
             },
         })
+    }
+
+    pub fn parameter_snapshot(&self) -> Result<Vec<VstParameterDef>, String> {
+        let Some(controller) = self.edit_controller.as_ref() else {
+            return Ok(self.parameters.clone());
+        };
+
+        Ok(self
+            .parameters
+            .iter()
+            .map(|parameter| VstParameterDef {
+                value_normalized: Self::current_parameter_value(controller, parameter.id),
+                ..parameter.clone()
+            })
+            .collect())
+    }
+
+    pub fn set_parameter_value(
+        &self,
+        parameter_id: u32,
+        value_normalized: f64,
+    ) -> Result<f64, String> {
+        let controller = self
+            .edit_controller
+            .as_ref()
+            .ok_or_else(|| "This VST3 plugin does not expose an edit controller.".to_string())?;
+        let bounded = value_normalized.clamp(0.0, 1.0);
+        let result = unsafe { controller.setParamNormalized(parameter_id, bounded) };
+        if result != kResultOk {
+            return Err(format!(
+                "Failed to set VST3 parameter {parameter_id}: controller returned {result}."
+            ));
+        }
+        Ok(Self::current_parameter_value(controller, parameter_id))
     }
 }
 
@@ -629,7 +675,10 @@ mod tests {
         let root = unique_temp_dir("bundle");
         let bundle_path = root.join("Example.vst3");
         #[cfg(target_os = "linux")]
-        let module_path = bundle_path.join("Contents").join("x86_64-linux").join("Example.so");
+        let module_path = bundle_path
+            .join("Contents")
+            .join("x86_64-linux")
+            .join("Example.so");
         #[cfg(target_os = "macos")]
         let module_path = bundle_path.join("Contents").join("MacOS").join("Example");
         #[cfg(target_os = "windows")]
@@ -646,7 +695,8 @@ mod tests {
         .expect("bundle directories should be created");
         write_fake_binary(&module_path, host_binary_magic());
 
-        let resolved = resolve_vst3_module_path(&bundle_path).expect("bundle plugin should resolve");
+        let resolved =
+            resolve_vst3_module_path(&bundle_path).expect("bundle plugin should resolve");
         assert_eq!(resolved, module_path);
 
         fs::remove_dir_all(root).ok();
@@ -658,9 +708,8 @@ mod tests {
         let plugin_path = root.join("WrongHost.vst3");
         write_fake_binary(&plugin_path, incompatible_binary_magic());
 
-        let error = resolve_vst3_module_path(&plugin_path).expect_err(
-            "plugin binaries for another operating system should be rejected",
-        );
+        let error = resolve_vst3_module_path(&plugin_path)
+            .expect_err("plugin binaries for another operating system should be rejected");
         assert!(error.contains("current host expects"));
 
         fs::remove_dir_all(root).ok();

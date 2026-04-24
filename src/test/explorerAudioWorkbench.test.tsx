@@ -430,6 +430,7 @@ describe('ExplorerAudioWorkbench', () => {
       />,
     );
 
+    expect(screen.getByTestId('audio-preview-overview')).toBeInTheDocument();
     expect(await screen.findByTestId('audio-vst-headless-parameters')).toBeInTheDocument();
     expect(registerWorkflowTabs).toHaveBeenCalledWith([
       {
@@ -463,6 +464,59 @@ describe('ExplorerAudioWorkbench', () => {
       expect(syncExplorerVstEditorSessionRectMock).toHaveBeenCalled();
     });
     expect(screen.queryByText(/plugin rack \(vst3\)/i)).toBeNull();
+  });
+
+  it('keeps the audio preview visible in VST mode and reflects live parameter updates', async () => {
+    audioEngineSnapshot.decks[0].activePluginPath =
+      '/Library/Audio/Plug-Ins/VST3/SpaceLab.vst3';
+    audioEngineSnapshot.decks[0].vstParameters = [
+      {
+        id: 1,
+        title: 'Mix',
+        shortTitle: 'Mix',
+        units: '%',
+        defaultNormalized: 0.5,
+        min: 0,
+        max: 1,
+        valueNormalized: 0.5,
+      },
+    ];
+    setAudioDeckPluginParameterMock.mockImplementation(
+      async (_deckId: 'a' | 'b', parameterId: number, valueNormalized: number) => {
+        audioEngineSnapshot.decks[0].vstParameters = audioEngineSnapshot.decks[0].vstParameters.map(
+          (parameter) =>
+            parameter.id === parameterId
+              ? {
+                  ...parameter,
+                  valueNormalized,
+                }
+              : parameter,
+        );
+      },
+    );
+
+    render(
+      <ExplorerAudioWorkbench
+        audioPath='/tmp/anthem.mp3'
+        audioName='anthem.mp3'
+        audioExtension='mp3'
+        audioSize={6 * 1024 * 1024}
+        mode='edit'
+        workflowTabId='vst'
+      />,
+    );
+
+    expect(await screen.findByTestId('audio-vst-headless-parameters')).toBeInTheDocument();
+    expect(screen.getByTestId('audio-preview-overview')).toBeInTheDocument();
+
+    const mixSlider = screen.getByRole('slider', { name: 'Mix' });
+    mixSlider.focus();
+    fireEvent.keyDown(mixSlider, { key: 'ArrowRight' });
+
+    await waitFor(() => {
+      expect(setAudioDeckPluginParameterMock).toHaveBeenCalledWith('a', 1, 0.501);
+    });
+    expect(screen.getByDisplayValue('0.501')).toBeInTheDocument();
   });
 
   it('keeps overwrite-original behind an explicit confirmation dialog', async () => {

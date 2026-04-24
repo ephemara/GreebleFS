@@ -9,6 +9,8 @@ interface AppDialogFrameProps {
   children?: ReactNode;
   actions?: ReactNode;
   width?: number | string;
+  maxWidth?: number | string;
+  maxHeight?: number | string;
   onClose?: () => void;
   closeOnBackdrop?: boolean;
 }
@@ -48,11 +50,20 @@ export function AppDialogFrame({
   children,
   actions,
   width = 420,
+  maxWidth = 'min(92vw, 560px)',
+  maxHeight = 'calc(100vh - 40px)',
   onClose,
   closeOnBackdrop = true,
 }: AppDialogFrameProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const resolvedWidth = typeof width === 'number' ? `${width}px` : width;
+  const resolvedMaxWidth = typeof maxWidth === 'number'
+    ? `min(92vw, ${maxWidth}px)`
+    : maxWidth;
+  const resolvedMaxHeight = typeof maxHeight === 'number'
+    ? `min(calc(100vh - 40px), ${maxHeight}px)`
+    : maxHeight;
 
   return (
     <div
@@ -72,7 +83,9 @@ export function AppDialogFrame({
         aria-describedby={description ? descriptionId : undefined}
         style={{
           ...panelStyle,
-          width: typeof width === 'number' ? `${width}px` : width,
+          width: resolvedWidth,
+          maxWidth: resolvedMaxWidth,
+          maxHeight: resolvedMaxHeight,
         }}
       >
         <div style={headerStyle}>
@@ -233,18 +246,22 @@ const overlayStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  padding: 20,
+  padding: 'clamp(12px, 2vw, 20px)',
   background: 'rgba(0,0,0,0.72)',
 };
 
 const panelStyle: CSSProperties = {
-  maxWidth: 'min(92vw, 560px)',
   borderRadius: 'var(--overlay-explorer-panel-radius, 18px)',
   border: '1px solid var(--overlay-explorer-preview-border, var(--overlay-border))',
   background: 'var(--overlay-explorer-preview-bg, var(--overlay-bg-panel))',
   color: 'var(--overlay-text-primary)',
   boxShadow: '0 24px 64px rgba(0,0,0,0.9)',
-  padding: 20,
+  padding: 'clamp(16px, 1.8vw, 20px)',
+  display: 'flex',
+  flexDirection: 'column',
+  minWidth: 0,
+  overflowX: 'hidden',
+  overflowY: 'auto',
 };
 
 const headerStyle: CSSProperties = {
@@ -277,6 +294,7 @@ const descriptionStyle: CSSProperties = {
 
 const actionsStyle: CSSProperties = {
   display: 'flex',
+  flexWrap: 'wrap',
   justifyContent: 'flex-end',
   gap: 8,
   marginTop: 18,

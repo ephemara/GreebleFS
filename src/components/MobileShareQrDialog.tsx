@@ -55,6 +55,7 @@ export function MobileShareQrDialog({
       description={`Bring the ${remoteAccessDefinition.label} mobile route online, then scan the desktop-hosted explorer directly from your phone.`}
       icon={<Smartphone size={16} />}
       width={980}
+      maxWidth={980}
       onClose={onClose}
       actions={(
         <>

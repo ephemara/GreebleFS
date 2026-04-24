@@ -3,6 +3,7 @@
 // Copyright © 2021 - present Aleksey Hoffman. All rights reserved.
 
 use std::collections::HashMap;
+use std::cmp::Ordering;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -23,7 +24,8 @@ use tauri::Manager;
 use super::handlers::handle_multipart_upload;
 use super::streaming::{resolve_sub_path, share_root_label, stream_file_response};
 use super::types::{
-    MobileFolderIconRuleSnapshot, MobileIconThemeSnapshot, MobileThemeSnapshot,
+    MobileFolderIconRuleSnapshot, MobileIconThemeSnapshot, MobileLayoutSortBy,
+    MobileLayoutSortOrder, MobileThemeSnapshot,
     ACTIVE_MOBILE_THEME_SNAPSHOT, APP_ICON_PNG, APPLE_TOUCH_ICON_PNG, FTP_MAX_UPLOAD_BYTES,
     ShareState,
 };
@@ -75,21 +77,30 @@ enum MobilePreviewKind {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MobileListQuery {
     path: Option<String>,
     offset: Option<usize>,
     limit: Option<usize>,
+    show_hidden_files: Option<bool>,
+    sort_by: Option<MobileLayoutSortBy>,
+    sort_order: Option<MobileLayoutSortOrder>,
+    directories_first: Option<bool>,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MobileSearchQuery {
     query: String,
     limit: Option<usize>,
+    show_hidden_files: Option<bool>,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MobilePathQuery {
     path: String,
+    show_hidden_files: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -110,6 +121,7 @@ struct MobileEntryInfo {
     name: String,
     relative_path: String,
     is_dir: bool,
+    is_hidden: bool,
     size: u64,
     extension: String,
     mime_type: Option<String>,
@@ -128,6 +140,7 @@ struct MobileEntryInfo {
 #[serde(rename_all = "camelCase")]
 struct MobileListResponse {
     current_path: String,
+    parent_path: String,
     can_go_up: bool,
     share_name: String,
     hub_mode: bool,
@@ -145,6 +158,7 @@ struct MobileSearchEntry {
     relative_path: String,
     parent_relative_path: String,
     is_dir: bool,
+    is_hidden: bool,
     size: u64,
     extension: String,
     mime_type: Option<String>,
@@ -225,10 +239,30 @@ struct MobileEntryMetadata {
     relative_path: String,
     absolute_path: Option<PathBuf>,
     is_dir: bool,
+    is_hidden: bool,
     size: u64,
     extension: String,
     mime_type: Option<String>,
     modified_ms: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MobileBrowsePolicy {
+    show_hidden_files: bool,
+    sort_by: MobileLayoutSortBy,
+    sort_order: MobileLayoutSortOrder,
+    directories_first: bool,
+}
+
+impl Default for MobileBrowsePolicy {
+    fn default() -> Self {
+        Self {
+            show_hidden_files: false,
+            sort_by: MobileLayoutSortBy::Name,
+            sort_order: MobileLayoutSortOrder::Asc,
+            directories_first: true,
+        }
+    }
 }
 
 pub(super) fn build_mobile_router(state: ShareState) -> Router {
@@ -306,6 +340,12 @@ async fn mobile_search_handler(
     Query(query): Query<MobileSearchQuery>,
 ) -> Response {
     let snapshot = ACTIVE_MOBILE_THEME_SNAPSHOT.read().await.clone();
+    let browse_policy = MobileBrowsePolicy {
+        show_hidden_files: query
+            .show_hidden_files
+            .unwrap_or(snapshot.layout.show_hidden_files),
+        ..MobileBrowsePolicy::default()
+    };
     let search_limit = query
         .limit
         .unwrap_or(MOBILE_SEARCH_DEFAULT_LIMIT)
@@ -324,7 +364,13 @@ async fn mobile_search_handler(
     }
 
     if let Some(hub) = &state.file_hub {
-        let entries = build_hub_search_entries(hub, trimmed_query, search_limit, &snapshot);
+        let entries = build_hub_search_entries(
+            hub,
+            trimmed_query,
+            search_limit,
+            browse_policy,
+            &snapshot,
+        );
         let response = MobileSearchResponse {
             query: trimmed_query.to_string(),
             share_name: share_root_label(&state.share_path),
@@ -373,9 +419,16 @@ async fn mobile_search_handler(
     let entries = results
         .into_iter()
         .filter_map(|result| {
-            build_mobile_search_entry_from_result(&state.share_path, result, &snapshot)
+            build_mobile_search_entry_from_result(
+                &state.share_path,
+                result,
+                browse_policy,
+                &snapshot,
+            )
         })
         .collect::<Vec<_>>();
+    let mut entries = entries;
+    sort_mobile_search_entries(&mut entries, browse_policy);
 
     let response = MobileSearchResponse {
         query: trimmed_query.to_string(),
@@ -449,6 +502,12 @@ async fn mobile_preview_handler(
     Query(query): Query<MobilePathQuery>,
 ) -> Response {
     let snapshot = ACTIVE_MOBILE_THEME_SNAPSHOT.read().await.clone();
+    let browse_policy = MobileBrowsePolicy {
+        show_hidden_files: query
+            .show_hidden_files
+            .unwrap_or(snapshot.layout.show_hidden_files),
+        ..MobileBrowsePolicy::default()
+    };
     let resolved = match resolve_mobile_target(&state, &query.path) {
         Ok(target) => target,
         Err(status) => return (status, "Invalid path").into_response(),
@@ -479,6 +538,7 @@ async fn mobile_preview_handler(
             folder_summary: build_folder_preview_summary(
                 &resolved.absolute_path,
                 &resolved.relative_path,
+                browse_policy,
                 &snapshot,
             )
             .ok(),
@@ -496,6 +556,7 @@ async fn mobile_preview_handler(
             folder_summary: None,
             archive_summary: build_archive_preview_summary(
                 &resolved.absolute_path,
+                browse_policy,
                 &snapshot,
             )
             .ok(),
@@ -775,9 +836,10 @@ async fn mobile_list_handler(
     Query(query): Query<MobileListQuery>,
 ) -> Response {
     let snapshot = ACTIVE_MOBILE_THEME_SNAPSHOT.read().await.clone();
+    let browse_policy = resolve_mobile_browse_policy(&snapshot, &query);
 
     if state.file_hub.is_some() {
-        return mobile_hub_list_response(&state, &query, &snapshot);
+        return mobile_hub_list_response(&state, &query, browse_policy, &snapshot);
     }
 
     let target = match resolve_sub_path(&state.share_path, query.path.as_deref()) {
@@ -796,30 +858,23 @@ async fn mobile_list_handler(
         .clamp(1, MOBILE_MAX_PAGE_SIZE);
 
     let current_relative_path = compute_relative_path(&state.share_path, &target);
-
-    let mut entries: Vec<MobileEntryInfo> = match std::fs::read_dir(&target) {
-        Ok(read_dir) => read_dir
-            .flatten()
-            .filter_map(|entry| {
-                build_mobile_entry_from_dir(&current_relative_path, entry)
-                    .map(|metadata| build_mobile_entry_info(metadata, &snapshot))
-            })
-            .collect(),
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to read directory",
-            )
-                .into_response()
-        }
-    };
-
-    entries.sort_by(|left, right| {
-        right
-            .is_dir
-            .cmp(&left.is_dir)
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-    });
+    let mut entries =
+        match collect_mobile_entries_for_directory(
+            &target,
+            &current_relative_path,
+            browse_policy,
+            &snapshot,
+        ) {
+            Ok(entries) => entries,
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to read directory",
+                )
+                    .into_response()
+            }
+        };
+    sort_mobile_entries(&mut entries, browse_policy);
 
     build_mobile_list_response(
         &state.share_path,
@@ -834,6 +889,7 @@ async fn mobile_list_handler(
 fn mobile_hub_list_response(
     state: &ShareState,
     query: &MobileListQuery,
+    browse_policy: MobileBrowsePolicy,
     snapshot: &MobileThemeSnapshot,
 ) -> Response {
     if query
@@ -858,10 +914,13 @@ fn mobile_hub_list_response(
             Ok(metadata) => metadata,
             Err(_) => continue,
         };
+        if metadata.is_hidden && !browse_policy.show_hidden_files {
+            continue;
+        }
         entries.push(build_mobile_entry_info(metadata, snapshot));
     }
 
-    entries.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    sort_mobile_entries(&mut entries, browse_policy);
 
     build_mobile_list_response(&state.share_path, "", true, offset, limit, entries)
 }
@@ -889,6 +948,7 @@ fn build_mobile_list_response(
 
     let response = MobileListResponse {
         current_path: current_relative_path.to_string(),
+        parent_path: parent_relative_path(current_relative_path),
         can_go_up: !hub_mode && !current_relative_path.is_empty(),
         share_name: share_root_label(share_path),
         hub_mode,
@@ -914,6 +974,44 @@ fn compute_relative_path(base_path: &Path, target_path: &Path) -> String {
         .replace('\\', "/")
 }
 
+fn resolve_mobile_browse_policy(
+    snapshot: &MobileThemeSnapshot,
+    query: &MobileListQuery,
+) -> MobileBrowsePolicy {
+    MobileBrowsePolicy {
+        show_hidden_files: query
+            .show_hidden_files
+            .unwrap_or(snapshot.layout.show_hidden_files),
+        sort_by: query.sort_by.unwrap_or(snapshot.layout.sort_by),
+        sort_order: query
+            .sort_order
+            .unwrap_or(snapshot.layout.sort_order),
+        directories_first: query
+            .directories_first
+            .unwrap_or(snapshot.layout.directories_first),
+    }
+}
+
+fn collect_mobile_entries_for_directory(
+    folder_path: &Path,
+    current_relative_path: &str,
+    browse_policy: MobileBrowsePolicy,
+    snapshot: &MobileThemeSnapshot,
+) -> Result<Vec<MobileEntryInfo>, std::io::Error> {
+    let read_dir = std::fs::read_dir(folder_path)?;
+    let mut entries = Vec::new();
+    for entry in read_dir.flatten() {
+        let Some(metadata) = build_mobile_entry_from_dir(current_relative_path, entry) else {
+            continue;
+        };
+        if metadata.is_hidden && !browse_policy.show_hidden_files {
+            continue;
+        }
+        entries.push(build_mobile_entry_info(metadata, snapshot));
+    }
+    Ok(entries)
+}
+
 fn build_mobile_entry_from_dir(
     current_relative_path: &str,
     entry: std::fs::DirEntry,
@@ -921,6 +1019,7 @@ fn build_mobile_entry_from_dir(
     let metadata = entry.metadata().ok()?;
     let name = entry.file_name().to_string_lossy().to_string();
     let is_dir = metadata.is_dir();
+    let is_hidden = mobile_metadata_is_hidden(&name, &metadata);
     let relative_path = if current_relative_path.is_empty() {
         name.clone()
     } else {
@@ -932,6 +1031,7 @@ fn build_mobile_entry_from_dir(
         relative_path,
         absolute_path: Some(entry.path()),
         is_dir,
+        is_hidden,
         size: if is_dir { 0 } else { metadata.len() },
         extension: if is_dir {
             String::new()
@@ -952,11 +1052,15 @@ fn build_mobile_entry_from_dir(
 fn build_mobile_search_entry_from_result(
     share_root: &Path,
     result: GlobalSearchResultEntry,
+    browse_policy: MobileBrowsePolicy,
     snapshot: &MobileThemeSnapshot,
 ) -> Option<MobileSearchEntry> {
     let absolute_path = PathBuf::from(&result.path);
     let relative_path = compute_relative_path(share_root, &absolute_path);
     if relative_path.is_empty() && absolute_path != share_root {
+        return None;
+    }
+    if !browse_policy.show_hidden_files && mobile_relative_path_is_hidden(&relative_path) {
         return None;
     }
 
@@ -974,6 +1078,7 @@ fn build_mobile_search_entry_from_result(
         relative_path: relative_path.clone(),
         absolute_path: Some(absolute_path),
         is_dir: result.is_dir,
+        is_hidden: mobile_relative_path_is_hidden(&relative_path),
         size: if result.is_dir { 0 } else { result.size },
         extension,
         mime_type,
@@ -987,6 +1092,7 @@ fn build_mobile_search_entry_from_result(
         relative_path: entry.relative_path,
         parent_relative_path,
         is_dir: entry.is_dir,
+        is_hidden: entry.is_hidden,
         size: entry.size,
         extension: entry.extension,
         mime_type: entry.mime_type,
@@ -1007,6 +1113,7 @@ fn build_hub_search_entries(
     hub: &[PathBuf],
     query: &str,
     limit: usize,
+    browse_policy: MobileBrowsePolicy,
     snapshot: &MobileThemeSnapshot,
 ) -> Vec<MobileSearchEntry> {
     let normalized_query = query.to_lowercase();
@@ -1027,6 +1134,9 @@ fn build_hub_search_entries(
             Ok(metadata) => metadata,
             Err(_) => continue,
         };
+        if metadata.is_hidden && !browse_policy.show_hidden_files {
+            continue;
+        }
         let entry = build_mobile_entry_info(metadata, snapshot);
         let score = if normalized_name.starts_with(&normalized_query) {
             1.0
@@ -1039,6 +1149,7 @@ fn build_hub_search_entries(
             relative_path: entry.relative_path,
             parent_relative_path: String::new(),
             is_dir: entry.is_dir,
+            is_hidden: entry.is_hidden,
             size: entry.size,
             extension: entry.extension,
             mime_type: entry.mime_type,
@@ -1055,13 +1166,7 @@ fn build_hub_search_entries(
         });
     }
 
-    entries.sort_by(|left, right| {
-        right
-            .score
-            .partial_cmp(&left.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-    });
+    sort_mobile_search_entries(&mut entries, browse_policy);
     entries.truncate(limit);
     entries
 }
@@ -1083,6 +1188,7 @@ fn build_target_metadata(
         relative_path,
         absolute_path: Some(absolute_path.to_path_buf()),
         is_dir,
+        is_hidden: mobile_metadata_is_hidden(&name, &metadata),
         size: if is_dir { 0 } else { metadata.len() },
         extension: if is_dir {
             String::new()
@@ -1128,6 +1234,7 @@ fn build_mobile_entry_info(
         name: metadata.name,
         relative_path: metadata.relative_path,
         is_dir: metadata.is_dir,
+        is_hidden: metadata.is_hidden,
         size: metadata.size,
         extension: metadata.extension,
         mime_type: metadata.mime_type,
@@ -1319,6 +1426,186 @@ fn parent_relative_path(relative_path: &str) -> String {
     segments.join("/")
 }
 
+fn mobile_metadata_is_hidden(name: &str, metadata: &std::fs::Metadata) -> bool {
+    mobile_name_is_hidden(name) || mobile_platform_hidden(metadata)
+}
+
+fn mobile_name_is_hidden(name: &str) -> bool {
+    name.starts_with('.')
+}
+
+fn mobile_relative_path_is_hidden(relative_path: &str) -> bool {
+    relative_path
+        .split(['/', '\\'])
+        .filter(|segment| !segment.is_empty())
+        .any(mobile_name_is_hidden)
+}
+
+#[cfg(windows)]
+fn mobile_platform_hidden(metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+    (metadata.file_attributes() & FILE_ATTRIBUTE_HIDDEN) != 0
+}
+
+#[cfg(not(windows))]
+fn mobile_platform_hidden(_: &std::fs::Metadata) -> bool {
+    false
+}
+
+fn sort_mobile_entries(entries: &mut [MobileEntryInfo], browse_policy: MobileBrowsePolicy) {
+    entries.sort_by(|left, right| compare_mobile_entries(left, right, browse_policy));
+}
+
+fn sort_mobile_search_entries(
+    entries: &mut [MobileSearchEntry],
+    browse_policy: MobileBrowsePolicy,
+) {
+    entries.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| {
+                compare_mobile_entry_fields(
+                    left.is_dir,
+                    &left.name,
+                    left.modified_ms,
+                    left.size,
+                    &left.extension,
+                    right.is_dir,
+                    &right.name,
+                    right.modified_ms,
+                    right.size,
+                    &right.extension,
+                    browse_policy,
+                )
+            })
+    });
+}
+
+fn compare_mobile_entries(
+    left: &MobileEntryInfo,
+    right: &MobileEntryInfo,
+    browse_policy: MobileBrowsePolicy,
+) -> Ordering {
+    compare_mobile_entry_fields(
+        left.is_dir,
+        &left.name,
+        left.modified_ms,
+        left.size,
+        &left.extension,
+        right.is_dir,
+        &right.name,
+        right.modified_ms,
+        right.size,
+        &right.extension,
+        browse_policy,
+    )
+}
+
+fn compare_mobile_entry_fields(
+    left_is_dir: bool,
+    left_name: &str,
+    left_modified_ms: Option<u64>,
+    left_size: u64,
+    left_extension: &str,
+    right_is_dir: bool,
+    right_name: &str,
+    right_modified_ms: Option<u64>,
+    right_size: u64,
+    right_extension: &str,
+    browse_policy: MobileBrowsePolicy,
+) -> Ordering {
+    let directory_order = if browse_policy.directories_first {
+        right_is_dir.cmp(&left_is_dir)
+    } else {
+        Ordering::Equal
+    };
+    if directory_order != Ordering::Equal {
+        return directory_order;
+    }
+
+    let primary_order = match browse_policy.sort_by {
+        MobileLayoutSortBy::Name => natural_case_insensitive_cmp(left_name, right_name),
+        MobileLayoutSortBy::Date => left_modified_ms
+            .unwrap_or(0)
+            .cmp(&right_modified_ms.unwrap_or(0)),
+        MobileLayoutSortBy::Size => left_size.cmp(&right_size),
+        MobileLayoutSortBy::Type => natural_case_insensitive_cmp(left_extension, right_extension)
+            .then_with(|| natural_case_insensitive_cmp(left_name, right_name)),
+    };
+
+    let applied_primary_order = match browse_policy.sort_order {
+        MobileLayoutSortOrder::Asc => primary_order,
+        MobileLayoutSortOrder::Desc => primary_order.reverse(),
+    };
+
+    if applied_primary_order != Ordering::Equal {
+        return applied_primary_order;
+    }
+
+    natural_case_insensitive_cmp(left_name, right_name)
+}
+
+fn natural_case_insensitive_cmp(left: &str, right: &str) -> Ordering {
+    let left_chars = left.chars().collect::<Vec<_>>();
+    let right_chars = right.chars().collect::<Vec<_>>();
+    let mut left_index = 0_usize;
+    let mut right_index = 0_usize;
+
+    while left_index < left_chars.len() && right_index < right_chars.len() {
+        let left_char = left_chars[left_index];
+        let right_char = right_chars[right_index];
+
+        if left_char.is_ascii_digit() && right_char.is_ascii_digit() {
+            let left_start = left_index;
+            let right_start = right_index;
+            while left_index < left_chars.len() && left_chars[left_index].is_ascii_digit() {
+                left_index += 1;
+            }
+            while right_index < right_chars.len() && right_chars[right_index].is_ascii_digit() {
+                right_index += 1;
+            }
+
+            let left_digits = left_chars[left_start..left_index].iter().collect::<String>();
+            let right_digits = right_chars[right_start..right_index].iter().collect::<String>();
+            let left_trimmed = left_digits.trim_start_matches('0');
+            let right_trimmed = right_digits.trim_start_matches('0');
+            let left_normalized = if left_trimmed.is_empty() { "0" } else { left_trimmed };
+            let right_normalized = if right_trimmed.is_empty() { "0" } else { right_trimmed };
+
+            let numeric_order = left_normalized
+                .len()
+                .cmp(&right_normalized.len())
+                .then_with(|| left_normalized.cmp(right_normalized));
+            if numeric_order != Ordering::Equal {
+                return numeric_order;
+            }
+
+            let width_order = left_digits.len().cmp(&right_digits.len());
+            if width_order != Ordering::Equal {
+                return width_order;
+            }
+
+            continue;
+        }
+
+        let left_folded = left_char.to_ascii_lowercase();
+        let right_folded = right_char.to_ascii_lowercase();
+        let character_order = left_folded.cmp(&right_folded);
+        if character_order != Ordering::Equal {
+            return character_order;
+        }
+
+        left_index += 1;
+        right_index += 1;
+    }
+
+    left_chars.len().cmp(&right_chars.len())
+}
+
 fn encode_relative_path(path: &str) -> String {
     path.split('/')
         .filter(|segment| !segment.is_empty())
@@ -1377,35 +1664,30 @@ fn pdf_page_count(path: &Path) -> Option<u32> {
 fn build_folder_preview_summary(
     folder_path: &Path,
     folder_relative_path: &str,
+    browse_policy: MobileBrowsePolicy,
     snapshot: &MobileThemeSnapshot,
 ) -> Result<MobileDirectoryPreviewSummary, String> {
-    let read_dir = std::fs::read_dir(folder_path)
-        .map_err(|error| format!("Failed to read folder preview '{}': {error}", folder_path.display()))?;
-    let mut entries = Vec::new();
+    let mut entries = collect_mobile_entries_for_directory(
+        folder_path,
+        folder_relative_path,
+        browse_policy,
+        snapshot,
+    )
+    .map_err(|error| format!("Failed to read folder preview '{}': {error}", folder_path.display()))?;
     let mut folder_count = 0_usize;
     let mut file_count = 0_usize;
     let mut total_visible_file_bytes = 0_u64;
 
-    for entry in read_dir.flatten() {
-        let metadata = match build_mobile_entry_from_dir(folder_relative_path, entry) {
-            Some(metadata) => metadata,
-            None => continue,
-        };
-        if metadata.is_dir {
+    for entry in &entries {
+        if entry.is_dir {
             folder_count += 1;
         } else {
             file_count += 1;
-            total_visible_file_bytes = total_visible_file_bytes.saturating_add(metadata.size);
+            total_visible_file_bytes = total_visible_file_bytes.saturating_add(entry.size);
         }
-        entries.push(build_mobile_entry_info(metadata, snapshot));
     }
 
-    entries.sort_by(|left, right| {
-        right
-            .is_dir
-            .cmp(&left.is_dir)
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-    });
+    sort_mobile_entries(&mut entries, browse_policy);
 
     let truncated = entries.len() > MOBILE_FOLDER_PREVIEW_ENTRY_LIMIT;
     entries.truncate(MOBILE_FOLDER_PREVIEW_ENTRY_LIMIT);
@@ -1421,13 +1703,33 @@ fn build_folder_preview_summary(
 
 fn build_archive_preview_summary(
     archive_path: &Path,
+    browse_policy: MobileBrowsePolicy,
     snapshot: &MobileThemeSnapshot,
 ) -> Result<MobileArchivePreviewSummary, String> {
     let entries = archive_ops::list_archive_dir(archive_path, "")?;
-    let folder_count = entries.iter().filter(|entry| entry.is_dir).count();
-    let file_count = entries.iter().filter(|entry| !entry.is_dir).count();
-    let truncated = entries.len() > MOBILE_ARCHIVE_PREVIEW_ENTRY_LIMIT;
-    let preview_entries = entries
+    let mut visible_entries = entries
+        .into_iter()
+        .filter(|entry| browse_policy.show_hidden_files || !mobile_relative_path_is_hidden(&entry.relative_path))
+        .collect::<Vec<_>>();
+    visible_entries.sort_by(|left, right| {
+        compare_mobile_entry_fields(
+            left.is_dir,
+            &left.name,
+            Some(left.modified),
+            left.size,
+            &left.extension,
+            right.is_dir,
+            &right.name,
+            Some(right.modified),
+            right.size,
+            &right.extension,
+            browse_policy,
+        )
+    });
+    let folder_count = visible_entries.iter().filter(|entry| entry.is_dir).count();
+    let file_count = visible_entries.iter().filter(|entry| !entry.is_dir).count();
+    let truncated = visible_entries.len() > MOBILE_ARCHIVE_PREVIEW_ENTRY_LIMIT;
+    let preview_entries = visible_entries
         .into_iter()
         .take(MOBILE_ARCHIVE_PREVIEW_ENTRY_LIMIT)
         .map(|entry| build_mobile_entry_from_archive(entry, snapshot))
@@ -1451,6 +1753,7 @@ fn build_mobile_entry_from_archive(
         relative_path: entry.relative_path,
         absolute_path: None,
         is_dir: entry.is_dir,
+        is_hidden: mobile_relative_path_is_hidden(&entry.relative_path),
         size: if entry.is_dir { 0 } else { entry.size },
         extension: entry.extension,
         mime_type: None,
@@ -1552,19 +1855,19 @@ fn resolve_mobile_icon_id(
     let normalized_name = name.trim().to_ascii_lowercase();
     let normalized_extension = extension.trim().trim_start_matches('.').to_ascii_lowercase();
     if let Some(icon_id) = snapshot.icon_theme.file_names.get(&normalized_name) {
-        return normalize_icon_id(icon_id);
+        return normalize_mobile_icon_candidate(snapshot, icon_id, &snapshot.icon_theme.file);
     }
     if let Some(icon_id) = snapshot.icon_theme.file_extensions.get(&normalized_extension) {
-        return normalize_icon_id(icon_id);
+        return normalize_mobile_icon_candidate(snapshot, icon_id, &snapshot.icon_theme.file);
     }
 
     if let Some(path) = absolute_path {
         if archive_ops::is_supported_archive_path(path) {
-            return "archive".to_string();
+            return normalize_mobile_icon_candidate(snapshot, "archive", &snapshot.icon_theme.file);
         }
     }
 
-    normalize_icon_id(&snapshot.icon_theme.file)
+    normalize_mobile_icon_candidate(snapshot, &snapshot.icon_theme.file, &snapshot.icon_theme.file)
 }
 
 fn resolve_mobile_folder_icon_id(
@@ -1581,11 +1884,19 @@ fn resolve_mobile_folder_icon_id(
             .map(|matcher| normalize_folder_icon_matcher(matcher))
             .any(|matcher| !matcher.is_empty() && candidates.contains(&matcher))
         {
-            return normalize_icon_id(&rule.icon);
+            return normalize_mobile_icon_candidate(
+                snapshot,
+                &rule.icon,
+                &snapshot.default_folder_icon,
+            );
         }
     }
 
-    normalize_icon_id(&snapshot.default_folder_icon)
+    normalize_mobile_icon_candidate(
+        snapshot,
+        &snapshot.default_folder_icon,
+        &snapshot.icon_theme.folder,
+    )
 }
 
 fn build_effective_folder_icon_rules(
@@ -1622,6 +1933,32 @@ fn build_effective_folder_icon_rules(
 
 fn is_folder_icon_id(icon_theme: &MobileIconThemeSnapshot, icon_id: &str) -> bool {
     icon_id == normalize_icon_id(&icon_theme.folder) || icon_id.starts_with("folder_")
+}
+
+fn normalize_mobile_icon_candidate(
+    snapshot: &MobileThemeSnapshot,
+    candidate: &str,
+    fallback: &str,
+) -> String {
+    let normalized_candidate = normalize_icon_id(candidate);
+    if snapshot
+        .icon_theme
+        .icon_definitions
+        .contains_key(&normalized_candidate)
+    {
+        return normalized_candidate;
+    }
+
+    let normalized_fallback = normalize_icon_id(fallback);
+    if snapshot
+        .icon_theme
+        .icon_definitions
+        .contains_key(&normalized_fallback)
+    {
+        return normalized_fallback;
+    }
+
+    normalize_icon_id(&snapshot.icon_theme.file)
 }
 
 fn normalize_icon_id(value: &str) -> String {

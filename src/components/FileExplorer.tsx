@@ -252,6 +252,7 @@ import { OverlayScrollArea } from "./OverlayScrollArea";
 import { AppConfirmDialog, AppPromptDialog } from "./AppModal";
 import { ExplorerAudioWorkbench } from "./ExplorerAudioWorkbench";
 import { ExplorerImageEditor } from "./ExplorerImageEditor";
+import { ExplorerPythonWorkbench } from "./ExplorerPythonWorkbench";
 import { ExplorerShaderWorkbench } from "./ExplorerShaderWorkbench";
 import { ExplorerVideoEditor } from "./ExplorerVideoEditor";
 import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
@@ -404,6 +405,7 @@ import {
   isAudioPreviewExtension,
   isEditableImagePreviewExtension,
   isExecutableBinaryExtension,
+  isPythonPreviewExtension,
   getModelPreviewFormat,
   isVideoPreviewExtension,
   type ModelPreviewFormat,
@@ -423,7 +425,10 @@ import {
   findSearchFocusColumns,
   type EditorSearchFocusTarget,
 } from "./fileExplorerSearchFocus";
-import { buildTerminalScriptRunCommand } from "./terminalCommandUtils";
+import {
+  buildTerminalPythonRunCommand,
+  buildTerminalScriptRunCommand,
+} from "./terminalCommandUtils";
 import {
   dispatchTerminalCommand,
   resolvePluginCommandTemplate,
@@ -473,7 +478,15 @@ import {
   type ExplorerShaderPreviewEntryPoint,
   type ExplorerShaderPreviewStage,
 } from "../runtime/shaderPreviewBackend";
-import { createPythonRuntimeConfig } from "../config/python";
+import {
+  buildManagedPythonReplCommand,
+  createPythonRuntimeConfig,
+} from "../config/python";
+import {
+  executeManagedPython,
+  getManagedPythonRuntimeStatus,
+  type ManagedPythonActionResponse,
+} from "../runtime/pythonRuntimeBackend";
 import {
   resolveLocalModelBindingForRoot,
   semanticIndexingCapabilityId,
@@ -532,6 +545,13 @@ const EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS = 88;
 const EXPLORER_TEXT_DRAFT_SCOPE = "text";
 const EXPLORER_SHADER_DRAFT_SCOPE = "shader";
 const explorerStringDraftSerializer = createStringExplorerDraftSerializer();
+const SCRIPT_PREVIEW_WILDCARD_WORKFLOW_TABS = [
+  { id: "run", label: "Run", baseMode: "preview" },
+] as const satisfies readonly ExplorerPreviewWildcardWorkflowTab[];
+const PYTHON_PREVIEW_WILDCARD_WORKFLOW_TABS = [
+  { id: "run", label: "Run", baseMode: "preview" },
+  { id: "runtime", label: "Runtime", baseMode: "preview" },
+] as const satisfies readonly ExplorerPreviewWildcardWorkflowTab[];
 
 type ExplorerNormalizedSearchResult = {
   name: string;
@@ -918,6 +938,11 @@ interface TransferConflictDialogState {
 type PreviewResolvedPathState = {
   resolvedPath?: string;
 };
+
+type ExplorerPythonPreviewMetadata = {
+  source: "extension" | "executable";
+};
+
 type PreviewState =
   | { type: "none"; path: string }
   | ({
@@ -982,6 +1007,7 @@ type PreviewState =
       language: string;
       renderKind: DocumentPreviewKind;
       scriptPreview: ExplorerResolvedScriptPreview | null;
+      pythonPreview: ExplorerPythonPreviewMetadata | null;
       focusTarget: EditorSearchFocusTarget | null;
       isDirty: boolean;
       isSaving: boolean;
@@ -3394,11 +3420,16 @@ function PreviewPanel({
   onTogglePreviewLock,
   onTogglePreviewTerminal,
   onRunTextScript,
+  onRunPythonManaged,
+  onRunPythonInTerminal,
+  onOpenManagedPythonRepl,
   onStopTextScriptRun,
   viewMode,
   onViewModeChange,
   activeWorkflowTabId,
   onWorkflowTabChange,
+  pythonRuntimeConfig,
+  pythonBootstrapPackageInput,
   explorerTheme,
   blurEnabled,
   chromeLayoutId,
@@ -3461,11 +3492,16 @@ function PreviewPanel({
     path: string,
     scriptPreview: ExplorerResolvedScriptPreview,
   ) => Promise<void>;
+  onRunPythonManaged: (path: string) => Promise<ManagedPythonActionResponse>;
+  onRunPythonInTerminal: (path: string) => Promise<void>;
+  onOpenManagedPythonRepl: () => Promise<void>;
   onStopTextScriptRun: () => void;
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
   activeWorkflowTabId: string | null;
   onWorkflowTabChange: (tabId: string) => void;
+  pythonRuntimeConfig: ReturnType<typeof createPythonRuntimeConfig>;
+  pythonBootstrapPackageInput: string;
   explorerTheme: ResolvedExplorerThemeRecipe;
   blurEnabled: boolean;
   chromeLayoutId: ExplorerChromeLayoutId;
@@ -3590,6 +3626,17 @@ function PreviewPanel({
     onWorkflowTabChange(currentViewModeRef.current);
   }, [onWorkflowTabChange, preview.path, preview.type]);
 
+  const activePythonPreviewMetadata =
+    preview.type === "text" ? preview.pythonPreview : null;
+
+  useEffect(() => {
+    if (preview.type !== "text" || activePythonPreviewMetadata == null) {
+      return;
+    }
+
+    setWildcardWorkflowTabs([...PYTHON_PREVIEW_WILDCARD_WORKFLOW_TABS]);
+  }, [activePythonPreviewMetadata, preview.path, preview.type]);
+
   const handleWildcardWorkflowTabsChange = useCallback(
     (tabs: ExplorerPreviewWildcardWorkflowTab[] | null) => {
       setWildcardWorkflowTabs(tabs ?? []);
@@ -3699,8 +3746,13 @@ function PreviewPanel({
   const deferredPreviewTextContent = useDeferredValue(
     preview.type === "text" ? preview.content : "",
   );
+  const isPythonTextPreview = activePythonPreviewMetadata != null;
   const isScriptTextPreview =
     preview.type === "text" && preview.scriptPreview != null;
+  const hidesPreviewWorkflowTab = isPythonTextPreview || isScriptTextPreview;
+  const effectiveWildcardWorkflowTabs = isScriptTextPreview
+    ? SCRIPT_PREVIEW_WILDCARD_WORKFLOW_TABS
+    : wildcardWorkflowTabs;
   const supportsRenderedPreview =
     preview.type === "text" &&
     preview.scriptPreview == null &&
@@ -3709,19 +3761,15 @@ function PreviewPanel({
     preview.type === "text"
       ? getExplorerTextPreviewMetrics(deferredPreviewTextContent)
       : null;
-  const textPreviewShowsEditorCursor =
-    preview.type === "text" &&
-    (!supportsRenderedPreview || viewMode === "edit");
   const supportsPreviewModeToggle =
     supportsRenderedPreview ||
-    isScriptTextPreview ||
     isVideoPreview ||
     isAudioPreview ||
     isPdfPreview ||
     isShaderPreview ||
     isSpreadsheetPreview ||
     isEditableImagePreview ||
-    wildcardWorkflowTabs.length > 0;
+    effectiveWildcardWorkflowTabs.length > 0;
   const previewSupportsEditableWorkflowTabs =
     !previewBackedByArchiveVirtual ||
     preview.type === "text" ||
@@ -3729,14 +3777,14 @@ function PreviewPanel({
   const previewWorkflowTabs = useMemo(
     () =>
       buildExplorerPreviewWorkflowTabs({
-        previewLabel: isScriptTextPreview ? "Run" : "Preview",
+        includePreviewTab: !hidesPreviewWorkflowTab,
         includeEditTab: previewSupportsEditableWorkflowTabs,
-        wildcardTabs: wildcardWorkflowTabs,
+        wildcardTabs: effectiveWildcardWorkflowTabs,
       }),
     [
-      isScriptTextPreview,
+      effectiveWildcardWorkflowTabs,
+      hidesPreviewWorkflowTab,
       previewSupportsEditableWorkflowTabs,
-      wildcardWorkflowTabs,
     ],
   );
   const activePreviewWorkflowTab = useMemo(
@@ -3747,6 +3795,16 @@ function PreviewPanel({
       ),
     [activeWorkflowTabId, previewWorkflowTabs],
   );
+  const isPythonRunWorkflowTab =
+    isPythonTextPreview && activePreviewWorkflowTab.id === "run";
+  const isPythonRuntimeWorkflowTab =
+    isPythonTextPreview && activePreviewWorkflowTab.id === "runtime";
+  const showsPythonWorkbench =
+    isPythonRunWorkflowTab || isPythonRuntimeWorkflowTab;
+  const showsTextPreviewCursor =
+    preview.type === "text" &&
+    !showsPythonWorkbench &&
+    (!supportsRenderedPreview || viewMode === "edit");
 
   useEffect(() => {
     if (activeWorkflowTabId !== activePreviewWorkflowTab.id) {
@@ -3800,7 +3858,11 @@ function PreviewPanel({
     [],
   );
   const renderPreviewWorkflowToggle = useCallback(
-    (options?: { onPreviewAction?: () => void; onEditAction?: () => void }) => (
+    (options?: {
+      onPreviewAction?: () => void;
+      onEditAction?: () => void;
+      onRunAction?: () => void;
+    }) => (
       <div
         style={{
           display: "flex",
@@ -3834,6 +3896,10 @@ function PreviewPanel({
                 }
                 if (tab.id === "edit") {
                   options?.onEditAction?.();
+                  return;
+                }
+                if (tab.id === "run") {
+                  options?.onRunAction?.();
                 }
               }}
               {...workflowTabMotion.motionDataAttributes}
@@ -4154,7 +4220,7 @@ function PreviewPanel({
                 }}
               >
                 {renderPreviewWorkflowToggle({
-                  onPreviewAction: (() => {
+                  onRunAction: (() => {
                     const scriptPreview = preview.scriptPreview;
                     if (scriptPreview == null) {
                       return undefined;
@@ -4929,20 +4995,42 @@ function PreviewPanel({
                 />
               </Suspense>
             )}
+          {preview.type === "text" && showsPythonWorkbench && (
+            <ExplorerPythonWorkbench
+              pythonPath={previewResolvedPath}
+              pythonName={preview.name}
+              workingDirectory={getPathParent(previewResolvedPath) ?? ""}
+              workflowTabId={activePreviewWorkflowTab.id}
+              runtimeConfig={pythonRuntimeConfig}
+              packageInput={pythonBootstrapPackageInput}
+              onRunManaged={() => onRunPythonManaged(preview.path)}
+              onRunInTerminal={() => onRunPythonInTerminal(preview.path)}
+              onOpenManagedRepl={onOpenManagedPythonRepl}
+            />
+          )}
           {preview.type === "text" &&
+            !showsPythonWorkbench &&
             (viewMode === "edit" ||
+              preview.pythonPreview != null ||
               (preview.scriptPreview == null && !supportsRenderedPreview)) && (
               <SearchAwareCodeView
                 path={previewResolvedPath}
                 value={preview.content || ""}
                 language={preview.language || "plaintext"}
                 focusTarget={preview.focusTarget}
-                onChange={(value) => onTextChange(preview.path, value)}
+                onChange={
+                  previewBackedByArchiveVirtual ||
+                  (preview.pythonPreview != null && viewMode !== "edit")
+                    ? undefined
+                    : (value) => onTextChange(preview.path, value)
+                }
                 onCursorPositionChange={setTextPreviewCursor}
                 options={buildExplorerMonacoPreviewOptions({
                   editorSettings,
                   lineCount: textPreviewMetrics?.lineCount ?? 1,
-                  readOnly: previewBackedByArchiveVirtual,
+                  readOnly:
+                    previewBackedByArchiveVirtual ||
+                    (preview.pythonPreview != null && viewMode !== "edit"),
                   allowFolding: false,
                   topPadding: 8,
                 })}
@@ -4990,7 +5078,9 @@ function PreviewPanel({
           )}
         </div>
       </div>
-      {previewSurfaceMode === "content" && preview.type === "text" && (
+      {previewSurfaceMode === "content" &&
+        preview.type === "text" &&
+        !showsPythonWorkbench && (
         <div
           data-testid="text-preview-status"
           style={{
@@ -5012,13 +5102,13 @@ function PreviewPanel({
               gap: 12,
               flexWrap: "wrap",
             }}
-          >
-            <span data-testid="text-preview-metrics">
-              {textPreviewMetrics?.characterCount ?? 0} chars ·{" "}
-              {textPreviewMetrics?.wordCount ?? 0} words ·{" "}
-              {textPreviewMetrics?.lineCount ?? 1} lines
-            </span>
-            {textPreviewShowsEditorCursor && (
+            >
+              <span data-testid="text-preview-metrics">
+                {textPreviewMetrics?.characterCount ?? 0} chars ·{" "}
+                {textPreviewMetrics?.wordCount ?? 0} words ·{" "}
+                {textPreviewMetrics?.lineCount ?? 1} lines
+              </span>
+            {showsTextPreviewCursor && (
               <span data-testid="text-preview-cursor">
                 Ln {textPreviewCursor.lineNumber}, Col{" "}
                 {textPreviewCursor.column}
@@ -8053,7 +8143,8 @@ export function FileExplorer({
   );
   const explorerTerminalWorkingDirectory = currentPathIsCloud || currentPathIsVirtual
     ? null
-    : preview.type === "text" && preview.scriptPreview != null
+    : preview.type === "text" &&
+        (preview.scriptPreview != null || preview.pythonPreview != null)
       ? (getPathParent(preview.path) ?? currentPath)
       : currentPath;
   const previewSurfaceMode: PreviewSurfaceMode =
@@ -11845,6 +11936,117 @@ export function FileExplorer({
       revealExplorerEmbeddedTerminal,
     ],
   );
+  const runPreviewPythonManaged = useCallback(
+    async (path: string) => {
+      const currentPreview = previewRef.current;
+      if (
+        currentPreview.type !== "text" ||
+        currentPreview.path !== path ||
+        currentPreview.pythonPreview == null
+      ) {
+        throw new Error("Python preview is no longer active.");
+      }
+
+      if (currentPreview.isDirty) {
+        const didSave = await persistPreviewText(path);
+        if (!didSave) {
+          throw new Error("Unable to save the Python file before running it.");
+        }
+      }
+
+      const entryPath = currentPreview.resolvedPath ?? currentPreview.path;
+      const workingDirectory =
+        getPathParent(entryPath) ?? (currentPath.trim() || null);
+      if (!workingDirectory) {
+        throw new Error("Unable to resolve a Python working directory.");
+      }
+
+      setDocumentViewMode("preview");
+      setActivePreviewWorkflowTabId("run");
+      return executeManagedPython({
+        config: pythonRuntimeConfig,
+        executionMode: "script",
+        entry: entryPath,
+        arguments: [],
+        workingDirectory,
+        environment: {},
+        useManagedEnvironment: true,
+      });
+    },
+    [currentPath, persistPreviewText, pythonRuntimeConfig],
+  );
+  const runPreviewPythonInTerminal = useCallback(
+    async (path: string) => {
+      const currentPreview = previewRef.current;
+      if (
+        currentPreview.type !== "text" ||
+        currentPreview.path !== path ||
+        currentPreview.pythonPreview == null
+      ) {
+        throw new Error("Python preview is no longer active.");
+      }
+
+      if (!explorerTerminalWorkingDirectory) {
+        throw new Error(
+          "Explorer terminal commands are unavailable for this location.",
+        );
+      }
+
+      if (currentPreview.isDirty) {
+        const didSave = await persistPreviewText(path);
+        if (!didSave) {
+          throw new Error("Unable to save the Python file before running it.");
+        }
+      }
+
+      const command = buildTerminalPythonRunCommand({
+        path: currentPreview.resolvedPath ?? currentPreview.path,
+        shell: useSettingsStore.getState().settings.terminal.shell,
+      });
+      if (!command) {
+        throw new Error("Unable to build a Python terminal command.");
+      }
+
+      setDocumentViewMode("preview");
+      setActivePreviewWorkflowTabId("run");
+      revealExplorerEmbeddedTerminal("bottom");
+      queueExplorerTerminalCommand(command);
+    },
+    [
+      explorerTerminalWorkingDirectory,
+      persistPreviewText,
+      queueExplorerTerminalCommand,
+      revealExplorerEmbeddedTerminal,
+    ],
+  );
+  const openManagedPythonRepl = useCallback(async () => {
+    if (!explorerTerminalWorkingDirectory) {
+      throw new Error("Explorer terminal commands are unavailable for this location.");
+    }
+
+    const runtimeStatus = await getManagedPythonRuntimeStatus(pythonRuntimeConfig);
+    if (!runtimeStatus.ready || !runtimeStatus.managedPythonPath.trim()) {
+      throw new Error("Managed Python runtime is not ready yet.");
+    }
+
+    const command = buildManagedPythonReplCommand(
+      runtimeStatus.managedPythonPath,
+      useSettingsStore.getState().settings.terminal.shell,
+      runtimePlatform,
+    );
+    if (!command) {
+      throw new Error("Unable to build the managed Python REPL command.");
+    }
+
+    revealExplorerEmbeddedTerminal("bottom");
+    queueExplorerTerminalCommand(command);
+  }, [
+    explorerTerminalWorkingDirectory,
+    pythonRuntimeConfig,
+    queueExplorerTerminalCommand,
+    revealExplorerEmbeddedTerminal,
+    runtimePlatform,
+  ]);
   const clearPreviewSurface = useCallback(() => {
     previewCloseGuardRef.current = null;
     if (explorerTerminalVisible && explorerTerminalPlacement === "preview") {
@@ -12123,6 +12325,12 @@ export function FileExplorer({
         }
 
         if (executableTextScriptProbe.kind === "script") {
+          const pythonPreview =
+            executableTextScriptProbe.preview.language === "python"
+              ? ({
+                  source: "executable",
+                } satisfies ExplorerPythonPreviewMetadata)
+              : null;
           setDocumentViewMode("edit");
           const restoredDraft = loadExplorerEditDraft(
             EXPLORER_TEXT_DRAFT_SCOPE,
@@ -12142,10 +12350,14 @@ export function FileExplorer({
             content: resolvedContent,
             language: executableTextScriptProbe.preview.language,
             renderKind: "none",
-            scriptPreview: {
-              ...executableTextScriptProbe.preview,
-              content: resolvedContent,
-            },
+            scriptPreview:
+              pythonPreview == null
+                ? {
+                    ...executableTextScriptProbe.preview,
+                    content: resolvedContent,
+                  }
+                : null,
+            pythonPreview,
             focusTarget,
             isDirty: hasRestoredDraft,
             isSaving: false,
@@ -12559,6 +12771,7 @@ export function FileExplorer({
                       name: entry.name,
                       language: resolvedPreview.language,
                       renderKind: "none",
+                      pythonPreview: null,
                       scriptPreview: prev.scriptPreview
                         ? {
                             ...prev.scriptPreview,
@@ -12625,6 +12838,7 @@ export function FileExplorer({
               content: resolvedContent,
               language: resolvedPreview.language,
               renderKind: "none",
+              pythonPreview: null,
               scriptPreview: {
                 language: resolvedPreview.language,
                 runner: resolvedPreview.runner,
@@ -12660,8 +12874,19 @@ export function FileExplorer({
           return;
         }
         case "text": {
+          const pythonPreview = isPythonPreviewExtension(
+            resolvedPreview.extension,
+          )
+            ? ({
+                source: "extension",
+              } satisfies ExplorerPythonPreviewMetadata)
+            : null;
           setDocumentViewMode(
-            resolvedPreview.renderKind !== "none" ? "preview" : "edit",
+            pythonPreview != null
+              ? "edit"
+              : resolvedPreview.renderKind !== "none"
+                ? "preview"
+                : "edit",
           );
           if (
             currentPreview.type === "text" &&
@@ -12677,6 +12902,7 @@ export function FileExplorer({
                       language: resolvedPreview.language,
                       renderKind: resolvedPreview.renderKind,
                       scriptPreview: null,
+                      pythonPreview,
                       focusTarget,
                     }
                   : prev,
@@ -12733,6 +12959,7 @@ export function FileExplorer({
               language: resolvedPreview.language,
               renderKind: resolvedPreview.renderKind,
               scriptPreview: null,
+              pythonPreview,
               focusTarget,
               isDirty: hasRestoredDraft,
               isSaving: false,
@@ -15597,7 +15824,15 @@ export function FileExplorer({
   const previewPlacement = effectiveShellLayout.previewPlacement;
   const previewModeLabel =
     preview.type === "text"
-      ? preview.scriptPreview != null
+      ? preview.pythonPreview != null
+        ? activePreviewWorkflowTabId === "run"
+          ? "Python run"
+          : activePreviewWorkflowTabId === "runtime"
+            ? "Python runtime"
+            : documentViewMode === "edit"
+              ? "Python editor"
+              : "Python preview"
+        : preview.scriptPreview != null
         ? documentViewMode === "edit"
           ? "Script editor"
           : "Script run"
@@ -19755,9 +19990,28 @@ export function FileExplorer({
         }
         return;
       }
-      if (isEditableKeyboardTarget(e.target)) return;
-
       const activeElement = document.activeElement;
+      const isTypingInEmbeddedEditor =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement ||
+        activeElement instanceof HTMLElement
+          ? activeElement.isContentEditable ||
+            activeElement.closest(".monaco-editor") != null
+          : false;
+      const allowsPythonWorkbenchHotkeyWhileEditing =
+        preview.type === "text" &&
+        preview.pythonPreview != null &&
+        isTypingInEmbeddedEditor &&
+        (matchesKeybinding(e, keybindings.pythonWorkbenchRunManaged) ||
+          matchesKeybinding(e, keybindings.pythonWorkbenchRunInTerminal));
+      if (
+        isEditableKeyboardTarget(e.target) &&
+        !allowsPythonWorkbenchHotkeyWhileEditing
+      ) {
+        return;
+      }
+
       const isExplorerFocus = activeElement === mainRef.current;
       const isEmbeddedExplorerTerminalFocus =
         activeElement instanceof HTMLElement &&
@@ -19800,15 +20054,6 @@ export function FileExplorer({
         void runRecursiveSizeCalculation();
         return;
       }
-
-      const isTypingInEmbeddedEditor =
-        activeElement instanceof HTMLInputElement ||
-        activeElement instanceof HTMLTextAreaElement ||
-        activeElement instanceof HTMLSelectElement ||
-        activeElement instanceof HTMLElement
-          ? activeElement.isContentEditable ||
-            activeElement.closest(".monaco-editor") != null
-          : false;
 
       if (
         preview.type === "audio" &&
@@ -19905,6 +20150,24 @@ export function FileExplorer({
       ) {
         e.preventDefault();
         void persistPreviewText(preview.path);
+        return;
+      }
+      if (
+        preview.type === "text" &&
+        preview.pythonPreview != null &&
+        matchesKeybinding(e, keybindings.pythonWorkbenchRunManaged)
+      ) {
+        e.preventDefault();
+        void runPreviewPythonManaged(preview.path);
+        return;
+      }
+      if (
+        preview.type === "text" &&
+        preview.pythonPreview != null &&
+        matchesKeybinding(e, keybindings.pythonWorkbenchRunInTerminal)
+      ) {
+        e.preventDefault();
+        void runPreviewPythonInTerminal(preview.path);
         return;
       }
       if (
@@ -20332,6 +20595,8 @@ export function FileExplorer({
     queueClipboard,
     refresh,
     runArchiveToolbarAction,
+    runPreviewPythonInTerminal,
+    runPreviewPythonManaged,
     toggleActiveConstellationRouteMode,
     toggleConstellationSelectionPinState,
     rename.active,
@@ -22877,11 +23142,16 @@ export function FileExplorer({
         onTogglePreviewLock={togglePreviewLock}
         onTogglePreviewTerminal={togglePreviewTerminal}
         onRunTextScript={runPreviewTextScript}
+        onRunPythonManaged={runPreviewPythonManaged}
+        onRunPythonInTerminal={runPreviewPythonInTerminal}
+        onOpenManagedPythonRepl={openManagedPythonRepl}
         onStopTextScriptRun={stopPreviewTextScriptRun}
         viewMode={documentViewMode}
         onViewModeChange={setDocumentViewMode}
         activeWorkflowTabId={activePreviewWorkflowTabId}
         onWorkflowTabChange={setActivePreviewWorkflowTabId}
+        pythonRuntimeConfig={pythonRuntimeConfig}
+        pythonBootstrapPackageInput={pythonSettings.bootstrapPackages}
         explorerTheme={explorerTheme}
         blurEnabled={explorerBlurEnabled}
         chromeLayoutId={effectiveChromeLayoutId}
@@ -22956,6 +23226,8 @@ export function FileExplorer({
     previewWidth,
     refresh,
     registerPreviewCloseGuard,
+    runPreviewPythonInTerminal,
+    runPreviewPythonManaged,
     runPreviewTextScript,
     setActivePreviewWorkflowTabId,
     setDocumentViewMode,
@@ -22967,6 +23239,9 @@ export function FileExplorer({
     stopPreviewTextScriptRun,
     togglePreviewLock,
     togglePreviewTerminal,
+    openManagedPythonRepl,
+    pythonRuntimeConfig,
+    pythonSettings.bootstrapPackages,
     updatePdfPreviewDocument,
     updatePreviewTextContent,
     updateShaderPreviewCompileResult,

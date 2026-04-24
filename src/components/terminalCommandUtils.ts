@@ -121,3 +121,25 @@ export function buildTerminalScriptRunCommand(args: {
   }
   return `${interpreter} ${quotePathForUnixShell(normalizedPath)}`;
 }
+
+export function buildTerminalPythonRunCommand(args: {
+  path: string;
+  shell: string;
+}): string {
+  const normalizedPath = args.path.trim();
+  const normalizedShell = shellExecutableName(args.shell);
+
+  if (!normalizedPath) {
+    return "";
+  }
+
+  if (isPowerShellShell(normalizedShell)) {
+    return `if (Get-Command python -ErrorAction SilentlyContinue) { & python ${quotePathForPowerShell(normalizedPath)} } elseif (Get-Command py -ErrorAction SilentlyContinue) { & py -3 ${quotePathForPowerShell(normalizedPath)} } else { Write-Host 'Python is not available in PATH.' }`;
+  }
+
+  if (isCmdShell(normalizedShell)) {
+    return `python ${quotePathForCmd(normalizedPath)} || py -3 ${quotePathForCmd(normalizedPath)}`;
+  }
+
+  return `if command -v python3 >/dev/null 2>&1; then python3 ${quotePathForUnixShell(normalizedPath)}; elif command -v python >/dev/null 2>&1; then python ${quotePathForUnixShell(normalizedPath)}; else echo 'Python is not available in PATH.'; fi`;
+}

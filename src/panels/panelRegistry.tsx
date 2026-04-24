@@ -16,6 +16,13 @@ import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import type { LoadedExplorerHomePack } from '../config/homePackages';
 import type { LoadedExplorerMenuPack } from '../config/menuPacks';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
+import type {
+  LoadedThemeAppearancePack,
+  LoadedThemeEnginePack,
+  LoadedThemeInteractionMotionPack,
+  LoadedThemeRecipePack,
+  LoadedThemeShellRendererPack,
+} from '../config/themeBundlePacks';
 import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import {
   iconThemeSystemConfig,
@@ -149,12 +156,47 @@ export function createBuiltInPanelDefinitions({
   themePackagesLoading,
   themePackagesError,
   themePackagesWarnings,
+  appearancePacks = [],
+  appearancePacksDirectory = '',
+  appearancePacksLoading = false,
+  appearancePacksError = null,
+  appearancePacksWarnings = [],
+  interactionMotionPacks = [],
+  interactionMotionPacksDirectory = '',
+  interactionMotionPacksLoading = false,
+  interactionMotionPacksError = null,
+  interactionMotionPacksWarnings = [],
+  shellRenderers = [],
+  shellRenderersDirectory = '',
+  shellRenderersLoading = false,
+  shellRenderersError = null,
+  shellRenderersWarnings = [],
+  themeRecipePacks = [],
+  themeRecipePacksDirectory = '',
+  themeRecipePacksLoading = false,
+  themeRecipePacksError = null,
+  themeRecipePacksWarnings = [],
+  themeEnginePacks = [],
+  themeEnginePacksDirectory = '',
+  themeEnginePacksLoading = false,
+  themeEnginePacksError = null,
+  themeEnginePacksWarnings = [],
   onRefreshTopBars,
   onOpenTopBarsFolder,
   onRefreshHomePacks = async () => {},
   onRefreshMenuPacks = async () => {},
   onOpenHomePacksFolder = async () => {},
   onOpenMenuPacksFolder = async () => {},
+  onRefreshAppearancePacks = async () => {},
+  onOpenAppearancePacksFolder = async () => {},
+  onRefreshInteractionMotionPacks = async () => {},
+  onOpenInteractionMotionPacksFolder = async () => {},
+  onRefreshShellRenderers = async () => {},
+  onOpenShellRenderersFolder = async () => {},
+  onRefreshThemeRecipePacks = async () => {},
+  onOpenThemeRecipesFolder = async () => {},
+  onRefreshThemeEnginePacks = async () => {},
+  onOpenThemeEnginesFolder = async () => {},
   iconThemePackages = [],
   iconThemePackagesDirectory = iconThemeSystemConfig.iconThemesDirectory,
   iconThemePackagesLoading = false,
@@ -233,12 +275,47 @@ export function createBuiltInPanelDefinitions({
   themePackagesLoading: boolean;
   themePackagesError: string | null;
   themePackagesWarnings: string[];
+  appearancePacks?: LoadedThemeAppearancePack[];
+  appearancePacksDirectory?: string;
+  appearancePacksLoading?: boolean;
+  appearancePacksError?: string | null;
+  appearancePacksWarnings?: string[];
+  interactionMotionPacks?: LoadedThemeInteractionMotionPack[];
+  interactionMotionPacksDirectory?: string;
+  interactionMotionPacksLoading?: boolean;
+  interactionMotionPacksError?: string | null;
+  interactionMotionPacksWarnings?: string[];
+  shellRenderers?: LoadedThemeShellRendererPack[];
+  shellRenderersDirectory?: string;
+  shellRenderersLoading?: boolean;
+  shellRenderersError?: string | null;
+  shellRenderersWarnings?: string[];
+  themeRecipePacks?: LoadedThemeRecipePack[];
+  themeRecipePacksDirectory?: string;
+  themeRecipePacksLoading?: boolean;
+  themeRecipePacksError?: string | null;
+  themeRecipePacksWarnings?: string[];
+  themeEnginePacks?: LoadedThemeEnginePack[];
+  themeEnginePacksDirectory?: string;
+  themeEnginePacksLoading?: boolean;
+  themeEnginePacksError?: string | null;
+  themeEnginePacksWarnings?: string[];
   onRefreshTopBars: () => Promise<void>;
   onOpenTopBarsFolder: () => Promise<void>;
   onRefreshHomePacks?: () => Promise<void>;
   onRefreshMenuPacks?: () => Promise<void>;
   onOpenHomePacksFolder?: () => Promise<void>;
   onOpenMenuPacksFolder?: () => Promise<void>;
+  onRefreshAppearancePacks?: () => Promise<void>;
+  onOpenAppearancePacksFolder?: () => Promise<void>;
+  onRefreshInteractionMotionPacks?: () => Promise<void>;
+  onOpenInteractionMotionPacksFolder?: () => Promise<void>;
+  onRefreshShellRenderers?: () => Promise<void>;
+  onOpenShellRenderersFolder?: () => Promise<void>;
+  onRefreshThemeRecipePacks?: () => Promise<void>;
+  onOpenThemeRecipesFolder?: () => Promise<void>;
+  onRefreshThemeEnginePacks?: () => Promise<void>;
+  onOpenThemeEnginesFolder?: () => Promise<void>;
   iconThemePackages?: LoadedIconThemePackage[];
   iconThemePackagesDirectory?: string;
   iconThemePackagesLoading?: boolean;
@@ -464,12 +541,47 @@ export function createBuiltInPanelDefinitions({
             themePackagesLoading={themePackagesLoading}
             themePackagesError={themePackagesError}
             themePackagesWarnings={themePackagesWarnings}
+            appearancePacks={appearancePacks}
+            appearancePacksDirectory={appearancePacksDirectory}
+            appearancePacksLoading={appearancePacksLoading}
+            appearancePacksError={appearancePacksError}
+            appearancePacksWarnings={appearancePacksWarnings}
+            interactionMotionPacks={interactionMotionPacks}
+            interactionMotionPacksDirectory={interactionMotionPacksDirectory}
+            interactionMotionPacksLoading={interactionMotionPacksLoading}
+            interactionMotionPacksError={interactionMotionPacksError}
+            interactionMotionPacksWarnings={interactionMotionPacksWarnings}
+            shellRenderers={shellRenderers}
+            shellRenderersDirectory={shellRenderersDirectory}
+            shellRenderersLoading={shellRenderersLoading}
+            shellRenderersError={shellRenderersError}
+            shellRenderersWarnings={shellRenderersWarnings}
+            themeRecipePacks={themeRecipePacks}
+            themeRecipePacksDirectory={themeRecipePacksDirectory}
+            themeRecipePacksLoading={themeRecipePacksLoading}
+            themeRecipePacksError={themeRecipePacksError}
+            themeRecipePacksWarnings={themeRecipePacksWarnings}
+            themeEnginePacks={themeEnginePacks}
+            themeEnginePacksDirectory={themeEnginePacksDirectory}
+            themeEnginePacksLoading={themeEnginePacksLoading}
+            themeEnginePacksError={themeEnginePacksError}
+            themeEnginePacksWarnings={themeEnginePacksWarnings}
             onRefreshTopBars={onRefreshTopBars}
             onOpenTopBarsFolder={onOpenTopBarsFolder}
             onRefreshHomePacks={onRefreshHomePacks}
             onRefreshMenuPacks={onRefreshMenuPacks}
             onOpenHomePacksFolder={onOpenHomePacksFolder}
             onOpenMenuPacksFolder={onOpenMenuPacksFolder}
+            onRefreshAppearancePacks={onRefreshAppearancePacks}
+            onOpenAppearancePacksFolder={onOpenAppearancePacksFolder}
+            onRefreshInteractionMotionPacks={onRefreshInteractionMotionPacks}
+            onOpenInteractionMotionPacksFolder={onOpenInteractionMotionPacksFolder}
+            onRefreshShellRenderers={onRefreshShellRenderers}
+            onOpenShellRenderersFolder={onOpenShellRenderersFolder}
+            onRefreshThemeRecipePacks={onRefreshThemeRecipePacks}
+            onOpenThemeRecipesFolder={onOpenThemeRecipesFolder}
+            onRefreshThemeEnginePacks={onRefreshThemeEnginePacks}
+            onOpenThemeEnginesFolder={onOpenThemeEnginesFolder}
             iconThemePackages={iconThemePackages}
             iconThemePackagesDirectory={iconThemePackagesDirectory}
             iconThemePackagesLoading={iconThemePackagesLoading}

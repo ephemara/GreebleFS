@@ -1,4 +1,10 @@
 export type { MobileShareThemeSnapshot } from "../src/config/mobileTheme";
+export type {
+  MobileLayoutSettings,
+  MobileLayoutSortBy,
+  MobileLayoutSortOrder,
+  MobileLayoutViewMode,
+} from "../src/config/mobileLayout";
 
 export type MobileEntryKind =
   | "directory"
@@ -28,6 +34,7 @@ export interface MobileShareEntry {
   name: string;
   relativePath: string;
   isDir: boolean;
+  isHidden: boolean;
   size: number;
   extension: string;
   mimeType: string | null;
@@ -44,6 +51,7 @@ export interface MobileShareEntry {
 
 export interface MobileShareListingResponse {
   currentPath: string;
+  parentPath: string;
   canGoUp: boolean;
   shareName: string;
   hubMode: boolean;

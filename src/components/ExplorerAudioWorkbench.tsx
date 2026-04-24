@@ -1456,6 +1456,79 @@ export function ExplorerAudioWorkbench({
     workbenchError || previewDeck.error || snapshot.engineError
       ? workbenchError ?? previewDeck.error ?? snapshot.engineError
       : previewTransportStatus;
+  const previewPlaybackOverview = (
+    <div
+      data-testid="audio-preview-overview"
+      style={{ ...cardStyle, padding: 12, display: 'grid', gap: 10 }}
+    >
+      <div
+        ref={timelineRef}
+        role="presentation"
+        onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
+        style={{
+          position: 'relative',
+          height: 96,
+          borderRadius: 'calc(var(--overlay-explorer-control-radius, 10px) + 4px)',
+          overflow: 'hidden',
+          cursor: 'pointer',
+          border: '1px solid var(--overlay-explorer-preview-border)',
+          background: 'color-mix(in srgb, var(--overlay-explorer-preview-bg) 82%, black 18%)',
+        }}
+      >
+        <div style={{ position: 'absolute', inset: 0, width: playheadLeft, background: 'color-mix(in srgb, var(--overlay-accent) 14%, transparent)', pointerEvents: 'none', zIndex: 1 }} />
+        {hasLoopSelectionPreview ? (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              left: selectionLeft,
+              width: selectionWidth,
+              background: 'color-mix(in srgb, var(--overlay-accent) 18%, transparent)',
+              borderLeft: '1px solid var(--overlay-explorer-chip-active-border)',
+              borderRight: '1px solid var(--overlay-explorer-chip-active-border)',
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          />
+        ) : null}
+        <AudioWorkbenchWaveformBars waveformBuckets={waveformBuckets} isAnalyzing={isAnalyzing} />
+        <AudioWorkbenchPlayheadMarker
+          ref={playheadMarkerRef}
+          currentTimeSeconds={currentTimeSeconds}
+          durationSeconds={effectiveDuration}
+          isPlaying={previewDeck.isPlaying}
+          playbackRate={previewDeck.rate}
+        />
+      </div>
+      {spectralBands.length > 0 ? (
+        <div style={{ height: 34, borderRadius: 'var(--overlay-explorer-control-radius, 8px)', overflow: 'hidden', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
+          <AudioWorkbenchSpectralBars spectralBands={spectralBands} />
+        </div>
+      ) : null}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 10 }}>
+        {previewSummaryItems.map((item) => (
+          <div key={item.label} style={summaryCardStyle}>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>
+              {item.label}
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>{item.value}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ ...statusChipStyle, color: workbenchError || previewDeck.error || snapshot.engineError ? '#c0392b' : 'var(--overlay-text-primary)' }}>
+          {activeStatusMessage}
+        </span>
+        <span style={statusChipStyle}>Peak {formatDb(analysis?.peakLevel)}</span>
+        <span style={statusChipStyle}>RMS {formatDb(analysis?.rmsLevel)}</span>
+        <span style={statusChipStyle}>Silence regions: {silenceRegions.length}</span>
+        {previewShortcutItems.map((shortcut) => (
+          <span key={shortcut} style={statusChipStyle}>{shortcut}</span>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <>
@@ -1522,74 +1595,7 @@ export function ExplorerAudioWorkbench({
 
           {isPreviewMode ? (
             <>
-              <div style={{ ...cardStyle, padding: 12, display: 'grid', gap: 10 }}>
-                <div
-                  ref={timelineRef}
-                  role="presentation"
-                  onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
-                  style={{
-                    position: 'relative',
-                    height: 96,
-                    borderRadius: 'calc(var(--overlay-explorer-control-radius, 10px) + 4px)',
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                    border: '1px solid var(--overlay-explorer-preview-border)',
-                    background: 'color-mix(in srgb, var(--overlay-explorer-preview-bg) 82%, black 18%)',
-                  }}
-                >
-                  <div style={{ position: 'absolute', inset: 0, width: playheadLeft, background: 'color-mix(in srgb, var(--overlay-accent) 14%, transparent)', pointerEvents: 'none', zIndex: 1 }} />
-                  {hasLoopSelectionPreview ? (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        bottom: 0,
-                        left: selectionLeft,
-                        width: selectionWidth,
-                        background: 'color-mix(in srgb, var(--overlay-accent) 18%, transparent)',
-                        borderLeft: '1px solid var(--overlay-explorer-chip-active-border)',
-                        borderRight: '1px solid var(--overlay-explorer-chip-active-border)',
-                        pointerEvents: 'none',
-                        zIndex: 2,
-                      }}
-                    />
-                  ) : null}
-                  <AudioWorkbenchWaveformBars waveformBuckets={waveformBuckets} isAnalyzing={isAnalyzing} />
-                  <AudioWorkbenchPlayheadMarker
-                    ref={playheadMarkerRef}
-                    currentTimeSeconds={currentTimeSeconds}
-                    durationSeconds={effectiveDuration}
-                    isPlaying={previewDeck.isPlaying}
-                    playbackRate={previewDeck.rate}
-                  />
-                </div>
-                {spectralBands.length > 0 ? (
-                  <div style={{ height: 34, borderRadius: 'var(--overlay-explorer-control-radius, 8px)', overflow: 'hidden', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
-                    <AudioWorkbenchSpectralBars spectralBands={spectralBands} />
-                  </div>
-                ) : null}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: 10 }}>
-                  {previewSummaryItems.map((item) => (
-                    <div key={item.label} style={summaryCardStyle}>
-                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>
-                        {item.label}
-                      </span>
-                      <span style={{ fontSize: 13, fontWeight: 700 }}>{item.value}</span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ ...statusChipStyle, color: workbenchError || previewDeck.error || snapshot.engineError ? '#c0392b' : 'var(--overlay-text-primary)' }}>
-                    {activeStatusMessage}
-                  </span>
-                  <span style={statusChipStyle}>Peak {formatDb(analysis?.peakLevel)}</span>
-                  <span style={statusChipStyle}>RMS {formatDb(analysis?.rmsLevel)}</span>
-                  <span style={statusChipStyle}>Silence regions: {silenceRegions.length}</span>
-                  {previewShortcutItems.map((shortcut) => (
-                    <span key={shortcut} style={statusChipStyle}>{shortcut}</span>
-                  ))}
-                </div>
-              </div>
+              {previewPlaybackOverview}
             </>
           ) : isEditMode ? (
             <>
@@ -1810,6 +1816,8 @@ export function ExplorerAudioWorkbench({
           ) : (
             <>
               <div style={{ display: 'grid', gap: 10, minHeight: 0 }}>
+                {previewPlaybackOverview}
+
                 <div style={{ ...cardStyle, padding: 10, display: 'grid', gap: 8 }}>
                   <div
                     style={{

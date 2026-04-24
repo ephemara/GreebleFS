@@ -201,6 +201,7 @@ struct AudioDeckRuntime {
     deck_id: AudioDeckId,
     clip: ArcSwapOption<AudioClip>,
     metadata: Mutex<AudioDeckMetadata>,
+    vst_host: Mutex<Option<DeckVstRuntime>>,
     is_playing: AtomicBool,
     is_loading: AtomicBool,
     position_frames: AtomicU64,
@@ -223,6 +224,11 @@ struct AudioDeckMetadata {
     error: Option<String>,
     active_plugin_path: Option<String>,
     vst_parameters: Vec<VstParameterState>,
+}
+
+struct DeckVstRuntime {
+    plugin_path: String,
+    host: HeadlessVstHost,
 }
 
 struct AudioClip {
@@ -265,12 +271,11 @@ fn resolve_audio_ffmpeg_binary() -> String {
         .unwrap_or_else(|| DEFAULT_AUDIO_FFMPEG_BINARY.to_string())
 }
 
-fn build_vst_parameter_state_snapshot(
-    plugin_path: &str,
+fn build_vst_parameter_state_snapshot_from_host(
+    host: &HeadlessVstHost,
 ) -> Result<Vec<VstParameterState>, String> {
-    let host = HeadlessVstHost::load_plugin(plugin_path)?;
     Ok(host
-        .parameters
+        .parameter_snapshot()?
         .iter()
         .map(|parameter| VstParameterState {
             id: parameter.id,
@@ -280,7 +285,7 @@ fn build_vst_parameter_state_snapshot(
             default_normalized: parameter.default_normalized,
             min: parameter.min,
             max: parameter.max,
-            value_normalized: parameter.default_normalized,
+            value_normalized: parameter.value_normalized,
         })
         .collect())
 }
@@ -291,6 +296,7 @@ impl AudioDeckRuntime {
             deck_id,
             clip: ArcSwapOption::default(),
             metadata: Mutex::new(AudioDeckMetadata::default()),
+            vst_host: Mutex::new(None),
             is_playing: AtomicBool::new(false),
             is_loading: AtomicBool::new(false),
             position_frames: AtomicU64::new(0.0f64.to_bits()),
@@ -1716,6 +1722,10 @@ fn unload_deck_internal(
     let deck = shared.deck(deck_id);
     deck.load_generation.fetch_add(1, Ordering::Relaxed);
     deck.clear_loaded_clip();
+    deck.vst_host
+        .lock()
+        .map_err(|e| format!("lock error: {e}"))?
+        .take();
     deck.is_loading.store(false, Ordering::Relaxed);
     update_deck_metadata(deck, |metadata| {
         *metadata = AudioDeckMetadata::default();
@@ -1956,19 +1966,30 @@ pub fn audio_engine_load_plugin(
 ) -> Result<AudioEngineStateSnapshot, String> {
     let shared = ensure_audio_engine_shared(&app)?;
     let deck = shared.deck(request.deck_id);
-    let plugin_load_result = build_vst_parameter_state_snapshot(&request.plugin_path);
+    let plugin_load_result = HeadlessVstHost::load_plugin(&request.plugin_path).and_then(|host| {
+        build_vst_parameter_state_snapshot_from_host(&host).map(|state| (host, state))
+    });
     {
         let mut meta = deck
             .metadata
             .lock()
             .map_err(|e| format!("lock error: {e}"))?;
+        let mut host_state = deck
+            .vst_host
+            .lock()
+            .map_err(|e| format!("lock error: {e}"))?;
         match plugin_load_result {
-            Ok(parameter_state) => {
+            Ok((host, parameter_state)) => {
+                *host_state = Some(DeckVstRuntime {
+                    plugin_path: request.plugin_path.clone(),
+                    host,
+                });
                 meta.active_plugin_path = Some(request.plugin_path.clone());
                 meta.vst_parameters = parameter_state;
                 meta.error = None;
             }
             Err(error) => {
+                host_state.take();
                 meta.active_plugin_path = None;
                 meta.vst_parameters.clear();
                 meta.error = Some(format!("VST load failed: {error}"));
@@ -1988,6 +2009,12 @@ pub fn audio_engine_clear_deck_plugin(
 ) -> Result<AudioEngineStateSnapshot, String> {
     let shared = ensure_audio_engine_shared(&app)?;
     {
+        shared
+            .deck(request.deck_id)
+            .vst_host
+            .lock()
+            .map_err(|e| format!("lock error: {e}"))?
+            .take();
         let mut meta = shared
             .deck(request.deck_id)
             .metadata
@@ -2010,19 +2037,25 @@ pub fn audio_engine_set_plugin_parameter(
 ) -> Result<AudioEngineStateSnapshot, String> {
     let shared = ensure_audio_engine_shared(&app)?;
     {
+        let deck = shared.deck(request.deck_id);
+        let mut host_state = deck
+            .vst_host
+            .lock()
+            .map_err(|e| format!("lock error: {e}"))?;
+        let active_host = host_state
+            .as_mut()
+            .ok_or_else(|| "Load a VST3 plugin before editing its parameters.".to_string())?;
+        active_host
+            .host
+            .set_parameter_value(request.parameter_id, request.value_normalized)?;
+        let parameter_state = build_vst_parameter_state_snapshot_from_host(&active_host.host)?;
         let mut meta = shared
             .deck(request.deck_id)
             .metadata
             .lock()
             .map_err(|e| format!("lock error: {e}"))?;
-        let parameter = meta
-            .vst_parameters
-            .iter_mut()
-            .find(|parameter| parameter.id == request.parameter_id)
-            .ok_or_else(|| "Unknown VST parameter.".to_string())?;
-        parameter.value_normalized = request
-            .value_normalized
-            .clamp(parameter.min, parameter.max);
+        meta.active_plugin_path = Some(active_host.plugin_path.clone());
+        meta.vst_parameters = parameter_state;
     }
     let snapshot = shared.snapshot();
     shared.emit_state();

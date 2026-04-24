@@ -39,6 +39,24 @@ function resolveOpenFolderIconId(
   return snapshot.iconTheme.iconDefinitions[openIconId] ? openIconId : iconId;
 }
 
+function resolveKnownIconId(
+  iconId: string | null | undefined,
+  snapshot: MobileShareThemeSnapshot,
+): string | null {
+  if (!iconId) {
+    return null;
+  }
+
+  const normalizedIconId = iconId.trim();
+  if (!normalizedIconId) {
+    return null;
+  }
+
+  return snapshot.iconTheme.iconDefinitions[normalizedIconId]
+    ? normalizedIconId
+    : null;
+}
+
 export function buildMobileIconUrl(iconId: string): string {
   return `/api/icon?id=${encodeURIComponent(iconId)}`;
 }
@@ -52,14 +70,6 @@ export function resolveMobileEntryIconUrl(
     return null;
   }
 
-  if (entry.iconId.trim()) {
-    const iconId =
-      openFolder && entry.isDir
-        ? resolveOpenFolderIconId(entry.iconId, snapshot)
-        : entry.iconId;
-    return buildMobileIconUrl(iconId);
-  }
-
   const iconTheme = createResolvedIconTheme(snapshot);
   if (entry.isDir) {
     const folderResolution = resolveFolderIcon(entry.relativePath || entry.name, {
@@ -67,14 +77,22 @@ export function resolveMobileEntryIconUrl(
       defaultIcon: snapshot.defaultFolderIcon as FolderIconValue,
       iconTheme,
     });
-    const iconId = openFolder
+    const themedFolderIconId = openFolder
       ? resolveOpenFolderIconId(folderResolution.icon, snapshot)
       : folderResolution.icon;
-    return buildMobileIconUrl(iconId);
+    const iconId =
+      resolveKnownIconId(themedFolderIconId, snapshot)
+      ?? resolveKnownIconId(entry.iconId, snapshot)
+      ?? resolveKnownIconId(snapshot.defaultFolderIcon, snapshot)
+      ?? resolveKnownIconId(snapshot.iconTheme.folder, snapshot);
+    return iconId ? buildMobileIconUrl(iconId) : null;
   }
 
-  const iconId = resolveFileIconId(entry.name, entry.extension, iconTheme);
-  return buildMobileIconUrl(iconId);
+  const iconId =
+    resolveKnownIconId(resolveFileIconId(entry.name, entry.extension, iconTheme), snapshot)
+    ?? resolveKnownIconId(entry.iconId, snapshot)
+    ?? resolveKnownIconId(snapshot.iconTheme.file, snapshot);
+  return iconId ? buildMobileIconUrl(iconId) : null;
 }
 
 export function resolveMobileNavIcon(

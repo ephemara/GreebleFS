@@ -187,6 +187,14 @@ describe('WorkbenchTopBar', () => {
           url: 'https://greeble-node.tailnet.ts.net:8080',
           isPreferred: false,
         },
+        {
+          id: 'lan-direct',
+          label: 'LAN Direct',
+          description: 'Direct local IP fallback for the current network.',
+          kind: 'lan',
+          url: 'http://192.168.1.4:8080',
+          isPreferred: false,
+        },
       ],
     };
 
@@ -252,10 +260,17 @@ describe('WorkbenchTopBar', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /show qr codes/i }));
 
-    expect(await screen.findByText('Phone Pairing', {}, { timeout: 4000 })).toBeInTheDocument();
+    const dialogTitle = await screen.findByText('Phone Pairing', {}, { timeout: 4000 });
+    expect(dialogTitle).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.style.maxWidth).toBe('min(92vw, 980px)');
+    expect(dialog.style.maxHeight).toBe('calc(100vh - 40px)');
+    expect(screen.getByRole('list', { name: /mobile share connection targets/i }).style.gridTemplateColumns)
+      .toBe('repeat(auto-fit, minmax(min(100%, 216px), 1fr))');
     expect(await screen.findByAltText('QR code for LAN HTTPS', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(await screen.findByAltText('QR code for Tailnet', {}, { timeout: 4000 })).toBeInTheDocument();
-    expect(qrCodeToDataUrlMock).toHaveBeenCalledTimes(2);
+    expect(await screen.findByAltText('QR code for LAN Direct', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(qrCodeToDataUrlMock).toHaveBeenCalledTimes(3);
     expect(screen.getByRole('button', { name: /mobile settings/i })).toBeInTheDocument();
     expect(onStartMobileShare).toHaveBeenCalledTimes(0);
   });

@@ -167,6 +167,7 @@ export interface OverlayThemeDefinition {
   description?: string;
   defaultTopBarId?: string;
   defaultHomePackId?: string;
+  defaultMenuPackId?: string;
   defaultShaderId?: string;
   defaultOpenAnimationId?: string;
   defaultCloseAnimationId?: string;
@@ -1327,6 +1328,9 @@ export function normalizeThemeDefinition(
     defaultHomePackId: typeof theme.defaultHomePackId === 'string'
       ? theme.defaultHomePackId.trim() || undefined
       : fallbackTheme?.defaultHomePackId,
+    defaultMenuPackId: typeof theme.defaultMenuPackId === 'string'
+      ? theme.defaultMenuPackId.trim() || undefined
+      : fallbackTheme?.defaultMenuPackId,
     defaultShaderId: typeof theme.defaultShaderId === 'string'
       ? theme.defaultShaderId.trim() || undefined
       : fallback.defaultShaderId,

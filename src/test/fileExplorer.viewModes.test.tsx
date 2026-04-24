@@ -396,6 +396,16 @@ const ENTRIES = [
     is_symlink: false,
   },
   {
+    name: "runner.py",
+    path: `${REPO_ROOT}\\runner.py`,
+    is_dir: false,
+    size: 144,
+    modified: 0,
+    extension: "py",
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
     name: "build.bat",
     path: `${REPO_ROOT}\\build.bat`,
     is_dir: false,
@@ -1019,6 +1029,9 @@ describe("FileExplorer view modes", () => {
             if (payload?.path === `${REPO_ROOT}\\index.html`) {
               return "<html><body><h1>hello from html preview</h1></body></html>";
             }
+            if (payload?.path === `${REPO_ROOT}\\runner.py`) {
+              return 'print("hello from python preview")';
+            }
             return "hello from preview";
           case "fs_write_file":
             return null;
@@ -1188,6 +1201,83 @@ describe("FileExplorer view modes", () => {
           case "fs_cancel_search_entries":
           case "fs_start_native_file_drag":
             return null;
+          case "python_get_runtime_status":
+            return {
+              runtimeRoot: `${REPO_ROOT}\\.greeblefs-python`,
+              envDir: `${REPO_ROOT}\\.greeblefs-python\\env`,
+              scriptsDir: `${REPO_ROOT}\\.greeblefs-python\\scripts`,
+              tempDir: `${REPO_ROOT}\\.greeblefs-python\\temp`,
+              logsDir: `${REPO_ROOT}\\.greeblefs-python\\logs`,
+              managedPythonPath:
+                "C:\\Python Runtime\\env\\Scripts\\python.exe",
+              envExists: true,
+              ready: true,
+              managedPythonVersion: "Python 3.11.9",
+              managedPipVersion: "pip 25.0",
+              preferredInterpreterPath: null,
+              bootstrapPackages: [],
+              interpreterHint: "Python 3.11 is preferred",
+              baseInterpreter: {
+                label: "Python 3.11",
+                version: "3.11.9",
+              },
+              discoveredInterpreters: [],
+              boilerplate: {
+                readmePath: `${REPO_ROOT}\\.greeblefs-python\\README.md`,
+                requirementsPath:
+                  `${REPO_ROOT}\\.greeblefs-python\\requirements.txt`,
+                packageDir:
+                  `${REPO_ROOT}\\.greeblefs-python\\overlayterm_runtime`,
+                helloScriptPath:
+                  `${REPO_ROOT}\\.greeblefs-python\\scripts\\hello_runtime.py`,
+                probeScriptPath:
+                  `${REPO_ROOT}\\.greeblefs-python\\scripts\\probe.py`,
+              },
+            };
+          case "python_execute":
+            return {
+              status: {
+                runtimeRoot: `${REPO_ROOT}\\.greeblefs-python`,
+                envDir: `${REPO_ROOT}\\.greeblefs-python\\env`,
+                scriptsDir: `${REPO_ROOT}\\.greeblefs-python\\scripts`,
+                tempDir: `${REPO_ROOT}\\.greeblefs-python\\temp`,
+                logsDir: `${REPO_ROOT}\\.greeblefs-python\\logs`,
+                managedPythonPath:
+                  "C:\\Python Runtime\\env\\Scripts\\python.exe",
+                envExists: true,
+                ready: true,
+                managedPythonVersion: "Python 3.11.9",
+                managedPipVersion: "pip 25.0",
+                preferredInterpreterPath: null,
+                bootstrapPackages: [],
+                interpreterHint: "Python 3.11 is preferred",
+                baseInterpreter: {
+                  label: "Python 3.11",
+                  version: "3.11.9",
+                },
+                discoveredInterpreters: [],
+                boilerplate: {
+                  readmePath: `${REPO_ROOT}\\.greeblefs-python\\README.md`,
+                  requirementsPath:
+                    `${REPO_ROOT}\\.greeblefs-python\\requirements.txt`,
+                  packageDir:
+                    `${REPO_ROOT}\\.greeblefs-python\\overlayterm_runtime`,
+                  helloScriptPath:
+                    `${REPO_ROOT}\\.greeblefs-python\\scripts\\hello_runtime.py`,
+                  probeScriptPath:
+                    `${REPO_ROOT}\\.greeblefs-python\\scripts\\probe.py`,
+                },
+              },
+              result: {
+                command:
+                  'C:\\Python Runtime\\env\\Scripts\\python.exe "C:\\workspace\\repo\\runner.py"',
+                workingDirectory: REPO_ROOT,
+                exitCode: 0,
+                success: true,
+                stdout: "hello from python preview",
+                stderr: "",
+              },
+            };
           default:
             throw new Error(`Unexpected invoke command: ${command}`);
         }
@@ -1440,7 +1530,7 @@ describe("FileExplorer view modes", () => {
     expect(getChromeControl("previewSplitToggle")).toBeNull();
   });
 
-  it("opens executable scripts in an editor-first preview with a run mode backed by the preview terminal", async () => {
+  it("opens executable scripts in an editor-first preview with edit left of the run workflow tab", async () => {
     renderExplorer();
     await screen.findByText("build.bat");
 
@@ -1450,7 +1540,7 @@ describe("FileExplorer view modes", () => {
     expect(screen.queryByText(/preview unavailable/i)).toBeNull();
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^run$/i })).toBeInTheDocument();
-    expectChromeControlButtonOrder("previewModeToggle", ["Run", "Edit"]);
+    expectChromeControlButtonOrder("previewModeToggle", ["Edit", "Run"]);
     expect(getChromeControl("previewTerminalToggle")).toBeNull();
     expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
       "hello from preview",
@@ -1485,6 +1575,153 @@ describe("FileExplorer view modes", () => {
         "data-overlay-explorer-preview-surface-mode",
         "content",
       );
+    });
+  });
+
+  it("opens Python files editor-first with run and runtime wildcard tabs", async () => {
+    renderExplorer();
+    await screen.findByText("runner.py");
+
+    fireEvent.click(screen.getByText("runner.py"));
+
+    expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
+      'print("hello from python preview")',
+    );
+    expect(useExplorerStore.getState().session.documentViewMode).toBe("edit");
+    expectChromeControlButtonOrder("previewModeToggle", [
+      "Edit",
+      "Run",
+      "Runtime",
+    ]);
+    expect(screen.queryByTestId("explorer-python-workbench")).toBeNull();
+
+    fireEvent.click(
+      within(getChromeControl("previewModeToggle") as HTMLElement).getByRole(
+        "button",
+        {
+          name: "Edit",
+        },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.documentViewMode).toBe("edit");
+    });
+
+    fireEvent.click(
+      within(getChromeControl("previewModeToggle") as HTMLElement).getByRole(
+        "button",
+        {
+          name: "Run",
+        },
+      ),
+    );
+
+    expect(await screen.findByTestId("explorer-python-workbench")).toHaveAttribute(
+      "data-python-workflow-tab",
+      "run",
+    );
+
+    fireEvent.click(
+      within(getChromeControl("previewModeToggle") as HTMLElement).getByRole(
+        "button",
+        {
+          name: "Runtime",
+        },
+      ),
+    );
+
+    const pythonWorkbench = await screen.findByTestId(
+      "explorer-python-workbench",
+    );
+    expect(pythonWorkbench).toHaveAttribute("data-python-workflow-tab", "runtime");
+    expect(
+      within(pythonWorkbench).getByRole("button", { name: "Open Managed REPL" }),
+    ).toBeInTheDocument();
+  });
+
+  it("runs Python previews through managed and terminal actions from the workbench and hotkeys", async () => {
+    const invokeMock = vi.mocked(invoke);
+    renderExplorer();
+    await screen.findByText("runner.py");
+
+    fireEvent.click(screen.getByText("runner.py"));
+    const pythonModeToggle = await waitFor(() => {
+      const control = getChromeControl("previewModeToggle");
+      expect(control).not.toBeNull();
+      return control as HTMLElement;
+    });
+
+    fireEvent.click(
+      within(pythonModeToggle).getByRole("button", {
+        name: "Run",
+      }),
+    );
+
+    const runManagedButton = await screen.findByRole("button", {
+      name: "Run Managed",
+    });
+    await userEvent.click(runManagedButton);
+
+    await screen.findByText("Latest Managed Run");
+    expect(
+      invokeMock.mock.calls.some(
+        ([command, args]) =>
+          command === "python_execute" &&
+          JSON.stringify(args ?? {}).includes("runner.py"),
+      ),
+    ).toBe(true);
+
+    const runInTerminalButton = screen.getByRole("button", {
+      name: "Run in Terminal",
+    });
+    await userEvent.click(runInTerminalButton);
+
+    await waitFor(() => {
+      expect(getExplorerEmbeddedTerminalLayer()).toHaveAttribute(
+        "data-overlay-explorer-terminal-placement",
+        "bottom",
+      );
+      expect(
+        previewTerminalMockState.lastProps?.pendingCommandRequest?.command,
+      ).toContain("runner.py");
+    });
+
+    fireEvent.click(
+      within(getChromeControl("previewModeToggle") as HTMLElement).getByRole(
+        "button",
+        {
+          name: "Edit",
+        },
+      ),
+    );
+
+    const monacoEditor = await screen.findByTestId("monaco-editor");
+    monacoEditor.tabIndex = -1;
+    monacoEditor.focus();
+    fireEvent.keyDown(monacoEditor, { key: "F9", bubbles: true });
+
+    await waitFor(() => {
+      expect(
+        invokeMock.mock.calls.filter(([command]) => command === "python_execute")
+          .length,
+      ).toBeGreaterThanOrEqual(2);
+      expect(screen.getByTestId("explorer-python-workbench")).toHaveAttribute(
+        "data-python-workflow-tab",
+        "run",
+      );
+    });
+
+    fireEvent.keyDown(monacoEditor, {
+      key: "F9",
+      ctrlKey: true,
+      bubbles: true,
+    });
+
+    await waitFor(() => {
+      expect(
+        previewTerminalMockState.lastProps?.pendingCommandRequest?.command,
+      ).toContain("runner.py");
     });
   });
 

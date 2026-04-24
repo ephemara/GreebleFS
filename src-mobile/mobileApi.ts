@@ -1,4 +1,5 @@
 import type {
+  MobileLayoutSettings,
   MobilePreviewResponse,
   MobileSearchResponse,
   MobileSearchStatusResponse,
@@ -9,6 +10,12 @@ import type {
 
 export const MOBILE_PAGE_SIZE = 160;
 export const MOBILE_SEARCH_DEBOUNCE_MS = 160;
+
+export interface MobileBrowseRequestOptions
+  extends Pick<
+    MobileLayoutSettings,
+    "showHiddenFiles" | "sortBy" | "sortOrder" | "directoriesFirst"
+  > {}
 
 function encodeRelativePath(path: string): string {
   return path
@@ -54,6 +61,7 @@ export function buildMobileThumbnailUrl(
 export async function fetchMobileListing(
   path: string,
   offset: number,
+  options: MobileBrowseRequestOptions,
   limit: number = MOBILE_PAGE_SIZE,
 ): Promise<MobileShareListingResponse> {
   const params = new URLSearchParams();
@@ -62,6 +70,10 @@ export async function fetchMobileListing(
   }
   params.set("offset", String(offset));
   params.set("limit", String(limit));
+  params.set("showHiddenFiles", String(options.showHiddenFiles));
+  params.set("sortBy", options.sortBy);
+  params.set("sortOrder", options.sortOrder);
+  params.set("directoriesFirst", String(options.directoriesFirst));
 
   return fetchJson<MobileShareListingResponse>(`/api/list?${params.toString()}`);
 }
@@ -84,11 +96,15 @@ export async function fetchMobileSearchStatus(): Promise<MobileSearchStatusRespo
 
 export async function fetchMobileSearchResults(
   query: string,
-  limit = 48,
+  options: {
+    showHiddenFiles: boolean;
+    limit?: number;
+  },
 ): Promise<MobileSearchResponse> {
   const params = new URLSearchParams({
     query,
-    limit: String(limit),
+    limit: String(options.limit ?? 48),
+    showHiddenFiles: String(options.showHiddenFiles),
   });
   return fetchJson<MobileSearchResponse>(`/api/search?${params.toString()}`);
 }
@@ -115,10 +131,17 @@ export async function cancelMobileSearchScan(): Promise<void> {
 
 export async function fetchMobilePreview(
   relativePath: string,
+  options?: {
+    showHiddenFiles?: boolean;
+  },
 ): Promise<MobilePreviewResponse> {
-  return fetchJson<MobilePreviewResponse>(
-    `/api/preview?${buildPathQuery(relativePath)}`,
-  );
+  const params = new URLSearchParams({
+    path: relativePath,
+  });
+  if (typeof options?.showHiddenFiles === "boolean") {
+    params.set("showHiddenFiles", String(options.showHiddenFiles));
+  }
+  return fetchJson<MobilePreviewResponse>(`/api/preview?${params.toString()}`);
 }
 
 export interface MobileUploadTask {

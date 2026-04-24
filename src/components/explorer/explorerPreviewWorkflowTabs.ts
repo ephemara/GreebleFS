@@ -16,6 +16,7 @@ export interface ExplorerPreviewWorkflowTab
 export interface ExplorerPreviewWorkflowTabSetOptions {
   previewLabel?: string;
   editLabel?: string;
+  includePreviewTab?: boolean;
   includeEditTab?: boolean;
   wildcardTabs?: readonly ExplorerPreviewWildcardWorkflowTab[];
 }
@@ -47,16 +48,21 @@ function normalizeWildcardTabs(
 export function buildExplorerPreviewWorkflowTabs({
   previewLabel = "Preview",
   editLabel = "Edit",
+  includePreviewTab = true,
   includeEditTab = true,
   wildcardTabs = [],
 }: ExplorerPreviewWorkflowTabSetOptions = {}): ExplorerPreviewWorkflowTab[] {
   return [
-    {
-      id: "preview",
-      label: previewLabel,
-      baseMode: "preview",
-      kind: "preview",
-    },
+    ...(includePreviewTab
+      ? [
+          {
+            id: "preview",
+            label: previewLabel,
+            baseMode: "preview",
+            kind: "preview",
+          } satisfies ExplorerPreviewWorkflowTab,
+        ]
+      : []),
     ...(includeEditTab
       ? [
           {

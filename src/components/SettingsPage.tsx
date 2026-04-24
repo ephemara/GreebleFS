@@ -18,9 +18,6 @@ import {
   getThemeSourceLabel,
   overlayFontCatalog,
   overlayThemePresets,
-  parseImportedTheme,
-  serializeTheme,
-  upsertCustomTheme,
   type OverlayThemeDefinition,
   type ResolvedOverlayAppearance,
 } from '../config/appearance';
@@ -153,6 +150,25 @@ import {
   type LoadedLayoutManifest,
 } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
+import {
+  createThemeBundleManifestFromThemeDefinition,
+  parseImportedThemeBundle,
+  serializeThemeBundle,
+  upsertCustomThemeBundle,
+  type OverlayThemeBundleManifest,
+} from '../config/themePackages';
+import {
+  themeAppearancePackSystemConfig,
+  themeEnginePackSystemConfig,
+  themeInteractionMotionPackSystemConfig,
+  themeRecipePackSystemConfig,
+  themeShellRendererPackSystemConfig,
+  type LoadedThemeAppearancePack,
+  type LoadedThemeEnginePack,
+  type LoadedThemeInteractionMotionPack,
+  type LoadedThemeRecipePack,
+  type LoadedThemeShellRendererPack,
+} from '../config/themeBundlePacks';
 import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import type { LoadedExplorerHomePack } from '../config/homePackages';
 import type { LoadedExplorerMenuPack } from '../config/menuPacks';
@@ -716,6 +732,480 @@ function TopBarCatalogCard({
   );
 }
 
+type ThemeBundleCatalogSourceKind = 'standalone' | 'theme-contributed';
+
+interface ThemeBundleCatalogEntry<TPack extends {
+  id: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  warnings: string[];
+  localId?: string;
+}> {
+  pack: TPack;
+  sourceKind: ThemeBundleCatalogSourceKind;
+  sourceLabel: string;
+  sourceThemeId?: string;
+}
+
+interface ThemeBundleCatalogCardOption {
+  id: string;
+  name: string;
+  description?: string;
+  badges: string[];
+  summary?: string;
+  sourceKind: ThemeBundleCatalogSourceKind;
+  sourceLabel: string;
+  tags: string[];
+  warnings: string[];
+}
+
+function buildThemeBundleCatalogEntries<TPack extends {
+  id: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  warnings: string[];
+  localId?: string;
+}>(
+  standalonePacks: readonly TPack[],
+  themePackages: readonly LoadedOverlayThemePackage[],
+  selectLocalPacks: (themePackage: LoadedOverlayThemePackage) => readonly TPack[],
+): ThemeBundleCatalogEntry<TPack>[] {
+  const entryMap = new Map<string, ThemeBundleCatalogEntry<TPack>>();
+
+  for (const pack of standalonePacks) {
+    entryMap.set(pack.id, {
+      pack,
+      sourceKind: 'standalone',
+      sourceLabel: 'Standalone',
+    });
+  }
+
+  for (const themePackage of themePackages) {
+    for (const pack of selectLocalPacks(themePackage)) {
+      entryMap.set(pack.id, {
+        pack,
+        sourceKind: 'theme-contributed',
+        sourceLabel: themePackage.name,
+        sourceThemeId: themePackage.id,
+      });
+    }
+  }
+
+  return [...entryMap.values()].sort((left, right) => left.pack.name.localeCompare(right.pack.name));
+}
+
+function findThemeBundleCatalogPack<TPack extends { id: string; localId?: string }>(
+  packs: readonly TPack[],
+  requestedId: string | null | undefined,
+): TPack | null {
+  const trimmedId = requestedId?.trim();
+  if (!trimmedId) {
+    return null;
+  }
+
+  return packs.find(pack => pack.id === trimmedId || pack.localId === trimmedId) ?? null;
+}
+
+function findThemeBundleCatalogEntry<TPack extends {
+  id: string;
+  localId?: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  warnings: string[];
+}>(
+  entries: readonly ThemeBundleCatalogEntry<TPack>[],
+  requestedId: string | null | undefined,
+): ThemeBundleCatalogEntry<TPack> | null {
+  const trimmedId = requestedId?.trim();
+  if (!trimmedId) {
+    return null;
+  }
+
+  return entries.find(entry => entry.pack.id === trimmedId || entry.pack.localId === trimmedId) ?? null;
+}
+
+function findEmbeddedThemeBundleManifestPack<TPack extends { id?: string; name?: string }>(
+  packs: readonly TPack[] | undefined,
+  requestedId: string | null | undefined,
+): TPack | null {
+  const trimmedId = requestedId?.trim();
+  if (!trimmedId) {
+    return null;
+  }
+
+  return packs?.find(pack => pack.id?.trim() === trimmedId) ?? null;
+}
+
+function resolveThemeBundlePackSelectionLabel<
+  TPack extends {
+    id: string;
+    name: string;
+    description?: string;
+    tags: string[];
+    warnings: string[];
+    localId?: string;
+  },
+  TEmbedded extends { id?: string; name?: string },
+>(args: {
+  requestedId: string | null | undefined;
+  entries: readonly ThemeBundleCatalogEntry<TPack>[];
+  activeThemeLocalPacks?: readonly TPack[];
+  embeddedPacks?: readonly TEmbedded[];
+  emptyLabel?: string;
+}): string {
+  const trimmedId = args.requestedId?.trim();
+  if (!trimmedId) {
+    return args.emptyLabel ?? 'None';
+  }
+
+  const localMatch = findThemeBundleCatalogPack(args.activeThemeLocalPacks ?? [], trimmedId);
+  if (localMatch) {
+    return localMatch.name;
+  }
+
+  const catalogMatch = findThemeBundleCatalogEntry(args.entries, trimmedId);
+  if (catalogMatch) {
+    return catalogMatch.pack.name;
+  }
+
+  const embeddedMatch = findEmbeddedThemeBundleManifestPack(args.embeddedPacks, trimmedId);
+  if (embeddedMatch?.name?.trim()) {
+    return embeddedMatch.name.trim();
+  }
+
+  return trimmedId;
+}
+
+function getThemeBundleCatalogSourceBadgeLabel(sourceKind: ThemeBundleCatalogSourceKind, sourceLabel: string): string {
+  return sourceKind === 'standalone' ? 'Standalone' : sourceLabel;
+}
+
+function ThemeBundlePackCatalogCard({
+  option,
+  active,
+  border,
+  accent,
+  text,
+  muted,
+  onClick,
+}: {
+  option: ThemeBundleCatalogCardOption;
+  active: boolean;
+  border: string;
+  accent: string;
+  text: string;
+  muted: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded border p-3 text-left transition-colors"
+      style={{
+        borderColor: active ? accent : border,
+        background: active ? `${accent}12` : 'rgba(255,255,255,0.03)',
+        color: text,
+        boxShadow: active ? `inset 0 0 0 1px ${accent}22` : 'none',
+      }}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-semibold">{option.name}</div>
+          {option.description ? (
+            <div className="mt-1 text-[11px] leading-4 opacity-55">{option.description}</div>
+          ) : null}
+        </div>
+        {active ? <ThemeBadge label="Pinned" active /> : null}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <ThemeBadge
+          label={getThemeBundleCatalogSourceBadgeLabel(option.sourceKind, option.sourceLabel)}
+          active={active}
+        />
+        {option.badges.map(badge => (
+          <ThemeBadge key={`${option.id}-${badge}`} label={badge} active={active} />
+        ))}
+        {option.tags.slice(0, 2).map(tag => (
+          <ThemeBadge key={`${option.id}-tag-${tag}`} label={tag} />
+        ))}
+        {option.warnings.length > 0 ? <ThemeBadge label={`${option.warnings.length} warnings`} /> : null}
+      </div>
+
+      {option.summary ? (
+        <div className="mt-3 text-[10px] uppercase tracking-[0.12em]" style={{ color: active ? accent : muted }}>
+          {option.summary}
+        </div>
+      ) : null}
+    </button>
+  );
+}
+
+function countThemeBundleCatalogEntriesBySource<TPack extends {
+  id: string;
+  name: string;
+  description?: string;
+  tags: string[];
+  warnings: string[];
+  localId?: string;
+}>(
+  entries: readonly ThemeBundleCatalogEntry<TPack>[],
+): { standaloneCount: number; themeContributedCount: number } {
+  return entries.reduce((counts, entry) => {
+    if (entry.sourceKind === 'standalone') {
+      counts.standaloneCount += 1;
+    } else {
+      counts.themeContributedCount += 1;
+    }
+    return counts;
+  }, {
+    standaloneCount: 0,
+    themeContributedCount: 0,
+  });
+}
+
+function hasThemeBundlePackSelection<
+  TPack extends {
+    id: string;
+    localId?: string;
+    name: string;
+    description?: string;
+    tags: string[];
+    warnings: string[];
+  },
+  TEmbedded extends { id?: string; name?: string },
+>(args: {
+  requestedId: string | null | undefined;
+  entries: readonly ThemeBundleCatalogEntry<TPack>[];
+  activeThemeLocalPacks?: readonly TPack[];
+  embeddedPacks?: readonly TEmbedded[];
+}): boolean {
+  const trimmedId = args.requestedId?.trim();
+  if (!trimmedId) {
+    return true;
+  }
+
+  return Boolean(
+    findThemeBundleCatalogPack(args.activeThemeLocalPacks ?? [], trimmedId)
+    || findThemeBundleCatalogEntry(args.entries, trimmedId)
+    || findEmbeddedThemeBundleManifestPack(args.embeddedPacks, trimmedId),
+  );
+}
+
+function ThemeBundlePackSettingsSection({
+  icon,
+  title,
+  subtitle,
+  catalogTitle,
+  catalogDescription,
+  directoryPath,
+  currentLabel,
+  modeLabel,
+  loading,
+  catalogCountLabel,
+  standaloneCount,
+  themeContributedCount,
+  followThemeDetail,
+  followThemeDescription,
+  followThemeResolvedLabel,
+  followThemeSourceLabel,
+  followThemeActive,
+  activeOptionId,
+  options,
+  emptyCatalogMessage,
+  pinnedSelectionMissingMessage,
+  error,
+  errorLabel,
+  warnings,
+  warningsLabel,
+  onFollowTheme,
+  onSelect,
+  onRefresh,
+  onOpenFolder,
+  border,
+  accent,
+  text,
+  muted,
+}: {
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+  catalogTitle: string;
+  catalogDescription: ReactNode;
+  directoryPath: string;
+  currentLabel: string;
+  modeLabel: string;
+  loading: boolean;
+  catalogCountLabel: string;
+  standaloneCount: number;
+  themeContributedCount: number;
+  followThemeDetail: string;
+  followThemeDescription: string;
+  followThemeResolvedLabel: string;
+  followThemeSourceLabel: string;
+  followThemeActive: boolean;
+  activeOptionId: string | null;
+  options: readonly ThemeBundleCatalogCardOption[];
+  emptyCatalogMessage: string;
+  pinnedSelectionMissingMessage?: string | null;
+  error?: string | null;
+  errorLabel: string;
+  warnings: readonly string[];
+  warningsLabel: string;
+  onFollowTheme: () => void;
+  onSelect: (id: string) => void;
+  onRefresh: () => void | Promise<void>;
+  onOpenFolder: () => void | Promise<void>;
+  border: string;
+  accent: string;
+  text: string;
+  muted: string;
+}) {
+  return (
+    <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+      <SectionTitle
+        icon={icon}
+        title={title}
+        subtitle={subtitle}
+      />
+
+      <div className="mt-4 space-y-4">
+        <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{catalogTitle}</div>
+              <div className="mt-1 text-[11px] opacity-40">
+                {catalogDescription}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void onRefresh()}
+                className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+              >
+                <RefreshCw size={10} />
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={() => void onOpenFolder()}
+                className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
+              >
+                Open Folder
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+            <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+              Current: {currentLabel}
+            </span>
+            <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+              Mode: {modeLabel}
+            </span>
+            <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+              {loading ? 'Scanning Catalog' : catalogCountLabel}
+            </span>
+            <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+              Standalone: {standaloneCount}
+            </span>
+            <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+              Theme Contributed: {themeContributedCount}
+            </span>
+          </div>
+
+          <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}33`, background: `${accent}10`, color: text }}>
+            {followThemeDetail}
+          </div>
+
+          <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}>
+            Standalone packs refresh from <code>{directoryPath}</code>. Theme-contributed packs still refresh from the active theme bundle pipeline.
+          </div>
+
+          {error ? (
+            <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+              {errorLabel}: {error}
+            </div>
+          ) : null}
+
+          {warnings.length > 0 ? (
+            <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
+              <div className="font-semibold uppercase tracking-[0.12em]">{warningsLabel}</div>
+              <div className="mt-2 space-y-1.5">
+                {warnings.map(warning => (
+                  <div key={warning}>{warning}</div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {pinnedSelectionMissingMessage ? (
+            <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
+              {pinnedSelectionMissingMessage}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Selection</label>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            <button
+              type="button"
+              onClick={onFollowTheme}
+              className="w-full rounded border p-3 text-left transition-colors"
+              style={{
+                borderColor: followThemeActive ? accent : border,
+                background: followThemeActive ? `${accent}12` : 'rgba(255,255,255,0.03)',
+                color: text,
+                boxShadow: followThemeActive ? `inset 0 0 0 1px ${accent}22` : 'none',
+              }}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold">Follow Theme</div>
+                  <div className="mt-1 text-[11px] leading-4 opacity-55">
+                    {followThemeDescription}
+                  </div>
+                </div>
+                {followThemeActive ? <ThemeBadge label="Active" active /> : null}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <ThemeBadge label={`Resolved ${followThemeResolvedLabel}`} active={followThemeActive} />
+                <ThemeBadge label={followThemeSourceLabel} />
+                <ThemeBadge label="Theme Default" />
+              </div>
+            </button>
+
+            {options.length > 0 ? options.map(option => (
+              <ThemeBundlePackCatalogCard
+                key={option.id}
+                option={option}
+                active={!followThemeActive && option.id === activeOptionId}
+                border={border}
+                accent={accent}
+                text={text}
+                muted={muted}
+                onClick={() => onSelect(option.id)}
+              />
+            )) : (
+              <div className="rounded border px-3 py-3 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                {emptyCatalogMessage}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ColorToken({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="flex flex-col gap-1 rounded border p-2" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
@@ -1060,6 +1550,14 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <Music size={14} />;
     case 'appearance':
       return <Palette size={14} />;
+    case 'appearance-packs':
+      return <Sparkles size={14} />;
+    case 'theme-recipes':
+      return <LayoutGrid size={14} />;
+    case 'theme-engines':
+      return <Cpu size={14} />;
+    case 'shell-renderers':
+      return <MonitorPlay size={14} />;
     case 'top-bars':
       return <SlidersHorizontal size={14} />;
     case 'icons':
@@ -1110,9 +1608,17 @@ interface SettingsSectionContentContext {
   screenshotDefaultOutputAction: ScreenshotOutputActionId;
   screenshotShowGrid: boolean;
   audioFolderCount: number;
+  appearancePackSelectionSummary: string;
+  availableAppearancePacksCount: number;
   availableWallpapersCount: number;
   themeWallpaperAvailable: boolean;
   wallpaperFailureCount: number;
+  themeRecipeSelectionSummary: string;
+  availableThemeRecipePacksCount: number;
+  themeEngineSelectionSummary: string;
+  availableThemeEnginePacksCount: number;
+  shellRendererSelectionSummary: string;
+  availableShellRenderersCount: number;
   availableShadersCount: number;
   shaderPerformanceLabel: string;
   shaderFailureCount: number;
@@ -1209,7 +1715,27 @@ function getSettingsSectionContent(
     case 'appearance':
       return {
         summary: `${context.effectiveThemeName} · ${formatOverlayVisualControlValue('opacity', context.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', context.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', context.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', context.appBlurStrength)} BL`,
-        detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, UI typography, and the theme package catalog that can now contribute separate top bars.',
+        detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, UI typography, and the theme bundle catalog that orchestrates the modular authored lanes.',
+      };
+    case 'appearance-packs':
+      return {
+        summary: `${context.appearancePackSelectionSummary} · ${context.availableAppearancePacksCount} packs`,
+        detail: 'Appearance packs own palette, fonts, visuals, and shell identity primitives. Leave them on Follow Theme to respect the active bundle, or pin one to start mixing shells intentionally.',
+      };
+    case 'theme-recipes':
+      return {
+        summary: `${context.themeRecipeSelectionSummary} · ${context.availableThemeRecipePacksCount} packs`,
+        detail: 'Theme recipe packs own workbench, explorer, and dock recipe lanes. Pin one when you want to swap the shell composition language without changing the whole bundle.',
+      };
+    case 'theme-engines':
+      return {
+        summary: `${context.themeEngineSelectionSummary} · ${context.availableThemeEnginePacksCount} packs`,
+        detail: 'Theme engine packs own design tokens, render styles, layout primitives, and compatibility defaults. This is the deeper presentation/runtime lane behind the visible shell.',
+      };
+    case 'shell-renderers':
+      return {
+        summary: `${context.shellRendererSelectionSummary} · ${context.availableShellRenderersCount} renderers`,
+        detail: 'Shell renderers control the runtime renderer module itself. Leave Follow Theme on for bundle defaults, or pin a renderer when you want the shell runtime to break away from the bundle.',
       };
     case 'top-bars':
       return {
@@ -1244,7 +1770,7 @@ function getSettingsSectionContent(
     case 'theme-json':
       return {
         summary: 'Direct JSON editing',
-        detail: 'Paste, tweak, and version full theme definitions directly when the recipe controls and token pickers are not enough.',
+        detail: 'Paste, tweak, and version theme bundle manifests directly when the picker surfaces are not enough.',
       };
   }
 
@@ -1459,6 +1985,31 @@ export function SettingsPage({
   themePackagesLoading,
   themePackagesError,
   themePackagesWarnings,
+  appearancePacks = [],
+  appearancePacksDirectory = themeAppearancePackSystemConfig.appearancesDirectory,
+  appearancePacksLoading = false,
+  appearancePacksError = null,
+  appearancePacksWarnings = [],
+  interactionMotionPacks = [],
+  interactionMotionPacksDirectory = themeInteractionMotionPackSystemConfig.interactionMotionDirectory,
+  interactionMotionPacksLoading = false,
+  interactionMotionPacksError = null,
+  interactionMotionPacksWarnings = [],
+  shellRenderers = [],
+  shellRenderersDirectory = themeShellRendererPackSystemConfig.shellRenderersDirectory,
+  shellRenderersLoading = false,
+  shellRenderersError = null,
+  shellRenderersWarnings = [],
+  themeRecipePacks = [],
+  themeRecipePacksDirectory = themeRecipePackSystemConfig.themeRecipesDirectory,
+  themeRecipePacksLoading = false,
+  themeRecipePacksError = null,
+  themeRecipePacksWarnings = [],
+  themeEnginePacks = [],
+  themeEnginePacksDirectory = themeEnginePackSystemConfig.themeEnginesDirectory,
+  themeEnginePacksLoading = false,
+  themeEnginePacksError = null,
+  themeEnginePacksWarnings = [],
   iconThemePackages = [],
   iconThemePackagesDirectory = iconThemeSystemConfig.iconThemesDirectory,
   iconThemePackagesLoading = false,
@@ -1470,6 +2021,16 @@ export function SettingsPage({
   onRefreshMenuPacks = async () => { },
   onOpenHomePacksFolder = async () => { },
   onOpenMenuPacksFolder = async () => { },
+  onRefreshAppearancePacks = async () => { },
+  onOpenAppearancePacksFolder = async () => { },
+  onRefreshInteractionMotionPacks = async () => { },
+  onOpenInteractionMotionPacksFolder = async () => { },
+  onRefreshShellRenderers = async () => { },
+  onOpenShellRenderersFolder = async () => { },
+  onRefreshThemeRecipePacks = async () => { },
+  onOpenThemeRecipesFolder = async () => { },
+  onRefreshThemeEnginePacks = async () => { },
+  onOpenThemeEnginesFolder = async () => { },
   onRefreshThemes,
   onOpenThemesFolder,
   onRefreshIconThemes = async () => { },
@@ -1521,6 +2082,31 @@ export function SettingsPage({
   themePackagesLoading: boolean;
   themePackagesError: string | null;
   themePackagesWarnings: string[];
+  appearancePacks?: LoadedThemeAppearancePack[];
+  appearancePacksDirectory?: string;
+  appearancePacksLoading?: boolean;
+  appearancePacksError?: string | null;
+  appearancePacksWarnings?: string[];
+  interactionMotionPacks?: LoadedThemeInteractionMotionPack[];
+  interactionMotionPacksDirectory?: string;
+  interactionMotionPacksLoading?: boolean;
+  interactionMotionPacksError?: string | null;
+  interactionMotionPacksWarnings?: string[];
+  shellRenderers?: LoadedThemeShellRendererPack[];
+  shellRenderersDirectory?: string;
+  shellRenderersLoading?: boolean;
+  shellRenderersError?: string | null;
+  shellRenderersWarnings?: string[];
+  themeRecipePacks?: LoadedThemeRecipePack[];
+  themeRecipePacksDirectory?: string;
+  themeRecipePacksLoading?: boolean;
+  themeRecipePacksError?: string | null;
+  themeRecipePacksWarnings?: string[];
+  themeEnginePacks?: LoadedThemeEnginePack[];
+  themeEnginePacksDirectory?: string;
+  themeEnginePacksLoading?: boolean;
+  themeEnginePacksError?: string | null;
+  themeEnginePacksWarnings?: string[];
   iconThemePackages?: LoadedIconThemePackage[];
   iconThemePackagesDirectory?: string;
   iconThemePackagesLoading?: boolean;
@@ -1532,6 +2118,16 @@ export function SettingsPage({
   onRefreshMenuPacks?: () => Promise<void>;
   onOpenHomePacksFolder?: () => Promise<void>;
   onOpenMenuPacksFolder?: () => Promise<void>;
+  onRefreshAppearancePacks?: () => Promise<void>;
+  onOpenAppearancePacksFolder?: () => Promise<void>;
+  onRefreshInteractionMotionPacks?: () => Promise<void>;
+  onOpenInteractionMotionPacksFolder?: () => Promise<void>;
+  onRefreshShellRenderers?: () => Promise<void>;
+  onOpenShellRenderersFolder?: () => Promise<void>;
+  onRefreshThemeRecipePacks?: () => Promise<void>;
+  onOpenThemeRecipesFolder?: () => Promise<void>;
+  onRefreshThemeEnginePacks?: () => Promise<void>;
+  onOpenThemeEnginesFolder?: () => Promise<void>;
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
   onRefreshIconThemes?: () => Promise<void>;
@@ -1658,7 +2254,7 @@ export function SettingsPage({
   const homeTasks = useExplorerTaskSnapshots();
 
   const profileOptions = useMemo(() => getExternalTerminalProfileOptions(platform), [platform]);
-  const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.app.baseTheme));
+  const [themeDraft, setThemeDraft] = useState('');
   const [themeImportError, setThemeImportError] = useState<string | null>(null);
   const [folderIconSearch, setFolderIconSearch] = useState('');
   const [startupSyncPending, setStartupSyncPending] = useState(false);
@@ -2195,6 +2791,368 @@ export function SettingsPage({
     () => new Map(themePackages.map(pkg => [pkg.id, pkg] as const)),
     [themePackages],
   );
+  const customThemeBundleLookup = useMemo(
+    () => new Map(
+      settings.appearance.customThemeBundles
+        .filter((bundle): bundle is OverlayThemeBundleManifest & { id: string } => typeof bundle.id === 'string' && bundle.id.trim().length > 0)
+        .map(bundle => [bundle.id.trim(), bundle] as const),
+    ),
+    [settings.appearance.customThemeBundles],
+  );
+  const activeManagedThemeId = settings.appearance.activeThemeId;
+  const activeThemePackage = useMemo(
+    () => themePackageLookup.get(activeManagedThemeId) ?? null,
+    [activeManagedThemeId, themePackageLookup],
+  );
+  const activeThemeBundleManifest = useMemo(() => (
+    customThemeBundleLookup.get(activeManagedThemeId)
+    ?? activeThemePackage?.manifest
+    ?? createThemeBundleManifestFromThemeDefinition(appearance.baseTheme)
+  ), [activeManagedThemeId, activeThemePackage, appearance.baseTheme, customThemeBundleLookup]);
+  const editableThemeBundle = useMemo(() => {
+    const synthesizedBundle = createThemeBundleManifestFromThemeDefinition(appearance.baseTheme);
+    return {
+      ...activeThemeBundleManifest,
+      appearancePackId: synthesizedBundle.appearancePackId,
+      interactionMotionPackId: synthesizedBundle.interactionMotionPackId,
+      themeRecipeId: synthesizedBundle.themeRecipeId,
+      themeEngineId: synthesizedBundle.themeEngineId,
+      embedded: synthesizedBundle.embedded,
+    } satisfies OverlayThemeBundleManifest;
+  }, [activeThemeBundleManifest, appearance.baseTheme]);
+  const availableAppearancePackEntries = useMemo(
+    () => buildThemeBundleCatalogEntries(
+      appearancePacks,
+      themePackages,
+      themePackage => themePackage.localCatalogs?.appearancePacks ?? [],
+    ),
+    [appearancePacks, themePackages],
+  );
+  const availableRecipePackEntries = useMemo(
+    () => buildThemeBundleCatalogEntries(
+      themeRecipePacks,
+      themePackages,
+      themePackage => themePackage.localCatalogs?.themeRecipePacks ?? [],
+    ),
+    [themePackages, themeRecipePacks],
+  );
+  const availableThemeEngineEntries = useMemo(
+    () => buildThemeBundleCatalogEntries(
+      themeEnginePacks,
+      themePackages,
+      themePackage => themePackage.localCatalogs?.themeEnginePacks ?? [],
+    ),
+    [themeEnginePacks, themePackages],
+  );
+  const availableShellRendererEntries = useMemo(
+    () => buildThemeBundleCatalogEntries(
+      shellRenderers,
+      themePackages,
+      themePackage => themePackage.localCatalogs?.shellRenderers ?? [],
+    ),
+    [shellRenderers, themePackages],
+  );
+  const availableInteractionMotionPackEntries = useMemo(
+    () => buildThemeBundleCatalogEntries(
+      interactionMotionPacks,
+      themePackages,
+      themePackage => themePackage.localCatalogs?.interactionMotionPacks ?? [],
+    ),
+    [interactionMotionPacks, themePackages],
+  );
+  const activeThemeLocalCatalogs = activeThemePackage?.localCatalogs;
+  const effectiveThemeBundleManifest = editableThemeBundle;
+  const activeThemeBundleLabel = activeThemeBundleManifest.name?.trim() || appearance.baseTheme.name;
+  const appearancePackThemeDefaultLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: effectiveThemeBundleManifest.appearancePackId,
+    entries: availableAppearancePackEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.appearancePacks,
+    embeddedPacks: effectiveThemeBundleManifest.embedded?.appearancePacks,
+    emptyLabel: 'Built-In Appearance',
+  }), [
+    activeThemeLocalCatalogs?.appearancePacks,
+    availableAppearancePackEntries,
+    effectiveThemeBundleManifest.appearancePackId,
+    effectiveThemeBundleManifest.embedded?.appearancePacks,
+  ]);
+  const themeRecipeThemeDefaultLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: effectiveThemeBundleManifest.themeRecipeId,
+    entries: availableRecipePackEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.themeRecipePacks,
+    embeddedPacks: effectiveThemeBundleManifest.embedded?.themeRecipes,
+    emptyLabel: 'Built-In Recipe',
+  }), [
+    activeThemeLocalCatalogs?.themeRecipePacks,
+    availableRecipePackEntries,
+    effectiveThemeBundleManifest.embedded?.themeRecipes,
+    effectiveThemeBundleManifest.themeRecipeId,
+  ]);
+  const themeEngineThemeDefaultLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: effectiveThemeBundleManifest.themeEngineId,
+    entries: availableThemeEngineEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.themeEnginePacks,
+    embeddedPacks: effectiveThemeBundleManifest.embedded?.themeEngines,
+    emptyLabel: 'Built-In Engine',
+  }), [
+    activeThemeLocalCatalogs?.themeEnginePacks,
+    availableThemeEngineEntries,
+    effectiveThemeBundleManifest.embedded?.themeEngines,
+    effectiveThemeBundleManifest.themeEngineId,
+  ]);
+  const shellRendererThemeDefaultLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: effectiveThemeBundleManifest.rendererId,
+    entries: availableShellRendererEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.shellRenderers,
+    emptyLabel: 'Default Renderer',
+  }), [
+    activeThemeLocalCatalogs?.shellRenderers,
+    availableShellRendererEntries,
+    effectiveThemeBundleManifest.rendererId,
+  ]);
+  const interactionMotionPackThemeDefaultLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: effectiveThemeBundleManifest.interactionMotionPackId,
+    entries: availableInteractionMotionPackEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.interactionMotionPacks,
+    embeddedPacks: effectiveThemeBundleManifest.embedded?.interactionMotionPacks,
+    emptyLabel: 'Built-In Motion',
+  }), [
+    activeThemeLocalCatalogs?.interactionMotionPacks,
+    availableInteractionMotionPackEntries,
+    effectiveThemeBundleManifest.embedded?.interactionMotionPacks,
+    effectiveThemeBundleManifest.interactionMotionPackId,
+  ]);
+  const appearancePackSelectionLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: settings.appearance.activeAppearancePackId ?? effectiveThemeBundleManifest.appearancePackId,
+    entries: availableAppearancePackEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.appearancePacks,
+    embeddedPacks: effectiveThemeBundleManifest.embedded?.appearancePacks,
+    emptyLabel: 'Built-In Appearance',
+  }), [
+    activeThemeLocalCatalogs?.appearancePacks,
+    availableAppearancePackEntries,
+    effectiveThemeBundleManifest.appearancePackId,
+    effectiveThemeBundleManifest.embedded?.appearancePacks,
+    settings.appearance.activeAppearancePackId,
+  ]);
+  const themeRecipeSelectionLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: settings.appearance.activeThemeRecipeId ?? effectiveThemeBundleManifest.themeRecipeId,
+    entries: availableRecipePackEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.themeRecipePacks,
+    embeddedPacks: effectiveThemeBundleManifest.embedded?.themeRecipes,
+    emptyLabel: 'Built-In Recipe',
+  }), [
+    activeThemeLocalCatalogs?.themeRecipePacks,
+    availableRecipePackEntries,
+    effectiveThemeBundleManifest.embedded?.themeRecipes,
+    effectiveThemeBundleManifest.themeRecipeId,
+    settings.appearance.activeThemeRecipeId,
+  ]);
+  const themeEngineSelectionLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: settings.appearance.activeThemeEngineId ?? effectiveThemeBundleManifest.themeEngineId,
+    entries: availableThemeEngineEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.themeEnginePacks,
+    embeddedPacks: effectiveThemeBundleManifest.embedded?.themeEngines,
+    emptyLabel: 'Built-In Engine',
+  }), [
+    activeThemeLocalCatalogs?.themeEnginePacks,
+    availableThemeEngineEntries,
+    effectiveThemeBundleManifest.embedded?.themeEngines,
+    effectiveThemeBundleManifest.themeEngineId,
+    settings.appearance.activeThemeEngineId,
+  ]);
+  const shellRendererSelectionLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: settings.appearance.activeShellRendererId ?? effectiveThemeBundleManifest.rendererId,
+    entries: availableShellRendererEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.shellRenderers,
+    emptyLabel: 'Default Renderer',
+  }), [
+    activeThemeLocalCatalogs?.shellRenderers,
+    availableShellRendererEntries,
+    effectiveThemeBundleManifest.rendererId,
+    settings.appearance.activeShellRendererId,
+  ]);
+  const appearancePackSelectionSummary = `${settings.appearance.activeAppearancePackId == null ? 'Follow Theme' : 'Pinned'} · ${appearancePackSelectionLabel}`;
+  const themeRecipeSelectionSummary = `${settings.appearance.activeThemeRecipeId == null ? 'Follow Theme' : 'Pinned'} · ${themeRecipeSelectionLabel}`;
+  const themeEngineSelectionSummary = `${settings.appearance.activeThemeEngineId == null ? 'Follow Theme' : 'Pinned'} · ${themeEngineSelectionLabel}`;
+  const shellRendererSelectionSummary = `${settings.appearance.activeShellRendererId == null ? 'Follow Theme' : 'Pinned'} · ${shellRendererSelectionLabel}`;
+  const appearancePackCatalogCounts = useMemo(
+    () => countThemeBundleCatalogEntriesBySource(availableAppearancePackEntries),
+    [availableAppearancePackEntries],
+  );
+  const themeRecipeCatalogCounts = useMemo(
+    () => countThemeBundleCatalogEntriesBySource(availableRecipePackEntries),
+    [availableRecipePackEntries],
+  );
+  const themeEngineCatalogCounts = useMemo(
+    () => countThemeBundleCatalogEntriesBySource(availableThemeEngineEntries),
+    [availableThemeEngineEntries],
+  );
+  const shellRendererCatalogCounts = useMemo(
+    () => countThemeBundleCatalogEntriesBySource(availableShellRendererEntries),
+    [availableShellRendererEntries],
+  );
+  const interactionMotionPackCatalogCounts = useMemo(
+    () => countThemeBundleCatalogEntriesBySource(availableInteractionMotionPackEntries),
+    [availableInteractionMotionPackEntries],
+  );
+  const appearancePackPinnedSelectionMissing = useMemo(
+    () => settings.appearance.activeAppearancePackId != null && !hasThemeBundlePackSelection({
+      requestedId: settings.appearance.activeAppearancePackId,
+      entries: availableAppearancePackEntries,
+      activeThemeLocalPacks: activeThemeLocalCatalogs?.appearancePacks,
+      embeddedPacks: effectiveThemeBundleManifest.embedded?.appearancePacks,
+    }),
+    [
+      activeThemeLocalCatalogs?.appearancePacks,
+      availableAppearancePackEntries,
+      effectiveThemeBundleManifest.embedded?.appearancePacks,
+      settings.appearance.activeAppearancePackId,
+    ],
+  );
+  const themeRecipePinnedSelectionMissing = useMemo(
+    () => settings.appearance.activeThemeRecipeId != null && !hasThemeBundlePackSelection({
+      requestedId: settings.appearance.activeThemeRecipeId,
+      entries: availableRecipePackEntries,
+      activeThemeLocalPacks: activeThemeLocalCatalogs?.themeRecipePacks,
+      embeddedPacks: effectiveThemeBundleManifest.embedded?.themeRecipes,
+    }),
+    [
+      activeThemeLocalCatalogs?.themeRecipePacks,
+      availableRecipePackEntries,
+      effectiveThemeBundleManifest.embedded?.themeRecipes,
+      settings.appearance.activeThemeRecipeId,
+    ],
+  );
+  const themeEnginePinnedSelectionMissing = useMemo(
+    () => settings.appearance.activeThemeEngineId != null && !hasThemeBundlePackSelection({
+      requestedId: settings.appearance.activeThemeEngineId,
+      entries: availableThemeEngineEntries,
+      activeThemeLocalPacks: activeThemeLocalCatalogs?.themeEnginePacks,
+      embeddedPacks: effectiveThemeBundleManifest.embedded?.themeEngines,
+    }),
+    [
+      activeThemeLocalCatalogs?.themeEnginePacks,
+      availableThemeEngineEntries,
+      effectiveThemeBundleManifest.embedded?.themeEngines,
+      settings.appearance.activeThemeEngineId,
+    ],
+  );
+  const shellRendererPinnedSelectionMissing = useMemo(
+    () => settings.appearance.activeShellRendererId != null && !hasThemeBundlePackSelection({
+      requestedId: settings.appearance.activeShellRendererId,
+      entries: availableShellRendererEntries,
+      activeThemeLocalPacks: activeThemeLocalCatalogs?.shellRenderers,
+    }),
+    [
+      activeThemeLocalCatalogs?.shellRenderers,
+      availableShellRendererEntries,
+      settings.appearance.activeShellRendererId,
+    ],
+  );
+  const activeAppearancePackCardId = useMemo(
+    () => findThemeBundleCatalogEntry(availableAppearancePackEntries, settings.appearance.activeAppearancePackId)?.pack.id
+      ?? settings.appearance.activeAppearancePackId,
+    [availableAppearancePackEntries, settings.appearance.activeAppearancePackId],
+  );
+  const activeThemeRecipeCardId = useMemo(
+    () => findThemeBundleCatalogEntry(availableRecipePackEntries, settings.appearance.activeThemeRecipeId)?.pack.id
+      ?? settings.appearance.activeThemeRecipeId,
+    [availableRecipePackEntries, settings.appearance.activeThemeRecipeId],
+  );
+  const activeThemeEngineCardId = useMemo(
+    () => findThemeBundleCatalogEntry(availableThemeEngineEntries, settings.appearance.activeThemeEngineId)?.pack.id
+      ?? settings.appearance.activeThemeEngineId,
+    [availableThemeEngineEntries, settings.appearance.activeThemeEngineId],
+  );
+  const activeShellRendererCardId = useMemo(
+    () => findThemeBundleCatalogEntry(availableShellRendererEntries, settings.appearance.activeShellRendererId)?.pack.id
+      ?? settings.appearance.activeShellRendererId,
+    [availableShellRendererEntries, settings.appearance.activeShellRendererId],
+  );
+  const appearancePackFollowThemeDetail = `${activeThemeBundleLabel} currently resolves the appearance lane to ${appearancePackThemeDefaultLabel}.`;
+  const themeRecipeFollowThemeDetail = `${activeThemeBundleLabel} currently resolves the recipe lane to ${themeRecipeThemeDefaultLabel}.`;
+  const themeEngineFollowThemeDetail = `${activeThemeBundleLabel} currently resolves the theme engine lane to ${themeEngineThemeDefaultLabel}.`;
+  const shellRendererFollowThemeDetail = effectiveThemeBundleManifest.rendererId
+    ? `${activeThemeBundleLabel} currently resolves the renderer lane to ${shellRendererThemeDefaultLabel}.`
+    : `${activeThemeBundleLabel} does not pin a renderer pack, so the shell is using its built-in renderer runtime.`;
+  const appearancePackCardOptions = useMemo(() => availableAppearancePackEntries.map(({ pack, sourceKind, sourceLabel }) => ({
+    id: pack.id,
+    name: pack.name,
+    description: pack.description,
+    badges: [
+      pack.appearance.palette?.accent ? 'Accent' : null,
+      pack.appearance.fonts?.ui ? 'UI Font' : null,
+      pack.appearance.visuals?.length ? `Visuals ${pack.appearance.visuals.length}` : null,
+    ].filter((value): value is string => Boolean(value)),
+    summary: [
+      pack.appearance.palette?.accent ? `Accent ${pack.appearance.palette.accent}` : null,
+      pack.appearance.fonts?.ui ? `UI ${pack.appearance.fonts.ui}` : null,
+      pack.appearance.visuals?.length ? `Visuals ${pack.appearance.visuals.length}` : null,
+    ].filter((value): value is string => Boolean(value)).join(' · '),
+    sourceKind,
+    sourceLabel,
+    tags: pack.tags,
+    warnings: pack.warnings,
+  } satisfies ThemeBundleCatalogCardOption)), [availableAppearancePackEntries]);
+  const themeRecipeCardOptions = useMemo(() => availableRecipePackEntries.map(({ pack, sourceKind, sourceLabel }) => ({
+    id: pack.id,
+    name: pack.name,
+    description: pack.description,
+    badges: [
+      pack.recipe.workbench ? 'Workbench' : null,
+      pack.recipe.explorer ? 'Explorer' : null,
+      pack.recipe.dock ? 'Dock' : null,
+    ].filter((value): value is string => Boolean(value)),
+    summary: [
+      pack.recipe.workbench ? 'Workbench' : null,
+      pack.recipe.explorer ? 'Explorer' : null,
+      pack.recipe.dock ? 'Dock' : null,
+    ].filter((value): value is string => Boolean(value)).join(' · '),
+    sourceKind,
+    sourceLabel,
+    tags: pack.tags,
+    warnings: pack.warnings,
+  } satisfies ThemeBundleCatalogCardOption)), [availableRecipePackEntries]);
+  const themeEngineCardOptions = useMemo(() => availableThemeEngineEntries.map(({ pack, sourceKind, sourceLabel }) => ({
+    id: pack.id,
+    name: pack.name,
+    description: pack.description,
+    badges: [
+      pack.engineManifest.renderStyles.length > 0 ? `Render ${pack.engineManifest.renderStyles.length}` : null,
+      pack.engineManifest.designTokens.length > 0 ? `Tokens ${pack.engineManifest.designTokens.length}` : null,
+      pack.engineManifest.compatibility.shellBlueprints.length > 0 ? `Shell ${pack.engineManifest.compatibility.shellBlueprints.length}` : null,
+    ].filter((value): value is string => Boolean(value)),
+    summary: [
+      pack.engineManifest.renderStyles.length > 0 ? `${pack.engineManifest.renderStyles.length} render styles` : null,
+      pack.engineManifest.designTokens.length > 0 ? `${pack.engineManifest.designTokens.length} tokens` : null,
+      pack.engineManifest.compatibility.shellBlueprints.length > 0 ? `${pack.engineManifest.compatibility.shellBlueprints.length} shell targets` : null,
+    ].filter((value): value is string => Boolean(value)).join(' · '),
+    sourceKind,
+    sourceLabel,
+    tags: pack.tags,
+    warnings: pack.warnings,
+  } satisfies ThemeBundleCatalogCardOption)), [availableThemeEngineEntries]);
+  const shellRendererCardOptions = useMemo(() => availableShellRendererEntries.map(({ pack, sourceKind, sourceLabel }) => ({
+    id: pack.id,
+    name: pack.name,
+    description: pack.description ?? pack.renderer?.description,
+    badges: [
+      pack.renderer?.fallbackRuntime ? `Runtime ${pack.renderer.fallbackRuntime}` : null,
+      pack.renderer?.supportsLiveSwap ? 'Live Swap' : null,
+      pack.renderer?.capabilities.wallpaperScene ? 'Wallpaper' : null,
+      pack.renderer?.capabilities.customScreens ? 'Screens' : null,
+    ].filter((value): value is string => Boolean(value)),
+    summary: [
+      pack.renderer?.fallbackRuntime ? `Runtime ${pack.renderer.fallbackRuntime}` : null,
+      pack.renderer?.supportsLiveSwap ? 'Live swap' : null,
+      pack.renderer?.capabilities.wallpaperScene ? 'Wallpaper scene' : null,
+      pack.renderer?.capabilities.customScreens ? 'Custom screens' : null,
+    ].filter((value): value is string => Boolean(value)).join(' · '),
+    sourceKind,
+    sourceLabel,
+    tags: pack.tags,
+    warnings: [...pack.warnings, ...(pack.renderer?.error ? [pack.renderer.error] : [])],
+  } satisfies ThemeBundleCatalogCardOption)), [availableShellRendererEntries]);
   const normalizedActiveIconThemeId = useMemo(
     () => normalizeIconThemePackageSelectionId(settings.appearance.activeIconThemeId),
     [settings.appearance.activeIconThemeId],
@@ -2576,8 +3534,8 @@ export function SettingsPage({
   }, [appearance.fonts.ui, settings.terminal.fontFamily]);
 
   useEffect(() => {
-    setThemeDraft(serializeTheme(appAppearance.baseTheme));
-  }, [appAppearance.baseTheme]);
+    setThemeDraft(serializeThemeBundle(editableThemeBundle));
+  }, [editableThemeBundle]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2603,22 +3561,37 @@ export function SettingsPage({
     };
   }, [settings.layout.configPath]);
 
-  const persistTheme = useCallback((nextTheme: OverlayThemeDefinition) => {
+  const persistThemeBundle = useCallback((nextBundle: OverlayThemeBundleManifest) => {
+    const requestedId = nextBundle.id?.trim() || activeManagedThemeId || appAppearance.baseTheme.id;
     const builtinIds = new Set(overlayThemePresets.map(themeDef => themeDef.id));
-    const needsCustomId = builtinIds.has(nextTheme.id);
-    const customTheme = {
-      ...nextTheme,
-      id: needsCustomId ? `${nextTheme.id}-custom` : nextTheme.id,
-      name: needsCustomId ? `${nextTheme.name} Custom` : nextTheme.name,
-    };
-    const nextCustomThemes = upsertCustomTheme(settings.appearance.customThemes, customTheme);
+    const collidesWithManagedTheme = builtinIds.has(requestedId) || themePackageLookup.has(requestedId);
+    const fallbackBundleName = activeThemeBundleManifest.name?.trim() || appAppearance.baseTheme.name;
+    const customBundle = {
+      ...nextBundle,
+      id: collidesWithManagedTheme ? `${requestedId}-custom` : requestedId,
+      name: collidesWithManagedTheme
+        ? `${nextBundle.name?.trim() || fallbackBundleName} Custom`
+        : (nextBundle.name?.trim() || fallbackBundleName),
+    } satisfies OverlayThemeBundleManifest;
+    const nextCustomThemeBundles = upsertCustomThemeBundle(
+      settings.appearance.customThemeBundles,
+      customBundle,
+    );
     updateAppearance({
-      customThemes: nextCustomThemes,
-      activeThemeId: customTheme.id,
+      customThemeBundles: nextCustomThemeBundles,
+      activeThemeId: customBundle.id,
     });
-    setThemeDraft(serializeTheme(customTheme));
-    return customTheme;
-  }, [settings.appearance.customThemes, updateAppearance]);
+    setThemeDraft(serializeThemeBundle(customBundle));
+    return customBundle;
+  }, [
+    activeManagedThemeId,
+    activeThemeBundleManifest.name,
+    appAppearance.baseTheme.id,
+    appAppearance.baseTheme.name,
+    settings.appearance.customThemeBundles,
+    themePackageLookup,
+    updateAppearance,
+  ]);
 
   const applyThemeSelection = useCallback((themeId: string) => {
     applyThemeSelectionWithDefaults(themeId);
@@ -2857,24 +3830,43 @@ export function SettingsPage({
   ]);
 
   const updateThemePalette = useCallback((patch: Partial<OverlayThemeDefinition['palette']>) => {
-    persistTheme({
-      ...appAppearance.baseTheme,
-      palette: {
-        ...appAppearance.baseTheme.palette,
-        ...patch,
+    const baseEmbeddedAppearancePack = editableThemeBundle.embedded?.appearancePacks?.[0] ?? {
+      id: editableThemeBundle.appearancePackId ?? 'appearance-base',
+      name: `${activeThemeBundleLabel} Appearance`,
+      extendsThemeId: appAppearance.baseTheme.extendsThemeId,
+      palette: appAppearance.baseTheme.palette,
+      effects: appAppearance.baseTheme.effects,
+      xterm: appAppearance.baseTheme.xterm,
+      fonts: appAppearance.baseTheme.fonts,
+      visuals: appAppearance.baseTheme.visuals,
+      cssVars: appAppearance.baseTheme.cssVars,
+    };
+    persistThemeBundle({
+      ...editableThemeBundle,
+      embedded: {
+        ...editableThemeBundle.embedded,
+        appearancePacks: [
+          {
+            ...baseEmbeddedAppearancePack,
+            palette: {
+              ...(baseEmbeddedAppearancePack.palette ?? {}),
+              ...patch,
+            },
+          },
+        ],
       },
     });
-  }, [appAppearance.baseTheme, persistTheme]);
+  }, [activeThemeBundleLabel, appAppearance.baseTheme, editableThemeBundle, persistThemeBundle]);
 
   const applyThemeDraft = useCallback(() => {
     try {
-      const importedTheme = parseImportedTheme(themeDraft);
-      persistTheme(importedTheme);
+      const importedThemeBundle = parseImportedThemeBundle(themeDraft);
+      persistThemeBundle(importedThemeBundle);
       setThemeImportError(null);
     } catch (error) {
       setThemeImportError(`Theme import failed: ${String(error)}`);
     }
-  }, [persistTheme, themeDraft]);
+  }, [persistThemeBundle, themeDraft]);
 
   const seedDefaultBookmarks = useCallback(async () => {
     try {
@@ -3768,9 +4760,17 @@ export function SettingsPage({
     screenshotDefaultOutputAction: settings.screenshots.defaultOutputAction,
     screenshotShowGrid: settings.screenshots.showGrid,
     audioFolderCount: settings.audio.vst3AdditionalFolders.length,
+    appearancePackSelectionSummary,
+    availableAppearancePacksCount: availableAppearancePackEntries.length,
     availableWallpapersCount: availableWallpapers.length,
     themeWallpaperAvailable,
     wallpaperFailureCount: wallpaperFailures.length,
+    themeRecipeSelectionSummary,
+    availableThemeRecipePacksCount: availableRecipePackEntries.length,
+    themeEngineSelectionSummary,
+    availableThemeEnginePacksCount: availableThemeEngineEntries.length,
+    shellRendererSelectionSummary,
+    availableShellRenderersCount: availableShellRendererEntries.length,
     availableShadersCount: availableShaders.length,
     shaderPerformanceLabel: shaderPerformanceProfile.label,
     shaderFailureCount: shaderFailures.length,
@@ -3803,6 +4803,10 @@ export function SettingsPage({
     homePackSummary,
     iconThemeSelectionSummary,
     activeMenuPack?.name,
+    appearancePackSelectionSummary,
+    availableAppearancePackEntries.length,
+    availableRecipePackEntries.length,
+    availableShellRendererEntries.length,
     installedLocalModelCount,
     interactionMotionSurfaceCatalog.length,
     layoutManifestState.manifest.profiles.length,
@@ -3810,6 +4814,7 @@ export function SettingsPage({
     menuPacks.length,
     platform,
     semanticIndexModelSummary,
+    shellRendererSelectionSummary,
     settings.audio.vst3AdditionalFolders.length,
     settings.appearance.appBlurStrength,
     settings.appearance.appOpacity,
@@ -3833,6 +4838,9 @@ export function SettingsPage({
     shaderFailures.length,
     shaderPerformanceProfile.label,
     systemPresentationState,
+    themeEngineSelectionSummary,
+    availableThemeEngineEntries.length,
+    themeRecipeSelectionSummary,
     themeWallpaperAvailable,
     topBarSelectionSummary,
     workspaceRoots.length,
@@ -5041,10 +6049,10 @@ export function SettingsPage({
                   <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Packages</div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Bundles</div>
                         <p className="mt-1 text-[11px] opacity-40">
-                          Drop packaged themes into <code>{themePackagesDirectory}</code> and GreebleFS will discover them as curated themes with assets, visuals, and any modular top-bar contributions they publish.
-                          Official pilot themes surface first, built-ins stay supported, and archive material remains selectable without dominating the page.
+                          Drop theme bundles into <code>{themePackagesDirectory}</code> and GreebleFS will compose them as orchestration manifests over modular authored packs such as appearance, top bars, icons, wallpapers, shaders, animations, motion, renderers, and engine recipes.
+                          Official pilot bundles surface first, built-ins stay supported, and archive material remains selectable without dominating the page.
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -5070,7 +6078,7 @@ export function SettingsPage({
 
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
                       <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                        {themePackagesLoading ? 'Scanning Packages' : `${themePackages.length} Package${themePackages.length === 1 ? '' : 's'} Loaded`}
+                        {themePackagesLoading ? 'Scanning Bundles' : `${themePackages.length} Bundle${themePackages.length === 1 ? '' : 's'} Loaded`}
                       </span>
                       <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
                         Active Source: {getThemeSourceLabel(editableTheme)}
@@ -5267,6 +6275,182 @@ export function SettingsPage({
               </section>
             )}
 
+            {activeSection === 'appearance-packs' && (
+              <ThemeBundlePackSettingsSection
+                icon={<Sparkles size={12} />}
+                title="Appearance Packs"
+                subtitle="Palette, typography, visuals, and CSS-var identity packs that can follow the active theme bundle or stay pinned independently."
+                catalogTitle="Appearance Pack Catalog"
+                catalogDescription={(
+                  <>
+                    Standalone appearance packs now live in <code>{appearancePacksDirectory}</code>. Theme bundles can still contribute local packs, so users can swap palette, fonts, and atmosphere without rebuilding the entire theme package.
+                  </>
+                )}
+                directoryPath={appearancePacksDirectory}
+                currentLabel={appearancePackSelectionLabel}
+                modeLabel={settings.appearance.activeAppearancePackId == null ? 'Follow Theme' : 'Pinned'}
+                loading={appearancePacksLoading}
+                catalogCountLabel={`${availableAppearancePackEntries.length} pack${availableAppearancePackEntries.length === 1 ? '' : 's'}`}
+                standaloneCount={appearancePackCatalogCounts.standaloneCount}
+                themeContributedCount={appearancePackCatalogCounts.themeContributedCount}
+                followThemeDetail={appearancePackFollowThemeDetail}
+                followThemeDescription="Let the active theme bundle choose the appearance pack. Palette, typography, visuals, and CSS vars continue to resolve from the current theme composition."
+                followThemeResolvedLabel={appearancePackThemeDefaultLabel}
+                followThemeSourceLabel={activeThemeBundleLabel}
+                followThemeActive={settings.appearance.activeAppearancePackId == null}
+                activeOptionId={activeAppearancePackCardId}
+                options={appearancePackCardOptions}
+                emptyCatalogMessage="No standalone or theme-contributed appearance packs are available yet."
+                pinnedSelectionMissingMessage={appearancePackPinnedSelectionMissing
+                  ? `The pinned appearance pack id ${settings.appearance.activeAppearancePackId} is no longer available, so the shell is temporarily following the active theme bundle until you pin another one.`
+                  : null}
+                error={appearancePacksError}
+                errorLabel="Appearance-pack scan failed"
+                warnings={appearancePacksWarnings}
+                warningsLabel="Appearance-pack warnings"
+                onFollowTheme={() => updateAppearance({ activeAppearancePackId: null })}
+                onSelect={packId => updateAppearance({ activeAppearancePackId: packId })}
+                onRefresh={onRefreshAppearancePacks}
+                onOpenFolder={onOpenAppearancePacksFolder}
+                border={border}
+                accent={accent}
+                text={text}
+                muted={muted}
+              />
+            )}
+
+            {activeSection === 'theme-recipes' && (
+              <ThemeBundlePackSettingsSection
+                icon={<LayoutGrid size={12} />}
+                title="Theme Recipes"
+                subtitle="Workbench, explorer, and dock recipe packs that can follow the active theme bundle or stay pinned independently."
+                catalogTitle="Theme Recipe Catalog"
+                catalogDescription={(
+                  <>
+                    Standalone theme recipe packs now live in <code>{themeRecipePacksDirectory}</code>. Theme bundles can still contribute local recipe packs, so users can swap workbench, explorer, and dock presentation lanes independently from palette or renderer choices.
+                  </>
+                )}
+                directoryPath={themeRecipePacksDirectory}
+                currentLabel={themeRecipeSelectionLabel}
+                modeLabel={settings.appearance.activeThemeRecipeId == null ? 'Follow Theme' : 'Pinned'}
+                loading={themeRecipePacksLoading}
+                catalogCountLabel={`${availableRecipePackEntries.length} pack${availableRecipePackEntries.length === 1 ? '' : 's'}`}
+                standaloneCount={themeRecipeCatalogCounts.standaloneCount}
+                themeContributedCount={themeRecipeCatalogCounts.themeContributedCount}
+                followThemeDetail={themeRecipeFollowThemeDetail}
+                followThemeDescription="Let the active theme bundle choose the recipe pack. Workbench, explorer, and dock recipes continue to resolve from the current bundle composition."
+                followThemeResolvedLabel={themeRecipeThemeDefaultLabel}
+                followThemeSourceLabel={activeThemeBundleLabel}
+                followThemeActive={settings.appearance.activeThemeRecipeId == null}
+                activeOptionId={activeThemeRecipeCardId}
+                options={themeRecipeCardOptions}
+                emptyCatalogMessage="No standalone or theme-contributed recipe packs are available yet."
+                pinnedSelectionMissingMessage={themeRecipePinnedSelectionMissing
+                  ? `The pinned theme recipe id ${settings.appearance.activeThemeRecipeId} is no longer available, so the shell is temporarily following the active theme bundle until you pin another one.`
+                  : null}
+                error={themeRecipePacksError}
+                errorLabel="Theme-recipe scan failed"
+                warnings={themeRecipePacksWarnings}
+                warningsLabel="Theme-recipe warnings"
+                onFollowTheme={() => updateAppearance({ activeThemeRecipeId: null })}
+                onSelect={packId => updateAppearance({ activeThemeRecipeId: packId })}
+                onRefresh={onRefreshThemeRecipePacks}
+                onOpenFolder={onOpenThemeRecipesFolder}
+                border={border}
+                accent={accent}
+                text={text}
+                muted={muted}
+              />
+            )}
+
+            {activeSection === 'theme-engines' && (
+              <ThemeBundlePackSettingsSection
+                icon={<Cpu size={12} />}
+                title="Theme Engines"
+                subtitle="Design tokens, render styles, navigation/layout primitives, and engine-default packs that can follow the active theme bundle or stay pinned."
+                catalogTitle="Theme Engine Catalog"
+                catalogDescription={(
+                  <>
+                    Standalone theme engine packs now live in <code>{themeEnginePacksDirectory}</code>. Theme bundles can still contribute local engines, so users can swap token graphs, render styles, and engine defaults without changing the entire bundle.
+                  </>
+                )}
+                directoryPath={themeEnginePacksDirectory}
+                currentLabel={themeEngineSelectionLabel}
+                modeLabel={settings.appearance.activeThemeEngineId == null ? 'Follow Theme' : 'Pinned'}
+                loading={themeEnginePacksLoading}
+                catalogCountLabel={`${availableThemeEngineEntries.length} pack${availableThemeEngineEntries.length === 1 ? '' : 's'}`}
+                standaloneCount={themeEngineCatalogCounts.standaloneCount}
+                themeContributedCount={themeEngineCatalogCounts.themeContributedCount}
+                followThemeDetail={themeEngineFollowThemeDetail}
+                followThemeDescription="Let the active theme bundle choose the engine pack. Design tokens, render styles, layout primitives, navigation patterns, and engine defaults stay aligned to the current theme composition."
+                followThemeResolvedLabel={themeEngineThemeDefaultLabel}
+                followThemeSourceLabel={activeThemeBundleLabel}
+                followThemeActive={settings.appearance.activeThemeEngineId == null}
+                activeOptionId={activeThemeEngineCardId}
+                options={themeEngineCardOptions}
+                emptyCatalogMessage="No standalone or theme-contributed theme engines are available yet."
+                pinnedSelectionMissingMessage={themeEnginePinnedSelectionMissing
+                  ? `The pinned theme engine id ${settings.appearance.activeThemeEngineId} is no longer available, so the shell is temporarily following the active theme bundle until you pin another one.`
+                  : null}
+                error={themeEnginePacksError}
+                errorLabel="Theme-engine scan failed"
+                warnings={themeEnginePacksWarnings}
+                warningsLabel="Theme-engine warnings"
+                onFollowTheme={() => updateAppearance({ activeThemeEngineId: null })}
+                onSelect={packId => updateAppearance({ activeThemeEngineId: packId })}
+                onRefresh={onRefreshThemeEnginePacks}
+                onOpenFolder={onOpenThemeEnginesFolder}
+                border={border}
+                accent={accent}
+                text={text}
+                muted={muted}
+              />
+            )}
+
+            {activeSection === 'shell-renderers' && (
+              <ThemeBundlePackSettingsSection
+                icon={<MonitorPlay size={12} />}
+                title="Shell Renderers"
+                subtitle="Renderer modules that can follow the active theme bundle or stay pinned independently."
+                catalogTitle="Shell Renderer Catalog"
+                catalogDescription={(
+                  <>
+                    Standalone shell renderers now live in <code>{shellRenderersDirectory}</code>. Theme bundles can still contribute local renderers, so users can pin a different runtime shell renderer without discarding the current theme bundle.
+                  </>
+                )}
+                directoryPath={shellRenderersDirectory}
+                currentLabel={shellRendererSelectionLabel}
+                modeLabel={settings.appearance.activeShellRendererId == null ? 'Follow Theme' : 'Pinned'}
+                loading={shellRenderersLoading}
+                catalogCountLabel={`${availableShellRendererEntries.length} renderer${availableShellRendererEntries.length === 1 ? '' : 's'}`}
+                standaloneCount={shellRendererCatalogCounts.standaloneCount}
+                themeContributedCount={shellRendererCatalogCounts.themeContributedCount}
+                followThemeDetail={shellRendererFollowThemeDetail}
+                followThemeDescription="Let the active theme bundle choose the renderer lane. If the bundle omits a renderer, the shell falls back to the built-in workbench runtime."
+                followThemeResolvedLabel={shellRendererThemeDefaultLabel}
+                followThemeSourceLabel={activeThemeBundleLabel}
+                followThemeActive={settings.appearance.activeShellRendererId == null}
+                activeOptionId={activeShellRendererCardId}
+                options={shellRendererCardOptions}
+                emptyCatalogMessage="No standalone or theme-contributed shell renderers are available yet."
+                pinnedSelectionMissingMessage={shellRendererPinnedSelectionMissing
+                  ? `The pinned shell renderer id ${settings.appearance.activeShellRendererId} is no longer available, so the shell is temporarily following the active theme bundle until you pin another one.`
+                  : null}
+                error={shellRenderersError}
+                errorLabel="Shell-renderer scan failed"
+                warnings={shellRenderersWarnings}
+                warningsLabel="Shell-renderer warnings"
+                onFollowTheme={() => updateAppearance({ activeShellRendererId: null })}
+                onSelect={packId => updateAppearance({ activeShellRendererId: packId })}
+                onRefresh={onRefreshShellRenderers}
+                onOpenFolder={onOpenShellRenderersFolder}
+                border={border}
+                accent={accent}
+                text={text}
+                muted={muted}
+              />
+            )}
+
             {activeSection === 'top-bars' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
                 <SectionTitle
@@ -5281,7 +6465,7 @@ export function SettingsPage({
                       <div>
                         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Top Bar Catalog</div>
                         <p className="mt-1 text-[11px] opacity-40">
-                          Top bars now have their own authored storage root in <code>{topBarPackagesDirectory}</code>. Built-ins always stay available, standalone top-bar packages live there, and theme packages in <code>{themePackagesDirectory}</code> can still contribute additional shell chrome workflows without forcing users to swap the entire theme.
+                          Top bars now have their own authored storage root in <code>{topBarPackagesDirectory}</code>. Built-ins always stay available, standalone top-bar packages live there, and theme bundles in <code>{themePackagesDirectory}</code> can still contribute additional shell chrome workflows without forcing users to swap the entire theme.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -5328,7 +6512,7 @@ export function SettingsPage({
                     </div>
 
                     <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}>
-                      Standalone top bars refresh from <code>{topBarPackagesDirectory}</code>. Theme-contributed top bars still refresh from the theme package pipeline in <code>{themePackagesDirectory}</code>.
+                      Standalone top bars refresh from <code>{topBarPackagesDirectory}</code>. Theme-contributed top bars still refresh from the theme bundle pipeline in <code>{themePackagesDirectory}</code>.
                     </div>
 
                     {topBarPackagesError ? (
@@ -6694,6 +7878,72 @@ export function SettingsPage({
                 />
 
                 <div className="mt-4 space-y-4">
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Interaction Motion Pack Catalog</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Standalone motion packs now live in <code>{interactionMotionPacksDirectory}</code>. Theme bundles can still contribute local motion packs, while the controls below keep handling lane-level preset routing and per-surface tuning.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void onRefreshInteractionMotionPacks()}
+                          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          <RefreshCw size={10} />
+                          Refresh
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void onOpenInteractionMotionPacksFolder()}
+                          className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
+                        >
+                          Open Folder
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        Theme Default: {interactionMotionPackThemeDefaultLabel}
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        {interactionMotionPacksLoading ? 'Scanning Catalog' : `Catalog: ${availableInteractionMotionPackEntries.length} packs`}
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        Standalone: {interactionMotionPackCatalogCounts.standaloneCount}
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        Theme Contributed: {interactionMotionPackCatalogCounts.themeContributedCount}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}33`, background: `${accent}10`, color: text }}>
+                      {activeThemeBundleLabel} currently resolves the interaction motion lane to {interactionMotionPackThemeDefaultLabel}.
+                    </div>
+
+                    {interactionMotionPacksError ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+                        Interaction-motion pack scan failed: {interactionMotionPacksError}
+                      </div>
+                    ) : null}
+
+                    {interactionMotionPacksWarnings.length > 0 ? (
+                      <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
+                        <div className="font-semibold uppercase tracking-[0.12em]">Interaction-motion warnings</div>
+                        <div className="mt-2 space-y-1.5">
+                          {interactionMotionPacksWarnings.map(warning => (
+                            <div key={warning}>{warning}</div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
                   <div
                     className="rounded border p-3"
                     {...interactionMotionCard.motionDataAttributes}
@@ -7134,6 +8384,27 @@ export function SettingsPage({
                         'audioWorkbenchPreviousSilence',
                         'audioWorkbenchNextSilence',
                         'audioWorkbenchExportClip',
+                      ].includes(definition.key))
+                      .map(definition => (
+                        <ShortcutField
+                          key={definition.key}
+                          bindingKey={definition.key}
+                          value={settings.keybindings[definition.key]}
+                          onCommit={value => updateKeybindings({ [definition.key]: value })}
+                        />
+                      ))}
+                  </div>
+                </div>
+                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Python Workbench Hotkeys</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Keyboard coverage for the Python preview lane: managed runs and terminal fallback stay on the same settings-backed shortcut system as the other explorer workbenches.
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {hotkeyBindingDefinitions
+                      .filter(definition => [
+                        'pythonWorkbenchRunManaged',
+                        'pythonWorkbenchRunInTerminal',
                       ].includes(definition.key))
                       .map(definition => (
                         <ShortcutField
@@ -9162,6 +10433,233 @@ export function SettingsPage({
                   <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="max-w-[760px]">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Mobile Theme</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Colors, fonts, icon theme, folder rules, and thumbnails still come from the paired desktop shell. This lane only shapes the mobile browse layout so the phone UI can feel like a premium files app instead of a raw list.
+                        </p>
+                      </div>
+                      <div className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        {settings.mobile.layout.viewMode === 'list'
+                          ? 'List'
+                          : settings.mobile.layout.viewMode === 'icons-l'
+                            ? 'Large Icons'
+                            : settings.mobile.layout.viewMode === 'icons-s'
+                              ? 'Compact Icons'
+                              : 'Medium Icons'}
+                        {' · '}
+                        {settings.mobile.layout.sortBy}
+                        {' · '}
+                        {settings.mobile.layout.showHiddenFiles ? 'Hidden On' : 'Hidden Off'}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+                      <div className="space-y-4">
+                        <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                            <LayoutGrid size={12} />
+                            View Mode
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
+                            {[
+                              { id: 'icons-l', label: 'Large Icons' },
+                              { id: 'icons-m', label: 'Medium Icons' },
+                              { id: 'icons-s', label: 'Compact Icons' },
+                              { id: 'list', label: 'List' },
+                            ].map(option => {
+                              const active = settings.mobile.layout.viewMode === option.id;
+                              return (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  onClick={() => updateMobile({
+                                    layout: {
+                                      ...settings.mobile.layout,
+                                      viewMode: option.id as typeof settings.mobile.layout.viewMode,
+                                    },
+                                  })}
+                                  className="rounded px-3 py-3 text-left transition-colors"
+                                  style={{
+                                    border: `1px solid ${active ? accent : border}`,
+                                    background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                                    color: text,
+                                  }}
+                                >
+                                  <div className="text-[11px] font-semibold">{option.label}</div>
+                                  <div className="mt-1 text-[10px] opacity-45">
+                                    {option.id === 'list'
+                                      ? 'Dense rows for long folders'
+                                      : option.id === 'icons-l'
+                                        ? 'Artwork-first browsing'
+                                        : option.id === 'icons-s'
+                                          ? 'More cards per screen'
+                                          : 'Balanced card density'}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                              <span>Grid Zoom</span>
+                              <span>{settings.mobile.layout.gridZoom.toFixed(2)}x</span>
+                            </div>
+                            <div className="mt-3">
+                              <PremiumSlider
+                                value={settings.mobile.layout.gridZoom}
+                                min={0.7}
+                                max={1.8}
+                                step={0.05}
+                                onChange={value => updateMobile({
+                                  layout: {
+                                    ...settings.mobile.layout,
+                                    gridZoom: value,
+                                  },
+                                })}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                            <SlidersHorizontal size={12} />
+                            Sorting
+                          </div>
+                          <div className="mt-3 grid gap-2 md:grid-cols-2">
+                            {[
+                              { id: 'name', label: 'Name' },
+                              { id: 'date', label: 'Date' },
+                              { id: 'size', label: 'Size' },
+                              { id: 'type', label: 'Type' },
+                            ].map(option => {
+                              const active = settings.mobile.layout.sortBy === option.id;
+                              return (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  onClick={() => updateMobile({
+                                    layout: {
+                                      ...settings.mobile.layout,
+                                      sortBy: option.id as typeof settings.mobile.layout.sortBy,
+                                    },
+                                  })}
+                                  className="rounded px-3 py-3 text-left transition-colors"
+                                  style={{
+                                    border: `1px solid ${active ? accent : border}`,
+                                    background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                                    color: text,
+                                  }}
+                                >
+                                  <div className="text-[11px] font-semibold">{option.label}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            {[
+                              { id: 'asc', label: 'Ascending', icon: <ArrowUp size={12} /> },
+                              { id: 'desc', label: 'Descending', icon: <ArrowDown size={12} /> },
+                            ].map(option => {
+                              const active = settings.mobile.layout.sortOrder === option.id;
+                              return (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  onClick={() => updateMobile({
+                                    layout: {
+                                      ...settings.mobile.layout,
+                                      sortOrder: option.id as typeof settings.mobile.layout.sortOrder,
+                                    },
+                                  })}
+                                  className="inline-flex items-center justify-center gap-2 rounded px-3 py-3 text-[11px] font-semibold transition-colors"
+                                  style={{
+                                    border: `1px solid ${active ? accent : border}`,
+                                    background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                                    color: text,
+                                  }}
+                                >
+                                  {option.icon}
+                                  {option.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        {[
+                          {
+                            id: 'directoriesFirst',
+                            title: 'Directories First',
+                            body: 'Keep folder cards ahead of files so traversal feels like a real mobile explorer instead of a flat dump.',
+                            active: settings.mobile.layout.directoriesFirst,
+                          },
+                          {
+                            id: 'showHiddenFiles',
+                            title: 'Show Hidden Files',
+                            body: 'Off by default so the phone opens into visible content instead of a wall of dotfiles and config folders.',
+                            active: settings.mobile.layout.showHiddenFiles,
+                          },
+                          {
+                            id: 'showTabLabels',
+                            title: 'Show Dock Labels',
+                            body: 'Keep text labels under the bottom dock icons. Turn this off if you want a tighter Files-style navigation bar.',
+                            active: settings.mobile.layout.showTabLabels,
+                          },
+                        ].map(toggle => (
+                          <button
+                            key={toggle.id}
+                            type="button"
+                            onClick={() => updateMobile({
+                              layout: {
+                                ...settings.mobile.layout,
+                                [toggle.id]: !toggle.active,
+                              },
+                            })}
+                            className="w-full rounded border px-3 py-3 text-left transition-colors"
+                            style={{
+                              borderColor: toggle.active ? `${accent}66` : border,
+                              background: toggle.active ? `${accent}12` : 'rgba(255,255,255,0.02)',
+                              color: text,
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-[11px] font-semibold">{toggle.title}</div>
+                                <div className="mt-1 text-[11px] leading-5 opacity-45">{toggle.body}</div>
+                              </div>
+                              <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: toggle.active ? `${accent}66` : border, background: 'rgba(255,255,255,0.03)', color: toggle.active ? accent : muted }}>
+                                {toggle.active ? 'On' : 'Off'}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+
+                        <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                            <Type size={12} />
+                            Current Mobile Layout
+                          </div>
+                          <div className="mt-3 space-y-2 opacity-75">
+                            <div>View: {settings.mobile.layout.viewMode}</div>
+                            <div>Sort: {settings.mobile.layout.sortBy} · {settings.mobile.layout.sortOrder}</div>
+                            <div>Grid Zoom: {settings.mobile.layout.gridZoom.toFixed(2)}x</div>
+                            <div>Folders First: {settings.mobile.layout.directoriesFirst ? 'enabled' : 'disabled'}</div>
+                            <div>Hidden Files: {settings.mobile.layout.showHiddenFiles ? 'visible' : 'hidden'}</div>
+                            <div>Dock Labels: {settings.mobile.layout.showTabLabels ? 'shown' : 'icon only'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="max-w-[760px]">
                         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Tailscale Control</div>
                         <p className="mt-1 text-[11px] opacity-40">
                           This does not replace Tailscale itself. It uses the local CLI if installed, lets you keep a hostname and optional custom control server in settings, and surfaces the status that matters for mobile share routing.
@@ -9538,7 +11036,7 @@ export function SettingsPage({
                 <SectionTitle
                   icon={<Palette size={12} />}
                   title="Theme JSON"
-                  subtitle="Paste, tweak, or version your custom theme directly."
+                  subtitle="Paste, tweak, or version a theme bundle manifest directly."
                 />
 
                 <div className="mt-4 space-y-2">
@@ -9568,7 +11066,7 @@ export function SettingsPage({
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => {
-                        setThemeDraft(serializeTheme(editableTheme));
+                        setThemeDraft(serializeThemeBundle(editableThemeBundle));
                         setThemeImportError(null);
                       }}
                       className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"

@@ -69,6 +69,8 @@ export type HotkeyBindingKey =
   | 'audioWorkbenchPreviousSilence'
   | 'audioWorkbenchNextSilence'
   | 'audioWorkbenchExportClip'
+  | 'pythonWorkbenchRunManaged'
+  | 'pythonWorkbenchRunInTerminal'
   | 'imageEditorUndo'
   | 'imageEditorRedo'
   | 'imageEditorReset'
@@ -591,6 +593,20 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Audio Workbench Export Clip',
     description: 'Open the clip export flow from the audio workbench.',
     defaultValue: 'Ctrl+Shift+S',
+    scope: 'local',
+  },
+  {
+    key: 'pythonWorkbenchRunManaged',
+    label: 'Python Workbench Run Managed',
+    description: 'Run the active Python preview through the managed Python runtime.',
+    defaultValue: 'F9',
+    scope: 'local',
+  },
+  {
+    key: 'pythonWorkbenchRunInTerminal',
+    label: 'Python Workbench Run In Terminal',
+    description: 'Queue the active Python preview into the explorer embedded terminal.',
+    defaultValue: 'Ctrl+F9',
     scope: 'local',
   },
   {

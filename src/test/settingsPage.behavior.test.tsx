@@ -14,6 +14,16 @@ import { resolveThemeCatalogPackageMetadata } from '../config/themeCatalogCurati
 import { pluginSystemConfig } from '../config/plugins';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import { topBarSystemConfig, type LoadedOverlayTopBarPackage } from '../config/topBarPackages';
+import {
+  themeAppearancePackSystemConfig,
+  themeEnginePackSystemConfig,
+  themeRecipePackSystemConfig,
+  themeShellRendererPackSystemConfig,
+  type LoadedThemeAppearancePack,
+  type LoadedThemeEnginePack,
+  type LoadedThemeRecipePack,
+  type LoadedThemeShellRendererPack,
+} from '../config/themeBundlePacks';
 import { compileThemeEngineManifest, normalizeThemeManifestDraft } from '../runtime/themeEngineBackend';
 import { createLoadedTopBarDefinition } from '../config/topBars';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
@@ -77,6 +87,10 @@ function renderSettingsPage(options?: {
   homePacks?: LoadedExplorerHomePack[];
   menuPacks?: LoadedExplorerMenuPack[];
   themePackages?: LoadedOverlayThemePackage[];
+  appearancePacks?: LoadedThemeAppearancePack[];
+  themeRecipePacks?: LoadedThemeRecipePack[];
+  themeEnginePacks?: LoadedThemeEnginePack[];
+  shellRenderers?: LoadedThemeShellRendererPack[];
   onRefreshTopBars?: () => Promise<void>;
   onOpenTopBarsFolder?: () => Promise<void>;
   onRefreshHomePacks?: () => Promise<void>;
@@ -119,12 +133,40 @@ function renderSettingsPage(options?: {
       themePackagesLoading={false}
       themePackagesError={null}
       themePackagesWarnings={[]}
+      appearancePacks={options?.appearancePacks ?? []}
+      appearancePacksDirectory={themeAppearancePackSystemConfig.appearancesDirectory}
+      appearancePacksLoading={false}
+      appearancePacksError={null}
+      appearancePacksWarnings={[]}
+      shellRenderers={options?.shellRenderers ?? []}
+      shellRenderersDirectory={themeShellRendererPackSystemConfig.shellRenderersDirectory}
+      shellRenderersLoading={false}
+      shellRenderersError={null}
+      shellRenderersWarnings={[]}
+      themeRecipePacks={options?.themeRecipePacks ?? []}
+      themeRecipePacksDirectory={themeRecipePackSystemConfig.themeRecipesDirectory}
+      themeRecipePacksLoading={false}
+      themeRecipePacksError={null}
+      themeRecipePacksWarnings={[]}
+      themeEnginePacks={options?.themeEnginePacks ?? []}
+      themeEnginePacksDirectory={themeEnginePackSystemConfig.themeEnginesDirectory}
+      themeEnginePacksLoading={false}
+      themeEnginePacksError={null}
+      themeEnginePacksWarnings={[]}
       onRefreshTopBars={options?.onRefreshTopBars ?? (async () => {})}
       onOpenTopBarsFolder={options?.onOpenTopBarsFolder ?? (async () => {})}
       onRefreshHomePacks={options?.onRefreshHomePacks ?? (async () => {})}
       onOpenHomePacksFolder={options?.onOpenHomePacksFolder ?? (async () => {})}
       onRefreshMenuPacks={async () => {}}
       onOpenMenuPacksFolder={async () => {}}
+      onRefreshAppearancePacks={async () => {}}
+      onOpenAppearancePacksFolder={async () => {}}
+      onRefreshShellRenderers={async () => {}}
+      onOpenShellRenderersFolder={async () => {}}
+      onRefreshThemeRecipePacks={async () => {}}
+      onOpenThemeRecipesFolder={async () => {}}
+      onRefreshThemeEnginePacks={async () => {}}
+      onOpenThemeEnginesFolder={async () => {}}
       onRefreshThemes={async () => {}}
       onOpenThemesFolder={async () => {}}
       shaders={createBuiltInOverlayShaders()}
@@ -358,6 +400,110 @@ describe('SettingsPage behavior', () => {
     expect(openTopBarsFolder).toHaveBeenCalledTimes(1);
   }, 30000);
 
+  it('pins modular theme bundle lanes from their dedicated settings sections', async () => {
+    const user = userEvent.setup();
+    const engineManifest = normalizeThemeManifestDraft({
+      id: 'steel-engine',
+      name: 'Steel Engine',
+      designTokens: [],
+      layoutPrimitives: [],
+      navigationPatterns: [],
+      animationProfiles: [],
+      iconPacks: [],
+      renderStyles: [],
+    });
+
+    renderSettingsPage({
+      appearancePacks: [
+        {
+          id: 'retro-burst',
+          localId: 'retro-burst',
+          name: 'Retro Burst',
+          version: 1,
+          directoryPath: 'appearance-packs/retro-burst',
+          manifestPath: 'appearance-packs/retro-burst/appearance.json',
+          description: 'Warm CRT palette.',
+          tags: ['retro'],
+          warnings: [],
+          appearance: {
+            id: 'retro-burst',
+            name: 'Retro Burst',
+            palette: {
+              accent: '#ff8f3f',
+            },
+            fonts: {
+              ui: 'IBM Plex Sans',
+            },
+          },
+        },
+      ],
+      themeRecipePacks: [
+        {
+          id: 'glass-cockpit',
+          localId: 'glass-cockpit',
+          name: 'Glass Cockpit',
+          version: 1,
+          directoryPath: 'theme-recipes/glass-cockpit',
+          manifestPath: 'theme-recipes/glass-cockpit/theme-recipe.json',
+          description: 'Workbench-forward chrome recipe.',
+          tags: ['glass'],
+          warnings: [],
+          recipe: {
+            workbench: {} as never,
+          },
+        },
+      ],
+      themeEnginePacks: [
+        {
+          id: 'steel-engine',
+          localId: 'steel-engine',
+          name: 'Steel Engine',
+          version: 1,
+          directoryPath: 'theme-engines/steel-engine',
+          manifestPath: 'theme-engines/steel-engine/theme-engine.json',
+          description: 'Neutral engine defaults.',
+          tags: ['engine'],
+          warnings: [],
+          engineManifest,
+          compiledEngineManifest: compileThemeEngineManifest(engineManifest),
+        },
+      ],
+      shellRenderers: [
+        {
+          id: 'cinema-shell',
+          localId: 'cinema-shell',
+          name: 'Cinema Shell',
+          version: 1,
+          directoryPath: 'shell-renderers/cinema-shell',
+          manifestPath: 'shell-renderers/cinema-shell/shell-renderer.json',
+          description: 'Media-forward shell renderer.',
+          tags: ['renderer'],
+          warnings: [],
+          entryModule: 'index.tsx',
+        },
+      ],
+    });
+
+    await user.click(findSectionButton('Appearance Packs'));
+    await user.click(screen.getByRole('button', { name: /retro burst/i }));
+    expect(useSettingsStore.getState().settings.appearance.activeAppearancePackId).toBe('retro-burst');
+
+    await user.click(findSectionButton('Theme Recipes'));
+    await user.click(screen.getByRole('button', { name: /glass cockpit/i }));
+    expect(useSettingsStore.getState().settings.appearance.activeThemeRecipeId).toBe('glass-cockpit');
+
+    await user.click(findSectionButton('Theme Engines'));
+    await user.click(screen.getByRole('button', { name: /steel engine/i }));
+    expect(useSettingsStore.getState().settings.appearance.activeThemeEngineId).toBe('steel-engine');
+
+    await user.click(findSectionButton('Shell Renderers'));
+    await user.click(screen.getByRole('button', { name: /cinema shell/i }));
+    expect(useSettingsStore.getState().settings.appearance.activeShellRendererId).toBe('cinema-shell');
+
+    await user.click(screen.getByRole('button', { name: /follow theme/i }));
+    expect(useSettingsStore.getState().settings.appearance.activeShellRendererId).toBeNull();
+  }, 30000);
+
   it('keeps the live mobile QR cards visible in settings', async () => {
     useMobileShareStore.setState({
       phase: 'running',
@@ -510,6 +656,10 @@ describe('SettingsPage behavior', () => {
       'Screenshots',
       'Audio',
       'Appearance',
+      'Appearance Packs',
+      'Theme Recipes',
+      'Theme Engines',
+      'Shell Renderers',
       'Top Bars',
       'Icons',
       'Wallpapers',
@@ -1665,6 +1815,76 @@ describe('SettingsPage behavior', () => {
     );
     await user.click(followThemeButtons[followThemeButtons.length - 1] as HTMLButtonElement);
     expect(useSettingsStore.getState().settings.appearance.activeTopBarId).toBeNull();
+  });
+
+  it('imports a theme bundle manifest and persists it as a custom theme bundle', async () => {
+    const user = userEvent.setup();
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Theme JSON'));
+
+    const editor = screen.getByRole('textbox');
+    fireEvent.change(editor, {
+      target: {
+        value: JSON.stringify({
+          version: 1,
+          id: 'sunset-inline',
+          name: 'Sunset Inline',
+          extends: 'operator',
+          appearancePackId: 'appearance-base',
+          embedded: {
+            appearancePacks: [
+              {
+                id: 'appearance-base',
+                name: 'Sunset Inline Appearance',
+                extendsThemeId: 'operator',
+                palette: {
+                  accent: '#ff7a00',
+                },
+              },
+            ],
+          },
+        }, null, 2),
+      },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Import / Apply' }));
+
+    await waitFor(() => {
+      const appearanceSettings = useSettingsStore.getState().settings.appearance;
+      expect(appearanceSettings.activeThemeId).toBe('sunset-inline');
+      expect(appearanceSettings.customThemeBundles).toHaveLength(1);
+      expect(appearanceSettings.customThemeBundles[0]?.id).toBe('sunset-inline');
+      expect(appearanceSettings.customThemeBundles[0]?.embedded?.appearancePacks?.[0]?.palette?.accent).toBe('#ff7a00');
+    });
+
+    expect(screen.queryByText(/Theme import failed:/)).not.toBeInTheDocument();
+  });
+
+  it('rejects legacy monolithic theme JSON with a clear unsupported-format error', async () => {
+    const user = userEvent.setup();
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Theme JSON'));
+
+    const editor = screen.getByRole('textbox');
+    fireEvent.change(editor, {
+      target: {
+        value: JSON.stringify({
+          id: 'legacy-theme',
+          name: 'Legacy Theme',
+          palette: {
+            accent: '#ff00aa',
+          },
+        }, null, 2),
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Import / Apply' }));
+
+    expect(await screen.findByText(/Legacy monolithic theme JSON is unsupported/)).toBeInTheDocument();
+    expect(useSettingsStore.getState().settings.appearance.customThemeBundles).toEqual([]);
   });
 
   it('shows theme import failures inline instead of using a browser alert', async () => {

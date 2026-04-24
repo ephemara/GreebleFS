@@ -81,6 +81,8 @@ describe('hotkey config helpers', () => {
     expect(defaults.audioWorkbenchPreviousSilence).toBe('Shift+ArrowLeft');
     expect(defaults.audioWorkbenchNextSilence).toBe('Shift+ArrowRight');
     expect(defaults.audioWorkbenchExportClip).toBe('Ctrl+Shift+S');
+    expect(defaults.pythonWorkbenchRunManaged).toBe('F9');
+    expect(defaults.pythonWorkbenchRunInTerminal).toBe('Ctrl+F9');
     expect(defaults.imageEditorUndo).toBe('Ctrl+Z');
     expect(defaults.imageEditorRedo).toBe('Ctrl+Shift+Z');
     expect(defaults.imageEditorReset).toBe('Escape');

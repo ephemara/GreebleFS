@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import QRCode from 'qrcode';
 import { Copy, ExternalLink, Loader2 } from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
@@ -23,6 +23,14 @@ export function MobileShareConnectionCards({
   const accent = appearance.theme.palette.accent;
   const border = appearance.theme.palette.border;
   const controlRadius = appearance.workbenchTheme.metrics.controlRadius;
+  const qrDisplaySize = connectionTargets.length >= 3
+    ? 'clamp(100px, 9vw, 128px)'
+    : 'clamp(112px, 11vw, 152px)';
+  const qrGridStyle = {
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 216px), 1fr))',
+    alignItems: 'start',
+    '--mobile-share-qr-size': qrDisplaySize,
+  } as CSSProperties;
 
   useEffect(() => {
     let cancelled = false;
@@ -70,20 +78,20 @@ export function MobileShareConnectionCards({
 
   return (
     <div
+      role="list"
+      aria-label="Mobile share connection targets"
       className="grid gap-3"
-      style={{
-        gridTemplateColumns: connectionTargets.length > 1
-          ? 'repeat(2, minmax(0, 1fr))'
-          : 'minmax(0, 1fr)',
-      }}
+      style={qrGridStyle}
     >
       {connectionTargets.map(target => (
         <div
           key={target.url}
+          role="listitem"
           className="rounded border p-3"
           style={{
             borderColor: target.isPreferred ? `${accent}66` : border,
             background: target.isPreferred ? `${accent}0d` : 'rgba(255,255,255,0.03)',
+            minWidth: 0,
           }}
         >
           <div className="flex items-start justify-between gap-2">
@@ -109,15 +117,18 @@ export function MobileShareConnectionCards({
 
           <div
             className="mt-3 flex items-center justify-center rounded border bg-white p-2"
-            style={{ borderColor: border, minHeight: mobileShareQrCodeSizePx + 16 }}
+            style={{
+              borderColor: border,
+              minHeight: 'calc(var(--mobile-share-qr-size) + 16px)',
+            }}
           >
             {qrCodeByUrl[target.url] ? (
               <img
                 src={qrCodeByUrl[target.url]}
                 alt={`QR code for ${target.label}`}
                 style={{
-                  width: mobileShareQrCodeSizePx,
-                  height: mobileShareQrCodeSizePx,
+                  width: 'var(--mobile-share-qr-size)',
+                  height: 'var(--mobile-share-qr-size)',
                   objectFit: 'contain',
                 }}
               />

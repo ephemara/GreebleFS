@@ -1,3 +1,43 @@
+# 2026-04-23 - Queue Intake Now Has A Repo-Local Analyzer And A Dedicated Agent Skill
+
+- GreebleFS now has a durable queue-intake workflow for dragged-in code folders under `queue/`. The queue is intentionally gitignored, but it is not throwaway scratch space: it is the repo-local intake lane for user-owned code that may donate systems into the app.
+- Durable implementation shape:
+  - `queue/queue.py` is now the authoritative first-pass analyzer. It supports `list`, `check`, `sanitize`, and `move` commands over `queue/staging` and `queue/vault`.
+  - The analyzer inventories file counts, line counts, bytes, detected languages, manifest files, and dependencies across common ecosystems (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `requirements.txt`).
+  - It also builds repo-fit guidance by combining weighted path-token overlap against the live repo with curated adoption seams for contracts, frontend/explorer runtime, and native/GPU lanes, then emits a single report with summary, novelty, repo connections, sanitize findings, and suggested next steps.
+  - The sanitize pass is heuristic but intentionally assimilation-focused: it surfaces machine-specific absolute paths, inline endpoints, localhost-only endpoints, magic ports, and candidate-wide brand identifiers that should be abstracted before code is ported into GreebleFS.
+  - The current sample candidate, `queue/staging/kos-proto`, now correctly reads as low novelty, surfaces close existing repo references under `packages/KOS/crates/kos-proto`, and points likely adoption review toward `crates/overlay-contracts`, `src-tauri/src/specta_bindings.rs`, `src/generated/tauri.ts`, and explorer/frontend UI-runtime seams instead of forcing a blind repo crawl.
+- Durable workflow note:
+  - When the user says `check the queue`, future agents should start with `python3 queue/queue.py check` rather than manually traversing the monorepo.
+  - Queue contents are explicitly user-owned code and are safe to copy from, but agents should still treat queue folders as selective-salvage candidates, not as greenfield subsystems to import wholesale.
+  - If the queue analyzer surfaces `Existing Reference Paths`, treat the candidate as compare-or-salvage, not as automatically novel.
+- Skill support:
+  - Added `~/.codex/skills/greeblefs-queue`, which teaches agents what `check the queue` means, how to interpret `queue.py`, when to move folders between `staging` and `vault`, and how to route promising candidates into the real GreebleFS architecture.
+- Validation:
+  - passed: `python3 -m py_compile queue/queue.py`
+  - passed: `python3 queue/queue.py check kos-proto --limit 12`
+  - passed: `python3 queue/queue.py sanitize kos-proto`
+  - passed: `python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py ~/.codex/skills/greeblefs-queue`
+
+# 2026-04-23 - Python Files Now Use Shared Workflow Tabs With Dedicated Run And Runtime Lanes
+
+- Python files no longer feel like plain generic text when opened from the explorer. `FileExplorer.tsx` still keeps them on the shared preview-header workflow system, but `.py`, `.pyw`, and executable/shebang Python scripts now open code-first on `Edit`, hide the generic `Preview` tab, and register `Run | Runtime` wildcard tabs instead of forking a separate header.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now carries explicit `pythonPreview` metadata on text preview state. Python files still resolve through the text preview lane, but the preview shell now knows when to open Monaco edit mode by default and when to mount the Python workbench under wildcard tabs.
+  - `src/components/ExplorerPythonWorkbench.tsx` is the new pane-local Python surface. `Run` captures managed-runtime stdout/stderr back into the preview, while `Runtime` exposes runtime refresh, bootstrap, package-queue install, and managed REPL actions without leaving the preview shell.
+  - `src/components/terminalCommandUtils.ts` now owns `buildTerminalPythonRunCommand(...)` so Python terminal fallback follows the same shell-aware command-building path as other executable preview actions.
+  - `src-tauri/src/python_commands.rs` no longer throws Tauri errors for non-zero script exits. `python_execute` now returns structured `PythonActionResponse` payloads even when the script fails, so the preview workbench can render exit code/stdout/stderr instead of collapsing into a transport error.
+  - `src/config/hotkeys.ts` plus `SettingsPage.tsx` now expose `F9` for managed Python run and `Ctrl+F9` for terminal fallback. `FileExplorer.tsx` wires those hotkeys locally, including the Monaco-focused Python editing path.
+- Durable product note:
+  - Python deliberately stayed on the shared preview-shell model without pretending it needs a rendered preview lane. Keep it code-first with `Edit | Run | Runtime` and add lane-specific actions through wildcard tabs rather than forking a second preview-header system for code files.
+  - Executable text previews such as shell, batch, and PowerShell scripts should also stay code-first in the header. Their shared workflow tab order is now `Edit | Run`, with `Run` remaining a real execution action instead of a relabeled fake preview tab.
+  - Managed runs are the preview-native path because they can return structured output into the pane. Terminal fallback and managed REPL intentionally route into the explorer embedded terminal bottom drawer so the Python workbench stays visible.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "Python" --reporter=dot --pool=forks`
+  - passed: `bunx vitest run src/test/filePreview.test.ts src/test/terminalCommandUtils.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot --pool=forks`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml build_python_action_response_keeps_failed_script_results_structured -- --nocapture`
+  - blocked currently: `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails on unrelated mobile/share and settings type errors outside the Python preview lane (`src-mobile/App.tsx`, `src/App.tsx`, `src/components/SettingsPage.tsx`, `src/test/mobileApp.test.tsx`)
+
 # 2026-04-23 - Mobile Share Is Now A Real Four-Tab PWA Shell Backed By A Native Mobile Control Plane
 
 - The old one-screen phone share has been replaced with a proper mobile app shell under `src-mobile/`. The mobile bundle now has first-class `Explorer`, `Search`, `Transfers`, and `Settings` tabs, keeps its own browser-safe navigation/transfer state in `src-mobile/mobileStore.ts`, and still stays deliberately separate from the desktop Tauri session model.
@@ -3770,3 +3810,22 @@
   - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "preserves preview width drag resize behavior while split mode is active" --reporter=dot`
   - passed: `bunx vitest run src/test/explorerStore.test.ts src/test/explorerSideRail.test.tsx --reporter=dot`
   - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
+## 2026-04-23 — Theme Packages Became Bundle-First Orchestration Manifests
+
+- Authored filesystem themes are no longer treated as giant monolithic payloads. `src/config/themePackages.ts` now loads `themes/` as bundle manifests that orchestrate modular child packs and/or explicit external pack ids, then composes those lanes back into the resolved downstream `OverlayThemeDefinition`.
+- Durable implementation shape:
+  - `src/config/themeBundlePacks.ts` is the new shared modular-pack loader layer for `appearance-packs/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, and `theme-engines/`. Theme bundles and standalone managed roots now share the same authored pack formats instead of duplicating pack logic inside `themePackages.ts`.
+  - `src/config/themePackages.ts` now treats `theme.json` / `theme.toml` as a bundle manifest with explicit refs like `appearancePackId`, `topBarId`, `iconThemeId`, `wallpaperId`, `shaderId`, `openAnimationId`, `closeAnimationId`, `interactionMotionPackId`, `rendererId`, `themeRecipeId`, `themeEngineId`, `homePackId`, and `menuPackId`. Bundle-local child folders are auto-discovered under `appearance-packs/`, `top-bars/`, `icon-themes/`, `wallpapers/`, `shaders/`, `animations/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, `theme-engines/`, `home-packs/`, and `menu-packs/`.
+  - Bundle-local authored ids are scoped as `<themeBundleId>:<localId>`, which lets local child packs flow through the same global catalogs without colliding with standalone authored roots.
+  - `src/config/appContentDirectories.ts` now exposes standalone managed roots for the new pack families (`appearance-packs`, `interaction-motion`, `shell-renderers`, `theme-recipes`, `theme-engines`) so authors can ship them globally or nest them inside a bundle with the same manifest shape.
+  - `src/App.tsx` now resolves three layers before appearance resolution: filesystem/plugin theme bundles, bundle-local pack catalogs, and standalone/global pack catalogs. The rest of the shell still consumes resolved `OverlayThemeDefinition` objects, so downstream UI/runtime consumers stay stable.
+  - `src/store/settingsStore.ts` now persists `settings.appearance.customThemeBundles` alongside legacy `customThemes`. This is the durable storage path for authored Theme JSON edits after the bundle refactor.
+  - `src/components/SettingsPage.tsx` `Theme JSON` now edits/imports bundle manifests instead of raw resolved theme definitions. Palette edits mutate the embedded appearance pack inside the editable bundle draft, imports persist to `customThemeBundles`, and legacy monolithic theme JSON is rejected with a clear unsupported-format error.
+- Durable product note:
+  - Treat theme bundles as orchestration manifests, not the place where every theming subsystem should be re-authored inline. Anything behavior-heavy or asset-heavy should prefer its own pack lane and let the bundle choose defaults.
+  - User pins still win for the currently exposed Settings lanes. “Follow Theme” now means “follow the active theme bundle default,” not “read some monolithic blob.”
+  - Legacy authored filesystem `theme.json` files are intentionally unsupported now. If a bundle-like migration path is needed, migrate old content into child pack folders or embedded bundle packs rather than reviving the monolithic parser.
+- Validation:
+  - passed: `bunx vitest run src/test/themePackages.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`

@@ -74,6 +74,43 @@ pub struct MobileThemeMetricsSnapshot {
     pub panel_gap: f64,
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum MobileLayoutViewMode {
+    IconsL,
+    IconsM,
+    IconsS,
+    List,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum MobileLayoutSortBy {
+    Name,
+    Date,
+    Size,
+    Type,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum MobileLayoutSortOrder {
+    Asc,
+    Desc,
+}
+
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MobileThemeLayoutSnapshot {
+    pub view_mode: MobileLayoutViewMode,
+    pub grid_zoom: f64,
+    pub show_hidden_files: bool,
+    pub sort_by: MobileLayoutSortBy,
+    pub sort_order: MobileLayoutSortOrder,
+    pub directories_first: bool,
+    pub show_tab_labels: bool,
+}
+
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct MobileIconThemeSnapshot {
@@ -112,6 +149,7 @@ pub struct MobileThemeSnapshot {
     pub icon_theme: MobileIconThemeSnapshot,
     pub folder_icon_rules: Vec<MobileFolderIconRuleSnapshot>,
     pub default_folder_icon: String,
+    pub layout: MobileThemeLayoutSnapshot,
 }
 
 impl Default for MobileThemeSnapshot {
@@ -172,6 +210,15 @@ impl Default for MobileThemeSnapshot {
             },
             folder_icon_rules: Vec::new(),
             default_folder_icon: "folder".to_string(),
+            layout: MobileThemeLayoutSnapshot {
+                view_mode: MobileLayoutViewMode::IconsM,
+                grid_zoom: 1.0,
+                show_hidden_files: false,
+                sort_by: MobileLayoutSortBy::Name,
+                sort_order: MobileLayoutSortOrder::Asc,
+                directories_first: true,
+                show_tab_labels: true,
+            },
         }
     }
 }

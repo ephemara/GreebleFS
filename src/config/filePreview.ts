@@ -67,6 +67,8 @@ const IMAGE_PREVIEW_EXTENSIONS = [
   "avif",
 ] as const;
 
+const PYTHON_PREVIEW_EXTENSIONS = ["py", "pyw"] as const;
+
 const IMAGE_EDITOR_CONTENT_TYPE_BY_EXTENSION = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -558,6 +560,7 @@ const MONACO_LANGUAGE_BY_EXTENSION: Record<string, string> = {
 };
 
 const IMAGE_PREVIEW_EXTENSION_SET = new Set<string>(IMAGE_PREVIEW_EXTENSIONS);
+const PYTHON_PREVIEW_EXTENSION_SET = new Set<string>(PYTHON_PREVIEW_EXTENSIONS);
 const AUDIO_PREVIEW_EXTENSION_SET = new Set<string>(
   Object.keys(AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION),
 );
@@ -648,6 +651,10 @@ export function isExecutableScriptExtension(extension: string): boolean {
 
 export function isExecutableBinaryExtension(extension: string): boolean {
   return EXECUTABLE_BINARY_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function isPythonPreviewExtension(extension: string): boolean {
+  return PYTHON_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
 }
 
 export function getExecutableScriptRunner(

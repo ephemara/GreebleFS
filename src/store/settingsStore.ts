@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { normalizeThemeDefinition, type OverlayThemeDefinition } from '../config/appearance';
+import { type OverlayThemeBundleManifest } from '../config/themePackages';
 import {
   createDefaultFolderIconRules,
   DEFAULT_FOLDER_ICON_VALUE,
@@ -114,6 +115,11 @@ import {
   normalizeMobileRemoteAccessMode,
   type MobileRemoteAccessMode,
 } from '../config/mobileAccess';
+import {
+  defaultMobileLayoutSettings,
+  normalizeMobileLayoutSettings,
+  type MobileLayoutSettings,
+} from '../config/mobileLayout';
 import { EXPLORER_HOME_PATH } from '../config/explorerVirtualLocations';
 import {
   DEFAULT_PILOT_ACCENT_COLOR,
@@ -204,9 +210,14 @@ export interface AppearanceSettings {
   activeThemeId: string;
   dockThemeMode: DockThemeMode;
   activeDockThemeId: string | null;
+  activeAppearancePackId: string | null;
+  activeThemeRecipeId: string | null;
+  activeThemeEngineId: string | null;
+  activeShellRendererId: string | null;
   activeTopBarId: string | null;
   activeIconThemeId: string | null;
   customThemes: OverlayThemeDefinition[];
+  customThemeBundles: OverlayThemeBundleManifest[];
   activeWallpaperId?: string | null;
   wallpaperFitMode: OverlayWallpaperFitMode;
   wallpaperOpacity: number;
@@ -279,6 +290,7 @@ export interface MobileSettings {
   remoteAccessMode: MobileRemoteAccessMode;
   tailscaleLoginServer: string;
   tailscaleHostname: string;
+  layout: MobileLayoutSettings;
 }
 
 export type KeybindingSettings = HotkeyBindingSettings;
@@ -805,12 +817,35 @@ function normalizeAppearanceSettings(
   return {
     ...merged,
     customThemes: (merged.customThemes ?? base.customThemes).map(theme => normalizeThemeDefinition(theme)),
+    customThemeBundles: Array.isArray(merged.customThemeBundles)
+      ? merged.customThemeBundles
+      : base.customThemeBundles,
     dockThemeMode: normalizeDockThemeMode(merged.dockThemeMode ?? base.dockThemeMode),
     activeDockThemeId: typeof merged.activeDockThemeId === 'string'
       ? merged.activeDockThemeId.trim() || null
       : merged.activeDockThemeId === null
         ? null
         : base.activeDockThemeId ?? null,
+    activeAppearancePackId: typeof merged.activeAppearancePackId === 'string'
+      ? merged.activeAppearancePackId.trim() || null
+      : merged.activeAppearancePackId === null
+        ? null
+        : base.activeAppearancePackId ?? null,
+    activeThemeRecipeId: typeof merged.activeThemeRecipeId === 'string'
+      ? merged.activeThemeRecipeId.trim() || null
+      : merged.activeThemeRecipeId === null
+        ? null
+        : base.activeThemeRecipeId ?? null,
+    activeThemeEngineId: typeof merged.activeThemeEngineId === 'string'
+      ? merged.activeThemeEngineId.trim() || null
+      : merged.activeThemeEngineId === null
+        ? null
+        : base.activeThemeEngineId ?? null,
+    activeShellRendererId: typeof merged.activeShellRendererId === 'string'
+      ? merged.activeShellRendererId.trim() || null
+      : merged.activeShellRendererId === null
+        ? null
+        : base.activeShellRendererId ?? null,
     activeTopBarId: typeof merged.activeTopBarId === 'string'
       ? merged.activeTopBarId.trim() || null
       : merged.activeTopBarId === null
@@ -911,6 +946,8 @@ function normalizeMobileSettings(
   updates?: Partial<MobileSettings>,
 ): MobileSettings {
   const merged = { ...base, ...updates };
+  const hasExplicitLayout = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'layout');
   return {
     remoteAccessMode: normalizeMobileRemoteAccessMode(
       merged.remoteAccessMode ?? base.remoteAccessMode,
@@ -921,6 +958,9 @@ function normalizeMobileSettings(
     tailscaleHostname: typeof merged.tailscaleHostname === 'string'
       ? merged.tailscaleHostname.trim()
       : base.tailscaleHostname,
+    layout: hasExplicitLayout
+      ? normalizeMobileLayoutSettings(base.layout, updates?.layout)
+      : base.layout,
   };
 }
 
@@ -1035,9 +1075,14 @@ export const defaultSettings: Settings = {
     activeThemeId: DEFAULT_PILOT_DARK_THEME_ID,
     dockThemeMode: 'follow-app',
     activeDockThemeId: null,
+    activeAppearancePackId: null,
+    activeThemeRecipeId: null,
+    activeThemeEngineId: null,
+    activeShellRendererId: null,
     activeTopBarId: null,
     activeIconThemeId: null,
     customThemes: [],
+    customThemeBundles: [],
     activeWallpaperId: null,
     wallpaperFitMode: 'cover',
     wallpaperOpacity: overlayVisualControls.opacity.defaultValue,
@@ -1093,6 +1138,7 @@ export const defaultSettings: Settings = {
     remoteAccessMode: 'lan',
     tailscaleLoginServer: '',
     tailscaleHostname: '',
+    layout: defaultMobileLayoutSettings,
   },
   screenshots: {
     saveDirectory: screenshotFeatureConfig.defaultSaveDirectory,

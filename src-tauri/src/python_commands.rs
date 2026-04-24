@@ -812,6 +812,17 @@ pub(crate) fn build_status(
     }
 }
 
+fn build_python_action_response(
+    resolved: &ResolvedRuntimeConfig,
+    paths: &RuntimePaths,
+    interpreters: Vec<DetectedInterpreter>,
+    base_interpreter: DetectedInterpreter,
+    result: PythonCommandResult,
+) -> PythonActionResponse {
+    let status = build_status(resolved, paths, interpreters, Some(base_interpreter));
+    PythonActionResponse { status, result }
+}
+
 pub(crate) fn bootstrap_runtime(
     config: &ResolvedRuntimeConfig,
 ) -> Result<
@@ -1183,15 +1194,13 @@ pub async fn python_execute(
 
     let environment = pythonpath_environment(&paths, request.environment);
     let result = run_command(&python_program, &args, &working_directory, &environment)?;
-    if !result.success {
-        return Err(format!(
-            "Python execution failed.\n{}\n{}",
-            result.stdout, result.stderr
-        ));
-    }
-
-    let status = build_status(&resolved, &paths, interpreters, Some(base_interpreter));
-    Ok(PythonActionResponse { status, result })
+    Ok(build_python_action_response(
+        &resolved,
+        &paths,
+        interpreters,
+        base_interpreter,
+        result,
+    ))
 }
 
 #[cfg(test)]
@@ -1221,6 +1230,54 @@ mod tests {
         assert_eq!(paths.scripts_dir, root.join("scripts"));
         assert_eq!(paths.package_dir, root.join("overlayterm_runtime"));
         assert_eq!(paths.requirements_path, root.join("requirements.txt"));
+    }
+
+    #[test]
+    fn build_python_action_response_keeps_failed_script_results_structured() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+        let resolved = ResolvedRuntimeConfig {
+            preferred_interpreter_path: None,
+            runtime_root: temp.path().to_path_buf(),
+            bootstrap_packages: Vec::new(),
+            auto_upgrade_pip: true,
+            create_boilerplate: false,
+        };
+        let paths = build_runtime_paths(temp.path());
+        let base_interpreter = DetectedInterpreter {
+            descriptor: PythonInterpreterDescriptor {
+                id: "python-1".to_string(),
+                label: "System Python".to_string(),
+                command: "python3".to_string(),
+                args: Vec::new(),
+                source: "test".to_string(),
+                preferred: false,
+                recommended: true,
+                executable: "/usr/bin/python3".to_string(),
+                version: "3.11.9".to_string(),
+                major: 3,
+                minor: 11,
+                micro: 9,
+            },
+        };
+        let response = build_python_action_response(
+            &resolved,
+            &paths,
+            vec![base_interpreter.clone()],
+            base_interpreter,
+            PythonCommandResult {
+                command: "python3 broken.py".to_string(),
+                working_directory: path_to_string(temp.path()),
+                exit_code: 1,
+                success: false,
+                stdout: "partial output".to_string(),
+                stderr: "traceback".to_string(),
+            },
+        );
+
+        assert!(!response.result.success);
+        assert_eq!(response.result.exit_code, 1);
+        assert_eq!(response.result.stderr, "traceback");
+        assert!(!response.status.ready);
     }
 
     #[test]

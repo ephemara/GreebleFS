@@ -114,7 +114,16 @@ import {
   menuPackSystemConfig,
   type LoadedExplorerMenuPack,
 } from './config/menuPacks';
-import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
+import {
+  createEmptyGlobalThemeBundleCatalogs,
+  loadThemePackages as discoverThemePackages,
+  resolveLoadedThemePackages,
+  resolveThemeBundleManifests,
+  themeSystemConfig,
+  type OverlayThemeBundleManifest,
+  type GlobalThemeBundleCatalogs,
+  type LoadedOverlayThemePackage,
+} from './config/themePackages';
 import { dispatchTerminalCommand } from './config/pluginContributions';
 import {
   describeGlobalSearchPaletteStatus,
@@ -245,6 +254,44 @@ const FRAME_PROBE_OUTPUT_PATH = (() => {
     import.meta.env as { VITE_OVERLAYTERM_FRAME_PROBE_FILE?: string }
   ).VITE_OVERLAYTERM_FRAME_PROBE_FILE?.trim() ?? '';
 })();
+
+const APP_THEME_BUNDLE_OVERRIDE_ID = 'settings:active-theme-bundle-overrides';
+const DOCK_THEME_BUNDLE_OVERRIDE_ID = 'settings:active-dock-theme-bundle-overrides';
+
+function hasPinnedThemeBundleLaneOverrides(overrides: {
+  activeAppearancePackId?: string | null;
+  activeThemeRecipeId?: string | null;
+  activeThemeEngineId?: string | null;
+  activeShellRendererId?: string | null;
+}): boolean {
+  return Boolean(
+    overrides.activeAppearancePackId
+    || overrides.activeThemeRecipeId
+    || overrides.activeThemeEngineId
+    || overrides.activeShellRendererId,
+  );
+}
+
+function createPinnedThemeBundleOverrideManifest(args: {
+  id: string;
+  name: string;
+  extendsThemeId: string;
+  activeAppearancePackId?: string | null;
+  activeThemeRecipeId?: string | null;
+  activeThemeEngineId?: string | null;
+  activeShellRendererId?: string | null;
+}): OverlayThemeBundleManifest {
+  return {
+    version: 1,
+    id: args.id,
+    name: args.name,
+    extends: args.extendsThemeId,
+    appearancePackId: args.activeAppearancePackId ?? undefined,
+    themeRecipeId: args.activeThemeRecipeId ?? undefined,
+    themeEngineId: args.activeThemeEngineId ?? undefined,
+    rendererId: args.activeShellRendererId ?? undefined,
+  };
+}
 
 function clampValue(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -587,6 +634,9 @@ function App() {
   const [themePackagesLoading, setThemePackagesLoading] = useState(true);
   const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
   const [themePackagesWarnings, setThemePackagesWarnings] = useState<string[]>([]);
+  const [themeBundleDependencyCatalogs, setThemeBundleDependencyCatalogs] = useState<GlobalThemeBundleCatalogs>(
+    () => createEmptyGlobalThemeBundleCatalogs(),
+  );
   const [iconThemePackages, setIconThemePackages] = useState<LoadedIconThemePackage[]>([]);
   const [iconThemePackagesLoading, setIconThemePackagesLoading] = useState(true);
   const [iconThemePackagesError, setIconThemePackagesError] = useState<string | null>(null);
@@ -768,12 +818,55 @@ function App() {
     for (const pack of authoredHomePacks) {
       packMap.set(pack.id, pack);
     }
+    for (const pack of resolveLoadedThemePackages(
+      [...themePackages, ...pluginThemePackages],
+      {
+        ...themeBundleDependencyCatalogs,
+        iconThemePackages,
+        wallpapers: authoredWallpapers,
+      },
+    ).flatMap(themePackage => themePackage.localCatalogs?.homePacks ?? [])) {
+      packMap.set(pack.id, pack);
+    }
     return [...packMap.values()].sort((left, right) => left.name.localeCompare(right.name));
-  }, [authoredHomePacks, builtInHomePacks]);
+  }, [
+    authoredHomePacks,
+    authoredWallpapers,
+    builtInHomePacks,
+    iconThemePackages,
+    pluginThemePackages,
+    themeBundleDependencyCatalogs,
+    themePackages,
+  ]);
   const combinedThemePackages = useMemo(
-    () => [...themePackages, ...pluginThemePackages],
-    [pluginThemePackages, themePackages],
+    () => resolveLoadedThemePackages(
+      [...themePackages, ...pluginThemePackages],
+      {
+        ...themeBundleDependencyCatalogs,
+        iconThemePackages,
+        wallpapers: authoredWallpapers,
+      },
+    ),
+    [
+      authoredWallpapers,
+      iconThemePackages,
+      pluginThemePackages,
+      themeBundleDependencyCatalogs,
+      themePackages,
+    ],
   );
+  const combinedMenuPacks = useMemo(() => {
+    const packMap = new Map<string, LoadedExplorerMenuPack>();
+    for (const pack of menuPacks) {
+      packMap.set(pack.id, pack);
+    }
+    for (const themePackage of combinedThemePackages) {
+      for (const pack of themePackage.localCatalogs?.menuPacks ?? []) {
+        packMap.set(pack.id, pack);
+      }
+    }
+    return [...packMap.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [combinedThemePackages, menuPacks]);
   const combinedTopBarPackageSources = useMemo(
     () => [...topBarPackages, ...combinedThemePackages],
     [combinedThemePackages, topBarPackages],
@@ -781,17 +874,125 @@ function App() {
   const selectedIconTheme = useMemo(() => {
     return resolveLoadedIconThemePackage(iconThemePackages, appearance.activeIconThemeId)?.iconTheme ?? null;
   }, [appearance.activeIconThemeId, iconThemePackages]);
+  const hasPinnedThemeBundleOverrides = useMemo(() => hasPinnedThemeBundleLaneOverrides({
+    activeAppearancePackId: appearance.activeAppearancePackId,
+    activeThemeRecipeId: appearance.activeThemeRecipeId,
+    activeThemeEngineId: appearance.activeThemeEngineId,
+    activeShellRendererId: appearance.activeShellRendererId,
+  }), [
+    appearance.activeAppearancePackId,
+    appearance.activeShellRendererId,
+    appearance.activeThemeEngineId,
+    appearance.activeThemeRecipeId,
+  ]);
+  const appThemeOverrideManifest = useMemo(() => {
+    const baseThemeId = appearance.activeThemeId.trim();
+    if (!hasPinnedThemeBundleOverrides || !baseThemeId) {
+      return null;
+    }
+
+    return createPinnedThemeBundleOverrideManifest({
+      id: APP_THEME_BUNDLE_OVERRIDE_ID,
+      name: 'Pinned Theme Lane Overrides',
+      extendsThemeId: baseThemeId,
+      activeAppearancePackId: appearance.activeAppearancePackId,
+      activeThemeRecipeId: appearance.activeThemeRecipeId,
+      activeThemeEngineId: appearance.activeThemeEngineId,
+      activeShellRendererId: appearance.activeShellRendererId,
+    });
+  }, [
+    appearance.activeAppearancePackId,
+    appearance.activeShellRendererId,
+    appearance.activeThemeEngineId,
+    appearance.activeThemeId,
+    appearance.activeThemeRecipeId,
+    hasPinnedThemeBundleOverrides,
+  ]);
+  const dockThemeOverrideManifest = useMemo(() => {
+    const baseDockThemeId = appearance.activeDockThemeId?.trim();
+    if (!hasPinnedThemeBundleOverrides || appearance.dockThemeMode !== 'override' || !baseDockThemeId) {
+      return null;
+    }
+
+    return createPinnedThemeBundleOverrideManifest({
+      id: DOCK_THEME_BUNDLE_OVERRIDE_ID,
+      name: 'Pinned Dock Theme Lane Overrides',
+      extendsThemeId: baseDockThemeId,
+      activeAppearancePackId: appearance.activeAppearancePackId,
+      activeThemeRecipeId: appearance.activeThemeRecipeId,
+      activeThemeEngineId: appearance.activeThemeEngineId,
+      activeShellRendererId: appearance.activeShellRendererId,
+    });
+  }, [
+    appearance.activeAppearancePackId,
+    appearance.activeDockThemeId,
+    appearance.activeShellRendererId,
+    appearance.activeThemeEngineId,
+    appearance.activeThemeRecipeId,
+    appearance.dockThemeMode,
+    hasPinnedThemeBundleOverrides,
+  ]);
+  const effectiveCustomThemeBundles = useMemo(() => [
+    ...appearance.customThemeBundles,
+    ...(appThemeOverrideManifest ? [appThemeOverrideManifest] : []),
+    ...(dockThemeOverrideManifest ? [dockThemeOverrideManifest] : []),
+  ], [appearance.customThemeBundles, appThemeOverrideManifest, dockThemeOverrideManifest]);
+  const effectiveActiveThemeId = appThemeOverrideManifest?.id ?? appearance.activeThemeId;
+  const effectiveActiveDockThemeId = dockThemeOverrideManifest?.id ?? appearance.activeDockThemeId;
+  const resolvedCustomBundleThemes = useMemo(
+    () => resolveThemeBundleManifests(
+      effectiveCustomThemeBundles,
+      {
+        ...themeBundleDependencyCatalogs,
+        appearancePacks: [
+          ...themeBundleDependencyCatalogs.appearancePacks,
+          ...combinedThemePackages.flatMap(pkg => pkg.localCatalogs?.appearancePacks ?? []),
+        ],
+        interactionMotionPacks: [
+          ...themeBundleDependencyCatalogs.interactionMotionPacks,
+          ...combinedThemePackages.flatMap(pkg => pkg.localCatalogs?.interactionMotionPacks ?? []),
+        ],
+        shellRenderers: [
+          ...themeBundleDependencyCatalogs.shellRenderers,
+          ...combinedThemePackages.flatMap(pkg => pkg.localCatalogs?.shellRenderers ?? []),
+        ],
+        themeRecipePacks: [
+          ...themeBundleDependencyCatalogs.themeRecipePacks,
+          ...combinedThemePackages.flatMap(pkg => pkg.localCatalogs?.themeRecipePacks ?? []),
+        ],
+        themeEnginePacks: [
+          ...themeBundleDependencyCatalogs.themeEnginePacks,
+          ...combinedThemePackages.flatMap(pkg => pkg.localCatalogs?.themeEnginePacks ?? []),
+        ],
+        iconThemePackages: [
+          ...iconThemePackages,
+          ...combinedThemePackages.flatMap(pkg => pkg.localCatalogs?.iconThemePackages ?? []),
+        ],
+        wallpapers: [
+          ...authoredWallpapers,
+          ...combinedThemePackages.flatMap(pkg => pkg.localCatalogs?.wallpapers ?? []),
+        ],
+      },
+    ),
+    [
+      authoredWallpapers,
+      combinedThemePackages,
+      effectiveCustomThemeBundles,
+      iconThemePackages,
+      themeBundleDependencyCatalogs,
+    ],
+  );
   const resolvedPackageThemes = useMemo(
-    () => combinedThemePackages.map(pkg => pkg.theme),
-    [combinedThemePackages],
+    () => [...combinedThemePackages.map(pkg => pkg.theme), ...resolvedCustomBundleThemes],
+    [combinedThemePackages, resolvedCustomBundleThemes],
   );
   const windowMode: TerminalWindowMode = settings.windowMode === 'windowed' ? 'windowed' : 'overlay';
   const zenFocusMode = layoutSettings.zenFocusMode === true;
   windowModeRef.current = windowMode;
   const resolvedAppearance = useMemo(
     () => resolveOverlayAppearance({
-      activeThemeId: appearance.activeThemeId,
-      activeDockThemeId: appearance.activeDockThemeId,
+      activeThemeId: effectiveActiveThemeId,
+      activeDockThemeId: effectiveActiveDockThemeId,
       dockThemeMode: appearance.dockThemeMode,
       customThemes: appearance.customThemes,
       packageThemes: resolvedPackageThemes,
@@ -802,12 +1003,12 @@ function App() {
       windowMode,
     }),
     [
-      appearance.activeDockThemeId,
-      appearance.activeThemeId,
       appearance.customThemes,
       appearance.dockThemeMode,
       appearance.panelTransparency,
       appearance.uiFontFamily,
+      effectiveActiveDockThemeId,
+      effectiveActiveThemeId,
       selectedIconTheme,
       resolvedPackageThemes,
       settings.fontFamily,
@@ -821,11 +1022,13 @@ function App() {
     () => createMobileShareThemeSnapshot(resolvedAppearance, {
       folderIconRules: explorerSettings.folderIconRules,
       defaultFolderIcon: explorerSettings.defaultFolderIcon,
+      layout: settings.mobile.layout,
     }),
     [
       resolvedAppearance,
       explorerSettings.defaultFolderIcon,
       explorerSettings.folderIconRules,
+      settings.mobile.layout,
     ],
   );
   const resolvedTopBarSelection = useMemo(
@@ -2885,6 +3088,7 @@ function App() {
       setThemeContributedAnimations([]);
       setThemePackagesError(null);
       setThemePackagesWarnings([]);
+      setThemeBundleDependencyCatalogs(createEmptyGlobalThemeBundleCatalogs());
       setThemePackagesLoading(false);
       return;
     }
@@ -2929,12 +3133,14 @@ function App() {
           setThemeContributedAnimations(result.animations);
           setThemePackagesError(result.sourceError);
           setThemePackagesWarnings(result.warnings);
+          setThemeBundleDependencyCatalogs(result.dependencyCatalogs);
         } catch (error) {
           setThemePackages([]);
           setThemeContributedShaders([]);
           setThemeContributedAnimations([]);
           setThemePackagesError(String(error));
           setThemePackagesWarnings([]);
+          setThemeBundleDependencyCatalogs(createEmptyGlobalThemeBundleCatalogs());
         } finally {
           setThemePackagesLoading(false);
         }
@@ -3037,8 +3243,16 @@ function App() {
     await openManagedContentDirectory('themes');
   }, [openManagedContentDirectory]);
 
+  const openAppearancePacksFolder = useCallback(async () => {
+    await openManagedContentDirectory('appearancePacks');
+  }, [openManagedContentDirectory]);
+
   const openTopBarsFolder = useCallback(async () => {
     await openManagedContentDirectory('topBars');
+  }, [openManagedContentDirectory]);
+
+  const openInteractionMotionPacksFolder = useCallback(async () => {
+    await openManagedContentDirectory('interactionMotionPacks');
   }, [openManagedContentDirectory]);
 
   const openAnimationsFolder = useCallback(async () => {
@@ -3051,6 +3265,18 @@ function App() {
 
   const openWallpapersFolder = useCallback(async () => {
     await openManagedContentDirectory('wallpapers');
+  }, [openManagedContentDirectory]);
+
+  const openShellRenderersFolder = useCallback(async () => {
+    await openManagedContentDirectory('shellRenderers');
+  }, [openManagedContentDirectory]);
+
+  const openThemeRecipesFolder = useCallback(async () => {
+    await openManagedContentDirectory('themeRecipes');
+  }, [openManagedContentDirectory]);
+
+  const openThemeEnginesFolder = useCallback(async () => {
+    await openManagedContentDirectory('themeEngines');
   }, [openManagedContentDirectory]);
 
   const refreshAuthoredWallpapers = useCallback(async (force = false) => {
@@ -3416,7 +3642,7 @@ function App() {
         topBarPackagesError,
         topBarPackagesWarnings,
         homePacks: combinedHomePacks,
-        menuPacks,
+        menuPacks: combinedMenuPacks,
         homePacksDirectory: homePackSystemConfig.homePacksDirectory,
         menuPacksDirectory: menuPackSystemConfig.menuPacksDirectory,
         homePacksLoading,
@@ -3430,12 +3656,47 @@ function App() {
         themePackagesLoading,
         themePackagesError,
         themePackagesWarnings,
+        appearancePacks: themeBundleDependencyCatalogs.appearancePacks,
+        appearancePacksDirectory: getManagedContentDirectory('appearancePacks'),
+        appearancePacksLoading: themePackagesLoading,
+        appearancePacksError: themePackagesError,
+        appearancePacksWarnings: themeBundleDependencyCatalogs.warnings,
+        interactionMotionPacks: themeBundleDependencyCatalogs.interactionMotionPacks,
+        interactionMotionPacksDirectory: getManagedContentDirectory('interactionMotionPacks'),
+        interactionMotionPacksLoading: themePackagesLoading,
+        interactionMotionPacksError: themePackagesError,
+        interactionMotionPacksWarnings: themeBundleDependencyCatalogs.warnings,
+        shellRenderers: themeBundleDependencyCatalogs.shellRenderers,
+        shellRenderersDirectory: getManagedContentDirectory('shellRenderers'),
+        shellRenderersLoading: themePackagesLoading,
+        shellRenderersError: themePackagesError,
+        shellRenderersWarnings: themeBundleDependencyCatalogs.warnings,
+        themeRecipePacks: themeBundleDependencyCatalogs.themeRecipePacks,
+        themeRecipePacksDirectory: getManagedContentDirectory('themeRecipes'),
+        themeRecipePacksLoading: themePackagesLoading,
+        themeRecipePacksError: themePackagesError,
+        themeRecipePacksWarnings: themeBundleDependencyCatalogs.warnings,
+        themeEnginePacks: themeBundleDependencyCatalogs.themeEnginePacks,
+        themeEnginePacksDirectory: getManagedContentDirectory('themeEngines'),
+        themeEnginePacksLoading: themePackagesLoading,
+        themeEnginePacksError: themePackagesError,
+        themeEnginePacksWarnings: themeBundleDependencyCatalogs.warnings,
         onRefreshTopBars: refreshTopBarCatalog,
         onOpenTopBarsFolder: openTopBarsFolder,
         onRefreshHomePacks: () => refreshHomePacks(true),
         onRefreshMenuPacks: () => refreshMenuPacks(true),
         onOpenHomePacksFolder: openHomePacksFolder,
         onOpenMenuPacksFolder: openMenuPacksFolder,
+        onRefreshAppearancePacks: refreshThemePackages,
+        onOpenAppearancePacksFolder: openAppearancePacksFolder,
+        onRefreshInteractionMotionPacks: refreshThemePackages,
+        onOpenInteractionMotionPacksFolder: openInteractionMotionPacksFolder,
+        onRefreshShellRenderers: refreshThemePackages,
+        onOpenShellRenderersFolder: openShellRenderersFolder,
+        onRefreshThemeRecipePacks: refreshThemePackages,
+        onOpenThemeRecipesFolder: openThemeRecipesFolder,
+        onRefreshThemeEnginePacks: refreshThemePackages,
+        onOpenThemeEnginesFolder: openThemeEnginesFolder,
         iconThemePackages,
         iconThemePackagesDirectory: iconThemeSystemConfig.iconThemesDirectory,
         iconThemePackagesLoading,
@@ -3523,9 +3784,14 @@ function App() {
       pluginExplorerActions,
       pluginContextMenuItems,
       openAnimationsFolder,
+      openAppearancePacksFolder,
       openHomePacksFolder,
+      openInteractionMotionPacksFolder,
       openMenuPacksFolder,
+      openShellRenderersFolder,
       openShadersFolder,
+      openThemeEnginesFolder,
+      openThemeRecipesFolder,
       openPluginsFolder,
       openTopBarsFolder,
       openWallpapersFolder,
@@ -3546,7 +3812,8 @@ function App() {
       requestWindowModeChange,
       resolvedAppearance,
       combinedThemePackages,
-      menuPacks,
+      combinedMenuPacks,
+      themeBundleDependencyCatalogs,
       iconThemePackages,
       importWallpaperFiles,
       explorerPanelLayoutMode,

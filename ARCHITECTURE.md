@@ -25,7 +25,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - State: Zustand
 - Desktop host: Tauri 2 + Rust
 - Python runtime: managed virtualenv + persistent stdio JSON sidecar + embedded `pyo3` helpers
-- Visual system: CSS variables, theme packages, icon themes, shaders, animations
+- Visual system: CSS variables, theme bundles, appearance packs, icon themes, top bars, shaders, animations
 - Tests: Vitest unit/browser, Rust tests
 
 ## Main Entry Points
@@ -43,7 +43,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/panels/panelRegistry.tsx`
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
-  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video/audio editor paths, the shared preview-header workflow-tab system (`Preview` / `Edit` plus lane-owned wildcard tabs), the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode. It also accepts workspace-owned external reveal/navigation requests so shell-level actions such as command-palette global-search results can reopen the active pane at a directory and select a concrete entry without bypassing explorer state.
+  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video/audio/Python editor-workbench paths, the shared preview-header workflow-tab system (`Preview` / `Edit` plus lane-owned wildcard tabs), the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode. It also accepts workspace-owned external reveal/navigation requests so shell-level actions such as command-palette global-search results can reopen the active pane at a directory and select a concrete entry without bypassing explorer state.
 - `src/components/OverlayScrollArea.tsx`
   Shared overlay scroll host. It owns the explicit scrollbar contract for shipping-shell panes (`hidden`, `themed`, `explorer-file-list`) so explorer lists, popouts, and workbench/detail surfaces can share themed scroll behavior without per-component scrollbar CSS.
 - `src/components/ExplorerImageEditor.tsx`
@@ -54,6 +54,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shell-owned wrapper for the embedded preview-pane audio surface. It now follows the same preview-first shell model as the image/video lanes, but audio is also the first wildcard-tab consumer: `FileExplorer.tsx` opens audio in a clean playback-first preview surface, the shared preview header exposes `Preview | Edit | VST`, trim/export tools stay in explicit `Edit`, and the `VST` workflow keeps the playback/waveform overview visible while stacking a compact plugin lane underneath it. Headless VST parameter edits now round-trip through a live per-deck host instead of detached metadata, while inline native editor attachment still remains an honest unavailable path. Under that shell split it still rides the Rust audio engine, keeps shared waveform selection, DAW-style fade edge handles, memoized waveform/spectral subsurfaces, a RAF-driven playhead marker, loop/gain/rate control, offline export actions, and spectrogram rendering.
 - `src/components/explorer/explorerPreviewWorkflowTabs.ts`
   Shared preview-header workflow-tab contract. It canonicalizes the built-in non-edit/edit tabs, normalizes lane-owned wildcard tabs, and resolves the active workflow tab without persisting wildcard ids into explorer session state.
+- `src/components/ExplorerPythonWorkbench.tsx`
+  Shell-owned wrapper for the embedded Python preview lane. Python files stay on the shared workflow-tab system, but they are now explicitly code-first: `FileExplorer.tsx` opens them on `Edit`, hides the generic `Preview` tab, and adds `Run | Runtime` wildcard tabs for managed execution, runtime bootstrap/package maintenance, and managed REPL handoff. Managed runs render structured stdout/stderr back into the preview pane, while terminal-backed fallback routes into the explorer embedded terminal bottom drawer so the workbench does not disappear.
 - `src/components/ExplorerPdfWorkbench.tsx`
   Shell-owned wrapper for the embedded preview-pane PDF surface. It keeps the explorer preview-pane contract, renders one active page at a time, exposes page/zoom/fit/edit/save chrome, authors page-space overlay annotations plus AcroForm edits in React, and defers document truth/render/save back to the typed Rust PDF bridge.
 - `src/components/ExplorerSpreadsheetWorkbench.tsx`
@@ -105,7 +107,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/layoutProfiles.ts`
   Built-in and external layout manifest normalization for shell blueprints, pinned panels, control docks, and top/bottom chrome behavior.
 - `src/config/themePackages.ts`
-  Theme package discovery and manifest loading from `themes/`.
+  Theme-bundle discovery and orchestration from `themes/`. Filesystem themes are now bundle manifests that compose modular child folders and external pack ids back into resolved `OverlayThemeDefinition` objects.
+- `src/config/themeBundlePacks.ts`
+  Standalone modular pack loaders for `appearance-packs/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, and `theme-engines/`. Theme bundles and global managed roots both use these same authored pack formats.
 - `src/config/topBarPackages.ts`
   Standalone top-bar package discovery and manifest loading from `top-bars/`.
 - `src/config/iconTheme.ts` and `src/config/iconThemePackages.ts`
@@ -231,14 +235,19 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 ## Theme / Workbench Architecture
 
-- Overlay themes still own the global palette, effects, fonts, icon theme, visuals, and shader/motion defaults.
+- Overlay themes still resolve as the downstream shell identity, but authored filesystem themes are now bundle-first orchestration manifests instead of monolithic packages.
+- Theme bundles now orchestrate modular authored lanes:
+  - `themes/<bundle>/theme.json` or `theme.toml` points at lanes such as `appearancePackId`, `topBarId`, `iconThemeId`, `wallpaperId`, `shaderId`, `openAnimationId`, `closeAnimationId`, `interactionMotionPackId`, `rendererId`, `themeRecipeId`, `themeEngineId`, `homePackId`, and `menuPackId`
+  - bundle-local child folders can live in-place under `appearance-packs/`, `top-bars/`, `icon-themes/`, `wallpapers/`, `shaders/`, `animations/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, `theme-engines/`, `home-packs/`, and `menu-packs/`
+  - local child ids are scoped as `<themeBundleId>:<localId>` so bundle-local authored packs do not collide with standalone managed roots
+  - `src/components/SettingsPage.tsx` `Theme JSON` now edits/imports bundle manifests and persists them in `settings.appearance.customThemeBundles`; legacy monolithic theme JSON is intentionally rejected
 - Top bars are now a first-class shell subsystem instead of an implicit side effect of `theme.workbench.topBarStyle`:
   - `src/config/topBars.ts` defines the built-in catalog, the control-zone schema (`leadingControls`, `navigationShortcuts`, `trailingControls`), and the active resolution order: explicit user pin, `theme.defaultTopBarId`, legacy `theme.workbench.topBarStyle`, then built-in fallback
-  - `src/config/topBarPackages.ts` owns the standalone `top-bars/` loader, so authored top bars no longer need to hide inside theme packages just to exist on disk
+  - `src/config/topBarPackages.ts` owns the standalone `top-bars/` loader, so authored top bars no longer need to hide inside theme bundles just to exist on disk
   - `src/components/WorkbenchTopBar.tsx` renders the active top bar from that data-driven definition instead of hardcoding one shell-header workflow in `App.tsx`
   - `src/store/settingsStore.ts` now persists `settings.appearance.activeTopBarId`; `null` means "follow the active theme path"
   - `SettingsPage.tsx` owns top-bar selection in a dedicated `Top Bars` section, plus the open/refresh affordances for the standalone `top-bars/` root
-  - Theme packages can still contribute top bars and choose `theme.defaultTopBarId`; the authored `top-bars/` root and theme package contributions both flow through the same resolver
+  - Theme bundles can still contribute top bars and choose `theme.defaultTopBarId`; the authored `top-bars/` root and theme-bundle contributions both flow through the same resolver
 - Settings navigation is now catalog-driven instead of hardcoded section ids:
   - `src/config/settingsNavigation.ts` defines the canonical settings-section keys, labels, ordering, overview summaries, and keyword metadata used by the rail, overview cards, and command palette
   - `src/store/settingsStore.ts` persists `activeSection` as a typed `SettingsSectionKey`, and `SettingsPage.tsx` reads that store value directly so palette deep-links can land on sections like `Icons`, `Top Bars`, or `Context Menus` without component-local routing state
@@ -396,8 +405,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - worker lanes must always keep a safe fallback path so test mode, unsupported environments, or worker boot failures do not break plugin/theme/shader loading
   - `DevPerformanceHud.tsx` now surfaces worker activity, fallback count, error count, and last-task duration so frontend threading changes are observable during local performance work
 - Managed content roots now split by runtime mode:
-  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `top-bars/`, `home-packs/`, `menu-packs/`, `icon-themes/`, `shaders/`, `animations/`, `wallpapers/`, `notes/`, and `Screenshots/` so authoring stays in the workspace
-  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/top-bars`, `$HOME/home-packs`, `$HOME/menu-packs`, `$HOME/icon-themes`, `$HOME/shaders`, `$HOME/animations`, `$HOME/wallpapers`, `$HOME/notes`, or `$HOME/Screenshots`
+  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `appearance-packs/`, `top-bars/`, `home-packs/`, `menu-packs/`, `icon-themes/`, `wallpapers/`, `shaders/`, `animations/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, `theme-engines/`, `notes/`, and `Screenshots/` so authoring stays in the workspace
+  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/appearance-packs`, `$HOME/top-bars`, `$HOME/home-packs`, `$HOME/menu-packs`, `$HOME/icon-themes`, `$HOME/wallpapers`, `$HOME/shaders`, `$HOME/animations`, `$HOME/interaction-motion`, `$HOME/shell-renderers`, `$HOME/theme-recipes`, `$HOME/theme-engines`, `$HOME/notes`, or `$HOME/Screenshots`
   - `src/config/appContentDirectories.ts` owns that bootstrap, the managed-content catalog, and the legacy-home-path detection/migration rules
   - `src/App.tsx` and `SettingsPage.tsx` consume the managed-content catalog so workspace roots and folder-open commands stay discoverable as new managed roots are added
   - release migrations now also carry old `co.overlayterm.app` app-local directories forward into `co.greeblefs.app`
@@ -548,11 +557,23 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/`
   Persisted settings, explorer state, terminal state, and task state.
 - `themes/`
-  Theme packages discovered at runtime.
+  Theme bundles discovered at runtime. Each bundle is an orchestration manifest that can package local child folders and/or reference standalone managed packs.
+- `appearance-packs/`
+  Standalone appearance packs discovered at runtime.
 - `top-bars/`
   Standalone top-bar packages discovered at runtime.
+- `icon-themes/`
+  Standalone icon-theme packages discovered at runtime.
 - `menu-packs/`
   Authored explorer menu packs discovered at runtime. These control menu structure per explorer context independently from theme presentation.
+- `interaction-motion/`
+  Standalone shell interaction-motion packs discovered at runtime.
+- `shell-renderers/`
+  Standalone shell renderer packs discovered at runtime.
+- `theme-recipes/`
+  Standalone recipe packs for workbench/explorer/dock presentation discovered at runtime.
+- `theme-engines/`
+  Standalone engine-manifest packs for presentation, compatibility, render styles, and authored defaults discovered at runtime.
 - `animations/`
   Authored animation modules.
 - `wallpapers/`
@@ -561,6 +582,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Repo-owned Python workspace for the managed sidecar. It contains the sidecar manifest, the Python package that serves JSON-line actions over stdio, and the durable guide for adding new Python-backed capabilities.
 - `notes/`
   Managed notes/todos/bugs/prompts content root in development. Release builds move the same root under Tauri `AppLocalData`.
+- `queue/`
+  Repo-local intake lane for user-owned code folders that may donate systems into GreebleFS. `queue/staging/` is the active review lane, `queue/vault/` is the deferred/rejected lane, and `queue/queue.py` is the first-pass analyzer for repo fit, novelty, dependencies, semantic/path connections, and sanitize/scrub findings before agents start manual assimilation work.
 - `shaders/`
   Authored shader modules.
 - `src-tauri/`

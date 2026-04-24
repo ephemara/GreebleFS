@@ -5,6 +5,11 @@ import {
   type FolderIconValue,
 } from './folderIcons';
 import {
+  defaultMobileLayoutSettings,
+  normalizeMobileLayoutSettings,
+  type MobileLayoutSettings,
+} from './mobileLayout';
+import {
   getBuiltInIconTheme,
   type OverlayResolvedIconTheme,
 } from './iconTheme';
@@ -53,6 +58,8 @@ export interface MobileShareFolderIconRuleSnapshot {
   icon: string;
 }
 
+export interface MobileShareThemeLayoutSnapshot extends MobileLayoutSettings {}
+
 export interface MobileShareThemeSnapshot {
   themeId: string;
   themeName: string;
@@ -64,11 +71,13 @@ export interface MobileShareThemeSnapshot {
   iconTheme: MobileShareIconThemeSnapshot;
   folderIconRules: MobileShareFolderIconRuleSnapshot[];
   defaultFolderIcon: string;
+  layout: MobileShareThemeLayoutSnapshot;
 }
 
 export interface CreateMobileShareThemeSnapshotOptions {
   folderIconRules?: readonly FolderIconRule[];
   defaultFolderIcon?: FolderIconValue;
+  layout?: MobileLayoutSettings;
 }
 
 function cloneIconThemeSnapshot(
@@ -140,5 +149,9 @@ export function createMobileShareThemeSnapshot(
     folderIconRules: cloneFolderIconRules(options.folderIconRules),
     defaultFolderIcon:
       options.defaultFolderIcon ?? DEFAULT_FOLDER_ICON_VALUE,
+    layout: normalizeMobileLayoutSettings(
+      defaultMobileLayoutSettings,
+      options.layout,
+    ),
   };
 }

@@ -10,40 +10,74 @@ import {
 import {
   normalizeThemeDefinition,
   overlayThemePresets,
-  type OverlayThemeAssets,
-  type OverlayThemeCompatibility,
   type OverlayThemeDefinition,
-  type OverlayThemePresentation,
-  type OverlayThemeVisualLayer,
 } from './appearance';
 import {
-  compileThemeEngineManifest,
-  normalizeThemeManifestDraft,
-  type CompiledThemeEngineManifest,
-  type ExplorerThemeManifest,
-} from '../runtime/themeEngineBackend';
-import { type LoadedOverlayAnimation, loadAnimationFromSource, deriveAnimationId, deriveAnimationName } from '../components/animationRuntime';
+  createMediaWallpaperFromFile,
+  isFrontendWallpaperFile,
+  isMediaWallpaperFile,
+  loadWallpaperFromSource,
+  type LoadedOverlayWallpaper,
+} from '../components/wallpaperRuntime';
 import {
-  loadThemeRendererFromSource,
-  type LoadedOverlayThemeRenderer,
-} from '../components/themeRendererRuntime';
+  deriveAnimationName,
+  isFrontendAnimationFile,
+  loadAnimationFromSource,
+  type LoadedOverlayAnimation,
+} from '../components/animationRuntime';
 import {
-  createResolvedIconThemeFromEntries,
-  getBuiltInIconTheme,
-  mergeResolvedIconThemes,
-  parseIconThemeManifest,
-  resolveIconThemeManifest,
-  type OverlayResolvedIconTheme,
-} from './iconTheme';
-import { type LoadedOverlayShader, loadShaderFromSource, deriveShaderId, deriveShaderName, isFrontendShaderFile } from '../components/shaderRuntime';
-import { isFrontendAnimationFile } from '../components/animationRuntime';
+  deriveShaderName,
+  isFrontendShaderFile,
+  loadShaderFromSource,
+  type LoadedOverlayShader,
+} from '../components/shaderRuntime';
+import {
+  loadIconThemePackagesFromDirectoryEntries,
+  type LoadedIconThemePackage,
+} from './iconThemePackages';
 import { getManagedContentDirectory } from './appContentDirectories';
+import {
+  loadExplorerHomePacksFromDirectoryEntries,
+  type LoadedExplorerHomePack,
+} from './homePackages';
 import { joinPlatformPath } from './platform';
-import { OVERLAY_SHELL_BLUEPRINTS } from './shellBlueprints';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
-import type { WorkbenchRenderRuntimeKind } from './workbenchRenderRuntime';
-import { commands, unwrapTauriResult } from '../runtime/tauriClient';
-import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
+import {
+  loadThemeAppearancePacks,
+  loadThemeAppearancePacksFromDirectoryEntries,
+  loadThemeEnginePacks,
+  loadThemeEnginePacksFromDirectoryEntries,
+  loadThemeInteractionMotionPacks,
+  loadThemeInteractionMotionPacksFromDirectoryEntries,
+  loadThemeRecipePacks,
+  loadThemeRecipePacksFromDirectoryEntries,
+  loadThemeShellRendererPacks,
+  loadThemeShellRendererPacksFromDirectoryEntries,
+  createInlineThemeAppearancePack,
+  createInlineThemeEnginePack,
+  createInlineThemeInteractionMotionPack,
+  createInlineThemeRecipePack,
+  type LoadedThemeAppearancePack,
+  type LoadedThemeEnginePack,
+  type LoadedThemeInteractionMotionPack,
+  type LoadedThemeRecipePack,
+  type LoadedThemeShellRendererPack,
+  type ThemeAppearancePackManifest,
+  type ThemeEnginePackManifest,
+  type ThemeInteractionMotionPackManifest,
+  type ThemeRecipePackManifest,
+} from './themeBundlePacks';
+import {
+  loadExplorerMenuPacksFromDirectoryEntries,
+  type LoadedExplorerMenuPack,
+} from './menuPacks';
+import {
+  loadTopBarPackagesFromDirectoryEntries,
+} from './topBarPackages';
+import {
+  commands,
+  unwrapTauriResult,
+} from '../runtime/tauriClient';
 import {
   compareThemeCatalogPackages,
   resolveThemeCatalogPackageMetadata,
@@ -59,11 +93,8 @@ interface FileEntry {
 }
 
 type LooseRecord = Record<string, unknown>;
-const validShellBlueprintIds = new Set(OVERLAY_SHELL_BLUEPRINTS.map(blueprint => blueprint.id));
-const themeRendererRuntimeModuleExtensions = ['ts', 'tsx', 'js', 'jsx'] as const;
-type ShellBlueprintId = NonNullable<OverlayThemeCompatibility['shellBlueprints']>[number];
 
-export interface OverlayThemePackageManifest {
+export interface OverlayThemeBundleManifest {
   version?: number;
   id?: string;
   name?: string;
@@ -72,63 +103,83 @@ export interface OverlayThemePackageManifest {
   homepage?: string;
   tags?: string[];
   extends?: string;
-  defaultTopBarId?: string;
-  defaultHomePackId?: string;
-  topBars?: OverlayTopBarDefinition[];
-  theme?: Partial<OverlayThemeDefinition>;
-  assets?: {
-    background?: string;
-    preview?: string;
-    iconsDirectory?: string;
-    iconTheme?: string;
-    iconAliases?: Record<string, string>;
-  };
-  contributions?: {
-    shaders?: string[];
-    animations?: string[];
-  };
-  visuals?: OverlayThemeVisualLayer[];
-  cssVars?: Record<string, string>;
-  fonts?: {
-    ui?: string;
-    mono?: string;
-  };
-  presentation?: OverlayThemePresentation;
-  compatibility?: OverlayThemeCompatibility;
-  designTokens?: ExplorerThemeManifest['designTokens'];
-  layoutPrimitives?: ExplorerThemeManifest['layoutPrimitives'];
-  navigationPatterns?: ExplorerThemeManifest['navigationPatterns'];
-  animationProfiles?: ExplorerThemeManifest['animationProfiles'];
-  iconPacks?: ExplorerThemeManifest['iconPacks'];
-  renderStyles?: ExplorerThemeManifest['renderStyles'];
-  defaultLayoutPrimitiveId?: ExplorerThemeManifest['defaultLayoutPrimitiveId'];
-  defaultNavigationPatternId?: ExplorerThemeManifest['defaultNavigationPatternId'];
-  defaultAnimationProfileId?: ExplorerThemeManifest['defaultAnimationProfileId'];
-  defaultIconPackId?: ExplorerThemeManifest['defaultIconPackId'];
-  defaultRenderStyleId?: ExplorerThemeManifest['defaultRenderStyleId'];
-  themeRenderer?: {
-    entryModule?: string;
-    apiVersion?: number;
-    supportsLiveSwap?: boolean;
-    fallbackRuntime?: WorkbenchRenderRuntimeKind;
-    capabilities?: {
-      customScreens?: boolean;
-      wallpaperScene?: boolean;
-      surfaceAdapters?: boolean;
-    };
+  preview?: string;
+  appearancePackId?: string;
+  topBarId?: string;
+  iconThemeId?: string;
+  wallpaperId?: string;
+  shaderId?: string;
+  openAnimationId?: string;
+  closeAnimationId?: string;
+  interactionMotionPackId?: string;
+  rendererId?: string;
+  themeRecipeId?: string;
+  themeEngineId?: string;
+  homePackId?: string;
+  menuPackId?: string;
+  embedded?: {
+    appearancePacks?: ThemeAppearancePackManifest[];
+    interactionMotionPacks?: ThemeInteractionMotionPackManifest[];
+    themeRecipes?: ThemeRecipePackManifest[];
+    themeEngines?: ThemeEnginePackManifest[];
   };
 }
 
-interface OverlayThemePackageRecord {
+interface OverlayThemeBundleRecord {
   directoryName: string;
   directoryPath: string;
   manifestPath: string;
-  manifest: OverlayThemePackageManifest;
+  manifest: OverlayThemeBundleManifest;
 }
 
 export interface ThemePackageDirectoryEntry {
   name: string;
   path: string;
+}
+
+export interface LoadedThemeBundleLocalId {
+  id: string;
+  localId: string;
+}
+
+export interface LoadedThemeBundleLocalIconTheme extends LoadedIconThemePackage {
+  localId: string;
+}
+
+export interface LoadedThemeBundleLocalWallpaper extends LoadedOverlayWallpaper {
+  localId: string;
+}
+
+export interface LoadedThemeBundleLocalHomePack extends LoadedExplorerHomePack {
+  localId: string;
+}
+
+export interface LoadedThemeBundleLocalMenuPack extends LoadedExplorerMenuPack {
+  localId: string;
+}
+
+export interface ThemeBundleLocalCatalogs {
+  appearancePacks: LoadedThemeAppearancePack[];
+  interactionMotionPacks: LoadedThemeInteractionMotionPack[];
+  shellRenderers: LoadedThemeShellRendererPack[];
+  themeRecipePacks: LoadedThemeRecipePack[];
+  themeEnginePacks: LoadedThemeEnginePack[];
+  iconThemePackages: LoadedThemeBundleLocalIconTheme[];
+  wallpapers: LoadedThemeBundleLocalWallpaper[];
+  homePacks: LoadedThemeBundleLocalHomePack[];
+  menuPacks: LoadedThemeBundleLocalMenuPack[];
+  shaders: LoadedThemeBundleLocalId[];
+  animations: LoadedThemeBundleLocalId[];
+}
+
+export interface ThemeBundleDependencyCatalogs {
+  appearancePacks?: LoadedThemeAppearancePack[];
+  interactionMotionPacks?: LoadedThemeInteractionMotionPack[];
+  shellRenderers?: LoadedThemeShellRendererPack[];
+  themeRecipePacks?: LoadedThemeRecipePack[];
+  themeEnginePacks?: LoadedThemeEnginePack[];
+  iconThemePackages?: LoadedIconThemePackage[];
+  wallpapers?: LoadedOverlayWallpaper[];
 }
 
 export interface LoadedOverlayThemePackage {
@@ -157,11 +208,22 @@ export interface LoadedOverlayThemePackage {
     themeRenderer: boolean;
     topBars?: number;
   };
+  manifest?: OverlayThemeBundleManifest;
+  localCatalogs?: ThemeBundleLocalCatalogs;
   theme: OverlayThemeDefinition;
-  engineManifest?: ExplorerThemeManifest;
-  compiledEngineManifest?: CompiledThemeEngineManifest;
-  themeRenderer?: LoadedOverlayThemeRenderer;
+  engineManifest?: OverlayThemeDefinition['engineManifest'];
+  compiledEngineManifest?: OverlayThemeDefinition['compiledEngineManifest'];
+  themeRenderer?: OverlayThemeDefinition['themeRenderer'];
   topBars?: LoadedOverlayTopBarDefinition[];
+}
+
+export interface GlobalThemeBundleCatalogs {
+  appearancePacks: LoadedThemeAppearancePack[];
+  interactionMotionPacks: LoadedThemeInteractionMotionPack[];
+  shellRenderers: LoadedThemeShellRendererPack[];
+  themeRecipePacks: LoadedThemeRecipePack[];
+  themeEnginePacks: LoadedThemeEnginePack[];
+  warnings: string[];
 }
 
 export interface ThemePackageLoadResult {
@@ -171,26 +233,63 @@ export interface ThemePackageLoadResult {
   directory: string;
   warnings: string[];
   sourceError: string | null;
+  dependencyCatalogs: GlobalThemeBundleCatalogs;
 }
 
 export interface ThemePackageLoadOptions {
   sourceKind?: LoadedOverlayThemePackage['sourceKind'];
   sourceLabel?: string;
+  dependencyCatalogs?: GlobalThemeBundleCatalogs;
 }
 
 export const themeSystemConfig = {
   get themesDirectory(): string {
-    return resolveThemesDirectory();
+    return getManagedContentDirectory('themes');
   },
   manifestNames: ['theme.json', 'theme.toml', 'manifest.json', 'manifest.toml'] as const,
-  packageShadersDirectoryName: 'shaders',
-  packageAnimationsDirectoryName: 'animations',
+  childDirectoryNames: {
+    appearancePacks: 'appearance-packs',
+    topBars: 'top-bars',
+    iconThemes: 'icon-themes',
+    wallpapers: 'wallpapers',
+    shaders: 'shaders',
+    animations: 'animations',
+    interactionMotion: 'interaction-motion',
+    shellRenderers: 'shell-renderers',
+    themeRecipes: 'theme-recipes',
+    themeEngines: 'theme-engines',
+    homePacks: 'home-packs',
+    menuPacks: 'menu-packs',
+  },
   runtimeAssetPollingEnabled: resolveRuntimeAssetPollingEnabled(),
   scanIntervalMs: 5000,
 };
 
-function resolveThemesDirectory(): string {
-  return getManagedContentDirectory('themes');
+function emptyLocalCatalogs(): ThemeBundleLocalCatalogs {
+  return {
+    appearancePacks: [],
+    interactionMotionPacks: [],
+    shellRenderers: [],
+    themeRecipePacks: [],
+    themeEnginePacks: [],
+    iconThemePackages: [],
+    wallpapers: [],
+    homePacks: [],
+    menuPacks: [],
+    shaders: [],
+    animations: [],
+  };
+}
+
+export function createEmptyGlobalThemeBundleCatalogs(): GlobalThemeBundleCatalogs {
+  return {
+    appearancePacks: [],
+    interactionMotionPacks: [],
+    shellRenderers: [],
+    themeRecipePacks: [],
+    themeEnginePacks: [],
+    warnings: [],
+  };
 }
 
 function asRecord(value: unknown): LooseRecord | null {
@@ -204,70 +303,29 @@ function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
 }
 
-function asStringRecord(value: unknown): Record<string, string> {
-  const source = asRecord(value);
-  if (!source) {
-    return {};
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
   }
 
-  return Object.fromEntries(
-    Object.entries(source)
-      .filter(([, entry]) => typeof entry === 'string' && entry.trim().length > 0)
-      .map(([key, entry]) => [key, String(entry).trim()]),
-  );
-}
-
-function isWorkbenchRenderRuntimeKind(value: unknown): value is WorkbenchRenderRuntimeKind {
-  return value === 'workbench-tabs'
-    || value === 'cross-axis-media'
-    || value === 'channel-launcher'
-    || value === 'desktop-stack';
-}
-
-function parseThemeCompatibility(value: unknown): OverlayThemeCompatibility | undefined {
-  const source = asRecord(value);
-  if (!source) {
-    return undefined;
-  }
-
-  const shellBlueprints = Array.isArray(source.shellBlueprints)
-    ? (source.shellBlueprints as unknown[])
+  return Array.from(new Set(
+    value
       .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-      .map(entry => entry.trim())
-      .filter((entry): entry is ShellBlueprintId => validShellBlueprintIds.has(entry as ShellBlueprintId))
-    : [];
-  const tags = Array.isArray(source.tags)
-    ? (source.tags as unknown[])
-      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-      .map(entry => entry.trim())
-    : [];
-
-  return {
-    shellBlueprints,
-    tags,
-  };
+      .map(entry => entry.trim()),
+  ));
 }
 
-function derivePackageId(record: OverlayThemePackageRecord): string {
-  const explicitId = asString(record.manifest.id) || asString(record.manifest.theme?.id);
-  if (explicitId) {
-    return explicitId;
-  }
-
-  return record.directoryName
+function normalizeIdFragment(value: string | undefined, fallback: string): string {
+  const normalized = (value ?? fallback)
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'theme-package';
+    .replace(/^-+|-+$/g, '');
+  return normalized || fallback;
 }
 
-function derivePackageName(record: OverlayThemePackageRecord): string {
-  return asString(record.manifest.name)
-    || asString(record.manifest.theme?.name)
-    || record.directoryName
-      .replace(/[-_]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .replace(/\b\w/g, letter => letter.toUpperCase());
+function createScopedId(scopeId: string, localId: string): string {
+  return `${normalizeIdFragment(scopeId, 'theme-bundle')}:${normalizeIdFragment(localId, 'local')}`;
 }
 
 function toAssetUrl(filePath: string): string {
@@ -283,129 +341,100 @@ function toAssetUrl(filePath: string): string {
   }
 }
 
-function shouldInlineThemeAsset(filePath: string): boolean {
-  return /\.svg$/i.test(filePath);
+function normalizeRelativeAssetPath(path: string): string {
+  return path.trim().replace(/^\.(?:\/|\\)/, '');
 }
 
-async function toInlineAssetUrl(filePath: string): Promise<string> {
-  if (typeof window === 'undefined' || !isTauri()) {
-    return toAssetUrl(filePath);
+async function resolveOptionalPreviewUrl(directoryPath: string, previewPath?: string): Promise<string | undefined> {
+  const trimmedPath = previewPath?.trim();
+  if (!trimmedPath) {
+    return undefined;
   }
 
-  try {
-    return await commands.fsReadFileBase64(filePath).then(unwrapTauriResult);
-  } catch {
-    return toAssetUrl(filePath);
-  }
+  return toAssetUrl(joinPlatformPath(directoryPath, normalizeRelativeAssetPath(trimmedPath)));
 }
 
-async function resolveThemePackageAssetUrl(filePath: string): Promise<string> {
-  if (shouldInlineThemeAsset(filePath)) {
-    return toInlineAssetUrl(filePath);
+function deriveBundleId(record: OverlayThemeBundleRecord): string {
+  const explicitId = asString(record.manifest.id);
+  if (explicitId) {
+    return explicitId;
   }
-  return toAssetUrl(filePath);
+
+  return record.directoryName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'theme-bundle';
 }
 
-function normalizePackageAssetPath(assetPath: string): string {
-  return assetPath.trim().replace(/^\.(?:\/|\\)/, '');
+function deriveBundleName(record: OverlayThemeBundleRecord, bundleId: string): string {
+  return asString(record.manifest.name)
+    || bundleId.replace(/-/g, ' ').replace(/\b\w/g, character => character.toUpperCase());
 }
 
-function normalizePackageComparisonPath(path: string): string {
-  return path
-    .replace(/\\/g, '/')
-    .replace(/\/+/g, '/')
-    .replace(/\/+$/g, '');
+function getParentDirectoryPath(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  const lastSlash = normalized.lastIndexOf('/');
+  if (lastSlash <= 0) {
+    return normalized.startsWith('/') ? '/' : '.';
+  }
+
+  return normalized.slice(0, lastSlash);
 }
 
-function normalizePackageRuntimeModulePath(path: string): string | null {
-  const normalizedPath = path.trim().replace(/\\/g, '/');
-  if (!normalizedPath || normalizedPath.startsWith('/') || /^[A-Za-z]:\//.test(normalizedPath)) {
-    return null;
-  }
-
-  const segments: string[] = [];
-  for (const segment of normalizedPath.split('/')) {
-    if (!segment || segment === '.') {
-      continue;
-    }
-
-    if (segment === '..') {
-      if (segments.length === 0) {
-        return null;
-      }
-      segments.pop();
-      continue;
-    }
-
-    segments.push(segment);
-  }
-
-  return segments.join('/');
+function hasLegacyThemePackageFields(source: LooseRecord): boolean {
+  return [
+    'theme',
+    'topBars',
+    'assets',
+    'contributions',
+    'visuals',
+    'cssVars',
+    'fonts',
+    'presentation',
+    'compatibility',
+    'designTokens',
+    'layoutPrimitives',
+    'navigationPatterns',
+    'animationProfiles',
+    'iconPacks',
+    'renderStyles',
+    'themeRenderer',
+    'defaultTopBarId',
+    'defaultHomePackId',
+    'defaultShaderId',
+    'defaultOpenAnimationId',
+    'defaultCloseAnimationId',
+  ].some(key => key in source);
 }
 
-function getPackageRelativePath(directoryPath: string, filePath: string): string | null {
-  const normalizedDirectoryPath = normalizePackageComparisonPath(directoryPath);
-  const normalizedFilePath = normalizePackageComparisonPath(filePath);
-  if (!normalizedDirectoryPath || !normalizedFilePath) {
-    return null;
-  }
-
-  if (normalizedFilePath === normalizedDirectoryPath) {
-    return '';
-  }
-
-  if (!normalizedFilePath.startsWith(`${normalizedDirectoryPath}/`)) {
-    return null;
-  }
-
-  return normalizedFilePath.slice(normalizedDirectoryPath.length + 1);
+function parseInlinePackArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
 }
 
-function resolvePackageRuntimeModuleImportPath(
-  fromModuleRelativePath: string,
-  specifier: string,
-): string | null {
-  const importerSegments = fromModuleRelativePath.replace(/\\/g, '/').split('/').filter(Boolean);
-  importerSegments.pop();
-  const specifierSegments = specifier.replace(/\\/g, '/').split('/');
-  return normalizePackageRuntimeModulePath(
-    [...importerSegments, ...specifierSegments].join('/'),
-  );
-}
-
-function buildPackageRuntimeModuleCandidates(relativePath: string): string[] {
-  const normalizedRelativePath = normalizePackageRuntimeModulePath(relativePath);
-  if (!normalizedRelativePath) {
-    return [];
-  }
-
-  const candidates = new Set<string>();
-  if (/\.[^./]+$/.test(normalizedRelativePath)) {
-    candidates.add(normalizedRelativePath);
-  } else {
-    for (const extension of themeRendererRuntimeModuleExtensions) {
-      candidates.add(`${normalizedRelativePath}.${extension}`);
-      candidates.add(`${normalizedRelativePath}/index.${extension}`);
-    }
-  }
-
-  return [...candidates];
-}
-
-function parseThemeManifestText(text: string, filePath: string): OverlayThemePackageManifest {
+function parseThemeBundleManifestText(text: string, filePath: string): OverlayThemeBundleManifest {
   const trimmed = text.trim();
   if (!trimmed) {
-    throw new Error(`Theme manifest is empty: ${filePath}`);
+    throw new Error(`Theme bundle manifest is empty: ${filePath}`);
   }
 
-  const lowerPath = filePath.toLowerCase();
-  const parsed = lowerPath.endsWith('.toml')
+  const parsed = filePath.toLowerCase().endsWith('.toml')
     ? parseToml(trimmed)
     : JSON.parse(trimmed);
   const source = asRecord(parsed);
   if (!source) {
-    throw new Error(`Theme manifest must be an object: ${filePath}`);
+    throw new Error(`Theme bundle manifest must be an object: ${filePath}`);
   }
+
+  if (hasLegacyThemePackageFields(source)) {
+    throw new Error(`Legacy monolithic theme packages are no longer supported: ${filePath}`);
+  }
+
+  const embedded = asRecord(source.embedded);
+  const appearancePack = asRecord(source.appearancePack) as ThemeAppearancePackManifest | undefined;
+  const interactionMotionPack = asRecord(source.interactionMotionPack) as ThemeInteractionMotionPackManifest | undefined;
+  const themeRecipePack = asRecord(source.themeRecipePack) as ThemeRecipePackManifest | undefined;
+  const themeEnginePack = asRecord(source.themeEnginePack) as ThemeEnginePackManifest | undefined;
 
   return {
     version: typeof source.version === 'number' ? source.version : 1,
@@ -414,484 +443,752 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
     description: asString(source.description),
     author: asString(source.author),
     homepage: asString(source.homepage),
-    tags: Array.isArray(source.tags)
-      ? source.tags.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0).map(entry => entry.trim())
-      : [],
+    tags: asStringArray(source.tags),
     extends: asString(source.extends),
-    defaultTopBarId: asString(source.defaultTopBarId),
-    topBars: Array.isArray(source.topBars)
-      ? source.topBars.filter((entry): entry is OverlayTopBarDefinition => Boolean(asRecord(entry)))
-        .map(entry => asRecord(entry) as OverlayTopBarDefinition)
-      : [],
-    theme: asRecord(source.theme) as Partial<OverlayThemeDefinition> | undefined,
-    assets: {
-      background: asString(asRecord(source.assets)?.background),
-      preview: asString(asRecord(source.assets)?.preview),
-      iconsDirectory: asString(asRecord(source.assets)?.iconsDirectory),
-      iconTheme: asString(asRecord(source.assets)?.iconTheme),
-      iconAliases: asStringRecord(asRecord(source.assets)?.iconAliases),
+    preview: asString(source.preview),
+    appearancePackId: asString(source.appearancePackId),
+    topBarId: asString(source.topBarId),
+    iconThemeId: asString(source.iconThemeId),
+    wallpaperId: asString(source.wallpaperId),
+    shaderId: asString(source.shaderId),
+    openAnimationId: asString(source.openAnimationId),
+    closeAnimationId: asString(source.closeAnimationId),
+    interactionMotionPackId: asString(source.interactionMotionPackId),
+    rendererId: asString(source.rendererId),
+    themeRecipeId: asString(source.themeRecipeId),
+    themeEngineId: asString(source.themeEngineId),
+    homePackId: asString(source.homePackId),
+    menuPackId: asString(source.menuPackId),
+    embedded: {
+      appearancePacks: [
+        ...(appearancePack ? [appearancePack] : []),
+        ...parseInlinePackArray<ThemeAppearancePackManifest>(embedded?.appearancePacks),
+      ],
+      interactionMotionPacks: [
+        ...(interactionMotionPack ? [interactionMotionPack] : []),
+        ...parseInlinePackArray<ThemeInteractionMotionPackManifest>(embedded?.interactionMotionPacks),
+      ],
+      themeRecipes: [
+        ...(themeRecipePack ? [themeRecipePack] : []),
+        ...parseInlinePackArray<ThemeRecipePackManifest>(embedded?.themeRecipes),
+      ],
+      themeEngines: [
+        ...(themeEnginePack ? [themeEnginePack] : []),
+        ...parseInlinePackArray<ThemeEnginePackManifest>(embedded?.themeEngines),
+      ],
     },
-    contributions: {
-      shaders: Array.isArray(asRecord(source.contributions)?.shaders)
-        ? (asRecord(source.contributions)?.shaders as unknown[]).filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0).map(entry => entry.trim())
-        : [],
-      animations: Array.isArray(asRecord(source.contributions)?.animations)
-        ? (asRecord(source.contributions)?.animations as unknown[]).filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0).map(entry => entry.trim())
-        : [],
-    },
-    visuals: Array.isArray(source.visuals) ? source.visuals as OverlayThemeVisualLayer[] : undefined,
-    cssVars: asStringRecord(source.cssVars),
-    fonts: {
-      ui: asString(asRecord(source.fonts)?.ui),
-      mono: asString(asRecord(source.fonts)?.mono),
-    },
-    presentation: asRecord(source.presentation) as OverlayThemePresentation | undefined,
-    compatibility: parseThemeCompatibility(source.compatibility),
-    designTokens: Array.isArray(source.designTokens)
-      ? source.designTokens as ExplorerThemeManifest['designTokens']
-      : undefined,
-    layoutPrimitives: Array.isArray(source.layoutPrimitives)
-      ? source.layoutPrimitives as ExplorerThemeManifest['layoutPrimitives']
-      : undefined,
-    navigationPatterns: Array.isArray(source.navigationPatterns)
-      ? source.navigationPatterns as ExplorerThemeManifest['navigationPatterns']
-      : undefined,
-    animationProfiles: Array.isArray(source.animationProfiles)
-      ? source.animationProfiles as ExplorerThemeManifest['animationProfiles']
-      : undefined,
-    iconPacks: Array.isArray(source.iconPacks)
-      ? source.iconPacks as ExplorerThemeManifest['iconPacks']
-      : undefined,
-    renderStyles: Array.isArray(source.renderStyles)
-      ? source.renderStyles as ExplorerThemeManifest['renderStyles']
-      : undefined,
-    defaultLayoutPrimitiveId: typeof source.defaultLayoutPrimitiveId === 'string'
-      ? source.defaultLayoutPrimitiveId.trim()
-      : undefined,
-    defaultNavigationPatternId: typeof source.defaultNavigationPatternId === 'string'
-      ? source.defaultNavigationPatternId.trim()
-      : undefined,
-    defaultAnimationProfileId: typeof source.defaultAnimationProfileId === 'string'
-      ? source.defaultAnimationProfileId.trim()
-      : undefined,
-    defaultIconPackId: typeof source.defaultIconPackId === 'string'
-      ? source.defaultIconPackId.trim()
-      : undefined,
-    defaultRenderStyleId: typeof source.defaultRenderStyleId === 'string'
-      ? source.defaultRenderStyleId.trim()
-      : undefined,
-    themeRenderer: (() => {
-      const rendererSource = asRecord(source.themeRenderer);
-      if (!rendererSource) {
-        return undefined;
-      }
-      const capabilitiesSource = asRecord(rendererSource.capabilities);
-
-      return {
-        entryModule: asString(rendererSource.entryModule ?? rendererSource.entry),
-        apiVersion: typeof rendererSource.apiVersion === 'number'
-          ? rendererSource.apiVersion
-          : undefined,
-        supportsLiveSwap: typeof rendererSource.supportsLiveSwap === 'boolean'
-          ? rendererSource.supportsLiveSwap
-          : undefined,
-        fallbackRuntime: isWorkbenchRenderRuntimeKind(rendererSource.fallbackRuntime)
-          ? rendererSource.fallbackRuntime
-          : undefined,
-        capabilities: {
-          customScreens: typeof capabilitiesSource?.customScreens === 'boolean'
-            ? capabilitiesSource.customScreens
-            : undefined,
-          wallpaperScene: typeof capabilitiesSource?.wallpaperScene === 'boolean'
-            ? capabilitiesSource.wallpaperScene
-            : undefined,
-          surfaceAdapters: typeof capabilitiesSource?.surfaceAdapters === 'boolean'
-            ? capabilitiesSource.surfaceAdapters
-            : undefined,
-        },
-      };
-    })(),
   };
 }
 
-async function readPackageManifest(directoryPath: string): Promise<{ manifestPath: string; manifest: OverlayThemePackageManifest } | null> {
-  const candidates = themeSystemConfig.manifestNames.map(name => joinPlatformPath(directoryPath, name));
-
-  for (const candidatePath of candidates) {
+async function readBundleManifest(directoryPath: string): Promise<{ manifestPath: string; manifest: OverlayThemeBundleManifest } | null> {
+  for (const manifestName of themeSystemConfig.manifestNames) {
+    const manifestPath = joinPlatformPath(directoryPath, manifestName);
+    let text: string;
     try {
-      const text = await commands.fsReadTextFile(candidatePath).then(unwrapTauriResult);
-      return {
-        manifestPath: candidatePath,
-        manifest: parseThemeManifestText(text, candidatePath),
-      };
+      text = await commands.fsReadTextFile(manifestPath).then(unwrapTauriResult);
     } catch {
       continue;
     }
+
+    return {
+      manifestPath,
+      manifest: parseThemeBundleManifestText(text, manifestPath),
+    };
   }
 
   return null;
 }
 
-async function resolveIconEntries(directoryPath: string, iconsDirectory: string, aliases: Record<string, string>): Promise<Record<string, string>> {
-  const iconsPath = joinPlatformPath(directoryPath, normalizePackageAssetPath(iconsDirectory));
-  const entries = await commands.fsListDir(iconsPath, false).then(unwrapTauriResult);
-  const resolvedEntries = await Promise.all(
-    entries
-      .filter(entry => !entry.is_dir)
-      .map(async entry => {
-        const baseName = entry.name.replace(/\.[^.]+$/, '').toLowerCase();
-        return [baseName, await toInlineAssetUrl(entry.path)] as const;
-      }),
-  );
-  const resolved = Object.fromEntries(resolvedEntries);
-
-  Object.entries(aliases).forEach(([alias, target]) => {
-    const resolvedTarget = resolved[target.toLowerCase()];
-    if (resolvedTarget) {
-      resolved[alias.toLowerCase()] = resolvedTarget;
-    }
-  });
-
-  return resolved;
-}
-
-async function resolvePackageIconTheme(
-  directoryPath: string,
-  iconThemePath: string,
-): Promise<OverlayResolvedIconTheme> {
-  const absolutePath = joinPlatformPath(directoryPath, iconThemePath);
-  const text = await commands.fsReadTextFile(absolutePath).then(unwrapTauriResult);
-  const manifest = parseIconThemeManifest(text);
-  const resolvedIconEntries = await Promise.all(
-    Object.entries(manifest.iconDefinitions ?? {}).map(async ([key, value]) => {
-      const iconPath = typeof value === 'string' ? value : value?.iconPath;
-      if (!iconPath?.trim()) {
-        return null;
-      }
-
-      const absoluteIconPath = joinPlatformPath(
-        directoryPath,
-        normalizePackageAssetPath(iconPath),
-      );
-      return [key, await toInlineAssetUrl(absoluteIconPath)] as const;
-    }),
-  );
-  const resolved = resolveIconThemeManifest(
-    {
-      ...manifest,
-      iconDefinitions: Object.fromEntries(
-        resolvedIconEntries.filter(
-          (entry): entry is readonly [string, string] => Boolean(entry),
-        ),
-      ),
-    },
-    iconPath => iconPath,
-  );
-  return mergeResolvedIconThemes(getBuiltInIconTheme(), resolved);
-}
-
-function createRelativeFileEntry(directoryPath: string, relativePath: string): FileEntry {
-  const normalizedPath = normalizePackageAssetPath(relativePath);
-  const absolutePath = joinPlatformPath(directoryPath, normalizedPath);
-  const pathSegments = normalizedPath.split(/[\\/]/).filter(Boolean);
-  const fileName = pathSegments[pathSegments.length - 1] ?? normalizedPath;
-  const extensionMatch = /\.([^.]+)$/.exec(fileName);
-  return {
-    name: fileName,
-    path: absolutePath,
-    is_dir: false,
-    extension: extensionMatch?.[1]?.toLowerCase() ?? '',
-    modified: 0,
-  };
-}
-
-function createThemeRendererRelativeModuleSourceResolver(
-  directoryPath: string,
-): RuntimeRelativeModuleSourceResolver {
-  return async ({ fromModulePath, specifier }) => {
-    const fromModuleRelativePath = getPackageRelativePath(directoryPath, fromModulePath);
-    if (fromModuleRelativePath == null) {
-      return null;
-    }
-
-    const resolvedImportPath = resolvePackageRuntimeModuleImportPath(fromModuleRelativePath, specifier);
-    if (!resolvedImportPath) {
-      return null;
-    }
-
-    for (const candidateRelativePath of buildPackageRuntimeModuleCandidates(resolvedImportPath)) {
-      const candidateAbsolutePath = joinPlatformPath(directoryPath, candidateRelativePath);
-      try {
-        const source = await commands.fsReadTextFile(candidateAbsolutePath).then(unwrapTauriResult);
-        return {
-          modulePath: candidateAbsolutePath,
-          source,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
-  };
-}
-
-async function resolvePackageRuntimeEntries(
-  directoryPath: string,
-  explicitPaths: string[] | undefined,
-  defaultDirectoryName: string,
-  filterEntry: (entry: FileEntry) => boolean,
-): Promise<FileEntry[]> {
-  if (explicitPaths && explicitPaths.length > 0) {
-    return explicitPaths
-      .map(relativePath => createRelativeFileEntry(directoryPath, relativePath))
-      .filter(filterEntry);
-  }
-
-  const runtimeDirectory = joinPlatformPath(directoryPath, defaultDirectoryName);
+async function loadChildDirectoryEntries(directoryPath: string): Promise<FileEntry[]> {
   try {
-    const entries = await commands.fsListDir(runtimeDirectory, false).then(unwrapTauriResult);
-    return entries.filter(entry => !entry.is_dir && filterEntry(entry));
+    return await commands.fsListDir(directoryPath, false).then(unwrapTauriResult);
   } catch {
     return [];
   }
 }
 
-function mergeVisualLayers(
-  baseVisuals: OverlayThemeVisualLayer[] | undefined,
-  packageVisuals: OverlayThemeVisualLayer[] | undefined,
-): OverlayThemeVisualLayer[] | undefined {
-  const next = [...(baseVisuals ?? []), ...(packageVisuals ?? [])].filter(layer => Boolean(layer?.backgroundImage));
-  return next.length > 0 ? next : undefined;
+function toTopBarDefinition(topBar: LoadedOverlayTopBarDefinition): OverlayTopBarDefinition {
+  return {
+    id: topBar.localId,
+    name: topBar.name,
+    description: topBar.description,
+    topBarStyle: topBar.topBarStyle,
+    tabStyle: topBar.tabStyle,
+    navigationMode: topBar.navigationMode,
+    leadingControls: topBar.leadingControls,
+    navigationShortcuts: topBar.navigationShortcuts,
+    trailingControls: topBar.trailingControls,
+    tags: topBar.tags,
+  };
 }
 
-function mergeThemeAssets(
-  baseAssets: OverlayThemeAssets | undefined,
-  packageAssets: OverlayThemeAssets | undefined,
-): OverlayThemeAssets | undefined {
-  if (!baseAssets && !packageAssets) {
-    return undefined;
+function scopeTopBarsToBundle(
+  bundleId: string,
+  bundleName: string,
+  topBars: LoadedOverlayTopBarDefinition[],
+): LoadedOverlayTopBarDefinition[] {
+  const deduped = new Map<string, LoadedOverlayTopBarDefinition>();
+
+  for (const topBar of topBars) {
+    const loaded = createLoadedTopBarDefinition(
+      toTopBarDefinition(topBar),
+      {
+        source: 'theme-package',
+        sourceLabel: bundleName,
+        scopeId: bundleId,
+        sourceThemeId: bundleId,
+      },
+    );
+    if (!deduped.has(loaded.id)) {
+      deduped.set(loaded.id, loaded);
+    }
   }
 
+  return Array.from(deduped.values());
+}
+
+function scopeIconThemePackageToBundle(
+  bundleId: string,
+  iconThemePackage: LoadedIconThemePackage,
+): LoadedThemeBundleLocalIconTheme {
+  const localId = normalizeIdFragment(iconThemePackage.id, 'icon-theme');
+  const scopedId = createScopedId(bundleId, localId);
   return {
-    ...baseAssets,
-    ...packageAssets,
-    iconTheme: packageAssets?.iconTheme
-      ? mergeResolvedIconThemes(
-          baseAssets?.iconTheme ?? getBuiltInIconTheme(),
-          packageAssets.iconTheme,
-        )
-      : baseAssets?.iconTheme,
-    iconEntries: {
-      ...(baseAssets?.iconEntries ?? {}),
-      ...(packageAssets?.iconEntries ?? {}),
+    ...iconThemePackage,
+    id: scopedId,
+    localId,
+    iconTheme: {
+      ...iconThemePackage.iconTheme,
+      id: scopedId,
     },
   };
 }
 
-function buildThemeEngineManifest(
-  packageId: string,
-  packageName: string,
-  manifest: OverlayThemePackageManifest,
-  resolvedTheme?: OverlayThemeDefinition,
-): ExplorerThemeManifest | undefined {
-  const hasEngineMetadata = Boolean(
-    manifest.designTokens?.length
-      || manifest.layoutPrimitives?.length
-      || manifest.navigationPatterns?.length
-      || manifest.animationProfiles?.length
-      || manifest.iconPacks?.length
-      || manifest.renderStyles?.length
-      || manifest.defaultLayoutPrimitiveId
-      || manifest.defaultNavigationPatternId
-      || manifest.defaultAnimationProfileId
-      || manifest.defaultIconPackId
-      || manifest.defaultRenderStyleId,
-  );
-  if (!hasEngineMetadata) {
+function scopeWallpaperToBundle(
+  bundleId: string,
+  wallpaper: LoadedOverlayWallpaper,
+): LoadedThemeBundleLocalWallpaper {
+  const localId = normalizeIdFragment(wallpaper.id ?? wallpaper.name, 'wallpaper');
+  return {
+    ...wallpaper,
+    id: createScopedId(bundleId, localId),
+    localId,
+  };
+}
+
+function scopeHomePackToBundle(
+  bundleId: string,
+  pack: LoadedExplorerHomePack,
+): LoadedThemeBundleLocalHomePack {
+  const localId = normalizeIdFragment(pack.id, 'home-pack');
+  const scopedId = createScopedId(bundleId, localId);
+  return {
+    ...pack,
+    id: scopedId,
+    localId,
+    runtime: {
+      ...pack.runtime,
+      id: scopedId,
+    },
+  };
+}
+
+function scopeMenuPackToBundle(
+  bundleId: string,
+  pack: LoadedExplorerMenuPack,
+): LoadedThemeBundleLocalMenuPack {
+  const localId = normalizeIdFragment(pack.id, 'menu-pack');
+  return {
+    ...pack,
+    id: createScopedId(bundleId, localId),
+    localId,
+  };
+}
+
+function createLocalRuntimeId(bundleId: string, fileName: string, type: 'shader' | 'animation'): LoadedThemeBundleLocalId {
+  const localId = normalizeIdFragment(fileName.replace(/\.[^.]+$/, ''), type);
+  return {
+    id: createScopedId(bundleId, localId),
+    localId,
+  };
+}
+
+function buildLocalCatalogEntry<T extends { id: string }>(value: T, localId: string): { id: string; localId: string; value: T } {
+  return { id: value.id, localId, value };
+}
+
+interface CollectedPackageLocalCatalogs {
+  appearancePacks: LoadedThemeAppearancePack[];
+  interactionMotionPacks: LoadedThemeInteractionMotionPack[];
+  shellRenderers: LoadedThemeShellRendererPack[];
+  themeRecipePacks: LoadedThemeRecipePack[];
+  themeEnginePacks: LoadedThemeEnginePack[];
+  topBars: LoadedOverlayTopBarDefinition[];
+  iconThemePackages: LoadedThemeBundleLocalIconTheme[];
+  wallpapers: LoadedThemeBundleLocalWallpaper[];
+  homePacks: LoadedThemeBundleLocalHomePack[];
+  menuPacks: LoadedThemeBundleLocalMenuPack[];
+  shaders: LoadedThemeBundleLocalId[];
+  animations: LoadedThemeBundleLocalId[];
+}
+
+function resolveReferencedCatalogValue<T>(
+  requestedId: string | undefined,
+  localEntries: Array<{ id: string; localId: string; value: T }>,
+  externalEntries: Array<{ id: string; localId: string; value: T }>,
+): T | undefined {
+  const trimmedId = requestedId?.trim();
+  if (!trimmedId) {
+    if (localEntries.length === 1) {
+      return localEntries[0]?.value;
+    }
     return undefined;
   }
 
-  return normalizeThemeManifestDraft({
-    id: packageId,
-    name: packageName,
-    extends: manifest.extends || null,
-    presentation: {
-      density: manifest.presentation?.density ?? 'comfortable',
-      chromeStyle: manifest.presentation?.chromeStyle ?? 'floating',
-      iconStyle: manifest.presentation?.iconStyle ?? 'vector',
-      motionStyle: manifest.presentation?.motionStyle ?? 'fluid',
-      cornerRadius: manifest.presentation?.cornerRadius ?? 12,
-      panelSpacing: manifest.presentation?.panelSpacing ?? 8,
-    },
-    compatibility: {
-      shellBlueprints: manifest.compatibility?.shellBlueprints
-        ?? resolvedTheme?.compatibility?.shellBlueprints
-        ?? [],
-      tags: manifest.compatibility?.tags
-        ?? resolvedTheme?.compatibility?.tags
-        ?? [],
-    },
-    designTokens: manifest.designTokens ?? [],
-    layoutPrimitives: manifest.layoutPrimitives ?? [],
-    navigationPatterns: manifest.navigationPatterns ?? [],
-    animationProfiles: manifest.animationProfiles ?? [],
-    iconPacks: manifest.iconPacks ?? [],
-    renderStyles: manifest.renderStyles ?? [],
-    defaultLayoutPrimitiveId: manifest.defaultLayoutPrimitiveId ?? null,
-    defaultNavigationPatternId: manifest.defaultNavigationPatternId ?? null,
-    defaultAnimationProfileId: manifest.defaultAnimationProfileId ?? null,
-    defaultIconPackId: manifest.defaultIconPackId ?? null,
-    defaultRenderStyleId: manifest.defaultRenderStyleId ?? null,
-  });
+  const localMatch = localEntries.find(entry => entry.id === trimmedId || entry.localId === trimmedId);
+  if (localMatch) {
+    return localMatch.value;
+  }
+
+  return externalEntries.find(entry => entry.id === trimmedId)?.value;
 }
 
-function buildPackageTopBars(
-  record: OverlayThemePackageRecord,
-  packageId: string,
-  packageName: string,
-): LoadedOverlayTopBarDefinition[] {
-  const dedupedTopBars = new Map<string, LoadedOverlayTopBarDefinition>();
-
-  for (const definition of record.manifest.topBars ?? []) {
-    const loadedTopBar = createLoadedTopBarDefinition(definition, {
-      source: 'theme-package',
-      sourceLabel: packageName,
-      scopeId: packageId,
-      sourceThemeId: packageId,
-    });
-
-    if (!dedupedTopBars.has(loadedTopBar.id)) {
-      dedupedTopBars.set(loadedTopBar.id, loadedTopBar);
+function resolveScopedSelectionId(
+  requestedId: string | undefined,
+  localEntries: Array<{ id: string; localId: string }>,
+): string | undefined {
+  const trimmedId = requestedId?.trim();
+  if (!trimmedId) {
+    if (localEntries.length === 1) {
+      return localEntries[0]?.id;
     }
+    return undefined;
   }
 
-  return Array.from(dedupedTopBars.values());
+  const localMatch = localEntries.find(entry => entry.id === trimmedId || entry.localId === trimmedId);
+  return localMatch?.id ?? trimmedId;
 }
 
-async function buildPackageTheme(
-  record: OverlayThemePackageRecord,
-  packageMap: Map<string, OverlayThemePackageRecord>,
-  cache: Map<string, OverlayThemeDefinition>,
-  stack: string[] = [],
-): Promise<OverlayThemeDefinition> {
-  const packageId = derivePackageId(record);
-  const cached = cache.get(packageId);
-  if (cached) {
-    return cached;
-  }
+function collectPackageLocalCatalogs(packages: LoadedOverlayThemePackage[]): CollectedPackageLocalCatalogs {
+  return {
+    appearancePacks: packages.flatMap(pkg => pkg.localCatalogs?.appearancePacks ?? []),
+    interactionMotionPacks: packages.flatMap(pkg => pkg.localCatalogs?.interactionMotionPacks ?? []),
+    shellRenderers: packages.flatMap(pkg => pkg.localCatalogs?.shellRenderers ?? []),
+    themeRecipePacks: packages.flatMap(pkg => pkg.localCatalogs?.themeRecipePacks ?? []),
+    themeEnginePacks: packages.flatMap(pkg => pkg.localCatalogs?.themeEnginePacks ?? []),
+    topBars: packages.flatMap(pkg => pkg.topBars ?? []),
+    iconThemePackages: packages.flatMap(pkg => pkg.localCatalogs?.iconThemePackages ?? []),
+    wallpapers: packages.flatMap(pkg => pkg.localCatalogs?.wallpapers ?? []),
+    homePacks: packages.flatMap(pkg => pkg.localCatalogs?.homePacks ?? []),
+    menuPacks: packages.flatMap(pkg => pkg.localCatalogs?.menuPacks ?? []),
+    shaders: packages.flatMap(pkg => pkg.localCatalogs?.shaders ?? []),
+    animations: packages.flatMap(pkg => pkg.localCatalogs?.animations ?? []),
+  };
+}
 
-  if (stack.includes(packageId)) {
-    throw new Error(`Circular theme package extends chain: ${[...stack, packageId].join(' -> ')}`);
-  }
+function cloneThemePackageWithResolution(
+  packageInfo: LoadedOverlayThemePackage,
+  nextTheme: OverlayThemeDefinition,
+  warnings: string[],
+): LoadedOverlayThemePackage {
+  return {
+    ...packageInfo,
+    warnings,
+    previewUrl: packageInfo.previewUrl ?? nextTheme.assets?.previewUrl ?? nextTheme.assets?.backgroundUrl,
+    theme: nextTheme,
+    engineManifest: nextTheme.engineManifest,
+    compiledEngineManifest: nextTheme.compiledEngineManifest,
+    themeRenderer: nextTheme.themeRenderer,
+  };
+}
 
-  const builtInBase = overlayThemePresets.find(theme => theme.id === record.manifest.extends);
-  let baseTheme = builtInBase ?? overlayThemePresets[0];
+export function resolveLoadedThemePackages(
+  packages: LoadedOverlayThemePackage[],
+  dependencies: ThemeBundleDependencyCatalogs = {},
+): LoadedOverlayThemePackage[] {
+  const packageLookup = new Map(packages.map(pkg => [pkg.id, pkg] as const));
+  const localCatalogs = collectPackageLocalCatalogs(packages);
+  const resolvedCache = new Map<string, LoadedOverlayThemePackage>();
 
-  if (!builtInBase && record.manifest.extends) {
-    const extendedPackage = packageMap.get(record.manifest.extends);
-    if (extendedPackage) {
-      baseTheme = await buildPackageTheme(extendedPackage, packageMap, cache, [...stack, packageId]);
+  const appearanceEntries = [
+    ...(dependencies.appearancePacks ?? []).map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+    ...localCatalogs.appearancePacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+  ];
+  const interactionMotionEntries = [
+    ...(dependencies.interactionMotionPacks ?? []).map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+    ...localCatalogs.interactionMotionPacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+  ];
+  const shellRendererEntries = [
+    ...(dependencies.shellRenderers ?? []).map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+    ...localCatalogs.shellRenderers.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+  ];
+  const themeRecipeEntries = [
+    ...(dependencies.themeRecipePacks ?? []).map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+    ...localCatalogs.themeRecipePacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+  ];
+  const themeEngineEntries = [
+    ...(dependencies.themeEnginePacks ?? []).map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+    ...localCatalogs.themeEnginePacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+  ];
+  const iconThemeEntries = [
+    ...(dependencies.iconThemePackages ?? []).map(pack => buildLocalCatalogEntry(pack, normalizeIdFragment(pack.id, 'icon-theme'))),
+    ...localCatalogs.iconThemePackages.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+  ];
+  const wallpaperEntries = [
+    ...(dependencies.wallpapers ?? []).map(wallpaper => buildLocalCatalogEntry(wallpaper, normalizeIdFragment(wallpaper.id, 'wallpaper'))),
+    ...localCatalogs.wallpapers.map(wallpaper => buildLocalCatalogEntry(wallpaper, wallpaper.localId)),
+  ];
+
+  const resolvePackage = (packageInfo: LoadedOverlayThemePackage, stack: string[] = []): LoadedOverlayThemePackage => {
+    const cached = resolvedCache.get(packageInfo.id);
+    if (cached) {
+      return cached;
     }
-  }
 
-  const packageAssetsSource = record.manifest.assets;
-  const packageName = derivePackageName(record);
-  const packageTopBars = buildPackageTopBars(record, packageId, packageName);
-  const backgroundPath = asString(packageAssetsSource?.background);
-  const previewPath = asString(packageAssetsSource?.preview);
-  const iconsDirectory = asString(packageAssetsSource?.iconsDirectory);
-  const iconThemePath = asString(packageAssetsSource?.iconTheme);
-  const iconAliases = packageAssetsSource?.iconAliases ?? {};
-  let iconTheme: OverlayResolvedIconTheme | undefined;
+    if (stack.includes(packageInfo.id)) {
+      const circularTheme = normalizeThemeDefinition({
+        id: packageInfo.id,
+        name: packageInfo.name,
+        description: packageInfo.description,
+        source: 'package',
+      }, overlayThemePresets[0]);
+      const circularPackage = cloneThemePackageWithResolution(
+        packageInfo,
+        circularTheme,
+        [...packageInfo.warnings, `Circular theme bundle extends chain: ${[...stack, packageInfo.id].join(' -> ')}`],
+      );
+      resolvedCache.set(packageInfo.id, circularPackage);
+      return circularPackage;
+    }
 
-  if (iconThemePath) {
-    iconTheme = await resolvePackageIconTheme(record.directoryPath, iconThemePath);
-  } else if (iconsDirectory) {
-    const resolvedEntries = await resolveIconEntries(record.directoryPath, iconsDirectory, iconAliases);
-    iconTheme = mergeResolvedIconThemes(
-      getBuiltInIconTheme(),
-      createResolvedIconThemeFromEntries(resolvedEntries),
+    const resolutionWarnings = [...packageInfo.warnings];
+    const manifest = packageInfo.manifest ?? createThemeBundleManifestFromThemeDefinition(packageInfo.theme);
+    const packageLocalCatalogs = packageInfo.localCatalogs ?? emptyLocalCatalogs();
+
+    let fallbackTheme = overlayThemePresets[0];
+    const extendsId = asString(manifest.extends);
+    if (extendsId) {
+      const extendedPackage = packageLookup.get(extendsId);
+      if (extendedPackage) {
+        fallbackTheme = resolvePackage(extendedPackage, [...stack, packageInfo.id]).theme;
+      } else {
+        fallbackTheme = overlayThemePresets.find(theme => theme.id === extendsId) ?? overlayThemePresets[0];
+      }
+    }
+
+    const appearancePack = resolveReferencedCatalogValue(
+      manifest.appearancePackId,
+      packageLocalCatalogs.appearancePacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+      appearanceEntries,
     );
-  }
+    const appearanceFallbackThemeId = appearancePack?.appearance.extendsThemeId;
+    const appearanceFallbackTheme = appearanceFallbackThemeId
+      ? (overlayThemePresets.find(theme => theme.id === appearanceFallbackThemeId) ?? fallbackTheme)
+      : fallbackTheme;
 
-  const resolvedBackgroundPath = backgroundPath
-    ? joinPlatformPath(record.directoryPath, normalizePackageAssetPath(backgroundPath))
-    : null;
-  const resolvedPreviewPath = previewPath
-    ? joinPlatformPath(record.directoryPath, normalizePackageAssetPath(previewPath))
-    : null;
-  const [resolvedBackgroundUrl, resolvedPreviewUrl] = await Promise.all([
-    resolvedBackgroundPath ? resolveThemePackageAssetUrl(resolvedBackgroundPath) : Promise.resolve(undefined),
-    resolvedPreviewPath ? resolveThemePackageAssetUrl(resolvedPreviewPath) : Promise.resolve(undefined),
+    if (manifest.appearancePackId && !appearancePack) {
+      resolutionWarnings.push(`Appearance pack "${manifest.appearancePackId}" was not found.`);
+    }
+
+    const themeRecipePack = resolveReferencedCatalogValue(
+      manifest.themeRecipeId,
+      packageLocalCatalogs.themeRecipePacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+      themeRecipeEntries,
+    );
+    if (manifest.themeRecipeId && !themeRecipePack) {
+      resolutionWarnings.push(`Theme recipe "${manifest.themeRecipeId}" was not found.`);
+    }
+
+    const interactionMotionPack = resolveReferencedCatalogValue(
+      manifest.interactionMotionPackId,
+      packageLocalCatalogs.interactionMotionPacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+      interactionMotionEntries,
+    );
+    if (manifest.interactionMotionPackId && !interactionMotionPack) {
+      resolutionWarnings.push(`Interaction motion pack "${manifest.interactionMotionPackId}" was not found.`);
+    }
+
+    const themeEnginePack = resolveReferencedCatalogValue(
+      manifest.themeEngineId,
+      packageLocalCatalogs.themeEnginePacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+      themeEngineEntries,
+    );
+    if (manifest.themeEngineId && !themeEnginePack) {
+      resolutionWarnings.push(`Theme engine "${manifest.themeEngineId}" was not found.`);
+    }
+
+    const shellRendererPack = resolveReferencedCatalogValue(
+      manifest.rendererId,
+      packageLocalCatalogs.shellRenderers.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+      shellRendererEntries,
+    );
+    if (manifest.rendererId && !shellRendererPack) {
+      resolutionWarnings.push(`Shell renderer "${manifest.rendererId}" was not found.`);
+    }
+
+    const iconThemePackage = resolveReferencedCatalogValue(
+      manifest.iconThemeId,
+      packageLocalCatalogs.iconThemePackages.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+      iconThemeEntries,
+    );
+    if (manifest.iconThemeId && !iconThemePackage) {
+      resolutionWarnings.push(`Icon theme "${manifest.iconThemeId}" was not found.`);
+    }
+
+    const wallpaper = resolveReferencedCatalogValue(
+      manifest.wallpaperId,
+      packageLocalCatalogs.wallpapers.map(entry => buildLocalCatalogEntry(entry, entry.localId)),
+      wallpaperEntries,
+    );
+    if (manifest.wallpaperId && !wallpaper) {
+      resolutionWarnings.push(`Wallpaper "${manifest.wallpaperId}" was not found.`);
+    }
+
+    const resolvedDefaultTopBarId = qualifyThemeTopBarSelectionId(
+      manifest.topBarId,
+      packageInfo.id,
+      packageInfo.topBars ?? [],
+    ) ?? (manifest.topBarId || fallbackTheme.defaultTopBarId);
+
+    const themePatch = {
+      id: packageInfo.id,
+      name: packageInfo.name,
+      description: packageInfo.description,
+      source: 'package',
+      extendsThemeId: appearancePack?.appearance.extendsThemeId ?? (extendsId || fallbackTheme.id),
+      palette: appearancePack?.appearance.palette,
+      effects: appearancePack?.appearance.effects,
+      xterm: appearancePack?.appearance.xterm,
+      fonts: appearancePack?.appearance.fonts,
+      visuals: appearancePack?.appearance.visuals,
+      cssVars: appearancePack?.appearance.cssVars,
+      defaultTopBarId: resolvedDefaultTopBarId,
+      defaultHomePackId: resolveScopedSelectionId(manifest.homePackId, packageLocalCatalogs.homePacks),
+      defaultMenuPackId: resolveScopedSelectionId(manifest.menuPackId, packageLocalCatalogs.menuPacks),
+      defaultShaderId: resolveScopedSelectionId(manifest.shaderId, packageLocalCatalogs.shaders),
+      defaultOpenAnimationId: resolveScopedSelectionId(manifest.openAnimationId, packageLocalCatalogs.animations),
+      defaultCloseAnimationId: resolveScopedSelectionId(manifest.closeAnimationId, packageLocalCatalogs.animations),
+      interactionMotion: interactionMotionPack?.interactionMotion,
+      workbench: themeRecipePack?.recipe.workbench,
+      explorer: themeRecipePack?.recipe.explorer,
+      dock: themeRecipePack?.recipe.dock,
+      presentation: themeEnginePack?.engineManifest.presentation,
+      compatibility: themeEnginePack?.engineManifest.compatibility,
+      engineManifest: themeEnginePack?.engineManifest,
+      compiledEngineManifest: themeEnginePack?.compiledEngineManifest,
+      themeRenderer: shellRendererPack?.renderer,
+    } as Partial<OverlayThemeDefinition>;
+
+    const nextTheme = normalizeThemeDefinition(themePatch, appearanceFallbackTheme);
+
+    nextTheme.assets = {
+      ...(nextTheme.assets ?? {}),
+      backgroundUrl: wallpaper?.assetUrl ?? nextTheme.assets?.backgroundUrl,
+      previewUrl: packageInfo.previewUrl
+        ?? appearancePack?.previewUrl
+        ?? wallpaper?.previewUrl
+        ?? nextTheme.assets?.previewUrl,
+      iconTheme: iconThemePackage?.iconTheme ?? nextTheme.assets?.iconTheme,
+      iconEntries: iconThemePackage?.iconTheme.iconDefinitions ?? nextTheme.assets?.iconEntries,
+    };
+
+    const resolvedPackage = cloneThemePackageWithResolution(packageInfo, nextTheme, resolutionWarnings);
+    resolvedCache.set(packageInfo.id, resolvedPackage);
+    return resolvedPackage;
+  };
+
+  return packages
+    .map(pkg => resolvePackage(pkg))
+    .sort(compareThemeCatalogPackages);
+}
+
+async function loadChildWallpapers(
+  directoryEntries: FileEntry[],
+  bundleId: string,
+): Promise<LoadedThemeBundleLocalWallpaper[]> {
+  const wallpapers = await Promise.all(
+    directoryEntries
+      .filter(entry => isFrontendWallpaperFile(entry) || isMediaWallpaperFile(entry))
+      .map(async entry => {
+        if (isMediaWallpaperFile(entry)) {
+          return scopeWallpaperToBundle(bundleId, createMediaWallpaperFromFile(entry));
+        }
+
+        const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
+        const wallpaper = await loadWallpaperFromSource(source, entry);
+        return scopeWallpaperToBundle(bundleId, wallpaper);
+      }),
+  );
+
+  return wallpapers.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+async function loadChildAnimations(
+  directoryEntries: FileEntry[],
+  bundleId: string,
+  bundleName: string,
+): Promise<{ animations: LoadedOverlayAnimation[]; localIds: LoadedThemeBundleLocalId[]; warnings: string[] }> {
+  const warnings: string[] = [];
+  const localIds: LoadedThemeBundleLocalId[] = [];
+  const loaded = (
+    await Promise.all(directoryEntries.filter(isFrontendAnimationFile).map(async entry => {
+      const localId = createLocalRuntimeId(bundleId, entry.name, 'animation');
+      localIds.push(localId);
+      try {
+        const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
+        return await loadAnimationFromSource(source, entry, {
+          context: {
+            id: localId.id,
+            name: deriveAnimationName(`${bundleName} ${localId.localId}`),
+            filePath: entry.path,
+            animationRoot: getParentDirectoryPath(entry.path),
+            source: 'folder',
+          },
+        });
+      } catch (error) {
+        warnings.push(`Animation ${entry.name}: ${String(error)}`);
+        return null;
+      }
+    }))
+  ).filter((entry): entry is LoadedOverlayAnimation => Boolean(entry));
+
+  return { animations: loaded, localIds, warnings };
+}
+
+async function loadChildShaders(
+  directoryEntries: FileEntry[],
+  bundleId: string,
+  bundleName: string,
+): Promise<{ shaders: LoadedOverlayShader[]; localIds: LoadedThemeBundleLocalId[]; warnings: string[] }> {
+  const warnings: string[] = [];
+  const localIds: LoadedThemeBundleLocalId[] = [];
+  const loaded = (
+    await Promise.all(directoryEntries.filter(isFrontendShaderFile).map(async entry => {
+      const localId = createLocalRuntimeId(bundleId, entry.name, 'shader');
+      localIds.push(localId);
+      try {
+        const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
+        return await loadShaderFromSource(source, entry, {
+          context: {
+            id: localId.id,
+            name: deriveShaderName(`${bundleName} ${localId.localId}`),
+            filePath: entry.path,
+            shaderRoot: getParentDirectoryPath(entry.path),
+            source: 'folder',
+          },
+        });
+      } catch (error) {
+        warnings.push(`Shader ${entry.name}: ${String(error)}`);
+        return null;
+      }
+    }))
+  ).filter((entry): entry is LoadedOverlayShader => Boolean(entry));
+
+  return { shaders: loaded, localIds, warnings };
+}
+
+async function buildThemeBundlePackage(
+  record: OverlayThemeBundleRecord,
+  options?: ThemePackageLoadOptions,
+): Promise<{ packageInfo: LoadedOverlayThemePackage; shaders: LoadedOverlayShader[]; animations: LoadedOverlayAnimation[]; warnings: string[] }> {
+  const bundleId = deriveBundleId(record);
+  const bundleName = deriveBundleName(record, bundleId);
+  const localCatalogs = emptyLocalCatalogs();
+  const packageWarnings: string[] = [];
+  const themeContributedShaders: LoadedOverlayShader[] = [];
+  const themeContributedAnimations: LoadedOverlayAnimation[] = [];
+
+  const previewUrl = await resolveOptionalPreviewUrl(record.directoryPath, record.manifest.preview);
+  const childEntries = await loadChildDirectoryEntries(record.directoryPath);
+  const childDirectoryLookup = new Map(childEntries.filter(entry => entry.is_dir).map(entry => [entry.name, entry.path] as const));
+
+  const loadEntries = async (directoryName: string): Promise<FileEntry[]> => {
+    const childDirectoryPath = childDirectoryLookup.get(directoryName);
+    if (!childDirectoryPath) {
+      return [];
+    }
+    return loadChildDirectoryEntries(childDirectoryPath);
+  };
+
+  const [appearanceEntries, topBarEntries, iconThemeEntries, wallpaperEntries, shaderEntries, animationEntries, interactionMotionEntries, shellRendererEntries, themeRecipeEntries, themeEngineEntries, homePackEntries, menuPackEntries] = await Promise.all([
+    loadEntries(themeSystemConfig.childDirectoryNames.appearancePacks),
+    loadEntries(themeSystemConfig.childDirectoryNames.topBars),
+    loadEntries(themeSystemConfig.childDirectoryNames.iconThemes),
+    loadEntries(themeSystemConfig.childDirectoryNames.wallpapers),
+    loadEntries(themeSystemConfig.childDirectoryNames.shaders),
+    loadEntries(themeSystemConfig.childDirectoryNames.animations),
+    loadEntries(themeSystemConfig.childDirectoryNames.interactionMotion),
+    loadEntries(themeSystemConfig.childDirectoryNames.shellRenderers),
+    loadEntries(themeSystemConfig.childDirectoryNames.themeRecipes),
+    loadEntries(themeSystemConfig.childDirectoryNames.themeEngines),
+    loadEntries(themeSystemConfig.childDirectoryNames.homePacks),
+    loadEntries(themeSystemConfig.childDirectoryNames.menuPacks),
   ]);
 
-  const resolvedAssets: OverlayThemeAssets = {
-    packageRoot: record.directoryPath,
+  const [
+    appearanceResult,
+    topBarPackageResult,
+    iconThemePackageResult,
+    interactionMotionResult,
+    shellRendererResult,
+    themeRecipeResult,
+    themeEngineResult,
+    homePackResult,
+    menuPackResult,
+    childWallpaperResult,
+    childShaderResult,
+    childAnimationResult,
+  ] = await Promise.all([
+    loadThemeAppearancePacksFromDirectoryEntries(appearanceEntries, {
+      scopeId: bundleId,
+      virtualRoot: record.directoryPath,
+    }),
+    loadTopBarPackagesFromDirectoryEntries(topBarEntries, record.directoryPath),
+    loadIconThemePackagesFromDirectoryEntries(iconThemeEntries, record.directoryPath),
+    loadThemeInteractionMotionPacksFromDirectoryEntries(interactionMotionEntries, {
+      scopeId: bundleId,
+      virtualRoot: record.directoryPath,
+    }),
+    loadThemeShellRendererPacksFromDirectoryEntries(shellRendererEntries, {
+      scopeId: bundleId,
+      virtualRoot: record.directoryPath,
+    }),
+    loadThemeRecipePacksFromDirectoryEntries(themeRecipeEntries, {
+      scopeId: bundleId,
+      virtualRoot: record.directoryPath,
+    }),
+    loadThemeEnginePacksFromDirectoryEntries(themeEngineEntries, {
+      scopeId: bundleId,
+      virtualRoot: record.directoryPath,
+    }),
+    loadExplorerHomePacksFromDirectoryEntries(homePackEntries, record.directoryPath),
+    loadExplorerMenuPacksFromDirectoryEntries(menuPackEntries, record.directoryPath),
+    loadChildWallpapers(wallpaperEntries, bundleId),
+    loadChildShaders(shaderEntries, bundleId, bundleName),
+    loadChildAnimations(animationEntries, bundleId, bundleName),
+  ]);
+
+  localCatalogs.appearancePacks.push(...appearanceResult.packs);
+  localCatalogs.interactionMotionPacks.push(...interactionMotionResult.packs);
+  localCatalogs.shellRenderers.push(...shellRendererResult.packs);
+  localCatalogs.themeRecipePacks.push(...themeRecipeResult.packs);
+  localCatalogs.themeEnginePacks.push(...themeEngineResult.packs);
+  localCatalogs.iconThemePackages.push(
+    ...iconThemePackageResult.packages
+      .filter(pkg => pkg.sourceKind !== 'built-in')
+      .map(pkg => scopeIconThemePackageToBundle(bundleId, pkg)),
+  );
+  localCatalogs.wallpapers.push(...childWallpaperResult);
+  localCatalogs.homePacks.push(...homePackResult.packs.map(pack => scopeHomePackToBundle(bundleId, pack)));
+  localCatalogs.menuPacks.push(...menuPackResult.packs.map(pack => scopeMenuPackToBundle(bundleId, pack)));
+  localCatalogs.shaders.push(...childShaderResult.localIds);
+  localCatalogs.animations.push(...childAnimationResult.localIds);
+
+  themeContributedShaders.push(...childShaderResult.shaders);
+  themeContributedAnimations.push(...childAnimationResult.animations);
+
+  packageWarnings.push(
+    ...appearanceResult.warnings,
+    ...interactionMotionResult.warnings,
+    ...shellRendererResult.warnings,
+    ...themeRecipeResult.warnings,
+    ...themeEngineResult.warnings,
+    ...topBarPackageResult.warnings,
+    ...iconThemePackageResult.warnings,
+    ...homePackResult.warnings,
+    ...menuPackResult.warnings,
+    ...childShaderResult.warnings,
+    ...childAnimationResult.warnings,
+  );
+
+  const embedded = record.manifest.embedded;
+  for (const appearancePack of embedded?.appearancePacks ?? []) {
+    localCatalogs.appearancePacks.push(createInlineThemeAppearancePack(appearancePack, { bundleId, directoryPath: record.directoryPath }));
+  }
+  for (const interactionMotionPack of embedded?.interactionMotionPacks ?? []) {
+    localCatalogs.interactionMotionPacks.push(createInlineThemeInteractionMotionPack(interactionMotionPack, { bundleId, directoryPath: record.directoryPath }));
+  }
+  for (const themeRecipe of embedded?.themeRecipes ?? []) {
+    localCatalogs.themeRecipePacks.push(createInlineThemeRecipePack(themeRecipe, { bundleId, directoryPath: record.directoryPath }));
+  }
+  for (const themeEngine of embedded?.themeEngines ?? []) {
+    localCatalogs.themeEnginePacks.push(createInlineThemeEnginePack(themeEngine, { bundleId, directoryPath: record.directoryPath }));
+  }
+
+  const topBars = scopeTopBarsToBundle(
+    bundleId,
+    bundleName,
+    topBarPackageResult.packages.flatMap(pkg => pkg.topBars),
+  );
+
+  const rawPackage: LoadedOverlayThemePackage = {
+    id: bundleId,
+    name: bundleName,
+    version: typeof record.manifest.version === 'number' ? record.manifest.version : 1,
+    directoryPath: record.directoryPath,
     manifestPath: record.manifestPath,
-    backgroundUrl: resolvedBackgroundUrl,
-    previewUrl: resolvedPreviewUrl,
-    iconTheme,
-    iconEntries: iconTheme?.iconDefinitions,
+    sourceKind: options?.sourceKind ?? 'theme-directory',
+    sourceLabel: options?.sourceLabel ?? record.directoryPath,
+    description: asString(record.manifest.description) || undefined,
+    author: asString(record.manifest.author) || undefined,
+    homepage: asString(record.manifest.homepage) || undefined,
+    tags: record.manifest.tags ?? [],
+    previewUrl,
+    warnings: packageWarnings,
+    catalog: resolveThemeCatalogPackageMetadata(bundleId),
+    capabilitySummary: {
+      icons: localCatalogs.iconThemePackages.length > 0 || Boolean(record.manifest.iconThemeId),
+      wallpaper: localCatalogs.wallpapers.length > 0 || Boolean(record.manifest.wallpaperId),
+      dock: localCatalogs.themeRecipePacks.some(pack => Boolean(pack.recipe.dock)),
+      visuals: localCatalogs.appearancePacks.reduce((total, pack) => total + (pack.appearance.visuals?.length ?? 0), 0),
+      shaders: localCatalogs.shaders.length,
+      animations: localCatalogs.animations.length,
+      fonts: localCatalogs.appearancePacks.reduce((total, pack) => total + ([pack.appearance.fonts?.ui, pack.appearance.fonts?.mono].filter(Boolean).length), 0),
+      themeRenderer: localCatalogs.shellRenderers.length > 0 || Boolean(record.manifest.rendererId),
+      topBars: topBars.length,
+    },
+    manifest: record.manifest,
+    localCatalogs,
+    theme: normalizeThemeDefinition({
+      id: bundleId,
+      name: bundleName,
+      description: asString(record.manifest.description),
+      source: 'package',
+    }),
+    topBars,
   };
 
-  const themePatch = record.manifest.theme ?? {};
-  const backgroundImage = themePatch.effects?.backgroundImage
-    ?? (resolvedAssets.backgroundUrl ? `url("${resolvedAssets.backgroundUrl}")` : undefined);
-  const resolvedDefaultTopBarId = qualifyThemeTopBarSelectionId(
-    asString(record.manifest.defaultTopBarId) || themePatch.defaultTopBarId,
-    packageId,
-    packageTopBars,
-  );
-  const mergedTheme = normalizeThemeDefinition({
-    ...baseTheme,
-    ...themePatch,
-    id: packageId,
-    name: packageName,
-    description: asString(record.manifest.description) || themePatch.description || baseTheme.description,
-    defaultTopBarId: resolvedDefaultTopBarId,
-    defaultHomePackId: asString(record.manifest.defaultHomePackId) || themePatch.defaultHomePackId,
-    source: 'package',
-    extendsThemeId: record.manifest.extends || baseTheme.id,
-    palette: {
-      ...baseTheme.palette,
-      ...(themePatch.palette ?? {}),
-    },
-    effects: {
-      ...baseTheme.effects,
-      ...(themePatch.effects ?? {}),
-      ...(backgroundImage ? { backgroundImage } : {}),
-    },
-    xterm: {
-      ...baseTheme.xterm,
-      ...(themePatch.xterm ?? {}),
-    },
-    fonts: {
-      ...(baseTheme.fonts ?? {}),
-      ...(themePatch.fonts ?? {}),
-      ...(record.manifest.fonts ?? {}),
-    },
-    presentation: {
-      ...(baseTheme.presentation ?? {}),
-      ...(themePatch.presentation ?? {}),
-      ...(record.manifest.presentation ?? {}),
-    },
-    assets: mergeThemeAssets(baseTheme.assets, resolvedAssets),
-    visuals: mergeVisualLayers(baseTheme.visuals, record.manifest.visuals ?? themePatch.visuals),
-    cssVars: {
-      ...(baseTheme.cssVars ?? {}),
-      ...(themePatch.cssVars ?? {}),
-      ...(record.manifest.cssVars ?? {}),
-    },
-    compatibility: {
-      ...(baseTheme.compatibility ?? {}),
-      ...(themePatch.compatibility ?? {}),
-      ...(record.manifest.compatibility ?? {}),
-    },
-  }, baseTheme);
+  return {
+    packageInfo: rawPackage,
+    shaders: themeContributedShaders,
+    animations: themeContributedAnimations,
+    warnings: packageWarnings.map(warning => `${bundleName}: ${warning}`),
+  };
+}
 
-  cache.set(packageId, mergedTheme);
-  return mergedTheme;
+export async function loadGlobalThemeBundleCatalogs(): Promise<GlobalThemeBundleCatalogs> {
+  const [appearanceResult, interactionMotionResult, shellRendererResult, themeRecipeResult, themeEngineResult] = await Promise.all([
+    loadThemeAppearancePacks(),
+    loadThemeInteractionMotionPacks(),
+    loadThemeShellRendererPacks(),
+    loadThemeRecipePacks(),
+    loadThemeEnginePacks(),
+  ]);
+
+  return {
+    appearancePacks: appearanceResult.packs,
+    interactionMotionPacks: interactionMotionResult.packs,
+    shellRenderers: shellRendererResult.packs,
+    themeRecipePacks: themeRecipeResult.packs,
+    themeEnginePacks: themeEngineResult.packs,
+    warnings: [
+      ...appearanceResult.warnings,
+      ...interactionMotionResult.warnings,
+      ...shellRendererResult.warnings,
+      ...themeRecipeResult.warnings,
+      ...themeEngineResult.warnings,
+    ],
+  };
 }
 
 export async function loadThemePackagesFromDirectoryEntries(
@@ -900,177 +1197,40 @@ export async function loadThemePackagesFromDirectoryEntries(
   options?: ThemePackageLoadOptions,
 ): Promise<ThemePackageLoadResult> {
   try {
-    const packageRecords: OverlayThemePackageRecord[] = [];
-    const shaders: LoadedOverlayShader[] = [];
-    const animations: LoadedOverlayAnimation[] = [];
-    const warnings: string[] = [];
-
+    const bundleRecords: OverlayThemeBundleRecord[] = [];
+    const manifestWarnings: string[] = [];
     for (const entry of directoryEntries) {
-      const manifest = await readPackageManifest(entry.path);
-      if (!manifest) {
-        continue;
-      }
-
-      packageRecords.push({
-        directoryName: entry.name,
-        directoryPath: entry.path,
-        manifestPath: manifest.manifestPath,
-        manifest: manifest.manifest,
-      });
-    }
-
-    const packageMap = new Map(packageRecords.map(record => [derivePackageId(record), record] as const));
-    const cache = new Map<string, OverlayThemeDefinition>();
-    const packages: LoadedOverlayThemePackage[] = [];
-
-    for (const record of packageRecords) {
-      const packageName = derivePackageName(record);
-      const packageWarnings: string[] = [];
-
       try {
-        const theme = await buildPackageTheme(record, packageMap, cache);
-        const packageTopBars = buildPackageTopBars(record, theme.id, theme.name);
-        const shaderEntries = await resolvePackageRuntimeEntries(
-          record.directoryPath,
-          record.manifest.contributions?.shaders,
-          themeSystemConfig.packageShadersDirectoryName,
-          isFrontendShaderFile,
-        );
-        const animationEntries = await resolvePackageRuntimeEntries(
-          record.directoryPath,
-          record.manifest.contributions?.animations,
-          themeSystemConfig.packageAnimationsDirectoryName,
-          isFrontendAnimationFile,
-        );
-
-        const packageShaders = (
-          await Promise.all(shaderEntries.map(async entry => {
-            try {
-              const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
-              return loadShaderFromSource(source, entry, {
-                context: {
-                  id: deriveShaderId(`${theme.id}-${entry.name}`),
-                  name: deriveShaderName(`${theme.name} ${entry.name}`),
-                  filePath: entry.path,
-                  shaderRoot: record.directoryPath,
-                  source: 'folder',
-                },
-              });
-            } catch (error) {
-              packageWarnings.push(`Shader ${entry.name}: ${String(error)}`);
-              return null;
-            }
-          }))
-        ).filter((entry): entry is LoadedOverlayShader => Boolean(entry));
-        const packageAnimations = (
-          await Promise.all(animationEntries.map(async entry => {
-            try {
-              const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
-              return loadAnimationFromSource(source, entry, {
-                context: {
-                  id: deriveAnimationId(`${theme.id}-${entry.name}`),
-                  name: deriveAnimationName(`${theme.name} ${entry.name}`),
-                  filePath: entry.path,
-                  animationRoot: record.directoryPath,
-                  source: 'folder',
-                },
-              });
-            } catch (error) {
-              packageWarnings.push(`Animation ${entry.name}: ${String(error)}`);
-              return null;
-            }
-          }))
-        ).filter((entry): entry is LoadedOverlayAnimation => Boolean(entry));
-        const rendererManifest = record.manifest.themeRenderer;
-        let packageThemeRenderer: LoadedOverlayThemeRenderer | undefined;
-        if (rendererManifest?.entryModule) {
-          try {
-            const rendererEntry = createRelativeFileEntry(record.directoryPath, rendererManifest.entryModule);
-            const source = await commands.fsReadTextFile(rendererEntry.path).then(unwrapTauriResult);
-            packageThemeRenderer = await loadThemeRendererFromSource(source, rendererEntry, {
-              context: {
-                id: `${theme.id}-renderer`,
-                name: `${theme.name} Renderer`,
-                filePath: rendererEntry.path,
-                rendererRoot: record.directoryPath,
-                entryModule: rendererManifest.entryModule,
-              },
-              defaults: {
-                apiVersion: rendererManifest.apiVersion,
-                supportsLiveSwap: rendererManifest.supportsLiveSwap,
-                fallbackRuntime: rendererManifest.fallbackRuntime,
-                capabilities: rendererManifest.capabilities,
-              },
-              resolveRelativeModuleSource: createThemeRendererRelativeModuleSourceResolver(record.directoryPath),
-            });
-            if (packageThemeRenderer.error) {
-              packageWarnings.push(`Theme renderer ${rendererManifest.entryModule}: ${packageThemeRenderer.error}`);
-            }
-          } catch (error) {
-            packageWarnings.push(`Theme renderer ${rendererManifest.entryModule}: ${String(error)}`);
-          }
+        const manifest = await readBundleManifest(entry.path);
+        if (!manifest) {
+          continue;
         }
-
-        const engineManifest = buildThemeEngineManifest(theme.id, theme.name, record.manifest, theme);
-        const compiledEngineManifest = engineManifest ? compileThemeEngineManifest(engineManifest) : undefined;
-        const themeWithEngineManifest: OverlayThemeDefinition = {
-          ...theme,
-          engineManifest,
-          compiledEngineManifest,
-          themeRenderer: packageThemeRenderer,
-        };
-
-        packages.push({
-          id: theme.id,
-          name: theme.name,
-          version: typeof record.manifest.version === 'number' ? record.manifest.version : 1,
-          directoryPath: record.directoryPath,
-          manifestPath: record.manifestPath,
-          sourceKind: options?.sourceKind ?? 'theme-directory',
-          sourceLabel: options?.sourceLabel ?? record.directoryPath,
-          description: asString(record.manifest.description) || theme.description,
-          author: asString(record.manifest.author) || undefined,
-          homepage: asString(record.manifest.homepage) || undefined,
-          tags: record.manifest.tags ?? [],
-          catalog: resolveThemeCatalogPackageMetadata(theme.id),
-          previewUrl: theme.assets?.previewUrl ?? theme.assets?.backgroundUrl,
-          warnings: packageWarnings,
-          capabilitySummary: {
-            icons: Boolean(theme.assets?.iconTheme || theme.assets?.iconEntries),
-            wallpaper: Boolean(theme.assets?.backgroundUrl),
-            dock: Boolean(theme.dock?.workbench || theme.dock?.explorer),
-            visuals: theme.visuals?.length ?? 0,
-            shaders: packageShaders.length,
-            animations: packageAnimations.length,
-            fonts: [theme.fonts?.ui, theme.fonts?.mono].filter(Boolean).length,
-            themeRenderer: Boolean(rendererManifest?.entryModule),
-            topBars: packageTopBars.length,
-          },
-          theme: themeWithEngineManifest,
-          engineManifest,
-          compiledEngineManifest,
-          themeRenderer: packageThemeRenderer,
-          topBars: packageTopBars,
+        bundleRecords.push({
+          directoryName: entry.name,
+          directoryPath: entry.path,
+          manifestPath: manifest.manifestPath,
+          manifest: manifest.manifest,
         });
-        shaders.push(...packageShaders);
-        animations.push(...packageAnimations);
-        warnings.push(...packageWarnings.map(warning => `${packageName}: ${warning}`));
       } catch (error) {
-        warnings.push(`${packageName}: ${String(error)}`);
+        manifestWarnings.push(`${entry.name}: ${String(error)}`);
       }
     }
 
-    packages.sort(compareThemeCatalogPackages);
-    shaders.sort((left, right) => left.name.localeCompare(right.name));
-    animations.sort((left, right) => left.name.localeCompare(right.name));
+    const builtPackages = await Promise.all(
+      bundleRecords.map(record => buildThemeBundlePackage(record, options)),
+    );
+    const rawPackages = builtPackages.map(result => result.packageInfo);
+    const dependencyCatalogs = options?.dependencyCatalogs ?? createEmptyGlobalThemeBundleCatalogs();
+    const resolvedPackages = resolveLoadedThemePackages(rawPackages, dependencyCatalogs);
 
     return {
-      packages,
-      shaders,
-      animations,
+      packages: resolvedPackages,
+      shaders: builtPackages.flatMap(result => result.shaders).sort((left, right) => left.name.localeCompare(right.name)),
+      animations: builtPackages.flatMap(result => result.animations).sort((left, right) => left.name.localeCompare(right.name)),
       directory: directoryLabel,
-      warnings,
+      warnings: [...dependencyCatalogs.warnings, ...manifestWarnings, ...builtPackages.flatMap(result => result.warnings)],
       sourceError: null,
+      dependencyCatalogs,
     };
   } catch (error) {
     return {
@@ -1080,6 +1240,7 @@ export async function loadThemePackagesFromDirectoryEntries(
       directory: directoryLabel,
       warnings: [],
       sourceError: String(error),
+      dependencyCatalogs: createEmptyGlobalThemeBundleCatalogs(),
     };
   }
 }
@@ -1094,14 +1255,20 @@ export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
       directory,
       warnings: [],
       sourceError: null,
+      dependencyCatalogs: createEmptyGlobalThemeBundleCatalogs(),
     };
   }
 
   try {
-    const rootEntries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
+    const [rootEntries, dependencyCatalogs] = await Promise.all([
+      commands.fsListDir(directory, false).then(unwrapTauriResult),
+      loadGlobalThemeBundleCatalogs(),
+    ]);
+
     return loadThemePackagesFromDirectoryEntries(
       rootEntries.filter(entry => entry.is_dir).map(entry => ({ name: entry.name, path: entry.path })),
       directory,
+      { dependencyCatalogs },
     );
   } catch (error) {
     return {
@@ -1111,6 +1278,196 @@ export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
       directory,
       warnings: [],
       sourceError: String(error),
+      dependencyCatalogs: createEmptyGlobalThemeBundleCatalogs(),
     };
   }
+}
+
+function detectLegacyThemeJsonShape(source: LooseRecord): boolean {
+  return hasLegacyThemePackageFields(source)
+    || 'palette' in source
+    || 'effects' in source
+    || 'xterm' in source
+    || 'workbench' in source
+    || 'explorer' in source
+    || 'dock' in source;
+}
+
+export function parseImportedThemeBundle(source: string): OverlayThemeBundleManifest {
+  const parsed = JSON.parse(source) as unknown;
+  const candidate = asRecord(parsed);
+  if (!candidate) {
+    throw new Error('Theme bundle JSON must be an object.');
+  }
+
+  if (detectLegacyThemeJsonShape(candidate)) {
+    throw new Error('Legacy monolithic theme JSON is unsupported. Import a theme bundle manifest instead.');
+  }
+
+  return parseThemeBundleManifestText(source, 'imported-theme-bundle.json');
+}
+
+export function serializeThemeBundle(bundle: OverlayThemeBundleManifest): string {
+  return JSON.stringify(bundle, null, 2);
+}
+
+export function upsertCustomThemeBundle(
+  bundles: OverlayThemeBundleManifest[],
+  nextBundle: OverlayThemeBundleManifest,
+): OverlayThemeBundleManifest[] {
+  const normalizedId = asString(nextBundle.id);
+  if (!normalizedId) {
+    return [...bundles, nextBundle];
+  }
+
+  const nextIndex = bundles.findIndex(bundle => asString(bundle.id) === normalizedId);
+  if (nextIndex === -1) {
+    return [...bundles, nextBundle];
+  }
+
+  const updated = [...bundles];
+  updated[nextIndex] = nextBundle;
+  return updated;
+}
+
+export function createThemeBundleManifestFromThemeDefinition(
+  theme: OverlayThemeDefinition,
+): OverlayThemeBundleManifest {
+  const appearancePackId = 'appearance-base';
+  const themeRecipeId = (theme.workbench || theme.explorer || theme.dock) ? 'theme-recipe-base' : undefined;
+  const interactionMotionPackId = theme.interactionMotion ? 'interaction-motion-base' : undefined;
+  const themeEngineId = (theme.engineManifest || theme.presentation || theme.compatibility) ? 'theme-engine-base' : undefined;
+
+  return {
+    version: 1,
+    id: theme.id,
+    name: theme.name,
+    description: theme.description,
+    extends: theme.extendsThemeId,
+    topBarId: theme.defaultTopBarId,
+    iconThemeId: theme.assets?.iconTheme?.id,
+    shaderId: theme.defaultShaderId,
+    openAnimationId: theme.defaultOpenAnimationId,
+    closeAnimationId: theme.defaultCloseAnimationId,
+    homePackId: theme.defaultHomePackId,
+    menuPackId: theme.defaultMenuPackId,
+    appearancePackId,
+    interactionMotionPackId,
+    themeRecipeId,
+    themeEngineId,
+    embedded: {
+      appearancePacks: [
+        {
+          id: appearancePackId,
+          name: `${theme.name} Appearance`,
+          extendsThemeId: theme.extendsThemeId,
+          palette: theme.palette,
+          effects: theme.effects,
+          xterm: theme.xterm,
+          fonts: theme.fonts,
+          visuals: theme.visuals,
+          cssVars: theme.cssVars,
+        },
+      ],
+      interactionMotionPacks: interactionMotionPackId
+        ? [{
+            id: interactionMotionPackId,
+            name: `${theme.name} Motion`,
+            interactionMotion: theme.interactionMotion,
+          }]
+        : [],
+      themeRecipes: themeRecipeId
+        ? [{
+            id: themeRecipeId,
+            name: `${theme.name} Recipe`,
+            workbench: theme.workbench,
+            explorer: theme.explorer,
+            dock: theme.dock,
+          }]
+        : [],
+      themeEngines: themeEngineId
+        ? [{
+            id: themeEngineId,
+            name: `${theme.name} Engine`,
+            presentation: theme.presentation,
+            compatibility: theme.compatibility,
+            designTokens: theme.engineManifest?.designTokens,
+            layoutPrimitives: theme.engineManifest?.layoutPrimitives,
+            navigationPatterns: theme.engineManifest?.navigationPatterns,
+            animationProfiles: theme.engineManifest?.animationProfiles,
+            iconPacks: theme.engineManifest?.iconPacks,
+            renderStyles: theme.engineManifest?.renderStyles,
+            defaultLayoutPrimitiveId: theme.engineManifest?.defaultLayoutPrimitiveId ?? undefined,
+            defaultNavigationPatternId: theme.engineManifest?.defaultNavigationPatternId ?? undefined,
+            defaultAnimationProfileId: theme.engineManifest?.defaultAnimationProfileId ?? undefined,
+            defaultIconPackId: theme.engineManifest?.defaultIconPackId ?? undefined,
+            defaultRenderStyleId: theme.engineManifest?.defaultRenderStyleId ?? undefined,
+          }]
+        : [],
+    },
+  };
+}
+
+export function resolveThemeBundleManifests(
+  manifests: OverlayThemeBundleManifest[],
+  dependencies: ThemeBundleDependencyCatalogs = {},
+): OverlayThemeDefinition[] {
+  const packages = manifests.map((manifest, index) => {
+    const bundleId = asString(manifest.id) || `custom-theme-bundle-${index + 1}`;
+    const bundleName = asString(manifest.name) || bundleId.replace(/-/g, ' ').replace(/\b\w/g, character => character.toUpperCase());
+    const localCatalogs = emptyLocalCatalogs();
+    for (const appearancePack of manifest.embedded?.appearancePacks ?? []) {
+      localCatalogs.appearancePacks.push(createInlineThemeAppearancePack(appearancePack, { bundleId }));
+    }
+    for (const interactionMotionPack of manifest.embedded?.interactionMotionPacks ?? []) {
+      localCatalogs.interactionMotionPacks.push(createInlineThemeInteractionMotionPack(interactionMotionPack, { bundleId }));
+    }
+    for (const themeRecipePack of manifest.embedded?.themeRecipes ?? []) {
+      localCatalogs.themeRecipePacks.push(createInlineThemeRecipePack(themeRecipePack, { bundleId }));
+    }
+    for (const themeEnginePack of manifest.embedded?.themeEngines ?? []) {
+      localCatalogs.themeEnginePacks.push(createInlineThemeEnginePack(themeEnginePack, { bundleId }));
+    }
+
+    return {
+      id: bundleId,
+      name: bundleName,
+      version: typeof manifest.version === 'number' ? manifest.version : 1,
+      directoryPath: `settings:${bundleId}`,
+      manifestPath: `settings:${bundleId}:theme.json`,
+      sourceKind: 'theme-directory' as const,
+      sourceLabel: 'Settings Theme JSON',
+      description: manifest.description,
+      author: manifest.author,
+      homepage: manifest.homepage,
+      tags: manifest.tags ?? [],
+      previewUrl: undefined,
+      warnings: [],
+      catalog: resolveThemeCatalogPackageMetadata(bundleId),
+      capabilitySummary: {
+        icons: Boolean(manifest.iconThemeId),
+        wallpaper: Boolean(manifest.wallpaperId),
+        dock: localCatalogs.themeRecipePacks.some(pack => Boolean(pack.recipe.dock)),
+        visuals: localCatalogs.appearancePacks.reduce((total, pack) => total + (pack.appearance.visuals?.length ?? 0), 0),
+        shaders: 0,
+        animations: 0,
+        fonts: localCatalogs.appearancePacks.reduce((total, pack) => total + ([pack.appearance.fonts?.ui, pack.appearance.fonts?.mono].filter(Boolean).length), 0),
+        themeRenderer: Boolean(manifest.rendererId),
+        topBars: 0,
+      },
+      manifest,
+      localCatalogs,
+      theme: normalizeThemeDefinition({
+        id: bundleId,
+        name: bundleName,
+        source: 'custom',
+      }),
+      topBars: [],
+    } satisfies LoadedOverlayThemePackage;
+  });
+
+  return resolveLoadedThemePackages(packages, dependencies).map(pkg => ({
+    ...pkg.theme,
+    source: 'custom',
+  }));
 }
