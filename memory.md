@@ -26,15 +26,15 @@
   - `FileExplorer.tsx` now builds an `ExplorerMenuInvocationContext` for `entry`, `background`, `multi-select`, `search-result`, and `preview-pane`, then hands that snapshot to `buildExplorerRuntimeMenu(...)` instead of assembling menu JSX inline.
   - `src/config/menuPacks.ts` adds the new managed `menu-packs/` root plus the built-in `GreebleFS Classic Explorer Menu` authored pack. Packs own per-context layout trees, submenus, group slots, quick-slot/fallback placement, and optional renderer hints, but not execution code.
   - `src/store/settingsStore.ts` now persists `settings.explorer.activeMenuPackId` and `contextMenuLayoutOverridesByContext`. Legacy `contextMenuItemOverrides` is kept only as migration input and hydrates forward into the new per-context layout override model.
-  - `src/components/SettingsPage.tsx` now exposes a context-aware `Context Menu Composer` with active-pack selection, per-context renderer selection, command/group-slot/submenu authoring, parent placement, quick slots, fallback buckets, and reset controls.
+  - `src/components/SettingsPage.tsx` now exposes a dedicated top-level `Context Menus` settings section with a context-aware `Context Menu Composer`, active-pack selection, per-context renderer selection, command/group-slot/submenu authoring, parent placement, quick slots, fallback buckets, and reset controls. The Explorer section now links into that lane instead of embedding the whole composer inline.
   - `src/components/explorer/ExplorerContextMenu.tsx` is the first production renderer. It ships the classic nested menu path now, and keyboard-opened submenus now remember an anchor rect so the submenu can render instead of only updating hidden state.
 - Durable product note:
   - Themes choose how menus look and which renderer family they prefer, but packs choose which commands appear where. Do not collapse menu content back into theme files or component JSX.
   - Only the classic nested renderer is fully shipped in this slice. `hybrid`, `radial`, `sheet`, and `hud` already exist in the schema/runtime as future-capability targets, so new work should preserve those typed paths even if the UI still falls back to `classic`.
 - Validation:
   - passed: `bunx vitest run src/test/appContentDirectories.test.ts src/test/settingsStore.test.ts src/test/explorerContextMenu.test.ts src/test/menuPacks.test.ts src/test/explorerMenuRuntime.test.ts src/test/explorerContextMenuRenderer.test.tsx src/test/settingsPage.behavior.test.tsx --reporter=dot`
-  - passed: filtered touched-path typecheck via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "src/components/explorer/ExplorerContextMenu\\.tsx|src/test/explorerContextMenuRenderer\\.test\\.tsx|src/test/explorerMenuRuntime\\.test\\.ts|src/test/menuPacks\\.test\\.ts|src/test/settingsPage\\.behavior\\.test\\.tsx|src/config/menuPacks\\.ts|src/components/explorer/explorerMenuRuntime\\.ts|src/config/explorerContextMenu\\.ts|src/store/settingsStore\\.ts" || true`
-  - note: a later repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` run is currently blocked by unrelated mobile-share errors in `src-mobile/App.tsx` and `src-mobile/mobileShared.ts`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
 
 # 2026-04-23 - Audio VST Workflow Now Keeps Preview Context And Uses A Live Deck Host
 
@@ -3755,3 +3755,18 @@
   - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
   - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
   - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx src/test/screenshotsManager.test.tsx --reporter=dot`
+
+## 2026-04-23 — Explorer Pane Resize Headroom Increased
+
+- Explorer pane resizing now gives materially more headroom on wide desktops instead of feeling capped near the middle of the shell.
+- Durable implementation shape:
+  - `src/config/explorerShellLayouts.ts` raises `EXPLORER_PREVIEW_WIDTH_BOUNDS.max` from `920` to `1280`, so the preview pane can be pulled much farther without changing its default width or layout bias.
+  - `src/config/explorerWorkspaceLayouts.ts` now exports `EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS` and widens the shared workspace split clamp from `28/72` to `18/82`, which applies to both live drag resizing and persisted workspace-tab hydration.
+  - `src/config/explorerRail.ts` raises the sources rail max width to `520` in full explorer mode and `320` in compact mode so the other resizable explorer lane can also breathe on larger monitors.
+- Durable product note:
+  - Keep pane-resize freedom data-driven through the shared bounds/config files, not as one-off numbers inside `FileExplorer.tsx` or `ExplorerWorkspace.tsx`. Preview, rail, and workspace split behavior should continue to widen or tighten from those central contracts.
+  - The current bounds are intentionally more permissive, not unlimited. They are meant to make the explorer feel less artificially constrained without letting one drag gesture permanently consume the whole shell.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "preserves preview width drag resize behavior while split mode is active" --reporter=dot`
+  - passed: `bunx vitest run src/test/explorerStore.test.ts src/test/explorerSideRail.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`

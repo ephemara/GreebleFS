@@ -50,12 +50,12 @@ export const explorerRailWidthBoundsByLayout: Record<'full' | 'compact', Explore
   full: {
     defaultWidth: 220,
     minWidth: 168,
-    maxWidth: 360,
+    maxWidth: 520,
   },
   compact: {
     defaultWidth: 172,
     minWidth: 144,
-    maxWidth: 260,
+    maxWidth: 320,
   },
 };
 

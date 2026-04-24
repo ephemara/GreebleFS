@@ -59,6 +59,10 @@ const builtInExplorerWorkspaceLayouts: Record<ExplorerWorkspaceLayoutMode, Explo
 
 export const defaultExplorerWorkspaceLayoutMode: ExplorerWorkspaceLayoutMode = 'single';
 export const defaultExplorerWorkspaceAxisRatio = 0.5;
+export const EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS = {
+  min: 0.18,
+  max: 0.82,
+} as const;
 
 export function normalizeExplorerWorkspaceLayoutMode(
   value: unknown,
@@ -125,5 +129,8 @@ export function clampExplorerWorkspaceAxisRatio(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return defaultExplorerWorkspaceAxisRatio;
   }
-  return Math.max(0.28, Math.min(0.72, value));
+  return Math.max(
+    EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS.min,
+    Math.min(EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS.max, value),
+  );
 }

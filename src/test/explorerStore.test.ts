@@ -13,6 +13,10 @@ import {
   useExplorerStore,
 } from '../store/explorerStore';
 import { createDefaultExplorerRailSnapshot, createExplorerBookmarkFolder } from '../components/explorer/explorerRailState';
+import {
+  EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS,
+  clampExplorerWorkspaceAxisRatio,
+} from '../config/explorerWorkspaceLayouts';
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -376,6 +380,16 @@ describe('explorerStore persistence', () => {
     expect(activeWorkspaceTab?.focusedPane).toBe('pane-2');
     expect(activeWorkspaceTab?.panes['pane-2']).not.toBeNull();
     expect(activeWorkspaceTab?.columnSplitRatio).toBe(0.61);
+  });
+
+  it('clamps workspace split ratios to the expanded explorer bounds', () => {
+    expect(clampExplorerWorkspaceAxisRatio(-1)).toBe(
+      EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS.min,
+    );
+    expect(clampExplorerWorkspaceAxisRatio(2)).toBe(
+      EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS.max,
+    );
+    expect(clampExplorerWorkspaceAxisRatio(0.5)).toBe(0.5);
   });
 
   it('preserves hidden pane sessions when moving 4-Up to 3-Up and back', () => {

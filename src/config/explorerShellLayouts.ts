@@ -29,7 +29,7 @@ export interface ExplorerShellLayoutWidthInputs {
 
 export const EXPLORER_PREVIEW_WIDTH_BOUNDS = {
   min: 220,
-  max: 920,
+  max: 1280,
 } as const;
 
 export const explorerShellLayouts: readonly ExplorerShellLayoutDefinition[] = [

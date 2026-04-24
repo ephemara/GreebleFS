@@ -356,6 +356,7 @@ import {
   FileExplorer,
   invalidateExplorerResultCaches,
 } from "../components/FileExplorer";
+import { EXPLORER_PREVIEW_WIDTH_BOUNDS } from "../config/explorerShellLayouts";
 import {
   normalizeThemeDefinition,
   resolveOverlayAppearance,
@@ -1969,6 +1970,17 @@ describe("FileExplorer view modes", () => {
       resizedWidth = useExplorerStore.getState().session.previewWidth ?? 0;
       expect(resizedWidth).toBeGreaterThan(initialWidth);
     });
+
+    fireEvent.mouseDown(getPreviewResizeHandle(), { clientX: 900 });
+    fireEvent.mouseMove(window, { clientX: -900 });
+    fireEvent.mouseUp(window);
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewWidth).toBe(
+        EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
+      );
+    });
+    resizedWidth = useExplorerStore.getState().session.previewWidth ?? 0;
 
     fireEvent.click(screen.getByText("anthem.mp3"));
 

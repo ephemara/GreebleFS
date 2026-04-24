@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { listExplorerLocation } from '../runtime/explorerBackend';
 import { invalidateExplorerDirectoryResultCaches } from '../components/explorer/explorerDirectoryCache';
+import { getExplorerRailWidthBounds } from '../config/explorerRail';
 
 vi.mock('../runtime/explorerBackend', () => {
   return {
@@ -36,6 +37,19 @@ beforeEach(() => {
 });
 
 describe('ExplorerSideRail', () => {
+  it('keeps wider manual resize headroom for explorer rail surfaces', () => {
+    expect(getExplorerRailWidthBounds(false)).toMatchObject({
+      defaultWidth: 220,
+      minWidth: 168,
+      maxWidth: 520,
+    });
+    expect(getExplorerRailWidthBounds(true)).toMatchObject({
+      defaultWidth: 172,
+      minWidth: 144,
+      maxWidth: 320,
+    });
+  });
+
   it('creates bookmark folders from the compact header action', () => {
     render(
       <ExplorerSideRail
