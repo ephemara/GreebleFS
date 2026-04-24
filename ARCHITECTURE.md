@@ -245,11 +245,17 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 - Overlay themes still resolve as the downstream shell identity, but authored filesystem themes are now bundle-first orchestration manifests instead of monolithic packages.
 - Theme bundles now orchestrate modular authored lanes:
-  - `themes/<bundle>/theme.json` or `theme.toml` points at lanes such as `appearancePackId`, `topBarId`, `iconThemeId`, `wallpaperId`, `shaderId`, `openAnimationId`, `closeAnimationId`, `interactionMotionPackId`, `rendererId`, `themeRecipeId`, `themeEngineId`, `homePackId`, and `menuPackId`
-  - bundle-local child folders can live in-place under `appearance-packs/`, `top-bars/`, `icon-themes/`, `wallpapers/`, `shaders/`, `animations/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, `theme-engines/`, `home-packs/`, and `menu-packs/`
+  - `themes/<bundle>/theme.json` or `theme.toml` points at lanes such as `appearancePackId`, `topBarId`, `iconThemeId`, `wallpaperId`, `shaderId`, `openAnimationId`, `closeAnimationId`, `soundPackId`, `interactionMotionPackId`, `rendererId`, `themeRecipeId`, `themeEngineId`, `homePackId`, and `menuPackId`
+  - bundle-local child folders can live in-place under `appearance-packs/`, `top-bars/`, `icon-themes/`, `wallpapers/`, `shaders/`, `animations/`, `sound-packs/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, `theme-engines/`, `home-packs/`, and `menu-packs/`
   - local child ids are scoped as `<themeBundleId>:<localId>` so bundle-local authored packs do not collide with standalone managed roots
   - `src/components/SettingsPage.tsx` `Theme JSON` now edits/imports bundle manifests and persists them in `settings.appearance.customThemeBundles`; legacy monolithic theme JSON is intentionally rejected
   - `themes/andromeda/` is the first full repo-local example that exercises the required core lanes plus local top bar, icon theme, wallpaper, shader, and animation without needing runtime code changes
+- Sound packs are now a first-class theme and settings lane:
+  - `src/config/soundPacks.ts` owns the managed `sound-packs/` catalog, built-in synth fallback pack, standalone/theme-local manifest loading, and cue ids for shell buttons, explorer navigation, task lifecycle, and notification audio
+  - `src/runtime/soundEffects.ts` is the shell-side playback runtime. It resolves the current pack plus category toggles into Web Audio playback and keeps explicit preview support separate from the live enabled-state gates
+  - `src/runtime/nativeNotifications.ts` is the host-notification bridge used by the shell to check/request permission and dispatch OS-native notifications without scattering plugin calls through components
+  - `src/store/settingsStore.ts` now persists `settings.audio.activeSoundPackId`; `null` means "follow the active theme path", matching the other bundle-pack lanes
+  - `SettingsPage.tsx` owns the authored sound-pack selector, cue-category toggles, native-notification controls, and VST path management in one audio section
 - Top bars are now a first-class shell subsystem instead of an implicit side effect of `theme.workbench.topBarStyle`:
   - `src/config/topBars.ts` defines the built-in catalog, the control-zone schema (`leadingControls`, `navigationShortcuts`, `trailingControls`), and the active resolution order: explicit user pin, `theme.defaultTopBarId`, legacy `theme.workbench.topBarStyle`, then built-in fallback
   - `src/config/topBarPackages.ts` owns the standalone `top-bars/` loader, so authored top bars no longer need to hide inside theme bundles just to exist on disk
@@ -415,8 +421,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - worker lanes must always keep a safe fallback path so test mode, unsupported environments, or worker boot failures do not break plugin/theme/shader loading
   - `DevPerformanceHud.tsx` now surfaces worker activity, fallback count, error count, and last-task duration so frontend threading changes are observable during local performance work
 - Managed content roots now split by runtime mode:
-  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `appearance-packs/`, `top-bars/`, `home-packs/`, `menu-packs/`, `icon-themes/`, `wallpapers/`, `shaders/`, `animations/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, `theme-engines/`, `notes/`, and `Screenshots/` so authoring stays in the workspace
-  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/appearance-packs`, `$HOME/top-bars`, `$HOME/home-packs`, `$HOME/menu-packs`, `$HOME/icon-themes`, `$HOME/wallpapers`, `$HOME/shaders`, `$HOME/animations`, `$HOME/interaction-motion`, `$HOME/shell-renderers`, `$HOME/theme-recipes`, `$HOME/theme-engines`, `$HOME/notes`, or `$HOME/Screenshots`
+  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `appearance-packs/`, `top-bars/`, `home-packs/`, `menu-packs/`, `icon-themes/`, `wallpapers/`, `shaders/`, `animations/`, `sound-packs/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, `theme-engines/`, `notes/`, and `Screenshots/` so authoring stays in the workspace
+  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/appearance-packs`, `$HOME/top-bars`, `$HOME/home-packs`, `$HOME/menu-packs`, `$HOME/icon-themes`, `$HOME/wallpapers`, `$HOME/shaders`, `$HOME/animations`, `$HOME/sound-packs`, `$HOME/interaction-motion`, `$HOME/shell-renderers`, `$HOME/theme-recipes`, `$HOME/theme-engines`, `$HOME/notes`, or `$HOME/Screenshots`
   - `src/config/appContentDirectories.ts` owns that bootstrap, the managed-content catalog, and the legacy-home-path detection/migration rules
   - `src/App.tsx` and `SettingsPage.tsx` consume the managed-content catalog so workspace roots and folder-open commands stay discoverable as new managed roots are added
   - release migrations now also carry old `co.overlayterm.app` app-local directories forward into `co.greeblefs.app`
@@ -578,6 +584,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Standalone appearance packs discovered at runtime.
 - `top-bars/`
   Standalone top-bar packages discovered at runtime.
+- `sound-packs/`
+  Standalone shell sound packs discovered at runtime. Theme bundles can pin these by id or contribute bundle-local packs through `themes/<bundle>/sound-packs/`.
 - `icon-themes/`
   Standalone icon-theme packages discovered at runtime.
 - `menu-packs/`

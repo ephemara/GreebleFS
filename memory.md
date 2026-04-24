@@ -4055,3 +4055,30 @@
   - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`
   - passed: `bunx vitest run src/test/accelerationRuntimeStore.test.ts src/test/pythonConfig.test.ts --reporter=dot`
   - note: `bunx tsc --noEmit --pretty false -p tsconfig.json` still reports unrelated repo-wide type errors in `src/config/soundPacks.ts`, `src/panels/panelRegistry.tsx`, and vendored `src/vendor/tiptap/**` files.
+
+## 2026-04-24 — Theme-Aware Sound Packs and Native Notification Routing
+
+- GreebleFS now has a first-class shell sound-effects lane instead of ad hoc per-component noise. Sound packs are treated like the other managed/theme-authored systems: themes can declare a default pack, users can pin an override, and the shell runtime resolves one active pack before shared button/explorer/task/notification cues play.
+- Durable implementation shape:
+  - `src/config/appContentDirectories.ts` now registers a managed `soundPacks` root backed by `sound-packs/`, so authored packs follow the same dev-vs-release content-root rules as themes, top bars, icon themes, wallpapers, shaders, and animations.
+  - `src/config/soundPacks.ts` is the canonical loader/runtime contract for this lane. It owns the effect catalog (`shell-button-press`, `explorer-selection-step`, `explorer-open-entry`, `task-start`, `task-success`, `task-failure`, `notification-*`), the built-in synth fallback pack, standalone pack loading, bundle-local pack loading/scoping, and cue normalization.
+  - `src/config/themePackages.ts` and `src/config/appearance.ts` now treat `soundPackId` / `defaultSoundPackId` as real theme lanes. Theme bundles can point at standalone packs or contribute `themes/<bundle>/sound-packs/*`, and the resolved downstream theme carries the default sound-pack id the same way it already carries top bar, icon theme, shader, animation, renderer, recipe, and engine defaults.
+  - `src/store/settingsStore.ts` now persists the user-facing audio lane: `activeSoundPackId`, master enable, volume, per-category enable flags (`button`, `navigation`, `task`, `notification`), native-notification enable flags, and the existing VST3 path list.
+  - `src/runtime/soundEffects.ts` is the shell playback runtime. It uses Web Audio for synth/sample playback, caches decoded samples, respects per-cue cooldowns, and exposes a preview path that bypasses live mute/category gating so authored packs can be auditioned safely from Settings.
+  - `src/runtime/nativeNotifications.ts` is the host-notification bridge. The app now owns notification permission/status checks and `sendNativeNotification(...)` directly instead of leaving that path buried in plugin-only affordances.
+  - `src/App.tsx` now hydrates the active sound-pack catalog, resolves the current pack from `settings.audio.activeSoundPackId ?? theme.defaultSoundPackId ?? DEFAULT_SOUND_PACK_ID`, configures the global sound runtime, and plays task sounds / sends native notifications off explorer task lifecycle transitions.
+  - `src/components/SettingsPage.tsx` now has a real audio control surface:
+    - sound-pack catalog section using the shared theme-bundle pack UI
+    - sound enable/category toggles plus master volume
+    - explicit cue preview buttons
+    - native-notification permission/test controls
+    - the existing VST3 discovery-path list
+  - `src/components/OverlayActionButton.tsx`, `src/components/WorkbenchTopBar.tsx`, and `src/components/FileExplorer.tsx` now emit the shared shell-button / explorer-navigation cues so the system is audible in the actual workbench, not just configurable in Settings.
+- Durable product notes:
+  - Treat sound packs as shell identity, not as one-off UX garnish. New user-facing shell/explorer actions should reuse the central cue catalog and settings-backed category gates instead of hardcoding `new Audio(...)` or isolated browser playback inside components.
+  - Native notifications are now app-owned behavior. Future task/report/reminder notifications should route through `src/runtime/nativeNotifications.ts` and the `settings.audio.native*` gates rather than directly importing Tauri notification APIs from random surfaces.
+  - Theme bundles can now own a sound identity lane. If a future theme starter/example bundle is authored, include `soundPackId` and a local `sound-packs/` example so this capability stays visible in the bundle-first reference shape.
+- Validation:
+  - passed: `bunx vitest run src/test/soundPacks.test.ts src/test/themePackages.test.ts src/test/settingsStore.test.ts --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "src/(config/soundPacks|components/SettingsPage|components/OverlayActionButton|components/WorkbenchTopBar|components/FileExplorer|panels/panelRegistry|runtime/nativeNotifications|runtime/soundEffects|App\\.tsx|store/settingsStore|config/themePackages|config/settingsNavigation|config/appearance|config/appContentDirectories|test/soundPacks|test/themePackages|test/settingsStore)"` returned no matching errors
+  - note: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` is still noisy because of unrelated vendored `src/vendor/tiptap/**` failures and other pre-existing workspace issues, so use the filtered signal for this lane

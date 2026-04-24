@@ -101,6 +101,7 @@ describe('theme bundle loader', () => {
           createDirectoryEntry('themes/vista-glass/wallpapers'),
           createDirectoryEntry('themes/vista-glass/shaders'),
           createDirectoryEntry('themes/vista-glass/animations'),
+          createDirectoryEntry('themes/vista-glass/sound-packs'),
           createDirectoryEntry('themes/vista-glass/interaction-motion'),
           createDirectoryEntry('themes/vista-glass/shell-renderers'),
           createDirectoryEntry('themes/vista-glass/theme-recipes'),
@@ -123,6 +124,9 @@ describe('theme bundle loader', () => {
         ],
         'themes/vista-glass/animations': [
           createFileEntry('themes/vista-glass/animations/package-open.tsx'),
+        ],
+        'themes/vista-glass/sound-packs': [
+          createDirectoryEntry('themes/vista-glass/sound-packs/glass-clicks'),
         ],
         'themes/vista-glass/interaction-motion': [
           createDirectoryEntry('themes/vista-glass/interaction-motion/motion-core'),
@@ -155,6 +159,7 @@ describe('theme bundle loader', () => {
           shaderId: 'package-glow',
           openAnimationId: 'package-open',
           closeAnimationId: 'burn',
+          soundPackId: 'glass-clicks',
           interactionMotionPackId: 'motion-core',
           rendererId: 'vista-renderer',
           themeRecipeId: 'recipe-core',
@@ -228,6 +233,20 @@ describe('theme bundle loader', () => {
             },
           });
         `,
+        'themes/vista-glass/sound-packs/glass-clicks/sound-pack.json': JSON.stringify({
+          version: 1,
+          id: 'glass-clicks',
+          name: 'Glass Clicks',
+          masterVolume: 0.9,
+          sounds: {
+            'shell-button-press': {
+              kind: 'synth',
+              tones: [
+                { frequency: 820, durationMs: 20, gain: 0.16, waveform: 'triangle' },
+              ],
+            },
+          },
+        }),
         'themes/vista-glass/interaction-motion/motion-core/interaction-motion.json': JSON.stringify({
           version: 1,
           id: 'motion-core',
@@ -368,6 +387,7 @@ describe('theme bundle loader', () => {
     expect(themePackage.localCatalogs?.appearancePacks[0]?.id).toBe('vista-glass:appearance-core');
     expect(themePackage.localCatalogs?.iconThemePackages[0]?.id).toBe('vista-glass:vista-icons');
     expect(themePackage.localCatalogs?.wallpapers[0]?.id).toBe('vista-glass:aurora');
+    expect(themePackage.localCatalogs?.soundPacks[0]?.id).toBe('vista-glass:glass-clicks');
     expect(themePackage.localCatalogs?.interactionMotionPacks[0]?.id).toBe('vista-glass:motion-core');
     expect(themePackage.localCatalogs?.shellRenderers[0]?.id).toBe('vista-glass:vista-renderer');
     expect(themePackage.localCatalogs?.themeRecipePacks[0]?.id).toBe('vista-glass:recipe-core');
@@ -381,6 +401,7 @@ describe('theme bundle loader', () => {
     expect(themePackage.theme.fonts?.ui).toBe('Operator');
     expect(themePackage.theme.cssVars?.['--overlay-explorer-brand']).toBe('cross-media');
     expect(themePackage.theme.defaultTopBarId).toBe('vista-glass:launcher-rail');
+    expect(themePackage.theme.defaultSoundPackId).toBe('vista-glass:glass-clicks');
     expect(themePackage.theme.defaultShaderId).toBe('vista-glass:package-glow');
     expect(themePackage.theme.defaultOpenAnimationId).toBe('vista-glass:package-open');
     expect(themePackage.theme.defaultCloseAnimationId).toBe('burn');

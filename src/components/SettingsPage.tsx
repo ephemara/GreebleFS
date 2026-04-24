@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Bot, Camera, Cpu, Database, Download, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, VolumeX } from '@/components/AppIcons';
+import { ArrowDown, ArrowUp, Bot, Camera, Cpu, Database, Download, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, Volume2, VolumeX } from '@/components/AppIcons';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import { PremiumSlider } from './PremiumSlider';
@@ -179,6 +179,13 @@ import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import type { LoadedExplorerHomePack } from '../config/homePackages';
 import type { LoadedExplorerMenuPack } from '../config/menuPacks';
 import {
+  DEFAULT_SOUND_PACK_ID,
+  overlaySoundEffectCatalog,
+  resolveLoadedSoundPack,
+  soundPackSystemConfig,
+  type LoadedOverlaySoundPack,
+} from '../config/soundPacks';
+import {
   iconThemeSystemConfig,
   normalizeIconThemePackageSelectionId,
   resolveLoadedIconThemePackage,
@@ -275,6 +282,13 @@ import {
   listExplorerHomeUsage,
   type ExplorerHomeUsageSnapshotValue,
 } from '../runtime/homeBackend';
+import {
+  ensureNativeNotificationPermission,
+  getNativeNotificationPermissionState,
+  sendNativeNotification,
+  type NativeNotificationPermissionState,
+} from '../runtime/nativeNotifications';
+import { previewSoundEffect } from '../runtime/soundEffects';
 
 function ThemeBadge({ label, active = false }: { label: string; active?: boolean }) {
   return (
@@ -1619,6 +1633,10 @@ interface SettingsSectionContentContext {
   screenshotDefaultOutputAction: ScreenshotOutputActionId;
   screenshotShowGrid: boolean;
   audioFolderCount: number;
+  soundPackSelectionSummary: string;
+  availableSoundPacksCount: number;
+  soundEffectsEnabled: boolean;
+  nativeNotificationsEnabled: boolean;
   appearancePackSelectionSummary: string;
   availableAppearancePacksCount: number;
   availableWallpapersCount: number;
@@ -1720,8 +1738,8 @@ function getSettingsSectionContent(
       };
     case 'audio':
       return {
-        summary: `${context.audioFolderCount} user folders`,
-        detail: 'Configure scan paths for audio integrations and DAW-like plugin discovery.',
+        summary: `${context.soundPackSelectionSummary} · ${context.soundEffectsEnabled ? 'FX on' : 'FX muted'} · ${context.nativeNotificationsEnabled ? 'Native notices on' : 'Native notices off'} · ${context.audioFolderCount} VST folder${context.audioFolderCount === 1 ? '' : 's'}`,
+        detail: `Route shell sound packs, cue categories, and OS-native notifications through the same settings-backed audio lane, then add extra ${context.platform === 'macos' ? 'Audio Unit / VST-style' : 'VST3'} discovery paths for workbench audio integrations.`,
       };
     case 'appearance':
       return {
@@ -1797,6 +1815,19 @@ function formatScreenshotOutputActionLabel(action: ScreenshotOutputActionId): st
   }
 
   return action === 'save' ? 'Save' : 'Copy';
+}
+
+function formatNativeNotificationPermissionLabel(permission: NativeNotificationPermissionState): string {
+  switch (permission) {
+    case 'granted':
+      return 'Granted';
+    case 'denied':
+      return 'Denied';
+    case 'default':
+      return 'Prompt Required';
+    case 'unavailable':
+      return 'Unavailable';
+  }
 }
 
 function OverviewCard({
@@ -2026,6 +2057,11 @@ export function SettingsPage({
   iconThemePackagesLoading = false,
   iconThemePackagesError = null,
   iconThemePackagesWarnings = [],
+  soundPacks = [],
+  soundPacksDirectory = soundPackSystemConfig.soundPacksDirectory,
+  soundPacksLoading = false,
+  soundPacksError = null,
+  soundPacksWarnings = [],
   onRefreshTopBars,
   onOpenTopBarsFolder,
   onRefreshHomePacks = async () => { },
@@ -2046,6 +2082,8 @@ export function SettingsPage({
   onOpenThemesFolder,
   onRefreshIconThemes = async () => { },
   onOpenIconThemesFolder = async () => { },
+  onRefreshSoundPacks = async () => { },
+  onOpenSoundPacksFolder = async () => { },
   shaders,
   shaderDiagnostics,
   shadersDirectory,
@@ -2123,6 +2161,11 @@ export function SettingsPage({
   iconThemePackagesLoading?: boolean;
   iconThemePackagesError?: string | null;
   iconThemePackagesWarnings?: string[];
+  soundPacks?: LoadedOverlaySoundPack[];
+  soundPacksDirectory?: string;
+  soundPacksLoading?: boolean;
+  soundPacksError?: string | null;
+  soundPacksWarnings?: string[];
   onRefreshTopBars: () => Promise<void>;
   onOpenTopBarsFolder: () => Promise<void>;
   onRefreshHomePacks?: () => Promise<void>;
@@ -2143,6 +2186,8 @@ export function SettingsPage({
   onOpenThemesFolder: () => Promise<void>;
   onRefreshIconThemes?: () => Promise<void>;
   onOpenIconThemesFolder?: () => Promise<void>;
+  onRefreshSoundPacks?: () => Promise<void>;
+  onOpenSoundPacksFolder?: () => Promise<void>;
   shaders: LoadedOverlayShader[];
   shaderDiagnostics: LoadedOverlayShader[];
   shadersDirectory: string;
@@ -2176,6 +2221,9 @@ export function SettingsPage({
     if (platform === 'linux') return 'Linux';
     return 'the OS';
   }, [platform]);
+  const [nativeNotificationPermissionState, setNativeNotificationPermissionState] = useState<NativeNotificationPermissionState>('unavailable');
+  const [nativeNotificationPermissionLoading, setNativeNotificationPermissionLoading] = useState(false);
+  const [nativeNotificationFeedback, setNativeNotificationFeedback] = useState<string | null>(null);
   const {
     activeSection,
     setActiveSection,
@@ -2219,6 +2267,19 @@ export function SettingsPage({
     setHomePresetSelection: state.setHomePresetSelection,
     resetToDefaults: state.resetToDefaults,
   })));
+  const refreshNativeNotificationPermission = useCallback(async () => {
+    setNativeNotificationPermissionLoading(true);
+    try {
+      const nextPermission = await getNativeNotificationPermissionState();
+      setNativeNotificationPermissionState(nextPermission);
+    } finally {
+      setNativeNotificationPermissionLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshNativeNotificationPermission();
+  }, [refreshNativeNotificationPermission]);
   const systemPresentationState = useMemo(
     () => resolveSystemPresentationState(settings.system),
     [settings.system],
@@ -2285,6 +2346,7 @@ export function SettingsPage({
   const [localModelStatusError, setLocalModelStatusError] = useState<string | null>(null);
   const [localModelNotice, setLocalModelNotice] = useState<string | null>(null);
   const [modelPrewarmPendingId, setModelPrewarmPendingId] = useState<string | null>(null);
+  const [accelerationInstallPending, setAccelerationInstallPending] = useState(false);
   const [semanticOverrideRootPathDraft, setSemanticOverrideRootPathDraft] = useState('');
   const [semanticOverrideModelIdDraft, setSemanticOverrideModelIdDraft] = useState<string | null>(
     settings.models.capabilityBindings[semanticIndexingCapabilityId]?.modelId ?? null,
@@ -2327,9 +2389,6 @@ export function SettingsPage({
   const [wallpaperImportError, setWallpaperImportError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
   const [railWidth, setRailWidth] = usePersistentPanelSize('overlayterm-settings-rail-width', 236, 190, 320);
-  const accelerationAutoProbeRequestedRef = useRef(false);
-  const accelerationAutoInstallAttemptRef = useRef<string | null>(null);
-  const accelerationAutoInstallInFlightRef = useRef(false);
   const availableLinuxDisplayBackends = linuxDisplayBackendStatus?.availableBackends ?? [];
   const linuxDisplayBackendStatusSummary = useMemo(() => {
     if (platform !== 'linux') {
@@ -2498,6 +2557,19 @@ export function SettingsPage({
       settings.system.accelerationRoutingMode,
     ],
   );
+  const accelerationInstallRecommended = useMemo(
+    () => shouldAutoInstallAccelerationPackages(accelerationRuntimeSnapshot.pythonProbe),
+    [accelerationRuntimeSnapshot.pythonProbe],
+  );
+  const accelerationInstallButtonLabel = useMemo(() => {
+    if (accelerationAutoInstallPlan == null) {
+      return 'Download AI Packages';
+    }
+
+    return accelerationAutoInstallPlan.presetId === 'cuda-ai-indexing'
+      ? 'Download CUDA Packages'
+      : 'Download AI Packages';
+  }, [accelerationAutoInstallPlan]);
   const handleProbeAccelerationPipeline = useCallback(async () => {
     setAccelerationProbePending(true);
     setAccelerationProbeNotice(null);
@@ -2522,6 +2594,62 @@ export function SettingsPage({
   }, [
     managedPythonRuntimeConfig,
     settings.system.accelerationRoutingMode,
+  ]);
+  const handleQueueAccelerationInstall = useCallback(async () => {
+    if (accelerationAutoInstallPlan == null) {
+      setAccelerationProbeError('No managed AI package preset is available for the current routing mode.');
+      return;
+    }
+
+    setAccelerationInstallPending(true);
+    setAccelerationProbeNotice(null);
+    setAccelerationProbeError(null);
+
+    try {
+      const runtimeConfig = createPythonRuntimeConfig({
+        ...settings.python,
+        bootstrapPackages: accelerationAutoInstallPlan.packageInput,
+      });
+
+      if (settings.python.bootstrapPackages.trim() !== accelerationAutoInstallPlan.packageInput) {
+        updatePython({ bootstrapPackages: accelerationAutoInstallPlan.packageInput });
+      }
+
+      revealIntegratedTerminalPanel();
+
+      let runtimeStatus = await getManagedPythonRuntimeStatus(runtimeConfig);
+      if (!runtimeStatus.ready || !runtimeStatus.managedPythonPath.trim()) {
+        const bootstrapResponse = await bootstrapManagedPythonRuntime(runtimeConfig);
+        runtimeStatus = bootstrapResponse.status;
+      }
+
+      const installCommand = buildManagedPythonPipInstallCommand({
+        managedPythonPath: runtimeStatus.managedPythonPath,
+        shell: settings.terminal.shell,
+        platform,
+        packages: accelerationAutoInstallPlan.packages,
+      });
+      if (!installCommand) {
+        throw new Error('Unable to build the managed Python install command.');
+      }
+
+      dispatchTerminalCommand(installCommand, true);
+      setAccelerationProbeNotice(
+        `Opened Terminal and queued ${accelerationAutoInstallPlan.presetLabel} for install.`,
+      );
+      setAccelerationProbeError(null);
+    } catch (error) {
+      setAccelerationProbeError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAccelerationInstallPending(false);
+    }
+  }, [
+    accelerationAutoInstallPlan,
+    platform,
+    revealIntegratedTerminalPanel,
+    settings.python,
+    settings.terminal.shell,
+    updatePython,
   ]);
   const cudaProviderStatus = useMemo(
     () => accelerationRuntimeSnapshot.providers.find(provider => provider.providerKind === 'cudaPython') ?? null,
@@ -2684,106 +2812,6 @@ export function SettingsPage({
     localModelStatus,
     localModelStatusPending,
     refreshLocalModels,
-  ]);
-
-  useEffect(() => {
-    const accelerationSectionActive = activeSection === 'system' || activeSection === 'models';
-    if (!accelerationSectionActive) {
-      return;
-    }
-
-    if (
-      accelerationProbePending
-      || accelerationRuntimeHydrationState === 'loading'
-      || accelerationRuntimeSnapshot.pythonProbeAttempted
-      || accelerationAutoProbeRequestedRef.current
-    ) {
-      return;
-    }
-
-    accelerationAutoProbeRequestedRef.current = true;
-    void handleProbeAccelerationPipeline();
-  }, [
-    accelerationProbePending,
-    accelerationRuntimeHydrationState,
-    accelerationRuntimeSnapshot.pythonProbeAttempted,
-    activeSection,
-    handleProbeAccelerationPipeline,
-  ]);
-
-  useEffect(() => {
-    const accelerationSectionActive = activeSection === 'system' || activeSection === 'models';
-    if (
-      !accelerationSectionActive
-      || accelerationAutoInstallPlan == null
-      || !accelerationRuntimeSnapshot.pythonProbeAttempted
-      || !shouldAutoInstallAccelerationPackages(accelerationRuntimeSnapshot.pythonProbe)
-    ) {
-      return;
-    }
-
-    const attemptSignature = `${accelerationAutoInstallPlan.presetId}:${accelerationAutoInstallPlan.packageInput}`;
-    if (
-      accelerationAutoInstallInFlightRef.current
-      || accelerationAutoInstallAttemptRef.current === attemptSignature
-    ) {
-      return;
-    }
-
-    accelerationAutoInstallAttemptRef.current = attemptSignature;
-    accelerationAutoInstallInFlightRef.current = true;
-
-    void (async () => {
-      try {
-        const runtimeConfig = createPythonRuntimeConfig({
-          ...settings.python,
-          bootstrapPackages: accelerationAutoInstallPlan.packageInput,
-        });
-
-        if (settings.python.bootstrapPackages.trim() !== accelerationAutoInstallPlan.packageInput) {
-          updatePython({ bootstrapPackages: accelerationAutoInstallPlan.packageInput });
-        }
-
-        revealIntegratedTerminalPanel();
-
-        let runtimeStatus = await getManagedPythonRuntimeStatus(runtimeConfig);
-        if (!runtimeStatus.ready || !runtimeStatus.managedPythonPath.trim()) {
-          const bootstrapResponse = await bootstrapManagedPythonRuntime(runtimeConfig);
-          runtimeStatus = bootstrapResponse.status;
-        }
-
-        const installCommand = buildManagedPythonPipInstallCommand({
-          managedPythonPath: runtimeStatus.managedPythonPath,
-          shell: settings.terminal.shell,
-          platform,
-          packages: accelerationAutoInstallPlan.packages,
-        });
-        if (!installCommand) {
-          throw new Error('Unable to build the managed Python install command.');
-        }
-
-        dispatchTerminalCommand(installCommand, true);
-        setAccelerationProbeNotice(
-          `Detected a blank managed AI runtime. Opened Terminal and started installing ${accelerationAutoInstallPlan.presetLabel}.`,
-        );
-        setAccelerationProbeError(null);
-      } catch (error) {
-        accelerationAutoInstallAttemptRef.current = null;
-        setAccelerationProbeError(error instanceof Error ? error.message : String(error));
-      } finally {
-        accelerationAutoInstallInFlightRef.current = false;
-      }
-    })();
-  }, [
-    accelerationAutoInstallPlan,
-    accelerationRuntimeSnapshot.pythonProbe,
-    accelerationRuntimeSnapshot.pythonProbeAttempted,
-    activeSection,
-    platform,
-    revealIntegratedTerminalPanel,
-    settings.python,
-    settings.terminal.shell,
-    updatePython,
   ]);
 
   useEffect(() => {
@@ -3012,9 +3040,32 @@ export function SettingsPage({
     ),
     [interactionMotionPacks, themePackages],
   );
+  const availableSoundPackEntries = useMemo(
+    () => buildThemeBundleCatalogEntries(
+      soundPacks,
+      themePackages,
+      themePackage => themePackage.localCatalogs?.soundPacks ?? [],
+    ),
+    [soundPacks, themePackages],
+  );
+  const availableSoundPackCatalog = useMemo(
+    () => availableSoundPackEntries.map(entry => entry.pack),
+    [availableSoundPackEntries],
+  );
   const activeThemeLocalCatalogs = activeThemePackage?.localCatalogs;
   const effectiveThemeBundleManifest = editableThemeBundle;
   const activeThemeBundleLabel = activeThemeBundleManifest.name?.trim() || appearance.baseTheme.name;
+  const soundPackThemeDefaultLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: effectiveThemeBundleManifest.soundPackId ?? appearance.baseTheme.defaultSoundPackId ?? DEFAULT_SOUND_PACK_ID,
+    entries: availableSoundPackEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.soundPacks,
+    emptyLabel: 'GreebleFS Default',
+  }), [
+    activeThemeLocalCatalogs?.soundPacks,
+    appearance.baseTheme.defaultSoundPackId,
+    availableSoundPackEntries,
+    effectiveThemeBundleManifest.soundPackId,
+  ]);
   const appearancePackThemeDefaultLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
     requestedId: effectiveThemeBundleManifest.appearancePackId,
     entries: availableAppearancePackEntries,
@@ -3123,10 +3174,45 @@ export function SettingsPage({
     effectiveThemeBundleManifest.rendererId,
     settings.appearance.activeShellRendererId,
   ]);
+  const soundPackSelectionLabel = useMemo(() => resolveThemeBundlePackSelectionLabel({
+    requestedId: settings.audio.activeSoundPackId
+      ?? effectiveThemeBundleManifest.soundPackId
+      ?? appearance.baseTheme.defaultSoundPackId
+      ?? DEFAULT_SOUND_PACK_ID,
+    entries: availableSoundPackEntries,
+    activeThemeLocalPacks: activeThemeLocalCatalogs?.soundPacks,
+    emptyLabel: 'GreebleFS Default',
+  }), [
+    activeThemeLocalCatalogs?.soundPacks,
+    appearance.baseTheme.defaultSoundPackId,
+    availableSoundPackEntries,
+    effectiveThemeBundleManifest.soundPackId,
+    settings.audio.activeSoundPackId,
+  ]);
+  const resolvedPreviewSoundPack = useMemo(
+    () => resolveLoadedSoundPack(
+      availableSoundPackCatalog,
+      settings.audio.activeSoundPackId
+        ?? effectiveThemeBundleManifest.soundPackId
+        ?? appearance.baseTheme.defaultSoundPackId
+        ?? DEFAULT_SOUND_PACK_ID,
+    ) ?? resolveLoadedSoundPack(availableSoundPackCatalog, DEFAULT_SOUND_PACK_ID),
+    [
+      appearance.baseTheme.defaultSoundPackId,
+      availableSoundPackCatalog,
+      effectiveThemeBundleManifest.soundPackId,
+      settings.audio.activeSoundPackId,
+    ],
+  );
+  const soundPackSelectionSummary = `${settings.audio.activeSoundPackId == null ? 'Follow Theme' : 'Pinned'} · ${soundPackSelectionLabel}`;
   const appearancePackSelectionSummary = `${settings.appearance.activeAppearancePackId == null ? 'Follow Theme' : 'Pinned'} · ${appearancePackSelectionLabel}`;
   const themeRecipeSelectionSummary = `${settings.appearance.activeThemeRecipeId == null ? 'Follow Theme' : 'Pinned'} · ${themeRecipeSelectionLabel}`;
   const themeEngineSelectionSummary = `${settings.appearance.activeThemeEngineId == null ? 'Follow Theme' : 'Pinned'} · ${themeEngineSelectionLabel}`;
   const shellRendererSelectionSummary = `${settings.appearance.activeShellRendererId == null ? 'Follow Theme' : 'Pinned'} · ${shellRendererSelectionLabel}`;
+  const soundPackCatalogCounts = useMemo(
+    () => countThemeBundleCatalogEntriesBySource(availableSoundPackEntries),
+    [availableSoundPackEntries],
+  );
   const appearancePackCatalogCounts = useMemo(
     () => countThemeBundleCatalogEntriesBySource(availableAppearancePackEntries),
     [availableAppearancePackEntries],
@@ -3201,6 +3287,18 @@ export function SettingsPage({
       settings.appearance.activeShellRendererId,
     ],
   );
+  const soundPackPinnedSelectionMissing = useMemo(
+    () => settings.audio.activeSoundPackId != null && !hasThemeBundlePackSelection({
+      requestedId: settings.audio.activeSoundPackId,
+      entries: availableSoundPackEntries,
+      activeThemeLocalPacks: activeThemeLocalCatalogs?.soundPacks,
+    }),
+    [
+      activeThemeLocalCatalogs?.soundPacks,
+      availableSoundPackEntries,
+      settings.audio.activeSoundPackId,
+    ],
+  );
   const activeAppearancePackCardId = useMemo(
     () => findThemeBundleCatalogEntry(availableAppearancePackEntries, settings.appearance.activeAppearancePackId)?.pack.id
       ?? settings.appearance.activeAppearancePackId,
@@ -3221,6 +3319,12 @@ export function SettingsPage({
       ?? settings.appearance.activeShellRendererId,
     [availableShellRendererEntries, settings.appearance.activeShellRendererId],
   );
+  const activeSoundPackCardId = useMemo(
+    () => findThemeBundleCatalogEntry(availableSoundPackEntries, settings.audio.activeSoundPackId)?.pack.id
+      ?? settings.audio.activeSoundPackId,
+    [availableSoundPackEntries, settings.audio.activeSoundPackId],
+  );
+  const soundPackFollowThemeDetail = `${activeThemeBundleLabel} currently resolves the sound-pack lane to ${soundPackThemeDefaultLabel}.`;
   const appearancePackFollowThemeDetail = `${activeThemeBundleLabel} currently resolves the appearance lane to ${appearancePackThemeDefaultLabel}.`;
   const themeRecipeFollowThemeDetail = `${activeThemeBundleLabel} currently resolves the recipe lane to ${themeRecipeThemeDefaultLabel}.`;
   const themeEngineFollowThemeDetail = `${activeThemeBundleLabel} currently resolves the theme engine lane to ${themeEngineThemeDefaultLabel}.`;
@@ -3305,6 +3409,31 @@ export function SettingsPage({
     tags: pack.tags,
     warnings: [...pack.warnings, ...(pack.renderer?.error ? [pack.renderer.error] : [])],
   } satisfies ThemeBundleCatalogCardOption)), [availableShellRendererEntries]);
+  const soundPackCardOptions = useMemo(() => availableSoundPackEntries.map(({ pack, sourceKind, sourceLabel }) => {
+    const cues = Object.values(pack.sounds);
+    const synthCount = cues.filter((cue) => cue?.kind === 'synth').length;
+    const sampleCount = cues.filter((cue) => cue?.kind === 'sample').length;
+    const missingCueCount = overlaySoundEffectCatalog.length - cues.length;
+
+    return {
+      id: pack.id,
+      name: pack.name,
+      description: pack.description,
+      badges: [
+        cues.length > 0 ? `FX ${cues.length}` : 'No cues',
+        synthCount > 0 ? `Synth ${synthCount}` : null,
+        sampleCount > 0 ? `Sample ${sampleCount}` : null,
+      ].filter((value): value is string => Boolean(value)),
+      summary: [
+        `Master ${Math.round(pack.masterVolume * 100)}%`,
+        missingCueCount > 0 ? `${missingCueCount} default fallback${missingCueCount === 1 ? '' : 's'}` : 'Full cue set',
+      ].join(' · '),
+      sourceKind,
+      sourceLabel,
+      tags: pack.tags,
+      warnings: pack.warnings,
+    } satisfies ThemeBundleCatalogCardOption;
+  }), [availableSoundPackEntries]);
   const normalizedActiveIconThemeId = useMemo(
     () => normalizeIconThemePackageSelectionId(settings.appearance.activeIconThemeId),
     [settings.appearance.activeIconThemeId],
@@ -4908,6 +5037,10 @@ export function SettingsPage({
     screenshotDefaultOutputAction: settings.screenshots.defaultOutputAction,
     screenshotShowGrid: settings.screenshots.showGrid,
     audioFolderCount: settings.audio.vst3AdditionalFolders.length,
+    soundPackSelectionSummary,
+    availableSoundPacksCount: availableSoundPackEntries.length,
+    soundEffectsEnabled: settings.audio.soundEffectsEnabled,
+    nativeNotificationsEnabled: settings.audio.nativeNotificationsEnabled,
     appearancePackSelectionSummary,
     availableAppearancePacksCount: availableAppearancePackEntries.length,
     availableWallpapersCount: availableWallpapers.length,
@@ -4939,6 +5072,7 @@ export function SettingsPage({
     activeLayoutProfile.label,
     animationFailures.length,
     availableAnimations.length,
+    availableSoundPackEntries.length,
     availableShaders.length,
     availableTopBars.length,
     availableWallpapers.length,
@@ -4963,6 +5097,9 @@ export function SettingsPage({
     platform,
     semanticIndexModelSummary,
     shellRendererSelectionSummary,
+    soundPackSelectionSummary,
+    settings.audio.nativeNotificationsEnabled,
+    settings.audio.soundEffectsEnabled,
     settings.audio.vst3AdditionalFolders.length,
     settings.appearance.appBlurStrength,
     settings.appearance.appOpacity,
@@ -5746,10 +5883,30 @@ export function SettingsPage({
                             {accelerationProbePending ? <Loader2 size={11} className="animate-spin" /> : <Cpu size={11} />}
                             Probe CUDA / AI
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleQueueAccelerationInstall()}
+                            disabled={accelerationInstallPending || accelerationAutoInstallPlan == null}
+                            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                            style={{
+                              border: `1px solid ${accelerationInstallPending || accelerationAutoInstallPlan == null ? border : accent}`,
+                              background: accelerationInstallPending || accelerationAutoInstallPlan == null ? 'rgba(255,255,255,0.03)' : `${accent}16`,
+                              color: text,
+                              opacity: accelerationInstallPending || accelerationAutoInstallPlan == null ? 0.72 : 1,
+                            }}
+                          >
+                            {accelerationInstallPending ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                            {accelerationInstallPending ? 'Opening Terminal…' : accelerationInstallButtonLabel}
+                          </button>
                         </div>
 
                         <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: muted }}>
                           {accelerationPipelineStatus}
+                        </div>
+                        <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: muted }}>
+                          {accelerationInstallRecommended
+                            ? 'Blank runtime detected. Use Download to queue the recommended managed packages in Terminal.'
+                            : 'Download uses the current acceleration routing mode, so CUDA packages only queue when you explicitly select the CUDA lane.'}
                         </div>
                       </div>
                     </OverviewCard>
@@ -9137,20 +9294,37 @@ export function SettingsPage({
                           Cross-provider routing for CPU fallback, the native `wgpu` lane, and the Python-sidecar CUDA/AI lane. Future thumbnail, media, indexing, inference, and similarity features should resolve through this contract.
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleProbeAccelerationPipeline()}
-                        disabled={accelerationProbePending}
-                        className="rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
-                        style={{
-                          borderColor: accelerationProbePending ? border : accent,
-                          background: accelerationProbePending ? 'rgba(255,255,255,0.03)' : `${accent}14`,
-                          color: text,
-                          opacity: accelerationProbePending ? 0.7 : 1,
-                        }}
-                      >
-                        {accelerationProbePending ? 'Probing…' : 'Probe CUDA / AI'}
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleProbeAccelerationPipeline()}
+                          disabled={accelerationProbePending}
+                          className="rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
+                          style={{
+                            borderColor: accelerationProbePending ? border : accent,
+                            background: accelerationProbePending ? 'rgba(255,255,255,0.03)' : `${accent}14`,
+                            color: text,
+                            opacity: accelerationProbePending ? 0.7 : 1,
+                          }}
+                        >
+                          {accelerationProbePending ? 'Probing…' : 'Probe CUDA / AI'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleQueueAccelerationInstall()}
+                          disabled={accelerationInstallPending || accelerationAutoInstallPlan == null}
+                          className="inline-flex items-center gap-1.5 rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
+                          style={{
+                            borderColor: accelerationInstallPending || accelerationAutoInstallPlan == null ? border : accent,
+                            background: accelerationInstallPending || accelerationAutoInstallPlan == null ? 'rgba(255,255,255,0.03)' : `${accent}14`,
+                            color: text,
+                            opacity: accelerationInstallPending || accelerationAutoInstallPlan == null ? 0.7 : 1,
+                          }}
+                        >
+                          {accelerationInstallPending ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                          {accelerationInstallPending ? 'Opening Terminal…' : accelerationInstallButtonLabel}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
@@ -9190,6 +9364,14 @@ export function SettingsPage({
                       style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}
                     >
                       {accelerationPipelineStatus}
+                    </div>
+                    <div
+                      className="mt-2 rounded border px-3 py-2 text-[11px]"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: muted }}
+                    >
+                      {accelerationInstallRecommended
+                        ? 'Blank runtime detected. Use Download to queue the recommended managed packages in Terminal.'
+                        : 'Download uses the current routing mode. Keep routing on Auto or CPU fallback if you do not want CUDA packages.'}
                     </div>
 
                     {accelerationRuntimeSnapshot.providers.length > 0 ? (
@@ -10951,16 +11133,318 @@ export function SettingsPage({
             )}
 
             {activeSection === 'audio' && (
-              <div className="mx-auto max-w-4xl space-y-6 pt-2 pb-6">
+              <div className="mx-auto max-w-5xl space-y-6 pt-2 pb-6">
                 <SectionTitle
                   icon={<Music size={14} />}
                   title="Audio Integration"
                   subtitle={activeSectionMeta.detail}
                 />
+                <ThemeBundlePackSettingsSection
+                  icon={<Volume2 size={12} />}
+                  title="Sound Packs"
+                  subtitle="Theme-aware shell sound sets for button clicks, explorer travel, task lifecycle cues, and notification audio."
+                  catalogTitle="Sound Pack Catalog"
+                  catalogDescription={(
+                    <>
+                      Standalone sound packs live in <code>{soundPacksDirectory}</code>. Theme bundles can still pin a default sound pack or contribute local packs so the shell voice follows the active theme identity.
+                    </>
+                  )}
+                  directoryPath={soundPacksDirectory}
+                  currentLabel={soundPackSelectionLabel}
+                  modeLabel={settings.audio.activeSoundPackId == null ? 'Follow Theme' : 'Pinned'}
+                  loading={soundPacksLoading}
+                  catalogCountLabel={`${availableSoundPackEntries.length} pack${availableSoundPackEntries.length === 1 ? '' : 's'}`}
+                  standaloneCount={soundPackCatalogCounts.standaloneCount}
+                  themeContributedCount={soundPackCatalogCounts.themeContributedCount}
+                  followThemeDetail={soundPackFollowThemeDetail}
+                  followThemeDescription="Let the active theme bundle choose the shell sound pack. Shared buttons, explorer navigation, task cues, and notification audio stay aligned to the current theme composition."
+                  followThemeResolvedLabel={soundPackThemeDefaultLabel}
+                  followThemeSourceLabel={activeThemeBundleLabel}
+                  followThemeActive={settings.audio.activeSoundPackId == null}
+                  activeOptionId={activeSoundPackCardId}
+                  options={soundPackCardOptions}
+                  emptyCatalogMessage="No standalone or theme-contributed sound packs are available yet."
+                  pinnedSelectionMissingMessage={soundPackPinnedSelectionMissing
+                    ? `The pinned sound pack id ${settings.audio.activeSoundPackId} is no longer available, so the shell is temporarily following the active theme bundle until you pin another one.`
+                    : null}
+                  error={soundPacksError}
+                  errorLabel="Sound-pack scan failed"
+                  warnings={soundPacksWarnings}
+                  warningsLabel="Sound-pack warnings"
+                  onFollowTheme={() => updateAudio({ activeSoundPackId: null })}
+                  onSelect={packId => updateAudio({ activeSoundPackId: packId })}
+                  onRefresh={onRefreshSoundPacks}
+                  onOpenFolder={onOpenSoundPacksFolder}
+                  border={border}
+                  accent={accent}
+                  text={text}
+                  muted={muted}
+                />
+
+                <OverviewCard
+                  title="Sound Routing"
+                  subtitle="Choose which interaction groups can make noise, set the shell-wide cue volume, and audition the active pack without leaving Settings."
+                  badges={[
+                    resolvedPreviewSoundPack?.name ?? 'GreebleFS Default',
+                    settings.audio.soundEffectsEnabled ? 'Effects enabled' : 'Effects muted',
+                    `${Math.round(settings.audio.soundEffectsVolume * 100)}% master`,
+                  ]}
+                >
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                        <div>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Sound Effects</div>
+                          <p className="mt-1 opacity-45">Master toggle for all shell cues. Explicit preview buttons still audition the selected pack.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.audio.soundEffectsEnabled}
+                          onChange={event => updateAudio({ soundEffectsEnabled: event.target.checked })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                        <div>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Button Cues</div>
+                          <p className="mt-1 opacity-45">Shared shell buttons, toolbar chrome, and action triggers.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.audio.buttonSoundsEnabled}
+                          onChange={event => updateAudio({ buttonSoundsEnabled: event.target.checked })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                        <div>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Navigation Cues</div>
+                          <p className="mt-1 opacity-45">Explorer arrow-key travel, entry-open confirmations, and motion through content.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.audio.navigationSoundsEnabled}
+                          onChange={event => updateAudio({ navigationSoundsEnabled: event.target.checked })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                        <div>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Task Cues</div>
+                          <p className="mt-1 opacity-45">Copy, move, delete, archive, and other explorer task lifecycle changes.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.audio.taskSoundsEnabled}
+                          onChange={event => updateAudio({ taskSoundsEnabled: event.target.checked })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                        <div>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Notification Cues</div>
+                          <p className="mt-1 opacity-45">Native notification pings, permission tests, and future host-level alerts.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.audio.notificationSoundsEnabled}
+                          onChange={event => updateAudio({ notificationSoundsEnabled: event.target.checked })}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                      <RangeField
+                        label="Cue Volume"
+                        description="Scales the entire sound-pack lane before per-cue gain and pack master volume apply."
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={settings.audio.soundEffectsVolume}
+                        valueLabel={`${Math.round(settings.audio.soundEffectsVolume * 100)}%`}
+                        onChange={value => updateAudio({ soundEffectsVolume: value })}
+                      />
+
+                      <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Cue Preview</div>
+                            <p className="mt-1 text-[11px] opacity-45">
+                              Preview buttons use the currently resolved pack, even when the live shell is muted, so authored packs can be auditioned safely.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            <ThemeBadge label={resolvedPreviewSoundPack?.name ?? 'GreebleFS Default'} />
+                            <ThemeBadge label={`${Object.keys(resolvedPreviewSoundPack?.sounds ?? {}).length}/${overlaySoundEffectCatalog.length} cues`} />
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                          {[
+                            { id: 'shell-button-press' as const, label: 'Button Press', description: 'Shared shell chrome click.' },
+                            { id: 'explorer-selection-step' as const, label: 'Selection Step', description: 'Directional travel in explorer.' },
+                            { id: 'explorer-open-entry' as const, label: 'Open Entry', description: 'Open a file or enter a folder.' },
+                            { id: 'task-success' as const, label: 'Task Success', description: 'Completed file operation.' },
+                            { id: 'task-failure' as const, label: 'Task Failure', description: 'Failed or cancelled operation.' },
+                            { id: 'notification-info' as const, label: 'Notification Ping', description: 'Native notification companion cue.' },
+                          ].map(preview => (
+                            <button
+                              key={preview.id}
+                              type="button"
+                              onClick={() => {
+                                void previewSoundEffect(preview.id);
+                              }}
+                              className="rounded px-3 py-3 text-left transition-colors"
+                              style={{
+                                border: `1px solid ${border}`,
+                                background: 'rgba(255,255,255,0.03)',
+                                color: text,
+                              }}
+                            >
+                              <div className="text-[11px] font-semibold">{preview.label}</div>
+                              <p className="mt-1 text-[11px] opacity-45">{preview.description}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </OverviewCard>
+
+                <OverviewCard
+                  title="Native Notifications"
+                  subtitle={`Use ${platformLabel} notifications for completed or failed explorer tasks, then keep permission and test routing visible from the same surface.`}
+                  badges={[
+                    formatNativeNotificationPermissionLabel(nativeNotificationPermissionState),
+                    settings.audio.nativeNotificationsEnabled ? 'OS routing on' : 'OS routing off',
+                    nativeNotificationPermissionLoading ? 'Checking status' : 'Status live',
+                  ]}
+                >
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                        <div>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Native Notifications</div>
+                          <p className="mt-1 opacity-45">Allow host-level notifications for shell and explorer events.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.audio.nativeNotificationsEnabled}
+                          onChange={event => updateAudio({ nativeNotificationsEnabled: event.target.checked })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                        <div>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Task Success Alerts</div>
+                          <p className="mt-1 opacity-45">Send native confirmation when long-running explorer tasks complete successfully.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.audio.nativeTaskSuccessNotificationsEnabled}
+                          onChange={event => updateAudio({ nativeTaskSuccessNotificationsEnabled: event.target.checked })}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                        <div>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Task Failure Alerts</div>
+                          <p className="mt-1 opacity-45">Surface failed or cancelled explorer tasks through the host notification center.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.audio.nativeTaskFailureNotificationsEnabled}
+                          onChange={event => updateAudio({ nativeTaskFailureNotificationsEnabled: event.target.checked })}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="rounded border px-3 py-3 text-[11px]" style={{
+                      borderColor: nativeNotificationPermissionState === 'granted' ? `${accent}55` : border,
+                      background: nativeNotificationPermissionState === 'granted' ? `${accent}12` : 'rgba(255,255,255,0.025)',
+                    }}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Permission Status</div>
+                          <p className="mt-1 opacity-50">
+                            {nativeNotificationPermissionState === 'granted'
+                              ? `${platformLabel} notifications are ready to receive GreebleFS task alerts.`
+                              : nativeNotificationPermissionState === 'denied'
+                                ? `${platformLabel} notification permission is currently denied. Re-enable it from the OS and then refresh here.`
+                                : nativeNotificationPermissionState === 'default'
+                                  ? `${platformLabel} has not granted notification permission yet. Request permission once, then send a test notification to confirm routing.`
+                                  : `Native notifications are not available in this runtime context, so GreebleFS will stay in-app only.`}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setNativeNotificationFeedback(null);
+                              const granted = await ensureNativeNotificationPermission();
+                              await refreshNativeNotificationPermission();
+                              setNativeNotificationFeedback(
+                                granted
+                                  ? 'Native notification permission granted.'
+                                  : 'Notification permission was not granted.',
+                              );
+                              void previewSoundEffect(granted ? 'notification-success' : 'notification-error');
+                            }}
+                            className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                            style={{ border: `1px solid ${accent}55`, background: `${accent}16`, color: text }}
+                          >
+                            Request Permission
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNativeNotificationFeedback(null);
+                              void refreshNativeNotificationPermission();
+                            }}
+                            className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                          >
+                            Refresh Status
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setNativeNotificationFeedback(null);
+                              const sent = await sendNativeNotification({
+                                title: 'GreebleFS Native Notification Test',
+                                body: 'Host-native notifications and shell audio are wired up and ready.',
+                                requestPermission: false,
+                              });
+                              await refreshNativeNotificationPermission();
+                              setNativeNotificationFeedback(
+                                sent
+                                  ? 'Test notification sent to the OS notification center.'
+                                  : 'Native notification was not sent. Grant permission first or check whether this runtime exposes host notifications.',
+                              );
+                              void previewSoundEffect(sent ? 'notification-info' : 'notification-error');
+                            }}
+                            className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                          >
+                            Send Test Notification
+                          </button>
+                        </div>
+                      </div>
+
+                      {nativeNotificationFeedback ? (
+                        <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{
+                          borderColor: nativeNotificationPermissionState === 'granted' ? `${accent}44` : border,
+                          background: nativeNotificationPermissionState === 'granted' ? `${accent}10` : 'rgba(255,255,255,0.03)',
+                        }}
+                        >
+                          {nativeNotificationFeedback}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </OverviewCard>
+
                 <OverviewCard
                   title="VST3 Discovery Paths"
-                  subtitle="Platform standard fallback scans are automatic. Add arbitrary extra paths here."
-                  badges={[]}
+                  subtitle="Platform standard fallback scans are automatic. Add arbitrary extra paths here for audio workbench discovery."
+                  badges={[
+                    `${settings.audio.vst3AdditionalFolders.length} extra path${settings.audio.vst3AdditionalFolders.length === 1 ? '' : 's'}`,
+                  ]}
                 >
                   <div className="space-y-2">
                     {settings.audio.vst3AdditionalFolders.map((folder, i) => (

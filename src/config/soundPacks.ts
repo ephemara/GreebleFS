@@ -459,7 +459,7 @@ function createLoadedSoundCue(
     };
   }
 
-  const tones = (cue.tones ?? [])
+  const tones: LoadedOverlaySoundTone[] = (cue.tones ?? [])
     .map((tone) => ({
       frequency: clampFrequency(tone.frequency, 440),
       durationMs: clampDuration(tone.durationMs, 48),
@@ -467,14 +467,14 @@ function createLoadedSoundCue(
       gain: clampUnit(tone.gain, 0.24),
       waveform: tone.waveform === 'square' || tone.waveform === 'sawtooth' || tone.waveform === 'triangle'
         ? tone.waveform
-        : 'sine',
+        : 'sine' as OscillatorType,
       detuneCents: typeof tone.detuneCents === 'number' && Number.isFinite(tone.detuneCents)
         ? Math.min(Math.max(tone.detuneCents, -4800), 4800)
         : 0,
       pan: clampPan(tone.pan, 0),
     }))
     .filter((tone) => tone.durationMs > 0 && tone.frequency > 0 && tone.gain > 0);
-  const noiseLayers = (cue.noiseLayers ?? [])
+  const noiseLayers: LoadedOverlaySoundNoiseLayer[] = (cue.noiseLayers ?? [])
     .map((noiseLayer) => ({
       durationMs: clampDuration(noiseLayer.durationMs, 24),
       offsetMs: clampDuration(noiseLayer.offsetMs, 0),

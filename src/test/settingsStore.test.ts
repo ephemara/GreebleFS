@@ -198,6 +198,21 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.screenshots.closeEditorAfterAction).toBe(true);
   });
 
+  it('has the correct default audio settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.audio.activeSoundPackId).toBeNull();
+    expect(settings.audio.soundEffectsEnabled).toBe(true);
+    expect(settings.audio.soundEffectsVolume).toBe(0.72);
+    expect(settings.audio.buttonSoundsEnabled).toBe(true);
+    expect(settings.audio.navigationSoundsEnabled).toBe(true);
+    expect(settings.audio.taskSoundsEnabled).toBe(true);
+    expect(settings.audio.notificationSoundsEnabled).toBe(true);
+    expect(settings.audio.nativeNotificationsEnabled).toBe(true);
+    expect(settings.audio.nativeTaskSuccessNotificationsEnabled).toBe(true);
+    expect(settings.audio.nativeTaskFailureNotificationsEnabled).toBe(true);
+    expect(settings.audio.vst3AdditionalFolders).toEqual([]);
+  });
+
   it('has safe default mobile access settings', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.mobile.remoteAccessMode).toBe('lan');

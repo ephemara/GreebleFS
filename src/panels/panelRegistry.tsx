@@ -15,6 +15,7 @@ import type { LoadedOverlayWallpaper } from '../components/wallpaperRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import type { LoadedExplorerHomePack } from '../config/homePackages';
 import type { LoadedExplorerMenuPack } from '../config/menuPacks';
+import type { LoadedOverlaySoundPack } from '../config/soundPacks';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type {
   LoadedThemeAppearancePack,
@@ -202,10 +203,17 @@ export function createBuiltInPanelDefinitions({
   iconThemePackagesLoading = false,
   iconThemePackagesError = null,
   iconThemePackagesWarnings = [],
+  soundPacks = [],
+  soundPacksDirectory = '',
+  soundPacksLoading = false,
+  soundPacksError = null,
+  soundPacksWarnings = [],
   onRefreshThemes,
   onOpenThemesFolder,
   onRefreshIconThemes = async () => {},
   onOpenIconThemesFolder = async () => {},
+  onRefreshSoundPacks = async () => {},
+  onOpenSoundPacksFolder = async () => {},
   shaders,
   shaderDiagnostics,
   shadersDirectory,
@@ -321,10 +329,17 @@ export function createBuiltInPanelDefinitions({
   iconThemePackagesLoading?: boolean;
   iconThemePackagesError?: string | null;
   iconThemePackagesWarnings?: string[];
+  soundPacks?: LoadedOverlaySoundPack[];
+  soundPacksDirectory?: string;
+  soundPacksLoading?: boolean;
+  soundPacksError?: string | null;
+  soundPacksWarnings?: string[];
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
   onRefreshIconThemes?: () => Promise<void>;
   onOpenIconThemesFolder?: () => Promise<void>;
+  onRefreshSoundPacks?: () => Promise<void>;
+  onOpenSoundPacksFolder?: () => Promise<void>;
   shaders: LoadedOverlayShader[];
   shaderDiagnostics: LoadedOverlayShader[];
   shadersDirectory: string;
@@ -587,10 +602,17 @@ export function createBuiltInPanelDefinitions({
             iconThemePackagesLoading={iconThemePackagesLoading}
             iconThemePackagesError={iconThemePackagesError}
             iconThemePackagesWarnings={iconThemePackagesWarnings}
+            soundPacks={soundPacks}
+            soundPacksDirectory={soundPacksDirectory}
+            soundPacksLoading={soundPacksLoading}
+            soundPacksError={soundPacksError}
+            soundPacksWarnings={soundPacksWarnings}
             onRefreshThemes={onRefreshThemes}
             onOpenThemesFolder={onOpenThemesFolder}
             onRefreshIconThemes={onRefreshIconThemes}
             onOpenIconThemesFolder={onOpenIconThemesFolder}
+            onRefreshSoundPacks={onRefreshSoundPacks}
+            onOpenSoundPacksFolder={onOpenSoundPacksFolder}
             shaders={shaders}
             shaderDiagnostics={shaderDiagnostics}
             shadersDirectory={shadersDirectory}

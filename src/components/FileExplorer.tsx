@@ -493,6 +493,7 @@ import {
   semanticIndexingCapabilityId,
 } from "../config/localModels";
 import { commands, unwrapTauriResult } from "../runtime/tauriClient";
+import { playSoundEffect } from "../runtime/soundEffects";
 import {
   moveExplorerChromeControlInResolvedSurfaces,
   resolveExplorerChromeSurfaceLayout,
@@ -13249,6 +13250,8 @@ export function FileExplorer({
 
   const openEntry = useCallback(
     async (entry: FileEntry) => {
+      void playSoundEffect("explorer-open-entry");
+
       if (entry.is_dir) {
         navigate(entry.path);
         return;
@@ -20638,6 +20641,7 @@ export function FileExplorer({
           return;
         }
         selectVisibleEntryAtIndex(nextIndex, e.shiftKey);
+        void playSoundEffect("explorer-selection-step");
         return;
       }
       if (matchesKeybinding(e, keybindings.selectAllExplorer)) {

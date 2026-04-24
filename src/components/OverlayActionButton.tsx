@@ -8,6 +8,7 @@ import {
 
 import { useInteractionMotionController } from '../animation/interactionMotion';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
+import { playSoundEffect } from '../runtime/soundEffects';
 
 export type OverlayActionButtonTone = 'accent' | 'neutral' | 'quiet' | 'danger';
 export type OverlayActionButtonSize = 'default' | 'compact';
@@ -34,6 +35,7 @@ export function OverlayActionButton({
   className,
   children,
   style,
+  onClick,
   onPointerEnter,
   onPointerLeave,
   onPointerDown,
@@ -115,6 +117,12 @@ export function OverlayActionButton({
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!disabled && !event.defaultPrevented) {
+          void playSoundEffect('shell-button-press');
+        }
+      }}
       onBlur={(event) => {
         setIsHovered(false);
         setIsPressed(false);

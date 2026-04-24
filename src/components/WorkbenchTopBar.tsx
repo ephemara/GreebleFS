@@ -47,6 +47,7 @@ import { MobileShareRouteMenu } from './MobileShareRouteMenu';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { WindowControls } from './WindowControls';
 import type { MobileShareSession } from '../runtime/mobileShareRuntime';
+import { playSoundEffect } from '../runtime/soundEffects';
 
 interface WorkbenchTopBarProps {
   appearance: ResolvedOverlayAppearance;
@@ -130,7 +131,7 @@ interface CompactChromeButtonProps {
   controlRadius: number;
   ariaLabel?: string;
   style?: CSSProperties;
-  onClick?: () => void;
+  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
 }
@@ -186,7 +187,12 @@ function CompactChromeButton({
   return (
     <button
       aria-label={ariaLabel}
-      onClick={onClick}
+      onClick={(event) => {
+        onClick?.(event);
+        if (!event.defaultPrevented) {
+          void playSoundEffect('shell-button-press');
+        }
+      }}
       onContextMenu={onContextMenu}
       title={title}
       {...motionBinding.motionDataAttributes}
@@ -740,7 +746,7 @@ export function WorkbenchTopBar({
       active?: boolean;
       title: string;
       motionStepIndex?: number;
-      onClick?: () => void;
+      onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
       onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
       ariaLabel?: string;
       style?: CSSProperties;
