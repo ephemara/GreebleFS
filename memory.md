@@ -1,3 +1,21 @@
+# 2026-04-24 - Rust Workspace Loads Cleanly On Linux Again For Serena And Tauri
+
+- The Linux Rust workspace is valid again for Cargo tooling, rust-analyzer, and Serena indexing. The prior failure was not one bug but two stacked workspace hazards.
+- Durable implementation shape:
+  - `crates/file-opening-macos/build.rs` now exits early unless `CARGO_CFG_TARGET_OS=macos`, so Linux-hosted tooling does not try to package the Swift bridge while loading the workspace.
+  - `crates/file-opening-macos/Cargo.toml` now enables the `swift-rs` build feature for the build script and keeps the runtime `swift-rs` dependency scoped to macOS targets.
+  - `crates/file-opening-macos/src/lib.rs` is now explicitly macOS-only, which keeps the crate from pretending to be a normal cross-platform library during Linux workspace checks.
+  - Root `Cargo.toml` no longer lists the missing local playground member `.playground/terminal-shadow-probe` in `[workspace].members`, so Cargo metadata and rust-analyzer can load the workspace without requiring an absent scratch package.
+- Durable workflow note:
+  - Treat local playground crates as opt-in developer state, not committed workspace requirements, unless the package actually exists in the repo.
+  - Any Swift/macOS bridge crate should gate build-script work by target and keep Apple-specific dependencies scoped to macOS. If Rust indexing suddenly dies on Linux again, check for unconditional build scripts before blaming Serena.
+  - The local Serena override at `.serena/project.local.yml` is now the right place to re-enable or narrow indexing for the current machine without changing the repo-tracked Serena project config.
+- Validation:
+  - passed: `cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1`
+  - passed: `cargo check -p file-opening-macos`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --package greeblefs --lib`
+  - passed: `serena project index /home/ephemara/Dev/Apps-2D/GreebleFS` with `rust=162`, `typescript=473`, `python=23`
+
 # 2026-04-24 - Reference Repos Now Have A Profile-Driven Scrubber And Repomap Flow
 
 - The repo now has a durable reference-intake workflow for the ignored `reference/` folder instead of ad hoc manual flattening.
@@ -23,6 +41,22 @@
   - passed: `python3 reference_scrub_vscode.py --apply`
   - passed: `python3 reference_scrub_zed.py --apply`
   - passed: post-run verification that every direct child of `reference/` contains both `repomap.md` and `reference-scrub-manifest.json`
+
+# 2026-04-24 - Notes Panel Now Uses One Obsidian-Like Sidebar, Shared Menus, And Coalesced Autosave
+
+- The notes panel no longer uses the earlier two-left-rail layout or browser-native confirm dialogs. It now behaves like a single sidebar tree with folders and notes in one surface, while the editor stays in the main lane.
+- Durable implementation shape:
+  - `src/components/NotesManager.tsx` now renders one explorer-like notes sidebar instead of separate folder and note-list panes. The tree shows folders plus nested notes, search filters the same tree, and the sidebar uses the existing `ExplorerContextMenu` presenter plus `AppPromptDialog` / `AppConfirmDialog` for folder/note actions.
+  - The notes sidebar now keeps folder actions mostly in the shared context menu rather than always-visible inline buttons. The root state feels closer to Obsidian/iPhone Notes than a mini SaaS dashboard.
+  - Notes saving is no longer "save then full workspace reload" on a short per-keystroke debounce. `NotesManager.tsx` now keeps the active markdown draft local, coalesces saves after idle time, flushes on blur/navigation/manual save, and patches the active note record into local workspace state after a successful write instead of rescanning the entire tree.
+  - `src/runtime/notesWorkspaceBackend.ts` now exports `summarizeNotesMarkdown(...)` so the panel can update preview text and word count locally after save without duplicating markdown-summary logic.
+  - `src/components/notes/NotesRichMarkdownEditor.tsx` now exposes a blur hook so the notes shell can flush pending markdown edits when the rich editor loses focus.
+- Durable product note:
+  - Keep the notes panel on the shared shell dialog/menu path. Do not reintroduce `window.confirm`, inline folder action spam, or a second dedicated note-list rail unless a future product change explicitly needs a different structure.
+  - Keep saves local-first and coalesced. Structural operations can still reload the notes tree, but ordinary text edits should not rescan the full workspace after every write.
+- Validation:
+  - passed: `bunx vitest run src/test/notesManager.test.tsx src/test/notesConfig.test.ts src/test/notesMarkdownDocument.test.ts src/test/panelRegistry.test.tsx --reporter=dot`
+  - passed: targeted `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "src/components/NotesManager.tsx|src/components/notes/NotesRichMarkdownEditor.tsx|src/runtime/notesWorkspaceBackend.ts|src/test/notesManager.test.tsx" || true`
 
 # 2026-04-24 - Native Open With Is Now A Real Explorer Submenu With macOS Support
 
