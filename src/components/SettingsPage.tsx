@@ -143,6 +143,7 @@ import { InteractionMotionLab } from '../animation/MotionLab';
 import { useInteractionMotionController, type InteractionMotionBinding } from '../animation/interactionMotion';
 import { MobileShareConnectionCards } from './MobileShareConnectionCards';
 import { MobileShareQrDialog } from './MobileShareQrDialog';
+import { OverlayActionButton } from './OverlayActionButton';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   loadExternalLayoutManifest,
@@ -10314,38 +10315,35 @@ export function SettingsPage({
                     ) : null}
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
+                      <OverlayActionButton
+                        appearance={appearance}
+                        tone="accent"
                         disabled={mobileSharePending}
                         onClick={() => void startMobileShareFromSettings()}
-                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                        style={{ border: `1px solid ${accent}55`, background: `${accent}18`, color: text, opacity: mobileSharePending ? 0.7 : 1 }}
                       >
                         {mobileSharePhase === 'starting'
                           ? 'Starting...'
                           : mobileShareSession
                             ? `Restart ${mobileRemoteAccessDefinition.launchBadge} Share`
                             : `Start ${mobileRemoteAccessDefinition.launchBadge} Share`}
-                      </button>
-                      <button
-                        type="button"
+                      </OverlayActionButton>
+                      <OverlayActionButton
+                        appearance={appearance}
+                        tone="neutral"
                         disabled={mobileSharePending}
                         onClick={() => void stopMobileShareFromSettings()}
-                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, opacity: mobileSharePending ? 0.7 : 1 }}
                       >
                         {mobileSharePhase === 'stopping' ? 'Stopping...' : 'Stop Mobile Share'}
-                      </button>
-                      <button
-                        type="button"
+                      </OverlayActionButton>
+                      <OverlayActionButton
+                        appearance={appearance}
+                        tone="neutral"
                         disabled={mobileSharePending}
                         onClick={() => void openMobileQrDialogFromSettings()}
-                        className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                        style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, opacity: mobileSharePending ? 0.7 : 1 }}
                       >
                         <Smartphone size={11} />
                         Show QR Codes
-                      </button>
+                      </OverlayActionButton>
                     </div>
 
                     {mobileShareRouteMismatch ? (

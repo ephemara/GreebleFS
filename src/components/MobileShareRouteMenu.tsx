@@ -8,6 +8,7 @@ import {
 } from '../config/mobileAccess';
 import type { MobileSharePhase } from '../store/mobileShareStore';
 import type { MobileShareSession } from '../runtime/mobileShareRuntime';
+import { OverlayActionButton } from './OverlayActionButton';
 
 interface MobileShareRouteMenuProps {
   appearance: ResolvedOverlayAppearance;
@@ -180,44 +181,45 @@ export function MobileShareRouteMenu({
       ) : null}
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <button
-          type="button"
+        <OverlayActionButton
+          appearance={appearance}
+          tone="accent"
           onClick={() => void onShowQrCodes()}
-          className="inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-          style={{ border: `1px solid ${accent}55`, background: `${accent}18`, color: text, borderRadius: controlRadius }}
+          className="w-full justify-center"
         >
           <ScanLine size={11} />
           Show QR Codes
-        </button>
-        <button
-          type="button"
+        </OverlayActionButton>
+        <OverlayActionButton
+          appearance={appearance}
+          tone="neutral"
           onClick={() => void onStartOrRestartShare()}
-          className="inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, borderRadius: controlRadius }}
+          className="w-full justify-center"
         >
           {isPending && phase === 'starting' ? <Loader2 size={11} className="animate-spin" /> : null}
           {session ? `Restart ${remoteAccessDefinition.launchBadge}` : `Start ${remoteAccessDefinition.launchBadge}`}
-        </button>
+        </OverlayActionButton>
       </div>
 
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <button
-          type="button"
+        <OverlayActionButton
+          appearance={appearance}
+          tone="neutral"
+          disabled={isPending}
           onClick={() => void onStopShare()}
-          className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, borderRadius: controlRadius, opacity: isPending ? 0.7 : 1 }}
+          className="w-full justify-center"
         >
           {phase === 'stopping' ? 'Stopping...' : 'Stop Share'}
-        </button>
-        <button
-          type="button"
+        </OverlayActionButton>
+        <OverlayActionButton
+          appearance={appearance}
+          tone="neutral"
           onClick={() => void onOpenMobileSettings()}
-          className="inline-flex items-center justify-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, borderRadius: controlRadius }}
+          className="w-full justify-center"
         >
           <Settings2 size={11} />
           Settings
-        </button>
+        </OverlayActionButton>
       </div>
     </div>
   );

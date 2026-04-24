@@ -7,6 +7,7 @@ export const interactionMotionSurfaceIds = [
   'previewWorkflowTab',
   'panelTab',
   'topBarButton',
+  'actionButton',
   'settingsCard',
 ] as const;
 
@@ -249,6 +250,12 @@ export const interactionMotionSurfaceCatalog: InteractionMotionSurfaceDefinition
     description: 'Chrome controls such as layout, mode, command palette, and focus toggles react consistently.',
   },
   {
+    id: 'actionButton',
+    moduleId: 'shellChrome',
+    label: 'Action Buttons',
+    description: 'Settings, dialog, menu, and utility action buttons share one interaction treatment outside the top bar.',
+  },
+  {
     id: 'settingsCard',
     moduleId: 'shellChrome',
     label: 'Settings Cards',
@@ -266,6 +273,7 @@ export const interactionMotionModuleCatalog: InteractionMotionModuleDefinition[]
       'previewWorkflowTab',
       'panelTab',
       'topBarButton',
+      'actionButton',
       'settingsCard',
     ],
   },
@@ -475,6 +483,7 @@ function createKClonerProfile(args: {
   previewWorkflowTab: OverlayInteractionMotionEffect;
   panelTab: OverlayInteractionMotionEffect;
   topBarButton: OverlayInteractionMotionEffect;
+  actionButton: OverlayInteractionMotionEffect;
   settingsCard: OverlayInteractionMotionEffect;
 }): OverlayInteractionMotionProfile {
   return {
@@ -526,6 +535,13 @@ function createKClonerProfile(args: {
         Math.max(220, Math.round(args.durationMs * 0.8)),
         args.easing,
         { supportsSelect: false, pressScale: 0.978 },
+      ),
+      actionButton: createAnimatedSurfaceProfile(
+        args.animationPresetId,
+        args.actionButton,
+        Math.max(220, Math.round(args.durationMs * 0.88)),
+        args.easing,
+        { supportsSelect: false, pressScale: 0.982 },
       ),
       settingsCard: createAnimatedSurfaceProfile(
         args.animationPresetId,
@@ -579,6 +595,11 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
         press: { translateY: 0.5, scale: 0.98 },
         activate: { scale: 1.01, brightness: 1.03 },
       },
+      actionButton: {
+        hover: { translateY: -1.25, scale: 1.012 },
+        press: { translateY: 0.5, scale: 0.982 },
+        activate: { scale: 1.012, brightness: 1.03 },
+      },
       settingsCard: {
         hover: { translateY: -2, scale: 1.006 },
         press: { scale: 0.992 },
@@ -625,6 +646,11 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
         hover: { translateY: -1.5, scale: 1.015 },
         press: { translateY: 0.8, scale: 0.978 },
         activate: { scale: 1.018, brightness: 1.03 },
+      },
+      actionButton: {
+        hover: { translateY: -1.75, scale: 1.018 },
+        press: { translateY: 0.8, scale: 0.98 },
+        activate: { scale: 1.02, brightness: 1.03 },
       },
       settingsCard: {
         hover: { translateY: -3, scale: 1.012 },
@@ -673,6 +699,11 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
         press: { translateY: 1, scale: 0.976, rotateDeg: 0.3 },
         activate: { scale: 1.02, brightness: 1.04 },
       },
+      actionButton: {
+        hover: { translateY: -2.25, scale: 1.022, rotateDeg: -0.25 },
+        press: { translateY: 1, scale: 0.978, rotateDeg: 0.24 },
+        activate: { scale: 1.024, brightness: 1.04 },
+      },
       settingsCard: {
         hover: { translateY: -4, scale: 1.016, rotateDeg: -0.35 },
         press: { scale: 0.986, rotateDeg: 0.28 },
@@ -693,6 +724,7 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
     previewWorkflowTab: { translateY: -4, scale: 1.04 },
     panelTab: { translateY: -4, scale: 1.04 },
     topBarButton: { translateY: -3, scale: 1.04 },
+    actionButton: { translateY: -4, scale: 1.03 },
     settingsCard: { translateY: -6, scale: 1.02 },
   }),
   createKClonerProfile({
@@ -708,6 +740,7 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
     previewWorkflowTab: { translateX: 3, translateY: -2, rotateDeg: 1.1, scale: 1.02 },
     panelTab: { translateX: 3.5, translateY: -2.5, rotateDeg: 1.2, scale: 1.02 },
     topBarButton: { translateX: 2.5, translateY: -2, rotateDeg: 1.1, scale: 1.02 },
+    actionButton: { translateX: 3.25, translateY: -2.5, rotateDeg: 1, scale: 1.02 },
     settingsCard: { translateX: 4, translateY: -4, rotateDeg: 0.8, scale: 1.015 },
   }),
   createKClonerProfile({
@@ -723,6 +756,7 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
     previewWorkflowTab: { translateX: 2.5, rotateDeg: 1.2 },
     panelTab: { translateX: 2.5, rotateDeg: 1.2 },
     topBarButton: { translateX: 2.25, rotateDeg: 1.1 },
+    actionButton: { translateX: 2.25, rotateDeg: 1 },
     settingsCard: { translateX: 2, rotateDeg: 0.9 },
   }),
   createKClonerProfile({
@@ -738,6 +772,7 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
     previewWorkflowTab: { translateY: -2.5, scale: 1.015 },
     panelTab: { translateY: -3, scale: 1.016 },
     topBarButton: { translateY: -2.5, scale: 1.016 },
+    actionButton: { translateY: -3.5, scale: 1.015 },
     settingsCard: { translateY: -5, scale: 1.012 },
   }),
   createKClonerProfile({
@@ -753,6 +788,7 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
     previewWorkflowTab: { scale: 1.05, brightness: 1.03 },
     panelTab: { scale: 1.05, brightness: 1.035 },
     topBarButton: { scale: 1.045, brightness: 1.03 },
+    actionButton: { scale: 1.04, brightness: 1.028 },
     settingsCard: { scale: 1.028, brightness: 1.02 },
   }),
   createKClonerProfile({
@@ -768,6 +804,7 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
     previewWorkflowTab: { translateY: -2.5, scale: 1.06 },
     panelTab: { translateY: -3, scale: 1.06 },
     topBarButton: { translateY: -2.5, scale: 1.055 },
+    actionButton: { translateY: -3, scale: 1.05 },
     settingsCard: { translateY: -5, scale: 1.03 },
   }),
   createKClonerProfile({
@@ -783,6 +820,7 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
     previewWorkflowTab: { translateX: 2.5, rotateDeg: 2.1, scale: 1.025 },
     panelTab: { translateX: 3, rotateDeg: 2.2, scale: 1.025 },
     topBarButton: { translateX: 2.5, rotateDeg: 2.1, scale: 1.022 },
+    actionButton: { translateX: 3, rotateDeg: 1.8, scale: 1.02 },
     settingsCard: { translateX: 4, rotateDeg: 1.5, scale: 1.018 },
   }),
   createKClonerProfile({
@@ -798,6 +836,7 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
     previewWorkflowTab: { translateX: 1.5, rotateDeg: 3.8, scale: 1.02 },
     panelTab: { translateX: 1.5, rotateDeg: 4.1, scale: 1.02 },
     topBarButton: { translateX: 1.25, rotateDeg: 3.6, scale: 1.018 },
+    actionButton: { translateX: 1.75, rotateDeg: 2.8, scale: 1.018 },
     settingsCard: { translateX: 2.25, rotateDeg: 2.5, scale: 1.015 },
   }),
   createKClonerProfile({
@@ -813,6 +852,7 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
     previewWorkflowTab: { scale: 1.05, brightness: 1.03 },
     panelTab: { scale: 1.05, brightness: 1.03 },
     topBarButton: { scale: 1.045, brightness: 1.03 },
+    actionButton: { scale: 1.04, brightness: 1.028 },
     settingsCard: { scale: 1.03, brightness: 1.02 },
   }),
   createKClonerProfile({
@@ -828,6 +868,7 @@ export const interactionMotionProfiles: OverlayInteractionMotionProfile[] = [
     previewWorkflowTab: { translateX: 2.5, translateY: -1.5, rotateDeg: 1.2, scale: 1.02 },
     panelTab: { translateX: 2.5, translateY: -1.5, rotateDeg: 1.3, scale: 1.02 },
     topBarButton: { translateX: 2, translateY: -1.5, rotateDeg: 1.2, scale: 1.02 },
+    actionButton: { translateX: 2.5, translateY: -2, rotateDeg: 1.05, scale: 1.02 },
     settingsCard: { translateX: 3, translateY: -3, rotateDeg: 1.1, scale: 1.016 },
   }),
 ];

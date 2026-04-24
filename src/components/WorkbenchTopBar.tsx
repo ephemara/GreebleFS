@@ -38,7 +38,10 @@ import type {
 } from '../store/settingsStore';
 import type { MobileSharePhase } from '../store/mobileShareStore';
 import type { OverlayThemeRendererSurfaceOwnership } from './themeRendererShellModel';
-import { useInteractionMotionController } from '../animation/interactionMotion';
+import {
+  useInteractionMotionController,
+  type InteractionMotionBinding,
+} from '../animation/interactionMotion';
 import { MobileShareQrDialog } from './MobileShareQrDialog';
 import { MobileShareRouteMenu } from './MobileShareRouteMenu';
 import { OverlayScrollArea } from './OverlayScrollArea';
@@ -114,6 +117,126 @@ function renderControlZone(
     >
       {children}
     </div>
+  );
+}
+
+interface CompactChromeButtonProps {
+  active?: boolean;
+  title: string;
+  motionBinding: InteractionMotionBinding;
+  text: string;
+  muted: string;
+  accent: string;
+  controlRadius: number;
+  ariaLabel?: string;
+  style?: CSSProperties;
+  onClick?: () => void;
+  onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
+}
+
+function CompactChromeButton({
+  active = false,
+  title,
+  motionBinding,
+  text,
+  muted,
+  accent,
+  controlRadius,
+  ariaLabel,
+  style,
+  onClick,
+  onContextMenu,
+  children,
+}: CompactChromeButtonProps) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
+  const interactionState = isPressed
+    ? 'pressed'
+    : isHovered
+      ? 'hovered'
+      : active
+        ? 'active'
+        : 'idle';
+
+  const background = active
+    ? interactionState === 'pressed'
+      ? 'var(--overlay-workbench-chrome-button-active-bg)'
+      : 'var(--overlay-workbench-chrome-button-active-bg)'
+    : interactionState === 'pressed'
+      ? 'rgba(255,255,255,0.12)'
+      : interactionState === 'hovered'
+        ? 'rgba(255,255,255,0.08)'
+        : 'var(--overlay-workbench-chrome-button-bg)';
+  const borderColor = active
+    ? 'var(--overlay-workbench-chrome-button-active-border)'
+    : interactionState === 'idle'
+      ? 'var(--overlay-workbench-chrome-border)'
+      : `${accent}${interactionState === 'pressed' ? '88' : '66'}`;
+  const boxShadow = active
+    ? interactionState === 'hovered' || interactionState === 'pressed'
+      ? `0 0 0 1px ${accent}2a inset, 0 0 0 4px ${accent}14`
+      : `0 0 0 1px ${accent}22 inset`
+    : interactionState === 'hovered'
+      ? `0 0 0 1px ${accent}18 inset`
+      : interactionState === 'pressed'
+        ? `0 0 0 1px ${accent}22 inset`
+        : 'none';
+
+  return (
+    <button
+      aria-label={ariaLabel}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      title={title}
+      {...motionBinding.motionDataAttributes}
+      onPointerEnter={(event) => {
+        setIsHovered(true);
+        motionBinding.onPointerEnter(event);
+      }}
+      onPointerLeave={(event) => {
+        setIsHovered(false);
+        setIsPressed(false);
+        motionBinding.onPointerLeave(event);
+      }}
+      onPointerDown={(event) => {
+        setIsHovered(true);
+        setIsPressed(true);
+        motionBinding.onPointerDown(event);
+      }}
+      onPointerUp={(event) => {
+        setIsPressed(false);
+        setIsHovered(true);
+        motionBinding.onPointerUp(event);
+      }}
+      onPointerCancel={(event) => {
+        setIsHovered(false);
+        setIsPressed(false);
+        motionBinding.onPointerCancel(event);
+      }}
+      onBlur={() => {
+        setIsHovered(false);
+        setIsPressed(false);
+      }}
+      style={{
+        height: 22,
+        minWidth: 22,
+        padding: 0,
+        background,
+        border: `1px solid ${borderColor}`,
+        color: active || interactionState !== 'idle' ? text : muted,
+        borderRadius: controlRadius,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        boxShadow,
+        ...style,
+        ...motionBinding.motionStyle,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -629,39 +752,21 @@ export function WorkbenchTopBar({
     );
 
     return (
-      <button
+      <CompactChromeButton
         key={options.key}
+        active={options.active}
+        title={options.title}
+        motionBinding={motionBinding}
+        text={text}
+        muted={muted}
+        accent={accent}
+        controlRadius={workbench.metrics.controlRadius}
         aria-label={options.ariaLabel}
         onClick={options.onClick}
         onContextMenu={options.onContextMenu}
-        title={options.title}
-        {...motionBinding.motionDataAttributes}
-        onPointerEnter={motionBinding.onPointerEnter}
-        onPointerLeave={motionBinding.onPointerLeave}
-        onPointerDown={motionBinding.onPointerDown}
-        onPointerUp={motionBinding.onPointerUp}
-        onPointerCancel={motionBinding.onPointerCancel}
-        style={{
-          height: 22,
-          minWidth: 22,
-          padding: 0,
-          background: options.active
-            ? 'var(--overlay-workbench-chrome-button-active-bg)'
-            : 'var(--overlay-workbench-chrome-button-bg)',
-          border: `1px solid ${options.active ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
-          color: options.active ? text : muted,
-          borderRadius: workbench.metrics.controlRadius,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          boxShadow: options.active ? `0 0 0 1px ${accent}22 inset` : 'none',
-          ...options.style,
-          ...motionBinding.motionStyle,
-        }}
       >
         {content}
-      </button>
+      </CompactChromeButton>
     );
   };
 

@@ -8,9 +8,12 @@ import {
   Loader,
 } from "@/components/AppIcons";
 
-import type { ExplorerArchiveFormatDescriptor } from "../config/explorerArchives";
 import type { FolderIconRule, FolderIconValue } from "../config/folderIcons";
 import type { OverlayResolvedIconTheme } from "../config/iconTheme";
+import {
+  getExplorerArchiveRecommendedWorkflowLabel,
+  type ExplorerArchiveFormatDescriptor,
+} from "../config/explorerArchives";
 import {
   explorerBackendContract,
   type ExplorerArchiveExtractionMode,
@@ -58,6 +61,28 @@ function formatModifiedLabel(timestampMs: number): string | null {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(timestampMs));
+}
+
+function buildArchiveActionButtonStyle(isRecommended: boolean) {
+  return {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    background: isRecommended
+      ? "var(--overlay-explorer-chip-active-bg)"
+      : "var(--overlay-explorer-chip-bg)",
+    border: isRecommended
+      ? "1px solid var(--overlay-explorer-chip-active-border)"
+      : "1px solid var(--overlay-explorer-chip-border)",
+    color: isRecommended
+      ? "var(--overlay-explorer-chip-active-text)"
+      : "var(--overlay-text-primary)",
+    padding: "6px 12px",
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+  } as const;
 }
 
 export function ExplorerArchivePreview({
@@ -130,6 +155,11 @@ export function ExplorerArchivePreview({
         onStartDragOutEntry?.(request);
       },
     });
+  const recommendedWorkflowLabel = getExplorerArchiveRecommendedWorkflowLabel(
+    descriptor.recommendedWorkflow,
+  );
+  const recommendExtractFirst =
+    descriptor.recommendedWorkflow === "extract-first";
 
   return (
     <div
@@ -196,73 +226,135 @@ export function ExplorerArchivePreview({
             <span>·</span>
             <span>{formatSize(archiveSize)}</span>
             <span>·</span>
-            <span>{folderCount} folder{folderCount === 1 ? "" : "s"}</span>
+            <span>
+              {folderCount} folder{folderCount === 1 ? "" : "s"}
+            </span>
             <span>·</span>
-            <span>{fileCount} file{fileCount === 1 ? "" : "s"}</span>
+            <span>
+              {fileCount} file{fileCount === 1 ? "" : "s"}
+            </span>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <button
-            type="button"
-            onClick={() => onExtract("extractHere")}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              background: "var(--overlay-explorer-chip-active-bg)",
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--overlay-explorer-chip-border)",
+              background: "var(--overlay-explorer-chip-bg)",
+              color: "var(--overlay-text-muted)",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+            }}
+          >
+            {descriptor.accessSummary}
+          </span>
+          <span
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
               border: "1px solid var(--overlay-explorer-chip-active-border)",
+              background: "var(--overlay-explorer-chip-active-bg)",
               color: "var(--overlay-explorer-chip-active-text)",
-              padding: "6px 12px",
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
             }}
           >
-            <ArrowDownToLine size={14} />
-            Extract Here
-          </button>
-          <button
-            type="button"
-            onClick={() => onExtract("extractToDirectory")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              background: "var(--overlay-explorer-chip-bg)",
-              border: "1px solid var(--overlay-explorer-chip-border)",
-              color: "var(--overlay-text-primary)",
-              padding: "6px 12px",
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            <FileSearch size={14} />
-            Extract To...
-          </button>
-          <button
-            type="button"
-            onClick={() => onExtract("extractToNewFolder")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              background: "var(--overlay-explorer-chip-bg)",
-              border: "1px solid var(--overlay-explorer-chip-border)",
-              color: "var(--overlay-text-primary)",
-              padding: "6px 12px",
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            <HardDriveDownload size={14} />
-            Extract to New Folder
-          </button>
+            Recommended: {recommendedWorkflowLabel}
+          </span>
+        </div>
+
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--overlay-text-dim)",
+            lineHeight: 1.5,
+            maxWidth: 420,
+            textAlign: "center",
+          }}
+        >
+          {descriptor.workflowHint}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginTop: 4,
+            flexWrap: "wrap",
+            justifyContent: "center",
+          }}
+        >
+          {recommendExtractFirst ? (
+            <>
+              <button
+                type="button"
+                data-overlay-recommended-action="true"
+                onClick={() => onExtract("extractToNewFolder")}
+                style={buildArchiveActionButtonStyle(true)}
+              >
+                <HardDriveDownload size={14} />
+                Extract to New Folder
+              </button>
+              <button
+                type="button"
+                onClick={() => onExtract("extractHere")}
+                style={buildArchiveActionButtonStyle(false)}
+              >
+                <ArrowDownToLine size={14} />
+                Extract Here
+              </button>
+              <button
+                type="button"
+                onClick={() => onExtract("extractToDirectory")}
+                style={buildArchiveActionButtonStyle(false)}
+              >
+                <FileSearch size={14} />
+                Extract To...
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                data-overlay-recommended-action="true"
+                onClick={() => onExtract("extractHere")}
+                style={buildArchiveActionButtonStyle(true)}
+              >
+                <ArrowDownToLine size={14} />
+                Extract Here
+              </button>
+              <button
+                type="button"
+                onClick={() => onExtract("extractToDirectory")}
+                style={buildArchiveActionButtonStyle(false)}
+              >
+                <FileSearch size={14} />
+                Extract To...
+              </button>
+              <button
+                type="button"
+                onClick={() => onExtract("extractToNewFolder")}
+                style={buildArchiveActionButtonStyle(false)}
+              >
+                <HardDriveDownload size={14} />
+                Extract to New Folder
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -349,14 +441,17 @@ export function ExplorerArchivePreview({
           >
             {previewEntries.map((entry) => {
               const modifiedLabel = formatModifiedLabel(entry.modified);
-              const previewEntryDragBindings = bindPreviewEntryDirectDrag(entry);
+              const previewEntryDragBindings =
+                bindPreviewEntryDirectDrag(entry);
               const isSelected = isPreviewEntrySelected(entry.path);
               return (
                 <button
                   type="button"
                   key={entry.path}
                   data-overlay-preview-entry-path={entry.path}
-                  data-overlay-preview-entry-kind={entry.is_dir ? "folder" : "file"}
+                  data-overlay-preview-entry-kind={
+                    entry.is_dir ? "folder" : "file"
+                  }
                   data-overlay-preview-entry-selected={String(isSelected)}
                   aria-label={
                     entry.is_dir
@@ -453,7 +548,8 @@ export function ExplorerArchivePreview({
                         style={{
                           padding: "2px 6px",
                           borderRadius: 999,
-                          border: "1px solid var(--overlay-explorer-chip-border)",
+                          border:
+                            "1px solid var(--overlay-explorer-chip-border)",
                           background: "var(--overlay-explorer-chip-bg)",
                           color: "var(--overlay-text-muted)",
                           textTransform: "uppercase",
@@ -463,7 +559,9 @@ export function ExplorerArchivePreview({
                         {entry.extension}
                       </span>
                     )}
-                    <span>{entry.is_dir ? "Folder" : formatSize(entry.size)}</span>
+                    <span>
+                      {entry.is_dir ? "Folder" : formatSize(entry.size)}
+                    </span>
                   </div>
                 </button>
               );

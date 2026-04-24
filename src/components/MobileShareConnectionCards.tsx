@@ -4,6 +4,7 @@ import { Copy, ExternalLink, Loader2 } from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { mobileShareQrCodeSizePx } from '../config/mobileAccess';
 import { copyTextToClipboardSafely, type MobileShareSession } from '../runtime/mobileShareRuntime';
+import { OverlayActionButton } from './OverlayActionButton';
 
 interface MobileShareConnectionCardsProps {
   appearance: ResolvedOverlayAppearance;
@@ -150,34 +151,26 @@ export function MobileShareConnectionCards({
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
+            <OverlayActionButton
+              appearance={appearance}
+              tone="neutral"
+              size="compact"
               onClick={() => void copyTextToClipboardSafely(target.url)}
-              className="inline-flex items-center gap-1 rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
-              style={{
-                border: `1px solid ${border}`,
-                background: 'rgba(255,255,255,0.04)',
-                color: text,
-                borderRadius: controlRadius,
-              }}
+              className="gap-1"
             >
               <Copy size={10} />
               Copy URL
-            </button>
-            <button
-              type="button"
+            </OverlayActionButton>
+            <OverlayActionButton
+              appearance={appearance}
+              tone="neutral"
+              size="compact"
               onClick={() => window.open(target.url, '_blank', 'noopener,noreferrer')}
-              className="inline-flex items-center gap-1 rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
-              style={{
-                border: `1px solid ${border}`,
-                background: 'rgba(255,255,255,0.04)',
-                color: text,
-                borderRadius: controlRadius,
-              }}
+              className="gap-1"
             >
               <ExternalLink size={10} />
               Open
-            </button>
+            </OverlayActionButton>
           </div>
         </div>
       ))}

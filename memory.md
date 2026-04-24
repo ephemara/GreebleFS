@@ -1,3 +1,17 @@
+# 2026-04-23 - Deep Research Intake Now Maps Archive Access Policy Back Into The Repo
+
+- `docs/deep-research-report.md` was broad and intentionally repo-agnostic, so the useful pieces were translated into repo-owned guidance instead of treated like a direct implementation spec.
+- Durable implementation shape:
+  - `src/config/explorerArchives.ts` now stores per-format access summaries, workflow recommendations, and user-facing guidance strings. Archive handling is no longer only suffix-aware; it is also access-aware.
+  - `src/components/ExplorerArchivePreview.tsx` now surfaces those access hints in the archive header and marks the recommended extraction path for stream-heavy or compression-first formats.
+  - `src/config/accelerationRuntime.ts` now makes the GPU-lane guidance more explicit: direct storage, AI indexing, similarity search, and file hashing all describe coarse-grained or batched acceleration rather than implying CUDA should own tiny metadata work.
+  - `docs/architecture/storage-research-alignment.md` now maps the deep-research report back onto the actual GreebleFS architecture, calling out what already exists, what is still missing, and what future agents should not misread as immediate work.
+- Durable product note:
+  - Treat storage research as routing guidance, not as a command to bolt a speculative new filesystem into the shell. The highest-leverage near-term path is still typed archive/package policy, immutable-pack verification, and native index evolution.
+  - Archives in the explorer are read-only virtual surfaces. Format-specific access guidance should live in the archive descriptor registry so future package and packed-image work can reuse the same policy language instead of hardcoding per-component copy.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerArchives.test.ts src/test/explorerArchivePreview.test.tsx --reporter=dot`
+
 # 2026-04-23 - Settings Now Exposes Modular Theme Bundle Lanes As First-Class Menus
 
 - The bundle-first theme refactor is now surfaced directly in Settings instead of being hidden behind `theme.json` and bundle manifests only. The bottom appearance cluster now has dedicated rail sections for `Appearance Packs`, `Theme Recipes`, `Theme Engines`, and `Shell Renderers`, while `Interaction Motion` also shows the new standalone motion-pack catalog root.

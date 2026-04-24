@@ -18,6 +18,16 @@ describe("ExplorerArchivePreview", () => {
     vi.mocked(explorerBackendContract.listArchiveDir).mockReset();
   });
 
+  const zipDescriptor = {
+    id: "zip" as const,
+    suffixes: [".zip"],
+    label: "Zip Archive",
+    accessSummary: "Entry-addressable archive",
+    recommendedWorkflow: "browse-first" as const,
+    workflowHint:
+      "Good for quick inspection and selective extraction. Extract when you need normal filesystem semantics.",
+  };
+
   it("renders archive directory entries from the typed archive listing bridge", async () => {
     const archivePath = "C:\\Assets\\demo.zip";
     const iconTheme = getBuiltInIconTheme();
@@ -58,7 +68,7 @@ describe("ExplorerArchivePreview", () => {
         archivePath={archivePath}
         archiveName="demo.zip"
         archiveSize={2048}
-        descriptor={{ id: "zip", suffixes: [".zip"], label: "Zip Archive" }}
+        descriptor={zipDescriptor}
         onExtract={() => undefined}
         onOpenEntry={() => undefined}
         iconTheme={iconTheme}
@@ -66,15 +76,16 @@ describe("ExplorerArchivePreview", () => {
     );
 
     expect(
-      await screen.findByRole("button", { name: /open archive folder textures/i }),
+      await screen.findByRole("button", {
+        name: /open archive folder textures/i,
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /open archive file readme\.txt/i }),
     ).toBeInTheDocument();
-    expect(vi.mocked(explorerBackendContract.listArchiveDir)).toHaveBeenCalledWith(
-      archivePath,
-      "",
-    );
+    expect(
+      vi.mocked(explorerBackendContract.listArchiveDir),
+    ).toHaveBeenCalledWith(archivePath, "");
 
     const folderRow = screen.getByRole("button", {
       name: /open archive folder textures/i,
@@ -150,7 +161,7 @@ describe("ExplorerArchivePreview", () => {
         archivePath={archivePath}
         archiveName="demo.zip"
         archiveSize={2048}
-        descriptor={{ id: "zip", suffixes: [".zip"], label: "Zip Archive" }}
+        descriptor={zipDescriptor}
         onExtract={() => undefined}
         onOpenEntry={onOpenEntry}
         onStartDragOutEntry={onStartDragOutEntry}
@@ -204,5 +215,43 @@ describe("ExplorerArchivePreview", () => {
       }),
     );
     expect(onOpenEntry).not.toHaveBeenCalled();
+  });
+
+  it("surfaces access guidance and marks the extract-first action for compression-heavy formats", async () => {
+    const archivePath = "C:\\Assets\\demo.tar.xz";
+
+    vi.mocked(explorerBackendContract.listArchiveDir).mockResolvedValue([]);
+
+    render(
+      <ExplorerArchivePreview
+        archivePath={archivePath}
+        archiveName="demo.tar.xz"
+        archiveSize={4096}
+        descriptor={{
+          id: "tar-xz",
+          suffixes: [".tar.xz"],
+          label: "Tar + XZ Archive",
+          accessSummary: "Dense streamed tree archive",
+          recommendedWorkflow: "extract-first",
+          workflowHint:
+            "Best treated as a compact handoff format. Extract before repeated reads or edits.",
+        }}
+        onExtract={() => undefined}
+        onOpenEntry={() => undefined}
+      />,
+    );
+
+    expect(
+      await screen.findByText("Dense streamed tree archive"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Recommended: Extract First/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Best treated as a compact handoff format\. Extract before repeated reads or edits\./i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Extract to New Folder/i }),
+    ).toHaveAttribute("data-overlay-recommended-action", "true");
   });
 });

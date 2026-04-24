@@ -1,22 +1,29 @@
-import type { FileEntry } from '../generated/tauri';
+import type { FileEntry } from "../generated/tauri";
 
-const EXPLORER_ARCHIVE_VIRTUAL_SCHEME = 'greeblefs://archive';
+const EXPLORER_ARCHIVE_VIRTUAL_SCHEME = "greeblefs://archive";
 
 export type ExplorerArchiveFormatId =
-  | 'zip'
-  | 'seven-zip'
-  | 'tar'
-  | 'tar-gzip'
-  | 'tar-bzip2'
-  | 'tar-xz'
-  | 'gzip'
-  | 'bzip2'
-  | 'xz';
+  | "zip"
+  | "seven-zip"
+  | "tar"
+  | "tar-gzip"
+  | "tar-bzip2"
+  | "tar-xz"
+  | "gzip"
+  | "bzip2"
+  | "xz";
+
+export type ExplorerArchiveRecommendedWorkflow =
+  | "browse-first"
+  | "extract-first";
 
 export interface ExplorerArchiveFormatDescriptor {
   id: ExplorerArchiveFormatId;
   suffixes: readonly string[];
   label: string;
+  accessSummary: string;
+  recommendedWorkflow: ExplorerArchiveRecommendedWorkflow;
+  workflowHint: string;
 }
 
 export interface ExplorerArchiveVirtualLocation {
@@ -24,26 +31,105 @@ export interface ExplorerArchiveVirtualLocation {
   entryPath: string;
 }
 
-export const EXPLORER_ARCHIVE_FORMATS: readonly ExplorerArchiveFormatDescriptor[] = [
-  { id: 'tar-gzip', suffixes: ['.tar.gz', '.tgz'], label: 'Tar + Gzip Archive' },
-  { id: 'tar-bzip2', suffixes: ['.tar.bz2', '.tbz2'], label: 'Tar + Bzip2 Archive' },
-  { id: 'tar-xz', suffixes: ['.tar.xz', '.txz'], label: 'Tar + XZ Archive' },
-  { id: 'seven-zip', suffixes: ['.7z'], label: '7-Zip Archive' },
-  { id: 'zip', suffixes: ['.zip', '.cbz', '.jar', '.apk'], label: 'Zip Archive' },
-  { id: 'tar', suffixes: ['.tar'], label: 'Tar Archive' },
-  { id: 'gzip', suffixes: ['.gz'], label: 'Gzip Archive' },
-  { id: 'bzip2', suffixes: ['.bz2'], label: 'Bzip2 Archive' },
-  { id: 'xz', suffixes: ['.xz'], label: 'XZ Archive' },
-];
+export const EXPLORER_ARCHIVE_FORMATS: readonly ExplorerArchiveFormatDescriptor[] =
+  [
+    {
+      id: "tar-gzip",
+      suffixes: [".tar.gz", ".tgz"],
+      label: "Tar + Gzip Archive",
+      accessSummary: "Streamed tree archive",
+      recommendedWorkflow: "extract-first",
+      workflowHint:
+        "Quick inspection is fine, but repeated access is better after extraction.",
+    },
+    {
+      id: "tar-bzip2",
+      suffixes: [".tar.bz2", ".tbz2"],
+      label: "Tar + Bzip2 Archive",
+      accessSummary: "Streamed tree archive",
+      recommendedWorkflow: "extract-first",
+      workflowHint:
+        "Compression is tuned for storage density. Extract before active work.",
+    },
+    {
+      id: "tar-xz",
+      suffixes: [".tar.xz", ".txz"],
+      label: "Tar + XZ Archive",
+      accessSummary: "Dense streamed tree archive",
+      recommendedWorkflow: "extract-first",
+      workflowHint:
+        "Best treated as a compact handoff format. Extract before repeated reads or edits.",
+    },
+    {
+      id: "seven-zip",
+      suffixes: [".7z"],
+      label: "7-Zip Archive",
+      accessSummary: "Compression-first archive",
+      recommendedWorkflow: "extract-first",
+      workflowHint:
+        "Great for compact storage, but normal filesystem work is better after extraction.",
+    },
+    {
+      id: "zip",
+      suffixes: [".zip", ".cbz", ".jar", ".apk"],
+      label: "Zip Archive",
+      accessSummary: "Entry-addressable archive",
+      recommendedWorkflow: "browse-first",
+      workflowHint:
+        "Good for quick inspection and selective extraction. Extract when you need normal filesystem semantics.",
+    },
+    {
+      id: "tar",
+      suffixes: [".tar"],
+      label: "Tar Archive",
+      accessSummary: "Sequential tree archive",
+      recommendedWorkflow: "extract-first",
+      workflowHint:
+        "Useful as a packaging container, but active work is usually better after extraction.",
+    },
+    {
+      id: "gzip",
+      suffixes: [".gz"],
+      label: "Gzip Archive",
+      accessSummary: "Single-file compressed stream",
+      recommendedWorkflow: "extract-first",
+      workflowHint:
+        "Treat this as extract-first. The preview is for inspection, not repeated random access.",
+    },
+    {
+      id: "bzip2",
+      suffixes: [".bz2"],
+      label: "Bzip2 Archive",
+      accessSummary: "Single-file compressed stream",
+      recommendedWorkflow: "extract-first",
+      workflowHint:
+        "Best suited for storage and transfer. Extract before active use.",
+    },
+    {
+      id: "xz",
+      suffixes: [".xz"],
+      label: "XZ Archive",
+      accessSummary: "Single-file compressed stream",
+      recommendedWorkflow: "extract-first",
+      workflowHint:
+        "Dense compression favors compact storage over direct repeated access.",
+    },
+  ];
 
-function getArchiveFileName(value: string | Pick<FileEntry, 'name'>): string {
-  return typeof value === 'string' ? value : value.name;
+export function getExplorerArchiveRecommendedWorkflowLabel(
+  value: ExplorerArchiveRecommendedWorkflow,
+): string {
+  return value === "browse-first" ? "Browse First" : "Extract First";
+}
+
+function getArchiveFileName(value: string | Pick<FileEntry, "name">): string {
+  return typeof value === "string" ? value : value.name;
 }
 
 function getArchiveLeafFromPath(path: string): string {
-  const trimmedPath = path.trim().replace(/[/\\]+$/, '');
+  const trimmedPath = path.trim().replace(/[/\\]+$/, "");
   if (!trimmedPath) {
-    return '';
+    return "";
   }
 
   const segments = trimmedPath.split(/[/\\]+/).filter(Boolean);
@@ -51,7 +137,7 @@ function getArchiveLeafFromPath(path: string): string {
 }
 
 function getFilesystemParentPath(path: string): string | null {
-  const trimmedPath = path.trim().replace(/[/\\]+$/, '');
+  const trimmedPath = path.trim().replace(/[/\\]+$/, "");
   if (!trimmedPath) {
     return null;
   }
@@ -60,21 +146,21 @@ function getFilesystemParentPath(path: string): string | null {
     return `${trimmedPath}\\`;
   }
 
-  const nextPath = trimmedPath.replace(/[/\\][^/\\]+$/, '');
+  const nextPath = trimmedPath.replace(/[/\\][^/\\]+$/, "");
   if (nextPath === trimmedPath) {
-    return trimmedPath.startsWith('/') ? '/' : null;
+    return trimmedPath.startsWith("/") ? "/" : null;
   }
 
   if (/^[A-Za-z]:$/.test(nextPath)) {
     return `${nextPath}\\`;
   }
 
-  return nextPath || (trimmedPath.startsWith('/') ? '/' : null);
+  return nextPath || (trimmedPath.startsWith("/") ? "/" : null);
 }
 
 export function normalizeExplorerArchiveEntryPath(value: string): string {
-  const normalizedValue = value.trim().replace(/\\/g, '/');
-  return normalizedValue.replace(/^\/+|\/+$/g, '');
+  const normalizedValue = value.trim().replace(/\\/g, "/");
+  return normalizedValue.replace(/^\/+|\/+$/g, "");
 }
 
 export function buildExplorerArchiveVirtualPath(
@@ -86,10 +172,10 @@ export function buildExplorerArchiveVirtualPath(
   }
 
   const url = new URL(EXPLORER_ARCHIVE_VIRTUAL_SCHEME);
-  url.searchParams.set('archive', archivePath);
+  url.searchParams.set("archive", archivePath);
   const entryPath = normalizeExplorerArchiveEntryPath(location.entryPath);
   if (entryPath) {
-    url.searchParams.set('entry', entryPath);
+    url.searchParams.set("entry", entryPath);
   }
   return url.toString();
 }
@@ -109,12 +195,13 @@ export function parseExplorerArchiveVirtualPath(
     return null;
   }
 
-  const normalizedBase = `${parsedUrl.protocol}//${parsedUrl.host}`.toLowerCase();
+  const normalizedBase =
+    `${parsedUrl.protocol}//${parsedUrl.host}`.toLowerCase();
   if (normalizedBase !== EXPLORER_ARCHIVE_VIRTUAL_SCHEME) {
     return null;
   }
 
-  const archivePath = parsedUrl.searchParams.get('archive')?.trim() ?? '';
+  const archivePath = parsedUrl.searchParams.get("archive")?.trim() ?? "";
   if (!archivePath) {
     return null;
   }
@@ -122,7 +209,7 @@ export function parseExplorerArchiveVirtualPath(
   return {
     archivePath,
     entryPath: normalizeExplorerArchiveEntryPath(
-      parsedUrl.searchParams.get('entry') ?? '',
+      parsedUrl.searchParams.get("entry") ?? "",
     ),
   };
 }
@@ -149,48 +236,50 @@ export function getExplorerArchiveVirtualParentPath(
     return getExplorerArchiveContainerPath(location.archivePath);
   }
 
-  const entrySegments = location.entryPath.split('/').filter(Boolean);
+  const entrySegments = location.entryPath.split("/").filter(Boolean);
   entrySegments.pop();
   if (entrySegments.length === 0) {
     return buildExplorerArchiveVirtualPath({
       archivePath: location.archivePath,
-      entryPath: '',
+      entryPath: "",
     });
   }
 
   return buildExplorerArchiveVirtualPath({
     archivePath: location.archivePath,
-    entryPath: entrySegments.join('/'),
+    entryPath: entrySegments.join("/"),
   });
 }
 
-export function getExplorerArchiveVirtualCurrentFolderName(path: string): string {
+export function getExplorerArchiveVirtualCurrentFolderName(
+  path: string,
+): string {
   const location = parseExplorerArchiveVirtualPath(path);
   if (!location) {
-    return 'archive';
+    return "archive";
   }
 
   if (!location.entryPath) {
     return getExplorerArchiveDefaultFolderName(location.archivePath);
   }
 
-  const entrySegments = location.entryPath.split('/').filter(Boolean);
-  return entrySegments[entrySegments.length - 1] ?? 'archive';
+  const entrySegments = location.entryPath.split("/").filter(Boolean);
+  return entrySegments[entrySegments.length - 1] ?? "archive";
 }
 
 export function getExplorerArchiveVirtualRootLabel(path: string): string {
   const location = parseExplorerArchiveVirtualPath(path);
   if (!location) {
-    return 'Archive';
+    return "Archive";
   }
 
-  return getArchiveLeafFromPath(location.archivePath) || 'Archive';
+  return getArchiveLeafFromPath(location.archivePath) || "Archive";
 }
 
 export function getExplorerArchiveDescriptor(
-  value: string | Pick<FileEntry, 'name' | 'is_dir'>,
+  value: string | Pick<FileEntry, "name" | "is_dir">,
 ): ExplorerArchiveFormatDescriptor | null {
-  if (typeof value !== 'string' && value.is_dir) {
+  if (typeof value !== "string" && value.is_dir) {
     return null;
   }
 
@@ -199,31 +288,40 @@ export function getExplorerArchiveDescriptor(
     return null;
   }
 
-  return EXPLORER_ARCHIVE_FORMATS.find((format) => (
-    format.suffixes.some((suffix) => lowerName.endsWith(suffix))
-  )) ?? null;
+  return (
+    EXPLORER_ARCHIVE_FORMATS.find((format) =>
+      format.suffixes.some((suffix) => lowerName.endsWith(suffix)),
+    ) ?? null
+  );
 }
 
-export function isExplorerArchiveEntry(entry: Pick<FileEntry, 'name' | 'is_dir'>): boolean {
+export function isExplorerArchiveEntry(
+  entry: Pick<FileEntry, "name" | "is_dir">,
+): boolean {
   return getExplorerArchiveDescriptor(entry) != null;
 }
 
-export function getExplorerArchiveDefaultFolderName(value: string | Pick<FileEntry, 'name'>): string {
+export function getExplorerArchiveDefaultFolderName(
+  value: string | Pick<FileEntry, "name">,
+): string {
   const fileName = getArchiveFileName(value).trim();
   const descriptor = getExplorerArchiveDescriptor(fileName);
   if (!descriptor) {
-    return fileName || 'archive';
+    return fileName || "archive";
   }
 
   const lowerName = fileName.toLowerCase();
-  const matchedSuffix = descriptor.suffixes.find((suffix) => lowerName.endsWith(suffix)) ?? '';
-  const nextName = matchedSuffix ? fileName.slice(0, -matchedSuffix.length) : fileName;
-  const normalized = nextName.trim().replace(/\.+$/, '').trim();
-  return normalized || 'archive';
+  const matchedSuffix =
+    descriptor.suffixes.find((suffix) => lowerName.endsWith(suffix)) ?? "";
+  const nextName = matchedSuffix
+    ? fileName.slice(0, -matchedSuffix.length)
+    : fileName;
+  const normalized = nextName.trim().replace(/\.+$/, "").trim();
+  return normalized || "archive";
 }
 
 export function getExplorerArchiveExtractToFolderLabel(
-  value: string | Pick<FileEntry, 'name'>,
+  value: string | Pick<FileEntry, "name">,
 ): string {
   return `Extract to "${getExplorerArchiveDefaultFolderName(value)}"/`;
 }

@@ -5,6 +5,7 @@ import type { MobileSharePhase } from '../store/mobileShareStore';
 import type { MobileShareSession } from '../runtime/mobileShareRuntime';
 import { AppDialogFrame } from './AppModal';
 import { MobileShareConnectionCards } from './MobileShareConnectionCards';
+import { OverlayActionButton } from './OverlayActionButton';
 
 interface MobileShareQrDialogProps {
   open: boolean;
@@ -60,41 +61,38 @@ export function MobileShareQrDialog({
       actions={(
         <>
           {showSettingsAction ? (
-            <button
-              type="button"
+            <OverlayActionButton
+              appearance={appearance}
+              tone="neutral"
               onClick={onOpenMobileSettings}
-              className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-              style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, borderRadius: controlRadius }}
             >
               <Settings2 size={11} />
               Mobile Settings
-            </button>
+            </OverlayActionButton>
           ) : null}
-          <button
-            type="button"
+          <OverlayActionButton
+            appearance={appearance}
+            tone="accent"
             onClick={() => void onStartOrRestartShare()}
-            className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-            style={{ border: `1px solid ${accent}55`, background: `${accent}18`, color: text, borderRadius: controlRadius }}
           >
             {phase === 'starting' ? <Loader2 size={11} className="animate-spin" /> : null}
             {session ? `Restart ${remoteAccessDefinition.launchBadge} Share` : `Start ${remoteAccessDefinition.launchBadge} Share`}
-          </button>
-          <button
-            type="button"
+          </OverlayActionButton>
+          <OverlayActionButton
+            appearance={appearance}
+            tone="neutral"
+            disabled={isPending}
             onClick={() => void onStopShare()}
-            className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text, borderRadius: controlRadius, opacity: isPending ? 0.7 : 1 }}
           >
             {phase === 'stopping' ? 'Stopping...' : 'Stop Share'}
-          </button>
-          <button
-            type="button"
+          </OverlayActionButton>
+          <OverlayActionButton
+            appearance={appearance}
+            tone="quiet"
             onClick={onClose}
-            className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.03)', color: muted, borderRadius: controlRadius }}
           >
             Close
-          </button>
+          </OverlayActionButton>
         </>
       )}
     >
