@@ -15,7 +15,13 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@tiptap/core": ["src/vendor/tiptap/core/src/index.ts"],
+      "@tiptap/core/jsx-runtime": ["src/vendor/tiptap/core/src/jsx-runtime.ts"],
+      "@tiptap/core/jsx-dev-runtime": ["src/vendor/tiptap/core/src/jsx-runtime.ts"],
+      "@tiptap/react": ["src/vendor/tiptap/react/src/index.ts"],
+      "@tiptap/pm/*": ["src/vendor/tiptap/pm/*/index.ts"],
+      "@tiptap/*": ["src/vendor/tiptap/*/src/index.ts"]
     },
 
     "types": ["vitest/globals", "node"],

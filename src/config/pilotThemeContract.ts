@@ -2,6 +2,7 @@ import { DEFAULT_ADAPTIVE_SEMANTIC_DENSITY } from './explorerExperimentalModes';
 import type { OverlayExplorerThemeRecipe } from './explorerTheme';
 import type { ExplorerShellLayoutId } from './explorerShellLayouts';
 import type { ExplorerViewMode } from './explorerViewModes';
+import type { ShaderPerformanceMode } from './shaders';
 import type { OverlayWallpaperFitMode } from './wallpapers';
 import type { OverlayWorkbenchThemeRecipe } from './workbenchTheme';
 
@@ -21,6 +22,7 @@ export interface ThemeSelectionAppearanceDefaults {
   wallpaperOpacity?: number;
   wallpaperMuted?: boolean;
   activeShaderId?: string | null;
+  shaderPerformanceMode?: ShaderPerformanceMode;
   uiFontFamily?: string;
   useNativeOsIcons?: boolean;
   appOpacity?: number;
@@ -324,6 +326,11 @@ const themeSelectionDefaultsById: Record<string, ThemeSelectionDefaults> = {
   monokai: createBuiltInThemeSelectionDefaults('dark'),
   'github-dark': createBuiltInThemeSelectionDefaults('dark'),
   catppuccin: createBuiltInThemeSelectionDefaults('dark'),
+  andromeda: createBuiltInThemeSelectionDefaults('dark', {
+    appearance: {
+      shaderPerformanceMode: 'performance',
+    },
+  }),
 };
 
 export function getThemeSelectionDefaults(

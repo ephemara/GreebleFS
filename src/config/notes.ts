@@ -1,23 +1,24 @@
 import { getManagedContentDirectory } from './appContentDirectories';
 import { joinPlatformPath } from './platform';
 
-export const noteCategoryDirectoryNames = {
-  notes: 'notes',
-  todos: 'todos',
-  bugs: 'bugs',
-  prompts: 'prompts',
+export const notesWorkspaceConfig = {
+  defaultDirectoryName: 'New Folder',
+  defaultDocumentTitle: 'Untitled Note',
+  documentFileExtension: 'md',
+  supportedDocumentExtensions: ['md', 'markdown', 'mdx'],
 } as const;
 
-export type ManagedNoteCategoryId = keyof typeof noteCategoryDirectoryNames;
+export type NotesDocumentExtension = typeof notesWorkspaceConfig.supportedDocumentExtensions[number];
 
 export function getManagedNotesRootDirectory(): string {
   return getManagedContentDirectory('notes');
 }
 
-export function getManagedNoteCategoryDirectory(category: ManagedNoteCategoryId): string {
-  return joinPlatformPath(getManagedNotesRootDirectory(), noteCategoryDirectoryNames[category]);
+export function joinManagedNotesPath(basePath: string, segment: string): string {
+  return joinPlatformPath(basePath, segment);
 }
 
-export function joinManagedNotePath(directory: string, fileName: string): string {
-  return joinPlatformPath(directory, fileName);
+export function isManagedNotesDocumentFileName(fileName: string): boolean {
+  const extension = fileName.split('.').pop()?.trim().toLowerCase() ?? '';
+  return notesWorkspaceConfig.supportedDocumentExtensions.includes(extension as NotesDocumentExtension);
 }

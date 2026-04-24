@@ -17,14 +17,28 @@ const ignoredWatchGlobs = [
   "**/plugins/**/node_modules/**",
 ];
 
+function projectPath(...segments: string[]): string {
+  return path.resolve(...segments).replace(/\\/g, "/");
+}
+
+const tiptapVendorAliases = [
+  { find: "@tiptap/core/jsx-runtime", replacement: projectPath("src/vendor/tiptap/core/src/jsx-runtime.ts") },
+  { find: "@tiptap/core/jsx-dev-runtime", replacement: projectPath("src/vendor/tiptap/core/src/jsx-runtime.ts") },
+  { find: "@tiptap/core", replacement: projectPath("src/vendor/tiptap/core/src/index.ts") },
+  { find: "@tiptap/react", replacement: projectPath("src/vendor/tiptap/react/src/index.ts") },
+  { find: /^@tiptap\/pm\/(.+)$/, replacement: `${projectPath("src/vendor/tiptap/pm")}/$1/index.ts` },
+  { find: /^@tiptap\/(.+)$/, replacement: `${projectPath("src/vendor/tiptap")}/$1/src/index.ts` },
+] as const;
+
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
   base: "./",
   resolve: {
-    alias: {
-      "@": "/src",
-    },
+    alias: [
+      { find: "@", replacement: "/src" },
+      ...tiptapVendorAliases,
+    ],
   },
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

@@ -1,3 +1,33 @@
+# 2026-04-24 - Notes Panel Is Now A Folder-First Markdown Workspace Backed By Vendored Tiptap
+
+- The notes surface no longer behaves like a hardcoded notes/todos/bugs/prompts board. It is now a real folder/document workspace over the managed `notes/` root, with empty-state-first behavior and no category-specific icons or app logic.
+- Durable implementation shape:
+  - `src/components/NotesManager.tsx` now owns a three-pane notes shell: folder tree, note list, and document workspace. Root selection behaves like `All Notes`, while real folders are just filesystem directories under `notes/`.
+  - `src/components/notes/NotesRichMarkdownEditor.tsx` is the shell-owned rich editor surface. It uses the vendored Tiptap source tree for toolbar-driven rich editing while still persisting plain markdown.
+  - `src/runtime/notesWorkspaceBackend.ts` is now the filesystem seam for notes. It creates/renames/deletes folders and notes through the explorer runtime, scans the notes tree recursively for list/search state, and preserves legacy frontmatter-based notes by stripping the old JSON envelope on read.
+  - `src/runtime/notesMarkdownDocument.ts` is the markdown round-trip layer. It resolves the vendored Tiptap extensions, feeds their markdown hooks through a local Marked-based parser/renderer, and adds local markdown extensions for blockquotes, inline code, code blocks, hard breaks, and links so notes stay `.md` on disk instead of drifting into HTML storage.
+  - `src/config/notes.ts` is now root-first instead of category-first. It exposes the notes workspace defaults plus supported markdown file extensions, and it no longer encodes app-specific subdirectories like `todos` or `bugs`.
+  - `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, and `vitest.browser.config.ts` now resolve `@tiptap/*` imports into `src/vendor/tiptap/*`, while `package.json` / `bun.lock` now include the upstream ProseMirror runtime packages plus `fast-equals` and `use-sync-external-store` that the vendored editor depends on.
+- Durable product note:
+  - Treat the notes panel as a markdown workspace, not a task-board surface. Checklist syntax still exists as a markdown feature, but the panel should not grow special todo/bug/prompt modes again.
+  - The vendored editor source is not self-contained: future agents who add more Tiptap packages must wire both alias resolution and any missing upstream runtime dependencies, not just copy source folders into `src/vendor/`.
+- Validation:
+  - passed: `bunx vitest run src/test/notesConfig.test.ts src/test/notesMarkdownDocument.test.ts src/test/panelRegistry.test.tsx --reporter=dot`
+  - passed: targeted `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "NotesManager|NotesRichMarkdownEditor|notesMarkdownDocument|notesWorkspaceBackend|notesConfig|notesMarkdownDocument.test" || true`
+
+# 2026-04-24 - Andromeda Theme Selection Now Resets Stale Overrides And Uses A Cheaper Always-On Visual Stack
+
+- Selecting the authored `themes/andromeda/` bundle had a real performance trap: `applyThemeSelection(...)` only resets theme-managed appearance/layout state when the target theme id is registered in `src/config/pilotThemeContract.ts`, and Andromeda was not in that map yet.
+- Durable implementation shape:
+  - `src/config/pilotThemeContract.ts` now gives `andromeda` explicit selection defaults and extends theme-selection appearance defaults with `shaderPerformanceMode`. That means switching into Andromeda now clears stale wallpaper/shader overrides, resets blur/transparency/zoom back to the shared theme baseline, and forces shader mode back to `performance` instead of inheriting a heavier prior theme state.
+  - `themes/andromeda/appearance-packs/appearance-core/appearance.json` now keeps the same identity but removes the always-on drifting/panning visual animations and lowers the overlay opacities. Treat this bundle as Linux-compositor-safe by default; animated shaders and bundle-local animations can still add motion intentionally, but the base appearance pack should not require them to feel correct.
+  - `src/components/FileExplorer.tsx` no longer mixes `margin` with `marginBottom` in the toolbar shell, which removes the React style warning and avoids layout churn from conflicting shorthand/non-shorthand updates.
+  - `src/components/StoragePanel.tsx` no longer nests a remove `<button>` inside a clickable queue-row `<button>`. Queue rows are now keyboard-accessible button-like containers with a separate real button for removal, which removes the invalid DOM nesting warning and the hydration risk it caused.
+  - `src/test/settingsStore.test.ts` now locks the Andromeda regression path by asserting that theme selection clears stale wallpaper/shader/blur/zoom state, and `src/test/storagePanel.layout.test.tsx` now asserts that the cleanup queue does not render `button button` nesting.
+- Durable product note:
+  - Treat authored bundle theme switches like a controlled reset point. If a new bundle should restore a baseline shell state, register it in the theme-selection defaults map instead of assuming the manifest alone is enough.
+  - Linux/Wayland compositor issues can amplify heavy visuals, but first verify whether the theme switch is leaking old user overrides or whether the base appearance pack itself is doing too much continuous work.
+
 # 2026-04-24 - Andromeda Is The First Canonical Bundle-First Theme
 
 - The repo-root `themes/andromeda/` bundle is now the first full, production-grade bundle-first theme for GreebleFS. It is intentionally the golden example for future authored themes and exercises the normal lane model without requiring any runtime code changes.

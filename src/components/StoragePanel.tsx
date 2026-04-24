@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type RefObject,
   type ReactNode,
@@ -683,62 +684,75 @@ function StorageRail({
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 6 }}>
-                {filteredQueueItems.map((item) => (
-                  <button
-                    key={item.path}
-                    type="button"
-                    onClick={() => onSelectQueuePath(item.path)}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'minmax(0, 1fr) auto',
-                      gap: 8,
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      border: selectedPathSet.has(item.path)
-                        ? '1px solid color-mix(in srgb, var(--overlay-accent) 62%, var(--overlay-border))'
-                        : '1px solid var(--overlay-border)',
-                      background: selectedPathSet.has(item.path)
-                        ? 'color-mix(in srgb, var(--overlay-accent) 10%, rgba(255,255,255,0.03))'
-                        : 'rgba(255,255,255,0.03)',
-                      color: 'var(--overlay-text-primary)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                  >
-                    <div style={{ minWidth: 0, display: 'grid', gap: 2 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--overlay-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.name}
-                      </div>
-                      <div style={{ fontSize: 10.5, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.path}
-                      </div>
-                      <div style={{ fontSize: 10.5, color: 'var(--overlay-text-muted)' }}>
-                        {formatBytes(item.allocatedBytes)}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onRemoveQueuePath(item.path);
-                      }}
+                {filteredQueueItems.map((item) => {
+                  const isSelected = selectedPathSet.has(item.path);
+                  const handleQueueItemKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelectQueuePath(item.path);
+                    }
+                  };
+
+                  return (
+                    <div
+                      key={item.path}
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={isSelected}
+                      onClick={() => onSelectQueuePath(item.path)}
+                      onKeyDown={handleQueueItemKeyDown}
                       style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 8,
-                        border: '1px solid var(--overlay-border)',
-                        background: 'rgba(255,255,255,0.03)',
-                        color: 'var(--overlay-text-secondary)',
                         display: 'grid',
-                        placeItems: 'center',
+                        gridTemplateColumns: 'minmax(0, 1fr) auto',
+                        gap: 8,
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border: isSelected
+                          ? '1px solid color-mix(in srgb, var(--overlay-accent) 62%, var(--overlay-border))'
+                          : '1px solid var(--overlay-border)',
+                        background: isSelected
+                          ? 'color-mix(in srgb, var(--overlay-accent) 10%, rgba(255,255,255,0.03))'
+                          : 'rgba(255,255,255,0.03)',
+                        color: 'var(--overlay-text-primary)',
                         cursor: 'pointer',
-                        padding: 0,
+                        textAlign: 'left',
                       }}
                     >
-                      <X size={12} />
-                    </button>
-                  </button>
-                ))}
+                      <div style={{ minWidth: 0, display: 'grid', gap: 2 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--overlay-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.name}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.path}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--overlay-text-muted)' }}>
+                          {formatBytes(item.allocatedBytes)}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRemoveQueuePath(item.path);
+                        }}
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 8,
+                          border: '1px solid var(--overlay-border)',
+                          background: 'rgba(255,255,255,0.03)',
+                          color: 'var(--overlay-text-secondary)',
+                          display: 'grid',
+                          placeItems: 'center',
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

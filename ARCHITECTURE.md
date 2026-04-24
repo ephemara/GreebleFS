@@ -66,6 +66,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shell-owned wrapper for the embedded shader preview/editor surface. It renders WGSL/HLSL/SPIR-V documents inside the explorer preview pane, owns edit-vs-preview presentation, exposes stage/entrypoint pickers plus scene-mode controls, renders the WebGPU host canvas when available, and falls back to diagnostics plus inspection output when live preview is unsupported.
 - `src/components/StoragePanel.tsx`
   First-class storage forensics tab. It now follows the Explorer shell contract more closely: left drive/context rail, dense matrix-first workspace, optional split-map/types/focus modes, a scroll-safe preview-pane-style inspector with a `Current Context` lane, keyboard navigation, indexed jump/search inside the active storage scope, and a visible batch cleanup queue for staged trash/delete actions.
+- `src/components/NotesManager.tsx`, `src/components/notes/NotesRichMarkdownEditor.tsx`, `src/runtime/notesWorkspaceBackend.ts`, and `src/runtime/notesMarkdownDocument.ts`
+  Shell-owned notes workspace. The notes panel is no longer a hardcoded notes/todos/bugs/prompts board; it is now a folder-first markdown workspace over the managed `notes/` root. `NotesManager.tsx` owns folder/document selection plus autosave state, `NotesRichMarkdownEditor.tsx` owns the vendored Tiptap editor chrome, `notesWorkspaceBackend.ts` owns filesystem-backed folder/document operations through the explorer runtime, and `notesMarkdownDocument.ts` owns the markdown-to-Tiptap round-trip plus local markdown extensions (blockquote, code, code block, hard break, link) that the vendored editor needs.
 - `src/components/storage/storageTreemap.ts`
   Pure treemap layout helper for the storage tab. It turns the condensed native storage tree into deterministic SVG rectangles weighted by allocated bytes without mixing layout math into the panel component.
 - `src/components/storage/storageWorkbench.ts`
@@ -583,7 +585,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src-python/`
   Repo-owned Python workspace for the managed sidecar. It contains the sidecar manifest, the Python package that serves JSON-line actions over stdio, and the durable guide for adding new Python-backed capabilities.
 - `notes/`
-  Managed notes/todos/bugs/prompts content root in development. Release builds move the same root under Tauri `AppLocalData`.
+  Managed folder-first markdown notes root in development. Release builds move the same root under Tauri `AppLocalData`. Older notes/todos/bugs/prompts subfolders may still exist as plain folders inside this root, but the panel no longer treats them as special categories.
+- `src/vendor/tiptap/`
+  Vendored Tiptap source packages used by the notes workspace. Resolution is wired through `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, and `vitest.browser.config.ts`, while the upstream ProseMirror runtime packages still live in the app dependency graph.
 - `queue/`
   Repo-local intake lane for user-owned code folders that may donate systems into GreebleFS. `queue/staging/` is the active review lane, `queue/vault/` is the deferred/rejected lane, and `queue/queue.py` is the first-pass analyzer for repo fit, novelty, dependencies, semantic/path connections, and sanitize/scrub findings before agents start manual assimilation work.
 - `shaders/`

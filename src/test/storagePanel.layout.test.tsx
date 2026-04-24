@@ -327,4 +327,43 @@ describe('StoragePanel layout shell', () => {
       expect(storageBackendMocks.listStorageDirectory).toHaveBeenCalledWith('scan-1', '/home/alice/Dev/src');
     });
   });
+
+  it('renders cleanup queue rows without nesting a button inside another button', async () => {
+    useStorageWorkbenchStore.setState({
+      activeMode: 'matrix',
+      selectedRootPath: null,
+      selectedTypeBucketId: null,
+      selectedPaths: [],
+      selectionAnchorPath: null,
+      expandedPaths: [],
+      sortState: {
+        key: 'allocatedBytes',
+        direction: 'desc',
+      },
+      previewSplitMode: 'pane',
+      focusPath: null,
+      queue: {
+        definitionId: 'cleanup',
+        itemOrder: ['/home/alice/archive.bin'],
+        itemsByPath: {
+          '/home/alice/archive.bin': {
+            path: '/home/alice/archive.bin',
+            name: 'archive.bin',
+            kind: 'file',
+            logicalBytes: 200,
+            allocatedBytes: 200,
+            wasteBytes: 0,
+            extension: 'bin',
+          },
+        },
+        filterQuery: '',
+      },
+    });
+
+    const { container } = render(<StoragePanel />);
+
+    await screen.findByText('archive.bin');
+
+    expect(container.querySelector('button button')).toBeNull();
+  });
 });

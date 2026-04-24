@@ -83,28 +83,16 @@
     {
       "id": "andromeda-aura",
       "backgroundImage": "radial-gradient(circle at 76% 18%, rgba(143,231,255,0.18), transparent 20%), radial-gradient(circle at 28% 76%, rgba(200,187,255,0.12), transparent 18%), radial-gradient(circle at 54% 52%, rgba(255,255,255,0.05), transparent 14%)",
-      "opacity": 0.92,
+      "opacity": 0.78,
       "blendMode": "screen",
-      "filter": "blur(0px)",
-      "animation": {
-        "kind": "drift",
-        "durationMs": 24000,
-        "easing": "ease-in-out",
-        "direction": "alternate"
-      }
+      "filter": "blur(0px)"
     },
     {
       "id": "andromeda-starlines",
       "backgroundImage": "repeating-radial-gradient(circle at center, rgba(255,255,255,0.22) 0 0.7px, transparent 0.7px 28px), linear-gradient(120deg, transparent 0%, rgba(143,231,255,0.08) 48%, transparent 100%)",
       "backgroundSize": "220px 220px, cover",
-      "opacity": 0.26,
-      "blendMode": "screen",
-      "animation": {
-        "kind": "pan",
-        "durationMs": 32000,
-        "easing": "linear",
-        "direction": "normal"
-      }
+      "opacity": 0.16,
+      "blendMode": "screen"
     },
     {
       "id": "andromeda-vignette",

@@ -16752,6 +16752,11 @@ export function FileExplorer({
       : usesWorkspaceCompactChrome
         ? "7px 9px"
         : "var(--overlay-explorer-toolbar-padding)";
+    const toolbarInsetMargin = usesInset
+      ? usesWorkspaceCompactChrome
+        ? "6px"
+        : "var(--overlay-explorer-chrome-inset)"
+      : 0;
     return {
       display: "flex",
       flexDirection: "column",
@@ -16774,11 +16779,9 @@ export function FileExplorer({
       borderRadius: usesFloatingShell
         ? "var(--overlay-explorer-panel-radius)"
         : 0,
-      margin: usesInset
-        ? usesWorkspaceCompactChrome
-          ? "6px"
-          : "var(--overlay-explorer-chrome-inset)"
-        : 0,
+      marginTop: toolbarInsetMargin,
+      marginRight: toolbarInsetMargin,
+      marginLeft: toolbarInsetMargin,
       marginBottom: 0,
       boxShadow: usesFloatingShell
         ? "var(--overlay-explorer-toolbar-shadow)"

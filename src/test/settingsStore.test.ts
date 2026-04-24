@@ -806,6 +806,36 @@ describe('useSettingsStore.applyThemeSelection()', () => {
     expect(session.previewLocked).toBe(true);
     expect(session.sourcesVisible).toBe(false);
   });
+
+  it('resets stale wallpaper, shader, blur, and zoom overrides when switching into andromeda', () => {
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'pilot-dark',
+          activeWallpaperId: 'wallpaper-lab',
+          activeShaderId: 'nebula-flow',
+          shaderPerformanceMode: 'quality',
+          panelTransparency: 0.52,
+          appBlur: true,
+          appZoom: 1.14,
+        },
+      },
+    }));
+
+    useSettingsStore.getState().applyThemeSelection('andromeda');
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.appearance.activeThemeId).toBe('andromeda');
+    expect(settings.appearance.theme).toBe('dark');
+    expect(settings.appearance.activeWallpaperId).toBeNull();
+    expect(settings.appearance.activeShaderId).toBeNull();
+    expect(settings.appearance.shaderPerformanceMode).toBe('performance');
+    expect(settings.appearance.panelTransparency).toBe(0);
+    expect(settings.appearance.appBlur).toBe(false);
+    expect(settings.appearance.appZoom).toBe(1);
+  });
 });
 
 describe('useSettingsStore.updateModels()', () => {
