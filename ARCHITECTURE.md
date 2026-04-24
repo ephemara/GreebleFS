@@ -602,6 +602,13 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Vendored Tiptap source packages used by the notes workspace. Resolution is wired through `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, and `vitest.browser.config.ts`, while the upstream ProseMirror runtime packages still live in the app dependency graph.
 - `queue/`
   Repo-local intake lane for user-owned code folders that may donate systems into GreebleFS. `queue/staging/` is the active review lane, `queue/vault/` is the deferred/rejected lane, and `queue/queue.py` is the first-pass analyzer for repo fit, novelty, dependencies, semantic/path connections, and sanitize/scrub findings before agents start manual assimilation work.
+- `reference/`
+  Repo-local reference-code intake lane for flattened third-party explorer/editor repos that agents should study without directory-traversal sprawl. The tracked workflow lives at the repo root:
+  - `reference_scrub.py` is the profile-driven destructive scrubber for any direct child of `reference/`
+  - `reference_scrub_profiles.toml` is the source of truth for per-repo keep/drop/hoist/collapse rules plus the generic fallback
+  - `reference_scrub_vscode.py` and `reference_scrub_zed.py` are thin wrappers for the two largest reference repos
+  - each scrubbed reference repo gets a root `reference-scrub-manifest.json` plus compressed `repomap.md`
+  The scrubber hard-fails on path traversal, absolute/outside targets, and symlink entries, stages the rewrite under `reference/.<repo>.reference-scrub-staging`, and only ever replaces a direct child inside `reference/`
 - `shaders/`
   Authored shader modules.
 - `src-tauri/`
@@ -636,6 +643,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `cargo test --manifest-path src-tauri/Cargo.toml storage_scan_ -- --nocapture`
 - `bunx vitest run src/test/pythonConfig.test.ts src/test/pythonRuntimeBackend.test.ts src/test/terminalOverlay.test.tsx -t "Python" --reporter=dot`
 - `bunx vitest run src/test/hotkeys.test.ts src/test/explorerStore.test.ts src/test/fileExplorer.searchTelemetry.test.tsx --reporter=dot`
+- `python3 -m unittest discover -s tests_python -p 'test_*.py' -v`
+- `python3 reference_scrub.py --all --skip-repomix`
+- `python3 reference_scrub.py --all --apply`
+- `python3 reference_scrub_vscode.py --apply`
+- `python3 reference_scrub_zed.py --apply`
 - `bash ./install.sh`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`
 - `bash ./install.sh --launch`
@@ -666,6 +678,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run test:browser` currently launches a headed Playwright Chromium session in this workspace. Without an X server it fails before any tests run; use `xvfb-run` or a headless browser config if you need browser validation locally.
 - Keep Vite/Vitest watcher ignore lists covering the repo-root Rust `target/` tree, not just `src-tauri/target*`. After `cargo test` or `export-bindings`, browser runs can hit Linux `ENOSPC` watcher limits if the root `target/` artifacts are still inside the watch graph.
 - `plugins/**/dist/**` is versioned source for packaged frontend plugins in this repo. Do not treat those directories like app-build output or let a blanket `dist/` ignore swallow shipped plugin entries.
+- The reference scrubber is intentionally destructive. Future agents should not manually flatten `reference/*` by hand and should not point the scrubber at anything outside `reference/`; use `python3 reference_scrub.py --repo <name>` or the wrapper scripts so the safety checks and repomap generation stay intact.
 - Packaged frontend plugins are no longer single-file only. `src/components/pluginRuntime.tsx` now executes a package-local module graph, so plugin entries may import sibling helpers with relative paths, but those imports must remain inside the plugin root and still cannot pull arbitrary npm dependencies.
 - Explorer context-menu plugin contributions can now open plugin panels through `panel-request` execution. If a plugin needs a folder/file handoff from Explorer, use `src/runtime/pluginPanelRequests.ts` and the `overlayterm-plugin` helpers instead of inventing ad hoc window events or local-storage keys.
 - The dev HUD is internal to this app. It is not a Tauri plugin or external Chrome overlay, and it should be treated as part of the shell runtime.

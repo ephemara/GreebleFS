@@ -1,3 +1,29 @@
+# 2026-04-24 - Reference Repos Now Have A Profile-Driven Scrubber And Repomap Flow
+
+- The repo now has a durable reference-intake workflow for the ignored `reference/` folder instead of ad hoc manual flattening.
+- Durable implementation shape:
+  - `reference_scrub.py` is the root orchestrator for destructively normalizing any direct child of `reference/`
+  - `reference_scrub_profiles.toml` is the source of truth for per-repo keep/drop/hoist/collapse behavior plus the generic fallback for newly added folders
+  - `reference_scrub_vscode.py` and `reference_scrub_zed.py` are thin wrappers for the two largest imported repos
+  - `tests_python/test_reference_scrub.py` is the safety net for path rejection, symlink rejection, dry-run behavior, hoist/collapse behavior, repomap generation, deterministic collision renaming, and repeated-run idempotence
+- Durable safety model:
+  - The scrubber only accepts direct child repo names under `reference/`
+  - It rejects path traversal, absolute/outside targets, repo symlinks, and nested symlink entries
+  - It stages the rewrite under `reference/.<repo>.reference-scrub-staging`, writes `reference-scrub-manifest.json`, runs compressed `repomix` to produce `repomap.md`, and then atomically replaces the original repo directory
+  - Generated `repomap.md` and `reference-scrub-manifest.json` are excluded from future scrub inputs so repeated runs stay structurally idempotent
+- Durable workflow note:
+  - If future agents add another reference repo, they should first try `python3 reference_scrub.py --repo <folder> --skip-repomix` to validate the shape, then add or refine a profile in `reference_scrub_profiles.toml` only if the generic fallback is not aggressive enough
+  - The wrapper scripts exist because `vscode` and `zed` are large enough that users may want explicit one-command reruns
+  - Agents should use the generated `repomap.md` files for orientation before doing manual traversal inside those references
+- Executed validation:
+  - passed: `python3 -m unittest discover -s tests_python -p 'test_*.py' -v`
+  - passed: `python3 -m py_compile reference_scrub.py reference_scrub_vscode.py reference_scrub_zed.py tests_python/test_reference_scrub.py`
+  - passed: `python3 reference_scrub.py --all --skip-repomix`
+  - passed: `python3 reference_scrub.py --all --apply`
+  - passed: `python3 reference_scrub_vscode.py --apply`
+  - passed: `python3 reference_scrub_zed.py --apply`
+  - passed: post-run verification that every direct child of `reference/` contains both `repomap.md` and `reference-scrub-manifest.json`
+
 # 2026-04-24 - Native Open With Is Now A Real Explorer Submenu With macOS Support
 
 - Explorer `Open With` is no longer just a thin system-picker action. The explorer menu runtime now resolves a real submenu of associated apps from a host-owned native subsystem, while keeping the system picker as a fallback action where the platform supports it.
