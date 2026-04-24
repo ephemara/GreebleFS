@@ -51,6 +51,13 @@ use crate::image_commands::{
     ImageEditorPreviewRequest, ImageEditorPreviewResult, ImageEditorSessionBootstrap,
     ImageEditorSessionCreateRequest, ImageFilterPresetDefinition, ImageFilterPresetId,
 };
+use crate::image_cutout_commands::{
+    ImageCutoutApplyPromptsRequest, ImageCutoutCopyToClipboardRequest,
+    ImageCutoutExportFilterState, ImageCutoutExportMode, ImageCutoutPreviewMask,
+    ImageCutoutPromptKind, ImageCutoutPromptPoint, ImageCutoutProviderDiagnostics,
+    ImageCutoutResetSessionRequest, ImageCutoutSessionOpenRequest,
+    ImageCutoutSessionSnapshot, ImageCutoutStagedExportArtifact,
+};
 use crate::lan_share::types::LanShareResult;
 use crate::linux_graphics::{
     LinuxDisplayBackend, LinuxDisplayBackendPreference, LinuxDisplayBackendStatus,
@@ -299,6 +306,12 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::image_commands::image_editor_render_preview,
             crate::image_commands::image_editor_export,
             crate::image_commands::image_editor_close_session,
+            crate::image_cutout_commands::image_cutout_open_session,
+            crate::image_cutout_commands::image_cutout_apply_prompts,
+            crate::image_cutout_commands::image_cutout_reset_session,
+            crate::image_cutout_commands::image_cutout_stage_export,
+            crate::image_cutout_commands::image_cutout_copy_to_clipboard,
+            crate::image_cutout_commands::image_cutout_close_session,
             crate::gpu_runtime::gpu_runtime_configure,
             crate::gpu_runtime::gpu_runtime_get_status,
             crate::pdf_commands::pdf_open_preview_document,
@@ -423,6 +436,18 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ImageEditorPreviewResult>()
         .typ::<ImageEditorExportRequest>()
         .typ::<ImageEditorExportResult>()
+        .typ::<ImageCutoutPromptKind>()
+        .typ::<ImageCutoutPromptPoint>()
+        .typ::<ImageCutoutPreviewMask>()
+        .typ::<ImageCutoutProviderDiagnostics>()
+        .typ::<ImageCutoutSessionOpenRequest>()
+        .typ::<ImageCutoutApplyPromptsRequest>()
+        .typ::<ImageCutoutResetSessionRequest>()
+        .typ::<ImageCutoutExportFilterState>()
+        .typ::<ImageCutoutExportMode>()
+        .typ::<ImageCutoutCopyToClipboardRequest>()
+        .typ::<ImageCutoutSessionSnapshot>()
+        .typ::<ImageCutoutStagedExportArtifact>()
         .typ::<GpuTierMode>()
         .typ::<GpuEffectiveTier>()
         .typ::<GpuFallbackReason>()

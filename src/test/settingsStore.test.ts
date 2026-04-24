@@ -184,6 +184,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.audioWorkbenchExportClip).toBe('Ctrl+Shift+S');
     expect(settings.keybindings.pythonWorkbenchRunManaged).toBe('F9');
     expect(settings.keybindings.pythonWorkbenchRunInTerminal).toBe('Ctrl+F9');
+    expect(settings.keybindings.imageCutoutCopy).toBe('Ctrl+C');
     expect(settings.keybindings.imageEditorUndo).toBe('Ctrl+Z');
     expect(settings.keybindings.imageEditorRedo).toBe('Ctrl+Shift+Z');
     expect(settings.keybindings.imageEditorReset).toBe('Escape');

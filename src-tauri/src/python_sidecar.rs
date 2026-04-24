@@ -110,6 +110,11 @@ pub mod action_ids {
     pub const ACCELERATION_CUDA_PROBE: &str = "acceleration.cuda_probe";
     pub const RUNTIME_SUMMARY: &str = "runtime.summary";
     pub const ML_PROBE: &str = "ml.probe";
+    pub const IMAGE_CUTOUT_OPEN_SESSION: &str = "image.cutout_open_session";
+    pub const IMAGE_CUTOUT_APPLY_PROMPTS: &str = "image.cutout_apply_prompts";
+    pub const IMAGE_CUTOUT_RESET_SESSION: &str = "image.cutout_reset_session";
+    pub const IMAGE_CUTOUT_STAGE_EXPORT: &str = "image.cutout_stage_export";
+    pub const IMAGE_CUTOUT_CLOSE_SESSION: &str = "image.cutout_close_session";
     pub const FILES_SCAN_DIRECTORY: &str = "files.scan_directory";
     pub const FILES_HASH_PATHS: &str = "files.hash_paths";
     pub const SEMANTIC_INDEX_ROOT: &str = "semantic.index_root";

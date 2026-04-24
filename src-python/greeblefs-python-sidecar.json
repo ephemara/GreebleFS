@@ -92,6 +92,36 @@
       "payloadExampleJson": "{\"modelId\":\"semantic-minilm-l6-v2\",\"capabilityId\":\"semantic-indexing\",\"backendPreference\":\"onnx\"}"
     },
     {
+      "id": "image.cutout_open_session",
+      "label": "Open Image Cutout Session",
+      "description": "Bootstraps a promptable image cutout session and returns the initial salient-subject matte preview.",
+      "payloadExampleJson": "{\"sessionId\":\"image-cutout-1\",\"inputDataUrl\":\"data:image/png;base64,...\",\"logicalOutputPath\":\"/tmp/photo.png\",\"previewMaxDimension\":1280,\"modelId\":\"image-cutout-sam2-small\",\"backendPreference\":\"auto\"}"
+    },
+    {
+      "id": "image.cutout_apply_prompts",
+      "label": "Apply Image Cutout Prompts",
+      "description": "Refines an existing image cutout session with positive or negative prompt points.",
+      "payloadExampleJson": "{\"sessionId\":\"image-cutout-1\",\"prompts\":[{\"xNorm\":0.52,\"yNorm\":0.41,\"kind\":\"positive\"}]}"
+    },
+    {
+      "id": "image.cutout_reset_session",
+      "label": "Reset Image Cutout Session",
+      "description": "Restores the current cutout session back to its auto-generated starting matte.",
+      "payloadExampleJson": "{\"sessionId\":\"image-cutout-1\"}"
+    },
+    {
+      "id": "image.cutout_stage_export",
+      "label": "Stage Image Cutout Export",
+      "description": "Writes the current cutout result as a transparent PNG to a requested path.",
+      "payloadExampleJson": "{\"sessionId\":\"image-cutout-1\",\"outputPath\":\"/tmp/photo.cutout.png\",\"filters\":{\"brightness\":100,\"contrast\":100,\"saturate\":100,\"hueRotate\":0,\"grayscale\":0,\"sepia\":0,\"invert\":0,\"blur\":0}}"
+    },
+    {
+      "id": "image.cutout_close_session",
+      "label": "Close Image Cutout Session",
+      "description": "Drops the cached image cutout session state and releases its preview/mask buffers.",
+      "payloadExampleJson": "{\"sessionId\":\"image-cutout-1\"}"
+    },
+    {
       "id": "files.scan_directory",
       "label": "Scan Directory",
       "description": "Lists a directory with lightweight metadata from Python.",

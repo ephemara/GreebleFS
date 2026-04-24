@@ -77,6 +77,7 @@ export const localModelCapabilityCatalog = localModelCatalog.capabilities;
 export const localModelDefinitions = localModelCatalog.models;
 
 export const semanticIndexingCapabilityId = 'semantic-indexing';
+export const imageCutoutCapabilityId = 'image-cutout';
 
 export function normalizeLocalModelBackendPreference(
   value: unknown,

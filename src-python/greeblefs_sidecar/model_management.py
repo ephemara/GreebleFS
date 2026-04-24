@@ -448,6 +448,33 @@ def prewarm_local_model_action(
     errors: list[str] = []
     for backend_kind, provider_name in attempts:
         try:
+            if descriptor.get("family") == "image-cutout":
+                provider_kind = (
+                    "cuda"
+                    if backend_preference == "cuda" and torch_cuda_available()
+                    else "cpu"
+                )
+                mark_model_registry_ready(
+                    context,
+                    descriptor,
+                    backend_kind="python",
+                    provider_kind=provider_kind,
+                    capability_id=str(capability_id).strip() if isinstance(capability_id, str) else None,
+                )
+                cache_summary = build_model_cache_summary(context)
+                return {
+                    **cache_summary,
+                    "modelId": descriptor["modelId"],
+                    "providerModelId": descriptor["providerModelId"],
+                    "backendKind": "python",
+                    "providerKind": provider_kind,
+                    "backendPreference": backend_preference,
+                    "message": (
+                        f"Prepared {descriptor['label']} for the managed image-cutout runtime "
+                        f"via the {provider_kind} lane."
+                    ),
+                }
+
             if descriptor.get("family") != "sentence-transformer":
                 raise RuntimeError(
                     f"Model family '{descriptor.get('family')}' is not prewarmable yet."

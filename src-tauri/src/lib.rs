@@ -10,6 +10,7 @@ pub mod explorer_pro_commands;
 pub mod fs_commands;
 pub mod global_search;
 pub mod gpu_runtime;
+pub mod image_cutout_commands;
 pub mod image_commands;
 pub mod lan_share;
 mod linux_graphics;
@@ -191,6 +192,7 @@ pub fn run() {
             app.manage(CloudRuntimeState::default());
             app.manage(AudioEngineManager::default());
             app.manage(gpu_runtime);
+            app.manage(image_cutout_commands::ImageCutoutManager::default());
             app.manage(image_commands::ImageEditorManager::default());
             app.manage(pdf_commands::PdfPreviewManager::default());
             app.manage(python_sidecar::PythonSidecarManager::default());

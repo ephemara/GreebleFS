@@ -24,21 +24,31 @@ import { writeFile } from "@tauri-apps/plugin-fs";
 import { getImageEditorContentType } from "../config/filePreview";
 import { matchesKeybinding } from "../config/hotkeys";
 import {
+  type LocalModelBackendPreference,
+} from "../config/localModels";
+import {
   buildCSSFilterString,
   createDefaultImageFiltersState,
   imageEditorFilterDefinitions,
   type ExplorerImageFiltersState,
 } from "../config/imageEditorFilters";
 import { writeExplorerFile } from "../runtime/explorerBackend";
+import type { ManagedPythonRuntimeConfig } from "../runtime/pythonRuntimeBackend";
 import { useSettingsStore } from "../store/settingsStore";
+import { ExplorerImageCutoutSurface } from "./ExplorerImageCutoutSurface";
 import { OverlayScrollArea } from "./OverlayScrollArea";
 import { PremiumSlider as PremiumSliderControl } from "./PremiumSlider";
 
 type ExplorerImageEditorProps = {
   imagePath: string;
+  logicalImagePath?: string;
   imageName: string;
   imageSource: string;
   mode?: "preview" | "edit";
+  workflowTabId?: string | null;
+  pythonRuntimeConfig?: ManagedPythonRuntimeConfig | null;
+  cutoutModelId?: string | null;
+  cutoutBackendPreference?: LocalModelBackendPreference | null;
   onSaved?: () => Promise<void> | void;
 };
 
@@ -275,9 +285,14 @@ export const ExplorerImageEditor = forwardRef<
 >(function ExplorerImageEditor(
   {
     imagePath,
+    logicalImagePath,
     imageName,
     imageSource,
     mode = "edit",
+    workflowTabId = null,
+    pythonRuntimeConfig = null,
+    cutoutModelId = null,
+    cutoutBackendPreference = "auto",
     onSaved,
   },
   forwardedRef,
@@ -309,7 +324,8 @@ export const ExplorerImageEditor = forwardRef<
 
   const contentType = getImageEditorContentType(getImageExtension(imageName));
   const isEditableFormat = contentType !== null;
-  const showEditingChrome = mode === "edit" && isEditableFormat;
+  const isCutoutMode = workflowTabId === "cutout" && isEditableFormat;
+  const showEditingChrome = mode === "edit" && isEditableFormat && !isCutoutMode;
   const keybindings = useSettingsStore((state) => state.settings.keybindings);
 
   const clearSavedStatusTimeout = useCallback(() => {
@@ -901,6 +917,21 @@ export const ExplorerImageEditor = forwardRef<
           />
         </div>
       </div>
+    );
+  }
+
+  if (isCutoutMode) {
+    return (
+      <ExplorerImageCutoutSurface
+        imageName={imageName}
+        imagePath={imagePath}
+        logicalOutputPath={logicalImagePath ?? imagePath}
+        sourceImageUrl={baseImage?.src ?? imageSource}
+        filterState={filters}
+        pythonRuntimeConfig={pythonRuntimeConfig}
+        cutoutModelId={cutoutModelId}
+        cutoutBackendPreference={cutoutBackendPreference}
+      />
     );
   }
 

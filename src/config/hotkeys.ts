@@ -71,6 +71,7 @@ export type HotkeyBindingKey =
   | 'audioWorkbenchExportClip'
   | 'pythonWorkbenchRunManaged'
   | 'pythonWorkbenchRunInTerminal'
+  | 'imageCutoutCopy'
   | 'imageEditorUndo'
   | 'imageEditorRedo'
   | 'imageEditorReset'
@@ -607,6 +608,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Python Workbench Run In Terminal',
     description: 'Queue the active Python preview into the explorer embedded terminal.',
     defaultValue: 'Ctrl+F9',
+    scope: 'local',
+  },
+  {
+    key: 'imageCutoutCopy',
+    label: 'Image Cutout Copy',
+    description: 'Copy the active explorer cutout selection as a transparent image to the system clipboard.',
+    defaultValue: 'Ctrl+C',
     scope: 'local',
   },
   {

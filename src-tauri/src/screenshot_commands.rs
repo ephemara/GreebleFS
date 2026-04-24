@@ -259,7 +259,7 @@ fn read_image_from_disk(path: &Path) -> Result<RgbaImage, String> {
         .map(|image| image.to_rgba8())
 }
 
-fn copy_rgba_image_to_clipboard(image: RgbaImage) -> Result<(), String> {
+pub(crate) fn copy_rgba_image_to_clipboard(image: RgbaImage) -> Result<(), String> {
     let image_width = image.width() as usize;
     let image_height = image.height() as usize;
     let image_data = image.into_raw();

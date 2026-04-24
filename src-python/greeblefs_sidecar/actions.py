@@ -15,6 +15,13 @@ from .model_management import (
     local_model_catalog_status_action,
     prewarm_local_model_action,
 )
+from .cutout_runtime import (
+    image_cutout_apply_prompts_action,
+    image_cutout_close_session_action,
+    image_cutout_open_session_action,
+    image_cutout_reset_session_action,
+    image_cutout_stage_export_action,
+)
 from .semantic_search_runtime import (
     semantic_delete_index_action,
     semantic_find_similar_file_action,
@@ -282,6 +289,46 @@ def models_cache_summary_action(payload: Any, context: PythonActionContext) -> d
 @python_action("models.prewarm")
 def models_prewarm_action(payload: Any, context: PythonActionContext) -> dict[str, Any]:
     return prewarm_local_model_action(payload, context)
+
+
+@python_action("image.cutout_open_session")
+def image_cutout_open_session_registered_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    return image_cutout_open_session_action(payload, context)
+
+
+@python_action("image.cutout_apply_prompts")
+def image_cutout_apply_prompts_registered_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    return image_cutout_apply_prompts_action(payload, context)
+
+
+@python_action("image.cutout_reset_session")
+def image_cutout_reset_session_registered_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    return image_cutout_reset_session_action(payload, context)
+
+
+@python_action("image.cutout_stage_export")
+def image_cutout_stage_export_registered_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    return image_cutout_stage_export_action(payload, context)
+
+
+@python_action("image.cutout_close_session")
+def image_cutout_close_session_registered_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    return image_cutout_close_session_action(payload, context)
 
 
 @python_action("files.scan_directory")

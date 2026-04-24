@@ -489,6 +489,8 @@ import {
   type ManagedPythonActionResponse,
 } from "../runtime/pythonRuntimeBackend";
 import {
+  imageCutoutCapabilityId,
+  type LocalModelCapabilityBinding,
   resolveLocalModelBindingForRoot,
   semanticIndexingCapabilityId,
 } from "../config/localModels";
@@ -554,6 +556,9 @@ const SCRIPT_PREVIEW_WILDCARD_WORKFLOW_TABS = [
 const PYTHON_PREVIEW_WILDCARD_WORKFLOW_TABS = [
   { id: "run", label: "Run", baseMode: "preview" },
   { id: "runtime", label: "Runtime", baseMode: "preview" },
+] as const satisfies readonly ExplorerPreviewWildcardWorkflowTab[];
+const IMAGE_PREVIEW_WILDCARD_WORKFLOW_TABS = [
+  { id: "cutout", label: "Cutout", baseMode: "edit" },
 ] as const satisfies readonly ExplorerPreviewWildcardWorkflowTab[];
 
 function awaitPromiseWithTimeout<T>(
@@ -3455,6 +3460,7 @@ function PreviewPanel({
   activeWorkflowTabId,
   onWorkflowTabChange,
   pythonRuntimeConfig,
+  imageCutoutModelBinding,
   pythonBootstrapPackageInput,
   explorerTheme,
   blurEnabled,
@@ -3527,6 +3533,7 @@ function PreviewPanel({
   activeWorkflowTabId: string | null;
   onWorkflowTabChange: (tabId: string) => void;
   pythonRuntimeConfig: ReturnType<typeof createPythonRuntimeConfig>;
+  imageCutoutModelBinding: LocalModelCapabilityBinding;
   pythonBootstrapPackageInput: string;
   explorerTheme: ResolvedExplorerThemeRecipe;
   blurEnabled: boolean;
@@ -3662,6 +3669,17 @@ function PreviewPanel({
 
     setWildcardWorkflowTabs([...PYTHON_PREVIEW_WILDCARD_WORKFLOW_TABS]);
   }, [activePythonPreviewMetadata, preview.path, preview.type]);
+
+  useEffect(() => {
+    if (
+      preview.type !== "image" ||
+      !isEditableImagePreviewExtension(preview.extension)
+    ) {
+      return;
+    }
+
+    setWildcardWorkflowTabs([...IMAGE_PREVIEW_WILDCARD_WORKFLOW_TABS]);
+  }, [preview.extension, preview.path, preview.type]);
 
   const handleWildcardWorkflowTabsChange = useCallback(
     (tabs: ExplorerPreviewWildcardWorkflowTab[] | null) => {
@@ -4866,6 +4884,7 @@ function PreviewPanel({
           {preview.type === "image" && preview.content && (
             <ExplorerImageEditor
               imagePath={previewResolvedPath}
+              logicalImagePath={preview.path}
               imageName={preview.name}
               imageSource={preview.content}
               mode={
@@ -4875,6 +4894,10 @@ function PreviewPanel({
                   ? "edit"
                   : "preview"
               }
+              workflowTabId={activePreviewWorkflowTab.id}
+              pythonRuntimeConfig={pythonRuntimeConfig}
+              cutoutModelId={imageCutoutModelBinding.modelId}
+              cutoutBackendPreference={imageCutoutModelBinding.backendPreference}
               onSaved={onRefreshPreviewEntry}
             />
           )}
@@ -7702,6 +7725,15 @@ export function FileExplorer({
       modelsSettings.capabilityBindings,
       modelsSettings.semanticIndexRootOverrides,
     ],
+  );
+  const imageCutoutModelBinding = useMemo(
+    () => resolveLocalModelBindingForRoot(
+      modelsSettings.capabilityBindings,
+      imageCutoutCapabilityId,
+      currentPath,
+      {},
+    ),
+    [currentPath, modelsSettings.capabilityBindings],
   );
   const [history, setHistory] = useState<string[]>(
     () => initialSession.history,
@@ -16060,11 +16092,13 @@ export function FileExplorer({
                     : "Audio preview"
                 : preview.type === "folder"
                   ? "Folder preview"
-                  : preview.type === "image"
-                    ? documentViewMode === "edit" &&
-                      isEditableImagePreviewExtension(preview.extension)
-                      ? "Image editor"
-                      : "Image preview"
+                : preview.type === "image"
+                    ? activePreviewWorkflowTabId === "cutout"
+                      ? "Image cutout"
+                      : documentViewMode === "edit" &&
+                          isEditableImagePreviewExtension(preview.extension)
+                        ? "Image editor"
+                        : "Image preview"
                     : preview.type === "model3d"
                       ? "3D preview"
                       : "Preview";
@@ -20209,6 +20243,13 @@ export function FileExplorer({
         activeElement instanceof HTMLElement &&
         activeElement.closest('[data-testid="terminal-overlay-embedded-root"]') !=
           null;
+      const previewKeyboardOwner =
+        activeElement instanceof HTMLElement
+          ? activeElement.closest<HTMLElement>(
+              "[data-explorer-preview-keyboard-owner]",
+            )?.dataset.explorerPreviewKeyboardOwner ?? null
+          : null;
+      const cutoutPreviewOwnsKeyboard = previewKeyboardOwner === "image-cutout";
       const selectedEntry =
         (lastSelected.current
           ? (visibleEntryLookup.get(lastSelected.current) ?? null)
@@ -20723,6 +20764,9 @@ export function FileExplorer({
             selectedEntries.map((entry) => entry.path).join("\n"),
           );
         }
+        return;
+      }
+      if (cutoutPreviewOwnsKeyboard && matchesKeybinding(e, keybindings.copySelection)) {
         return;
       }
       if (matchesKeybinding(e, keybindings.copySelection)) {
@@ -23344,6 +23388,7 @@ export function FileExplorer({
         activeWorkflowTabId={activePreviewWorkflowTabId}
         onWorkflowTabChange={setActivePreviewWorkflowTabId}
         pythonRuntimeConfig={pythonRuntimeConfig}
+        imageCutoutModelBinding={imageCutoutModelBinding}
         pythonBootstrapPackageInput={pythonSettings.bootstrapPackages}
         explorerTheme={explorerTheme}
         blurEnabled={explorerBlurEnabled}
@@ -23433,6 +23478,7 @@ export function FileExplorer({
     togglePreviewLock,
     togglePreviewTerminal,
     openManagedPythonRepl,
+    imageCutoutModelBinding,
     pythonRuntimeConfig,
     pythonSettings.bootstrapPackages,
     updatePdfPreviewDocument,

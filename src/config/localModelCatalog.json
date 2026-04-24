@@ -66,6 +66,16 @@
       "backendOptionIds": ["auto", "cpu", "onnx", "cuda"]
     },
     {
+      "id": "image-cutout",
+      "label": "Image Cutout",
+      "description": "Promptable subject cutouts for the explorer preview/editor lane with transparent PNG export, drag-out, and clipboard copy.",
+      "availability": "active",
+      "supportsPerRootOverrides": false,
+      "defaultModelId": "image-cutout-sam2-small",
+      "defaultBackendPreference": "auto",
+      "backendOptionIds": ["auto", "cpu", "cuda"]
+    },
+    {
       "id": "source-separation",
       "label": "Source Separation",
       "description": "Stem splitting and other audio-isolation models such as Demucs-style workflows.",
@@ -115,6 +125,19 @@
       "estimatedFootprintMb": 1300,
       "capabilityIds": ["semantic-indexing"],
       "tags": ["semantic", "embeddings", "quality", "cuda"]
+    },
+    {
+      "id": "image-cutout-sam2-small",
+      "label": "SAM 2 Small",
+      "description": "Promptable cutout lane reserved for near-instant subject extraction, matte refinement, and transparent PNG staging.",
+      "provider": "huggingface",
+      "providerModelId": "facebook/sam2-hiera-small",
+      "family": "image-cutout",
+      "hardwareProfileId": "balanced",
+      "recommendedBackendPreference": "auto",
+      "estimatedFootprintMb": 520,
+      "capabilityIds": ["image-cutout"],
+      "tags": ["default", "image", "cutout", "sam2", "matting"]
     }
   ]
 }

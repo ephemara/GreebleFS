@@ -8782,13 +8782,13 @@ export function SettingsPage({
                 <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
                   <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Image Editor Hotkeys</div>
                   <p className="mt-1 text-[11px] opacity-40">
-                    Keyboard coverage for the explorer image editor: save, undo, redo, reset, and selection cleanup all stay on the same settings-backed shortcut layer as the rest of the shell.
+                    Keyboard coverage for the explorer image lane: save, cutout copy, undo, redo, and reset all stay on the same settings-backed shortcut layer as the rest of the shell.
                   </p>
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                     {hotkeyBindingDefinitions
                       .filter(definition => [
                         'saveFile',
-                        'deleteItem',
+                        'imageCutoutCopy',
                         'imageEditorUndo',
                         'imageEditorRedo',
                         'imageEditorReset',
