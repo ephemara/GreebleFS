@@ -50,6 +50,13 @@ pub struct ImageCutoutProviderDiagnostics {
     pub message: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ImageCutoutWorkflowMode {
+    Cutout,
+    RemoveBackground,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageCutoutSessionOpenRequest {
@@ -60,6 +67,7 @@ pub struct ImageCutoutSessionOpenRequest {
     pub config: Option<PythonRuntimeConfig>,
     pub model_id: Option<String>,
     pub backend_preference: Option<String>,
+    pub workflow_mode: ImageCutoutWorkflowMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -153,6 +161,7 @@ struct ImageCutoutManagerInner {
 #[derive(Clone)]
 struct ImageCutoutSession {
     logical_output_path: Option<String>,
+    workflow_mode: ImageCutoutWorkflowMode,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -165,6 +174,7 @@ struct PythonImageCutoutOpenSessionPayload {
     preview_max_dimension: u32,
     model_id: Option<String>,
     backend_preference: Option<String>,
+    workflow_mode: ImageCutoutWorkflowMode,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -311,6 +321,7 @@ impl ImageCutoutManager {
             .unwrap_or(DEFAULT_IMAGE_CUTOUT_PREVIEW_MAX_DIMENSION)
             .clamp(256, 2048);
         let logical_output_path = normalize_optional_output_path(request.logical_output_path.clone());
+        let workflow_mode = request.workflow_mode;
 
         let PythonSidecarDecodedActionResponse { result, .. }: PythonSidecarDecodedActionResponse<
             PythonImageCutoutSessionSnapshot,
@@ -326,6 +337,7 @@ impl ImageCutoutManager {
                 preview_max_dimension,
                 model_id: request.model_id.clone(),
                 backend_preference: request.backend_preference.clone(),
+                workflow_mode,
             }),
             None,
             None,
@@ -340,6 +352,7 @@ impl ImageCutoutManager {
                 session_id.clone(),
                 ImageCutoutSession {
                     logical_output_path,
+                    workflow_mode,
                 },
             );
 
@@ -754,5 +767,23 @@ mod tests {
     fn sanitize_cutout_file_stem_normalizes_ascii_tokens() {
         assert_eq!(sanitize_cutout_file_stem("Dog Portrait 01"), "dog-portrait-01");
         assert_eq!(sanitize_cutout_file_stem(""), "cutout");
+    }
+
+    #[test]
+    fn open_request_carries_workflow_mode() {
+        let request = super::ImageCutoutSessionOpenRequest {
+            input_path: Some("/tmp/sample.png".to_string()),
+            input_data_url: None,
+            logical_output_path: None,
+            preview_max_dimension: None,
+            config: None,
+            model_id: None,
+            backend_preference: None,
+            workflow_mode: super::ImageCutoutWorkflowMode::RemoveBackground,
+        };
+        assert_eq!(
+            request.workflow_mode,
+            super::ImageCutoutWorkflowMode::RemoveBackground
+        );
     }
 }
