@@ -5436,6 +5436,9 @@ function ExplorerEmbeddedTerminalLayer({
     previewRect,
     visible,
   ]);
+  const activeSurfaceResolved =
+    visible &&
+    (placement === "preview" ? previewRect != null : bottomAnchorTop != null);
 
   if (!mounted) {
     return null;
@@ -5492,6 +5495,7 @@ function ExplorerEmbeddedTerminalLayer({
           appearance={appearance}
           terminalIdNamespace={terminalIdNamespace}
           workingDirectory={workingDirectory}
+          bootReady={activeSurfaceResolved}
           consumeExplorerCwdSync={false}
           pendingCommandRequest={pendingCommandRequest}
           onCommandRequestHandled={onCommandRequestHandled}

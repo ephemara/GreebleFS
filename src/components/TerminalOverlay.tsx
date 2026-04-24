@@ -363,6 +363,7 @@ interface TerminalOverlayProps {
   pluginCommands?: OverlayPluginCommandContribution[];
   terminalIdNamespace?: string;
   workingDirectory?: string | null;
+  bootReady?: boolean;
   consumeExplorerCwdSync?: boolean;
   onReportedWorkingDirectoryChange?: (cwd: string) => void;
   pendingCommandRequest?: TerminalOverlayCommandRequest | null;
@@ -547,6 +548,7 @@ interface XTermPaneProps {
   id: string;
   visible: boolean;
   active: boolean;
+  bootReady: boolean;
   theme: Theme;
   workbenchTheme: ResolvedWorkbenchThemeRecipe;
   workingDirectory?: string | null;
@@ -561,6 +563,7 @@ const XTermPane = memo(function XTermPane({
   id,
   visible,
   active,
+  bootReady,
   theme,
   workbenchTheme,
   workingDirectory = null,
@@ -772,11 +775,11 @@ const XTermPane = memo(function XTermPane({
   }, [attachWebglRenderer, disposeWebglRenderer, id, settings, theme, workingDirectory]);
 
   useEffect(() => {
-    if (visible) {
+    if (visible && bootReady) {
       const raf = requestAnimationFrame(() => boot());
       return () => cancelAnimationFrame(raf);
     }
-  }, [visible, boot]);
+  }, [boot, bootReady, visible]);
 
   useEffect(() => {
     const entry = xtermRegistry.get(id);
@@ -1575,6 +1578,7 @@ export function TerminalOverlay({
   pluginCommands = [],
   terminalIdNamespace = 'overlay',
   workingDirectory = null,
+  bootReady = true,
   consumeExplorerCwdSync = true,
   onReportedWorkingDirectoryChange,
   pendingCommandRequest = null,
@@ -2618,6 +2622,7 @@ export function TerminalOverlay({
                 id={paneId}
                 visible={tabId === activeTabId}
                 active={isActivePane && tabId === activeTabId}
+                bootReady={bootReady}
                 theme={theme}
                 workbenchTheme={appearance.workbenchTheme}
                 workingDirectory={normalizedWorkingDirectory}
@@ -2636,6 +2641,7 @@ export function TerminalOverlay({
     activePaneId,
     activeTab,
     activeTabId,
+    bootReady,
     appearance.workbenchTheme,
     appearance.theme.palette.success,
     closePane,
