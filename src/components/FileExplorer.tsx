@@ -3427,14 +3427,18 @@ function PreviewPanel({
   presentationMode,
   previewLocked,
   previewSurfaceMode,
+  previewTerminalMounted,
   refreshRevision,
   previewContentHostRef,
   previewDropBinding,
   previewDropTarget,
   previewDropTargetActive,
   previewDropTargetDwell,
-  explorerTerminalWorkingDirectory,
-  explorerTerminalReportedWorkingDirectory,
+  previewTerminalWorkingDirectory,
+  previewTerminalReportedWorkingDirectory,
+  previewTerminalNamespace,
+  previewTerminalCommandRequest,
+  previewTerminalFocusRequestKey,
   onClose,
   onWidthChange,
   onTextChange,
@@ -3452,6 +3456,8 @@ function PreviewPanel({
   onTogglePresentationMode,
   onTogglePreviewLock,
   onTogglePreviewTerminal,
+  onPreviewTerminalCommandHandled,
+  onPreviewTerminalReportedWorkingDirectoryChange,
   onRunTextScript,
   onRunPythonManaged,
   onRunPythonInTerminal,
@@ -3486,14 +3492,18 @@ function PreviewPanel({
   presentationMode: ExplorerPreviewSplitMode;
   previewLocked: boolean;
   previewSurfaceMode: PreviewSurfaceMode;
+  previewTerminalMounted: boolean;
   refreshRevision: number;
   previewContentHostRef: React.RefObject<HTMLDivElement | null>;
   previewDropBinding: ExplorerDropSurfaceBinding | null;
   previewDropTarget: ExplorerPreviewDropTarget | null;
   previewDropTargetActive: boolean;
   previewDropTargetDwell: boolean;
-  explorerTerminalWorkingDirectory: string | null;
-  explorerTerminalReportedWorkingDirectory: string | null;
+  previewTerminalWorkingDirectory: string | null;
+  previewTerminalReportedWorkingDirectory: string | null;
+  previewTerminalNamespace: string;
+  previewTerminalCommandRequest: TerminalOverlayCommandRequest | null;
+  previewTerminalFocusRequestKey: number;
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
@@ -3522,6 +3532,8 @@ function PreviewPanel({
   onTogglePresentationMode: () => void;
   onTogglePreviewLock: () => void;
   onTogglePreviewTerminal: () => void;
+  onPreviewTerminalCommandHandled: (requestId: string) => void;
+  onPreviewTerminalReportedWorkingDirectoryChange: (cwd: string) => void;
   onRunTextScript: (
     path: string,
     scriptPreview: ExplorerResolvedScriptPreview,
@@ -3772,8 +3784,8 @@ function PreviewPanel({
     : "Lock preview to the current item";
   const isPreviewTerminalMode = previewSurfaceMode === "terminal";
   const previewTerminalDisplayPath =
-    explorerTerminalReportedWorkingDirectory?.trim() ||
-    explorerTerminalWorkingDirectory ||
+    previewTerminalReportedWorkingDirectory?.trim() ||
+    previewTerminalWorkingDirectory ||
     "";
   const previewTerminalToggleTitle = isPreviewTerminalMode
     ? "Show file preview"
@@ -4589,7 +4601,7 @@ function PreviewPanel({
         isVisible: () =>
           preview.type !== "none" &&
           !isScriptTextPreview &&
-          Boolean(explorerTerminalWorkingDirectory),
+          Boolean(previewTerminalWorkingDirectory),
         render: () => (
           <ExplorerEmbeddedTerminalToggleButton
             active={isPreviewTerminalMode}
@@ -4651,7 +4663,7 @@ function PreviewPanel({
       previewSurfaceMode,
       previewTerminalDisplayPath,
       previewTerminalToggleTitle,
-      explorerTerminalWorkingDirectory,
+      previewTerminalWorkingDirectory,
       previewTitle,
       isScriptTextPreview,
       onRunTextScript,
@@ -5123,6 +5135,28 @@ function PreviewPanel({
             </div>
           )}
         </div>
+        {previewTerminalMounted && (
+          <div
+            data-overlay-explorer-preview-surface="terminal"
+            style={getPreviewSurfaceLayerStyle("terminal")}
+          >
+            <TerminalOverlay
+              isOpen
+              embedded
+              onClose={() => {}}
+              terminalIdNamespace={previewTerminalNamespace}
+              workingDirectory={previewTerminalWorkingDirectory}
+              bootReady={previewSurfaceMode === "terminal"}
+              consumeExplorerCwdSync={false}
+              pendingCommandRequest={previewTerminalCommandRequest}
+              onCommandRequestHandled={onPreviewTerminalCommandHandled}
+              onReportedWorkingDirectoryChange={
+                onPreviewTerminalReportedWorkingDirectoryChange
+              }
+              focusRequestKey={previewTerminalFocusRequestKey}
+            />
+          </div>
+        )}
       </div>
       {previewSurfaceMode === "content" &&
         preview.type === "text" &&
@@ -7882,10 +7916,19 @@ export function FileExplorer({
   const [transferConflictPolicy, setTransferConflictPolicy] =
     useState<ExplorerFileTransferCollisionPolicy>("keep_both");
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewSurfaceMode, setPreviewSurfaceMode] =
+    useState<PreviewSurfaceMode>("content");
+  const [previewTerminalMounted, setPreviewTerminalMounted] = useState(false);
+  const [previewTerminalCommandRequest, setPreviewTerminalCommandRequest] =
+    useState<TerminalOverlayCommandRequest | null>(null);
+  const [
+    previewTerminalReportedWorkingDirectory,
+    setPreviewTerminalReportedWorkingDirectory,
+  ] = useState<string | null>(null);
+  const [previewTerminalFocusRequestKey, setPreviewTerminalFocusRequestKey] =
+    useState(0);
   const [explorerTerminalMounted, setExplorerTerminalMounted] = useState(false);
   const [explorerTerminalVisible, setExplorerTerminalVisible] = useState(false);
-  const [explorerTerminalPlacement, setExplorerTerminalPlacement] =
-    useState<ExplorerEmbeddedTerminalPlacement>("preview");
   const [explorerTerminalBottomHeight, setExplorerTerminalBottomHeight] =
     useState<number>(EXPLORER_EMBEDDED_TERMINAL_HEIGHT_BOUNDS.default);
   const [explorerTerminalCommandRequest, setExplorerTerminalCommandRequest] =
@@ -8088,6 +8131,10 @@ export function FileExplorer({
       sourceKind: activeDragInteraction.sourceKind,
     } as const;
   }, [activeDragInteraction, scopeRootDropActive]);
+  const lastPreviewTerminalShellReportedCwdRef = useRef<string | null>(null);
+  const lastPreviewTerminalExplorerAppliedCwdRef =
+    useRef<string | null>(null);
+  const previewTerminalCommandSequenceRef = useRef(0);
   const lastExplorerTerminalShellReportedCwdRef = useRef<string | null>(null);
   const lastExplorerTerminalExplorerAppliedCwdRef = useRef<string | null>(null);
   const explorerTerminalCommandSequenceRef = useRef(0);
@@ -8205,22 +8252,24 @@ export function FileExplorer({
     !currentPathIsVirtual;
   const explorerSupportsAnyDropTarget =
     currentLocationSupportsMutation || activePreviewDropTarget != null;
+  const previewTerminalNamespace = useMemo(
+    () => `preview-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+    [instanceId],
+  );
+  const previewTerminalWorkingDirectory = currentPathIsCloud || currentPathIsVirtual
+    ? null
+    : preview.type === "text" &&
+        (preview.scriptPreview != null || preview.pythonPreview != null)
+      ? (getPathParent(preview.path) ?? currentPath)
+      : currentPath;
   const explorerTerminalNamespace = useMemo(
     () => `explorer-terminal-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
     [instanceId],
   );
   const explorerTerminalWorkingDirectory = currentPathIsCloud || currentPathIsVirtual
     ? null
-    : preview.type === "text" &&
-        (preview.scriptPreview != null || preview.pythonPreview != null)
-      ? (getPathParent(preview.path) ?? currentPath)
-      : currentPath;
-  const previewSurfaceMode: PreviewSurfaceMode =
-    explorerTerminalVisible && explorerTerminalPlacement === "preview"
-      ? "terminal"
-      : "content";
-  const bottomTerminalVisible =
-    explorerTerminalVisible && explorerTerminalPlacement === "bottom";
+    : currentPath;
+  const bottomTerminalVisible = explorerTerminalVisible;
   const previewPanelVisible =
     !isCompactDock && previewEnabled && !usesWorkspaceCompactChrome;
   const hasPreview = previewPanelVisible && preview.type !== "none";

@@ -664,6 +664,7 @@ export default function App() {
   const uploadCancellationRef = useRef<Map<string, () => void>>(new Map());
   const historyWriteModeRef = useRef<"push" | "replace">("replace");
   const lastLocationKeyRef = useRef("");
+  const recoveredExplorerPathsRef = useRef<Set<string>>(new Set());
   const isApplyingPopStateRef = useRef(false);
   const consumedDownloadIntentKeyRef = useRef<string>("");
 
@@ -996,7 +997,10 @@ export default function App() {
     link.href = downloadUrl;
     link.download = entry.name;
     link.rel = "noreferrer";
+    link.style.display = "none";
+    document.body.appendChild(link);
     link.click();
+    link.remove();
 
     patchTransfer(transferId, {
       phase: "completed",
@@ -1236,6 +1240,23 @@ export default function App() {
       window.removeEventListener("popstate", handlePopState);
     };
   }, [setActiveTab]);
+
+  useEffect(() => {
+    if (
+      !loadingError
+      || currentPath.length === 0
+      || entries.length > 0
+      || recoveredExplorerPathsRef.current.has(currentPath)
+      || (!loadingError.startsWith("404") && !loadingError.startsWith("403"))
+    ) {
+      return;
+    }
+
+    recoveredExplorerPathsRef.current.add(currentPath);
+    historyWriteModeRef.current = "replace";
+    setCurrentPath("");
+    setLoadingError(null);
+  }, [currentPath, entries.length, loadingError]);
 
   useEffect(() => {
     if (
