@@ -14,6 +14,7 @@ use axum::extract::{DefaultBodyLimit, Multipart, Path as AxumPath, Query, State}
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::Json;
 use axum::Router;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
@@ -22,6 +23,11 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 use super::handlers::handle_multipart_upload;
+use super::push::{
+    get_mobile_push_config, register_mobile_push_subscription,
+    unregister_mobile_push_subscription, MobilePushSubscriptionInput,
+    MobilePushSubscriptionRemovalRequest,
+};
 use super::streaming::{resolve_sub_path, share_root_label, stream_file_response};
 use super::types::{
     MobileFolderIconRuleSnapshot, MobileIconThemeSnapshot, MobileLayoutSortBy,
@@ -276,6 +282,9 @@ pub(super) fn build_mobile_router(state: ShareState) -> Router {
         .route("/api/thumbnail", get(mobile_thumbnail_handler))
         .route("/api/icon", get(mobile_icon_handler))
         .route("/api/upload", post(mobile_upload_handler))
+        .route("/api/push/config", get(mobile_push_config_handler))
+        .route("/api/push/subscribe", post(mobile_push_subscribe_handler))
+        .route("/api/push/unsubscribe", post(mobile_push_unsubscribe_handler))
         .route("/files/{*path}", get(mobile_file_handler))
         .route("/icons/{*path}", get(mobile_built_in_icon_handler))
         .route("/app-icon.png", get(app_icon_handler))
@@ -297,6 +306,33 @@ async fn apple_touch_icon_handler() -> Response {
 async fn mobile_theme_handler() -> Response {
     let snapshot: MobileThemeSnapshot = ACTIVE_MOBILE_THEME_SNAPSHOT.read().await.clone();
     axum::Json(snapshot).into_response()
+}
+
+async fn mobile_push_config_handler(State(state): State<ShareState>) -> Response {
+    match get_mobile_push_config(&state.app_handle).await {
+        Ok(config) => (StatusCode::OK, Json(config)).into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error).into_response(),
+    }
+}
+
+async fn mobile_push_subscribe_handler(
+    State(state): State<ShareState>,
+    Json(input): Json<MobilePushSubscriptionInput>,
+) -> Response {
+    match register_mobile_push_subscription(&state.app_handle, input).await {
+        Ok(config) => (StatusCode::OK, Json(config)).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
+    }
+}
+
+async fn mobile_push_unsubscribe_handler(
+    State(state): State<ShareState>,
+    Json(request): Json<MobilePushSubscriptionRemovalRequest>,
+) -> Response {
+    match unregister_mobile_push_subscription(&state.app_handle, &request.endpoint).await {
+        Ok(config) => (StatusCode::OK, Json(config)).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
+    }
 }
 
 async fn mobile_search_status_handler(State(state): State<ShareState>) -> Response {

@@ -14,6 +14,7 @@ pub mod image_cutout_commands;
 pub mod image_commands;
 pub mod lan_share;
 mod linux_graphics;
+pub mod native_terminal;
 pub mod open_with;
 pub mod pdf_commands;
 pub mod plugin_commands;

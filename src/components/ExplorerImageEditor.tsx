@@ -14,7 +14,6 @@ import {
   ArrowUpRight,
   Check,
   Crop,
-  ImageIcon,
   RotateCcw,
   Save,
   X,
@@ -310,6 +309,9 @@ export const ExplorerImageEditor = forwardRef<
   const previewImageRef = useRef<HTMLImageElement | null>(null);
   const cropperImageRef = useRef<HTMLImageElement | null>(null);
   const cropperRef = useRef<Cropper | null>(null);
+  const baseImageRef = useRef<HTMLImageElement | null>(null);
+  const previewModeRef = useRef(mode);
+  const isCroppingRef = useRef(false);
   const savedImageSourceRef = useRef<string | null>(null);
   const savedFiltersRef = useRef<ExplorerImageFiltersState>(
     createDefaultImageFiltersState(),
@@ -317,6 +319,7 @@ export const ExplorerImageEditor = forwardRef<
   const dirtyRef = useRef(false);
   const mountedRef = useRef(true);
   const blobUrlsRef = useRef<Set<string>>(new Set());
+  const deferredPreviewCleanupSourcesRef = useRef<Set<string>>(new Set());
   const savedStatusTimeoutRef = useRef<number | null>(null);
 
   const [baseImage, setBaseImage] = useState<HTMLImageElement | null>(null);
@@ -335,6 +338,18 @@ export const ExplorerImageEditor = forwardRef<
   const isCutoutMode = workflowTabId === "cutout" && isEditableFormat;
   const showEditingChrome = mode === "edit" && isEditableFormat && !isCutoutMode;
   const keybindings = useSettingsStore((state) => state.settings.keybindings);
+
+  useEffect(() => {
+    baseImageRef.current = baseImage;
+  }, [baseImage]);
+
+  useEffect(() => {
+    previewModeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    isCroppingRef.current = isCropping;
+  }, [isCropping]);
 
   useEffect(() => {
     if (!onRegisterWorkflowTabs) {
@@ -375,6 +390,22 @@ export const ExplorerImageEditor = forwardRef<
     }
     return value;
   }, []);
+
+  const deferPreviewCleanupSource = useCallback((value: string | null) => {
+    if (!value || !value.startsWith("blob:")) {
+      return;
+    }
+
+    deferredPreviewCleanupSourcesRef.current.add(value);
+  }, []);
+
+  const flushDeferredPreviewCleanupSources = useCallback(() => {
+    for (const value of deferredPreviewCleanupSourcesRef.current) {
+      revokeTrackedBlobUrl(value);
+    }
+
+    deferredPreviewCleanupSourcesRef.current.clear();
+  }, [revokeTrackedBlobUrl]);
 
   const clearCropperInstance = useCallback(() => {
     cropperRef.current?.destroy();
@@ -710,13 +741,18 @@ export const ExplorerImageEditor = forwardRef<
       mountedRef.current = false;
       clearSavedStatusTimeout();
       clearCropperInstance();
+      flushDeferredPreviewCleanupSources();
 
       for (const value of blobUrlsRef.current) {
         URL.revokeObjectURL(value);
       }
       blobUrlsRef.current.clear();
     };
-  }, [clearCropperInstance, clearSavedStatusTimeout]);
+  }, [
+    clearCropperInstance,
+    clearSavedStatusTimeout,
+    flushDeferredPreviewCleanupSources,
+  ]);
 
   useEffect(() => {
     if (!isEditableFormat) {
@@ -726,15 +762,29 @@ export const ExplorerImageEditor = forwardRef<
 
     let cancelled = false;
     const defaultFilters = createDefaultImageFiltersState();
+    const previousSavedImageSource = savedImageSourceRef.current;
+    const shouldPreserveCurrentPreview =
+      previewModeRef.current === "preview" &&
+      Boolean(baseImageRef.current) &&
+      !dirtyRef.current &&
+      !isCroppingRef.current;
 
     clearSavedStatusTimeout();
     clearCropperInstance();
-    revokeTrackedBlobUrl(savedImageSourceRef.current);
+    if (shouldPreserveCurrentPreview) {
+      deferPreviewCleanupSource(previousSavedImageSource);
+    } else {
+      flushDeferredPreviewCleanupSources();
+      revokeTrackedBlobUrl(previousSavedImageSource);
+    }
+
     savedImageSourceRef.current = imageSource;
     savedFiltersRef.current = cloneImageFiltersState(defaultFilters);
     dirtyRef.current = false;
 
-    setBaseImage(null);
+    if (!shouldPreserveCurrentPreview) {
+      setBaseImage(null);
+    }
     setFilters(defaultFilters);
     resetPreviewViewport();
     setIsCropping(false);
@@ -749,12 +799,15 @@ export const ExplorerImageEditor = forwardRef<
 
         setBaseImage(image);
         resetPreviewViewport();
+        flushDeferredPreviewCleanupSources();
       })
       .catch((error) => {
         if (cancelled || !mountedRef.current) {
           return;
         }
 
+        setBaseImage(null);
+        flushDeferredPreviewCleanupSources();
         setSaveState("error");
         setStatusMessage(String(error));
       });
@@ -765,6 +818,8 @@ export const ExplorerImageEditor = forwardRef<
   }, [
     clearCropperInstance,
     clearSavedStatusTimeout,
+    deferPreviewCleanupSource,
+    flushDeferredPreviewCleanupSources,
     imagePath,
     imageSource,
     isEditableFormat,
@@ -1019,22 +1074,6 @@ export const ExplorerImageEditor = forwardRef<
                 : "default",
             }}
           >
-            {!baseImage && (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  color: "var(--overlay-text-muted)",
-                }}
-              >
-                <ImageIcon size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
-                <span style={{ fontSize: 13, fontWeight: 500 }}>
-                  Loading image...
-                </span>
-              </div>
-            )}
-
             {baseImage && (
               <img
                 ref={previewImageRef}

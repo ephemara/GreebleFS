@@ -2092,6 +2092,48 @@ describe("FileExplorer view modes", () => {
     });
   });
 
+  it("uses Ctrl+C to arm Dolphin-style selection mode before copying", async () => {
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    expect(getChromeControl("statusSelectionMode")).toBeNull();
+
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(getChromeControl("statusSelectionMode")).not.toBeNull();
+    });
+
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(getChromeControl("statusSelectionMode")).toBeNull();
+    });
+
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(getChromeControl("statusSelectionMode")).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByText("notes.txt"));
+
+    await waitFor(() => {
+      expect(getChromeControl("statusSelectionMode")).not.toBeNull();
+      expect(getChromeControl("statusSelectionSummary")).toHaveTextContent(
+        "1 selected",
+      );
+      expect(screen.queryByRole("button", { name: /copy path/i })).toBeNull();
+    });
+
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByText(/copy queue:/i)).toBeInTheDocument();
+      expect(getChromeControl("statusSelectionMode")).toBeNull();
+    });
+  });
+
   it("toggles the sources panel from the explorer hotkey", async () => {
     renderExplorer();
     await screen.findByText("alpha");

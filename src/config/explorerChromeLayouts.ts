@@ -46,6 +46,7 @@ export type BuiltInExplorerChromeControlId =
   | 'shellLayout'
   | 'viewLayout'
   | 'togglePreview'
+  | 'selectionModeToggle'
   | 'toggleHiddenFiles'
   | 'refresh'
   | 'customizeHome'
@@ -89,6 +90,7 @@ export type BuiltInExplorerChromeControlId =
   | 'previewTerminalToggle'
   | 'previewClose'
   | 'statusItemCount'
+  | 'statusSelectionMode'
   | 'statusSelectionSummary'
   | 'statusModeProfile'
   | 'statusViewSummary'
@@ -311,6 +313,10 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
         explorerToolbar: { zone: 'primaryEnd', order: 60 },
         explorerTopbar: { zone: 'end', order: 40 },
       },
+      selectionModeToggle: {
+        explorerToolbar: { zone: 'primaryEnd', order: 65 },
+        explorerTopbar: { zone: 'end', order: 45 },
+      },
       toggleHiddenFiles: {
         explorerToolbar: { zone: 'primaryEnd', order: 70 },
       },
@@ -440,6 +446,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       statusItemCount: {
         explorerStatusBar: { zone: 'start', order: 10 },
       },
+      statusSelectionMode: {
+        explorerStatusBar: { zone: 'start', order: 15 },
+      },
       statusSelectionSummary: {
         explorerStatusBar: { zone: 'start', order: 20 },
       },
@@ -559,6 +568,10 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       togglePreview: {
         explorerToolbar: { zone: 'secondaryEnd', order: 90 },
         explorerTopbar: { zone: 'end', order: 40 },
+      },
+      selectionModeToggle: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 95 },
+        explorerTopbar: { zone: 'end', order: 45 },
       },
       toggleHiddenFiles: {
         explorerToolbar: { zone: 'primaryEnd', order: 50 },
@@ -688,6 +701,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       statusItemCount: {
         explorerStatusBar: { zone: 'start', order: 10 },
+      },
+      statusSelectionMode: {
+        explorerStatusBar: { zone: 'start', order: 15 },
       },
       statusSelectionSummary: {
         explorerStatusBar: { zone: 'start', order: 20 },

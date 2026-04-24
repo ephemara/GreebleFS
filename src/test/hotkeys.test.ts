@@ -53,6 +53,9 @@ describe('hotkey config helpers', () => {
     expect(defaults.togglePreviewLock).toBe('Ctrl+Alt+P');
     expect(defaults.selectAllExplorer).toBe('Ctrl+A');
     expect(defaults.clearExplorerSelection).toBe('Ctrl+Shift+A');
+    expect(defaults.copySelection).toBe('Ctrl+C');
+    expect(defaults.cutSelection).toBe('Ctrl+X');
+    expect(defaults.pasteSelection).toBe('Ctrl+V');
     expect(defaults.openInTerminal).toBe('Ctrl+Enter');
     expect(defaults.togglePreviewTerminal).toBe('Ctrl+Alt+T');
     expect(defaults.revealInExplorer).toBe('Ctrl+Alt+R');

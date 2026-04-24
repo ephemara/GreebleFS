@@ -152,34 +152,18 @@ function toneColor(tone: CutoutStatusTone): string {
   }
 }
 
-function toolChipStyle(active: boolean): CSSProperties {
+function overlayPanelStyle(): CSSProperties {
   return {
-    appearance: "none",
     display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-start",
-    gap: 4,
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: active
-      ? "1px solid rgba(96, 165, 250, 0.48)"
-      : "1px solid rgba(255,255,255,0.12)",
-    background: active ? "rgba(59, 130, 246, 0.18)" : "rgba(255,255,255,0.04)",
-    color: active ? "#f8fbff" : "var(--overlay-text-primary)",
-    textAlign: "left",
-    cursor: "pointer",
-  };
-}
-
-function panelCardStyle(): CSSProperties {
-  return {
-    display: "grid",
-    gap: 10,
-    padding: 12,
+    alignItems: "center",
+    gap: 8,
+    padding: 8,
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))",
-    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+    border: "1px solid var(--overlay-explorer-preview-border, rgba(255,255,255,0.12))",
+    background:
+      "linear-gradient(180deg, rgba(10,14,24,0.82), rgba(10,14,24,0.68))",
+    boxShadow: "0 18px 34px rgba(0,0,0,0.28)",
+    backdropFilter: "blur(14px)",
   };
 }
 
@@ -187,6 +171,31 @@ function sliderStyle(): CSSProperties {
   return {
     width: "100%",
     accentColor: "#60a5fa",
+  };
+}
+
+function segmentedButtonStyle(active: boolean): CSSProperties {
+  return {
+    appearance: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 999,
+    border: active
+      ? "1px solid rgba(96, 165, 250, 0.42)"
+      : "1px solid rgba(255,255,255,0.12)",
+    background: active
+      ? "rgba(59, 130, 246, 0.2)"
+      : "rgba(255,255,255,0.04)",
+    color: active ? "#f8fbff" : "var(--overlay-text-muted)",
+    padding: "7px 12px",
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: "0.02em",
+    cursor: "pointer",
+    transition:
+      "background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease",
   };
 }
 
@@ -321,6 +330,38 @@ async function buildPreviewSourcePixels(
   };
 }
 
+async function buildPreviewSourcePixelsWithFallback(
+  sourceImageUrl: string,
+  fallbackSourceImageUrl: string,
+  width: number,
+  height: number,
+): Promise<{
+  pixels: ExplorerImageCutoutSourcePixels;
+  canvas: HTMLCanvasElement;
+  usedFallback: boolean;
+}> {
+  try {
+    const result = await buildPreviewSourcePixels(sourceImageUrl, width, height);
+    return {
+      ...result,
+      usedFallback: false,
+    };
+  } catch (primaryError) {
+    if (fallbackSourceImageUrl === sourceImageUrl) {
+      throw primaryError;
+    }
+    const fallbackResult = await buildPreviewSourcePixels(
+      fallbackSourceImageUrl,
+      width,
+      height,
+    );
+    return {
+      ...fallbackResult,
+      usedFallback: true,
+    };
+  }
+}
+
 async function buildInitialMaskFromDataUrl(
   dataUrl: string,
   width: number,
@@ -405,12 +446,20 @@ export function ExplorerImageCutoutSurface({
   const [activeToolId, setActiveToolId] = useState<ExplorerImageCutoutToolId>(
     DEFAULT_IMAGE_CUTOUT_TOOL_ID,
   );
+  const [activeEditMode, setActiveEditMode] =
+    useState<ExplorerImageCutoutEditMode>("add");
+  const [activeInspectorTab, setActiveInspectorTab] = useState<
+    "select" | "refine"
+  >("select");
   const [sparkTolerance, setSparkTolerance] = useState(DEFAULT_SPARK_TOLERANCE);
   const [sweepTolerance, setSweepTolerance] = useState(DEFAULT_SWEEP_TOLERANCE);
   const [sweepSize, setSweepSize] = useState(DEFAULT_SWEEP_SIZE);
   const [sweepSoftness, setSweepSoftness] = useState(DEFAULT_SWEEP_SOFTNESS);
   const [edgeSoftness, setEdgeSoftness] = useState(DEFAULT_EDGE_SOFTNESS);
   const [edgePull, setEdgePull] = useState(DEFAULT_EDGE_PULL);
+  const [previewReady, setPreviewReady] = useState(false);
+  const [usedSourcePreviewFallback, setUsedSourcePreviewFallback] =
+    useState(false);
 
   const focusSurface = useCallback(() => {
     rootRef.current?.focus();
@@ -468,6 +517,7 @@ export function ExplorerImageCutoutSurface({
         height: resolvedMask.height,
         points: buildCutoutBoundaryPoints(resolvedMask),
       };
+      setPreviewReady(true);
     });
   }, []);
 
@@ -575,8 +625,8 @@ export function ExplorerImageCutoutSurface({
 
   const resolveEditModeFromPointer = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>): ExplorerImageCutoutEditMode =>
-      event.altKey || event.button === 2 ? "subtract" : "add",
-    [],
+      event.altKey || event.button === 2 ? "subtract" : activeEditMode,
+    [activeEditMode],
   );
 
   const applySparkAtPointer = useCallback(
@@ -707,7 +757,13 @@ export function ExplorerImageCutoutSurface({
   const handleSurfacePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       focusSurface();
-      if (isBooting || isMutating || event.button > 2) {
+      if (
+        isBooting ||
+        isMutating ||
+        event.button > 2 ||
+        baseMaskRef.current == null ||
+        sourcePixelsRef.current == null
+      ) {
         return;
       }
       const point = resolveMaskPoint(event);
@@ -761,6 +817,8 @@ export function ExplorerImageCutoutSurface({
     historyIndexRef.current = 0;
     boundaryRef.current = null;
     activeSweepStrokeRef.current = null;
+    setPreviewReady(false);
+    setUsedSourcePreviewFallback(false);
     setHistoryIndex(0);
     setHistoryLength(1);
 
@@ -782,9 +840,10 @@ export function ExplorerImageCutoutSurface({
           return;
         }
 
-        const [{ pixels, canvas }, initialMask] = await Promise.all([
-          buildPreviewSourcePixels(
+        const [sourcePreview, initialMask] = await Promise.all([
+          buildPreviewSourcePixelsWithFallback(
             sourceImageUrl,
+            snapshot.cutoutPreviewDataUrl,
             snapshot.previewWidth,
             snapshot.previewHeight,
           ),
@@ -801,14 +860,17 @@ export function ExplorerImageCutoutSurface({
         }
 
         sessionIdRef.current = snapshot.sessionId;
-        sourcePixelsRef.current = pixels;
-        sourcePreviewCanvasRef.current = canvas;
+        sourcePixelsRef.current = sourcePreview.pixels;
+        sourcePreviewCanvasRef.current = sourcePreview.canvas;
+        setUsedSourcePreviewFallback(sourcePreview.usedFallback);
         resetHistoryState(initialMask);
         setSessionSnapshot(snapshot);
-        setStatusTone("success");
+        setStatusTone(sourcePreview.usedFallback ? "warning" : "success");
         setStatusMessage(
-          snapshot.diagnostics.message?.trim() ||
-            "Auto cutout ready. Refine locally with Spark or Sweep.",
+          sourcePreview.usedFallback
+            ? "Auto cutout ready. Source preview fallback is active, so selection expansion may feel less precise."
+            : snapshot.diagnostics.message?.trim() ||
+                "Auto cutout ready. Use Spark or Sweep to tighten the subject, then refine the edge.",
         );
         setIsBooting(false);
         focusSurface();
@@ -1096,6 +1158,20 @@ export function ExplorerImageCutoutSurface({
   );
 
   const hasSession = sessionSnapshot != null && baseMaskRef.current != null;
+  const canUseInteractiveTools = hasSession && sourcePixelsRef.current != null;
+  const checkerboardCSS = `
+    linear-gradient(45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.02) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.02) 75%)
+  `;
+  const stageCursor = isMutating
+    ? "progress"
+    : !canUseInteractiveTools
+      ? "default"
+      : activeToolId === "spark"
+        ? "cell"
+        : "crosshair";
 
   return (
     <div
@@ -1107,65 +1183,238 @@ export function ExplorerImageCutoutSurface({
       style={{
         width: "100%",
         height: "100%",
-        display: "flex",
-        flexDirection: "column",
         position: "absolute",
         inset: 0,
         overflow: "hidden",
         outline: "none",
-        background:
-          "radial-gradient(circle at top, rgba(255,255,255,0.06), transparent 52%), var(--overlay-explorer-preview-bg, #0f172a)",
+        background: "var(--overlay-explorer-preview-bg, #111827)",
       }}
     >
       <div
         style={{
+          position: "absolute",
+          inset: 0,
+          backgroundImage:
+            `radial-gradient(circle at top, rgba(255,255,255,0.06), transparent 52%), ${checkerboardCSS}`,
+          backgroundSize: "auto, 16px 16px, 16px 16px, 16px 16px, 16px 16px",
+          backgroundPosition: "0 0, 0 0, 0 8px, 8px -8px, -8px 0px",
+          backgroundColor: "rgba(0,0,0,0.38)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          padding: "10px 12px",
-          borderBottom: "1px solid var(--overlay-explorer-preview-border, rgba(255,255,255,0.1))",
-          background: "rgba(10, 14, 24, 0.62)",
-          backdropFilter: "blur(14px)",
-          flexWrap: "wrap",
+          justifyContent: "center",
+          padding: 16,
+          overflow: "hidden",
         }}
       >
-        <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+        <div
+          ref={frameRef}
+          onPointerDown={handleSurfacePointerDown}
+          onPointerMove={continueSweepStroke}
+          onPointerUp={endSweepStroke}
+          onPointerCancel={endSweepStroke}
+          onLostPointerCapture={endSweepStroke}
+          onContextMenu={(event) => event.preventDefault()}
+          style={{
+            position: "relative",
+            display: "grid",
+            alignItems: "center",
+            justifyContent: "center",
+            maxWidth: "100%",
+            maxHeight: "100%",
+            overflow: "hidden",
+            userSelect: "none",
+            cursor: stageCursor,
+          }}
+        >
+          {isBooting && !sessionSnapshot ? (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 12,
+                color: "var(--overlay-text-muted)",
+              }}
+            >
+              <Loader2 size={26} className="animate-spin" />
+              <span style={{ fontSize: 12 }}>Building the initial subject cutout…</span>
+            </div>
+          ) : sessionSnapshot ? (
+            <>
+              {!previewReady ? (
+                <img
+                  src={sessionSnapshot.cutoutPreviewDataUrl}
+                  alt={`${imageName} cutout preview`}
+                  draggable={false}
+                  style={{
+                    gridArea: "1 / 1",
+                    display: "block",
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    objectFit: "contain",
+                    filter: filterCss,
+                    boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
+                  }}
+                />
+              ) : null}
+              <canvas
+                ref={previewCanvasRef}
+                aria-label={`${imageName} cutout preview`}
+                style={{
+                  gridArea: "1 / 1",
+                  display: "block",
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  objectFit: "contain",
+                  filter: filterCss,
+                  boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
+                  opacity: previewReady ? 1 : 0,
+                  transition: "opacity 120ms ease",
+                }}
+              />
+              <canvas
+                ref={marchingAntsCanvasRef}
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  pointerEvents: "none",
+                  imageRendering: "pixelated",
+                  opacity: previewReady ? 1 : 0,
+                  transition: "opacity 120ms ease",
+                }}
+              />
+            </>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 12,
+                color: "#fca5a5",
+                padding: 24,
+              }}
+            >
+              <Scissors size={26} />
+              <span style={{ fontSize: 12 }}>{statusMessage}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          inset: "12px 12px auto 12px",
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+          pointerEvents: "none",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gap: 8,
+            maxWidth: "min(420px, calc(100% - 120px))",
+            pointerEvents: "auto",
+          }}
+        >
           <div
             style={{
-              display: "inline-flex",
+              ...overlayPanelStyle(),
               alignItems: "center",
-              gap: 8,
-              color: "var(--overlay-text-primary)",
-              fontSize: 12,
-              fontWeight: 700,
+              minWidth: 0,
             }}
           >
-            <Scissors size={14} />
-            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-              {imageName}
+            <Scissors size={13} />
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.03em",
+                color: "var(--overlay-text-primary)",
+              }}
+            >
+              Cutout
+            </span>
+            <span
+              style={{
+                minWidth: 0,
+                fontSize: 10,
+                color: toneColor(statusTone),
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {statusMessage}
             </span>
           </div>
+
           <div
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap",
-              fontSize: 10,
-              color: toneColor(statusTone),
+              ...overlayPanelStyle(),
+              flexDirection: "column",
+              alignItems: "stretch",
+              gap: 8,
             }}
           >
-            <span>{statusMessage}</span>
-            {sessionSnapshot ? (
-              <span style={{ color: "var(--overlay-text-muted)" }}>
-                Auto pass · {sessionSnapshot.diagnostics.backendKind} · {sessionSnapshot.previewWidth}
-                ×{sessionSnapshot.previewHeight}
-              </span>
-            ) : null}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {imageCutoutToolDefinitions.map((tool) => (
+                <button
+                  key={tool.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveToolId(tool.id);
+                    setActiveInspectorTab("select");
+                  }}
+                  style={segmentedButtonStyle(tool.id === activeToolId)}
+                >
+                  {tool.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setActiveEditMode("add")}
+                style={segmentedButtonStyle(activeEditMode === "add")}
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveEditMode("subtract")}
+                style={segmentedButtonStyle(activeEditMode === "subtract")}
+              >
+                Trim
+              </button>
+            </div>
           </div>
         </div>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            gap: 8,
+            flexWrap: "wrap",
+            pointerEvents: "auto",
+          }}
+        >
           <button
             type="button"
             onClick={() => restoreHistoryIndex(Math.max(0, historyIndex - 1))}
@@ -1233,244 +1482,184 @@ export function ExplorerImageCutoutSurface({
         </div>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: "flex",
-          gap: 12,
-          padding: 12,
-          flexWrap: "wrap",
-          backgroundImage:
-            "linear-gradient(45deg, rgba(255,255,255,0.02) 25%, transparent 25%), linear-gradient(-45deg, rgba(255,255,255,0.02) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.02) 75%), linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.02) 75%)",
-          backgroundSize: "18px 18px",
-          backgroundPosition: "0 0, 0 9px, 9px -9px, -9px 0px",
-        }}
-      >
+      {hasSession ? (
         <div
           style={{
-            width: 296,
-            maxWidth: "100%",
-            display: "grid",
-            gap: 12,
-            alignContent: "start",
-          }}
-        >
-          <div style={panelCardStyle()}>
-            <div style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>Tool</span>
-              <span style={{ fontSize: 12, color: "var(--overlay-text-primary)", fontWeight: 700 }}>
-                {activeToolDefinition.label}
-              </span>
-              <span style={{ fontSize: 10, color: "var(--overlay-text-dim, rgba(255,255,255,0.5))" }}>
-                {activeToolDefinition.description}
-              </span>
-            </div>
-            <div style={{ display: "grid", gap: 8 }}>
-              {imageCutoutToolDefinitions.map((tool) => (
-                <button
-                  key={tool.id}
-                  type="button"
-                  onClick={() => setActiveToolId(tool.id)}
-                  style={toolChipStyle(tool.id === activeToolId)}
-                >
-                  <span style={{ fontSize: 11, fontWeight: 700 }}>{tool.label}</span>
-                  <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>
-                    {tool.description}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={panelCardStyle()}>
-            <div style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>Live Tools</span>
-              <span style={{ fontSize: 10, color: "var(--overlay-text-dim, rgba(255,255,255,0.5))" }}>
-                {describeToolInteraction(activeToolId)}
-              </span>
-            </div>
-            {activeToolId === "spark" ? (
-              <ControlSlider
-                label="Color Reach"
-                value={sparkTolerance}
-                min={0}
-                max={100}
-                step={1}
-                onChange={setSparkTolerance}
-                helper="Higher values let Spark jump across looser color matches."
-              />
-            ) : (
-              <>
-                <ControlSlider
-                  label="Sweep Size"
-                  value={sweepSize}
-                  min={6}
-                  max={140}
-                  step={1}
-                  onChange={setSweepSize}
-                  helper="Larger sweeps cover more pixels per pass."
-                />
-                <ControlSlider
-                  label="Sweep Reach"
-                  value={sweepTolerance}
-                  min={0}
-                  max={100}
-                  step={1}
-                  onChange={setSweepTolerance}
-                  helper="Higher reach accepts a wider range of nearby colors."
-                />
-                <ControlSlider
-                  label="Sweep Softness"
-                  value={sweepSoftness}
-                  min={0}
-                  max={100}
-                  step={1}
-                  onChange={setSweepSoftness}
-                  helper="Soft sweeps taper their edges instead of cutting hard circles."
-                />
-              </>
-            )}
-          </div>
-
-          <div style={panelCardStyle()}>
-            <div style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>Edge Tuning</span>
-              <span style={{ fontSize: 10, color: "var(--overlay-text-dim, rgba(255,255,255,0.5))" }}>
-                Shape the live edge without re-running the auto pass.
-              </span>
-            </div>
-            <ControlSlider
-              label="Soft Edge"
-              value={edgeSoftness}
-              min={0}
-              max={24}
-              step={1}
-              onChange={setEdgeSoftness}
-              helper="Adds feather-like softness around the mask boundary."
-            />
-            <ControlSlider
-              label="Edge Pull"
-              value={edgePull}
-              min={-24}
-              max={24}
-              step={1}
-              onChange={setEdgePull}
-              helper="Negative values tighten the edge. Positive values grow it."
-            />
-          </div>
-
-          <div style={panelCardStyle()}>
-            <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>Gestures</span>
-            <div style={{ display: "grid", gap: 4, fontSize: 10, color: "var(--overlay-text-primary)" }}>
-              <span>Click / drag = add to subject</span>
-              <span>Alt-click / right-drag = trim from subject</span>
-              <span>Ctrl+C = copy</span>
-              <span>Ctrl+S = save sibling PNG</span>
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            flex: "1 1 360px",
-            minWidth: 0,
-            minHeight: 320,
+            position: "absolute",
+            inset: "auto 12px 12px 12px",
             display: "flex",
-            alignItems: "stretch",
+            justifyContent: "center",
+            pointerEvents: "none",
           }}
         >
           <div
             style={{
-              flex: 1,
-              minHeight: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              overflow: "hidden",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.08)",
-              background:
-                "radial-gradient(circle at center, rgba(255,255,255,0.03), rgba(0,0,0,0.26))",
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+              ...overlayPanelStyle(),
+              width: "min(620px, 100%)",
+              maxWidth: "100%",
+              flexDirection: "column",
+              alignItems: "stretch",
+              gap: 10,
+              pointerEvents: "auto",
             }}
           >
-            {isBooting && !sessionSnapshot ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => setActiveInspectorTab("select")}
+                  style={segmentedButtonStyle(activeInspectorTab === "select")}
+                >
+                  Select
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveInspectorTab("refine")}
+                  style={segmentedButtonStyle(activeInspectorTab === "refine")}
+                >
+                  Refine
+                </button>
+              </div>
+
               <div
                 style={{
-                  display: "flex",
-                  flexDirection: "column",
+                  display: "inline-flex",
                   alignItems: "center",
-                  gap: 12,
+                  gap: 8,
+                  flexWrap: "wrap",
+                  fontSize: 10,
                   color: "var(--overlay-text-muted)",
                 }}
               >
-                <Loader2 size={26} className="animate-spin" />
-                <span style={{ fontSize: 12 }}>Building the initial subject cutout…</span>
+                <span style={{ color: "var(--overlay-text-primary)" }}>
+                  {activeInspectorTab === "select" ? activeToolDefinition.label : "Edge Finish"}
+                </span>
+                <span>{activeEditMode === "add" ? "Add" : "Trim"}</span>
+                {sessionSnapshot ? (
+                  <span>
+                    {sessionSnapshot.previewWidth}×{sessionSnapshot.previewHeight}
+                  </span>
+                ) : null}
               </div>
-            ) : sessionSnapshot ? (
-              <div
-                ref={frameRef}
-                onPointerDown={handleSurfacePointerDown}
-                onPointerMove={continueSweepStroke}
-                onPointerUp={endSweepStroke}
-                onPointerCancel={endSweepStroke}
-                onLostPointerCapture={endSweepStroke}
-                onContextMenu={(event) => event.preventDefault()}
-                style={{
-                  position: "relative",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  maxWidth: "100%",
-                  maxHeight: "100%",
-                  cursor: isMutating ? "progress" : activeToolId === "spark" ? "cell" : "crosshair",
-                  userSelect: "none",
-                }}
-              >
-                <canvas
-                  ref={previewCanvasRef}
-                  aria-label={`${imageName} cutout preview`}
-                  style={{
-                    display: "block",
-                    maxWidth: "100%",
-                    maxHeight: "100%",
-                    objectFit: "contain",
-                    filter: filterCss,
-                    boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
-                  }}
-                />
-                <canvas
-                  ref={marchingAntsCanvasRef}
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    pointerEvents: "none",
-                    imageRendering: "pixelated",
-                  }}
-                />
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 12,
-                  color: "#fca5a5",
-                  padding: 24,
-                }}
-              >
-                <Scissors size={26} />
-                <span style={{ fontSize: 12 }}>{statusMessage}</span>
-              </div>
-            )}
+            </div>
+
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--overlay-text-muted)",
+              }}
+            >
+              {activeInspectorTab === "select"
+                ? describeToolInteraction(activeToolId)
+                : "Dial in the edge only after the subject selection feels right."}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              }}
+            >
+              {activeInspectorTab === "select" ? (
+                activeToolId === "spark" ? (
+                  <ControlSlider
+                    label="Color Reach"
+                    value={sparkTolerance}
+                    min={0}
+                    max={100}
+                    step={1}
+                    onChange={setSparkTolerance}
+                    helper="Higher values let Spark jump across looser color matches."
+                  />
+                ) : (
+                  <>
+                    <ControlSlider
+                      label="Sweep Size"
+                      value={sweepSize}
+                      min={6}
+                      max={140}
+                      step={1}
+                      onChange={setSweepSize}
+                      helper="Larger sweeps cover more pixels per pass."
+                    />
+                    <ControlSlider
+                      label="Sweep Reach"
+                      value={sweepTolerance}
+                      min={0}
+                      max={100}
+                      step={1}
+                      onChange={setSweepTolerance}
+                      helper="Higher reach accepts a wider range of nearby colors."
+                    />
+                    <ControlSlider
+                      label="Sweep Softness"
+                      value={sweepSoftness}
+                      min={0}
+                      max={100}
+                      step={1}
+                      onChange={setSweepSoftness}
+                      helper="Soft sweeps taper their edge instead of carving hard circles."
+                    />
+                  </>
+                )
+              ) : (
+                <>
+                  <ControlSlider
+                    label="Soft Edge"
+                    value={edgeSoftness}
+                    min={0}
+                    max={24}
+                    step={1}
+                    onChange={setEdgeSoftness}
+                    helper="Adds feather-like softness around the matte edge."
+                  />
+                  <ControlSlider
+                    label="Edge Pull"
+                    value={edgePull}
+                    min={-24}
+                    max={24}
+                    step={1}
+                    onChange={setEdgePull}
+                    helper="Negative values tighten. Positive values expand."
+                  />
+                </>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+                fontSize: 10,
+                color: "var(--overlay-text-dim, rgba(255,255,255,0.56))",
+              }}
+            >
+              <span>
+                {activeInspectorTab === "select"
+                  ? "Hold Alt or use right-click to trim temporarily without leaving Add mode."
+                  : "Refine stays local until you copy, drag, or save the cutout."}
+              </span>
+              {usedSourcePreviewFallback ? (
+                <span style={{ color: toneColor("warning") }}>
+                  Using host preview fallback
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

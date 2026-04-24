@@ -233,6 +233,8 @@ pub async fn start_lan_share(
         https_handle: https_handle.map(|(handle, _)| handle),
         https_task,
         mdns_daemon,
+        share_path: state.share_path.clone(),
+        file_hub: state.file_hub.clone(),
     });
 
     let address = match local_ip {

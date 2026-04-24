@@ -389,7 +389,8 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
   {
     key: 'copySelection',
     label: 'Copy Selection',
-    description: 'Copy the current explorer selection into the transfer queue.',
+    description:
+      'Copy the current explorer selection into the transfer queue, or toggle Explorer selection mode when nothing is selected.',
     defaultValue: 'Ctrl+C',
     scope: 'local',
   },

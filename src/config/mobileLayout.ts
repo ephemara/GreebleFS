@@ -13,14 +13,25 @@ export const mobileLayoutSortByOptions = [
 ] as const;
 
 export const mobileLayoutSortOrderOptions = ['asc', 'desc'] as const;
+export const mobileLayoutTouchComfortOptions = [
+  'compact',
+  'balanced',
+  'comfortable',
+] as const;
 
 export type MobileLayoutViewMode = typeof mobileLayoutViewModes[number];
 export type MobileLayoutSortBy = typeof mobileLayoutSortByOptions[number];
 export type MobileLayoutSortOrder = typeof mobileLayoutSortOrderOptions[number];
+export type MobileLayoutTouchComfort =
+  typeof mobileLayoutTouchComfortOptions[number];
 
 export interface MobileLayoutSettings {
   viewMode: MobileLayoutViewMode;
   gridZoom: number;
+  interfaceScale: number;
+  chromeScale: number;
+  pagePadding: number;
+  touchComfort: MobileLayoutTouchComfort;
   showHiddenFiles: boolean;
   sortBy: MobileLayoutSortBy;
   sortOrder: MobileLayoutSortOrder;
@@ -31,6 +42,10 @@ export interface MobileLayoutSettings {
 export const defaultMobileLayoutSettings: MobileLayoutSettings = {
   viewMode: 'icons-m',
   gridZoom: 1,
+  interfaceScale: 1.08,
+  chromeScale: 1.08,
+  pagePadding: 16,
+  touchComfort: 'comfortable',
   showHiddenFiles: false,
   sortBy: 'name',
   sortOrder: 'asc',
@@ -69,7 +84,50 @@ export function normalizeMobileGridZoom(
   }
 
   const rounded = Math.round(value * 100) / 100;
-  return Math.max(0.7, Math.min(1.8, rounded));
+  return Math.max(0.7, Math.min(2.6, rounded));
+}
+
+export function normalizeMobileInterfaceScale(
+  value: unknown,
+  fallback: number = defaultMobileLayoutSettings.interfaceScale,
+): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  const rounded = Math.round(value * 100) / 100;
+  return Math.max(0.85, Math.min(1.6, rounded));
+}
+
+export function normalizeMobileChromeScale(
+  value: unknown,
+  fallback: number = defaultMobileLayoutSettings.chromeScale,
+): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  const rounded = Math.round(value * 100) / 100;
+  return Math.max(0.85, Math.min(1.6, rounded));
+}
+
+export function normalizeMobilePagePadding(
+  value: unknown,
+  fallback: number = defaultMobileLayoutSettings.pagePadding,
+): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(10, Math.min(32, Math.round(value)));
+}
+
+export function normalizeMobileTouchComfort(
+  value: unknown,
+): MobileLayoutTouchComfort {
+  return mobileLayoutTouchComfortOptions.includes(value as MobileLayoutTouchComfort)
+    ? (value as MobileLayoutTouchComfort)
+    : defaultMobileLayoutSettings.touchComfort;
 }
 
 export function normalizeMobileLayoutSettings(
@@ -84,6 +142,19 @@ export function normalizeMobileLayoutSettings(
   return {
     viewMode: normalizeMobileLayoutViewMode(merged.viewMode),
     gridZoom: normalizeMobileGridZoom(merged.gridZoom, base.gridZoom),
+    interfaceScale: normalizeMobileInterfaceScale(
+      merged.interfaceScale,
+      base.interfaceScale,
+    ),
+    chromeScale: normalizeMobileChromeScale(
+      merged.chromeScale,
+      base.chromeScale,
+    ),
+    pagePadding: normalizeMobilePagePadding(
+      merged.pagePadding,
+      base.pagePadding,
+    ),
+    touchComfort: normalizeMobileTouchComfort(merged.touchComfort),
     showHiddenFiles: merged.showHiddenFiles === true,
     sortBy: normalizeMobileLayoutSortBy(merged.sortBy),
     sortOrder: normalizeMobileLayoutSortOrder(merged.sortOrder),

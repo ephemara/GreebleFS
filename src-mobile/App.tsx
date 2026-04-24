@@ -25,6 +25,14 @@ import {
   type MobileBrowseRequestOptions,
 } from "./mobileApi";
 import {
+  listenToMobilePushMessages,
+  loadMobilePushRuntimeSnapshot,
+  subscribeMobilePushNotifications,
+  unsubscribeMobilePushNotifications,
+  type MobilePushNotificationIntent,
+  type MobilePushRuntimeSnapshot,
+} from "./mobilePush";
+import {
   defaultMobileLayoutSettings,
   isMobileGridViewMode,
   normalizeMobileGridZoom,
@@ -55,6 +63,11 @@ import type {
 interface MobileLocationState {
   tab: MobileTabId;
   path: string;
+}
+
+interface MobileViewportSnapshot {
+  width: number;
+  height: number;
 }
 
 const BOTTOM_DOCK_TABS = [
@@ -234,6 +247,121 @@ function getGridIconSize(layout: MobileLayoutSettings): number {
         ? 46
         : 60;
   return Math.round(baseSize * layout.gridZoom);
+}
+
+function readCurrentViewportSnapshot(): MobileViewportSnapshot {
+  if (typeof window === "undefined") {
+    return { width: 390, height: 844 };
+  }
+
+  const visualViewport = window.visualViewport;
+  if (visualViewport) {
+    return {
+      width: Math.max(320, Math.round(visualViewport.width)),
+      height: Math.max(560, Math.round(visualViewport.height)),
+    };
+  }
+
+  return {
+    width: Math.max(320, Math.round(window.innerWidth || 390)),
+    height: Math.max(560, Math.round(window.innerHeight || 844)),
+  };
+}
+
+function getHandsetScaleBoost(width: number): number {
+  if (width <= 375) {
+    return 1.16;
+  }
+  if (width <= 414) {
+    return 1.1;
+  }
+  if (width <= 480) {
+    return 1.04;
+  }
+  return 1;
+}
+
+function getResolvedInterfaceScale(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): number {
+  const rawScale = layout.interfaceScale * getHandsetScaleBoost(viewportWidth);
+  return Math.round(rawScale * 100) / 100;
+}
+
+function getResolvedChromeScale(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): number {
+  const handsetBoost = getHandsetScaleBoost(viewportWidth);
+  const rawScale = layout.chromeScale * Math.max(1, handsetBoost - 0.02);
+  return Math.round(rawScale * 100) / 100;
+}
+
+function getTouchTargetSize(layout: MobileLayoutSettings): number {
+  switch (layout.touchComfort) {
+    case "compact":
+      return 42;
+    case "balanced":
+      return 48;
+    case "comfortable":
+    default:
+      return 56;
+  }
+}
+
+function getLayoutPanelGap(layout: MobileLayoutSettings): number {
+  switch (layout.touchComfort) {
+    case "compact":
+      return 10;
+    case "balanced":
+      return 14;
+    case "comfortable":
+    default:
+      return 18;
+  }
+}
+
+function getGridMinWidthForViewport(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): number {
+  return Math.round(
+    getGridMinWidth(layout) * getResolvedInterfaceScale(layout, viewportWidth),
+  );
+}
+
+function getGridIconSizeForViewport(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): number {
+  return Math.round(
+    getGridIconSize(layout) * getResolvedInterfaceScale(layout, viewportWidth),
+  );
+}
+
+function buildMobileShellStyle(
+  layout: MobileLayoutSettings,
+  viewport: MobileViewportSnapshot,
+): CSSProperties {
+  const interfaceScale = getResolvedInterfaceScale(layout, viewport.width);
+  const chromeScale = getResolvedChromeScale(layout, viewport.width);
+  const panelGap = getLayoutPanelGap(layout);
+  const touchTarget = getTouchTargetSize(layout);
+  const bottomNavHeight = Math.round(touchTarget * 1.52);
+  const actionStripHeight = Math.round(touchTarget * 1.2);
+  const pagePadding = Math.round(layout.pagePadding * Math.max(1, interfaceScale - 0.03));
+
+  return {
+    "--mobile-interface-scale": interfaceScale.toFixed(2),
+    "--mobile-chrome-scale": chromeScale.toFixed(2),
+    "--mobile-page-padding": `${pagePadding}px`,
+    "--mobile-panel-gap": `${panelGap}px`,
+    "--mobile-touch-target": `${touchTarget}px`,
+    "--mobile-bottom-nav-height": `${bottomNavHeight}px`,
+    "--mobile-action-strip-height": `${actionStripHeight}px`,
+    "--mobile-viewport-height": `${viewport.height}px`,
+  } as CSSProperties;
 }
 
 function formatSortLabel(sortBy: MobileLayoutSettings["sortBy"]): string {
@@ -514,6 +642,17 @@ export default function App() {
     error: null,
   });
   const [isStandalone, setIsStandalone] = useState(isStandaloneWebApp());
+  const [viewportSnapshot, setViewportSnapshot] = useState<MobileViewportSnapshot>(
+    () => readCurrentViewportSnapshot(),
+  );
+  const [pushRuntime, setPushRuntime] = useState<MobilePushRuntimeSnapshot>({
+    supported: false,
+    permission: "unsupported",
+    config: null,
+    subscription: null,
+  });
+  const [pushRuntimeBusy, setPushRuntimeBusy] = useState(false);
+  const [pushRuntimeError, setPushRuntimeError] = useState<string | null>(null);
 
   const explorerListRef = useRef<HTMLDivElement | null>(null);
   const generalUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -526,6 +665,7 @@ export default function App() {
   const historyWriteModeRef = useRef<"push" | "replace">("replace");
   const lastLocationKeyRef = useRef("");
   const isApplyingPopStateRef = useRef(false);
+  const consumedDownloadIntentKeyRef = useRef<string>("");
 
   const deferredFilterInput = useDeferredValue(filterInput.trim().toLowerCase());
   const showInstallTip = !installTipDismissed && isIosSafari() && !isStandalone;
@@ -562,13 +702,23 @@ export default function App() {
     () => currentPath.split("/").filter(Boolean),
     [currentPath],
   );
-  const gridCardSize = getGridIconSize(resolvedLayout);
+  const gridCardSize = getGridIconSizeForViewport(
+    resolvedLayout,
+    viewportSnapshot.width,
+  );
+  const mobileShellStyle = useMemo(
+    () => buildMobileShellStyle(resolvedLayout, viewportSnapshot),
+    [resolvedLayout, viewportSnapshot],
+  );
   const gridStyle = useMemo(
     () =>
       ({
-        "--mobile-grid-min-width": `${getGridMinWidth(resolvedLayout)}px`,
+        "--mobile-grid-min-width": `${getGridMinWidthForViewport(
+          resolvedLayout,
+          viewportSnapshot.width,
+        )}px`,
       }) as CSSProperties,
-    [resolvedLayout],
+    [resolvedLayout, viewportSnapshot.width],
   );
 
   function commitLocationState(
@@ -612,6 +762,74 @@ export default function App() {
       loading: false,
       error: null,
     });
+  }
+
+  function consumeDownloadIntent(
+    relativePath: string,
+    displayName?: string,
+    sourceLabel: string = "Desktop ping",
+  ): void {
+    const normalizedRelativePath = relativePath.trim().replace(/^\/+/, "");
+    if (!normalizedRelativePath) {
+      return;
+    }
+
+    const fileName =
+      displayName?.trim() ||
+      normalizedRelativePath.split("/").filter(Boolean).slice(-1)[0] ||
+      "download";
+    const syntheticEntry: MobileShareEntry = {
+      name: fileName,
+      relativePath: normalizedRelativePath,
+      isDir: false,
+      isHidden: false,
+      size: 0,
+      extension: fileName.includes(".")
+        ? fileName.split(".").slice(1).join(".")
+        : "",
+      mimeType: null,
+      modifiedMs: null,
+      entryKind: "file",
+      iconId: themeSnapshot?.iconTheme.file ?? "file",
+      thumbnailUrl: null,
+      previewKind: null,
+      canPreview: false,
+      canDownload: true,
+      fileUrl: buildMobileFileUrl(normalizedRelativePath),
+      downloadUrl: buildMobileFileUrl(normalizedRelativePath),
+    };
+
+    startDownload(syntheticEntry, {
+      message: `Queued from ${sourceLabel}.`,
+      sourceLabel,
+      navigationMode: "replace",
+    });
+  }
+
+  function readPendingDownloadIntentFromLocation(): {
+    key: string;
+    relativePath: string;
+    displayName: string | undefined;
+    parentPath: string;
+  } | null {
+    const params = new URLSearchParams(window.location.search);
+    const intent = params.get("intent");
+    const relativePath = params.get("download")?.trim();
+    if (intent !== "push-download" || !relativePath) {
+      return null;
+    }
+
+    const displayName = params.get("downloadName")?.trim() || undefined;
+    const parentPath =
+      params.get("path")?.trim() ||
+      relativePath.split("/").slice(0, -1).join("/");
+
+    return {
+      key: `${intent}:${relativePath}`,
+      relativePath,
+      displayName,
+      parentPath,
+    };
   }
 
   function resetListingState(nextPath: string): void {
@@ -751,19 +969,26 @@ export default function App() {
     }
   }
 
-  function startDownload(entry: MobileShareEntry) {
+  function startDownload(
+    entry: MobileShareEntry,
+    options?: {
+      message?: string;
+      sourceLabel?: string;
+      navigationMode?: "push" | "replace";
+    },
+  ) {
     const downloadUrl =
       entry.downloadUrl ?? entry.fileUrl ?? buildMobileFileUrl(entry.relativePath);
     const transferId = createTransfer({
       direction: "download",
       displayName: entry.name,
       targetPath: entry.relativePath,
-      sourceLabel: "Browser handoff",
+      sourceLabel: options?.sourceLabel ?? "Browser handoff",
       phase: "handoff",
       bytesTransferred: entry.size,
       bytesTotal: entry.size > 0 ? entry.size : null,
       progress: entry.size > 0 ? 1 : null,
-      message: "Sent to the browser download manager.",
+      message: options?.message ?? "Sent to the browser download manager.",
       fileUrl: downloadUrl,
     });
 
@@ -781,7 +1006,7 @@ export default function App() {
         tab: "transfers",
         path: currentPath,
       },
-      "push",
+      options?.navigationMode ?? "push",
     );
   }
 
@@ -877,6 +1102,40 @@ export default function App() {
       return;
     }
     beginUploadTransfer(Array.from(fileList), sourceLabel);
+  }
+
+  async function enablePushNotifications(): Promise<void> {
+    setPushRuntimeBusy(true);
+    setPushRuntimeError(null);
+    try {
+      const snapshot = await subscribeMobilePushNotifications();
+      setPushRuntime(snapshot);
+    } catch (error) {
+      setPushRuntimeError(
+        error instanceof Error
+          ? error.message
+          : "Failed to enable mobile notifications.",
+      );
+    } finally {
+      setPushRuntimeBusy(false);
+    }
+  }
+
+  async function disablePushNotifications(): Promise<void> {
+    setPushRuntimeBusy(true);
+    setPushRuntimeError(null);
+    try {
+      const snapshot = await unsubscribeMobilePushNotifications();
+      setPushRuntime(snapshot);
+    } catch (error) {
+      setPushRuntimeError(
+        error instanceof Error
+          ? error.message
+          : "Failed to disable mobile notifications.",
+      );
+    } finally {
+      setPushRuntimeBusy(false);
+    }
   }
 
   function retryTransfer(transferId: string) {
@@ -1021,6 +1280,97 @@ export default function App() {
       document.removeEventListener("visibilitychange", syncStandaloneMode);
     };
   }, []);
+
+  useEffect(() => {
+    const syncViewportSnapshot = () => {
+      setViewportSnapshot(readCurrentViewportSnapshot());
+    };
+
+    syncViewportSnapshot();
+    window.addEventListener("resize", syncViewportSnapshot);
+    window.addEventListener("orientationchange", syncViewportSnapshot);
+    window.visualViewport?.addEventListener("resize", syncViewportSnapshot);
+    window.visualViewport?.addEventListener("scroll", syncViewportSnapshot);
+
+    return () => {
+      window.removeEventListener("resize", syncViewportSnapshot);
+      window.removeEventListener("orientationchange", syncViewportSnapshot);
+      window.visualViewport?.removeEventListener("resize", syncViewportSnapshot);
+      window.visualViewport?.removeEventListener("scroll", syncViewportSnapshot);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPushRuntime = async () => {
+      try {
+        const snapshot = await loadMobilePushRuntimeSnapshot();
+        if (!cancelled) {
+          setPushRuntime(snapshot);
+          setPushRuntimeError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPushRuntimeError(
+            error instanceof Error
+              ? error.message
+              : "Failed to load the push pairing state.",
+          );
+        }
+      }
+    };
+
+    void loadPushRuntime();
+    const unsubscribe = listenToMobilePushMessages(
+      (intent: MobilePushNotificationIntent) => {
+        const normalizedParentPath = intent.parentPath.trim();
+        if (normalizedParentPath !== currentPath) {
+          navigateTo(
+            {
+              tab: "transfers",
+              path: normalizedParentPath,
+            },
+            "replace",
+          );
+        } else {
+          setActiveTab("transfers");
+        }
+        consumeDownloadIntent(intent.relativePath, intent.displayName, "desktop ping");
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [currentPath, setActiveTab]);
+
+  useEffect(() => {
+    const pendingIntent = readPendingDownloadIntentFromLocation();
+    if (!pendingIntent) {
+      consumedDownloadIntentKeyRef.current = "";
+      return;
+    }
+
+    if (pendingIntent.key === consumedDownloadIntentKeyRef.current) {
+      return;
+    }
+
+    consumedDownloadIntentKeyRef.current = pendingIntent.key;
+    navigateTo(
+      {
+        tab: "transfers",
+        path: pendingIntent.parentPath,
+      },
+      "replace",
+    );
+    consumeDownloadIntent(
+      pendingIntent.relativePath,
+      pendingIntent.displayName,
+      "desktop ping",
+    );
+  }, [activeTab, currentPath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1505,7 +1855,10 @@ export default function App() {
   }
 
   return (
-    <div className="mobile-shell">
+    <div
+      className={`mobile-shell mobile-shell--${resolvedLayout.touchComfort}`}
+      style={mobileShellStyle}
+    >
       <div className="mobile-shell__backdrop" />
 
       <header className="mobile-topbar">
@@ -1825,6 +2178,218 @@ export default function App() {
               </article>
 
               <article className="mobile-settings-card">
+                <div className="mobile-settings-card__title">Notifications</div>
+                <div className="mobile-settings-card__body">
+                  Enable web push so the desktop explorer can ping this phone to open the paired shell and start file downloads immediately.
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Support</span>
+                  <span>{pushRuntime.supported ? "Ready" : "Unavailable"}</span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Permission</span>
+                  <span>{pushRuntime.permission}</span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Paired devices</span>
+                  <span>{pushRuntime.config?.subscriptionCount ?? 0}</span>
+                </div>
+                {pushRuntimeError ? (
+                  <div className="mobile-settings-card__note mobile-settings-card__note--error">
+                    {pushRuntimeError}
+                  </div>
+                ) : null}
+                {!isStandalone ? (
+                  <div className="mobile-settings-card__note">
+                    Add GreebleFS to Home Screen on iPhone before asking for notification permission.
+                  </div>
+                ) : null}
+                <div className="mobile-settings-card__actions">
+                  <button
+                    type="button"
+                    className="mobile-action-button"
+                    disabled={pushRuntimeBusy || !pushRuntime.supported || !isStandalone}
+                    onClick={() => {
+                      void enablePushNotifications();
+                    }}
+                  >
+                    <LucideIcons.Bell size={18} strokeWidth={1.7} />
+                    {pushRuntime.subscription ? "Refresh Pairing" : "Enable Push"}
+                  </button>
+                  {pushRuntime.subscription ? (
+                    <button
+                      type="button"
+                      className="mobile-action-button"
+                      disabled={pushRuntimeBusy}
+                      onClick={() => {
+                        void disablePushNotifications();
+                      }}
+                    >
+                      <LucideIcons.BellOff size={18} strokeWidth={1.7} />
+                      Disable
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+
+              <article className="mobile-settings-card">
+                <div className="mobile-settings-card__title">Session Layout Tuning</div>
+                <div className="mobile-settings-card__body">
+                  These controls sit on top of the desktop Mobile Theme settings so you can tune the current phone session without breaking the paired shell contract.
+                </div>
+                <div className="mobile-settings-card__slider-block">
+                  <div className="mobile-settings-card__row">
+                    <span>Interface scale</span>
+                    <span>{resolvedLayout.interfaceScale.toFixed(2)}x</span>
+                  </div>
+                  <input
+                    className="mobile-slider"
+                    type="range"
+                    min="0.85"
+                    max="1.6"
+                    step="0.05"
+                    value={resolvedLayout.interfaceScale}
+                    onChange={(event) => {
+                      patchLayoutOverrides({
+                        interfaceScale: Number(event.currentTarget.value),
+                      });
+                    }}
+                  />
+                </div>
+                <div className="mobile-settings-card__slider-block">
+                  <div className="mobile-settings-card__row">
+                    <span>Chrome scale</span>
+                    <span>{resolvedLayout.chromeScale.toFixed(2)}x</span>
+                  </div>
+                  <input
+                    className="mobile-slider"
+                    type="range"
+                    min="0.85"
+                    max="1.6"
+                    step="0.05"
+                    value={resolvedLayout.chromeScale}
+                    onChange={(event) => {
+                      patchLayoutOverrides({
+                        chromeScale: Number(event.currentTarget.value),
+                      });
+                    }}
+                  />
+                </div>
+                <div className="mobile-settings-card__slider-block">
+                  <div className="mobile-settings-card__row">
+                    <span>Grid zoom</span>
+                    <span>{resolvedLayout.gridZoom.toFixed(2)}x</span>
+                  </div>
+                  <input
+                    className="mobile-slider"
+                    type="range"
+                    min="0.7"
+                    max="2.6"
+                    step="0.05"
+                    value={resolvedLayout.gridZoom}
+                    onChange={(event) => {
+                      patchLayoutOverrides({
+                        gridZoom: Number(event.currentTarget.value),
+                      });
+                    }}
+                  />
+                </div>
+                <div className="mobile-settings-card__slider-block">
+                  <div className="mobile-settings-card__row">
+                    <span>Page gutter</span>
+                    <span>{resolvedLayout.pagePadding}px</span>
+                  </div>
+                  <input
+                    className="mobile-slider"
+                    type="range"
+                    min="10"
+                    max="32"
+                    step="1"
+                    value={resolvedLayout.pagePadding}
+                    onChange={(event) => {
+                      patchLayoutOverrides({
+                        pagePadding: Number(event.currentTarget.value),
+                      });
+                    }}
+                  />
+                </div>
+                <div className="mobile-settings-card__section">
+                  <div className="mobile-settings-card__section-label">Touch comfort</div>
+                  <div className="mobile-layout-toggle-grid">
+                    {["compact", "balanced", "comfortable"].map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className={`mobile-layout-pill${
+                          resolvedLayout.touchComfort === option
+                            ? " mobile-layout-pill--active"
+                            : ""
+                        }`}
+                        onClick={() => {
+                          patchLayoutOverrides({
+                            touchComfort:
+                              option as MobileLayoutSettings["touchComfort"],
+                          });
+                        }}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mobile-settings-card__section">
+                  <div className="mobile-settings-card__section-label">Quick toggles</div>
+                  <div className="mobile-layout-toggle-grid">
+                    <button
+                      type="button"
+                      className={`mobile-layout-pill${
+                        resolvedLayout.showTabLabels
+                          ? " mobile-layout-pill--active"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        patchLayoutOverrides({
+                          showTabLabels: !resolvedLayout.showTabLabels,
+                        });
+                      }}
+                    >
+                      Dock labels
+                    </button>
+                    <button
+                      type="button"
+                      className={`mobile-layout-pill${
+                        resolvedLayout.showHiddenFiles
+                          ? " mobile-layout-pill--active"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        patchLayoutOverrides({
+                          showHiddenFiles: !resolvedLayout.showHiddenFiles,
+                        });
+                      }}
+                    >
+                      Hidden files
+                    </button>
+                    <button
+                      type="button"
+                      className={`mobile-layout-pill${
+                        resolvedLayout.directoriesFirst
+                          ? " mobile-layout-pill--active"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        patchLayoutOverrides({
+                          directoriesFirst: !resolvedLayout.directoriesFirst,
+                        });
+                      }}
+                    >
+                      Folders first
+                    </button>
+                  </div>
+                </div>
+              </article>
+
+              <article className="mobile-settings-card">
                 <div className="mobile-settings-card__title">Layout</div>
                 <div className="mobile-settings-card__row">
                   <span>View mode</span>
@@ -1835,10 +2400,26 @@ export default function App() {
                   <span>{resolvedLayout.gridZoom.toFixed(2)}x</span>
                 </div>
                 <div className="mobile-settings-card__row">
+                  <span>Interface scale</span>
+                  <span>{resolvedLayout.interfaceScale.toFixed(2)}x</span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Chrome scale</span>
+                  <span>{resolvedLayout.chromeScale.toFixed(2)}x</span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Touch comfort</span>
+                  <span>{resolvedLayout.touchComfort}</span>
+                </div>
+                <div className="mobile-settings-card__row">
                   <span>Sort</span>
                   <span>
                     {resolvedLayout.sortBy} · {resolvedLayout.sortOrder}
                   </span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Page gutter</span>
+                  <span>{resolvedLayout.pagePadding}px</span>
                 </div>
                 <div className="mobile-settings-card__row">
                   <span>Hidden files</span>

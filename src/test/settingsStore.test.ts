@@ -161,6 +161,9 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.explorerMoveSelectionLeft).toBe('ArrowLeft');
     expect(settings.keybindings.explorerMoveSelectionRight).toBe('ArrowRight');
     expect(settings.keybindings.toggleExplorerSources).toBe('Ctrl+B');
+    expect(settings.keybindings.copySelection).toBe('Ctrl+C');
+    expect(settings.keybindings.cutSelection).toBe('Ctrl+X');
+    expect(settings.keybindings.pasteSelection).toBe('Ctrl+V');
     expect(settings.keybindings.togglePreviewLock).toBe('Ctrl+Alt+P');
     expect(settings.keybindings.togglePreviewTerminal).toBe('Ctrl+Alt+T');
     expect(settings.keybindings.pdfWorkbenchPreviousPage).toBe('PageUp');

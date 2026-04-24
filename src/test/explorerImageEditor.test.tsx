@@ -16,6 +16,7 @@ const {
   cropperRotateMock,
   cropperSetAspectRatioMock,
   cutoutSurfaceMockState,
+  previewImageMockState,
 } = vi.hoisted(() => ({
   writeFileMock: vi.fn(),
   writeExplorerFileMock: vi.fn(),
@@ -27,6 +28,15 @@ const {
   cropperSetAspectRatioMock: vi.fn(),
   cutoutSurfaceMockState: {
     lastProps: null as null | Record<string, unknown>,
+  },
+  previewImageMockState: {
+    deferredSources: new Set<string>(),
+    pendingLoads: new Map<
+      string,
+      Array<{
+        onload: null | (() => void);
+      }>
+    >(),
   },
 }));
 
@@ -70,6 +80,13 @@ class MockPreviewImage {
 
   set src(value: string) {
     this._src = value;
+    if (previewImageMockState.deferredSources.has(value)) {
+      const pendingLoads = previewImageMockState.pendingLoads.get(value) ?? [];
+      pendingLoads.push(this);
+      previewImageMockState.pendingLoads.set(value, pendingLoads);
+      return;
+    }
+
     queueMicrotask(() => {
       this.onload?.();
     });
@@ -97,6 +114,24 @@ function restoreImageMock(): void {
   }
 
   Reflect.deleteProperty(window, "Image");
+}
+
+function resetPreviewImageMockState(): void {
+  previewImageMockState.deferredSources.clear();
+  previewImageMockState.pendingLoads.clear();
+}
+
+function deferPreviewImageLoad(source: string): void {
+  previewImageMockState.deferredSources.add(source);
+}
+
+function resolvePreviewImageLoad(source: string): void {
+  const pendingLoads = previewImageMockState.pendingLoads.get(source) ?? [];
+  previewImageMockState.pendingLoads.delete(source);
+  previewImageMockState.deferredSources.delete(source);
+  for (const image of pendingLoads) {
+    image.onload?.();
+  }
 }
 
 function setPreviewMetrics(
@@ -142,6 +177,7 @@ function setPreviewMetrics(
 describe("ExplorerImageEditor", () => {
   beforeEach(() => {
     installImageMock();
+    resetPreviewImageMockState();
     writeFileMock.mockReset();
     writeExplorerFileMock.mockReset();
     cropperDestroyMock.mockReset();
@@ -233,6 +269,50 @@ describe("ExplorerImageEditor", () => {
     expect(
       screen.queryByRole("button", { name: "Crop Tool" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps the current preview visible while the next preview image is still decoding", async () => {
+    const firstSource = "data:image/png;base64,Zmlyc3Q=";
+    const secondSource = "data:image/png;base64,c2Vjb25k";
+    deferPreviewImageLoad(secondSource);
+
+    const { rerender } = render(
+      <ExplorerImageEditor
+        imagePath="/tmp/first.png"
+        imageName="first.png"
+        imageSource={firstSource}
+        mode="preview"
+      />,
+    );
+
+    await screen.findByTestId("explorer-image-editor-preview-image");
+    expect(
+      screen.getByTestId("explorer-image-editor-preview-image"),
+    ).toHaveAttribute("src", firstSource);
+
+    rerender(
+      <ExplorerImageEditor
+        imagePath="/tmp/second.png"
+        imageName="second.png"
+        imageSource={secondSource}
+        mode="preview"
+      />,
+    );
+
+    expect(screen.queryByText(/loading image/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("explorer-image-editor-preview-image"),
+    ).toHaveAttribute("src", firstSource);
+
+    act(() => {
+      resolvePreviewImageLoad(secondSource);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("explorer-image-editor-preview-image"),
+      ).toHaveAttribute("src", secondSource);
+    });
   });
 
   it("routes the cutout workflow through the dedicated surface with the current editor state", async () => {

@@ -102,6 +102,9 @@ export interface ExplorerMenuRuntimeEnvironment {
   openAsAdmin: (path: string) => Promise<void>;
   openInTerminal: (path: string) => void | Promise<void>;
   openInFilesystemAquarium: (path: string) => void | Promise<void>;
+  sendToMobileDownload: (
+    entry: ExplorerMenuInvocationEntry,
+  ) => void | Promise<void>;
   revealExplorerPath: (path: string) => Promise<void>;
   openExplorerPropertiesPanel: (paths: string[]) => void;
   copyToSysClipboard: (text: string) => void | Promise<void>;
@@ -440,6 +443,12 @@ function canShowBuiltInCommand(
         && !environment.isExplorerArchiveVirtualPath(entryPath);
     case 'open-aquarium':
       return !environment.isCloudExplorerPath(entryPath);
+    case 'send-to-mobile-download':
+      return targetEntries.length === 1
+        && !entry.isDirectory
+        && !environment.isCloudExplorerPath(entryPath)
+        && !environment.isExplorerArchiveVirtualPath(entryPath)
+        && environment.supportsNativeIntegration(entryPath);
     case 'reveal':
       if (invocation.kind === 'background') {
         return environment.supportsNativeIntegration(environment.currentPath);
@@ -524,6 +533,8 @@ function executeBuiltInLeaf(
         environment.openInFilesystemAquarium(
           entry.isDirectory ? entry.path : entry.parentPath || environment.currentPath,
         );
+    case 'send-to-mobile-download':
+      return () => environment.sendToMobileDownload(entry);
     case 'reveal':
       return () =>
         environment.revealExplorerPath(
@@ -655,6 +666,8 @@ function resolveBuiltInLabel(
       return primaryEntry && !primaryEntry.isDirectory
         ? 'Open Parent Habitat in Filesystem Aquarium'
         : 'Open Habitat in Filesystem Aquarium';
+    case 'send-to-mobile-download':
+      return 'Send to iPhone';
     default:
       return command.title;
   }

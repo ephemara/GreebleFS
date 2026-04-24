@@ -10760,9 +10760,9 @@ export function SettingsPage({
                               ? 'Compact Icons'
                               : 'Medium Icons'}
                         {' · '}
-                        {settings.mobile.layout.sortBy}
+                        UI {settings.mobile.layout.interfaceScale.toFixed(2)}x
                         {' · '}
-                        {settings.mobile.layout.showHiddenFiles ? 'Hidden On' : 'Hidden Off'}
+                        {settings.mobile.layout.touchComfort}
                       </div>
                     </div>
 
@@ -10833,6 +10833,78 @@ export function SettingsPage({
                               />
                             </div>
                           </div>
+
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                              <span>Interface Scale</span>
+                              <span>{settings.mobile.layout.interfaceScale.toFixed(2)}x</span>
+                            </div>
+                            <div className="mt-3">
+                              <PremiumSlider
+                                value={settings.mobile.layout.interfaceScale}
+                                min={0.85}
+                                max={1.6}
+                                step={0.05}
+                                onChange={value => updateMobile({
+                                  layout: {
+                                    ...settings.mobile.layout,
+                                    interfaceScale: value,
+                                  },
+                                })}
+                              />
+                            </div>
+                            <div className="mt-2 text-[10px] opacity-45">
+                              Scales typography, cards, previews, and row density for the whole iPhone shell.
+                            </div>
+                          </div>
+
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                              <span>Chrome Scale</span>
+                              <span>{settings.mobile.layout.chromeScale.toFixed(2)}x</span>
+                            </div>
+                            <div className="mt-3">
+                              <PremiumSlider
+                                value={settings.mobile.layout.chromeScale}
+                                min={0.85}
+                                max={1.6}
+                                step={0.05}
+                                onChange={value => updateMobile({
+                                  layout: {
+                                    ...settings.mobile.layout,
+                                    chromeScale: value,
+                                  },
+                                })}
+                              />
+                            </div>
+                            <div className="mt-2 text-[10px] opacity-45">
+                              Tunes the top shell, sticky explorer header, action strip, and bottom dock prominence.
+                            </div>
+                          </div>
+
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                              <span>Page Gutter</span>
+                              <span>{settings.mobile.layout.pagePadding}px</span>
+                            </div>
+                            <div className="mt-3">
+                              <PremiumSlider
+                                value={settings.mobile.layout.pagePadding}
+                                min={10}
+                                max={32}
+                                step={1}
+                                onChange={value => updateMobile({
+                                  layout: {
+                                    ...settings.mobile.layout,
+                                    pagePadding: Math.round(value),
+                                  },
+                                })}
+                              />
+                            </div>
+                            <div className="mt-2 text-[10px] opacity-45">
+                              Controls how edge-to-edge the phone surface feels once safe-area padding is applied.
+                            </div>
+                          </div>
                         </div>
 
                         <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
@@ -10900,6 +10972,56 @@ export function SettingsPage({
                               );
                             })}
                           </div>
+
+                          <div className="mt-4">
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                              Touch Comfort
+                            </div>
+                            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                              {[
+                                {
+                                  id: 'compact',
+                                  label: 'Compact',
+                                  description: 'Tighter rows and controls when you want more content per screen.',
+                                },
+                                {
+                                  id: 'balanced',
+                                  label: 'Balanced',
+                                  description: 'Keeps a native-files feel without wasting vertical room.',
+                                },
+                                {
+                                  id: 'comfortable',
+                                  label: 'Comfortable',
+                                  description: 'Bigger touch targets and breathing room for handheld use.',
+                                },
+                              ].map(option => {
+                                const active = settings.mobile.layout.touchComfort === option.id;
+                                return (
+                                  <button
+                                    key={option.id}
+                                    type="button"
+                                    onClick={() => updateMobile({
+                                      layout: {
+                                        ...settings.mobile.layout,
+                                        touchComfort: option.id as typeof settings.mobile.layout.touchComfort,
+                                      },
+                                    })}
+                                    className="rounded px-3 py-3 text-left transition-colors"
+                                    style={{
+                                      border: `1px solid ${active ? accent : border}`,
+                                      background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                                      color: text,
+                                    }}
+                                  >
+                                    <div className="text-[11px] font-semibold">{option.label}</div>
+                                    <div className="mt-1 text-[10px] opacity-45">
+                                      {option.description}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                         </div>
                       </div>
 
@@ -10961,6 +11083,10 @@ export function SettingsPage({
                             <div>View: {settings.mobile.layout.viewMode}</div>
                             <div>Sort: {settings.mobile.layout.sortBy} · {settings.mobile.layout.sortOrder}</div>
                             <div>Grid Zoom: {settings.mobile.layout.gridZoom.toFixed(2)}x</div>
+                            <div>Interface Scale: {settings.mobile.layout.interfaceScale.toFixed(2)}x</div>
+                            <div>Chrome Scale: {settings.mobile.layout.chromeScale.toFixed(2)}x</div>
+                            <div>Page Gutter: {settings.mobile.layout.pagePadding}px</div>
+                            <div>Touch Comfort: {settings.mobile.layout.touchComfort}</div>
                             <div>Folders First: {settings.mobile.layout.directoriesFirst ? 'enabled' : 'disabled'}</div>
                             <div>Hidden Files: {settings.mobile.layout.showHiddenFiles ? 'visible' : 'hidden'}</div>
                             <div>Dock Labels: {settings.mobile.layout.showTabLabels ? 'shown' : 'icon only'}</div>

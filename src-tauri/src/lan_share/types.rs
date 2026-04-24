@@ -39,6 +39,8 @@ pub(super) struct ActiveServer {
     pub(super) https_handle: Option<axum_server::Handle<SocketAddr>>,
     pub(super) https_task: Option<tokio::task::JoinHandle<()>>,
     pub(super) mdns_daemon: Option<mdns_sd::ServiceDaemon>,
+    pub(super) share_path: PathBuf,
+    pub(super) file_hub: Option<Vec<PathBuf>>,
 }
 
 pub(super) static ACTIVE_SERVER: once_cell::sync::Lazy<Arc<Mutex<Option<ActiveServer>>>> =
@@ -101,6 +103,10 @@ pub enum MobileLayoutSortOrder {
 pub struct MobileThemeLayoutSnapshot {
     pub view_mode: MobileLayoutViewMode,
     pub grid_zoom: f64,
+    pub interface_scale: f64,
+    pub chrome_scale: f64,
+    pub page_padding: u16,
+    pub touch_comfort: String,
     pub show_hidden_files: bool,
     pub sort_by: MobileLayoutSortBy,
     pub sort_order: MobileLayoutSortOrder,
@@ -210,6 +216,10 @@ impl Default for MobileThemeSnapshot {
             layout: MobileThemeLayoutSnapshot {
                 view_mode: MobileLayoutViewMode::IconsM,
                 grid_zoom: 1.0,
+                interface_scale: 1.08,
+                chrome_scale: 1.08,
+                page_padding: 16,
+                touch_comfort: "comfortable".to_string(),
                 show_hidden_files: false,
                 sort_by: MobileLayoutSortBy::Name,
                 sort_order: MobileLayoutSortOrder::Asc,

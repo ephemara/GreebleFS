@@ -207,6 +207,7 @@ import {
   publishFileOperationsTransferCompleted,
   type FileOperationsTransferCompletedEventDetail,
 } from "../runtime/fileOperationsWindow";
+import { sendMobileDownloadNotification } from "../runtime/mobilePushBackend";
 import {
   beginExplorerDragInteraction,
   clearExplorerDragInteractionTarget,
@@ -381,6 +382,10 @@ import {
   type ExplorerRecursiveSizeCacheEntry,
 } from "../store/explorerStore";
 import { useExplorerTaskProgressFeed, useExplorerTaskSnapshots } from "../store/explorerTaskStore";
+import {
+  startMobileShareSession,
+  useMobileShareStore,
+} from "../store/mobileShareStore";
 import { useSettingsStore } from "../store/settingsStore";
 import type { SettingsSectionKey } from "../config/settingsNavigation";
 import type { LoadedExplorerHomePack } from "../config/homePackages";
@@ -7550,6 +7555,7 @@ export function FileExplorer({
     explorerSettings,
     homeSettings,
     appearanceSettings,
+    mobileSettings,
     pythonSettings,
     modelsSettings,
     systemSettings,
@@ -7566,6 +7572,7 @@ export function FileExplorer({
       explorerSettings: state.settings.explorer,
       homeSettings: state.settings.home,
       appearanceSettings: state.settings.appearance,
+      mobileSettings: state.settings.mobile,
       pythonSettings: state.settings.python,
       modelsSettings: state.settings.models,
       systemSettings: state.settings.system,
@@ -7794,6 +7801,7 @@ export function FileExplorer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectionModeActive, setSelectionModeActive] = useState(false);
   const [search, setSearch] = useState(() => initialSession.search);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchModeValue>(
@@ -8852,6 +8860,7 @@ export function FileExplorer({
         setHistory(nextHistory);
         setHistoryIdx(nextHistoryIdx);
         setSelected(new Set());
+        setSelectionModeActive(false);
         setSearch("");
         setSearchResults([]);
         setSemanticSearchSourcePath(null);
@@ -8900,6 +8909,7 @@ export function FileExplorer({
         setHistory(nextHistory);
         setHistoryIdx(nextHistoryIdx);
         setSelected(new Set());
+        setSelectionModeActive(false);
         setSearch("");
         setSearchResults([]);
         setSemanticSearchSourcePath(null);
@@ -10543,6 +10553,9 @@ export function FileExplorer({
     lastSelected.current = null;
     selectionRangeAnchorPathRef.current = null;
   }, []);
+  const toggleSelectionMode = useCallback(() => {
+    setSelectionModeActive((current) => !current);
+  }, []);
   const handleBookmarkCreated = useCallback(
     (name: string, path: string) => {
       void Promise.resolve(onAddBookmark(name, path)).catch(() => {});
@@ -11115,8 +11128,14 @@ export function FileExplorer({
           is_dir: item.is_dir,
         })),
       });
+      setSelectionModeActive(false);
     },
-    [currentPathIsArchiveVirtual, resolveEntriesForAction, setClipboard],
+    [
+      currentPathIsArchiveVirtual,
+      resolveEntriesForAction,
+      setClipboard,
+      setSelectionModeActive,
+    ],
   );
 
   const openAsAdmin = useCallback(async (path: string) => {
@@ -14361,8 +14380,9 @@ export function FileExplorer({
           is_dir: entry.isDirectory,
         })),
       });
+      setSelectionModeActive(false);
     },
-    [currentPathIsArchiveVirtual, setClipboard],
+    [currentPathIsArchiveVirtual, setClipboard, setSelectionModeActive],
   );
   const requestTransferDestinationEntries = useCallback(
     (operation: FileTransferOperation, entries: ExplorerMenuInvocationEntry[]) => {
@@ -14458,6 +14478,70 @@ export function FileExplorer({
       }
     },
     [bookmarkPathSet, explorerRail, handleBookmarkCreated, updateExplorerRail],
+  );
+  const sendEntryToMobileDownload = useCallback(
+    async (entry: ExplorerMenuInvocationEntry) => {
+      const absolutePath = entry.path.trim();
+      if (!absolutePath || entry.isDirectory) {
+        setError("Select a regular file before sending it to the paired iPhone.");
+        return;
+      }
+      if (isCloudExplorerPath(absolutePath) || isExplorerArchiveVirtualPath(absolutePath)) {
+        setError("Send to iPhone currently supports local desktop files only.");
+        return;
+      }
+
+      const requestedSharePath =
+        getPathParent(absolutePath) ?? currentPath.trim() ?? "";
+      if (!requestedSharePath) {
+        setError("Could not resolve a folder to share for the selected file.");
+        return;
+      }
+
+      const activeMobileShareStore = useMobileShareStore.getState();
+      const activeSession = activeMobileShareStore.session;
+      const normalizedRequestedSharePath = requestedSharePath.replace(/[\\/]+$/, "");
+      const normalizedAbsolutePath = absolutePath.replace(/[\\/]+$/, "");
+      const activeSharePath =
+        activeSession?.sharePath.replace(/[\\/]+$/, "") ?? null;
+      const activeSharePathIsFilesystemRoot =
+        activeSharePath === "/"
+        || /^[A-Za-z]:$/.test(activeSharePath ?? "");
+      const activeShareContainsFile =
+        activeSharePath != null
+        && (normalizedAbsolutePath === activeSharePath
+          || (activeSharePathIsFilesystemRoot
+            && normalizedAbsolutePath.startsWith(activeSharePath))
+          || normalizedAbsolutePath.startsWith(`${activeSharePath}/`)
+          || normalizedAbsolutePath.startsWith(`${activeSharePath}\\`));
+      const needsFreshMobileShare =
+        activeSession == null
+        || activeSession.remoteAccessMode !== mobileSettings.remoteAccessMode
+        || !activeShareContainsFile;
+
+      try {
+        const session = needsFreshMobileShare
+          ? await startMobileShareSession({
+              requestedPath: normalizedRequestedSharePath,
+              remoteAccessMode: mobileSettings.remoteAccessMode,
+              copyPreferredUrl: false,
+            })
+          : activeSession;
+
+        await sendMobileDownloadNotification({
+          absolutePath,
+          shareUrl: session.preferredUrl,
+        });
+      } catch (mobileSendError) {
+        setError(String(mobileSendError));
+      }
+    },
+    [
+      currentPath,
+      isCloudExplorerPath,
+      mobileSettings.remoteAccessMode,
+      setError,
+    ],
   );
   const canRunAudioBatchEntries = useCallback(
     (entries: ExplorerMenuInvocationEntry[]) => {
@@ -14578,6 +14662,7 @@ export function FileExplorer({
         openAsAdmin,
         openInTerminal: onOpenInTerminal,
         openInFilesystemAquarium: onOpenInFilesystemAquarium,
+        sendToMobileDownload: sendEntryToMobileDownload,
         revealExplorerPath: (path) =>
           revealExplorerPath(path).catch((error) => {
             setError(String(error));
@@ -14668,6 +14753,7 @@ export function FileExplorer({
     revealExplorerPath,
     revealPathLabel,
     runAudioBatchForEntries,
+    sendEntryToMobileDownload,
     explorerMenuRuntimePlatform,
     supportsNativeIntegration,
     supportsNativeOpenWith,
@@ -14801,6 +14887,7 @@ export function FileExplorer({
     const plainClick = !e.shiftKey && !e.ctrlKey && !e.metaKey;
     const shouldAutoReopenPreview =
       plainClick &&
+      !selectionModeActive &&
       !previewEnabled &&
       previewReopenOnSelectionRef.current &&
       !isCompactDock;
@@ -14828,11 +14915,21 @@ export function FileExplorer({
         return next;
       });
       selectionRangeAnchorPathRef.current = entry.path;
+    } else if (selectionModeActive) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.has(entry.path) ? next.delete(entry.path) : next.add(entry.path);
+        return next;
+      });
+      selectionRangeAnchorPathRef.current = entry.path;
     } else {
       setSelected(new Set([entry.path]));
       selectionRangeAnchorPathRef.current = entry.path;
     }
     lastSelected.current = entry.path;
+    if (selectionModeActive && plainClick) {
+      return;
+    }
     if (explorerPicker) {
       if (explorerPicker.kind === 'saveFile' && !entry.is_dir) {
         setPickerSaveFileName(
@@ -17963,6 +18060,48 @@ export function FileExplorer({
         },
       },
       {
+        id: "selectionModeToggle",
+        label: "Selection Mode",
+        surfaces: ["explorerToolbar", "explorerTopbar"],
+        isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
+        render: () => {
+          const selectionModeShortcut = keybindings.copySelection || "Ctrl+C";
+          const selectionModeTitle = selectionModeActive
+            ? `Selection mode is active. Single-click toggles files and folders. Press ${selectionModeShortcut} to copy the current selection, or Escape to exit.`
+            : `Selection mode is inactive. Press ${selectionModeShortcut} with nothing selected to start a Dolphin-style selection pass.`;
+          return (
+            <button
+              type="button"
+              aria-pressed={selectionModeActive}
+              aria-label={
+                selectionModeActive
+                  ? "Exit selection mode"
+                  : "Enter selection mode"
+              }
+              onClick={toggleSelectionMode}
+              title={selectionModeTitle}
+              style={toolbarToggleButtonStyle(selectionModeActive)}
+              onMouseEnter={(event) =>
+                (event.currentTarget.style.background =
+                  "var(--overlay-explorer-chip-active-bg)")
+              }
+              onMouseLeave={(event) =>
+                (event.currentTarget.style.background = selectionModeActive
+                  ? "var(--overlay-explorer-chip-active-bg)"
+                  : "var(--overlay-explorer-chip-bg)")
+              }
+            >
+              <CopyPlus size={11} />
+              <span
+                style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              >
+                Select
+              </span>
+            </button>
+          );
+        },
+      },
+      {
         id: "customizeHome",
         label: "Customize Home",
         surfaces: ["explorerToolbar"],
@@ -19084,6 +19223,20 @@ export function FileExplorer({
         ),
       },
       {
+        id: "statusSelectionMode",
+        label: "Status Selection Mode",
+        surfaces: ["explorerStatusBar"],
+        isVisible: () => selectionModeActive,
+        render: () => (
+          <span
+            style={{ color: accent }}
+            title={`Selection mode is active. Single-click toggles entries. Press ${keybindings.copySelection || "Ctrl+C"} to copy the current selection, or Escape to exit.`}
+          >
+            Selection mode
+          </span>
+        ),
+      },
+      {
         id: "statusSelectionSummary",
         label: "Status Selection Summary",
         surfaces: ["explorerStatusBar"],
@@ -19427,6 +19580,7 @@ export function FileExplorer({
       isCompactDock,
       isGlobalChromeSurfaceActive,
       isSearchActive,
+      keybindings.copySelection,
       navigate,
       openNew,
       openTagDialog,
@@ -19436,6 +19590,7 @@ export function FileExplorer({
       previewLoading,
       previewLocked,
       previewModeLabel,
+      selectionModeActive,
       recentLocations,
       refresh,
       requestSemanticIndexBuild,
@@ -19472,6 +19627,7 @@ export function FileExplorer({
       startDuplicateFinder,
       submitAddressDraft,
       triggerFindSimilarForPath,
+      toggleSelectionMode,
       toggleBottomExplorerTerminal,
       toggleSourcesPanel,
       shouldRenderRail,
@@ -20746,6 +20902,7 @@ export function FileExplorer({
         return;
       }
       if (e.key === "Escape") {
+        setSelectionModeActive(false);
         setClipboard(null);
         setNewItem({ visible: false, kind: "folder" });
       }
@@ -20763,6 +20920,10 @@ export function FileExplorer({
       }
       if (matchesKeybinding(e, keybindings.copySelection)) {
         e.preventDefault();
+        if (selectedEntries.length === 0) {
+          setSelectionModeActive((current) => !current);
+          return;
+        }
         if (!currentLocationSupportsMutation) {
           return;
         }
@@ -23723,6 +23884,9 @@ export function FileExplorer({
                 ref={mainRef}
                 data-overlay-explorer-plane="content-viewport"
                 data-overlay-explorer-instance-id={String(instanceId)}
+                data-overlay-explorer-selection-mode={
+                  selectionModeActive ? "active" : "idle"
+                }
                 tabIndex={0}
                 aria-busy={loading ? true : undefined}
                 style={{

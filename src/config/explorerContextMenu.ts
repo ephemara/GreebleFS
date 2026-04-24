@@ -46,6 +46,7 @@ export type ExplorerBuiltInContextMenuActionId =
   | 'open-admin'
   | 'open-terminal'
   | 'open-aquarium'
+  | 'send-to-mobile-download'
   | 'reveal'
   | 'properties'
   | 'copy-path'
@@ -1123,6 +1124,23 @@ export const BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerBuiltInContextMenuCat
       source: 'built-in',
       iconName: 'Sparkles',
       execution: { kind: 'built-in', actionId: 'open-aquarium' },
+      tone: 'accent',
+      supportsQuickSlot: true,
+      behavior: 'leaf',
+    },
+    {
+      id: 'built-in.send-to-mobile-download',
+      title: 'Send to iPhone',
+      description:
+        'Wake the paired mobile PWA with a push notification and queue an immediate file download.',
+      contexts: ['entry', 'search-result', 'preview-pane'],
+      appliesTo: 'file',
+      group: 'open',
+      defaultOrder: 55,
+      priority: 55,
+      source: 'built-in',
+      iconName: 'Smartphone',
+      execution: { kind: 'built-in', actionId: 'send-to-mobile-download' },
       tone: 'accent',
       supportsQuickSlot: true,
       behavior: 'leaf',
