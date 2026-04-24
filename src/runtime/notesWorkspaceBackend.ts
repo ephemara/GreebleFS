@@ -176,6 +176,16 @@ export async function readNotesDocumentMarkdown(documentPath: string): Promise<s
   return normalizeLegacyNotesDocument(rawMarkdown).markdown;
 }
 
+export function summarizeNotesMarkdown(markdown: string): {
+  previewText: string;
+  wordCount: number;
+} {
+  return {
+    previewText: createNotesPreviewText(markdown),
+    wordCount: countMarkdownWords(markdown),
+  };
+}
+
 async function scanNotesDirectoryTree(
   directoryPath: string,
   parentPath: string | null,

@@ -13,12 +13,14 @@ interface NotesRichMarkdownEditorProps {
   appearance: ResolvedOverlayAppearance;
   markdown: string;
   onMarkdownChange: (markdown: string) => void;
+  onBlur?: () => void;
 }
 
 export function NotesRichMarkdownEditor({
   appearance,
   markdown,
   onMarkdownChange,
+  onBlur,
 }: NotesRichMarkdownEditorProps) {
   const lastAppliedMarkdownRef = useRef(markdown);
   const isApplyingExternalMarkdownRef = useRef(false);
@@ -31,6 +33,9 @@ export function NotesRichMarkdownEditor({
         class: 'notes-rich-editor-surface',
         spellcheck: 'true',
       },
+    },
+    onBlur: () => {
+      onBlur?.();
     },
     onUpdate: ({ editor: activeEditor }) => {
       if (isApplyingExternalMarkdownRef.current) {
@@ -70,10 +75,10 @@ export function NotesRichMarkdownEditor({
         style={{
           display: 'flex',
           flexWrap: 'wrap',
-          gap: 8,
-          padding: '12px 14px',
+          gap: 6,
+          padding: '10px 12px',
           borderBottom: '1px solid var(--overlay-border)',
-          background: 'color-mix(in srgb, var(--overlay-bg-panel) 85%, transparent)',
+          background: 'color-mix(in srgb, var(--overlay-bg-panel) 90%, transparent)',
         }}
       >
         <ToolbarButton
@@ -360,7 +365,7 @@ function ToolbarButton({
       onClick={onClick}
       style={{
         minWidth: 0,
-        paddingInline: 10,
+        paddingInline: 8,
         letterSpacing: '0.04em',
         fontSize: 10,
         textTransform: 'none',
