@@ -8,8 +8,21 @@ import {
   useState,
 } from "react";
 
-import { Copy, Loader2, MousePointer2, Scissors, Undo2 } from "@/components/AppIcons";
+import {
+  Copy,
+  Loader2,
+  MousePointer2,
+  RefreshCw,
+  RotateCcw,
+  Scissors,
+  Undo2,
+} from "@/components/AppIcons";
 
+import {
+  DEFAULT_IMAGE_CUTOUT_TOOL_ID,
+  imageCutoutToolDefinitions,
+  type ExplorerImageCutoutToolId,
+} from "../config/imageCutoutTools";
 import { matchesKeybinding } from "../config/hotkeys";
 import {
   buildCSSFilterString,
@@ -17,7 +30,6 @@ import {
 } from "../config/imageEditorFilters";
 import type { LocalModelBackendPreference } from "../config/localModels";
 import {
-  applyExplorerImageCutoutPrompts,
   closeExplorerImageCutoutSession,
   copyExplorerImageCutoutToClipboard,
   openExplorerImageCutoutSession,
@@ -28,6 +40,19 @@ import {
 } from "../runtime/imageCutoutBackend";
 import type { ManagedPythonRuntimeConfig } from "../runtime/pythonRuntimeBackend";
 import { useSettingsStore } from "../store/settingsStore";
+import {
+  applySparkSelection,
+  applySweepSelectionInPlace,
+  buildCutoutBoundaryPoints,
+  cloneCutoutMaskAlpha,
+  createCutoutMaskFromImageData,
+  resolveAdjustedCutoutMask,
+  writeCutoutMaskToCanvas,
+  type ExplorerImageCutoutAlphaMask,
+  type ExplorerImageCutoutBoundaryPoint,
+  type ExplorerImageCutoutEditMode,
+  type ExplorerImageCutoutSourcePixels,
+} from "./explorer/explorerImageCutoutMask";
 
 type ExplorerImageCutoutSurfaceProps = {
   imageName: string;
@@ -42,17 +67,30 @@ type ExplorerImageCutoutSurfaceProps = {
 
 type CutoutStatusTone = "neutral" | "success" | "warning" | "error";
 
-type CutoutPromptPoint = {
-  xNorm: number;
-  yNorm: number;
-  kind: "positive" | "negative";
+type CutoutBoundarySnapshot = {
+  width: number;
+  height: number;
+  points: ExplorerImageCutoutBoundaryPoint[];
 };
 
-type CutoutBoundaryPoint = readonly [number, number];
+type ActiveSweepStroke = {
+  pointerId: number;
+  mode: ExplorerImageCutoutEditMode;
+  workingMask: ExplorerImageCutoutAlphaMask;
+  lastX: number;
+  lastY: number;
+};
 
-const DEFAULT_PREVIEW_MAX_DIMENSION = 1280;
+const DEFAULT_PREVIEW_MAX_DIMENSION = 960;
+const HISTORY_LIMIT = 32;
 const MARCHING_ANTS_WIDTH = 4;
 const MARCHING_ANTS_SPEED = 20;
+const DEFAULT_SPARK_TOLERANCE = 26;
+const DEFAULT_SWEEP_TOLERANCE = 30;
+const DEFAULT_SWEEP_SIZE = 34;
+const DEFAULT_SWEEP_SOFTNESS = 42;
+const DEFAULT_EDGE_SOFTNESS = 2;
+const DEFAULT_EDGE_PULL = 0;
 
 function buttonStyle(
   variant: "primary" | "default" | "ghost" = "default",
@@ -70,7 +108,8 @@ function buttonStyle(
     fontWeight: 700,
     letterSpacing: "0.02em",
     cursor: "pointer",
-    transition: "background 120ms ease, border-color 120ms ease, opacity 120ms ease",
+    transition:
+      "background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease",
   };
 
   switch (variant) {
@@ -113,6 +152,105 @@ function toneColor(tone: CutoutStatusTone): string {
   }
 }
 
+function toolChipStyle(active: boolean): CSSProperties {
+  return {
+    appearance: "none",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 4,
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: active
+      ? "1px solid rgba(96, 165, 250, 0.48)"
+      : "1px solid rgba(255,255,255,0.12)",
+    background: active ? "rgba(59, 130, 246, 0.18)" : "rgba(255,255,255,0.04)",
+    color: active ? "#f8fbff" : "var(--overlay-text-primary)",
+    textAlign: "left",
+    cursor: "pointer",
+  };
+}
+
+function panelCardStyle(): CSSProperties {
+  return {
+    display: "grid",
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+  };
+}
+
+function sliderStyle(): CSSProperties {
+  return {
+    width: "100%",
+    accentColor: "#60a5fa",
+  };
+}
+
+function ControlSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  helper,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+  helper?: string;
+}) {
+  return (
+    <label style={{ display: "grid", gap: 6 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          fontSize: 10,
+          color: "var(--overlay-text-muted)",
+        }}
+      >
+        <span>{label}</span>
+        <span style={{ color: "var(--overlay-text-primary)", fontVariantNumeric: "tabular-nums" }}>
+          {value}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.currentTarget.value))}
+        style={sliderStyle()}
+      />
+      {helper ? (
+        <span style={{ fontSize: 10, color: "var(--overlay-text-dim, rgba(255,255,255,0.5))" }}>
+          {helper}
+        </span>
+      ) : null}
+    </label>
+  );
+}
+
+async function loadImageElement(source: string): Promise<HTMLImageElement> {
+  const image = new window.Image();
+  return await new Promise((resolve, reject) => {
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Failed to decode the cutout preview source image."));
+    image.src = source;
+  });
+}
+
 async function convertBlobUrlToDataUrl(blobUrl: string): Promise<string> {
   const response = await fetch(blobUrl);
   if (!response.ok) {
@@ -121,7 +259,7 @@ async function convertBlobUrlToDataUrl(blobUrl: string): Promise<string> {
   const blob = await response.blob();
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Failed to convert image blob to a data URL."));
+    reader.onerror = () => reject(new Error("Failed to convert the image blob to a data URL."));
     reader.onload = () => resolve(String(reader.result ?? ""));
     reader.readAsDataURL(blob);
   });
@@ -154,52 +292,51 @@ async function resolveCutoutSessionInput(
   };
 }
 
-async function computeMaskBoundaryPoints(
-  dataUrl: string,
+async function buildPreviewSourcePixels(
+  sourceImageUrl: string,
+  width: number,
+  height: number,
 ): Promise<{
-  width: number;
-  height: number;
-  points: CutoutBoundaryPoint[];
+  pixels: ExplorerImageCutoutSourcePixels;
+  canvas: HTMLCanvasElement;
 }> {
-  const image = new window.Image();
-  const loadedImage = await new Promise<HTMLImageElement>((resolve, reject) => {
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Failed to decode cutout mask preview."));
-    image.src = dataUrl;
-  });
-  const width = loadedImage.naturalWidth || loadedImage.width || 1;
-  const height = loadedImage.naturalHeight || loadedImage.height || 1;
+  const image = await loadImageElement(sourceImageUrl);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
   if (!context) {
-    return { width, height, points: [] };
+    throw new Error("Failed to create the preview source canvas.");
   }
-  context.drawImage(loadedImage, 0, 0, width, height);
-  const { data } = context.getImageData(0, 0, width, height);
-  const points: CutoutBoundaryPoint[] = [];
+  context.clearRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+  const imageData = context.getImageData(0, 0, width, height);
+  return {
+    canvas,
+    pixels: {
+      width,
+      height,
+      data: new Uint8ClampedArray(imageData.data),
+    },
+  };
+}
 
-  const alphaAt = (x: number, y: number): number =>
-    data[(y * width + x) * 4 + 3] ?? 0;
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const alpha = alphaAt(x, y);
-      if (alpha < 12) {
-        continue;
-      }
-      const left = x > 0 ? alphaAt(x - 1, y) : 0;
-      const right = x + 1 < width ? alphaAt(x + 1, y) : 0;
-      const top = y > 0 ? alphaAt(x, y - 1) : 0;
-      const bottom = y + 1 < height ? alphaAt(x, y + 1) : 0;
-      if (left < 12 || right < 12 || top < 12 || bottom < 12) {
-        points.push([x, y]);
-      }
-    }
+async function buildInitialMaskFromDataUrl(
+  dataUrl: string,
+  width: number,
+  height: number,
+): Promise<ExplorerImageCutoutAlphaMask> {
+  const image = await loadImageElement(dataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Failed to create the preview mask canvas.");
   }
-
-  return { width, height, points };
+  context.clearRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+  return createCutoutMaskFromImageData(context.getImageData(0, 0, width, height));
 }
 
 function buildExportFilters(filterState: ExplorerImageFiltersState) {
@@ -215,6 +352,19 @@ function buildExportFilters(filterState: ExplorerImageFiltersState) {
   };
 }
 
+function maskToDataUrl(mask: ExplorerImageCutoutAlphaMask): string {
+  const canvas = document.createElement("canvas");
+  writeCutoutMaskToCanvas(mask, canvas);
+  return canvas.toDataURL("image/png");
+}
+
+function describeToolInteraction(toolId: ExplorerImageCutoutToolId): string {
+  if (toolId === "spark") {
+    return "Click to grab a connected color island near the cursor.";
+  }
+  return "Drag to sweep across similar pixels. Alt-drag or right-drag trims the mask.";
+}
+
 export function ExplorerImageCutoutSurface({
   imageName,
   imagePath,
@@ -227,37 +377,372 @@ export function ExplorerImageCutoutSurface({
 }: ExplorerImageCutoutSurfaceProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const marchingAntsCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const boundaryRef = useRef<{
-    width: number;
-    height: number;
-    points: CutoutBoundaryPoint[];
-  } | null>(null);
+  const sourcePreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const resolvedMaskCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const promptHistoryRef = useRef<CutoutPromptPoint[][]>([[]]);
-  const promptHistoryIndexRef = useRef(0);
+  const refreshPreviewFrameRef = useRef(0);
+  const baseMaskRef = useRef<ExplorerImageCutoutAlphaMask | null>(null);
+  const resolvedMaskRef = useRef<ExplorerImageCutoutAlphaMask | null>(null);
+  const sourcePixelsRef = useRef<ExplorerImageCutoutSourcePixels | null>(null);
+  const historyRef = useRef<Uint8ClampedArray[]>([]);
+  const historyIndexRef = useRef(0);
+  const activeSweepStrokeRef = useRef<ActiveSweepStroke | null>(null);
+  const boundaryRef = useRef<CutoutBoundarySnapshot | null>(null);
+  const edgeSoftnessRef = useRef(DEFAULT_EDGE_SOFTNESS);
+  const edgePullRef = useRef(DEFAULT_EDGE_PULL);
   const keybindings = useSettingsStore((state) => state.settings.keybindings);
 
   const [sessionSnapshot, setSessionSnapshot] =
     useState<ExplorerImageCutoutSessionSnapshot | null>(null);
-  const [promptHistory, setPromptHistory] = useState<CutoutPromptPoint[][]>([[]]);
-  const [promptHistoryIndex, setPromptHistoryIndex] = useState(0);
   const [statusTone, setStatusTone] = useState<CutoutStatusTone>("neutral");
   const [statusMessage, setStatusMessage] = useState("Booting cutout session…");
   const [isBooting, setIsBooting] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const [historyLength, setHistoryLength] = useState(1);
+  const [activeToolId, setActiveToolId] = useState<ExplorerImageCutoutToolId>(
+    DEFAULT_IMAGE_CUTOUT_TOOL_ID,
+  );
+  const [sparkTolerance, setSparkTolerance] = useState(DEFAULT_SPARK_TOLERANCE);
+  const [sweepTolerance, setSweepTolerance] = useState(DEFAULT_SWEEP_TOLERANCE);
+  const [sweepSize, setSweepSize] = useState(DEFAULT_SWEEP_SIZE);
+  const [sweepSoftness, setSweepSoftness] = useState(DEFAULT_SWEEP_SOFTNESS);
+  const [edgeSoftness, setEdgeSoftness] = useState(DEFAULT_EDGE_SOFTNESS);
+  const [edgePull, setEdgePull] = useState(DEFAULT_EDGE_PULL);
 
   const focusSurface = useCallback(() => {
     rootRef.current?.focus();
   }, []);
 
-  useEffect(() => {
-    promptHistoryRef.current = promptHistory;
-  }, [promptHistory]);
+  const schedulePreviewRefresh = useCallback(() => {
+    if (refreshPreviewFrameRef.current !== 0) {
+      return;
+    }
+
+    refreshPreviewFrameRef.current = window.requestAnimationFrame(() => {
+      refreshPreviewFrameRef.current = 0;
+
+      const baseMask = baseMaskRef.current;
+      const sourcePreviewCanvas = sourcePreviewCanvasRef.current;
+      const previewCanvas = previewCanvasRef.current;
+      if (!baseMask || !sourcePreviewCanvas || !previewCanvas) {
+        return;
+      }
+
+      const resolvedMask = resolveAdjustedCutoutMask({
+        baseMask,
+        edgeSoftness: edgeSoftnessRef.current,
+        edgePull: edgePullRef.current,
+      });
+      resolvedMaskRef.current = resolvedMask;
+
+      if (!resolvedMaskCanvasRef.current) {
+        resolvedMaskCanvasRef.current = document.createElement("canvas");
+      }
+      writeCutoutMaskToCanvas(resolvedMask, resolvedMaskCanvasRef.current);
+
+      previewCanvas.width = resolvedMask.width;
+      previewCanvas.height = resolvedMask.height;
+      const previewContext = previewCanvas.getContext("2d");
+      if (!previewContext) {
+        return;
+      }
+
+      previewContext.clearRect(0, 0, resolvedMask.width, resolvedMask.height);
+      previewContext.globalCompositeOperation = "source-over";
+      previewContext.drawImage(sourcePreviewCanvas, 0, 0, resolvedMask.width, resolvedMask.height);
+      previewContext.globalCompositeOperation = "destination-in";
+      previewContext.drawImage(
+        resolvedMaskCanvasRef.current,
+        0,
+        0,
+        resolvedMask.width,
+        resolvedMask.height,
+      );
+      previewContext.globalCompositeOperation = "source-over";
+
+      boundaryRef.current = {
+        width: resolvedMask.width,
+        height: resolvedMask.height,
+        points: buildCutoutBoundaryPoints(resolvedMask),
+      };
+    });
+  }, []);
+
+  const resetHistoryState = useCallback((mask: ExplorerImageCutoutAlphaMask) => {
+    baseMaskRef.current = {
+      width: mask.width,
+      height: mask.height,
+      alpha: cloneCutoutMaskAlpha(mask.alpha),
+    };
+    historyRef.current = [cloneCutoutMaskAlpha(mask.alpha)];
+    historyIndexRef.current = 0;
+    setHistoryIndex(0);
+    setHistoryLength(1);
+    schedulePreviewRefresh();
+  }, [schedulePreviewRefresh]);
+
+  const commitMaskHistory = useCallback(
+    (
+      mask: ExplorerImageCutoutAlphaMask,
+      status: string,
+      tone: CutoutStatusTone = "success",
+    ) => {
+      const nextMask = {
+        width: mask.width,
+        height: mask.height,
+        alpha: cloneCutoutMaskAlpha(mask.alpha),
+      };
+      baseMaskRef.current = nextMask;
+
+      const nextHistory = [
+        ...historyRef.current.slice(0, historyIndexRef.current + 1),
+        cloneCutoutMaskAlpha(nextMask.alpha),
+      ];
+      while (nextHistory.length > HISTORY_LIMIT) {
+        nextHistory.shift();
+      }
+      historyRef.current = nextHistory;
+      historyIndexRef.current = nextHistory.length - 1;
+      setHistoryIndex(historyIndexRef.current);
+      setHistoryLength(nextHistory.length);
+      setStatusTone(tone);
+      setStatusMessage(status);
+      schedulePreviewRefresh();
+    },
+    [schedulePreviewRefresh],
+  );
+
+  const previewMaskDuringStroke = useCallback(
+    (mask: ExplorerImageCutoutAlphaMask, status: string) => {
+      baseMaskRef.current = mask;
+      setStatusTone("neutral");
+      setStatusMessage(status);
+      schedulePreviewRefresh();
+    },
+    [schedulePreviewRefresh],
+  );
+
+  const restoreHistoryIndex = useCallback(
+    (nextIndex: number) => {
+      const currentMask = baseMaskRef.current;
+      const snapshot = historyRef.current[nextIndex];
+      if (!currentMask || !snapshot) {
+        return;
+      }
+
+      baseMaskRef.current = {
+        width: currentMask.width,
+        height: currentMask.height,
+        alpha: cloneCutoutMaskAlpha(snapshot),
+      };
+      historyIndexRef.current = nextIndex;
+      setHistoryIndex(nextIndex);
+      setHistoryLength(historyRef.current.length);
+      setStatusTone("success");
+      setStatusMessage(
+        nextIndex === 0
+          ? "Restored the auto cutout."
+          : `Restored edit ${nextIndex + 1} of ${historyRef.current.length}.`,
+      );
+      schedulePreviewRefresh();
+    },
+    [schedulePreviewRefresh],
+  );
+
+  const resolveMaskPoint = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>): { x: number; y: number } | null => {
+      const frame = frameRef.current;
+      const baseMask = baseMaskRef.current;
+      if (!frame || !baseMask) {
+        return null;
+      }
+      const rect = frame.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        return null;
+      }
+      const xRatio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+      const yRatio = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+      return {
+        x: Math.max(0, Math.min(baseMask.width - 1, Math.round(xRatio * (baseMask.width - 1)))),
+        y: Math.max(0, Math.min(baseMask.height - 1, Math.round(yRatio * (baseMask.height - 1)))),
+      };
+    },
+    [],
+  );
+
+  const resolveEditModeFromPointer = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>): ExplorerImageCutoutEditMode =>
+      event.altKey || event.button === 2 ? "subtract" : "add",
+    [],
+  );
+
+  const applySparkAtPointer = useCallback(
+    (point: { x: number; y: number }, mode: ExplorerImageCutoutEditMode) => {
+      const baseMask = baseMaskRef.current;
+      const sourcePixels = sourcePixelsRef.current;
+      if (!baseMask || !sourcePixels) {
+        return;
+      }
+      const nextMask = applySparkSelection({
+        baseMask,
+        sourcePixels,
+        centerX: point.x,
+        centerY: point.y,
+        tolerance: sparkTolerance,
+        mode,
+      });
+      commitMaskHistory(
+        nextMask,
+        mode === "add" ? "Spark added a color island." : "Spark trimmed a color island.",
+      );
+    },
+    [commitMaskHistory, sparkTolerance],
+  );
+
+  const applySweepPoint = useCallback(
+    (
+      mask: ExplorerImageCutoutAlphaMask,
+      point: { x: number; y: number },
+      mode: ExplorerImageCutoutEditMode,
+    ) => {
+      const sourcePixels = sourcePixelsRef.current;
+      if (!sourcePixels) {
+        return;
+      }
+      applySweepSelectionInPlace({
+        targetMask: mask,
+        sourcePixels,
+        centerX: point.x,
+        centerY: point.y,
+        radius: sweepSize,
+        tolerance: sweepTolerance,
+        softness: sweepSoftness,
+        mode,
+      });
+    },
+    [sweepSize, sweepSoftness, sweepTolerance],
+  );
+
+  const beginSweepStroke = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>, point: { x: number; y: number }) => {
+      const baseMask = baseMaskRef.current;
+      if (!baseMask) {
+        return;
+      }
+      const workingMask = {
+        width: baseMask.width,
+        height: baseMask.height,
+        alpha: cloneCutoutMaskAlpha(baseMask.alpha),
+      };
+      const mode = resolveEditModeFromPointer(event);
+      applySweepPoint(workingMask, point, mode);
+      activeSweepStrokeRef.current = {
+        pointerId: event.pointerId,
+        mode,
+        workingMask,
+        lastX: point.x,
+        lastY: point.y,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      previewMaskDuringStroke(
+        workingMask,
+        mode === "add" ? "Sweeping the selection outward…" : "Sweeping the selection inward…",
+      );
+    },
+    [applySweepPoint, previewMaskDuringStroke, resolveEditModeFromPointer],
+  );
+
+  const continueSweepStroke = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const activeStroke = activeSweepStrokeRef.current;
+      if (!activeStroke || event.pointerId !== activeStroke.pointerId) {
+        return;
+      }
+      const point = resolveMaskPoint(event);
+      if (!point) {
+        return;
+      }
+      const deltaX = point.x - activeStroke.lastX;
+      const deltaY = point.y - activeStroke.lastY;
+      const distance = Math.hypot(deltaX, deltaY);
+      const stepCount = Math.max(1, Math.ceil(distance / Math.max(2, sweepSize / 3)));
+
+      for (let stepIndex = 1; stepIndex <= stepCount; stepIndex += 1) {
+        const stepPoint = {
+          x: Math.round(activeStroke.lastX + (deltaX * stepIndex) / stepCount),
+          y: Math.round(activeStroke.lastY + (deltaY * stepIndex) / stepCount),
+        };
+        applySweepPoint(activeStroke.workingMask, stepPoint, activeStroke.mode);
+      }
+
+      activeStroke.lastX = point.x;
+      activeStroke.lastY = point.y;
+      previewMaskDuringStroke(
+        activeStroke.workingMask,
+        activeStroke.mode === "add"
+          ? "Sweeping the selection outward…"
+          : "Sweeping the selection inward…",
+      );
+    },
+    [applySweepPoint, previewMaskDuringStroke, resolveMaskPoint, sweepSize],
+  );
+
+  const endSweepStroke = useCallback(() => {
+    const activeStroke = activeSweepStrokeRef.current;
+    if (!activeStroke) {
+      return;
+    }
+    activeSweepStrokeRef.current = null;
+    commitMaskHistory(
+      activeStroke.workingMask,
+      activeStroke.mode === "add"
+        ? "Sweep added to the selection."
+        : "Sweep trimmed the selection.",
+    );
+  }, [commitMaskHistory]);
+
+  const handleSurfacePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      focusSurface();
+      if (isBooting || isMutating || event.button > 2) {
+        return;
+      }
+      const point = resolveMaskPoint(event);
+      if (!point) {
+        return;
+      }
+      event.preventDefault();
+
+      if (activeToolId === "spark") {
+        applySparkAtPointer(point, resolveEditModeFromPointer(event));
+        return;
+      }
+      beginSweepStroke(event, point);
+    },
+    [
+      activeToolId,
+      applySparkAtPointer,
+      beginSweepStroke,
+      focusSurface,
+      isBooting,
+      isMutating,
+      resolveEditModeFromPointer,
+      resolveMaskPoint,
+    ],
+  );
 
   useEffect(() => {
-    promptHistoryIndexRef.current = promptHistoryIndex;
-  }, [promptHistoryIndex]);
+    edgeSoftnessRef.current = edgeSoftness;
+    schedulePreviewRefresh();
+  }, [edgeSoftness, schedulePreviewRefresh]);
+
+  useEffect(() => {
+    edgePullRef.current = edgePull;
+    schedulePreviewRefresh();
+  }, [edgePull, schedulePreviewRefresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -268,9 +753,16 @@ export function ExplorerImageCutoutSurface({
     setStatusTone("neutral");
     setStatusMessage("Booting cutout session…");
     setSessionSnapshot(null);
+    sourcePixelsRef.current = null;
+    sourcePreviewCanvasRef.current = null;
+    baseMaskRef.current = null;
+    resolvedMaskRef.current = null;
+    historyRef.current = [];
+    historyIndexRef.current = 0;
     boundaryRef.current = null;
-    setPromptHistory([[]]);
-    setPromptHistoryIndex(0);
+    activeSweepStrokeRef.current = null;
+    setHistoryIndex(0);
+    setHistoryLength(1);
 
     void (async () => {
       try {
@@ -290,12 +782,33 @@ export function ExplorerImageCutoutSurface({
           return;
         }
 
+        const [{ pixels, canvas }, initialMask] = await Promise.all([
+          buildPreviewSourcePixels(
+            sourceImageUrl,
+            snapshot.previewWidth,
+            snapshot.previewHeight,
+          ),
+          buildInitialMaskFromDataUrl(
+            snapshot.previewMask.dataUrl,
+            snapshot.previewWidth,
+            snapshot.previewHeight,
+          ),
+        ]);
+
+        if (cancelled) {
+          staleSessionId = snapshot.sessionId;
+          return;
+        }
+
         sessionIdRef.current = snapshot.sessionId;
+        sourcePixelsRef.current = pixels;
+        sourcePreviewCanvasRef.current = canvas;
+        resetHistoryState(initialMask);
         setSessionSnapshot(snapshot);
         setStatusTone("success");
         setStatusMessage(
           snapshot.diagnostics.message?.trim() ||
-            "Auto-selected a subject. Click to add, Alt-click to subtract.",
+            "Auto cutout ready. Refine locally with Spark or Sweep.",
         );
         setIsBooting(false);
         focusSurface();
@@ -303,7 +816,6 @@ export function ExplorerImageCutoutSurface({
         if (cancelled) {
           return;
         }
-        setSessionSnapshot(null);
         setStatusTone("error");
         setStatusMessage(String(error));
         setIsBooting(false);
@@ -325,35 +837,13 @@ export function ExplorerImageCutoutSurface({
     imagePath,
     logicalOutputPath,
     pythonRuntimeConfig,
+    resetHistoryState,
     sourceImageUrl,
   ]);
 
   useEffect(() => {
-    let cancelled = false;
-    const snapshot = sessionSnapshot;
-    if (!snapshot) {
-      boundaryRef.current = null;
-      return;
-    }
-
-    void computeMaskBoundaryPoints(snapshot.previewMask.dataUrl)
-      .then((boundary) => {
-        if (cancelled) {
-          return;
-        }
-        boundaryRef.current = boundary;
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-        boundaryRef.current = null;
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionSnapshot]);
+    schedulePreviewRefresh();
+  }, [historyIndex, schedulePreviewRefresh, sessionSnapshot]);
 
   useEffect(() => {
     let animationFrameId = 0;
@@ -401,130 +891,48 @@ export function ExplorerImageCutoutSurface({
     };
   }, []);
 
-  const restorePromptHistory = useCallback(
-    async (nextIndex: number) => {
-      const snapshot = sessionSnapshot;
-      const sessionId = snapshot?.sessionId ?? sessionIdRef.current;
-      if (!snapshot || !sessionId) {
-        return;
+  useEffect(() => {
+    return () => {
+      if (refreshPreviewFrameRef.current !== 0) {
+        window.cancelAnimationFrame(refreshPreviewFrameRef.current);
       }
-      const nextPromptSet = promptHistoryRef.current[nextIndex] ?? [];
-      setIsMutating(true);
-      setStatusTone("neutral");
-      setStatusMessage(
-        nextPromptSet.length === 0
-          ? "Resetting to the auto-selected subject…"
-          : "Rebuilding the prompt stack…",
-      );
-
-      try {
-        let nextSnapshot = await resetExplorerImageCutoutSession(sessionId);
-        if (nextPromptSet.length > 0) {
-          nextSnapshot = await applyExplorerImageCutoutPrompts({
-            sessionId,
-            prompts: nextPromptSet.map((prompt) => ({
-              xNorm: prompt.xNorm,
-              yNorm: prompt.yNorm,
-              kind: prompt.kind,
-            })),
-          });
-        }
-        setSessionSnapshot(nextSnapshot);
-        setPromptHistoryIndex(nextIndex);
-        setStatusTone("success");
-        setStatusMessage(
-          nextPromptSet.length === 0
-            ? "Back to the initial auto mask."
-            : `Restored ${nextPromptSet.length} prompt${nextPromptSet.length === 1 ? "" : "s"}.`,
-        );
-      } catch (error) {
-        setStatusTone("error");
-        setStatusMessage(String(error));
-      } finally {
-        setIsMutating(false);
-      }
-    },
-    [sessionSnapshot],
-  );
-
-  const appendPrompt = useCallback(
-    async (prompt: CutoutPromptPoint) => {
-      const snapshot = sessionSnapshot;
-      if (!snapshot) {
-        return;
-      }
-
-      setIsMutating(true);
-      setStatusTone("neutral");
-      setStatusMessage(
-        prompt.kind === "negative"
-          ? "Subtracting that region from the matte…"
-          : "Refining the subject matte…",
-      );
-
-      try {
-        const nextSnapshot = await applyExplorerImageCutoutPrompts({
-          sessionId: snapshot.sessionId,
-          prompts: [
-            {
-              xNorm: prompt.xNorm,
-              yNorm: prompt.yNorm,
-              kind: prompt.kind,
-            },
-          ],
-        });
-        const currentPromptSet = promptHistoryRef.current[promptHistoryIndexRef.current] ?? [];
-        const nextPromptSet = [...currentPromptSet, prompt];
-        const nextHistory = [
-          ...promptHistoryRef.current.slice(0, promptHistoryIndexRef.current + 1),
-          nextPromptSet,
-        ];
-        setPromptHistory(nextHistory);
-        setPromptHistoryIndex(nextHistory.length - 1);
-        setSessionSnapshot(nextSnapshot);
-        setStatusTone("success");
-        setStatusMessage(
-          prompt.kind === "negative"
-            ? "Negative prompt applied."
-            : "Positive prompt applied.",
-        );
-      } catch (error) {
-        setStatusTone("error");
-        setStatusMessage(String(error));
-      } finally {
-        setIsMutating(false);
-      }
-    },
-    [sessionSnapshot],
-  );
-
-  const handleSurfacePointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      focusSurface();
-      if (!sessionSnapshot || isBooting || isMutating || event.button > 2) {
-        return;
-      }
-      if (!frameRef.current) {
-        return;
-      }
-      event.preventDefault();
-      const rect = frameRef.current.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) {
-        return;
-      }
-
-      const xNorm = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-      const yNorm = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
-      void appendPrompt({
-        xNorm,
-        yNorm,
-        kind: event.altKey || event.button === 2 ? "negative" : "positive",
-      });
-    },
-    [appendPrompt, focusSurface, isBooting, isMutating, sessionSnapshot],
-  );
+    };
+  }, []);
 
   const exportFilters = useMemo(() => buildExportFilters(filterState), [filterState]);
+  const filterCss = buildCSSFilterString(filterState);
+
+  const buildOverrideMaskDataUrl = useCallback(() => {
+    const resolvedMask = resolvedMaskRef.current;
+    return resolvedMask ? maskToDataUrl(resolvedMask) : null;
+  }, []);
+
+  const handleResetToAutoCutout = useCallback(async () => {
+    const snapshot = sessionSnapshot;
+    if (!snapshot) {
+      return;
+    }
+    setIsMutating(true);
+    setStatusTone("neutral");
+    setStatusMessage("Restoring the auto cutout…");
+    try {
+      const nextSnapshot = await resetExplorerImageCutoutSession(snapshot.sessionId);
+      const nextMask = await buildInitialMaskFromDataUrl(
+        nextSnapshot.previewMask.dataUrl,
+        nextSnapshot.previewWidth,
+        nextSnapshot.previewHeight,
+      );
+      resetHistoryState(nextMask);
+      setSessionSnapshot(nextSnapshot);
+      setStatusTone("success");
+      setStatusMessage("Back to the initial auto cutout.");
+    } catch (error) {
+      setStatusTone("error");
+      setStatusMessage(String(error));
+    } finally {
+      setIsMutating(false);
+    }
+  }, [resetHistoryState, sessionSnapshot]);
 
   const handleSaveSibling = useCallback(async () => {
     const snapshot = sessionSnapshot;
@@ -540,6 +948,7 @@ export function ExplorerImageCutoutSurface({
         exportMode: "siblingPng",
         logicalOutputPath: logicalOutputPath ?? imagePath,
         filters: exportFilters,
+        overrideMaskDataUrl: buildOverrideMaskDataUrl(),
       });
       setStatusTone("success");
       setStatusMessage(`Saved ${exportArtifact.fileName}.`);
@@ -549,7 +958,13 @@ export function ExplorerImageCutoutSurface({
     } finally {
       setIsMutating(false);
     }
-  }, [exportFilters, imagePath, logicalOutputPath, sessionSnapshot]);
+  }, [
+    buildOverrideMaskDataUrl,
+    exportFilters,
+    imagePath,
+    logicalOutputPath,
+    sessionSnapshot,
+  ]);
 
   const handleCopyToClipboard = useCallback(async () => {
     const snapshot = sessionSnapshot;
@@ -564,6 +979,7 @@ export function ExplorerImageCutoutSurface({
         sessionId: snapshot.sessionId,
         logicalOutputPath: logicalOutputPath ?? imagePath,
         filters: exportFilters,
+        overrideMaskDataUrl: buildOverrideMaskDataUrl(),
       });
       setStatusTone("success");
       setStatusMessage("Cutout copied to the clipboard.");
@@ -573,7 +989,13 @@ export function ExplorerImageCutoutSurface({
     } finally {
       setIsMutating(false);
     }
-  }, [exportFilters, imagePath, logicalOutputPath, sessionSnapshot]);
+  }, [
+    buildOverrideMaskDataUrl,
+    exportFilters,
+    imagePath,
+    logicalOutputPath,
+    sessionSnapshot,
+  ]);
 
   const handleNativeDrag = useCallback(async () => {
     const snapshot = sessionSnapshot;
@@ -589,6 +1011,7 @@ export function ExplorerImageCutoutSurface({
         exportMode: "staging",
         logicalOutputPath: logicalOutputPath ?? imagePath,
         filters: exportFilters,
+        overrideMaskDataUrl: buildOverrideMaskDataUrl(),
       });
       await startExplorerImageCutoutNativeDrag(exportArtifact.outputPath);
       setStatusTone("success");
@@ -599,7 +1022,13 @@ export function ExplorerImageCutoutSurface({
     } finally {
       setIsMutating(false);
     }
-  }, [exportFilters, imagePath, logicalOutputPath, sessionSnapshot]);
+  }, [
+    buildOverrideMaskDataUrl,
+    exportFilters,
+    imagePath,
+    logicalOutputPath,
+    sessionSnapshot,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -625,23 +1054,23 @@ export function ExplorerImageCutoutSurface({
       if (matchesKeybinding(event, keybindings.imageEditorUndo)) {
         event.preventDefault();
         event.stopPropagation();
-        if (promptHistoryIndexRef.current > 0) {
-          void restorePromptHistory(promptHistoryIndexRef.current - 1);
+        if (historyIndexRef.current > 0) {
+          restoreHistoryIndex(historyIndexRef.current - 1);
         }
         return;
       }
       if (matchesKeybinding(event, keybindings.imageEditorRedo)) {
         event.preventDefault();
         event.stopPropagation();
-        if (promptHistoryIndexRef.current + 1 < promptHistoryRef.current.length) {
-          void restorePromptHistory(promptHistoryIndexRef.current + 1);
+        if (historyIndexRef.current + 1 < historyRef.current.length) {
+          restoreHistoryIndex(historyIndexRef.current + 1);
         }
         return;
       }
       if (matchesKeybinding(event, keybindings.imageEditorReset)) {
         event.preventDefault();
         event.stopPropagation();
-        void restorePromptHistory(0);
+        void handleResetToAutoCutout();
       }
     };
 
@@ -649,17 +1078,24 @@ export function ExplorerImageCutoutSurface({
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [
     handleCopyToClipboard,
+    handleResetToAutoCutout,
     handleSaveSibling,
     keybindings.imageCutoutCopy,
     keybindings.imageEditorRedo,
     keybindings.imageEditorReset,
     keybindings.imageEditorUndo,
     keybindings.saveFile,
-    restorePromptHistory,
+    restoreHistoryIndex,
   ]);
 
-  const promptMarkers = promptHistory[promptHistoryIndex] ?? [];
-  const filterCss = buildCSSFilterString(filterState);
+  const activeToolDefinition = useMemo(
+    () =>
+      imageCutoutToolDefinitions.find((tool) => tool.id === activeToolId) ??
+      imageCutoutToolDefinitions[0],
+    [activeToolId],
+  );
+
+  const hasSession = sessionSnapshot != null && baseMaskRef.current != null;
 
   return (
     <div
@@ -723,9 +1159,8 @@ export function ExplorerImageCutoutSurface({
             <span>{statusMessage}</span>
             {sessionSnapshot ? (
               <span style={{ color: "var(--overlay-text-muted)" }}>
-                {sessionSnapshot.promptCount} prompt{sessionSnapshot.promptCount === 1 ? "" : "s"} ·{" "}
-                {sessionSnapshot.diagnostics.backendKind} · {sessionSnapshot.previewWidth}×
-                {sessionSnapshot.previewHeight}
+                Auto pass · {sessionSnapshot.diagnostics.backendKind} · {sessionSnapshot.previewWidth}
+                ×{sessionSnapshot.previewHeight}
               </span>
             ) : null}
           </div>
@@ -733,11 +1168,11 @@ export function ExplorerImageCutoutSurface({
         <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <button
             type="button"
-            onClick={() => void restorePromptHistory(Math.max(0, promptHistoryIndex - 1))}
-            disabled={isBooting || isMutating || promptHistoryIndex <= 0}
+            onClick={() => restoreHistoryIndex(Math.max(0, historyIndex - 1))}
+            disabled={isBooting || isMutating || historyIndex <= 0}
             style={{
               ...buttonStyle("ghost"),
-              opacity: isBooting || isMutating || promptHistoryIndex <= 0 ? 0.5 : 1,
+              opacity: isBooting || isMutating || historyIndex <= 0 ? 0.5 : 1,
             }}
           >
             <Undo2 size={13} />
@@ -745,14 +1180,39 @@ export function ExplorerImageCutoutSurface({
           </button>
           <button
             type="button"
+            onClick={() => restoreHistoryIndex(historyIndex + 1)}
+            disabled={isBooting || isMutating || historyIndex + 1 >= historyLength}
+            style={{
+              ...buttonStyle("ghost"),
+              opacity:
+                isBooting || isMutating || historyIndex + 1 >= historyLength ? 0.5 : 1,
+            }}
+          >
+            <RefreshCw size={13} />
+            Redo
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleResetToAutoCutout()}
+            disabled={isBooting || isMutating || !hasSession}
+            style={{
+              ...buttonStyle("ghost"),
+              opacity: isBooting || isMutating || !hasSession ? 0.5 : 1,
+            }}
+          >
+            <RotateCcw size={13} />
+            Reset
+          </button>
+          <button
+            type="button"
             onPointerDown={(event) => {
               event.preventDefault();
               void handleNativeDrag();
             }}
-            disabled={isBooting || isMutating || !sessionSnapshot}
+            disabled={isBooting || isMutating || !hasSession}
             style={{
               ...buttonStyle("primary"),
-              opacity: isBooting || isMutating || !sessionSnapshot ? 0.5 : 1,
+              opacity: isBooting || isMutating || !hasSession ? 0.5 : 1,
             }}
           >
             <MousePointer2 size={13} />
@@ -761,10 +1221,10 @@ export function ExplorerImageCutoutSurface({
           <button
             type="button"
             onClick={() => void handleCopyToClipboard()}
-            disabled={isBooting || isMutating || !sessionSnapshot}
+            disabled={isBooting || isMutating || !hasSession}
             style={{
               ...buttonStyle("default"),
-              opacity: isBooting || isMutating || !sessionSnapshot ? 0.5 : 1,
+              opacity: isBooting || isMutating || !hasSession ? 0.5 : 1,
             }}
           >
             <Copy size={13} />
@@ -778,9 +1238,9 @@ export function ExplorerImageCutoutSurface({
           flex: 1,
           minHeight: 0,
           display: "flex",
-          flexDirection: "column",
-          gap: 10,
+          gap: 12,
           padding: 12,
+          flexWrap: "wrap",
           backgroundImage:
             "linear-gradient(45deg, rgba(255,255,255,0.02) 25%, transparent 25%), linear-gradient(-45deg, rgba(255,255,255,0.02) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.02) 75%), linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.02) 75%)",
           backgroundSize: "18px 18px",
@@ -789,132 +1249,226 @@ export function ExplorerImageCutoutSurface({
       >
         <div
           style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 10,
-            flexWrap: "wrap",
-            fontSize: 10,
-            color: "var(--overlay-text-muted)",
+            width: 296,
+            maxWidth: "100%",
+            display: "grid",
+            gap: 12,
+            alignContent: "start",
           }}
         >
-          <span>Click = add to subject</span>
-          <span>Alt-click / right-click = subtract</span>
-          <span>Ctrl+C = copy</span>
-          <span>Ctrl+S = save sibling PNG</span>
+          <div style={panelCardStyle()}>
+            <div style={{ display: "grid", gap: 3 }}>
+              <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>Tool</span>
+              <span style={{ fontSize: 12, color: "var(--overlay-text-primary)", fontWeight: 700 }}>
+                {activeToolDefinition.label}
+              </span>
+              <span style={{ fontSize: 10, color: "var(--overlay-text-dim, rgba(255,255,255,0.5))" }}>
+                {activeToolDefinition.description}
+              </span>
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {imageCutoutToolDefinitions.map((tool) => (
+                <button
+                  key={tool.id}
+                  type="button"
+                  onClick={() => setActiveToolId(tool.id)}
+                  style={toolChipStyle(tool.id === activeToolId)}
+                >
+                  <span style={{ fontSize: 11, fontWeight: 700 }}>{tool.label}</span>
+                  <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>
+                    {tool.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={panelCardStyle()}>
+            <div style={{ display: "grid", gap: 3 }}>
+              <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>Live Tools</span>
+              <span style={{ fontSize: 10, color: "var(--overlay-text-dim, rgba(255,255,255,0.5))" }}>
+                {describeToolInteraction(activeToolId)}
+              </span>
+            </div>
+            {activeToolId === "spark" ? (
+              <ControlSlider
+                label="Color Reach"
+                value={sparkTolerance}
+                min={0}
+                max={100}
+                step={1}
+                onChange={setSparkTolerance}
+                helper="Higher values let Spark jump across looser color matches."
+              />
+            ) : (
+              <>
+                <ControlSlider
+                  label="Sweep Size"
+                  value={sweepSize}
+                  min={6}
+                  max={140}
+                  step={1}
+                  onChange={setSweepSize}
+                  helper="Larger sweeps cover more pixels per pass."
+                />
+                <ControlSlider
+                  label="Sweep Reach"
+                  value={sweepTolerance}
+                  min={0}
+                  max={100}
+                  step={1}
+                  onChange={setSweepTolerance}
+                  helper="Higher reach accepts a wider range of nearby colors."
+                />
+                <ControlSlider
+                  label="Sweep Softness"
+                  value={sweepSoftness}
+                  min={0}
+                  max={100}
+                  step={1}
+                  onChange={setSweepSoftness}
+                  helper="Soft sweeps taper their edges instead of cutting hard circles."
+                />
+              </>
+            )}
+          </div>
+
+          <div style={panelCardStyle()}>
+            <div style={{ display: "grid", gap: 3 }}>
+              <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>Edge Tuning</span>
+              <span style={{ fontSize: 10, color: "var(--overlay-text-dim, rgba(255,255,255,0.5))" }}>
+                Shape the live edge without re-running the auto pass.
+              </span>
+            </div>
+            <ControlSlider
+              label="Soft Edge"
+              value={edgeSoftness}
+              min={0}
+              max={24}
+              step={1}
+              onChange={setEdgeSoftness}
+              helper="Adds feather-like softness around the mask boundary."
+            />
+            <ControlSlider
+              label="Edge Pull"
+              value={edgePull}
+              min={-24}
+              max={24}
+              step={1}
+              onChange={setEdgePull}
+              helper="Negative values tighten the edge. Positive values grow it."
+            />
+          </div>
+
+          <div style={panelCardStyle()}>
+            <span style={{ fontSize: 10, color: "var(--overlay-text-muted)" }}>Gestures</span>
+            <div style={{ display: "grid", gap: 4, fontSize: 10, color: "var(--overlay-text-primary)" }}>
+              <span>Click / drag = add to subject</span>
+              <span>Alt-click / right-drag = trim from subject</span>
+              <span>Ctrl+C = copy</span>
+              <span>Ctrl+S = save sibling PNG</span>
+            </div>
+          </div>
         </div>
 
         <div
           style={{
-            flex: 1,
-            minHeight: 0,
+            flex: "1 1 360px",
+            minWidth: 0,
+            minHeight: 320,
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.08)",
-            background:
-              "radial-gradient(circle at center, rgba(255,255,255,0.03), rgba(0,0,0,0.26))",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+            alignItems: "stretch",
           }}
         >
-          {isBooting && !sessionSnapshot ? (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 12,
-                color: "var(--overlay-text-muted)",
-              }}
-            >
-              <Loader2 size={26} className="animate-spin" />
-              <span style={{ fontSize: 12 }}>Building the initial subject matte…</span>
-            </div>
-          ) : sessionSnapshot ? (
-            <div
-              ref={frameRef}
-              onPointerDown={handleSurfacePointerDown}
-              onContextMenu={(event) => event.preventDefault()}
-              style={{
-                position: "relative",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                maxWidth: "100%",
-                maxHeight: "100%",
-                cursor: isMutating ? "progress" : "crosshair",
-                userSelect: "none",
-              }}
-            >
-              <img
-                src={sessionSnapshot.cutoutPreviewDataUrl}
-                alt={`${imageName} cutout preview`}
-                draggable={false}
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.08)",
+              background:
+                "radial-gradient(circle at center, rgba(255,255,255,0.03), rgba(0,0,0,0.26))",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+            }}
+          >
+            {isBooting && !sessionSnapshot ? (
+              <div
                 style={{
-                  display: "block",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 12,
+                  color: "var(--overlay-text-muted)",
+                }}
+              >
+                <Loader2 size={26} className="animate-spin" />
+                <span style={{ fontSize: 12 }}>Building the initial subject cutout…</span>
+              </div>
+            ) : sessionSnapshot ? (
+              <div
+                ref={frameRef}
+                onPointerDown={handleSurfacePointerDown}
+                onPointerMove={continueSweepStroke}
+                onPointerUp={endSweepStroke}
+                onPointerCancel={endSweepStroke}
+                onLostPointerCapture={endSweepStroke}
+                onContextMenu={(event) => event.preventDefault()}
+                style={{
+                  position: "relative",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                   maxWidth: "100%",
                   maxHeight: "100%",
-                  objectFit: "contain",
-                  filter: filterCss,
-                  boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
+                  cursor: isMutating ? "progress" : activeToolId === "spark" ? "cell" : "crosshair",
+                  userSelect: "none",
                 }}
-              />
-              <canvas
-                ref={marchingAntsCanvasRef}
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  width: "100%",
-                  height: "100%",
-                  pointerEvents: "none",
-                  imageRendering: "pixelated",
-                }}
-              />
-              {promptMarkers.map((prompt, index) => (
-                <div
-                  key={`${prompt.kind}-${index}-${prompt.xNorm}-${prompt.yNorm}`}
+              >
+                <canvas
+                  ref={previewCanvasRef}
+                  aria-label={`${imageName} cutout preview`}
+                  style={{
+                    display: "block",
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    objectFit: "contain",
+                    filter: filterCss,
+                    boxShadow: "0 12px 32px rgba(0,0,0,0.45)",
+                  }}
+                />
+                <canvas
+                  ref={marchingAntsCanvasRef}
                   aria-hidden
                   style={{
                     position: "absolute",
-                    left: `${prompt.xNorm * 100}%`,
-                    top: `${prompt.yNorm * 100}%`,
-                    width: 14,
-                    height: 14,
-                    marginLeft: -7,
-                    marginTop: -7,
-                    borderRadius: 999,
-                    border:
-                      prompt.kind === "negative"
-                        ? "2px solid rgba(248, 113, 113, 0.9)"
-                        : "2px solid rgba(96, 165, 250, 0.9)",
-                    background:
-                      prompt.kind === "negative"
-                        ? "rgba(127, 29, 29, 0.44)"
-                        : "rgba(30, 64, 175, 0.42)",
-                    boxShadow: "0 0 0 2px rgba(15, 23, 42, 0.7)",
-                    transform: "translateZ(0)",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
                     pointerEvents: "none",
+                    imageRendering: "pixelated",
                   }}
                 />
-              ))}
-            </div>
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 12,
-                color: "#fca5a5",
-                padding: 24,
-              }}
-            >
-              <Scissors size={26} />
-              <span style={{ fontSize: 12 }}>{statusMessage}</span>
-            </div>
-          )}
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 12,
+                  color: "#fca5a5",
+                  padding: 24,
+                }}
+              >
+                <Scissors size={26} />
+                <span style={{ fontSize: 12 }}>{statusMessage}</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -102,6 +102,7 @@ pub struct ImageCutoutStageExportRequest {
     pub export_mode: ImageCutoutExportMode,
     pub logical_output_path: Option<String>,
     pub filters: Option<ImageCutoutExportFilterState>,
+    pub override_mask_data_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -110,6 +111,7 @@ pub struct ImageCutoutCopyToClipboardRequest {
     pub session_id: String,
     pub logical_output_path: Option<String>,
     pub filters: Option<ImageCutoutExportFilterState>,
+    pub override_mask_data_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -184,6 +186,7 @@ struct PythonImageCutoutStageExportPayload {
     session_id: String,
     output_path: String,
     filters: Option<ImageCutoutExportFilterState>,
+    override_mask_data_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -423,6 +426,7 @@ impl ImageCutoutManager {
             output_path,
             request.export_mode,
             request.filters,
+            request.override_mask_data_url,
         )
     }
 
@@ -438,6 +442,7 @@ impl ImageCutoutManager {
                 export_mode: ImageCutoutExportMode::Staging,
                 logical_output_path: request.logical_output_path.clone(),
                 filters: request.filters,
+                override_mask_data_url: request.override_mask_data_url,
             },
         )?;
         let image = image::ImageReader::open(&export.output_path)
@@ -499,6 +504,7 @@ impl ImageCutoutManager {
         output_path: PathBuf,
         mode: ImageCutoutExportMode,
         filters: Option<ImageCutoutExportFilterState>,
+        override_mask_data_url: Option<String>,
     ) -> Result<ImageCutoutStagedExportArtifact, String> {
         let output_path_string = output_path.to_string_lossy().to_string();
         let PythonSidecarDecodedActionResponse { result, .. }: PythonSidecarDecodedActionResponse<
@@ -511,6 +517,7 @@ impl ImageCutoutManager {
                 session_id: session_id.to_string(),
                 output_path: output_path_string,
                 filters,
+                override_mask_data_url,
             }),
             None,
             None,

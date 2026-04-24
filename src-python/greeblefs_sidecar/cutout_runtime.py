@@ -130,6 +130,23 @@ def _load_input_image(payload_dict: dict[str, Any]) -> Any:
     raise ValueError("Cutout session open requires either inputPath or inputDataUrl.")
 
 
+def _load_override_mask(
+    payload_dict: dict[str, Any],
+    expected_size: tuple[int, int],
+) -> Any | None:
+    override_mask_data_url = payload_dict.get("overrideMaskDataUrl")
+    if not isinstance(override_mask_data_url, str) or not override_mask_data_url.strip():
+        return None
+
+    override_image = _decode_data_url_image(override_mask_data_url.strip())
+    mask_alpha = override_image.getchannel("A")
+    if mask_alpha.getextrema()[0] == mask_alpha.getextrema()[1]:
+        mask_alpha = _rgba_to_luminance(override_image)
+    if mask_alpha.size != expected_size:
+        mask_alpha = mask_alpha.resize(expected_size, PIL_RESAMPLE_LANCZOS)
+    return mask_alpha.convert("L")
+
+
 def _fit_image(image: Any, max_dimension: int) -> Any:
     width, height = image.size
     if width <= max_dimension and height <= max_dimension:
@@ -499,7 +516,11 @@ def image_cutout_stage_export_action(
         raise KeyError(f"Image cutout session was not found: {session_id}")
 
     output = _apply_filter_state(session.original_image, payload_dict.get("filters"))
-    export_mask = _resize_mask_for_export(session.current_mask, output.size)
+    override_mask = _load_override_mask(payload_dict, session.analysis_image.size)
+    export_mask = _resize_mask_for_export(
+        override_mask if override_mask is not None else session.current_mask,
+        output.size,
+    )
     source_alpha = output.getchannel("A")
     output.putalpha(ImageChops.multiply(source_alpha, export_mask))
 
