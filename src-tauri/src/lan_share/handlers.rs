@@ -239,13 +239,21 @@ async fn ftp_file_handler(
 async fn ftp_upload_handler(
     State(state): State<ShareState>,
     Query(query): Query<UploadQuery>,
+    multipart: Multipart,
+) -> Response {
+    handle_multipart_upload(&state, query.path.as_deref(), multipart).await
+}
+
+pub(super) async fn handle_multipart_upload(
+    state: &ShareState,
+    upload_path: Option<&str>,
     mut multipart: Multipart,
 ) -> Response {
     if state.file_hub.is_some() {
         return (StatusCode::FORBIDDEN, "Upload not allowed").into_response();
     }
 
-    let target_dir = match resolve_sub_path(&state.share_path, query.path.as_deref()) {
+    let target_dir = match resolve_sub_path(&state.share_path, upload_path) {
         Ok(path) => path,
         Err(status) => return (status, "Invalid upload path").into_response(),
     };
@@ -286,7 +294,7 @@ async fn ftp_upload_handler(
     (StatusCode::OK, axum::Json(response_body)).into_response()
 }
 
-fn get_unique_path(path: &Path) -> PathBuf {
+pub(super) fn get_unique_path(path: &Path) -> PathBuf {
     let parent = path.parent().unwrap_or(Path::new(""));
     let stem = path
         .file_stem()

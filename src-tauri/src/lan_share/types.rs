@@ -2,6 +2,7 @@
 // License: GNU GPLv3 or later. See the license file in the project root for more information.
 // Copyright © 2021 - present Aleksey Hoffman. All rights reserved.
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -75,6 +76,31 @@ pub struct MobileThemeMetricsSnapshot {
 
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub struct MobileIconThemeSnapshot {
+    pub id: String,
+    pub name: String,
+    pub file: String,
+    pub folder: String,
+    pub folder_expanded: String,
+    pub icon_definitions: BTreeMap<String, String>,
+    pub file_extensions: BTreeMap<String, String>,
+    pub file_names: BTreeMap<String, String>,
+    pub folder_names: BTreeMap<String, String>,
+    pub folder_names_expanded: BTreeMap<String, String>,
+    pub ui_icons: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MobileFolderIconRuleSnapshot {
+    pub id: String,
+    pub label: String,
+    pub matchers: Vec<String>,
+    pub icon: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct MobileThemeSnapshot {
     pub theme_id: String,
     pub theme_name: String,
@@ -83,6 +109,9 @@ pub struct MobileThemeSnapshot {
     pub palette: MobileThemePaletteSnapshot,
     pub metrics: MobileThemeMetricsSnapshot,
     pub shadow: String,
+    pub icon_theme: MobileIconThemeSnapshot,
+    pub folder_icon_rules: Vec<MobileFolderIconRuleSnapshot>,
+    pub default_folder_icon: String,
 }
 
 impl Default for MobileThemeSnapshot {
@@ -116,6 +145,33 @@ impl Default for MobileThemeSnapshot {
                 panel_gap: 14.0,
             },
             shadow: "0 18px 48px rgba(0, 0, 0, 0.34)".to_string(),
+            icon_theme: MobileIconThemeSnapshot {
+                id: "greeblefs_icon_theme".to_string(),
+                name: "GreebleFS Icon Theme".to_string(),
+                file: "txt".to_string(),
+                folder: "folder".to_string(),
+                folder_expanded: "folder_open".to_string(),
+                icon_definitions: BTreeMap::from([
+                    ("txt".to_string(), "/icons/txt.svg".to_string()),
+                    ("folder".to_string(), "/icons/folder.svg".to_string()),
+                    (
+                        "folder_open".to_string(),
+                        "/icons/folder_open.svg".to_string(),
+                    ),
+                    ("image".to_string(), "/icons/image.svg".to_string()),
+                    ("video".to_string(), "/icons/video.svg".to_string()),
+                    ("audio".to_string(), "/icons/audio.svg".to_string()),
+                    ("pdf".to_string(), "/icons/pdf.svg".to_string()),
+                    ("archive".to_string(), "/icons/archive.svg".to_string()),
+                ]),
+                file_extensions: BTreeMap::new(),
+                file_names: BTreeMap::new(),
+                folder_names: BTreeMap::new(),
+                folder_names_expanded: BTreeMap::new(),
+                ui_icons: BTreeMap::new(),
+            },
+            folder_icon_rules: Vec::new(),
+            default_folder_icon: "folder".to_string(),
         }
     }
 }

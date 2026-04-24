@@ -70,6 +70,23 @@ if (typeof globalThis.ResizeObserver !== 'function') {
   });
 }
 
+if (typeof globalThis.matchMedia !== 'function') {
+  Object.defineProperty(globalThis, 'matchMedia', {
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+    writable: true,
+    configurable: true,
+  });
+}
+
 // ─── Mock the entire @tauri-apps/* surface ───────────────────────────────────
 // We are testing logic / rendering only. Real Tauri IPC is NOT available in
 // jsdom, so every `invoke`, `listen`, etc. must be stubbed.

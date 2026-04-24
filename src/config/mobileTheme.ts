@@ -1,4 +1,13 @@
 import type { ResolvedOverlayAppearance } from './appearance';
+import {
+  DEFAULT_FOLDER_ICON_VALUE,
+  type FolderIconRule,
+  type FolderIconValue,
+} from './folderIcons';
+import {
+  getBuiltInIconTheme,
+  type OverlayResolvedIconTheme,
+} from './iconTheme';
 
 export interface MobileShareThemePaletteSnapshot {
   appBackground: string;
@@ -23,6 +32,27 @@ export interface MobileShareThemeMetricsSnapshot {
   panelGap: number;
 }
 
+export interface MobileShareIconThemeSnapshot {
+  id: string;
+  name: string;
+  file: string;
+  folder: string;
+  folderExpanded: string;
+  iconDefinitions: Record<string, string>;
+  fileExtensions: Record<string, string>;
+  fileNames: Record<string, string>;
+  folderNames: Record<string, string>;
+  folderNamesExpanded: Record<string, string>;
+  uiIcons: Record<string, string>;
+}
+
+export interface MobileShareFolderIconRuleSnapshot {
+  id: string;
+  label: string;
+  matchers: string[];
+  icon: string;
+}
+
 export interface MobileShareThemeSnapshot {
   themeId: string;
   themeName: string;
@@ -31,13 +61,53 @@ export interface MobileShareThemeSnapshot {
   palette: MobileShareThemePaletteSnapshot;
   metrics: MobileShareThemeMetricsSnapshot;
   shadow: string;
+  iconTheme: MobileShareIconThemeSnapshot;
+  folderIconRules: MobileShareFolderIconRuleSnapshot[];
+  defaultFolderIcon: string;
+}
+
+export interface CreateMobileShareThemeSnapshotOptions {
+  folderIconRules?: readonly FolderIconRule[];
+  defaultFolderIcon?: FolderIconValue;
+}
+
+function cloneIconThemeSnapshot(
+  iconTheme: OverlayResolvedIconTheme,
+): MobileShareIconThemeSnapshot {
+  return {
+    id: iconTheme.id,
+    name: iconTheme.name,
+    file: iconTheme.file,
+    folder: iconTheme.folder,
+    folderExpanded: iconTheme.folderExpanded,
+    iconDefinitions: { ...iconTheme.iconDefinitions },
+    fileExtensions: { ...iconTheme.fileExtensions },
+    fileNames: { ...iconTheme.fileNames },
+    folderNames: { ...iconTheme.folderNames },
+    folderNamesExpanded: { ...iconTheme.folderNamesExpanded },
+    uiIcons: { ...iconTheme.uiIcons },
+  };
+}
+
+function cloneFolderIconRules(
+  rules: readonly FolderIconRule[] | undefined,
+): MobileShareFolderIconRuleSnapshot[] {
+  return (rules ?? []).map((rule) => ({
+    id: rule.id,
+    label: rule.label,
+    matchers: [...rule.matchers],
+    icon: rule.icon,
+  }));
 }
 
 export function createMobileShareThemeSnapshot(
   appearance: ResolvedOverlayAppearance,
+  options: CreateMobileShareThemeSnapshotOptions = {},
 ): MobileShareThemeSnapshot {
   const palette = appearance.theme.palette;
   const metrics = appearance.workbenchTheme.metrics;
+  const resolvedIconTheme =
+    appearance.theme.assets?.iconTheme ?? getBuiltInIconTheme();
 
   return {
     themeId: appearance.theme.id,
@@ -66,5 +136,9 @@ export function createMobileShareThemeSnapshot(
       panelGap: metrics.panelGap,
     },
     shadow: appearance.theme.effects.shadow,
+    iconTheme: cloneIconThemeSnapshot(resolvedIconTheme),
+    folderIconRules: cloneFolderIconRules(options.folderIconRules),
+    defaultFolderIcon:
+      options.defaultFolderIcon ?? DEFAULT_FOLDER_ICON_VALUE,
   };
 }

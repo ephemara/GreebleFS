@@ -32,8 +32,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 - `src/main.tsx`
   Frontend bootstrap. It now selects the root app by webview label, rendering `App` for the main shell and `src/windows/FileOperationsWindowApp.tsx` for the dedicated `file-operations` popout.
-- `vite.mobile.config.ts`, `src-mobile/main.tsx`, and `src-mobile/App.tsx`
-  The browser-safe mobile/PWA surface. This is a separate Vite entrypoint that builds `dist-mobile/` for Axum to serve over LAN/mobile sharing; it must stay free of Tauri-only runtime assumptions and talks to the desktop host through HTTP endpoints instead of direct `invoke()` calls.
+- `vite.mobile.config.ts`, `src-mobile/main.tsx`, `src-mobile/App.tsx`, `src-mobile/mobileApi.ts`, and `src-mobile/mobileStore.ts`
+  The browser-safe mobile/PWA surface. This is a separate Vite entrypoint that builds `dist-mobile/` for Axum to serve over LAN/mobile sharing; it must stay free of Tauri-only runtime assumptions and talks to the desktop host through HTTP endpoints instead of direct `invoke()` calls. The mobile shell is now a real four-tab app (`Explorer`, `Search`, `Transfers`, `Settings`) with its own browser-safe Zustand store, dedicated preview overlay flow, upload/download queueing, and desktop-owned theme/icon resources delivered over the mobile API instead of duplicated in the phone bundle.
 - `install.sh`
   Root Linux local-install wrapper. It delegates to `scripts/build-and-install-linux-local-release.sh`, which builds the app and installs a per-user release on Linux.
 - `install.ps1`
@@ -149,7 +149,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/runtime/tauriClient.ts` and `src/runtime/explorerBackend.ts`
   Typed frontend bridge for native explorer/media commands. Large 3D preview reads now use raw-byte preview transport commands (`fs_read_preview_bytes` / `cloud_read_preview_bytes`) that return `Uint8Array` payloads instead of base64 strings.
 - `src-tauri/src/lan_share/mobile.rs`
-  Browser-facing Axum surface for the sovereign mobile share. It serves the compiled `dist-mobile/` bundle, exposes the paged `/api/list` directory feed, falls back cleanly when the mobile bundle is missing, and reuses the existing file/Range streaming lane for direct media playback from the desktop host.
+  Browser-facing Axum surface for the sovereign mobile share. It serves the compiled `dist-mobile/` bundle, exposes the full mobile control plane (`/api/list`, `/api/theme`, `/api/search`, `/api/search/status`, `/api/search/scan`, `/api/search/cancel`, `/api/preview`, `/api/thumbnail`, `/api/icon`, `/api/upload`), falls back cleanly when the mobile bundle is missing, and reuses the existing file/Range streaming lane for direct media playback from the desktop host. This layer is now also the resolver for mobile presentation metadata such as entry kind, icon ids, thumbnail URLs, preview capability, and desktop-authored icon-theme/folder-icon rules.
 - `src-tauri/src/tailscale_commands.rs`
   Native Tailscale integration seam for the mobile share. It owns CLI-backed tailnet status, connect/disconnect flows, and the tailnet host/certificate resolution used when the mobile share needs a remote-safe URL instead of a LAN-only address.
 - `src/runtime/gitPanelBackend.ts`
@@ -219,7 +219,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/globalSearchStore.ts`
   Palette-scoped global-search state. It owns first-open initialization, status polling, debounced queries, scan lifecycle, and the latest indexed results shown in the shell command palette.
 - `src/store/settingsStore.ts`
-  Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, machine-level developer-mode behavior, the explorer menu authoring contract (`activeMenuPackId` plus per-context `contextMenuLayoutOverridesByContext`), the `settings.home` contract (active Home pack id, usage-telemetry toggle, per-pack state blobs, and active preset selection by pack id), and the `settings.mobile` contract for remote mobile-share delivery (`remoteAccessMode`, `tailscaleLoginServer`, `tailscaleHostname`). Shell/mobile configuration should live here rather than inside ad hoc component-local storage.
+  Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, machine-level developer-mode behavior, the explorer menu authoring contract (`activeMenuPackId` plus per-context `contextMenuLayoutOverridesByContext`), the `settings.home` contract (active Home pack id, usage-telemetry toggle, per-pack state blobs, and active preset selection by pack id), and the `settings.mobile` contract for remote mobile-share delivery (`remoteAccessMode`, `tailscaleLoginServer`, `tailscaleHostname`, boot/autostart behavior, and paired-shell preferences). Shell/mobile configuration should live here rather than inside ad hoc component-local storage.
 - `src/store/explorerStore.ts`
   Persisted explorer rail, named explorer session snapshots, and explorer-local workspace state for tabs plus slot-based workspace layouts. Explorer search state now persists the explicit `searchMode` enum, with legacy `searchIncludeContent` payloads normalized forward on hydration.
 - `src/store/gpuRuntimeStore.ts`

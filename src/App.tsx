@@ -627,6 +627,7 @@ function App() {
     appearance,
     keybindings,
     layoutSettings,
+    explorerSettings,
     mobileSettings,
     pythonSettings,
     systemSettings,
@@ -640,6 +641,7 @@ function App() {
     appearance: state.settings.appearance,
     keybindings: state.settings.keybindings,
     layoutSettings: state.settings.layout,
+    explorerSettings: state.settings.explorer,
     mobileSettings: state.settings.mobile,
     pythonSettings: state.settings.python,
     systemSettings: state.settings.system,
@@ -816,8 +818,15 @@ function App() {
   const accent = theme.palette.accent;
   const workbench = resolvedAppearance.workbenchTheme;
   const mobileShareThemeSnapshot = useMemo(
-    () => createMobileShareThemeSnapshot(resolvedAppearance),
-    [resolvedAppearance],
+    () => createMobileShareThemeSnapshot(resolvedAppearance, {
+      folderIconRules: explorerSettings.folderIconRules,
+      defaultFolderIcon: explorerSettings.defaultFolderIcon,
+    }),
+    [
+      resolvedAppearance,
+      explorerSettings.defaultFolderIcon,
+      explorerSettings.folderIconRules,
+    ],
   );
   const resolvedTopBarSelection = useMemo(
     () => resolveActiveTopBarSelection({

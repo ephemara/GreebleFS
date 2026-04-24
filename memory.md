@@ -1,3 +1,24 @@
+# 2026-04-23 - Mobile Share Is Now A Real Four-Tab PWA Shell Backed By A Native Mobile Control Plane
+
+- The old one-screen phone share has been replaced with a proper mobile app shell under `src-mobile/`. The mobile bundle now has first-class `Explorer`, `Search`, `Transfers`, and `Settings` tabs, keeps its own browser-safe navigation/transfer state in `src-mobile/mobileStore.ts`, and still stays deliberately separate from the desktop Tauri session model.
+- Durable implementation shape:
+  - `src-mobile/App.tsx` now owns a preview-first mobile explorer with paged directory traversal, breadcrumbs, quick filter, upload buttons, preview overlay handling, transfer history, indexed-search tab, and paired-settings diagnostics instead of only rendering one directory list.
+  - `src-mobile/mobileApi.ts`, `src-mobile/types.ts`, and `src-mobile/mobileShared.ts` are now the browser-safe contract layer for the PWA. Mobile no longer guesses entry presentation locally; it consumes typed desktop-authored metadata such as entry kind, preview kind, icon ids, thumbnail URLs, and download/open URLs from the host.
+  - `src-tauri/src/lan_share/mobile.rs` is no longer a list-only route. It now serves the full mobile control plane: paged listings, theme/icon payloads, preview metadata, thumbnail reads, indexed search status/query/scan control, icon resolution, uploads, and the existing file/range stream lane.
+  - `src-tauri/src/lan_share/types.rs` plus `src/config/mobileTheme.ts` now carry a larger mobile theme snapshot that includes desktop-owned icon-theme data and folder-icon rules, so the phone surface inherits the same visual/icon identity as the paired desktop shell.
+  - `src-tauri/src/lan_share/handlers.rs` now exposes a shared multipart upload helper so the mobile upload endpoint can reuse the host upload path instead of inventing a second write flow.
+- Durable product note:
+  - Mobile still has its own session state, tab selection, and transfer queue, but desktop remains the source of truth for theme, icon theme, folder icon rules, thumbnail generation, preview classification, search indexing, and file streaming.
+  - Downloads intentionally remain browser-managed final handoffs in v1. The mobile app tracks those actions in its transfer queue, but iOS/browser storage semantics still own the final save location.
+  - This is a read-heavy, preview-heavy mobile surface. Editor-grade desktop workbenches are still out of scope for the PWA lane, but preview parity now covers image, video, audio, PDF, text, folder summaries, and archive summaries.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml lan_share::mobile -- --nocapture`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/mobileApp.test.tsx src/test/mobileTheme.test.ts --reporter=dot`
+  - passed: `bun run build:mobile`
+
 # 2026-04-23 - Explorer Context Menus Now Use Menu Packs, Typed Runtime Resolution, And A Classic Nested Renderer
 
 - Explorer context menus no longer come from the old flat `CtxItem[]` flow inside `FileExplorer.tsx`. The explorer now resolves menus through four layers: a typed command graph in `src/config/explorerContextMenu.ts`, declarative authored packs in `src/config/menuPacks.ts`, theme presentation hints in `src/config/explorerTheme.ts`, and the runtime/renderer pair in `src/components/explorer/explorerMenuRuntime.ts` plus `src/components/explorer/ExplorerContextMenu.tsx`.
