@@ -1,6 +1,6 @@
-//
-
+use super::OPEN_WITH_LINUX_COMMAND_TIMEOUT;
 use crate::open_with::utils::path_extension_lowercase;
+use crate::open_with::utils::run_command_with_timeout;
 use std::path::Path;
 use std::process::Command;
 
@@ -38,10 +38,14 @@ pub(super) fn get_mime_type(path: &Path) -> Result<String, String> {
 }
 
 fn get_mime_type_via_xdg_mime(file_path: &str) -> Option<String> {
-    let output = Command::new("xdg-mime")
-        .args(["query", "filetype", file_path])
-        .output()
-        .ok()?;
+    let mut command = Command::new("xdg-mime");
+    command.args(["query", "filetype", file_path]);
+    let output = run_command_with_timeout(
+        command,
+        OPEN_WITH_LINUX_COMMAND_TIMEOUT,
+        "xdg-mime query filetype",
+    )
+    .ok()?;
 
     if !output.status.success() {
         return None;
@@ -57,10 +61,14 @@ fn get_mime_type_via_xdg_mime(file_path: &str) -> Option<String> {
 }
 
 fn get_mime_type_via_gio(file_path: &str) -> Option<String> {
-    let output = Command::new("gio")
-        .args(["info", "--attributes=standard::content-type", file_path])
-        .output()
-        .ok()?;
+    let mut command = Command::new("gio");
+    command.args(["info", "--attributes=standard::content-type", file_path]);
+    let output = run_command_with_timeout(
+        command,
+        OPEN_WITH_LINUX_COMMAND_TIMEOUT,
+        "gio info --attributes=standard::content-type",
+    )
+    .ok()?;
 
     if !output.status.success() {
         return None;
@@ -85,10 +93,11 @@ fn get_mime_type_via_gio(file_path: &str) -> Option<String> {
 }
 
 fn get_mime_type_via_file_command(file_path: &str) -> Option<String> {
-    let output = Command::new("file")
-        .args(["--mime-type", "-b", file_path])
-        .output()
-        .ok()?;
+    let mut command = Command::new("file");
+    command.args(["--mime-type", "-b", file_path]);
+    let output =
+        run_command_with_timeout(command, OPEN_WITH_LINUX_COMMAND_TIMEOUT, "file --mime-type")
+            .ok()?;
 
     if !output.status.success() {
         return None;

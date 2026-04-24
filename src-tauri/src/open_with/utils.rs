@@ -6,6 +6,9 @@ use file_icon_provider::get_file_icon;
 use image::codecs::png::PngEncoder;
 use image::ImageEncoder;
 use std::path::Path;
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 pub fn canonicalize_path(path: &Path) -> String {
     match path.canonicalize() {
@@ -68,4 +71,43 @@ pub fn path_extension_lowercase(path: &Path) -> Option<String> {
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(|extension| extension.to_ascii_lowercase())
+}
+
+pub fn run_command_with_timeout(
+    mut command: Command,
+    timeout: Duration,
+    description: &str,
+) -> Result<Output, String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Failed to run {description}: {error}"))?;
+    let started = Instant::now();
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                return child
+                    .wait_with_output()
+                    .map_err(|error| format!("Failed to collect {description} output: {error}"));
+            }
+            Ok(None) => {
+                if started.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "{description} timed out after {}ms",
+                        timeout.as_millis()
+                    ));
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("Failed while waiting for {description}: {error}"));
+            }
+        }
+    }
 }

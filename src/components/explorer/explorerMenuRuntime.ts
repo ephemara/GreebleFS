@@ -58,6 +58,8 @@ export interface ExplorerOpenWithProgramsState {
   status: 'idle' | 'loading' | 'ready' | 'error';
   catalog: ExplorerAssociatedProgramsCatalog | null;
   error: string | null;
+  requestId: number | null;
+  requestedAtEpochMs: number | null;
 }
 
 export interface ExplorerMenuRuntimeActionContext {

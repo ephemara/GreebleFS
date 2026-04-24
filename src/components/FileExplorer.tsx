@@ -543,6 +543,7 @@ const EXPLORER_THUMBNAIL_TYPE_BADGE_KINDS = new Set<
 const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
 const EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS = 88;
+const EXPLORER_OPEN_WITH_REQUEST_TIMEOUT_MS = 4000;
 const EXPLORER_TEXT_DRAFT_SCOPE = "text";
 const EXPLORER_SHADER_DRAFT_SCOPE = "shader";
 const explorerStringDraftSerializer = createStringExplorerDraftSerializer();
@@ -553,6 +554,29 @@ const PYTHON_PREVIEW_WILDCARD_WORKFLOW_TABS = [
   { id: "run", label: "Run", baseMode: "preview" },
   { id: "runtime", label: "Runtime", baseMode: "preview" },
 ] as const satisfies readonly ExplorerPreviewWildcardWorkflowTab[];
+
+function awaitPromiseWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutHandle = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutHandle);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeoutHandle);
+        reject(error);
+      },
+    );
+  });
+}
 
 type ExplorerNormalizedSearchResult = {
   name: string;
@@ -7797,6 +7821,7 @@ export function FileExplorer({
   const [openWithProgramsByPath, setOpenWithProgramsByPath] = useState<
     Record<string, ExplorerOpenWithProgramsState | undefined>
   >({});
+  const openWithProgramsRequestIdRef = useRef(0);
   const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showArchiveActionsMenu, setShowArchiveActionsMenu] = useState(false);
@@ -11108,13 +11133,23 @@ export function FileExplorer({
         return;
       }
 
+      const requestId = ++openWithProgramsRequestIdRef.current;
+      const requestedAtEpochMs = Date.now();
       let shouldLoad = false;
       setOpenWithProgramsByPath((current) => {
         const existing = current[path];
-        if (
-          existing?.status === "loading" ||
-          existing?.status === "ready"
-        ) {
+        if (existing?.status === "ready") {
+          return current;
+        }
+
+        const shouldReuseInFlightRequest =
+          existing?.status === "loading" &&
+          existing.requestId !== null &&
+          existing.requestedAtEpochMs !== null &&
+          requestedAtEpochMs - existing.requestedAtEpochMs <
+            EXPLORER_OPEN_WITH_REQUEST_TIMEOUT_MS;
+
+        if (shouldReuseInFlightRequest) {
           return current;
         }
 
@@ -11125,6 +11160,8 @@ export function FileExplorer({
             status: "loading",
             catalog: existing?.catalog ?? null,
             error: null,
+            requestId,
+            requestedAtEpochMs,
           },
         };
       });
@@ -11134,24 +11171,46 @@ export function FileExplorer({
       }
 
       try {
-        const catalog = await getExplorerAssociatedPrograms(path);
-        setOpenWithProgramsByPath((current) => ({
-          ...current,
-          [path]: {
-            status: "ready",
-            catalog,
-            error: null,
-          },
-        }));
+        const catalog = await awaitPromiseWithTimeout(
+          getExplorerAssociatedPrograms(path),
+          EXPLORER_OPEN_WITH_REQUEST_TIMEOUT_MS,
+          "Timed out while resolving compatible apps.",
+        );
+        setOpenWithProgramsByPath((current) => {
+          const existing = current[path];
+          if (!existing || existing.requestId !== requestId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [path]: {
+              status: "ready",
+              catalog,
+              error: null,
+              requestId: null,
+              requestedAtEpochMs: null,
+            },
+          };
+        });
       } catch (error) {
-        setOpenWithProgramsByPath((current) => ({
-          ...current,
-          [path]: {
-            status: "error",
-            catalog: null,
-            error: String(error),
-          },
-        }));
+        setOpenWithProgramsByPath((current) => {
+          const existing = current[path];
+          if (!existing || existing.requestId !== requestId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [path]: {
+              status: "error",
+              catalog: null,
+              error: String(error),
+              requestId: null,
+              requestedAtEpochMs: null,
+            },
+          };
+        });
       }
     },
     [

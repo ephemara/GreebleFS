@@ -1,12 +1,13 @@
-//
-
+use super::OPEN_WITH_LINUX_COMMAND_TIMEOUT;
 use crate::open_with::types::AssociatedProgram;
-use crate::open_with::utils::{get_program_icon, load_png_as_base64};
+use crate::open_with::utils::{get_program_icon, load_png_as_base64, run_command_with_timeout};
 use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+const RESOLVE_ASSOCIATED_PROGRAM_ICONS: bool = false;
 
 pub(super) struct GioMimeInfo {
     pub(crate) default_app: Option<String>,
@@ -27,11 +28,12 @@ pub(super) struct DesktopEntry {
 }
 
 pub(super) fn get_gio_mime_info(mime_type: &str) -> Option<GioMimeInfo> {
-    let output = Command::new("gio")
+    let mut command = Command::new("gio");
+    command
         .args(["mime", mime_type])
         .env("LC_ALL", "C")
-        .env("LANG", "C")
-        .output()
+        .env("LANG", "C");
+    let output = run_command_with_timeout(command, OPEN_WITH_LINUX_COMMAND_TIMEOUT, "gio mime")
         .map_err(|command_error| {
             log::warn!(
                 "Open With Linux: gio mime failed for {}: {}",
@@ -203,17 +205,21 @@ pub(super) fn get_mimeapps_entries(mime_type: &str) -> MimeappsEntries {
 }
 
 pub(super) fn get_xdg_default_app(mime_type: &str) -> Option<String> {
-    let output = Command::new("xdg-mime")
-        .args(["query", "default", mime_type])
-        .output()
-        .map_err(|command_error| {
-            log::warn!(
-                "Open With Linux: xdg-mime default failed for {}: {}",
-                mime_type,
-                command_error
-            );
-        })
-        .ok()?;
+    let mut command = Command::new("xdg-mime");
+    command.args(["query", "default", mime_type]);
+    let output = run_command_with_timeout(
+        command,
+        OPEN_WITH_LINUX_COMMAND_TIMEOUT,
+        "xdg-mime query default",
+    )
+    .map_err(|command_error| {
+        log::warn!(
+            "Open With Linux: xdg-mime default failed for {}: {}",
+            mime_type,
+            command_error
+        );
+    })
+    .ok()?;
 
     if !output.status.success() {
         let stderr_value = String::from_utf8_lossy(&output.stderr);
@@ -393,11 +399,17 @@ pub(super) fn desktop_id_to_program(
         .and_then(|value| parse_exec_command(value))
         .and_then(|value| resolve_executable_path(&value));
 
-    let icon = entry
-        .as_ref()
-        .and_then(|value| value.icon.as_ref())
-        .and_then(|value| resolve_icon_path(value, desktop_file_path.as_ref()))
-        .or_else(|| exec_path.as_ref().and_then(|value| get_program_icon(value)));
+    // The current explorer menu renderer does not consume per-program icons yet, so
+    // skip the expensive Linux icon/theme lookup path to keep submenu resolution fast.
+    let icon = if RESOLVE_ASSOCIATED_PROGRAM_ICONS {
+        entry
+            .as_ref()
+            .and_then(|value| value.icon.as_ref())
+            .and_then(|value| resolve_icon_path(value, desktop_file_path.as_ref()))
+            .or_else(|| exec_path.as_ref().and_then(|value| get_program_icon(value)))
+    } else {
+        None
+    };
 
     if desktop_file_path.is_none() {
         log::warn!("Open With Linux: desktop file not found {}", desktop_id);

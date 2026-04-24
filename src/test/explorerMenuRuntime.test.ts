@@ -209,6 +209,8 @@ describe('explorerMenuRuntime', () => {
         [targetEntry.path]: {
           status: 'ready',
           error: null,
+          requestId: null,
+          requestedAtEpochMs: null,
           catalog: {
             defaultProgram: {
               name: 'Preview',
