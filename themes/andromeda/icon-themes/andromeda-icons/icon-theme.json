@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "id": "andromeda-icons",
+  "name": "Andromeda Icons",
+  "description": "Minimal line icons with observatory folders and starlit media glyphs.",
+  "file": "txt",
+  "folder": "folder",
+  "folderExpanded": "folder_open",
+  "iconDefinitions": {
+    "folder": "./icons/folder.svg",
+    "folder_open": "./icons/folder-open.svg",
+    "folder_assets": "./icons/folder-assets.svg",
+    "folder_assets_open": "./icons/folder-assets-open.svg",
+    "image": "./icons/image.svg",
+    "audio": "./icons/audio.svg",
+    "video": "./icons/video.svg",
+    "model3d": "./icons/model3d.svg",
+    "sparkles": "./icons/sparkles.svg",
+    "palette": "./icons/palette.svg"
+  },
+  "folderNames": {
+    "themes": "folder_assets",
+    "wallpapers": "folder_assets",
+    "shaders": "folder_assets",
+    "animations": "folder_assets",
+    "appearance-packs": "folder_assets",
+    "theme-recipes": "folder_assets",
+    "theme-engines": "folder_assets",
+    "icon-themes": "folder_assets",
+    "top-bars": "folder_assets",
+    "interaction-motion": "folder_assets",
+    "plugins": "folder_assets",
+    "assets": "folder_assets"
+  },
+  "folderNamesExpanded": {
+    "themes": "folder_assets_open",
+    "wallpapers": "folder_assets_open",
+    "shaders": "folder_assets_open",
+    "animations": "folder_assets_open",
+    "appearance-packs": "folder_assets_open",
+    "theme-recipes": "folder_assets_open",
+    "theme-engines": "folder_assets_open",
+    "icon-themes": "folder_assets_open",
+    "top-bars": "folder_assets_open",
+    "interaction-motion": "folder_assets_open",
+    "plugins": "folder_assets_open",
+    "assets": "folder_assets_open"
+  }
+}

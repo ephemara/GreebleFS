@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "id": "andromeda",
+  "name": "Andromeda",
+  "description": "The first canonical GreebleFS bundle theme: a restrained deep-space shell with frosted observatory chrome, luminous explorer focus, and authored atmospheric motion.",
+  "author": "Codex",
+  "tags": [
+    "reference",
+    "bundle-first",
+    "space",
+    "galaxy",
+    "minimal",
+    "cinematic"
+  ],
+  "extends": "github-dark",
+  "preview": "wallpapers/andromeda-halo.svg",
+  "appearancePackId": "appearance-core",
+  "topBarId": "stellar-bridge",
+  "iconThemeId": "andromeda-icons",
+  "wallpaperId": "andromeda-halo",
+  "shaderId": "andromeda-drift",
+  "openAnimationId": "andromeda-gate",
+  "closeAnimationId": "andromeda-gate",
+  "interactionMotionPackId": "motion-core",
+  "themeRecipeId": "recipe-core",
+  "themeEngineId": "engine-core"
+}

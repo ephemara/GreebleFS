@@ -1,3 +1,17 @@
+# 2026-04-24 - Andromeda Is The First Canonical Bundle-First Theme
+
+- The repo-root `themes/andromeda/` bundle is now the first full, production-grade bundle-first theme for GreebleFS. It is intentionally the golden example for future authored themes and exercises the normal lane model without requiring any runtime code changes.
+- Durable implementation shape:
+  - `themes/andromeda/theme.json` orchestrates local bundle ids only and keeps the manifest strictly orchestration-focused.
+  - The bundle ships one authored pack for each required core lane: `appearance-packs/appearance-core`, `theme-recipes/recipe-core`, `theme-engines/engine-core`, and `interaction-motion/motion-core`.
+  - It also exercises the optional local lanes that matter for the product identity: `top-bars/stellar-bridge`, `icon-themes/andromeda-icons`, `wallpapers/andromeda-halo.svg`, `shaders/andromeda-drift.tsx`, and `animations/andromeda-gate.tsx`.
+  - The theme stays on the standard shell runtime instead of introducing a custom renderer. That is deliberate: the reference theme demonstrates how far the current bundle system can go through authored content alone.
+- Durable product note:
+  - Treat `themes/andromeda/` as the canonical authored example for bundle-local ids, folder names, manifest ownership boundaries, and local asset/module placement until a dedicated starter bundle exists in-repo.
+  - The older `src-tauri/themes/*` examples are still useful for aesthetic reference and legacy shape comparison, but future authored themes should prefer the modular pack layout used by Andromeda.
+- Validation:
+  - passed: `bunx vitest run src/test/andromedaThemeBundle.test.ts --reporter=dot`
+
 # 2026-04-24 - Mobile Share Buttons Now Use A Shared Action-Button Surface With Static Hover Feedback
 
 - The mobile-share flow had drifted away from the shell UI system: the route menu, QR-card actions, settings action row, and pairing-dialog footer were all hand-styled buttons with no consistent hover treatment, and the top-bar phone button relied too heavily on motion-only feedback.

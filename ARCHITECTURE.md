@@ -241,6 +241,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - bundle-local child folders can live in-place under `appearance-packs/`, `top-bars/`, `icon-themes/`, `wallpapers/`, `shaders/`, `animations/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, `theme-engines/`, `home-packs/`, and `menu-packs/`
   - local child ids are scoped as `<themeBundleId>:<localId>` so bundle-local authored packs do not collide with standalone managed roots
   - `src/components/SettingsPage.tsx` `Theme JSON` now edits/imports bundle manifests and persists them in `settings.appearance.customThemeBundles`; legacy monolithic theme JSON is intentionally rejected
+  - `themes/andromeda/` is the first full repo-local example that exercises the required core lanes plus local top bar, icon theme, wallpaper, shader, and animation without needing runtime code changes
 - Top bars are now a first-class shell subsystem instead of an implicit side effect of `theme.workbench.topBarStyle`:
   - `src/config/topBars.ts` defines the built-in catalog, the control-zone schema (`leadingControls`, `navigationShortcuts`, `trailingControls`), and the active resolution order: explicit user pin, `theme.defaultTopBarId`, legacy `theme.workbench.topBarStyle`, then built-in fallback
   - `src/config/topBarPackages.ts` owns the standalone `top-bars/` loader, so authored top bars no longer need to hide inside theme bundles just to exist on disk
@@ -558,6 +559,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Persisted settings, explorer state, terminal state, and task state.
 - `themes/`
   Theme bundles discovered at runtime. Each bundle is an orchestration manifest that can package local child folders and/or reference standalone managed packs.
+  `themes/andromeda/` is the canonical bundle-first reference theme and shows the preferred authored layout for future theme work.
 - `appearance-packs/`
   Standalone appearance packs discovered at runtime.
 - `top-bars/`
