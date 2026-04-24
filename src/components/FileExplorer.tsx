@@ -3427,14 +3427,18 @@ function PreviewPanel({
   presentationMode,
   previewLocked,
   previewSurfaceMode,
+  previewTerminalMounted,
   refreshRevision,
   previewContentHostRef,
   previewDropBinding,
   previewDropTarget,
   previewDropTargetActive,
   previewDropTargetDwell,
-  explorerTerminalWorkingDirectory,
-  explorerTerminalReportedWorkingDirectory,
+  previewTerminalWorkingDirectory,
+  previewTerminalReportedWorkingDirectory,
+  previewTerminalNamespace,
+  previewTerminalCommandRequest,
+  previewTerminalFocusRequestKey,
   onClose,
   onWidthChange,
   onTextChange,
@@ -3452,6 +3456,8 @@ function PreviewPanel({
   onTogglePresentationMode,
   onTogglePreviewLock,
   onTogglePreviewTerminal,
+  onPreviewTerminalCommandHandled,
+  onPreviewTerminalReportedWorkingDirectoryChange,
   onRunTextScript,
   onRunPythonManaged,
   onRunPythonInTerminal,
@@ -3486,14 +3492,18 @@ function PreviewPanel({
   presentationMode: ExplorerPreviewSplitMode;
   previewLocked: boolean;
   previewSurfaceMode: PreviewSurfaceMode;
+  previewTerminalMounted: boolean;
   refreshRevision: number;
   previewContentHostRef: React.RefObject<HTMLDivElement | null>;
   previewDropBinding: ExplorerDropSurfaceBinding | null;
   previewDropTarget: ExplorerPreviewDropTarget | null;
   previewDropTargetActive: boolean;
   previewDropTargetDwell: boolean;
-  explorerTerminalWorkingDirectory: string | null;
-  explorerTerminalReportedWorkingDirectory: string | null;
+  previewTerminalWorkingDirectory: string | null;
+  previewTerminalReportedWorkingDirectory: string | null;
+  previewTerminalNamespace: string;
+  previewTerminalCommandRequest: TerminalOverlayCommandRequest | null;
+  previewTerminalFocusRequestKey: number;
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
@@ -3522,6 +3532,8 @@ function PreviewPanel({
   onTogglePresentationMode: () => void;
   onTogglePreviewLock: () => void;
   onTogglePreviewTerminal: () => void;
+  onPreviewTerminalCommandHandled: (requestId: string) => void;
+  onPreviewTerminalReportedWorkingDirectoryChange: (cwd: string) => void;
   onRunTextScript: (
     path: string,
     scriptPreview: ExplorerResolvedScriptPreview,
@@ -3772,8 +3784,8 @@ function PreviewPanel({
     : "Lock preview to the current item";
   const isPreviewTerminalMode = previewSurfaceMode === "terminal";
   const previewTerminalDisplayPath =
-    explorerTerminalReportedWorkingDirectory?.trim() ||
-    explorerTerminalWorkingDirectory ||
+    previewTerminalReportedWorkingDirectory?.trim() ||
+    previewTerminalWorkingDirectory ||
     "";
   const previewTerminalToggleTitle = isPreviewTerminalMode
     ? "Show file preview"
@@ -4589,7 +4601,7 @@ function PreviewPanel({
         isVisible: () =>
           preview.type !== "none" &&
           !isScriptTextPreview &&
-          Boolean(explorerTerminalWorkingDirectory),
+          Boolean(previewTerminalWorkingDirectory),
         render: () => (
           <ExplorerEmbeddedTerminalToggleButton
             active={isPreviewTerminalMode}
@@ -4651,7 +4663,7 @@ function PreviewPanel({
       previewSurfaceMode,
       previewTerminalDisplayPath,
       previewTerminalToggleTitle,
-      explorerTerminalWorkingDirectory,
+      previewTerminalWorkingDirectory,
       previewTitle,
       isScriptTextPreview,
       onRunTextScript,
@@ -5123,6 +5135,28 @@ function PreviewPanel({
             </div>
           )}
         </div>
+        {previewTerminalMounted && (
+          <div
+            data-overlay-explorer-preview-surface="terminal"
+            style={getPreviewSurfaceLayerStyle("terminal")}
+          >
+            <TerminalOverlay
+              isOpen
+              embedded
+              onClose={() => {}}
+              terminalIdNamespace={previewTerminalNamespace}
+              workingDirectory={previewTerminalWorkingDirectory}
+              bootReady={previewSurfaceMode === "terminal"}
+              consumeExplorerCwdSync={false}
+              pendingCommandRequest={previewTerminalCommandRequest}
+              onCommandRequestHandled={onPreviewTerminalCommandHandled}
+              onReportedWorkingDirectoryChange={
+                onPreviewTerminalReportedWorkingDirectoryChange
+              }
+              focusRequestKey={previewTerminalFocusRequestKey}
+            />
+          </div>
+        )}
       </div>
       {previewSurfaceMode === "content" &&
         preview.type === "text" &&
@@ -7882,10 +7916,19 @@ export function FileExplorer({
   const [transferConflictPolicy, setTransferConflictPolicy] =
     useState<ExplorerFileTransferCollisionPolicy>("keep_both");
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewSurfaceMode, setPreviewSurfaceMode] =
+    useState<PreviewSurfaceMode>("content");
+  const [previewTerminalMounted, setPreviewTerminalMounted] = useState(false);
+  const [previewTerminalCommandRequest, setPreviewTerminalCommandRequest] =
+    useState<TerminalOverlayCommandRequest | null>(null);
+  const [
+    previewTerminalReportedWorkingDirectory,
+    setPreviewTerminalReportedWorkingDirectory,
+  ] = useState<string | null>(null);
+  const [previewTerminalFocusRequestKey, setPreviewTerminalFocusRequestKey] =
+    useState(0);
   const [explorerTerminalMounted, setExplorerTerminalMounted] = useState(false);
   const [explorerTerminalVisible, setExplorerTerminalVisible] = useState(false);
-  const [explorerTerminalPlacement, setExplorerTerminalPlacement] =
-    useState<ExplorerEmbeddedTerminalPlacement>("preview");
   const [explorerTerminalBottomHeight, setExplorerTerminalBottomHeight] =
     useState<number>(EXPLORER_EMBEDDED_TERMINAL_HEIGHT_BOUNDS.default);
   const [explorerTerminalCommandRequest, setExplorerTerminalCommandRequest] =
@@ -8088,9 +8131,12 @@ export function FileExplorer({
       sourceKind: activeDragInteraction.sourceKind,
     } as const;
   }, [activeDragInteraction, scopeRootDropActive]);
+  const lastPreviewTerminalShellReportedCwdRef = useRef<string | null>(null);
+  const lastPreviewTerminalExplorerAppliedCwdRef =
+    useRef<string | null>(null);
+  const previewTerminalCommandSequenceRef = useRef(0);
   const lastExplorerTerminalShellReportedCwdRef = useRef<string | null>(null);
   const lastExplorerTerminalExplorerAppliedCwdRef = useRef<string | null>(null);
-  const explorerTerminalCommandSequenceRef = useRef(0);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
   const lastWorkspaceRevealSequenceRef = useRef(0);
@@ -8205,22 +8251,24 @@ export function FileExplorer({
     !currentPathIsVirtual;
   const explorerSupportsAnyDropTarget =
     currentLocationSupportsMutation || activePreviewDropTarget != null;
+  const previewTerminalNamespace = useMemo(
+    () => `preview-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+    [instanceId],
+  );
+  const previewTerminalWorkingDirectory = currentPathIsCloud || currentPathIsVirtual
+    ? null
+    : preview.type === "text" &&
+        (preview.scriptPreview != null || preview.pythonPreview != null)
+      ? (getPathParent(preview.path) ?? currentPath)
+      : currentPath;
   const explorerTerminalNamespace = useMemo(
     () => `explorer-terminal-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
     [instanceId],
   );
   const explorerTerminalWorkingDirectory = currentPathIsCloud || currentPathIsVirtual
     ? null
-    : preview.type === "text" &&
-        (preview.scriptPreview != null || preview.pythonPreview != null)
-      ? (getPathParent(preview.path) ?? currentPath)
-      : currentPath;
-  const previewSurfaceMode: PreviewSurfaceMode =
-    explorerTerminalVisible && explorerTerminalPlacement === "preview"
-      ? "terminal"
-      : "content";
-  const bottomTerminalVisible =
-    explorerTerminalVisible && explorerTerminalPlacement === "bottom";
+    : currentPath;
+  const bottomTerminalVisible = explorerTerminalVisible;
   const previewPanelVisible =
     !isCompactDock && previewEnabled && !usesWorkspaceCompactChrome;
   const hasPreview = previewPanelVisible && preview.type !== "none";
@@ -12027,25 +12075,53 @@ export function FileExplorer({
     },
     [],
   );
-  const bumpExplorerTerminalFocusRequest = useCallback(() => {
-    setExplorerTerminalFocusRequestKey((current) => current + 1);
+  const bumpPreviewTerminalFocusRequest = useCallback(() => {
+    setPreviewTerminalFocusRequestKey((current) => current + 1);
   }, []);
-  const queueExplorerTerminalCommand = useCallback(
+  const queuePreviewTerminalCommand = useCallback(
     (command: string) => {
       const trimmedCommand = command.trim();
       if (!trimmedCommand) {
         return;
       }
 
-      explorerTerminalCommandSequenceRef.current += 1;
-      setExplorerTerminalCommandRequest({
-        id: `${explorerTerminalNamespace}:${explorerTerminalCommandSequenceRef.current}`,
+      previewTerminalCommandSequenceRef.current += 1;
+      setPreviewTerminalCommandRequest({
+        id: `${previewTerminalNamespace}:${previewTerminalCommandSequenceRef.current}`,
         command: trimmedCommand,
         run: true,
       });
     },
-    [explorerTerminalNamespace],
+    [previewTerminalNamespace],
   );
+  const handlePreviewTerminalCommandHandled = useCallback(
+    (requestId: string) => {
+      setPreviewTerminalCommandRequest((current) =>
+        current?.id === requestId ? null : current,
+      );
+    },
+    [],
+  );
+  const resetPreviewTerminalState = useCallback(() => {
+    setPreviewSurfaceMode("content");
+    setPreviewTerminalMounted(false);
+    setPreviewTerminalCommandRequest(null);
+    setPreviewTerminalReportedWorkingDirectory(null);
+    lastPreviewTerminalShellReportedCwdRef.current = null;
+    lastPreviewTerminalExplorerAppliedCwdRef.current = null;
+  }, []);
+  const revealPreviewTerminal = useCallback(() => {
+    if (!previewTerminalWorkingDirectory) {
+      return;
+    }
+
+    setPreviewTerminalMounted(true);
+    setPreviewSurfaceMode("terminal");
+    bumpPreviewTerminalFocusRequest();
+  }, [bumpPreviewTerminalFocusRequest, previewTerminalWorkingDirectory]);
+  const bumpExplorerTerminalFocusRequest = useCallback(() => {
+    setExplorerTerminalFocusRequestKey((current) => current + 1);
+  }, []);
   const handleExplorerTerminalCommandHandled = useCallback(
     (requestId: string) => {
       setExplorerTerminalCommandRequest((current) =>
@@ -12054,48 +12130,37 @@ export function FileExplorer({
     },
     [],
   );
-  const revealExplorerEmbeddedTerminal = useCallback(
-    (placement: ExplorerEmbeddedTerminalPlacement) => {
-      if (!explorerTerminalWorkingDirectory) {
-        return;
-      }
+  const revealBottomExplorerTerminal = useCallback(() => {
+    if (!explorerTerminalWorkingDirectory) {
+      return;
+    }
 
-      setExplorerTerminalMounted(true);
-      setExplorerTerminalPlacement(placement);
-      setExplorerTerminalVisible(true);
+    setExplorerTerminalMounted(true);
+    setExplorerTerminalVisible(true);
+    bumpExplorerTerminalFocusRequest();
+  }, [bumpExplorerTerminalFocusRequest, explorerTerminalWorkingDirectory]);
+  const toggleBottomExplorerTerminal = useCallback(() => {
+    if (!explorerTerminalWorkingDirectory) {
+      return;
+    }
+
+    const nextVisible = !explorerTerminalVisible;
+    setExplorerTerminalMounted(true);
+    setExplorerTerminalVisible(nextVisible);
+    if (nextVisible) {
       bumpExplorerTerminalFocusRequest();
-    },
-    [bumpExplorerTerminalFocusRequest, explorerTerminalWorkingDirectory],
-  );
-  const toggleExplorerEmbeddedTerminal = useCallback(
-    (placement: ExplorerEmbeddedTerminalPlacement) => {
-      if (!explorerTerminalWorkingDirectory) {
-        return;
-      }
-
-      setExplorerTerminalMounted(true);
-      if (explorerTerminalVisible && explorerTerminalPlacement === placement) {
-        setExplorerTerminalVisible(false);
-        return;
-      }
-
-      setExplorerTerminalPlacement(placement);
-      setExplorerTerminalVisible(true);
-      bumpExplorerTerminalFocusRequest();
-    },
-    [
-      bumpExplorerTerminalFocusRequest,
-      explorerTerminalPlacement,
-      explorerTerminalVisible,
-      explorerTerminalWorkingDirectory,
-    ],
-  );
+    }
+  }, [
+    bumpExplorerTerminalFocusRequest,
+    explorerTerminalVisible,
+    explorerTerminalWorkingDirectory,
+  ]);
   const stopPreviewTextScriptRun = useCallback(() => {
     setDocumentViewMode("edit");
-    if (explorerTerminalVisible && explorerTerminalPlacement === "preview") {
-      setExplorerTerminalVisible(false);
+    if (previewSurfaceMode === "terminal") {
+      setPreviewSurfaceMode("content");
     }
-  }, [explorerTerminalPlacement, explorerTerminalVisible]);
+  }, [previewSurfaceMode]);
   const runPreviewTextScript = useCallback(
     async (path: string, scriptPreview: ExplorerResolvedScriptPreview) => {
       const currentPreview = previewRef.current;
@@ -12123,14 +12188,19 @@ export function FileExplorer({
         return;
       }
 
+      if (!previewTerminalWorkingDirectory) {
+        return;
+      }
+
       setDocumentViewMode("preview");
-      revealExplorerEmbeddedTerminal("preview");
-      queueExplorerTerminalCommand(command);
+      revealPreviewTerminal();
+      queuePreviewTerminalCommand(command);
     },
     [
       persistPreviewText,
-      queueExplorerTerminalCommand,
-      revealExplorerEmbeddedTerminal,
+      previewTerminalWorkingDirectory,
+      queuePreviewTerminalCommand,
+      revealPreviewTerminal,
     ],
   );
   const runPreviewPythonManaged = useCallback(
@@ -12183,7 +12253,7 @@ export function FileExplorer({
         throw new Error("Python preview is no longer active.");
       }
 
-      if (!explorerTerminalWorkingDirectory) {
+      if (!previewTerminalWorkingDirectory) {
         throw new Error(
           "Explorer terminal commands are unavailable for this location.",
         );
@@ -12206,18 +12276,18 @@ export function FileExplorer({
 
       setDocumentViewMode("preview");
       setActivePreviewWorkflowTabId("run");
-      revealExplorerEmbeddedTerminal("bottom");
-      queueExplorerTerminalCommand(command);
+      revealPreviewTerminal();
+      queuePreviewTerminalCommand(command);
     },
     [
-      explorerTerminalWorkingDirectory,
       persistPreviewText,
-      queueExplorerTerminalCommand,
-      revealExplorerEmbeddedTerminal,
+      previewTerminalWorkingDirectory,
+      queuePreviewTerminalCommand,
+      revealPreviewTerminal,
     ],
   );
   const openManagedPythonRepl = useCallback(async () => {
-    if (!explorerTerminalWorkingDirectory) {
+    if (!previewTerminalWorkingDirectory) {
       throw new Error("Explorer terminal commands are unavailable for this location.");
     }
 
@@ -12235,34 +12305,73 @@ export function FileExplorer({
       throw new Error("Unable to build the managed Python REPL command.");
     }
 
-    revealExplorerEmbeddedTerminal("bottom");
-    queueExplorerTerminalCommand(command);
+    setDocumentViewMode("preview");
+    setActivePreviewWorkflowTabId("runtime");
+    revealPreviewTerminal();
+    queuePreviewTerminalCommand(command);
   }, [
-    explorerTerminalWorkingDirectory,
+    previewTerminalWorkingDirectory,
     pythonRuntimeConfig,
-    queueExplorerTerminalCommand,
-    revealExplorerEmbeddedTerminal,
+    queuePreviewTerminalCommand,
+    revealPreviewTerminal,
     runtimePlatform,
   ]);
+  const handlePreviewTerminalReportedWorkingDirectoryChange = useCallback(
+    (cwd: string) => {
+      const trimmedCwd = cwd.trim();
+      if (!trimmedCwd) {
+        return;
+      }
+
+      const normalizedReportedCwd = normalizeExplorerPath(trimmedCwd);
+      if (
+        !normalizedReportedCwd ||
+        isCloudExplorerPath(normalizedReportedCwd)
+      ) {
+        return;
+      }
+
+      setPreviewTerminalReportedWorkingDirectory(trimmedCwd);
+      if (
+        lastPreviewTerminalShellReportedCwdRef.current === normalizedReportedCwd
+      ) {
+        return;
+      }
+      lastPreviewTerminalShellReportedCwdRef.current = normalizedReportedCwd;
+
+      if (normalizeExplorerPath(currentPath) === normalizedReportedCwd) {
+        return;
+      }
+
+      lastPreviewTerminalExplorerAppliedCwdRef.current = normalizedReportedCwd;
+      void navigate(normalizedReportedCwd, true).catch(() => {});
+    },
+    [currentPath, navigate],
+  );
   const clearPreviewSurface = useCallback(() => {
     previewCloseGuardRef.current = null;
-    if (explorerTerminalVisible && explorerTerminalPlacement === "preview") {
-      setExplorerTerminalVisible(false);
-    }
+    resetPreviewTerminalState();
     setPreview({ type: "none", path: "" });
     setPreviewLoading(false);
     setPdfPreviewChromeState(null);
     setPreviewLocked(false);
-  }, [explorerTerminalPlacement, explorerTerminalVisible]);
+  }, [resetPreviewTerminalState]);
   const togglePreviewTerminal = useCallback(() => {
-    toggleExplorerEmbeddedTerminal("preview");
-  }, [toggleExplorerEmbeddedTerminal]);
-  const toggleBottomExplorerTerminal = useCallback(() => {
-    toggleExplorerEmbeddedTerminal("bottom");
-  }, [toggleExplorerEmbeddedTerminal]);
-  const revealBottomExplorerTerminal = useCallback(() => {
-    revealExplorerEmbeddedTerminal("bottom");
-  }, [revealExplorerEmbeddedTerminal]);
+    if (!previewTerminalWorkingDirectory) {
+      return;
+    }
+
+    const nextMode = previewSurfaceMode === "terminal" ? "content" : "terminal";
+    setPreviewTerminalMounted(true);
+    setPreviewSurfaceMode(nextMode);
+    if (nextMode === "terminal") {
+      bumpPreviewTerminalFocusRequest();
+    }
+  }, [
+    bumpPreviewTerminalFocusRequest,
+    previewSurfaceMode,
+    previewTerminalWorkingDirectory,
+  ]);
   const handleExplorerTerminalReportedWorkingDirectoryChange = useCallback(
     (cwd: string) => {
       const trimmedCwd = cwd.trim();
@@ -12337,6 +12446,31 @@ export function FileExplorer({
   }, [closePreview, previewEnabled]);
 
   useEffect(() => {
+    if (!previewTerminalReportedWorkingDirectory) {
+      return;
+    }
+
+    const normalizedCurrentPath = normalizeExplorerPath(currentPath);
+    const normalizedReportedPath = normalizeExplorerPath(
+      previewTerminalReportedWorkingDirectory,
+    );
+    if (lastPreviewTerminalExplorerAppliedCwdRef.current === normalizedCurrentPath) {
+      return;
+    }
+    if (normalizedReportedPath !== normalizedCurrentPath) {
+      setPreviewTerminalReportedWorkingDirectory(null);
+    }
+  }, [currentPath, previewTerminalReportedWorkingDirectory]);
+
+  useEffect(() => {
+    if (previewTerminalWorkingDirectory) {
+      return;
+    }
+
+    resetPreviewTerminalState();
+  }, [previewTerminalWorkingDirectory, resetPreviewTerminalState]);
+
+  useEffect(() => {
     if (!explorerTerminalReportedWorkingDirectory) {
       return;
     }
@@ -12366,14 +12500,6 @@ export function FileExplorer({
     lastExplorerTerminalShellReportedCwdRef.current = null;
     lastExplorerTerminalExplorerAppliedCwdRef.current = null;
   }, [explorerTerminalWorkingDirectory]);
-
-  useEffect(() => {
-    if (previewPanelVisible || explorerTerminalPlacement !== "preview") {
-      return;
-    }
-
-    setExplorerTerminalVisible(false);
-  }, [explorerTerminalPlacement, previewPanelVisible]);
 
   const applyModeProfilePreset = useCallback(
     (nextModeProfile: ExplorerModeProfileDefinition) => {
@@ -20752,7 +20878,7 @@ export function FileExplorer({
       if (
         matchesKeybinding(e, keybindings.togglePreviewTerminal) &&
         hasPreview &&
-        explorerTerminalWorkingDirectory
+        previewTerminalWorkingDirectory
       ) {
         e.preventDefault();
         togglePreviewTerminal();
@@ -20982,6 +21108,7 @@ export function FileExplorer({
     persistShaderPreviewSource,
     preview,
     explorerTerminalWorkingDirectory,
+    previewTerminalWorkingDirectory,
     queueClipboard,
     refresh,
     runArchiveToolbarAction,
@@ -23501,16 +23628,20 @@ export function FileExplorer({
         presentationMode={previewSplitMode}
         previewLocked={previewLocked}
         previewSurfaceMode={previewSurfaceMode}
+        previewTerminalMounted={previewTerminalMounted}
         refreshRevision={previewRefreshRevision}
         previewContentHostRef={previewContentHostRef}
         previewDropBinding={previewDropBinding}
         previewDropTarget={activePreviewDropTarget}
         previewDropTargetActive={previewDropTargetActive}
         previewDropTargetDwell={previewDropTargetDwell}
-        explorerTerminalWorkingDirectory={explorerTerminalWorkingDirectory}
-        explorerTerminalReportedWorkingDirectory={
-          explorerTerminalReportedWorkingDirectory
+        previewTerminalWorkingDirectory={previewTerminalWorkingDirectory}
+        previewTerminalReportedWorkingDirectory={
+          previewTerminalReportedWorkingDirectory
         }
+        previewTerminalNamespace={previewTerminalNamespace}
+        previewTerminalCommandRequest={previewTerminalCommandRequest}
+        previewTerminalFocusRequestKey={previewTerminalFocusRequestKey}
         onWidthChange={setPreviewWidth}
         onTextChange={updatePreviewTextContent}
         onTextSave={persistPreviewText}
@@ -23531,6 +23662,10 @@ export function FileExplorer({
         }
         onTogglePreviewLock={togglePreviewLock}
         onTogglePreviewTerminal={togglePreviewTerminal}
+        onPreviewTerminalCommandHandled={handlePreviewTerminalCommandHandled}
+        onPreviewTerminalReportedWorkingDirectoryChange={
+          handlePreviewTerminalReportedWorkingDirectoryChange
+        }
         onRunTextScript={runPreviewTextScript}
         onRunPythonManaged={runPreviewPythonManaged}
         onRunPythonInTerminal={runPreviewPythonInTerminal}
@@ -23607,16 +23742,22 @@ export function FileExplorer({
     previewRefreshRevision,
     previewSplitMode,
     previewSurfaceMode,
+    previewTerminalMounted,
+    previewTerminalCommandRequest,
+    previewTerminalFocusRequestKey,
+    previewTerminalNamespace,
     previewDropBinding,
     previewDropTargetActive,
     previewDropTargetDwell,
-    explorerTerminalReportedWorkingDirectory,
-    explorerTerminalWorkingDirectory,
+    previewTerminalReportedWorkingDirectory,
+    previewTerminalWorkingDirectory,
     activePreviewDropTarget,
     previewContentHostRef,
     previewWidth,
     refresh,
     registerPreviewCloseGuard,
+    handlePreviewTerminalCommandHandled,
+    handlePreviewTerminalReportedWorkingDirectoryChange,
     runPreviewPythonInTerminal,
     runPreviewPythonManaged,
     runPreviewTextScript,
@@ -25318,7 +25459,7 @@ export function FileExplorer({
         bottomAnchorRef={bottomTerminalAnchorRef}
         mounted={explorerTerminalMounted}
         visible={explorerTerminalVisible}
-        placement={explorerTerminalPlacement}
+        placement="bottom"
         bottomHeight={explorerTerminalBottomHeight}
         onBottomHeightChange={setExplorerTerminalBottomHeight}
         explorerTheme={explorerTheme}

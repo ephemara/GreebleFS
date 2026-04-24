@@ -4111,3 +4111,26 @@
   - passed: `bunx vitest run src/test/soundPacks.test.ts src/test/themePackages.test.ts src/test/settingsStore.test.ts --reporter=dot`
   - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "src/(config/soundPacks|components/SettingsPage|components/OverlayActionButton|components/WorkbenchTopBar|components/FileExplorer|panels/panelRegistry|runtime/nativeNotifications|runtime/soundEffects|App\\.tsx|store/settingsStore|config/themePackages|config/settingsNavigation|config/appearance|config/appContentDirectories|test/soundPacks|test/themePackages|test/settingsStore)"` returned no matching errors
   - note: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` is still noisy because of unrelated vendored `src/vendor/tiptap/**` failures and other pre-existing workspace issues, so use the filtered signal for this lane
+
+## 2026-04-24 — Mobile PWA Layout Scaling And Push-Driven iPhone Downloads
+
+- The sovereign mobile shell now has a real iPhone-tuned layout lane plus a first pass at push notifications. Mobile browsing is no longer locked to one density recipe, and the desktop explorer can now dispatch a file directly toward paired phones through web push.
+- Durable implementation shape:
+  - `src/config/mobileLayout.ts` now owns a richer mobile ergonomics contract: `interfaceScale`, `chromeScale`, `pagePadding`, and `touchComfort` were added alongside the existing view/sort/hidden-file settings. The defaults are intentionally phone-biased (`comfortable`, larger chrome, larger page gutters) and the normalization helpers clamp the lane centrally.
+  - `src/store/settingsStore.ts`, `src/config/mobileTheme.ts`, and `src-tauri/src/lan_share/types.rs` now carry that richer layout snapshot end-to-end so the desktop Settings control plane, the native host, and the browser PWA all agree on the same mobile layout truth.
+  - `src/components/SettingsPage.tsx` now exposes those controls inside `Settings -> Mobile -> Mobile Theme` with explicit sliders and comfort toggles instead of relying only on a single grid zoom value.
+  - `src-mobile/App.tsx` and `src-mobile/mobile.css` now apply viewport-aware shell variables for interface scale, chrome scale, touch-target sizing, bottom-dock spacing, safe-area padding, and visual-viewport height. The mobile shell also now avoids stale broken-folder landings by recovering to a safe path and can consume deep-link download intents.
+  - `src-mobile/public/sw.js` and `src-mobile/mobilePush.ts` now implement the PWA push lane: the service worker shows notifications, click-through routing opens or focuses the app, and the browser shell can subscribe/unsubscribe through `/api/push/*`.
+  - `src-tauri/src/lan_share/push.rs` is the native push registry and dispatch layer. It persists paired-device subscriptions plus a VAPID key under app data and builds deep-link payloads that reopen the mobile app on the `Transfers` lane with enough path context to immediately start a browser download.
+  - `src/runtime/mobilePushBackend.ts`, `src-tauri/src/share_commands.rs`, `src-tauri/src/lan_share/mobile.rs`, and `src-tauri/src/specta_bindings.rs` now give the desktop shell a typed command path for push config/registration/dispatch.
+  - `src/config/explorerContextMenu.ts`, `src/config/menuPacks.ts`, `src/components/explorer/explorerMenuRuntime.ts`, and `src/components/FileExplorer.tsx` now surface a `Send to iPhone` explorer command for single local files. If the mobile share is not already running, the explorer first auto-starts the share using the current mobile remote-access settings and then sends the push payload.
+- Durable product notes:
+  - Keep mobile layout tuning inside the shared `settings.mobile.layout` contract. If future presets or per-device heuristics are added, extend that typed contract instead of scattering more one-off CSS literals through `src-mobile/App.tsx`.
+  - Treat iPhone push notifications as an installed-PWA feature, not a generic browser-tab feature. The intended lane is: Home Screen install, enable notifications from the installed app, then let desktop explorer actions wake the phone into the mobile shell with a deep-link download intent.
+  - The desktop push runtime should keep consuming generated Specta types instead of local copies. This lane changed shape once already (`deviceLabel`/`userAgent` nullability and the generated `p256Dh` key name), and local shadow interfaces drift too easily.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - passed: `bun run build:mobile`
+  - passed: `bunx vitest run src/test/explorerMenuRuntime.test.ts src/test/mobileApp.test.tsx src/test/mobileTheme.test.ts src/test/settingsStore.test.ts --reporter=dot`
+  - note: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still has unrelated branch drift in `src/components/FileExplorer.tsx` and other existing workspace noise, so use scoped checks for this mobile/push lane unless that explorer terminal work is being addressed directly.

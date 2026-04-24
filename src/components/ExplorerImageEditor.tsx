@@ -31,11 +31,21 @@ import {
   imageEditorFilterDefinitions,
   type ExplorerImageFiltersState,
 } from "../config/imageEditorFilters";
+import {
+  explorerImageIsolationWorkflowTabs,
+  type ExplorerImageCutoutWorkflowMode,
+} from "../config/imageCutoutTools";
 import { writeExplorerFile } from "../runtime/explorerBackend";
 import type { ManagedPythonRuntimeConfig } from "../runtime/pythonRuntimeBackend";
 import { useSettingsStore } from "../store/settingsStore";
 import { ExplorerImageCutoutSurface } from "./ExplorerImageCutoutSurface";
 import type { ExplorerPreviewWildcardWorkflowTab } from "./explorer/explorerPreviewWorkflowTabs";
+import {
+  applyExplorerImageStageWheelZoom,
+  DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM,
+  normalizeExplorerImageStageTransform,
+  type ExplorerImageStageTransform,
+} from "./explorer/explorerImageStage";
 import { OverlayScrollArea } from "./OverlayScrollArea";
 import { PremiumSlider as PremiumSliderControl } from "./PremiumSlider";
 
@@ -63,83 +73,7 @@ export interface ExplorerImageEditorRef {
 
 type ImageEditorSaveState = "idle" | "saving" | "dirty" | "saved" | "error";
 
-type ImagePreviewTransform = {
-  scale: number;
-  offsetX: number;
-  offsetY: number;
-};
-
-const DEFAULT_IMAGE_PREVIEW_TRANSFORM: ImagePreviewTransform = {
-  scale: 1,
-  offsetX: 0,
-  offsetY: 0,
-};
-
-const IMAGE_PREVIEW_MIN_SCALE = 0.5;
-const IMAGE_PREVIEW_MAX_SCALE = 6;
-const IMAGE_PREVIEW_ZOOM_SENSITIVITY = 0.0015;
-const IMAGE_CUTOUT_WORKFLOW_TABS = [
-  { id: "cutout", label: "Cutout", baseMode: "edit" },
-] as const satisfies readonly ExplorerPreviewWildcardWorkflowTab[];
-
-function clampValue(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function normalizeImagePreviewTransform(
-  transform: ImagePreviewTransform,
-  viewport: HTMLDivElement | null,
-  image: HTMLImageElement | null,
-): ImagePreviewTransform {
-  const nextScale = Number(
-    clampValue(
-      transform.scale,
-      IMAGE_PREVIEW_MIN_SCALE,
-      IMAGE_PREVIEW_MAX_SCALE,
-    ).toFixed(2),
-  );
-
-  if (!viewport || !image) {
-    return {
-      scale: nextScale,
-      offsetX: Number(transform.offsetX.toFixed(2)),
-      offsetY: Number(transform.offsetY.toFixed(2)),
-    };
-  }
-
-  const viewportWidth = viewport.clientWidth;
-  const viewportHeight = viewport.clientHeight;
-  const baseWidth = image.clientWidth;
-  const baseHeight = image.clientHeight;
-
-  if (
-    viewportWidth <= 0 ||
-    viewportHeight <= 0 ||
-    baseWidth <= 0 ||
-    baseHeight <= 0
-  ) {
-    return {
-      scale: nextScale,
-      offsetX: Number(transform.offsetX.toFixed(2)),
-      offsetY: Number(transform.offsetY.toFixed(2)),
-    };
-  }
-
-  const scaledWidth = baseWidth * nextScale;
-  const scaledHeight = baseHeight * nextScale;
-  const maxOffsetX = Math.max(0, (scaledWidth - viewportWidth) / 2);
-  const maxOffsetY = Math.max(0, (scaledHeight - viewportHeight) / 2);
-
-  return {
-    scale: nextScale,
-    offsetX: Number(
-      clampValue(transform.offsetX, -maxOffsetX, maxOffsetX).toFixed(2),
-    ),
-    offsetY: Number(
-      clampValue(transform.offsetY, -maxOffsetY, maxOffsetY).toFixed(2),
-    ),
-  };
-}
+type ImagePreviewTransform = ExplorerImageStageTransform;
 
 function getImageExtension(name: string): string {
   return name.trim().split(".").pop()?.toLowerCase() ?? "";
@@ -327,7 +261,7 @@ export const ExplorerImageEditor = forwardRef<
     createDefaultImageFiltersState(),
   );
   const [previewTransform, setPreviewTransform] =
-    useState<ImagePreviewTransform>(DEFAULT_IMAGE_PREVIEW_TRANSFORM);
+    useState<ImagePreviewTransform>(DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM);
   const [isPreviewDragging, setIsPreviewDragging] = useState(false);
   const [isCropping, setIsCropping] = useState(false);
   const [saveState, setSaveState] = useState<ImageEditorSaveState>("idle");
@@ -335,8 +269,16 @@ export const ExplorerImageEditor = forwardRef<
 
   const contentType = getImageEditorContentType(getImageExtension(imageName));
   const isEditableFormat = contentType !== null;
-  const isCutoutMode = workflowTabId === "cutout" && isEditableFormat;
-  const showEditingChrome = mode === "edit" && isEditableFormat && !isCutoutMode;
+  const imageIsolationWorkflowMode: ExplorerImageCutoutWorkflowMode | null =
+    workflowTabId === "cutout"
+      ? "cutout"
+      : workflowTabId === "remove-background"
+        ? "removeBackground"
+        : null;
+  const isImageIsolationMode =
+    imageIsolationWorkflowMode !== null && isEditableFormat;
+  const showEditingChrome =
+    mode === "edit" && isEditableFormat && !isImageIsolationMode;
   const keybindings = useSettingsStore((state) => state.settings.keybindings);
 
   useEffect(() => {
@@ -357,7 +299,7 @@ export const ExplorerImageEditor = forwardRef<
     }
 
     onRegisterWorkflowTabs(
-      isEditableFormat ? [...IMAGE_CUTOUT_WORKFLOW_TABS] : null,
+      isEditableFormat ? [...explorerImageIsolationWorkflowTabs] : null,
     );
 
     return () => {
@@ -413,7 +355,7 @@ export const ExplorerImageEditor = forwardRef<
   }, []);
 
   const resetPreviewViewport = useCallback(() => {
-    setPreviewTransform(DEFAULT_IMAGE_PREVIEW_TRANSFORM);
+    setPreviewTransform(DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM);
     setIsPreviewDragging(false);
   }, []);
 
@@ -642,37 +584,15 @@ export const ExplorerImageEditor = forwardRef<
       event.preventDefault();
       event.stopPropagation();
 
-      const zoomFactor = Math.exp(
-        -event.deltaY * IMAGE_PREVIEW_ZOOM_SENSITIVITY,
-      );
-      const viewportRect = viewport.getBoundingClientRect();
-      const focusX = event.clientX - viewportRect.left - viewportRect.width / 2;
-      const focusY = event.clientY - viewportRect.top - viewportRect.height / 2;
-
       setPreviewTransform((current) => {
-        const nextScale = Number(
-          clampValue(
-            current.scale * zoomFactor,
-            IMAGE_PREVIEW_MIN_SCALE,
-            IMAGE_PREVIEW_MAX_SCALE,
-          ).toFixed(2),
-        );
-        if (nextScale === current.scale) {
-          return current;
-        }
-
-        const scaleRatio = nextScale / current.scale;
-        return normalizeImagePreviewTransform(
-          {
-            scale: nextScale,
-            offsetX:
-              current.offsetX * scaleRatio + (1 - scaleRatio) * focusX,
-            offsetY:
-              current.offsetY * scaleRatio + (1 - scaleRatio) * focusY,
-          },
+        return applyExplorerImageStageWheelZoom({
+          currentTransform: current,
           viewport,
-          previewImageRef.current,
-        );
+          content: previewImageRef.current,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          deltaY: event.deltaY,
+        });
       });
     },
     [baseImage, isCropping],
@@ -699,7 +619,7 @@ export const ExplorerImageEditor = forwardRef<
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         setPreviewTransform(
-          normalizeImagePreviewTransform(
+          normalizeExplorerImageStageTransform(
             {
               scale: startTransform.scale,
               offsetX: startTransform.offsetX + (moveEvent.clientX - startClientX),
@@ -997,9 +917,10 @@ export const ExplorerImageEditor = forwardRef<
     );
   }
 
-  if (isCutoutMode) {
+  if (isImageIsolationMode && imageIsolationWorkflowMode) {
     return (
       <ExplorerImageCutoutSurface
+        workflowMode={imageIsolationWorkflowMode}
         imageName={imageName}
         imagePath={imagePath}
         logicalOutputPath={logicalImagePath ?? imagePath}

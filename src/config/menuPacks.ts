@@ -284,35 +284,38 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
       commandId: 'built-in.open-with',
       quickSlot: 'secondary',
     }),
-    createEntry('entry.reveal', 'command', 30, { commandId: 'built-in.reveal' }),
-    createEntry('entry.properties', 'command', 40, { commandId: 'built-in.properties' }),
-    createEntry('entry.separator.primary', 'separator', 50),
-    createEntry('entry.clipboard', 'submenu', 60, { title: 'Clipboard', iconName: 'Clipboard' }),
+    createEntry('entry.send-to-mobile', 'command', 30, {
+      commandId: 'built-in.send-to-mobile-download',
+    }),
+    createEntry('entry.reveal', 'command', 40, { commandId: 'built-in.reveal' }),
+    createEntry('entry.properties', 'command', 50, { commandId: 'built-in.properties' }),
+    createEntry('entry.separator.primary', 'separator', 60),
+    createEntry('entry.clipboard', 'submenu', 70, { title: 'Clipboard', iconName: 'Clipboard' }),
     createEntry('entry.clipboard.slot', 'group-slot', 10, {
       parentEntryId: 'entry.clipboard',
       group: 'clipboard',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('entry.organize', 'submenu', 70, { title: 'Organize', iconName: 'Edit3' }),
+    createEntry('entry.organize', 'submenu', 80, { title: 'Organize', iconName: 'Edit3' }),
     createEntry('entry.organize.slot', 'group-slot', 10, {
       parentEntryId: 'entry.organize',
       group: 'organize',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('entry.library', 'submenu', 80, { title: 'Library', iconName: 'Star' }),
+    createEntry('entry.library', 'submenu', 90, { title: 'Library', iconName: 'Star' }),
     createEntry('entry.library.slot', 'group-slot', 10, {
       parentEntryId: 'entry.library',
       group: 'library',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('entry.plugins', 'submenu', 90, { title: 'Plugins', iconName: 'Puzzle' }),
+    createEntry('entry.plugins', 'submenu', 100, { title: 'Plugins', iconName: 'Puzzle' }),
     createEntry('entry.plugins.slot', 'group-slot', 10, {
       parentEntryId: 'entry.plugins',
       group: 'plugin',
       sourceFilter: 'plugin',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('entry.separator.danger', 'separator', 100),
-    createEntry('entry.danger.slot', 'group-slot', 110, {
+    createEntry('entry.separator.danger', 'separator', 110),
+    createEntry('entry.danger.slot', 'group-slot', 120, {
       group: 'danger',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
@@ -368,27 +371,30 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
   const searchResultLayout: ExplorerMenuLayoutEntry[] = [
     createEntry('search.open', 'command', 10, { commandId: 'built-in.open', quickSlot: 'primary' }),
     createEntry('search.open-with', 'command', 20, { commandId: 'built-in.open-with' }),
-    createEntry('search.system.slot', 'group-slot', 30, {
+    createEntry('search.send-to-mobile', 'command', 30, {
+      commandId: 'built-in.send-to-mobile-download',
+    }),
+    createEntry('search.system.slot', 'group-slot', 40, {
       group: 'system',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('search.clipboard.slot', 'group-slot', 40, {
+    createEntry('search.clipboard.slot', 'group-slot', 50, {
       group: 'clipboard',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('search.organize.slot', 'group-slot', 50, {
+    createEntry('search.organize.slot', 'group-slot', 60, {
       group: 'organize',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('search.library.slot', 'group-slot', 60, {
+    createEntry('search.library.slot', 'group-slot', 70, {
       group: 'library',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('search.plugins.slot', 'group-slot', 70, {
+    createEntry('search.plugins.slot', 'group-slot', 80, {
       group: 'plugin',
       sourceFilter: 'plugin',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('search.danger.slot', 'group-slot', 80, {
+    createEntry('search.danger.slot', 'group-slot', 90, {
       group: 'danger',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
@@ -397,27 +403,30 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
   const previewPaneLayout: ExplorerMenuLayoutEntry[] = [
     createEntry('preview.open', 'command', 10, { commandId: 'built-in.open', quickSlot: 'primary' }),
     createEntry('preview.open-with', 'command', 20, { commandId: 'built-in.open-with' }),
-    createEntry('preview.system.slot', 'group-slot', 30, {
+    createEntry('preview.send-to-mobile', 'command', 30, {
+      commandId: 'built-in.send-to-mobile-download',
+    }),
+    createEntry('preview.system.slot', 'group-slot', 40, {
       group: 'system',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.clipboard.slot', 'group-slot', 40, {
+    createEntry('preview.clipboard.slot', 'group-slot', 50, {
       group: 'clipboard',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.organize.slot', 'group-slot', 50, {
+    createEntry('preview.organize.slot', 'group-slot', 60, {
       group: 'organize',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.library.slot', 'group-slot', 60, {
+    createEntry('preview.library.slot', 'group-slot', 70, {
       group: 'library',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.plugins.slot', 'group-slot', 70, {
+    createEntry('preview.plugins.slot', 'group-slot', 80, {
       group: 'plugin',
       sourceFilter: 'plugin',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.danger.slot', 'group-slot', 80, {
+    createEntry('preview.danger.slot', 'group-slot', 90, {
       group: 'danger',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),

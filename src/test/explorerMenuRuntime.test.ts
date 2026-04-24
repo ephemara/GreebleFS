@@ -83,6 +83,7 @@ function createEnvironment(
     openAsAdmin: vi.fn(async () => {}),
     openInTerminal: vi.fn(),
     openInFilesystemAquarium: vi.fn(),
+    sendToMobileDownload: vi.fn(async () => {}),
     revealExplorerPath: vi.fn(async () => {}),
     openExplorerPropertiesPanel: vi.fn(),
     copyToSysClipboard: vi.fn(),
@@ -276,6 +277,35 @@ describe('explorerMenuRuntime', () => {
       'com.apple.TextEdit',
       [],
     );
+  });
+
+  it('surfaces the send-to-iphone command for a single local file selection', async () => {
+    const targetEntry = createEntry({
+      path: '/workspace/exports/final.mov',
+      name: 'final.mov',
+      parentPath: '/workspace/exports',
+      extension: 'mov',
+      stem: 'final',
+    });
+    const environment = createEnvironment();
+    const menu = buildMenu({
+      invocation: {
+        kind: 'entry',
+        primaryEntry: targetEntry,
+        selectedEntries: [targetEntry],
+      },
+      environment,
+    });
+
+    const sendNode = findNodeByLabel(menu.nodes, 'Send to iPhone');
+    expect(sendNode?.kind).toBe('command');
+    if (!sendNode || sendNode.kind !== 'command') {
+      throw new Error('Expected Send to iPhone command');
+    }
+
+    await sendNode.onSelect();
+
+    expect(environment.sendToMobileDownload).toHaveBeenCalledWith(targetEntry);
   });
 
   it('dispatches multi-select menus without falling back to the entry layout', () => {

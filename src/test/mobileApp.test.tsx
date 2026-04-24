@@ -80,6 +80,10 @@ const mobileThemeSnapshot: MobileShareThemeSnapshot = {
   layout: {
     viewMode: "icons-m",
     gridZoom: 1,
+    interfaceScale: 1.08,
+    chromeScale: 1.08,
+    pagePadding: 16,
+    touchComfort: "comfortable",
     showHiddenFiles: false,
     sortBy: "name",
     sortOrder: "asc",

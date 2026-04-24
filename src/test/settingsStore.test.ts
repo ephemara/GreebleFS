@@ -330,6 +330,10 @@ describe('useSettingsStore.updateMobile()', () => {
         ...store.settings.mobile.layout,
         viewMode: 'list',
         gridZoom: 9,
+        interfaceScale: 1.9,
+        chromeScale: 0.4,
+        pagePadding: 99,
+        touchComfort: 'compact',
         showHiddenFiles: true,
         sortBy: 'size',
         sortOrder: 'desc',
@@ -341,7 +345,11 @@ describe('useSettingsStore.updateMobile()', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.mobile.remoteAccessMode).toBe('lan');
     expect(settings.mobile.layout.viewMode).toBe('list');
-    expect(settings.mobile.layout.gridZoom).toBe(1.8);
+    expect(settings.mobile.layout.gridZoom).toBe(2.6);
+    expect(settings.mobile.layout.interfaceScale).toBe(1.6);
+    expect(settings.mobile.layout.chromeScale).toBe(0.85);
+    expect(settings.mobile.layout.pagePadding).toBe(32);
+    expect(settings.mobile.layout.touchComfort).toBe('compact');
     expect(settings.mobile.layout.showHiddenFiles).toBe(true);
     expect(settings.mobile.layout.sortBy).toBe('size');
     expect(settings.mobile.layout.sortOrder).toBe('desc');
