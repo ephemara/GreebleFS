@@ -36,6 +36,7 @@ import { writeExplorerFile } from "../runtime/explorerBackend";
 import type { ManagedPythonRuntimeConfig } from "../runtime/pythonRuntimeBackend";
 import { useSettingsStore } from "../store/settingsStore";
 import { ExplorerImageCutoutSurface } from "./ExplorerImageCutoutSurface";
+import type { ExplorerPreviewWildcardWorkflowTab } from "./explorer/explorerPreviewWorkflowTabs";
 import { OverlayScrollArea } from "./OverlayScrollArea";
 import { PremiumSlider as PremiumSliderControl } from "./PremiumSlider";
 
@@ -49,6 +50,9 @@ type ExplorerImageEditorProps = {
   pythonRuntimeConfig?: ManagedPythonRuntimeConfig | null;
   cutoutModelId?: string | null;
   cutoutBackendPreference?: LocalModelBackendPreference | null;
+  onRegisterWorkflowTabs?: (
+    tabs: ExplorerPreviewWildcardWorkflowTab[] | null,
+  ) => void;
   onSaved?: () => Promise<void> | void;
 };
 
@@ -75,6 +79,9 @@ const DEFAULT_IMAGE_PREVIEW_TRANSFORM: ImagePreviewTransform = {
 const IMAGE_PREVIEW_MIN_SCALE = 0.5;
 const IMAGE_PREVIEW_MAX_SCALE = 6;
 const IMAGE_PREVIEW_ZOOM_SENSITIVITY = 0.0015;
+const IMAGE_CUTOUT_WORKFLOW_TABS = [
+  { id: "cutout", label: "Cutout", baseMode: "edit" },
+] as const satisfies readonly ExplorerPreviewWildcardWorkflowTab[];
 
 function clampValue(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -293,6 +300,7 @@ export const ExplorerImageEditor = forwardRef<
     pythonRuntimeConfig = null,
     cutoutModelId = null,
     cutoutBackendPreference = "auto",
+    onRegisterWorkflowTabs,
     onSaved,
   },
   forwardedRef,
@@ -327,6 +335,20 @@ export const ExplorerImageEditor = forwardRef<
   const isCutoutMode = workflowTabId === "cutout" && isEditableFormat;
   const showEditingChrome = mode === "edit" && isEditableFormat && !isCutoutMode;
   const keybindings = useSettingsStore((state) => state.settings.keybindings);
+
+  useEffect(() => {
+    if (!onRegisterWorkflowTabs) {
+      return;
+    }
+
+    onRegisterWorkflowTabs(
+      isEditableFormat ? [...IMAGE_CUTOUT_WORKFLOW_TABS] : null,
+    );
+
+    return () => {
+      onRegisterWorkflowTabs(null);
+    };
+  }, [isEditableFormat, onRegisterWorkflowTabs]);
 
   const clearSavedStatusTimeout = useCallback(() => {
     if (savedStatusTimeoutRef.current == null) {

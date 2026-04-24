@@ -15,6 +15,7 @@ const {
   cropperGetCroppedCanvasMock,
   cropperRotateMock,
   cropperSetAspectRatioMock,
+  cutoutSurfaceMockState,
 } = vi.hoisted(() => ({
   writeFileMock: vi.fn(),
   writeExplorerFileMock: vi.fn(),
@@ -24,6 +25,9 @@ const {
   })),
   cropperRotateMock: vi.fn(),
   cropperSetAspectRatioMock: vi.fn(),
+  cutoutSurfaceMockState: {
+    lastProps: null as null | Record<string, unknown>,
+  },
 }));
 
 vi.mock("@tauri-apps/plugin-fs", () => ({
@@ -40,6 +44,17 @@ vi.mock("cropperjs", () => ({
     getCroppedCanvas = cropperGetCroppedCanvasMock;
     rotate = cropperRotateMock;
     setAspectRatio = cropperSetAspectRatioMock;
+  },
+}));
+
+vi.mock("../components/ExplorerImageCutoutSurface", () => ({
+  ExplorerImageCutoutSurface: (props: Record<string, unknown>) => {
+    cutoutSurfaceMockState.lastProps = props;
+    return (
+      <div data-testid="mock-explorer-image-cutout-surface">
+        {String(props.imageName)}:{String(props.logicalOutputPath ?? props.imagePath)}
+      </div>
+    );
   },
 }));
 
@@ -133,6 +148,7 @@ describe("ExplorerImageEditor", () => {
     cropperGetCroppedCanvasMock.mockClear();
     cropperRotateMock.mockReset();
     cropperSetAspectRatioMock.mockReset();
+    cutoutSurfaceMockState.lastProps = null;
     useSettingsStore.getState().resetToDefaults();
   });
 
@@ -217,6 +233,42 @@ describe("ExplorerImageEditor", () => {
     expect(
       screen.queryByRole("button", { name: "Crop Tool" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("routes the cutout workflow through the dedicated surface with the current editor state", async () => {
+    const registerWorkflowTabs = vi.fn();
+    render(
+      <ExplorerImageEditor
+        imagePath="/tmp/resolved-preview.png"
+        logicalImagePath="/tmp/original-preview.png"
+        imageName="preview.png"
+        imageSource="data:image/png;base64,ZmFrZQ=="
+        mode="edit"
+        workflowTabId="cutout"
+        cutoutModelId="image-cutout-sam2-small"
+        cutoutBackendPreference="cpu"
+        onRegisterWorkflowTabs={registerWorkflowTabs}
+      />,
+    );
+
+    expect(
+      await screen.findByTestId("mock-explorer-image-cutout-surface"),
+    ).toHaveTextContent("preview.png:/tmp/original-preview.png");
+    expect(registerWorkflowTabs).toHaveBeenCalledWith([
+      { id: "cutout", label: "Cutout", baseMode: "edit" },
+    ]);
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Crop Tool" }),
+    ).not.toBeInTheDocument();
+
+    expect(cutoutSurfaceMockState.lastProps).toMatchObject({
+      imageName: "preview.png",
+      imagePath: "/tmp/resolved-preview.png",
+      logicalOutputPath: "/tmp/original-preview.png",
+      cutoutModelId: "image-cutout-sam2-small",
+      cutoutBackendPreference: "cpu",
+    });
   });
 
   it("exposes imperative save/reset hooks for the shared screenshot editor flow", async () => {

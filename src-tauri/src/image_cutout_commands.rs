@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::python_commands::PythonRuntimeConfig;
 use crate::python_sidecar::{self, PythonSidecarDecodedActionResponse};
@@ -50,7 +50,7 @@ pub struct ImageCutoutProviderDiagnostics {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageCutoutSessionOpenRequest {
     pub input_path: Option<String>,

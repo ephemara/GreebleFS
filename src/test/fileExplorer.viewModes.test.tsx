@@ -53,15 +53,39 @@ vi.mock("../components/ExplorerImageEditor", () => ({
   ExplorerImageEditor: ({
     imageName,
     mode = "edit",
+    workflowTabId,
+    onRegisterWorkflowTabs,
   }: {
     imageName: string;
     mode?: "preview" | "edit";
-  }) => (
-    <div
-      data-testid="mock-explorer-image-editor"
-      data-image-mode={mode}
-    >{`${imageName}:${mode}`}</div>
-  ),
+    workflowTabId?: string | null;
+    onRegisterWorkflowTabs?: (
+      tabs: Array<{
+        id: string;
+        label: string;
+        baseMode: "preview" | "edit";
+      }> | null,
+    ) => void;
+  }) => {
+    React.useEffect(() => {
+      onRegisterWorkflowTabs?.([
+        {
+          id: "cutout",
+          label: "Cutout",
+          baseMode: "edit",
+        },
+      ]);
+      return () => onRegisterWorkflowTabs?.(null);
+    }, [onRegisterWorkflowTabs]);
+
+    return (
+      <div
+        data-testid="mock-explorer-image-editor"
+        data-image-mode={mode}
+        data-image-workflow-tab={workflowTabId ?? mode}
+      >{`${imageName}:${workflowTabId ?? mode}`}</div>
+    );
+  },
 }));
 
 vi.mock("../components/ExplorerVideoEditor", () => ({
@@ -5602,10 +5626,14 @@ const value = 1;
     const imageEditor = await screen.findByTestId("mock-explorer-image-editor");
     expect(imageEditor).toHaveTextContent("preview.png:preview");
     expect(imageEditor).toHaveAttribute("data-image-mode", "preview");
+    expect(imageEditor).toHaveAttribute("data-image-workflow-tab", "preview");
 
+    await waitFor(() => {
+      const previewModeToggle = getChromeControl("previewModeToggle");
+      expect(previewModeToggle).not.toBeNull();
+      expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit", "Cutout"]);
+    });
     const previewModeToggle = getChromeControl("previewModeToggle");
-    expect(previewModeToggle).not.toBeNull();
-    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
 
     fireEvent.click(
       within(previewModeToggle as HTMLElement).getByRole("button", {
@@ -5620,6 +5648,30 @@ const value = 1;
       expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
         "data-image-mode",
         "edit",
+      );
+      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
+        "data-image-workflow-tab",
+        "edit",
+      );
+    });
+
+    fireEvent.click(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Cutout",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("mock-explorer-image-editor"),
+      ).toHaveTextContent("preview.png:cutout");
+      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
+        "data-image-mode",
+        "edit",
+      );
+      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
+        "data-image-workflow-tab",
+        "cutout",
       );
     });
   });

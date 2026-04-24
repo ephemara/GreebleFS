@@ -557,9 +557,6 @@ const PYTHON_PREVIEW_WILDCARD_WORKFLOW_TABS = [
   { id: "run", label: "Run", baseMode: "preview" },
   { id: "runtime", label: "Runtime", baseMode: "preview" },
 ] as const satisfies readonly ExplorerPreviewWildcardWorkflowTab[];
-const IMAGE_PREVIEW_WILDCARD_WORKFLOW_TABS = [
-  { id: "cutout", label: "Cutout", baseMode: "edit" },
-] as const satisfies readonly ExplorerPreviewWildcardWorkflowTab[];
 
 function awaitPromiseWithTimeout<T>(
   promise: Promise<T>,
@@ -3670,17 +3667,6 @@ function PreviewPanel({
     setWildcardWorkflowTabs([...PYTHON_PREVIEW_WILDCARD_WORKFLOW_TABS]);
   }, [activePythonPreviewMetadata, preview.path, preview.type]);
 
-  useEffect(() => {
-    if (
-      preview.type !== "image" ||
-      !isEditableImagePreviewExtension(preview.extension)
-    ) {
-      return;
-    }
-
-    setWildcardWorkflowTabs([...IMAGE_PREVIEW_WILDCARD_WORKFLOW_TABS]);
-  }, [preview.extension, preview.path, preview.type]);
-
   const handleWildcardWorkflowTabsChange = useCallback(
     (tabs: ExplorerPreviewWildcardWorkflowTab[] | null) => {
       setWildcardWorkflowTabs(tabs ?? []);
@@ -4669,6 +4655,11 @@ function PreviewPanel({
       supportsRenderedPreview,
       supportsPreviewModeToggle,
       previewSupportsEditableWorkflowTabs,
+      isEditableImagePreview,
+      onShaderSceneChange,
+      onShaderSave,
+      onTextSave,
+      renderPreviewWorkflowToggle,
       viewMode,
       previewLocked,
     ],
@@ -4898,6 +4889,7 @@ function PreviewPanel({
               pythonRuntimeConfig={pythonRuntimeConfig}
               cutoutModelId={imageCutoutModelBinding.modelId}
               cutoutBackendPreference={imageCutoutModelBinding.backendPreference}
+              onRegisterWorkflowTabs={handleWildcardWorkflowTabsChange}
               onSaved={onRefreshPreviewEntry}
             />
           )}
