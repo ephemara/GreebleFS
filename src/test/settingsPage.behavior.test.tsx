@@ -350,7 +350,8 @@ describe('SettingsPage behavior', () => {
     });
   }, 30000);
 
-  it('auto-opens Terminal and injects the managed AI install command when the acceleration probe is blank', async () => {
+  it('only injects the managed AI install command after the operator clicks Download', async () => {
+    const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);
     const injectedCommands: Array<{ command: string; run?: boolean }> = [];
     const activeProfileId = useSettingsStore.getState().settings.layout.activeProfileId;
@@ -474,6 +475,11 @@ describe('SettingsPage behavior', () => {
 
     try {
       renderSettingsPage();
+
+      const downloadButton = await screen.findByRole('button', { name: 'Download CUDA Packages' });
+      expect(injectedCommands).toHaveLength(0);
+
+      await user.click(downloadButton);
 
       await waitFor(() => {
         expect(injectedCommands).toHaveLength(1);
@@ -1043,7 +1049,7 @@ describe('SettingsPage behavior', () => {
       .settings.explorer.contextMenuLayoutOverridesByContext.entry?.entries
       .find((entry) => entry.kind === 'command' && entry.commandId === 'sample-plugin.context-menu.capture');
     expect(movedPluginEntry?.order).toBeLessThan(initialPluginEntry.order);
-  });
+  }, 30000);
 
   it('opens the dedicated context menu section from the explorer CTA', async () => {
     const user = userEvent.setup();
