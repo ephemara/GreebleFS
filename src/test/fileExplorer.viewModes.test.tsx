@@ -1702,10 +1702,11 @@ describe("FileExplorer view modes", () => {
     await userEvent.click(runInTerminalButton);
 
     await waitFor(() => {
-      expect(getExplorerEmbeddedTerminalLayer()).toHaveAttribute(
-        "data-overlay-explorer-terminal-placement",
-        "bottom",
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-surface-mode",
+        "terminal",
       );
+      expect(queryExplorerEmbeddedTerminalLayer()).toBeNull();
       expect(
         previewTerminalMockState.lastProps?.pendingCommandRequest?.command,
       ).toContain("runner.py");
@@ -1885,7 +1886,7 @@ describe("FileExplorer view modes", () => {
     await screen.findByRole("button", { name: /copy path/i });
   });
 
-  it("shows an icon-only preview terminal toggle, swaps surfaces, and keeps the terminal session mounted", async () => {
+  it("shows an icon-only preview terminal toggle, swaps surfaces, and keeps the preview terminal session mounted", async () => {
     renderExplorer();
     await screen.findByText("index.html");
 
@@ -1908,14 +1909,7 @@ describe("FileExplorer view modes", () => {
         "data-overlay-explorer-preview-surface-mode",
         "terminal",
       );
-      expect(getExplorerEmbeddedTerminalLayer()).toHaveAttribute(
-        "data-overlay-explorer-terminal-placement",
-        "preview",
-      );
-      expect(getExplorerEmbeddedTerminalLayer()).toHaveAttribute(
-        "data-overlay-explorer-terminal-visible",
-        "true",
-      );
+      expect(queryExplorerEmbeddedTerminalLayer()).toBeNull();
       expect(screen.getByTestId("mock-preview-terminal")).toHaveAttribute(
         "data-working-directory",
         REPO_ROOT,
@@ -1944,10 +1938,7 @@ describe("FileExplorer view modes", () => {
         "data-overlay-explorer-preview-surface-mode",
         "content",
       );
-      expect(getExplorerEmbeddedTerminalLayer()).toHaveAttribute(
-        "data-overlay-explorer-terminal-visible",
-        "false",
-      );
+      expect(queryExplorerEmbeddedTerminalLayer()).toBeNull();
       expect(previewTerminalMockState.mountCount).toBe(1);
       expect(getChromeControl("previewCopyPath")).not.toBeNull();
     });
@@ -1978,7 +1969,7 @@ describe("FileExplorer view modes", () => {
     });
   });
 
-  it("moves the same explorer terminal session between preview and bottom placements", async () => {
+  it("keeps the preview terminal and bottom drawer as separate explorer terminals", async () => {
     renderExplorer();
     await screen.findByText("index.html");
 
@@ -2000,6 +1991,25 @@ describe("FileExplorer view modes", () => {
     await waitFor(() => {
       expect(getPreviewPane()).toHaveAttribute(
         "data-overlay-explorer-preview-surface-mode",
+        "terminal",
+      );
+      expect(getExplorerEmbeddedTerminalLayer()).toHaveAttribute(
+        "data-overlay-explorer-terminal-placement",
+        "bottom",
+      );
+      expect(getExplorerEmbeddedTerminalLayer()).toHaveAttribute(
+        "data-overlay-explorer-terminal-visible",
+        "true",
+      );
+      expect(screen.getAllByTestId("mock-preview-terminal")).toHaveLength(2);
+      expect(previewTerminalMockState.mountCount).toBe(2);
+    });
+
+    fireEvent.click(getPreviewTerminalToggleButton());
+
+    await waitFor(() => {
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-surface-mode",
         "content",
       );
       expect(getExplorerEmbeddedTerminalLayer()).toHaveAttribute(
@@ -2010,21 +2020,7 @@ describe("FileExplorer view modes", () => {
         "data-overlay-explorer-terminal-visible",
         "true",
       );
-      expect(previewTerminalMockState.mountCount).toBe(1);
-    });
-
-    fireEvent.click(getPreviewTerminalToggleButton());
-
-    await waitFor(() => {
-      expect(getPreviewPane()).toHaveAttribute(
-        "data-overlay-explorer-preview-surface-mode",
-        "terminal",
-      );
-      expect(getExplorerEmbeddedTerminalLayer()).toHaveAttribute(
-        "data-overlay-explorer-terminal-placement",
-        "preview",
-      );
-      expect(previewTerminalMockState.mountCount).toBe(1);
+      expect(previewTerminalMockState.mountCount).toBe(2);
     });
   });
 

@@ -57,6 +57,7 @@ use crate::image_cutout_commands::{
     ImageCutoutPromptKind, ImageCutoutPromptPoint, ImageCutoutProviderDiagnostics,
     ImageCutoutResetSessionRequest, ImageCutoutSessionOpenRequest,
     ImageCutoutSessionSnapshot, ImageCutoutStagedExportArtifact,
+    ImageCutoutWorkflowMode,
 };
 use crate::lan_share::types::LanShareResult;
 use crate::linux_graphics::{
@@ -445,6 +446,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ImageCutoutPromptPoint>()
         .typ::<ImageCutoutPreviewMask>()
         .typ::<ImageCutoutProviderDiagnostics>()
+        .typ::<ImageCutoutWorkflowMode>()
         .typ::<ImageCutoutSessionOpenRequest>()
         .typ::<ImageCutoutApplyPromptsRequest>()
         .typ::<ImageCutoutResetSessionRequest>()

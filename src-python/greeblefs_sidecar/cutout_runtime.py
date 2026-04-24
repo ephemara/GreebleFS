@@ -28,6 +28,8 @@ else:
 IMAGE_CUTOUT_CAPABILITY_ID = "image-cutout"
 DEFAULT_PREVIEW_MAX_DIMENSION = 1280
 MASK_THRESHOLD = 164
+WORKFLOW_MODE_CUTOUT = "cutout"
+WORKFLOW_MODE_REMOVE_BACKGROUND = "removeBackground"
 _CUTOUT_SESSION_CACHE: dict[str, "CutoutSession"] = {}
 PIL_RESAMPLE_LANCZOS = getattr(
     getattr(Image, "Resampling", Image),
@@ -46,6 +48,7 @@ class CutoutPrompt:
 @dataclass
 class CutoutSession:
     session_id: str
+    workflow_mode: str
     logical_output_path: str | None
     analysis_image: Any
     original_image: Any
@@ -83,6 +86,15 @@ def _clamp_norm(value: Any) -> float:
 def _sanitize_prompt_kind(value: Any) -> str:
     text = str(value or "positive").strip().lower()
     return "negative" if text == "negative" else "positive"
+
+
+def _normalize_workflow_mode(value: Any) -> str:
+    text = str(value or WORKFLOW_MODE_CUTOUT).strip()
+    return (
+        WORKFLOW_MODE_REMOVE_BACKGROUND
+        if text == WORKFLOW_MODE_REMOVE_BACKGROUND
+        else WORKFLOW_MODE_CUTOUT
+    )
 
 
 def _parse_prompt(payload: Any) -> CutoutPrompt | None:
@@ -233,6 +245,37 @@ def _build_initial_mask(image: Any) -> Any:
     mask = _contract_mask(mask, 3)
     mask = mask.filter(ImageFilter.GaussianBlur(radius=3.0))
     return mask
+
+
+def _build_empty_mask(image: Any) -> Any:
+    width, height = image.size
+    return Image.new("L", (width, height), 0)
+
+
+def _build_workflow_base_mask(image: Any, workflow_mode: str) -> Any:
+    if workflow_mode == WORKFLOW_MODE_REMOVE_BACKGROUND:
+        return _build_initial_mask(image)
+    return _build_empty_mask(image)
+
+
+def _build_workflow_message(workflow_mode: str) -> str:
+    if workflow_mode == WORKFLOW_MODE_REMOVE_BACKGROUND:
+        return (
+            "Auto background removal is using the current heuristic runtime. "
+            "Semantic prompt cutout lives in the separate Cutout lane."
+        )
+    return (
+        "Prompt-first cutout lane active on the current heuristic runtime. "
+        "No automatic background removal runs when Cutout opens."
+    )
+
+
+def _reset_session_masks(session: CutoutSession) -> None:
+    session.base_mask = _build_workflow_base_mask(
+        session.analysis_image,
+        session.workflow_mode,
+    )
+    session.current_mask = session.base_mask.copy()
 
 
 def _prompt_point(image: Any, prompt: CutoutPrompt) -> tuple[int, int]:
@@ -423,6 +466,7 @@ def image_cutout_open_session_action(
     backend_preference = normalize_model_backend_preference(
         payload_dict.get("backendPreference")
     )
+    workflow_mode = _normalize_workflow_mode(payload_dict.get("workflowMode"))
 
     descriptor = resolve_model_descriptor(
         context,
@@ -435,16 +479,14 @@ def image_cutout_open_session_action(
     )
     input_image = _load_input_image(payload_dict)
     analysis_image = _fit_image(input_image, preview_max_dimension)
-    base_mask = _build_initial_mask(analysis_image)
+    base_mask = _build_workflow_base_mask(analysis_image, workflow_mode)
     current_mask = base_mask.copy()
     backend_kind = _resolve_backend_kind(backend_preference)
-    message = (
-        "Heuristic cutout runtime active; the promptable SAM2 provider slot is reserved "
-        "behind the same capability contract for a later managed-weights pass."
-    )
+    message = _build_workflow_message(workflow_mode)
 
     session = CutoutSession(
         session_id=session_id,
+        workflow_mode=workflow_mode,
         logical_output_path=str(payload_dict.get("logicalOutputPath")).strip()
         if isinstance(payload_dict.get("logicalOutputPath"), str)
         and str(payload_dict.get("logicalOutputPath")).strip()
@@ -496,7 +538,7 @@ def image_cutout_reset_session_action(
         raise KeyError(f"Image cutout session was not found: {session_id}")
 
     session.prompts.clear()
-    session.current_mask = session.base_mask.copy()
+    _reset_session_masks(session)
     return _build_session_payload(session)
 
 

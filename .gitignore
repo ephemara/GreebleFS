@@ -115,3 +115,4 @@ public/icons/folder_scripts.svg
 src/repomix-output.xml
 .telemetry/
 packages/
+src/generated/tauri.ts
