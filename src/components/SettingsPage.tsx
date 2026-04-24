@@ -6585,20 +6585,6 @@ export function SettingsPage({
                     </div>
                   </div>
                 </div>
-                <MobileShareQrDialog
-                  open={mobileQrDialogOpen}
-                  appearance={appearance}
-                  phase={mobileSharePhase}
-                  session={mobileShareSession}
-                  remoteAccessMode={settings.mobile.remoteAccessMode}
-                  notice={mobileShareNotice}
-                  error={mobileShareError}
-                  showSettingsAction={false}
-                  onClose={() => setMobileQrDialogOpen(false)}
-                  onOpenMobileSettings={() => setMobileQrDialogOpen(false)}
-                  onStartOrRestartShare={startMobileShareFromSettings}
-                  onStopShare={stopMobileShareFromSettings}
-                />
               </section>
             )}
 
@@ -11085,6 +11071,20 @@ export function SettingsPage({
             )}
           </div>
         </OverlayScrollArea>
+        <MobileShareQrDialog
+          open={mobileQrDialogOpen}
+          appearance={appearance}
+          phase={mobileSharePhase}
+          session={mobileShareSession}
+          remoteAccessMode={settings.mobile.remoteAccessMode}
+          notice={mobileShareNotice}
+          error={mobileShareError}
+          showSettingsAction={false}
+          onClose={() => setMobileQrDialogOpen(false)}
+          onOpenMobileSettings={() => setMobileQrDialogOpen(false)}
+          onStartOrRestartShare={startMobileShareFromSettings}
+          onStopShare={stopMobileShareFromSettings}
+        />
       </main>
     </div>
   );

@@ -151,6 +151,21 @@ describe('interaction motion resolver', () => {
         },
       },
     });
+    const resolvedActionButton = resolveInteractionMotionSurfaceStyle({
+      surfaceId: 'actionButton',
+      triggerState: { hover: true },
+      settings: {
+        ...baseSettings,
+        interactionMotionModuleOverrides: {
+          fileItems: {
+            presetId: 'bounce',
+          },
+          shellChrome: {
+            presetId: 'subtle',
+          },
+        },
+      },
+    });
 
     expect(resolvedFileIcon.enabled).toBe(true);
     expect(resolvedFileIcon.presetId).toBe('bounce');
@@ -165,5 +180,12 @@ describe('interaction motion resolver', () => {
     expect(resolvedChrome.presetId).toBe('subtle');
     expect(resolvedChrome.animation).toBeUndefined();
     expect(resolvedChrome.dataAttributes['data-interaction-motion-module']).toBe('shellChrome');
+
+    expect(resolvedActionButton.enabled).toBe(true);
+    expect(resolvedActionButton.presetId).toBe('subtle');
+    expect(resolvedActionButton.transform).toContain('translate3d');
+    expect(resolvedActionButton.animation).toBeUndefined();
+    expect(resolvedActionButton.dataAttributes['data-interaction-motion-surface']).toBe('actionButton');
+    expect(resolvedActionButton.dataAttributes['data-interaction-motion-module']).toBe('shellChrome');
   });
 });

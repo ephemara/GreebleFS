@@ -44,7 +44,6 @@ export function MobileShareQrDialog({
   const muted = appearance.theme.palette.textMuted;
   const accent = appearance.theme.palette.accent;
   const border = appearance.theme.palette.border;
-  const controlRadius = appearance.workbenchTheme.metrics.controlRadius;
   const remoteAccessDefinition = getMobileRemoteAccessModeDefinition(remoteAccessMode);
   const isPending = phase === 'starting' || phase === 'stopping';
   const selectedModeDiffersFromLiveSession = session != null

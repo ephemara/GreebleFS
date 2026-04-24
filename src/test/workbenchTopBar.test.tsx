@@ -248,6 +248,10 @@ describe('WorkbenchTopBar', () => {
     );
 
     const mobileShareButton = screen.getByTitle('Stop Mobile Share (Ctrl+Alt+Shift+M)');
+    expect(mobileShareButton).toHaveAttribute('data-interaction-motion-surface', 'topBarButton');
+    const idleMobileShareButtonBoxShadow = mobileShareButton.style.boxShadow;
+    fireEvent.pointerEnter(mobileShareButton);
+    expect(mobileShareButton.style.boxShadow).not.toBe(idleMobileShareButtonBoxShadow);
     fireEvent.click(mobileShareButton);
     expect(onToggleMobileShare).toHaveBeenCalledTimes(1);
 
@@ -255,10 +259,15 @@ describe('WorkbenchTopBar', () => {
 
     expect(await screen.findByText('Selected Route', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(container.firstElementChild).toHaveStyle({ overflow: 'visible' });
+    const showQrCodesButton = screen.getByRole('button', { name: /show qr codes/i });
+    expect(showQrCodesButton).toHaveAttribute('data-interaction-motion-surface', 'actionButton');
+    const idleShowQrCodesButtonBoxShadow = showQrCodesButton.style.boxShadow;
+    fireEvent.pointerEnter(showQrCodesButton);
+    expect(showQrCodesButton.style.boxShadow).not.toBe(idleShowQrCodesButtonBoxShadow);
     fireEvent.click(screen.getByRole('button', { name: /tailscale/i }));
     expect(onSetMobileShareRemoteAccessMode).toHaveBeenCalledWith('tailscale');
 
-    fireEvent.click(screen.getByRole('button', { name: /show qr codes/i }));
+    fireEvent.click(showQrCodesButton);
 
     const dialogTitle = await screen.findByText('Phone Pairing', {}, { timeout: 4000 });
     expect(dialogTitle).toBeInTheDocument();
@@ -271,7 +280,8 @@ describe('WorkbenchTopBar', () => {
     expect(await screen.findByAltText('QR code for Tailnet', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(await screen.findByAltText('QR code for LAN Direct', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(qrCodeToDataUrlMock).toHaveBeenCalledTimes(3);
-    expect(screen.getByRole('button', { name: /mobile settings/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /mobile settings/i }))
+      .toHaveAttribute('data-interaction-motion-surface', 'actionButton');
     expect(onStartMobileShare).toHaveBeenCalledTimes(0);
   });
 });

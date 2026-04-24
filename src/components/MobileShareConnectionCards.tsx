@@ -23,7 +23,6 @@ export function MobileShareConnectionCards({
   const muted = appearance.theme.palette.textMuted;
   const accent = appearance.theme.palette.accent;
   const border = appearance.theme.palette.border;
-  const controlRadius = appearance.workbenchTheme.metrics.controlRadius;
   const qrDisplaySize = connectionTargets.length >= 3
     ? 'clamp(100px, 9vw, 128px)'
     : 'clamp(112px, 11vw, 152px)';

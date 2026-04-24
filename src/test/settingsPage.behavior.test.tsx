@@ -500,7 +500,11 @@ describe('SettingsPage behavior', () => {
     await user.click(screen.getByRole('button', { name: /cinema shell/i }));
     expect(useSettingsStore.getState().settings.appearance.activeShellRendererId).toBe('cinema-shell');
 
-    await user.click(screen.getByRole('button', { name: /follow theme/i }));
+    const followThemeRendererButton = screen.getByText('Resolved Default Renderer').closest('button');
+    if (!followThemeRendererButton) {
+      throw new Error('Missing Follow Theme renderer button');
+    }
+    await user.click(followThemeRendererButton);
     expect(useSettingsStore.getState().settings.appearance.activeShellRendererId).toBeNull();
   }, 30000);
 
@@ -549,6 +553,24 @@ describe('SettingsPage behavior', () => {
 
     expect(await screen.findByAltText('QR code for LAN HTTPS')).toBeInTheDocument();
     expect(await screen.findByAltText('QR code for Tailnet')).toBeInTheDocument();
+    const showQrCodesButton = screen.getByRole('button', { name: /show qr codes/i });
+    const copyUrlButton = screen.getAllByRole('button', { name: /copy url/i })[0];
+
+    expect(showQrCodesButton).toHaveAttribute('data-interaction-motion-surface', 'actionButton');
+    expect(copyUrlButton).toHaveAttribute('data-interaction-motion-surface', 'actionButton');
+
+    const idleShowQrCodesButtonBoxShadow = showQrCodesButton.style.boxShadow;
+    fireEvent.pointerEnter(showQrCodesButton);
+    expect(showQrCodesButton.style.boxShadow).not.toBe(idleShowQrCodesButtonBoxShadow);
+
+    const idleCopyUrlButtonBoxShadow = copyUrlButton.style.boxShadow;
+    fireEvent.pointerEnter(copyUrlButton);
+    expect(copyUrlButton.style.boxShadow).not.toBe(idleCopyUrlButtonBoxShadow);
+
+    fireEvent.click(showQrCodesButton);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /close/i }))
+      .toHaveAttribute('data-interaction-motion-surface', 'actionButton');
   }, 30000);
 
   it('updates explorer click mode, restores folder rules, and seeds bookmarks without duplicates', async () => {

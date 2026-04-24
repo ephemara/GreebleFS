@@ -1,3 +1,19 @@
+# 2026-04-24 - Mobile Share Buttons Now Use A Shared Action-Button Surface With Static Hover Feedback
+
+- The mobile-share flow had drifted away from the shell UI system: the route menu, QR-card actions, settings action row, and pairing-dialog footer were all hand-styled buttons with no consistent hover treatment, and the top-bar phone button relied too heavily on motion-only feedback.
+- Durable implementation shape:
+  - `src/config/interactionMotion.ts` now defines a dedicated `actionButton` surface under `shellChrome`. This keeps non-top-bar shell actions configurable through the same motion catalog without overloading `topBarButton` or `settingsCard`.
+  - `src/components/OverlayActionButton.tsx` is now the shared primitive for shell action buttons outside the top bar. It owns static hover/press visuals, tone/size variants, and `useInteractionMotionController(...)` binding so affordance survives even when interaction motion is disabled.
+  - The mobile-share flow now uses that primitive in `src/components/MobileShareRouteMenu.tsx`, `src/components/MobileShareQrDialog.tsx`, `src/components/MobileShareConnectionCards.tsx`, and the mobile action row inside `src/components/SettingsPage.tsx`. Future mobile-share button polish should extend `OverlayActionButton` instead of restyling each surface again.
+  - `src/components/WorkbenchTopBar.tsx` now routes compact chrome hover/press visuals through a shared `CompactChromeButton`, so the phone/pair button reads as interactive before any transform/filter motion kicks in.
+  - The settings-owned QR dialog had been mounted under the Top Bars section by mistake, which meant `Show QR Codes` from the Mobile section could toggle local state without rendering the dialog. `SettingsPage.tsx` now mounts `MobileShareQrDialog` at the page shell level so the mobile section can always open it.
+- Durable product note:
+  - Treat motion as additive polish, not as the only affordance. Shared shell buttons must still change border/background/shadow on hover when motion is disabled or reduced.
+  - If another settings/dialog/menu workflow needs shell-style buttons, use `OverlayActionButton` and the `actionButton` surface instead of copying inline button styles or reusing `topBarButton`.
+- Validation:
+  - passed: `bunx vitest run src/test/interactionMotion.test.ts src/test/overlayActionButton.test.tsx src/test/workbenchTopBar.test.tsx src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "OverlayActionButton|interactionMotion.ts|MobileShareRouteMenu|MobileShareQrDialog|MobileShareConnectionCards|WorkbenchTopBar|SettingsPage|overlayActionButton.test|workbenchTopBar.test|settingsPage.behavior.test|interactionMotion.test" || true`
+
 # 2026-04-23 - Deep Research Intake Now Maps Archive Access Policy Back Into The Repo
 
 - `docs/deep-research-report.md` was broad and intentionally repo-agnostic, so the useful pieces were translated into repo-owned guidance instead of treated like a direct implementation spec.
