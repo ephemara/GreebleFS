@@ -350,6 +350,148 @@ describe('SettingsPage behavior', () => {
     });
   }, 30000);
 
+  it('auto-opens Terminal and injects the managed AI install command when the acceleration probe is blank', async () => {
+    const invokeMock = vi.mocked(invoke);
+    const injectedCommands: Array<{ command: string; run?: boolean }> = [];
+    const activeProfileId = useSettingsStore.getState().settings.layout.activeProfileId;
+
+    useSettingsStore.setState({
+      activeSection: 'system',
+      settings: {
+        ...useSettingsStore.getState().settings,
+        system: {
+          ...useSettingsStore.getState().settings.system,
+          accelerationRoutingMode: 'preferCuda',
+        },
+        python: {
+          ...useSettingsStore.getState().settings.python,
+          bootstrapPackages: '',
+        },
+      },
+    });
+    useAccelerationRuntimeStore.setState(state => ({
+      ...state,
+      snapshot: {
+        ...state.snapshot,
+        pythonProbeAttempted: true,
+        pythonSidecarRunning: true,
+        pythonSidecarActionAvailable: true,
+        pythonProbeError: null,
+        pythonProbe: {
+          pythonVersion: '3.11.9',
+          platform: 'Windows',
+          cudaVisibleDevices: null,
+          cudaHome: null,
+          cudaPath: null,
+          torch: {
+            installed: false,
+            imported: null,
+            importError: null,
+            version: null,
+            cudaAvailable: null,
+            cudaVersion: null,
+            cudnnAvailable: null,
+            deviceCount: null,
+            devices: [],
+          },
+          onnxruntime: {
+            installed: false,
+            imported: null,
+            importError: null,
+            availableProviders: null,
+            providerError: null,
+          },
+          optionalModules: [
+            { id: 'numpy', installed: false, imported: null, importError: null, version: null },
+            { id: 'PIL', installed: false, imported: null, importError: null, version: null },
+            { id: 'sentence_transformers', installed: false, imported: null, importError: null, version: null },
+            { id: 'transformers', installed: false, imported: null, importError: null, version: null },
+            { id: 'tokenizers', installed: false, imported: null, importError: null, version: null },
+            { id: 'optimum', installed: false, imported: null, importError: null, version: null },
+            { id: 'faiss', installed: false, imported: null, importError: null, version: null },
+          ],
+        },
+        providers: [
+          {
+            providerKind: 'cpu',
+            label: 'CPU Fallback',
+            origin: 'native',
+            available: true,
+            ready: true,
+            detail: 'fallback',
+            supportedWorkloadIds: ['thumbnails'],
+          },
+          {
+            providerKind: 'cudaPython',
+            label: 'CUDA Python Sidecar',
+            origin: 'python-sidecar',
+            available: true,
+            ready: false,
+            detail: 'missing packages',
+            supportedWorkloadIds: ['aiIndexing', 'localInference', 'similaritySearch'],
+          },
+        ],
+      },
+      hydrationState: 'ready',
+      hydrationError: null,
+    }));
+
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'python_get_runtime_status') {
+        return {
+          runtimeRoot: 'C:\\Python Runtime',
+          envDir: 'C:\\Python Runtime\\env',
+          scriptsDir: 'C:\\Python Runtime\\scripts',
+          tempDir: 'C:\\Python Runtime\\temp',
+          logsDir: 'C:\\Python Runtime\\logs',
+          managedPythonPath: 'C:\\Python Runtime\\env\\Scripts\\python.exe',
+          envExists: true,
+          ready: true,
+          managedPythonVersion: '3.11.9',
+          managedPipVersion: '25.0',
+          preferredInterpreterPath: null,
+          bootstrapPackages: [],
+          interpreterHint: 'Python 3.11 is preferred',
+          baseInterpreter: null,
+          discoveredInterpreters: [],
+          boilerplate: {
+            readmePath: 'C:\\Python Runtime\\README.md',
+            requirementsPath: 'C:\\Python Runtime\\requirements.txt',
+            packageDir: 'C:\\Python Runtime\\overlayterm_runtime',
+            helloScriptPath: 'C:\\Python Runtime\\scripts\\hello_runtime.py',
+            probeScriptPath: 'C:\\Python Runtime\\scripts\\onnx_probe.py',
+          },
+        };
+      }
+
+      return null;
+    });
+
+    const listener = (event: Event) => {
+      injectedCommands.push((event as CustomEvent<{ command: string; run?: boolean }>).detail);
+    };
+    window.addEventListener('overlayterm:cmdinject', listener);
+
+    try {
+      renderSettingsPage();
+
+      await waitFor(() => {
+        expect(injectedCommands).toHaveLength(1);
+      });
+
+      expect(injectedCommands[0]?.run).toBe(true);
+      expect(injectedCommands[0]?.command).toContain("python.exe' -m pip install");
+      expect(injectedCommands[0]?.command).toContain("'onnxruntime-gpu'");
+      expect(injectedCommands[0]?.command).toContain("'faiss-cpu'");
+      expect(useSettingsStore.getState().settings.python.bootstrapPackages).toContain('onnxruntime-gpu');
+      expect(useSettingsStore.getState().settings.python.bootstrapPackages).toContain('faiss-cpu');
+      expect(useSettingsStore.getState().settings.layout.panelStateByProfile[activeProfileId]?.activePanelId).toBe('terminal');
+      expect(useSettingsStore.getState().settings.layout.panelStateByProfile[activeProfileId]?.openPanelIds).toContain('terminal');
+    } finally {
+      window.removeEventListener('overlayterm:cmdinject', listener);
+    }
+  }, 30000);
+
   it('lands on the overview section and can create then open a missing workspace root', async () => {
     const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);

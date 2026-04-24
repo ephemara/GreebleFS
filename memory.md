@@ -4039,3 +4039,19 @@
   - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
   - passed: `bunx vitest run src/test/mobileApp.test.tsx src/test/mobileTheme.test.ts src/test/settingsStore.test.ts --reporter=dot`
   - passed: `bun run build:mobile`
+
+## 2026-04-24 — Blank Managed AI Runtime Now Auto-Seeds and Opens Terminal Install Flow
+
+- The Settings acceleration/model surfaces now treat a completely blank managed AI runtime as a bootstrap case instead of a dead-end status card. When the probe shows no Torch, no ONNX Runtime, and none of the optional AI modules, the app seeds the managed Python bootstrap package list, reveals the integrated Terminal, and injects the pip install command for the recommended package preset.
+- Durable implementation shape:
+  - `src-python/greeblefs-python-sidecar.json` package presets are now the install truth for this workflow. `ml-core` includes `sentence-transformers` and `faiss-cpu`, and `cuda-ai-indexing` includes `faiss-cpu`, so the acceleration probe and the install presets stay aligned.
+  - `src/config/python.ts` now owns the data-driven helpers for this flow: resolving the auto-install preset from the current acceleration routing mode, merging/deduping the managed bootstrap queue, deciding when a probe is "effectively blank", and building a shell-correct managed pip install command for PowerShell, `cmd.exe`, and POSIX shells.
+  - `src/components/SettingsPage.tsx` now auto-probes acceleration when the user lands on `System` or `Models`, and if the runtime is blank it updates `settings.python.bootstrapPackages`, opens the `terminal` panel in the active layout profile, ensures the managed runtime exists, and dispatches the pip command through the existing `overlayterm:cmdinject` flow.
+  - `src/runtime/accelerationRuntimeBackend.ts` now rejects invalid/null acceleration snapshots from the native bridge instead of letting the store replace its snapshot with `null`. That keeps the Settings page stable if a mock, test harness, or unexpected bridge response fails to return a real snapshot object.
+- Durable product notes:
+  - Keep this workflow data-driven through the package presets and Python config helpers. If future routing modes or curated AI stacks are added, extend the preset catalog and preset-selection helper instead of hardcoding package lists inside `SettingsPage`.
+  - The intended UX is "open Terminal and show the real install command", not "hide the whole install behind a silent backend task". Silent runtime bootstrap before injection is acceptable, but the user-facing package install should continue to route through the integrated terminal flow.
+- Validation:
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/accelerationRuntimeStore.test.ts src/test/pythonConfig.test.ts --reporter=dot`
+  - note: `bunx tsc --noEmit --pretty false -p tsconfig.json` still reports unrelated repo-wide type errors in `src/config/soundPacks.ts`, `src/panels/panelRegistry.tsx`, and vendored `src/vendor/tiptap/**` files.

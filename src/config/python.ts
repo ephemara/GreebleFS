@@ -1,3 +1,4 @@
+import type { AccelerationRoutingMode } from './accelerationRuntime';
 import type { RuntimePlatform } from './platform';
 import pythonSidecarWorkspaceManifestJson from '../../src-python/greeblefs-python-sidecar.json';
 
@@ -93,6 +94,28 @@ export interface PythonSidecarWorkspaceManifest {
   actions: PythonSidecarActionPreset[];
 }
 
+export interface PythonAccelerationOptionalModuleProbeLike {
+  id: string;
+  installed: boolean;
+}
+
+export interface PythonAccelerationInstallProbeLike {
+  torch: {
+    installed: boolean;
+  };
+  onnxruntime: {
+    installed: boolean;
+  };
+  optionalModules: PythonAccelerationOptionalModuleProbeLike[];
+}
+
+export interface ManagedPythonPackageInstallPlan {
+  presetId: string;
+  presetLabel: string;
+  packages: string[];
+  packageInput: string;
+}
+
 export interface PythonExamplePreset {
   id: string;
   label: string;
@@ -163,6 +186,113 @@ export function parseMultilineValues(raw: string): string[] {
     .filter(Boolean);
 }
 
+function shellExecutableName(shell: string): string {
+  const trimmed = shell.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const match = trimmed.match(/^(?:\"([^\"]+)\"|'([^']+)'|(\S+))/);
+  return (match?.[1] ?? match?.[2] ?? match?.[3] ?? trimmed).toLowerCase();
+}
+
+function isPowerShellShell(normalizedShell: string): boolean {
+  return normalizedShell.endsWith('powershell.exe')
+    || normalizedShell.endsWith('powershell')
+    || normalizedShell.endsWith('pwsh.exe')
+    || normalizedShell.endsWith('pwsh');
+}
+
+function isCmdShell(normalizedShell: string): boolean {
+  return normalizedShell.endsWith('cmd.exe') || normalizedShell.endsWith('cmd');
+}
+
+function quoteCmdLiteral(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function dedupePackages(packages: Iterable<string>): string[] {
+  const seen = new Set<string>();
+  const uniquePackages: string[] = [];
+
+  for (const rawPackage of packages) {
+    const normalizedPackage = rawPackage.trim();
+    if (!normalizedPackage || seen.has(normalizedPackage)) {
+      continue;
+    }
+
+    seen.add(normalizedPackage);
+    uniquePackages.push(normalizedPackage);
+  }
+
+  return uniquePackages;
+}
+
+export function resolvePythonQuickPackagePreset(
+  presetId: string,
+): PythonQuickPackagePreset | null {
+  const normalizedPresetId = presetId.trim();
+  if (!normalizedPresetId) {
+    return null;
+  }
+
+  return pythonQuickPackagePresets.find(preset => preset.id === normalizedPresetId) ?? null;
+}
+
+export function mergeManagedPythonPackageQueue(
+  currentPackageInput: string,
+  packagesToAppend: string[],
+): string[] {
+  return dedupePackages([
+    ...parseMultilineValues(currentPackageInput),
+    ...packagesToAppend,
+  ]);
+}
+
+export function resolveAccelerationAutoInstallPresetId(
+  routingMode: AccelerationRoutingMode,
+): string {
+  return routingMode === 'preferCuda' ? 'cuda-ai-indexing' : 'ml-core';
+}
+
+export function shouldAutoInstallAccelerationPackages(
+  probe: PythonAccelerationInstallProbeLike | null | undefined,
+): boolean {
+  if (!probe) {
+    return false;
+  }
+
+  if (probe.torch.installed || probe.onnxruntime.installed) {
+    return false;
+  }
+
+  return probe.optionalModules.length > 0
+    && probe.optionalModules.every(module => module.installed !== true);
+}
+
+export function createAccelerationAutoInstallPlan(args: {
+  routingMode: AccelerationRoutingMode;
+  currentPackageInput: string;
+}): ManagedPythonPackageInstallPlan | null {
+  const presetId = resolveAccelerationAutoInstallPresetId(args.routingMode);
+  const preset = resolvePythonQuickPackagePreset(presetId);
+  if (!preset) {
+    return null;
+  }
+
+  const packages = mergeManagedPythonPackageQueue(
+    args.currentPackageInput,
+    preset.packages,
+  );
+
+  return {
+    presetId: preset.id,
+    presetLabel: preset.label,
+    packages,
+    packageInput: packages.join('\n'),
+  };
+}
+
 export function createPythonRuntimeConfig(settings: {
   preferredInterpreterPath: string;
   runtimeRoot: string;
@@ -210,15 +340,60 @@ export function buildManagedPythonReplCommand(
   shell: string,
   platform: RuntimePlatform,
 ): string {
-  const normalizedShell = shell.trim().toLowerCase();
+  const normalizedShell = shellExecutableName(shell);
 
   if (platform === 'windows') {
-    if (normalizedShell.includes('cmd')) {
-      return `"${managedPythonPath.replace(/"/g, '""')}"`;
+    if (isCmdShell(normalizedShell)) {
+      return quoteCmdLiteral(managedPythonPath);
     }
 
     return `& ${quotePowerShellLiteral(managedPythonPath)}`;
   }
 
   return quotePosixLiteral(managedPythonPath);
+}
+
+export function buildManagedPythonPipInstallCommand(args: {
+  managedPythonPath: string;
+  shell: string;
+  platform: RuntimePlatform;
+  packages: string[];
+}): string {
+  const normalizedPackages = dedupePackages(args.packages);
+  if (!args.managedPythonPath.trim() || normalizedPackages.length === 0) {
+    return '';
+  }
+
+  const normalizedShell = shellExecutableName(args.shell);
+
+  if (args.platform === 'windows') {
+    if (isCmdShell(normalizedShell)) {
+      return [
+        quoteCmdLiteral(args.managedPythonPath),
+        '-m',
+        'pip',
+        'install',
+        ...normalizedPackages.map(quoteCmdLiteral),
+      ].join(' ');
+    }
+
+    if (isPowerShellShell(normalizedShell)) {
+      return [
+        '&',
+        quotePowerShellLiteral(args.managedPythonPath),
+        '-m',
+        'pip',
+        'install',
+        ...normalizedPackages.map(quotePowerShellLiteral),
+      ].join(' ');
+    }
+  }
+
+  return [
+    quotePosixLiteral(args.managedPythonPath),
+    '-m',
+    'pip',
+    'install',
+    ...normalizedPackages.map(quotePosixLiteral),
+  ].join(' ');
 }

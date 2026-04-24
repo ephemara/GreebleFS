@@ -37,7 +37,12 @@ import {
   getAccelerationRoutingModeLabel,
   resolveAccelerationProviderForWorkload,
 } from '../config/accelerationRuntime';
-import { createPythonRuntimeConfig } from '../config/python';
+import {
+  buildManagedPythonPipInstallCommand,
+  createAccelerationAutoInstallPlan,
+  createPythonRuntimeConfig,
+  shouldAutoInstallAccelerationPackages,
+} from '../config/python';
 import {
   formatLocalModelEstimatedFootprint,
   getCapabilityModels,
@@ -222,9 +227,10 @@ import {
   type HotkeyBindingKey,
 } from '../config/hotkeys';
 import { screenshotFeatureConfig, type ScreenshotCaptureModeId, type ScreenshotOutputActionId } from '../config/screenshots';
-import type {
-  OverlayPluginContextMenuContribution,
-  OverlayPluginExplorerActionContribution,
+import {
+  dispatchTerminalCommand,
+  type OverlayPluginContextMenuContribution,
+  type OverlayPluginExplorerActionContribution,
 } from '../config/pluginContributions';
 import { useSettingsStore, resolveSystemPresentationState, type TerminalWindowMode } from '../store/settingsStore';
 import { useExplorerStore } from '../store/explorerStore';
@@ -255,6 +261,10 @@ import {
   getTelemetryStatus,
   type OverlayTelemetrySessionStatus,
 } from '../runtime/telemetryBackend';
+import {
+  bootstrapManagedPythonRuntime,
+  getManagedPythonRuntimeStatus,
+} from '../runtime/pythonRuntimeBackend';
 import {
   getLocalModelCatalogStatus,
   prewarmLocalModel,
@@ -2171,6 +2181,7 @@ export function SettingsPage({
     setActiveSection,
     settings,
     updateTerminal,
+    updatePython,
     updateExplorer,
     updateHome,
     updateAppearance,
@@ -2191,6 +2202,7 @@ export function SettingsPage({
     setActiveSection: state.setActiveSection,
     settings: state.settings,
     updateTerminal: state.updateTerminal,
+    updatePython: state.updatePython,
     updateExplorer: state.updateExplorer,
     updateHome: state.updateHome,
     updateAppearance: state.updateAppearance,
@@ -2315,6 +2327,9 @@ export function SettingsPage({
   const [wallpaperImportError, setWallpaperImportError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
   const [railWidth, setRailWidth] = usePersistentPanelSize('overlayterm-settings-rail-width', 236, 190, 320);
+  const accelerationAutoProbeRequestedRef = useRef(false);
+  const accelerationAutoInstallAttemptRef = useRef<string | null>(null);
+  const accelerationAutoInstallInFlightRef = useRef(false);
   const availableLinuxDisplayBackends = linuxDisplayBackendStatus?.availableBackends ?? [];
   const linuxDisplayBackendStatusSummary = useMemo(() => {
     if (platform !== 'linux') {
@@ -2443,9 +2458,45 @@ export function SettingsPage({
     accelerationRuntimeSnapshot,
     settings.system.accelerationRoutingMode,
   ]);
+  const activeLayoutProfile = useMemo(
+    () => resolveLayoutProfile(layoutManifestState.manifest, settings.layout.activeProfileId),
+    [layoutManifestState.manifest, settings.layout.activeProfileId],
+  );
+  const revealIntegratedTerminalPanel = useCallback(() => {
+    const currentPanelState = settings.layout.panelStateByProfile[activeLayoutProfile.id] ?? {
+      openPanelIds: [],
+      activePanelId: null,
+      dismissedPanelIds: [],
+    };
+
+    updateLayout({
+      panelStateByProfile: {
+        ...settings.layout.panelStateByProfile,
+        [activeLayoutProfile.id]: {
+          openPanelIds: Array.from(new Set([...currentPanelState.openPanelIds, 'terminal'])),
+          activePanelId: 'terminal',
+          dismissedPanelIds: currentPanelState.dismissedPanelIds.filter(panelId => panelId !== 'terminal'),
+        },
+      },
+    });
+  }, [
+    activeLayoutProfile.id,
+    settings.layout.panelStateByProfile,
+    updateLayout,
+  ]);
   const managedPythonRuntimeConfig = useMemo(
     () => createPythonRuntimeConfig(settings.python),
     [settings.python],
+  );
+  const accelerationAutoInstallPlan = useMemo(
+    () => createAccelerationAutoInstallPlan({
+      routingMode: settings.system.accelerationRoutingMode,
+      currentPackageInput: settings.python.bootstrapPackages,
+    }),
+    [
+      settings.python.bootstrapPackages,
+      settings.system.accelerationRoutingMode,
+    ],
   );
   const handleProbeAccelerationPipeline = useCallback(async () => {
     setAccelerationProbePending(true);
@@ -2633,6 +2684,106 @@ export function SettingsPage({
     localModelStatus,
     localModelStatusPending,
     refreshLocalModels,
+  ]);
+
+  useEffect(() => {
+    const accelerationSectionActive = activeSection === 'system' || activeSection === 'models';
+    if (!accelerationSectionActive) {
+      return;
+    }
+
+    if (
+      accelerationProbePending
+      || accelerationRuntimeHydrationState === 'loading'
+      || accelerationRuntimeSnapshot.pythonProbeAttempted
+      || accelerationAutoProbeRequestedRef.current
+    ) {
+      return;
+    }
+
+    accelerationAutoProbeRequestedRef.current = true;
+    void handleProbeAccelerationPipeline();
+  }, [
+    accelerationProbePending,
+    accelerationRuntimeHydrationState,
+    accelerationRuntimeSnapshot.pythonProbeAttempted,
+    activeSection,
+    handleProbeAccelerationPipeline,
+  ]);
+
+  useEffect(() => {
+    const accelerationSectionActive = activeSection === 'system' || activeSection === 'models';
+    if (
+      !accelerationSectionActive
+      || accelerationAutoInstallPlan == null
+      || !accelerationRuntimeSnapshot.pythonProbeAttempted
+      || !shouldAutoInstallAccelerationPackages(accelerationRuntimeSnapshot.pythonProbe)
+    ) {
+      return;
+    }
+
+    const attemptSignature = `${accelerationAutoInstallPlan.presetId}:${accelerationAutoInstallPlan.packageInput}`;
+    if (
+      accelerationAutoInstallInFlightRef.current
+      || accelerationAutoInstallAttemptRef.current === attemptSignature
+    ) {
+      return;
+    }
+
+    accelerationAutoInstallAttemptRef.current = attemptSignature;
+    accelerationAutoInstallInFlightRef.current = true;
+
+    void (async () => {
+      try {
+        const runtimeConfig = createPythonRuntimeConfig({
+          ...settings.python,
+          bootstrapPackages: accelerationAutoInstallPlan.packageInput,
+        });
+
+        if (settings.python.bootstrapPackages.trim() !== accelerationAutoInstallPlan.packageInput) {
+          updatePython({ bootstrapPackages: accelerationAutoInstallPlan.packageInput });
+        }
+
+        revealIntegratedTerminalPanel();
+
+        let runtimeStatus = await getManagedPythonRuntimeStatus(runtimeConfig);
+        if (!runtimeStatus.ready || !runtimeStatus.managedPythonPath.trim()) {
+          const bootstrapResponse = await bootstrapManagedPythonRuntime(runtimeConfig);
+          runtimeStatus = bootstrapResponse.status;
+        }
+
+        const installCommand = buildManagedPythonPipInstallCommand({
+          managedPythonPath: runtimeStatus.managedPythonPath,
+          shell: settings.terminal.shell,
+          platform,
+          packages: accelerationAutoInstallPlan.packages,
+        });
+        if (!installCommand) {
+          throw new Error('Unable to build the managed Python install command.');
+        }
+
+        dispatchTerminalCommand(installCommand, true);
+        setAccelerationProbeNotice(
+          `Detected a blank managed AI runtime. Opened Terminal and started installing ${accelerationAutoInstallPlan.presetLabel}.`,
+        );
+        setAccelerationProbeError(null);
+      } catch (error) {
+        accelerationAutoInstallAttemptRef.current = null;
+        setAccelerationProbeError(error instanceof Error ? error.message : String(error));
+      } finally {
+        accelerationAutoInstallInFlightRef.current = false;
+      }
+    })();
+  }, [
+    accelerationAutoInstallPlan,
+    accelerationRuntimeSnapshot.pythonProbe,
+    accelerationRuntimeSnapshot.pythonProbeAttempted,
+    activeSection,
+    platform,
+    revealIntegratedTerminalPanel,
+    settings.python,
+    settings.terminal.shell,
+    updatePython,
   ]);
 
   useEffect(() => {
@@ -4349,10 +4500,6 @@ export function SettingsPage({
     const snapshot = await clearExplorerHomeUsage();
     setHomeUsageSnapshot(snapshot);
   }, []);
-  const activeLayoutProfile = useMemo(
-    () => resolveLayoutProfile(layoutManifestState.manifest, settings.layout.activeProfileId),
-    [layoutManifestState.manifest, settings.layout.activeProfileId],
-  );
   const [performanceTelemetryRevision, setPerformanceTelemetryRevision] = useState(0);
   const PERFORMANCE_TELEMETRY_REFRESH_MS = 5000;
   const layoutSourceSummary = useMemo(() => {
