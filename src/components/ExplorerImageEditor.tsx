@@ -41,6 +41,7 @@ import { useSettingsStore } from "../store/settingsStore";
 import { ExplorerImageCutoutSurface } from "./ExplorerImageCutoutSurface";
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 import type { ExplorerPreviewWildcardWorkflowTab } from "./explorer/explorerPreviewWorkflowTabs";
+import type { ExplorerImageCutoutStagedExportArtifact } from "../runtime/imageCutoutBackend";
 import {
   applyExplorerImageStageWheelZoom,
   DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM,
@@ -67,6 +68,9 @@ type ExplorerImageEditorProps = {
     registration: ExplorerPreviewContextMenuRegistration | null,
   ) => void;
   onSaved?: () => Promise<void> | void;
+  onQueueClipboardEntry?: (
+    artifact: ExplorerImageCutoutStagedExportArtifact,
+  ) => Promise<void> | void;
 };
 
 export interface ExplorerImageEditorRef {
@@ -240,6 +244,7 @@ export const ExplorerImageEditor = forwardRef<
     onRegisterWorkflowTabs,
     onRegisterContextMenuRegistration,
     onSaved,
+    onQueueClipboardEntry,
   },
   forwardedRef,
 ) {
@@ -984,6 +989,8 @@ export const ExplorerImageEditor = forwardRef<
         cutoutModelId={cutoutModelId}
         cutoutBackendPreference={cutoutBackendPreference}
         onRegisterContextMenuRegistration={onRegisterContextMenuRegistration}
+        onSaved={onSaved}
+        onQueueClipboardEntry={onQueueClipboardEntry}
       />
     );
   }

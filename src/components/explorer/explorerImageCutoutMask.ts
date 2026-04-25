@@ -50,12 +50,14 @@ function inferMaskChannelPreference(data: Uint8ClampedArray): "alpha" | "luma" {
   let alphaMax = 0;
   let lumaMin = 255;
   let lumaMax = 0;
+  let maxChannelSpread = 0;
   for (let offset = 0; offset < data.length; offset += 4) {
     const red = data[offset] ?? 0;
     const green = data[offset + 1] ?? 0;
     const blue = data[offset + 2] ?? 0;
     const alpha = data[offset + 3] ?? 0;
     const luma = Math.max(red, green, blue);
+    const channelSpread = Math.max(red, green, blue) - Math.min(red, green, blue);
     if (alpha < alphaMin) {
       alphaMin = alpha;
     }
@@ -68,9 +70,30 @@ function inferMaskChannelPreference(data: Uint8ClampedArray): "alpha" | "luma" {
     if (luma > lumaMax) {
       lumaMax = luma;
     }
+    if (channelSpread > maxChannelSpread) {
+      maxChannelSpread = channelSpread;
+    }
   }
-  return alphaMax - alphaMin <= 1 && lumaMax - lumaMin > 1 ? "luma" : "alpha";
+  const alphaRange = alphaMax - alphaMin;
+  const lumaRange = lumaMax - lumaMin;
+  const looksLikeOpaqueGrayscaleMask =
+    alphaRange <= 1 && maxChannelSpread <= 1;
+  if (looksLikeOpaqueGrayscaleMask) {
+    return "luma";
+  }
+  return alphaRange <= 1 && lumaRange > 1 ? "luma" : "alpha";
 }
+
+const EIGHT_CONNECTED_NEIGHBOR_OFFSETS = [
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [-1, 0],
+  [1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1],
+] as const;
 
 export function cloneCutoutMaskAlpha(alpha: Uint8ClampedArray): Uint8ClampedArray {
   return new Uint8ClampedArray(alpha);
@@ -418,39 +441,22 @@ export function applySparkSelection(args: {
     const nextIndex = alphaIndex(baseMask.width, x, y);
     alpha[nextIndex] = mode === "add" ? 255 : 0;
 
-    if (x > 0) {
-      const leftIndex = alphaIndex(baseMask.width, x - 1, y);
-      if (visited[leftIndex] === 0) {
-        visited[leftIndex] = 1;
-        queueX[tail] = x - 1;
-        queueY[tail] = y;
-        tail += 1;
+    for (const [offsetX, offsetY] of EIGHT_CONNECTED_NEIGHBOR_OFFSETS) {
+      const nextX = x + offsetX;
+      const nextY = y + offsetY;
+      if (
+        nextX < 0 ||
+        nextY < 0 ||
+        nextX >= baseMask.width ||
+        nextY >= baseMask.height
+      ) {
+        continue;
       }
-    }
-    if (x + 1 < baseMask.width) {
-      const rightIndex = alphaIndex(baseMask.width, x + 1, y);
-      if (visited[rightIndex] === 0) {
-        visited[rightIndex] = 1;
-        queueX[tail] = x + 1;
-        queueY[tail] = y;
-        tail += 1;
-      }
-    }
-    if (y > 0) {
-      const topIndex = alphaIndex(baseMask.width, x, y - 1);
-      if (visited[topIndex] === 0) {
-        visited[topIndex] = 1;
-        queueX[tail] = x;
-        queueY[tail] = y - 1;
-        tail += 1;
-      }
-    }
-    if (y + 1 < baseMask.height) {
-      const bottomIndex = alphaIndex(baseMask.width, x, y + 1);
-      if (visited[bottomIndex] === 0) {
-        visited[bottomIndex] = 1;
-        queueX[tail] = x;
-        queueY[tail] = y + 1;
+      const nextVisitedIndex = alphaIndex(baseMask.width, nextX, nextY);
+      if (visited[nextVisitedIndex] === 0) {
+        visited[nextVisitedIndex] = 1;
+        queueX[tail] = nextX;
+        queueY[tail] = nextY;
         tail += 1;
       }
     }
@@ -661,17 +667,18 @@ export function applySweepSelectionInPlace(args: {
       b: meanColor.b + (pixelColor.b - meanColor.b) * blend,
     };
 
-    if (x > 0) {
-      pushQueuePoint(x - 1, y, x, y);
-    }
-    if (x + 1 < targetMask.width) {
-      pushQueuePoint(x + 1, y, x, y);
-    }
-    if (y > 0) {
-      pushQueuePoint(x, y - 1, x, y);
-    }
-    if (y + 1 < targetMask.height) {
-      pushQueuePoint(x, y + 1, x, y);
+    for (const [offsetX, offsetY] of EIGHT_CONNECTED_NEIGHBOR_OFFSETS) {
+      const nextX = x + offsetX;
+      const nextY = y + offsetY;
+      if (
+        nextX < 0 ||
+        nextY < 0 ||
+        nextX >= targetMask.width ||
+        nextY >= targetMask.height
+      ) {
+        continue;
+      }
+      pushQueuePoint(nextX, nextY, x, y);
     }
   }
 }

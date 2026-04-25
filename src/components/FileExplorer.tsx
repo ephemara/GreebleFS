@@ -396,6 +396,7 @@ import {
 } from "../store/explorerStore";
 import {
   openExplorerTaskCenter,
+  toggleExplorerTaskCenter,
   useExplorerTaskProgressFeed,
   useExplorerTaskSnapshots,
 } from "../store/explorerTaskStore";
@@ -548,6 +549,10 @@ import {
   resolveExplorerCustomizeCatalogEntry,
   type ExplorerCustomizeCatalogEntry,
 } from "../config/explorerCustomizeCatalog";
+import {
+  beginExplorerChromeResizeSession,
+  cancelExplorerChromeResizeSession,
+} from "./explorer/explorerChromeResizeRuntime";
 import {
   cycleExplorerSearchMode,
   explorerSearchModeDescriptions,
@@ -1381,33 +1386,80 @@ function shouldRefreshExplorerForTransferEvent(
 }
 
 function toolbarChipButtonStyle(disabled: boolean): CSSProperties {
+  return toolbarChipButtonStyleForVariant(disabled, "regular");
+}
+
+function resolveExplorerChromeControlMetrics(
+  sizeVariant: ExplorerChromeSizeVariant = "regular",
+) {
+  if (sizeVariant === "compact") {
+    return {
+      fontSize: 9,
+      gap: 4,
+      iconSize: 11,
+      iconPadding: 4,
+      inlinePadding: 6,
+      blockPadding: 3,
+      minHeight: 26,
+    };
+  }
+  if (sizeVariant === "wide") {
+    return {
+      fontSize: 11,
+      gap: 7,
+      iconSize: 14,
+      iconPadding: 6,
+      inlinePadding: 10,
+      blockPadding: 5,
+      minHeight: 34,
+    };
+  }
+  return {
+    fontSize: 10,
+    gap: 6,
+    iconSize: 12,
+    iconPadding: 5,
+    inlinePadding: 8,
+    blockPadding: 4,
+    minHeight: 30,
+  };
+}
+
+function toolbarChipButtonStyleForVariant(
+  disabled: boolean,
+  sizeVariant: ExplorerChromeSizeVariant = "regular",
+): CSSProperties {
+  const metrics = resolveExplorerChromeControlMetrics(sizeVariant);
   return {
     display: "flex",
     alignItems: "center",
-    gap: 6,
+    gap: metrics.gap,
     background: disabled
       ? "var(--overlay-explorer-chip-bg)"
       : "var(--overlay-explorer-chip-active-bg)",
     border: `1px solid ${disabled ? "var(--overlay-explorer-chip-border)" : "var(--overlay-explorer-chip-active-border)"}`,
     cursor: disabled ? "default" : "pointer",
     color: disabled ? EXP.muted2 : "var(--overlay-explorer-chip-active-text)",
-    padding: "4px 8px",
+    padding: `${metrics.blockPadding}px ${metrics.inlinePadding}px`,
     borderRadius: "var(--overlay-explorer-control-radius)",
-    fontSize: 10,
+    fontSize: metrics.fontSize,
     fontWeight: 700,
     opacity: disabled ? 0.55 : 1,
     flexShrink: 0,
+    minHeight: metrics.minHeight,
   };
 }
 
 function toolbarToggleButtonStyle(
   active: boolean,
   disabled = false,
+  sizeVariant: ExplorerChromeSizeVariant = "regular",
 ): CSSProperties {
+  const metrics = resolveExplorerChromeControlMetrics(sizeVariant);
   return {
     display: "flex",
     alignItems: "center",
-    gap: 6,
+    gap: metrics.gap,
     background: active
       ? "var(--overlay-explorer-chip-active-bg)"
       : "var(--overlay-explorer-chip-bg)",
@@ -1416,45 +1468,58 @@ function toolbarToggleButtonStyle(
     color: disabled
       ? EXP.muted2
       : active
-        ? "var(--overlay-explorer-chip-active-text)"
-        : EXP.muted,
-    padding: "4px 8px",
+      ? "var(--overlay-explorer-chip-active-text)"
+      : EXP.muted,
+    padding: `${metrics.blockPadding}px ${metrics.inlinePadding}px`,
     borderRadius: "var(--overlay-explorer-control-radius)",
-    fontSize: 10,
+    fontSize: metrics.fontSize,
     fontWeight: 700,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
     opacity: disabled ? 0.55 : 1,
+    minHeight: metrics.minHeight,
   };
 }
 
-function toolbarIconButtonStyle(disabled = false): CSSProperties {
+function toolbarIconButtonStyle(
+  disabled = false,
+  sizeVariant: ExplorerChromeSizeVariant = "regular",
+): CSSProperties {
+  const metrics = resolveExplorerChromeControlMetrics(sizeVariant);
   return {
     background: "var(--overlay-explorer-chip-bg)",
     border: "1px solid transparent",
     cursor: disabled ? "default" : "pointer",
     color: disabled ? EXP.muted2 : EXP.muted,
-    padding: 5,
+    padding: metrics.iconPadding,
     borderRadius: "var(--overlay-explorer-control-radius)",
     display: "flex",
     alignItems: "center",
     flexShrink: 0,
+    minHeight: metrics.minHeight,
   };
 }
 
-function toolbarActionButtonStyle(): CSSProperties {
+function toolbarActionButtonStyle(
+  sizeVariant: ExplorerChromeSizeVariant = "regular",
+): CSSProperties {
+  const metrics = resolveExplorerChromeControlMetrics(sizeVariant);
   return {
     display: "flex",
     alignItems: "center",
-    gap: 4,
+    gap: metrics.gap,
     background: "var(--overlay-explorer-chip-bg)",
     border: "1px solid transparent",
     cursor: "pointer",
     color: EXP.muted,
-    padding: "4px 7px",
+    padding: `${metrics.blockPadding}px ${Math.max(
+      metrics.inlinePadding - 1,
+      5,
+    )}px`,
     borderRadius: "var(--overlay-explorer-control-radius)",
-    fontSize: "var(--overlay-explorer-toolbar-font-size)",
+    fontSize: metrics.fontSize,
     flexShrink: 0,
+    minHeight: metrics.minHeight,
   };
 }
 
@@ -1497,7 +1562,9 @@ function serializeKeyboardBindingEvent(
 
 function explorerEmbeddedTerminalToggleButtonStyle(
   active = false,
+  sizeVariant: ExplorerChromeSizeVariant = "regular",
 ): CSSProperties {
+  const metrics = resolveExplorerChromeControlMetrics(sizeVariant);
   return {
     display: "inline-flex",
     alignItems: "center",
@@ -1509,8 +1576,8 @@ function explorerEmbeddedTerminalToggleButtonStyle(
     borderRadius: "var(--overlay-explorer-control-radius)",
     cursor: "pointer",
     color: active ? EXP.text : EXP.muted,
-    width: 28,
-    height: 28,
+    width: metrics.minHeight,
+    height: metrics.minHeight,
     padding: 0,
     flexShrink: 0,
   };
@@ -1520,15 +1587,18 @@ function ExplorerEmbeddedTerminalToggleButton({
   active,
   icon: Icon,
   ariaLabel,
+  sizeVariant = "regular",
   title,
   onClick,
 }: {
   active: boolean;
   icon: React.ComponentType<{ size?: number }>;
   ariaLabel: string;
+  sizeVariant?: ExplorerChromeSizeVariant;
   title: string;
   onClick: () => void;
 }) {
+  const metrics = resolveExplorerChromeControlMetrics(sizeVariant);
   return (
     <button
       type="button"
@@ -1536,9 +1606,9 @@ function ExplorerEmbeddedTerminalToggleButton({
       aria-label={ariaLabel}
       aria-pressed={active}
       title={title}
-      style={explorerEmbeddedTerminalToggleButtonStyle(active)}
+      style={explorerEmbeddedTerminalToggleButtonStyle(active, sizeVariant)}
     >
-      <Icon size={12} />
+      <Icon size={metrics.iconSize} />
     </button>
   );
 }
@@ -8146,6 +8216,8 @@ export function FileExplorer({
     () => initialSession.actionsVisible,
   );
   const [actionsPaneSelectedControlId, setActionsPaneSelectedControlId] =
+    useState<ExplorerChromeControlId | null>(null);
+  const [resizingExplorerChromeControlId, setResizingExplorerChromeControlId] =
     useState<ExplorerChromeControlId | null>(null);
   const [constellationActiveLens, setConstellationActiveLens] =
     useState<ConstellationLensId>(
@@ -16787,6 +16859,15 @@ export function FileExplorer({
       ),
     [explorerCustomizeCatalog],
   );
+  const explorerCustomizeCatalogByControlId = useMemo(
+    () =>
+      new Map(
+        explorerCustomizeCatalog.map(
+          (entry) => [entry.controlId, entry] as const,
+        ),
+      ),
+    [explorerCustomizeCatalog],
+  );
   const selectedExplorerCustomizeControlId =
     activeChromeEditSession?.selectedControlId ?? actionsPaneSelectedControlId;
   const selectedExplorerCustomizeEntry = useMemo(
@@ -16797,17 +16878,6 @@ export function FileExplorer({
       ),
     [explorerCustomizeCatalog, selectedExplorerCustomizeControlId],
   );
-  const selectedExplorerCustomizePlacement =
-    useMemo<ExplorerChromeOverrideEntry | null>(
-      () =>
-        activeChromeEditSession?.selectedControlId
-          ? (activeChromeEditSession.draftOverride.entries.find(
-              (entry) =>
-                entry.controlId === activeChromeEditSession.selectedControlId,
-            ) ?? null)
-          : null,
-      [activeChromeEditSession],
-    );
   const selectedExplorerCustomizeCommandBinding = useMemo(
     () =>
       selectedExplorerCustomizeEntry
@@ -16892,9 +16962,11 @@ export function FileExplorer({
         zone: existingEntry?.zone ?? fallbackZone,
         order: existingEntry?.order ?? fallbackOrder,
         hidden: existingEntry?.hidden ?? false,
-        sizeVariant: existingEntry?.sizeVariant,
-        showLabel: existingEntry?.showLabel,
-        showIcon: existingEntry?.showIcon,
+        sizeVariant:
+          existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
+        widthPx: existingEntry?.widthPx ?? visiblePlacement?.widthPx,
+        showLabel: existingEntry?.showLabel ?? visiblePlacement?.showLabel,
+        showIcon: existingEntry?.showIcon ?? visiblePlacement?.showIcon,
         ...updates,
       };
       updateChromeEditDraft({
@@ -16980,9 +17052,12 @@ export function FileExplorer({
                 existingEntry?.zone ?? visiblePlacement?.zone ?? "primaryEnd",
               order: existingEntry?.order ?? visiblePlacement?.order ?? 9990,
               hidden: true,
-              sizeVariant: existingEntry?.sizeVariant,
-              showLabel: existingEntry?.showLabel,
-              showIcon: existingEntry?.showIcon,
+              sizeVariant:
+                existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
+              widthPx: existingEntry?.widthPx ?? visiblePlacement?.widthPx,
+              showLabel:
+                existingEntry?.showLabel ?? visiblePlacement?.showLabel,
+              showIcon: existingEntry?.showIcon ?? visiblePlacement?.showIcon,
             },
           ],
         });
@@ -17021,6 +17096,51 @@ export function FileExplorer({
     },
     [activeChromeEditSession, setChromeEditSelectedControl],
   );
+  const selectedExplorerCustomizePlacement =
+    useMemo<ExplorerChromeOverrideEntry | null>(() => {
+      if (!selectedExplorerCustomizeControlId) {
+        return null;
+      }
+
+      const explicitEntry =
+        activeChromeEditSession?.draftOverride.entries.find(
+          (entry) => entry.controlId === selectedExplorerCustomizeControlId,
+        ) ?? null;
+      const visiblePlacement = findRegisteredExplorerChromePlacement(
+        selectedExplorerCustomizeControlId,
+      );
+      const fallbackSurfaceId =
+        explicitEntry?.surfaceId ??
+        visiblePlacement?.surfaceId ??
+        selectedExplorerCustomizeEntry?.surfaces[0] ??
+        "explorerToolbar";
+      const fallbackZone =
+        explicitEntry?.zone ?? visiblePlacement?.zone ?? "primaryEnd";
+      const fallbackOrder =
+        explicitEntry?.order ?? visiblePlacement?.order ?? 9990;
+
+      return {
+        controlId: selectedExplorerCustomizeControlId,
+        surfaceId: fallbackSurfaceId,
+        zone: fallbackZone,
+        order: fallbackOrder,
+        hidden: explicitEntry?.hidden ?? false,
+        sizeVariant:
+          explicitEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
+        widthPx:
+          explicitEntry?.widthPx ??
+          visiblePlacement?.widthPx ??
+          selectedExplorerCustomizeEntry?.defaultWidthPx ??
+          undefined,
+        showLabel: explicitEntry?.showLabel ?? visiblePlacement?.showLabel,
+        showIcon: explicitEntry?.showIcon ?? visiblePlacement?.showIcon,
+      };
+    }, [
+      activeChromeEditSession,
+      findRegisteredExplorerChromePlacement,
+      selectedExplorerCustomizeControlId,
+      selectedExplorerCustomizeEntry,
+    ]);
   const beginPlacedExplorerChromePointerDrag = useCallback(
     (args: {
       controlId: ExplorerChromeControlId;
@@ -17070,6 +17190,106 @@ export function FileExplorer({
       setChromeEditDraggingControl,
       setChromeEditHighlightedDropTarget,
       setChromeEditSelectedControl,
+    ],
+  );
+  const beginExplorerChromePointerResize = useCallback(
+    (args: {
+      controlId: ExplorerChromeControlId;
+      pointerId: number;
+      startPoint: { x: number; y: number };
+    }) => {
+      if (!activeChromeEditSession) {
+        return;
+      }
+
+      const catalogEntry = explorerCustomizeCatalogByControlId.get(
+        args.controlId,
+      );
+      if (!catalogEntry) {
+        return;
+      }
+
+      const visiblePlacement = findRegisteredExplorerChromePlacement(
+        args.controlId,
+      );
+      const explicitEntry =
+        activeChromeEditSession.draftOverride.entries.find(
+          (entry) => entry.controlId === args.controlId,
+        ) ?? null;
+
+      if (catalogEntry.supportsWidthPx) {
+        beginExplorerChromeResizeSession({
+          pointerId: args.pointerId,
+          controlId: args.controlId,
+          startPoint: args.startPoint,
+          kind: "width-px",
+          initialWidthPx:
+            explicitEntry?.widthPx ??
+            visiblePlacement?.widthPx ??
+            catalogEntry.defaultWidthPx ??
+            catalogEntry.minWidthPx ??
+            160,
+          minWidthPx: catalogEntry.minWidthPx ?? 96,
+          maxWidthPx: catalogEntry.maxWidthPx ?? 1600,
+          onActivate: () => {
+            setResizingExplorerChromeControlId(args.controlId);
+            setChromeEditSelectedControl(args.controlId);
+          },
+          onWidthChange: (widthPx) => {
+            updateExplorerChromeEditEntry(args.controlId, {
+              hidden: false,
+              widthPx,
+            });
+          },
+          onComplete: () => {
+            setResizingExplorerChromeControlId((current) =>
+              current === args.controlId ? null : current,
+            );
+          },
+        });
+        return;
+      }
+
+      if (!catalogEntry.supportsSizeVariant) {
+        return;
+      }
+
+      beginExplorerChromeResizeSession({
+        pointerId: args.pointerId,
+        controlId: args.controlId,
+        startPoint: args.startPoint,
+        kind: "size-variant",
+        initialSizeVariant:
+          explicitEntry?.sizeVariant ??
+          visiblePlacement?.sizeVariant ??
+          "regular",
+        sizeVariants:
+          catalogEntry.sizeVariants.length > 0
+            ? catalogEntry.sizeVariants
+            : ["compact", "regular", "wide"],
+        onActivate: () => {
+          setResizingExplorerChromeControlId(args.controlId);
+          setChromeEditSelectedControl(args.controlId);
+        },
+        onSizeVariantChange: (sizeVariant) => {
+          updateExplorerChromeEditEntry(args.controlId, {
+            hidden: false,
+            sizeVariant,
+          });
+        },
+        onComplete: () => {
+          setResizingExplorerChromeControlId((current) =>
+            current === args.controlId ? null : current,
+          );
+        },
+      });
+    },
+    [
+      activeChromeEditSession,
+      explorerCustomizeCatalogByControlId,
+      findRegisteredExplorerChromePlacement,
+      setChromeEditSelectedControl,
+      updateExplorerChromeEditEntry,
     ],
   );
   const beginCatalogExplorerChromePointerDrag = useCallback(
@@ -17125,6 +17345,7 @@ export function FileExplorer({
       draggingControlId: activeChromeEditSession?.draggingControlId ?? null,
       highlightedDropTarget:
         activeChromeEditSession?.highlightedDropTarget ?? null,
+      resizingControlId: resizingExplorerChromeControlId,
       selectedControlId:
         activeChromeEditSession?.selectedControlId ??
         actionsPaneSelectedControlId,
@@ -17144,11 +17365,19 @@ export function FileExplorer({
         setChromeEditHighlightedDropTarget(null);
       },
       onBeginPointerDrag: beginPlacedExplorerChromePointerDrag,
+      onBeginPointerResize: beginExplorerChromePointerResize,
       onSetHighlightedDropTarget: setChromeEditHighlightedDropTarget,
       onSetSelectedControl: selectExplorerCustomizeControl,
       onSetPendingHotkeyControl: setChromeEditPendingHotkeyControl,
       onRequestHotkeyCapture: requestExplorerChromeHotkeyCapture,
       onMoveControl: handleExplorerChromeControlMove,
+      isControlResizable: (placement: ExplorerChromeResolvedControlPlacement) =>
+        Boolean(
+          explorerCustomizeCatalogByControlId.get(placement.controlId)
+            ?.supportsWidthPx ||
+            explorerCustomizeCatalogByControlId.get(placement.controlId)
+              ?.supportsSizeVariant,
+        ),
       onRemoveControl: activeChromeEditSession
         ? removeExplorerChromeControlFromDraft
         : undefined,
@@ -17157,9 +17386,12 @@ export function FileExplorer({
       activeChromeEditSession,
       actionsPaneSelectedControlId,
       beginPlacedExplorerChromePointerDrag,
+      beginExplorerChromePointerResize,
       chromeHotkeyCaptureControlId,
+      explorerCustomizeCatalogByControlId,
       handleExplorerChromeControlMove,
       registerChromeEditSurface,
+      resizingExplorerChromeControlId,
       removeExplorerChromeControlFromDraft,
       requestExplorerChromeHotkeyCapture,
       selectExplorerCustomizeControl,
@@ -17187,6 +17419,8 @@ export function FileExplorer({
     }
 
     cancelExplorerCustomizePointerSession();
+    cancelExplorerChromeResizeSession();
+    setResizingExplorerChromeControlId(null);
 
     if (activeChromeEditSession.draftOverride.entries.length > 0) {
       setExplorerChromeLayoutOverride(
@@ -17217,12 +17451,14 @@ export function FileExplorer({
     }
 
     cancelExplorerCustomizePointerSession();
+    cancelExplorerChromeResizeSession();
     updateChromeEditDraft({ entries: [] });
     setChromeEditDraggingControl(null);
     setChromeEditHighlightedDropTarget(null);
     setChromeEditPendingHotkeyControl(null);
     setChromeHotkeyCaptureControl(null);
     setChromeEditSelectedControl(null);
+    setResizingExplorerChromeControlId(null);
   }, [
     activeChromeEditSession,
     setChromeEditDraggingControl,
@@ -17230,10 +17466,13 @@ export function FileExplorer({
     setChromeEditPendingHotkeyControl,
     setChromeEditSelectedControl,
     setChromeHotkeyCaptureControl,
+    setResizingExplorerChromeControlId,
     updateChromeEditDraft,
   ]);
   const cancelExplorerChromeCustomization = useCallback(() => {
     cancelExplorerCustomizePointerSession();
+    cancelExplorerChromeResizeSession();
+    setResizingExplorerChromeControlId(null);
     closeChromeEditSession();
     setShowModeProfileMenu(false);
   }, [closeChromeEditSession]);
@@ -17273,6 +17512,18 @@ export function FileExplorer({
     },
     [activeChromeEditSession, updateExplorerChromeEditEntry],
   );
+  const setSelectedExplorerChromeWidthPx = useCallback(
+    (widthPx: number) => {
+      if (!selectedExplorerCustomizeControlId) {
+        return;
+      }
+      updateExplorerChromeEditEntry(selectedExplorerCustomizeControlId, {
+        hidden: false,
+        widthPx,
+      });
+    },
+    [selectedExplorerCustomizeControlId, updateExplorerChromeEditEntry],
+  );
   useEffect(() => {
     if (
       chromeEditSession &&
@@ -17280,6 +17531,8 @@ export function FileExplorer({
         chromeEditSession.layoutId !== effectiveChromeLayoutId)
     ) {
       cancelExplorerCustomizePointerSession();
+      cancelExplorerChromeResizeSession();
+      setResizingExplorerChromeControlId(null);
       closeChromeEditSession();
     }
   }, [
@@ -17287,10 +17540,12 @@ export function FileExplorer({
     closeChromeEditSession,
     effectiveChromeLayoutId,
     explorerChromeThemeId,
+    setResizingExplorerChromeControlId,
   ]);
   useEffect(
     () => () => {
       cancelExplorerCustomizePointerSession();
+      cancelExplorerChromeResizeSession();
     },
     [],
   );
@@ -21084,8 +21339,18 @@ export function FileExplorer({
         id: "statusTaskBadge",
         label: "Status Task Badge",
         surfaces: ["explorerStatusBar"],
-        isVisible: () => false,
-        render: () => null,
+        isVisible: () => true,
+        render: (placement) => (
+          <ExplorerTaskStatusBadge
+            accent={accent}
+            text={EXP.text}
+            muted={EXP.muted}
+            border={EXP.border}
+            danger={EXP.red}
+            background="rgba(255,255,255,0.02)"
+            sizeVariant={placement.sizeVariant}
+          />
+        ),
       },
       {
         id: "statusClipboardQueue",
@@ -21465,6 +21730,9 @@ export function FileExplorer({
           return true;
         case "actionsPaneToggle":
           toggleActionsPanel();
+          return true;
+        case "statusTaskBadge":
+          toggleExplorerTaskCenter();
           return true;
         case "customizeModeToggle":
           if (activeChromeEditSession) {
@@ -25832,6 +26100,7 @@ export function FileExplorer({
             onSetSelectedShowIcon={setSelectedExplorerChromeShowIcon}
             onSetSelectedShowLabel={setSelectedExplorerChromeShowLabel}
             onSetSelectedSizeVariant={setSelectedExplorerChromeSizeVariant}
+            onSetSelectedWidthPx={setSelectedExplorerChromeWidthPx}
             runtimeCanExecuteEntry={canExecuteExplorerActionsPaneEntry}
           />
         </ResizablePane>
@@ -25859,6 +26128,7 @@ export function FileExplorer({
     selectedExplorerCustomizeCommandBinding,
     selectedExplorerCustomizeEntry,
     selectedExplorerCustomizePlacement,
+    setSelectedExplorerChromeWidthPx,
     setSelectedExplorerChromeShowIcon,
     setSelectedExplorerChromeShowLabel,
     setSelectedExplorerChromeSizeVariant,
@@ -27604,29 +27874,6 @@ export function FileExplorer({
             renderControl={renderExplorerChromeControl}
             editMode={explorerChromeEditMode}
           />
-          <div
-            data-overlay-explorer-status-task-anchor="true"
-            style={{
-              position: "absolute",
-              left: "50%",
-              top: "50%",
-              transform: "translate(-50%, -50%)",
-              zIndex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              pointerEvents: "auto",
-            }}
-          >
-            <ExplorerTaskStatusBadge
-              accent={accent}
-              text={EXP.text}
-              muted={EXP.muted}
-              border={EXP.border}
-              danger={EXP.red}
-              background="rgba(255,255,255,0.02)"
-            />
-          </div>
         </div>
       )}
 

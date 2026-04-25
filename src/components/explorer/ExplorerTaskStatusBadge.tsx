@@ -22,6 +22,7 @@ import {
   getExplorerTaskSummary,
 } from './ExplorerTaskCenterContent';
 import { OverlayScrollArea } from '../OverlayScrollArea';
+import type { ExplorerChromeSizeVariant } from '../../config/explorerChromeLayouts';
 
 interface ExplorerTaskStatusBadgeProps {
   accent: string;
@@ -29,7 +30,38 @@ interface ExplorerTaskStatusBadgeProps {
   border: string;
   danger: string;
   muted: string;
+  sizeVariant?: ExplorerChromeSizeVariant;
   text: string;
+}
+
+function resolveExplorerTaskBadgeMetrics(
+  sizeVariant: ExplorerChromeSizeVariant,
+) {
+  if (sizeVariant === 'compact') {
+    return {
+      buttonPadding: '2px 7px',
+      gap: 5,
+      iconSize: 11,
+      fontSize: 10,
+      closeButtonSize: 20,
+    };
+  }
+  if (sizeVariant === 'wide') {
+    return {
+      buttonPadding: '4px 10px',
+      gap: 7,
+      iconSize: 13,
+      fontSize: 11,
+      closeButtonSize: 24,
+    };
+  }
+  return {
+    buttonPadding: '3px 8px',
+    gap: 6,
+    iconSize: 12,
+    fontSize: 10.5,
+    closeButtonSize: 22,
+  };
 }
 
 function resolveExplorerTaskBadgeSummary(args: {
@@ -103,12 +135,17 @@ export function ExplorerTaskStatusBadge({
   border,
   danger,
   muted,
+  sizeVariant = 'regular',
   text,
 }: ExplorerTaskStatusBadgeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isOpen = useExplorerTaskCenterOpen();
   const tasks = useExplorerTaskSnapshots();
   const actionRuns = useExplorerActionRunSnapshots();
+  const metrics = useMemo(
+    () => resolveExplorerTaskBadgeMetrics(sizeVariant),
+    [sizeVariant],
+  );
 
   useEffect(() => {
     if (!isOpen) {
@@ -142,32 +179,43 @@ export function ExplorerTaskStatusBadge({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 22,
-        height: 22,
+        width: metrics.closeButtonSize,
+        height: metrics.closeButtonSize,
       }}
       aria-label="Close task center"
     >
-      <X size={14} />
+      <X size={Math.max(12, metrics.iconSize + 1)} />
     </button>
   );
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        width: '100%',
+        minWidth: 0,
+      }}
+    >
       <button
         type="button"
         onClick={toggleExplorerTaskCenter}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 6,
+          gap: metrics.gap,
           minWidth: 0,
+          width: '100%',
           maxWidth: '100%',
-          padding: '2px 8px',
+          padding: metrics.buttonPadding,
           borderRadius: 999,
           border: `1px solid ${summary.color === danger ? `${danger}55` : border}`,
           background,
           color: text,
           cursor: 'pointer',
+          fontSize: metrics.fontSize,
         }}
         >
           {summary.icon}

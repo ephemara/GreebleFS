@@ -56,6 +56,7 @@ interface ExplorerActionsPaneProps {
   onSetSelectedShowIcon: (value: boolean) => void;
   onSetSelectedShowLabel: (value: boolean) => void;
   onSetSelectedSizeVariant: (variant: ExplorerChromeSizeVariant) => void;
+  onSetSelectedWidthPx: (widthPx: number) => void;
   runtimeCanExecuteEntry: (entry: ExplorerCustomizeCatalogEntry) => boolean;
 }
 
@@ -94,6 +95,7 @@ export function ExplorerActionsPane({
   onSetSelectedShowIcon,
   onSetSelectedShowLabel,
   onSetSelectedSizeVariant,
+  onSetSelectedWidthPx,
   runtimeCanExecuteEntry,
 }: ExplorerActionsPaneProps) {
   const [query, setQuery] = useState("");
@@ -653,6 +655,52 @@ export function ExplorerActionsPane({
                           </option>
                         ))}
                       </select>
+                    </label>
+                  ) : null}
+                  {selectedEntry.supportsWidthPx ? (
+                    <label
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: muted,
+                        }}
+                      >
+                        Width ·{" "}
+                        {Math.round(
+                          selectedPlacement?.widthPx ??
+                            selectedEntry.defaultWidthPx ??
+                            selectedEntry.minWidthPx ??
+                            160,
+                        )}
+                        px
+                      </span>
+                      <input
+                        type="range"
+                        min={selectedEntry.minWidthPx ?? 96}
+                        max={selectedEntry.maxWidthPx ?? 1600}
+                        step={1}
+                        value={
+                          selectedPlacement?.widthPx ??
+                          selectedEntry.defaultWidthPx ??
+                          selectedEntry.minWidthPx ??
+                          160
+                        }
+                        onChange={(event) =>
+                          onSetSelectedWidthPx(
+                            Number(event.currentTarget.value),
+                          )
+                        }
+                        style={{ accentColor: accent }}
+                      />
                     </label>
                   ) : null}
                   {selectedEntry.supportsLabelVisibility ? (

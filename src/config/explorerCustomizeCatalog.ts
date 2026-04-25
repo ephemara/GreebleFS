@@ -180,6 +180,7 @@ const unsupportedBuiltInExplorerCustomizeControlIds =
     "workspaceLayoutHint",
     "workspaceTabs",
     "workspaceNewTab",
+    "workspacePaneActionsMenu",
     "workspaceDuplicateTab",
     "workspaceFocusLeft",
     "workspaceFocusRight",

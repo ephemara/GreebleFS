@@ -52,6 +52,7 @@ import {
   stageExplorerImageCutoutExport,
   startExplorerImageCutoutNativeDrag,
   type ExplorerImageCutoutSessionSnapshot,
+  type ExplorerImageCutoutStagedExportArtifact,
 } from "../runtime/imageCutoutBackend";
 import type { ManagedPythonRuntimeConfig } from "../runtime/pythonRuntimeBackend";
 import { useSettingsStore } from "../store/settingsStore";
@@ -96,6 +97,10 @@ type ExplorerImageCutoutSurfaceProps = {
   onRegisterContextMenuRegistration?: (
     registration: ExplorerPreviewContextMenuRegistration | null,
   ) => void;
+  onSaved?: (outputPath?: string) => Promise<void> | void;
+  onQueueClipboardEntry?: (
+    artifact: ExplorerImageCutoutStagedExportArtifact,
+  ) => Promise<void> | void;
 };
 
 type CutoutStatusTone = "neutral" | "success" | "warning" | "error";
@@ -893,6 +898,8 @@ export function ExplorerImageCutoutSurface({
   cutoutModelId = null,
   cutoutBackendPreference = "auto",
   onRegisterContextMenuRegistration,
+  onSaved,
+  onQueueClipboardEntry,
 }: ExplorerImageCutoutSurfaceProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const stageViewportRef = useRef<HTMLDivElement | null>(null);
@@ -1437,19 +1444,20 @@ export function ExplorerImageCutoutSurface({
     lane.statusMessage = "Saving sibling cutout PNG…";
     syncLaneVisuals(workflowMode);
 
-    try {
-      const exportArtifact = await stageExplorerImageCutoutExport({
-        sessionId: snapshot.sessionId,
-        exportMode: "siblingPng",
-        logicalOutputPath: logicalOutputPath ?? imagePath,
-        filters: exportFilters,
-        overrideMaskDataUrl: resolveExportMaskDataUrl(workflowMode),
-      });
-      lane.statusTone = "success";
-      lane.statusMessage = `Saved ${exportArtifact.fileName}.`;
-    } catch (error) {
-      lane.statusTone = "error";
-      lane.statusMessage = String(error);
+      try {
+        const exportArtifact = await stageExplorerImageCutoutExport({
+          sessionId: snapshot.sessionId,
+          exportMode: "siblingPng",
+          logicalOutputPath: logicalOutputPath ?? imagePath,
+          filters: exportFilters,
+          overrideMaskDataUrl: resolveExportMaskDataUrl(workflowMode),
+        });
+        await onSaved?.(exportArtifact.outputPath);
+        lane.statusTone = "success";
+        lane.statusMessage = `Saved ${exportArtifact.fileName}.`;
+      } catch (error) {
+        lane.statusTone = "error";
+        lane.statusMessage = String(error);
     } finally {
       lane.isMutating = false;
       syncLaneVisuals(workflowMode);
@@ -1459,6 +1467,7 @@ export function ExplorerImageCutoutSurface({
     getLaneState,
     imagePath,
     logicalOutputPath,
+    onSaved,
     resolveExportMaskDataUrl,
     syncLaneVisuals,
     workflowMode,
@@ -1476,19 +1485,22 @@ export function ExplorerImageCutoutSurface({
     lane.statusMessage = "Copying the current cutout to the system clipboard…";
     syncLaneVisuals(workflowMode);
 
-    try {
-      await copyExplorerImageCutoutToClipboard({
-        sessionId: snapshot.sessionId,
-        logicalOutputPath: logicalOutputPath ?? imagePath,
-        filters: exportFilters,
-        overrideMaskDataUrl: resolveExportMaskDataUrl(workflowMode),
-      });
-      lane.statusTone = "success";
-      lane.statusMessage = "Cutout copied to the clipboard.";
-    } catch (error) {
-      lane.statusTone = "error";
-      lane.statusMessage = String(error);
-    } finally {
+      try {
+        const exportArtifact = await copyExplorerImageCutoutToClipboard({
+          sessionId: snapshot.sessionId,
+          logicalOutputPath: logicalOutputPath ?? imagePath,
+          filters: exportFilters,
+          overrideMaskDataUrl: resolveExportMaskDataUrl(workflowMode),
+        });
+        await onQueueClipboardEntry?.(exportArtifact);
+        lane.statusTone = "success";
+        lane.statusMessage = onQueueClipboardEntry
+          ? "Cutout copied and queued for Explorer paste."
+          : "Cutout copied to the clipboard.";
+      } catch (error) {
+        lane.statusTone = "error";
+        lane.statusMessage = String(error);
+      } finally {
       lane.isMutating = false;
       syncLaneVisuals(workflowMode);
     }
@@ -1497,6 +1509,7 @@ export function ExplorerImageCutoutSurface({
     getLaneState,
     imagePath,
     logicalOutputPath,
+    onQueueClipboardEntry,
     resolveExportMaskDataUrl,
     syncLaneVisuals,
     workflowMode,
