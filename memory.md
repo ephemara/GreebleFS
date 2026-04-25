@@ -1,3 +1,21 @@
+# 2026-04-25 - Actions-First Context Menus Now Have A Live Authoring Surface And Explorer Deep-Link
+
+- The authored context-menu runtime has now crossed the line from “configurable” to “visually authorable.” The durable v1 shape is actions-first:
+  - `actions/` is now the canonical managed extensibility root for new explorer commands, with plugin-local `actions/` folders treated as first-class catalog inputs instead of forcing plugins to hide behavior behind legacy `contextMenuItems`.
+  - Explorer runtime assembly still flows through `src/components/explorer/explorerMenuRuntime.ts`, but the runtime now treats authored actions as a first-class source alongside built-ins, preview actions, and legacy plugin items.
+  - `src/components/FileExplorer.tsx` now injects an `Edit Menu` affordance into the live explorer context menu. That action does not rebuild a second editor path; it deep-links straight into Settings and pins the composer to the active invocation context (`entry`, `background`, `multi-select`, `search-result`, or `preview-pane`).
+- The Settings-side composer is no longer a bloated flat list editor:
+  - `src/components/SettingsPage.tsx` now uses a three-lane `Context Menus` authoring surface: pack/context controls plus the action browser on the left, the real runtime menu preview in the center, and a selected-node inspector on the right.
+  - The preview is built from the same runtime menu graph the explorer uses, not a second fake settings-only representation. Future authoring work should extend the shared runtime graph first, then let both Explorer and Settings consume it.
+  - Node selection can come from either the structure tree or the live preview, and the inspector owns enabled state, folder naming, parent submenu selection, quick-slot placement, fallback bucket choice, and removal.
+  - Reordering now has two durable seams: button-based sibling motion via `moveExplorerMenuLayoutEntry(...)` and drag/reparent placement via `placeExplorerMenuLayoutEntry(...)`. Cycle protection now explicitly rejects self-parenting and descendant-parenting in `withExplorerMenuLayoutEntryParent(...)`.
+- Durable implementation lesson:
+  - The Settings preview environment must normalize `detectClientPlatform()` before feeding `ExplorerMenuRuntimeEnvironment.runtimePlatform`; the runtime only accepts `windows | macos | linux`, so `unknown` needs a safe preview fallback.
+- Durable validation:
+  - passed: `bunx vitest run src/test/explorerContextMenu.layout.test.ts src/test/explorerMenuRuntime.test.ts src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - passed: `bash -lc 'bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "SettingsPage.tsx|explorerMenuRuntime.test.ts|explorerContextMenu.layout.test.ts|explorerMenuRuntime.ts|settingsStore.ts|FileExplorer.tsx"'`
+  - note: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still reports pre-existing unrelated failures in VS Code compatibility files and vendored `src/vendor/tiptap/**`; the context-menu/action authoring files above are clean in that output.
+
 # 2026-04-24 - Storage Pane Now Uses A Minimal Three-Layer Workbench Shell
 
 - The storage panel no longer reads like three separate dashboards bolted together. The durable default shell is now: compact scan rail on the left, one slim workbench command strip over the main storage view, and one unified inspector on the right.

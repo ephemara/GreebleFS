@@ -1708,6 +1708,7 @@ export const useSettingsStore = create<SettingsState>()(
           ...defaultSettings,
           system: normalizeSystemSettings(defaultSettings.system),
         },
+        activeContextMenuComposerContext: 'entry',
       })),
       
       importSettings: (imported) => set((state) => ({

@@ -822,6 +822,30 @@ export function withExplorerMenuLayoutEntryParent(
   entryId: string,
   parentEntryId: string | null,
 ): ExplorerMenuLayoutEntry[] {
+  if (parentEntryId === entryId) {
+    return sortExplorerMenuLayoutEntries(entries);
+  }
+
+  const descendantIds = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    entries.forEach((entry) => {
+      if (
+        entry.parentEntryId
+        && (entry.parentEntryId === entryId || descendantIds.has(entry.parentEntryId))
+        && !descendantIds.has(entry.id)
+      ) {
+        descendantIds.add(entry.id);
+        changed = true;
+      }
+    });
+  }
+
+  if (parentEntryId && descendantIds.has(parentEntryId)) {
+    return sortExplorerMenuLayoutEntries(entries);
+  }
+
   const siblings = entries.filter(
     (entry) => entry.parentEntryId === parentEntryId && entry.id !== entryId,
   );

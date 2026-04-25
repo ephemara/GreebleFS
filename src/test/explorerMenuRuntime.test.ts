@@ -104,6 +104,7 @@ function createEnvironment(
     refresh: vi.fn(),
     navigate: vi.fn(),
     openSettingsSection: vi.fn(),
+    openContextMenuComposer: vi.fn(),
     runAudioBatch: vi.fn(),
     executeActionCommand: vi.fn(async () => {}),
     executePluginCommand: vi.fn(async () => {}),
@@ -119,6 +120,7 @@ function buildMenu(options?: {
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutOverridesByContext?: ExplorerMenuContextLayoutOverrideMap;
   previewContextMenuRegistration?: ExplorerPreviewContextMenuRegistration | null;
+  includeEditMenuCommand?: boolean;
 }) {
   return buildExplorerRuntimeMenu({
     invocation: createInvocation(options?.invocation),
@@ -129,6 +131,7 @@ function buildMenu(options?: {
     actions: options?.actions ?? [],
     pluginContextMenuItems: options?.pluginContextMenuItems ?? [],
     previewContextMenuRegistration: options?.previewContextMenuRegistration,
+    includeEditMenuCommand: options?.includeEditMenuCommand,
     environment: createEnvironment(options?.environment),
   });
 }
@@ -400,6 +403,34 @@ describe('explorerMenuRuntime', () => {
       }),
       primaryEntry,
     );
+  });
+
+  it('injects an edit-menu affordance that deep-links to the composer for the active context', async () => {
+    const primaryEntry = createEntry({
+      path: '/workspace/notes/editable.txt',
+      name: 'editable.txt',
+      stem: 'editable',
+    });
+    const environment = createEnvironment();
+    const menu = buildMenu({
+      invocation: {
+        kind: 'entry',
+        primaryEntry,
+        selectedEntries: [primaryEntry],
+      },
+      includeEditMenuCommand: true,
+      environment,
+    });
+
+    const editMenuNode = findNodeByLabel(menu.nodes, 'Edit Menu');
+    expect(editMenuNode?.kind).toBe('command');
+    if (!editMenuNode || editMenuNode.kind !== 'command') {
+      throw new Error('Expected Edit Menu command');
+    }
+
+    await editMenuNode.onSelect();
+
+    expect(environment.openContextMenuComposer).toHaveBeenCalledWith('entry');
   });
 
   it('prefers context-specific layout overrides over the active pack layout', () => {
