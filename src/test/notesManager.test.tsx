@@ -195,4 +195,27 @@ describe('NotesManager', () => {
     );
     expect(loadNotesWorkspaceSnapshot).toHaveBeenCalledTimes(1);
   });
+
+  it('does not render the managed notes root as a selectable folder row', async () => {
+    render(
+      <NotesManager
+        appearance={{
+          theme: {
+            palette: {
+              accent: '#44ff88',
+              border: '#2a2a2a',
+            },
+          },
+        } as never}
+      />,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('First Note')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Notes' })).not.toBeInTheDocument();
+  });
 });

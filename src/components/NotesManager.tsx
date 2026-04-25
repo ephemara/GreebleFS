@@ -1147,9 +1147,9 @@ export function NotesManager({
           <OverlayScrollArea style={{ minHeight: 0 }}>
             {loading ? (
               <SidebarEmptyState label="Loading notes…" />
-            ) : directoryTree ? (
+            ) : directoryTree && notesTreeHasVisibleEntries(directoryTree) ? (
               <div style={{ padding: '10px 10px 18px' }}>
-                <NotesSidebarDirectoryNode
+                <NotesSidebarTreeChildren
                   appearance={appearance}
                   node={directoryTree}
                   rootDirectoryPath={rootDirectoryPath}
@@ -1226,7 +1226,7 @@ export function NotesManager({
                   maxWidth: '100%',
                 }}
               >
-                {activeDocumentRecord?.title ?? 'Notes Workspace'}
+                {activeDocumentRecord?.title ?? 'No note selected'}
               </span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 11, color: 'var(--overlay-text-muted)' }}>
                 {activeDocumentRecord ? (
@@ -1240,7 +1240,7 @@ export function NotesManager({
                 ) : (
                   <>
                     <span>{activeDirectoryLabel}</span>
-                    <span>Markdown files stay on disk inside the managed notes root.</span>
+                    <span>Choose a note from the sidebar or create one. Everything stays as plain markdown on disk.</span>
                   </>
                 )}
               </div>
@@ -1341,7 +1341,6 @@ export function NotesManager({
           {!activeDocumentRecord ? (
             <EmptyWorkspaceSurface
               appearance={appearance}
-              activeDirectoryLabel={activeDirectoryLabel}
               onCreateDocument={() => handleCreateDocument()}
               onCreateDirectory={() => openCreateDirectoryPrompt(activeDirectoryPath ?? rootDirectoryPath ?? '')}
               onFocusSearch={() => {
@@ -1531,11 +1530,10 @@ function NotesSidebarDirectoryNode({
     target: NotesContextMenuTarget,
   ) => void;
 }) {
-  const isRoot = rootDirectoryPath === node.directory.path;
-  const isExpanded = isRoot || isSearchActive || expandedDirectoryPaths.includes(node.directory.path);
+  const isExpanded = isSearchActive || expandedDirectoryPaths.includes(node.directory.path);
   const isActiveDirectory = activeDirectoryPath === node.directory.path;
   const hasChildren = node.children.length > 0 || node.documents.length > 0;
-  const depth = getDirectoryDepth(node.directory.path, rootDirectoryPath);
+  const depth = getSidebarDirectoryDepth(node.directory.path, rootDirectoryPath);
   const rowBackground = isActiveDirectory
     ? `${appearance.theme.palette.accent}12`
     : 'transparent';
@@ -1563,7 +1561,7 @@ function NotesSidebarDirectoryNode({
           directoryPath: node.directory.path,
         })}
       >
-        {hasChildren && !isRoot ? (
+        {hasChildren ? (
           <button
             type="button"
             onClick={(event) => {
@@ -1575,7 +1573,7 @@ function NotesSidebarDirectoryNode({
             {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           </button>
         ) : (
-          <span style={{ width: 12, display: 'inline-flex' }} />
+          <span style={{ width: 16, display: 'inline-flex' }} />
         )}
 
         <button
@@ -1605,7 +1603,7 @@ function NotesSidebarDirectoryNode({
               fontSize: 12,
             }}
           >
-            {isRoot ? 'Notes' : node.directory.name}
+            {node.directory.name}
           </span>
         </button>
 
@@ -1615,38 +1613,83 @@ function NotesSidebarDirectoryNode({
       </div>
 
       {isExpanded ? (
-        <div style={{ display: 'grid', gap: 2 }}>
-          {node.documents.map((document) => (
-            <NotesSidebarDocumentRow
-              key={document.path}
-              appearance={appearance}
-              document={document}
-              selectedDocumentPath={selectedDocumentPath}
-              rootDirectoryPath={rootDirectoryPath}
-              isSearchActive={isSearchActive}
-              onSelectDocument={onSelectDocument}
-              onOpenContextMenu={onOpenContextMenu}
-            />
-          ))}
-
-          {node.children.map((childNode) => (
-            <NotesSidebarDirectoryNode
-              key={childNode.directory.path}
-              appearance={appearance}
-              node={childNode}
-              rootDirectoryPath={rootDirectoryPath}
-              activeDirectoryPath={activeDirectoryPath}
-              selectedDocumentPath={selectedDocumentPath}
-              expandedDirectoryPaths={expandedDirectoryPaths}
-              isSearchActive={isSearchActive}
-              onSelectDirectory={onSelectDirectory}
-              onSelectDocument={onSelectDocument}
-              onToggleExpanded={onToggleExpanded}
-              onOpenContextMenu={onOpenContextMenu}
-            />
-          ))}
-        </div>
+        <NotesSidebarTreeChildren
+          appearance={appearance}
+          node={node}
+          rootDirectoryPath={rootDirectoryPath}
+          activeDirectoryPath={activeDirectoryPath}
+          selectedDocumentPath={selectedDocumentPath}
+          expandedDirectoryPaths={expandedDirectoryPaths}
+          isSearchActive={isSearchActive}
+          onSelectDirectory={onSelectDirectory}
+          onSelectDocument={onSelectDocument}
+          onToggleExpanded={onToggleExpanded}
+          onOpenContextMenu={onOpenContextMenu}
+        />
       ) : null}
+    </div>
+  );
+}
+
+function NotesSidebarTreeChildren({
+  appearance,
+  node,
+  rootDirectoryPath,
+  activeDirectoryPath,
+  selectedDocumentPath,
+  expandedDirectoryPaths,
+  isSearchActive,
+  onSelectDirectory,
+  onSelectDocument,
+  onToggleExpanded,
+  onOpenContextMenu,
+}: {
+  appearance: ResolvedOverlayAppearance;
+  node: NotesWorkspaceTreeNode;
+  rootDirectoryPath: string | null;
+  activeDirectoryPath: string | null;
+  selectedDocumentPath: string | null;
+  expandedDirectoryPaths: string[];
+  isSearchActive: boolean;
+  onSelectDirectory: (directoryPath: string) => void;
+  onSelectDocument: (documentPath: string) => void;
+  onToggleExpanded: (directoryPath: string) => void;
+  onOpenContextMenu: (
+    event: Pick<ReactMouseEvent, 'clientX' | 'clientY' | 'preventDefault' | 'stopPropagation'>,
+    target: NotesContextMenuTarget,
+  ) => void;
+}) {
+  return (
+    <div style={{ display: 'grid', gap: 2 }}>
+      {node.children.map((childNode) => (
+        <NotesSidebarDirectoryNode
+          key={childNode.directory.path}
+          appearance={appearance}
+          node={childNode}
+          rootDirectoryPath={rootDirectoryPath}
+          activeDirectoryPath={activeDirectoryPath}
+          selectedDocumentPath={selectedDocumentPath}
+          expandedDirectoryPaths={expandedDirectoryPaths}
+          isSearchActive={isSearchActive}
+          onSelectDirectory={onSelectDirectory}
+          onSelectDocument={onSelectDocument}
+          onToggleExpanded={onToggleExpanded}
+          onOpenContextMenu={onOpenContextMenu}
+        />
+      ))}
+
+      {node.documents.map((document) => (
+        <NotesSidebarDocumentRow
+          key={document.path}
+          appearance={appearance}
+          document={document}
+          selectedDocumentPath={selectedDocumentPath}
+          rootDirectoryPath={rootDirectoryPath}
+          isSearchActive={isSearchActive}
+          onSelectDocument={onSelectDocument}
+          onOpenContextMenu={onOpenContextMenu}
+        />
+      ))}
     </div>
   );
 }
@@ -1750,14 +1793,12 @@ function SidebarEmptyState({
 
 function EmptyWorkspaceSurface({
   appearance,
-  activeDirectoryLabel,
   onCreateDocument,
   onCreateDirectory,
   onFocusSearch,
   keybindingHints,
 }: {
   appearance: ResolvedOverlayAppearance;
-  activeDirectoryLabel: string;
   onCreateDocument: () => void;
   onCreateDirectory: () => void;
   onFocusSearch: () => void;
@@ -1793,11 +1834,11 @@ function EmptyWorkspaceSurface({
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <StickyNote size={18} />
             <span style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.04em' }}>
-              One sidebar. Real folders. Plain markdown files.
+              Clean tree. Real folders. Plain markdown files.
             </span>
           </div>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65, color: 'var(--overlay-text-muted)' }}>
-            The active folder is {activeDirectoryLabel}. Create a note, spin up a folder, or search across the workspace without the old fake SaaS buckets and double-sidebar noise.
+            Use the sidebar like a normal folder tree. Create a note, add a folder, or jump in with search without the fake root bucket or extra panel noise.
           </p>
         </div>
 
@@ -2013,10 +2054,21 @@ function getDirectoryDisplayName(
   directoryLookup: Map<string, NotesDirectoryRecord>,
 ): string {
   if (directoryPath === rootDirectoryPath) {
-    return 'Notes';
+    return 'Top Level';
   }
 
   return directoryLookup.get(directoryPath)?.name ?? 'Folder';
+}
+
+function getSidebarDirectoryDepth(
+  directoryPath: string,
+  rootDirectoryPath: string | null,
+): number {
+  return Math.max(0, getDirectoryDepth(directoryPath, rootDirectoryPath) - 1);
+}
+
+function notesTreeHasVisibleEntries(node: NotesWorkspaceTreeNode): boolean {
+  return node.children.length > 0 || node.documents.length > 0;
 }
 
 function getDirectoryDepth(
