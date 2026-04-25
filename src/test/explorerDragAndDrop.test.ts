@@ -409,4 +409,48 @@ describe("explorerDragAndDrop", () => {
     binding.ref(null);
     endExplorerDragInteraction();
   });
+
+  it("restores hover-open behavior when a drop surface ref detaches and reattaches", () => {
+    vi.useFakeTimers();
+    const onAutoOpen = vi.fn();
+    const folderElement = document.createElement("div");
+    const binding = createExplorerDropSurfaceBinding({
+      surfaceId: "folder-auto-open-reattach",
+      scopeId: "pane-a",
+      role: "directory-target",
+      targetPath: "/workspace/alpha",
+      onAutoOpen,
+      autoOpenDelayMs: 120,
+      label: "alpha",
+    });
+
+    binding.ref(folderElement);
+    binding.ref(null);
+    binding.ref(folderElement);
+
+    updateExplorerDragInteractionFromResolvedHit({
+      resolvedHit: {
+        scopeId: "pane-a",
+        surfaceId: "folder-auto-open-reattach",
+        surfaceRole: "directory-target",
+        targetKind: "directory",
+        targetPath: "/workspace/alpha",
+        scopeElement: null,
+        targetElement: folderElement,
+        point: { x: 24, y: 24 },
+      },
+      sourceKind: "internal",
+      sourcePaths: ["/workspace/notes.txt"],
+      operation: "move",
+      platform: "linux",
+      primaryLabel: "notes.txt",
+    });
+
+    vi.advanceTimersByTime(121);
+
+    expect(onAutoOpen).toHaveBeenCalledTimes(1);
+
+    binding.ref(null);
+    endExplorerDragInteraction();
+  });
 });

@@ -1214,9 +1214,18 @@ export function createExplorerDropSurfaceBinding(
         explorerDropSurfaceBindingById.delete(descriptor.surfaceId);
         return;
       }
+      const behavior =
+        explorerDropSurfaceBehaviorById.get(descriptor.surfaceId) ?? {
+          autoOpenDelayMs: descriptor.autoOpenDelayMs ?? null,
+          label: descriptor.label ?? null,
+          onAutoOpen: descriptor.onAutoOpen ?? null,
+        };
       explorerDropSurfaceElementById.set(descriptor.surfaceId, node);
+      explorerDropSurfaceBehaviorById.set(descriptor.surfaceId, behavior);
+      explorerDropSurfaceBindingById.set(descriptor.surfaceId, binding);
       const metadata =
         explorerDropSurfaceMetadataById.get(descriptor.surfaceId) ?? nextMetadata;
+      explorerDropSurfaceMetadataById.set(descriptor.surfaceId, metadata);
       explorerDropSurfaceMetadataByElement.set(node, metadata);
       registerExplorerScopeRootSurface(descriptor.surfaceId, null, metadata);
     },
