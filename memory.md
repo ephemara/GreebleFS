@@ -1,3 +1,16 @@
+# 2026-04-25 - Frontend Checkbox UI Now Routes Through A Shared Branded Toggle System
+
+- The app should no longer present browser-default checkbox chrome for normal boolean controls. GreebleFS now treats checkbox-like settings as a branded toggle lane inspired by desktop switch controls but rendered through the app theme system.
+- Durable implementation shape:
+  - `src/components/OverlayToggle.tsx` is the shared app-owned boolean control primitive for places that want an explicit reusable component.
+  - `src/App.css` now contains the global checkbox skin. Any plain `input[type="checkbox"]` inside the app automatically adopts the new toggle treatment unless a future surface explicitly opts out with `data-overlay-toggle-ignore="true"`.
+  - `src/components/settings/SettingsPrimitives.tsx` now auto-converts native checkbox controls passed into `SettingsRow` into `OverlayToggle`, so settings sections can stay declarative without each file hand-wrapping every boolean row.
+  - `src/components/notes/NotesRichMarkdownEditor.tsx` includes the extra task-list layout glue needed for the vendored Tiptap checklist DOM so note checkboxes also read like proper toggles instead of browser defaults.
+- Durable product rule:
+  - Future boolean UI should either use `OverlayToggle` directly or rely on the shared checkbox skin. Do not introduce new browser-default checkbox styling or one-off bespoke toggles unless the product explicitly needs a special control model.
+- Durable validation:
+  - passed: `bunx vitest run src/test/explorerAudioWorkbench.test.tsx src/test/settingsPage.behavior.test.tsx --reporter=dot`
+
 # 2026-04-25 - Context Menu Composer Drag Now Uses Pointer Runtime And The UI Slimmed Into Shared Settings Controls
 
 - The reusable menu-authoring drag primitive no longer relies on browser-native HTML drag/drop. That path triggered OS-level drag affordances inside the Tauri webview, including the bad cancel cursor and host drag semantics that do not match GreebleFS’ app-owned interaction model.

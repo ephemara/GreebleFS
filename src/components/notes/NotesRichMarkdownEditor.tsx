@@ -296,6 +296,39 @@ export function NotesRichMarkdownEditor({
             margin: 0.22em 0;
           }
 
+          .notes-rich-editor-surface ul[data-type="taskList"] {
+            list-style: none;
+            padding-left: 0.4rem;
+          }
+
+          .notes-rich-editor-surface li[data-type="taskItem"] {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            align-items: start;
+            gap: 10px;
+            margin-left: 0;
+          }
+
+          .notes-rich-editor-surface li[data-type="taskItem"] > label {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 0.18em;
+          }
+
+          .notes-rich-editor-surface li[data-type="taskItem"] > label > span {
+            display: none;
+          }
+
+          .notes-rich-editor-surface li[data-type="taskItem"] > label > input[type="checkbox"] {
+            --overlay-toggle-width: 40px;
+            --overlay-toggle-height: 22px;
+          }
+
+          .notes-rich-editor-surface li[data-type="taskItem"] > div {
+            min-width: 0;
+          }
+
           .notes-rich-editor-surface table {
             width: 100%;
             border-collapse: collapse;

@@ -1,5 +1,13 @@
-import { cloneElement, isValidElement, type CSSProperties, type ReactNode } from 'react';
+import {
+  cloneElement,
+  isValidElement,
+  type CSSProperties,
+  type InputHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import { PremiumSlider } from '../PremiumSlider';
+import { OverlayToggle } from '../OverlayToggle';
 import type { InteractionMotionBinding } from '../../animation/interactionMotion';
 
 type SettingsSurfaceTone = 'default' | 'muted' | 'accent';
@@ -175,14 +183,17 @@ export function SettingsRow({
   className?: string;
   style?: CSSProperties;
 }) {
-  const labeledControl = isValidElement<{ 'aria-label'?: string; 'aria-labelledby'?: string }>(control)
+  const normalizedControl = isNativeCheckboxControl(control)
+    ? convertNativeCheckboxToToggle(control)
+    : control;
+  const labeledControl = isValidElement<{ 'aria-label'?: string; 'aria-labelledby'?: string }>(normalizedControl)
     ? cloneElement(
-      control,
-      control.props['aria-label'] || control.props['aria-labelledby']
+      normalizedControl,
+      normalizedControl.props['aria-label'] || normalizedControl.props['aria-labelledby']
         ? {}
         : { 'aria-label': title },
     )
-    : control;
+    : normalizedControl;
 
   return (
     <div
@@ -202,6 +213,21 @@ export function SettingsRow({
       <div className="shrink-0">{labeledControl}</div>
     </div>
   );
+}
+
+function isNativeCheckboxControl(
+  control: ReactNode,
+): control is ReactElement<InputHTMLAttributes<HTMLInputElement>> {
+  return isValidElement<InputHTMLAttributes<HTMLInputElement>>(control)
+    && control.type === 'input'
+    && control.props.type === 'checkbox';
+}
+
+function convertNativeCheckboxToToggle(
+  control: ReactElement<InputHTMLAttributes<HTMLInputElement>>,
+): ReactElement {
+  const { type: _type, size: _size, ...checkboxProps } = control.props;
+  return <OverlayToggle {...checkboxProps} />;
 }
 
 export function SettingsCatalogGrid({

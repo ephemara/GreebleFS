@@ -19,6 +19,7 @@ import {
   type ExplorerHomePackSettingsProps,
   type LoadedExplorerHomePackRuntime,
 } from './homePackRuntime';
+import { OverlayToggle } from '../OverlayToggle';
 
 const runtimeFilePath = 'builtin:explorer-home-pack';
 
@@ -189,9 +190,10 @@ function FavoritesDeckSettings({ host }: ExplorerHomePackSettingsProps) {
           Keep the deck focused on favorites only, or add the recent/most-used strip underneath.
         </span>
       </span>
-      <input
-        type="checkbox"
+      <OverlayToggle
+        size="compact"
         checked={showTelemetry}
+        aria-label="Show usage telemetry lane"
         onChange={(event) => host.updatePackState({ showTelemetry: event.target.checked })}
       />
     </label>

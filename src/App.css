@@ -20,6 +20,116 @@ html, body, #root {
   --overlay-scrollbar-thumb-hover: color-mix(in srgb, var(--overlay-accent) 46%, var(--overlay-border-strong));
   --overlay-scrollbar-track: transparent;
   --overlay-scrollbar-thumb-border-width: 3px;
+  --overlay-toggle-width: 48px;
+  --overlay-toggle-height: 26px;
+  --overlay-toggle-border: color-mix(in srgb, var(--overlay-accent) 16%, var(--overlay-border));
+  --overlay-toggle-track-top: color-mix(in srgb, var(--overlay-bg-panel-alt) 84%, black 16%);
+  --overlay-toggle-track-bottom: color-mix(in srgb, var(--overlay-bg-panel) 92%, black 8%);
+  --overlay-toggle-thumb-core: color-mix(in srgb, white 82%, var(--overlay-bg-card) 18%);
+  --overlay-toggle-thumb-gloss: rgba(255, 255, 255, 0.94);
+  --overlay-toggle-thumb-shadow: rgba(0, 0, 0, 0.34);
+  --overlay-toggle-focus-ring: color-mix(in srgb, var(--overlay-accent) 36%, transparent);
+}
+
+.overlay-scrollbar-scope :where(input[type='checkbox']):not([data-overlay-toggle-ignore='true']) {
+  -webkit-appearance: none;
+  appearance: none;
+  inline-size: var(--overlay-toggle-width);
+  block-size: var(--overlay-toggle-height);
+  min-inline-size: var(--overlay-toggle-width);
+  margin: 0;
+  border: 1px solid var(--overlay-toggle-border);
+  border-radius: 999px;
+  background-color: transparent;
+  background-image:
+    radial-gradient(circle at center, var(--overlay-toggle-thumb-gloss) 0 42%, color-mix(in srgb, var(--overlay-toggle-thumb-core) 88%, transparent) 43% 62%, transparent 63%),
+    linear-gradient(90deg, transparent 0%, transparent 36%, color-mix(in srgb, var(--overlay-accent) 12%, transparent) 58%, color-mix(in srgb, var(--overlay-accent) 18%, transparent) 100%),
+    linear-gradient(135deg, rgba(255,255,255,0.18), transparent 42%),
+    linear-gradient(180deg, var(--overlay-toggle-track-top), var(--overlay-toggle-track-bottom));
+  background-repeat: no-repeat;
+  background-size:
+    clamp(6px, calc(100% - 8px), 18px) clamp(6px, calc(100% - 8px), 18px),
+    100% 100%,
+    100% 100%,
+    100% 100%;
+  background-position:
+    left 4px center,
+    0 0,
+    0 0,
+    0 0;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, black 12%, transparent),
+    0 10px 24px rgba(0,0,0,0.18);
+  cursor: pointer;
+  flex-shrink: 0;
+  vertical-align: middle;
+  transform-origin: center;
+  user-select: none;
+  transition:
+    background-position 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.overlay-scrollbar-scope :where(input[type='checkbox']):not([data-overlay-toggle-ignore='true']):checked {
+  border-color: color-mix(in srgb, var(--overlay-accent) 38%, transparent);
+  background-image:
+    radial-gradient(circle at center, var(--overlay-toggle-thumb-gloss) 0 44%, color-mix(in srgb, white 72%, var(--overlay-accent) 28%) 45% 64%, transparent 65%),
+    linear-gradient(90deg, color-mix(in srgb, var(--overlay-accent) 10%, transparent) 0%, color-mix(in srgb, var(--overlay-accent) 34%, transparent) 46%, color-mix(in srgb, var(--overlay-accent) 64%, transparent) 100%),
+    linear-gradient(135deg, rgba(255,255,255,0.22), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-panel) 26%, var(--overlay-accent) 74%), color-mix(in srgb, var(--overlay-bg-panel-alt) 14%, var(--overlay-accent) 86%));
+  background-position:
+    right 4px center,
+    0 0,
+    0 0,
+    0 0;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 16%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--overlay-accent) 24%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--overlay-accent) 14%, transparent),
+    0 12px 28px color-mix(in srgb, var(--overlay-accent) 16%, transparent);
+}
+
+.overlay-scrollbar-scope :where(input[type='checkbox']):not([data-overlay-toggle-ignore='true']):hover {
+  border-color: color-mix(in srgb, var(--overlay-accent) 28%, var(--overlay-border));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 14%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--overlay-accent) 16%, transparent),
+    0 14px 32px rgba(0,0,0,0.22);
+}
+
+.overlay-scrollbar-scope :where(input[type='checkbox']):not([data-overlay-toggle-ignore='true']):active {
+  transform: scale(0.97);
+}
+
+.overlay-scrollbar-scope :where(input[type='checkbox']):not([data-overlay-toggle-ignore='true']):focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--overlay-toggle-focus-ring),
+    0 0 0 5px color-mix(in srgb, var(--overlay-bg-shell-solid) 84%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
+    0 12px 28px rgba(0,0,0,0.18);
+}
+
+.overlay-scrollbar-scope :where(input[type='checkbox']):not([data-overlay-toggle-ignore='true']):disabled {
+  cursor: default;
+  opacity: 0.56;
+  filter: saturate(0.8);
+}
+
+.overlay-scrollbar-scope :where(input[type='checkbox'][data-overlay-toggle-size='compact']) {
+  --overlay-toggle-width: 42px;
+  --overlay-toggle-height: 22px;
+}
+
+.overlay-scrollbar-scope :where(input[type='checkbox'][data-overlay-toggle-size='micro']) {
+  --overlay-toggle-width: 34px;
+  --overlay-toggle-height: 18px;
 }
 
 .overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none) {

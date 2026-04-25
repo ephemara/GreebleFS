@@ -34,6 +34,7 @@ import {
   type ExplorerVstPluginEntry,
 } from '../runtime/vstBackend';
 import { PremiumSlider } from './PremiumSlider';
+import { OverlayToggle } from './OverlayToggle';
 import type { ExplorerPreviewWildcardWorkflowTab } from './explorer/explorerPreviewWorkflowTabs';
 import {
   getAudioDeckState,
@@ -1790,7 +1791,12 @@ export function ExplorerAudioWorkbench({
                     </select>
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--overlay-text-primary)' }}>
-                    <input type="checkbox" checked={generateSpectrogram} onChange={(event) => setGenerateSpectrogram(event.target.checked)} />
+                    <OverlayToggle
+                      size="compact"
+                      checked={generateSpectrogram}
+                      aria-label="Generate spectrogram preview"
+                      onChange={(event) => setGenerateSpectrogram(event.target.checked)}
+                    />
                     Spectrogram preview
                   </label>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

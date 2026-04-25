@@ -185,11 +185,11 @@ export interface InteractionMotionBinding {
 
 export function useInteractionMotionController(appearance?: Pick<ResolvedOverlayAppearance, 'baseTheme'> | null) {
   const interactionMotionSettings = useSettingsStore(useShallow((state) => ({
-    interactionMotionEnabled: state.settings.appearance.interactionMotionEnabled,
-    interactionMotionPresetId: state.settings.appearance.interactionMotionPresetId,
-    interactionMotionIntensity: state.settings.appearance.interactionMotionIntensity,
-    interactionMotionModuleOverrides: state.settings.appearance.interactionMotionModuleOverrides,
-    interactionMotionSurfaceOverrides: state.settings.appearance.interactionMotionSurfaceOverrides,
+    interactionMotionEnabled: state.settings.appearance?.interactionMotionEnabled !== false,
+    interactionMotionPresetId: state.settings.appearance?.interactionMotionPresetId ?? null,
+    interactionMotionIntensity: state.settings.appearance?.interactionMotionIntensity ?? 1,
+    interactionMotionModuleOverrides: state.settings.appearance?.interactionMotionModuleOverrides ?? {},
+    interactionMotionSurfaceOverrides: state.settings.appearance?.interactionMotionSurfaceOverrides ?? {},
   })));
   const prefersReducedMotion = usePrefersReducedMotion();
   const themeDefaults = appearance?.baseTheme.interactionMotion;
