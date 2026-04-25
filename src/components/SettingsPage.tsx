@@ -10537,10 +10537,13 @@ export function SettingsPage({
             {activeSection === 'context-menus' && (
               <ContextMenusSettingsSection
                 detail={activeSectionMeta.detail}
+                appearance={appearance}
                 border={border}
                 accent={accent}
                 text={text}
                 muted={muted}
+                settingsSelectStyle={settingsSelectStyle}
+                settingsFieldStyle={settingsFieldStyle}
                 activeMenuPack={activeMenuPack}
                 menuPacks={menuPacks}
                 customizedContextCount={Object.keys(settings.explorer.contextMenuLayoutOverridesByContext).length}

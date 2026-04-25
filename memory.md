@@ -1,3 +1,23 @@
+# 2026-04-25 - Context Menu Composer Drag Now Uses Pointer Runtime And The UI Slimmed Into Shared Settings Controls
+
+- The reusable menu-authoring drag primitive no longer relies on browser-native HTML drag/drop. That path triggered OS-level drag affordances inside the Tauri webview, including the bad cancel cursor and host drag semantics that do not match GreebleFS’ app-owned interaction model.
+- Durable implementation shape:
+  - `src/components/DraggablePanelList.tsx` still owns the reusable reorderable panel-stack primitive, but it now runs through an app-owned pointer drag session instead of `draggable` / `dataTransfer`.
+  - The primitive now exposes `dragHandleProps` to the row renderer, tracks one shared pointer drag session across nested lists, resolves drop targets through DOM hit-testing plus list-local drop-index math, and only uses the rendered drop rails as visual indicators plus optional explicit hit zones.
+  - The intended mental model should now match Explorer’s internal drag runtime: Tauri is just the host window, while the app owns drag intent, hover resolution, and drop placement itself.
+- Durable UI note:
+  - `src/components/settings/sections/ContextMenusSettingsSection.tsx` was trimmed back toward the unified Settings shell. The extra top-heavy runtime explainer block is gone, the composer now uses shared `OverlayActionButton` controls plus the shared settings select/field styles from `SettingsPage.tsx`, and the editable menu canvas is intentionally width-constrained so it reads like a context menu in spirit rather than a generic full-width list editor.
+  - Source-mix counts now live inside the setup summary instead of consuming a second inspector card, and the left rail summary explains insertion targeting directly where users add new actions/folders.
+- Durable validation:
+  - passed: `bunx vitest run src/test/draggablePanelList.test.tsx --reporter=verbose`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "lets the dedicated context menu composer|adds new command nodes into the selected folder|opens the dedicated context menu section" --reporter=verbose`
+
+# 2026-04-25 - Repo Root Skills Mirror Now Symlinks To The Canonical .codex Skill Library
+
+- `skills/` at the repo root is now the local discovery mirror for GreebleFS-specific skills. Each `greeblefs-*` entry is a symlink to the canonical folder under `/home/ephemara/.codex/skills`.
+- This is intentional workflow infrastructure, not duplicated source. Update the real skill content in `/home/ephemara/.codex/skills/<skill-name>/`, and keep the repo mirror as symlinks so workspace-local discovery stays convenient without creating drift.
+- Added `/home/ephemara/.codex/skills/refresh-relevant-skill` as the helper that tells agents to refresh the existing skill that matches their just-finished subsystem work.
+
 # 2026-04-25 - Image Cutout Is Back To One Real Lane With A Local Tool Palette
 
 - Explorer image isolation no longer splits the product into `Cutout` versus `Remove BG` header tabs. The durable shell is back to one visible `Cutout` wildcard tab, with automatic background removal exposed as an in-lane tool action instead of pretending to be a separate workflow lane in the preview header.

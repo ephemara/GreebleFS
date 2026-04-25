@@ -1148,9 +1148,9 @@ describe('SettingsPage behavior', () => {
     await user.click(findSectionButton('Explorer'));
     await user.click(screen.getByRole('button', { name: 'Open Context Menus' }));
 
-    expect(screen.getByText('Explorer Menu Runtime')).toBeInTheDocument();
     expect(screen.getByText('Context Menu Composer')).toBeInTheDocument();
-    expect(screen.getByText('Context menus are now a first-class authored system. Menu packs define the structure, the command graph defines behavior, themes can steer renderer presentation, and user overrides own the composer layer for shareable setups and future renderer/layout packs.')).toBeInTheDocument();
+    expect(screen.getByText('Menu Canvas')).toBeInTheDocument();
+    expect(screen.getByText('Shape the live explorer menu directly. Select a folder to author into it, reorder with the canvas itself, and only flip to runtime preview when you want the final render pass.')).toBeInTheDocument();
   });
 
   it('saves cloud provider credentials from settings and enables the provider login action', async () => {

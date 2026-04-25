@@ -1,30 +1,24 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DraggablePanelList } from '../components/DraggablePanelList';
 
-function createDataTransfer(): DataTransfer {
-  const store = new Map<string, string>();
-  return {
-    dropEffect: 'move',
-    effectAllowed: 'all',
-    files: [] as unknown as FileList,
-    items: [] as unknown as DataTransferItemList,
-    types: [],
-    clearData: vi.fn((format?: string) => {
-      if (format) {
-        store.delete(format);
-      } else {
-        store.clear();
-      }
-    }),
-    getData: vi.fn((format: string) => store.get(format) ?? ''),
-    setData: vi.fn((format: string, value: string) => {
-      store.set(format, value);
-    }),
-    setDragImage: vi.fn(),
-  } as unknown as DataTransfer;
+function assignRect(
+  element: Element,
+  rect: Partial<DOMRectReadOnly>,
+): void {
+  vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+    x: rect.left ?? 0,
+    y: rect.top ?? 0,
+    width: rect.width ?? 100,
+    height: rect.height ?? 24,
+    top: rect.top ?? 0,
+    right: rect.right ?? ((rect.left ?? 0) + (rect.width ?? 100)),
+    bottom: rect.bottom ?? ((rect.top ?? 0) + (rect.height ?? 24)),
+    left: rect.left ?? 0,
+    toJSON: () => ({}),
+  } as DOMRectReadOnly);
 }
 
 function DraggablePanelListHarness({
@@ -48,40 +42,70 @@ function DraggablePanelListHarness({
       onDropItem={onDropItem}
       listLabel="test-panels"
       emptyState={<div>Empty</div>}
-      renderItem={({ itemId, item }) => (
-        <button type="button" data-testid={`panel-row-${itemId}`}>
-          {item.label}
-        </button>
+      renderItem={({ itemId, item, dragHandleProps }) => (
+        <div data-testid={`panel-row-${itemId}`}>
+          <div {...dragHandleProps} data-testid={`panel-handle-${itemId}`}>
+            Drag
+          </div>
+          <div>{item.label}</div>
+        </div>
       )}
     />
   );
 }
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('DraggablePanelList', () => {
-  it('drops a dragged row onto the targeted position', () => {
+  it('drops a dragged row onto the targeted position with pointer-driven dragging', () => {
     const onDropItem = vi.fn();
     render(<DraggablePanelListHarness onDropItem={onDropItem} />);
 
-    const dataTransfer = createDataTransfer();
-    const draggedRow = screen
-      .getByTestId('panel-row-beta')
-      .closest('[data-draggable-panel-item="beta"]');
-    if (!(draggedRow instanceof HTMLElement)) {
-      throw new Error('Expected draggable row wrapper');
-    }
-
-    fireEvent.dragStart(draggedRow, { dataTransfer });
-
-    const firstDropZone = document.querySelector(
-      '[data-draggable-panel-drop-zone="test-panels:0"]',
+    const listRoot = document.querySelector(
+      '[data-draggable-panel-list="test-panels"]',
     );
-    if (!(firstDropZone instanceof HTMLElement)) {
-      throw new Error('Expected first drop zone');
+    if (!(listRoot instanceof HTMLElement)) {
+      throw new Error('Expected list root');
     }
 
-    fireEvent.dragEnter(firstDropZone, { dataTransfer });
-    fireEvent.dragOver(firstDropZone, { dataTransfer });
-    fireEvent.drop(firstDropZone, { dataTransfer });
+    const alphaRow = document.querySelector(
+      '[data-draggable-panel-row-shell="alpha"]',
+    );
+    const betaRow = document.querySelector(
+      '[data-draggable-panel-row-shell="beta"]',
+    );
+    if (!(alphaRow instanceof HTMLElement) || !(betaRow instanceof HTMLElement)) {
+      throw new Error('Expected draggable panel row shells');
+    }
+
+    assignRect(listRoot, { top: 0, left: 0, width: 240, height: 120 });
+    assignRect(alphaRow, { top: 20, left: 0, width: 240, height: 28 });
+    assignRect(betaRow, { top: 60, left: 0, width: 240, height: 28 });
+
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => listRoot),
+    });
+
+    const betaHandle = screen.getByTestId('panel-handle-beta');
+    fireEvent.pointerDown(betaHandle, {
+      button: 0,
+      pointerId: 1,
+      clientX: 40,
+      clientY: 74,
+    });
+    fireEvent.pointerMove(window, {
+      pointerId: 1,
+      clientX: 40,
+      clientY: 6,
+    });
+    fireEvent.pointerUp(window, {
+      pointerId: 1,
+      clientX: 40,
+      clientY: 6,
+    });
 
     expect(onDropItem).toHaveBeenCalledWith('beta', 0);
   });

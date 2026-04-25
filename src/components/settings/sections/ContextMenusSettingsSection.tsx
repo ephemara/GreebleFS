@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 
 import {
   ArrowDown,
@@ -32,6 +40,8 @@ import {
 } from '@/components/AppIcons';
 
 import { DraggablePanelList } from '../../DraggablePanelList';
+import { OverlayActionButton } from '../../OverlayActionButton';
+import type { ResolvedOverlayAppearance } from '../../../config/appearance';
 import type { LoadedActionPack, LoadedExplorerAction } from '../../../config/actionPacks';
 import {
   EXPLORER_MENU_CONTEXT_KINDS,
@@ -45,6 +55,7 @@ import {
 import type { LoadedExplorerMenuPack } from '../../../config/menuPacks';
 import type { ExplorerRuntimeMenuNode } from '../../explorer/explorerMenuRuntime';
 import {
+  SettingsActionStrip,
   SettingsSectionBlock,
   SettingsSectionHeader,
   ThemeBadge,
@@ -423,10 +434,13 @@ function resolveContextMenuInsertionLabel(args: {
 
 export function ContextMenusSettingsSection({
   detail,
+  appearance,
   border,
   accent,
   text,
   muted,
+  settingsSelectStyle,
+  settingsFieldStyle,
   activeMenuPack,
   menuPacks,
   customizedContextCount,
@@ -492,10 +506,13 @@ export function ContextMenusSettingsSection({
   authoredPluginActionCount,
 }: {
   detail: string;
+  appearance: ResolvedOverlayAppearance;
   border: string;
   accent: string;
   text: string;
   muted: string;
+  settingsSelectStyle: CSSProperties;
+  settingsFieldStyle: CSSProperties;
   activeMenuPack: LoadedExplorerMenuPack | null;
   menuPacks: LoadedExplorerMenuPack[];
   customizedContextCount: number;
@@ -583,24 +600,13 @@ export function ContextMenusSettingsSection({
     setCanvasMode('edit');
   }, [activeContextMenuContext]);
 
-  const controlButtonStyle = {
-    border: `1px solid ${border}`,
-    background: 'rgba(255,255,255,0.04)',
-    color: text,
-  } as const;
-  const accentButtonStyle = {
-    border: `1px solid ${accent}55`,
-    background: `${accent}14`,
-    color: text,
-  } as const;
-  const inputStyle = {
-    borderColor: border,
-    background: 'rgba(255,255,255,0.04)',
-    color: text,
-  } as const;
   const panelSurfaceStyle = {
     borderColor: border,
     background: 'rgba(255,255,255,0.03)',
+  } as const;
+  const insetSurfaceStyle = {
+    borderColor: `${border}aa`,
+    background: 'rgba(255,255,255,0.022)',
   } as const;
 
   const branchEntriesByParentId = useMemo(() => {
@@ -688,7 +694,7 @@ export function ContextMenusSettingsSection({
           </div>
         )}
         className="space-y-1.5"
-        renderItem={({ item, isActive, isDragging }) => {
+        renderItem={({ item, isActive, isDragging, dragHandleProps }) => {
           const resolvedCommand = item.kind === 'command'
             ? (contextMenuCommandLookup.get(item.commandId) ?? null)
             : null;
@@ -701,29 +707,32 @@ export function ContextMenusSettingsSection({
             commandLookup: contextMenuCommandLookup,
             childCount,
           });
+          const showSupportingCopy = isActive || item.kind !== 'command';
 
           return (
             <button
               type="button"
               onClick={() => setSelectedContextMenuEntryId(item.id)}
               data-context-menu-canvas-item={item.id}
-              className="w-full rounded-[18px] border px-3 py-3 text-left"
+              className="w-full rounded-[16px] border px-2.5 py-2.5 text-left"
               style={{
                 borderColor: isActive ? accent : `${border}cc`,
-                background: isActive ? `${accent}14` : 'rgba(255,255,255,0.035)',
+                background: isActive ? `${accent}12` : 'rgba(255,255,255,0.026)',
                 color: text,
                 boxShadow: isActive ? `0 0 0 1px ${accent}24 inset` : 'none',
                 opacity: isDragging ? 0.76 : 1,
               }}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-2.5">
                 <div
+                  {...dragHandleProps}
                   aria-hidden
-                  className="flex h-9 w-8 shrink-0 items-center justify-center rounded-xl border text-[10px] font-semibold tracking-[0.24em]"
+                  className="flex h-8 w-7 shrink-0 cursor-grab select-none items-center justify-center rounded-lg border text-[9px] font-semibold tracking-[0.24em] active:cursor-grabbing"
                   style={{
                     borderColor: isActive ? `${accent}66` : `${border}aa`,
-                    background: isActive ? `${accent}12` : 'rgba(255,255,255,0.03)',
+                    background: isActive ? `${accent}10` : 'rgba(255,255,255,0.025)',
                     color: isActive ? text : muted,
+                    touchAction: 'none',
                   }}
                 >
                   ⋮⋮
@@ -737,15 +746,14 @@ export function ContextMenusSettingsSection({
                             ? <FolderTree size={13} />
                             : renderSettingsContextMenuIcon(resolvedCommand?.iconName)}
                         </span>
-                        <span className="truncate text-[12px] font-semibold">{title}</span>
+                        <span className="truncate text-[11px] font-semibold">{title}</span>
                       </div>
                       <div className="mt-1 flex flex-wrap gap-1.5">
-                        <ThemeBadge label={item.kind === 'submenu' ? 'folder' : item.kind} active={isActive} />
                         {resolvedCommand ? (
                           <ThemeBadge label={resolveContextMenuCommandSourceLabel(resolvedCommand)} />
                         ) : null}
                         {item.kind === 'group-slot' ? (
-                          <ThemeBadge label={item.sourceFilter ?? 'any'} />
+                          <ThemeBadge label={`${item.group} · ${item.sourceFilter ?? 'any'}`} />
                         ) : null}
                         {item.kind === 'submenu' ? (
                           <ThemeBadge label={`${childCount} node${childCount === 1 ? '' : 's'}`} />
@@ -755,14 +763,18 @@ export function ContextMenusSettingsSection({
                         ) : null}
                       </div>
                     </div>
-                    <div className="shrink-0 text-right text-[10px] opacity-45">
+                    <div className="shrink-0 text-right text-[9px] opacity-45">
                       <div>#{item.order}</div>
-                      {item.kind === 'submenu' ? (
-                        <div className="mt-1 opacity-60">Folder</div>
-                      ) : null}
+                      <div className="mt-1 opacity-60">
+                        {item.kind === 'submenu' ? 'Folder' : item.kind}
+                      </div>
                     </div>
                   </div>
-                  <p className="mt-2 text-[11px] leading-5 opacity-45">{supportingCopy}</p>
+                  {showSupportingCopy ? (
+                    <p className="mt-1 text-[10px] leading-4 opacity-45">
+                      {supportingCopy}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </button>
@@ -776,12 +788,12 @@ export function ContextMenusSettingsSection({
           const childLaneActive = selectedContextMenuEntryId === item.id;
           return (
             <div
-              className="ml-4 mt-2 border-l pl-3"
+              className="ml-3 mt-2 border-l pl-2.5"
               style={{
                 borderColor: childLaneActive ? `${accent}66` : `${border}88`,
               }}
             >
-              <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-55">
+              <div className="mb-2 flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.14em] opacity-55">
                 <FolderTree size={11} />
                 <span>{item.title}</span>
                 <ThemeBadge label={`${childCount} node${childCount === 1 ? '' : 's'}`} />
@@ -803,99 +815,98 @@ export function ContextMenusSettingsSection({
       />
 
       <SettingsSectionBlock
-        title="Explorer Menu Runtime"
-        subtitle="Context menus are now a first-class authored system. Menu packs define the structure, the command graph defines behavior, themes can steer renderer presentation, and user overrides own the composer layer for shareable setups and future renderer/layout packs."
-        tone="accent"
-        accent={accent}
+        title="Context Menu Composer"
+        subtitle="Shape the live explorer menu directly. Select a folder to author into it, reorder with the canvas itself, and only flip to runtime preview when you want the final render pass."
+        tone="muted"
         badges={[
           activeMenuPack?.name ?? 'No Pack',
-          `${menuPacks.length} Pack${menuPacks.length === 1 ? '' : 's'}`,
-          `${customizedContextCount} Customized Context${customizedContextCount === 1 ? '' : 's'}`,
+          `${menuPacks.length} pack${menuPacks.length === 1 ? '' : 's'}`,
+          `${customizedContextCount} customized context${customizedContextCount === 1 ? '' : 's'}`,
         ]}
-      >
-        <div className="grid grid-cols-1 gap-2 xl:grid-cols-3">
-          <div className="rounded border p-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Menu Packs</div>
-            <p className="mt-2 opacity-45">
-              Switch authored menu structures without touching command execution. This is the lane for future shared packs, curated defaults, and per-team context menu presets.
-            </p>
-          </div>
-          <div className="rounded border p-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Composer Overrides</div>
-            <p className="mt-2 opacity-45">
-              Reorder nodes, create submenus, assign quick slots, and control fallback buckets per context without hardcoding renderer-specific UI trees.
-            </p>
-          </div>
-          <div className="rounded border p-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Renderer Growth</div>
-            <p className="mt-2 opacity-45">
-              Classic nested menus ship first, but this section is where radial, hybrid, sheet, HUD, and shared presentation recipes can expand.
-            </p>
-          </div>
-        </div>
-      </SettingsSectionBlock>
-
-      <SettingsSectionBlock
-        title="Context Menu Composer"
-        subtitle="Edit the live explorer context menu directly: keep a folder selected and add into it, drag the menu rows themselves with minimal drop rails, and flip to the runtime preview only when you need a final render check."
-        tone="muted"
         actions={(
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void onRefreshMenuPacks()} className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={controlButtonStyle}>
+          <SettingsActionStrip>
+            <OverlayActionButton
+              appearance={appearance}
+              size="compact"
+              tone="quiet"
+              onClick={() => void onRefreshMenuPacks()}
+            >
               Refresh Packs
-            </button>
-            <button type="button" onClick={() => void onRefreshActions()} className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={controlButtonStyle}>
+            </OverlayActionButton>
+            <OverlayActionButton
+              appearance={appearance}
+              size="compact"
+              tone="quiet"
+              onClick={() => void onRefreshActions()}
+            >
               Refresh Actions
-            </button>
-            <button type="button" onClick={() => void onOpenMenuPacksFolder()} className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={accentButtonStyle}>
-              Open Menu Packs Folder
-            </button>
-            <button type="button" onClick={() => void onOpenActionsFolder()} className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={accentButtonStyle}>
-              Open Actions Folder
-            </button>
-            <button type="button" onClick={resetContextMenuLayout} className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={controlButtonStyle}>
+            </OverlayActionButton>
+            <OverlayActionButton
+              appearance={appearance}
+              size="compact"
+              tone="neutral"
+              onClick={() => void onOpenMenuPacksFolder()}
+            >
+              Packs Folder
+            </OverlayActionButton>
+            <OverlayActionButton
+              appearance={appearance}
+              size="compact"
+              tone="neutral"
+              onClick={() => void onOpenActionsFolder()}
+            >
+              Actions Folder
+            </OverlayActionButton>
+            <OverlayActionButton
+              appearance={appearance}
+              size="compact"
+              tone="quiet"
+              onClick={resetContextMenuLayout}
+            >
               Reset Context
-            </button>
-            <button type="button" onClick={resetAllContextMenuLayouts} className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={controlButtonStyle}>
-              Reset All Overrides
-            </button>
-          </div>
+            </OverlayActionButton>
+            <OverlayActionButton
+              appearance={appearance}
+              size="compact"
+              tone="quiet"
+              onClick={resetAllContextMenuLayouts}
+            >
+              Reset All
+            </OverlayActionButton>
+          </SettingsActionStrip>
         )}
       >
         {menuPacksWarnings.length > 0 ? (
-          <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${border}aa`, background: 'rgba(255,255,255,0.02)' }}>
+          <div className="rounded border px-3 py-2 text-[11px]" style={insetSurfaceStyle}>
             {menuPacksWarnings.map(warning => (
               <div key={warning} className="opacity-55">{warning}</div>
             ))}
           </div>
         ) : null}
         {actionsWarnings.length > 0 ? (
-          <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${border}aa`, background: 'rgba(255,255,255,0.02)' }}>
+          <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={insetSurfaceStyle}>
             {actionsWarnings.map(warning => (
               <div key={warning} className="opacity-55">{warning}</div>
             ))}
           </div>
         ) : null}
 
-        <div className="mt-3 flex flex-wrap gap-2">
+        <SettingsActionStrip className="mt-3">
           {EXPLORER_MENU_CONTEXT_KINDS.map(contextKind => (
-            <button
+            <OverlayActionButton
               key={contextKind}
-              type="button"
+              appearance={appearance}
+              size="compact"
+              tone={activeContextMenuContext === contextKind ? 'accent' : 'quiet'}
+              active={activeContextMenuContext === contextKind}
               onClick={() => setActiveContextMenuComposerContext(contextKind)}
-              className="rounded px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-              style={{
-                border: `1px solid ${activeContextMenuContext === contextKind ? accent : border}`,
-                background: activeContextMenuContext === contextKind ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                color: text,
-              }}
             >
               {contextKind}
-            </button>
+            </OverlayActionButton>
           ))}
-        </div>
+        </SettingsActionStrip>
 
-        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[248px_minmax(0,1fr)_272px]">
           <div className="space-y-3">
             <div className="rounded border p-3" style={panelSurfaceStyle}>
               <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">Composer Setup</div>
@@ -904,8 +915,8 @@ export function ContextMenusSettingsSection({
                 <select
                   value={activeMenuPack?.id ?? ''}
                   onChange={event => setActiveMenuPackId(event.target.value)}
-                  className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
-                  style={inputStyle}
+                  className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsSelectStyle}
                 >
                   {menuPacks.map(pack => (
                     <option key={pack.id} value={pack.id}>{pack.name}</option>
@@ -917,39 +928,39 @@ export function ContextMenusSettingsSection({
                 <select
                   value={activeContextMenuLayout.renderer ?? 'classic'}
                   onChange={event => setContextMenuRendererForActiveContext(event.target.value as ExplorerMenuContextLayout['renderer'])}
-                  className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
-                  style={inputStyle}
+                  className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsSelectStyle}
                 >
                   {['classic', 'hybrid', 'radial', 'sheet', 'hud'].map(renderer => (
                     <option key={renderer} value={renderer}>{renderer}</option>
                   ))}
                 </select>
               </label>
-              <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
-                <div className="rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
-                  <div className="font-semibold">{activeMenuPack?.name ?? 'No Pack Loaded'}</div>
-                  <div className="mt-1 opacity-55">
-                    {menuPacksLoading ? 'Scanning menu packs…' : `${menuPacks.length} pack${menuPacks.length === 1 ? '' : 's'} available`}
-                  </div>
-                  <div className="mt-1 text-[10px] opacity-45">{menuPacksDirectory}</div>
-                  {menuPacksError ? (
-                    <div className="mt-1 text-[10px]" style={{ color: 'var(--overlay-danger)' }}>
-                      {menuPacksError}
-                    </div>
-                  ) : null}
+              <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={insetSurfaceStyle}>
+                <div className="flex flex-wrap gap-1.5">
+                  <ThemeBadge label={menuPacksLoading ? 'Scanning Packs' : `${menuPacks.length} packs`} />
+                  <ThemeBadge label={actionsLoading ? 'Scanning Actions' : `${actions.length} actions`} />
+                  <ThemeBadge label={`${actionPacks.length} action packs`} />
+                  <ThemeBadge label={`${authoredPluginActionCount} plugin authored`} />
                 </div>
-                <div className="rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
-                  <div className="font-semibold">Action Catalog</div>
-                  <div className="mt-1 opacity-55">
-                    {actionsLoading ? 'Scanning action packs…' : `${actions.length} action${actions.length === 1 ? '' : 's'} across ${actionPacks.length} pack${actionPacks.length === 1 ? '' : 's'}`}
-                  </div>
-                  <div className="mt-1 text-[10px] opacity-45">{actionsDirectory}</div>
-                  {actionsError ? (
-                    <div className="mt-1 text-[10px]" style={{ color: 'var(--overlay-danger)' }}>
-                      {actionsError}
-                    </div>
-                  ) : null}
+                <div className="mt-3 opacity-55">
+                  New nodes currently land {insertionTargetLabel}. Keep a folder selected to author into it without touching the parent picker.
                 </div>
+                <div className="mt-2 text-[10px] opacity-45">{menuPacksDirectory}</div>
+                <div className="mt-1 text-[10px] opacity-45">{actionsDirectory}</div>
+                <div className="mt-2 text-[10px] opacity-45">
+                  {legacyPluginMenuItemCount} legacy plugin menu items • {legacyPluginActionCount} legacy plugin explorer actions
+                </div>
+                {menuPacksError ? (
+                  <div className="mt-2 text-[10px]" style={{ color: 'var(--overlay-danger)' }}>
+                    {menuPacksError}
+                  </div>
+                ) : null}
+                {actionsError ? (
+                  <div className="mt-1 text-[10px]" style={{ color: 'var(--overlay-danger)' }}>
+                    {actionsError}
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -958,9 +969,6 @@ export function ContextMenusSettingsSection({
                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">Action Browser</div>
                 <ThemeBadge label={`${filteredContextMenuBrowserCommands.length} visible`} />
               </div>
-              <p className="mt-2 text-[11px] opacity-45">
-                New nodes currently land {insertionTargetLabel}. Keep a folder selected to author into it without touching the parent picker.
-              </p>
               <div className="relative mt-3">
                 <Search
                   size={13}
@@ -977,8 +985,8 @@ export function ContextMenusSettingsSection({
                   value={contextMenuCommandBrowserQuery}
                   onChange={event => setContextMenuCommandBrowserQuery(event.target.value)}
                   placeholder="Search commands, actions, plugins..."
-                  className="w-full rounded border px-3 py-2 pl-9 text-[12px]"
-                  style={inputStyle}
+                  className="w-full rounded border px-3 py-2 pl-9 text-[11px] outline-none"
+                  style={settingsFieldStyle}
                 />
               </div>
               <label className="mt-3 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
@@ -989,8 +997,8 @@ export function ContextMenusSettingsSection({
                     ...current,
                     [activeContextMenuContext]: event.target.value,
                   }))}
-                  className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
-                  style={inputStyle}
+                  className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsSelectStyle}
                 >
                   <option value="">
                     {availableContextMenuCommandsForActiveContext.length > 0
@@ -1002,14 +1010,15 @@ export function ContextMenusSettingsSection({
                   ))}
                 </select>
               </label>
-              <button
-                type="button"
+              <OverlayActionButton
+                appearance={appearance}
+                size="compact"
+                tone="accent"
                 onClick={() => addContextMenuCommandEntry()}
-                className="mt-2 w-full rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                style={controlButtonStyle}
+                className="mt-2 w-full justify-center"
               >
                 Add Command Node
-              </button>
+              </OverlayActionButton>
               <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-1">
                 <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
                   <span>Add Group Slot</span>
@@ -1019,38 +1028,51 @@ export function ContextMenusSettingsSection({
                       ...current,
                       [activeContextMenuContext]: event.target.value as Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['group'],
                     }))}
-                    className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
-                    style={inputStyle}
+                    className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                    style={settingsSelectStyle}
                   >
                     {explorerMenuGroupOptions.map(group => (
                       <option key={group} value={group}>{group}</option>
                     ))}
                   </select>
                 </label>
-                <button
-                  type="button"
+                <OverlayActionButton
+                  appearance={appearance}
+                  size="compact"
+                  tone="quiet"
                   onClick={addContextMenuGroupSlot}
-                  className="self-end rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                  style={controlButtonStyle}
+                  className="self-end justify-center"
                 >
                   Add Group Slot
-                </button>
+                </OverlayActionButton>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2">
-                <button type="button" onClick={addContextMenuSubmenu} className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]" style={controlButtonStyle}>
+                <OverlayActionButton
+                  appearance={appearance}
+                  size="compact"
+                  tone="quiet"
+                  onClick={addContextMenuSubmenu}
+                  className="justify-center"
+                >
                   Create Folder
-                </button>
-                <button type="button" onClick={addContextMenuSeparator} className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]" style={controlButtonStyle}>
+                </OverlayActionButton>
+                <OverlayActionButton
+                  appearance={appearance}
+                  size="compact"
+                  tone="quiet"
+                  onClick={addContextMenuSeparator}
+                  className="justify-center"
+                >
                   Add Separator
-                </button>
+                </OverlayActionButton>
               </div>
-              <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+              <div className="mt-3 max-h-[360px] space-y-2 overflow-y-auto pr-1">
                 {filteredContextMenuBrowserCommands.length === 0 ? (
-                  <div className="rounded border px-3 py-4 text-[11px] opacity-50" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                  <div className="rounded border px-3 py-4 text-[11px] opacity-50" style={insetSurfaceStyle}>
                     No commands match the current browser filter.
                   </div>
                 ) : filteredContextMenuBrowserCommands.map(command => (
-                  <div key={command.id} className="rounded-xl border px-3 py-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                  <div key={command.id} className="rounded-xl border px-3 py-2.5" style={insetSurfaceStyle}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -1062,17 +1084,18 @@ export function ContextMenusSettingsSection({
                           <ThemeBadge label={command.group} />
                         </div>
                         {command.description ? (
-                          <p className="mt-2 text-[11px] opacity-45">{command.description}</p>
+                          <p className="mt-1 text-[10px] leading-4 opacity-45">{command.description}</p>
                         ) : null}
                       </div>
-                      <button
-                        type="button"
+                      <OverlayActionButton
+                        appearance={appearance}
+                        size="compact"
+                        tone="quiet"
                         onClick={() => addContextMenuCommandEntry(command.id)}
-                        className="shrink-0 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        style={controlButtonStyle}
+                        className="shrink-0"
                       >
                         Add
-                      </button>
+                      </OverlayActionButton>
                     </div>
                   </div>
                 ))}
@@ -1086,39 +1109,33 @@ export function ContextMenusSettingsSection({
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">Menu Canvas</div>
                   <div className="mt-1 text-[11px] opacity-45">
-                    Drag the menu rows directly in <code>{activeContextMenuContext}</code>. Minimal drop rails appear only while dragging, and runtime preview stays one toggle away.
+                    Edit <code>{activeContextMenuContext}</code> like a real menu stack. The canvas stays slim on purpose so it reads like the menu you are shaping, not a giant list builder.
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
+                <SettingsActionStrip>
+                  <OverlayActionButton
+                    appearance={appearance}
+                    size="compact"
+                    tone={canvasMode === 'edit' ? 'accent' : 'quiet'}
+                    active={canvasMode === 'edit'}
                     onClick={() => setCanvasMode('edit')}
-                    className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                    style={{
-                      border: `1px solid ${canvasMode === 'edit' ? accent : border}`,
-                      background: canvasMode === 'edit' ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                      color: text,
-                    }}
                   >
                     Edit Canvas
-                  </button>
-                  <button
-                    type="button"
+                  </OverlayActionButton>
+                  <OverlayActionButton
+                    appearance={appearance}
+                    size="compact"
+                    tone={canvasMode === 'preview' ? 'accent' : 'quiet'}
+                    active={canvasMode === 'preview'}
                     onClick={() => setCanvasMode('preview')}
-                    className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                    style={{
-                      border: `1px solid ${canvasMode === 'preview' ? accent : border}`,
-                      background: canvasMode === 'preview' ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                      color: text,
-                    }}
                   >
                     Runtime Preview
-                  </button>
+                  </OverlayActionButton>
                   <ThemeBadge label={`Renderer ${contextMenuPreviewMenu.presentation.renderer}`} active />
                   <ThemeBadge label={`Density ${contextMenuPreviewMenu.presentation.density}`} />
-                </div>
+                </SettingsActionStrip>
               </div>
-              <div className="mt-3 rounded-[22px] border p-3" style={{ borderColor: border, background: 'rgba(0,0,0,0.16)' }}>
+              <div className="mt-3 rounded-[20px] border p-3" style={{ borderColor: border, background: 'rgba(0,0,0,0.16)' }}>
                 {canvasMode === 'preview' ? (
                   <div data-context-menu-canvas-mode="preview">
                     <ExplorerContextMenuPreviewPanels
@@ -1130,7 +1147,7 @@ export function ContextMenusSettingsSection({
                     />
                   </div>
                 ) : (
-                  <div data-context-menu-canvas-mode="edit">
+                  <div data-context-menu-canvas-mode="edit" className="mx-auto w-full max-w-[620px]">
                     {renderContextMenuCanvasBranch(null)}
                   </div>
                 )}
@@ -1147,7 +1164,7 @@ export function ContextMenusSettingsSection({
                 ) : null}
               </div>
               {selectedContextMenuEntry == null ? (
-                <div className="mt-3 rounded border px-3 py-4 text-[11px] opacity-50" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                <div className="mt-3 rounded border px-3 py-4 text-[11px] opacity-50" style={insetSurfaceStyle}>
                   Select a canvas row or click a concrete menu item in runtime preview to inspect and fine-tune it here.
                 </div>
               ) : (
@@ -1191,8 +1208,8 @@ export function ContextMenusSettingsSection({
                       <input
                         value={selectedContextMenuEntry.title}
                         onChange={event => setContextMenuSubmenuTitle(selectedContextMenuEntry.id, event.target.value)}
-                        className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
-                        style={inputStyle}
+                        className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                        style={settingsFieldStyle}
                       />
                     </label>
                   ) : null}
@@ -1204,8 +1221,8 @@ export function ContextMenusSettingsSection({
                         <select
                           value={selectedContextMenuEntry.group}
                           onChange={event => setContextMenuGroupSlotGroup(selectedContextMenuEntry.id, event.target.value as Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['group'])}
-                          className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
-                          style={inputStyle}
+                          className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                          style={settingsSelectStyle}
                         >
                           {explorerMenuGroupOptions.map(group => (
                             <option key={group} value={group}>{group}</option>
@@ -1217,8 +1234,8 @@ export function ContextMenusSettingsSection({
                         <select
                           value={selectedContextMenuEntry.sourceFilter ?? 'any'}
                           onChange={event => setContextMenuGroupSlotSourceFilter(selectedContextMenuEntry.id, event.target.value as Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['sourceFilter'])}
-                          className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
-                          style={inputStyle}
+                          className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                          style={settingsSelectStyle}
                         >
                           {['any', 'built-in', 'plugin', 'preview', 'action'].map(sourceFilter => (
                             <option key={sourceFilter} value={sourceFilter}>{sourceFilter}</option>
@@ -1234,8 +1251,8 @@ export function ContextMenusSettingsSection({
                       <select
                         value={selectedContextMenuEntry.parentEntryId ?? ''}
                         onChange={event => setContextMenuLayoutEntryParent(selectedContextMenuEntry.id, event.target.value || null)}
-                        className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
-                        style={inputStyle}
+                        className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                        style={settingsSelectStyle}
                       >
                         <option value="">Root</option>
                         {availableParentSubmenus.map(submenu => (
@@ -1248,8 +1265,8 @@ export function ContextMenusSettingsSection({
                       <select
                         value={selectedContextMenuEntry.quickSlot ?? 'none'}
                         onChange={event => setContextMenuLayoutEntryQuickSlot(selectedContextMenuEntry.id, event.target.value as ExplorerMenuQuickSlot)}
-                        className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
-                        style={inputStyle}
+                        className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                        style={settingsSelectStyle}
                       >
                         {explorerMenuQuickSlotOptions.map(option => (
                           <option key={option} value={option}>{option}</option>
@@ -1261,8 +1278,8 @@ export function ContextMenusSettingsSection({
                       <select
                         value={selectedContextMenuEntry.fallbackBucket ?? 'default'}
                         onChange={event => setContextMenuLayoutEntryFallbackBucket(selectedContextMenuEntry.id, event.target.value as ExplorerMenuFallbackBucket)}
-                        className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
-                        style={inputStyle}
+                        className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                        style={settingsSelectStyle}
                       >
                         {explorerMenuFallbackBucketOptions.map(option => (
                           <option key={option} value={option}>{option}</option>
@@ -1271,59 +1288,47 @@ export function ContextMenusSettingsSection({
                     </label>
                   </div>
 
-                  <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                  <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={insetSurfaceStyle}>
                     <div className="font-semibold">Manual Fallback</div>
                     <p className="mt-2 opacity-50">
                       Dragging on the canvas is the primary workflow. These controls stay here as a slower keyboard-friendly fallback.
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
+                      <OverlayActionButton
+                        appearance={appearance}
+                        size="compact"
+                        tone="quiet"
                         onClick={() => moveContextMenuLayoutEntry(selectedContextMenuEntry.id, 'up')}
                         disabled={selectedContextMenuSiblingIndex <= 0}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        style={{
-                          ...controlButtonStyle,
-                          color: selectedContextMenuSiblingIndex <= 0 ? muted : text,
-                          opacity: selectedContextMenuSiblingIndex <= 0 ? 0.5 : 1,
-                        }}
+                        className="gap-1"
                       >
                         <ArrowUp size={11} />
                         Nudge Up
-                      </button>
-                      <button
-                        type="button"
+                      </OverlayActionButton>
+                      <OverlayActionButton
+                        appearance={appearance}
+                        size="compact"
+                        tone="quiet"
                         onClick={() => moveContextMenuLayoutEntry(selectedContextMenuEntry.id, 'down')}
                         disabled={selectedContextMenuSiblingIndex < 0 || selectedContextMenuSiblingIndex >= selectedContextMenuSiblingEntriesCount - 1}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        style={{
-                          ...controlButtonStyle,
-                          color: selectedContextMenuSiblingIndex < 0 || selectedContextMenuSiblingIndex >= selectedContextMenuSiblingEntriesCount - 1 ? muted : text,
-                          opacity: selectedContextMenuSiblingIndex < 0 || selectedContextMenuSiblingIndex >= selectedContextMenuSiblingEntriesCount - 1 ? 0.5 : 1,
-                        }}
+                        className="gap-1"
                       >
                         <ArrowDown size={11} />
                         Nudge Down
-                      </button>
-                      <button
-                        type="button"
+                      </OverlayActionButton>
+                      <OverlayActionButton
+                        appearance={appearance}
+                        size="compact"
+                        tone="danger"
                         onClick={() => removeContextMenuLayoutEntry(selectedContextMenuEntry.id)}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        style={controlButtonStyle}
+                        className="gap-1"
                       >
                         Remove
-                      </button>
+                      </OverlayActionButton>
                     </div>
                   </div>
                 </>
               )}
-            </div>
-
-            <div className="rounded border px-3 py-3 text-[11px]" style={panelSurfaceStyle}>
-              <div className="font-semibold">Source Mix</div>
-              <div className="mt-2 opacity-55">{legacyPluginMenuItemCount} legacy plugin menu items</div>
-              <div className="mt-1 opacity-55">{legacyPluginActionCount} legacy plugin explorer actions</div>
-              <div className="mt-1 opacity-55">{authoredPluginActionCount} plugin-shipped authored actions</div>
             </div>
           </div>
         </div>
