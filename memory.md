@@ -1,3 +1,61 @@
+# 2026-04-24 - Explorer Drag And Drop Now Coalesces Pointer Work And Reuses Drop-Surface Runtime State
+
+- The flagship explorer drag/drop runtime got a focused performance pass aimed at 120 Hz feel without changing the product model. Internal app-owned drag is still the same system, but the hot path now does less DOM churn and less React-facing work per pointer frame.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now coalesces internal pointer-drag updates through a single `requestAnimationFrame` lane (`internalPointerDragFrameRef` / `internalPointerDragPendingPointerRef`) instead of running full drag hit-resolution on every raw `pointermove`.
+  - The first internal drag frame still commits immediately when the gesture crosses the drag threshold. Keep that immediate lift-off path; it prevents the drag overlay and hovered target state from feeling one frame late even though follow-up movement is rAF-coalesced.
+  - Native drag-out startup in `FileExplorer.tsx` now takes a synchronous fast path for normal local entries. Only archive-virtual entries still await materialization before calling the native drag bridge, which keeps `Alt` drag-out feeling instant for ordinary files.
+  - `src/components/explorer/explorerDragAndDrop.ts` now memoizes drop-surface bindings by `surfaceId`, caches registered surface metadata/behavior by id and element, and keeps a scope-root lookup map so hit resolution no longer depends on repeated DOM queries for the scope root.
+  - The drag runtime now reuses the last resolved drop hit while the pointer stays inside the same target surface, caches element rects for the current animation frame, and caches normalized source-path validation context by source-path array plus platform. Future perf work should extend these runtime caches before adding more state at the `FileExplorer.tsx` layer.
+  - `setExplorerDragInteractionState(...)` now skips listener fan-out when the next state is the same object reference, which matters because the drag runtime frequently uses updater functions that intentionally return the current state on no-op paths.
+  - `FileExplorer.tsx` now relies on per-entry drag presentation (`dragPresentation.isDropTarget`) instead of a top-level `dragOver === path` string path in the main explorer selector path. Keep pushing drag visuals toward leaf-local presentation state instead of broad explorer-shell subscriptions.
+- Durable product note:
+  - The current fast path is intentionally hybrid: immediate first-frame response, then coalesced follow-up updates. Do not “simplify” it back into raw `pointermove` hit-resolution unless a future measurement proves the browser/runtime changed enough that the coalescing is no longer buying real smoothness.
+  - The next real perf ceiling is still large-surface rerender pressure in `FileExplorer.tsx`. If drag smoothness needs another pass, push more hover/drop visuals into smaller memoized leaves or DOM-local presentation hooks before adding more global drag-state subscriptions.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerDragAndDrop.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/ExplorerWorkspace.test.tsx -t "mounts the shared drag overlay during normal live workspace panes|routes folder preview row drags through the app-owned explorer drag runtime|drops explorer files into the previewed folder and refreshes the preview lane|copies native external drops into the previewed folder and refreshes the preview lane|starts pointer-driven internal explorer drags without invoking the native drag bridge|moves multi-selected files into the hovered folder without leaking the drop to the viewport root|drops into the current folder when hovering explorer chrome outside the main file plane|copies native external drops into the hovered folder via the Tauri drag-drop listener|drops native external drags into the current folder when the pointer is over a file card|starts the native drag bridge only when Alt is held for supported local entries" --reporter=dot`
+  - blocked currently: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails in pre-existing unrelated `src-mobile/**`, `src/config/**`, and vendored `src/vendor/tiptap/**` typing/dependency paths outside this drag/drop performance pass
+
+# 2026-04-24 - Mobile PWA Now Uses A Real Workbox Stack Plus Targeted Virtualization And Sheet Gestures
+
+- The mobile shell is no longer running on a copied static `public/sw.js` cache hack. `vite.mobile.config.ts` now builds the mobile bundle through `vite-plugin-pwa` in `injectManifest` mode, and `src-mobile/sw.ts` is the new source-of-truth service worker.
+- Durable implementation shape:
+  - `src-mobile/sw.ts` now owns the mobile service worker as a first-class source file. It uses Workbox precaching/runtime routing for the mobile shell while preserving the repo’s existing push-notification behavior and download-intent handoff back into the phone UI.
+  - `src-mobile/public/sw.js` was removed on purpose. Future service-worker changes should go through `src-mobile/sw.ts` and the Vite PWA build, not through a copied public asset.
+  - `src-mobile/App.tsx` now carries two mobile-performance primitives:
+    - `@tanstack/react-virtual` is wired into `MobileExplorerVirtualSurface` for large folder browsing
+    - `interact.js` now drives the preview overlay as a draggable bottom sheet with swipe-down dismissal
+  - The explorer virtualization is intentionally selective. Small folders render directly for immediate paint and simpler testing; large folders switch to the virtualized path. Do not force virtualization onto every tiny directory just because the library is available.
+  - The preview sheet is now the right extension point for future mobile interactions. If later passes add snap points, media galleries, or haptic-style affordances, build on the `mobile-overlay__sheet` lane instead of reverting to a static fullscreen overlay.
+- Durable product note:
+  - Treat the mobile shell as its own serious runtime, not a shrunken desktop panel. Performance and gesture polish now belong to the mobile architecture itself.
+  - If a future agent needs richer offline behavior, retry queues, or background sync, extend the Workbox-backed service worker rather than adding a second cache/runtime abstraction beside it.
+- Validation:
+  - passed: `bun run build:mobile`
+  - passed: `bunx vitest run src/test/mobileApp.test.tsx src/test/mobileTheme.test.ts --reporter=dot`
+  - note: repo-wide TypeScript remains expensive/noisy on this branch, so this pass relied on successful mobile build plus targeted mobile tests instead of claiming a clean full-repo `tsc`
+
+# 2026-04-24 - Preview Panes Now Register Adaptive Context Menus
+
+- Preview-pane right-click is still one shared explorer menu surface, but it no longer has to be generic-only. The menu can now adapt to the active preview kind plus the active workflow tab without each lane inventing its own private context menu system.
+- Durable implementation shape:
+  - `src/components/explorer/explorerPreviewContextMenu.ts` is the shared registration seam for preview-lane context actions. It owns the data shape for base preview actions plus workflow-tab overlays and merges them data-first by action id, including `hidden: true` removal for per-tab overrides.
+  - `src/config/explorerContextMenu.ts`, `src/config/menuPacks.ts`, and `src/components/explorer/explorerMenuRuntime.ts` now treat preview-owned actions as first-class runtime menu nodes. `preview-pane` invocations carry `previewContext` metadata (`previewKind`, `workflowTabId`, `workflowBaseMode`), menu packs have a dedicated `preview` slot, and the runtime injects preview actions near the top when an older layout has no explicit preview slot.
+  - `src/components/FileExplorer.tsx` now owns preview context-menu registration state at the explorer host layer instead of letting `PreviewPanel` hoard it locally. The mounted lane reports wildcard-tab/workflow context upward, and the shared preview-surface right-click path remains the default entrypoint for adaptive preview menus.
+  - `src/components/ExplorerImageEditor.tsx` and `src/components/ExplorerImageCutoutSurface.tsx` are the first adopter of the seam. Generic image preview/edit actions register from the shared image workbench, while `Cutout` and `Remove BG` add workflow-specific overlays from the shared isolation surface instead of forcing more permanent header chrome.
+- Durable implementation lesson:
+  - Do not explode explorer menu contexts into `preview-image`, `preview-audio`, `preview-cutout`, etc. One `preview-pane` context plus metadata and lane-owned registrations is the scalable contract.
+  - If preview-specific menu items disappear, inspect the host-owned registration/cleanup flow in `FileExplorer.tsx` and the mounted lane registration effect before blaming the menu pack layout.
+  - Child preview surfaces can still stop propagation when they truly need a local/editor-native menu, but they should not bypass the shared preview menu by default.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerMenuRuntime.test.ts --reporter=dot --pool=forks`
+  - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx --reporter=dot --pool=forks`
+  - passed: `bunx vitest run src/test/explorerImageCutoutSurface.test.tsx --reporter=dot --pool=forks`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "preview-pane context-menu|child preview surfaces suppress" --reporter=dot --pool=forks`
+  - passed: targeted `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "explorerContextMenu|menuPacks|explorerMenuRuntime|FileExplorer|ExplorerImageEditor|ExplorerImageCutoutSurface|explorerPreviewContextMenu|explorerMenuRuntime.test|fileExplorer.viewModes.test|explorerImageEditor.test|explorerImageCutoutSurface.test"`
+  - blocked currently: full `bunx vitest run src/test/fileExplorer.viewModes.test.tsx --reporter=dot --pool=forks` still fails outside this preview-menu slice in `opens executable scripts in an editor-first preview with edit left of the run workflow tab` and `drops explorer files into the previewed folder and refreshes the preview lane`, then eventually OOMs the worker process
+
 # 2026-04-24 - Image Isolation Is Now Split Into Real `Cutout` And `Remove BG` Lanes
 
 - Explorer image isolation no longer pretends that prompt-driven cutout and automatic background removal are the same workflow. Editable raster images now register two wildcard tabs: `Cutout` and `Remove BG`.

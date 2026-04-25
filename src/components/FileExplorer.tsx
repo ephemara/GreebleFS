@@ -15342,7 +15342,11 @@ export function FileExplorer({
       }
 
       const logicalPaths = dragEntries.map((entry) => entry.path);
-      const dragPaths = await resolveExplorerEntriesNativeDragPaths(dragEntries);
+      const dragPaths = dragEntries.every(
+        (entry) => !isExplorerArchiveVirtualPath(entry.path),
+      )
+        ? logicalPaths.filter((path) => path.trim().length > 0)
+        : await resolveExplorerEntriesNativeDragPaths(dragEntries);
       if (dragPaths.length === 0) {
         return;
       }
@@ -15673,6 +15677,13 @@ export function FileExplorer({
         }
 
         beginExplorerInternalPointerDrag(event, candidate);
+        commitExplorerInternalPointerDragPointer({
+          x: event.clientX,
+          y: event.clientY,
+          altKey: event.altKey,
+          ctrlKey: event.ctrlKey,
+        });
+        return;
       }
 
       if (candidate.intent !== "internal") {

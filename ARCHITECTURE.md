@@ -45,7 +45,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/panels/panelRegistry.tsx`
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
-  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video/audio/Python editor-workbench paths, the shared preview-header workflow-tab system (`Preview` / `Edit` plus lane-owned wildcard tabs), the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode. It also accepts workspace-owned external reveal/navigation requests so shell-level actions such as command-palette global-search results can reopen the active pane at a directory and select a concrete entry without bypassing explorer state.
+  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video/audio/Python editor-workbench paths, the shared preview-header workflow-tab system (`Preview` / `Edit` plus lane-owned wildcard tabs), the adaptive preview-pane context-menu host that merges preview-kind/workflow metadata with lane-registered actions, the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode. It also accepts workspace-owned external reveal/navigation requests so shell-level actions such as command-palette global-search results can reopen the active pane at a directory and select a concrete entry without bypassing explorer state.
 - `src/components/OverlayScrollArea.tsx`
   Shared overlay scroll host. It owns the explicit scrollbar contract for shipping-shell panes (`hidden`, `themed`, `explorer-file-list`) so explorer lists, popouts, and workbench/detail surfaces can share themed scroll behavior without per-component scrollbar CSS.
 - `src/components/ExplorerImageEditor.tsx`
@@ -58,6 +58,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shell-owned wrapper for the embedded preview-pane audio surface. It now follows the same preview-first shell model as the image/video lanes, but audio is also the first wildcard-tab consumer: `FileExplorer.tsx` opens audio in a clean playback-first preview surface, the shared preview header exposes `Preview | Edit | VST`, trim/export tools stay in explicit `Edit`, and the `VST` workflow keeps the playback/waveform overview visible while stacking a compact plugin lane underneath it. Headless VST parameter edits now round-trip through a live per-deck host instead of detached metadata, while inline native editor attachment still remains an honest unavailable path. Under that shell split it still rides the Rust audio engine, keeps shared waveform selection, DAW-style fade edge handles, memoized waveform/spectral subsurfaces, a RAF-driven playhead marker, loop/gain/rate control, offline export actions, and spectrogram rendering.
 - `src/components/explorer/explorerPreviewWorkflowTabs.ts`
   Shared preview-header workflow-tab contract. It canonicalizes the built-in non-edit/edit tabs, normalizes lane-owned wildcard tabs, and resolves the active workflow tab without persisting wildcard ids into explorer session state.
+- `src/components/explorer/explorerPreviewContextMenu.ts`
+  Shared preview-lane context-menu registration seam. Preview workbenches register base actions plus workflow-tab overlays here, and the merge contract deliberately keeps one `preview-pane` menu context while letting the runtime adapt actions by `previewKind` and active workflow tab.
 - `src/components/ExplorerPythonWorkbench.tsx`
   Shell-owned wrapper for the embedded Python preview lane. Python files stay on the shared workflow-tab system, but they are now explicitly code-first: `FileExplorer.tsx` opens them on `Edit`, hides the generic `Preview` tab, and adds `Run | Runtime` wildcard tabs for managed execution, runtime bootstrap/package maintenance, and managed REPL handoff. Managed runs render structured stdout/stderr back into the preview pane, while terminal-backed fallback routes into the explorer embedded terminal bottom drawer so the workbench does not disappear.
 - `src/components/ExplorerPdfWorkbench.tsx`
@@ -105,7 +107,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/explorerChromeLayouts.ts`
   Explorer chrome layout registry/resolver for adaptive topbar, toolbar, workspace header, rail header, preview header, and status-strip control placement plus zone-based layout override snapshots.
 - `src/config/explorerContextMenu.ts` and `src/config/menuPacks.ts`
-  Typed explorer-menu command graph plus declarative `menu-packs/` loader. The registry owns action metadata and legacy migration helpers; menu packs own per-context placement, submenu/group-slot structure, quick-slot/fallback hints, and the built-in classic authored pack.
+  Typed explorer-menu command graph plus declarative `menu-packs/` loader. The registry owns action metadata, preview-pane invocation metadata (`previewKind`, `workflowTabId`, `workflowBaseMode`), preview-owned command sources, and legacy migration helpers; menu packs own per-context placement, submenu/group-slot structure, the dedicated `preview` slot used by adaptive preview menus, quick-slot/fallback hints, and the built-in classic authored pack.
 - `src/config/themeEngineBindings.ts`
   Shared engine-manifest binding helpers for layout/navigation/render-driven recipe defaults.
 - `src/config/workbenchRenderRuntime.ts`
@@ -709,6 +711,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Preview wildcard tabs must be registered by the mounted lane surface, not guessed only from `FileExplorer.tsx`.
   - `ExplorerAudioWorkbench.tsx`, `ExplorerPythonWorkbench.tsx`, and the image cutout path all rely on lane-owned wildcard registration.
   - if the preview header stops reflecting a lane-owned tab, inspect memo dependencies around `renderPreviewWorkflowToggle` and the preview-chrome registry before assuming the lane forgot to register tabs.
+- Preview-pane context menus must stay host-owned and metadata-driven.
+  - Preview workbenches should register base actions and workflow overlays through `explorerPreviewContextMenu.ts` instead of inventing separate right-click systems.
+  - If preview-specific menu items disappear, inspect the host-owned registration/cleanup path in `FileExplorer.tsx` before changing menu-pack layouts or adding more permanent header chrome.
 - Image isolation is now two explicit workflows, not one overloaded tab.
   - `Cutout` is prompt-first and must open with an empty mask.
   - `Remove BG` is the explicit heuristic auto-removal lane and is the only place where opening/reset should auto-bootstrap a mask.
