@@ -1047,8 +1047,7 @@ describe('SettingsPage behavior', () => {
 
     await user.click(findSectionButton('Context Menus'));
     expect(screen.getByText('Context Menu Composer')).toBeInTheDocument();
-    expect(screen.getByText('Live Preview')).toBeInTheDocument();
-    expect(screen.getByText('Menu Structure')).toBeInTheDocument();
+    expect(screen.getByText('Menu Canvas')).toBeInTheDocument();
     expect(screen.getByText('Action Browser')).toBeInTheDocument();
     const activePackSelect = screen.getByRole('combobox', { name: 'Active Menu Pack' });
     expect(activePackSelect).toHaveValue(BUILT_IN_MENU_PACK_FIXTURES[0]?.id ?? '');
@@ -1090,8 +1089,55 @@ describe('SettingsPage behavior', () => {
     }
 
     await user.click(enabledToggle);
-    const moveUpButton = screen.getByRole('button', { name: 'Up' });
+    const moveUpButton = screen.getByRole('button', { name: 'Nudge Up' });
     expect(moveUpButton).toBeEnabled();
+  }, 30000);
+
+  it('adds new command nodes into the selected folder inside the menu canvas', async () => {
+    const user = userEvent.setup();
+    renderSettingsPage({
+      pluginContextMenuItems: [
+        {
+          id: 'sample-plugin.context-menu.capture',
+          pluginId: 'sample-plugin',
+          pluginName: 'Sample Tools',
+          title: 'Capture Memory Snapshot',
+          contexts: ['entry'],
+          appliesTo: 'file',
+          group: 'plugin',
+          defaultOrder: 650,
+          execution: {
+            kind: 'plugin-backend',
+            entry: 'backend/capture-snapshot',
+            args: ['{path}'],
+          },
+        },
+      ],
+    });
+
+    await user.click(findSectionButton('Context Menus'));
+    await user.click(screen.getByRole('button', { name: 'Create Folder' }));
+
+    const createdFolderEntry = useSettingsStore
+      .getState()
+      .settings.explorer.contextMenuLayoutOverridesByContext.entry?.entries
+      .find((entry) => entry.kind === 'submenu');
+    expect(createdFolderEntry).toBeDefined();
+
+    const addCommandSelect = screen.getByRole('combobox', { name: 'Add Command' });
+    await user.selectOptions(addCommandSelect, 'sample-plugin.context-menu.capture');
+    await user.click(screen.getByRole('button', { name: 'Add Command Node' }));
+
+    const nestedCommandEntry = useSettingsStore
+      .getState()
+      .settings.explorer.contextMenuLayoutOverridesByContext.entry?.entries
+      .find((entry) => entry.kind === 'command' && entry.commandId === 'sample-plugin.context-menu.capture');
+
+    expect(nestedCommandEntry).toMatchObject({
+      kind: 'command',
+      commandId: 'sample-plugin.context-menu.capture',
+      parentEntryId: createdFolderEntry?.id,
+    });
   }, 30000);
 
   it('opens the dedicated context menu section from the explorer CTA', async () => {

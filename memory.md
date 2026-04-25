@@ -12,6 +12,22 @@
   - passed: `bunx vitest run src/test/explorerImageCutoutMask.test.ts src/test/explorerImageEditor.test.tsx src/test/explorerImageCutoutSurface.test.tsx --reporter=dot --pool=forks`
   - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens editable image previews in fullscreen preview mode and only enters edit tools on demand|adapts preview-pane context-menu actions to the active image workflow tab" --reporter=dot --pool=forks`
 
+# 2026-04-25 - Context Menu Composer Is Now Canvas-First And Shares A Reusable Drag Panel Primitive
+
+- The context-menu editor moved from a split “runtime preview + separate structure list” workflow into a canvas-first workflow:
+  - `src/components/settings/sections/ContextMenusSettingsSection.tsx` is now the active composer seam. The center lane is a `Menu Canvas` with direct row dragging and minimal drop rails; runtime preview is still available, but now sits behind an explicit toggle instead of competing with a second structure panel.
+  - `src/components/DraggablePanelList.tsx` is the new reusable drag/reorder primitive for panel-like rows. It owns the light drop-indicator line treatment plus external dragged-item coordination so nested editors can reuse one interaction model instead of each feature inventing bespoke HTML5 drag zones.
+  - Future reorderable editor surfaces should prefer `DraggablePanelList` over hand-rolled `draggable` rows when the UX wants “panel stack with minimal insertion rails.”
+- Add behavior is now contextual instead of root-only:
+  - `src/components/SettingsPage.tsx` now resolves an insertion target from the current selection. If a submenu/folder is selected, new commands, separators, group slots, and folders insert inside it. Otherwise new nodes insert after the selected row, or at root when nothing is selected.
+  - This is the key authoring contract behind the streamlined canvas: keep a folder selected, add new things, and they land there without touching the parent dropdown first.
+- Durable UX fix:
+  - submenu renaming in `SettingsPage.tsx` now stores the raw input value instead of snapping empty intermediate edits back to the previous title. Without that, “select all and replace” behaved like an append-only field during authoring.
+- Durable validation:
+  - passed: `bunx vitest run src/test/draggablePanelList.test.tsx --reporter=verbose`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "lets the dedicated context menu composer" --reporter=verbose`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "adds new command nodes into the selected folder" --reporter=verbose`
+
 # 2026-04-25 - Actions-First Context Menus Now Have A Live Authoring Surface And Explorer Deep-Link
 
 - The authored context-menu runtime has now crossed the line from “configurable” to “visually authorable.” The durable v1 shape is actions-first:
