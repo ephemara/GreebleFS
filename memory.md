@@ -1,3 +1,17 @@
+# 2026-04-25 - Explorer Chrome Now Treats Workspace Tabs, Status Controls, And Width Editing As First-Class
+
+- Explorer chrome no longer stops at the top toolbar. The durable v2 shape is now:
+  - `src/components/explorer/ExplorerWorkspace.tsx` exposes a shared `workspaceTabStrip` control on `workspaceHeader`. That one placeable/resizable control owns the workspace tabs, the `+` affordance, the `1-Up` / `2-Up` / `3-Up` / `4-Up` layout controls, and the pane-actions entrypoint instead of assuming those widgets live in a fixed hardcoded strip.
+  - `src/components/FileExplorer.tsx` now treats status-strip affordances as real explorer chrome controls. `statusTaskBadge`, `terminalDrawerToggle`, and `statusViewToggles` all route through the same command/catalog/layout system as the top toolbar instead of relying on a centered hardcoded task anchor or immovable bottom-bar widgets.
+  - `src/config/explorerCustomizeCatalog.ts` is now the place where resize capability lives. Strip/input-like controls such as `workspaceTabStrip` and `addressBar` can persist a `widthPx` override, while many chip/button controls now honor `sizeVariant` so top and bottom chrome density can be tuned without one-off JSX branches.
+  - `src/components/explorer/explorerChromeResizeRuntime.ts` is the app-owned pointer resize seam for placed controls. Future width editing should keep flowing through that runtime plus `widthPx` overrides instead of inventing per-control resize math.
+- Durable product rule:
+  - Every non-viewport explorer chrome band should participate in the same authored system. If something in the workspace header, toolbar, or status bar cannot move with customize mode, that should be treated as a regression unless the control is intentionally non-placeable.
+  - Width-bearing controls should preserve their `widthPx` override when moved across explorer surfaces. Do not reintroduce a layout model where moving a control silently drops its width state.
+- Durable validation:
+  - passed: `bun x vitest run src/test/ExplorerWorkspace.test.tsx src/test/ExplorerChromeSurface.test.tsx src/test/explorerChromeLayouts.test.ts src/test/settingsStore.test.ts src/test/explorerStore.test.ts src/test/hotkeys.test.ts`
+  - passed: grep-filtered `bun x tsc --noEmit --pretty false -p tsconfig.json` produced no matches for `FileExplorer`, `ExplorerWorkspace`, `ExplorerActionsPane`, `ExplorerTaskStatusBadge`, `ExplorerChromeSurface`, `explorerChromeLayouts`, `explorerCustomizeCatalog`, or `settingsStore`
+
 # 2026-04-25 - Cutout Empty Masks Stay Silent And Host Output Now Rejoins Explorer Clipboard/Refresh Flows
 
 - The image cutout lane had a subtle but important mask-decoding trap:
