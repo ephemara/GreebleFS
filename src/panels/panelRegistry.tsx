@@ -429,7 +429,7 @@ export function createBuiltInPanelDefinitions({
       },
       render: () => (
         <DeferredPanel>
-          <LazyStoragePanel />
+          <LazyStoragePanel appearance={appearance} />
         </DeferredPanel>
       ),
     },

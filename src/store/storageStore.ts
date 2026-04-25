@@ -148,7 +148,7 @@ function normalizeStorageSnapshot(rawValue: unknown): StorageWorkbenchSnapshot {
       key: normalizeSortKey(candidate.sortState?.key),
       direction: candidate.sortState?.direction === 'asc' ? 'asc' : 'desc',
     },
-    previewSplitMode: candidate.previewSplitMode === 'inline' ? 'inline' : 'pane',
+    previewSplitMode: 'pane',
     focusPath: typeof candidate.focusPath === 'string' ? candidate.focusPath : null,
     queue: {
       definitionId: typeof candidate.queue?.definitionId === 'string'

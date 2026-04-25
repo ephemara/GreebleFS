@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StoragePanel } from '../components/StoragePanel';
 import { useStorageWorkbenchStore } from '../store/storageStore';
 
+const STORAGE_RAIL_WIDTH_KEY = 'greeblefs-storage-rail-width-v2';
+
 vi.mock('../components/ExplorerFolderPreview', () => ({
   ExplorerFolderPreview: ({ folderPath }: { folderPath: string }) => (
     <div data-testid="mock-storage-folder-preview">{folderPath}</div>
@@ -204,8 +206,12 @@ describe('StoragePanel layout shell', () => {
       expect(storageBackendMocks.listStorageDirectory).toHaveBeenCalledWith('scan-1', '/home/alice/Dev');
     });
 
-    expect(screen.getByText('Workbench')).toBeInTheDocument();
-    expect(screen.getByText('Matrix')).toBeInTheDocument();
+    expect(window.localStorage.getItem(STORAGE_RAIL_WIDTH_KEY)).toBe('224');
+    expect(screen.getByText('Scan Rail')).toBeInTheDocument();
+    expect(screen.getByTestId('storage-workbench-toolbar')).toBeInTheDocument();
+    expect(screen.getByTestId('storage-unified-inspector')).toBeInTheDocument();
+    expect(screen.queryByText('Selection')).not.toBeInTheDocument();
+    expect(screen.queryByText('Current Context')).not.toBeInTheDocument();
 
     expect(screen.getByTestId('storage-panel-root')).toHaveStyle({
       gridTemplateRows: 'auto minmax(0, 1fr)',
@@ -219,19 +225,29 @@ describe('StoragePanel layout shell', () => {
       gridTemplateRows: 'auto minmax(0, 1fr)',
       overflow: 'hidden',
     });
+    expect(screen.getByTestId('storage-workbench-layout')).toHaveStyle({
+      gridTemplateColumns: 'minmax(0, 1fr) minmax(312px, 360px)',
+      overflow: 'hidden',
+    });
     expect(screen.getByTestId('storage-mode-viewport')).toHaveStyle({
       display: 'flex',
       overflow: 'hidden',
     });
-    expect(screen.getByTestId('storage-inspector-layout')).toHaveStyle({
+    expect(screen.getByTestId('storage-matrix-surface')).toHaveStyle({
+      gridTemplateRows: 'auto minmax(0, 1fr)',
+      height: '100%',
+      overflow: 'hidden',
+    });
+    expect(screen.getByTestId('storage-unified-inspector')).toHaveStyle({
       gridTemplateRows: 'auto minmax(0, 1fr)',
       overflow: 'hidden',
       height: '100%',
     });
-    expect(screen.getByTestId('storage-current-context')).toHaveStyle({
+    expect(screen.getByTestId('storage-inspector-content')).toHaveStyle({
       gridTemplateRows: 'auto minmax(0, 1fr)',
       height: '100%',
     });
+    expect(screen.queryByTestId('storage-queue-drawer')).not.toBeInTheDocument();
   });
 
   it('uses indexed jump to reveal deeper matches inside the current storage context', async () => {
@@ -328,6 +344,47 @@ describe('StoragePanel layout shell', () => {
     });
   });
 
+  it('opens the queue drawer without creating a second persistent queue region', async () => {
+    useStorageWorkbenchStore.setState({
+      activeMode: 'matrix',
+      selectedRootPath: null,
+      selectedTypeBucketId: null,
+      selectedPaths: [],
+      selectionAnchorPath: null,
+      expandedPaths: [],
+      sortState: {
+        key: 'allocatedBytes',
+        direction: 'desc',
+      },
+      previewSplitMode: 'pane',
+      focusPath: null,
+      queue: {
+        definitionId: 'cleanup',
+        itemOrder: ['/home/alice/archive.bin'],
+        itemsByPath: {
+          '/home/alice/archive.bin': {
+            path: '/home/alice/archive.bin',
+            name: 'archive.bin',
+            kind: 'file',
+            logicalBytes: 200,
+            allocatedBytes: 200,
+            wasteBytes: 0,
+            extension: 'bin',
+          },
+        },
+        filterQuery: '',
+      },
+    });
+
+    render(<StoragePanel />);
+
+    fireEvent.click(screen.getByTestId('storage-queue-trigger').querySelector('button')!);
+
+    expect(await screen.findByTestId('storage-queue-drawer')).toBeInTheDocument();
+    expect(screen.getAllByText('Cleanup Queue')).toHaveLength(1);
+    expect(screen.getAllByText('archive.bin')).toHaveLength(1);
+  });
+
   it('renders cleanup queue rows without nesting a button inside another button', async () => {
     useStorageWorkbenchStore.setState({
       activeMode: 'matrix',
@@ -361,6 +418,8 @@ describe('StoragePanel layout shell', () => {
     });
 
     const { container } = render(<StoragePanel />);
+
+    fireEvent.click(screen.getByTestId('storage-queue-trigger').querySelector('button')!);
 
     await screen.findByText('archive.bin');
 

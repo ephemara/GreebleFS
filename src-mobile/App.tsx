@@ -1,5 +1,41 @@
-import * as LucideIcons from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import {
+  Archive,
+  ArrowDown,
+  ArrowDownToLine,
+  ArrowUp,
+  ArrowUpDown,
+  AudioLines,
+  Bell,
+  BellOff,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  CornerDownRight,
+  Download,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  FileText,
+  Folder,
+  FolderTree,
+  Grid2x2,
+  Grid3x3,
+  House,
+  Image,
+  Images,
+  LayoutGrid,
+  List,
+  RefreshCcw,
+  ScanSearch,
+  Search,
+  Settings2,
+  Upload,
+  Video,
+  X,
+  ZoomIn,
+  ZoomOut,
+  type LucideIcon,
+} from "lucide-react";
 import interact from "interactjs";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -89,25 +125,25 @@ const BOTTOM_DOCK_TABS = [
     id: "explorer",
     label: "Explorer",
     slotId: "folder_tree",
-    fallback: LucideIcons.FolderTree,
+    fallback: FolderTree,
   },
   {
     id: "search",
     label: "Search",
     slotId: "search",
-    fallback: LucideIcons.Search,
+    fallback: Search,
   },
   {
     id: "transfers",
     label: "Transfers",
     slotId: "download",
-    fallback: LucideIcons.ArrowDownToLine,
+    fallback: ArrowDownToLine,
   },
   {
     id: "settings",
     label: "Settings",
     slotId: "settings",
-    fallback: LucideIcons.Settings2,
+    fallback: Settings2,
   },
 ] satisfies Array<{
   id: MobileTabId;
@@ -120,28 +156,66 @@ const MOBILE_VIEW_MODE_BUTTONS = [
   {
     id: "icons-l",
     label: "Large",
-    icon: LucideIcons.LayoutGrid,
+    icon: LayoutGrid,
   },
   {
     id: "icons-m",
     label: "Medium",
-    icon: LucideIcons.Grid2x2,
+    icon: Grid2x2,
   },
   {
     id: "icons-s",
     label: "Compact",
-    icon: LucideIcons.Grid3x3,
+    icon: Grid3x3,
   },
   {
     id: "list",
     label: "List",
-    icon: LucideIcons.List,
+    icon: List,
   },
 ] satisfies Array<{
   id: MobileLayoutViewMode;
   label: string;
   icon: LucideIcon;
 }>;
+
+const MOBILE_LUCIDE_ICON_REGISTRY: Record<string, LucideIcon> = {
+  Archive,
+  ArrowDown,
+  ArrowDownToLine,
+  ArrowUp,
+  ArrowUpDown,
+  AudioLines,
+  Bell,
+  BellOff,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  CornerDownRight,
+  Download,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  FileText,
+  Folder,
+  FolderTree,
+  Grid2x2,
+  Grid3x3,
+  House,
+  Image,
+  Images,
+  LayoutGrid,
+  List,
+  RefreshCcw,
+  ScanSearch,
+  Search,
+  Settings2,
+  Upload,
+  Video,
+  X,
+  ZoomIn,
+  ZoomOut,
+};
 
 const SORT_CYCLE: MobileLayoutSettings["sortBy"][] = [
   "name",
@@ -539,9 +613,7 @@ function renderThemedIcon(args: {
   }
 
   if (reference?.kind === "lucide") {
-    const maybeIcon = (
-      LucideIcons as unknown as Record<string, LucideIcon | undefined>
-    )[reference.value];
+    const maybeIcon = MOBILE_LUCIDE_ICON_REGISTRY[reference.value];
     const LucideComponent = maybeIcon ?? FallbackIcon;
     return <LucideComponent className={args.className} strokeWidth={1.7} />;
   }
@@ -563,16 +635,16 @@ function MobileEntryIcon({
   const iconUrl = resolveMobileEntryIconUrl(entry, themeSnapshot, openFolder);
   const FallbackIcon =
     entry.isDir
-      ? LucideIcons.Folder
+      ? Folder
       : entry.entryKind === "image"
-        ? LucideIcons.Image
+        ? Image
         : entry.entryKind === "video"
-          ? LucideIcons.Video
+          ? Video
           : entry.entryKind === "audio"
-            ? LucideIcons.AudioLines
+            ? AudioLines
             : entry.entryKind === "archive"
-              ? LucideIcons.Archive
-              : LucideIcons.FileText;
+              ? Archive
+              : FileText;
 
   return (
     <div
@@ -736,7 +808,7 @@ function MobileExplorerVirtualSurface({
                     }}
                     aria-label={`Preview ${entry.name}`}
                   >
-                    <LucideIcons.Eye size={18} strokeWidth={1.7} />
+                    <Eye size={18} strokeWidth={1.7} />
                   </button>
                 ) : null}
                 {entry.canDownload ? (
@@ -748,11 +820,11 @@ function MobileExplorerVirtualSurface({
                     }}
                     aria-label={`Download ${entry.name}`}
                   >
-                    <LucideIcons.Download size={18} strokeWidth={1.7} />
+                    <Download size={18} strokeWidth={1.7} />
                   </button>
                 ) : (
                   <span className="mobile-row__chevron">
-                    <LucideIcons.ChevronRight size={18} strokeWidth={1.7} />
+                    <ChevronRight size={18} strokeWidth={1.7} />
                   </span>
                 )}
               </div>
@@ -875,7 +947,7 @@ function MobileExplorerVirtualSurface({
                       }}
                       aria-label={`Preview ${entry.name}`}
                     >
-                      <LucideIcons.Eye size={18} strokeWidth={1.7} />
+                      <Eye size={18} strokeWidth={1.7} />
                     </button>
                   ) : null}
                   {entry.canDownload ? (
@@ -887,11 +959,11 @@ function MobileExplorerVirtualSurface({
                       }}
                       aria-label={`Download ${entry.name}`}
                     >
-                      <LucideIcons.Download size={18} strokeWidth={1.7} />
+                      <Download size={18} strokeWidth={1.7} />
                     </button>
                   ) : (
                     <span className="mobile-row__chevron">
-                      <LucideIcons.ChevronRight size={18} strokeWidth={1.7} />
+                      <ChevronRight size={18} strokeWidth={1.7} />
                     </span>
                   )}
                 </div>
@@ -1089,6 +1161,37 @@ export default function App() {
     () => currentPath.split("/").filter(Boolean),
     [currentPath],
   );
+  const quickPlaceEntries = useMemo(() => {
+    if (currentPath.length > 0) {
+      return [];
+    }
+
+    const preferredNames = [
+      "Desktop",
+      "Downloads",
+      "Documents",
+      "Pictures",
+      "Music",
+      "Movies",
+      "Videos",
+      "Projects",
+      "Dev",
+    ];
+    const directoryEntries = loadedEntries.filter((entry) => entry.isDir);
+    const matchedEntries = preferredNames
+      .map((preferredName) =>
+        directoryEntries.find(
+          (entry) => entry.name.toLowerCase() === preferredName.toLowerCase(),
+        ),
+      )
+      .filter((entry): entry is MobileShareEntry => entry != null);
+    const seenPaths = new Set(matchedEntries.map((entry) => entry.relativePath));
+    const fallbackEntries = directoryEntries.filter(
+      (entry) => !seenPaths.has(entry.relativePath),
+    );
+
+    return [...matchedEntries, ...fallbackEntries].slice(0, 6);
+  }, [currentPath, loadedEntries]);
   const gridCardSize = getGridIconSizeForViewport(
     resolvedLayout,
     viewportSnapshot.width,
@@ -2086,7 +2189,7 @@ export default function App() {
               }}
               aria-label={`Download ${entry.name}`}
             >
-              <LucideIcons.Download size={18} strokeWidth={1.7} />
+              <Download size={18} strokeWidth={1.7} />
             </button>
           ) : null}
           <button
@@ -2100,7 +2203,7 @@ export default function App() {
             }}
             aria-label={`Jump to ${entry.name}`}
           >
-            <LucideIcons.CornerDownRight size={18} strokeWidth={1.7} />
+            <CornerDownRight size={18} strokeWidth={1.7} />
           </button>
         </div>
       </article>
@@ -2257,9 +2360,21 @@ export default function App() {
       <div className="mobile-shell__backdrop" />
 
       <header className="mobile-topbar">
-        <div>
+        <div className="mobile-topbar__identity">
           <div className="mobile-topbar__eyebrow">Sovereign Mobile Link</div>
-          <h1 className="mobile-topbar__title">{shareName}</h1>
+          <div className="mobile-topbar__headline">
+            <h1 className="mobile-topbar__title">{shareName}</h1>
+            <button
+              type="button"
+              className="mobile-icon-button mobile-topbar__refresh"
+              onClick={() => {
+                void refreshCurrentDirectory();
+              }}
+              aria-label="Refresh share"
+            >
+              <RefreshCcw size={18} strokeWidth={1.7} />
+            </button>
+          </div>
           <div className="mobile-topbar__meta">
             <span
               className={`mobile-status-chip${
@@ -2268,24 +2383,11 @@ export default function App() {
             >
               {isStandalone ? "Standalone" : "Browser"}
             </span>
-            {themeSnapshot ? (
-              <span className="mobile-status-chip">{themeSnapshot.themeName}</span>
-            ) : null}
             <span className="mobile-status-chip">
               {hubMode ? "Hub Share" : "Directory Share"}
             </span>
           </div>
         </div>
-        <button
-          type="button"
-          className="mobile-pill-button"
-          onClick={() => {
-            void refreshCurrentDirectory();
-          }}
-        >
-          <LucideIcons.RefreshCcw size={18} strokeWidth={1.7} />
-          Refresh
-        </button>
       </header>
 
       {showInstallTip ? (
@@ -2333,7 +2435,7 @@ export default function App() {
                     }}
                     aria-label="Go back"
                   >
-                    <LucideIcons.ChevronLeft size={18} strokeWidth={1.7} />
+                    <ChevronLeft size={18} strokeWidth={1.7} />
                   </button>
                   <button
                     type="button"
@@ -2344,7 +2446,7 @@ export default function App() {
                     }}
                     aria-label="Go up"
                   >
-                    <LucideIcons.ChevronUp size={18} strokeWidth={1.7} />
+                    <ChevronUp size={18} strokeWidth={1.7} />
                   </button>
                   <button
                     type="button"
@@ -2354,7 +2456,7 @@ export default function App() {
                     }}
                     aria-label="Go to root"
                   >
-                    <LucideIcons.House size={18} strokeWidth={1.7} />
+                    <House size={18} strokeWidth={1.7} />
                   </button>
                 </div>
               </div>
@@ -2369,7 +2471,7 @@ export default function App() {
                     navigateToExplorerPath("", "push");
                   }}
                 >
-                  Shared
+                  {shareName}
                 </button>
                 {breadcrumbSegments.map((segment, index) => {
                   const segmentPath = breadcrumbSegments.slice(0, index + 1).join("/");
@@ -2391,6 +2493,26 @@ export default function App() {
                   );
                 })}
               </div>
+
+              {quickPlaceEntries.length > 0 ? (
+                <div className="mobile-quick-places">
+                  <div className="mobile-quick-places__label">Places</div>
+                  <div className="mobile-breadcrumbs mobile-breadcrumbs--scroll">
+                    {quickPlaceEntries.map((entry) => (
+                      <button
+                        key={entry.relativePath}
+                        type="button"
+                        className="mobile-breadcrumbs__segment mobile-quick-places__pill"
+                        onClick={() => {
+                          navigateToExplorerPath(entry.relativePath, "push");
+                        }}
+                      >
+                        {entry.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mobile-search">
                 <input
@@ -2455,7 +2577,7 @@ export default function App() {
                       });
                   }}
                 >
-                  <LucideIcons.ScanSearch size={18} strokeWidth={1.7} />
+                  <ScanSearch size={18} strokeWidth={1.7} />
                   Scan
                 </button>
                 <button
@@ -2481,7 +2603,7 @@ export default function App() {
                       });
                   }}
                 >
-                  <LucideIcons.X size={18} strokeWidth={1.7} />
+                  <X size={18} strokeWidth={1.7} />
                   Cancel
                 </button>
               </div>
@@ -2608,7 +2730,7 @@ export default function App() {
                       void enablePushNotifications();
                     }}
                   >
-                    <LucideIcons.Bell size={18} strokeWidth={1.7} />
+                    <Bell size={18} strokeWidth={1.7} />
                     {pushRuntime.subscription ? "Refresh Pairing" : "Enable Push"}
                   </button>
                   {pushRuntime.subscription ? (
@@ -2620,7 +2742,7 @@ export default function App() {
                         void disablePushNotifications();
                       }}
                     >
-                      <LucideIcons.BellOff size={18} strokeWidth={1.7} />
+                      <BellOff size={18} strokeWidth={1.7} />
                       Disable
                     </button>
                   ) : null}
@@ -2905,7 +3027,7 @@ export default function App() {
                 disabled={!isMobileGridViewMode(resolvedLayout.viewMode)}
                 aria-label="Zoom grid out"
               >
-                <LucideIcons.ZoomOut size={15} strokeWidth={1.7} />
+                <ZoomOut size={15} strokeWidth={1.7} />
               </button>
               <span className="mobile-segment-badge">
                 {resolvedLayout.gridZoom.toFixed(1)}x
@@ -2921,7 +3043,7 @@ export default function App() {
                 disabled={!isMobileGridViewMode(resolvedLayout.viewMode)}
                 aria-label="Zoom grid in"
               >
-                <LucideIcons.ZoomIn size={15} strokeWidth={1.7} />
+                <ZoomIn size={15} strokeWidth={1.7} />
               </button>
             </div>
 
@@ -2934,7 +3056,7 @@ export default function App() {
                 });
               }}
             >
-              <LucideIcons.ArrowUpDown size={15} strokeWidth={1.7} />
+              <ArrowUpDown size={15} strokeWidth={1.7} />
               Sort {formatSortLabel(resolvedLayout.sortBy)}
             </button>
 
@@ -2948,9 +3070,9 @@ export default function App() {
               }}
             >
               {resolvedLayout.sortOrder === "asc" ? (
-                <LucideIcons.ArrowUp size={15} strokeWidth={1.7} />
+                <ArrowUp size={15} strokeWidth={1.7} />
               ) : (
-                <LucideIcons.ArrowDown size={15} strokeWidth={1.7} />
+                <ArrowDown size={15} strokeWidth={1.7} />
               )}
               {resolvedLayout.sortOrder === "asc" ? "Ascending" : "Descending"}
             </button>
@@ -2967,9 +3089,9 @@ export default function App() {
               }}
             >
               {resolvedLayout.showHiddenFiles ? (
-                <LucideIcons.Eye size={15} strokeWidth={1.7} />
+                <Eye size={15} strokeWidth={1.7} />
               ) : (
-                <LucideIcons.EyeOff size={15} strokeWidth={1.7} />
+                <EyeOff size={15} strokeWidth={1.7} />
               )}
               Hidden {resolvedLayout.showHiddenFiles ? "On" : "Off"}
             </button>
@@ -2981,7 +3103,7 @@ export default function App() {
                 generalUploadInputRef.current?.click();
               }}
             >
-              <LucideIcons.Upload size={15} strokeWidth={1.7} />
+              <Upload size={15} strokeWidth={1.7} />
               Upload
             </button>
 
@@ -2992,7 +3114,7 @@ export default function App() {
                 mediaUploadInputRef.current?.click();
               }}
             >
-              <LucideIcons.Images size={15} strokeWidth={1.7} />
+              <Images size={15} strokeWidth={1.7} />
               Photos
             </button>
           </div>
@@ -3109,7 +3231,7 @@ export default function App() {
                     }
                   }}
                 >
-                  <LucideIcons.Download size={18} strokeWidth={1.7} />
+                  <Download size={18} strokeWidth={1.7} />
                   Download
                 </button>
               ) : null}
@@ -3125,7 +3247,7 @@ export default function App() {
                     }
                   }}
                 >
-                  <LucideIcons.ExternalLink size={18} strokeWidth={1.7} />
+                  <ExternalLink size={18} strokeWidth={1.7} />
                   Open
                 </button>
               ) : null}

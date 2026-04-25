@@ -121,33 +121,46 @@ button {
     linear-gradient(160deg, color-mix(in srgb, var(--mobile-accent) 12%, var(--mobile-surface-strong)), color-mix(in srgb, var(--mobile-topbar-bg) 90%, transparent));
   box-shadow: var(--mobile-shadow);
   padding:
-    calc(16px * var(--mobile-chrome-scale))
-    calc(18px * var(--mobile-chrome-scale));
-  display: flex;
-  justify-content: space-between;
-  gap: calc(14px * var(--mobile-chrome-scale));
-  align-items: flex-start;
+    calc(12px * var(--mobile-chrome-scale))
+    calc(14px * var(--mobile-chrome-scale));
+  display: grid;
+  gap: calc(10px * var(--mobile-chrome-scale));
   flex-shrink: 0;
 }
 
+.mobile-topbar__identity {
+  display: grid;
+  gap: calc(8px * var(--mobile-chrome-scale));
+}
+
+.mobile-topbar__headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(12px * var(--mobile-chrome-scale));
+}
+
 .mobile-topbar__eyebrow {
-  font-size: calc(11px * var(--mobile-chrome-scale));
-  letter-spacing: 0.16em;
+  font-size: calc(10px * var(--mobile-chrome-scale));
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--mobile-accent);
 }
 
 .mobile-topbar__title {
-  margin: 6px 0 0;
-  font-size: clamp(28px, calc(5.8vw * var(--mobile-interface-scale)), 34px);
-  line-height: 1.06;
+  margin: 0;
+  font-size: clamp(22px, calc(4.8vw * var(--mobile-interface-scale)), 28px);
+  line-height: 1.04;
 }
 
 .mobile-topbar__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: calc(8px * var(--mobile-chrome-scale));
-  margin-top: calc(12px * var(--mobile-chrome-scale));
+  gap: calc(6px * var(--mobile-chrome-scale));
+}
+
+.mobile-topbar__refresh {
+  flex-shrink: 0;
 }
 
 .mobile-status-chip,
@@ -296,7 +309,7 @@ button {
       env(safe-area-inset-bottom, 0px)
       + var(--mobile-bottom-nav-height)
       + var(--mobile-action-strip-height)
-      + 32px
+      + calc(var(--mobile-touch-target) * 0.95)
     );
 }
 
@@ -371,8 +384,8 @@ button {
 
 .mobile-explorer-header {
   display: grid;
-  gap: 12px;
-  padding-bottom: 14px;
+  gap: 10px;
+  padding-bottom: 12px;
   border-color: color-mix(in srgb, var(--mobile-accent) 24%, var(--mobile-border));
   flex-shrink: 0;
 }
@@ -392,7 +405,7 @@ button {
 .mobile-preview-summary__row-meta,
 .mobile-transfer-card__meta,
 .mobile-settings-card__row span:last-child {
-  font-size: calc(12px * var(--mobile-interface-scale));
+  font-size: calc(11px * var(--mobile-interface-scale));
   color: var(--mobile-text-muted);
 }
 
@@ -412,6 +425,23 @@ button {
   overflow-x: auto;
   flex-wrap: nowrap;
   padding-bottom: 2px;
+}
+
+.mobile-quick-places {
+  display: grid;
+  gap: 8px;
+}
+
+.mobile-quick-places__label {
+  font-size: calc(11px * var(--mobile-interface-scale));
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mobile-text-muted);
+}
+
+.mobile-quick-places__pill {
+  background: color-mix(in srgb, var(--mobile-accent) 10%, var(--mobile-surface) 96%);
 }
 
 .mobile-breadcrumbs__segment {
@@ -798,7 +828,7 @@ button {
   left: var(--mobile-page-padding);
   right: var(--mobile-page-padding);
   bottom:
-    calc(env(safe-area-inset-bottom, 0px) + var(--mobile-bottom-nav-height) + 12px);
+    calc(env(safe-area-inset-bottom, 0px) + var(--mobile-bottom-nav-height) + calc(var(--mobile-touch-target) * 0.28));
   z-index: 13;
   border-radius: 24px;
   border: 1px solid color-mix(in srgb, var(--mobile-accent) 20%, var(--mobile-border));
@@ -1081,8 +1111,8 @@ button {
 @media (max-width: 720px) {
   .mobile-topbar {
     padding:
-      calc(14px * var(--mobile-chrome-scale))
-      calc(16px * var(--mobile-chrome-scale));
+      calc(11px * var(--mobile-chrome-scale))
+      calc(13px * var(--mobile-chrome-scale));
   }
 
   .mobile-explorer-actions,
@@ -1096,10 +1126,6 @@ button {
   .mobile-shell {
     padding-left: 12px;
     padding-right: 12px;
-  }
-
-  .mobile-topbar {
-    flex-direction: column;
   }
 
   .mobile-explorer-header__top {
@@ -1119,7 +1145,7 @@ button {
 @media (max-width: 420px) {
   .mobile-explorer-actions {
     bottom:
-      calc(env(safe-area-inset-bottom, 0px) + var(--mobile-bottom-nav-height) + 10px);
+      calc(env(safe-area-inset-bottom, 0px) + var(--mobile-bottom-nav-height) + calc(var(--mobile-touch-target) * 0.24));
   }
 
   .mobile-main {
@@ -1128,7 +1154,7 @@ button {
         env(safe-area-inset-bottom, 0px)
         + var(--mobile-bottom-nav-height)
         + var(--mobile-action-strip-height)
-        + 34px
+        + calc(var(--mobile-touch-target) * 1.05)
       );
   }
 

@@ -1,3 +1,18 @@
+# 2026-04-24 - Storage Pane Now Uses A Minimal Three-Layer Workbench Shell
+
+- The storage panel no longer reads like three separate dashboards bolted together. The durable default shell is now: compact scan rail on the left, one slim workbench command strip over the main storage view, and one unified inspector on the right.
+- Durable implementation shape:
+  - `src/components/StoragePanel.tsx` now accepts `appearance?: ResolvedOverlayAppearance` and resolves a fallback appearance locally for isolated tests. The storage shell uses shared `OverlayActionButton` controls and workbench chrome vars instead of the old storage-only button/chip styling.
+  - The storage shell’s internal `SurfaceCard` body now behaves like a real flex column with `min-height: 0` and `overflow: hidden`. That is intentional: scrollable child surfaces like the matrix need an actual height budget or their scroll areas silently stop working.
+  - `src/panels/panelRegistry.tsx` now passes the live `appearance` object into the storage panel so the panel participates in the real workbench theme/runtime path like the other first-class surfaces.
+  - The left rail is intentionally tighter (`greeblefs-storage-rail-width-v2` now defaults to `224`) and only owns roots plus a small session/status block. The permanent cleanup queue card was removed from the rail on purpose.
+  - Batch cleanup now lives in a header drawer instead of a permanent side card. The queue trigger in the storage toolbar shows staged count plus allocated bytes, and the drawer owns filter, queued rows, and batch `Trash` / `Delete`.
+  - The right side is now one inspector shell. Selection metrics, direct actions, indexed jump, folder preview, and file details all live under that one container instead of stacked `Selection` and `Current Context` cards.
+  - `src/store/storageStore.ts` still keeps `previewSplitMode` in persisted state for backward compatibility, but hydration now normalizes legacy `inline` snapshots back to `pane`, and the storage UI no longer exposes pane/inline toggles.
+- Durable test note:
+  - `src/test/storagePanel.layout.test.tsx` now asserts the compact rail default, the unified inspector, and the queue drawer living in one place.
+  - `src/test/storageStore.test.ts` now protects the legacy `previewSplitMode: "inline" -> "pane"` migration.
+
 # 2026-04-24 - VS Code Theme And Icon Imports Now Work As First-Class Compatibility Packages
 
 - GreebleFS now treats common VS Code theme extensions as compatibility sources instead of forcing users to rewrite them into native bundle format first. `themes/` can ingest VS Code color-theme folders or `.vsix` archives, and `icon-themes/` can ingest VS Code file-icon folders or `.vsix` archives.
@@ -46,6 +61,9 @@
   - `src-mobile/App.tsx` now carries two mobile-performance primitives:
     - `@tanstack/react-virtual` is wired into `MobileExplorerVirtualSurface` for large folder browsing
     - `interact.js` now drives the preview overlay as a draggable bottom sheet with swipe-down dismissal
+  - The mobile shell chrome was also tightened in `src-mobile/App.tsx` and `src-mobile/mobile.css`: the top bar is now a compact identity row with icon-only refresh, the explorer root breadcrumb now uses the actual share name, and the root explorer header can expose lightweight `Places` pills for common directories already visible in the current share. Treat that `Places` strip as the current quick-traversal lane until a richer host-owned roots/drives endpoint exists.
+  - Bottom dock clearance is now larger and scales with touch-target size so the fixed explorer action strip no longer sits on top of the lowest cards when chrome scale is pushed upward.
+  - `vite.mobile.config.ts` now also uses explicit Rollup `manualChunks(...)` for the mobile build, and `src-mobile/App.tsx` no longer wildcard-imports `lucide-react`. The first pass of chunking exposed that the wildcard icon import was dominating the split, so the mobile icon usage is now registry-based and only imports the specific Lucide icons the mobile shell actually uses.
   - The explorer virtualization is intentionally selective. Small folders render directly for immediate paint and simpler testing; large folders switch to the virtualized path. Do not force virtualization onto every tiny directory just because the library is available.
   - The preview sheet is now the right extension point for future mobile interactions. If later passes add snap points, media galleries, or haptic-style affordances, build on the `mobile-overlay__sheet` lane instead of reverting to a static fullscreen overlay.
 - Durable product note:
@@ -54,6 +72,7 @@
 - Validation:
   - passed: `bun run build:mobile`
   - passed: `bunx vitest run src/test/mobileApp.test.tsx src/test/mobileTheme.test.ts --reporter=dot`
+  - notable mobile build result after chunking cleanup: app shell is now split into `mobile-react-core`, `mobile-gestures`, `mobile-vendor`, `mobile-virtual`, `mobile-icons`, and the main app chunk; the Lucide chunk dropped from roughly `600 KB` down to under `10 KB` once the wildcard import was removed
   - note: repo-wide TypeScript remains expensive/noisy on this branch, so this pass relied on successful mobile build plus targeted mobile tests instead of claiming a clean full-repo `tsc`
 
 # 2026-04-24 - Preview Panes Now Register Adaptive Context Menus

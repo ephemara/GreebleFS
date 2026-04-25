@@ -24,5 +24,36 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "dist-mobile"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+
+          if (
+            id.includes("/react/") ||
+            id.includes("/react-dom/") ||
+            id.includes("/scheduler/")
+          ) {
+            return "mobile-react-core";
+          }
+
+          if (id.includes("/lucide-react/")) {
+            return "mobile-icons";
+          }
+
+          if (id.includes("/interactjs/")) {
+            return "mobile-gestures";
+          }
+
+          if (id.includes("/@tanstack/react-virtual/")) {
+            return "mobile-virtual";
+          }
+
+          return "mobile-vendor";
+        },
+      },
+    },
   },
 });

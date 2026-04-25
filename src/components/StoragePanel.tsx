@@ -84,14 +84,19 @@ import {
   queryGlobalSearchUnderPath,
   type GlobalSearchResultValue,
 } from '../runtime/globalSearchBackend';
+import {
+  resolveOverlayAppearance,
+  type ResolvedOverlayAppearance,
+} from '../config/appearance';
+import { OverlayActionButton } from './OverlayActionButton';
 
 const POLL_INTERVAL_MS = 450;
 const TREEMAP_WIDTH = 960;
 const TREEMAP_HEIGHT = 420;
 const STORAGE_RAIL_WIDTH_KEY = 'greeblefs-storage-rail-width-v2';
-const STORAGE_RAIL_WIDTH_DEFAULT = 268;
-const STORAGE_RAIL_WIDTH_MIN = 220;
-const STORAGE_RAIL_WIDTH_MAX = 360;
+const STORAGE_RAIL_WIDTH_DEFAULT = 224;
+const STORAGE_RAIL_WIDTH_MIN = 196;
+const STORAGE_RAIL_WIDTH_MAX = 320;
 const STORAGE_CONTEXT_SEARCH_RESULT_LIMIT = 24;
 
 interface StorageContextMenuState {
@@ -192,63 +197,6 @@ function resolveNodeFill(entry: StorageScanEntry): string {
   return `hsl(${hue} ${saturation}% ${lightness}%)`;
 }
 
-function ActionButton({
-  children,
-  disabled = false,
-  onClick,
-  tone = 'default',
-  style,
-}: {
-  children: ReactNode;
-  disabled?: boolean;
-  onClick: () => void;
-  tone?: 'default' | 'accent' | 'danger';
-  style?: CSSProperties;
-}) {
-  const borderColor = tone === 'danger'
-    ? 'rgba(255,114,114,0.32)'
-    : tone === 'accent'
-      ? 'color-mix(in srgb, var(--overlay-accent) 52%, transparent)'
-      : 'var(--overlay-border)';
-  const textColor = tone === 'danger'
-    ? '#ff9b9b'
-    : tone === 'accent'
-      ? 'var(--overlay-accent)'
-      : 'var(--overlay-text-primary)';
-
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-        minHeight: 30,
-        padding: '0 10px',
-        borderRadius: 9,
-        border: `1px solid ${borderColor}`,
-        background: disabled
-          ? 'rgba(255,255,255,0.03)'
-          : tone === 'danger'
-            ? 'rgba(120, 30, 30, 0.18)'
-            : tone === 'accent'
-              ? 'color-mix(in srgb, var(--overlay-accent) 12%, rgba(255,255,255,0.03))'
-              : 'rgba(255,255,255,0.04)',
-        color: disabled ? 'var(--overlay-text-muted)' : textColor,
-        cursor: disabled ? 'default' : 'pointer',
-        fontSize: 11.5,
-        fontWeight: 700,
-        ...style,
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
 function SurfaceCard({
   children,
   style,
@@ -310,47 +258,10 @@ function SurfaceCard({
           {actions}
         </div>
       ) : null}
-      <div style={{ flex: 1, minHeight: 0 }}>{children}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+        {children}
+      </div>
     </section>
-  );
-}
-
-function ModeChip({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 28,
-        padding: '0 10px',
-        borderRadius: 999,
-        border: active
-          ? '1px solid color-mix(in srgb, var(--overlay-accent) 62%, var(--overlay-border))'
-          : '1px solid var(--overlay-border)',
-        background: active
-          ? 'color-mix(in srgb, var(--overlay-accent) 12%, rgba(255,255,255,0.03))'
-          : 'rgba(255,255,255,0.03)',
-        color: active ? 'var(--overlay-accent)' : 'var(--overlay-text-secondary)',
-        cursor: 'pointer',
-        fontSize: 10.5,
-        fontWeight: 700,
-        letterSpacing: '0.04em',
-        textTransform: 'uppercase',
-      }}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -383,6 +294,42 @@ function StorageMetric({
       </div>
       {detail ? (
         <div style={{ fontSize: 10, color: 'var(--overlay-text-muted)', lineHeight: 1.35 }}>
+          {detail}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function StorageInlineMetricPill({
+  detail,
+  label,
+  value,
+}: {
+  detail?: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gap: 3,
+        minWidth: 0,
+        padding: '8px 10px',
+        borderRadius: 999,
+        border: '1px solid color-mix(in srgb, var(--overlay-accent) 18%, var(--overlay-workbench-chrome-border))',
+        background: 'color-mix(in srgb, var(--overlay-workbench-chrome-bg) 78%, transparent)',
+      }}
+    >
+      <div style={{ fontSize: 9, color: 'var(--overlay-text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--overlay-text-primary)', whiteSpace: 'nowrap' }}>
+        {value}
+      </div>
+      {detail ? (
+        <div style={{ fontSize: 10, color: 'var(--overlay-text-secondary)', lineHeight: 1.35 }}>
           {detail}
         </div>
       ) : null}
@@ -501,74 +448,72 @@ function StorageStatusBanner({
 }
 
 function StorageRail({
+  appearance,
   activeRootPath,
   isElevated,
   onBeginScan,
-  onClearQueue,
-  onExecuteQueue,
   onRefreshRoots,
-  onRemoveQueuePath,
-  onSelectQueuePath,
-  queueFilterQuery,
-  queueItems,
   roots,
   rootsError,
   rootsLoading,
   scanStatus,
-  selectedPathSet,
-  setQueueFilterQuery,
 }: {
+  appearance: ResolvedOverlayAppearance;
   activeRootPath: string | null;
   isElevated: boolean | null;
   onBeginScan: (rootPath: string) => void;
-  onClearQueue: () => void;
-  onExecuteQueue: (actionId: StorageBatchQueueActionId) => void;
   onRefreshRoots: () => void;
-  onRemoveQueuePath: (path: string) => void;
-  onSelectQueuePath: (path: string) => void;
-  queueFilterQuery: string;
-  queueItems: StorageQueuedItem[];
   roots: StorageRootInfo[];
   rootsError: string | null;
   rootsLoading: boolean;
   scanStatus: StorageScanSnapshot | null;
-  selectedPathSet: Set<string>;
-  setQueueFilterQuery: (query: string) => void;
 }) {
-  const queueDefinition = getStorageBatchQueueDefinition('cleanup');
-  const filteredQueueItems = queueItems.filter((item) => matchesQueueFilter(item, queueFilterQuery));
-  const queueSummary = summarizeQueueEntries(queueItems);
-
   return (
     <OverlayScrollArea
+      data-testid="storage-scan-rail"
       style={{ flex: 1, minHeight: 0 }}
       scrollbarStyle="explorer-file-list"
-      viewportStyle={{ padding: 12 }}
+      viewportStyle={{ padding: 10 }}
     >
-      <div style={{ display: 'grid', gap: 12 }}>
-        <SurfaceCard
-          title="Roots"
-          subtitle={rootsLoading ? 'Loading local volumes.' : `${roots.length} local roots detected`}
-          actions={(
-            <ActionButton onClick={onRefreshRoots} disabled={rootsLoading}>
+      <div style={{ display: 'grid', gap: 10 }}>
+        <section
+          style={{
+            display: 'grid',
+            gap: 10,
+            padding: 10,
+            borderRadius: appearance.workbenchTheme.metrics.panelRadius,
+            border: '1px solid var(--overlay-workbench-chrome-border)',
+            background: 'linear-gradient(180deg, color-mix(in srgb, var(--overlay-workbench-chrome-bg) 92%, transparent), color-mix(in srgb, var(--overlay-workbench-shell-bg) 86%, transparent))',
+            boxShadow: 'var(--overlay-workbench-shell-shadow)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--overlay-text-secondary)' }}>
+                Scan Rail
+              </div>
+              <div style={{ marginTop: 3, fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                {rootsLoading ? 'Loading local volumes.' : `${roots.length} local roots detected`}
+              </div>
+            </div>
+            <OverlayActionButton appearance={appearance} size="compact" tone="quiet" onClick={onRefreshRoots} disabled={rootsLoading}>
               <RefreshCw size={13} />
               Refresh
-            </ActionButton>
-          )}
-        >
+            </OverlayActionButton>
+          </div>
           {rootsLoading ? (
-            <div style={{ display: 'grid', placeItems: 'center', minHeight: 120, color: 'var(--overlay-text-muted)' }}>
+            <div style={{ display: 'grid', placeItems: 'center', minHeight: 88, color: 'var(--overlay-text-muted)' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
                 <LoaderCircle size={15} className="spin" />
                 Loading drives...
               </span>
             </div>
           ) : rootsError ? (
-            <div style={{ minHeight: 120, padding: 14, color: '#ffb0b0', fontSize: 12.5 }}>
+            <div style={{ minHeight: 88, padding: 8, color: '#ffb0b0', fontSize: 12.5 }}>
               {rootsError}
             </div>
           ) : (
-            <div style={{ display: 'grid', gap: 8, padding: 10 }}>
+            <div style={{ display: 'grid', gap: 8 }}>
               {roots.map((root) => {
                 const usedBytes = Math.max(0, root.total_bytes - root.free_bytes);
                 const usedPercent = root.total_bytes > 0 ? (usedBytes / root.total_bytes) * 100 : 0;
@@ -581,14 +526,14 @@ function StorageRail({
                     style={{
                       display: 'grid',
                       gap: 8,
-                      padding: 10,
-                      borderRadius: 12,
+                      padding: '9px 10px',
+                      borderRadius: appearance.workbenchTheme.metrics.controlRadius,
                       border: active
-                        ? '1px solid color-mix(in srgb, var(--overlay-accent) 62%, var(--overlay-border))'
-                        : '1px solid var(--overlay-border)',
+                        ? '1px solid color-mix(in srgb, var(--overlay-accent) 54%, var(--overlay-workbench-chrome-border))'
+                        : '1px solid color-mix(in srgb, var(--overlay-accent) 10%, var(--overlay-workbench-chrome-border))',
                       background: active
-                        ? 'color-mix(in srgb, var(--overlay-accent) 10%, rgba(255,255,255,0.03))'
-                        : 'rgba(255,255,255,0.03)',
+                        ? 'color-mix(in srgb, var(--overlay-accent) 10%, var(--overlay-workbench-shell-bg))'
+                        : 'color-mix(in srgb, var(--overlay-workbench-chrome-bg) 66%, transparent)',
                       color: 'var(--overlay-text-primary)',
                       cursor: 'pointer',
                       textAlign: 'left',
@@ -597,12 +542,12 @@ function StorageRail({
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                       <div
                         style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 10,
+                          width: 28,
+                          height: 28,
+                          borderRadius: appearance.workbenchTheme.metrics.controlRadius,
                           display: 'grid',
                           placeItems: 'center',
-                          background: 'rgba(255,255,255,0.06)',
+                          background: 'color-mix(in srgb, var(--overlay-accent) 12%, transparent)',
                           color: 'var(--overlay-accent)',
                           flexShrink: 0,
                         }}
@@ -613,8 +558,8 @@ function StorageRail({
                         <div style={{ fontSize: 13, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {root.label || root.path}
                         </div>
-                        <div style={{ marginTop: 2, fontSize: 10.5, color: 'var(--overlay-text-secondary)' }}>
-                          {root.path} · {root.drive_type}
+                        <div style={{ marginTop: 2, fontSize: 10.5, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {root.path}
                         </div>
                       </div>
                     </div>
@@ -632,156 +577,321 @@ function StorageRail({
               })}
             </div>
           )}
-        </SurfaceCard>
+        </section>
 
-        <SurfaceCard
-          title={queueDefinition.label}
-          subtitle={`${formatCount(queueItems.length)} staged`}
+        <section
+          style={{
+            display: 'grid',
+            gap: 10,
+            padding: 10,
+            borderRadius: appearance.workbenchTheme.metrics.panelRadius,
+            border: '1px solid var(--overlay-workbench-chrome-border)',
+            background: 'color-mix(in srgb, var(--overlay-workbench-shell-bg) 94%, transparent)',
+          }}
         >
-          <div style={{ display: 'grid', gap: 10, padding: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
-              {queueDefinition.supportedActions.map((action) => (
-                <ActionButton
-                  key={action.id}
-                  disabled={queueItems.length === 0}
-                  onClick={() => onExecuteQueue(action.id)}
-                  tone={action.tone}
-                >
-                  {action.label}
-                </ActionButton>
-              ))}
+          <div style={{ display: 'grid', gap: 3 }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--overlay-text-secondary)' }}>
+              Session
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
-              <StorageMetric label="Queued" value={formatCount(queueItems.length)} />
-              <StorageMetric label="Allocated" value={formatBytes(queueSummary.allocatedBytes)} />
+            <div style={{ fontSize: 11.5, color: 'var(--overlay-text-primary)' }}>
+              {scanStatus ? (scanStatus.completed ? 'Snapshot ready' : 'Native scan in progress') : 'Waiting for a scan'}
             </div>
-            <input
-              value={queueFilterQuery}
-              onChange={(event) => setQueueFilterQuery(event.target.value)}
-              placeholder="Filter queued paths"
-              style={{
-                width: '100%',
-                minHeight: 34,
-                borderRadius: 10,
-                border: '1px solid var(--overlay-border)',
-                background: 'rgba(255,255,255,0.03)',
-                color: 'var(--overlay-text-primary)',
-                padding: '0 12px',
-                outline: 'none',
-              }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-              <div style={{ fontSize: 11, color: 'var(--overlay-text-secondary)' }}>
-                {formatBytes(queueSummary.logicalBytes)} logical · {formatBytes(queueSummary.wasteBytes)} waste
-              </div>
-              <ActionButton disabled={queueItems.length === 0} onClick={onClearQueue}>
-                Clear
-              </ActionButton>
-            </div>
-            {filteredQueueItems.length === 0 ? (
-              <div style={{ padding: '10px 0', fontSize: 11, color: 'var(--overlay-text-muted)', lineHeight: 1.5 }}>
-                Stage files or folders here for batch trash or delete.
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gap: 6 }}>
-                {filteredQueueItems.map((item) => {
-                  const isSelected = selectedPathSet.has(item.path);
-                  const handleQueueItemKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      onSelectQueuePath(item.path);
-                    }
-                  };
-
-                  return (
-                    <div
-                      key={item.path}
-                      role="button"
-                      tabIndex={0}
-                      aria-pressed={isSelected}
-                      onClick={() => onSelectQueuePath(item.path)}
-                      onKeyDown={handleQueueItemKeyDown}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'minmax(0, 1fr) auto',
-                        gap: 8,
-                        padding: '8px 10px',
-                        borderRadius: 10,
-                        border: isSelected
-                          ? '1px solid color-mix(in srgb, var(--overlay-accent) 62%, var(--overlay-border))'
-                          : '1px solid var(--overlay-border)',
-                        background: isSelected
-                          ? 'color-mix(in srgb, var(--overlay-accent) 10%, rgba(255,255,255,0.03))'
-                          : 'rgba(255,255,255,0.03)',
-                        color: 'var(--overlay-text-primary)',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                      }}
-                    >
-                      <div style={{ minWidth: 0, display: 'grid', gap: 2 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--overlay-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.name}
-                        </div>
-                        <div style={{ fontSize: 10.5, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.path}
-                        </div>
-                        <div style={{ fontSize: 10.5, color: 'var(--overlay-text-muted)' }}>
-                          {formatBytes(item.allocatedBytes)}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onRemoveQueuePath(item.path);
-                        }}
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: 8,
-                          border: '1px solid var(--overlay-border)',
-                          background: 'rgba(255,255,255,0.03)',
-                          color: 'var(--overlay-text-secondary)',
-                          display: 'grid',
-                          placeItems: 'center',
-                          cursor: 'pointer',
-                          padding: 0,
-                        }}
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
-        </SurfaceCard>
-
-        <SurfaceCard title="Session" subtitle={scanStatus ? (scanStatus.completed ? 'Snapshot ready' : 'Native scan in progress') : 'Waiting for a scan'}>
-          <div style={{ display: 'grid', gap: 10, padding: 12 }}>
-            <StorageMetric
-              label="Access"
-              value={isElevated ? 'Elevated' : 'Limited'}
-              detail={isElevated
-                ? 'Protected paths can be removed if the OS allows it.'
-                : 'Run elevated for destructive parity on protected paths.'}
-            />
+          <StorageInlineMetricPill
+            label="Access"
+            value={isElevated ? 'Elevated' : 'Limited'}
+            detail={isElevated
+              ? 'Protected paths can be removed if the OS allows it.'
+              : 'Run elevated for protected-path parity.'}
+          />
+          <div style={{ display: 'grid', gap: 6, fontSize: 11.5, color: 'var(--overlay-text-secondary)' }}>
             {scanStatus ? (
-              <div style={{ display: 'grid', gap: 6, fontSize: 11.5, color: 'var(--overlay-text-secondary)' }}>
+              <>
                 <div>{formatCount(scanStatus.scannedFileCount)} files · {formatCount(scanStatus.scannedDirectoryCount)} folders</div>
                 <div>{formatBytes(scanStatus.totalAllocatedBytes)} allocated · {formatBytes(scanStatus.totalLogicalBytes)} logical</div>
                 <div>Elapsed {Math.max(0, Math.round(scanStatus.elapsedMs / 1000))}s</div>
-              </div>
+              </>
             ) : (
               <div style={{ fontSize: 11.5, color: 'var(--overlay-text-muted)', lineHeight: 1.5 }}>
-                Pick a drive to start a native storage scan. Matrix and treemap modes will hydrate once the snapshot lands.
+                Pick a drive to start a native storage scan. Matrix and treemap modes hydrate once the snapshot lands.
               </div>
             )}
           </div>
-        </SurfaceCard>
+        </section>
       </div>
     </OverlayScrollArea>
+  );
+}
+
+function StorageWorkbenchToolbar({
+  activeMode,
+  activeRootPath,
+  appearance,
+  isQueueDrawerOpen,
+  onRescan,
+  onSetActiveMode,
+  queueTrigger,
+  scanStatus,
+  selectionAllocatedBytes,
+  selectedEntriesCount,
+}: {
+  activeMode: StorageWorkbenchMode;
+  activeRootPath: string | null;
+  appearance: ResolvedOverlayAppearance;
+  isQueueDrawerOpen: boolean;
+  onRescan: () => void;
+  onSetActiveMode: (mode: StorageWorkbenchMode) => void;
+  queueTrigger: ReactNode;
+  scanStatus: StorageScanSnapshot | null;
+  selectionAllocatedBytes: number;
+  selectedEntriesCount: number;
+}) {
+  return (
+    <div
+      data-testid="storage-workbench-toolbar"
+      style={{
+        display: 'grid',
+        gap: 12,
+        padding: '12px 14px',
+        borderRadius: appearance.workbenchTheme.metrics.panelRadius,
+        border: '1px solid var(--overlay-workbench-chrome-border)',
+        background: 'linear-gradient(180deg, color-mix(in srgb, var(--overlay-workbench-chrome-bg) 94%, transparent), color-mix(in srgb, var(--overlay-workbench-shell-bg) 88%, transparent))',
+        boxShadow: 'var(--overlay-workbench-shell-shadow)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0, display: 'grid', gap: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--overlay-text-secondary)' }}>
+            Storage Workbench
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--overlay-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {scanStatus
+              ? `${scanStatus.rootPath} · ${formatCount(scanStatus.scannedFileCount)} files · ${formatCount(scanStatus.scannedDirectoryCount)} folders`
+              : 'Pick a drive to start the workbench.'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {(['matrix', 'split-map', 'types', 'focus'] as StorageWorkbenchMode[]).map((mode) => (
+            <OverlayActionButton
+              key={mode}
+              appearance={appearance}
+              size="compact"
+              tone={activeMode === mode ? 'accent' : 'quiet'}
+              active={activeMode === mode}
+              onClick={() => onSetActiveMode(mode)}
+            >
+              {mode === 'split-map' ? 'Map' : mode === 'focus' ? 'Focus' : mode === 'types' ? 'Types' : 'Matrix'}
+            </OverlayActionButton>
+          ))}
+          {activeRootPath ? (
+            <OverlayActionButton appearance={appearance} size="compact" tone="neutral" onClick={onRescan}>
+              <RefreshCw size={13} />
+              Rescan
+            </OverlayActionButton>
+          ) : null}
+          {queueTrigger}
+          <div data-testid="storage-task-badge">
+            <ExplorerTaskStatusBadge
+              accent="var(--overlay-accent)"
+              border="var(--overlay-border)"
+              danger="#ff8d8d"
+              muted="var(--overlay-text-muted)"
+              text="var(--overlay-text-primary)"
+            />
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <StorageInlineMetricPill label="Allocated" value={formatBytes(scanStatus?.totalAllocatedBytes ?? 0)} />
+        <StorageInlineMetricPill label="Logical" value={formatBytes(scanStatus?.totalLogicalBytes ?? 0)} />
+        <StorageInlineMetricPill label="Waste" value={formatBytes(scanStatus?.totalWasteBytes ?? 0)} />
+        <StorageInlineMetricPill label="Selected" value={`${formatCount(selectedEntriesCount)} items`} detail={formatBytes(selectionAllocatedBytes)} />
+        {!scanStatus?.completed && scanStatus ? (
+          <StorageInlineMetricPill label="Status" value="Scanning" detail={scanStatus.currentPath ?? scanStatus.rootPath} />
+        ) : isQueueDrawerOpen ? (
+          <StorageInlineMetricPill label="Queue" value="Drawer Open" detail="Batch cleanup in one place" />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function StorageQueueDrawer({
+  appearance,
+  busyAction,
+  onClearQueue,
+  onExecuteQueue,
+  onRemoveQueuePath,
+  onSelectQueuePath,
+  queueFilterQuery,
+  queueItems,
+  selectedPathSet,
+  setQueueFilterQuery,
+}: {
+  appearance: ResolvedOverlayAppearance;
+  busyAction: 'delete' | 'trash' | 'queue' | null;
+  onClearQueue: () => void;
+  onExecuteQueue: (actionId: StorageBatchQueueActionId) => void;
+  onRemoveQueuePath: (path: string) => void;
+  onSelectQueuePath: (path: string) => void;
+  queueFilterQuery: string;
+  queueItems: StorageQueuedItem[];
+  selectedPathSet: Set<string>;
+  setQueueFilterQuery: (query: string) => void;
+}) {
+  const queueDefinition = getStorageBatchQueueDefinition('cleanup');
+  const filteredQueueItems = queueItems.filter((item) => matchesQueueFilter(item, queueFilterQuery));
+  const queueSummary = summarizeQueueEntries(queueItems);
+
+  return (
+    <div
+      data-testid="storage-queue-drawer"
+      style={{
+        position: 'absolute',
+        top: 'calc(100% + 8px)',
+        right: 0,
+        zIndex: 20,
+        width: 'min(440px, 100%)',
+        maxWidth: '100%',
+        display: 'grid',
+        gap: 12,
+        padding: 14,
+        borderRadius: appearance.workbenchTheme.metrics.panelRadius,
+        border: '1px solid var(--overlay-workbench-chrome-border)',
+        background: 'linear-gradient(180deg, color-mix(in srgb, var(--overlay-workbench-chrome-bg) 96%, transparent), color-mix(in srgb, var(--overlay-workbench-shell-bg) 92%, transparent))',
+        boxShadow: 'var(--overlay-workbench-shell-shadow)',
+      }}
+    >
+      <div style={{ display: 'grid', gap: 4 }}>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--overlay-text-secondary)' }}>
+          {queueDefinition.label}
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--overlay-text-primary)' }}>
+          Batch trash or delete from one focused drawer.
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <StorageInlineMetricPill label="Staged" value={formatCount(queueItems.length)} />
+        <StorageInlineMetricPill label="Allocated" value={formatBytes(queueSummary.allocatedBytes)} />
+        <StorageInlineMetricPill label="Logical" value={formatBytes(queueSummary.logicalBytes)} />
+        <StorageInlineMetricPill label="Waste" value={formatBytes(queueSummary.wasteBytes)} />
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {queueDefinition.supportedActions.map((action) => (
+          <OverlayActionButton
+            key={action.id}
+            appearance={appearance}
+            size="compact"
+            tone={action.tone === 'danger' ? 'danger' : 'accent'}
+            disabled={queueItems.length === 0 || busyAction !== null}
+            onClick={() => onExecuteQueue(action.id)}
+          >
+            {action.label}
+          </OverlayActionButton>
+        ))}
+        <OverlayActionButton appearance={appearance} size="compact" tone="quiet" disabled={queueItems.length === 0} onClick={onClearQueue}>
+          Clear
+        </OverlayActionButton>
+      </div>
+
+      <input
+        data-testid="storage-queue-filter-input"
+        value={queueFilterQuery}
+        onChange={(event) => setQueueFilterQuery(event.target.value)}
+        placeholder="Filter queued paths"
+        style={{
+          width: '100%',
+          minHeight: 36,
+          borderRadius: appearance.workbenchTheme.metrics.controlRadius,
+          border: '1px solid color-mix(in srgb, var(--overlay-accent) 18%, var(--overlay-workbench-chrome-border))',
+          background: 'color-mix(in srgb, var(--overlay-bg-input) 88%, var(--overlay-workbench-shell-bg))',
+          color: 'var(--overlay-text-primary)',
+          padding: '0 12px',
+          outline: 'none',
+        }}
+      />
+
+      {filteredQueueItems.length === 0 ? (
+        <div style={{ fontSize: 11.5, color: 'var(--overlay-text-muted)', lineHeight: 1.6 }}>
+          {queueItems.length === 0
+            ? 'Stage files or folders from the matrix, map, types, or inspector actions to batch clean them here.'
+            : 'No queued paths match the current filter.'}
+        </div>
+      ) : (
+        <OverlayScrollArea
+          style={{ minHeight: 0, maxHeight: '40vh' }}
+          scrollbarStyle="explorer-file-list"
+          viewportStyle={{ paddingRight: 2 }}
+        >
+          <div style={{ display: 'grid', gap: 8 }}>
+            {filteredQueueItems.map((item) => {
+              const isSelected = selectedPathSet.has(item.path);
+              const handleQueueItemKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onSelectQueuePath(item.path);
+                }
+              };
+
+              return (
+                <div
+                  key={item.path}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isSelected}
+                  onClick={() => onSelectQueuePath(item.path)}
+                  onKeyDown={handleQueueItemKeyDown}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                    gap: 10,
+                    alignItems: 'start',
+                    padding: '10px 12px',
+                    borderRadius: appearance.workbenchTheme.metrics.controlRadius,
+                    border: isSelected
+                      ? '1px solid color-mix(in srgb, var(--overlay-accent) 56%, var(--overlay-workbench-chrome-border))'
+                      : '1px solid color-mix(in srgb, var(--overlay-accent) 12%, var(--overlay-workbench-chrome-border))',
+                    background: isSelected
+                      ? 'color-mix(in srgb, var(--overlay-accent) 10%, var(--overlay-workbench-shell-bg))'
+                      : 'color-mix(in srgb, var(--overlay-workbench-chrome-bg) 68%, transparent)',
+                    color: 'var(--overlay-text-primary)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div style={{ minWidth: 0, display: 'grid', gap: 4 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--overlay-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {item.name}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {item.path}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 10.5, color: 'var(--overlay-text-muted)' }}>
+                      <span>{formatBytes(item.allocatedBytes)} allocated</span>
+                      <span>{formatBytes(item.logicalBytes)} logical</span>
+                    </div>
+                  </div>
+                  <OverlayActionButton
+                    appearance={appearance}
+                    size="compact"
+                    tone="quiet"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRemoveQueuePath(item.path);
+                    }}
+                  >
+                    <X size={12} />
+                    Remove
+                  </OverlayActionButton>
+                </div>
+              );
+            })}
+          </div>
+        </OverlayScrollArea>
+      )}
+    </div>
   );
 }
 
@@ -831,7 +941,10 @@ function StorageMatrixTable({
       subtitle="Dense hierarchy with directories and files in one sorted field."
       style={{ flex: 1, minHeight: 0, minWidth: 0, height: '100%' }}
     >
-      <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', minHeight: 0 }}>
+      <div
+        data-testid="storage-matrix-surface"
+        style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', flex: 1, minHeight: 0, minWidth: 0, height: '100%', overflow: 'hidden' }}
+      >
         <div
           style={{
             display: 'grid',
@@ -866,7 +979,7 @@ function StorageMatrixTable({
           ))}
         </div>
 
-        <OverlayScrollArea style={{ minHeight: 0 }} scrollbarStyle="explorer-file-list">
+        <OverlayScrollArea style={{ minHeight: 0, minWidth: 0, flex: 1 }} scrollbarStyle="explorer-file-list">
           <div
             ref={keyboardTargetRef}
             style={{ display: 'grid', outline: 'none' }}
@@ -1126,7 +1239,8 @@ function StorageTypesSurface({
   );
 }
 
-function StorageCurrentContextPane({
+function StorageInspectorContextContent({
+  appearance,
   activeRootPath,
   contextSearchError,
   contextSearchQuery,
@@ -1139,6 +1253,7 @@ function StorageCurrentContextPane({
   selectedEntry,
   selectedPathSet,
 }: {
+  appearance: ResolvedOverlayAppearance;
   activeRootPath: string | null;
   contextSearchError: string | null;
   contextSearchQuery: string;
@@ -1161,237 +1276,226 @@ function StorageCurrentContextPane({
     : 'scanned root';
 
   return (
-    <SurfaceCard
-      title="Current Context"
-      subtitle={trimmedQuery
-        ? contextSearchScopePath
-          ? `Indexed jump inside ${scopeDescription}`
-          : 'Pick a scanned path to search'
-        : selectedEntry
-          ? selectedEntry.path
-          : 'Select a file or folder to inspect its local context.'}
-      style={{ minHeight: 0, minWidth: 0, height: '100%' }}
+    <div
+      data-testid="storage-inspector-content"
+      style={{
+        display: 'grid',
+        gridTemplateRows: 'auto minmax(0, 1fr)',
+        minHeight: 0,
+        minWidth: 0,
+        height: '100%',
+      }}
     >
       <div
-        data-testid="storage-current-context"
         style={{
           display: 'grid',
-          gridTemplateRows: 'auto minmax(0, 1fr)',
-          minHeight: 0,
-          minWidth: 0,
-          height: '100%',
+          gap: 8,
+          padding: '12px 14px',
+          borderBottom: '1px solid var(--overlay-workbench-chrome-border)',
+          background: 'color-mix(in srgb, var(--overlay-workbench-chrome-bg) 72%, transparent)',
         }}
       >
-        <div
+        <input
+          data-testid="storage-context-search-input"
+          value={contextSearchQuery}
+          onChange={(event) => onContextSearchQueryChange(event.target.value)}
+          placeholder={contextSearchScopePath
+            ? 'Jump with indexed search inside this context'
+            : 'Pick a scanned path first'}
+          disabled={!contextSearchScopePath}
           style={{
-            display: 'grid',
-            gap: 8,
-            padding: 12,
-            borderBottom: '1px solid var(--overlay-border)',
-            background: 'rgba(255,255,255,0.02)',
+            width: '100%',
+            minHeight: 36,
+            borderRadius: appearance.workbenchTheme.metrics.controlRadius,
+            border: '1px solid color-mix(in srgb, var(--overlay-accent) 18%, var(--overlay-workbench-chrome-border))',
+            background: contextSearchScopePath
+              ? 'color-mix(in srgb, var(--overlay-bg-input) 88%, var(--overlay-workbench-shell-bg))'
+              : 'color-mix(in srgb, var(--overlay-workbench-chrome-bg) 88%, var(--overlay-workbench-shell-bg))',
+            color: contextSearchScopePath
+              ? 'var(--overlay-text-primary)'
+              : 'var(--overlay-text-muted)',
+            padding: '0 12px',
+            outline: 'none',
           }}
-        >
-          <input
-            data-testid="storage-context-search-input"
-            value={contextSearchQuery}
-            onChange={(event) => onContextSearchQueryChange(event.target.value)}
-            placeholder={contextSearchScopePath
-              ? 'Jump with indexed search inside this context'
-              : 'Pick a scanned path first'}
-            disabled={!contextSearchScopePath}
-            style={{
-              width: '100%',
-              minHeight: 34,
-              borderRadius: 10,
-              border: '1px solid var(--overlay-border)',
-              background: contextSearchScopePath
-                ? 'rgba(255,255,255,0.03)'
-                : 'rgba(255,255,255,0.02)',
-              color: contextSearchScopePath
-                ? 'var(--overlay-text-primary)'
-                : 'var(--overlay-text-muted)',
-              padding: '0 12px',
-              outline: 'none',
-            }}
-          />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--overlay-text-secondary)' }}>
-              {!contextSearchScopePath
-                ? 'Current context appears after the scan and selection settle.'
-                : trimmedQuery.length === 0
-                  ? `Browsing ${scopeDescription}. Type 2+ characters to jump with the indexed file search.`
-                  : !shouldRunQuery
-                    ? 'Type at least 2 characters to run indexed jump.'
-                    : isSearchingContext
-                      ? `Searching ${scopeDescription} through the new global index...`
-                      : `${formatCount(contextSearchResults.length)} indexed match${contextSearchResults.length === 1 ? '' : 'es'} in ${scopeDescription}.`}
-            </div>
-            {contextSearchScopePath ? (
-              <div
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: 999,
-                  border: '1px solid color-mix(in srgb, var(--overlay-accent) 34%, var(--overlay-border))',
-                  background: 'color-mix(in srgb, var(--overlay-accent) 10%, rgba(255,255,255,0.02))',
-                  color: 'var(--overlay-accent)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Indexed Jump
-              </div>
-            ) : null}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 10.5, color: 'var(--overlay-text-secondary)' }}>
+            {!contextSearchScopePath
+              ? 'Current context settles after the scan and selection do.'
+              : trimmedQuery.length === 0
+                ? `Browsing ${scopeDescription}. Type 2+ characters to jump through the indexed file graph.`
+                : !shouldRunQuery
+                  ? 'Type at least 2 characters to run indexed jump.'
+                  : isSearchingContext
+                    ? `Searching ${scopeDescription} through the new global index...`
+                    : `${formatCount(contextSearchResults.length)} indexed match${contextSearchResults.length === 1 ? '' : 'es'} in ${scopeDescription}.`}
           </div>
+          {contextSearchScopePath ? (
+            <div
+              style={{
+                padding: '4px 8px',
+                borderRadius: 999,
+                border: '1px solid color-mix(in srgb, var(--overlay-accent) 34%, var(--overlay-workbench-chrome-border))',
+                background: 'color-mix(in srgb, var(--overlay-accent) 10%, transparent)',
+                color: 'var(--overlay-accent)',
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Indexed Jump
+            </div>
+          ) : null}
         </div>
+      </div>
 
-        <div style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
-          {trimmedQuery.length > 0 ? (
-            !contextSearchScopePath ? (
-              <div style={{ padding: 18, fontSize: 11.5, color: 'var(--overlay-text-muted)' }}>
-                Pick a scanned path before running indexed jump from the storage context lane.
-              </div>
-            ) : !shouldRunQuery ? (
-              <div style={{ padding: 18, fontSize: 11.5, color: 'var(--overlay-text-muted)' }}>
-                Keep typing to search the indexed file graph inside this context.
-              </div>
-            ) : contextSearchError ? (
-              <div style={{ padding: 18, fontSize: 11.5, color: '#ffb0b0', lineHeight: 1.5 }}>
-                {contextSearchError}
-              </div>
-            ) : isSearchingContext ? (
-              <div style={{ minHeight: 0, height: '100%', display: 'grid', placeItems: 'center', color: 'var(--overlay-text-muted)' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                  <LoaderCircle size={15} className="spin" />
-                  Searching indexed results...
-                </span>
-              </div>
-            ) : contextSearchResults.length === 0 ? (
-              <div style={{ padding: 18, fontSize: 11.5, color: 'var(--overlay-text-muted)', lineHeight: 1.6 }}>
-                No indexed matches landed in this storage context. Try a broader term, switch selection, or rebuild the global index from the command palette if this scope is new.
-              </div>
-            ) : (
-              <OverlayScrollArea
-                style={{ minHeight: 0, height: '100%' }}
-                scrollbarStyle="explorer-file-list"
-                viewportStyle={{ padding: 8 }}
-              >
-                <div data-testid="storage-context-search-results" style={{ display: 'grid', gap: 8 }}>
-                  {contextSearchResults.map((result) => {
-                    const normalizedPath = normalizeStorageWorkbenchPath(result.path);
-                    const selected = selectedPathSet.has(normalizedPath);
-                    const relativePath = formatRelativeStoragePath(result.path, contextSearchScopePath);
-                    const modifiedLabel = formatModifiedLabel(result.modifiedTime);
-
-                    return (
-                      <button
-                        key={result.path}
-                        type="button"
-                        onClick={() => onSelectSearchResult(result)}
-                        onDoubleClick={() => onOpenSearchResult(result)}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'minmax(0, 1fr) auto',
-                          gap: 10,
-                          padding: '10px 12px',
-                          borderRadius: 12,
-                          border: selected
-                            ? '1px solid color-mix(in srgb, var(--overlay-accent) 62%, var(--overlay-border))'
-                            : '1px solid var(--overlay-border)',
-                          background: selected
-                            ? 'color-mix(in srgb, var(--overlay-accent) 10%, rgba(255,255,255,0.03))'
-                            : 'rgba(255,255,255,0.03)',
-                          color: 'var(--overlay-text-primary)',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                        }}
-                      >
-                        <div style={{ minWidth: 0, display: 'grid', gap: 4 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                            <div style={{ color: result.isDir ? 'var(--overlay-accent)' : 'var(--overlay-text-secondary)' }}>
-                              {result.isDir ? <Folder size={14} /> : <File size={14} />}
-                            </div>
-                            <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {result.name}
-                            </div>
-                          </div>
-                          <div style={{ fontSize: 10.5, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {relativePath}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 10.5, color: 'var(--overlay-text-muted)' }}>
-                            <span>{result.isDir ? 'Folder' : formatBytes(result.size)}</span>
-                            {modifiedLabel ? <span>{modifiedLabel}</span> : null}
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            alignSelf: 'start',
-                            padding: '3px 7px',
-                            borderRadius: 999,
-                            border: '1px solid var(--overlay-border)',
-                            background: 'rgba(255,255,255,0.04)',
-                            color: 'var(--overlay-text-secondary)',
-                            fontSize: 10,
-                            fontWeight: 700,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                          }}
-                        >
-                          {result.isDir ? 'Dir' : result.extension?.toUpperCase() ?? 'File'}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </OverlayScrollArea>
-            )
-          ) : selectedEntry?.kind === 'directory' ? (
-            <div style={{ minHeight: 0, minWidth: 0, height: '100%', overflow: 'hidden' }}>
-              <ExplorerFolderPreview
-                folderPath={selectedEntry.path}
-                folderName={selectedEntry.name}
-                showHiddenFiles
-                onOpenEntry={(entry) => {
-                  void openStorageEntry(entry.path);
-                }}
-              />
+      <div style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+        {trimmedQuery.length > 0 ? (
+          !contextSearchScopePath ? (
+            <div style={{ padding: 18, fontSize: 11.5, color: 'var(--overlay-text-muted)' }}>
+              Pick a scanned path before running indexed jump from the storage inspector.
+            </div>
+          ) : !shouldRunQuery ? (
+            <div style={{ padding: 18, fontSize: 11.5, color: 'var(--overlay-text-muted)' }}>
+              Keep typing to search the indexed file graph inside this context.
+            </div>
+          ) : contextSearchError ? (
+            <div style={{ padding: 18, fontSize: 11.5, color: '#ffb0b0', lineHeight: 1.5 }}>
+              {contextSearchError}
+            </div>
+          ) : isSearchingContext ? (
+            <div style={{ minHeight: 0, height: '100%', display: 'grid', placeItems: 'center', color: 'var(--overlay-text-muted)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                <LoaderCircle size={15} className="spin" />
+                Searching indexed results...
+              </span>
+            </div>
+          ) : contextSearchResults.length === 0 ? (
+            <div style={{ padding: 18, fontSize: 11.5, color: 'var(--overlay-text-muted)', lineHeight: 1.6 }}>
+              No indexed matches landed in this storage context. Try a broader term, switch selection, or rebuild the global index from the command palette if this scope is new.
             </div>
           ) : (
             <OverlayScrollArea
               style={{ minHeight: 0, height: '100%' }}
               scrollbarStyle="explorer-file-list"
-              viewportStyle={{ padding: 18 }}
+              viewportStyle={{ padding: 8 }}
             >
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--overlay-text-primary)' }}>
-                  {selectedEntry?.name ?? 'Current context is standing by'}
-                </div>
-                <div style={{ fontSize: 11.5, color: 'var(--overlay-text-secondary)', lineHeight: 1.6 }}>
-                  {selectedEntry
-                    ? 'Files still use the storage inspector actions for open, reveal, trash, and delete. Use indexed jump above to pivot quickly through the current subtree.'
-                    : 'Select any file or folder from the storage workbench to inspect it here.'}
-                </div>
-                {selectedEntry ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
-                    <StorageMetric label="Path" value={formatRelativeStoragePath(selectedEntry.path, activeRootPath)} detail={selectedEntry.path} />
-                    <StorageMetric
-                      label="Modified View"
-                      value={selectedEntry.extension?.toUpperCase() ?? 'File'}
-                      detail={`${formatBytes(selectedEntry.allocatedBytes)} allocated · ${formatBytes(selectedEntry.logicalBytes)} logical`}
-                    />
-                  </div>
-                ) : null}
+              <div data-testid="storage-context-search-results" style={{ display: 'grid', gap: 8 }}>
+                {contextSearchResults.map((result) => {
+                  const normalizedPath = normalizeStorageWorkbenchPath(result.path);
+                  const selected = selectedPathSet.has(normalizedPath);
+                  const relativePath = formatRelativeStoragePath(result.path, contextSearchScopePath);
+                  const modifiedLabel = formatModifiedLabel(result.modifiedTime);
+
+                  return (
+                    <button
+                      key={result.path}
+                      type="button"
+                      onClick={() => onSelectSearchResult(result)}
+                      onDoubleClick={() => onOpenSearchResult(result)}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr) auto',
+                        gap: 10,
+                        padding: '10px 12px',
+                        borderRadius: appearance.workbenchTheme.metrics.controlRadius,
+                        border: selected
+                          ? '1px solid color-mix(in srgb, var(--overlay-accent) 56%, var(--overlay-workbench-chrome-border))'
+                          : '1px solid color-mix(in srgb, var(--overlay-accent) 12%, var(--overlay-workbench-chrome-border))',
+                        background: selected
+                          ? 'color-mix(in srgb, var(--overlay-accent) 10%, var(--overlay-workbench-shell-bg))'
+                          : 'color-mix(in srgb, var(--overlay-workbench-chrome-bg) 68%, transparent)',
+                        color: 'var(--overlay-text-primary)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <div style={{ minWidth: 0, display: 'grid', gap: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                          <div style={{ color: result.isDir ? 'var(--overlay-accent)' : 'var(--overlay-text-secondary)' }}>
+                            {result.isDir ? <Folder size={14} /> : <File size={14} />}
+                          </div>
+                          <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {result.name}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {relativePath}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 10.5, color: 'var(--overlay-text-muted)' }}>
+                          <span>{result.isDir ? 'Folder' : formatBytes(result.size)}</span>
+                          {modifiedLabel ? <span>{modifiedLabel}</span> : null}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          alignSelf: 'start',
+                          padding: '3px 7px',
+                          borderRadius: 999,
+                          border: '1px solid color-mix(in srgb, var(--overlay-accent) 18%, var(--overlay-workbench-chrome-border))',
+                          background: 'color-mix(in srgb, var(--overlay-workbench-chrome-bg) 68%, transparent)',
+                          color: 'var(--overlay-text-secondary)',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
+                        {result.isDir ? 'Dir' : result.extension?.toUpperCase() ?? 'File'}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </OverlayScrollArea>
-          )}
-        </div>
+          )
+        ) : selectedEntry?.kind === 'directory' ? (
+          <div style={{ minHeight: 0, minWidth: 0, height: '100%', overflow: 'hidden' }}>
+            <ExplorerFolderPreview
+              folderPath={selectedEntry.path}
+              folderName={selectedEntry.name}
+              showHiddenFiles
+              onOpenEntry={(entry) => {
+                void openStorageEntry(entry.path);
+              }}
+            />
+          </div>
+        ) : (
+          <OverlayScrollArea
+            style={{ minHeight: 0, height: '100%' }}
+            scrollbarStyle="explorer-file-list"
+            viewportStyle={{ padding: 18 }}
+          >
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--overlay-text-primary)' }}>
+                {selectedEntry?.name ?? 'Inspector standing by'}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--overlay-text-secondary)', lineHeight: 1.6 }}>
+                {selectedEntry
+                  ? 'Use the actions above for open, reveal, trash, delete, or queue. Indexed jump stays focused on this subtree.'
+                  : 'Pick a file or folder from the storage workbench to inspect it here.'}
+              </div>
+              {selectedEntry ? (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <StorageInlineMetricPill label="Path" value={formatRelativeStoragePath(selectedEntry.path, activeRootPath)} detail={selectedEntry.path} />
+                  <StorageInlineMetricPill
+                    label="Kind"
+                    value={selectedEntry.extension?.toUpperCase() ?? selectedEntry.kind}
+                    detail={`${formatBytes(selectedEntry.allocatedBytes)} allocated · ${formatBytes(selectedEntry.logicalBytes)} logical`}
+                  />
+                </div>
+              ) : null}
+            </div>
+          </OverlayScrollArea>
+        )}
       </div>
-    </SurfaceCard>
+    </div>
   );
 }
 
-function StorageInspectorPane({
+function StorageUnifiedInspector({
+  appearance,
   activeRootPath,
   busyAction,
   contextSearchError,
@@ -1414,6 +1518,7 @@ function StorageInspectorPane({
   selectedEntries,
   selectedPathSet,
 }: {
+  appearance: ResolvedOverlayAppearance;
   activeRootPath: string | null;
   busyAction: 'delete' | 'trash' | 'queue' | null;
   contextSearchError: string | null;
@@ -1438,66 +1543,95 @@ function StorageInspectorPane({
 }) {
   const aggregateAllocated = selectedEntries.reduce((sum, entry) => sum + entry.allocatedBytes, 0);
   const aggregateLogical = selectedEntries.reduce((sum, entry) => sum + entry.logicalBytes, 0);
+  const selectionLabel = selectedEntries.length > 1
+    ? `${formatCount(selectedEntries.length)} items selected`
+    : selectedEntry?.name ?? 'Nothing selected';
+  const selectionDetail = selectedEntries.length > 1
+    ? `${formatBytes(aggregateAllocated)} allocated · ${formatBytes(aggregateLogical)} logical`
+    : selectedEntry
+      ? `${selectedEntry.kind} · ${formatBytes(selectedEntry.allocatedBytes)} allocated`
+      : 'Pick a file or folder from the matrix, map, or type views.';
 
   return (
     <div
-      data-testid="storage-inspector-layout"
-      style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 12, minHeight: 0, minWidth: 0, height: '100%', overflow: 'hidden' }}
+      data-testid="storage-unified-inspector"
+      style={{
+        display: 'grid',
+        gridTemplateRows: 'auto minmax(0, 1fr)',
+        minHeight: 0,
+        minWidth: 0,
+        height: '100%',
+        overflow: 'hidden',
+        borderRadius: appearance.workbenchTheme.metrics.panelRadius,
+        border: '1px solid var(--overlay-workbench-chrome-border)',
+        background: 'linear-gradient(180deg, color-mix(in srgb, var(--overlay-workbench-chrome-bg) 94%, transparent), color-mix(in srgb, var(--overlay-workbench-shell-bg) 90%, transparent))',
+        boxShadow: 'var(--overlay-workbench-shell-shadow)',
+      }}
     >
-      <SurfaceCard
-        title="Selection"
-        subtitle={selectedEntry ? selectedEntry.path : 'Select a path to inspect.'}
+      <div
+        style={{
+          display: 'grid',
+          gap: 12,
+          padding: '14px 14px 12px',
+          borderBottom: '1px solid var(--overlay-workbench-chrome-border)',
+          background: 'color-mix(in srgb, var(--overlay-workbench-chrome-bg) 76%, transparent)',
+        }}
       >
-        <div style={{ display: 'grid', gap: 10, padding: 12 }}>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 900, color: 'var(--overlay-text-primary)' }}>
-              {selectedEntries.length > 1 ? `${formatCount(selectedEntries.length)} items selected` : selectedEntry?.name ?? 'Nothing selected'}
-            </div>
-            <div style={{ marginTop: 4, fontSize: 11, color: 'var(--overlay-text-secondary)' }}>
-              {selectedEntries.length > 1
-                ? `${formatBytes(aggregateAllocated)} allocated · ${formatBytes(aggregateLogical)} logical`
-                : selectedEntry
-                  ? `${selectedEntry.kind} · ${formatBytes(selectedEntry.allocatedBytes)} allocated`
-                  : 'Pick a file or folder from the matrix, map, or type views.'}
-            </div>
+        <div style={{ display: 'grid', gap: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--overlay-text-secondary)' }}>
+            Inspector
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
-            <StorageMetric label="Allocated" value={formatBytes((aggregateAllocated || selectedEntry?.allocatedBytes) ?? 0)} />
-            <StorageMetric label="Logical" value={formatBytes((aggregateLogical || selectedEntry?.logicalBytes) ?? 0)} />
+          <div style={{ fontSize: 17, fontWeight: 900, color: 'var(--overlay-text-primary)' }}>
+            {selectionLabel}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
-            <ActionButton onClick={onAddSelectionToQueue} disabled={selectedEntries.length === 0 || busyAction === 'queue'} tone="accent">
-              <ScanLine size={14} />
-              Add to Queue
-            </ActionButton>
-            <ActionButton onClick={onRemoveSelectionFromQueue} disabled={!selectionInQueue || busyAction !== null}>
-              <X size={14} />
-              Remove
-            </ActionButton>
-            <ActionButton onClick={onOpen} disabled={!selectedEntry}>
-              <ExternalLink size={14} />
-              Open
-            </ActionButton>
-            <ActionButton onClick={onReveal} disabled={!selectedEntry}>
-              <Eye size={14} />
-              Reveal
-            </ActionButton>
-            <ActionButton onClick={onRescanHere} disabled={!selectedEntry || selectedEntry.kind !== 'directory'}>
-              <RefreshCw size={14} />
-              Scan Here
-            </ActionButton>
-            <ActionButton onClick={onTrash} disabled={!selectedEntry || busyAction !== null}>
-              <Trash2 size={14} />
-              Trash
-            </ActionButton>
-            <ActionButton onClick={onDelete} disabled={!selectedEntry || busyAction !== null} tone="danger">
-              <AlertTriangle size={14} />
-              Delete
-            </ActionButton>
+          <div style={{ fontSize: 11, color: 'var(--overlay-text-secondary)', lineHeight: 1.5 }}>
+            {selectedEntry ? selectedEntry.path : selectionDetail}
           </div>
         </div>
-      </SurfaceCard>
-      <StorageCurrentContextPane
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <StorageInlineMetricPill label="Allocated" value={formatBytes((aggregateAllocated || selectedEntry?.allocatedBytes) ?? 0)} />
+          <StorageInlineMetricPill label="Logical" value={formatBytes((aggregateLogical || selectedEntry?.logicalBytes) ?? 0)} />
+          {selectedEntry ? (
+            <StorageInlineMetricPill
+              label="Kind"
+              value={selectedEntry.extension?.toUpperCase() ?? selectedEntry.kind}
+              detail={selectedEntry.kind === 'directory' ? 'Directory focus available' : 'Direct file actions available'}
+            />
+          ) : null}
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <OverlayActionButton appearance={appearance} size="compact" tone="accent" onClick={onAddSelectionToQueue} disabled={selectedEntries.length === 0 || busyAction === 'queue'}>
+            <ScanLine size={14} />
+            Add to Queue
+          </OverlayActionButton>
+          <OverlayActionButton appearance={appearance} size="compact" tone="quiet" onClick={onRemoveSelectionFromQueue} disabled={!selectionInQueue || busyAction !== null}>
+            <X size={14} />
+            Remove
+          </OverlayActionButton>
+          <OverlayActionButton appearance={appearance} size="compact" tone="quiet" onClick={onOpen} disabled={!selectedEntry}>
+            <ExternalLink size={14} />
+            Open
+          </OverlayActionButton>
+          <OverlayActionButton appearance={appearance} size="compact" tone="quiet" onClick={onReveal} disabled={!selectedEntry}>
+            <Eye size={14} />
+            Reveal
+          </OverlayActionButton>
+          <OverlayActionButton appearance={appearance} size="compact" tone="neutral" onClick={onRescanHere} disabled={!selectedEntry || selectedEntry.kind !== 'directory'}>
+            <RefreshCw size={14} />
+            Scan Here
+          </OverlayActionButton>
+          <OverlayActionButton appearance={appearance} size="compact" tone="quiet" onClick={onTrash} disabled={!selectedEntry || busyAction !== null}>
+            <Trash2 size={14} />
+            Trash
+          </OverlayActionButton>
+          <OverlayActionButton appearance={appearance} size="compact" tone="danger" onClick={onDelete} disabled={!selectedEntry || busyAction !== null}>
+            <AlertTriangle size={14} />
+            Delete
+          </OverlayActionButton>
+        </div>
+      </div>
+      <StorageInspectorContextContent
+        appearance={appearance}
         activeRootPath={activeRootPath}
         contextSearchError={contextSearchError}
         contextSearchQuery={contextSearchQuery}
@@ -1595,8 +1729,16 @@ function StorageContextMenu({
   );
 }
 
-export function StoragePanel() {
+export function StoragePanel({
+  appearance,
+}: {
+  appearance?: ResolvedOverlayAppearance;
+}) {
   useExplorerTaskProgressFeed();
+  const resolvedAppearance = useMemo(
+    () => appearance ?? resolveOverlayAppearance(),
+    [appearance],
+  );
 
   const {
     activeMode,
@@ -1604,7 +1746,6 @@ export function StoragePanel() {
     clearQueue,
     expandedPaths,
     focusPath,
-    previewSplitMode,
     queue,
     removeQueuePaths,
     selectionAnchorPath,
@@ -1613,7 +1754,6 @@ export function StoragePanel() {
     setActiveMode,
     setExpandedPaths,
     setFocusPath,
-    setPreviewSplitMode,
     setQueueFilterQuery,
     setSelectedPaths,
     setSelectedRootPath,
@@ -1627,7 +1767,6 @@ export function StoragePanel() {
     clearQueue: state.clearQueue,
     expandedPaths: state.expandedPaths,
     focusPath: state.focusPath,
-    previewSplitMode: state.previewSplitMode,
     queue: state.queue,
     removeQueuePaths: state.removeQueuePaths,
     selectionAnchorPath: state.selectionAnchorPath,
@@ -1636,7 +1775,6 @@ export function StoragePanel() {
     setActiveMode: state.setActiveMode,
     setExpandedPaths: state.setExpandedPaths,
     setFocusPath: state.setFocusPath,
-    setPreviewSplitMode: state.setPreviewSplitMode,
     setQueueFilterQuery: state.setQueueFilterQuery,
     setSelectedPaths: state.setSelectedPaths,
     setSelectedRootPath: state.setSelectedRootPath,
@@ -1659,6 +1797,7 @@ export function StoragePanel() {
   const [contextSearchResults, setContextSearchResults] = useState<GlobalSearchResultValue[]>([]);
   const [contextSearchError, setContextSearchError] = useState<string | null>(null);
   const [isSearchingContext, setIsSearchingContext] = useState(false);
+  const [isQueueDrawerOpen, setQueueDrawerOpen] = useState(false);
   const [directoryEntriesByPath, setDirectoryEntriesByPath] = useState<Record<string, StorageScanEntry[]>>({});
   const [directoryLoadState, setDirectoryLoadState] = useState<Record<string, 'loading' | 'ready' | 'error'>>({});
   const [contextMenu, setContextMenu] = useState<StorageContextMenuState | null>(null);
@@ -1669,6 +1808,8 @@ export function StoragePanel() {
     STORAGE_RAIL_WIDTH_MAX,
   );
   const matrixContainerRef = useRef<HTMLDivElement | null>(null);
+  const queueDrawerRef = useRef<HTMLDivElement | null>(null);
+  const queueTriggerRef = useRef<HTMLDivElement | null>(null);
   const deferredContextSearchQuery = useDeferredValue(contextSearchQuery);
 
   const loadRoots = useCallback(async () => {
@@ -1692,6 +1833,36 @@ export function StoragePanel() {
   useEffect(() => {
     void loadRoots();
   }, [loadRoots]);
+
+  useEffect(() => {
+    if (!isQueueDrawerOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (
+        (queueDrawerRef.current && queueDrawerRef.current.contains(target))
+        || (queueTriggerRef.current && queueTriggerRef.current.contains(target))
+      ) {
+        return;
+      }
+      setQueueDrawerOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setQueueDrawerOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isQueueDrawerOpen]);
 
   const beginScan = useCallback(async (rootPath: string) => {
     const normalizedRootPath = normalizeStorageWorkbenchPath(rootPath);
@@ -1953,6 +2124,7 @@ export function StoragePanel() {
     setBusyAction('queue');
     addQueueItems(selectedEntries.map(buildQueuedItem));
     setBusyAction(null);
+    setQueueDrawerOpen(true);
     setPanelNotice(`Queued ${selectedEntries.length} item${selectedEntries.length === 1 ? '' : 's'} for batch cleanup.`);
   }, [addQueueItems, selectedEntries]);
   const handleRemoveSelectionFromQueue = useCallback(() => {
@@ -2319,78 +2491,73 @@ export function StoragePanel() {
   }, [directoryEntriesByPath, focusMatrixRows, focusRootEntry, handleMatrixKeyDown, handleRowClick, handleToggleExpanded, matrixRows, rootEntry, scanStatus, selectedBucketId, selectedEntry, selectedPathSet, setFocusPath, setSelectedPaths, setSelectedTypeBucketId, sortState.direction, sortState.key, sortedTypeBuckets, toggleSortKey, treemapRectEntries]);
 
   const selectionAllocatedBytes = selectedEntries.reduce((sum, entry) => sum + entry.allocatedBytes, 0);
+  const queueSummary = useMemo(() => summarizeQueueEntries(queueItems), [queueItems]);
+  const queueTrigger = (
+    <div ref={queueTriggerRef} data-testid="storage-queue-trigger">
+      <OverlayActionButton
+        appearance={resolvedAppearance}
+        size="compact"
+        tone={isQueueDrawerOpen ? 'accent' : 'neutral'}
+        active={isQueueDrawerOpen}
+        onClick={() => setQueueDrawerOpen((current) => !current)}
+      >
+        <ScanLine size={13} />
+        Queue {formatCount(queueItems.length)}
+        <span style={{ color: 'var(--overlay-text-secondary)' }}>{formatBytes(queueSummary.allocatedBytes)}</span>
+        <ChevronDown size={13} />
+      </OverlayActionButton>
+    </div>
+  );
   const mainWorkspace = (
     <div
       data-testid="storage-main-workspace"
       style={{
         display: 'grid',
         gridTemplateRows: 'auto minmax(0, 1fr)',
-        gap: 10,
+        gap: 12,
         minHeight: 0,
         minWidth: 0,
         overflow: 'hidden',
       }}
     >
-      <SurfaceCard
-        title="Workbench"
-        subtitle={scanStatus
-          ? `${scanStatus.rootPath} · ${formatCount(scanStatus.scannedFileCount)} files · ${formatCount(scanStatus.scannedDirectoryCount)} folders`
-          : 'Storage analysis workbench'}
-        actions={(
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {(['matrix', 'split-map', 'types', 'focus'] as StorageWorkbenchMode[]).map((mode) => (
-              <ModeChip
-                key={mode}
-                active={activeMode === mode}
-                label={mode === 'split-map' ? 'map' : mode}
-                onClick={() => setActiveMode(mode)}
-              />
-            ))}
-            <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.08)' }} />
-            <ModeChip
-              active={previewSplitMode === 'pane'}
-              label="pane"
-              onClick={() => setPreviewSplitMode('pane')}
-            />
-            <ModeChip
-              active={previewSplitMode === 'inline'}
-              label="inline"
-              onClick={() => setPreviewSplitMode('inline')}
-            />
-            {activeRootPath ? (
-              <ActionButton onClick={() => { void beginScan(activeRootPath); }}>
-                <RefreshCw size={13} />
-                Scan
-              </ActionButton>
-            ) : null}
-            <ActionButton onClick={applyQueueSelection} disabled={selectedEntries.length === 0} tone="accent">
-              <ScanLine size={13} />
-              Queue
-            </ActionButton>
-            <ExplorerTaskStatusBadge
-              accent="var(--overlay-accent)"
-              border="var(--overlay-border)"
-              danger="#ff8d8d"
-              muted="var(--overlay-text-muted)"
-              text="var(--overlay-text-primary)"
+      <div style={{ position: 'relative', minWidth: 0 }}>
+        <StorageWorkbenchToolbar
+          activeMode={activeMode}
+          activeRootPath={activeRootPath}
+          appearance={resolvedAppearance}
+          isQueueDrawerOpen={isQueueDrawerOpen}
+          onRescan={() => {
+            if (activeRootPath) {
+              void beginScan(activeRootPath);
+            }
+          }}
+          onSetActiveMode={setActiveMode}
+          queueTrigger={queueTrigger}
+          scanStatus={scanStatus}
+          selectedEntriesCount={selectedEntries.length}
+          selectionAllocatedBytes={selectionAllocatedBytes}
+        />
+        {isQueueDrawerOpen ? (
+          <div ref={queueDrawerRef}>
+            <StorageQueueDrawer
+              appearance={resolvedAppearance}
+              busyAction={busyAction}
+              onClearQueue={clearQueue}
+              onExecuteQueue={(actionId) => { void handleExecuteQueue(actionId); }}
+              onRemoveQueuePath={(path) => removeQueuePaths([path])}
+              onSelectQueuePath={(path) => {
+                setSelectedPaths([path], path);
+                setFocusPath(path);
+                matrixContainerRef.current?.focus();
+              }}
+              queueFilterQuery={queue.filterQuery}
+              queueItems={queueItems}
+              selectedPathSet={selectedPathSet}
+              setQueueFilterQuery={setQueueFilterQuery}
             />
           </div>
-        )}
-      >
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, padding: '8px 10px 10px', alignItems: 'center', fontSize: 11, color: 'var(--overlay-text-secondary)' }}>
-          <span>{formatBytes(scanStatus?.totalAllocatedBytes ?? 0)} allocated</span>
-          <span>{formatBytes(scanStatus?.totalLogicalBytes ?? 0)} logical</span>
-          <span>{formatBytes(scanStatus?.totalWasteBytes ?? 0)} waste</span>
-          <span>{formatCount(selectedEntries.length)} selected</span>
-          <span>{formatBytes(selectionAllocatedBytes)} selection size</span>
-          <span>{formatCount(queueItems.length)} queued</span>
-          {!scanStatus?.completed && scanStatus ? (
-            <span style={{ color: 'var(--overlay-accent)' }}>
-              Scanning {scanStatus.currentPath ?? scanStatus.rootPath}...
-            </span>
-          ) : null}
-        </div>
-      </SurfaceCard>
+        ) : null}
+      </div>
       <div
         data-testid="storage-mode-viewport"
         style={{ display: 'flex', minHeight: 0, minWidth: 0, overflow: 'hidden' }}
@@ -2400,7 +2567,8 @@ export function StoragePanel() {
     </div>
   );
   const inspectorPane = (
-    <StorageInspectorPane
+    <StorageUnifiedInspector
+      appearance={resolvedAppearance}
       activeRootPath={activeRootPath}
       busyAction={busyAction}
       contextSearchError={contextSearchError}
@@ -2452,32 +2620,21 @@ export function StoragePanel() {
           }}
         >
           <StorageRail
+            appearance={resolvedAppearance}
             activeRootPath={activeRootPath}
             isElevated={isElevated}
             onBeginScan={(rootPath) => { void beginScan(rootPath); }}
-            onClearQueue={clearQueue}
-            onExecuteQueue={(actionId) => { void handleExecuteQueue(actionId); }}
             onRefreshRoots={() => { void loadRoots(); }}
-            onRemoveQueuePath={(path) => removeQueuePaths([path])}
-            onSelectQueuePath={(path) => {
-              setSelectedPaths([path], path);
-              setFocusPath(path);
-            }}
-            queueFilterQuery={queue.filterQuery}
-            queueItems={queueItems}
             roots={roots}
             rootsError={rootsError}
             rootsLoading={rootsLoading}
             scanStatus={scanStatus}
-            selectedPathSet={selectedPathSet}
-            setQueueFilterQuery={setQueueFilterQuery}
           />
         </ResizablePane>
 
         <div
-          style={previewSplitMode === 'pane'
-            ? { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(300px, 340px)', gap: 10, minHeight: 0, minWidth: 0, flex: 1, overflow: 'hidden' }
-            : { display: 'grid', gridTemplateRows: 'minmax(0, 1fr) minmax(260px, 34vh)', gap: 10, minHeight: 0, minWidth: 0, flex: 1, overflow: 'hidden' }}
+          data-testid="storage-workbench-layout"
+          style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(312px, 360px)', gap: 12, minHeight: 0, minWidth: 0, flex: 1, overflow: 'hidden' }}
         >
           {mainWorkspace}
           <div style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>

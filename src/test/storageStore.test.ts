@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   STORAGE_WORKBENCH_STATE_STORAGE_KEY,
   useStorageWorkbenchStore,
@@ -94,5 +94,25 @@ describe('storageStore', () => {
     store.removeQueuePaths(['C:\\beta.bin']);
 
     expect(useStorageWorkbenchStore.getState().queue.itemOrder).toEqual(['C:\\alpha.bin']);
+  });
+
+  it('hydrates legacy inline preview split mode as pane', async () => {
+    window.localStorage.setItem(STORAGE_WORKBENCH_STATE_STORAGE_KEY, JSON.stringify({
+      activeMode: 'matrix',
+      previewSplitMode: 'inline',
+      selectedPaths: [],
+      expandedPaths: [],
+      queue: {
+        definitionId: 'cleanup',
+        itemOrder: [],
+        itemsByPath: {},
+        filterQuery: '',
+      },
+    }));
+
+    vi.resetModules();
+    const reloadedModule = await import('../store/storageStore');
+
+    expect(reloadedModule.useStorageWorkbenchStore.getState().previewSplitMode).toBe('pane');
   });
 });
