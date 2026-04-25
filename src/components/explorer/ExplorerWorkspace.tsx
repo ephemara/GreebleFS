@@ -1,57 +1,80 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, CopyPlus, MoreHorizontal, Plus, SquareSplitHorizontal, X } from '@/components/AppIcons';
-import { useShallow } from 'zustand/react/shallow';
-import type { ResolvedOverlayAppearance } from '../../config/appearance';
-import type { LoadedExplorerAction } from '../../config/actionPacks';
-import { detectClientPlatform } from '../../config/platform';
-import { matchesKeybinding } from '../../config/hotkeys';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  CopyPlus,
+  MoreHorizontal,
+  Plus,
+  SquareSplitHorizontal,
+  X,
+} from "@/components/AppIcons";
+import { useShallow } from "zustand/react/shallow";
+import type { ResolvedOverlayAppearance } from "../../config/appearance";
+import type { LoadedExplorerAction } from "../../config/actionPacks";
+import { detectClientPlatform } from "../../config/platform";
+import { matchesKeybinding } from "../../config/hotkeys";
+import {
+  beginExplorerCustomizePointerSession,
+  cancelExplorerCustomizePointerSession,
+} from "./explorerCustomizePointerRuntime";
+import {
+  getExplorerChromeCommandId,
+  isExplorerActionChromeControlId,
+} from "../../config/explorerCustomizeCatalog";
 import {
   moveExplorerChromeControlInResolvedSurfaces,
   resolveExplorerChromeSurfaceLayout,
   type ExplorerChromeControlId,
   type ExplorerChromeControlDefinition,
+  type ExplorerChromeOverrideEntry,
   type ExplorerChromeResolvedControlPlacement,
+  type ExplorerChromeResolvedSurface,
   type ExplorerChromeSurfaceId,
   type ExplorerChromeZoneId,
-} from '../../config/explorerChromeLayouts';
-import { getExplorerChromeCommandId } from '../../config/explorerCustomizeCatalog';
+} from "../../config/explorerChromeLayouts";
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
-} from '../../config/pluginContributions';
-import type { ExplorerLayoutMode } from '../../config/layoutProfiles';
-import type { LoadedExplorerHomePack } from '../../config/homePackages';
-import type { LoadedExplorerMenuPack } from '../../config/menuPacks';
+} from "../../config/pluginContributions";
+import type { ExplorerLayoutMode } from "../../config/layoutProfiles";
+import type { LoadedExplorerHomePack } from "../../config/homePackages";
+import type { LoadedExplorerMenuPack } from "../../config/menuPacks";
 import {
   EXPLORER_DRAG_DWELL_INDICATOR_HEIGHT_PX,
   EXPLORER_TAB_AUTO_OPEN_DELAY_MS,
-} from '../../config/explorerDragInteractions';
+} from "../../config/explorerDragInteractions";
 import {
   resolveEffectiveExplorerModeProfile,
   resolveExplorerModeProfileChromeLayoutId,
-} from '../../config/explorerModeProfiles';
-import { isExplorerHomePath } from '../../config/explorerVirtualLocations';
-import { resolveExplorerThemeRecipe } from '../../config/explorerTheme';
+} from "../../config/explorerModeProfiles";
+import { isExplorerHomePath } from "../../config/explorerVirtualLocations";
+import { resolveExplorerThemeRecipe } from "../../config/explorerTheme";
 import {
   getExplorerPaneLabel,
   getExplorerWorkspaceLayoutDefinition,
   getExplorerWorkspaceVisiblePaneIds,
   type ExplorerPaneId,
   type ExplorerWorkspaceLayoutMode,
-} from '../../config/explorerWorkspaceLayouts';
+} from "../../config/explorerWorkspaceLayouts";
 import {
   PRIMARY_EXPLORER_INSTANCE_ID,
   defaultExplorerSession,
   useExplorerStore,
   type ExplorerWorkspacePaneSnapshot,
   type ExplorerWorkspaceTabSnapshot,
-} from '../../store/explorerStore';
-import { useSettingsStore } from '../../store/settingsStore';
-import type { SettingsSectionKey } from '../../config/settingsNavigation';
-import type { ExplorerPickerRequest } from '../../runtime/explorerPicker';
-import { ExplorerChromeSurface } from './ExplorerChromeSurface';
-import { ExplorerDragOverlay } from './ExplorerDragOverlay';
-import { FileExplorer } from '../FileExplorer';
+} from "../../store/explorerStore";
+import { useSettingsStore } from "../../store/settingsStore";
+import type { SettingsSectionKey } from "../../config/settingsNavigation";
+import type { ExplorerPickerRequest } from "../../runtime/explorerPicker";
+import { ExplorerChromeSurface } from "./ExplorerChromeSurface";
+import { ExplorerDragOverlay } from "./ExplorerDragOverlay";
+import { FileExplorer } from "../FileExplorer";
 import type {
   ExplorerWorkspaceNavigationRequest,
   ExplorerWorkspaceRevealRequest,
@@ -60,7 +83,7 @@ import type {
   ExplorerWorkspaceRuntimeSnapshot,
   ExplorerWorkspaceSelectionTransferRequest,
   ExplorerWorkspaceSelectionTransferResult,
-} from '../FileExplorer';
+} from "../FileExplorer";
 import {
   clearExplorerDragInteractionTarget,
   createExplorerDropSurfaceBinding,
@@ -72,10 +95,17 @@ import {
   shallowEqualExplorerDragSelection,
   updateExplorerDragInteractionFromPoint,
   useExplorerDragInteractionSelector,
-} from './explorerDragAndDrop';
+} from "./explorerDragAndDrop";
 
 interface ExplorerWorkspaceProps {
-  theme: { accent: string; bg: string; bgPanel: string; text: string; border: string; textMuted: string };
+  theme: {
+    accent: string;
+    bg: string;
+    bgPanel: string;
+    text: string;
+    border: string;
+    textMuted: string;
+  };
   appearance?: ResolvedOverlayAppearance;
   onOpenInTerminal: (path: string) => void;
   onOpenInFilesystemAquarium?: (path: string) => void;
@@ -88,11 +118,11 @@ interface ExplorerWorkspaceProps {
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
-  chromeControlSurface?: 'toolbar' | 'topbar';
+  chromeControlSurface?: "toolbar" | "topbar";
   explorerPicker?: ExplorerPickerRequest | null;
   onExplorerPickerConfirm?: (result: {
     currentDirectory: string;
-    entries: Array<{ path: string; name: string; kind: 'file' | 'folder' }>;
+    entries: Array<{ path: string; name: string; kind: "file" | "folder" }>;
   }) => void;
   onExplorerPickerCancel?: () => void;
 }
@@ -100,14 +130,14 @@ interface ExplorerWorkspaceProps {
 function getPathLeaf(path: string): string {
   const trimmed = path.trim();
   if (!trimmed || isExplorerHomePath(trimmed)) {
-    return 'Home';
+    return "Home";
   }
   const parts = trimmed.split(/[\\/]/).filter(Boolean);
   return parts.length > 0 ? (parts[parts.length - 1] ?? trimmed) : trimmed;
 }
 
 function getPaneShortLabel(paneId: ExplorerPaneId): string {
-  return getExplorerPaneLabel(paneId).replace('Pane ', 'P');
+  return getExplorerPaneLabel(paneId).replace("Pane ", "P");
 }
 
 function getWorkspacePaneDisplayLabel(
@@ -117,7 +147,7 @@ function getWorkspacePaneDisplayLabel(
   if (currentPath.trim()) {
     return getPathLeaf(currentPath);
   }
-  return pane.title.trim() || 'Explorer';
+  return pane.title.trim() || "Explorer";
 }
 
 function getPreferredWorkspaceTabPaneId(
@@ -128,22 +158,26 @@ function getPreferredWorkspaceTabPaneId(
     return tab.focusedPane;
   }
 
-  return visiblePaneIds.find((paneId) => tab.panes[paneId] != null)
-    ?? (['pane-1', 'pane-2', 'pane-3', 'pane-4'] as ExplorerPaneId[])
-      .find((paneId) => tab.panes[paneId] != null)
-    ?? 'pane-1';
+  return (
+    visiblePaneIds.find((paneId) => tab.panes[paneId] != null) ??
+    (["pane-1", "pane-2", "pane-3", "pane-4"] as ExplorerPaneId[]).find(
+      (paneId) => tab.panes[paneId] != null,
+    ) ??
+    "pane-1"
+  );
 }
 
 function resolvePaneAccent(active: boolean): React.CSSProperties {
   return active
     ? {
-      borderColor: 'var(--overlay-accent)',
-      boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--overlay-accent) 52%, transparent)',
-    }
+        borderColor: "var(--overlay-accent)",
+        boxShadow:
+          "inset 0 0 0 1px color-mix(in srgb, var(--overlay-accent) 52%, transparent)",
+      }
     : {
-      borderColor: 'var(--overlay-border)',
-      boxShadow: 'none',
-    };
+        borderColor: "var(--overlay-border)",
+        boxShadow: "none",
+      };
 }
 
 function getNextVisiblePaneId(
@@ -176,9 +210,11 @@ function sameSelectionEntry(
   left: ExplorerWorkspaceRuntimeSelectionEntry,
   right: ExplorerWorkspaceRuntimeSelectionEntry,
 ): boolean {
-  return left.path === right.path
-    && left.name === right.name
-    && left.is_dir === right.is_dir;
+  return (
+    left.path === right.path &&
+    left.name === right.name &&
+    left.is_dir === right.is_dir
+  );
 }
 
 function sameRuntimeSnapshot(
@@ -189,14 +225,16 @@ function sameRuntimeSnapshot(
     return false;
   }
   if (
-    left.instanceId !== right.instanceId
-    || left.currentPath !== right.currentPath
-    || left.currentPathIsCloud !== right.currentPathIsCloud
-    || left.selectedEntries.length !== right.selectedEntries.length
+    left.instanceId !== right.instanceId ||
+    left.currentPath !== right.currentPath ||
+    left.currentPathIsCloud !== right.currentPathIsCloud ||
+    left.selectedEntries.length !== right.selectedEntries.length
   ) {
     return false;
   }
-  return left.selectedEntries.every((entry, index) => sameSelectionEntry(entry, right.selectedEntries[index] ?? entry));
+  return left.selectedEntries.every((entry, index) =>
+    sameSelectionEntry(entry, right.selectedEntries[index] ?? entry),
+  );
 }
 
 export function ExplorerWorkspace({
@@ -212,8 +250,8 @@ export function ExplorerWorkspace({
   actions = [],
   pluginActions = [],
   pluginContextMenuItems = [],
-  layoutMode = 'full',
-  chromeControlSurface = 'toolbar',
+  layoutMode = "full",
+  chromeControlSurface = "toolbar",
   explorerPicker = null,
   onExplorerPickerConfirm = () => undefined,
   onExplorerPickerCancel = () => undefined,
@@ -222,6 +260,7 @@ export function ExplorerWorkspace({
     sessions,
     workspace,
     chromeEditSession,
+    chromeHotkeyCaptureControlId,
     pendingOpenRequest,
     closeChromeEditSession,
     createWorkspaceTab,
@@ -230,42 +269,59 @@ export function ExplorerWorkspace({
     focusWorkspaceTab,
     registerChromeEditSurface,
     setChromeEditDraggingControl,
+    setChromeEditHighlightedDropTarget,
+    setChromeEditPendingHotkeyControl,
+    setChromeEditSelectedControl,
+    setChromeHotkeyCaptureControl,
     setWorkspaceColumnSplitRatio,
     setWorkspaceLayoutMode,
     setWorkspaceRowSplitRatio,
     setFocusedPane,
     unregisterChromeEditSurface,
     updateChromeEditDraft,
-  } = useExplorerStore(useShallow((state) => ({
-    sessions: state.sessions,
-    workspace: state.workspace,
-    chromeEditSession: state.chromeEditSession,
-    pendingOpenRequest: state.pendingOpenRequest,
-    closeChromeEditSession: state.closeChromeEditSession,
-    createWorkspaceTab: state.createWorkspaceTab,
-    duplicateWorkspaceTab: state.duplicateWorkspaceTab,
-    closeWorkspaceTab: state.closeWorkspaceTab,
-    focusWorkspaceTab: state.focusWorkspaceTab,
-    registerChromeEditSurface: state.registerChromeEditSurface,
-    setChromeEditDraggingControl: state.setChromeEditDraggingControl,
-    setWorkspaceColumnSplitRatio: state.setWorkspaceColumnSplitRatio,
-    setWorkspaceLayoutMode: state.setWorkspaceLayoutMode,
-    setWorkspaceRowSplitRatio: state.setWorkspaceRowSplitRatio,
-    setFocusedPane: state.setFocusedPane,
-    unregisterChromeEditSurface: state.unregisterChromeEditSurface,
-    updateChromeEditDraft: state.updateChromeEditDraft,
-  })));
+  } = useExplorerStore(
+    useShallow((state) => ({
+      sessions: state.sessions,
+      workspace: state.workspace,
+      chromeEditSession: state.chromeEditSession,
+      chromeHotkeyCaptureControlId: state.chromeHotkeyCaptureControlId,
+      pendingOpenRequest: state.pendingOpenRequest,
+      closeChromeEditSession: state.closeChromeEditSession,
+      createWorkspaceTab: state.createWorkspaceTab,
+      duplicateWorkspaceTab: state.duplicateWorkspaceTab,
+      closeWorkspaceTab: state.closeWorkspaceTab,
+      focusWorkspaceTab: state.focusWorkspaceTab,
+      registerChromeEditSurface: state.registerChromeEditSurface,
+      setChromeEditDraggingControl: state.setChromeEditDraggingControl,
+      setChromeEditHighlightedDropTarget:
+        state.setChromeEditHighlightedDropTarget,
+      setChromeEditPendingHotkeyControl:
+        state.setChromeEditPendingHotkeyControl,
+      setChromeEditSelectedControl: state.setChromeEditSelectedControl,
+      setChromeHotkeyCaptureControl: state.setChromeHotkeyCaptureControl,
+      setWorkspaceColumnSplitRatio: state.setWorkspaceColumnSplitRatio,
+      setWorkspaceLayoutMode: state.setWorkspaceLayoutMode,
+      setWorkspaceRowSplitRatio: state.setWorkspaceRowSplitRatio,
+      setFocusedPane: state.setFocusedPane,
+      unregisterChromeEditSurface: state.unregisterChromeEditSurface,
+      updateChromeEditDraft: state.updateChromeEditDraft,
+    })),
+  );
   const {
     activeThemeId,
     modeProfileOverridesByThemeId,
     chromeLayoutOverridesByThemeId,
     commandBindingsById,
-  } = useSettingsStore(useShallow((state) => ({
-    activeThemeId: state.settings.appearance.activeThemeId,
-    modeProfileOverridesByThemeId: state.settings.explorer.modeProfileOverridesByThemeId,
-    chromeLayoutOverridesByThemeId: state.settings.explorer.chromeLayoutOverridesByThemeId,
-    commandBindingsById: state.settings.keybindings.commandBindingsById,
-  })));
+  } = useSettingsStore(
+    useShallow((state) => ({
+      activeThemeId: state.settings.appearance.activeThemeId,
+      modeProfileOverridesByThemeId:
+        state.settings.explorer.modeProfileOverridesByThemeId,
+      chromeLayoutOverridesByThemeId:
+        state.settings.explorer.chromeLayoutOverridesByThemeId,
+      commandBindingsById: state.settings.keybindings.commandBindingsById,
+    })),
+  );
 
   const containerRef = useRef<HTMLDivElement>(null);
   const paneSurfaceRef = useRef<HTMLDivElement>(null);
@@ -273,11 +329,19 @@ export function ExplorerWorkspace({
   const paneActionsMenuRef = useRef<HTMLDivElement>(null);
   const [linkedNavigationEnabled, setLinkedNavigationEnabled] = useState(false);
   const [paneActionsMenuOpen, setPaneActionsMenuOpen] = useState(false);
-  const [runtimeSnapshotsByInstanceId, setRuntimeSnapshotsByInstanceId] = useState<Record<string, ExplorerWorkspaceRuntimeSnapshot>>({});
-  const [navigationRequestsByInstanceId, setNavigationRequestsByInstanceId] = useState<Record<string, ExplorerWorkspaceNavigationRequest>>({});
-  const [revealRequestsByInstanceId, setRevealRequestsByInstanceId] = useState<Record<string, ExplorerWorkspaceRevealRequest>>({});
-  const [selectionTransferRequestsByInstanceId, setSelectionTransferRequestsByInstanceId] = useState<Record<string, ExplorerWorkspaceSelectionTransferRequest>>({});
-  const [refreshRequestsByInstanceId, setRefreshRequestsByInstanceId] = useState<Record<string, ExplorerWorkspaceRefreshRequest>>({});
+  const [runtimeSnapshotsByInstanceId, setRuntimeSnapshotsByInstanceId] =
+    useState<Record<string, ExplorerWorkspaceRuntimeSnapshot>>({});
+  const [navigationRequestsByInstanceId, setNavigationRequestsByInstanceId] =
+    useState<Record<string, ExplorerWorkspaceNavigationRequest>>({});
+  const [revealRequestsByInstanceId, setRevealRequestsByInstanceId] = useState<
+    Record<string, ExplorerWorkspaceRevealRequest>
+  >({});
+  const [
+    selectionTransferRequestsByInstanceId,
+    setSelectionTransferRequestsByInstanceId,
+  ] = useState<Record<string, ExplorerWorkspaceSelectionTransferRequest>>({});
+  const [refreshRequestsByInstanceId, setRefreshRequestsByInstanceId] =
+    useState<Record<string, ExplorerWorkspaceRefreshRequest>>({});
   const lastPendingOpenSequenceRef = useRef(0);
 
   const explorerTheme = useMemo(
@@ -292,16 +356,15 @@ export function ExplorerWorkspace({
     }
 
     const trimmedActiveThemeId = activeThemeId.trim();
-    return trimmedActiveThemeId || 'operator';
+    return trimmedActiveThemeId || "operator";
   }, [appearance?.baseTheme.id, activeThemeId]);
 
   const workspaceTabs = workspace.tabs;
   const activeWorkspaceTab = useMemo(
-    () => (
-      workspaceTabs.find((tab) => tab.id === workspace.activeWorkspaceTabId)
-      ?? workspaceTabs[0]
-      ?? null
-    ),
+    () =>
+      workspaceTabs.find((tab) => tab.id === workspace.activeWorkspaceTabId) ??
+      workspaceTabs[0] ??
+      null,
     [workspace.activeWorkspaceTabId, workspaceTabs],
   );
   const workspaceLayout = useMemo(
@@ -313,67 +376,89 @@ export function ExplorerWorkspace({
     [activeWorkspaceTab?.layoutMode],
   );
   const activePane = useMemo(
-    () => (
-      activeWorkspaceTab
-      && visiblePaneIds.includes(activeWorkspaceTab.focusedPane)
-      && activeWorkspaceTab.panes[activeWorkspaceTab.focusedPane]
+    () =>
+      activeWorkspaceTab &&
+      visiblePaneIds.includes(activeWorkspaceTab.focusedPane) &&
+      activeWorkspaceTab.panes[activeWorkspaceTab.focusedPane]
         ? activeWorkspaceTab.focusedPane
-        : visiblePaneIds.find((paneId) => activeWorkspaceTab?.panes[paneId] != null)
-          ?? visiblePaneIds[0]
-          ?? 'pane-1'
-    ),
+        : (visiblePaneIds.find(
+            (paneId) => activeWorkspaceTab?.panes[paneId] != null,
+          ) ??
+          visiblePaneIds[0] ??
+          "pane-1"),
     [activeWorkspaceTab, visiblePaneIds],
   );
   const activePaneSnapshot = activeWorkspaceTab?.panes[activePane] ?? null;
-  const resolveWorkspaceDragPayload = useCallback((dataTransfer: DataTransfer | null | undefined) => {
-    const sharedDragSession = getExplorerSharedDragSession();
-    const sourcePaths = readExplorerPathsFromDataTransfer({
-      dataTransfer,
-      fallbackPaths: sharedDragSession?.paths ?? [],
-    });
-    const payloadMatchesSharedDrag = sourcePaths.length === 0
-      ? Boolean(sharedDragSession?.paths.length)
-      : doesExplorerPayloadMatchSharedDragSession({
-        payloadPaths: sourcePaths,
-        platform: runtimePlatform,
-        session: sharedDragSession,
+  const resolveWorkspaceDragPayload = useCallback(
+    (dataTransfer: DataTransfer | null | undefined) => {
+      const sharedDragSession = getExplorerSharedDragSession();
+      const sourcePaths = readExplorerPathsFromDataTransfer({
+        dataTransfer,
+        fallbackPaths: sharedDragSession?.paths ?? [],
       });
-    const isInternalDrag = Boolean(sharedDragSession)
-      && (sourcePaths.length === 0 || payloadMatchesSharedDrag);
-    return {
-      sourceKind: isInternalDrag ? 'internal' : 'external',
-      operation: isInternalDrag ? 'move' : 'copy',
-      sourcePaths,
-    } as const;
-  }, [runtimePlatform]);
-  const onWorkspaceDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    const dragPayload = resolveWorkspaceDragPayload(event.dataTransfer);
-    const hit = updateExplorerDragInteractionFromPoint({
-      pointer: { x: event.clientX, y: event.clientY },
-      sourceKind: dragPayload.sourceKind,
-      sourcePaths: dragPayload.sourcePaths,
-      operation: event.shiftKey ? 'copy' : dragPayload.operation,
-      platform: runtimePlatform,
-      externalWindowItemCount: dragPayload.sourceKind === 'external' ? dragPayload.sourcePaths.length : 0,
-    });
-    if (!hit || !hit.surfaceId.startsWith('workspace-tab-')) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    const interactionState = getExplorerDragInteractionState();
-    event.dataTransfer.dropEffect = interactionState.valid ? (event.shiftKey ? 'copy' : dragPayload.operation) : 'none';
-  }, [resolveWorkspaceDragPayload, runtimePlatform]);
-  const onWorkspaceDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    const relatedTarget = event.relatedTarget;
-    if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) {
-      return;
-    }
-    const interactionState = getExplorerDragInteractionState();
-    if (interactionState.targetSurfaceId?.startsWith('workspace-tab-')) {
-      clearExplorerDragInteractionTarget();
-    }
-  }, []);
+      const payloadMatchesSharedDrag =
+        sourcePaths.length === 0
+          ? Boolean(sharedDragSession?.paths.length)
+          : doesExplorerPayloadMatchSharedDragSession({
+              payloadPaths: sourcePaths,
+              platform: runtimePlatform,
+              session: sharedDragSession,
+            });
+      const isInternalDrag =
+        Boolean(sharedDragSession) &&
+        (sourcePaths.length === 0 || payloadMatchesSharedDrag);
+      return {
+        sourceKind: isInternalDrag ? "internal" : "external",
+        operation: isInternalDrag ? "move" : "copy",
+        sourcePaths,
+      } as const;
+    },
+    [runtimePlatform],
+  );
+  const onWorkspaceDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      const dragPayload = resolveWorkspaceDragPayload(event.dataTransfer);
+      const hit = updateExplorerDragInteractionFromPoint({
+        pointer: { x: event.clientX, y: event.clientY },
+        sourceKind: dragPayload.sourceKind,
+        sourcePaths: dragPayload.sourcePaths,
+        operation: event.shiftKey ? "copy" : dragPayload.operation,
+        platform: runtimePlatform,
+        externalWindowItemCount:
+          dragPayload.sourceKind === "external"
+            ? dragPayload.sourcePaths.length
+            : 0,
+      });
+      if (!hit || !hit.surfaceId.startsWith("workspace-tab-")) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const interactionState = getExplorerDragInteractionState();
+      event.dataTransfer.dropEffect = interactionState.valid
+        ? event.shiftKey
+          ? "copy"
+          : dragPayload.operation
+        : "none";
+    },
+    [resolveWorkspaceDragPayload, runtimePlatform],
+  );
+  const onWorkspaceDragLeave = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      const relatedTarget = event.relatedTarget;
+      if (
+        relatedTarget instanceof Node &&
+        event.currentTarget.contains(relatedTarget)
+      ) {
+        return;
+      }
+      const interactionState = getExplorerDragInteractionState();
+      if (interactionState.targetSurfaceId?.startsWith("workspace-tab-")) {
+        clearExplorerDragInteractionTarget();
+      }
+    },
+    [],
+  );
   const workspacePaneCount = visiblePaneIds.length as 1 | 2 | 3 | 4;
   const workspaceDragState = useExplorerDragInteractionSelector(
     (state) => ({
@@ -385,27 +470,39 @@ export function ExplorerWorkspace({
     shallowEqualExplorerDragSelection,
   );
   const commanderTargetPaneId = useMemo(
-    () => visiblePaneIds.length === 2 ? getNextVisiblePaneId(visiblePaneIds, activePane) : null,
+    () =>
+      visiblePaneIds.length === 2
+        ? getNextVisiblePaneId(visiblePaneIds, activePane)
+        : null,
     [activePane, visiblePaneIds],
   );
   const commanderTargetPaneSnapshot = commanderTargetPaneId
-    ? activeWorkspaceTab?.panes[commanderTargetPaneId] ?? null
+    ? (activeWorkspaceTab?.panes[commanderTargetPaneId] ?? null)
     : null;
-  const activeRuntime = activePaneSnapshot ? runtimeSnapshotsByInstanceId[activePaneSnapshot.instanceId] ?? null : null;
+  const activeRuntime = activePaneSnapshot
+    ? (runtimeSnapshotsByInstanceId[activePaneSnapshot.instanceId] ?? null)
+    : null;
   const commanderTargetRuntime = commanderTargetPaneSnapshot
-    ? runtimeSnapshotsByInstanceId[commanderTargetPaneSnapshot.instanceId] ?? null
+    ? (runtimeSnapshotsByInstanceId[commanderTargetPaneSnapshot.instanceId] ??
+      null)
     : null;
-  const activePanePath = activeRuntime?.currentPath
-    ?? (activePaneSnapshot ? sessions[activePaneSnapshot.instanceId]?.currentPath ?? '' : '');
-  const commanderTargetPath = commanderTargetRuntime?.currentPath
-    ?? (commanderTargetPaneSnapshot ? sessions[commanderTargetPaneSnapshot.instanceId]?.currentPath ?? '' : '');
+  const activePanePath =
+    activeRuntime?.currentPath ??
+    (activePaneSnapshot
+      ? (sessions[activePaneSnapshot.instanceId]?.currentPath ?? "")
+      : "");
+  const commanderTargetPath =
+    commanderTargetRuntime?.currentPath ??
+    (commanderTargetPaneSnapshot
+      ? (sessions[commanderTargetPaneSnapshot.instanceId]?.currentPath ?? "")
+      : "");
   const commanderSelectionCount = activeRuntime?.selectedEntries.length ?? 0;
   const canUseCommanderActions = Boolean(
-    activePaneSnapshot
-    && commanderTargetPaneId
-    && commanderTargetPaneSnapshot
-    && activePanePath.trim()
-    && commanderTargetPath.trim(),
+    activePaneSnapshot &&
+    commanderTargetPaneId &&
+    commanderTargetPaneSnapshot &&
+    activePanePath.trim() &&
+    commanderTargetPath.trim(),
   );
   const commanderSummaryText = useMemo(() => {
     if (!canUseCommanderActions || !commanderTargetPaneId) {
@@ -422,14 +519,17 @@ export function ExplorerWorkspace({
     commanderTargetPaneId,
     commanderTargetPath,
   ]);
-  const legacyShellLayoutId = sessions[activePaneSnapshot?.instanceId ?? PRIMARY_EXPLORER_INSTANCE_ID]?.shellLayoutId
-    ?? defaultExplorerSession.shellLayoutId;
+  const legacyShellLayoutId =
+    sessions[activePaneSnapshot?.instanceId ?? PRIMARY_EXPLORER_INSTANCE_ID]
+      ?.shellLayoutId ?? defaultExplorerSession.shellLayoutId;
   const effectiveModeProfile = useMemo(
-    () => resolveEffectiveExplorerModeProfile({
-      themeOverrideModeProfileId: modeProfileOverridesByThemeId[explorerChromeThemeId] ?? null,
-      themeDefaultModeProfileId: explorerTheme.defaultModeProfileId,
-      legacyShellLayoutId,
-    }),
+    () =>
+      resolveEffectiveExplorerModeProfile({
+        themeOverrideModeProfileId:
+          modeProfileOverridesByThemeId[explorerChromeThemeId] ?? null,
+        themeDefaultModeProfileId: explorerTheme.defaultModeProfileId,
+        legacyShellLayoutId,
+      }),
     [
       explorerChromeThemeId,
       explorerTheme.defaultModeProfileId,
@@ -438,27 +538,39 @@ export function ExplorerWorkspace({
     ],
   );
   const explorerChromeLayoutId = useMemo(
-    () => resolveExplorerModeProfileChromeLayoutId({
-      modeProfile: effectiveModeProfile,
-      themeChromeLayoutId: explorerTheme.chromeLayoutId,
-    }),
+    () =>
+      resolveExplorerModeProfileChromeLayoutId({
+        modeProfile: effectiveModeProfile,
+        themeChromeLayoutId: explorerTheme.chromeLayoutId,
+      }),
     [effectiveModeProfile, explorerTheme.chromeLayoutId],
   );
   const persistedExplorerChromeOverride = useMemo(
-    () => chromeLayoutOverridesByThemeId[explorerChromeThemeId]?.[explorerChromeLayoutId] ?? null,
-    [chromeLayoutOverridesByThemeId, explorerChromeLayoutId, explorerChromeThemeId],
+    () =>
+      chromeLayoutOverridesByThemeId[explorerChromeThemeId]?.[
+        explorerChromeLayoutId
+      ] ?? null,
+    [
+      chromeLayoutOverridesByThemeId,
+      explorerChromeLayoutId,
+      explorerChromeThemeId,
+    ],
   );
   const explorerChromeOverride = useMemo(
-    () => (
-      chromeEditSession
-      && chromeEditSession.themeId === explorerChromeThemeId
-      && chromeEditSession.layoutId === explorerChromeLayoutId
+    () =>
+      chromeEditSession &&
+      chromeEditSession.themeId === explorerChromeThemeId &&
+      chromeEditSession.layoutId === explorerChromeLayoutId
         ? chromeEditSession.draftOverride
-        : persistedExplorerChromeOverride
-    ),
-    [chromeEditSession, explorerChromeLayoutId, explorerChromeThemeId, persistedExplorerChromeOverride],
+        : persistedExplorerChromeOverride,
+    [
+      chromeEditSession,
+      explorerChromeLayoutId,
+      explorerChromeThemeId,
+      persistedExplorerChromeOverride,
+    ],
   );
-  const workspaceLayoutMode = activeWorkspaceTab?.layoutMode ?? 'single';
+  const workspaceLayoutMode = activeWorkspaceTab?.layoutMode ?? "single";
   const workspaceColumnSplitRatio = activeWorkspaceTab?.columnSplitRatio ?? 0.5;
   const workspaceRowSplitRatio = activeWorkspaceTab?.rowSplitRatio ?? 0.5;
 
@@ -466,65 +578,73 @@ export function ExplorerWorkspace({
     commandSequenceRef.current += 1;
     return commandSequenceRef.current;
   }, []);
-  const publishRuntimeSnapshot = useCallback((snapshot: ExplorerWorkspaceRuntimeSnapshot) => {
-    setRuntimeSnapshotsByInstanceId((current) => {
-      const previous = current[snapshot.instanceId];
-      if (sameRuntimeSnapshot(previous, snapshot)) {
-        return current;
+  const publishRuntimeSnapshot = useCallback(
+    (snapshot: ExplorerWorkspaceRuntimeSnapshot) => {
+      setRuntimeSnapshotsByInstanceId((current) => {
+        const previous = current[snapshot.instanceId];
+        if (sameRuntimeSnapshot(previous, snapshot)) {
+          return current;
+        }
+        return {
+          ...current,
+          [snapshot.instanceId]: snapshot,
+        };
+      });
+    },
+    [],
+  );
+  const issueNavigationRequest = useCallback(
+    (instanceId: string, path: string, pushHistory = true) => {
+      const trimmedPath = path.trim();
+      if (!instanceId.trim() || !trimmedPath) {
+        return;
       }
-      return {
+      setNavigationRequestsByInstanceId((current) => ({
         ...current,
-        [snapshot.instanceId]: snapshot,
-      };
-    });
-  }, []);
-  const issueNavigationRequest = useCallback((
-    instanceId: string,
-    path: string,
-    pushHistory = true,
-  ) => {
-    const trimmedPath = path.trim();
-    if (!instanceId.trim() || !trimmedPath) {
-      return;
-    }
-    setNavigationRequestsByInstanceId((current) => ({
-      ...current,
-      [instanceId]: {
-        sequence: nextCommandSequence(),
-        path: trimmedPath,
-        pushHistory,
-      },
-    }));
-  }, [nextCommandSequence]);
-  const issueSelectionTransferRequest = useCallback((
-    instanceId: string,
-    targetDir: string,
-    operation: ExplorerWorkspaceSelectionTransferRequest['operation'],
-  ) => {
-    const trimmedTargetDir = targetDir.trim();
-    if (!instanceId.trim() || !trimmedTargetDir) {
-      return;
-    }
-    setSelectionTransferRequestsByInstanceId((current) => ({
-      ...current,
-      [instanceId]: {
-        sequence: nextCommandSequence(),
-        targetDir: trimmedTargetDir,
-        operation,
-      },
-    }));
-  }, [nextCommandSequence]);
-  const issueRefreshRequest = useCallback((instanceId: string) => {
-    if (!instanceId.trim()) {
-      return;
-    }
-    setRefreshRequestsByInstanceId((current) => ({
-      ...current,
-      [instanceId]: {
-        sequence: nextCommandSequence(),
-      },
-    }));
-  }, [nextCommandSequence]);
+        [instanceId]: {
+          sequence: nextCommandSequence(),
+          path: trimmedPath,
+          pushHistory,
+        },
+      }));
+    },
+    [nextCommandSequence],
+  );
+  const issueSelectionTransferRequest = useCallback(
+    (
+      instanceId: string,
+      targetDir: string,
+      operation: ExplorerWorkspaceSelectionTransferRequest["operation"],
+    ) => {
+      const trimmedTargetDir = targetDir.trim();
+      if (!instanceId.trim() || !trimmedTargetDir) {
+        return;
+      }
+      setSelectionTransferRequestsByInstanceId((current) => ({
+        ...current,
+        [instanceId]: {
+          sequence: nextCommandSequence(),
+          targetDir: trimmedTargetDir,
+          operation,
+        },
+      }));
+    },
+    [nextCommandSequence],
+  );
+  const issueRefreshRequest = useCallback(
+    (instanceId: string) => {
+      if (!instanceId.trim()) {
+        return;
+      }
+      setRefreshRequestsByInstanceId((current) => ({
+        ...current,
+        [instanceId]: {
+          sequence: nextCommandSequence(),
+        },
+      }));
+    },
+    [nextCommandSequence],
+  );
   useEffect(() => {
     if (!pendingOpenRequest) {
       return;
@@ -534,15 +654,19 @@ export function ExplorerWorkspace({
     }
 
     lastPendingOpenSequenceRef.current = pendingOpenRequest.sequence;
-    const targetInstanceId = activePaneSnapshot?.instanceId ?? PRIMARY_EXPLORER_INSTANCE_ID;
+    const targetInstanceId =
+      activePaneSnapshot?.instanceId ?? PRIMARY_EXPLORER_INSTANCE_ID;
     setRevealRequestsByInstanceId((current) => ({
       ...current,
       [targetInstanceId]: pendingOpenRequest,
     }));
   }, [activePaneSnapshot?.instanceId, pendingOpenRequest]);
-  const ensureWorkspaceLayout = useCallback((nextLayoutMode: ExplorerWorkspaceLayoutMode) => {
-    setWorkspaceLayoutMode(nextLayoutMode);
-  }, [setWorkspaceLayoutMode]);
+  const ensureWorkspaceLayout = useCallback(
+    (nextLayoutMode: ExplorerWorkspaceLayoutMode) => {
+      setWorkspaceLayoutMode(nextLayoutMode);
+    },
+    [setWorkspaceLayoutMode],
+  );
   const duplicateActiveTab = useCallback(() => {
     if (!activeWorkspaceTab) {
       return;
@@ -579,14 +703,14 @@ export function ExplorerWorkspace({
   }, []);
   const cycleWorkspaceLayout = useCallback(() => {
     const orderedLayouts: ExplorerWorkspaceLayoutMode[] = [
-      'single',
-      'split',
-      'triple',
-      'quad',
+      "single",
+      "split",
+      "triple",
+      "quad",
     ];
     const currentIndex = orderedLayouts.indexOf(workspaceLayoutMode);
     const nextLayout =
-      orderedLayouts[(currentIndex + 1) % orderedLayouts.length] ?? 'single';
+      orderedLayouts[(currentIndex + 1) % orderedLayouts.length] ?? "single";
     ensureWorkspaceLayout(nextLayout);
   }, [ensureWorkspaceLayout, workspaceLayoutMode]);
   const nudgeWorkspaceSplit = useCallback(
@@ -634,49 +758,83 @@ export function ExplorerWorkspace({
     if (activePanePath === commanderTargetPath) {
       return;
     }
-    issueNavigationRequest(commanderTargetPaneSnapshot.instanceId, activePanePath, true);
-  }, [activePanePath, commanderTargetPaneSnapshot, commanderTargetPath, issueNavigationRequest]);
+    issueNavigationRequest(
+      commanderTargetPaneSnapshot.instanceId,
+      activePanePath,
+      true,
+    );
+  }, [
+    activePanePath,
+    commanderTargetPaneSnapshot,
+    commanderTargetPath,
+    issueNavigationRequest,
+  ]);
   const copySelectionToCommanderTarget = useCallback(() => {
     if (!activePaneSnapshot || !commanderTargetPath.trim()) {
       return;
     }
-    issueSelectionTransferRequest(activePaneSnapshot.instanceId, commanderTargetPath, 'copy');
+    issueSelectionTransferRequest(
+      activePaneSnapshot.instanceId,
+      commanderTargetPath,
+      "copy",
+    );
   }, [activePaneSnapshot, commanderTargetPath, issueSelectionTransferRequest]);
   const moveSelectionToCommanderTarget = useCallback(() => {
     if (!activePaneSnapshot || !commanderTargetPath.trim()) {
       return;
     }
-    issueSelectionTransferRequest(activePaneSnapshot.instanceId, commanderTargetPath, 'move');
+    issueSelectionTransferRequest(
+      activePaneSnapshot.instanceId,
+      commanderTargetPath,
+      "move",
+    );
   }, [activePaneSnapshot, commanderTargetPath, issueSelectionTransferRequest]);
-  const handleWorkspaceSelectionTransferComplete = useCallback((
-    result: ExplorerWorkspaceSelectionTransferResult,
-  ) => {
-    if (!result.success) {
-      return;
-    }
-    const targetInstanceIds = new Set<string>();
-    for (const workspaceTab of workspaceTabs) {
-      for (const paneId of ['pane-1', 'pane-2', 'pane-3', 'pane-4'] as ExplorerPaneId[]) {
-        const pane = workspaceTab.panes[paneId];
-        if (!pane) {
-          continue;
-        }
-        const runtimePath = runtimeSnapshotsByInstanceId[pane.instanceId]?.currentPath;
-        const sessionPath = sessions[pane.instanceId]?.currentPath ?? '';
-        if ((runtimePath ?? sessionPath) === result.targetDir) {
-          targetInstanceIds.add(pane.instanceId);
+  const handleWorkspaceSelectionTransferComplete = useCallback(
+    (result: ExplorerWorkspaceSelectionTransferResult) => {
+      if (!result.success) {
+        return;
+      }
+      const targetInstanceIds = new Set<string>();
+      for (const workspaceTab of workspaceTabs) {
+        for (const paneId of [
+          "pane-1",
+          "pane-2",
+          "pane-3",
+          "pane-4",
+        ] as ExplorerPaneId[]) {
+          const pane = workspaceTab.panes[paneId];
+          if (!pane) {
+            continue;
+          }
+          const runtimePath =
+            runtimeSnapshotsByInstanceId[pane.instanceId]?.currentPath;
+          const sessionPath = sessions[pane.instanceId]?.currentPath ?? "";
+          if ((runtimePath ?? sessionPath) === result.targetDir) {
+            targetInstanceIds.add(pane.instanceId);
+          }
         }
       }
-    }
-    for (const instanceId of targetInstanceIds) {
-      issueRefreshRequest(instanceId);
-    }
-  }, [issueRefreshRequest, runtimeSnapshotsByInstanceId, sessions, workspaceTabs]);
+      for (const instanceId of targetInstanceIds) {
+        issueRefreshRequest(instanceId);
+      }
+    },
+    [
+      issueRefreshRequest,
+      runtimeSnapshotsByInstanceId,
+      sessions,
+      workspaceTabs,
+    ],
+  );
 
   useEffect(() => {
     const liveInstanceIds = new Set<string>();
     for (const workspaceTab of workspaceTabs) {
-      for (const paneId of ['pane-1', 'pane-2', 'pane-3', 'pane-4'] as ExplorerPaneId[]) {
+      for (const paneId of [
+        "pane-1",
+        "pane-2",
+        "pane-3",
+        "pane-4",
+      ] as ExplorerPaneId[]) {
         const pane = workspaceTab.panes[paneId];
         if (pane) {
           liveInstanceIds.add(pane.instanceId);
@@ -684,28 +842,36 @@ export function ExplorerWorkspace({
       }
     }
     setRuntimeSnapshotsByInstanceId((current) => {
-      const nextEntries = Object.entries(current).filter(([instanceId]) => liveInstanceIds.has(instanceId));
+      const nextEntries = Object.entries(current).filter(([instanceId]) =>
+        liveInstanceIds.has(instanceId),
+      );
       if (nextEntries.length === Object.keys(current).length) {
         return current;
       }
       return Object.fromEntries(nextEntries);
     });
     setNavigationRequestsByInstanceId((current) => {
-      const nextEntries = Object.entries(current).filter(([instanceId]) => liveInstanceIds.has(instanceId));
+      const nextEntries = Object.entries(current).filter(([instanceId]) =>
+        liveInstanceIds.has(instanceId),
+      );
       if (nextEntries.length === Object.keys(current).length) {
         return current;
       }
       return Object.fromEntries(nextEntries);
     });
     setSelectionTransferRequestsByInstanceId((current) => {
-      const nextEntries = Object.entries(current).filter(([instanceId]) => liveInstanceIds.has(instanceId));
+      const nextEntries = Object.entries(current).filter(([instanceId]) =>
+        liveInstanceIds.has(instanceId),
+      );
       if (nextEntries.length === Object.keys(current).length) {
         return current;
       }
       return Object.fromEntries(nextEntries);
     });
     setRefreshRequestsByInstanceId((current) => {
-      const nextEntries = Object.entries(current).filter(([instanceId]) => liveInstanceIds.has(instanceId));
+      const nextEntries = Object.entries(current).filter(([instanceId]) =>
+        liveInstanceIds.has(instanceId),
+      );
       if (nextEntries.length === Object.keys(current).length) {
         return current;
       }
@@ -714,7 +880,11 @@ export function ExplorerWorkspace({
   }, [workspaceTabs]);
 
   useEffect(() => {
-    if (!linkedNavigationEnabled || visiblePaneIds.length !== 2 || !commanderTargetPaneSnapshot) {
+    if (
+      !linkedNavigationEnabled ||
+      visiblePaneIds.length !== 2 ||
+      !commanderTargetPaneSnapshot
+    ) {
       return;
     }
     if (!activePanePath.trim() || !commanderTargetPath.trim()) {
@@ -723,7 +893,11 @@ export function ExplorerWorkspace({
     if (activePanePath === commanderTargetPath) {
       return;
     }
-    issueNavigationRequest(commanderTargetPaneSnapshot.instanceId, activePanePath, true);
+    issueNavigationRequest(
+      commanderTargetPaneSnapshot.instanceId,
+      activePanePath,
+      true,
+    );
   }, [
     activePanePath,
     commanderTargetPath,
@@ -744,575 +918,883 @@ export function ExplorerWorkspace({
       setPaneActionsMenuOpen(false);
     };
 
-    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener("mousedown", handlePointerDown);
     return () => {
-      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener("mousedown", handlePointerDown);
     };
   }, [paneActionsMenuOpen]);
   useEffect(() => {
     setPaneActionsMenuOpen(false);
   }, [activePane, activeWorkspaceTab?.id, activeWorkspaceTab?.layoutMode]);
 
-  const handleWorkspaceChromeControlMove = useCallback((args: {
-    controlId: ExplorerChromeControlId;
-    targetSurfaceId: ExplorerChromeSurfaceId;
-    targetZoneId: ExplorerChromeZoneId;
-    targetIndex: number;
-  }) => {
-    if (!chromeEditSession) {
-      return;
-    }
+  const handleWorkspaceChromeControlMove = useCallback(
+    (args: {
+      controlId: ExplorerChromeControlId;
+      targetSurfaceId: ExplorerChromeSurfaceId;
+      targetZoneId: ExplorerChromeZoneId;
+      targetIndex: number;
+    }) => {
+      if (!chromeEditSession) {
+        return;
+      }
 
-    const registeredSurfaces = Object.values(chromeEditSession.registeredSurfaces)
-      .filter((surface): surface is NonNullable<typeof surface> => surface != null);
-    updateChromeEditDraft(moveExplorerChromeControlInResolvedSurfaces({
-      surfaces: registeredSurfaces,
-      controlId: args.controlId,
-      targetSurfaceId: args.targetSurfaceId,
-      targetZoneId: args.targetZoneId,
-      targetIndex: args.targetIndex,
-    }));
-  }, [chromeEditSession, updateChromeEditDraft]);
-  const workspaceChromeEditMode = useMemo(
-    () => (
-      chromeEditSession
-      && chromeEditSession.themeId === explorerChromeThemeId
-      && chromeEditSession.layoutId === explorerChromeLayoutId
-        ? {
-          active: true,
-          draggingControlId: chromeEditSession.draggingControlId,
-          onRegisterSurface: registerChromeEditSurface,
-          onUnregisterSurface: unregisterChromeEditSurface,
-          onDragStart: setChromeEditDraggingControl,
-          onDragEnd: () => setChromeEditDraggingControl(null),
-          onMoveControl: handleWorkspaceChromeControlMove,
+      const registeredSurfaces = Object.values(
+        chromeEditSession.registeredSurfaces,
+      ).filter(
+        (surface): surface is NonNullable<typeof surface> => surface != null,
+      );
+      const movedSnapshot = moveExplorerChromeControlInResolvedSurfaces({
+        surfaces: registeredSurfaces,
+        controlId: args.controlId,
+        targetSurfaceId: args.targetSurfaceId,
+        targetZoneId: args.targetZoneId,
+        targetIndex: args.targetIndex,
+      });
+      const hiddenEntries = chromeEditSession.draftOverride.entries.filter(
+        (entry) => entry.hidden && entry.controlId !== args.controlId,
+      );
+      updateChromeEditDraft({
+        entries: [...movedSnapshot.entries, ...hiddenEntries],
+      });
+    },
+    [chromeEditSession, updateChromeEditDraft],
+  );
+  const findRegisteredWorkspaceChromePlacement = useCallback(
+    (
+      controlId: ExplorerChromeControlId,
+    ): ExplorerChromeResolvedControlPlacement | null => {
+      if (!chromeEditSession) {
+        return null;
+      }
+
+      const registeredSurfaces = Object.values(
+        chromeEditSession.registeredSurfaces,
+      ).filter(
+        (surface): surface is ExplorerChromeResolvedSurface => surface != null,
+      );
+      for (const surface of registeredSurfaces) {
+        for (const row of surface.rows) {
+          for (const zone of row.zones) {
+            const placement = zone.controls.find(
+              (entry) => entry.controlId === controlId,
+            );
+            if (placement) {
+              return placement;
+            }
+          }
         }
-        : undefined
-    ),
+      }
+
+      return null;
+    },
+    [chromeEditSession],
+  );
+  const removeWorkspaceChromeControlFromDraft = useCallback(
+    (controlId: ExplorerChromeControlId) => {
+      if (!chromeEditSession) {
+        return;
+      }
+
+      const existingEntry = chromeEditSession.draftOverride.entries.find(
+        (entry) => entry.controlId === controlId,
+      );
+      const visiblePlacement =
+        findRegisteredWorkspaceChromePlacement(controlId);
+      const baseEntry: ExplorerChromeOverrideEntry = {
+        controlId,
+        surfaceId:
+          existingEntry?.surfaceId ??
+          visiblePlacement?.surfaceId ??
+          "workspaceHeader",
+        zone: existingEntry?.zone ?? visiblePlacement?.zone ?? "end",
+        order: existingEntry?.order ?? visiblePlacement?.order ?? 9990,
+        hidden: true,
+        sizeVariant: existingEntry?.sizeVariant,
+        showLabel: existingEntry?.showLabel,
+        showIcon: existingEntry?.showIcon,
+      };
+
+      updateChromeEditDraft({
+        entries: isExplorerActionChromeControlId(controlId)
+          ? chromeEditSession.draftOverride.entries.filter(
+              (entry) => entry.controlId !== controlId,
+            )
+          : [
+              ...chromeEditSession.draftOverride.entries.filter(
+                (entry) => entry.controlId !== controlId,
+              ),
+              baseEntry,
+            ],
+      });
+      setChromeEditSelectedControl(null);
+      setChromeEditPendingHotkeyControl(null);
+    },
     [
       chromeEditSession,
-      explorerChromeLayoutId,
-      explorerChromeThemeId,
-      handleWorkspaceChromeControlMove,
-      registerChromeEditSurface,
-      setChromeEditDraggingControl,
-      unregisterChromeEditSurface,
+      findRegisteredWorkspaceChromePlacement,
+      setChromeEditPendingHotkeyControl,
+      setChromeEditSelectedControl,
+      updateChromeEditDraft,
     ],
   );
+  const requestWorkspaceChromeHotkeyCapture = useCallback(
+    (controlId: ExplorerChromeControlId) => {
+      setChromeHotkeyCaptureControl(controlId);
+      if (chromeEditSession) {
+        setChromeEditPendingHotkeyControl(controlId);
+      }
+    },
+    [
+      chromeEditSession,
+      setChromeEditPendingHotkeyControl,
+      setChromeHotkeyCaptureControl,
+    ],
+  );
+  const beginWorkspaceChromePointerDrag = useCallback(
+    (args: {
+      controlId: ExplorerChromeControlId;
+      pointerId: number;
+      sourceKind: "placed";
+      startPoint: { x: number; y: number };
+      onTap?: (controlId: ExplorerChromeControlId) => void;
+    }) => {
+      if (!chromeEditSession) {
+        return;
+      }
+
+      beginExplorerCustomizePointerSession({
+        pointerId: args.pointerId,
+        controlId: args.controlId,
+        sourceKind: args.sourceKind,
+        startPoint: args.startPoint,
+        onActivate: (controlId) => {
+          setChromeEditDraggingControl(controlId);
+          setChromeEditSelectedControl(controlId);
+        },
+        onUpdateDropTarget: setChromeEditHighlightedDropTarget,
+        onTap: (controlId) => {
+          args.onTap?.(controlId);
+        },
+        onDrop: ({ controlId, target }) => {
+          handleWorkspaceChromeControlMove({
+            controlId,
+            targetSurfaceId: target.surfaceId,
+            targetZoneId: target.zoneId,
+            targetIndex: target.targetIndex,
+          });
+        },
+        onRemove: (controlId) => {
+          removeWorkspaceChromeControlFromDraft(controlId);
+        },
+        onComplete: () => {
+          setChromeEditDraggingControl(null);
+          setChromeEditHighlightedDropTarget(null);
+        },
+      });
+    },
+    [
+      chromeEditSession,
+      handleWorkspaceChromeControlMove,
+      removeWorkspaceChromeControlFromDraft,
+      setChromeEditDraggingControl,
+      setChromeEditHighlightedDropTarget,
+      setChromeEditSelectedControl,
+    ],
+  );
+  const workspaceChromeEditMode = useMemo(() => {
+    const sessionActive = Boolean(
+      chromeEditSession &&
+      chromeEditSession.themeId === explorerChromeThemeId &&
+      chromeEditSession.layoutId === explorerChromeLayoutId,
+    );
+    return {
+      active: sessionActive,
+      draggingControlId: sessionActive
+        ? (chromeEditSession?.draggingControlId ?? null)
+        : null,
+      highlightedDropTarget: sessionActive
+        ? (chromeEditSession?.highlightedDropTarget ?? null)
+        : null,
+      selectedControlId: sessionActive
+        ? (chromeEditSession?.selectedControlId ?? null)
+        : null,
+      pendingHotkeyControlId:
+        chromeHotkeyCaptureControlId ??
+        (sessionActive
+          ? (chromeEditSession?.pendingHotkeyControlId ?? null)
+          : null),
+      onRegisterSurface: sessionActive ? registerChromeEditSurface : undefined,
+      onUnregisterSurface: sessionActive
+        ? unregisterChromeEditSurface
+        : undefined,
+      onDragStart: setChromeEditDraggingControl,
+      onDragEnd: () => {
+        setChromeEditDraggingControl(null);
+        setChromeEditHighlightedDropTarget(null);
+      },
+      onBeginPointerDrag: beginWorkspaceChromePointerDrag,
+      onSetHighlightedDropTarget: setChromeEditHighlightedDropTarget,
+      onSetSelectedControl: setChromeEditSelectedControl,
+      onSetPendingHotkeyControl: setChromeEditPendingHotkeyControl,
+      onRequestHotkeyCapture: requestWorkspaceChromeHotkeyCapture,
+      onMoveControl: handleWorkspaceChromeControlMove,
+      onRemoveControl: sessionActive
+        ? removeWorkspaceChromeControlFromDraft
+        : undefined,
+    };
+  }, [
+    chromeEditSession,
+    chromeHotkeyCaptureControlId,
+    beginWorkspaceChromePointerDrag,
+    explorerChromeLayoutId,
+    explorerChromeThemeId,
+    handleWorkspaceChromeControlMove,
+    registerChromeEditSurface,
+    setChromeEditDraggingControl,
+    setChromeEditHighlightedDropTarget,
+    setChromeEditPendingHotkeyControl,
+    setChromeEditSelectedControl,
+    requestWorkspaceChromeHotkeyCapture,
+    removeWorkspaceChromeControlFromDraft,
+    unregisterChromeEditSurface,
+  ]);
   useEffect(() => {
     if (
-      chromeEditSession
-      && (
-        chromeEditSession.themeId !== explorerChromeThemeId
-        || chromeEditSession.layoutId !== explorerChromeLayoutId
-      )
+      chromeEditSession &&
+      (chromeEditSession.themeId !== explorerChromeThemeId ||
+        chromeEditSession.layoutId !== explorerChromeLayoutId)
     ) {
+      cancelExplorerCustomizePointerSession();
       closeChromeEditSession();
     }
-  }, [chromeEditSession, closeChromeEditSession, explorerChromeLayoutId, explorerChromeThemeId]);
+  }, [
+    chromeEditSession,
+    closeChromeEditSession,
+    explorerChromeLayoutId,
+    explorerChromeThemeId,
+  ]);
+  useEffect(
+    () => () => {
+      cancelExplorerCustomizePointerSession();
+    },
+    [],
+  );
 
   const columnSplitPercent = Math.round(workspaceColumnSplitRatio * 100);
   const rowSplitPercent = Math.round(workspaceRowSplitRatio * 100);
-  const workspaceHeaderRowStyle = useMemo<React.CSSProperties>(() => ({
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    minWidth: 0,
-    flexWrap: 'wrap',
-  }), []);
-  const getWorkspaceHeaderZoneStyle = useCallback((zoneId: ExplorerChromeZoneId): React.CSSProperties => {
-    switch (zoneId) {
-      case 'center':
-        return {
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          flex: 1,
-          minWidth: 0,
-          overflowX: 'auto',
-        };
-      case 'end':
-        return {
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          flexShrink: 0,
-          flexWrap: 'wrap',
-          justifyContent: 'flex-end',
-          minWidth: 0,
-        };
-      case 'start':
-      default:
-        return {
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          minWidth: 0,
-          flexWrap: 'wrap',
-        };
-    }
-  }, []);
-  const commanderButtonsDisabled = !canUseCommanderActions || commanderSelectionCount === 0;
-  const workspaceChromeControlRegistry = useMemo<Array<ExplorerChromeControlDefinition & {
-    isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
-    render: (placement: ExplorerChromeResolvedControlPlacement) => React.ReactNode;
-  }>>(() => [
-    {
-      id: 'workspacePaneCounts',
-      label: 'Pane Switcher',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => visiblePaneIds.length > 1,
-      render: () => (
-        <div aria-label="Workspace panes" role="group" style={paneSwitcherGroupStyle}>
-          {visiblePaneIds.map((paneId) => (
-            <button
-              key={paneId}
-              type="button"
-              onClick={() => setFocusedPane(paneId)}
-              title={`Focus ${getExplorerPaneLabel(paneId)}`}
-              style={paneSwitcherButtonStyle(activePane === paneId, theme.accent)}
-            >
-              <span>{getPaneShortLabel(paneId)}</span>
-            </button>
-          ))}
-        </div>
-      ),
+  const workspaceHeaderRowStyle = useMemo<React.CSSProperties>(
+    () => ({
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+      minWidth: 0,
+      flexWrap: "wrap",
+    }),
+    [],
+  );
+  const getWorkspaceHeaderZoneStyle = useCallback(
+    (zoneId: ExplorerChromeZoneId): React.CSSProperties => {
+      switch (zoneId) {
+        case "center":
+          return {
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flex: 1,
+            minWidth: 0,
+            overflowX: "auto",
+          };
+        case "end":
+          return {
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flexShrink: 0,
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+            minWidth: 0,
+          };
+        case "start":
+        default:
+          return {
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            minWidth: 0,
+            flexWrap: "wrap",
+          };
+      }
     },
-    {
-      id: 'workspaceTabs',
-      label: 'Workspace Tabs',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => workspaceTabs.length > 0,
-      render: () => (
-        <>
-          {workspaceTabs.map((tab) => {
-            const preferredPaneId = getPreferredWorkspaceTabPaneId(tab);
-            const preferredPane = tab.panes[preferredPaneId];
-            const currentPath = preferredPane
-              ? runtimeSnapshotsByInstanceId[preferredPane.instanceId]?.currentPath
-                ?? sessions[preferredPane.instanceId]?.currentPath
-              : '';
-            const isActive = activeWorkspaceTab?.id === tab.id;
-            const tabPaneCount = getExplorerWorkspaceVisiblePaneIds(tab.layoutMode).length;
-            const tabLabel = preferredPane
-              ? getWorkspacePaneDisplayLabel(preferredPane, currentPath)
-              : 'Explorer';
-            const tabDropBinding = preferredPane && currentPath.trim()
-              ? createExplorerDropSurfaceBinding({
-                surfaceId: `workspace-tab-${tab.id}`,
-                scopeId: getExplorerDropScopeId(preferredPane.instanceId),
-                role: 'navigation-target',
-                targetPath: currentPath,
-                autoOpenDelayMs: EXPLORER_TAB_AUTO_OPEN_DELAY_MS,
-                onAutoOpen: () => focusWorkspaceTab(tab.id),
-                label: tabLabel,
-              })
-              : null;
-            const tabSurfaceId = `workspace-tab-${tab.id}`;
-            const isDropTarget =
-              workspaceDragState.valid &&
-              workspaceDragState.targetSurfaceId === tabSurfaceId;
-            const isDwellTarget = workspaceDragState.dwellSurfaceId === tabSurfaceId;
-            return (
+    [],
+  );
+  const commanderButtonsDisabled =
+    !canUseCommanderActions || commanderSelectionCount === 0;
+  const workspaceChromeControlRegistry = useMemo<
+    Array<
+      ExplorerChromeControlDefinition & {
+        isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
+        render: (
+          placement: ExplorerChromeResolvedControlPlacement,
+        ) => React.ReactNode;
+      }
+    >
+  >(
+    () => [
+      {
+        id: "workspacePaneCounts",
+        label: "Pane Switcher",
+        surfaces: ["workspaceHeader"],
+        isVisible: () => visiblePaneIds.length > 1,
+        render: () => (
+          <div
+            aria-label="Workspace panes"
+            role="group"
+            style={paneSwitcherGroupStyle}
+          >
+            {visiblePaneIds.map((paneId) => (
+              <button
+                key={paneId}
+                type="button"
+                onClick={() => setFocusedPane(paneId)}
+                title={`Focus ${getExplorerPaneLabel(paneId)}`}
+                style={paneSwitcherButtonStyle(
+                  activePane === paneId,
+                  theme.accent,
+                )}
+              >
+                <span>{getPaneShortLabel(paneId)}</span>
+              </button>
+            ))}
+          </div>
+        ),
+      },
+      {
+        id: "workspaceTabs",
+        label: "Workspace Tabs",
+        surfaces: ["workspaceHeader"],
+        isVisible: () => workspaceTabs.length > 0,
+        render: () => (
+          <>
+            {workspaceTabs.map((tab) => {
+              const preferredPaneId = getPreferredWorkspaceTabPaneId(tab);
+              const preferredPane = tab.panes[preferredPaneId];
+              const currentPath = preferredPane
+                ? (runtimeSnapshotsByInstanceId[preferredPane.instanceId]
+                    ?.currentPath ??
+                  sessions[preferredPane.instanceId]?.currentPath)
+                : "";
+              const isActive = activeWorkspaceTab?.id === tab.id;
+              const tabPaneCount = getExplorerWorkspaceVisiblePaneIds(
+                tab.layoutMode,
+              ).length;
+              const tabLabel = preferredPane
+                ? getWorkspacePaneDisplayLabel(preferredPane, currentPath)
+                : "Explorer";
+              const tabDropBinding =
+                preferredPane && currentPath.trim()
+                  ? createExplorerDropSurfaceBinding({
+                      surfaceId: `workspace-tab-${tab.id}`,
+                      scopeId: getExplorerDropScopeId(preferredPane.instanceId),
+                      role: "navigation-target",
+                      targetPath: currentPath,
+                      autoOpenDelayMs: EXPLORER_TAB_AUTO_OPEN_DELAY_MS,
+                      onAutoOpen: () => focusWorkspaceTab(tab.id),
+                      label: tabLabel,
+                    })
+                  : null;
+              const tabSurfaceId = `workspace-tab-${tab.id}`;
+              const isDropTarget =
+                workspaceDragState.valid &&
+                workspaceDragState.targetSurfaceId === tabSurfaceId;
+              const isDwellTarget =
+                workspaceDragState.dwellSurfaceId === tabSurfaceId;
+              return (
+                <div
+                  key={tab.id}
+                  style={workspaceTabChipStyle(
+                    isActive,
+                    theme.accent,
+                    isDropTarget,
+                  )}
+                >
+                  <button
+                    type="button"
+                    ref={tabDropBinding?.ref}
+                    data-overlay-explorer-drop-scope-id={
+                      tabDropBinding?.["data-overlay-explorer-drop-scope-id"]
+                    }
+                    data-overlay-explorer-drop-surface-role={
+                      tabDropBinding?.[
+                        "data-overlay-explorer-drop-surface-role"
+                      ]
+                    }
+                    data-overlay-explorer-drop-surface-id={
+                      tabDropBinding?.["data-overlay-explorer-drop-surface-id"]
+                    }
+                    data-overlay-drop-target-path={
+                      tabDropBinding?.["data-overlay-drop-target-path"]
+                    }
+                    onClick={() => focusWorkspaceTab(tab.id)}
+                    title={currentPath || tabLabel}
+                    style={workspaceTabButtonStyle(isActive, isDropTarget)}
+                  >
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 999,
+                        background: isActive
+                          ? theme.accent
+                          : "rgba(255,255,255,0.35)",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        maxWidth: 180,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {tabLabel}
+                    </span>
+                    {tabPaneCount > 1 && (
+                      <span
+                        style={paneSwitcherCountStyle(isActive, theme.accent)}
+                      >
+                        {tabPaneCount}
+                      </span>
+                    )}
+                    {isDwellTarget ? (
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          position: "absolute",
+                          left: 10,
+                          right: 10,
+                          bottom: 7,
+                          height: EXPLORER_DRAG_DWELL_INDICATOR_HEIGHT_PX,
+                          borderRadius: 999,
+                          overflow: "hidden",
+                          background: "rgba(255,255,255,0.08)",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "block",
+                            width: `${Math.max(0, Math.min(100, workspaceDragState.dwellProgress * 100))}%`,
+                            height: "100%",
+                            borderRadius: 999,
+                            background:
+                              "color-mix(in srgb, var(--overlay-accent) 90%, white 10%)",
+                            transition: "width 60ms linear",
+                          }}
+                        />
+                      </span>
+                    ) : null}
+                  </button>
+                  {workspaceTabs.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => closeWorkspaceTab(tab.id)}
+                      title="Close tab"
+                      style={workspaceTabIconButtonStyle}
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        ),
+      },
+      {
+        id: "workspaceNewTab",
+        label: "New Tab",
+        surfaces: ["workspaceHeader"],
+        isVisible: () => true,
+        render: () => (
+          <button
+            type="button"
+            onClick={createTabInFocusedPane}
+            title="New workspace tab"
+            style={toolbarButtonStyle}
+          >
+            <Plus size={13} />
+          </button>
+        ),
+      },
+      {
+        id: "workspacePaneActionsMenu",
+        label: "Pane Actions Menu",
+        surfaces: ["workspaceHeader"],
+        isVisible: () => true,
+        render: () => (
+          <div ref={paneActionsMenuRef} style={{ position: "relative" }}>
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={paneActionsMenuOpen}
+              aria-label="Workspace pane actions"
+              onClick={() => setPaneActionsMenuOpen((current) => !current)}
+              title="Workspace pane actions"
+              style={toolbarButtonStyle}
+            >
+              <MoreHorizontal size={13} />
+            </button>
+            {paneActionsMenuOpen && (
               <div
-                key={tab.id}
-                style={workspaceTabChipStyle(isActive, theme.accent, isDropTarget)}
+                role="menu"
+                aria-label="Workspace pane actions"
+                style={workspaceOverflowMenuStyle}
               >
                 <button
                   type="button"
-                  ref={tabDropBinding?.ref}
-                  data-overlay-explorer-drop-scope-id={tabDropBinding?.["data-overlay-explorer-drop-scope-id"]}
-                  data-overlay-explorer-drop-surface-role={tabDropBinding?.["data-overlay-explorer-drop-surface-role"]}
-                  data-overlay-explorer-drop-surface-id={tabDropBinding?.["data-overlay-explorer-drop-surface-id"]}
-                  data-overlay-drop-target-path={tabDropBinding?.["data-overlay-drop-target-path"]}
-                  onClick={() => focusWorkspaceTab(tab.id)}
-                  title={currentPath || tabLabel}
-                  style={workspaceTabButtonStyle(isActive, isDropTarget)}
-                >
-                  <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: 999,
-                      background: isActive ? theme.accent : 'rgba(255,255,255,0.35)',
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontWeight: 600 }}>
-                    {tabLabel}
-                  </span>
-                  {tabPaneCount > 1 && (
-                    <span style={paneSwitcherCountStyle(isActive, theme.accent)}>
-                      {tabPaneCount}
-                    </span>
+                  role="menuitem"
+                  onClick={() => {
+                    duplicateActiveTab();
+                    setPaneActionsMenuOpen(false);
+                  }}
+                  disabled={!activeWorkspaceTab}
+                  style={workspaceOverflowMenuItemStyle(
+                    false,
+                    !activeWorkspaceTab,
                   )}
-                  {isDwellTarget ? (
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        position: 'absolute',
-                        left: 10,
-                        right: 10,
-                        bottom: 7,
-                        height: EXPLORER_DRAG_DWELL_INDICATOR_HEIGHT_PX,
-                        borderRadius: 999,
-                        overflow: 'hidden',
-                        background: 'rgba(255,255,255,0.08)',
-                      }}
-                    >
-                      <span
-                        style={{
-                          display: 'block',
-                          width: `${Math.max(0, Math.min(100, workspaceDragState.dwellProgress * 100))}%`,
-                          height: '100%',
-                          borderRadius: 999,
-                          background: 'color-mix(in srgb, var(--overlay-accent) 90%, white 10%)',
-                          transition: 'width 60ms linear',
-                        }}
-                      />
-                    </span>
-                  ) : null}
+                >
+                  <CopyPlus size={12} />
+                  Duplicate Workspace Tab
                 </button>
-                {workspaceTabs.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => closeWorkspaceTab(tab.id)}
-                    title="Close tab"
-                    style={workspaceTabIconButtonStyle}
-                  >
-                    <X size={11} />
-                  </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeActiveTab();
+                    setPaneActionsMenuOpen(false);
+                  }}
+                  disabled={!activeWorkspaceTab || workspaceTabs.length <= 1}
+                  style={workspaceOverflowMenuItemStyle(
+                    false,
+                    !activeWorkspaceTab || workspaceTabs.length <= 1,
+                  )}
+                >
+                  <X size={12} />
+                  Close Workspace Tab
+                </button>
+                {visiblePaneIds.length > 1 && (
+                  <>
+                    <div style={workspaceOverflowDividerStyle} />
+                    <div style={workspaceOverflowLabelStyle}>Pane</div>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        focusNextPane();
+                        setPaneActionsMenuOpen(false);
+                      }}
+                      style={workspaceOverflowMenuItemStyle(false, false)}
+                    >
+                      <span style={workspaceOverflowLeadingGlyphStyle}>→</span>
+                      Focus Next Pane
+                    </button>
+                  </>
+                )}
+                {commanderTargetPaneId && (
+                  <>
+                    <div style={workspaceOverflowDividerStyle} />
+                    <div style={workspaceOverflowLabelStyle}>Commander</div>
+                    {commanderSummaryText && (
+                      <div style={workspaceOverflowSummaryStyle(theme.accent)}>
+                        {commanderSummaryText}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        syncCommanderTargetToActivePane();
+                        setPaneActionsMenuOpen(false);
+                      }}
+                      disabled={!canUseCommanderActions}
+                      style={workspaceOverflowMenuItemStyle(
+                        false,
+                        !canUseCommanderActions,
+                      )}
+                    >
+                      <span style={workspaceOverflowLeadingGlyphStyle}>↺</span>
+                      Sync Target Pane
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={linkedNavigationEnabled}
+                      onClick={() => {
+                        setLinkedNavigationEnabled((current) => !current);
+                        setPaneActionsMenuOpen(false);
+                      }}
+                      style={workspaceOverflowMenuItemStyle(
+                        linkedNavigationEnabled,
+                        false,
+                      )}
+                    >
+                      <span style={workspaceOverflowLeadingGlyphStyle}>
+                        {linkedNavigationEnabled ? "●" : "○"}
+                      </span>
+                      Linked Navigation
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        copySelectionToCommanderTarget();
+                        setPaneActionsMenuOpen(false);
+                      }}
+                      disabled={commanderButtonsDisabled}
+                      style={workspaceOverflowMenuItemStyle(
+                        false,
+                        commanderButtonsDisabled,
+                      )}
+                    >
+                      <span style={workspaceOverflowLeadingGlyphStyle}>⎘</span>
+                      Copy Selection To Pane
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        moveSelectionToCommanderTarget();
+                        setPaneActionsMenuOpen(false);
+                      }}
+                      disabled={commanderButtonsDisabled}
+                      style={workspaceOverflowMenuItemStyle(
+                        false,
+                        commanderButtonsDisabled,
+                      )}
+                    >
+                      <span style={workspaceOverflowLeadingGlyphStyle}>⇄</span>
+                      Move Selection To Pane
+                    </button>
+                  </>
+                )}
+                {(workspaceLayout.supportsColumnSplit ||
+                  workspaceLayout.supportsRowSplit) && (
+                  <>
+                    <div style={workspaceOverflowDividerStyle} />
+                    <div style={workspaceOverflowLabelStyle}>Split</div>
+                    <div style={workspaceOverflowMetaStyle}>
+                      {workspaceLayout.supportsColumnSplit
+                        ? `Cols ${columnSplitPercent}%`
+                        : "Cols off"}
+                      {workspaceLayout.supportsRowSplit
+                        ? ` · Rows ${rowSplitPercent}%`
+                        : ""}
+                    </div>
+                    {workspaceLayout.supportsColumnSplit && (
+                      <>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setWorkspaceColumnSplitRatio(
+                              workspaceColumnSplitRatio - 0.05,
+                            );
+                            setPaneActionsMenuOpen(false);
+                          }}
+                          style={workspaceOverflowMenuItemStyle(false, false)}
+                        >
+                          <ChevronLeft size={12} />
+                          Narrow First Column
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setWorkspaceColumnSplitRatio(0.5);
+                            setPaneActionsMenuOpen(false);
+                          }}
+                          style={workspaceOverflowMenuItemStyle(false, false)}
+                        >
+                          <SquareSplitHorizontal size={12} />
+                          Reset Column Split
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setWorkspaceColumnSplitRatio(
+                              workspaceColumnSplitRatio + 0.05,
+                            );
+                            setPaneActionsMenuOpen(false);
+                          }}
+                          style={workspaceOverflowMenuItemStyle(false, false)}
+                        >
+                          <ChevronRight size={12} />
+                          Widen First Column
+                        </button>
+                      </>
+                    )}
+                    {workspaceLayout.supportsRowSplit && (
+                      <>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setWorkspaceRowSplitRatio(
+                              workspaceRowSplitRatio - 0.05,
+                            );
+                            setPaneActionsMenuOpen(false);
+                          }}
+                          style={workspaceOverflowMenuItemStyle(false, false)}
+                        >
+                          <span style={workspaceOverflowLeadingGlyphStyle}>
+                            ↑
+                          </span>
+                          Reduce Top Row
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setWorkspaceRowSplitRatio(0.5);
+                            setPaneActionsMenuOpen(false);
+                          }}
+                          style={workspaceOverflowMenuItemStyle(false, false)}
+                        >
+                          <span style={workspaceOverflowLeadingGlyphStyle}>
+                            ↕
+                          </span>
+                          Reset Row Split
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setWorkspaceRowSplitRatio(
+                              workspaceRowSplitRatio + 0.05,
+                            );
+                            setPaneActionsMenuOpen(false);
+                          }}
+                          style={workspaceOverflowMenuItemStyle(false, false)}
+                        >
+                          <span style={workspaceOverflowLeadingGlyphStyle}>
+                            ↓
+                          </span>
+                          Expand Top Row
+                        </button>
+                      </>
+                    )}
+                  </>
                 )}
               </div>
-            );
-          })}
-        </>
-      ),
-    },
-    {
-      id: 'workspaceNewTab',
-      label: 'New Tab',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => true,
-      render: () => (
-        <button type="button" onClick={createTabInFocusedPane} title="New workspace tab" style={toolbarButtonStyle}>
-          <Plus size={13} />
-        </button>
-      ),
-    },
-    {
-      id: 'workspacePaneActionsMenu',
-      label: 'Pane Actions Menu',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => true,
-      render: () => (
-        <div ref={paneActionsMenuRef} style={{ position: 'relative' }}>
-          <button
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={paneActionsMenuOpen}
-            aria-label="Workspace pane actions"
-            onClick={() => setPaneActionsMenuOpen((current) => !current)}
-            title="Workspace pane actions"
-            style={toolbarButtonStyle}
+            )}
+          </div>
+        ),
+      },
+      {
+        id: "workspaceSplitToggle",
+        label: "Workspace Layout",
+        surfaces: ["workspaceHeader"],
+        isVisible: () => true,
+        render: () => (
+          <div
+            aria-label="Workspace layout"
+            role="group"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: 3,
+              borderRadius: 999,
+              border: "1px solid var(--overlay-border)",
+              background:
+                "color-mix(in srgb, var(--overlay-explorer-chip-bg) 86%, black 14%)",
+            }}
           >
-            <MoreHorizontal size={13} />
-          </button>
-          {paneActionsMenuOpen && (
-            <div role="menu" aria-label="Workspace pane actions" style={workspaceOverflowMenuStyle}>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  duplicateActiveTab();
-                  setPaneActionsMenuOpen(false);
-                }}
-                disabled={!activeWorkspaceTab}
-                style={workspaceOverflowMenuItemStyle(false, !activeWorkspaceTab)}
-              >
-                <CopyPlus size={12} />
-                Duplicate Workspace Tab
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  closeActiveTab();
-                  setPaneActionsMenuOpen(false);
-                }}
-                disabled={!activeWorkspaceTab || workspaceTabs.length <= 1}
-                style={workspaceOverflowMenuItemStyle(false, !activeWorkspaceTab || workspaceTabs.length <= 1)}
-              >
-                <X size={12} />
-                Close Workspace Tab
-              </button>
-              {visiblePaneIds.length > 1 && (
-                <>
-                  <div style={workspaceOverflowDividerStyle} />
-                  <div style={workspaceOverflowLabelStyle}>Pane</div>
+            {(["single", "split", "triple", "quad"] as const).map(
+              (layoutId) => {
+                const layoutDefinition =
+                  getExplorerWorkspaceLayoutDefinition(layoutId);
+                const isActiveLayout = workspaceLayoutMode === layoutId;
+                return (
                   <button
+                    key={layoutId}
                     type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      focusNextPane();
-                      setPaneActionsMenuOpen(false);
-                    }}
-                    style={workspaceOverflowMenuItemStyle(false, false)}
+                    aria-pressed={isActiveLayout}
+                    onClick={() => ensureWorkspaceLayout(layoutId)}
+                    title={
+                      isActiveLayout
+                        ? `${layoutDefinition.shortLabel} active`
+                        : `Switch workspace to ${layoutDefinition.label}`
+                    }
+                    style={paneActionButtonStyle(isActiveLayout, theme.accent)}
                   >
-                    <span style={workspaceOverflowLeadingGlyphStyle}>→</span>
-                    Focus Next Pane
+                    {layoutDefinition.shortLabel}
                   </button>
-                </>
-              )}
-              {commanderTargetPaneId && (
-                <>
-                  <div style={workspaceOverflowDividerStyle} />
-                  <div style={workspaceOverflowLabelStyle}>Commander</div>
-                  {commanderSummaryText && (
-                    <div style={workspaceOverflowSummaryStyle(theme.accent)}>
-                      {commanderSummaryText}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      syncCommanderTargetToActivePane();
-                      setPaneActionsMenuOpen(false);
-                    }}
-                    disabled={!canUseCommanderActions}
-                    style={workspaceOverflowMenuItemStyle(false, !canUseCommanderActions)}
-                  >
-                    <span style={workspaceOverflowLeadingGlyphStyle}>↺</span>
-                    Sync Target Pane
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={linkedNavigationEnabled}
-                    onClick={() => {
-                      setLinkedNavigationEnabled((current) => !current);
-                      setPaneActionsMenuOpen(false);
-                    }}
-                    style={workspaceOverflowMenuItemStyle(linkedNavigationEnabled, false)}
-                  >
-                    <span style={workspaceOverflowLeadingGlyphStyle}>{linkedNavigationEnabled ? '●' : '○'}</span>
-                    Linked Navigation
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      copySelectionToCommanderTarget();
-                      setPaneActionsMenuOpen(false);
-                    }}
-                    disabled={commanderButtonsDisabled}
-                    style={workspaceOverflowMenuItemStyle(false, commanderButtonsDisabled)}
-                  >
-                    <span style={workspaceOverflowLeadingGlyphStyle}>⎘</span>
-                    Copy Selection To Pane
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      moveSelectionToCommanderTarget();
-                      setPaneActionsMenuOpen(false);
-                    }}
-                    disabled={commanderButtonsDisabled}
-                    style={workspaceOverflowMenuItemStyle(false, commanderButtonsDisabled)}
-                  >
-                    <span style={workspaceOverflowLeadingGlyphStyle}>⇄</span>
-                    Move Selection To Pane
-                  </button>
-                </>
-              )}
-              {(workspaceLayout.supportsColumnSplit || workspaceLayout.supportsRowSplit) && (
-                <>
-                  <div style={workspaceOverflowDividerStyle} />
-                  <div style={workspaceOverflowLabelStyle}>Split</div>
-                  <div style={workspaceOverflowMetaStyle}>
-                    {workspaceLayout.supportsColumnSplit ? `Cols ${columnSplitPercent}%` : 'Cols off'}
-                    {workspaceLayout.supportsRowSplit ? ` · Rows ${rowSplitPercent}%` : ''}
-                  </div>
-                  {workspaceLayout.supportsColumnSplit && (
-                    <>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setWorkspaceColumnSplitRatio(workspaceColumnSplitRatio - 0.05);
-                          setPaneActionsMenuOpen(false);
-                        }}
-                        style={workspaceOverflowMenuItemStyle(false, false)}
-                      >
-                        <ChevronLeft size={12} />
-                        Narrow First Column
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setWorkspaceColumnSplitRatio(0.5);
-                          setPaneActionsMenuOpen(false);
-                        }}
-                        style={workspaceOverflowMenuItemStyle(false, false)}
-                      >
-                        <SquareSplitHorizontal size={12} />
-                        Reset Column Split
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setWorkspaceColumnSplitRatio(workspaceColumnSplitRatio + 0.05);
-                          setPaneActionsMenuOpen(false);
-                        }}
-                        style={workspaceOverflowMenuItemStyle(false, false)}
-                      >
-                        <ChevronRight size={12} />
-                        Widen First Column
-                      </button>
-                    </>
-                  )}
-                  {workspaceLayout.supportsRowSplit && (
-                    <>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setWorkspaceRowSplitRatio(workspaceRowSplitRatio - 0.05);
-                          setPaneActionsMenuOpen(false);
-                        }}
-                        style={workspaceOverflowMenuItemStyle(false, false)}
-                      >
-                        <span style={workspaceOverflowLeadingGlyphStyle}>↑</span>
-                        Reduce Top Row
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setWorkspaceRowSplitRatio(0.5);
-                          setPaneActionsMenuOpen(false);
-                        }}
-                        style={workspaceOverflowMenuItemStyle(false, false)}
-                      >
-                        <span style={workspaceOverflowLeadingGlyphStyle}>↕</span>
-                        Reset Row Split
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setWorkspaceRowSplitRatio(workspaceRowSplitRatio + 0.05);
-                          setPaneActionsMenuOpen(false);
-                        }}
-                        style={workspaceOverflowMenuItemStyle(false, false)}
-                      >
-                        <span style={workspaceOverflowLeadingGlyphStyle}>↓</span>
-                        Expand Top Row
-                      </button>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      id: 'workspaceSplitToggle',
-      label: 'Workspace Layout',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => true,
-      render: () => (
-        <div
-          aria-label="Workspace layout"
-          role="group"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: 3,
-            borderRadius: 999,
-            border: '1px solid var(--overlay-border)',
-            background: 'color-mix(in srgb, var(--overlay-explorer-chip-bg) 86%, black 14%)',
-          }}
-        >
-          {(['single', 'split', 'triple', 'quad'] as const).map((layoutId) => {
-            const layoutDefinition = getExplorerWorkspaceLayoutDefinition(layoutId);
-            const isActiveLayout = workspaceLayoutMode === layoutId;
-            return (
-              <button
-                key={layoutId}
-                type="button"
-                aria-pressed={isActiveLayout}
-                onClick={() => ensureWorkspaceLayout(layoutId)}
-                title={
-                  isActiveLayout
-                    ? `${layoutDefinition.shortLabel} active`
-                    : `Switch workspace to ${layoutDefinition.label}`
-                }
-                style={paneActionButtonStyle(isActiveLayout, theme.accent)}
-              >
-                {layoutDefinition.shortLabel}
-              </button>
-            );
-          })}
-        </div>
-      ),
-    },
-  ], [
-    activePane,
-    activeWorkspaceTab,
-    canUseCommanderActions,
-    closeActiveTab,
-    closeWorkspaceTab,
-    columnSplitPercent,
-    commanderButtonsDisabled,
-    commanderSummaryText,
-    commanderTargetPaneId,
-    copySelectionToCommanderTarget,
-    createTabInFocusedPane,
-    duplicateActiveTab,
-    ensureWorkspaceLayout,
-    focusNextPane,
-    focusWorkspaceTab,
-    linkedNavigationEnabled,
-    moveSelectionToCommanderTarget,
-    paneActionsMenuOpen,
-    rowSplitPercent,
-    runtimeSnapshotsByInstanceId,
-    sessions,
-    setFocusedPane,
-    setPaneActionsMenuOpen,
-    setWorkspaceColumnSplitRatio,
-    setWorkspaceRowSplitRatio,
-    syncCommanderTargetToActivePane,
-    theme.accent,
-    visiblePaneIds,
-    workspaceColumnSplitRatio,
-    workspaceLayoutMode,
-    workspaceLayout.supportsColumnSplit,
-    workspaceLayout.supportsRowSplit,
-    workspaceRowSplitRatio,
-    workspaceTabs,
-  ]);
+                );
+              },
+            )}
+          </div>
+        ),
+      },
+    ],
+    [
+      activePane,
+      activeWorkspaceTab,
+      canUseCommanderActions,
+      closeActiveTab,
+      closeWorkspaceTab,
+      columnSplitPercent,
+      commanderButtonsDisabled,
+      commanderSummaryText,
+      commanderTargetPaneId,
+      copySelectionToCommanderTarget,
+      createTabInFocusedPane,
+      duplicateActiveTab,
+      ensureWorkspaceLayout,
+      focusNextPane,
+      focusWorkspaceTab,
+      linkedNavigationEnabled,
+      moveSelectionToCommanderTarget,
+      paneActionsMenuOpen,
+      rowSplitPercent,
+      runtimeSnapshotsByInstanceId,
+      sessions,
+      setFocusedPane,
+      setPaneActionsMenuOpen,
+      setWorkspaceColumnSplitRatio,
+      setWorkspaceRowSplitRatio,
+      syncCommanderTargetToActivePane,
+      theme.accent,
+      visiblePaneIds,
+      workspaceColumnSplitRatio,
+      workspaceLayoutMode,
+      workspaceLayout.supportsColumnSplit,
+      workspaceLayout.supportsRowSplit,
+      workspaceRowSplitRatio,
+      workspaceTabs,
+    ],
+  );
   const workspaceChromeControlRegistryById = useMemo(
-    () => new Map(workspaceChromeControlRegistry.map((entry) => [entry.id, entry])),
+    () =>
+      new Map(workspaceChromeControlRegistry.map((entry) => [entry.id, entry])),
     [workspaceChromeControlRegistry],
   );
   const workspaceHeaderSurface = useMemo(
-    () => resolveExplorerChromeSurfaceLayout({
-      layoutId: explorerChromeLayoutId,
-      surfaceId: 'workspaceHeader',
-      controlDefinitions: workspaceChromeControlRegistry,
-      override: explorerChromeOverride,
-      isControlVisible: (controlId, surfaceId) => workspaceChromeControlRegistryById.get(controlId)?.isVisible(surfaceId) ?? false,
-    }),
+    () =>
+      resolveExplorerChromeSurfaceLayout({
+        layoutId: explorerChromeLayoutId,
+        surfaceId: "workspaceHeader",
+        controlDefinitions: workspaceChromeControlRegistry,
+        override: explorerChromeOverride,
+        isControlVisible: (controlId, surfaceId) =>
+          workspaceChromeControlRegistryById
+            .get(controlId)
+            ?.isVisible(surfaceId) ?? false,
+      }),
     [
       explorerChromeLayoutId,
       explorerChromeOverride,
@@ -1320,72 +1802,76 @@ export function ExplorerWorkspace({
       workspaceChromeControlRegistryById,
     ],
   );
-  const renderWorkspaceChromeControl = useCallback((placement: ExplorerChromeResolvedControlPlacement) => (
-    workspaceChromeControlRegistryById.get(placement.controlId)?.render(placement) ?? null
-  ), [workspaceChromeControlRegistryById]);
+  const renderWorkspaceChromeControl = useCallback(
+    (placement: ExplorerChromeResolvedControlPlacement) =>
+      workspaceChromeControlRegistryById
+        .get(placement.controlId)
+        ?.render(placement) ?? null,
+    [workspaceChromeControlRegistryById],
+  );
   const activateWorkspaceChromeCommand = useCallback(
     (controlId: ExplorerChromeControlId): boolean => {
       switch (controlId) {
-        case 'workspacePaneCounts':
+        case "workspacePaneCounts":
           if (visiblePaneIds.length <= 1) {
             return false;
           }
           focusNextPane();
           return true;
-        case 'workspaceMode':
-        case 'workspaceLayoutHint':
-        case 'workspaceSplitToggle':
+        case "workspaceMode":
+        case "workspaceLayoutHint":
+        case "workspaceSplitToggle":
           cycleWorkspaceLayout();
           return true;
-        case 'workspaceNewTab':
+        case "workspaceNewTab":
           createTabInFocusedPane();
           return true;
-        case 'workspacePaneActionsMenu':
+        case "workspacePaneActionsMenu":
           togglePaneActionsMenu();
           return true;
-        case 'workspaceDuplicateTab':
+        case "workspaceDuplicateTab":
           if (!activeWorkspaceTab) {
             return false;
           }
           duplicateActiveTab();
           return true;
-        case 'workspaceFocusLeft':
+        case "workspaceFocusLeft":
           if (visiblePaneIds.length <= 1) {
             return false;
           }
           focusPreviousPane();
           return true;
-        case 'workspaceFocusRight':
+        case "workspaceFocusRight":
           if (visiblePaneIds.length <= 1) {
             return false;
           }
           focusNextPane();
           return true;
-        case 'workspaceSyncPath':
+        case "workspaceSyncPath":
           if (!commanderTargetPaneSnapshot || !activePanePath.trim()) {
             return false;
           }
           syncCommanderTargetToActivePane();
           return true;
-        case 'workspaceLinkNavigation':
+        case "workspaceLinkNavigation":
           if (!commanderTargetPaneId) {
             return false;
           }
           setLinkedNavigationEnabled((current) => !current);
           return true;
-        case 'workspaceCopyToPane':
+        case "workspaceCopyToPane":
           if (commanderButtonsDisabled) {
             return false;
           }
           copySelectionToCommanderTarget();
           return true;
-        case 'workspaceMoveToPane':
+        case "workspaceMoveToPane":
           if (commanderButtonsDisabled) {
             return false;
           }
           moveSelectionToCommanderTarget();
           return true;
-        case 'workspaceSwapPane':
+        case "workspaceSwapPane":
           if (
             !activePaneSnapshot ||
             !commanderTargetPaneSnapshot ||
@@ -1405,17 +1891,17 @@ export function ExplorerWorkspace({
             true,
           );
           return true;
-        case 'workspaceCloseTab':
+        case "workspaceCloseTab":
           if (!activeWorkspaceTab || workspaceTabs.length <= 1) {
             return false;
           }
           closeActiveTab();
           return true;
-        case 'workspaceSplitNudgeLeft':
+        case "workspaceSplitNudgeLeft":
           return nudgeWorkspaceSplit(-0.05);
-        case 'workspaceSplitReset':
+        case "workspaceSplitReset":
           return resetWorkspaceSplit();
-        case 'workspaceSplitNudgeRight':
+        case "workspaceSplitNudgeRight":
           return nudgeWorkspaceSplit(0.05);
         default:
           return false;
@@ -1449,10 +1935,9 @@ export function ExplorerWorkspace({
   const workspaceCommandControlIdByCommandId = useMemo(
     () =>
       new Map(
-        workspaceChromeControlRegistry.map((entry) => [
-          getExplorerChromeCommandId(entry.id),
-          entry.id,
-        ] as const),
+        workspaceChromeControlRegistry.map(
+          (entry) => [getExplorerChromeCommandId(entry.id), entry.id] as const,
+        ),
       ),
     [workspaceChromeControlRegistry],
   );
@@ -1492,185 +1977,221 @@ export function ExplorerWorkspace({
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [commandBindingsById, triggerWorkspaceChromeCommandBinding]);
 
-  const renderPane = useCallback((pane: ExplorerPaneId, paneSnapshot: ExplorerWorkspacePaneSnapshot | null) => {
-    const isActivePane = activePane === pane;
-    if (!paneSnapshot) {
+  const renderPane = useCallback(
+    (
+      pane: ExplorerPaneId,
+      paneSnapshot: ExplorerWorkspacePaneSnapshot | null,
+    ) => {
+      const isActivePane = activePane === pane;
+      if (!paneSnapshot) {
+        return (
+          <div
+            style={{
+              minWidth: 0,
+              minHeight: 0,
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              border: "1px dashed var(--overlay-border)",
+              borderRadius: 14,
+              background: "var(--overlay-bg-panel)",
+              color: "var(--overlay-text-muted)",
+            }}
+            onMouseDown={() => setFocusedPane(pane)}
+          >
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
+                minHeight: 0,
+                display: "grid",
+                placeItems: "center",
+              }}
+            >
+              <div
+                style={{
+                  border: "1px solid var(--overlay-border)",
+                  borderRadius: 999,
+                  padding: "8px 14px",
+                  background: "var(--overlay-explorer-chip-bg)",
+                  color: "var(--overlay-text-primary)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                Pane unavailable
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div
           style={{
             minWidth: 0,
             minHeight: 0,
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            border: '1px dashed var(--overlay-border)',
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            border: "1px solid var(--overlay-border)",
             borderRadius: 14,
-            background: 'var(--overlay-bg-panel)',
-            color: 'var(--overlay-text-muted)',
+            overflow: "hidden",
+            background: "var(--overlay-bg-panel)",
+            ...resolvePaneAccent(isActivePane),
           }}
           onMouseDown={() => setFocusedPane(pane)}
         >
-          <div
-            style={{
-              flex: 1,
-              minWidth: 0,
-              minHeight: 0,
-              display: 'grid',
-              placeItems: 'center',
-            }}
-          >
-            <div
-              style={{
-                border: '1px solid var(--overlay-border)',
-                borderRadius: 999,
-                padding: '8px 14px',
-                background: 'var(--overlay-explorer-chip-bg)',
-                color: 'var(--overlay-text-primary)',
-                fontSize: 11,
-                fontWeight: 600,
-              }}
-            >
-              Pane unavailable
-            </div>
-          </div>
+          <FileExplorer
+            key={paneSnapshot.instanceId}
+            appearance={appearance}
+            chromeControlSurface={chromeControlSurface}
+            externalNavigationRequest={
+              navigationRequestsByInstanceId[paneSnapshot.instanceId] ?? null
+            }
+            externalRevealRequest={
+              revealRequestsByInstanceId[paneSnapshot.instanceId] ?? null
+            }
+            externalRefreshRequest={
+              refreshRequestsByInstanceId[paneSnapshot.instanceId] ?? null
+            }
+            externalSelectionTransferRequest={
+              selectionTransferRequestsByInstanceId[paneSnapshot.instanceId] ??
+              null
+            }
+            instanceId={paneSnapshot.instanceId}
+            layoutMode={layoutMode}
+            renderDragOverlayHost={false}
+            workspacePaneCount={workspacePaneCount}
+            onWorkspaceRuntimeSnapshotChange={publishRuntimeSnapshot}
+            onWorkspaceSelectionTransferComplete={
+              handleWorkspaceSelectionTransferComplete
+            }
+            actions={actions}
+            pluginActions={pluginActions}
+            pluginContextMenuItems={pluginContextMenuItems}
+            explorerPicker={isActivePane ? explorerPicker : null}
+            onExplorerPickerConfirm={onExplorerPickerConfirm}
+            onExplorerPickerCancel={onExplorerPickerCancel}
+            theme={theme}
+            onAddBookmark={onAddBookmark}
+            homePacks={homePacks}
+            menuPacks={menuPacks}
+            onOpenPanel={onOpenPanel}
+            onOpenSettingsSection={onOpenSettingsSection}
+            onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
+            onOpenInTerminal={onOpenInTerminal}
+          />
         </div>
       );
-    }
+    },
+    [
+      activePane,
+      appearance,
+      chromeControlSurface,
+      handleWorkspaceSelectionTransferComplete,
+      layoutMode,
+      navigationRequestsByInstanceId,
+      onAddBookmark,
+      pendingOpenRequest,
+      actions,
+      homePacks,
+      onOpenInFilesystemAquarium,
+      onOpenInTerminal,
+      onOpenPanel,
+      onOpenSettingsSection,
+      onExplorerPickerCancel,
+      onExplorerPickerConfirm,
+      pluginActions,
+      pluginContextMenuItems,
+      publishRuntimeSnapshot,
+      refreshRequestsByInstanceId,
+      revealRequestsByInstanceId,
+      explorerPicker,
+      selectionTransferRequestsByInstanceId,
+      setFocusedPane,
+      theme,
+      workspacePaneCount,
+    ],
+  );
 
-    return (
-      <div
-        style={{
-          minWidth: 0,
-          minHeight: 0,
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          border: '1px solid var(--overlay-border)',
-          borderRadius: 14,
-          overflow: 'hidden',
-          background: 'var(--overlay-bg-panel)',
-          ...resolvePaneAccent(isActivePane),
-        }}
-        onMouseDown={() => setFocusedPane(pane)}
-      >
-        <FileExplorer
-          key={paneSnapshot.instanceId}
-          appearance={appearance}
-          chromeControlSurface={chromeControlSurface}
-          externalNavigationRequest={navigationRequestsByInstanceId[paneSnapshot.instanceId] ?? null}
-          externalRevealRequest={revealRequestsByInstanceId[paneSnapshot.instanceId] ?? null}
-          externalRefreshRequest={refreshRequestsByInstanceId[paneSnapshot.instanceId] ?? null}
-          externalSelectionTransferRequest={selectionTransferRequestsByInstanceId[paneSnapshot.instanceId] ?? null}
-          instanceId={paneSnapshot.instanceId}
-          layoutMode={layoutMode}
-          renderDragOverlayHost={false}
-          workspacePaneCount={workspacePaneCount}
-          onWorkspaceRuntimeSnapshotChange={publishRuntimeSnapshot}
-          onWorkspaceSelectionTransferComplete={handleWorkspaceSelectionTransferComplete}
-          actions={actions}
-          pluginActions={pluginActions}
-          pluginContextMenuItems={pluginContextMenuItems}
-          explorerPicker={isActivePane ? explorerPicker : null}
-          onExplorerPickerConfirm={onExplorerPickerConfirm}
-          onExplorerPickerCancel={onExplorerPickerCancel}
-          theme={theme}
-              onAddBookmark={onAddBookmark}
-              homePacks={homePacks}
-              menuPacks={menuPacks}
-              onOpenPanel={onOpenPanel}
-          onOpenSettingsSection={onOpenSettingsSection}
-          onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
-          onOpenInTerminal={onOpenInTerminal}
-        />
+  const startColumnResize = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startRatio = workspaceColumnSplitRatio;
+      const width =
+        paneSurfaceRef.current?.getBoundingClientRect().width ??
+        containerRef.current?.getBoundingClientRect().width ??
+        1;
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        const delta = moveEvent.clientX - startX;
+        setWorkspaceColumnSplitRatio(startRatio + delta / width);
+      };
+      const onMouseUp = () => {
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+      };
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    },
+    [setWorkspaceColumnSplitRatio, workspaceColumnSplitRatio],
+  );
+  const startRowResize = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const startY = event.clientY;
+      const startRatio = workspaceRowSplitRatio;
+      const height =
+        paneSurfaceRef.current?.getBoundingClientRect().height ??
+        containerRef.current?.getBoundingClientRect().height ??
+        1;
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        const delta = moveEvent.clientY - startY;
+        setWorkspaceRowSplitRatio(startRatio + delta / height);
+      };
+      const onMouseUp = () => {
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+      };
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    },
+    [setWorkspaceRowSplitRatio, workspaceRowSplitRatio],
+  );
+  const renderColumnHandle = useCallback(
+    (key: string) => (
+      <div key={key} style={splitHandleStyle} onMouseDown={startColumnResize}>
+        <div style={splitHandleInnerStyle} />
       </div>
-    );
-  }, [
-    activePane,
-    appearance,
-    chromeControlSurface,
-    handleWorkspaceSelectionTransferComplete,
-    layoutMode,
-    navigationRequestsByInstanceId,
-    onAddBookmark,
-    pendingOpenRequest,
-    actions,
-    homePacks,
-    onOpenInFilesystemAquarium,
-    onOpenInTerminal,
-    onOpenPanel,
-    onOpenSettingsSection,
-    onExplorerPickerCancel,
-    onExplorerPickerConfirm,
-    pluginActions,
-    pluginContextMenuItems,
-    publishRuntimeSnapshot,
-    refreshRequestsByInstanceId,
-    revealRequestsByInstanceId,
-    explorerPicker,
-    selectionTransferRequestsByInstanceId,
-    setFocusedPane,
-    theme,
-    workspacePaneCount,
-  ]);
-
-  const startColumnResize = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startRatio = workspaceColumnSplitRatio;
-    const width = paneSurfaceRef.current?.getBoundingClientRect().width ?? containerRef.current?.getBoundingClientRect().width ?? 1;
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const delta = moveEvent.clientX - startX;
-      setWorkspaceColumnSplitRatio(startRatio + delta / width);
-    };
-    const onMouseUp = () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  }, [setWorkspaceColumnSplitRatio, workspaceColumnSplitRatio]);
-  const startRowResize = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const startY = event.clientY;
-    const startRatio = workspaceRowSplitRatio;
-    const height = paneSurfaceRef.current?.getBoundingClientRect().height ?? containerRef.current?.getBoundingClientRect().height ?? 1;
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const delta = moveEvent.clientY - startY;
-      setWorkspaceRowSplitRatio(startRatio + delta / height);
-    };
-    const onMouseUp = () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  }, [setWorkspaceRowSplitRatio, workspaceRowSplitRatio]);
-  const renderColumnHandle = useCallback((key: string) => (
-    <div
-      key={key}
-      style={splitHandleStyle}
-      onMouseDown={startColumnResize}
-    >
-      <div style={splitHandleInnerStyle} />
-    </div>
-  ), [startColumnResize]);
-  const renderRowHandle = useCallback((key: string) => (
-    <div
-      key={key}
-      style={{ ...splitHandleStyle, width: '100%', height: 8, cursor: 'row-resize' }}
-      onMouseDown={startRowResize}
-    >
-      <div style={{ ...splitHandleInnerStyle, width: '100%', height: 2 }} />
-    </div>
-  ), [startRowResize]);
+    ),
+    [startColumnResize],
+  );
+  const renderRowHandle = useCallback(
+    (key: string) => (
+      <div
+        key={key}
+        style={{
+          ...splitHandleStyle,
+          width: "100%",
+          height: 8,
+          cursor: "row-resize",
+        }}
+        onMouseDown={startRowResize}
+      >
+        <div style={{ ...splitHandleInnerStyle, width: "100%", height: 2 }} />
+      </div>
+    ),
+    [startRowResize],
+  );
 
   return (
     <div
@@ -1678,84 +2199,193 @@ export function ExplorerWorkspace({
       onDragOver={onWorkspaceDragOver}
       onDragLeave={onWorkspaceDragLeave}
       style={{
-        display: 'flex',
-        flexDirection: 'column',
+        display: "flex",
+        flexDirection: "column",
         minHeight: 0,
-        height: '100%',
+        height: "100%",
         gap: 10,
       }}
     >
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
           gap: 8,
           minHeight: 36,
-          padding: '6px 10px',
+          padding: "6px 10px",
           borderRadius: 14,
-          border: '1px solid var(--overlay-border)',
-          background: 'color-mix(in srgb, var(--overlay-bg-panel) 88%, black 12%)',
+          border: "1px solid var(--overlay-border)",
+          background:
+            "color-mix(in srgb, var(--overlay-bg-panel) 88%, black 12%)",
         }}
       >
         <ExplorerChromeSurface
           surface={workspaceHeaderSurface}
-          style={{ width: '100%' }}
+          style={{ width: "100%" }}
           getRowStyle={() => workspaceHeaderRowStyle}
           getZoneStyle={getWorkspaceHeaderZoneStyle}
           renderControl={renderWorkspaceChromeControl}
           editMode={workspaceChromeEditMode}
         />
       </div>
-      {workspaceLayoutMode === 'single' ? (
+      {workspaceLayoutMode === "single" ? (
         <div style={{ flex: 1, minHeight: 0 }}>
-          {renderPane('pane-1', activeWorkspaceTab?.panes['pane-1'] ?? null)}
+          {renderPane("pane-1", activeWorkspaceTab?.panes["pane-1"] ?? null)}
         </div>
-      ) : workspaceLayoutMode === 'split' ? (
-        <div ref={paneSurfaceRef} style={{ display: 'flex', flex: 1, minHeight: 0, gap: 10 }}>
-          <div style={{ flex: workspaceColumnSplitRatio, minWidth: 0, minHeight: 0 }}>
-            {renderPane('pane-1', activeWorkspaceTab?.panes['pane-1'] ?? null)}
+      ) : workspaceLayoutMode === "split" ? (
+        <div
+          ref={paneSurfaceRef}
+          style={{ display: "flex", flex: 1, minHeight: 0, gap: 10 }}
+        >
+          <div
+            style={{
+              flex: workspaceColumnSplitRatio,
+              minWidth: 0,
+              minHeight: 0,
+            }}
+          >
+            {renderPane("pane-1", activeWorkspaceTab?.panes["pane-1"] ?? null)}
           </div>
-          {renderColumnHandle('split-column')}
-          <div style={{ flex: 1 - workspaceColumnSplitRatio, minWidth: 0, minHeight: 0 }}>
-            {renderPane('pane-2', activeWorkspaceTab?.panes['pane-2'] ?? null)}
+          {renderColumnHandle("split-column")}
+          <div
+            style={{
+              flex: 1 - workspaceColumnSplitRatio,
+              minWidth: 0,
+              minHeight: 0,
+            }}
+          >
+            {renderPane("pane-2", activeWorkspaceTab?.panes["pane-2"] ?? null)}
           </div>
         </div>
-      ) : workspaceLayoutMode === 'triple' ? (
-        <div ref={paneSurfaceRef} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 10 }}>
+      ) : workspaceLayoutMode === "triple" ? (
+        <div
+          ref={paneSurfaceRef}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            flex: 1,
+            minHeight: 0,
+            gap: 10,
+          }}
+        >
           <div style={{ flex: workspaceRowSplitRatio, minHeight: 0 }}>
-            {renderPane('pane-1', activeWorkspaceTab?.panes['pane-1'] ?? null)}
+            {renderPane("pane-1", activeWorkspaceTab?.panes["pane-1"] ?? null)}
           </div>
-          {renderRowHandle('triple-row')}
-          <div style={{ display: 'flex', minHeight: 0, flex: 1 - workspaceRowSplitRatio, gap: 10 }}>
-            <div style={{ flex: workspaceColumnSplitRatio, minWidth: 0, minHeight: 0 }}>
-              {renderPane('pane-2', activeWorkspaceTab?.panes['pane-2'] ?? null)}
+          {renderRowHandle("triple-row")}
+          <div
+            style={{
+              display: "flex",
+              minHeight: 0,
+              flex: 1 - workspaceRowSplitRatio,
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                flex: workspaceColumnSplitRatio,
+                minWidth: 0,
+                minHeight: 0,
+              }}
+            >
+              {renderPane(
+                "pane-2",
+                activeWorkspaceTab?.panes["pane-2"] ?? null,
+              )}
             </div>
-            {renderColumnHandle('triple-column')}
-            <div style={{ flex: 1 - workspaceColumnSplitRatio, minWidth: 0, minHeight: 0 }}>
-              {renderPane('pane-3', activeWorkspaceTab?.panes['pane-3'] ?? null)}
+            {renderColumnHandle("triple-column")}
+            <div
+              style={{
+                flex: 1 - workspaceColumnSplitRatio,
+                minWidth: 0,
+                minHeight: 0,
+              }}
+            >
+              {renderPane(
+                "pane-3",
+                activeWorkspaceTab?.panes["pane-3"] ?? null,
+              )}
             </div>
           </div>
         </div>
       ) : (
-        <div ref={paneSurfaceRef} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 10 }}>
-          <div style={{ display: 'flex', minHeight: 0, flex: workspaceRowSplitRatio, gap: 10 }}>
-            <div style={{ flex: workspaceColumnSplitRatio, minWidth: 0, minHeight: 0 }}>
-              {renderPane('pane-1', activeWorkspaceTab?.panes['pane-1'] ?? null)}
+        <div
+          ref={paneSurfaceRef}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            flex: 1,
+            minHeight: 0,
+            gap: 10,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              minHeight: 0,
+              flex: workspaceRowSplitRatio,
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                flex: workspaceColumnSplitRatio,
+                minWidth: 0,
+                minHeight: 0,
+              }}
+            >
+              {renderPane(
+                "pane-1",
+                activeWorkspaceTab?.panes["pane-1"] ?? null,
+              )}
             </div>
-            {renderColumnHandle('quad-column-top')}
-            <div style={{ flex: 1 - workspaceColumnSplitRatio, minWidth: 0, minHeight: 0 }}>
-              {renderPane('pane-2', activeWorkspaceTab?.panes['pane-2'] ?? null)}
+            {renderColumnHandle("quad-column-top")}
+            <div
+              style={{
+                flex: 1 - workspaceColumnSplitRatio,
+                minWidth: 0,
+                minHeight: 0,
+              }}
+            >
+              {renderPane(
+                "pane-2",
+                activeWorkspaceTab?.panes["pane-2"] ?? null,
+              )}
             </div>
           </div>
-          {renderRowHandle('quad-row')}
-          <div style={{ display: 'flex', minHeight: 0, flex: 1 - workspaceRowSplitRatio, gap: 10 }}>
-            <div style={{ flex: workspaceColumnSplitRatio, minWidth: 0, minHeight: 0 }}>
-              {renderPane('pane-3', activeWorkspaceTab?.panes['pane-3'] ?? null)}
+          {renderRowHandle("quad-row")}
+          <div
+            style={{
+              display: "flex",
+              minHeight: 0,
+              flex: 1 - workspaceRowSplitRatio,
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                flex: workspaceColumnSplitRatio,
+                minWidth: 0,
+                minHeight: 0,
+              }}
+            >
+              {renderPane(
+                "pane-3",
+                activeWorkspaceTab?.panes["pane-3"] ?? null,
+              )}
             </div>
-            {renderColumnHandle('quad-column-bottom')}
-            <div style={{ flex: 1 - workspaceColumnSplitRatio, minWidth: 0, minHeight: 0 }}>
-              {renderPane('pane-4', activeWorkspaceTab?.panes['pane-4'] ?? null)}
+            {renderColumnHandle("quad-column-bottom")}
+            <div
+              style={{
+                flex: 1 - workspaceColumnSplitRatio,
+                minWidth: 0,
+                minHeight: 0,
+              }}
+            >
+              {renderPane(
+                "pane-4",
+                activeWorkspaceTab?.panes["pane-4"] ?? null,
+              )}
             </div>
           </div>
         </div>
@@ -1766,103 +2396,119 @@ export function ExplorerWorkspace({
 }
 
 const toolbarButtonStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   width: 30,
   height: 30,
   borderRadius: 999,
-  border: '1px solid var(--overlay-border)',
-  background: 'var(--overlay-explorer-chip-bg)',
-  color: 'var(--overlay-text-primary)',
-  cursor: 'pointer',
+  border: "1px solid var(--overlay-border)",
+  background: "var(--overlay-explorer-chip-bg)",
+  color: "var(--overlay-text-primary)",
+  cursor: "pointer",
 };
 
 const paneSwitcherGroupStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
+  display: "inline-flex",
+  alignItems: "center",
   gap: 6,
   minWidth: 0,
-  flexWrap: 'wrap',
+  flexWrap: "wrap",
 };
 
-function paneSwitcherButtonStyle(active: boolean, accent: string): React.CSSProperties {
+function paneSwitcherButtonStyle(
+  active: boolean,
+  accent: string,
+): React.CSSProperties {
   return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 6,
     minWidth: 38,
-    padding: '4px 9px',
+    padding: "4px 9px",
     borderRadius: 999,
-    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-border)'}`,
-    background: active ? `${accent}18` : 'var(--overlay-explorer-chip-bg)',
-    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
+    border: `1px solid ${active ? `${accent}66` : "var(--overlay-border)"}`,
+    background: active ? `${accent}18` : "var(--overlay-explorer-chip-bg)",
+    color: active ? "var(--overlay-text-primary)" : "var(--overlay-text-muted)",
     fontSize: 10,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   };
 }
 
-function paneSwitcherCountStyle(active: boolean, accent: string): React.CSSProperties {
+function paneSwitcherCountStyle(
+  active: boolean,
+  accent: string,
+): React.CSSProperties {
   return {
     minWidth: 16,
-    padding: '1px 5px',
+    padding: "1px 5px",
     borderRadius: 999,
-    background: active ? `${accent}24` : 'rgba(255,255,255,0.08)',
-    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-dim)',
+    background: active ? `${accent}24` : "rgba(255,255,255,0.08)",
+    color: active ? "var(--overlay-text-primary)" : "var(--overlay-text-dim)",
     fontSize: 9,
     fontWeight: 700,
     lineHeight: 1.2,
   };
 }
 
-function workspaceTabChipStyle(active: boolean, accent: string, dropTarget = false): React.CSSProperties {
+function workspaceTabChipStyle(
+  active: boolean,
+  accent: string,
+  dropTarget = false,
+): React.CSSProperties {
   return {
-    display: 'inline-flex',
-    alignItems: 'center',
+    display: "inline-flex",
+    alignItems: "center",
     gap: 6,
     minWidth: 0,
-    padding: '6px 8px 6px 10px',
+    padding: "6px 8px 6px 10px",
     borderRadius: 999,
-    border: `1px solid ${dropTarget ? `${accent}92` : active ? `${accent}66` : 'var(--overlay-border)'}`,
+    border: `1px solid ${dropTarget ? `${accent}92` : active ? `${accent}66` : "var(--overlay-border)"}`,
     background: dropTarget
       ? `color-mix(in srgb, ${accent} 18%, var(--overlay-explorer-chip-bg))`
       : active
         ? `${accent}1b`
-        : 'var(--overlay-explorer-chip-bg)',
-    boxShadow: dropTarget ? `0 0 0 1px ${accent}2a, 0 12px 28px ${accent}24` : undefined,
+        : "var(--overlay-explorer-chip-bg)",
+    boxShadow: dropTarget
+      ? `0 0 0 1px ${accent}2a, 0 12px 28px ${accent}24`
+      : undefined,
   };
 }
 
-function workspaceTabButtonStyle(active: boolean, dropTarget = false): React.CSSProperties {
+function workspaceTabButtonStyle(
+  active: boolean,
+  dropTarget = false,
+): React.CSSProperties {
   return {
-    display: 'inline-flex',
-    alignItems: 'center',
+    display: "inline-flex",
+    alignItems: "center",
     gap: 7,
     minWidth: 0,
-    border: 'none',
-    background: 'transparent',
-    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
-    cursor: 'pointer',
+    border: "none",
+    background: "transparent",
+    color: active ? "var(--overlay-text-primary)" : "var(--overlay-text-muted)",
+    cursor: "pointer",
     padding: 0,
-    position: 'relative',
-    transform: dropTarget ? 'translateY(-1px) scale(1.02)' : 'none',
-    transition: 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1), color 160ms ease',
+    position: "relative",
+    transform: dropTarget ? "translateY(-1px) scale(1.02)" : "none",
+    transition:
+      "transform 160ms cubic-bezier(0.22, 1, 0.36, 1), color 160ms ease",
   };
 }
 
 const workspaceTabIconButtonStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   width: 20,
   height: 20,
   borderRadius: 999,
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--overlay-text-dim)',
-  cursor: 'pointer',
+  border: "none",
+  background: "transparent",
+  color: "var(--overlay-text-dim)",
+  cursor: "pointer",
   flexShrink: 0,
 };
 
@@ -1872,16 +2518,16 @@ function paneActionButtonStyle(
   disabled = false,
 ): React.CSSProperties {
   return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
     minWidth: 0,
-    padding: '6px 10px',
+    padding: "6px 10px",
     borderRadius: 999,
-    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-border)'}`,
-    background: active ? `${accent}18` : 'var(--overlay-explorer-chip-bg)',
-    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
-    cursor: disabled ? 'not-allowed' : 'pointer',
+    border: `1px solid ${active ? `${accent}66` : "var(--overlay-border)"}`,
+    background: active ? `${accent}18` : "var(--overlay-explorer-chip-bg)",
+    color: active ? "var(--overlay-text-primary)" : "var(--overlay-text-muted)",
+    cursor: disabled ? "not-allowed" : "pointer",
     fontSize: 10.5,
     fontWeight: 700,
     opacity: disabled ? 0.45 : 1,
@@ -1889,68 +2535,73 @@ function paneActionButtonStyle(
 }
 
 const workspaceOverflowMenuStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: 'calc(100% + 8px)',
+  position: "absolute",
+  top: "calc(100% + 8px)",
   right: 0,
   zIndex: 40,
-  display: 'flex',
-  flexDirection: 'column',
+  display: "flex",
+  flexDirection: "column",
   gap: 4,
   minWidth: 240,
   padding: 8,
   borderRadius: 14,
-  border: '1px solid var(--overlay-border)',
-  background: 'color-mix(in srgb, var(--overlay-bg-panel) 94%, black 6%)',
-  boxShadow: '0 20px 40px rgba(0,0,0,0.28)',
+  border: "1px solid var(--overlay-border)",
+  background: "color-mix(in srgb, var(--overlay-bg-panel) 94%, black 6%)",
+  boxShadow: "0 20px 40px rgba(0,0,0,0.28)",
 };
 
-function workspaceOverflowMenuItemStyle(active: boolean, disabled: boolean): React.CSSProperties {
+function workspaceOverflowMenuItemStyle(
+  active: boolean,
+  disabled: boolean,
+): React.CSSProperties {
   return {
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 8,
-    width: '100%',
+    width: "100%",
     minWidth: 0,
-    border: 'none',
+    border: "none",
     borderRadius: 10,
-    background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
-    color: disabled ? 'var(--overlay-text-dim)' : 'var(--overlay-text-primary)',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    padding: '7px 9px',
+    background: active
+      ? "var(--overlay-explorer-chip-active-bg)"
+      : "transparent",
+    color: disabled ? "var(--overlay-text-dim)" : "var(--overlay-text-primary)",
+    cursor: disabled ? "not-allowed" : "pointer",
+    padding: "7px 9px",
     fontSize: 11,
     fontWeight: 600,
-    textAlign: 'left',
+    textAlign: "left",
     opacity: disabled ? 0.5 : 1,
   };
 }
 
 const workspaceOverflowDividerStyle: React.CSSProperties = {
   height: 1,
-  margin: '4px 0 1px',
-  background: 'var(--overlay-border)',
+  margin: "4px 0 1px",
+  background: "var(--overlay-border)",
   opacity: 0.8,
 };
 
 const workspaceOverflowLabelStyle: React.CSSProperties = {
-  padding: '2px 9px 0',
+  padding: "2px 9px 0",
   fontSize: 9,
   fontWeight: 700,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
-  color: 'var(--overlay-text-dim)',
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: "var(--overlay-text-dim)",
 };
 
 const workspaceOverflowLeadingGlyphStyle: React.CSSProperties = {
   width: 12,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   flexShrink: 0,
 };
 
 function workspaceOverflowSummaryStyle(accent: string): React.CSSProperties {
   return {
-    padding: '2px 9px 4px',
+    padding: "2px 9px 4px",
     fontSize: 10,
     fontWeight: 600,
     color: accent,
@@ -1958,28 +2609,28 @@ function workspaceOverflowSummaryStyle(accent: string): React.CSSProperties {
 }
 
 const workspaceOverflowMetaStyle: React.CSSProperties = {
-  padding: '2px 9px 4px',
+  padding: "2px 9px 4px",
   fontSize: 10,
   fontWeight: 600,
-  color: 'var(--overlay-text-dim)',
-  whiteSpace: 'nowrap',
+  color: "var(--overlay-text-dim)",
+  whiteSpace: "nowrap",
 };
 
 const splitHandleStyle: React.CSSProperties = {
   width: 8,
   borderRadius: 999,
-  cursor: 'col-resize',
-  background: 'transparent',
-  position: 'relative',
+  cursor: "col-resize",
+  background: "transparent",
+  position: "relative",
   flexShrink: 0,
 };
 
 const splitHandleInnerStyle: React.CSSProperties = {
-  position: 'absolute',
+  position: "absolute",
   inset: 0,
-  margin: 'auto',
+  margin: "auto",
   width: 2,
-  height: '100%',
+  height: "100%",
   borderRadius: 999,
-  background: 'color-mix(in srgb, var(--overlay-border) 85%, transparent)',
+  background: "color-mix(in srgb, var(--overlay-border) 85%, transparent)",
 };

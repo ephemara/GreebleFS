@@ -1,22 +1,22 @@
-import { render, waitFor } from '@testing-library/react';
-import { useCallback, useState } from 'react';
-import { describe, expect, it } from 'vitest';
-import { ExplorerChromeSurface } from '../components/explorer/ExplorerChromeSurface';
-import type { ExplorerChromeResolvedSurface } from '../config/explorerChromeLayouts';
+import { fireEvent, render, waitFor } from "@testing-library/react";
+import { useCallback, useState } from "react";
+import { describe, expect, it } from "vitest";
+import { ExplorerChromeSurface } from "../components/explorer/ExplorerChromeSurface";
+import type { ExplorerChromeResolvedSurface } from "../config/explorerChromeLayouts";
 
 const toolbarSurface: ExplorerChromeResolvedSurface = {
-  surfaceId: 'explorerToolbar',
+  surfaceId: "explorerToolbar",
   rows: [
     {
-      id: 'primary',
+      id: "primary",
       zones: [
         {
-          id: 'primaryStart',
+          id: "primaryStart",
           controls: [
             {
-              controlId: 'refresh',
-              surfaceId: 'explorerToolbar',
-              zone: 'primaryStart',
+              controlId: "refresh",
+              surfaceId: "explorerToolbar",
+              zone: "primaryStart",
               order: 10,
             },
           ],
@@ -24,22 +24,25 @@ const toolbarSurface: ExplorerChromeResolvedSurface = {
       ],
     },
   ],
-  visibleControlIds: ['refresh'],
+  visibleControlIds: ["refresh"],
 };
 
-describe('ExplorerChromeSurface', () => {
-  it('registers a customize surface once when parent rerenders recreate the edit-mode object', async () => {
+describe("ExplorerChromeSurface", () => {
+  it("registers a customize surface once when parent rerenders recreate the edit-mode object", async () => {
     const registerCalls: string[] = [];
     const unregisterCalls: string[] = [];
 
     function Harness() {
       const [, setRevision] = useState(0);
-      const registerSurface = useCallback((surface: ExplorerChromeResolvedSurface) => {
-        registerCalls.push(surface.surfaceId);
-        if (registerCalls.length < 3) {
-          setRevision((current) => current + 1);
-        }
-      }, []);
+      const registerSurface = useCallback(
+        (surface: ExplorerChromeResolvedSurface) => {
+          registerCalls.push(surface.surfaceId);
+          if (registerCalls.length < 3) {
+            setRevision((current) => current + 1);
+          }
+        },
+        [],
+      );
       const unregisterSurface = useCallback((surfaceId: string) => {
         unregisterCalls.push(surfaceId);
       }, []);
@@ -64,14 +67,48 @@ describe('ExplorerChromeSurface', () => {
     const rendered = render(<Harness />);
 
     await waitFor(() => {
-      expect(registerCalls).toEqual(['explorerToolbar']);
+      expect(registerCalls).toEqual(["explorerToolbar"]);
     });
     expect(unregisterCalls).toHaveLength(0);
 
     rendered.unmount();
 
     await waitFor(() => {
-      expect(unregisterCalls).toEqual(['explorerToolbar']);
+      expect(unregisterCalls).toEqual(["explorerToolbar"]);
     });
+  });
+
+  it("requests hotkey capture on Ctrl+Alt+click even when customize mode is off", () => {
+    const requestedHotkeys: string[] = [];
+    const selectedControls: Array<string | null> = [];
+
+    const rendered = render(
+      <ExplorerChromeSurface
+        surface={toolbarSurface}
+        renderControl={() => <button type="button">Refresh</button>}
+        editMode={{
+          active: false,
+          draggingControlId: null,
+          pendingHotkeyControlId: null,
+          onDragStart: () => undefined,
+          onDragEnd: () => undefined,
+          onMoveControl: () => undefined,
+          onRequestHotkeyCapture: (controlId) => {
+            requestedHotkeys.push(controlId);
+          },
+          onSetSelectedControl: (controlId) => {
+            selectedControls.push(controlId);
+          },
+        }}
+      />,
+    );
+
+    fireEvent.click(rendered.getByText("Refresh"), {
+      ctrlKey: true,
+      altKey: true,
+    });
+
+    expect(requestedHotkeys).toEqual(["refresh"]);
+    expect(selectedControls).toEqual(["refresh"]);
   });
 });

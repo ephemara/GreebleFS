@@ -1,3 +1,20 @@
+# 2026-04-25 - Explorer Phase 2 Replaced HTML Drag With Pointer Rituals And Promoted Actions Into A Real Pane
+
+- Explorer chrome customize is no longer hosted by a floating HTML drag/drop overlay. The durable phase-2 shape is now:
+  - `src/components/explorer/explorerCustomizePointerRuntime.ts` owns the Tauri-safe pointer drag session for explorer customize. It resolves drop lanes and remove zones through DOM hit-testing, uses movement-threshold activation plus global pointer listeners, and never touches `draggable` / `dataTransfer`.
+  - `src/components/FileExplorer.tsx` now docks `src/components/explorer/ExplorerActionsPane.tsx` as a first-class explorer pane with its own persisted `actionsVisible` and `actionsWidth` session state. The pane trails Preview on the preview side (`preview -> actions -> content` when leading, `content -> preview -> actions` when trailing), and customize browsing now lives there instead of a floating overlay.
+  - `src/config/explorerShellLayouts.ts` now carries `EXPLORER_ACTIONS_WIDTH_BOUNDS`. Actions width is persisted independently and intentionally does not participate in shell-layout width multipliers in this phase.
+  - `src/components/explorer/ExplorerChromeSurface.tsx` is now pointer-driven for customize moves and supports always-on `Ctrl+Alt+Click` hotkey capture requests even when customize mode is off. The hover `X` removal affordance is the removal ritual for placed controls; dragging a placed control into the explorer content viewport still removes it, but now through the pointer runtime.
+  - `src/components/FileExplorer.tsx` and `src/components/explorer/ExplorerWorkspace.tsx` both bridge the shared `chromeHotkeyCaptureControlId` store field into chrome surfaces. `Ctrl+Alt+Click` is therefore no longer gated by customize mode, while `Ctrl+Alt+Drag` still is.
+  - `src/components/explorer/ExplorerCustomizeOverlay.tsx` was intentionally deleted. Do not resurrect a second floating customize host; future browse/inspect work belongs inside the docked Actions pane.
+- Durable product rule:
+  - The Actions pane is now the canonical authored-action browser for Explorer. In runtime mode it launches authored actions from the current explorer context. In customize mode it becomes the all-in browser/inspector for both built-in controls and authored actions.
+  - If customize mode auto-opens the Actions pane, exiting customize restores the prior closed state. If the user explicitly closes the Actions pane during customize, that is treated as leaving customize mode too.
+  - While the customize pointer ritual is active, normal explorer file/native drag startup is suppressed. Future drag work should keep that separation intact so the app-owned chrome ritual never leaks back into OS/browser drag semantics.
+- Durable validation:
+  - passed: `bun x vitest run src/test/ExplorerChromeSurface.test.tsx src/test/explorerStore.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts`
+  - passed: grep-filtered `bun x tsc --noEmit --pretty false -p tsconfig.json` produced no matches for the touched explorer phase-2 files
+
 # 2026-04-25 - Explorer ZBrush Customize Mode Now Runs On A Shared Chrome Catalog And Ritual Hotkeys
 
 - Explorer chrome customization is now a real runtime-backed system instead of a layout-only shell trick.
