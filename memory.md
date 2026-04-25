@@ -1,3 +1,20 @@
+# 2026-04-25 - Cutout Empty Masks Stay Silent And Host Output Now Rejoins Explorer Clipboard/Refresh Flows
+
+- The image cutout lane had a subtle but important mask-decoding trap:
+  - `src/components/explorer/explorerImageCutoutMask.ts` must only treat a flat grayscale image as a luminance-backed mask when the alpha channel is also effectively opaque. Transparent white mask canvases (`RGB=255`, `A=0`) are part of the local refine pipeline, and if the decoder blindly prefers luminance for any grayscale image it turns an empty mask into a full-frame marching-ants rectangle.
+  - Durable rule: empty transparent masks should decode through alpha, not luma. Opaque grayscale PNG masks from the Python runtime can still decode through luma.
+- Explorer cutout output is now wired back into the flagship explorer workflow instead of stopping at the OS boundary:
+  - `src/components/ExplorerImageCutoutSurface.tsx` still uses the native `image_cutout_copy_to_clipboard` seam, but the returned staged PNG artifact is now also passed back up to Explorer so `Ctrl+C` in Cutout fills the Explorer copy queue with a real file path that `Ctrl+V` can paste.
+  - `src/components/ExplorerImageEditor.tsx` and `src/components/FileExplorer.tsx` now thread that queue callback through the preview host. The queue entry should be the staged PNG artifact path, not the original source image path.
+  - Sibling save in Cutout now also calls back into the preview host after export so Explorer refreshes and the new `.cutout.png` actually appears in the current folder view.
+- Local selection polish from the same pass:
+  - `Magic Wand` and `Quick Select` now use eight-connected neighbor growth instead of strict four-connected growth, which makes diagonal subject regions behave more like a real image-selection tool and less like a toy grid flood fill.
+- Durable validation:
+  - passed: `bunx vitest run src/test/explorerImageCutoutMask.test.ts src/test/explorerImageCutoutSurface.test.tsx --reporter=dot --pool=forks`
+  - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx src/test/explorerImageCutoutSurface.test.tsx --reporter=dot --pool=forks`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens editable image previews in fullscreen preview mode and only enters edit tools on demand" --reporter=dot --pool=forks`
+  - passed: grep-filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` produced no matches for `ExplorerImageCutoutSurface`, `ExplorerImageEditor`, `explorerImageCutoutMask`, or `FileExplorer.tsx`
+
 # 2026-04-25 - Explorer Customize Chrome Now Uses Ambient Band Targeting Instead Of Drop Rails
 
 - Explorer chrome customize no longer depends on explicit per-gap drop-strip DOM nodes for placement. The durable interaction shape is now:

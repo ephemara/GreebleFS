@@ -401,6 +401,11 @@ function renderSurface(
   workflowMode: ExplorerImageCutoutWorkflowMode = "cutout",
   options?: {
     onRegisterContextMenuRegistration?: (registration: unknown) => void;
+    onSaved?: (outputPath?: string) => void | Promise<void>;
+    onQueueClipboardEntry?: (artifact: {
+      outputPath: string;
+      fileName: string;
+    }) => void | Promise<void>;
   },
 ) {
   return render(
@@ -411,6 +416,8 @@ function renderSurface(
       sourceImageUrl={SOURCE_IMAGE_DATA_URL}
       filterState={createDefaultImageFiltersState()}
       onRegisterContextMenuRegistration={options?.onRegisterContextMenuRegistration}
+      onSaved={options?.onSaved}
+      onQueueClipboardEntry={options?.onQueueClipboardEntry}
     />,
   );
 }
@@ -721,6 +728,61 @@ describe("ExplorerImageCutoutSurface", () => {
         "data-has-boundary",
         "false",
       );
+    });
+  });
+
+  it("queues the copied cutout into Explorer pasteable clipboard state when Ctrl+C is used", async () => {
+    const queueClipboardEntry = vi.fn();
+    renderSurface("cutout", {
+      onQueueClipboardEntry: queueClipboardEntry,
+    });
+
+    await waitFor(() => {
+      expect(backendMocks.openExplorerImageCutoutSession).toHaveBeenCalledTimes(1);
+    });
+
+    const surface = screen.getByTestId("explorer-image-cutout-surface");
+    surface.focus();
+    fireEvent.keyDown(window, {
+      key: "c",
+      ctrlKey: true,
+    });
+
+    await waitFor(() => {
+      expect(backendMocks.copyExplorerImageCutoutToClipboard).toHaveBeenCalledWith({
+        sessionId: "cutout-session",
+        logicalOutputPath: "/tmp/preview.png",
+        filters: expect.any(Object),
+        overrideMaskDataUrl: "data:image/png;base64,override-mask",
+      });
+      expect(queueClipboardEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outputPath: "/tmp/preview.cutout.png",
+          fileName: "preview.cutout.png",
+        }),
+      );
+    });
+  });
+
+  it("refreshes the host after saving a sibling cutout PNG", async () => {
+    const onSaved = vi.fn();
+    renderSurface("cutout", { onSaved });
+
+    await waitFor(() => {
+      expect(backendMocks.openExplorerImageCutoutSession).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save sibling PNG" }));
+
+    await waitFor(() => {
+      expect(backendMocks.stageExplorerImageCutoutExport).toHaveBeenCalledWith({
+        sessionId: "cutout-session",
+        exportMode: "siblingPng",
+        logicalOutputPath: "/tmp/preview.png",
+        filters: expect.any(Object),
+        overrideMaskDataUrl: "data:image/png;base64,override-mask",
+      });
+      expect(onSaved).toHaveBeenCalledWith("/tmp/preview.cutout.png");
     });
   });
 

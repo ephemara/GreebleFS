@@ -3689,6 +3689,7 @@ function PreviewPanel({
   onShaderSceneChange,
   onShaderSave,
   onRefreshPreviewEntry,
+  onQueueCutoutClipboardEntry,
   onPdfDocumentChange,
   onPdfChromeStateChange,
   onRegisterCloseGuard,
@@ -3764,6 +3765,10 @@ function PreviewPanel({
   onShaderSceneChange: (path: string, scene: "sphere" | "fullscreen") => void;
   onShaderSave: (path: string) => Promise<void>;
   onRefreshPreviewEntry: () => void | Promise<void>;
+  onQueueCutoutClipboardEntry: (artifact: {
+    outputPath: string;
+    fileName: string;
+  }) => void | Promise<void>;
   onPdfDocumentChange: (
     path: string,
     document: ExplorerPdfPreviewDocument,
@@ -5201,6 +5206,7 @@ function PreviewPanel({
                 handlePreviewContextMenuRegistrationChange
               }
               onSaved={onRefreshPreviewEntry}
+              onQueueClipboardEntry={onQueueCutoutClipboardEntry}
             />
           )}
           {preview.type === "audio" && (
@@ -14965,6 +14971,22 @@ export function FileExplorer({
       setSelectionModeActive(false);
     },
     [currentPathIsArchiveVirtual, setClipboard, setSelectionModeActive],
+  );
+  const queueCutoutClipboardEntry = useCallback(
+    async (artifact: { outputPath: string; fileName: string }) => {
+      setClipboard({
+        action: "copy",
+        entries: [
+          {
+            path: artifact.outputPath,
+            name: artifact.fileName,
+            is_dir: false,
+          },
+        ],
+      });
+      setSelectionModeActive(false);
+    },
+    [setClipboard, setSelectionModeActive],
   );
   const requestTransferDestinationEntries = useCallback(
     (
@@ -25882,6 +25904,7 @@ export function FileExplorer({
         onShaderSceneChange={updateShaderPreviewScene}
         onShaderSave={persistShaderPreviewSource}
         onRefreshPreviewEntry={refresh}
+        onQueueCutoutClipboardEntry={queueCutoutClipboardEntry}
         onPdfDocumentChange={updatePdfPreviewDocument}
         onPdfChromeStateChange={handlePdfPreviewChromeStateChange}
         onRegisterCloseGuard={registerPreviewCloseGuard}

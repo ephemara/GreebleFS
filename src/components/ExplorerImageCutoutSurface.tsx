@@ -1444,20 +1444,20 @@ export function ExplorerImageCutoutSurface({
     lane.statusMessage = "Saving sibling cutout PNG…";
     syncLaneVisuals(workflowMode);
 
-      try {
-        const exportArtifact = await stageExplorerImageCutoutExport({
-          sessionId: snapshot.sessionId,
-          exportMode: "siblingPng",
-          logicalOutputPath: logicalOutputPath ?? imagePath,
-          filters: exportFilters,
-          overrideMaskDataUrl: resolveExportMaskDataUrl(workflowMode),
-        });
-        await onSaved?.(exportArtifact.outputPath);
-        lane.statusTone = "success";
-        lane.statusMessage = `Saved ${exportArtifact.fileName}.`;
-      } catch (error) {
-        lane.statusTone = "error";
-        lane.statusMessage = String(error);
+    try {
+      const exportArtifact = await stageExplorerImageCutoutExport({
+        sessionId: snapshot.sessionId,
+        exportMode: "siblingPng",
+        logicalOutputPath: logicalOutputPath ?? imagePath,
+        filters: exportFilters,
+        overrideMaskDataUrl: resolveExportMaskDataUrl(workflowMode),
+      });
+      await onSaved?.(exportArtifact.outputPath);
+      lane.statusTone = "success";
+      lane.statusMessage = `Saved ${exportArtifact.fileName}.`;
+    } catch (error) {
+      lane.statusTone = "error";
+      lane.statusMessage = String(error);
     } finally {
       lane.isMutating = false;
       syncLaneVisuals(workflowMode);
@@ -1482,25 +1482,27 @@ export function ExplorerImageCutoutSurface({
 
     lane.isMutating = true;
     lane.statusTone = "neutral";
-    lane.statusMessage = "Copying the current cutout to the system clipboard…";
+    lane.statusMessage = onQueueClipboardEntry
+      ? "Copying the current cutout to the clipboard and Explorer paste queue…"
+      : "Copying the current cutout to the system clipboard…";
     syncLaneVisuals(workflowMode);
 
-      try {
-        const exportArtifact = await copyExplorerImageCutoutToClipboard({
-          sessionId: snapshot.sessionId,
-          logicalOutputPath: logicalOutputPath ?? imagePath,
-          filters: exportFilters,
-          overrideMaskDataUrl: resolveExportMaskDataUrl(workflowMode),
-        });
-        await onQueueClipboardEntry?.(exportArtifact);
-        lane.statusTone = "success";
-        lane.statusMessage = onQueueClipboardEntry
-          ? "Cutout copied and queued for Explorer paste."
-          : "Cutout copied to the clipboard.";
-      } catch (error) {
-        lane.statusTone = "error";
-        lane.statusMessage = String(error);
-      } finally {
+    try {
+      const exportArtifact = await copyExplorerImageCutoutToClipboard({
+        sessionId: snapshot.sessionId,
+        logicalOutputPath: logicalOutputPath ?? imagePath,
+        filters: exportFilters,
+        overrideMaskDataUrl: resolveExportMaskDataUrl(workflowMode),
+      });
+      await onQueueClipboardEntry?.(exportArtifact);
+      lane.statusTone = "success";
+      lane.statusMessage = onQueueClipboardEntry
+        ? "Cutout copied and queued for Explorer paste."
+        : "Cutout copied to the clipboard.";
+    } catch (error) {
+      lane.statusTone = "error";
+      lane.statusMessage = String(error);
+    } finally {
       lane.isMutating = false;
       syncLaneVisuals(workflowMode);
     }

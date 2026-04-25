@@ -77,11 +77,13 @@ function inferMaskChannelPreference(data: Uint8ClampedArray): "alpha" | "luma" {
   const alphaRange = alphaMax - alphaMin;
   const lumaRange = lumaMax - lumaMin;
   const looksLikeOpaqueGrayscaleMask =
-    alphaRange <= 1 && maxChannelSpread <= 1;
+    alphaMin >= 250 && alphaRange <= 1 && maxChannelSpread <= 1;
   if (looksLikeOpaqueGrayscaleMask) {
     return "luma";
   }
-  return alphaRange <= 1 && lumaRange > 1 ? "luma" : "alpha";
+  return alphaMin >= 250 && alphaRange <= 1 && lumaRange > 1
+    ? "luma"
+    : "alpha";
 }
 
 const EIGHT_CONNECTED_NEIGHBOR_OFFSETS = [

@@ -38,6 +38,22 @@ describe("explorerImageCutoutMask", () => {
     expect([...mask.alpha]).toEqual([0, 255, 32, 200]);
   });
 
+  it("treats opaque all-black grayscale masks as empty selections instead of full-alpha masks", () => {
+    const mask = createCutoutMaskFromImageData({
+      width: 2,
+      height: 2,
+      data: new Uint8ClampedArray([
+        0, 0, 0, 255,
+        0, 0, 0, 255,
+        0, 0, 0, 255,
+        0, 0, 0, 255,
+      ]),
+    });
+
+    expect([...mask.alpha]).toEqual([0, 0, 0, 0]);
+    expect(buildCutoutBoundaryPoints(mask)).toEqual([]);
+  });
+
   it("builds boundary points from the actual selection instead of the full image rectangle", () => {
     const mask = {
       width: 5,
@@ -114,6 +130,35 @@ describe("explorerImageCutoutMask", () => {
 
     expect([...nextMask.alpha]).toEqual([
       255, 0, 255,
+      0, 0, 255,
+    ]);
+  });
+
+  it("magic wand uses eight-connected growth so diagonal islands stay part of one contiguous pick", () => {
+    const sourcePixels = createSolidPixels(3, 3, [
+      [255, 0, 0], [0, 0, 255], [0, 0, 255],
+      [0, 0, 255], [255, 0, 0], [0, 0, 255],
+      [0, 0, 255], [0, 0, 255], [255, 0, 0],
+    ]);
+    const mask = {
+      width: 3,
+      height: 3,
+      alpha: new Uint8ClampedArray(9),
+    };
+
+    const nextMask = applySparkSelection({
+      baseMask: mask,
+      sourcePixels,
+      centerX: 0,
+      centerY: 0,
+      tolerance: 18,
+      contiguous: true,
+      mode: "add",
+    });
+
+    expect([...nextMask.alpha]).toEqual([
+      255, 0, 0,
+      0, 255, 0,
       0, 0, 255,
     ]);
   });
