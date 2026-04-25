@@ -57,6 +57,8 @@ export type ExplorerRuntimeMenuNode =
 export interface ExplorerRuntimeMenuPresentation {
   renderer: ExplorerMenuRendererKind;
   fallbackRenderer: ExplorerMenuRendererKind;
+  density: 'compact' | 'balanced' | 'touch';
+  showDescriptions: boolean;
 }
 
 export interface ExplorerOpenWithProgramsState {
@@ -356,6 +358,7 @@ function sanitizeNodeList(
 function resolvePresentationRenderer(
   menuPack: LoadedExplorerMenuPack,
   invocation: ExplorerMenuInvocationContext,
+  layout: ExplorerMenuContextLayout,
   themeRendererPreference?: ExplorerMenuRendererKind,
 ): ExplorerRuntimeMenuPresentation {
   const presentation = menuPack.presentation;
@@ -371,9 +374,12 @@ function resolvePresentationRenderer(
     renderer:
       matchingRule?.renderer ??
       themeRendererPreference ??
+      layout.renderer ??
       presentation.renderer ??
       'classic',
     fallbackRenderer: presentation.fallbackRenderer ?? 'classic',
+    density: layout.density ?? presentation.density ?? 'balanced',
+    showDescriptions: layout.showDescriptions ?? true,
   };
 }
 
@@ -1240,7 +1246,6 @@ function injectFallbackPreviewNodes(
   const pinnedTopCommandIds = new Set([
     'built-in.open',
     'built-in.open-with',
-    'built-in.send-to-mobile-download',
   ]);
   let insertionIndex = 0;
   while (insertionIndex < nodes.length) {
@@ -1362,6 +1367,7 @@ export function buildExplorerRuntimeMenu(
     presentation: resolvePresentationRenderer(
       menuPack,
       options.invocation,
+      layout,
       options.themeRendererPreference,
     ),
     nodes,

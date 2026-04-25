@@ -403,37 +403,16 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
   const previewPaneLayout: ExplorerMenuLayoutEntry[] = [
     createEntry('preview.open', 'command', 10, { commandId: 'built-in.open', quickSlot: 'primary' }),
     createEntry('preview.open-with', 'command', 20, { commandId: 'built-in.open-with' }),
-    createEntry('preview.send-to-mobile', 'command', 30, {
-      commandId: 'built-in.send-to-mobile-download',
-    }),
+    createEntry('preview.separator.preview', 'separator', 30),
     createEntry('preview.preview.slot', 'group-slot', 40, {
       group: 'preview',
       sourceFilter: 'preview',
     } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.system.slot', 'group-slot', 50, {
-      group: 'system',
-      sourceFilter: 'any',
-    } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.clipboard.slot', 'group-slot', 60, {
-      group: 'clipboard',
-      sourceFilter: 'any',
-    } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.organize.slot', 'group-slot', 70, {
-      group: 'organize',
-      sourceFilter: 'any',
-    } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.library.slot', 'group-slot', 80, {
-      group: 'library',
-      sourceFilter: 'any',
-    } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.plugins.slot', 'group-slot', 90, {
-      group: 'plugin',
-      sourceFilter: 'plugin',
-    } as Partial<ExplorerMenuLayoutEntry>),
-    createEntry('preview.danger.slot', 'group-slot', 100, {
-      group: 'danger',
-      sourceFilter: 'any',
-    } as Partial<ExplorerMenuLayoutEntry>),
+    createEntry('preview.separator.file', 'separator', 50),
+    createEntry('preview.reveal', 'command', 60, { commandId: 'built-in.reveal' }),
+    createEntry('preview.copy-path', 'command', 70, {
+      commandId: 'built-in.copy-path',
+    }),
   ];
 
   return {
@@ -471,7 +450,12 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
       background: { renderer: 'classic', entries: backgroundLayout },
       'multi-select': { renderer: 'classic', entries: multiSelectLayout },
       'search-result': { renderer: 'classic', entries: searchResultLayout },
-      'preview-pane': { renderer: 'classic', entries: previewPaneLayout },
+      'preview-pane': {
+        renderer: 'classic',
+        density: 'compact',
+        showDescriptions: false,
+        entries: previewPaneLayout,
+      },
     },
   };
 }

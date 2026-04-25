@@ -649,8 +649,15 @@ describe('explorerMenuRuntime', () => {
       previewContextMenuRegistration: null,
     });
 
+    expect(menu.presentation.density).toBe('compact');
+    expect(menu.presentation.showDescriptions).toBe(false);
     expect(findNodeByLabel(menu.nodes, 'Open')).not.toBeNull();
     expect(findNodeByLabel(menu.nodes, 'Open With')).not.toBeNull();
+    expect(findNodeByLabel(menu.nodes, 'Reveal in Explorer')).not.toBeNull();
+    expect(findNodeByLabel(menu.nodes, 'Copy Path')).not.toBeNull();
+    expect(findNodeByLabel(menu.nodes, 'Send to iPhone')).toBeNull();
+    expect(findNodeByLabel(menu.nodes, 'Copy')).toBeNull();
+    expect(findNodeByLabel(menu.nodes, 'Move to Trash')).toBeNull();
     expect(findNodeByLabel(menu.nodes, 'Reset View')).toBeNull();
   });
 

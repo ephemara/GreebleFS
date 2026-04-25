@@ -13,6 +13,8 @@ interface ExplorerContextMenuProps {
   x: number;
   y: number;
   nodes: ExplorerRuntimeMenuNode[];
+  density?: 'compact' | 'balanced' | 'touch';
+  showDescriptions?: boolean;
   onClose: () => void;
   renderIcon: (iconName?: string) => React.ReactNode;
 }
@@ -20,6 +22,8 @@ interface ExplorerContextMenuProps {
 interface MenuPanelProps {
   nodes: ExplorerRuntimeMenuNode[];
   path: string[];
+  density: 'compact' | 'balanced' | 'touch';
+  showDescriptions: boolean;
   desiredPosition: {
     left: number;
     top: number;
@@ -99,6 +103,8 @@ function clampPanelPosition(
 function MenuPanel({
   nodes,
   path,
+  density,
+  showDescriptions,
   desiredPosition,
   openSubmenuPath,
   activeIndexByPath,
@@ -108,6 +114,8 @@ function MenuPanel({
   onClose,
   anchorRectsByNodeId,
 }: MenuPanelProps) {
+  const isCompactDensity = density === 'compact';
+  const isTouchDensity = density === 'touch';
   const panelRef = useRef<HTMLDivElement | null>(null);
   const pathKey = getPathKey(path);
   const activeIndex = activeIndexByPath[pathKey] ?? findFirstSelectableIndex(nodes);
@@ -147,15 +155,15 @@ function MenuPanel({
           left: position.left,
           top: position.top,
           zIndex: 10000 + path.length,
-          minWidth: 228,
-          maxWidth: 300,
+          minWidth: isCompactDensity ? 208 : isTouchDensity ? 248 : 228,
+          maxWidth: isCompactDensity ? 272 : isTouchDensity ? 336 : 300,
           maxHeight: 'min(70vh, 640px)',
           overflowY: 'auto',
           background: 'var(--overlay-explorer-preview-bg)',
           border: '1px solid var(--overlay-explorer-preview-border)',
           borderRadius: 'var(--overlay-explorer-panel-radius)',
           boxShadow: 'var(--overlay-explorer-ctx-menu-shadow)',
-          padding: '4px 0',
+          padding: isCompactDensity ? '2px 0' : isTouchDensity ? '6px 0' : '4px 0',
           backdropFilter: 'blur(14px)',
         }}
       >
@@ -209,9 +217,13 @@ function MenuPanel({
                 display: 'grid',
                 gridTemplateColumns: '16px minmax(0, 1fr) auto',
                 alignItems: 'center',
-                gap: 10,
+                gap: isCompactDensity ? 8 : isTouchDensity ? 12 : 10,
                 width: '100%',
-                padding: '7px 12px',
+                padding: isCompactDensity
+                  ? '6px 10px'
+                  : isTouchDensity
+                    ? '10px 14px'
+                    : '7px 12px',
                 border: 'none',
                 background: active
                   ? node.tone === 'danger'
@@ -223,7 +235,7 @@ function MenuPanel({
                     ? 'var(--overlay-explorer-danger-text)'
                     : 'var(--overlay-text-primary)',
                 cursor: disabled ? 'default' : 'pointer',
-                fontSize: 12,
+                fontSize: isCompactDensity ? 11 : 12,
                 textAlign: 'left',
                 opacity: disabled ? 0.55 : 1,
               }}
@@ -240,7 +252,7 @@ function MenuPanel({
                 }}
               >
                 <span>{node.label}</span>
-                {node.kind === 'command' && node.description ? (
+                {showDescriptions && node.kind === 'command' && node.description ? (
                   <span
                     style={{
                       color: 'var(--overlay-text-muted)',
@@ -282,6 +294,8 @@ function MenuPanel({
             top: openSubmenuAnchor.top - 4,
             anchorRect: openSubmenuAnchor,
           }}
+          density={density}
+          showDescriptions={showDescriptions}
           openSubmenuPath={openSubmenuPath}
           activeIndexByPath={activeIndexByPath}
           iconRenderer={iconRenderer}
@@ -300,6 +314,8 @@ export function ExplorerContextMenu({
   x,
   y,
   nodes,
+  density = 'balanced',
+  showDescriptions = true,
   onClose,
   renderIcon,
 }: ExplorerContextMenuProps) {
@@ -447,6 +463,8 @@ export function ExplorerContextMenu({
       <MenuPanel
         nodes={rootNodes}
         path={[]}
+        density={density}
+        showDescriptions={showDescriptions}
         desiredPosition={{ left: x, top: y }}
         openSubmenuPath={openSubmenuPath}
         activeIndexByPath={activeIndexByPath}

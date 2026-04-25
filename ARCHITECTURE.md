@@ -107,7 +107,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/explorerChromeLayouts.ts`
   Explorer chrome layout registry/resolver for adaptive topbar, toolbar, workspace header, rail header, preview header, and status-strip control placement plus zone-based layout override snapshots.
 - `src/config/explorerContextMenu.ts` and `src/config/menuPacks.ts`
-  Typed explorer-menu command graph plus declarative `menu-packs/` loader. The registry owns action metadata, preview-pane invocation metadata (`previewKind`, `workflowTabId`, `workflowBaseMode`), preview-owned command sources, and legacy migration helpers; menu packs own per-context placement, submenu/group-slot structure, the dedicated `preview` slot used by adaptive preview menus, quick-slot/fallback hints, and the built-in classic authored pack.
+  Typed explorer-menu command graph plus declarative `menu-packs/` loader. The registry owns action metadata, preview-pane invocation metadata (`previewKind`, `workflowTabId`, `workflowBaseMode`), preview-owned command sources, context-authored density/description visibility, and legacy migration helpers; menu packs own per-context placement, submenu/group-slot structure, the dedicated `preview` slot used by adaptive preview menus, quick-slot/fallback hints, and the built-in classic authored pack. The default `preview-pane` layout is intentionally much smaller than the main explorer entry menu even though both ride the same system.
 - `src/config/themeEngineBindings.ts`
   Shared engine-manifest binding helpers for layout/navigation/render-driven recipe defaults.
 - `src/config/workbenchRenderRuntime.ts`

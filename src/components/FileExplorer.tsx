@@ -25674,6 +25674,8 @@ export function FileExplorer({
         x={ctxMenu.x}
         y={ctxMenu.y}
         nodes={resolvedContextMenu?.nodes ?? []}
+        density={resolvedContextMenu?.presentation.density}
+        showDescriptions={resolvedContextMenu?.presentation.showDescriptions}
         onClose={closeContextMenu}
         renderIcon={resolveContextMenuIcon}
       />

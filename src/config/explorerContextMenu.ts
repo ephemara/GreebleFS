@@ -238,6 +238,8 @@ export type ExplorerMenuLayoutEntry =
 
 export interface ExplorerMenuContextLayout {
   renderer?: ExplorerMenuRendererKind;
+  density?: 'compact' | 'balanced' | 'touch';
+  showDescriptions?: boolean;
   entries: ExplorerMenuLayoutEntry[];
 }
 
@@ -648,6 +650,16 @@ export function normalizeExplorerMenuContextLayout(
       record.renderer === 'sheet' ||
       record.renderer === 'hud'
         ? record.renderer
+        : undefined,
+    density:
+      record.density === 'compact' ||
+      record.density === 'balanced' ||
+      record.density === 'touch'
+        ? record.density
+        : undefined,
+    showDescriptions:
+      typeof record.showDescriptions === 'boolean'
+        ? record.showDescriptions
         : undefined,
     entries,
   };
