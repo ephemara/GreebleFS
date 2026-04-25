@@ -20124,6 +20124,7 @@ export function FileExplorer({
         render: () => (
           <button
             type="button"
+            data-explorer-customize-live-control="true"
             aria-pressed={Boolean(activeChromeEditSession)}
             onClick={() =>
               activeChromeEditSession

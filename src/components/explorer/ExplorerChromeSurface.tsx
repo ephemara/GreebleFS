@@ -105,6 +105,14 @@ export function ExplorerChromeSurface({
     return null;
   }
 
+  const targetUsesCustomizeRemoveControl = (target: EventTarget | null) =>
+    target instanceof Element &&
+    target.closest("[data-explorer-customize-remove-control='true']") != null;
+
+  const targetUsesCustomizeLiveControl = (target: EventTarget | null) =>
+    target instanceof Element &&
+    target.closest("[data-explorer-customize-live-control='true']") != null;
+
   const renderDropTarget = (
     zoneId: ExplorerChromeZoneId,
     targetIndex: number,
@@ -218,10 +226,16 @@ export function ExplorerChromeSurface({
                             }
 
                             if (
-                              editModeActive &&
-                              event.ctrlKey &&
-                              event.altKey
+                              targetUsesCustomizeRemoveControl(event.target)
                             ) {
+                              return;
+                            }
+
+                            if (editModeActive) {
+                              if (event.ctrlKey && event.altKey) {
+                                return;
+                              }
+
                               event.preventDefault();
                               event.stopPropagation();
                               editMode.onSetSelectedControl?.(
@@ -235,18 +249,7 @@ export function ExplorerChromeSurface({
                                   x: event.clientX,
                                   y: event.clientY,
                                 },
-                                onTap: (controlId) => {
-                                  editMode.onRequestHotkeyCapture?.(controlId);
-                                  editMode.onSetSelectedControl?.(controlId);
-                                },
                               });
-                              return;
-                            }
-
-                            if (editModeActive) {
-                              editMode.onSetSelectedControl?.(
-                                placement.controlId,
-                              );
                             }
                           }}
                           onMouseEnter={() => {
@@ -265,12 +268,8 @@ export function ExplorerChromeSurface({
                             }
 
                             if (
-                              editModeActive &&
-                              event.ctrlKey &&
-                              event.altKey
+                              targetUsesCustomizeRemoveControl(event.target)
                             ) {
-                              event.preventDefault();
-                              event.stopPropagation();
                               return;
                             }
 
@@ -287,6 +286,10 @@ export function ExplorerChromeSurface({
                             }
 
                             if (!editModeActive) {
+                              return;
+                            }
+
+                            if (targetUsesCustomizeLiveControl(event.target)) {
                               return;
                             }
 
@@ -308,7 +311,11 @@ export function ExplorerChromeSurface({
                               : "visible",
                             ...(editModeActive
                               ? {
-                                  cursor: "default",
+                                  cursor:
+                                    editMode.draggingControlId ===
+                                    placement.controlId
+                                      ? "grabbing"
+                                      : "grab",
                                   borderRadius: 10,
                                   outline: isPendingHotkey
                                     ? "1px solid color-mix(in srgb, var(--overlay-accent) 92%, white 8%)"
@@ -347,6 +354,7 @@ export function ExplorerChromeSurface({
                           {editModeActive && editMode.onRemoveControl ? (
                             <button
                               type="button"
+                              data-explorer-customize-remove-control="true"
                               aria-label={`Remove ${placement.controlId} from layout`}
                               onClick={(event) => {
                                 event.preventDefault();
