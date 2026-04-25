@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
+import { resolveOverlayAppearance } from '../config/appearance';
 import { defaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
 import {
   PRIMARY_EXPLORER_INSTANCE_ID,
@@ -34,22 +34,26 @@ function getWorkspaceControl(controlId: string) {
   return document.querySelector(`[data-overlay-explorer-control="${controlId}"]`) as HTMLElement | null;
 }
 
-function getWorkspaceButton(controlId: string): HTMLButtonElement | null {
-  const control = getWorkspaceControl(controlId);
+function getWorkspaceTabStrip(): HTMLElement {
+  const control = getWorkspaceControl('workspaceTabStrip');
   if (!control) {
-    return null;
+    throw new Error('Workspace tab strip not found');
   }
-  return control instanceof HTMLButtonElement
-    ? control
-    : (control.querySelector('button') as HTMLButtonElement | null);
+  return control;
+}
+
+function getWorkspaceTabsRegion(): HTMLElement {
+  return within(getWorkspaceTabStrip()).getByLabelText('Workspace tabs');
 }
 
 function getWorkspaceLayoutButton(label: string): HTMLButtonElement {
-  const control = getWorkspaceControl('workspaceSplitToggle');
-  if (!control) {
-    throw new Error('Workspace layout control not found');
-  }
-  return within(control).getByRole('button', { name: label });
+  return within(getWorkspaceTabStrip()).getByRole('button', { name: label });
+}
+
+function getWorkspacePaneActionsButton(): HTMLButtonElement {
+  return within(getWorkspaceTabStrip()).getByRole('button', {
+    name: 'Workspace pane actions',
+  });
 }
 
 function getRenderedFileExplorerProps(instanceId: string) {
@@ -164,23 +168,11 @@ describe('ExplorerWorkspace', () => {
     expect(explorerPane?.style.display).toBe('flex');
   });
 
-  it('repositions workspace header controls through chromeLayoutId', () => {
-    const appearance = resolveOverlayAppearance({
-      activeThemeId: 'focused-layout',
-      customThemes: [
-        normalizeThemeDefinition({
-          id: 'focused-layout',
-          name: 'Focused Layout',
-          explorer: {
-            defaultModeProfileId: 'focus',
-          },
-        }),
-      ],
-    });
+  it('renders the unified workspace tab strip through the shared header surface', () => {
+    renderWorkspace();
 
-    renderWorkspace(appearance);
-
-    expect(getWorkspaceControl('workspacePaneActionsMenu')?.getAttribute('data-overlay-explorer-control-zone')).toBe('end');
+    expect(screen.getByLabelText('Workspace tabs')).toBeInTheDocument();
+    expect(getWorkspaceControl('workspacePaneActionsMenu')).toBeNull();
   });
 
   it('mounts the shared drag overlay during normal live workspace panes', () => {
@@ -231,7 +223,7 @@ describe('ExplorerWorkspace', () => {
       selectedEntries: [],
     });
 
-    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
+    fireEvent.click(getWorkspacePaneActionsButton());
     const paneActionsMenu = await screen.findByRole('menu', { name: 'Workspace pane actions' });
     expect(within(paneActionsMenu).getByText('1 selected -> P2 · destination')).toBeInTheDocument();
 
@@ -242,7 +234,7 @@ describe('ExplorerWorkspace', () => {
       });
     });
 
-    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
+    fireEvent.click(getWorkspacePaneActionsButton());
     fireEvent.click(await screen.findByRole('menuitem', { name: /copy selection to pane/i }));
     await waitFor(() => {
       expect(getRenderedFileExplorerProps(PRIMARY_EXPLORER_INSTANCE_ID).externalSelectionTransferRequest).toMatchObject({
@@ -302,19 +294,25 @@ describe('ExplorerWorkspace', () => {
     useExplorerStore.getState().updateWorkspaceTabTitle(nextTab.id, 'Secondary Workspace');
 
     await waitFor(() => {
-      const workspaceTabs = getWorkspaceControl('workspaceTabs');
-      expect(workspaceTabs?.textContent).toContain('Secondary Workspace');
-      expect(within(workspaceTabs as HTMLElement).getAllByRole('button', { name: /workspace|explorer/i })).toHaveLength(2);
+      const workspaceTabStrip = getWorkspaceTabStrip();
+      expect(workspaceTabStrip.textContent).toContain('Secondary Workspace');
+      expect(
+        within(getWorkspaceTabsRegion()).getAllByRole('button', {
+          name: /workspace|explorer/i,
+        }),
+      ).toHaveLength(2);
     });
 
-    const paneSwitcher = getWorkspaceControl('workspacePaneCounts');
-    expect(paneSwitcher).not.toBeNull();
-    fireEvent.click(within(paneSwitcher as HTMLElement).getByTitle('Focus Pane 2'));
+    fireEvent.click(within(getWorkspaceTabStrip()).getByTitle('Focus Pane 2'));
 
     await waitFor(() => {
-      const workspaceTabs = getWorkspaceControl('workspaceTabs');
-      expect(workspaceTabs?.textContent).toContain('Secondary Workspace');
-      expect(within(workspaceTabs as HTMLElement).getAllByRole('button', { name: /workspace|explorer/i })).toHaveLength(2);
+      const workspaceTabStrip = getWorkspaceTabStrip();
+      expect(workspaceTabStrip.textContent).toContain('Secondary Workspace');
+      expect(
+        within(getWorkspaceTabsRegion()).getAllByRole('button', {
+          name: /workspace|explorer/i,
+        }),
+      ).toHaveLength(2);
       expect(useExplorerStore.getState().workspace.activeWorkspaceTabId).toBe(PRIMARY_EXPLORER_TAB_ID);
       expect(getActiveWorkspaceTab()?.focusedPane).toBe('pane-2');
     });
@@ -362,7 +360,7 @@ describe('ExplorerWorkspace', () => {
 
     await waitFor(() => {
       expect(useExplorerStore.getState().workspace.tabs).toHaveLength(2);
-      expect(getWorkspaceControl('workspaceTabs')?.textContent).toContain('Secondary Workspace');
+      expect(getWorkspaceTabStrip().textContent).toContain('Secondary Workspace');
     });
 
     fireEvent.click(screen.getByRole('button', { name: /secondary workspace/i }));
@@ -370,13 +368,13 @@ describe('ExplorerWorkspace', () => {
       expect(useExplorerStore.getState().workspace.activeWorkspaceTabId).toBe(nextTab.id);
     });
 
-    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
+    fireEvent.click(getWorkspacePaneActionsButton());
     fireEvent.click(await screen.findByRole('menuitem', { name: /duplicate workspace tab/i }));
     await waitFor(() => {
       expect(useExplorerStore.getState().workspace.tabs).toHaveLength(3);
     });
 
-    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
+    fireEvent.click(getWorkspacePaneActionsButton());
     fireEvent.click(await screen.findByRole('menuitem', { name: /close workspace tab/i }));
     await waitFor(() => {
       expect(useExplorerStore.getState().workspace.tabs).toHaveLength(2);

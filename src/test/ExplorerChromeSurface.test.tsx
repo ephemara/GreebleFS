@@ -235,6 +235,104 @@ describe("ExplorerChromeSurface", () => {
     expect(removedControls).toEqual(["refresh"]);
   });
 
+  it("renders width-constrained chrome controls from placement widthPx overrides", () => {
+    const rendered = render(
+      <ExplorerChromeSurface
+        surface={{
+          ...toolbarSurface,
+          rows: [
+            {
+              ...toolbarSurface.rows[0]!,
+              zones: [
+                {
+                  ...toolbarSurface.rows[0]!.zones[0]!,
+                  controls: [
+                    {
+                      ...toolbarSurface.rows[0]!.zones[0]!.controls[0]!,
+                      widthPx: 240,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+        renderControl={() => <button type="button">Refresh</button>}
+      />,
+    );
+
+    const control = rendered.container.querySelector(
+      "[data-overlay-explorer-control='refresh']",
+    ) as HTMLElement | null;
+    expect(control?.style.width).toBe("240px");
+    expect(control?.style.maxWidth).toBe("240px");
+  });
+
+  it("shows a resize affordance for resizable controls and forwards pointer resize requests", () => {
+    const resizeRequests: Array<{
+      controlId: string;
+      pointerId: number;
+      startPoint: { x: number; y: number };
+    }> = [];
+
+    const rendered = render(
+      <ExplorerChromeSurface
+        surface={{
+          ...toolbarSurface,
+          rows: [
+            {
+              ...toolbarSurface.rows[0]!,
+              zones: [
+                {
+                  ...toolbarSurface.rows[0]!.zones[0]!,
+                  controls: [
+                    {
+                      ...toolbarSurface.rows[0]!.zones[0]!.controls[0]!,
+                      widthPx: 260,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+        renderControl={() => <button type="button">Refresh</button>}
+        editMode={{
+          active: true,
+          draggingControlId: null,
+          resizingControlId: null,
+          onDragStart: () => undefined,
+          onDragEnd: () => undefined,
+          onMoveControl: () => undefined,
+          isControlResizable: () => true,
+          onBeginPointerResize: (args) => {
+            resizeRequests.push({
+              controlId: args.controlId,
+              pointerId: args.pointerId,
+              startPoint: args.startPoint,
+            });
+          },
+        }}
+      />,
+    );
+
+    const resizeHandle = rendered.getByLabelText("Resize refresh");
+    fireEvent.pointerDown(resizeHandle, {
+      button: 0,
+      pointerId: 41,
+      clientX: 320,
+      clientY: 28,
+    });
+
+    expect(resizeRequests).toEqual([
+      {
+        controlId: "refresh",
+        pointerId: 41,
+        startPoint: { x: 320, y: 28 },
+      },
+    ]);
+  });
+
   it("allows live customize controls to still be clicked while customize mode is on", () => {
     const liveClicks: string[] = [];
 

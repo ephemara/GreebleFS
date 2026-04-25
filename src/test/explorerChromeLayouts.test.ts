@@ -12,12 +12,14 @@ const toolbarDefinitions: ExplorerChromeControlDefinition[] = [
   { id: 'focusAddressBar', label: 'Focus Address Bar', surfaces: ['explorerToolbar', 'explorerTopbar'] },
   { id: 'experimentalModes', label: 'Experimental Modes', surfaces: ['explorerToolbar', 'explorerTopbar'] },
   { id: 'refresh', label: 'Refresh', surfaces: ['explorerToolbar'] },
+  { id: 'workspaceTabStrip', label: 'Workspace Tab Strip', surfaces: ['workspaceHeader'] },
   { id: 'railIdentity', label: 'Rail Identity', surfaces: ['railHeader'] },
   { id: 'railClose', label: 'Rail Close', surfaces: ['railHeader'] },
   { id: 'railManageToggle', label: 'Rail Manage Toggle', surfaces: ['railHeader'] },
   { id: 'previewIdentity', label: 'Preview Identity', surfaces: ['previewHeader'] },
   { id: 'previewClose', label: 'Preview Close', surfaces: ['previewHeader'] },
   { id: 'statusItemCount', label: 'Status Item Count', surfaces: ['explorerStatusBar'] },
+  { id: 'statusTaskBadge', label: 'Status Task Badge', surfaces: ['explorerStatusBar'] },
   { id: 'terminalDrawerToggle', label: 'Terminal Drawer Toggle', surfaces: ['explorerStatusBar'] },
   { id: 'statusViewToggles', label: 'Status View Toggles', surfaces: ['explorerStatusBar'] },
   { id: 'statusClipboardQueue', label: 'Status Clipboard Queue', surfaces: ['explorerStatusBar'] },
@@ -88,7 +90,13 @@ describe('explorer chrome layout resolver', () => {
     expect(visibleControlIds).not.toContain('experimentalModes');
   });
 
-  it('resolves rail, preview, and status surfaces through the shared chrome layout registry', () => {
+  it('resolves workspace, rail, preview, and status surfaces through the shared chrome layout registry', () => {
+    const workspaceHeader = resolveExplorerChromeSurfaceLayout({
+      layoutId: 'default',
+      surfaceId: 'workspaceHeader',
+      controlDefinitions: toolbarDefinitions,
+      isControlVisible: () => true,
+    });
     const railHeader = resolveExplorerChromeSurfaceLayout({
       layoutId: 'default',
       surfaceId: 'railHeader',
@@ -108,6 +116,9 @@ describe('explorer chrome layout resolver', () => {
       isControlVisible: () => true,
     });
 
+    expect(workspaceHeader.rows[0]?.zones.find((zone) => zone.id === 'center')?.controls.map((control) => control.controlId)).toEqual([
+      'workspaceTabStrip',
+    ]);
     expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('railIdentity');
     expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('railClose');
     expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('railManageToggle');
@@ -119,16 +130,28 @@ describe('explorer chrome layout resolver', () => {
       'statusPreviewLoading',
     ]);
     expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toEqual([
+      'statusTaskBadge',
       'terminalDrawerToggle',
       'statusViewToggles',
     ]);
   });
 
-  it('rebuilds override snapshots when a control moves across chrome surfaces', () => {
+  it('rebuilds override snapshots when a control moves across chrome surfaces and preserves width overrides', () => {
     const toolbar = resolveExplorerChromeSurfaceLayout({
       layoutId: 'default',
       surfaceId: 'explorerToolbar',
       controlDefinitions: toolbarDefinitions,
+      override: {
+        entries: [
+          {
+            controlId: 'refresh',
+            surfaceId: 'explorerToolbar',
+            zone: 'primaryEnd',
+            order: 80,
+            widthPx: 180,
+          },
+        ],
+      },
       isControlVisible: () => true,
     });
     const statusBar = resolveExplorerChromeSurfaceLayout({
@@ -152,6 +175,7 @@ describe('explorer chrome layout resolver', () => {
         surfaceId: 'explorerStatusBar',
         zone: 'end',
         order: 10,
+        widthPx: 180,
       }),
     );
   });

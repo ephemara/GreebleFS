@@ -1,0 +1,20 @@
+version = 1
+id = "inspect-selection"
+name = "Inspect Selection"
+description = "Print the current invocation payload and selected entries into the task center."
+icon = "FileSearch"
+tags = ["smoke", "selection", "python"]
+contexts = ["entry", "multi-select", "search-result", "preview-pane"]
+appliesTo = "any"
+
+[selection]
+minCount = 1
+allowFiles = true
+allowDirectories = true
+
+[execution]
+runner = "interpreter"
+entry = "python/inspect_selection.py"
+
+[presentation]
+outputTarget = "task-center"

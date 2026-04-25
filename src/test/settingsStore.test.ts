@@ -509,6 +509,7 @@ describe('useSettingsStore.updateExplorer()', () => {
         order: 5,
         hidden: false,
         sizeVariant: undefined,
+        widthPx: undefined,
         showLabel: undefined,
         showIcon: undefined,
       },

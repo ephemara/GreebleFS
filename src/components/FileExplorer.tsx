@@ -19163,6 +19163,7 @@ export function FileExplorer({
       action: () => void;
       disabled: boolean;
       icon: React.ReactNode;
+      sizeVariant?: ExplorerChromeSizeVariant;
       title: string;
     }) => (
       <button
@@ -19170,7 +19171,10 @@ export function FileExplorer({
         onClick={input.action}
         disabled={input.disabled}
         title={input.title}
-        style={toolbarIconButtonStyle(input.disabled)}
+        style={toolbarIconButtonStyle(
+          input.disabled,
+          input.sizeVariant ?? "regular",
+        )}
         onMouseEnter={(event) => {
           if (!input.disabled) {
             event.currentTarget.style.background =
@@ -19200,11 +19204,19 @@ export function FileExplorer({
         label: "Back",
         surfaces: ["explorerToolbar"],
         isVisible: () => true,
-        render: () =>
+        render: (placement) =>
           renderToolbarNavigationButton({
             action: goBack,
             disabled: historyIdx <= 0,
-            icon: <ChevronLeft size={14} />,
+            icon: (
+              <ChevronLeft
+                size={
+                  resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                    .iconSize
+                }
+              />
+            ),
+            sizeVariant: placement.sizeVariant,
             title: "Back",
           }),
       },
@@ -19213,11 +19225,19 @@ export function FileExplorer({
         label: "Forward",
         surfaces: ["explorerToolbar"],
         isVisible: () => true,
-        render: () =>
+        render: (placement) =>
           renderToolbarNavigationButton({
             action: goForward,
             disabled: historyIdx >= history.length - 1,
-            icon: <ChevronRight size={14} />,
+            icon: (
+              <ChevronRight
+                size={
+                  resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                    .iconSize
+                }
+              />
+            ),
+            sizeVariant: placement.sizeVariant,
             title: "Forward",
           }),
       },
@@ -19226,11 +19246,19 @@ export function FileExplorer({
         label: "Up",
         surfaces: ["explorerToolbar"],
         isVisible: () => true,
-        render: () =>
+        render: (placement) =>
           renderToolbarNavigationButton({
             action: goUp,
             disabled: false,
-            icon: <ArrowUp size={14} />,
+            icon: (
+              <ArrowUp
+                size={
+                  resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                    .iconSize
+                }
+              />
+            ),
+            sizeVariant: placement.sizeVariant,
             title: "Up",
           }),
       },
@@ -19239,7 +19267,11 @@ export function FileExplorer({
         label: "Address Bar",
         surfaces: ["explorerToolbar"],
         isVisible: () => true,
-        render: () => (
+        render: (placement) => {
+          const metrics = resolveExplorerChromeControlMetrics(
+            placement.sizeVariant,
+          );
+          return (
           <div
             onClick={() => {
               if (!addressEditing) {
@@ -19247,17 +19279,19 @@ export function FileExplorer({
               }
             }}
             style={{
-              flex: 1,
               display: "flex",
               alignItems: "center",
-              gap: 6,
+              gap: metrics.gap,
               background: "var(--overlay-explorer-omnibox-bg)",
               borderRadius: "var(--overlay-explorer-control-radius)",
               border: "1px solid var(--overlay-explorer-omnibox-border)",
-              padding: "3px 10px",
+              padding: `${metrics.blockPadding}px ${metrics.inlinePadding}px`,
               overflow: "hidden",
               cursor: addressEditing ? "text" : "pointer",
               minWidth: 0,
+              minHeight: metrics.minHeight,
+              width: "100%",
+              maxWidth: "100%",
             }}
           >
             {addressEditing ? (
@@ -19286,7 +19320,7 @@ export function FileExplorer({
                   border: "none",
                   outline: "none",
                   color: EXP.text,
-                  fontSize: "var(--overlay-explorer-breadcrumb-font-size)",
+                  fontSize: metrics.fontSize,
                   minWidth: 0,
                 }}
               />
@@ -19337,8 +19371,7 @@ export function FileExplorer({
                               cursor: "pointer",
                               color:
                                 i === crumbs.length - 1 ? EXP.text : EXP.muted,
-                              fontSize:
-                                "var(--overlay-explorer-breadcrumb-font-size)",
+                              fontSize: metrics.fontSize,
                               fontWeight: i === crumbs.length - 1 ? 600 : 400,
                               padding:
                                 explorerTheme.breadcrumbStyle === "plain"
@@ -19391,8 +19424,7 @@ export function FileExplorer({
                   ) : (
                     <span
                       style={{
-                        fontSize:
-                          "var(--overlay-explorer-breadcrumb-font-size)",
+                        fontSize: metrics.fontSize,
                         color: EXP.muted,
                         whiteSpace: "nowrap",
                       }}
@@ -19417,19 +19449,19 @@ export function FileExplorer({
                         alignItems: "center",
                         gap: 6,
                         maxWidth: isCompactDock ? 140 : 260,
-                        padding: "2px 8px",
+                        padding: `${Math.max(metrics.blockPadding - 1, 2)}px ${Math.max(metrics.inlinePadding - 1, 8)}px`,
                         borderRadius: "var(--overlay-explorer-control-radius)",
                         border: "1px solid var(--overlay-explorer-chip-border)",
                         background: "var(--overlay-explorer-chip-active-bg)",
                         color: EXP.text,
-                        fontSize: 10,
+                        fontSize: metrics.fontSize,
                         flexShrink: 0,
                         minWidth: 0,
                       }}
                     >
                       {searchLoading && (
                         <Loader
-                          size={10}
+                          size={Math.max(metrics.iconSize - 2, 10)}
                           style={{
                             color: EXP.muted2,
                             animation: "spin 1s linear infinite",
@@ -19438,7 +19470,7 @@ export function FileExplorer({
                         />
                       )}
                       <Search
-                        size={10}
+                        size={Math.max(metrics.iconSize - 2, 10)}
                         style={{ color: EXP.muted2, flexShrink: 0 }}
                       />
                       <span
@@ -19468,7 +19500,7 @@ export function FileExplorer({
                           flexShrink: 0,
                         }}
                       >
-                        <X size={10} />
+                        <X size={Math.max(metrics.iconSize - 2, 10)} />
                       </button>
                     </div>
                   </>
@@ -19476,7 +19508,8 @@ export function FileExplorer({
               </>
             )}
           </div>
-        ),
+          );
+        },
       },
       {
         id: "recentLocations",
@@ -20283,7 +20316,7 @@ export function FileExplorer({
         label: "Toggle Sources",
         surfaces: ["explorerToolbar", "explorerTopbar"],
         isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             data-overlay-explorer-panel-opener="sources"
@@ -20298,7 +20331,7 @@ export function FileExplorer({
                 : "Open the sources panel"
             }
             style={{
-              ...toolbarIconButtonStyle(false),
+              ...toolbarIconButtonStyle(false, placement.sizeVariant),
               background: shouldRenderRail
                 ? "var(--overlay-explorer-chip-active-bg)"
                 : "var(--overlay-explorer-chip-bg)",
@@ -20317,7 +20350,12 @@ export function FileExplorer({
                 : "var(--overlay-explorer-chip-bg)")
             }
           >
-            <FolderTree size={14} />
+            <FolderTree
+              size={
+                resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                  .iconSize
+              }
+            />
           </button>
         ),
       },
@@ -20326,7 +20364,7 @@ export function FileExplorer({
         label: "Toggle Actions",
         surfaces: ["explorerToolbar", "explorerTopbar"],
         isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             data-overlay-explorer-panel-opener="actions"
@@ -20340,7 +20378,11 @@ export function FileExplorer({
                 ? "Hide the actions pane"
                 : "Open the actions pane"
             }
-            style={toolbarToggleButtonStyle(actionsPaneVisible)}
+            style={toolbarToggleButtonStyle(
+              actionsPaneVisible,
+              false,
+              placement.sizeVariant,
+            )}
             onMouseEnter={(event) => {
               event.currentTarget.style.background =
                 "var(--overlay-explorer-chip-active-bg)";
@@ -20351,7 +20393,12 @@ export function FileExplorer({
                 : "var(--overlay-explorer-chip-bg)";
             }}
           >
-            <Sparkles size={12} />
+            <Sparkles
+              size={
+                resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                  .iconSize
+              }
+            />
             {showToolbarTextLabels ? "Actions" : "A"}
           </button>
         ),
@@ -20361,7 +20408,7 @@ export function FileExplorer({
         label: "Focus Address Bar",
         surfaces: ["explorerToolbar", "explorerTopbar"],
         isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
-        render: () => {
+        render: (placement) => {
           const active = addressEditing || isSearchActive;
           return (
             <button
@@ -20369,7 +20416,11 @@ export function FileExplorer({
               aria-pressed={active}
               onClick={focusExplorerAddressBar}
               title="Focus explorer search or path bar"
-              style={toolbarToggleButtonStyle(active)}
+              style={toolbarToggleButtonStyle(
+                active,
+                false,
+                placement.sizeVariant,
+              )}
               onMouseEnter={(e) =>
                 (e.currentTarget.style.background =
                   "var(--overlay-explorer-chip-active-bg)")
@@ -20380,7 +20431,12 @@ export function FileExplorer({
                   : "var(--overlay-explorer-chip-bg)")
               }
             >
-              <Search size={12} />
+              <Search
+                size={
+                  resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                    .iconSize
+                }
+              />
               Search
             </button>
           );
@@ -20398,7 +20454,7 @@ export function FileExplorer({
         label: "Customize Explorer Chrome",
         surfaces: ["explorerToolbar", "explorerTopbar"],
         isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             data-explorer-customize-live-control="true"
@@ -20413,9 +20469,18 @@ export function FileExplorer({
                 ? "Leave explorer customize mode"
                 : "Enable explorer customize mode"
             }
-            style={toolbarToggleButtonStyle(Boolean(activeChromeEditSession))}
+            style={toolbarToggleButtonStyle(
+              Boolean(activeChromeEditSession),
+              false,
+              placement.sizeVariant,
+            )}
           >
-            <Sliders size={12} />
+            <Sliders
+              size={
+                resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                  .iconSize
+              }
+            />
             {activeChromeEditSession ? "Customize On" : "Customize"}
           </button>
         ),
@@ -20898,7 +20963,7 @@ export function FileExplorer({
         surfaces: ["explorerToolbar", "explorerTopbar"],
         isVisible: (surfaceId) =>
           !usesWorkspaceCompactChrome && isGlobalChromeSurfaceActive(surfaceId),
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             aria-pressed={previewEnabled}
@@ -20908,7 +20973,11 @@ export function FileExplorer({
                 ? "Turn off inline preview for previewable files"
                 : "Turn on inline preview for previewable files"
             }
-            style={toolbarToggleButtonStyle(previewEnabled)}
+            style={toolbarToggleButtonStyle(
+              previewEnabled,
+              false,
+              placement.sizeVariant,
+            )}
             onMouseEnter={(e) =>
               (e.currentTarget.style.background =
                 "var(--overlay-explorer-chip-active-bg)")
@@ -20919,7 +20988,12 @@ export function FileExplorer({
                 : "var(--overlay-explorer-chip-bg)")
             }
           >
-            <Eye size={12} />
+            <Eye
+              size={
+                resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                  .iconSize
+              }
+            />
             {showToolbarTextLabels ? "Preview" : "P"}
           </button>
         ),
@@ -20929,7 +21003,7 @@ export function FileExplorer({
         label: "Toggle Hidden Files",
         surfaces: ["explorerToolbar"],
         isVisible: () => true,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() =>
@@ -20937,7 +21011,7 @@ export function FileExplorer({
             }
             title="Toggle hidden files"
             style={{
-              ...toolbarIconButtonStyle(),
+              ...toolbarIconButtonStyle(false, placement.sizeVariant),
               background: showHidden
                 ? "var(--overlay-explorer-chip-active-bg)"
                 : "var(--overlay-explorer-chip-bg)",
@@ -20955,7 +21029,12 @@ export function FileExplorer({
                 : "var(--overlay-explorer-chip-bg)")
             }
           >
-            <Eye size={14} />
+            <Eye
+              size={
+                resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                  .iconSize
+              }
+            />
           </button>
         ),
       },
@@ -20964,12 +21043,12 @@ export function FileExplorer({
         label: "Refresh",
         surfaces: ["explorerToolbar"],
         isVisible: () => true,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={refresh}
             title="Refresh (F5)"
-            style={toolbarIconButtonStyle()}
+            style={toolbarIconButtonStyle(false, placement.sizeVariant)}
             onMouseEnter={(e) => {
               e.currentTarget.style.background =
                 "var(--overlay-explorer-chip-active-bg)";
@@ -20981,7 +21060,12 @@ export function FileExplorer({
               e.currentTarget.style.color = EXP.muted;
             }}
           >
-            <RefreshCw size={14} />
+            <RefreshCw
+              size={
+                resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                  .iconSize
+              }
+            />
           </button>
         ),
       },
@@ -20992,12 +21076,12 @@ export function FileExplorer({
         isVisible: () =>
           currentLocationSupportsMutation &&
           (!explorerPicker || explorerPicker.allowCreateDirectory),
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() => openNew("folder")}
             title="New Folder"
-            style={toolbarActionButtonStyle()}
+            style={toolbarActionButtonStyle(placement.sizeVariant)}
             onMouseEnter={(e) => {
               e.currentTarget.style.background =
                 "var(--overlay-explorer-chip-active-bg)";
@@ -21009,7 +21093,12 @@ export function FileExplorer({
               e.currentTarget.style.color = EXP.muted;
             }}
           >
-            <FolderPlus size={13} />
+            <FolderPlus
+              size={
+                resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                  .iconSize
+              }
+            />
             Folder
           </button>
         ),
@@ -21019,12 +21108,12 @@ export function FileExplorer({
         label: "New File",
         surfaces: ["explorerToolbar"],
         isVisible: () => currentLocationSupportsMutation && !explorerPicker,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() => openNew("file")}
             title="New File"
-            style={toolbarActionButtonStyle()}
+            style={toolbarActionButtonStyle(placement.sizeVariant)}
             onMouseEnter={(e) => {
               e.currentTarget.style.background =
                 "var(--overlay-explorer-chip-active-bg)";
@@ -21036,7 +21125,12 @@ export function FileExplorer({
               e.currentTarget.style.color = EXP.muted;
             }}
           >
-            <FilePlus size={13} />
+            <FilePlus
+              size={
+                resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                  .iconSize
+              }
+            />
             File
           </button>
         ),
@@ -21046,26 +21140,26 @@ export function FileExplorer({
         label: "Paste Clipboard",
         surfaces: ["explorerToolbar"],
         isVisible: () => Boolean(clipboard) && currentLocationSupportsMutation,
-        render: () =>
+        render: (placement) =>
           clipboard ? (
             <button
               type="button"
               onClick={paste}
               title={`Paste ${clipboard.entries.length} item${clipboard.entries.length === 1 ? "" : "s"} (Ctrl+V)`}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                background: "var(--overlay-explorer-chip-active-bg)",
-                border: "1px solid var(--overlay-explorer-chip-active-border)",
-                borderRadius: "var(--overlay-explorer-control-radius)",
-                cursor: "pointer",
+                ...toolbarChipButtonStyleForVariant(
+                  false,
+                  placement.sizeVariant,
+                ),
                 color: "var(--overlay-explorer-chip-active-text)",
-                padding: "3px 8px",
-                fontSize: "var(--overlay-explorer-toolbar-font-size)",
               }}
             >
-              <Clipboard size={12} />
+              <Clipboard
+                size={
+                  resolveExplorerChromeControlMetrics(placement.sizeVariant)
+                    .iconSize
+                }
+              />
               Paste{" "}
               {clipboard.entries.length > 1 ? clipboard.entries.length : ""}
             </button>
@@ -21141,12 +21235,17 @@ export function FileExplorer({
         label: "Status View Toggles",
         surfaces: ["explorerStatusBar"],
         isVisible: () => !isCompactDock,
-        render: () => {
+        render: (placement) => {
+          const metrics = resolveExplorerChromeControlMetrics(
+            placement.sizeVariant,
+          );
+          const buttonSize = Math.max(metrics.minHeight - 4, 22);
+          const iconScale = Number((metrics.iconSize / 13).toFixed(3));
           const footerViewSwitcherHostStyle: CSSProperties = {
             display: "inline-flex",
             alignItems: "center",
-            gap: 4,
-            padding: 3,
+            gap: Math.max(metrics.gap - 2, 3),
+            padding: metrics.blockPadding,
             borderRadius: 999,
             border: "1px solid var(--overlay-explorer-chip-border)",
             background: "rgba(255,255,255,0.03)",
@@ -21159,8 +21258,8 @@ export function FileExplorer({
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            width: 26,
-            height: 26,
+            width: buttonSize,
+            height: buttonSize,
             borderRadius: 8,
             border: `1px solid ${active ? `${accent}66` : "transparent"}`,
             background: active
@@ -21168,6 +21267,7 @@ export function FileExplorer({
               : "transparent",
             color: active ? EXP.text : EXP.muted,
             cursor: "pointer",
+            fontSize: metrics.fontSize,
             transition:
               "background 0.14s ease, border-color 0.14s ease, color 0.14s ease",
           });
@@ -21266,7 +21366,18 @@ export function FileExplorer({
                     data-overlay-explorer-view-switch={button.id}
                     style={buildFooterViewSwitcherButtonStyle(button.active)}
                   >
-                    {button.icon}
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transform:
+                          iconScale === 1 ? "none" : `scale(${iconScale})`,
+                        transformOrigin: "center",
+                      }}
+                    >
+                      {button.icon}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -21279,11 +21390,12 @@ export function FileExplorer({
         label: "Terminal Drawer Toggle",
         surfaces: ["explorerStatusBar"],
         isVisible: () => Boolean(explorerTerminalWorkingDirectory),
-        render: () => (
+        render: (placement) => (
           <ExplorerEmbeddedTerminalToggleButton
             active={bottomTerminalVisible}
             icon={TerminalSquare}
             ariaLabel="Toggle bottom terminal drawer"
+            sizeVariant={placement.sizeVariant}
             title={
               bottomTerminalVisible
                 ? "Hide bottom terminal drawer"

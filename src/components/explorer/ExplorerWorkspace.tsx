@@ -39,7 +39,6 @@ import {
   type ExplorerChromeOverrideEntry,
   type ExplorerChromeResolvedControlPlacement,
   type ExplorerChromeResolvedSurface,
-  type ExplorerChromeSizeVariant,
   type ExplorerChromeSurfaceId,
   type ExplorerChromeZoneId,
 } from "../../config/explorerChromeLayouts";
@@ -2078,9 +2077,18 @@ export function ExplorerWorkspace({
   const activateWorkspaceChromeCommand = useCallback(
     (controlId: ExplorerChromeControlId): boolean => {
       switch (controlId) {
+        case "workspaceTabStrip":
         case "workspacePaneCounts":
           if (visiblePaneIds.length <= 1) {
+            if (controlId === "workspaceTabStrip") {
+              cycleWorkspaceLayout();
+              return true;
+            }
             return false;
+          }
+          if (controlId === "workspaceTabStrip") {
+            cycleWorkspaceLayout();
+            return true;
           }
           focusNextPane();
           return true;

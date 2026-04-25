@@ -212,6 +212,18 @@ interface BuiltInExplorerCustomizeCapability {
 const builtInExplorerCustomizeCapabilities: Partial<
   Record<BuiltInExplorerChromeControlId, BuiltInExplorerCustomizeCapability>
 > = {
+  navigateBack: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  navigateForward: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  navigateUp: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
   addressBar: {
     supportsSizeVariant: true,
     supportsWidthPx: true,
@@ -247,6 +259,14 @@ const builtInExplorerCustomizeCapabilities: Partial<
     defaultWidthPx: 760,
     minWidthPx: 320,
     maxWidthPx: 1600,
+  },
+  toggleSources: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  focusAddressBar: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
   },
   statusItemCount: {
     supportsWidthPx: true,
@@ -312,7 +332,27 @@ const builtInExplorerCustomizeCapabilities: Partial<
     supportsSizeVariant: true,
     sizeVariants: ["compact", "regular", "wide"],
   },
+  toggleHiddenFiles: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  refresh: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
   customizeModeToggle: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  newFolder: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  newFile: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  pasteClipboard: {
     supportsSizeVariant: true,
     sizeVariants: ["compact", "regular", "wide"],
   },
