@@ -68,6 +68,7 @@
   - The first internal drag frame still commits immediately when the gesture crosses the drag threshold. Keep that immediate lift-off path; it prevents the drag overlay and hovered target state from feeling one frame late even though follow-up movement is rAF-coalesced.
   - Native drag-out startup in `FileExplorer.tsx` now takes a synchronous fast path for normal local entries. Only archive-virtual entries still await materialization before calling the native drag bridge, which keeps `Alt` drag-out feeling instant for ordinary files.
   - `src/components/explorer/explorerDragAndDrop.ts` now memoizes drop-surface bindings by `surfaceId`, caches registered surface metadata/behavior by id and element, and keeps a scope-root lookup map so hit resolution no longer depends on repeated DOM queries for the scope root.
+  - Important regression fix: when a drop-surface ref detaches and reattaches, the runtime must restore the surface behavior map as well as the metadata map. A temporary ref detach can still leave folder drops working while silently killing dwell-open, because hit resolution only needs metadata but hover-open needs `onAutoOpen` behavior. Keep those two maps in sync on reattach.
   - The drag runtime now reuses the last resolved drop hit while the pointer stays inside the same target surface, caches element rects for the current animation frame, and caches normalized source-path validation context by source-path array plus platform. Future perf work should extend these runtime caches before adding more state at the `FileExplorer.tsx` layer.
   - `setExplorerDragInteractionState(...)` now skips listener fan-out when the next state is the same object reference, which matters because the drag runtime frequently uses updater functions that intentionally return the current state on no-op paths.
   - `FileExplorer.tsx` now relies on per-entry drag presentation (`dragPresentation.isDropTarget`) instead of a top-level `dragOver === path` string path in the main explorer selector path. Keep pushing drag visuals toward leaf-local presentation state instead of broad explorer-shell subscriptions.
@@ -4302,3 +4303,24 @@
   - passed: `bun run build:mobile`
   - passed: `bunx vitest run src/test/explorerMenuRuntime.test.ts src/test/mobileApp.test.tsx src/test/mobileTheme.test.ts src/test/settingsStore.test.ts --reporter=dot`
   - note: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still has unrelated branch drift in `src/components/FileExplorer.tsx` and other existing workspace noise, so use scoped checks for this mobile/push lane unless that explorer terminal work is being addressed directly.
+
+## 2026-04-25 — Settings Shell Standardization Pass Started With Shared Primitives And Representative Section Migrations
+
+- The settings overhaul now has a real shared UI framework instead of every migrated page inventing its own shell. `src/components/settings/SettingsShell.tsx` owns the rail + header + full-width content viewport contract, and `src/components/settings/SettingsPrimitives.tsx` now provides the shared section/header/block/row/catalog/inspector/action-strip building blocks that the migrated pages render through.
+- Durable implementation shape:
+  - `src/config/settingsNavigation.ts` now carries typed page-grammar metadata. Each section entry has an archetype (`rows`, `catalog-inspector`, `tool-editor`, or `hybrid`) plus shell hints so the settings surface can standardize layout without changing persisted settings state.
+  - `src/components/SettingsPage.tsx` now uses `SettingsShell` as the top-level settings layout and routes representative sections through extracted modules instead of owning all of their JSX inline. The first migrated sections are:
+    - `src/components/settings/sections/SystemSettingsSection.tsx`
+    - `src/components/settings/sections/AppearanceSettingsSection.tsx`
+    - `src/components/settings/sections/IconSettingsSection.tsx`
+    - `src/components/settings/sections/ContextMenusSettingsSection.tsx`
+  - `src/components/settings/ThemeCatalog.tsx` now owns the reusable theme-catalog rendering path that the appearance lane uses, so theme-card behavior is no longer trapped inside `SettingsPage.tsx`.
+  - The shared primitives now carry stable testing hooks (`data-settings-shell`, `data-settings-shell-content`, `data-settings-row`, `data-settings-catalog-grid`, `data-settings-catalog-card`, `data-settings-inspector`, etc.) and accessible naming defaults. `SettingsRow` auto-labels its control when the control does not already provide an accessible label, and clickable catalog cards now expose their title through `aria-label`. This keeps behavior tests stable while making the standardized settings surface more accessible.
+  - The migrated Appearance copy restores the VS Code compatibility messaging the old tests expected, including the explicit `.vsix` warning language, while the System and Context Menus lanes now render through the extracted shared anatomy instead of bespoke inline sections.
+- Durable product notes:
+  - This is an intentional phased migration, not a finished purge. `SettingsPage.tsx` still contains commented legacy branches/helpers for the just-migrated lanes so behavior can be compared while the rest of the settings surface is still being ported. The next cleanup pass should delete those legacy branches once the remaining settings sections have moved onto the shared framework.
+  - The new standard to preserve is: shell-level consistency first, then rich widgets inside that shell. Appearance and Icons stay rich through catalog + inspector treatment, System stays row-driven, and Context Menus keeps its three-lane editor/composer model rather than getting flattened into generic form rows.
+  - When migrating another settings section, prefer extracting a dedicated section module under `src/components/settings/sections/` and feed it typed data/actions from `SettingsPage.tsx` rather than re-expanding inline JSX in the page entrypoint.
+- Validation:
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx src/test/settingsPage.shaders.test.tsx --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "SettingsPage.tsx|src/components/settings/|src/test/settingsPage.behavior.test.tsx|settingsNavigation.ts"` returned no matching errors

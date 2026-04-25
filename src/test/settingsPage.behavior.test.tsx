@@ -110,7 +110,7 @@ function renderSettingsPage(options?: {
     panelTransparency: appearanceSettings.panelTransparency,
   });
 
-  render(
+  return render(
     <SettingsPage
       appearance={appearance}
       topBarPackages={options?.topBarPackages ?? []}
@@ -283,6 +283,33 @@ describe('SettingsPage behavior', () => {
       && (node.textContent?.includes('cached .vsix extracts never masquerade as authored bundles') ?? false),
     )[0]).toBeInTheDocument();
     expect(screen.getByText('VS Code VSIX')).toBeInTheDocument();
+  });
+
+  it('routes migrated sections through the shared settings shell archetypes', async () => {
+    const user = userEvent.setup();
+    const { container } = renderSettingsPage();
+    const shell = container.querySelector('[data-settings-shell="true"]');
+    const content = container.querySelector('[data-settings-shell-content="true"]');
+
+    expect(shell).not.toBeNull();
+    expect(content).not.toBeNull();
+    expect((content as HTMLElement).style.maxWidth).toBe('');
+
+    await user.click(findSectionButton('Appearance'));
+    expect(content).toHaveAttribute('data-settings-active-section', 'appearance');
+    expect(content).toHaveAttribute('data-settings-active-archetype', 'catalog-inspector');
+    expect(container.querySelector('[data-settings-catalog-grid]')).not.toBeNull();
+    expect(container.querySelector('[data-settings-inspector="Theme Inspector"]')).not.toBeNull();
+
+    await user.click(findSectionButton('System'));
+    expect(content).toHaveAttribute('data-settings-active-section', 'system');
+    expect(content).toHaveAttribute('data-settings-active-archetype', 'rows');
+    expect(container.querySelector('[data-settings-row="Launch At Startup"]')).not.toBeNull();
+
+    await user.click(findSectionButton('Context Menus'));
+    expect(content).toHaveAttribute('data-settings-active-section', 'context-menus');
+    expect(content).toHaveAttribute('data-settings-active-archetype', 'tool-editor');
+    expect(screen.getByText('Context Menu Composer')).toBeInTheDocument();
   });
 
   it('renders the models section, keeps CUDA disabled without an NVIDIA provider, and saves semantic root overrides', async () => {

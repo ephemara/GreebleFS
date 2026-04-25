@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Bot, Camera, Clipboard, Copy, CopyPlus, Cpu, Database, Download, Edit3, Eraser, ExternalLink, Eye, FilePlus, FolderOpen, FolderPlus, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, Info, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Pencil, Plus, Puzzle, RefreshCw, RotateCcw, Save, Scissors, Search, Settings2, Shield, ShieldCheck, Sliders, SlidersHorizontal, Smartphone, Sparkles, Star, StickyNote, Tags, Terminal, TerminalSquare, ThemedPanelIcon, Trash2, Type, Undo2, Volume2, VolumeX } from '@/components/AppIcons';
+import { ArrowDown, ArrowUp, Bot, Camera, Clipboard, Copy, CopyPlus, Cpu, Database, Download, Edit3, Eraser, ExternalLink, Eye, FilePlus, FolderOpen, FolderPlus, GitBranch, HardDrive, Home, Image, Info, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Pencil, Plus, Puzzle, RefreshCw, RotateCcw, Save, Scissors, Settings2, Shield, ShieldCheck, Sliders, SlidersHorizontal, Smartphone, Sparkles, Star, Tags, Terminal, TerminalSquare, Trash2, Type, Undo2, Volume2, VolumeX } from '@/components/AppIcons';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import { PremiumSlider } from './PremiumSlider';
@@ -16,7 +16,6 @@ import {
 import {
   ensureFontFamilyLoaded,
   getThemeSourceLabel,
-  overlayFontCatalog,
   overlayThemePresets,
   type OverlayThemeDefinition,
   type ResolvedOverlayAppearance,
@@ -80,10 +79,8 @@ import {
 import {
   createDefaultFolderIconRules,
   FOLDER_ICON_OPTIONS,
-  getNamedFolderIconSrc,
   normalizeFolderIconMatcher,
   type FolderIconRule,
-  type FolderIconValue,
 } from '../config/folderIcons';
 import {
   explorerViewModes,
@@ -119,7 +116,7 @@ import {
   type LoadedActionPack,
   type LoadedExplorerAction,
 } from '../config/actionPacks';
-import { getBuiltInIconTheme, resolveFileIconSrc } from '../config/iconTheme';
+import { getBuiltInIconTheme } from '../config/iconTheme';
 import { animationSystemConfig, resolvePreferredAnimationId } from '../config/animations';
 import {
   clampInteractionMotionIntensity,
@@ -145,6 +142,7 @@ import {
 } from '../config/appContentDirectories';
 import {
   settingsSectionCatalog,
+  type SettingsPageArchetype,
   type SettingsSectionKey,
 } from '../config/settingsNavigation';
 import {
@@ -153,12 +151,17 @@ import {
   mobileRemoteAccessModeDefinitions,
 } from '../config/mobileAccess';
 import { OverlayScrollArea } from './OverlayScrollArea';
-import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
+import { usePersistentPanelSize } from './ResizablePane';
 import { InteractionMotionLab } from '../animation/MotionLab';
 import { useInteractionMotionController, type InteractionMotionBinding } from '../animation/interactionMotion';
 import { MobileShareConnectionCards } from './MobileShareConnectionCards';
 import { MobileShareQrDialog } from './MobileShareQrDialog';
 import { OverlayActionButton } from './OverlayActionButton';
+import { SettingsShell } from './settings/SettingsShell';
+import { AppearanceSettingsSection } from './settings/sections/AppearanceSettingsSection';
+import { IconSettingsSection } from './settings/sections/IconSettingsSection';
+import { SystemSettingsSection } from './settings/sections/SystemSettingsSection';
+import { ContextMenusSettingsSection } from './settings/sections/ContextMenusSettingsSection';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   loadExternalLayoutManifest,
@@ -1861,6 +1864,15 @@ function parseMatcherInput(value: string): string[] {
 function stringifyMatchers(matchers: string[]): string {
   return matchers.join(', ');
 }
+
+const legacySettingsExtractionKeepalive = {
+  getIconThemePackageSourceBadgeLabel,
+  ThemeCatalogGrid,
+  ColorToken,
+  parseMatcherInput,
+  stringifyMatchers,
+};
+void legacySettingsExtractionKeepalive;
 
 const DEFAULT_LOADED_LAYOUT_MANIFEST: LoadedLayoutManifest = {
   manifest: BUILT_IN_LAYOUT_MANIFEST,
@@ -5803,6 +5815,8 @@ export function SettingsPage({
       subtitle: section.subtitle,
       summary: content.summary,
       detail: content.detail,
+      archetype: section.archetype as SettingsPageArchetype,
+      shell: section.shell,
       icon: getSettingsSectionIcon(section.key as SettingsSectionKey),
     };
   }), [settingsSectionContext]);
@@ -6465,119 +6479,101 @@ export function SettingsPage({
       </div>
     </div>
   );
+  void contextMenuComposerSurface;
 
   return (
     <div
       style={{
-        display: 'flex',
         height: '100%',
         minHeight: 0,
         minWidth: 0,
         fontFamily: appearance.fonts.ui,
         colorScheme: settingsFormColorScheme,
-        background: 'var(--overlay-workbench-settings-bg)',
-        gap: 'var(--overlay-workbench-panel-gap)',
-        padding: 'var(--overlay-workbench-page-padding)',
       }}
     >
-      <ResizablePane
-        size={railWidth}
-        minSize={190}
-        maxSize={320}
-        onSizeChange={setRailWidth}
-        borderColor={`${accent}55`}
-        style={{
-          display: 'flex',
-          minHeight: 0,
-          flexDirection: 'column',
-          border: `1px solid var(--overlay-workbench-settings-card-border)`,
-          borderRadius: workbench.metrics.panelRadius,
-          background: 'var(--overlay-workbench-settings-rail-bg)',
-          boxShadow: workbench.settingsStyle === 'floating' || workbench.settingsStyle === 'glass'
-            ? 'var(--overlay-workbench-shell-shadow)'
-            : 'none',
-          backdropFilter: blurEnabled && workbench.settingsStyle === 'glass' ? 'blur(18px)' : 'none',
-          WebkitBackdropFilter: blurEnabled && workbench.settingsStyle === 'glass' ? 'blur(18px)' : 'none',
-          overflow: 'hidden',
-        }}
+      <SettingsShell
+        railWidth={railWidth}
+        onRailWidthChange={setRailWidth}
+        accent={accent}
+        settingsStyle={workbench.settingsStyle}
+        panelRadius={workbench.metrics.panelRadius}
+        blurEnabled={blurEnabled}
+        activeSectionKey={activeSectionMeta.key}
+        activeArchetype={activeSectionMeta.archetype}
+        preferredContentDensity={activeSectionMeta.shell?.preferredContentDensity}
+        rail={(
+          <>
+            <div className="border-b px-4 py-3" style={{ borderColor: border }}>
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>
+                <SlidersHorizontal size={12} />
+                <span>Workbench Settings</span>
+              </div>
+              <h1 className="mt-1.5 text-[16px] font-semibold leading-none" style={{ color: text }}>Settings</h1>
+            </div>
+
+            <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: '8px 10px 10px 10px' }}>
+              <div className="space-y-2">
+                {settingsSections.map(section => (
+                  <SettingsRailButton
+                    key={section.key}
+                    active={activeSection === section.key}
+                    icon={section.icon}
+                    label={section.label}
+                    subtitle={section.subtitle}
+                    summary={section.summary}
+                    accent={accent}
+                    border={border}
+                    text={text}
+                    muted={muted}
+                    onClick={() => setActiveSection(section.key)}
+                    motionBinding={bindSettingsCardMotion(activeSection === section.key)}
+                  />
+                ))}
+              </div>
+            </OverlayScrollArea>
+          </>
+        )}
+        header={(
+          <div
+            className="border-b px-4 py-3"
+            data-settings-summary-header="true"
+            style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', borderRadius: workbench.settingsStyle === 'floating' || workbench.settingsStyle === 'glass' ? workbench.metrics.panelRadius : 0, background: 'var(--overlay-workbench-settings-card-bg)' }}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="min-w-[240px] flex-1 text-[11px] leading-4" style={{ color: muted }}>
+                  {activeSectionMeta.detail}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                <span className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}>
+                  Theme · {effectiveTheme.name}
+                </span>
+                <span className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}>
+                  Layout · {activeLayoutProfile.label}
+                </span>
+                <span className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}>
+                  Startup · {settings.system.launchAtStartup ? 'Enabled' : 'Disabled'}
+                </span>
+                <span className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}>
+                  Archetype · {activeSectionMeta.archetype}
+                </span>
+                <span className="hidden rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] xl:inline-flex" style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}>
+                  {activeSectionMeta.summary}
+                </span>
+                <button
+                  onClick={() => resetToDefaults()}
+                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
+                  style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: text, background: 'var(--overlay-workbench-settings-badge-bg)' }}
+                >
+                  <RotateCcw size={12} />
+                  Reset Defaults
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       >
-        <div className="border-b px-4 py-3" style={{ borderColor: border }}>
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>
-            <SlidersHorizontal size={12} />
-            <span>Workbench Settings</span>
-          </div>
-          <h1 className="mt-1.5 text-[16px] font-semibold leading-none" style={{ color: text }}>Settings</h1>
-        </div>
-
-        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: '8px 10px 10px 10px' }}>
-          <div className="space-y-2">
-            {settingsSections.map(section => (
-              <SettingsRailButton
-                key={section.key}
-                active={activeSection === section.key}
-                icon={section.icon}
-                label={section.label}
-                subtitle={section.subtitle}
-                summary={section.summary}
-                accent={accent}
-                border={border}
-                text={text}
-                muted={muted}
-                onClick={() => setActiveSection(section.key)}
-                motionBinding={bindSettingsCardMotion(activeSection === section.key)}
-              />
-            ))}
-          </div>
-        </OverlayScrollArea>
-      </ResizablePane>
-
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="border-b px-4 py-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', borderRadius: workbench.settingsStyle === 'floating' || workbench.settingsStyle === 'glass' ? workbench.metrics.panelRadius : 0, background: 'var(--overlay-workbench-settings-card-bg)' }}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="min-w-[240px] flex-1 text-[11px] leading-4" style={{ color: muted }}>
-                {activeSectionMeta.detail}
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-              <span
-                className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}
-              >
-                Theme · {effectiveTheme.name}
-              </span>
-              <span
-                className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}
-              >
-                Layout · {activeLayoutProfile.label}
-              </span>
-              <span
-                className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}
-              >
-                Startup · {settings.system.launchAtStartup ? 'Enabled' : 'Disabled'}
-              </span>
-              <span
-                className="hidden rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] xl:inline-flex"
-                style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}
-              >
-                {activeSectionMeta.summary}
-              </span>
-              <button
-                onClick={() => resetToDefaults()}
-                className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
-                style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: text, background: 'var(--overlay-workbench-settings-badge-bg)' }}
-              >
-                <RotateCcw size={12} />
-                Reset Defaults
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 0 }}>
-          <div className="flex w-full min-w-0 flex-col gap-3 px-4 pt-3 pb-5">
             {activeSection === 'overview' && (
               <section className="rounded border p-4" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
                 <SectionTitle
@@ -7277,241 +7273,38 @@ export function SettingsPage({
             )}
 
             {activeSection === 'appearance' && (
-              <section className="rounded border p-4" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
-                <SectionTitle
-                  icon={<Palette size={12} />}
-                  title="Appearance"
-                  subtitle="Theme recipes, UI fonts, and direct palette editing."
-                />
-
-                <div className="mt-4 space-y-4">
-                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Bundles</div>
-                        <p className="mt-1 text-[11px] opacity-40">
-                          Drop native theme bundles, VS Code color-theme extension folders, or <code>.vsix</code> archives into <code>{themePackagesDirectory}</code>. GreebleFS will compose native manifests as full theme bundles, and it will also adapt VS Code color themes into shell-safe theme packages with Monaco token colors plus any extension-contributed icon themes carried along as local catalog entries.
-                          Official pilot bundles surface first, built-ins stay supported, and compatibility imports stay clearly labeled so cached <code>.vsix</code> extracts never masquerade as authored bundles.
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void onOpenThemesFolder()}
-                          className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
-                        >
-                          Open Folder
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void onRefreshThemes()}
-                          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                          style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
-                        >
-                          <RefreshCw size={10} />
-                          Refresh
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                        {themePackagesLoading ? 'Scanning Bundles' : `${themePackages.length} Bundle${themePackages.length === 1 ? '' : 's'} Loaded`}
-                      </span>
-                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
-                        Active Source: {getThemeSourceLabel(editableTheme)}
-                      </span>
-                    </div>
-
-                    {themePackagesError && (
-                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
-                        Theme package scan failed: {themePackagesError}
-                      </div>
-                    )}
-
-                    {themePackagesWarnings.length > 0 && (
-                      <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
-                        <div className="font-semibold uppercase tracking-[0.12em]">Package warnings</div>
-                        <div className="mt-2 space-y-1.5">
-                          {themePackagesWarnings.map(warning => (
-                            <div key={warning}>{warning}</div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Curated Theme Suite</label>
-                    <ThemeCatalogGrid
-                      themes={appearance.themes}
-                      activeThemeId={settings.appearance.activeThemeId}
-                      onSelect={applyThemeSelection}
-                      themePackageLookup={themePackageLookup}
-                      createThemeCardMotion={bindSettingsCardMotion}
-                    />
-                  </div>
-
-                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Dock Theme Mode</div>
-                        <p className="mt-1 text-[11px] opacity-40">
-                          Keep dock mode on the application theme, or pin dock mode to a completely different theme while still honoring dock-specific recipe overrides.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {[
-                          {
-                            value: 'follow-app',
-                            label: 'Follow Application',
-                            description: 'Dock uses the app theme plus any dock-specific recipes declared by that theme.',
-                          },
-                          {
-                            value: 'override',
-                            label: 'Override Theme',
-                            description: 'Dock uses its own separately selected theme.',
-                          },
-                        ].map(option => {
-                          const active = settings.appearance.dockThemeMode === option.value;
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => updateAppearance({ dockThemeMode: option.value as 'follow-app' | 'override' })}
-                              className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                              style={{
-                                border: `1px solid ${active ? accent : border}`,
-                                background: active ? `${accent}18` : 'rgba(255,255,255,0.04)',
-                                color: text,
-                              }}
-                              title={option.description}
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                        Dock Source: {settings.appearance.dockThemeMode === 'override' ? 'Override Theme' : 'Application Theme'}
-                      </span>
-                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
-                        Current Dock Theme: {dockAppearance.baseTheme.name}
-                      </span>
-                    </div>
-                    {settings.appearance.dockThemeMode === 'follow-app' ? (
-                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}33`, background: `${accent}10`, color: text }}>
-                        Dock mode is following <strong>{appAppearance.baseTheme.name}</strong>. If that theme declares `theme.dock.workbench` or `theme.dock.explorer`, those dock-specific recipes are applied automatically.
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {settings.appearance.dockThemeMode === 'override' && (
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Curated Dock Theme Suite</label>
-                      <ThemeCatalogGrid
-                        themes={appearance.themes}
-                        activeThemeId={settings.appearance.activeDockThemeId}
-                        onSelect={applyDockThemeSelection}
-                        themePackageLookup={themePackageLookup}
-                        createThemeCardMotion={bindSettingsCardMotion}
-                      />
-                    </div>
-                  )}
-
-                  <div className="space-y-1.5">
-                    <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
-                      <Type size={10} />
-                      UI Font
-                    </label>
-                    <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
-                      {overlayFontCatalog.map(font => {
-                        const active = settings.appearance.uiFontFamily === font.family;
-                        return (
-                          <button
-                            key={font.id}
-                            onClick={() => updateAppearance({ uiFontFamily: font.family })}
-                            className="w-full rounded px-3 py-2 text-left text-[11px] transition-colors hover:bg-white/5"
-                            style={{
-                              fontFamily: font.family,
-                              background: active ? `${accent}18` : 'transparent',
-                              border: `1px solid ${active ? accent : 'rgba(255,255,255,0.08)'}`,
-                              color: active ? text : muted,
-                            }}
-                          >
-                            {font.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <ColorToken label="Accent" value={editableTheme.palette.accent} onChange={value => updateThemePalette({ accent: value, accentSoft: `${value}22` })} />
-                    <ColorToken label="App Background" value={editableTheme.palette.appBackground} onChange={value => updateThemePalette({ appBackground: value, shellBackgroundSolid: value })} />
-                    <ColorToken label="Panel" value={editableTheme.palette.panelBackground} onChange={value => updateThemePalette({ panelBackground: value, sidebarBackground: value })} />
-                    <ColorToken label="Text" value={editableTheme.palette.textPrimary} onChange={value => updateThemePalette({ textPrimary: value })} />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-2 xl:grid-cols-4">
-                    <RangeField
-                      label="Window Opacity"
-                      description="How translucent the overlay surface should feel."
-                      min={overlayVisualControls.opacity.min}
-                      max={overlayVisualControls.opacity.max}
-                      step={overlayVisualControls.opacity.step}
-                      value={settings.appearance.appOpacity}
-                      valueLabel={formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)}
-                      onChange={value => updateAppearance({ appOpacity: clampOverlayVisualControlValue('opacity', value) })}
-                    />
-                    <RangeField
-                      label="Panel Transparency"
-                      description="Fade panel chrome away while keeping the actual panel content readable."
-                      min={overlayVisualControls.panelTransparency.min}
-                      max={overlayVisualControls.panelTransparency.max}
-                      step={overlayVisualControls.panelTransparency.step}
-                      value={settings.appearance.panelTransparency}
-                      valueLabel={formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)}
-                      onChange={value => updateAppearance({ panelTransparency: clampOverlayVisualControlValue('panelTransparency', value) })}
-                    />
-                    <RangeField
-                      label="Blur Strength"
-                      description="Scale the glass softness separately from overall opacity so fully opaque shells can still feel frosted."
-                      min={overlayVisualControls.blurStrength.min}
-                      max={overlayVisualControls.blurStrength.max}
-                      step={overlayVisualControls.blurStrength.step}
-                      value={settings.appearance.appBlurStrength}
-                      valueLabel={formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)}
-                      onChange={value => updateAppearance({ appBlurStrength: clampOverlayVisualControlValue('blurStrength', value) })}
-                    />
-                    <RangeField
-                      label="Window Zoom"
-                      description="Scale the full overlay shell without changing monitor placement."
-                      min={overlayVisualControls.zoom.min}
-                      max={overlayVisualControls.zoom.max}
-                      step={overlayVisualControls.zoom.step}
-                      value={settings.appearance.appZoom}
-                      valueLabel={formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)}
-                      onChange={value => updateAppearance({ appZoom: clampOverlayVisualControlValue('zoom', value) })}
-                    />
-                  </div>
-
-                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
-                    <div>
-                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Native Glass Blur</div>
-                      <p className="mt-1 text-[11px] opacity-40">Use compositor-backed window blur when the platform supports it, then tune the glass amount with Blur Strength.</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={settings.appearance.appBlur}
-                      onChange={event => updateAppearance({ appBlur: event.target.checked })}
-                    />
-                  </label>
-                </div>
-              </section>
+              <AppearanceSettingsSection
+                appearance={appearance}
+                themePackageLookup={themePackageLookup}
+                themePackagesDirectory={themePackagesDirectory}
+                themePackagesCount={themePackages.length}
+                themePackagesLoading={themePackagesLoading}
+                themePackagesError={themePackagesError}
+                themePackagesWarnings={themePackagesWarnings}
+                editableTheme={editableTheme}
+                appAppearanceName={appAppearance.baseTheme.name}
+                dockAppearanceName={dockAppearance.baseTheme.name}
+                activeThemeId={settings.appearance.activeThemeId}
+                activeDockThemeId={settings.appearance.activeDockThemeId}
+                dockThemeMode={settings.appearance.dockThemeMode}
+                uiFontFamily={settings.appearance.uiFontFamily}
+                appOpacity={settings.appearance.appOpacity}
+                panelTransparency={settings.appearance.panelTransparency}
+                appBlurStrength={settings.appearance.appBlurStrength}
+                appZoom={settings.appearance.appZoom}
+                appBlur={settings.appearance.appBlur}
+                border={border}
+                accent={accent}
+                text={text}
+                muted={muted}
+                onOpenThemesFolder={onOpenThemesFolder}
+                onRefreshThemes={onRefreshThemes}
+                onApplyThemeSelection={applyThemeSelection}
+                onApplyDockThemeSelection={applyDockThemeSelection}
+                onUpdateAppearance={updateAppearance}
+                onUpdateThemePalette={updateThemePalette}
+                createThemeCardMotion={bindSettingsCardMotion}
+              />
             )}
 
             {activeSection === 'appearance-packs' && (
@@ -7827,397 +7620,38 @@ export function SettingsPage({
             )}
 
             {activeSection === 'icons' && (
-              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                <SectionTitle
-                  icon={<Image size={12} />}
-                  title="Icon Themes"
-                  subtitle="VS Code-style icon packs for explorer file icons, semantic folders, and stock shell glyphs."
-                />
-
-                <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Pack Directory</div>
-                        <p className="mt-1 text-[11px] opacity-40">
-                          Drop native <code>icon-theme.json</code> packs, VS Code icon-theme extension folders, or <code>.vsix</code> archives into <code>{iconThemePackagesDirectory}</code>. GreebleFS imports the icon payload into the existing icon catalog automatically, including common VS Code font-backed file icons, without unpacking visible cache folders beside the archive.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => void onRefreshIconThemes()}
-                          className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
-                        >
-                          <RefreshCw size={11} />
-                          Refresh
-                        </button>
-                        <button
-                          onClick={() => void onOpenIconThemesFolder()}
-                          className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                          style={{ border: `1px solid ${accent}55`, background: `${accent}18`, color: text }}
-                        >
-                          <FolderOpen size={11} />
-                          Open Folder
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                        Active: {activeIconThemePackage?.name ?? 'Follow Theme Default'}
-                      </span>
-                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
-                        Catalog: {iconThemePackages.length} packs
-                      </span>
-                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
-                        Root: {iconThemePackagesDirectory}
-                      </span>
-                    </div>
-
-                    {iconThemePackagesLoading ? (
-                      <div className="mt-3 rounded border px-3 py-2 text-[11px] opacity-55" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                        Scanning icon themes...
-                      </div>
-                    ) : null}
-                    {iconThemePackagesError ? (
-                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${effectiveTheme.palette.danger}55`, background: `${effectiveTheme.palette.danger}14`, color: text }}>
-                        {iconThemePackagesError}
-                      </div>
-                    ) : null}
-                    {iconThemePackagesWarnings.length > 0 ? (
-                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${effectiveTheme.palette.warning}55`, background: `${effectiveTheme.palette.warning}14`, color: text }}>
-                        {iconThemePackagesWarnings[0]}
-                      </div>
-                    ) : null}
-
-                    <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-2">
-                      <button
-                        onClick={() => applyIconThemeSelection(null)}
-                        className="rounded px-3 py-3 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${normalizedActiveIconThemeId == null ? accent : border}`,
-                          background: normalizedActiveIconThemeId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                          color: text,
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-semibold">Follow Theme Default</span>
-                          <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: normalizedActiveIconThemeId == null ? accent : muted }}>
-                            {themeIconTheme.name}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] opacity-45">
-                          The active shell theme continues to provide its default icon theme. Switching the shell theme also switches the icons.
-                        </p>
-                      </button>
-
-                      {iconThemePackages.map(iconThemePackage => {
-                        const active = normalizedActiveIconThemeId === normalizeIconThemePackageSelectionId(iconThemePackage.id);
-                        return (
-                          <button
-                            key={iconThemePackage.id}
-                            onClick={() => applyIconThemeSelection(iconThemePackage.id)}
-                            className="rounded px-3 py-3 text-left transition-colors"
-                            style={{
-                              border: `1px solid ${active ? accent : border}`,
-                              background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
-                              color: text,
-                            }}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-semibold">{iconThemePackage.name}</span>
-                              <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: active ? accent : muted }}>
-                                {getIconThemePackageSourceBadgeLabel(iconThemePackage.sourceKind)}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-[11px] opacity-45">
-                              {iconThemePackage.description || 'Dedicated icon pack for explorer assets and shell UI slots.'}
-                            </p>
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              <ThemeBadge label={`${iconThemePackage.capabilitySummary.iconDefinitions} glyphs`} active={active} />
-                              <ThemeBadge label={`${iconThemePackage.capabilitySummary.uiIcons} UI`} active={active} />
-                              <ThemeBadge label={`${iconThemePackage.capabilitySummary.fileExtensions} ext`} active={active} />
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Live Preview</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Explorer files and stock shell glyphs swap immediately. Thumbnail generation remains separate and only wins when the explorer decides a thumbnail should render.
-                    </p>
-
-                    <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Explorer</div>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {[
-                          { id: 'folder', label: 'Folder', src: getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, false, themeIconTheme) },
-                          { id: 'folder-open', label: 'Folder Open', src: getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, true, themeIconTheme) ?? getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, false, themeIconTheme) },
-                          { id: 'typescript', label: 'main.ts', src: resolveFileIconSrc('main.ts', 'ts', themeIconTheme) },
-                          { id: 'json', label: 'theme.json', src: resolveFileIconSrc('theme.json', 'json', themeIconTheme) },
-                          { id: 'markdown', label: 'README.md', src: resolveFileIconSrc('README.md', 'md', themeIconTheme) },
-                          { id: 'shader', label: 'shell.wgsl', src: resolveFileIconSrc('shell.wgsl', 'wgsl', themeIconTheme) },
-                        ].map(preview => (
-                          <div key={preview.id} className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                            <img src={preview.src} width={20} height={20} style={{ objectFit: 'contain', flexShrink: 0 }} draggable={false} />
-                            <span className="truncate text-[10px]" style={{ color: text }}>{preview.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shell UI</div>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {[
-                          { id: 'explorer', label: 'Explorer', icon: <FolderOpen size={15} /> },
-                          { id: 'search', label: 'Search', icon: <Search size={15} /> },
-                          { id: 'terminal', label: 'Terminal', icon: <TerminalSquare size={15} /> },
-                          { id: 'settings', label: 'Settings', icon: <Settings2 size={15} /> },
-                          { id: 'refresh', label: 'Refresh', icon: <RefreshCw size={15} /> },
-                          { id: 'layout', label: 'Layouts', icon: <LayoutGrid size={15} /> },
-                          { id: 'git', label: 'Git', icon: <GitBranch size={15} /> },
-                          { id: 'capture', label: 'Capture', icon: <Camera size={15} /> },
-                          { id: 'plugins', label: 'Plugins', icon: <Puzzle size={15} /> },
-                          { id: 'wallpaper', label: 'Wallpapers', icon: <MonitorPlay size={15} /> },
-                        ].map(preview => (
-                          <div key={preview.id} className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}>
-                            <span style={{ display: 'flex', color: accent }}>{preview.icon}</span>
-                            <span className="truncate text-[10px]">{preview.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Panel Tabs</div>
-                          <p className="mt-1 text-[11px] opacity-40">
-                            Panel chrome can target dedicated `panel_&lt;id&gt;` UI slots, including folder plugins that register their own top-bar tabs.
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {[
-                          {
-                            id: 'explorer',
-                            label: 'Explorer',
-                            slotId: getPanelIconSlotId('explorer'),
-                            icon: <ThemedPanelIcon panelId="explorer" fallbackSlotId="folder_open" fallbackIcon={FolderOpen} size={15} />,
-                          },
-                          {
-                            id: 'storage',
-                            label: 'Storage',
-                            slotId: getPanelIconSlotId('storage'),
-                            icon: <ThemedPanelIcon panelId="storage" fallbackSlotId="hard_drive" fallbackIcon={HardDrive} size={15} />,
-                          },
-                          {
-                            id: 'notes',
-                            label: 'Notes',
-                            slotId: getPanelIconSlotId('notes'),
-                            icon: <ThemedPanelIcon panelId="notes" fallbackSlotId="sticky_note" fallbackIcon={StickyNote} size={15} />,
-                          },
-                          {
-                            id: 'screenshots',
-                            label: 'Screenshots',
-                            slotId: getPanelIconSlotId('screenshots'),
-                            icon: <ThemedPanelIcon panelId="screenshots" fallbackSlotId="camera" fallbackIcon={Camera} size={15} />,
-                          },
-                          {
-                            id: 'plugins',
-                            label: 'Plugins',
-                            slotId: getPanelIconSlotId('plugins'),
-                            icon: <ThemedPanelIcon panelId="plugins" fallbackSlotId="puzzle" fallbackIcon={Puzzle} size={15} />,
-                          },
-                          {
-                            id: 'settings',
-                            label: 'Settings',
-                            slotId: getPanelIconSlotId('settings'),
-                            icon: <ThemedPanelIcon panelId="settings" fallbackSlotId="settings2" fallbackIcon={Settings2} size={15} />,
-                          },
-                          {
-                            id: 'drawable-canvas',
-                            label: 'Drawable Canvas',
-                            slotId: getPanelIconSlotId('drawable-canvas'),
-                            icon: <ThemedPanelIcon panelId="drawable-canvas" fallbackSlotId="puzzle" fallbackIcon={Puzzle} size={15} />,
-                          },
-                        ].map(preview => (
-                          <div key={preview.id} className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}>
-                            <span style={{ display: 'flex', color: accent }}>{preview.icon}</span>
-                            <div className="min-w-0">
-                              <div className="truncate text-[10px]">{preview.label}</div>
-                              <div className="truncate text-[8px] opacity-40">{preview.slotId}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <label className="mt-3 flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
-                      <div>
-                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">OS Icon Fallback</div>
-                        <p className="mt-1 text-[11px] opacity-40">
-                          Keep icon themes primary for explorer files and semantic folders, then let {platformLabel}&apos;s native icon service fill holes when the active pack has no direct match.
-                        </p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.appearance.useNativeOsIcons}
-                        onChange={event => updateAppearance({ useNativeOsIcons: event.target.checked })}
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Folder Icon Authoring</div>
-                      <p className="mt-1 text-[11px] opacity-40">
-                        Curated coding-folder rules land first. Anything that misses falls back to the default folder icon from the active icon theme.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => updateExplorer({ folderIconRules: createDefaultFolderIconRules() })}
-                      className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                      style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
-                    >
-                      Restore Rules
-                    </button>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[140px_minmax(0,1fr)]">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Default Fallback</label>
-                    <div className="flex items-center gap-3 rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)' }}>
-                      <img
-                        src={getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, false, themeIconTheme)}
-                        width={22}
-                        height={22}
-                        style={{ objectFit: 'contain', flexShrink: 0 }}
-                        draggable={false}
-                      />
-                      <select
-                        aria-label="Default fallback folder icon"
-                        value={settings.explorer.defaultFolderIcon}
-                        onChange={event => updateExplorer({ defaultFolderIcon: event.target.value as FolderIconValue })}
-                        className="w-full bg-transparent text-[11px] outline-none"
-                        style={settingsMonoSelectStyle}
-                      >
-                        {FOLDER_ICON_OPTIONS.map(option => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 space-y-2">
-                    {settings.explorer.folderIconRules.map(rule => (
-                      <div key={rule.id} className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                        <div className="grid grid-cols-1 gap-2 xl:grid-cols-[120px_minmax(0,1.1fr)_minmax(0,0.9fr)_36px]">
-                          <div className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)' }}>
-                            <img
-                              src={getNamedFolderIconSrc(rule.icon, false, themeIconTheme)}
-                              width={18}
-                              height={18}
-                              style={{ objectFit: 'contain', flexShrink: 0 }}
-                              draggable={false}
-                            />
-                            <input
-                              value={rule.label}
-                              onChange={event => updateFolderRule(rule.id, { label: event.target.value })}
-                              className="w-full bg-transparent text-[11px] outline-none"
-                              style={{ color: text }}
-                            />
-                          </div>
-                          <input
-                            value={stringifyMatchers(rule.matchers)}
-                            onChange={event => updateFolderRule(rule.id, { matchers: parseMatcherInput(event.target.value) })}
-                            placeholder="src, source, source_code"
-                            className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                            style={settingsMonoFieldStyle}
-                          />
-                          <select
-                            aria-label={`Folder icon for ${rule.label}`}
-                            value={rule.icon}
-                            onChange={event => updateFolderRule(rule.id, { icon: event.target.value as FolderIconValue })}
-                            className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                            style={settingsMonoSelectStyle}
-                          >
-                            {FOLDER_ICON_OPTIONS.map(option => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => removeFolderRule(rule.id)}
-                            className="flex items-center justify-center rounded border"
-                            title="Remove Rule"
-                            style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-3 flex items-center gap-2">
-                    <button
-                      onClick={addFolderRule}
-                      className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                      style={{ background: `${accent}18`, color: text, border: `1px solid ${accent}55` }}
-                    >
-                      <Plus size={11} />
-                      Add Rule
-                    </button>
-                    <span className="text-[10px] opacity-40">
-                      Matchers are normalized, so `src-tauri`, `src tauri`, and `src_tauri` resolve the same way.
-                    </span>
-                  </div>
-
-                  <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
-                    <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
-                      <Search size={11} />
-                      Icon Catalog
-                    </label>
-                    <input
-                      value={folderIconSearch}
-                      onChange={event => setFolderIconSearch(event.target.value)}
-                      placeholder="Filter icon names"
-                      className="mt-2 w-full rounded border px-3 py-2 text-[11px] outline-none"
-                      style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
-                    />
-                    <OverlayScrollArea style={{ marginTop: 12, maxHeight: 220 }} viewportStyle={{ paddingRight: 4 }}>
-                      <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                        {filteredFolderIconOptions.map(option => (
-                          <button
-                            key={option.value}
-                            onClick={() => updateExplorer({ defaultFolderIcon: option.value })}
-                            className="flex items-center gap-2 rounded border px-2 py-2 text-left text-[10px]"
-                            style={{
-                              borderColor: settings.explorer.defaultFolderIcon === option.value ? accent : border,
-                              background: settings.explorer.defaultFolderIcon === option.value ? `${accent}14` : 'rgba(255,255,255,0.03)',
-                              color: text,
-                            }}
-                            title="Set as default fallback"
-                          >
-                            <img src={option.closedSrc} width={18} height={18} style={{ objectFit: 'contain', flexShrink: 0 }} draggable={false} />
-                            <span className="truncate">{option.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </OverlayScrollArea>
-                  </div>
-                </div>
-              </section>
+              <IconSettingsSection
+                iconThemePackagesDirectory={iconThemePackagesDirectory}
+                iconThemePackages={iconThemePackages}
+                iconThemePackagesLoading={iconThemePackagesLoading}
+                iconThemePackagesError={iconThemePackagesError}
+                iconThemePackagesWarnings={iconThemePackagesWarnings}
+                activeIconThemePackage={activeIconThemePackage}
+                normalizedActiveIconThemeId={normalizedActiveIconThemeId}
+                themeIconTheme={themeIconTheme}
+                border={border}
+                accent={accent}
+                text={text}
+                muted={muted}
+                platformLabel={platformLabel}
+                filteredFolderIconOptions={filteredFolderIconOptions}
+                folderIconSearch={folderIconSearch}
+                onFolderIconSearchChange={setFolderIconSearch}
+                useNativeOsIcons={settings.appearance.useNativeOsIcons}
+                defaultFolderIcon={settings.explorer.defaultFolderIcon}
+                folderIconRules={settings.explorer.folderIconRules}
+                onRefreshIconThemes={onRefreshIconThemes}
+                onOpenIconThemesFolder={onOpenIconThemesFolder}
+                onApplyIconThemeSelection={applyIconThemeSelection}
+                onToggleNativeOsIcons={enabled => updateAppearance({ useNativeOsIcons: enabled })}
+                onRestoreFolderRules={() => updateExplorer({ folderIconRules: createDefaultFolderIconRules() })}
+                onSetDefaultFolderIcon={icon => updateExplorer({ defaultFolderIcon: icon })}
+                onUpdateFolderRule={updateFolderRule}
+                onRemoveFolderRule={removeFolderRule}
+                onAddFolderRule={addFolderRule}
+                settingsMonoFieldStyle={settingsMonoFieldStyle}
+                settingsMonoSelectStyle={settingsMonoSelectStyle}
+              />
             )}
 
             {activeSection === 'wallpapers' && (
@@ -10091,6 +9525,76 @@ export function SettingsPage({
             )}
 
             {activeSection === 'system' && (
+              <SystemSettingsSection
+                platform={platform}
+                startupSyncPending={startupSyncPending}
+                startupSyncError={startupSyncError}
+                launchAtStartup={settings.system.launchAtStartup}
+                startMobileShareOnBoot={settings.system.startMobileShareOnBoot}
+                hideAppInTray={settings.system.hideAppInTray}
+                showInTaskbar={settings.system.showInTaskbar}
+                developerMode={settings.system.developerMode}
+                developerTelemetryEnabled={settings.system.developerTelemetryEnabled}
+                sourceTraceModeEnabled={settings.system.sourceTraceModeEnabled}
+                consumerDiagnosticsEnabled={settings.system.consumerDiagnosticsEnabled}
+                developerTelemetryCaptureMode={settings.system.developerTelemetryCaptureMode}
+                developerTelemetryPayloadMode={settings.system.developerTelemetryPayloadMode}
+                developerTelemetryMaxFileSizeMb={settings.system.developerTelemetryMaxFileSizeMb}
+                developerTelemetryWriteToFile={settings.system.developerTelemetryWriteToFile}
+                developerTelemetryShowInspector={settings.system.developerTelemetryShowInspector}
+                consumerDiagnosticsIncludePluginRuntime={settings.system.consumerDiagnosticsIncludePluginRuntime}
+                consumerDiagnosticsIncludeRendererRuntime={settings.system.consumerDiagnosticsIncludeRendererRuntime}
+                consumerDiagnosticsIncludePerfSamples={settings.system.consumerDiagnosticsIncludePerfSamples}
+                toggleDeveloperTelemetryHud={settings.keybindings.toggleDeveloperTelemetryHud}
+                linuxDisplayBackendPreference={settings.system.linuxDisplayBackendPreference}
+                availableLinuxDisplayBackends={availableLinuxDisplayBackends}
+                linuxDisplayBackendStatus={linuxDisplayBackendStatus}
+                linuxDisplayBackendSyncPending={linuxDisplayBackendSyncPending}
+                linuxDisplayBackendStatusSummary={linuxDisplayBackendStatusSummary}
+                telemetryStatusPending={telemetryStatusPending}
+                telemetryStatusError={telemetryStatusError}
+                telemetryStatus={telemetryStatus}
+                telemetryActionPending={telemetryActionPending}
+                telemetryNotice={telemetryNotice}
+                systemPresentationState={systemPresentationState}
+                border={border}
+                accent={accent}
+                text={text}
+                muted={muted}
+                settingsSelectStyle={settingsSelectStyle}
+                settingsFieldStyle={settingsFieldStyle}
+                gpuRuntimeSnapshot={gpuRuntimeSnapshot}
+                gpuTierMode={settings.system.gpuTierMode}
+                gpuRuntimeDiagnosticsSummary={gpuRuntimeDiagnosticsSummary}
+                gpuRuntimeFeedStatus={gpuRuntimeFeedStatus}
+                gpuRuntimeTierOptions={gpuRuntimeTierOptions}
+                gpuTierLabel={getGpuTierModeLabel(gpuRuntimeSnapshot.effectiveTier)}
+                accelerationRoutingMode={settings.system.accelerationRoutingMode}
+                accelerationRoutingModeOptions={accelerationRoutingModeOptions}
+                accelerationProviderSummary={accelerationProviderSummary}
+                accelerationPipelineStatus={accelerationPipelineStatus}
+                accelerationInstallRecommended={accelerationInstallRecommended}
+                accelerationInstallButtonLabel={accelerationInstallButtonLabel}
+                accelerationProbePending={accelerationProbePending}
+                accelerationInstallPending={accelerationInstallPending}
+                accelerationAutoInstallPlanAvailable={accelerationAutoInstallPlan != null}
+                accelerationRuntimeSnapshot={accelerationRuntimeSnapshot}
+                accelerationWorkloadRoutes={accelerationWorkloadRoutes}
+                onSetLaunchAtStartup={setLaunchAtStartup}
+                onUpdateSystem={updateSystem}
+                onSetHideAppInTray={setHideAppInTray}
+                onSetShowInTaskbar={setShowInTaskbar}
+                onProbeAccelerationPipeline={handleProbeAccelerationPipeline}
+                onQueueAccelerationInstall={handleQueueAccelerationInstall}
+                onSetLinuxDisplayBackendPreference={setLinuxDisplayBackendPreference}
+                onRefreshTelemetryStatus={refreshTelemetryStatus}
+                onTelemetryExport={handleTelemetryExport}
+                onTelemetryClear={handleTelemetryClear}
+              />
+            )}
+
+            {/*
+            {false && activeSection === 'system' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
                 <SectionTitle
                   icon={<Settings2 size={12} />}
@@ -10657,6 +10161,9 @@ export function SettingsPage({
               </section>
             )}
 
+            )}
+            */}
+
             {activeSection === 'explorer' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
                 <SectionTitle
@@ -10982,6 +10489,80 @@ export function SettingsPage({
             )}
 
             {activeSection === 'context-menus' && (
+              <ContextMenusSettingsSection
+                detail={activeSectionMeta.detail}
+                border={border}
+                accent={accent}
+                text={text}
+                muted={muted}
+                activeMenuPack={activeMenuPack}
+                menuPacks={menuPacks}
+                customizedContextCount={Object.keys(settings.explorer.contextMenuLayoutOverridesByContext).length}
+                menuPacksWarnings={menuPacksWarnings}
+                actionsWarnings={actionsWarnings}
+                activeContextMenuContext={activeContextMenuContext}
+                setActiveContextMenuComposerContext={setActiveContextMenuComposerContext}
+                onRefreshMenuPacks={onRefreshMenuPacks}
+                onRefreshActions={onRefreshActions}
+                onOpenMenuPacksFolder={onOpenMenuPacksFolder}
+                onOpenActionsFolder={onOpenActionsFolder}
+                resetContextMenuLayout={resetContextMenuLayout}
+                resetAllContextMenuLayouts={resetAllContextMenuLayouts}
+                setActiveMenuPackId={packId => updateExplorer({ activeMenuPackId: packId })}
+                activeContextMenuLayout={activeContextMenuLayout}
+                setContextMenuRendererForActiveContext={setContextMenuRendererForActiveContext}
+                menuPacksLoading={menuPacksLoading}
+                menuPacksDirectory={menuPacksDirectory}
+                menuPacksError={menuPacksError}
+                actionsLoading={actionsLoading}
+                actions={actions}
+                actionPacks={actionPacks}
+                actionsDirectory={actionsDirectory}
+                actionsError={actionsError}
+                contextMenuCommandDraftByContext={contextMenuCommandDraftByContext}
+                setContextMenuCommandDraftByContext={setContextMenuCommandDraftByContext}
+                availableContextMenuCommandsForActiveContext={availableContextMenuCommandsForActiveContext}
+                addContextMenuCommandEntry={addContextMenuCommandEntry}
+                contextMenuGroupDraftByContext={contextMenuGroupDraftByContext}
+                setContextMenuGroupDraftByContext={setContextMenuGroupDraftByContext}
+                addContextMenuGroupSlot={addContextMenuGroupSlot}
+                addContextMenuSubmenu={addContextMenuSubmenu}
+                addContextMenuSeparator={addContextMenuSeparator}
+                filteredContextMenuBrowserCommands={filteredContextMenuBrowserCommands}
+                contextMenuCommandBrowserQuery={contextMenuCommandBrowserQuery}
+                setContextMenuCommandBrowserQuery={setContextMenuCommandBrowserQuery}
+                contextMenuPreviewMenu={contextMenuPreviewMenu}
+                selectedContextMenuPreviewNodeId={selectedContextMenuPreviewNodeId}
+                selectContextMenuEntryFromRuntimeNode={selectContextMenuEntryFromRuntimeNode}
+                activeContextMenuEntries={activeContextMenuEntries}
+                selectedContextMenuEntryId={selectedContextMenuEntryId}
+                setSelectedContextMenuEntryId={setSelectedContextMenuEntryId}
+                draggedContextMenuEntryId={draggedContextMenuEntryId}
+                setDraggedContextMenuEntryId={setDraggedContextMenuEntryId}
+                contextMenuCommandLookup={contextMenuCommandLookup}
+                selectedContextMenuEntry={selectedContextMenuEntry}
+                selectedContextMenuCommand={selectedContextMenuCommand}
+                activeContextMenuSubmenus={activeContextMenuSubmenus}
+                selectedContextMenuSiblingIndex={selectedContextMenuSiblingIndex}
+                selectedContextMenuSiblingEntriesCount={selectedContextMenuSiblingEntries.length}
+                toggleContextMenuLayoutEntryEnabled={toggleContextMenuLayoutEntryEnabled}
+                setContextMenuSubmenuTitle={setContextMenuSubmenuTitle}
+                setContextMenuGroupSlotGroup={setContextMenuGroupSlotGroup}
+                setContextMenuGroupSlotSourceFilter={setContextMenuGroupSlotSourceFilter}
+                setContextMenuLayoutEntryParent={setContextMenuLayoutEntryParent}
+                setContextMenuLayoutEntryQuickSlot={setContextMenuLayoutEntryQuickSlot}
+                setContextMenuLayoutEntryFallbackBucket={setContextMenuLayoutEntryFallbackBucket}
+                moveContextMenuLayoutEntry={moveContextMenuLayoutEntry}
+                removeContextMenuLayoutEntry={removeContextMenuLayoutEntry}
+                placeContextMenuLayoutEntryAt={placeContextMenuLayoutEntryAt}
+                legacyPluginMenuItemCount={pluginContextMenuItems.length}
+                legacyPluginActionCount={pluginExplorerActions.length}
+                authoredPluginActionCount={actions.filter(action => action.pluginId != null).length}
+              />
+            )}
+
+            {/*
+            {false && activeSection === 'context-menus' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
                 <SectionTitle
                   icon={<Puzzle size={12} />}
@@ -11037,6 +10618,9 @@ export function SettingsPage({
                 </div>
               </section>
             )}
+
+            )}
+            */}
 
             {activeSection === 'home' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
@@ -12760,23 +12344,21 @@ export function SettingsPage({
                 </div>
               </section>
             )}
-          </div>
-        </OverlayScrollArea>
-        <MobileShareQrDialog
-          open={mobileQrDialogOpen}
-          appearance={appearance}
-          phase={mobileSharePhase}
-          session={mobileShareSession}
-          remoteAccessMode={settings.mobile.remoteAccessMode}
-          notice={mobileShareNotice}
-          error={mobileShareError}
-          showSettingsAction={false}
-          onClose={() => setMobileQrDialogOpen(false)}
-          onOpenMobileSettings={() => setMobileQrDialogOpen(false)}
-          onStartOrRestartShare={startMobileShareFromSettings}
-          onStopShare={stopMobileShareFromSettings}
-        />
-      </main>
+      </SettingsShell>
+      <MobileShareQrDialog
+        open={mobileQrDialogOpen}
+        appearance={appearance}
+        phase={mobileSharePhase}
+        session={mobileShareSession}
+        remoteAccessMode={settings.mobile.remoteAccessMode}
+        notice={mobileShareNotice}
+        error={mobileShareError}
+        showSettingsAction={false}
+        onClose={() => setMobileQrDialogOpen(false)}
+        onOpenMobileSettings={() => setMobileQrDialogOpen(false)}
+        onStartOrRestartShare={startMobileShareFromSettings}
+        onStopShare={stopMobileShareFromSettings}
+      />
     </div>
   );
 }
