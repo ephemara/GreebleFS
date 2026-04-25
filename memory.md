@@ -1,3 +1,23 @@
+# 2026-04-24 - VS Code Theme And Icon Imports Now Work As First-Class Compatibility Packages
+
+- GreebleFS now treats common VS Code theme extensions as compatibility sources instead of forcing users to rewrite them into native bundle format first. `themes/` can ingest VS Code color-theme folders or `.vsix` archives, and `icon-themes/` can ingest VS Code file-icon folders or `.vsix` archives.
+- Durable implementation shape:
+  - `src/config/vscodeThemeCompatibility.ts` is the shared compatibility seam. It resolves extension roots from either a real folder or a cached `.vsix` extraction, checks both `package.json` and `extension/package.json`, parses JSONC, follows VS Code color-theme `include` chains, and adapts the result into normal GreebleFS theme/icon package shapes.
+  - VS Code file icon themes stay on the existing string-only icon contract. Image-backed icons still become data URLs, and font-backed VS Code icons are converted into inline SVG data URLs so Seti-style packs work without adding a second runtime icon model.
+  - `src/config/iconThemePackages.ts` now accepts native icon packs plus VS Code compatibility imports and tags them with explicit `sourceKind` / `sourceInfo` values (`vscode-icon-theme-directory`, `vscode-icon-theme-vsix`) so Settings and catalogs can label them clearly.
+  - `src/config/themePackages.ts` now accepts native theme bundles plus VS Code compatibility imports, preserves the raw normalized theme payload during bundle resolution, and carries extension-contributed file icon themes along as local icon catalogs for mixed VS Code extensions.
+  - `src/config/explorerMonaco.ts` is now the shared Monaco theme bridge for compatibility themes. Monaco surfaces derive their theme id/colors from the active resolved appearance and layer in VS Code token colors when the active theme came from a VS Code import. Do not hardcode `vs-dark` inside Monaco consumers anymore.
+  - `src/components/FileExplorer.tsx`, `src/components/GitManager.tsx`, and `src/components/ExplorerShaderWorkbench.tsx` now use that shared Monaco compatibility path instead of per-surface hardcoded theme names.
+  - `src/config/appearance.ts` now carries Monaco compatibility metadata on `theme.assets.monacoTheme` so the shell theme contract can stay GreebleFS-owned while Monaco still honors imported VS Code token colors.
+  - `src-tauri/src/archive_ops.rs` now treats `.vsix` as a zip-class archive and reuses the cached extraction path. The original archive stays in place; the extracted extension root lives in the archive cache.
+- Durable implementation lesson:
+  - `joinPlatformPath(...)` only joins one segment at a time. When probing `extension/package.json`, nest the joins (`joinPlatformPath(joinPlatformPath(root, 'extension'), 'package.json')`) instead of passing three arguments, or the final filename is silently dropped.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerMonaco.test.ts src/test/iconThemePackages.test.ts src/test/themePackages.test.ts`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "advertises VS Code folder and .vsix compatibility in theme settings copy"`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml vsix`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml detects_compound_archive_suffixes_before_single_suffixes`
+
 # 2026-04-24 - Explorer Drag And Drop Now Coalesces Pointer Work And Reuses Drop-Surface Runtime State
 
 - The flagship explorer drag/drop runtime got a focused performance pass aimed at 120 Hz feel without changing the product model. Internal app-owned drag is still the same system, but the hot path now does less DOM churn and less React-facing work per pointer frame.

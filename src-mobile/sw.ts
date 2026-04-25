@@ -145,9 +145,9 @@ registerRoute(
     request.method === "GET" &&
     request.mode === "navigate" &&
     url.origin === self.location.origin,
-  async ({ event }) => {
+  async ({ request }) => {
     try {
-      return await fetch(event.request);
+      return await fetch(request);
     } catch (_error) {
       return (
         (await caches.match("/")) ||
@@ -205,15 +205,18 @@ self.addEventListener("push", (event) => {
     (rawPayload as Record<string, unknown>).requireInteraction === true;
 
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      tag,
-      data: intent,
-      icon: "/app-icon.png",
-      badge: "/apple-touch-icon.png",
-      renotify: true,
-      requireInteraction,
-    }),
+    self.registration.showNotification(
+      title,
+      {
+        body,
+        tag,
+        data: intent,
+        icon: "/app-icon.png",
+        badge: "/apple-touch-icon.png",
+        renotify: true,
+        requireInteraction,
+      } as NotificationOptions,
+    ),
   );
 });
 

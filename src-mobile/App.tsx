@@ -697,6 +697,7 @@ function MobileExplorerVirtualSurface({
   onDownloadEntry: (entry: MobileShareEntry) => void;
 }) {
   const gridView = isMobileGridViewMode(layout.viewMode);
+  const shouldVirtualize = entries.length > 60;
   const listGap = getExplorerListGap(layout, viewportWidth);
   const gridGap = getExplorerGridGap(layout, viewportWidth);
   const gridColumnCount = gridView
@@ -706,9 +707,117 @@ function MobileExplorerVirtualSurface({
     ? Math.ceil(entries.length / gridColumnCount)
     : entries.length;
 
+  if (!shouldVirtualize) {
+    if (!gridView) {
+      return (
+        <div className="mobile-list-surface">
+          {entries.map((entry) => (
+            <article className="mobile-row" key={entry.relativePath}>
+              <button
+                type="button"
+                className="mobile-row__main"
+                onClick={() => {
+                  onOpenEntry(entry);
+                }}
+              >
+                <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} size={52} />
+                <div className="mobile-row__content">
+                  <div className="mobile-row__name">{entry.name}</div>
+                  <div className="mobile-row__meta">{getRowMetaLabel(entry)}</div>
+                </div>
+              </button>
+              <div className="mobile-row__actions">
+                {entry.canPreview ? (
+                  <button
+                    type="button"
+                    className="mobile-icon-button"
+                    onClick={() => {
+                      onPreviewEntry(entry);
+                    }}
+                    aria-label={`Preview ${entry.name}`}
+                  >
+                    <LucideIcons.Eye size={18} strokeWidth={1.7} />
+                  </button>
+                ) : null}
+                {entry.canDownload ? (
+                  <button
+                    type="button"
+                    className="mobile-icon-button"
+                    onClick={() => {
+                      onDownloadEntry(entry);
+                    }}
+                    aria-label={`Download ${entry.name}`}
+                  >
+                    <LucideIcons.Download size={18} strokeWidth={1.7} />
+                  </button>
+                ) : (
+                  <span className="mobile-row__chevron">
+                    <LucideIcons.ChevronRight size={18} strokeWidth={1.7} />
+                  </span>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className={`mobile-grid mobile-grid--${layout.viewMode}`}
+        style={
+          {
+            "--mobile-grid-min-width": `${getGridMinWidthForViewport(
+              layout,
+              viewportWidth,
+            )}px`,
+          } as CSSProperties
+        }
+      >
+        {entries.map((entry) => (
+          <button
+            key={entry.relativePath}
+            type="button"
+            className={`mobile-grid-card${
+              entry.isDir ? " mobile-grid-card--directory" : ""
+            }`}
+            onClick={() => {
+              onOpenEntry(entry);
+            }}
+          >
+            <div className="mobile-grid-card__icon-wrap">
+              <MobileEntryIcon
+                entry={entry}
+                themeSnapshot={themeSnapshot}
+                openFolder={entry.isDir}
+                size={gridCardSize}
+              />
+            </div>
+            <div className="mobile-grid-card__content">
+              <div className="mobile-grid-card__name">{entry.name}</div>
+              <div className="mobile-grid-card__meta">
+                {entry.isDir
+                  ? entry.isHidden
+                    ? "Hidden folder"
+                    : "Folder"
+                  : entry.size > 0
+                    ? formatBytes(entry.size)
+                    : getRowMetaLabel(entry)}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollElementRef.current,
+    initialRect: {
+      width: Math.max(viewportWidth, 320),
+      height: 720,
+    },
     estimateSize: () =>
       gridView
         ? getExplorerGridRowEstimateSize(layout, viewportWidth)

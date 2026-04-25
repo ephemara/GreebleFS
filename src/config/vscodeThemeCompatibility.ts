@@ -437,7 +437,10 @@ async function resolveVsCodeExtensionFromEntry(
       packageJsonPath = rootPackageJsonPath;
       manifest = parseJsoncObject<VsCodeExtensionManifest>(rootPackageJson, rootPackageJsonPath);
     } else {
-      const extensionPackageJsonPath = joinPlatformPath(entry.path, 'extension', 'package.json');
+      const extensionPackageJsonPath = joinPlatformPath(
+        joinPlatformPath(entry.path, 'extension'),
+        'package.json',
+      );
       const extensionPackageJson = await readTextFileIfExists(extensionPackageJsonPath);
       if (!extensionPackageJson) {
         return null;
@@ -462,7 +465,10 @@ async function resolveVsCodeExtensionFromEntry(
       packageJsonPath = extractedRootPackageJsonPath;
       manifest = parseJsoncObject<VsCodeExtensionManifest>(extractedRootPackageJson, extractedRootPackageJsonPath);
     } else {
-      const extractedExtensionPackageJsonPath = joinPlatformPath(extractionResult.outputPath, 'extension', 'package.json');
+      const extractedExtensionPackageJsonPath = joinPlatformPath(
+        joinPlatformPath(extractionResult.outputPath, 'extension'),
+        'package.json',
+      );
       const extractedExtensionPackageJson = await readTextFileIfExists(extractedExtensionPackageJsonPath);
       if (!extractedExtensionPackageJson) {
         return null;

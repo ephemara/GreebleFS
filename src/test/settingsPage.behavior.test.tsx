@@ -278,7 +278,10 @@ describe('SettingsPage behavior', () => {
     await user.click(findSectionButton('Appearance'));
 
     expect(screen.getByText(/VS Code color-theme extension folders, or/i)).toBeInTheDocument();
-    expect(screen.getByText(/cached \.vsix extracts never masquerade as authored bundles/i)).toBeInTheDocument();
+    expect(screen.getAllByText((_, node) =>
+      node?.tagName.toLowerCase() === 'p'
+      && (node.textContent?.includes('cached .vsix extracts never masquerade as authored bundles') ?? false),
+    )[0]).toBeInTheDocument();
     expect(screen.getByText('VS Code VSIX')).toBeInTheDocument();
   });
 
