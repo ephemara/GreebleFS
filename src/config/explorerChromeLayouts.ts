@@ -43,6 +43,7 @@ export type BuiltInExplorerChromeControlId =
   | 'toggleSources'
   | 'focusAddressBar'
   | 'experimentalModes'
+  | 'customizeModeToggle'
   | 'shellLayout'
   | 'viewLayout'
   | 'togglePreview'
@@ -103,7 +104,12 @@ export type BuiltInExplorerChromeControlId =
   | 'terminalDrawerToggle'
   | 'statusViewToggles';
 
-export type ExplorerChromeControlId = BuiltInExplorerChromeControlId | `plugin:${string}`;
+export type ExplorerChromeControlId =
+  | BuiltInExplorerChromeControlId
+  | `plugin:${string}`
+  | `action:${string}`;
+
+export type ExplorerChromeSizeVariant = 'compact' | 'regular' | 'wide';
 
 export interface ExplorerChromeControlDefinition {
   id: ExplorerChromeControlId;
@@ -131,6 +137,10 @@ export interface ExplorerChromeOverrideEntry {
   surfaceId: ExplorerChromeSurfaceId;
   zone: ExplorerChromeZoneId;
   order: number;
+  hidden?: boolean;
+  sizeVariant?: ExplorerChromeSizeVariant;
+  showLabel?: boolean;
+  showIcon?: boolean;
 }
 
 export interface ExplorerChromeOverrideSnapshot {
@@ -140,6 +150,10 @@ export interface ExplorerChromeOverrideSnapshot {
 export interface ExplorerChromeResolvedControlPlacement extends ExplorerChromeSlotDefinition {
   controlId: ExplorerChromeControlId;
   surfaceId: ExplorerChromeSurfaceId;
+  hidden?: boolean;
+  sizeVariant?: ExplorerChromeSizeVariant;
+  showLabel?: boolean;
+  showIcon?: boolean;
 }
 
 export interface ExplorerChromeResolvedZone {
@@ -300,6 +314,10 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       experimentalModes: {
         explorerToolbar: { zone: 'primaryEnd', order: 30 },
         explorerTopbar: { zone: 'end', order: 10 },
+      },
+      customizeModeToggle: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 4 },
+        explorerTopbar: { zone: 'end', order: 12 },
       },
       shellLayout: {
         explorerToolbar: { zone: 'primaryEnd', order: 40 },
@@ -557,6 +575,10 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
         explorerToolbar: { zone: 'secondaryEnd', order: 60 },
         explorerTopbar: { zone: 'end', order: 10 },
       },
+      customizeModeToggle: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 4 },
+        explorerTopbar: { zone: 'end', order: 12 },
+      },
       shellLayout: {
         explorerToolbar: { zone: 'secondaryEnd', order: 70 },
         explorerTopbar: { zone: 'end', order: 20 },
@@ -789,6 +811,16 @@ function asTrimmedString(value: unknown): string | null {
     : null;
 }
 
+function asBooleanOrUndefined(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function normalizeExplorerChromeSizeVariant(value: unknown): ExplorerChromeSizeVariant | undefined {
+  return value === 'compact' || value === 'wide' || value === 'regular'
+    ? value
+    : undefined;
+}
+
 export function normalizeExplorerChromeLayoutId(value: unknown): ExplorerChromeLayoutId {
   const trimmed = asTrimmedString(value);
   return trimmed ?? defaultExplorerChromeLayoutId;
@@ -808,6 +840,32 @@ export function getExplorerChromeLayoutDefinition(
     ?? builtInExplorerChromeLayouts[defaultExplorerChromeLayoutId];
 }
 
+export function listBuiltInExplorerChromeControlIds(): BuiltInExplorerChromeControlId[] {
+  const builtInIds = new Set<BuiltInExplorerChromeControlId>();
+  for (const layout of Object.values(builtInExplorerChromeLayouts)) {
+    for (const controlId of Object.keys(layout.placements) as BuiltInExplorerChromeControlId[]) {
+      builtInIds.add(controlId);
+    }
+  }
+  return Array.from(builtInIds).sort();
+}
+
+export function getSupportedExplorerChromeSurfaces(
+  controlId: ExplorerChromeControlId,
+): ExplorerChromeSurfaceId[] {
+  const supportedSurfaces = new Set<ExplorerChromeSurfaceId>();
+  for (const layout of Object.values(builtInExplorerChromeLayouts)) {
+    const placements = layout.placements[controlId];
+    if (!placements) {
+      continue;
+    }
+    for (const surfaceId of Object.keys(placements) as ExplorerChromeSurfaceId[]) {
+      supportedSurfaces.add(surfaceId);
+    }
+  }
+  return Array.from(supportedSurfaces);
+}
+
 export function normalizeExplorerChromeOverrideSnapshot(
   value: unknown,
 ): ExplorerChromeOverrideSnapshot {
@@ -821,6 +879,10 @@ export function normalizeExplorerChromeOverrideSnapshot(
     const surfaceId = entry?.surfaceId;
     const zone = entry?.zone;
     const order = asFiniteInteger(entry?.order);
+    const hidden = asBooleanOrUndefined(entry?.hidden) ?? false;
+    const sizeVariant = normalizeExplorerChromeSizeVariant(entry?.sizeVariant);
+    const showLabel = asBooleanOrUndefined(entry?.showLabel);
+    const showIcon = asBooleanOrUndefined(entry?.showIcon);
 
     if (
       !controlId
@@ -837,6 +899,10 @@ export function normalizeExplorerChromeOverrideSnapshot(
       surfaceId,
       zone,
       order,
+      hidden,
+      sizeVariant,
+      showLabel,
+      showIcon,
     });
   }
 
@@ -901,6 +967,7 @@ function getBasePlacement(
     controlId,
     surfaceId,
     ...placement,
+    hidden: false,
   };
 }
 
@@ -913,6 +980,10 @@ function getOverridePlacement(
   const overridePlacement = overridePlacementMap.get(controlId);
   if (!overridePlacement) {
     return basePlacement;
+  }
+
+  if (overridePlacement.hidden) {
+    return null;
   }
 
   if (overridePlacement.surfaceId !== surfaceId) {
@@ -930,6 +1001,10 @@ function getOverridePlacement(
     shrink: basePlacement?.shrink,
     collapsePriority: basePlacement?.collapsePriority,
     overflowEligible: basePlacement?.overflowEligible,
+    hidden: false,
+    sizeVariant: overridePlacement.sizeVariant ?? basePlacement?.sizeVariant,
+    showLabel: overridePlacement.showLabel ?? basePlacement?.showLabel,
+    showIcon: overridePlacement.showIcon ?? basePlacement?.showIcon,
   };
 }
 
@@ -950,7 +1025,40 @@ export function createExplorerChromeOverrideSnapshotFromResolvedSurfaces(
         surfaceId: placement.surfaceId,
         zone: placement.zone,
         order: placement.order,
+        hidden: placement.hidden,
+        sizeVariant: placement.sizeVariant,
+        showLabel: placement.showLabel,
+        showIcon: placement.showIcon,
       })),
+  });
+}
+
+export function getExplorerChromeResolvedSurfaceSignature(
+  surface: ExplorerChromeResolvedSurface,
+): string {
+  return JSON.stringify({
+    surfaceId: surface.surfaceId,
+    visibleControlIds: surface.visibleControlIds,
+    rows: surface.rows.map((row) => ({
+      id: row.id,
+      zones: row.zones.map((zone) => ({
+        id: zone.id,
+        controls: zone.controls.map((placement) => ({
+          controlId: placement.controlId,
+          surfaceId: placement.surfaceId,
+          zone: placement.zone,
+          order: placement.order,
+          grow: placement.grow,
+          shrink: placement.shrink,
+          collapsePriority: placement.collapsePriority,
+          overflowEligible: placement.overflowEligible,
+          hidden: placement.hidden,
+          sizeVariant: placement.sizeVariant,
+          showLabel: placement.showLabel,
+          showIcon: placement.showIcon,
+        })),
+      })),
+    })),
   });
 }
 
@@ -993,6 +1101,7 @@ export function moveExplorerChromeControlInResolvedSurfaces(input: {
     surfaceId: input.targetSurfaceId,
     zone: input.targetZoneId,
     order: 10,
+    hidden: false,
   };
   const nextPlacement: ExplorerChromeResolvedControlPlacement = {
     ...fallbackPlacement,
@@ -1011,6 +1120,10 @@ export function moveExplorerChromeControlInResolvedSurfaces(input: {
         surfaceId: surface.surfaceId,
         zone: zone.id,
         order: (index + 1) * 10,
+        hidden: placement.hidden,
+        sizeVariant: placement.sizeVariant,
+        showLabel: placement.showLabel,
+        showIcon: placement.showIcon,
       }));
     }))),
   });

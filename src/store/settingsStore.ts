@@ -60,6 +60,7 @@ import {
 import { DEFAULT_EXPLORER_MENU_PACK_ID } from '../config/menuPacks';
 import {
   createDefaultKeybindingSettings,
+  normalizeKeybindingValue,
   normalizeKeybindingSettings,
   type HotkeyBindingSettings,
 } from '../config/hotkeys';
@@ -1395,6 +1396,7 @@ interface SettingsState {
   updatePolyGemini: (updates: Partial<PolyGeminiSettings>) => void;
   updateLayout: (updates: Partial<LayoutSettings>) => void;
   updateAudio: (updates: Partial<AudioSettings>) => void;
+  setCommandKeybinding: (commandId: string, value: string) => void;
   
   // Bulk operations
   resetToDefaults: () => void;
@@ -1681,6 +1683,33 @@ export const useSettingsStore = create<SettingsState>()(
           keybindings: normalizeKeybindingSettings({ ...state.settings.keybindings, ...updates }),
         },
       })),
+
+      setCommandKeybinding: (commandId, value) => set((state) => {
+        const normalizedCommandId = commandId.trim();
+        if (!normalizedCommandId) {
+          return state;
+        }
+
+        const normalizedValue = normalizeKeybindingValue(value, '');
+        const nextCommandBindingsById = {
+          ...state.settings.keybindings.commandBindingsById,
+        };
+        if (normalizedValue) {
+          nextCommandBindingsById[normalizedCommandId] = normalizedValue;
+        } else {
+          delete nextCommandBindingsById[normalizedCommandId];
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            keybindings: normalizeKeybindingSettings({
+              ...state.settings.keybindings,
+              commandBindingsById: nextCommandBindingsById,
+            }),
+          },
+        };
+      }),
       
       updatePolyGemini: (updates) => set((state) => ({
         settings: {

@@ -187,7 +187,10 @@ import {
   type ExplorerViewModeDefinition,
   type ExplorerViewPresentation,
 } from "../config/explorerViewModes";
-import { matchesKeybinding } from "../config/hotkeys";
+import {
+  getCommandHotkeyBinding,
+  matchesKeybinding,
+} from "../config/hotkeys";
 import {
   DEFAULT_NATIVE_ICON_SIZE,
   getNativeIconCacheKey,
@@ -299,6 +302,7 @@ import {
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
+import { ExplorerCustomizeOverlay } from "./explorer/ExplorerCustomizeOverlay";
 import {
   buildExplorerPreviewWorkflowTabs,
   resolveExplorerPreviewWorkflowActiveTab,
@@ -525,12 +529,21 @@ import {
   type ExplorerChromeControlId,
   type ExplorerChromeControlDefinition,
   type ExplorerChromeLayoutId,
+  type ExplorerChromeOverrideEntry,
   type ExplorerChromeOverrideSnapshot,
   type ExplorerChromeResolvedControlPlacement,
   type ExplorerChromeResolvedSurface,
+  type ExplorerChromeSizeVariant,
   type ExplorerChromeSurfaceId,
   type ExplorerChromeZoneId,
 } from "../config/explorerChromeLayouts";
+import {
+  buildExplorerCustomizeCatalog,
+  getExplorerChromeCommandId,
+  isExplorerActionChromeControlId,
+  resolveExplorerCustomizeCatalogEntry,
+  type ExplorerCustomizeCatalogEntry,
+} from "../config/explorerCustomizeCatalog";
 import {
   cycleExplorerSearchMode,
   explorerSearchModeDescriptions,
@@ -1201,10 +1214,24 @@ const EXPLORER_EMBEDDED_TERMINAL_HEIGHT_BOUNDS = {
 interface ExplorerChromeEditModeState {
   active: boolean;
   draggingControlId: ExplorerChromeControlId | null;
+  highlightedDropTarget?: {
+    surfaceId: ExplorerChromeSurfaceId;
+    zoneId: ExplorerChromeZoneId;
+    targetIndex: number;
+  } | null;
+  selectedControlId?: ExplorerChromeControlId | null;
+  pendingHotkeyControlId?: ExplorerChromeControlId | null;
   onRegisterSurface?: (surface: ExplorerChromeResolvedSurface) => void;
   onUnregisterSurface?: (surfaceId: ExplorerChromeSurfaceId) => void;
   onDragStart: (controlId: ExplorerChromeControlId) => void;
   onDragEnd: () => void;
+  onSetHighlightedDropTarget?: (target: {
+    surfaceId: ExplorerChromeSurfaceId;
+    zoneId: ExplorerChromeZoneId;
+    targetIndex: number;
+  } | null) => void;
+  onSetSelectedControl?: (controlId: ExplorerChromeControlId | null) => void;
+  onSetPendingHotkeyControl?: (controlId: ExplorerChromeControlId | null) => void;
   onMoveControl: (args: {
     controlId: ExplorerChromeControlId;
     targetSurfaceId: ExplorerChromeSurfaceId;
@@ -1212,6 +1239,12 @@ interface ExplorerChromeEditModeState {
     targetIndex: number;
   }) => void;
 }
+
+type ExplorerRenderedChromeControlDefinition = ExplorerChromeControlDefinition & {
+  isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
+  render: (placement: ExplorerChromeResolvedControlPlacement) => React.ReactNode;
+  activate?: () => void;
+};
 
 interface ConstellationHoverState {
   kind: "edge" | "node";
@@ -1399,6 +1432,43 @@ function toolbarActionButtonStyle(): CSSProperties {
     fontSize: "var(--overlay-explorer-toolbar-font-size)",
     flexShrink: 0,
   };
+}
+
+function isModifierOnlyKeyboardEventKey(key: string): boolean {
+  return ["Control", "Shift", "Alt", "Meta"].includes(key);
+}
+
+function serializeKeyboardBindingEvent(
+  event: Pick<
+    KeyboardEvent,
+    "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey"
+  >,
+): string | null {
+  if (isModifierOnlyKeyboardEventKey(event.key)) {
+    return null;
+  }
+
+  const keyToken =
+    event.key === " "
+      ? "Space"
+      : event.key.length === 1
+        ? event.key.toUpperCase()
+        : event.key;
+  const tokens: string[] = [];
+  if (event.ctrlKey) {
+    tokens.push("Ctrl");
+  }
+  if (event.metaKey) {
+    tokens.push("Meta");
+  }
+  if (event.altKey) {
+    tokens.push("Alt");
+  }
+  if (event.shiftKey) {
+    tokens.push("Shift");
+  }
+  tokens.push(keyToken);
+  return tokens.join("+");
 }
 
 function explorerEmbeddedTerminalToggleButtonStyle(
@@ -3179,6 +3249,38 @@ function getPreviewStateResolvedPath(preview: PreviewState): string {
   return preview.resolvedPath ?? preview.path;
 }
 
+function supportsExplorerCommandPreviewModeToggle(
+  preview: PreviewState,
+): boolean {
+  switch (preview.type) {
+    case "none":
+    case "pdf":
+      return false;
+    case "audio":
+    case "video":
+    case "shader":
+    case "spreadsheet":
+      return true;
+    case "image":
+      return isEditableImagePreviewExtension(preview.extension);
+    case "text": {
+      const effectiveWildcardWorkflowTabs =
+        preview.scriptPreview != null
+          ? SCRIPT_PREVIEW_WILDCARD_WORKFLOW_TABS
+          : preview.pythonPreview != null
+            ? PYTHON_PREVIEW_WILDCARD_WORKFLOW_TABS
+            : [];
+      const supportsRenderedPreview =
+        preview.scriptPreview == null && preview.renderKind !== "none";
+      return (
+        supportsRenderedPreview || effectiveWildcardWorkflowTabs.length > 0
+      );
+    }
+    default:
+      return false;
+  }
+}
+
 function appendExplorerTransform(
   baseTransform: string | undefined,
   extraTransform: string | null,
@@ -3531,6 +3633,7 @@ function PreviewPanel({
   onPreviewWorkflowContextChange,
   onExtractArchive,
   onContextMenu,
+  externalChromeControls = [],
 }: {
   appearance?: ResolvedOverlayAppearance;
   preview: PreviewState;
@@ -3622,6 +3725,7 @@ function PreviewPanel({
   ) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
   onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
+  externalChromeControls?: ExplorerRenderedChromeControlDefinition[];
 }) {
   const interactionMotion = useInteractionMotionController();
   const dragging = useRef(false);
@@ -4157,16 +4261,8 @@ function PreviewPanel({
     },
     [],
   );
-  const previewChromeControlRegistry = useMemo<
-    Array<
-      ExplorerChromeControlDefinition & {
-        isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
-        render: (
-          placement: ExplorerChromeResolvedControlPlacement,
-        ) => React.ReactNode;
-      }
-    >
-  >(
+  const previewBuiltInChromeControlRegistry =
+    useMemo<ExplorerRenderedChromeControlDefinition[]>(
     () => [
       {
         id: "previewIdentity",
@@ -4771,6 +4867,14 @@ function PreviewPanel({
       previewLocked,
     ],
   );
+  const previewChromeControlRegistry =
+    useMemo<ExplorerRenderedChromeControlDefinition[]>(
+      () => [
+        ...previewBuiltInChromeControlRegistry,
+        ...externalChromeControls,
+      ],
+      [externalChromeControls, previewBuiltInChromeControlRegistry],
+    );
   const previewChromeControlRegistryById = useMemo(
     () =>
       new Map(previewChromeControlRegistry.map((entry) => [entry.id, entry])),
@@ -7695,6 +7799,7 @@ export function FileExplorer({
     clearExplorerChromeLayoutOverride,
     setExplorerChromeLayoutOverride,
     setExplorerModeProfileOverride,
+    setCommandKeybinding,
     setHomePackState,
     setHomePresetSelection,
     updateExplorerSettings,
@@ -7713,6 +7818,7 @@ export function FileExplorer({
         state.clearExplorerChromeLayoutOverride,
       setExplorerChromeLayoutOverride: state.setExplorerChromeLayoutOverride,
       setExplorerModeProfileOverride: state.setExplorerModeProfileOverride,
+      setCommandKeybinding: state.setCommandKeybinding,
       setHomePackState: state.setHomePackState,
       setHomePresetSelection: state.setHomePresetSelection,
       updateExplorerSettings: state.updateExplorer,
@@ -7736,6 +7842,9 @@ export function FileExplorer({
     registerChromeEditSurface,
     setClipboard,
     setChromeEditDraggingControl,
+    setChromeEditHighlightedDropTarget,
+    setChromeEditPendingHotkeyControl,
+    setChromeEditSelectedControl,
     setJumpFilter,
     setPropertiesPanel,
     setRecursiveSizeCacheEntry,
@@ -7756,6 +7865,9 @@ export function FileExplorer({
       registerChromeEditSurface: state.registerChromeEditSurface,
       setClipboard: state.setClipboard,
       setChromeEditDraggingControl: state.setChromeEditDraggingControl,
+      setChromeEditHighlightedDropTarget: state.setChromeEditHighlightedDropTarget,
+      setChromeEditPendingHotkeyControl: state.setChromeEditPendingHotkeyControl,
+      setChromeEditSelectedControl: state.setChromeEditSelectedControl,
       setJumpFilter: state.setJumpFilter,
       setPropertiesPanel: state.setPropertiesPanel,
       setRecursiveSizeCacheEntry: state.setRecursiveSizeCacheEntry,
@@ -15325,6 +15437,72 @@ export function FileExplorer({
       resolvePreviewContextMenuEntry,
     ],
   );
+  const selectedMenuInvocationEntries = useMemo(
+    () => selectedEntries.map(toMenuInvocationEntry),
+    [selectedEntries, toMenuInvocationEntry],
+  );
+  const buildExplorerChromeActionRuntimeContext = useCallback(
+    (
+      surfaceId: ExplorerChromeSurfaceId,
+      inputModality: ExplorerMenuInvocationContext["inputModality"] = "keyboard",
+    ) => {
+      const previewTarget = resolvePreviewContextMenuEntry();
+      const targetEntries =
+        surfaceId === "previewHeader"
+          ? previewTarget
+            ? [previewTarget]
+            : []
+          : selectedMenuInvocationEntries.length > 0
+            ? selectedMenuInvocationEntries
+            : previewTarget
+              ? [previewTarget]
+              : [];
+      const primaryEntry = targetEntries[0] ?? previewTarget ?? null;
+      const invocationKind: ExplorerMenuInvocationContext["kind"] =
+        surfaceId === "previewHeader" && previewTarget
+          ? "preview-pane"
+          : targetEntries.length > 1
+            ? "multi-select"
+            : targetEntries.length === 1
+              ? isSearchActive
+                ? "search-result"
+                : "entry"
+              : "background";
+
+      return {
+        invocation: buildContextMenuInvocation(invocationKind, {
+          inputModality,
+          selectedEntries: targetEntries,
+          primaryEntry,
+          previewTarget,
+          previewContext: previewMenuContext,
+        }),
+        primaryEntry,
+        targetEntries,
+      };
+    },
+    [
+      buildContextMenuInvocation,
+      isSearchActive,
+      previewMenuContext,
+      resolvePreviewContextMenuEntry,
+      selectedMenuInvocationEntries,
+    ],
+  );
+  const executeExplorerChromeActionControl = useCallback(
+    async (
+      action: LoadedExplorerAction,
+      surfaceId: ExplorerChromeSurfaceId,
+      inputModality: ExplorerMenuInvocationContext["inputModality"] = "keyboard",
+    ) => {
+      const runtimeContext = buildExplorerChromeActionRuntimeContext(
+        surfaceId,
+        inputModality,
+      );
+      await executeExplorerMenuAction(action, runtimeContext);
+    },
+    [buildExplorerChromeActionRuntimeContext, executeExplorerMenuAction],
+  );
 
   // ── Click with shift-select support ──
   const onEntryClick = (e: React.MouseEvent, entry: FileEntry) => {
@@ -16331,18 +16509,149 @@ export function FileExplorer({
       explorerSettings.chromeLayoutOverridesByThemeId,
     ],
   );
-  const explorerChromeOverride = useMemo(
+  const activeChromeEditSession = useMemo(
     () =>
-      chromeEditSession &&
-      chromeEditSession.themeId === explorerChromeThemeId &&
-      chromeEditSession.layoutId === effectiveChromeLayoutId
-        ? chromeEditSession.draftOverride
-        : persistedExplorerChromeOverride,
+      chromeEditSession
+      && chromeEditSession.themeId === explorerChromeThemeId
+      && chromeEditSession.layoutId === effectiveChromeLayoutId
+        ? chromeEditSession
+        : null,
     [
       chromeEditSession,
       effectiveChromeLayoutId,
       explorerChromeThemeId,
+    ],
+  );
+  const explorerChromeOverride = useMemo(
+    () =>
+      activeChromeEditSession
+        ? activeChromeEditSession.draftOverride
+        : persistedExplorerChromeOverride,
+    [
+      activeChromeEditSession,
       persistedExplorerChromeOverride,
+    ],
+  );
+  const explorerCustomizeCatalog = useMemo(
+    () =>
+      buildExplorerCustomizeCatalog({
+        actions,
+        persistedEntries: explorerChromeOverride?.entries ?? persistedExplorerChromeOverride?.entries ?? [],
+      }),
+    [actions, explorerChromeOverride, persistedExplorerChromeOverride],
+  );
+  const explorerCustomizeCatalogByCommandId = useMemo(
+    () =>
+      new Map(
+        explorerCustomizeCatalog.map((entry) => [entry.commandId, entry] as const),
+      ),
+    [explorerCustomizeCatalog],
+  );
+  const selectedExplorerCustomizeEntry = useMemo(
+    () =>
+      resolveExplorerCustomizeCatalogEntry(
+        explorerCustomizeCatalog,
+        activeChromeEditSession?.selectedControlId ?? null,
+      ),
+    [activeChromeEditSession?.selectedControlId, explorerCustomizeCatalog],
+  );
+  const selectedExplorerCustomizePlacement = useMemo<ExplorerChromeOverrideEntry | null>(
+    () =>
+      activeChromeEditSession?.selectedControlId
+        ? activeChromeEditSession.draftOverride.entries.find(
+            (entry) => entry.controlId === activeChromeEditSession.selectedControlId,
+          ) ?? null
+        : null,
+    [activeChromeEditSession],
+  );
+  const selectedExplorerCustomizeCommandBinding = useMemo(
+    () =>
+      selectedExplorerCustomizeEntry
+        ? getCommandHotkeyBinding(
+            keybindings,
+            selectedExplorerCustomizeEntry.commandId,
+          )
+        : "",
+    [keybindings, selectedExplorerCustomizeEntry],
+  );
+  const pendingExplorerHotkeyEntry = useMemo(
+    () =>
+      resolveExplorerCustomizeCatalogEntry(
+        explorerCustomizeCatalog,
+        activeChromeEditSession?.pendingHotkeyControlId ?? null,
+      ),
+    [activeChromeEditSession?.pendingHotkeyControlId, explorerCustomizeCatalog],
+  );
+  const pendingExplorerHotkeyPrompt = useMemo(
+    () =>
+      pendingExplorerHotkeyEntry
+        ? `Press a key combination to bind ${pendingExplorerHotkeyEntry.label}.`
+        : null,
+    [pendingExplorerHotkeyEntry],
+  );
+  const getRegisteredExplorerChromeSurfaces = useCallback(
+    () =>
+      Object.values(activeChromeEditSession?.registeredSurfaces ?? {}).filter(
+        (surface): surface is NonNullable<typeof surface> => surface != null,
+      ),
+    [activeChromeEditSession],
+  );
+  const findRegisteredExplorerChromePlacement = useCallback(
+    (controlId: ExplorerChromeControlId): ExplorerChromeResolvedControlPlacement | null => {
+      for (const surface of getRegisteredExplorerChromeSurfaces()) {
+        for (const row of surface.rows) {
+          for (const zone of row.zones) {
+            const placement = zone.controls.find((entry) => entry.controlId === controlId);
+            if (placement) {
+              return placement;
+            }
+          }
+        }
+      }
+      return null;
+    },
+    [getRegisteredExplorerChromeSurfaces],
+  );
+  const updateExplorerChromeEditEntry = useCallback(
+    (
+      controlId: ExplorerChromeControlId,
+      updates: Partial<ExplorerChromeOverrideEntry>,
+    ) => {
+      if (!activeChromeEditSession) {
+        return;
+      }
+
+      const existingEntry = activeChromeEditSession.draftOverride.entries.find(
+        (entry) => entry.controlId === controlId,
+      );
+      const visiblePlacement = findRegisteredExplorerChromePlacement(controlId);
+      const fallbackSurfaceId = visiblePlacement?.surfaceId ?? 'explorerToolbar';
+      const fallbackZone = visiblePlacement?.zone ?? 'primaryEnd';
+      const fallbackOrder = visiblePlacement?.order ?? 9990;
+      const nextEntry: ExplorerChromeOverrideEntry = {
+        controlId,
+        surfaceId: existingEntry?.surfaceId ?? fallbackSurfaceId,
+        zone: existingEntry?.zone ?? fallbackZone,
+        order: existingEntry?.order ?? fallbackOrder,
+        hidden: existingEntry?.hidden ?? false,
+        sizeVariant: existingEntry?.sizeVariant,
+        showLabel: existingEntry?.showLabel,
+        showIcon: existingEntry?.showIcon,
+        ...updates,
+      };
+      updateChromeEditDraft({
+        entries: [
+          ...activeChromeEditSession.draftOverride.entries.filter(
+            (entry) => entry.controlId !== controlId,
+          ),
+          nextEntry,
+        ],
+      });
+    },
+    [
+      activeChromeEditSession,
+      findRegisteredExplorerChromePlacement,
+      updateChromeEditDraft,
     ],
   );
   const handleExplorerChromeControlMove = useCallback(
@@ -16352,49 +16661,112 @@ export function FileExplorer({
       targetZoneId: ExplorerChromeZoneId;
       targetIndex: number;
     }) => {
-      if (!chromeEditSession) {
+      if (!activeChromeEditSession) {
         return;
       }
 
-      const registeredSurfaces = Object.values(
-        chromeEditSession.registeredSurfaces,
-      ).filter(
-        (surface): surface is NonNullable<typeof surface> => surface != null,
+      const movedSnapshot = moveExplorerChromeControlInResolvedSurfaces({
+        surfaces: getRegisteredExplorerChromeSurfaces(),
+        controlId: args.controlId,
+        targetSurfaceId: args.targetSurfaceId,
+        targetZoneId: args.targetZoneId,
+        targetIndex: args.targetIndex,
+      });
+      const hiddenEntries = activeChromeEditSession.draftOverride.entries.filter(
+        (entry) => entry.hidden && entry.controlId !== args.controlId,
       );
       updateChromeEditDraft(
-        moveExplorerChromeControlInResolvedSurfaces({
-          surfaces: registeredSurfaces,
-          controlId: args.controlId,
-          targetSurfaceId: args.targetSurfaceId,
-          targetZoneId: args.targetZoneId,
-          targetIndex: args.targetIndex,
-        }),
+        {
+          entries: [...movedSnapshot.entries, ...hiddenEntries],
+        },
       );
+      setChromeEditSelectedControl(args.controlId);
+      setChromeEditHighlightedDropTarget(null);
     },
-    [chromeEditSession, updateChromeEditDraft],
+    [
+      activeChromeEditSession,
+      getRegisteredExplorerChromeSurfaces,
+      setChromeEditHighlightedDropTarget,
+      setChromeEditSelectedControl,
+      updateChromeEditDraft,
+    ],
+  );
+  const removeExplorerChromeControlFromDraft = useCallback(
+    (controlId: ExplorerChromeControlId) => {
+      if (!activeChromeEditSession) {
+        return;
+      }
+
+      const existingEntry = activeChromeEditSession.draftOverride.entries.find(
+        (entry) => entry.controlId === controlId,
+      );
+      const visiblePlacement = findRegisteredExplorerChromePlacement(controlId);
+      if (isExplorerActionChromeControlId(controlId)) {
+        updateChromeEditDraft({
+          entries: activeChromeEditSession.draftOverride.entries.filter(
+            (entry) => entry.controlId !== controlId,
+          ),
+        });
+      } else {
+        updateChromeEditDraft({
+          entries: [
+            ...activeChromeEditSession.draftOverride.entries.filter(
+              (entry) => entry.controlId !== controlId,
+            ),
+            {
+              controlId,
+              surfaceId: existingEntry?.surfaceId ?? visiblePlacement?.surfaceId ?? 'explorerToolbar',
+              zone: existingEntry?.zone ?? visiblePlacement?.zone ?? 'primaryEnd',
+              order: existingEntry?.order ?? visiblePlacement?.order ?? 9990,
+              hidden: true,
+              sizeVariant: existingEntry?.sizeVariant,
+              showLabel: existingEntry?.showLabel,
+              showIcon: existingEntry?.showIcon,
+            },
+          ],
+        });
+      }
+      setChromeEditSelectedControl(null);
+      setChromeEditPendingHotkeyControl(null);
+    },
+    [
+      activeChromeEditSession,
+      findRegisteredExplorerChromePlacement,
+      setChromeEditPendingHotkeyControl,
+      setChromeEditSelectedControl,
+      updateChromeEditDraft,
+    ],
   );
   const explorerChromeEditMode = useMemo(
     () =>
-      chromeEditSession &&
-      chromeEditSession.themeId === explorerChromeThemeId &&
-      chromeEditSession.layoutId === effectiveChromeLayoutId
+      activeChromeEditSession
         ? {
             active: true,
-            draggingControlId: chromeEditSession.draggingControlId,
+            draggingControlId: activeChromeEditSession.draggingControlId,
+            highlightedDropTarget: activeChromeEditSession.highlightedDropTarget,
+            selectedControlId: activeChromeEditSession.selectedControlId,
+            pendingHotkeyControlId: activeChromeEditSession.pendingHotkeyControlId,
             onRegisterSurface: registerChromeEditSurface,
             onUnregisterSurface: unregisterChromeEditSurface,
             onDragStart: setChromeEditDraggingControl,
-            onDragEnd: () => setChromeEditDraggingControl(null),
+            onDragEnd: () => {
+              setChromeEditDraggingControl(null);
+              setChromeEditHighlightedDropTarget(null);
+            },
+            onSetHighlightedDropTarget: setChromeEditHighlightedDropTarget,
+            onSetSelectedControl: setChromeEditSelectedControl,
+            onSetPendingHotkeyControl: setChromeEditPendingHotkeyControl,
             onMoveControl: handleExplorerChromeControlMove,
           }
         : undefined,
     [
-      chromeEditSession,
-      effectiveChromeLayoutId,
-      explorerChromeThemeId,
+      activeChromeEditSession,
       handleExplorerChromeControlMove,
       registerChromeEditSurface,
       setChromeEditDraggingControl,
+      setChromeEditHighlightedDropTarget,
+      setChromeEditPendingHotkeyControl,
+      setChromeEditSelectedControl,
       unregisterChromeEditSurface,
     ],
   );
@@ -16412,18 +16784,16 @@ export function FileExplorer({
   ]);
   const saveExplorerChromeCustomization = useCallback(() => {
     if (
-      !chromeEditSession ||
-      chromeEditSession.themeId !== explorerChromeThemeId ||
-      chromeEditSession.layoutId !== effectiveChromeLayoutId
+      !activeChromeEditSession
     ) {
       return;
     }
 
-    if (chromeEditSession.draftOverride.entries.length > 0) {
+    if (activeChromeEditSession.draftOverride.entries.length > 0) {
       setExplorerChromeLayoutOverride(
         explorerChromeThemeId,
         effectiveChromeLayoutId,
-        chromeEditSession.draftOverride,
+        activeChromeEditSession.draftOverride,
       );
     } else {
       clearExplorerChromeLayoutOverride(
@@ -16435,7 +16805,7 @@ export function FileExplorer({
     closeChromeEditSession();
     setShowModeProfileMenu(false);
   }, [
-    chromeEditSession,
+    activeChromeEditSession,
     clearExplorerChromeLayoutOverride,
     closeChromeEditSession,
     effectiveChromeLayoutId,
@@ -16443,17 +16813,63 @@ export function FileExplorer({
     setExplorerChromeLayoutOverride,
   ]);
   const resetExplorerChromeCustomization = useCallback(() => {
-    if (!chromeEditSession) {
+    if (!activeChromeEditSession) {
       return;
     }
 
     updateChromeEditDraft({ entries: [] });
     setChromeEditDraggingControl(null);
-  }, [chromeEditSession, setChromeEditDraggingControl, updateChromeEditDraft]);
+    setChromeEditHighlightedDropTarget(null);
+    setChromeEditPendingHotkeyControl(null);
+    setChromeEditSelectedControl(null);
+  }, [
+    activeChromeEditSession,
+    setChromeEditDraggingControl,
+    setChromeEditHighlightedDropTarget,
+    setChromeEditPendingHotkeyControl,
+    setChromeEditSelectedControl,
+    updateChromeEditDraft,
+  ]);
   const cancelExplorerChromeCustomization = useCallback(() => {
     closeChromeEditSession();
     setShowModeProfileMenu(false);
   }, [closeChromeEditSession]);
+  const setSelectedExplorerChromeSizeVariant = useCallback(
+    (sizeVariant: ExplorerChromeSizeVariant) => {
+      if (!activeChromeEditSession?.selectedControlId) {
+        return;
+      }
+      updateExplorerChromeEditEntry(activeChromeEditSession.selectedControlId, {
+        hidden: false,
+        sizeVariant,
+      });
+    },
+    [activeChromeEditSession, updateExplorerChromeEditEntry],
+  );
+  const setSelectedExplorerChromeShowLabel = useCallback(
+    (showLabel: boolean) => {
+      if (!activeChromeEditSession?.selectedControlId) {
+        return;
+      }
+      updateExplorerChromeEditEntry(activeChromeEditSession.selectedControlId, {
+        hidden: false,
+        showLabel,
+      });
+    },
+    [activeChromeEditSession, updateExplorerChromeEditEntry],
+  );
+  const setSelectedExplorerChromeShowIcon = useCallback(
+    (showIcon: boolean) => {
+      if (!activeChromeEditSession?.selectedControlId) {
+        return;
+      }
+      updateExplorerChromeEditEntry(activeChromeEditSession.selectedControlId, {
+        hidden: false,
+        showIcon,
+      });
+    },
+    [activeChromeEditSession, updateExplorerChromeEditEntry],
+  );
   useEffect(() => {
     if (
       chromeEditSession &&
@@ -17856,6 +18272,165 @@ export function FileExplorer({
     },
     [],
   );
+  const canExecuteExplorerChromeAction = useCallback(
+    (
+      action: LoadedExplorerAction,
+      surfaceId: ExplorerChromeSurfaceId,
+    ): boolean => {
+      const runtimeContext = buildExplorerChromeActionRuntimeContext(surfaceId);
+      if (!action.contexts.includes(runtimeContext.invocation.kind)) {
+        return false;
+      }
+
+      const targetEntries = runtimeContext.targetEntries;
+      const { selection } = action;
+      const count = targetEntries.length;
+      if (selection.minCount != null && count < selection.minCount) {
+        return false;
+      }
+      if (selection.maxCount != null && count > selection.maxCount) {
+        return false;
+      }
+      if (count === 0) {
+        return selection.minCount == null || selection.minCount === 0;
+      }
+      if (
+        !selection.allowFiles &&
+        targetEntries.some((entry) => !entry.isDirectory)
+      ) {
+        return false;
+      }
+      if (
+        !selection.allowDirectories &&
+        targetEntries.some((entry) => entry.isDirectory)
+      ) {
+        return false;
+      }
+      if (selection.extensions.length === 0) {
+        return true;
+      }
+      return targetEntries.every((entry) => {
+        if (entry.isDirectory) {
+          return selection.allowDirectories;
+        }
+        return selection.extensions.includes(entry.extension.toLowerCase());
+      });
+    },
+    [buildExplorerChromeActionRuntimeContext],
+  );
+  const renderExplorerActionChromeControl = useCallback(
+    (
+      catalogEntry: ExplorerCustomizeCatalogEntry,
+      placement: ExplorerChromeResolvedControlPlacement,
+    ) => {
+      const sizeVariant = placement.sizeVariant ?? "regular";
+      const wantsIcon = placement.showIcon ?? true;
+      const wantsLabel = placement.showLabel ?? true;
+      const showIcon = wantsIcon || !wantsLabel;
+      const showLabel = wantsLabel || !wantsIcon;
+      const iconSize =
+        sizeVariant === "wide" ? 15 : sizeVariant === "compact" ? 11 : 13;
+      const padding =
+        sizeVariant === "wide"
+          ? "6px 12px"
+          : sizeVariant === "compact"
+            ? "3px 6px"
+            : "4px 9px";
+      const fontSize = sizeVariant === "compact" ? 10 : 11;
+      const minWidth = sizeVariant === "wide" ? 132 : undefined;
+      const isMissing = catalogEntry.source === "missing-action";
+      const action = catalogEntry.action;
+      const canExecute =
+        !isMissing &&
+        action != null &&
+        canExecuteExplorerChromeAction(action, placement.surfaceId);
+      const disabled = isMissing || !canExecute;
+      const iconNode = showIcon
+        ? action?.iconAssetUrl
+          ? <SvgIcon src={action.iconAssetUrl} size={iconSize} />
+          : (resolveContextMenuIcon(action?.iconName ?? "Sparkles") ?? (
+              <Sparkles size={iconSize} />
+            ))
+        : null;
+
+      return (
+        <button
+          type="button"
+          disabled={disabled}
+          title={catalogEntry.description}
+          onClick={() => {
+            if (!action || disabled) {
+              return;
+            }
+            void executeExplorerChromeActionControl(action, placement.surfaceId, "mouse");
+          }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: showLabel ? "flex-start" : "center",
+            gap: showIcon && showLabel ? 6 : 0,
+            minWidth,
+            maxWidth: placement.surfaceId === "explorerStatusBar" ? 220 : undefined,
+            padding,
+            borderRadius: "var(--overlay-explorer-control-radius)",
+            border: `1px solid ${
+              isMissing
+                ? "color-mix(in srgb, #f59e0b 62%, transparent)"
+                : "var(--overlay-explorer-chip-border)"
+            }`,
+            background: isMissing
+              ? "color-mix(in srgb, #f59e0b 12%, transparent)"
+              : "var(--overlay-explorer-chip-bg)",
+            color: disabled ? EXP.muted2 : EXP.text,
+            cursor: disabled ? "default" : "pointer",
+            opacity: disabled ? 0.72 : 1,
+            fontSize,
+            fontWeight: 600,
+            flexShrink: 0,
+            overflow: "hidden",
+          }}
+        >
+          {iconNode}
+          {showLabel ? (
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {catalogEntry.label}
+            </span>
+          ) : null}
+          {isMissing ? (
+            <AlertTriangle
+              size={10}
+              style={{ marginLeft: showLabel ? 6 : 0, flexShrink: 0 }}
+            />
+          ) : null}
+        </button>
+      );
+    },
+    [
+      canExecuteExplorerChromeAction,
+      executeExplorerChromeActionControl,
+    ],
+  );
+  const actionChromeControlRegistry =
+    useMemo<ExplorerRenderedChromeControlDefinition[]>(
+      () =>
+        explorerCustomizeCatalog
+          .filter((entry) => entry.source !== "built-in")
+          .map((entry) => ({
+            id: entry.controlId,
+            label: entry.label,
+            surfaces: entry.surfaces,
+            isVisible: (surfaceId) => entry.surfaces.includes(surfaceId),
+            render: (placement) =>
+              renderExplorerActionChromeControl(entry, placement),
+          })),
+      [explorerCustomizeCatalog, renderExplorerActionChromeControl],
+    );
   const renderToolbarNavigationButton = useCallback(
     (input: {
       action: () => void;
@@ -17889,16 +18464,8 @@ export function FileExplorer({
     ),
     [],
   );
-  const explorerChromeControlRegistry = useMemo<
-    Array<
-      ExplorerChromeControlDefinition & {
-        isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
-        render: (
-          placement: ExplorerChromeResolvedControlPlacement,
-        ) => React.ReactNode;
-      }
-    >
-  >(
+  const explorerBuiltInChromeControlRegistry =
+    useMemo<ExplorerRenderedChromeControlDefinition[]>(
     () => [
       {
         id: "navigateBack",
@@ -19057,6 +19624,32 @@ export function FileExplorer({
         render: () => null,
       },
       {
+        id: "customizeModeToggle",
+        label: "Customize Explorer Chrome",
+        surfaces: ["explorerToolbar", "explorerTopbar"],
+        isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
+        render: () => (
+          <button
+            type="button"
+            aria-pressed={Boolean(activeChromeEditSession)}
+            onClick={() =>
+              activeChromeEditSession
+                ? cancelExplorerChromeCustomization()
+                : beginExplorerChromeCustomization()
+            }
+            title={
+              activeChromeEditSession
+                ? "Leave explorer customize mode"
+                : "Enable explorer customize mode"
+            }
+            style={toolbarToggleButtonStyle(Boolean(activeChromeEditSession))}
+          >
+            <Sliders size={12} />
+            {activeChromeEditSession ? "Customize On" : "Customize"}
+          </button>
+        ),
+      },
+      {
         id: "shellLayout",
         label: "Explorer Mode",
         surfaces: ["explorerToolbar", "explorerTopbar"],
@@ -20149,10 +20742,410 @@ export function FileExplorer({
       usesWorkspaceDenseChrome,
     ],
   );
+  const explorerGlobalActionChromeControls =
+    useMemo<ExplorerRenderedChromeControlDefinition[]>(
+      () =>
+        actionChromeControlRegistry.filter((entry) =>
+          entry.surfaces.some((surfaceId) =>
+            [
+              "explorerTopbar",
+              "explorerToolbar",
+              "explorerStatusBar",
+            ].includes(surfaceId),
+          ),
+        ),
+      [actionChromeControlRegistry],
+    );
+  const previewExternalChromeControls =
+    useMemo<ExplorerRenderedChromeControlDefinition[]>(
+      () =>
+        actionChromeControlRegistry.filter((entry) =>
+          entry.surfaces.includes("previewHeader"),
+        ),
+      [actionChromeControlRegistry],
+    );
+  const explorerChromeControlRegistry =
+    useMemo<ExplorerRenderedChromeControlDefinition[]>(
+      () => [
+        ...explorerBuiltInChromeControlRegistry,
+        ...explorerGlobalActionChromeControls,
+      ],
+      [
+        explorerBuiltInChromeControlRegistry,
+        explorerGlobalActionChromeControls,
+      ],
+    );
   const explorerChromeControlRegistryById = useMemo(
     () =>
       new Map(explorerChromeControlRegistry.map((entry) => [entry.id, entry])),
     [explorerChromeControlRegistry],
+  );
+  const resolveExplorerChromeCommandSurface = useCallback(
+    (
+      catalogEntry: ExplorerCustomizeCatalogEntry,
+    ): ExplorerChromeSurfaceId => {
+      const visiblePlacement = findRegisteredExplorerChromePlacement(
+        catalogEntry.controlId,
+      );
+      if (visiblePlacement) {
+        return visiblePlacement.surfaceId;
+      }
+      if (selectedExplorerCustomizePlacement?.controlId === catalogEntry.controlId) {
+        return selectedExplorerCustomizePlacement.surfaceId;
+      }
+      if (catalogEntry.surfaces.includes("previewHeader") && hasPreview) {
+        return "previewHeader";
+      }
+      if (catalogEntry.surfaces.includes("explorerToolbar")) {
+        return "explorerToolbar";
+      }
+      if (catalogEntry.surfaces.includes("explorerTopbar")) {
+        return "explorerTopbar";
+      }
+      if (catalogEntry.surfaces.includes("explorerStatusBar")) {
+        return "explorerStatusBar";
+      }
+      if (catalogEntry.surfaces.includes("workspaceHeader")) {
+        return "workspaceHeader";
+      }
+      if (catalogEntry.surfaces.includes("railHeader")) {
+        return "railHeader";
+      }
+      return catalogEntry.surfaces[0] ?? "explorerToolbar";
+    },
+    [
+      findRegisteredExplorerChromePlacement,
+      hasPreview,
+      selectedExplorerCustomizePlacement,
+    ],
+  );
+  const previewModeToggleSupported = useMemo(
+    () => supportsExplorerCommandPreviewModeToggle(preview),
+    [preview],
+  );
+  const activateExplorerChromeCommand = useCallback(
+    (controlId: ExplorerChromeControlId): boolean => {
+      switch (controlId) {
+        case "navigateBack":
+          goBack();
+          return true;
+        case "navigateForward":
+          goForward();
+          return true;
+        case "navigateUp":
+          goUp();
+          return true;
+        case "addressBar":
+        case "focusAddressBar":
+          focusExplorerAddressBar();
+          return true;
+        case "archiveActions":
+          if (!currentPathIsArchiveVirtual) {
+            return false;
+          }
+          setShowLayoutMenu(false);
+          setShowModeProfileMenu(false);
+          setShowArchiveActionsMenu((current) => !current);
+          return true;
+        case "selectionModeToggle":
+          toggleSelectionMode();
+          return true;
+        case "customizeHome":
+          if (!currentPathIsHome) {
+            return false;
+          }
+          onOpenSettingsSection("home");
+          return true;
+        case "refreshHome":
+          if (!currentPathIsHome) {
+            return false;
+          }
+          void refresh();
+          return true;
+        case "openUserHome":
+          if (!currentPathIsHome || !userHomePath) {
+            return false;
+          }
+          void navigate(userHomePath);
+          return true;
+        case "pinLocation":
+          if (!currentPath || currentPathIsCloud || currentPathIsHome) {
+            return false;
+          }
+          handleBookmarkCreated(getPathLeaf(currentPath), currentPath);
+          return true;
+        case "toggleSearchContent":
+          if (currentPathIsCloud || currentPathIsHome) {
+            return false;
+          }
+          toggleSearchScope();
+          return true;
+        case "semanticIndexBuild":
+          if (currentPathIsCloud || currentPathIsHome) {
+            return false;
+          }
+          void requestSemanticIndexBuild("build");
+          return true;
+        case "semanticIndexRebuild":
+          if (currentPathIsCloud || currentPathIsHome || !semanticIndexSummary?.indexed) {
+            return false;
+          }
+          void requestSemanticIndexBuild("rebuild");
+          return true;
+        case "semanticIndexClear":
+          if (currentPathIsCloud || currentPathIsHome || !semanticIndexSummary?.indexed) {
+            return false;
+          }
+          void requestSemanticIndexBuild("clear");
+          return true;
+        case "saveSearch":
+          if (currentPathIsCloud || currentPathIsHome || !search.trim()) {
+            return false;
+          }
+          setSaveSearchState({
+            visible: true,
+            name: search.trim() || getPathLeaf(currentPath),
+          });
+          return true;
+        case "batchRename":
+          if (!currentLocationSupportsMutation || batchRenameTargets.length === 0) {
+            return false;
+          }
+          setBatchRename((current) => ({
+            ...current,
+            visible: true,
+            mode: current.mode ?? "literal",
+          }));
+          return true;
+        case "tagSelection":
+          if (!currentLocationSupportsMutation || selectedEntries.length === 0) {
+            return false;
+          }
+          openTagDialog(
+            selectedEntries.map((entry) => entry.path),
+            "add",
+            {
+              title: "Tag Selection",
+              description: `Enter comma-separated tags to add to ${
+                selectedEntries.length === 1
+                  ? "the current selection"
+                  : `${selectedEntries.length} selected items`
+              }.`,
+            },
+          );
+          return true;
+        case "duplicateScan":
+          if (!currentPath) {
+            return false;
+          }
+          void startDuplicateFinder();
+          return true;
+        case "openPropertiesPanel":
+          if (!currentPath || currentPathIsHome) {
+            return false;
+          }
+          openExplorerPropertiesForSelection();
+          return true;
+        case "undoTrash":
+          if (!currentLocationSupportsMutation) {
+            return false;
+          }
+          void undoTrash();
+          return true;
+        case "toggleSources":
+          toggleSourcesPanel();
+          return true;
+        case "customizeModeToggle":
+          if (activeChromeEditSession) {
+            cancelExplorerChromeCustomization();
+          } else {
+            beginExplorerChromeCustomization();
+          }
+          return true;
+        case "shellLayout":
+          setShowLayoutMenu(false);
+          setShowModeProfileMenu((current) => !current);
+          return true;
+        case "viewLayout":
+          setShowModeProfileMenu(false);
+          setShowLayoutMenu((current) => !current);
+          return true;
+        case "togglePreview":
+          void togglePreviewEnabled();
+          return true;
+        case "toggleHiddenFiles":
+          updateExplorerSettings({ showHiddenFiles: !showHidden });
+          return true;
+        case "refresh":
+          void refresh();
+          return true;
+        case "newFolder":
+          if (explorerPicker && !explorerPicker.allowCreateDirectory) {
+            return false;
+          }
+          openNew("folder");
+          return true;
+        case "newFile":
+          if (explorerPicker) {
+            return false;
+          }
+          openNew("file");
+          return true;
+        case "pasteClipboard":
+          if (!clipboard || !currentLocationSupportsMutation) {
+            return false;
+          }
+          void paste();
+          return true;
+        case "terminalDrawerToggle":
+          if (!explorerTerminalWorkingDirectory) {
+            return false;
+          }
+          toggleBottomExplorerTerminal();
+          return true;
+        case "previewLockToggle":
+          if (!hasPreview) {
+            return false;
+          }
+          togglePreviewLock();
+          return true;
+        case "previewCopyPath":
+          if (preview.type === "none") {
+            return false;
+          }
+          void copyToSysClipboard(getPreviewStateResolvedPath(preview));
+          return true;
+        case "previewSplitToggle":
+          if (!hasPreview) {
+            return false;
+          }
+          setPreviewSplitMode((current) =>
+            current === "pane" ? "inline" : "pane",
+          );
+          return true;
+        case "previewTerminalToggle":
+          if (!hasPreview || !previewTerminalWorkingDirectory) {
+            return false;
+          }
+          togglePreviewTerminal();
+          return true;
+        case "previewClose":
+          if (!previewPanelVisible) {
+            return false;
+          }
+          void closePreviewPanel();
+          return true;
+        case "previewModeToggle":
+          if (
+            previewSurfaceMode === "terminal" ||
+            preview.type === "none" ||
+            preview.type === "pdf" ||
+            !previewModeToggleSupported
+          ) {
+            return false;
+          }
+          setDocumentViewMode((current) =>
+            current === "edit" ? "preview" : "edit",
+          );
+          setActivePreviewWorkflowTabId((current) =>
+            current === "edit" ? "preview" : "edit",
+          );
+          return true;
+        default:
+          return false;
+      }
+    },
+    [
+      activeChromeEditSession,
+      batchRenameTargets.length,
+      beginExplorerChromeCustomization,
+      cancelExplorerChromeCustomization,
+      clipboard,
+      closePreviewPanel,
+      copyToSysClipboard,
+      currentLocationSupportsMutation,
+      currentPath,
+      currentPathIsArchiveVirtual,
+      currentPathIsCloud,
+      currentPathIsHome,
+      explorerPicker,
+      explorerTerminalWorkingDirectory,
+      focusExplorerAddressBar,
+      goBack,
+      goForward,
+      goUp,
+      handleBookmarkCreated,
+      hasPreview,
+      navigate,
+      onOpenSettingsSection,
+      openExplorerPropertiesForSelection,
+      openNew,
+      openTagDialog,
+      paste,
+      preview,
+      previewPanelVisible,
+      previewSurfaceMode,
+      previewTerminalWorkingDirectory,
+      previewModeToggleSupported,
+      refresh,
+      requestSemanticIndexBuild,
+      search,
+      selectedEntries,
+      semanticIndexSummary?.indexed,
+      setActivePreviewWorkflowTabId,
+      setBatchRename,
+      setDocumentViewMode,
+      setPreviewSplitMode,
+      setSaveSearchState,
+      setShowArchiveActionsMenu,
+      setShowLayoutMenu,
+      setShowModeProfileMenu,
+      showHidden,
+      startDuplicateFinder,
+      toggleBottomExplorerTerminal,
+      togglePreviewEnabled,
+      togglePreviewLock,
+      togglePreviewTerminal,
+      toggleSearchScope,
+      toggleSelectionMode,
+      toggleSourcesPanel,
+      undoTrash,
+      updateExplorerSettings,
+      userHomePath,
+    ],
+  );
+  const triggerExplorerChromeCommandBinding = useCallback(
+    (commandId: string): boolean => {
+      const catalogEntry = explorerCustomizeCatalogByCommandId.get(commandId);
+      if (!catalogEntry) {
+        return false;
+      }
+      if (catalogEntry.source === "built-in") {
+        return activateExplorerChromeCommand(catalogEntry.controlId);
+      }
+      if (!catalogEntry.action) {
+        setError(`${catalogEntry.label} is no longer available.`);
+        return false;
+      }
+      const surfaceId = resolveExplorerChromeCommandSurface(catalogEntry);
+      if (!canExecuteExplorerChromeAction(catalogEntry.action, surfaceId)) {
+        return false;
+      }
+      void executeExplorerChromeActionControl(
+        catalogEntry.action,
+        surfaceId,
+        "keyboard",
+      );
+      return true;
+    },
+    [
+      activateExplorerChromeCommand,
+      canExecuteExplorerChromeAction,
+      executeExplorerChromeActionControl,
+      explorerCustomizeCatalogByCommandId,
+      resolveExplorerChromeCommandSurface,
+      setError,
+    ],
   );
   const explorerTopbarSurface = useMemo(
     () =>
@@ -20853,6 +21846,25 @@ export function FileExplorer({
   // ── Keyboard ──
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
+      const pendingHotkeyControlId =
+        activeChromeEditSession?.pendingHotkeyControlId ?? null;
+      if (pendingHotkeyControlId) {
+        if (isModifierOnlyKeyboardEventKey(e.key)) {
+          return;
+        }
+        const nextBinding = serializeKeyboardBindingEvent(e);
+        if (!nextBinding) {
+          return;
+        }
+        e.preventDefault();
+        setCommandKeybinding(
+          getExplorerChromeCommandId(pendingHotkeyControlId),
+          nextBinding,
+        );
+        setChromeEditPendingHotkeyControl(null);
+        setChromeEditSelectedControl(pendingHotkeyControlId);
+        return;
+      }
       if (
         rename.active ||
         newItem.visible ||
@@ -20899,6 +21911,10 @@ export function FileExplorer({
             )?.dataset.explorerPreviewKeyboardOwner ?? null
           : null;
       const cutoutPreviewOwnsKeyboard = previewKeyboardOwner === "image-cutout";
+      const explorerOwnsKeyboard =
+        activeElement instanceof Node &&
+        explorerRootRef.current?.contains(activeElement) === true &&
+        !isEmbeddedExplorerTerminalFocus;
       const selectedEntry =
         (lastSelected.current
           ? (visibleEntryLookup.get(lastSelected.current) ?? null)
@@ -20927,6 +21943,20 @@ export function FileExplorer({
         }
         return 0;
       })();
+
+      if (explorerOwnsKeyboard) {
+        for (const [commandId, binding] of Object.entries(
+          keybindings.commandBindingsById,
+        )) {
+          if (!binding || !matchesKeybinding(e, binding)) {
+            continue;
+          }
+          if (triggerExplorerChromeCommandBinding(commandId)) {
+            e.preventDefault();
+            return;
+          }
+        }
+      }
 
       if (
         matchesKeybinding(e, keybindings.calculateRecursiveSize) &&
@@ -21450,6 +22480,7 @@ export function FileExplorer({
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [
+    activeChromeEditSession?.pendingHotkeyControlId,
     addressEditing,
     beginAddressEdit,
     clearExplorerSelection,
@@ -21489,6 +22520,9 @@ export function FileExplorer({
     runArchiveToolbarAction,
     runPreviewPythonInTerminal,
     runPreviewPythonManaged,
+    setCommandKeybinding,
+    setChromeEditPendingHotkeyControl,
+    setChromeEditSelectedControl,
     toggleActiveConstellationRouteMode,
     toggleConstellationSelectionPinState,
     rename.active,
@@ -21509,6 +22543,7 @@ export function FileExplorer({
     cycleSortKey,
     toggleSortOrder,
     togglePreviewLock,
+    triggerExplorerChromeCommandBinding,
     updateShaderPreviewScene,
     virtualWindow.columns,
     virtualWindow.kind,
@@ -24070,6 +25105,7 @@ export function FileExplorer({
         onRegisterContextMenuRegistration={setPreviewContextMenuRegistration}
         onPreviewWorkflowContextChange={setPreviewWorkflowContext}
         onContextMenu={onPreviewContextMenu}
+        externalChromeControls={previewExternalChromeControls}
         onExtractArchive={(mode) => {
           if (preview.type === "archive") {
             void handleArchiveAction(
@@ -24115,6 +25151,7 @@ export function FileExplorer({
     persistPreviewText,
     persistShaderPreviewSource,
     preview,
+    previewExternalChromeControls,
     previewLocked,
     previewPanelVisible,
     previewPlacement,
@@ -24417,6 +25454,25 @@ export function FileExplorer({
                   position: "relative",
                 }}
                 onClick={() => mainRef.current?.focus()}
+                onDragOver={(event) => {
+                  if (!activeChromeEditSession?.draggingControlId) {
+                    return;
+                  }
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => {
+                  if (!activeChromeEditSession?.draggingControlId) {
+                    return;
+                  }
+                  event.preventDefault();
+                  event.stopPropagation();
+                  removeExplorerChromeControlFromDraft(
+                    activeChromeEditSession.draggingControlId,
+                  );
+                  setChromeEditDraggingControl(null);
+                  setChromeEditHighlightedDropTarget(null);
+                }}
                 onContextMenu={(e) => {
                   if (e.target !== e.currentTarget) return;
                   onBackgroundContextMenu(e);
@@ -25894,6 +26950,29 @@ export function FileExplorer({
           </div>
         </div>
       )}
+
+      <ExplorerCustomizeOverlay
+        active={Boolean(activeChromeEditSession)}
+        catalog={explorerCustomizeCatalog}
+        selectedEntry={selectedExplorerCustomizeEntry}
+        selectedPlacement={selectedExplorerCustomizePlacement}
+        pendingHotkeyPrompt={pendingExplorerHotkeyPrompt}
+        commandBinding={selectedExplorerCustomizeCommandBinding}
+        onCatalogDragStart={setChromeEditDraggingControl}
+        onCatalogDragEnd={() => setChromeEditDraggingControl(null)}
+        onSelectControl={setChromeEditSelectedControl}
+        onRemoveSelected={() => {
+          if (!activeChromeEditSession?.selectedControlId) {
+            return;
+          }
+          removeExplorerChromeControlFromDraft(
+            activeChromeEditSession.selectedControlId,
+          );
+        }}
+        onSetSelectedSizeVariant={setSelectedExplorerChromeSizeVariant}
+        onSetSelectedShowLabel={setSelectedExplorerChromeShowLabel}
+        onSetSelectedShowIcon={setSelectedExplorerChromeShowIcon}
+      />
 
       {/* Context menu */}
       <ExplorerContextMenu

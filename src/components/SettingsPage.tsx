@@ -246,6 +246,11 @@ import {
   normalizeKeybindingValue,
   type HotkeyBindingKey,
 } from '../config/hotkeys';
+import {
+  buildExplorerCustomizeCatalog,
+  resolveExplorerChromeCommandLabel,
+  type ExplorerCustomizeCatalogEntry,
+} from '../config/explorerCustomizeCatalog';
 import { screenshotFeatureConfig, type ScreenshotCaptureModeId, type ScreenshotOutputActionId } from '../config/screenshots';
 import {
   dispatchTerminalCommand,
@@ -1796,6 +1801,57 @@ function ShortcutField({
   onCommit: (value: string) => void;
 }) {
   const definition = getHotkeyBindingDefinition(bindingKey);
+  return (
+    <ShortcutEditorCard
+      label={definition.label}
+      description={definition.description}
+      scopeLabel={definition.scope}
+      value={value}
+      defaultValue={definition.defaultValue}
+      onCommit={onCommit}
+      resetLabel="Reset"
+    />
+  );
+}
+
+function formatExplorerChromeSurfaceLabel(
+  surfaceId: ExplorerCustomizeCatalogEntry['surfaces'][number],
+): string {
+  switch (surfaceId) {
+    case 'explorerTopbar':
+      return 'Top Bar';
+    case 'explorerToolbar':
+      return 'Toolbar';
+    case 'workspaceHeader':
+      return 'Workspace';
+    case 'railHeader':
+      return 'Sources Rail';
+    case 'previewHeader':
+      return 'Preview';
+    case 'explorerStatusBar':
+      return 'Status Bar';
+    default:
+      return surfaceId;
+  }
+}
+
+function ShortcutEditorCard({
+  label,
+  description,
+  scopeLabel,
+  value,
+  defaultValue,
+  onCommit,
+  resetLabel = 'Reset',
+}: {
+  label: string;
+  description: string;
+  scopeLabel: string;
+  value: string;
+  defaultValue: string;
+  onCommit: (value: string) => void;
+  resetLabel?: string;
+}) {
   const [draft, setDraft] = useState(value);
 
   useEffect(() => {
@@ -1803,20 +1859,20 @@ function ShortcutField({
   }, [value]);
 
   const commit = useCallback(() => {
-    const normalized = normalizeKeybindingValue(draft, definition.defaultValue);
+    const normalized = normalizeKeybindingValue(draft, defaultValue);
     setDraft(normalized);
     onCommit(normalized);
-  }, [definition.defaultValue, draft, onCommit]);
+  }, [defaultValue, draft, onCommit]);
 
   return (
     <label className="rounded border p-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{definition.label}</div>
-          <p className="mt-1 text-[11px] opacity-40">{definition.description}</p>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{label}</div>
+          <p className="mt-1 text-[11px] opacity-40">{description}</p>
         </div>
         <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-80">
-          {definition.scope}
+          {scopeLabel}
         </span>
       </div>
       <input
@@ -1841,16 +1897,45 @@ function ShortcutField({
         <button
           type="button"
           onClick={() => {
-            setDraft(definition.defaultValue);
-            onCommit(definition.defaultValue);
+            setDraft(defaultValue);
+            onCommit(defaultValue);
           }}
           className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.14em]"
           style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)' }}
         >
-          Reset
+          {resetLabel}
         </button>
       </div>
     </label>
+  );
+}
+
+function CommandShortcutField({
+  label,
+  description,
+  surfaces,
+  value,
+  onCommit,
+}: {
+  label: string;
+  description: string;
+  surfaces: ExplorerCustomizeCatalogEntry['surfaces'];
+  value: string;
+  onCommit: (value: string) => void;
+}) {
+  const scopeLabel = surfaces
+    .map((surfaceId) => formatExplorerChromeSurfaceLabel(surfaceId))
+    .join(' · ');
+  return (
+    <ShortcutEditorCard
+      label={label}
+      description={description}
+      scopeLabel={scopeLabel || 'Explorer'}
+      value={value}
+      defaultValue=""
+      onCommit={onCommit}
+      resetLabel="Clear"
+    />
   );
 }
 
@@ -2659,6 +2744,7 @@ export function SettingsPage({
     applyDockThemeSelection: applyDockThemeSelectionWithDefaults,
     updateLayout,
     updateKeybindings,
+    setCommandKeybinding,
     updateScreenshots,
     updateSystem,
     updateMobile,
@@ -2682,6 +2768,7 @@ export function SettingsPage({
     applyDockThemeSelection: state.applyDockThemeSelection,
     updateLayout: state.updateLayout,
     updateKeybindings: state.updateKeybindings,
+    setCommandKeybinding: state.setCommandKeybinding,
     updateScreenshots: state.updateScreenshots,
     updateSystem: state.updateSystem,
     updateMobile: state.updateMobile,
@@ -5852,6 +5939,56 @@ export function SettingsPage({
     topBarSelectionSummary,
     workspaceRoots.length,
   ]);
+  const activeExplorerChromeOverrideEntries = useMemo(
+    () => {
+      if (!settings.appearance.activeThemeId) {
+        return [];
+      }
+      const themeOverrides =
+        settings.explorer.chromeLayoutOverridesByThemeId[
+          settings.appearance.activeThemeId
+        ] ?? {};
+      return Object.values(themeOverrides).flatMap(
+        (snapshot) => snapshot.entries,
+      );
+    },
+    [
+      settings.appearance.activeThemeId,
+      settings.explorer.chromeLayoutOverridesByThemeId,
+    ],
+  );
+  const explorerCustomizeCatalog = useMemo(
+    () =>
+      buildExplorerCustomizeCatalog({
+        actions,
+        persistedEntries: activeExplorerChromeOverrideEntries,
+      }),
+    [actions, activeExplorerChromeOverrideEntries],
+  );
+  const assignedExplorerCommandBindings = useMemo(
+    () =>
+      Object.entries(settings.keybindings.commandBindingsById)
+        .map(([commandId, binding]) => {
+          const matchingEntry =
+            explorerCustomizeCatalog.find(
+              (entry) => entry.commandId === commandId,
+            ) ?? null;
+          return {
+            commandId,
+            binding,
+            label: resolveExplorerChromeCommandLabel(
+              commandId,
+              explorerCustomizeCatalog,
+            ),
+            description:
+              matchingEntry?.description ??
+              'The original explorer command is no longer loaded. Clear or rebind it from customize mode.',
+            surfaces: matchingEntry?.surfaces ?? ['explorerToolbar'],
+          };
+        })
+        .sort((left, right) => left.label.localeCompare(right.label)),
+    [explorerCustomizeCatalog, settings.keybindings.commandBindingsById],
+  );
 
   const settingsSections = useMemo(() => settingsSectionCatalog.map(section => {
     const content = getSettingsSectionContent(section.key as SettingsSectionKey, settingsSectionContext);
@@ -9073,6 +9210,39 @@ export function SettingsPage({
                         />
                       ))}
                   </div>
+                </div>
+                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Explorer Ritual Bindings</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Use <code>Ctrl+Alt+Click</code> on any explorer control while customize mode is active to assign a shared command hotkey instantly. Bound commands live here, backed by the same settings store as the rest of the app.
+                      </p>
+                    </div>
+                    <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-80">
+                      {assignedExplorerCommandBindings.length} bound
+                    </span>
+                  </div>
+                  {assignedExplorerCommandBindings.length > 0 ? (
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      {assignedExplorerCommandBindings.map((binding) => (
+                        <CommandShortcutField
+                          key={binding.commandId}
+                          label={binding.label}
+                          description={binding.description}
+                          surfaces={binding.surfaces}
+                          value={binding.binding}
+                          onCommit={(value) =>
+                            setCommandKeybinding(binding.commandId, value)
+                          }
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded border border-dashed px-3 py-4 text-[11px] opacity-55" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+                      No ritual bindings yet. Enter explorer customize mode, then use <code>Ctrl+Alt+Click</code> on a control to capture one.
+                    </div>
+                  )}
                 </div>
                 <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
                   <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Audio Workbench Hotkeys</div>

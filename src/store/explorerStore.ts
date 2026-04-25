@@ -23,6 +23,7 @@ import {
   type ExplorerWorkspaceLayoutMode,
 } from '../config/explorerWorkspaceLayouts';
 import {
+  getExplorerChromeResolvedSurfaceSignature,
   normalizeExplorerChromeLayoutId,
   normalizeExplorerChromeOverrideSnapshot,
   type ExplorerChromeControlId,
@@ -30,6 +31,7 @@ import {
   type ExplorerChromeOverrideSnapshot,
   type ExplorerChromeResolvedSurface,
   type ExplorerChromeSurfaceId,
+  type ExplorerChromeZoneId,
 } from '../config/explorerChromeLayouts';
 import {
   normalizeExplorerSearchMode,
@@ -164,6 +166,13 @@ export interface ExplorerChromeEditSession {
   layoutId: ExplorerChromeLayoutId;
   draftOverride: ExplorerChromeOverrideSnapshot;
   draggingControlId: ExplorerChromeControlId | null;
+  highlightedDropTarget: {
+    surfaceId: ExplorerChromeSurfaceId;
+    zoneId: ExplorerChromeZoneId;
+    targetIndex: number;
+  } | null;
+  selectedControlId: ExplorerChromeControlId | null;
+  pendingHotkeyControlId: ExplorerChromeControlId | null;
   registeredSurfaces: Partial<Record<ExplorerChromeSurfaceId, ExplorerChromeResolvedSurface>>;
 }
 
@@ -339,6 +348,13 @@ interface ExplorerStoreState {
   }) => void;
   updateChromeEditDraft: (draftOverride: ExplorerChromeOverrideSnapshot) => void;
   setChromeEditDraggingControl: (controlId: ExplorerChromeControlId | null) => void;
+  setChromeEditHighlightedDropTarget: (target: {
+    surfaceId: ExplorerChromeSurfaceId;
+    zoneId: ExplorerChromeZoneId;
+    targetIndex: number;
+  } | null) => void;
+  setChromeEditSelectedControl: (controlId: ExplorerChromeControlId | null) => void;
+  setChromeEditPendingHotkeyControl: (controlId: ExplorerChromeControlId | null) => void;
   registerChromeEditSurface: (surface: ExplorerChromeResolvedSurface) => void;
   unregisterChromeEditSurface: (surfaceId: ExplorerChromeSurfaceId) => void;
   closeChromeEditSession: () => void;
@@ -1503,6 +1519,9 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
           layoutId: normalizeExplorerChromeLayoutId(layoutId),
           draftOverride: normalizeExplorerChromeOverrideSnapshot(initialOverride),
           draggingControlId: null,
+          highlightedDropTarget: null,
+          selectedControlId: null,
+          pendingHotkeyControlId: null,
           registeredSurfaces: {},
         },
       });
@@ -1518,6 +1537,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
             ...state.chromeEditSession,
             draftOverride: normalizeExplorerChromeOverrideSnapshot(draftOverride),
             draggingControlId: null,
+            highlightedDropTarget: null,
           },
         };
       });
@@ -1536,9 +1556,60 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
         };
       });
     },
+    setChromeEditHighlightedDropTarget: (target) => {
+      set((state) => {
+        if (!state.chromeEditSession) {
+          return state;
+        }
+
+        return {
+          chromeEditSession: {
+            ...state.chromeEditSession,
+            highlightedDropTarget: target,
+          },
+        };
+      });
+    },
+    setChromeEditSelectedControl: (controlId) => {
+      set((state) => {
+        if (!state.chromeEditSession) {
+          return state;
+        }
+
+        return {
+          chromeEditSession: {
+            ...state.chromeEditSession,
+            selectedControlId: controlId,
+          },
+        };
+      });
+    },
+    setChromeEditPendingHotkeyControl: (controlId) => {
+      set((state) => {
+        if (!state.chromeEditSession) {
+          return state;
+        }
+
+        return {
+          chromeEditSession: {
+            ...state.chromeEditSession,
+            pendingHotkeyControlId: controlId,
+          },
+        };
+      });
+    },
     registerChromeEditSurface: (surface) => {
       set((state) => {
         if (!state.chromeEditSession) {
+          return state;
+        }
+
+        const existingSurface = state.chromeEditSession.registeredSurfaces[surface.surfaceId];
+        if (
+          existingSurface
+          && getExplorerChromeResolvedSurfaceSignature(existingSurface)
+            === getExplorerChromeResolvedSurfaceSignature(surface)
+        ) {
           return state;
         }
 
@@ -1556,6 +1627,10 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
     unregisterChromeEditSurface: (surfaceId) => {
       set((state) => {
         if (!state.chromeEditSession) {
+          return state;
+        }
+
+        if (!state.chromeEditSession.registeredSurfaces[surfaceId]) {
           return state;
         }
 

@@ -18,7 +18,9 @@ import {
 import { OverlayScrollArea } from '../OverlayScrollArea';
 import { useInteractionMotionController, type InteractionMotionBinding } from '../../animation/interactionMotion';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
+import { matchesKeybinding } from '../../config/hotkeys';
 import { useExplorerStore } from '../../store/explorerStore';
+import { useSettingsStore } from '../../store/settingsStore';
 import { ExplorerChromeSurface } from './ExplorerChromeSurface';
 import {
   applyExplorerBookmarkImportPlan,
@@ -63,6 +65,7 @@ import type {
   ExplorerChromeZoneId,
 } from '../../config/explorerChromeLayouts';
 import { resolveExplorerChromeSurfaceLayout } from '../../config/explorerChromeLayouts';
+import { getExplorerChromeCommandId } from '../../config/explorerCustomizeCatalog';
 import {
   explorerRailViewModes,
   getExplorerRailViewModeDefinition,
@@ -210,11 +213,15 @@ export function ExplorerSideRail({
   chromeOverride,
   chromeEditMode,
 }: ExplorerSideRailProps) {
+  const railRootRef = useRef<HTMLDivElement>(null);
   const rail = useExplorerStore((state) => state.rail);
   const persistence = useExplorerStore((state) => state.persistence);
   const updateRail = useExplorerStore((state) => state.updateRail);
   const restoreRailBackup = useExplorerStore((state) => state.restoreRailBackup);
   const clearPersistenceNotice = useExplorerStore((state) => state.clearPersistenceNotice);
+  const commandBindingsById = useSettingsStore(
+    (state) => state.settings.keybindings.commandBindingsById,
+  );
   const interactionMotion = useInteractionMotionController(appearance);
   const activeFileDropState = useExplorerDragInteractionSelector(
     (state) => ({
@@ -265,6 +272,16 @@ export function ExplorerSideRail({
   const [editingNodeName, setEditingNodeName] = useState('');
   const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
   const [importPlan, setImportPlan] = useState<ExplorerBookmarkImportPlan | null>(null);
+  const toggleRailManageMode = useCallback(() => {
+    setIsManageMode((current) => {
+      const next = !current;
+      if (!next) {
+        setDraftFolderParentId(false);
+        setDraftCategoryName('');
+      }
+      return next;
+    });
+  }, []);
 
   const deferredQuery = useDeferredValue(rail.searchQuery);
   const categories = useMemo(() => getAllExplorerBookmarkCategories(rail.customCategories), [rail.customCategories]);
@@ -648,16 +665,7 @@ export function ExplorerSideRail({
         <button
           type="button"
           aria-pressed={isManageMode}
-          onClick={() => {
-            setIsManageMode((current) => {
-              const next = !current;
-              if (!next) {
-                setDraftFolderParentId(false);
-                setDraftCategoryName('');
-              }
-              return next;
-            });
-          }}
+          onClick={toggleRailManageMode}
           style={manageToggleButtonStyle(accent, isManageMode)}
         >
           {isManageMode ? 'Done' : 'Manage'}
@@ -676,11 +684,87 @@ export function ExplorerSideRail({
     showBrandLabel,
     showSupportingMeta,
     showVerboseDragGuide,
+    toggleRailManageMode,
   ]);
   const railChromeControlRegistryById = useMemo(
     () => new Map(railChromeControlRegistry.map((entry) => [entry.id, entry])),
     [railChromeControlRegistry],
   );
+  const activateRailChromeCommand = useCallback(
+    (controlId: ExplorerChromeControlId): boolean => {
+      switch (controlId) {
+        case 'railIdentity':
+          onGoHome();
+          return true;
+        case 'railBookmarkSummary':
+          updateRail(toggleExplorerRailSection(rail, 'bookmarks'));
+          return true;
+        case 'railClose':
+          if (typeof onCloseSources !== 'function') {
+            return false;
+          }
+          onCloseSources();
+          return true;
+        case 'railManageToggle':
+          toggleRailManageMode();
+          return true;
+        default:
+          return false;
+      }
+    },
+    [onCloseSources, onGoHome, rail, toggleRailManageMode, updateRail],
+  );
+  const railCommandControlIdByCommandId = useMemo(
+    () =>
+      new Map(
+        railChromeControlRegistry.map((entry) => [
+          getExplorerChromeCommandId(entry.id),
+          entry.id,
+        ] as const),
+      ),
+    [railChromeControlRegistry],
+  );
+  const triggerRailChromeCommandBinding = useCallback(
+    (commandId: string): boolean => {
+      const controlId = railCommandControlIdByCommandId.get(commandId);
+      return controlId ? activateRailChromeCommand(controlId) : false;
+    },
+    [activateRailChromeCommand, railCommandControlIdByCommandId],
+  );
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      const railOwnsKeyboard =
+        activeElement instanceof Node &&
+        railRootRef.current?.contains(activeElement) === true;
+      if (!railOwnsKeyboard) {
+        return;
+      }
+      if (
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement ||
+        (activeElement instanceof HTMLElement &&
+          activeElement.isContentEditable)
+      ) {
+        return;
+      }
+      for (const [commandId, binding] of Object.entries(commandBindingsById)) {
+        if (!binding || !matchesKeybinding(event, binding)) {
+          continue;
+        }
+        if (triggerRailChromeCommandBinding(commandId)) {
+          event.preventDefault();
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [commandBindingsById, triggerRailChromeCommandBinding]);
   const railHeaderSurface = useMemo(
     () => resolveExplorerChromeSurfaceLayout({
       layoutId: chromeLayoutId,
@@ -697,6 +781,7 @@ export function ExplorerSideRail({
 
   return (
     <div
+      ref={railRootRef}
       style={{
         display: 'flex',
         flexDirection: 'column',

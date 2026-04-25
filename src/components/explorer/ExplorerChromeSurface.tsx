@@ -1,4 +1,4 @@
-import React, { useEffect, type CSSProperties } from 'react';
+import React, { useEffect, useMemo, type CSSProperties } from 'react';
 import type {
   ExplorerChromeControlId,
   ExplorerChromeResolvedControlPlacement,
@@ -6,6 +6,7 @@ import type {
   ExplorerChromeSurfaceId,
   ExplorerChromeZoneId,
 } from '../../config/explorerChromeLayouts';
+import { getExplorerChromeResolvedSurfaceSignature } from '../../config/explorerChromeLayouts';
 
 interface ExplorerChromeSurfaceProps {
   surface: ExplorerChromeResolvedSurface;
@@ -16,10 +17,24 @@ interface ExplorerChromeSurfaceProps {
   editMode?: {
     active: boolean;
     draggingControlId: ExplorerChromeControlId | null;
+    highlightedDropTarget?: {
+      surfaceId: ExplorerChromeSurfaceId;
+      zoneId: ExplorerChromeZoneId;
+      targetIndex: number;
+    } | null;
+    selectedControlId?: ExplorerChromeControlId | null;
+    pendingHotkeyControlId?: ExplorerChromeControlId | null;
     onRegisterSurface?: (surface: ExplorerChromeResolvedSurface) => void;
     onUnregisterSurface?: (surfaceId: ExplorerChromeSurfaceId) => void;
     onDragStart: (controlId: ExplorerChromeControlId) => void;
     onDragEnd: () => void;
+    onSetHighlightedDropTarget?: (target: {
+      surfaceId: ExplorerChromeSurfaceId;
+      zoneId: ExplorerChromeZoneId;
+      targetIndex: number;
+    } | null) => void;
+    onSetSelectedControl?: (controlId: ExplorerChromeControlId | null) => void;
+    onSetPendingHotkeyControl?: (controlId: ExplorerChromeControlId | null) => void;
     onMoveControl: (args: {
       controlId: ExplorerChromeControlId;
       targetSurfaceId: ExplorerChromeSurfaceId;
@@ -39,16 +54,32 @@ export function ExplorerChromeSurface({
 }: ExplorerChromeSurfaceProps) {
   const editModeActive = editMode?.active === true;
   const hasControls = surface.rows.some((row) => row.zones.some((zone) => zone.controls.length > 0));
+  const registerSurface = editMode?.onRegisterSurface;
+  const unregisterSurface = editMode?.onUnregisterSurface;
+  const surfaceRegistrationSignature = useMemo(
+    () => getExplorerChromeResolvedSurfaceSignature(surface),
+    [surface],
+  );
+  const stableRegisteredSurface = useMemo(
+    () => surface,
+    [surfaceRegistrationSignature],
+  );
+
   useEffect(() => {
-    if (!editModeActive) {
+    if (!editModeActive || !registerSurface) {
       return undefined;
     }
 
-    editMode?.onRegisterSurface?.(surface);
+    registerSurface(stableRegisteredSurface);
     return () => {
-      editMode?.onUnregisterSurface?.(surface.surfaceId);
+      unregisterSurface?.(stableRegisteredSurface.surfaceId);
     };
-  }, [editMode, editModeActive, surface]);
+  }, [
+    editModeActive,
+    registerSurface,
+    stableRegisteredSurface,
+    unregisterSurface,
+  ]);
 
   if (!hasControls && !editModeActive) {
     return null;
@@ -62,12 +93,28 @@ export function ExplorerChromeSurface({
       return null;
     }
 
+    const highlightedDropTarget = editMode.highlightedDropTarget;
+    const isHighlighted = highlightedDropTarget?.surfaceId === surface.surfaceId
+      && highlightedDropTarget.zoneId === zoneId
+      && highlightedDropTarget.targetIndex === targetIndex;
+
     return (
       <div
         key={`${surface.surfaceId}:${zoneId}:drop:${targetIndex}`}
         onDragOver={(event) => {
           event.preventDefault();
           event.dataTransfer.dropEffect = 'move';
+          editMode.onSetHighlightedDropTarget?.({
+            surfaceId: surface.surfaceId,
+            zoneId,
+            targetIndex,
+          });
+        }}
+        onDragLeave={() => {
+          if (!isHighlighted) {
+            return;
+          }
+          editMode.onSetHighlightedDropTarget?.(null);
         }}
         onDrop={(event) => {
           event.preventDefault();
@@ -80,6 +127,7 @@ export function ExplorerChromeSurface({
             targetZoneId: zoneId,
             targetIndex,
           });
+          editMode.onSetHighlightedDropTarget?.(null);
           editMode.onDragEnd();
         }}
         style={{
@@ -97,8 +145,12 @@ export function ExplorerChromeSurface({
           style={{
             width: 2,
             borderRadius: 999,
-            background: editMode.draggingControlId ? 'var(--overlay-accent)' : 'color-mix(in srgb, var(--overlay-border) 82%, transparent)',
-            opacity: editMode.draggingControlId ? 0.95 : 0.35,
+            background: isHighlighted
+              ? 'var(--overlay-accent)'
+              : editMode.draggingControlId
+                ? 'color-mix(in srgb, var(--overlay-accent) 60%, transparent)'
+                : 'color-mix(in srgb, var(--overlay-border) 82%, transparent)',
+            opacity: isHighlighted ? 1 : editMode.draggingControlId ? 0.75 : 0.35,
           }}
         />
       </div>
@@ -147,52 +199,93 @@ export function ExplorerChromeSurface({
                   }}
                 >
                   {editModeActive && renderDropTarget(zone.id, 0)}
-                  {zone.controls.map((placement, index) => (
-                    <React.Fragment key={`${placement.surfaceId}:${placement.controlId}`}>
-                      <div
-                        data-overlay-explorer-control={placement.controlId}
-                        data-overlay-explorer-control-zone={placement.zone}
-                        draggable={editModeActive}
-                        onDragStart={(event) => {
-                          if (!editModeActive || !editMode) {
-                            return;
-                          }
-                          event.dataTransfer.effectAllowed = 'move';
-                          event.dataTransfer.setData('text/plain', placement.controlId);
-                          editMode.onDragStart(placement.controlId);
-                        }}
-                        onDragEnd={() => {
-                          if (!editModeActive || !editMode) {
-                            return;
-                          }
-                          editMode.onDragEnd();
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          minWidth: 0,
-                          flexGrow: placement.grow ?? 0,
-                          flexShrink: placement.shrink ?? 0,
-                          overflow: placement.overflowEligible ? 'hidden' : 'visible',
-                          ...(editModeActive
-                            ? {
-                              cursor: 'grab',
-                              borderRadius: 10,
-                              outline: '1px solid color-mix(in srgb, var(--overlay-border) 80%, transparent)',
-                              outlineOffset: -1,
-                              background: editMode.draggingControlId === placement.controlId
-                                ? 'color-mix(in srgb, var(--overlay-accent) 14%, transparent)'
-                                : 'transparent',
-                              opacity: editMode.draggingControlId === placement.controlId ? 0.55 : 1,
+                  {zone.controls.map((placement, index) => {
+                    const isSelected = editMode?.selectedControlId === placement.controlId;
+                    const isPendingHotkey = editMode?.pendingHotkeyControlId === placement.controlId;
+                    return (
+                      <React.Fragment key={`${placement.surfaceId}:${placement.controlId}`}>
+                        <div
+                          data-overlay-explorer-control={placement.controlId}
+                          data-overlay-explorer-control-zone={placement.zone}
+                          draggable={false}
+                          onMouseDownCapture={(event) => {
+                            if (!editModeActive || !editMode) {
+                              return;
                             }
-                            : {}),
-                        }}
-                      >
-                        {renderControl(placement)}
-                      </div>
-                      {editModeActive && renderDropTarget(zone.id, index + 1)}
-                    </React.Fragment>
-                  ))}
+                            event.currentTarget.draggable = event.ctrlKey && event.altKey;
+                            if (!event.ctrlKey || !event.altKey) {
+                              editMode.onSetSelectedControl?.(placement.controlId);
+                            }
+                          }}
+                          onMouseUpCapture={(event) => {
+                            event.currentTarget.draggable = false;
+                          }}
+                          onClickCapture={(event) => {
+                            if (!editModeActive || !editMode) {
+                              return;
+                            }
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (event.ctrlKey && event.altKey) {
+                              editMode.onSetPendingHotkeyControl?.(placement.controlId);
+                              editMode.onSetSelectedControl?.(placement.controlId);
+                              return;
+                            }
+                            editMode.onSetSelectedControl?.(placement.controlId);
+                          }}
+                          onDragStart={(event) => {
+                            if (!editModeActive || !editMode || !event.currentTarget.draggable) {
+                              event.preventDefault();
+                              return;
+                            }
+                            event.dataTransfer.effectAllowed = 'move';
+                            event.dataTransfer.setData('text/plain', placement.controlId);
+                            editMode.onSetSelectedControl?.(placement.controlId);
+                            editMode.onDragStart(placement.controlId);
+                          }}
+                          onDragEnd={(event) => {
+                            event.currentTarget.draggable = false;
+                            if (!editModeActive || !editMode) {
+                              return;
+                            }
+                            editMode.onSetHighlightedDropTarget?.(null);
+                            editMode.onDragEnd();
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            minWidth: 0,
+                            flexGrow: placement.grow ?? 0,
+                            flexShrink: placement.shrink ?? 0,
+                            overflow: placement.overflowEligible ? 'hidden' : 'visible',
+                            ...(editModeActive
+                              ? {
+                                cursor: 'default',
+                                borderRadius: 10,
+                                outline: isPendingHotkey
+                                  ? '1px solid color-mix(in srgb, var(--overlay-accent) 92%, white 8%)'
+                                  : isSelected
+                                    ? '1px solid color-mix(in srgb, var(--overlay-accent) 70%, transparent)'
+                                    : '1px solid color-mix(in srgb, var(--overlay-border) 80%, transparent)',
+                                outlineOffset: -1,
+                                background: editMode.draggingControlId === placement.controlId
+                                  ? 'color-mix(in srgb, var(--overlay-accent) 14%, transparent)'
+                                  : isPendingHotkey
+                                    ? 'color-mix(in srgb, var(--overlay-accent) 18%, transparent)'
+                                    : isSelected
+                                      ? 'color-mix(in srgb, var(--overlay-accent) 10%, transparent)'
+                                      : 'transparent',
+                                opacity: editMode.draggingControlId === placement.controlId ? 0.55 : 1,
+                              }
+                              : {}),
+                          }}
+                        >
+                          {renderControl(placement)}
+                        </div>
+                        {editModeActive && renderDropTarget(zone.id, index + 1)}
+                      </React.Fragment>
+                    );
+                  })}
                 </div>
               );
             })}

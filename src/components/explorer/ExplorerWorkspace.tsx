@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
 import type { LoadedExplorerAction } from '../../config/actionPacks';
 import { detectClientPlatform } from '../../config/platform';
+import { matchesKeybinding } from '../../config/hotkeys';
 import {
   moveExplorerChromeControlInResolvedSurfaces,
   resolveExplorerChromeSurfaceLayout,
@@ -13,6 +14,7 @@ import {
   type ExplorerChromeSurfaceId,
   type ExplorerChromeZoneId,
 } from '../../config/explorerChromeLayouts';
+import { getExplorerChromeCommandId } from '../../config/explorerCustomizeCatalog';
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
@@ -155,6 +157,21 @@ function getNextVisiblePaneId(
   return visiblePaneIds[(currentIndex + 1) % visiblePaneIds.length] ?? null;
 }
 
+function getPreviousVisiblePaneId(
+  visiblePaneIds: ExplorerPaneId[],
+  paneId: ExplorerPaneId,
+): ExplorerPaneId | null {
+  const currentIndex = visiblePaneIds.indexOf(paneId);
+  if (currentIndex === -1 || visiblePaneIds.length <= 1) {
+    return null;
+  }
+  return (
+    visiblePaneIds[
+      (currentIndex - 1 + visiblePaneIds.length) % visiblePaneIds.length
+    ] ?? null
+  );
+}
+
 function sameSelectionEntry(
   left: ExplorerWorkspaceRuntimeSelectionEntry,
   right: ExplorerWorkspaceRuntimeSelectionEntry,
@@ -242,10 +259,12 @@ export function ExplorerWorkspace({
     activeThemeId,
     modeProfileOverridesByThemeId,
     chromeLayoutOverridesByThemeId,
+    commandBindingsById,
   } = useSettingsStore(useShallow((state) => ({
     activeThemeId: state.settings.appearance.activeThemeId,
     modeProfileOverridesByThemeId: state.settings.explorer.modeProfileOverridesByThemeId,
     chromeLayoutOverridesByThemeId: state.settings.explorer.chromeLayoutOverridesByThemeId,
+    commandBindingsById: state.settings.keybindings.commandBindingsById,
   })));
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -548,6 +567,66 @@ export function ExplorerWorkspace({
     }
     setFocusedPane(nextPaneId);
   }, [activePane, setFocusedPane, visiblePaneIds]);
+  const focusPreviousPane = useCallback(() => {
+    const previousPaneId = getPreviousVisiblePaneId(visiblePaneIds, activePane);
+    if (!previousPaneId) {
+      return;
+    }
+    setFocusedPane(previousPaneId);
+  }, [activePane, setFocusedPane, visiblePaneIds]);
+  const togglePaneActionsMenu = useCallback(() => {
+    setPaneActionsMenuOpen((current) => !current);
+  }, []);
+  const cycleWorkspaceLayout = useCallback(() => {
+    const orderedLayouts: ExplorerWorkspaceLayoutMode[] = [
+      'single',
+      'split',
+      'triple',
+      'quad',
+    ];
+    const currentIndex = orderedLayouts.indexOf(workspaceLayoutMode);
+    const nextLayout =
+      orderedLayouts[(currentIndex + 1) % orderedLayouts.length] ?? 'single';
+    ensureWorkspaceLayout(nextLayout);
+  }, [ensureWorkspaceLayout, workspaceLayoutMode]);
+  const nudgeWorkspaceSplit = useCallback(
+    (delta: number): boolean => {
+      if (workspaceLayout.supportsColumnSplit) {
+        setWorkspaceColumnSplitRatio(workspaceColumnSplitRatio + delta);
+        return true;
+      }
+      if (workspaceLayout.supportsRowSplit) {
+        setWorkspaceRowSplitRatio(workspaceRowSplitRatio + delta);
+        return true;
+      }
+      return false;
+    },
+    [
+      setWorkspaceColumnSplitRatio,
+      setWorkspaceRowSplitRatio,
+      workspaceColumnSplitRatio,
+      workspaceLayout.supportsColumnSplit,
+      workspaceLayout.supportsRowSplit,
+      workspaceRowSplitRatio,
+    ],
+  );
+  const resetWorkspaceSplit = useCallback((): boolean => {
+    let updated = false;
+    if (workspaceLayout.supportsColumnSplit) {
+      setWorkspaceColumnSplitRatio(0.5);
+      updated = true;
+    }
+    if (workspaceLayout.supportsRowSplit) {
+      setWorkspaceRowSplitRatio(0.5);
+      updated = true;
+    }
+    return updated;
+  }, [
+    setWorkspaceColumnSplitRatio,
+    setWorkspaceRowSplitRatio,
+    workspaceLayout.supportsColumnSplit,
+    workspaceLayout.supportsRowSplit,
+  ]);
   const syncCommanderTargetToActivePane = useCallback(() => {
     if (!commanderTargetPaneSnapshot || !activePanePath.trim()) {
       return;
@@ -1244,6 +1323,180 @@ export function ExplorerWorkspace({
   const renderWorkspaceChromeControl = useCallback((placement: ExplorerChromeResolvedControlPlacement) => (
     workspaceChromeControlRegistryById.get(placement.controlId)?.render(placement) ?? null
   ), [workspaceChromeControlRegistryById]);
+  const activateWorkspaceChromeCommand = useCallback(
+    (controlId: ExplorerChromeControlId): boolean => {
+      switch (controlId) {
+        case 'workspacePaneCounts':
+          if (visiblePaneIds.length <= 1) {
+            return false;
+          }
+          focusNextPane();
+          return true;
+        case 'workspaceMode':
+        case 'workspaceLayoutHint':
+        case 'workspaceSplitToggle':
+          cycleWorkspaceLayout();
+          return true;
+        case 'workspaceNewTab':
+          createTabInFocusedPane();
+          return true;
+        case 'workspacePaneActionsMenu':
+          togglePaneActionsMenu();
+          return true;
+        case 'workspaceDuplicateTab':
+          if (!activeWorkspaceTab) {
+            return false;
+          }
+          duplicateActiveTab();
+          return true;
+        case 'workspaceFocusLeft':
+          if (visiblePaneIds.length <= 1) {
+            return false;
+          }
+          focusPreviousPane();
+          return true;
+        case 'workspaceFocusRight':
+          if (visiblePaneIds.length <= 1) {
+            return false;
+          }
+          focusNextPane();
+          return true;
+        case 'workspaceSyncPath':
+          if (!commanderTargetPaneSnapshot || !activePanePath.trim()) {
+            return false;
+          }
+          syncCommanderTargetToActivePane();
+          return true;
+        case 'workspaceLinkNavigation':
+          if (!commanderTargetPaneId) {
+            return false;
+          }
+          setLinkedNavigationEnabled((current) => !current);
+          return true;
+        case 'workspaceCopyToPane':
+          if (commanderButtonsDisabled) {
+            return false;
+          }
+          copySelectionToCommanderTarget();
+          return true;
+        case 'workspaceMoveToPane':
+          if (commanderButtonsDisabled) {
+            return false;
+          }
+          moveSelectionToCommanderTarget();
+          return true;
+        case 'workspaceSwapPane':
+          if (
+            !activePaneSnapshot ||
+            !commanderTargetPaneSnapshot ||
+            !activePanePath.trim() ||
+            !commanderTargetPath.trim()
+          ) {
+            return false;
+          }
+          issueNavigationRequest(
+            activePaneSnapshot.instanceId,
+            commanderTargetPath,
+            true,
+          );
+          issueNavigationRequest(
+            commanderTargetPaneSnapshot.instanceId,
+            activePanePath,
+            true,
+          );
+          return true;
+        case 'workspaceCloseTab':
+          if (!activeWorkspaceTab || workspaceTabs.length <= 1) {
+            return false;
+          }
+          closeActiveTab();
+          return true;
+        case 'workspaceSplitNudgeLeft':
+          return nudgeWorkspaceSplit(-0.05);
+        case 'workspaceSplitReset':
+          return resetWorkspaceSplit();
+        case 'workspaceSplitNudgeRight':
+          return nudgeWorkspaceSplit(0.05);
+        default:
+          return false;
+      }
+    },
+    [
+      activePanePath,
+      activePaneSnapshot,
+      activeWorkspaceTab,
+      closeActiveTab,
+      commanderButtonsDisabled,
+      commanderTargetPaneId,
+      commanderTargetPaneSnapshot,
+      commanderTargetPath,
+      copySelectionToCommanderTarget,
+      createTabInFocusedPane,
+      cycleWorkspaceLayout,
+      duplicateActiveTab,
+      focusNextPane,
+      focusPreviousPane,
+      issueNavigationRequest,
+      moveSelectionToCommanderTarget,
+      nudgeWorkspaceSplit,
+      resetWorkspaceSplit,
+      syncCommanderTargetToActivePane,
+      togglePaneActionsMenu,
+      visiblePaneIds.length,
+      workspaceTabs.length,
+    ],
+  );
+  const workspaceCommandControlIdByCommandId = useMemo(
+    () =>
+      new Map(
+        workspaceChromeControlRegistry.map((entry) => [
+          getExplorerChromeCommandId(entry.id),
+          entry.id,
+        ] as const),
+      ),
+    [workspaceChromeControlRegistry],
+  );
+  const triggerWorkspaceChromeCommandBinding = useCallback(
+    (commandId: string): boolean => {
+      const controlId = workspaceCommandControlIdByCommandId.get(commandId);
+      return controlId ? activateWorkspaceChromeCommand(controlId) : false;
+    },
+    [activateWorkspaceChromeCommand, workspaceCommandControlIdByCommandId],
+  );
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      const workspaceOwnsKeyboard =
+        activeElement instanceof Node &&
+        containerRef.current?.contains(activeElement) === true;
+      if (!workspaceOwnsKeyboard) {
+        return;
+      }
+      if (
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement ||
+        (activeElement instanceof HTMLElement &&
+          activeElement.isContentEditable)
+      ) {
+        return;
+      }
+      for (const [commandId, binding] of Object.entries(commandBindingsById)) {
+        if (!binding || !matchesKeybinding(event, binding)) {
+          continue;
+        }
+        if (triggerWorkspaceChromeCommandBinding(commandId)) {
+          event.preventDefault();
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [commandBindingsById, triggerWorkspaceChromeCommandBinding]);
 
   const renderPane = useCallback((pane: ExplorerPaneId, paneSnapshot: ExplorerWorkspacePaneSnapshot | null) => {
     const isActivePane = activePane === pane;
