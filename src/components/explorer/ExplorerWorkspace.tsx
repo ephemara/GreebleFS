@@ -24,6 +24,10 @@ import {
   cancelExplorerCustomizePointerSession,
 } from "./explorerCustomizePointerRuntime";
 import {
+  beginExplorerChromeResizeSession,
+  cancelExplorerChromeResizeSession,
+} from "./explorerChromeResizeRuntime";
+import {
   getExplorerChromeCommandId,
   isExplorerActionChromeControlId,
 } from "../../config/explorerCustomizeCatalog";
@@ -35,6 +39,7 @@ import {
   type ExplorerChromeOverrideEntry,
   type ExplorerChromeResolvedControlPlacement,
   type ExplorerChromeResolvedSurface,
+  type ExplorerChromeSizeVariant,
   type ExplorerChromeSurfaceId,
   type ExplorerChromeZoneId,
 } from "../../config/explorerChromeLayouts";

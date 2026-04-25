@@ -35,9 +35,13 @@ export interface ExplorerCustomizeCatalogEntry {
   surfaces: ExplorerChromeSurfaceId[];
   source: "built-in" | "action" | "missing-action";
   supportsSizeVariant: boolean;
+  supportsWidthPx: boolean;
   supportsLabelVisibility: boolean;
   supportsIconVisibility: boolean;
   sizeVariants: ExplorerChromeSizeVariant[];
+  defaultWidthPx: number | null;
+  minWidthPx: number | null;
+  maxWidthPx: number | null;
   action?: LoadedExplorerAction;
 }
 
@@ -170,9 +174,12 @@ function categorizeBuiltInExplorerChromeControl(
 
 const unsupportedBuiltInExplorerCustomizeControlIds =
   new Set<BuiltInExplorerChromeControlId>([
+    "workspacePaneCounts",
     "workspaceMode",
     "workspaceCommanderSummary",
     "workspaceLayoutHint",
+    "workspaceTabs",
+    "workspaceNewTab",
     "workspaceDuplicateTab",
     "workspaceFocusLeft",
     "workspaceFocusRight",
@@ -182,6 +189,7 @@ const unsupportedBuiltInExplorerCustomizeControlIds =
     "workspaceCopyToPane",
     "workspaceMoveToPane",
     "workspaceSwapPane",
+    "workspaceSplitToggle",
     "workspaceCloseTab",
     "workspaceSplitSummary",
     "workspaceSplitNudgeLeft",
@@ -189,25 +197,152 @@ const unsupportedBuiltInExplorerCustomizeControlIds =
     "workspaceSplitNudgeRight",
   ]);
 
+interface BuiltInExplorerCustomizeCapability {
+  supportsSizeVariant?: boolean;
+  supportsWidthPx?: boolean;
+  supportsLabelVisibility?: boolean;
+  supportsIconVisibility?: boolean;
+  sizeVariants?: ExplorerChromeSizeVariant[];
+  defaultWidthPx?: number | null;
+  minWidthPx?: number | null;
+  maxWidthPx?: number | null;
+}
+
+const builtInExplorerCustomizeCapabilities: Partial<
+  Record<BuiltInExplorerChromeControlId, BuiltInExplorerCustomizeCapability>
+> = {
+  addressBar: {
+    supportsSizeVariant: true,
+    supportsWidthPx: true,
+    sizeVariants: ["compact", "regular", "wide"],
+    defaultWidthPx: 760,
+    minWidthPx: 280,
+    maxWidthPx: 1480,
+  },
+  recentLocations: {
+    supportsWidthPx: true,
+    defaultWidthPx: 260,
+    minWidthPx: 150,
+    maxWidthPx: 420,
+  },
+  pinnedLocations: {
+    supportsWidthPx: true,
+    defaultWidthPx: 260,
+    minWidthPx: 150,
+    maxWidthPx: 420,
+  },
+  archiveActions: {
+    supportsSizeVariant: true,
+    supportsWidthPx: true,
+    sizeVariants: ["compact", "regular", "wide"],
+    defaultWidthPx: 220,
+    minWidthPx: 150,
+    maxWidthPx: 420,
+  },
+  workspaceTabStrip: {
+    supportsSizeVariant: true,
+    supportsWidthPx: true,
+    sizeVariants: ["compact", "regular", "wide"],
+    defaultWidthPx: 760,
+    minWidthPx: 320,
+    maxWidthPx: 1600,
+  },
+  statusItemCount: {
+    supportsWidthPx: true,
+    defaultWidthPx: 180,
+    minWidthPx: 120,
+    maxWidthPx: 320,
+  },
+  statusModeProfile: {
+    supportsWidthPx: true,
+    defaultWidthPx: 180,
+    minWidthPx: 120,
+    maxWidthPx: 320,
+  },
+  statusViewSummary: {
+    supportsWidthPx: true,
+    defaultWidthPx: 200,
+    minWidthPx: 140,
+    maxWidthPx: 360,
+  },
+  statusPreviewSummary: {
+    supportsWidthPx: true,
+    defaultWidthPx: 260,
+    minWidthPx: 160,
+    maxWidthPx: 520,
+  },
+  statusSearchSummary: {
+    supportsWidthPx: true,
+    defaultWidthPx: 300,
+    minWidthPx: 180,
+    maxWidthPx: 620,
+  },
+  statusClipboardQueue: {
+    supportsWidthPx: true,
+    defaultWidthPx: 240,
+    minWidthPx: 160,
+    maxWidthPx: 480,
+  },
+  statusTaskBadge: {
+    supportsSizeVariant: true,
+    supportsWidthPx: true,
+    sizeVariants: ["compact", "regular", "wide"],
+    defaultWidthPx: 180,
+    minWidthPx: 120,
+    maxWidthPx: 320,
+  },
+  statusViewToggles: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  terminalDrawerToggle: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  actionsPaneToggle: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  selectionModeToggle: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  togglePreview: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  customizeModeToggle: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+};
+
 function createBuiltInExplorerCustomizeCatalogEntries(): ExplorerCustomizeCatalogEntry[] {
   return listBuiltInExplorerChromeControlIds()
     .filter(
       (controlId) =>
         !unsupportedBuiltInExplorerCustomizeControlIds.has(controlId),
     )
-    .map((controlId) => ({
-      controlId,
-      commandId: getExplorerChromeCommandId(controlId),
-      label: humanizeExplorerChromeControlId(controlId),
-      description: `${humanizeExplorerChromeControlId(controlId)} control`,
-      category: categorizeBuiltInExplorerChromeControl(controlId),
-      surfaces: getSupportedExplorerChromeSurfaces(controlId),
-      source: "built-in",
-      supportsSizeVariant: false,
-      supportsLabelVisibility: false,
-      supportsIconVisibility: false,
-      sizeVariants: ["regular"],
-    }));
+    .map((controlId) => {
+      const capabilities = builtInExplorerCustomizeCapabilities[controlId];
+      return {
+        controlId,
+        commandId: getExplorerChromeCommandId(controlId),
+        label: humanizeExplorerChromeControlId(controlId),
+        description: `${humanizeExplorerChromeControlId(controlId)} control`,
+        category: categorizeBuiltInExplorerChromeControl(controlId),
+        surfaces: getSupportedExplorerChromeSurfaces(controlId),
+        source: "built-in",
+        supportsSizeVariant: capabilities?.supportsSizeVariant ?? false,
+        supportsWidthPx: capabilities?.supportsWidthPx ?? false,
+        supportsLabelVisibility: capabilities?.supportsLabelVisibility ?? false,
+        supportsIconVisibility: capabilities?.supportsIconVisibility ?? false,
+        sizeVariants: capabilities?.sizeVariants ?? ["regular"],
+        defaultWidthPx: capabilities?.defaultWidthPx ?? null,
+        minWidthPx: capabilities?.minWidthPx ?? null,
+        maxWidthPx: capabilities?.maxWidthPx ?? null,
+      };
+    });
 }
 
 function createActionExplorerCustomizeCatalogEntry(
@@ -223,9 +358,13 @@ function createActionExplorerCustomizeCatalogEntry(
     surfaces: [...defaultActionChromeSurfaces],
     source: "action",
     supportsSizeVariant: true,
+    supportsWidthPx: false,
     supportsLabelVisibility: true,
     supportsIconVisibility: true,
     sizeVariants: ["compact", "regular", "wide"],
+    defaultWidthPx: null,
+    minWidthPx: null,
+    maxWidthPx: null,
     action,
   };
 }
@@ -247,9 +386,13 @@ function createMissingActionExplorerCustomizeCatalogEntry(
     surfaces: [entry.surfaceId],
     source: "missing-action",
     supportsSizeVariant: true,
+    supportsWidthPx: false,
     supportsLabelVisibility: true,
     supportsIconVisibility: true,
     sizeVariants: ["compact", "regular", "wide"],
+    defaultWidthPx: null,
+    minWidthPx: null,
+    maxWidthPx: null,
   };
 }
 

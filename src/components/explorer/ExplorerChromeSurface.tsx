@@ -25,6 +25,7 @@ interface ExplorerChromeSurfaceProps {
       zoneId: ExplorerChromeZoneId;
       targetIndex: number;
     } | null;
+    resizingControlId?: ExplorerChromeControlId | null;
     selectedControlId?: ExplorerChromeControlId | null;
     pendingHotkeyControlId?: ExplorerChromeControlId | null;
     onRegisterSurface?: (surface: ExplorerChromeResolvedSurface) => void;
@@ -37,6 +38,11 @@ interface ExplorerChromeSurfaceProps {
       sourceKind: "placed";
       startPoint: { x: number; y: number };
       onTap?: (controlId: ExplorerChromeControlId) => void;
+    }) => void;
+    onBeginPointerResize?: (args: {
+      controlId: ExplorerChromeControlId;
+      pointerId: number;
+      startPoint: { x: number; y: number };
     }) => void;
     onSetHighlightedDropTarget?: (
       target: {
@@ -56,6 +62,9 @@ interface ExplorerChromeSurfaceProps {
       targetZoneId: ExplorerChromeZoneId;
       targetIndex: number;
     }) => void;
+    isControlResizable?: (
+      placement: ExplorerChromeResolvedControlPlacement,
+    ) => boolean;
     onRemoveControl?: (controlId: ExplorerChromeControlId) => void;
   };
 }
@@ -112,6 +121,10 @@ export function ExplorerChromeSurface({
   const targetUsesCustomizeLiveControl = (target: EventTarget | null) =>
     target instanceof Element &&
     target.closest("[data-explorer-customize-live-control='true']") != null;
+
+  const targetUsesCustomizeResizeControl = (target: EventTarget | null) =>
+    target instanceof Element &&
+    target.closest("[data-explorer-customize-resize-control='true']") != null;
 
   const renderInsertionGhost = (
     zoneId: ExplorerChromeZoneId,
@@ -242,6 +255,11 @@ export function ExplorerChromeSurface({
                       editMode?.selectedControlId === placement.controlId;
                     const isPendingHotkey =
                       editMode?.pendingHotkeyControlId === placement.controlId;
+                    const isResizing =
+                      editMode?.resizingControlId === placement.controlId;
+                    const controlIsResizable =
+                      editMode?.isControlResizable?.(placement) ?? false;
+                    const hasExplicitWidth = typeof placement.widthPx === "number";
                     return (
                       <React.Fragment
                         key={`${placement.surfaceId}:${placement.controlId}`}
@@ -259,6 +277,12 @@ export function ExplorerChromeSurface({
 
                             if (
                               targetUsesCustomizeRemoveControl(event.target)
+                            ) {
+                              return;
+                            }
+
+                            if (
+                              targetUsesCustomizeResizeControl(event.target)
                             ) {
                               return;
                             }
@@ -305,6 +329,12 @@ export function ExplorerChromeSurface({
                               return;
                             }
 
+                            if (
+                              targetUsesCustomizeResizeControl(event.target)
+                            ) {
+                              return;
+                            }
+
                             if (event.ctrlKey && event.altKey) {
                               event.preventDefault();
                               event.stopPropagation();
@@ -336,18 +366,25 @@ export function ExplorerChromeSurface({
                             alignItems: "center",
                             minWidth: 0,
                             position: "relative",
-                            flexGrow: placement.grow ?? 0,
-                            flexShrink: placement.shrink ?? 0,
+                            flexGrow: hasExplicitWidth ? 0 : placement.grow ?? 0,
+                            flexShrink: hasExplicitWidth ? 1 : placement.shrink ?? 0,
+                            flexBasis: hasExplicitWidth ? placement.widthPx : undefined,
+                            width: hasExplicitWidth ? placement.widthPx : undefined,
+                            maxWidth: hasExplicitWidth ? placement.widthPx : undefined,
                             overflow: placement.overflowEligible
                               ? "hidden"
                               : "visible",
+                            paddingRight:
+                              editModeActive && controlIsResizable ? 12 : 0,
                             ...(editModeActive
                               ? {
                                   cursor:
-                                    editMode.draggingControlId ===
-                                    placement.controlId
-                                      ? "grabbing"
-                                      : "grab",
+                                    isResizing
+                                      ? "ew-resize"
+                                      : editMode.draggingControlId ===
+                                          placement.controlId
+                                        ? "grabbing"
+                                        : "grab",
                                   borderRadius: 10,
                                   outline: isPendingHotkey
                                     ? "1px solid color-mix(in srgb, var(--overlay-accent) 92%, white 8%)"
@@ -355,9 +392,10 @@ export function ExplorerChromeSurface({
                                       ? "1px solid color-mix(in srgb, var(--overlay-accent) 70%, transparent)"
                                       : "1px solid color-mix(in srgb, var(--overlay-border) 80%, transparent)",
                                   outlineOffset: -1,
-                                  background:
-                                    editMode.draggingControlId ===
-                                    placement.controlId
+                                  background: isResizing
+                                    ? "color-mix(in srgb, var(--overlay-accent) 16%, transparent)"
+                                    : editMode.draggingControlId ===
+                                        placement.controlId
                                       ? "color-mix(in srgb, var(--overlay-accent) 14%, transparent)"
                                       : isPendingHotkey
                                         ? "color-mix(in srgb, var(--overlay-accent) 18%, transparent)"
@@ -383,6 +421,88 @@ export function ExplorerChromeSurface({
                           }}
                         >
                           {renderControl(placement)}
+                          {editModeActive &&
+                          controlIsResizable &&
+                          editMode.onBeginPointerResize ? (
+                            <button
+                              type="button"
+                              data-explorer-customize-resize-control="true"
+                              aria-label={`Resize ${placement.controlId}`}
+                              onPointerDown={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                editMode.onSetSelectedControl?.(
+                                  placement.controlId,
+                                );
+                                editMode.onBeginPointerResize?.({
+                                  controlId: placement.controlId,
+                                  pointerId: event.pointerId,
+                                  startPoint: {
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  },
+                                });
+                              }}
+                              style={{
+                                position: "absolute",
+                                top: "50%",
+                                right: 1,
+                                transform: "translateY(-50%)",
+                                width: 12,
+                                height: 28,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                border: "none",
+                                borderRadius: 999,
+                                background:
+                                  hoveredControlId === placement.controlId ||
+                                  isSelected ||
+                                  isResizing
+                                    ? "color-mix(in srgb, var(--overlay-accent) 20%, transparent)"
+                                    : "transparent",
+                                color: "var(--overlay-text-dim)",
+                                cursor: "ew-resize",
+                                opacity:
+                                  hoveredControlId === placement.controlId ||
+                                  isSelected ||
+                                  isResizing
+                                    ? 0.96
+                                    : 0,
+                                pointerEvents:
+                                  hoveredControlId === placement.controlId ||
+                                  isSelected ||
+                                  isResizing
+                                    ? "auto"
+                                    : "none",
+                                transition:
+                                  "opacity 120ms ease, background 120ms ease",
+                                zIndex: 2,
+                              }}
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  display: "grid",
+                                  gridAutoFlow: "row",
+                                  gap: 2,
+                                }}
+                              >
+                                {Array.from({ length: 4 }).map((_, handleIndex) => (
+                                  <span
+                                    key={handleIndex}
+                                    style={{
+                                      width: 3,
+                                      height: 3,
+                                      borderRadius: 999,
+                                      background:
+                                        "color-mix(in srgb, var(--overlay-text-dim) 78%, white 22%)",
+                                    }}
+                                  />
+                                ))}
+                              </span>
+                            </button>
+                          ) : null}
                           {editModeActive && editMode.onRemoveControl ? (
                             <button
                               type="button"

@@ -63,6 +63,7 @@ export type BuiltInExplorerChromeControlId =
   | "workspaceMode"
   | "workspaceCommanderSummary"
   | "workspaceLayoutHint"
+  | "workspaceTabStrip"
   | "workspaceTabs"
   | "workspaceNewTab"
   | "workspacePaneActionsMenu"
@@ -147,6 +148,7 @@ export interface ExplorerChromeOverrideEntry {
   order: number;
   hidden?: boolean;
   sizeVariant?: ExplorerChromeSizeVariant;
+  widthPx?: number;
   showLabel?: boolean;
   showIcon?: boolean;
 }
@@ -160,6 +162,7 @@ export interface ExplorerChromeResolvedControlPlacement extends ExplorerChromeSl
   surfaceId: ExplorerChromeSurfaceId;
   hidden?: boolean;
   sizeVariant?: ExplorerChromeSizeVariant;
+  widthPx?: number;
   showLabel?: boolean;
   showIcon?: boolean;
 }
@@ -434,6 +437,14 @@ const builtInExplorerChromeLayouts: Record<
           shrink: 1,
           collapsePriority: 40,
           overflowEligible: true,
+        },
+      },
+      workspaceTabStrip: {
+        workspaceHeader: {
+          zone: "center",
+          order: 10,
+          grow: 1,
+          shrink: 1,
         },
       },
       workspaceTabs: {
@@ -1045,6 +1056,81 @@ function normalizeExplorerChromeSizeVariant(
     : undefined;
 }
 
+function normalizeExplorerChromeWidthPx(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.max(56, Math.min(1600, Math.round(value)));
+}
+
+const explorerChromeFlexibleSurfaceSupport: Partial<
+  Record<BuiltInExplorerChromeControlId, ExplorerChromeSurfaceId[]>
+> = {
+  addressBar: [
+    "explorerTopbar",
+    "explorerToolbar",
+    "workspaceHeader",
+    "previewHeader",
+    "explorerStatusBar",
+  ],
+  workspaceTabStrip: [
+    "explorerTopbar",
+    "explorerToolbar",
+    "workspaceHeader",
+    "previewHeader",
+    "explorerStatusBar",
+  ],
+  statusTaskBadge: [
+    "explorerTopbar",
+    "explorerToolbar",
+    "workspaceHeader",
+    "previewHeader",
+    "explorerStatusBar",
+  ],
+  statusSearchSummary: [
+    "explorerTopbar",
+    "explorerToolbar",
+    "workspaceHeader",
+    "previewHeader",
+    "explorerStatusBar",
+  ],
+  statusClipboardQueue: [
+    "explorerTopbar",
+    "explorerToolbar",
+    "workspaceHeader",
+    "previewHeader",
+    "explorerStatusBar",
+  ],
+  statusPreviewSummary: [
+    "explorerTopbar",
+    "explorerToolbar",
+    "workspaceHeader",
+    "previewHeader",
+    "explorerStatusBar",
+  ],
+  statusViewSummary: [
+    "explorerTopbar",
+    "explorerToolbar",
+    "workspaceHeader",
+    "previewHeader",
+    "explorerStatusBar",
+  ],
+  statusModeProfile: [
+    "explorerTopbar",
+    "explorerToolbar",
+    "workspaceHeader",
+    "previewHeader",
+    "explorerStatusBar",
+  ],
+  statusItemCount: [
+    "explorerTopbar",
+    "explorerToolbar",
+    "workspaceHeader",
+    "previewHeader",
+    "explorerStatusBar",
+  ],
+};
+
 export function normalizeExplorerChromeLayoutId(
   value: unknown,
 ): ExplorerChromeLayoutId {
@@ -1085,6 +1171,13 @@ export function getSupportedExplorerChromeSurfaces(
   controlId: ExplorerChromeControlId,
 ): ExplorerChromeSurfaceId[] {
   const supportedSurfaces = new Set<ExplorerChromeSurfaceId>();
+  const flexibleSupport =
+    explorerChromeFlexibleSurfaceSupport[
+      controlId as BuiltInExplorerChromeControlId
+    ] ?? [];
+  for (const surfaceId of flexibleSupport) {
+    supportedSurfaces.add(surfaceId);
+  }
   for (const layout of Object.values(builtInExplorerChromeLayouts)) {
     const placements = layout.placements[controlId];
     if (!placements) {
@@ -1121,6 +1214,7 @@ export function normalizeExplorerChromeOverrideSnapshot(
     const order = asFiniteInteger(entry?.order);
     const hidden = asBooleanOrUndefined(entry?.hidden) ?? false;
     const sizeVariant = normalizeExplorerChromeSizeVariant(entry?.sizeVariant);
+    const widthPx = normalizeExplorerChromeWidthPx(entry?.widthPx);
     const showLabel = asBooleanOrUndefined(entry?.showLabel);
     const showIcon = asBooleanOrUndefined(entry?.showIcon);
 
@@ -1141,6 +1235,7 @@ export function normalizeExplorerChromeOverrideSnapshot(
       order,
       hidden,
       sizeVariant,
+      widthPx,
       showLabel,
       showIcon,
     });
@@ -1263,6 +1358,7 @@ function getOverridePlacement(
     overflowEligible: basePlacement?.overflowEligible,
     hidden: false,
     sizeVariant: overridePlacement.sizeVariant ?? basePlacement?.sizeVariant,
+    widthPx: overridePlacement.widthPx ?? basePlacement?.widthPx,
     showLabel: overridePlacement.showLabel ?? basePlacement?.showLabel,
     showIcon: overridePlacement.showIcon ?? basePlacement?.showIcon,
   };
@@ -1289,6 +1385,7 @@ export function createExplorerChromeOverrideSnapshotFromResolvedSurfaces(
         order: placement.order,
         hidden: placement.hidden,
         sizeVariant: placement.sizeVariant,
+        widthPx: placement.widthPx,
         showLabel: placement.showLabel,
         showIcon: placement.showIcon,
       })),
@@ -1316,6 +1413,7 @@ export function getExplorerChromeResolvedSurfaceSignature(
           overflowEligible: placement.overflowEligible,
           hidden: placement.hidden,
           sizeVariant: placement.sizeVariant,
+          widthPx: placement.widthPx,
           showLabel: placement.showLabel,
           showIcon: placement.showIcon,
         })),
@@ -1399,6 +1497,7 @@ export function moveExplorerChromeControlInResolvedSurfaces(input: {
             order: (index + 1) * 10,
             hidden: placement.hidden,
             sizeVariant: placement.sizeVariant,
+            widthPx: placement.widthPx,
             showLabel: placement.showLabel,
             showIcon: placement.showIcon,
           }));
