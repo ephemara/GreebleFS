@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyCircularBrushInPlace,
+  applyPolygonSelectionInPlace,
   applySparkSelection,
   applySweepSelection,
   buildCutoutBoundaryPoints,
@@ -119,5 +121,49 @@ describe("explorerImageCutoutMask", () => {
     expect(nextMask.alpha[2]).toBeGreaterThan(0);
     expect(nextMask.alpha[3]).toBe(0);
     expect(nextMask.alpha[4]).toBe(0);
+  });
+
+  it("direct circular brush paints without sampling source colors", () => {
+    const mask = {
+      width: 5,
+      height: 1,
+      alpha: new Uint8ClampedArray(5),
+    };
+
+    applyCircularBrushInPlace({
+      targetMask: mask,
+      centerX: 2,
+      centerY: 0,
+      radius: 2,
+      softness: 0,
+      mode: "add",
+    });
+
+    expect(mask.alpha[1]).toBeGreaterThan(0);
+    expect(mask.alpha[2]).toBe(255);
+    expect(mask.alpha[3]).toBeGreaterThan(0);
+  });
+
+  it("fills polygon selections for lasso-style regions", () => {
+    const mask = {
+      width: 5,
+      height: 5,
+      alpha: new Uint8ClampedArray(25),
+    };
+
+    applyPolygonSelectionInPlace({
+      targetMask: mask,
+      polygonPoints: [
+        { x: 1, y: 1 },
+        { x: 3, y: 1 },
+        { x: 3, y: 3 },
+        { x: 1, y: 3 },
+      ],
+      mode: "add",
+    });
+
+    expect(mask.alpha[2 + 2 * 5]).toBe(255);
+    expect(mask.alpha[0]).toBe(0);
+    expect(mask.alpha[4 + 4 * 5]).toBe(0);
   });
 });

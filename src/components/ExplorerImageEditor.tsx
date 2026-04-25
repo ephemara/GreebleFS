@@ -275,11 +275,7 @@ export const ExplorerImageEditor = forwardRef<
   const contentType = getImageEditorContentType(getImageExtension(imageName));
   const isEditableFormat = contentType !== null;
   const imageIsolationWorkflowMode: ExplorerImageCutoutWorkflowMode | null =
-    workflowTabId === "cutout"
-      ? "cutout"
-      : workflowTabId === "remove-background"
-        ? "removeBackground"
-        : null;
+    workflowTabId === "cutout" ? "cutout" : null;
   const isImageIsolationMode =
     imageIsolationWorkflowMode !== null && isEditableFormat;
   const showEditingChrome =

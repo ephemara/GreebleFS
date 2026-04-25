@@ -20,6 +20,11 @@ export type ExplorerImageCutoutImageDataLike = {
   data: Uint8ClampedArray;
 };
 
+export type ExplorerImageCutoutMaskPoint = {
+  x: number;
+  y: number;
+};
+
 function clampByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
@@ -464,6 +469,124 @@ export function applySweepSelectionInPlace(args: {
         continue;
       }
       targetMask.alpha[nextIndex] = clampByte(current * (1 - weight));
+    }
+  }
+}
+
+export function applyCircularBrushInPlace(args: {
+  targetMask: ExplorerImageCutoutAlphaMask;
+  centerX: number;
+  centerY: number;
+  radius: number;
+  softness: number;
+  mode: ExplorerImageCutoutEditMode;
+}): void {
+  const { targetMask, centerX, centerY, radius, softness, mode } = args;
+  if (
+    centerX < 0 ||
+    centerY < 0 ||
+    centerX >= targetMask.width ||
+    centerY >= targetMask.height
+  ) {
+    return;
+  }
+
+  const brushRadius = Math.max(2, Math.round(radius));
+  const brushRadiusSquared = brushRadius * brushRadius;
+  const softnessRatio = Math.max(0, Math.min(1, softness / 100));
+  const innerRatio = 1 - softnessRatio * 0.92;
+  const minX = Math.max(0, centerX - brushRadius);
+  const maxX = Math.min(targetMask.width - 1, centerX + brushRadius);
+  const minY = Math.max(0, centerY - brushRadius);
+  const maxY = Math.min(targetMask.height - 1, centerY + brushRadius);
+
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      const deltaX = x - centerX;
+      const deltaY = y - centerY;
+      const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+      if (distanceSquared > brushRadiusSquared) {
+        continue;
+      }
+
+      const distanceRatio = Math.sqrt(distanceSquared) / brushRadius;
+      const weight =
+        distanceRatio <= innerRatio
+          ? 1
+          : 1 - smoothstep(innerRatio, 1, distanceRatio);
+      const nextIndex = alphaIndex(targetMask.width, x, y);
+      const current = targetMask.alpha[nextIndex] ?? 0;
+      if (mode === "add") {
+        targetMask.alpha[nextIndex] = Math.max(current, clampByte(weight * 255));
+        continue;
+      }
+      targetMask.alpha[nextIndex] = clampByte(current * (1 - weight));
+    }
+  }
+}
+
+function polygonContainsPoint(
+  polygonPoints: readonly ExplorerImageCutoutMaskPoint[],
+  sampleX: number,
+  sampleY: number,
+): boolean {
+  let contains = false;
+  for (
+    let currentIndex = 0, previousIndex = polygonPoints.length - 1;
+    currentIndex < polygonPoints.length;
+    previousIndex = currentIndex, currentIndex += 1
+  ) {
+    const currentPoint = polygonPoints[currentIndex];
+    const previousPoint = polygonPoints[previousIndex];
+    if (!currentPoint || !previousPoint) {
+      continue;
+    }
+    const currentY = currentPoint.y + 0.5;
+    const previousY = previousPoint.y + 0.5;
+    const currentX = currentPoint.x + 0.5;
+    const previousX = previousPoint.x + 0.5;
+    const intersects =
+      (currentY > sampleY) !== (previousY > sampleY) &&
+      sampleX <
+        ((previousX - currentX) * (sampleY - currentY)) /
+          ((previousY - currentY) || 1e-6) +
+          currentX;
+    if (intersects) {
+      contains = !contains;
+    }
+  }
+  return contains;
+}
+
+export function applyPolygonSelectionInPlace(args: {
+  targetMask: ExplorerImageCutoutAlphaMask;
+  polygonPoints: readonly ExplorerImageCutoutMaskPoint[];
+  mode: ExplorerImageCutoutEditMode;
+}): void {
+  const { targetMask, polygonPoints, mode } = args;
+  if (polygonPoints.length < 3) {
+    return;
+  }
+
+  let minX = targetMask.width - 1;
+  let maxX = 0;
+  let minY = targetMask.height - 1;
+  let maxY = 0;
+
+  for (const point of polygonPoints) {
+    minX = Math.min(minX, Math.max(0, Math.min(targetMask.width - 1, point.x)));
+    maxX = Math.max(maxX, Math.max(0, Math.min(targetMask.width - 1, point.x)));
+    minY = Math.min(minY, Math.max(0, Math.min(targetMask.height - 1, point.y)));
+    maxY = Math.max(maxY, Math.max(0, Math.min(targetMask.height - 1, point.y)));
+  }
+
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      if (!polygonContainsPoint(polygonPoints, x + 0.5, y + 0.5)) {
+        continue;
+      }
+      const nextIndex = alphaIndex(targetMask.width, x, y);
+      targetMask.alpha[nextIndex] = mode === "add" ? 255 : 0;
     }
   }
 }

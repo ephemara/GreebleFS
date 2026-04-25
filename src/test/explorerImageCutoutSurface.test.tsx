@@ -31,6 +31,7 @@ type CanvasContextMock = {
   createImageData: (width: number, height: number) => ImageData;
   getImageData: (x?: number, y?: number, width?: number, height?: number) => ImageData;
   globalCompositeOperation: string;
+  __imageData?: ImageData;
 };
 
 type MockContextCarrier = HTMLCanvasElement & {
@@ -134,22 +135,59 @@ function installCanvasContextMock(): void {
         filter: "none",
         clearRect: vi.fn(),
         drawImage: vi.fn((image: { src?: string } | HTMLCanvasElement) => {
-          canvas.__lastDrawImageSrc =
-            image instanceof HTMLCanvasElement ? "" : String(image?.src ?? "");
+          if (image instanceof HTMLCanvasElement) {
+            const sourceCanvas = image as MockContextCarrier;
+            canvas.__lastDrawImageSrc = sourceCanvas.__lastDrawImageSrc ?? "";
+            const sourceImageData =
+              sourceCanvas.__mockContext?.__imageData ??
+              createTransparentImageData(canvas.width || 4, canvas.height || 4);
+            context.__imageData = {
+              width: sourceImageData.width,
+              height: sourceImageData.height,
+              data: new Uint8ClampedArray(sourceImageData.data),
+            } as ImageData;
+            return;
+          }
+
+          canvas.__lastDrawImageSrc = String(image?.src ?? "");
+          context.__imageData = resolveCanvasImageDataForSource(
+            canvas.__lastDrawImageSrc,
+            canvas.width || 4,
+            canvas.height || 4,
+          );
         }),
-        putImageData: vi.fn(),
+        putImageData: vi.fn((imageData: ImageData) => {
+          context.__imageData = {
+            width: imageData.width,
+            height: imageData.height,
+            data: new Uint8ClampedArray(imageData.data),
+          } as ImageData;
+        }),
         createImageData: (width: number, height: number) =>
           ({
             width,
             height,
             data: new Uint8ClampedArray(width * height * 4),
           }) as ImageData,
-        getImageData: (_x = 0, _y = 0, width = 4, height = 4) =>
-          resolveCanvasImageDataForSource(
+        getImageData: (_x = 0, _y = 0, width = 4, height = 4) => {
+          const storedImageData = context.__imageData;
+          if (
+            storedImageData &&
+            storedImageData.width === width &&
+            storedImageData.height === height
+          ) {
+            return {
+              width,
+              height,
+              data: new Uint8ClampedArray(storedImageData.data),
+            } as ImageData;
+          }
+          return resolveCanvasImageDataForSource(
             canvas.__lastDrawImageSrc ?? "",
             width,
             height,
-          ),
+          );
+        },
         globalCompositeOperation: "source-over",
       };
       canvas.__mockContext = context;
@@ -412,6 +450,12 @@ describe("ExplorerImageCutoutSurface", () => {
     });
 
     expect(screen.getByRole("button", { name: "Toggle refine controls" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Toggle tool palette" })).toBeInTheDocument();
+    expect(screen.getByTestId("explorer-image-cutout-tool-palette")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI Select" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Quick Select" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Magic Wand" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lasso" })).toBeInTheDocument();
     expect(
       screen.queryByText("Prompt-first cutout lane active."),
     ).not.toBeInTheDocument();
@@ -419,23 +463,25 @@ describe("ExplorerImageCutoutSurface", () => {
       "data-has-boundary",
       "false",
     );
-    expect(screen.getByText("Awaiting subject")).toBeInTheDocument();
+    expect(screen.getByText("Awaiting mask")).toBeInTheDocument();
   });
 
-  it("opens Remove BG with the shared top-bar actions and no explainer card", async () => {
-    renderSurface("removeBackground");
+  it("runs Auto Remove BG from the tool palette inside the single Cutout lane", async () => {
+    renderSurface("cutout");
+
+    await waitFor(() => {
+      expect(backendMocks.openExplorerImageCutoutSession).toHaveBeenCalledWith(
+        expect.objectContaining({ workflowMode: "cutout" }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Auto Remove BG" }));
 
     await waitFor(() => {
       expect(backendMocks.openExplorerImageCutoutSession).toHaveBeenCalledWith(
         expect.objectContaining({ workflowMode: "removeBackground" }),
       );
     });
-
-    expect(screen.getByRole("button", { name: "Toggle refine controls" })).toBeInTheDocument();
-    expect(
-      screen.queryByText("Auto background removal is ready."),
-    ).not.toBeInTheDocument();
-    expect(screen.getByTestId("explorer-image-cutout-zoom")).toBeInTheDocument();
   });
 
   it("sends positive and negative prompt clicks through the cutout backend", async () => {
@@ -560,6 +606,87 @@ describe("ExplorerImageCutoutSurface", () => {
     });
   });
 
+  it("applies Magic Wand locally without round-tripping through prompt inference", async () => {
+    renderSurface("cutout");
+
+    await waitFor(() => {
+      expect(backendMocks.openExplorerImageCutoutSession).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Magic Wand" }));
+
+    const stage = screen.getByTestId("explorer-image-cutout-stage");
+    const content = screen.getByTestId("explorer-image-cutout-stage-content");
+    setStageMetrics(stage, content);
+
+    fireEvent.pointerDown(stage, {
+      pointerId: 3,
+      clientX: 120,
+      clientY: 120,
+      button: 0,
+    });
+    fireEvent.pointerUp(stage, {
+      pointerId: 3,
+      clientX: 120,
+      clientY: 120,
+      button: 0,
+    });
+
+    await waitFor(() => {
+      expect(backendMocks.applyExplorerImageCutoutPrompts).not.toHaveBeenCalled();
+      expect(screen.getByTestId("explorer-image-cutout-marching-ants")).toHaveAttribute(
+        "data-has-boundary",
+        "true",
+      );
+    });
+  });
+
+  it("fills a local lasso selection inside the Cutout stage", async () => {
+    renderSurface("cutout");
+
+    await waitFor(() => {
+      expect(backendMocks.openExplorerImageCutoutSession).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Lasso" }));
+
+    const stage = screen.getByTestId("explorer-image-cutout-stage");
+    const content = screen.getByTestId("explorer-image-cutout-stage-content");
+    setStageMetrics(stage, content);
+
+    fireEvent.pointerDown(stage, {
+      pointerId: 4,
+      clientX: 80,
+      clientY: 80,
+      button: 0,
+    });
+    fireEvent.pointerMove(stage, {
+      pointerId: 4,
+      clientX: 160,
+      clientY: 90,
+      button: 0,
+    });
+    fireEvent.pointerMove(stage, {
+      pointerId: 4,
+      clientX: 140,
+      clientY: 160,
+      button: 0,
+    });
+    fireEvent.pointerUp(stage, {
+      pointerId: 4,
+      clientX: 82,
+      clientY: 82,
+      button: 0,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer-image-cutout-marching-ants")).toHaveAttribute(
+        "data-has-boundary",
+        "true",
+      );
+    });
+  });
+
   it("keeps refine controls hidden until requested and renders PremiumSlider-backed controls", async () => {
     renderSurface("cutout");
 
@@ -571,6 +698,7 @@ describe("ExplorerImageCutoutSurface", () => {
       screen.queryByTestId("explorer-image-cutout-refine-panel"),
     ).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Quick Select" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Toggle refine controls" }),
     );
@@ -579,13 +707,13 @@ describe("ExplorerImageCutoutSurface", () => {
       await screen.findByTestId("explorer-image-cutout-refine-panel"),
     ).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Brush Size" })).toBeInTheDocument();
-    expect(screen.getByRole("slider", { name: "Brush Reach" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Selection Reach" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Brush Softness" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Edge Softness" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Edge Pull" })).toBeInTheDocument();
   });
 
-  it("registers image preview context-menu overlays for Cutout and Remove BG lanes", async () => {
+  it("registers a compact adaptive preview context menu for the unified Cutout lane", async () => {
     const registerContextMenu = vi.fn();
     const { unmount } = renderSurface("cutout", {
       onRegisterContextMenuRegistration: registerContextMenu,
@@ -597,28 +725,11 @@ describe("ExplorerImageCutoutSurface", () => {
           previewKind: "image",
           baseActions: expect.arrayContaining([
             expect.objectContaining({ id: "image-cutout.reset-view" }),
+            expect.objectContaining({ id: "image-cutout.auto-remove-background" }),
+            expect.objectContaining({ id: "image-cutout.tools.toggle" }),
             expect.objectContaining({ id: "image-cutout.refine.toggle" }),
           ]),
-          workflowOverlays: expect.arrayContaining([
-            expect.objectContaining({
-              workflowTabId: "cutout",
-              actions: expect.arrayContaining([
-                expect.objectContaining({
-                  id: "image-cutout.selection.activate",
-                  title: "Return to Prompt Selection",
-                }),
-              ]),
-            }),
-            expect.objectContaining({
-              workflowTabId: "remove-background",
-              actions: expect.arrayContaining([
-                expect.objectContaining({
-                  id: "image-cutout.selection.activate",
-                  hidden: true,
-                }),
-              ]),
-            }),
-          ]),
+          workflowOverlays: [],
         }),
       );
     });

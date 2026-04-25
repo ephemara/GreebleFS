@@ -10,22 +10,28 @@ import {
 } from "react";
 
 import {
+  Bot,
   Copy,
   Eraser,
+  Palette,
   Pencil,
   RefreshCw,
   Save,
+  ScanLine,
+  Scissors,
   Sliders,
+  Sparkles,
   Undo2,
 } from "@/components/AppIcons";
 
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { matchesKeybinding } from "../config/hotkeys";
 import {
-  DEFAULT_IMAGE_CUTOUT_REFINE_TOOL_ID,
-  imageCutoutRefineToolDefinitions,
+  DEFAULT_IMAGE_CUTOUT_STAGE_TOOL_ID,
+  explorerImageCutoutStageToolDefinitions,
+  resolveExplorerImageCutoutStageToolDefinition,
   resolveExplorerImageIsolationLaneDefinition,
-  type ExplorerImageCutoutRefineToolId,
+  type ExplorerImageCutoutStageToolId,
   type ExplorerImageIsolationLaneDefinition,
   type ExplorerImageCutoutWorkflowMode,
 } from "../config/imageCutoutTools";
@@ -54,6 +60,9 @@ import {
   type ExplorerImageStageTransform,
 } from "./explorer/explorerImageStage";
 import {
+  applyCircularBrushInPlace,
+  applyPolygonSelectionInPlace,
+  applySparkSelection,
   applySweepSelectionInPlace,
   buildCutoutBoundaryPoints,
   cloneCutoutMaskAlpha,
@@ -63,6 +72,7 @@ import {
   type ExplorerImageCutoutAlphaMask,
   type ExplorerImageCutoutBoundaryPoint,
   type ExplorerImageCutoutEditMode,
+  type ExplorerImageCutoutMaskPoint,
   type ExplorerImageCutoutSourcePixels,
 } from "./explorer/explorerImageCutoutMask";
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
@@ -83,12 +93,6 @@ type ExplorerImageCutoutSurfaceProps = {
 };
 
 type CutoutStatusTone = "neutral" | "success" | "warning" | "error";
-
-type ExplorerImageCutoutStageToolId =
-  | "selection"
-  | "pan"
-  | "brush"
-  | "erase";
 
 type CutoutBoundarySnapshot = {
   width: number;
@@ -113,8 +117,8 @@ type ExplorerImageCutoutLaneState = {
   statusTone: CutoutStatusTone;
   statusMessage: string;
   transform: ExplorerImageStageTransform;
+  showToolPalette: boolean;
   showRefinePanel: boolean;
-  refineToolId: ExplorerImageCutoutRefineToolId;
   activeStageTool: ExplorerImageCutoutStageToolId;
   brushTolerance: number;
   brushSize: number;
@@ -127,8 +131,9 @@ type ExplorerImageCutoutLaneState = {
 type PendingStagePointerInteraction = {
   workflowMode: ExplorerImageCutoutWorkflowMode;
   pointerId: number;
-  dragIntent: "selectionCandidate" | "pan" | "nativeDrag";
-  negativePrompt: boolean;
+  dragIntent: "clickToolCandidate" | "pan" | "nativeDrag";
+  toolId: "aiSelect" | "magicWand";
+  negativeMode: boolean;
   startClientX: number;
   startClientY: number;
   startTransform: ExplorerImageStageTransform;
@@ -139,10 +144,28 @@ type PendingStagePointerInteraction = {
 type ActiveBrushStroke = {
   workflowMode: ExplorerImageCutoutWorkflowMode;
   pointerId: number;
+  toolId: "quickSelect" | "brush" | "erase";
   mode: ExplorerImageCutoutEditMode;
   workingMask: ExplorerImageCutoutAlphaMask;
   lastX: number;
   lastY: number;
+};
+
+type ActiveLassoStroke = {
+  workflowMode: ExplorerImageCutoutWorkflowMode;
+  pointerId: number;
+  mode: ExplorerImageCutoutEditMode;
+  points: ExplorerImageCutoutMaskPoint[];
+};
+
+type LoadedImageIsolationLane = {
+  snapshot: ExplorerImageCutoutSessionSnapshot;
+  sourcePreview: {
+    pixels: ExplorerImageCutoutSourcePixels;
+    canvas: HTMLCanvasElement;
+    usedFallback: boolean;
+  };
+  initialMask: ExplorerImageCutoutAlphaMask;
 };
 
 const DEFAULT_PREVIEW_MAX_DIMENSION = 960;
@@ -157,9 +180,9 @@ const DEFAULT_EDGE_SOFTNESS = 2;
 const DEFAULT_EDGE_PULL = 0;
 
 function resolveDefaultStageTool(
-  workflowMode: ExplorerImageCutoutWorkflowMode,
+  _workflowMode: ExplorerImageCutoutWorkflowMode,
 ): ExplorerImageCutoutStageToolId {
-  return workflowMode === "cutout" ? "selection" : "pan";
+  return DEFAULT_IMAGE_CUTOUT_STAGE_TOOL_ID;
 }
 
 function cloneMask(
@@ -180,12 +203,6 @@ function resolveLaneCopy(
   workflowMode: ExplorerImageCutoutWorkflowMode,
 ): ExplorerImageIsolationLaneDefinition {
   return resolveExplorerImageIsolationLaneDefinition(workflowMode);
-}
-
-function resolveWorkflowTabIdForIsolationMode(
-  workflowMode: ExplorerImageCutoutWorkflowMode,
-): string {
-  return workflowMode === "cutout" ? "cutout" : "remove-background";
 }
 
 function createDefaultLaneState(
@@ -209,8 +226,8 @@ function createDefaultLaneState(
     statusTone: "neutral",
     statusMessage: `Preparing ${lane.label.toLowerCase()}…`,
     transform: { ...DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM },
+    showToolPalette: true,
     showRefinePanel: false,
-    refineToolId: DEFAULT_IMAGE_CUTOUT_REFINE_TOOL_ID,
     activeStageTool: resolveDefaultStageTool(workflowMode),
     brushTolerance: DEFAULT_BRUSH_TOLERANCE,
     brushSize: DEFAULT_BRUSH_SIZE,
@@ -659,6 +676,49 @@ function CutoutSliderField({
   );
 }
 
+function toolPaletteStyle(): CSSProperties {
+  return {
+    ...floatingPanelStyle(),
+    display: "grid",
+    gap: 10,
+    padding: "12px",
+    maxWidth: "min(420px, calc(100% - 24px))",
+  };
+}
+
+function lassoOverlayStyle(isVisible: boolean): CSSProperties {
+  return {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+    opacity: isVisible ? 1 : 0,
+    transition: "opacity 120ms ease",
+  };
+}
+
+function renderCutoutToolIcon(
+  iconName: ReturnType<typeof resolveExplorerImageCutoutStageToolDefinition>["iconName"],
+): ReactNode {
+  switch (iconName) {
+    case "Bot":
+      return <Bot size={15} />;
+    case "ScanLine":
+      return <ScanLine size={15} />;
+    case "Sparkles":
+      return <Sparkles size={15} />;
+    case "Scissors":
+      return <Scissors size={15} />;
+    case "Pencil":
+      return <Pencil size={15} />;
+    case "Eraser":
+      return <Eraser size={15} />;
+    default:
+      return <Sparkles size={15} />;
+  }
+}
+
 export function ExplorerImageCutoutSurface({
   workflowMode,
   imageName: _imageName,
@@ -680,6 +740,7 @@ export function ExplorerImageCutoutSurface({
   const refreshPreviewFrameRef = useRef(0);
   const sourceGenerationRef = useRef(0);
   const activeBrushStrokeRef = useRef<ActiveBrushStroke | null>(null);
+  const activeLassoStrokeRef = useRef<ActiveLassoStroke | null>(null);
   const pendingStageInteractionRef =
     useRef<PendingStagePointerInteraction | null>(null);
   const laneStatesRef = useRef<
@@ -940,28 +1001,110 @@ export function ExplorerImageCutoutSurface({
     [getLaneState],
   );
 
-  const applyRefinePoint = useCallback(
+  const applyStrokePoint = useCallback(
     (
       lane: ExplorerImageCutoutLaneState,
       mask: ExplorerImageCutoutAlphaMask,
       point: { x: number; y: number },
+      toolId: "quickSelect" | "brush" | "erase",
       mode: ExplorerImageCutoutEditMode,
     ) => {
-      if (!lane.sourcePixels) {
+      if (toolId === "quickSelect") {
+        if (!lane.sourcePixels) {
+          return;
+        }
+        applySweepSelectionInPlace({
+          targetMask: mask,
+          sourcePixels: lane.sourcePixels,
+          centerX: point.x,
+          centerY: point.y,
+          radius: lane.brushSize,
+          tolerance: lane.brushTolerance,
+          softness: lane.brushSoftness,
+          mode,
+        });
         return;
       }
-      applySweepSelectionInPlace({
+
+      applyCircularBrushInPlace({
         targetMask: mask,
-        sourcePixels: lane.sourcePixels,
         centerX: point.x,
         centerY: point.y,
         radius: lane.brushSize,
-        tolerance: lane.brushTolerance,
         softness: lane.brushSoftness,
         mode,
       });
     },
     [],
+  );
+
+  const loadLaneSnapshot = useCallback(
+    async (
+      mode: ExplorerImageCutoutWorkflowMode,
+      existingSessionId: string | null,
+    ): Promise<LoadedImageIsolationLane> => {
+      const snapshot = existingSessionId
+        ? await resetExplorerImageCutoutSession(existingSessionId)
+        : await (async () => {
+            const sessionInput = await resolveCutoutSessionInput(sourceImageUrl, imagePath);
+            return await openExplorerImageCutoutSession({
+              inputDataUrl: sessionInput.inputDataUrl,
+              inputPath: sessionInput.inputPath,
+              logicalOutputPath: logicalOutputPath ?? imagePath,
+              previewMaxDimension: DEFAULT_PREVIEW_MAX_DIMENSION,
+              config: pythonRuntimeConfig,
+              modelId: cutoutModelId,
+              backendPreference: cutoutBackendPreference,
+              workflowMode: mode,
+            });
+          })();
+      const [sourcePreview, initialMask] = await Promise.all([
+        buildPreviewSourcePixelsWithFallback(
+          sourceImageUrl,
+          snapshot.cutoutPreviewDataUrl,
+          snapshot.previewWidth,
+          snapshot.previewHeight,
+        ),
+        buildMaskFromDataUrl(
+          snapshot.previewMask.dataUrl,
+          snapshot.previewWidth,
+          snapshot.previewHeight,
+        ),
+      ]);
+      return {
+        snapshot,
+        sourcePreview,
+        initialMask,
+      };
+    },
+    [
+      cutoutBackendPreference,
+      cutoutModelId,
+      imagePath,
+      logicalOutputPath,
+      pythonRuntimeConfig,
+      sourceImageUrl,
+    ],
+  );
+
+  const hydrateLaneFromLoadedSnapshot = useCallback(
+    (
+      mode: ExplorerImageCutoutWorkflowMode,
+      loadedLane: LoadedImageIsolationLane,
+      statusMessage: string,
+      statusTone: CutoutStatusTone,
+    ) => {
+      const lane = getLaneState(mode);
+      lane.sessionSnapshot = loadedLane.snapshot;
+      lane.sourcePixels = loadedLane.sourcePreview.pixels;
+      lane.sourcePreviewCanvas = loadedLane.sourcePreview.canvas;
+      lane.usedSourcePreviewFallback = loadedLane.sourcePreview.usedFallback;
+      lane.statusTone = statusTone;
+      lane.statusMessage = statusMessage;
+      lane.isBooting = false;
+      resetHistoryState(mode, loadedLane.initialMask);
+    },
+    [getLaneState, resetHistoryState],
   );
 
   const resolveExportMaskDataUrl = useCallback(
@@ -1048,16 +1191,13 @@ export function ExplorerImageCutoutSurface({
       syncLaneVisuals(mode);
 
       try {
-        const nextSnapshot = await resetExplorerImageCutoutSession(snapshot.sessionId);
-        const nextMask = await buildMaskFromDataUrl(
-          nextSnapshot.previewMask.dataUrl,
-          nextSnapshot.previewWidth,
-          nextSnapshot.previewHeight,
+        const loadedLane = await loadLaneSnapshot(mode, snapshot.sessionId);
+        hydrateLaneFromLoadedSnapshot(
+          mode,
+          loadedLane,
+          resolveLaneCopy(mode).resetLabel,
+          "success",
         );
-        lane.sessionSnapshot = nextSnapshot;
-        lane.statusTone = "success";
-        lane.statusMessage = resolveLaneCopy(mode).resetLabel;
-        resetHistoryState(mode, nextMask);
       } catch (error) {
         lane.statusTone = "error";
         lane.statusMessage = String(error);
@@ -1066,8 +1206,60 @@ export function ExplorerImageCutoutSurface({
         syncLaneVisuals(mode);
       }
     },
-    [getLaneState, resetHistoryState, syncLaneVisuals],
+    [getLaneState, hydrateLaneFromLoadedSnapshot, loadLaneSnapshot, syncLaneVisuals],
   );
+
+  const handleAutoRemoveBackground = useCallback(async () => {
+    const cutoutLane = getLaneState("cutout");
+    if (cutoutLane.isBooting || cutoutLane.isMutating) {
+      return;
+    }
+
+    const removeBackgroundLane = getLaneState("removeBackground");
+    cutoutLane.isMutating = true;
+    cutoutLane.statusTone = "neutral";
+    cutoutLane.statusMessage = "Running automatic background removal…";
+    syncLaneVisuals("cutout");
+
+    try {
+      const loadedLane = await loadLaneSnapshot(
+        "removeBackground",
+        removeBackgroundLane.sessionSnapshot?.sessionId ?? null,
+      );
+      hydrateLaneFromLoadedSnapshot(
+        "removeBackground",
+        loadedLane,
+        loadedLane.snapshot.diagnostics.message?.trim() ||
+          resolveLaneCopy("removeBackground").readyMessage,
+        loadedLane.sourcePreview.usedFallback ? "warning" : "success",
+      );
+
+      if (cutoutLane.baseMask) {
+        commitMaskHistory(
+          "cutout",
+          loadedLane.initialMask,
+          "Auto Remove BG merged into Cutout.",
+        );
+      } else {
+        resetHistoryState("cutout", loadedLane.initialMask);
+        cutoutLane.statusTone = "success";
+        cutoutLane.statusMessage = "Auto Remove BG merged into Cutout.";
+      }
+    } catch (error) {
+      cutoutLane.statusTone = "error";
+      cutoutLane.statusMessage = String(error);
+    } finally {
+      cutoutLane.isMutating = false;
+      syncLaneVisuals("cutout");
+    }
+  }, [
+    commitMaskHistory,
+    getLaneState,
+    hydrateLaneFromLoadedSnapshot,
+    loadLaneSnapshot,
+    resetHistoryState,
+    syncLaneVisuals,
+  ]);
 
   const handleSaveSibling = useCallback(async () => {
     const lane = getLaneState(workflowMode);
@@ -1225,56 +1417,27 @@ export function ExplorerImageCutoutSurface({
       syncLaneVisuals(mode);
 
       void (async () => {
-        let openedSessionId: string | null = null;
         try {
-          const sessionInput = await resolveCutoutSessionInput(sourceImageUrl, imagePath);
-          const snapshot = await openExplorerImageCutoutSession({
-            inputDataUrl: sessionInput.inputDataUrl,
-            inputPath: sessionInput.inputPath,
-            logicalOutputPath: logicalOutputPath ?? imagePath,
-            previewMaxDimension: DEFAULT_PREVIEW_MAX_DIMENSION,
-            config: pythonRuntimeConfig,
-            modelId: cutoutModelId,
-            backendPreference: cutoutBackendPreference,
-            workflowMode: mode,
-          });
-          openedSessionId = snapshot.sessionId;
-
-          const [sourcePreview, initialMask] = await Promise.all([
-            buildPreviewSourcePixelsWithFallback(
-              sourceImageUrl,
-              snapshot.cutoutPreviewDataUrl,
-              snapshot.previewWidth,
-              snapshot.previewHeight,
-            ),
-            buildMaskFromDataUrl(
-              snapshot.previewMask.dataUrl,
-              snapshot.previewWidth,
-              snapshot.previewHeight,
-            ),
-          ]);
+          const loadedLane = await loadLaneSnapshot(mode, null);
+          const snapshot = loadedLane.snapshot;
 
           const currentLane = laneStatesRef.current[mode];
           const isStale =
             sourceGenerationRef.current !== generation ||
             currentLane.bootRequestId !== requestId;
           if (isStale) {
-            if (openedSessionId) {
-              await closeExplorerImageCutoutSession(openedSessionId).catch(() => {});
-            }
+            await closeExplorerImageCutoutSession(snapshot.sessionId).catch(() => {});
             return;
           }
 
-          currentLane.sessionSnapshot = snapshot;
-          currentLane.sourcePixels = sourcePreview.pixels;
-          currentLane.sourcePreviewCanvas = sourcePreview.canvas;
-          currentLane.usedSourcePreviewFallback = sourcePreview.usedFallback;
-          currentLane.statusTone = sourcePreview.usedFallback ? "warning" : "success";
-          currentLane.statusMessage = sourcePreview.usedFallback
+          hydrateLaneFromLoadedSnapshot(
+            mode,
+            loadedLane,
+            loadedLane.sourcePreview.usedFallback
             ? `${laneDefinition.readyMessage} Source preview fallback is active, so prompt placement may feel slightly softer.`
-            : snapshot.diagnostics.message?.trim() || laneDefinition.readyMessage;
-          currentLane.isBooting = false;
-          resetHistoryState(mode, initialMask);
+            : snapshot.diagnostics.message?.trim() || laneDefinition.readyMessage,
+            loadedLane.sourcePreview.usedFallback ? "warning" : "success",
+          );
           if (mode === workflowMode) {
             focusSurface();
           }
@@ -1285,13 +1448,7 @@ export function ExplorerImageCutoutSurface({
             sourceGenerationRef.current !== generation ||
             currentLane.bootRequestId !== requestId;
           if (isStale) {
-            if (openedSessionId) {
-              void closeExplorerImageCutoutSession(openedSessionId).catch(() => {});
-            }
             return;
-          }
-          if (openedSessionId) {
-            void closeExplorerImageCutoutSession(openedSessionId).catch(() => {});
           }
           currentLane.isBooting = false;
           currentLane.statusTone = "error";
@@ -1306,10 +1463,10 @@ export function ExplorerImageCutoutSurface({
       cutoutModelId,
       focusSurface,
       getLaneState,
+      hydrateLaneFromLoadedSnapshot,
       imagePath,
-      logicalOutputPath,
+      loadLaneSnapshot,
       pythonRuntimeConfig,
-      resetHistoryState,
       sourceImageUrl,
       syncLaneVisuals,
       workflowMode,
@@ -1321,6 +1478,10 @@ export function ExplorerImageCutoutSurface({
       const activeBrushStroke = activeBrushStrokeRef.current;
       if (activeBrushStroke?.workflowMode === mode) {
         activeBrushStrokeRef.current = null;
+      }
+      const activeLassoStroke = activeLassoStrokeRef.current;
+      if (activeLassoStroke?.workflowMode === mode) {
+        activeLassoStrokeRef.current = null;
       }
       const pendingInteraction = pendingStageInteractionRef.current;
       if (pendingInteraction?.workflowMode === mode) {
@@ -1541,16 +1702,15 @@ export function ExplorerImageCutoutSurface({
     workflowMode,
   ]);
 
+  const handleToolPaletteToggle = useCallback(() => {
+    const lane = getLaneState(workflowMode);
+    lane.showToolPalette = !lane.showToolPalette;
+    invalidateActiveLane();
+  }, [getLaneState, invalidateActiveLane, workflowMode]);
+
   const handleRefineToggle = useCallback(() => {
     const lane = getLaneState(workflowMode);
-    const nextShowRefinePanel = !lane.showRefinePanel;
-    lane.showRefinePanel = nextShowRefinePanel;
-    if (!nextShowRefinePanel) {
-      lane.activeStageTool = resolveDefaultStageTool(workflowMode);
-    } else if (lane.activeStageTool === "selection" || lane.activeStageTool === "pan") {
-      lane.activeStageTool =
-        lane.refineToolId === "erase" ? "erase" : "brush";
-    }
+    lane.showRefinePanel = !lane.showRefinePanel;
     invalidateActiveLane();
   }, [getLaneState, invalidateActiveLane, workflowMode]);
 
@@ -1558,13 +1718,7 @@ export function ExplorerImageCutoutSurface({
     (nextTool: ExplorerImageCutoutStageToolId) => {
       const lane = getLaneState(workflowMode);
       lane.activeStageTool = nextTool;
-      if (nextTool === "selection" || nextTool === "pan") {
-        lane.showRefinePanel = false;
-      }
-      if (nextTool === "brush" || nextTool === "erase") {
-        lane.showRefinePanel = true;
-        lane.refineToolId = nextTool === "erase" ? "erase" : "brush";
-      }
+      lane.showToolPalette = true;
       invalidateActiveLane();
     },
     [getLaneState, invalidateActiveLane, workflowMode],
@@ -1574,9 +1728,6 @@ export function ExplorerImageCutoutSurface({
     if (!onRegisterContextMenuRegistration) {
       return;
     }
-
-    const cutoutLane = resolveLaneCopy("cutout");
-    const removeBackgroundLane = resolveLaneCopy("removeBackground");
 
     onRegisterContextMenuRegistration({
       previewKind: "image",
@@ -1602,83 +1753,52 @@ export function ExplorerImageCutoutSurface({
           onSelect: () => handleResetLane(workflowMode),
         },
         {
+          id: "image-cutout.auto-remove-background",
+          title: "Auto Remove BG",
+          description: "Run automatic background removal and merge the result into Cutout.",
+          iconName: "Sparkles",
+          group: "preview",
+          defaultOrder: 30,
+          priority: 30,
+          onSelect: () => {
+            void handleAutoRemoveBackground();
+          },
+        },
+        {
+          id: "image-cutout.tools.toggle",
+          title: activeLane.showToolPalette ? "Hide Tool Palette" : "Show Tool Palette",
+          description: "Reveal the compact cutout tool palette.",
+          iconName: "Palette",
+          group: "preview",
+          defaultOrder: 40,
+          priority: 40,
+          onSelect: () => handleToolPaletteToggle(),
+        },
+        {
           id: "image-cutout.refine.toggle",
           title: activeLane.showRefinePanel ? "Hide Refine Controls" : "Show Refine Controls",
           description: "Reveal the compact edge and brush refinement controls.",
           iconName: "Sliders",
           group: "preview",
-          defaultOrder: 30,
-          priority: 30,
-          onSelect: () => handleRefineToggle(),
-        },
-        {
-          id: "image-cutout.refine.brush",
-          title: "Refine With Brush",
-          description: "Switch into additive brush refinement.",
-          iconName: "Pencil",
-          group: "preview",
-          defaultOrder: 40,
-          priority: 40,
-          onSelect: () => handleSelectStageTool("brush"),
-        },
-        {
-          id: "image-cutout.refine.erase",
-          title: "Refine With Erase",
-          description: "Switch into subtractive brush refinement.",
-          iconName: "Eraser",
-          group: "preview",
           defaultOrder: 50,
           priority: 50,
-          onSelect: () => handleSelectStageTool("erase"),
+          onSelect: () => handleRefineToggle(),
         },
       ],
-      workflowOverlays: [
-        {
-          workflowTabId: resolveWorkflowTabIdForIsolationMode("cutout"),
-          actions: [
-            {
-              id: "image-cutout.reset-workflow",
-              title: cutoutLane.resetLabel,
-              onSelect: () => handleResetLane("cutout"),
-            },
-            {
-              id: "image-cutout.selection.activate",
-              title: "Return to Prompt Selection",
-              description: "Switch back to semantic positive and negative prompt clicks.",
-              iconName: "Sparkles",
-              group: "preview",
-              defaultOrder: 35,
-              priority: 35,
-              onSelect: () => handleSelectStageTool("selection"),
-            },
-          ],
-        },
-        {
-          workflowTabId: resolveWorkflowTabIdForIsolationMode("removeBackground"),
-          actions: [
-            {
-              id: "image-cutout.reset-workflow",
-              title: removeBackgroundLane.resetLabel,
-              onSelect: () => handleResetLane("removeBackground"),
-            },
-            {
-              id: "image-cutout.selection.activate",
-              hidden: true,
-            },
-          ],
-        },
-      ],
+      workflowOverlays: [],
     });
 
     return () => {
       onRegisterContextMenuRegistration(null);
     };
   }, [
+    activeLane.showToolPalette,
+    handleAutoRemoveBackground,
+    handleToolPaletteToggle,
     activeLane.showRefinePanel,
     handleRefineToggle,
     handleResetLane,
     handleResetStageView,
-    handleSelectStageTool,
     onRegisterContextMenuRegistration,
     workflowMode,
   ]);
@@ -1687,7 +1807,8 @@ export function ExplorerImageCutoutSurface({
     (
       event: ReactPointerEvent<HTMLDivElement>,
       point: { x: number; y: number },
-      stageTool: "brush" | "erase",
+      stageTool: "quickSelect" | "brush" | "erase",
+      negativeMode = false,
     ) => {
       const lane = getLaneState(workflowMode);
       const baseMask = lane.baseMask;
@@ -1697,11 +1818,12 @@ export function ExplorerImageCutoutSurface({
 
       const workingMask = cloneMask(baseMask);
       const editMode: ExplorerImageCutoutEditMode =
-        stageTool === "erase" ? "subtract" : "add";
-      applyRefinePoint(lane, workingMask, point, editMode);
+        stageTool === "erase" || negativeMode ? "subtract" : "add";
+      applyStrokePoint(lane, workingMask, point, stageTool, editMode);
       activeBrushStrokeRef.current = {
         workflowMode,
         pointerId: event.pointerId,
+        toolId: stageTool,
         mode: editMode,
         workingMask,
         lastX: point.x,
@@ -1711,12 +1833,16 @@ export function ExplorerImageCutoutSurface({
       previewMaskDuringStroke(
         workflowMode,
         workingMask,
-        editMode === "add"
-          ? "Refining the mask…"
-          : "Trimming the mask…",
+        stageTool === "quickSelect"
+          ? editMode === "add"
+            ? "Quick Select is growing the mask…"
+            : "Quick Select is subtracting from the mask…"
+          : editMode === "add"
+            ? "Painting into the mask…"
+            : "Erasing from the mask…",
       );
     },
-    [applyRefinePoint, getLaneState, previewMaskDuringStroke, workflowMode],
+    [applyStrokePoint, getLaneState, previewMaskDuringStroke, workflowMode],
   );
 
   const continueBrushStroke = useCallback(
@@ -1757,10 +1883,11 @@ export function ExplorerImageCutoutSurface({
             activeBrushStroke.lastY + (deltaY * stepIndex) / stepCount,
           ),
         };
-        applyRefinePoint(
+        applyStrokePoint(
           lane,
           activeBrushStroke.workingMask,
           stepPoint,
+          activeBrushStroke.toolId,
           activeBrushStroke.mode,
         );
       }
@@ -1770,13 +1897,17 @@ export function ExplorerImageCutoutSurface({
       previewMaskDuringStroke(
         workflowMode,
         activeBrushStroke.workingMask,
-        activeBrushStroke.mode === "add"
-          ? "Refining the mask…"
-          : "Trimming the mask…",
+        activeBrushStroke.toolId === "quickSelect"
+          ? activeBrushStroke.mode === "add"
+            ? "Quick Select is growing the mask…"
+            : "Quick Select is subtracting from the mask…"
+          : activeBrushStroke.mode === "add"
+            ? "Painting into the mask…"
+            : "Erasing from the mask…",
       );
     },
     [
-      applyRefinePoint,
+      applyStrokePoint,
       getLaneState,
       previewMaskDuringStroke,
       resolveMaskPointFromClient,
@@ -1793,11 +1924,127 @@ export function ExplorerImageCutoutSurface({
     commitMaskHistory(
       workflowMode,
       activeBrushStroke.workingMask,
-      activeBrushStroke.mode === "add"
-        ? "Brush refinement added to the mask."
-        : "Brush refinement trimmed the mask.",
+      activeBrushStroke.toolId === "quickSelect"
+        ? activeBrushStroke.mode === "add"
+          ? "Quick Select added to the mask."
+          : "Quick Select trimmed the mask."
+        : activeBrushStroke.mode === "add"
+          ? "Brush paint added to the mask."
+          : "Brush erase trimmed the mask.",
     );
   }, [commitMaskHistory, workflowMode]);
+
+  const beginLassoStroke = useCallback(
+    (
+      event: ReactPointerEvent<HTMLDivElement>,
+      point: { x: number; y: number },
+      negativeMode: boolean,
+    ) => {
+      activeLassoStrokeRef.current = {
+        workflowMode,
+        pointerId: event.pointerId,
+        mode: negativeMode ? "subtract" : "add",
+        points: [{ x: point.x, y: point.y }],
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const lane = getLaneState(workflowMode);
+      lane.statusTone = "neutral";
+      lane.statusMessage = negativeMode
+        ? "Drawing a subtractive lasso…"
+        : "Drawing an additive lasso…";
+      invalidateActiveLane();
+    },
+    [getLaneState, invalidateActiveLane, workflowMode],
+  );
+
+  const continueLassoStroke = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const activeLassoStroke = activeLassoStrokeRef.current;
+      if (
+        !activeLassoStroke ||
+        activeLassoStroke.workflowMode !== workflowMode ||
+        event.pointerId !== activeLassoStroke.pointerId
+      ) {
+        return;
+      }
+
+      const point = resolveMaskPointFromClient(
+        workflowMode,
+        event.clientX,
+        event.clientY,
+      );
+      if (!point) {
+        return;
+      }
+
+      const lastPoint =
+        activeLassoStroke.points[activeLassoStroke.points.length - 1] ?? null;
+      if (lastPoint && lastPoint.x === point.x && lastPoint.y === point.y) {
+        return;
+      }
+      activeLassoStroke.points.push({ x: point.x, y: point.y });
+      invalidateActiveLane();
+    },
+    [invalidateActiveLane, resolveMaskPointFromClient, workflowMode],
+  );
+
+  const endLassoStroke = useCallback(() => {
+    const activeLassoStroke = activeLassoStrokeRef.current;
+    if (!activeLassoStroke || activeLassoStroke.workflowMode !== workflowMode) {
+      return;
+    }
+    activeLassoStrokeRef.current = null;
+
+    const lane = getLaneState(workflowMode);
+    const baseMask = lane.baseMask;
+    if (!baseMask || activeLassoStroke.points.length < 3) {
+      lane.statusTone = "warning";
+      lane.statusMessage = "Lasso path was too short to make a selection.";
+      invalidateActiveLane();
+      return;
+    }
+
+    const workingMask = cloneMask(baseMask);
+    applyPolygonSelectionInPlace({
+      targetMask: workingMask,
+      polygonPoints: activeLassoStroke.points,
+      mode: activeLassoStroke.mode,
+    });
+    commitMaskHistory(
+      workflowMode,
+      workingMask,
+      activeLassoStroke.mode === "add"
+        ? "Lasso added to the mask."
+        : "Lasso removed from the mask.",
+    );
+  }, [commitMaskHistory, getLaneState, invalidateActiveLane, workflowMode]);
+
+  const handleApplyMagicWand = useCallback(
+    (point: { x: number; y: number }, negativeMode: boolean) => {
+      const lane = getLaneState(workflowMode);
+      const baseMask = lane.baseMask;
+      if (!baseMask || !lane.sourcePixels) {
+        return;
+      }
+
+      const nextMask = applySparkSelection({
+        baseMask,
+        sourcePixels: lane.sourcePixels,
+        centerX: point.x,
+        centerY: point.y,
+        tolerance: lane.brushTolerance,
+        mode: negativeMode ? "subtract" : "add",
+      });
+      commitMaskHistory(
+        workflowMode,
+        nextMask,
+        negativeMode
+          ? "Magic Wand removed the clicked region."
+          : "Magic Wand added the clicked region.",
+      );
+    },
+    [commitMaskHistory, getLaneState, workflowMode],
+  );
 
   const handleStagePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1824,26 +2071,68 @@ export function ExplorerImageCutoutSurface({
       }
 
       event.preventDefault();
+      const forcePanGesture = event.button === 1;
+      const negativeMode = event.altKey || event.button === 2;
 
-      if (lane.activeStageTool === "brush" || lane.activeStageTool === "erase") {
-        beginBrushStroke(event, point, lane.activeStageTool);
+      if (event.shiftKey) {
+        pendingStageInteractionRef.current = {
+          workflowMode,
+          pointerId: event.pointerId,
+          dragIntent: "nativeDrag",
+          toolId: lane.activeStageTool === "magicWand" ? "magicWand" : "aiSelect",
+          negativeMode,
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          startTransform: lane.transform,
+          hasDragged: false,
+          nativeDragStarted: false,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
         return;
       }
 
-      const selectionToolActive =
-        workflowMode === "cutout" && lane.activeStageTool === "selection";
-      const negativePrompt = selectionToolActive && (event.altKey || event.button === 2);
-      const dragIntent = event.shiftKey
-        ? "nativeDrag"
-        : selectionToolActive
-          ? "selectionCandidate"
-          : "pan";
+      if (forcePanGesture) {
+        pendingStageInteractionRef.current = {
+          workflowMode,
+          pointerId: event.pointerId,
+          dragIntent: "pan",
+          toolId: lane.activeStageTool === "magicWand" ? "magicWand" : "aiSelect",
+          negativeMode,
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          startTransform: lane.transform,
+          hasDragged: false,
+          nativeDragStarted: false,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
+
+      if (
+        lane.activeStageTool === "quickSelect" ||
+        lane.activeStageTool === "brush" ||
+        lane.activeStageTool === "erase"
+      ) {
+        beginBrushStroke(
+          event,
+          point,
+          lane.activeStageTool,
+          lane.activeStageTool === "quickSelect" ? negativeMode : false,
+        );
+        return;
+      }
+
+      if (lane.activeStageTool === "lasso") {
+        beginLassoStroke(event, point, negativeMode);
+        return;
+      }
 
       pendingStageInteractionRef.current = {
         workflowMode,
         pointerId: event.pointerId,
-        dragIntent,
-        negativePrompt,
+        dragIntent: "clickToolCandidate",
+        toolId: lane.activeStageTool === "magicWand" ? "magicWand" : "aiSelect",
+        negativeMode,
         startClientX: event.clientX,
         startClientY: event.clientY,
         startTransform: lane.transform,
@@ -1853,6 +2142,7 @@ export function ExplorerImageCutoutSurface({
       event.currentTarget.setPointerCapture(event.pointerId);
     },
     [
+      beginLassoStroke,
       beginBrushStroke,
       focusSurface,
       getLaneState,
@@ -1864,6 +2154,7 @@ export function ExplorerImageCutoutSurface({
   const handleStagePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       continueBrushStroke(event);
+      continueLassoStroke(event);
 
       const pendingInteraction = pendingStageInteractionRef.current;
       if (
@@ -1905,6 +2196,7 @@ export function ExplorerImageCutoutSurface({
     },
     [
       continueBrushStroke,
+      continueLassoStroke,
       getLaneState,
       invalidateActiveLane,
       stageNativeDrag,
@@ -1927,6 +2219,15 @@ export function ExplorerImageCutoutSurface({
         endBrushStroke();
       }
 
+      const activeLassoStroke = activeLassoStrokeRef.current;
+      if (
+        activeLassoStroke &&
+        activeLassoStroke.workflowMode === workflowMode &&
+        event.pointerId === activeLassoStroke.pointerId
+      ) {
+        endLassoStroke();
+      }
+
       const pendingInteraction = pendingStageInteractionRef.current;
       if (
         !pendingInteraction ||
@@ -1940,7 +2241,7 @@ export function ExplorerImageCutoutSurface({
       clearStagePointer();
 
       if (
-        pendingInteraction.dragIntent === "selectionCandidate" &&
+        pendingInteraction.dragIntent === "clickToolCandidate" &&
         !pendingInteraction.hasDragged
       ) {
         const point = resolveMaskPointFromClient(
@@ -1949,17 +2250,23 @@ export function ExplorerImageCutoutSurface({
           event.clientY,
         );
         if (point) {
-          void handleApplyPrompt(
-            pendingInteraction.negativePrompt ? "negative" : "positive",
-            point.xNorm,
-            point.yNorm,
-          );
+          if (pendingInteraction.toolId === "magicWand") {
+            handleApplyMagicWand(point, pendingInteraction.negativeMode);
+          } else {
+            void handleApplyPrompt(
+              pendingInteraction.negativeMode ? "negative" : "positive",
+              point.xNorm,
+              point.yNorm,
+            );
+          }
         }
       }
     },
     [
       clearStagePointer,
       endBrushStroke,
+      endLassoStroke,
+      handleApplyMagicWand,
       handleApplyPrompt,
       resolveMaskPointFromClient,
       workflowMode,
@@ -1968,8 +2275,9 @@ export function ExplorerImageCutoutSurface({
 
   const handleStagePointerCancel = useCallback(() => {
     endBrushStroke();
+    endLassoStroke();
     clearStagePointer();
-  }, [clearStagePointer, endBrushStroke]);
+  }, [clearStagePointer, endBrushStroke, endLassoStroke]);
 
   const handleRefineSliderChange = useCallback(
     (
@@ -1993,11 +2301,22 @@ export function ExplorerImageCutoutSurface({
   const activeHistoryLength = activeLane.history.length;
   const canUndo = activeLane.historyIndex > 0;
   const canRedo = activeLane.historyIndex + 1 < activeHistoryLength;
+  const activeToolDefinition = resolveExplorerImageCutoutStageToolDefinition(
+    activeLane.activeStageTool,
+  );
+  const activeLassoPoints =
+    activeLassoStrokeRef.current?.workflowMode === workflowMode
+      ? activeLassoStrokeRef.current.points
+      : [];
   const stageCursor = activeLane.isMutating
     ? "progress"
-    : activeLane.activeStageTool === "brush" || activeLane.activeStageTool === "erase"
+    : activeLane.activeStageTool === "quickSelect" ||
+        activeLane.activeStageTool === "brush" ||
+        activeLane.activeStageTool === "erase" ||
+        activeLane.activeStageTool === "lasso"
       ? "crosshair"
-      : activeLane.activeStageTool === "selection"
+      : activeLane.activeStageTool === "aiSelect" ||
+          activeLane.activeStageTool === "magicWand"
         ? "cell"
         : "grab";
   const zoomPercent = Math.round(activeLane.transform.scale * 100);
@@ -2017,12 +2336,62 @@ export function ExplorerImageCutoutSurface({
           inset: 12,
           display: "flex",
           alignItems: "flex-start",
-          justifyContent: "flex-end",
+          justifyContent: "space-between",
           gap: 12,
           pointerEvents: "none",
           zIndex: 3,
         }}
       >
+        {activeLane.showToolPalette ? (
+          <div
+            data-testid="explorer-image-cutout-tool-palette"
+            style={{
+              ...toolPaletteStyle(),
+              pointerEvents: "auto",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {explorerImageCutoutStageToolDefinitions.map((toolDefinition, index) => (
+                <ExplorerIsolationButton
+                  key={toolDefinition.id}
+                  ariaLabel={toolDefinition.ariaLabel}
+                  title={toolDefinition.description}
+                  active={activeLane.activeStageTool === toolDefinition.id}
+                  disabled={activeLane.isBooting || activeLane.isMutating}
+                  motionStepIndex={index}
+                  onClick={() => handleSelectStageTool(toolDefinition.id)}
+                >
+                  {renderCutoutToolIcon(toolDefinition.iconName)}
+                  <span>{toolDefinition.label}</span>
+                </ExplorerIsolationButton>
+              ))}
+            </div>
+
+            <div style={controlGroupStyle()}>
+              <ExplorerIsolationButton
+                ariaLabel="Auto Remove BG"
+                title="Run automatic background removal and merge it into Cutout"
+                disabled={activeLane.isBooting || activeLane.isMutating}
+                motionStepIndex={explorerImageCutoutStageToolDefinitions.length}
+                onClick={() => {
+                  void handleAutoRemoveBackground();
+                }}
+              >
+                <Sparkles size={15} />
+                <span>Auto Remove BG</span>
+              </ExplorerIsolationButton>
+            </div>
+          </div>
+        ) : (
+          <div />
+        )}
+
         <div
           style={{
             ...floatingPanelStyle(),
@@ -2071,12 +2440,24 @@ export function ExplorerImageCutoutSurface({
           </ExplorerIsolationButton>
 
           <ExplorerIsolationButton
+            ariaLabel="Toggle tool palette"
+            title="Toggle tool palette"
+            active={activeLane.showToolPalette}
+            variant="action"
+            disabled={activeLane.isBooting || activeLane.isMutating}
+            motionStepIndex={3}
+            onClick={handleToolPaletteToggle}
+          >
+            <Palette size={15} />
+          </ExplorerIsolationButton>
+
+          <ExplorerIsolationButton
             ariaLabel="Toggle refine controls"
             title="Toggle refine controls"
             active={activeLane.showRefinePanel}
             variant="action"
             disabled={activeLane.isBooting || activeLane.isMutating}
-            motionStepIndex={3}
+            motionStepIndex={4}
             onClick={handleRefineToggle}
           >
             <Sliders size={15} />
@@ -2087,7 +2468,7 @@ export function ExplorerImageCutoutSurface({
             title="Save sibling PNG"
             variant="action"
             disabled={!activeLane.sessionSnapshot || activeLane.isMutating}
-            motionStepIndex={4}
+            motionStepIndex={5}
             onClick={() => {
               void handleSaveSibling();
             }}
@@ -2100,7 +2481,7 @@ export function ExplorerImageCutoutSurface({
             title="Copy cutout to clipboard"
             variant="action"
             disabled={!activeLane.sessionSnapshot || activeLane.isMutating}
-            motionStepIndex={5}
+            motionStepIndex={6}
             onClick={() => {
               void handleCopyToClipboard();
             }}
@@ -2139,6 +2520,27 @@ export function ExplorerImageCutoutSurface({
             data-has-boundary={activeBoundaryVisible ? "true" : "false"}
             style={marchingAntsCanvasStyle(activeBoundaryVisible)}
           />
+          <svg
+            aria-hidden
+            data-testid="explorer-image-cutout-lasso-overlay"
+            viewBox={
+              activeLane.baseMask
+                ? `0 0 ${activeLane.baseMask.width} ${activeLane.baseMask.height}`
+                : "0 0 1 1"
+            }
+            style={lassoOverlayStyle(activeLassoPoints.length > 1)}
+          >
+            {activeLassoPoints.length > 1 ? (
+              <polygon
+                points={activeLassoPoints.map((point) => `${point.x},${point.y}`).join(" ")}
+                fill="color-mix(in srgb, var(--overlay-accent) 16%, transparent)"
+                stroke="var(--overlay-accent)"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+          </svg>
         </div>
       </div>
 
@@ -2163,7 +2565,14 @@ export function ExplorerImageCutoutSurface({
         }}
       >
         <span data-testid="explorer-image-cutout-zoom">{zoomPercent}%</span>
-        <span>{activeBoundaryVisible ? `${activeLaneDefinition.label} ready` : "Awaiting subject"}</span>
+        <span>{activeToolDefinition.label}</span>
+        <span>
+          {activeLane.isBooting
+            ? "Preparing"
+            : activeBoundaryVisible
+              ? `${activeLaneDefinition.label} ready`
+              : "Awaiting mask"}
+        </span>
         <span>{activeLane.sessionSnapshot ? `${activeLane.sessionSnapshot.previewWidth}×${activeLane.sessionSnapshot.previewHeight}` : "—"}</span>
       </div>
 
@@ -2191,51 +2600,26 @@ export function ExplorerImageCutoutSurface({
                 alignItems: "center",
                 justifyContent: "space-between",
                 gap: 12,
-                flexWrap: "wrap",
               }}
             >
-              <div style={controlGroupStyle()}>
-                {imageCutoutRefineToolDefinitions.map((toolDefinition, index) => {
-                  const isActive =
-                    activeLane.activeStageTool ===
-                    (toolDefinition.id === "erase" ? "erase" : "brush");
-                  const ToolIcon = toolDefinition.id === "erase" ? Eraser : Pencil;
-                  return (
-                    <ExplorerIsolationButton
-                      key={toolDefinition.id}
-                      ariaLabel={toolDefinition.ariaLabel}
-                      title={toolDefinition.description}
-                      active={isActive}
-                      disabled={activeLane.isBooting || activeLane.isMutating}
-                      motionStepIndex={index}
-                      onClick={() =>
-                        handleSelectStageTool(
-                          toolDefinition.id === "erase" ? "erase" : "brush",
-                        )
-                      }
-                    >
-                      <ToolIcon size={15} />
-                    </ExplorerIsolationButton>
-                  );
-                })}
-              </div>
-
-              <div
+              <span
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
+                  color: "var(--overlay-text-primary)",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {activeToolDefinition.label} Settings
+              </span>
+              <span
+                style={{
                   color: "var(--overlay-text-muted)",
                   fontSize: 11,
                 }}
               >
-                <span>
-                  {activeLane.activeStageTool === "erase" ? "Erase" : "Brush"}
-                </span>
-                <span>
-                  Shift-drag to drag out the transparent PNG.
-                </span>
-              </div>
+                Edge finish and brush response
+              </span>
             </div>
 
             <div
@@ -2245,37 +2629,43 @@ export function ExplorerImageCutoutSurface({
                 gap: 12,
               }}
             >
-              <CutoutSliderField
-                label="Brush Size"
-                value={activeLane.brushSize}
-                min={4}
-                max={96}
-                step={1}
-                onChange={(value) => handleRefineSliderChange("brushSize", value)}
-                helper="Larger brushes cover more nearby pixels per stroke."
-              />
-              <CutoutSliderField
-                label="Brush Reach"
-                value={activeLane.brushTolerance}
-                min={4}
-                max={100}
-                step={1}
-                onChange={(value) =>
-                  handleRefineSliderChange("brushTolerance", value)
-                }
-                helper="Higher reach accepts a wider color range around the stroke."
-              />
-              <CutoutSliderField
-                label="Brush Softness"
-                value={activeLane.brushSoftness}
-                min={0}
-                max={100}
-                step={1}
-                onChange={(value) =>
-                  handleRefineSliderChange("brushSoftness", value)
-                }
-                helper="Soft brushes taper the edge instead of carving a hard circle."
-              />
+              {activeToolDefinition.usesBrushSize ? (
+                <CutoutSliderField
+                  label="Brush Size"
+                  value={activeLane.brushSize}
+                  min={4}
+                  max={96}
+                  step={1}
+                  onChange={(value) => handleRefineSliderChange("brushSize", value)}
+                  helper="Larger strokes cover more nearby pixels per pass."
+                />
+              ) : null}
+              {activeToolDefinition.usesBrushReach ? (
+                <CutoutSliderField
+                  label="Selection Reach"
+                  value={activeLane.brushTolerance}
+                  min={4}
+                  max={100}
+                  step={1}
+                  onChange={(value) =>
+                    handleRefineSliderChange("brushTolerance", value)
+                  }
+                  helper="Higher reach accepts a wider color range around the sample."
+                />
+              ) : null}
+              {activeToolDefinition.usesBrushSoftness ? (
+                <CutoutSliderField
+                  label="Brush Softness"
+                  value={activeLane.brushSoftness}
+                  min={0}
+                  max={100}
+                  step={1}
+                  onChange={(value) =>
+                    handleRefineSliderChange("brushSoftness", value)
+                  }
+                  helper="Softer falloff feathers the stroke instead of carving a hard edge."
+                />
+              ) : null}
               <CutoutSliderField
                 label="Edge Softness"
                 value={activeLane.edgeSoftness}

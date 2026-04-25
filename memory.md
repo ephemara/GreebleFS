@@ -1,3 +1,17 @@
+# 2026-04-25 - Image Cutout Is Back To One Real Lane With A Local Tool Palette
+
+- Explorer image isolation no longer splits the product into `Cutout` versus `Remove BG` header tabs. The durable shell is back to one visible `Cutout` wildcard tab, with automatic background removal exposed as an in-lane tool action instead of pretending to be a separate workflow lane in the preview header.
+- Durable implementation shape:
+  - `src/config/imageCutoutTools.ts` now treats image isolation as one visible workflow tab plus a tool catalog. The hidden `removeBackground` lane metadata still exists for internal bootstrap/reset use, but only `Cutout` registers into the preview header. The same config file now owns the compact tool palette definitions for `AI Select`, `Quick Select`, `Magic Wand`, `Lasso`, `Brush`, and `Erase`.
+  - `src/components/explorer/explorerImageCutoutMask.ts` now has two new local primitives that future tools should reuse instead of burying logic in React: `applyCircularBrushInPlace(...)` for direct paint/erase strokes and `applyPolygonSelectionInPlace(...)` for freeform lasso fills.
+  - `src/components/ExplorerImageCutoutSurface.tsx` was re-centered around a single cutout lane with a compact floating tool palette. `AI Select` still uses the backend prompt seam, but `Magic Wand`, `Quick Select`, `Lasso`, `Brush`, and `Erase` are now real local tools, `Auto Remove BG` merges its result into the current cutout history, and the top-right chrome stays icon-first with `Tools` and `Refine` as compact inspectors instead of extra header tabs or explainer cards.
+  - The preview-pane adaptive context menu for image cutout was intentionally kept minimal even after the tool expansion. The lane now registers only a compact set of preview actions (`Reset View`, `Reset Isolation`, `Auto Remove BG`, `Show/Hide Tool Palette`, `Show/Hide Refine Controls`) rather than mirroring every tool into right-click.
+- Durable implementation lesson:
+  - The local mask preview path in tests depends on the canvas mock preserving image data through canvas-to-canvas draws. If new local mask tools look broken only in unit tests, inspect the `ExplorerImageCutoutSurface` canvas test harness before assuming the real tool math regressed.
+- Durable validation:
+  - passed: `bunx vitest run src/test/explorerImageCutoutMask.test.ts src/test/explorerImageEditor.test.tsx src/test/explorerImageCutoutSurface.test.tsx --reporter=dot --pool=forks`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens editable image previews in fullscreen preview mode and only enters edit tools on demand|adapts preview-pane context-menu actions to the active image workflow tab" --reporter=dot --pool=forks`
+
 # 2026-04-25 - Actions-First Context Menus Now Have A Live Authoring Surface And Explorer Deep-Link
 
 - The authored context-menu runtime has now crossed the line from “configurable” to “visually authorable.” The durable v1 shape is actions-first:

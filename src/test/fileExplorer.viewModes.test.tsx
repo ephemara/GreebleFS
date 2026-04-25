@@ -95,11 +95,6 @@ vi.mock("../components/ExplorerImageEditor", () => ({
           label: "Cutout",
           baseMode: "edit",
         },
-        {
-          id: "remove-background",
-          label: "Remove BG",
-          baseMode: "edit",
-        },
       ]);
       return () => onRegisterWorkflowTabs?.(null);
     }, [onRegisterWorkflowTabs]);
@@ -111,6 +106,11 @@ vi.mock("../components/ExplorerImageEditor", () => ({
           {
             id: "mock.image.base",
             title: "Image Menu Action",
+            onSelect: () => {},
+          },
+          {
+            id: "mock.image.auto-remove-background",
+            title: "Auto Remove BG",
             onSelect: () => {},
           },
         ],
@@ -127,18 +127,9 @@ vi.mock("../components/ExplorerImageEditor", () => ({
                 title: "Cutout Menu Action",
                 onSelect: () => {},
               },
-            ],
-          },
-          {
-            workflowTabId: "remove-background",
-            actions: [
               {
-                id: "mock.image.cutout",
-                hidden: true,
-              },
-              {
-                id: "mock.image.remove-background",
-                title: "Remove BG Menu Action",
+                id: "mock.image.tools.toggle",
+                title: "Show Tool Palette",
                 onSelect: () => {},
               },
             ],
@@ -5761,7 +5752,6 @@ const value = 1;
         "Preview",
         "Edit",
         "Cutout",
-        "Remove BG",
       ]);
     });
     const previewModeToggle = getChromeControl("previewModeToggle");
@@ -5806,25 +5796,6 @@ const value = 1;
       );
     });
 
-    fireEvent.click(
-      within(previewModeToggle as HTMLElement).getByRole("button", {
-        name: "Remove BG",
-      }),
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getByTestId("mock-explorer-image-editor"),
-      ).toHaveTextContent("preview.png:remove-background");
-      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
-        "data-image-mode",
-        "edit",
-      );
-      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
-        "data-image-workflow-tab",
-        "remove-background",
-      );
-    });
   });
 
   it("adapts preview-pane context-menu actions to the active image workflow tab", async () => {
@@ -5836,7 +5807,7 @@ const value = 1;
 
     await screen.findByText("Image Menu Action");
     expect(screen.queryByText("Cutout Menu Action")).not.toBeInTheDocument();
-    expect(screen.queryByText("Remove BG Menu Action")).not.toBeInTheDocument();
+    expect(screen.queryByText("Show Tool Palette")).not.toBeInTheDocument();
 
     const previewModeToggle = getChromeControl("previewModeToggle");
     fireEvent.click(
@@ -5855,25 +5826,7 @@ const value = 1;
     fireEvent.contextMenu(screen.getByTestId("mock-explorer-image-editor"));
     await screen.findByText("Image Cutout Menu Action");
     expect(screen.getByText("Cutout Menu Action")).toBeInTheDocument();
-    expect(screen.queryByText("Remove BG Menu Action")).not.toBeInTheDocument();
-
-    fireEvent.click(
-      within(previewModeToggle as HTMLElement).getByRole("button", {
-        name: "Remove BG",
-      }),
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveAttribute(
-        "data-image-workflow-tab",
-        "remove-background",
-      );
-    });
-
-    fireEvent.contextMenu(screen.getByTestId("mock-explorer-image-editor"));
-    await screen.findByText("Image Menu Action");
-    expect(screen.getByText("Remove BG Menu Action")).toBeInTheDocument();
-    expect(screen.queryByText("Cutout Menu Action")).not.toBeInTheDocument();
+    expect(screen.getByText("Show Tool Palette")).toBeInTheDocument();
   });
 
   it("lets child preview surfaces suppress the shared preview-pane context menu", async () => {

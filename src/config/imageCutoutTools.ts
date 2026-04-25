@@ -8,18 +8,36 @@ export type ExplorerImageIsolationLaneDefinition = {
   label: string;
   workflowLabel: string;
   baseMode: ExplorerPreviewWildcardWorkflowTab["baseMode"];
-  showsPromptSelection: boolean;
+  showWorkflowTab: boolean;
   resetLabel: string;
   emptySelectionMessage: string;
   readyMessage: string;
 };
 
-export type ExplorerImageCutoutRefineToolId = "brush" | "erase";
+export type ExplorerImageCutoutStageToolId =
+  | "aiSelect"
+  | "quickSelect"
+  | "magicWand"
+  | "lasso"
+  | "brush"
+  | "erase";
 
-export type ExplorerImageCutoutRefineToolDefinition = {
-  id: ExplorerImageCutoutRefineToolId;
+export type ExplorerImageCutoutStageToolDefinition = {
+  id: ExplorerImageCutoutStageToolId;
+  label: string;
   ariaLabel: string;
   description: string;
+  iconName:
+    | "Bot"
+    | "ScanLine"
+    | "Sparkles"
+    | "Scissors"
+    | "Pencil"
+    | "Eraser";
+  usesBrushSize: boolean;
+  usesBrushReach: boolean;
+  usesBrushSoftness: boolean;
+  supportsNegativeMode: boolean;
 };
 
 export const explorerImageIsolationLaneDefinitions = [
@@ -29,51 +47,109 @@ export const explorerImageIsolationLaneDefinitions = [
     label: "Cutout",
     workflowLabel: "Cutout",
     baseMode: "edit",
-    showsPromptSelection: true,
-    resetLabel: "Clear prompts",
-    emptySelectionMessage: "Click to place a positive prompt. Alt-click or right-click removes.",
-    readyMessage: "Click to select a subject. Drag to pan. Shift-drag exports a native cutout.",
+    showWorkflowTab: true,
+    resetLabel: "Clear Cutout",
+    emptySelectionMessage: "Choose a tool and start isolating the subject.",
+    readyMessage: "Cutout is ready for prompt, wand, lasso, and brush isolation.",
   },
   {
     id: "removeBackground",
-    workflowTabId: "remove-background",
+    workflowTabId: "cutout",
     label: "Remove BG",
     workflowLabel: "Remove BG",
     baseMode: "edit",
-    showsPromptSelection: false,
+    showWorkflowTab: false,
     resetLabel: "Re-run remove BG",
     emptySelectionMessage: "No automatic subject was detected yet.",
-    readyMessage: "Auto background removal is ready. Drag to pan. Shift-drag exports a native cutout.",
+    readyMessage: "Auto background removal is ready to merge into Cutout.",
   },
 ] as const satisfies readonly ExplorerImageIsolationLaneDefinition[];
 
 export const explorerImageIsolationWorkflowTabs =
-  explorerImageIsolationLaneDefinitions.map(
-    ({ workflowTabId, label, baseMode }) =>
-      ({
-        id: workflowTabId,
-        label,
-        baseMode,
-      }) satisfies ExplorerPreviewWildcardWorkflowTab,
-  );
+  explorerImageIsolationLaneDefinitions
+    .filter((laneDefinition) => laneDefinition.showWorkflowTab)
+    .map(
+      ({ workflowTabId, label, baseMode }) =>
+        ({
+          id: workflowTabId,
+          label,
+          baseMode,
+        }) satisfies ExplorerPreviewWildcardWorkflowTab,
+    );
 
-export const imageCutoutRefineToolDefinitions = [
+export const explorerImageCutoutStageToolDefinitions = [
+  {
+    id: "aiSelect",
+    label: "AI Select",
+    ariaLabel: "AI Select",
+    description: "Click positive prompts or Alt-click negative prompts for semantic cutout guidance.",
+    iconName: "Bot",
+    usesBrushSize: false,
+    usesBrushReach: false,
+    usesBrushSoftness: false,
+    supportsNegativeMode: true,
+  },
+  {
+    id: "quickSelect",
+    label: "Quick Select",
+    ariaLabel: "Quick Select",
+    description: "Brush similar pixels into the mask with color-aware local selection.",
+    iconName: "ScanLine",
+    usesBrushSize: true,
+    usesBrushReach: true,
+    usesBrushSoftness: true,
+    supportsNegativeMode: true,
+  },
+  {
+    id: "magicWand",
+    label: "Magic Wand",
+    ariaLabel: "Magic Wand",
+    description: "Click a contiguous color island to add or subtract it from the mask.",
+    iconName: "Sparkles",
+    usesBrushSize: false,
+    usesBrushReach: true,
+    usesBrushSoftness: false,
+    supportsNegativeMode: true,
+  },
+  {
+    id: "lasso",
+    label: "Lasso",
+    ariaLabel: "Lasso",
+    description: "Draw a freeform lasso around the subject to add or subtract a region.",
+    iconName: "Scissors",
+    usesBrushSize: false,
+    usesBrushReach: false,
+    usesBrushSoftness: false,
+    supportsNegativeMode: true,
+  },
   {
     id: "brush",
-    ariaLabel: "Refine brush",
-    description: "Brush similar pixels into the mask.",
+    label: "Brush",
+    ariaLabel: "Brush",
+    description: "Paint directly into the mask with a soft circular brush.",
+    iconName: "Pencil",
+    usesBrushSize: true,
+    usesBrushReach: false,
+    usesBrushSoftness: true,
+    supportsNegativeMode: false,
   },
   {
     id: "erase",
-    ariaLabel: "Refine erase",
-    description: "Brush similar pixels out of the mask.",
+    label: "Erase",
+    ariaLabel: "Erase",
+    description: "Paint directly out of the mask with a soft circular erase brush.",
+    iconName: "Eraser",
+    usesBrushSize: true,
+    usesBrushReach: false,
+    usesBrushSoftness: true,
+    supportsNegativeMode: false,
   },
-] as const satisfies readonly ExplorerImageCutoutRefineToolDefinition[];
+] as const satisfies readonly ExplorerImageCutoutStageToolDefinition[];
 
 export const DEFAULT_IMAGE_CUTOUT_WORKFLOW_MODE: ExplorerImageCutoutWorkflowMode =
   "cutout";
-export const DEFAULT_IMAGE_CUTOUT_REFINE_TOOL_ID: ExplorerImageCutoutRefineToolId =
-  "brush";
+export const DEFAULT_IMAGE_CUTOUT_STAGE_TOOL_ID: ExplorerImageCutoutStageToolId =
+  "aiSelect";
 
 export function resolveExplorerImageIsolationLaneDefinition(
   workflowMode: ExplorerImageCutoutWorkflowMode,
@@ -81,5 +157,14 @@ export function resolveExplorerImageIsolationLaneDefinition(
   return (
     explorerImageIsolationLaneDefinitions.find((lane) => lane.id === workflowMode) ??
     explorerImageIsolationLaneDefinitions[0]
+  );
+}
+
+export function resolveExplorerImageCutoutStageToolDefinition(
+  toolId: ExplorerImageCutoutStageToolId,
+): ExplorerImageCutoutStageToolDefinition {
+  return (
+    explorerImageCutoutStageToolDefinitions.find((toolDefinition) => toolDefinition.id === toolId) ??
+    explorerImageCutoutStageToolDefinitions[0]
   );
 }

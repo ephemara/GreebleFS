@@ -338,7 +338,6 @@ describe("ExplorerImageEditor", () => {
     ).toHaveTextContent("preview.png:/tmp/original-preview.png");
     expect(registerWorkflowTabs).toHaveBeenCalledWith([
       { id: "cutout", label: "Cutout", baseMode: "edit" },
-      { id: "remove-background", label: "Remove BG", baseMode: "edit" },
     ]);
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(
@@ -356,7 +355,7 @@ describe("ExplorerImageEditor", () => {
     });
   });
 
-  it("routes the remove-background workflow through the shared isolation surface", async () => {
+  it("does not route unsupported legacy isolation workflow ids into the cutout surface", async () => {
     render(
       <ExplorerImageEditor
         imagePath="/tmp/resolved-preview.png"
@@ -369,14 +368,9 @@ describe("ExplorerImageEditor", () => {
     );
 
     expect(
-      await screen.findByTestId("mock-explorer-image-cutout-surface"),
-    ).toHaveTextContent("preview.png:/tmp/original-preview.png");
-    expect(cutoutSurfaceMockState.lastProps).toMatchObject({
-      workflowMode: "removeBackground",
-      imageName: "preview.png",
-      imagePath: "/tmp/resolved-preview.png",
-      logicalOutputPath: "/tmp/original-preview.png",
-    });
+      screen.queryByTestId("mock-explorer-image-cutout-surface"),
+    ).not.toBeInTheDocument();
+    expect(cutoutSurfaceMockState.lastProps).toBeNull();
   });
 
   it("registers adaptive image preview context-menu actions outside isolation mode", async () => {
