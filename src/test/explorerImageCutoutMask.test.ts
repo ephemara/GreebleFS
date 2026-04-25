@@ -91,6 +91,33 @@ describe("explorerImageCutoutMask", () => {
     ]);
   });
 
+  it("magic wand can disable contiguous mode and select matching colors across the preview", () => {
+    const sourcePixels = createSolidPixels(3, 2, [
+      [255, 0, 0], [0, 0, 255], [255, 0, 0],
+      [0, 255, 0], [0, 255, 0], [255, 0, 0],
+    ]);
+    const mask = {
+      width: 3,
+      height: 2,
+      alpha: new Uint8ClampedArray(6),
+    };
+
+    const nextMask = applySparkSelection({
+      baseMask: mask,
+      sourcePixels,
+      centerX: 0,
+      centerY: 0,
+      tolerance: 18,
+      contiguous: false,
+      mode: "add",
+    });
+
+    expect([...nextMask.alpha]).toEqual([
+      255, 0, 255,
+      0, 0, 255,
+    ]);
+  });
+
   it("sweep paints only similar pixels inside the brush radius", () => {
     const sourcePixels = createSolidPixels(5, 1, [
       [200, 200, 200],
@@ -121,6 +148,36 @@ describe("explorerImageCutoutMask", () => {
     expect(nextMask.alpha[2]).toBeGreaterThan(0);
     expect(nextMask.alpha[3]).toBe(0);
     expect(nextMask.alpha[4]).toBe(0);
+  });
+
+  it("quick select respects strong edges instead of flooding across contrast boundaries", () => {
+    const sourcePixels = createSolidPixels(5, 3, [
+      [220, 220, 220], [220, 220, 220], [20, 20, 20], [20, 20, 20], [20, 20, 20],
+      [220, 220, 220], [220, 220, 220], [20, 20, 20], [20, 20, 20], [20, 20, 20],
+      [220, 220, 220], [220, 220, 220], [20, 20, 20], [20, 20, 20], [20, 20, 20],
+    ]);
+    const mask = {
+      width: 5,
+      height: 3,
+      alpha: new Uint8ClampedArray(15),
+    };
+
+    const nextMask = applySweepSelection({
+      baseMask: mask,
+      sourcePixels,
+      centerX: 1,
+      centerY: 1,
+      radius: 3,
+      tolerance: 24,
+      softness: 10,
+      edgeAwareness: 90,
+      mode: "add",
+    });
+
+    expect(nextMask.alpha[1 + 1 * 5]).toBe(255);
+    expect(nextMask.alpha[0 + 1 * 5]).toBeGreaterThan(0);
+    expect(nextMask.alpha[2 + 1 * 5]).toBe(0);
+    expect(nextMask.alpha[4 + 1 * 5]).toBe(0);
   });
 
   it("direct circular brush paints without sampling source colors", () => {

@@ -87,12 +87,15 @@ describe('hotkey config helpers', () => {
     expect(defaults.pythonWorkbenchRunManaged).toBe('F9');
     expect(defaults.pythonWorkbenchRunInTerminal).toBe('Ctrl+F9');
     expect(defaults.imageCutoutCopy).toBe('Ctrl+C');
+    expect(defaults.imageCutoutDeselect).toBe('Ctrl+D');
     expect(defaults.imageEditorUndo).toBe('Ctrl+Z');
     expect(defaults.imageEditorRedo).toBe('Ctrl+Shift+Z');
     expect(defaults.imageEditorReset).toBe('Escape');
     expect(defaults.find).toBe('');
     expect(defaults.toggleHiddenFiles).toBe('Ctrl+H');
     expect(defaults.replace).toBe('');
+    expect(defaults.commandBindingsById).toEqual({});
+    expect(normalized.commandBindingsById).toEqual({});
   });
 
   it('migrates the legacy toggleExplorerSearchScope binding into cycleExplorerSearchMode', () => {
@@ -111,6 +114,20 @@ describe('hotkey config helpers', () => {
       { ctrlKey: false, metaKey: false, altKey: true, shiftKey: false },
       'Option+Scroll',
     )).toBe(true);
+  });
+
+  it('normalizes explorer command binding maps and drops blank entries', () => {
+    const normalized = normalizeKeybindingSettings({
+      commandBindingsById: {
+        ' explorer-control:refresh ': ' Ctrl + Shift + R ',
+        '': 'Ctrl+K',
+        'explorer-control:missing': '   ',
+      },
+    } as Parameters<typeof normalizeKeybindingSettings>[0]);
+
+    expect(normalized.commandBindingsById).toEqual({
+      'explorer-control:refresh': 'Ctrl+Shift+R',
+    });
   });
 
   it('matches ctrl plus wheel gestures and rejects plain scrolling', () => {

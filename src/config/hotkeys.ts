@@ -72,6 +72,7 @@ export type HotkeyBindingKey =
   | 'pythonWorkbenchRunManaged'
   | 'pythonWorkbenchRunInTerminal'
   | 'imageCutoutCopy'
+  | 'imageCutoutDeselect'
   | 'imageEditorUndo'
   | 'imageEditorRedo'
   | 'imageEditorReset'
@@ -89,7 +90,11 @@ export interface HotkeyBindingDefinition {
   scope: 'global' | 'gesture' | 'local';
 }
 
-export type HotkeyBindingSettings = Record<HotkeyBindingKey, string>;
+export type CommandHotkeyBindingMap = Record<string, string>;
+
+export type HotkeyBindingSettings = Record<HotkeyBindingKey, string> & {
+  commandBindingsById: CommandHotkeyBindingMap;
+};
 
 export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
   {
@@ -619,6 +624,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     scope: 'local',
   },
   {
+    key: 'imageCutoutDeselect',
+    label: 'Image Cutout Deselect',
+    description: 'Clear the current explorer cutout selection without resetting the cutout session.',
+    defaultValue: 'Ctrl+D',
+    scope: 'local',
+  },
+  {
     key: 'imageEditorUndo',
     label: 'Image Editor Undo',
     description: 'Undo the last canvas edit inside the explorer image editor.',
@@ -667,10 +679,12 @@ const hotkeyDefinitionByKey = new Map(
 );
 
 export function createDefaultKeybindingSettings(): HotkeyBindingSettings {
-  return hotkeyBindingDefinitions.reduce((result, definition) => {
+  const normalizedSettings = hotkeyBindingDefinitions.reduce((result, definition) => {
     result[definition.key] = definition.defaultValue;
     return result;
   }, {} as HotkeyBindingSettings);
+  normalizedSettings.commandBindingsById = {};
+  return normalizedSettings;
 }
 
 export function normalizeKeybindingValue(value: unknown, fallback: string): string {
@@ -688,12 +702,17 @@ export function normalizeKeybindingValue(value: unknown, fallback: string): stri
 }
 
 export function normalizeKeybindingSettings(
-  value: Partial<Record<HotkeyBindingKey, unknown>> | undefined,
+  value:
+    | (Partial<Record<HotkeyBindingKey, unknown>> & {
+        commandBindingsById?: unknown;
+        toggleExplorerSearchScope?: unknown;
+      })
+    | undefined,
 ): HotkeyBindingSettings {
   const defaults = createDefaultKeybindingSettings();
   const legacyValue = value as Record<string, unknown> | undefined;
 
-  return hotkeyBindingDefinitions.reduce((result, definition) => {
+  const normalizedSettings = hotkeyBindingDefinitions.reduce((result, definition) => {
     const legacyFallbackValue =
       definition.key === 'cycleExplorerSearchMode'
         ? legacyValue?.toggleExplorerSearchScope
@@ -704,6 +723,39 @@ export function normalizeKeybindingSettings(
     );
     return result;
   }, {} as HotkeyBindingSettings);
+  normalizedSettings.commandBindingsById = normalizeCommandHotkeyBindingMap(
+    legacyValue?.commandBindingsById,
+  );
+  return normalizedSettings;
+}
+
+export function normalizeCommandHotkeyBindingMap(value: unknown): CommandHotkeyBindingMap {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([commandId, binding]) => {
+        const trimmedCommandId = commandId.trim();
+        if (!trimmedCommandId) {
+          return null;
+        }
+        const normalizedBinding = normalizeKeybindingValue(binding, '');
+        if (!normalizedBinding) {
+          return null;
+        }
+        return [trimmedCommandId, normalizedBinding] as const;
+      })
+      .filter((entry): entry is readonly [string, string] => entry != null),
+  );
+}
+
+export function getCommandHotkeyBinding(
+  settings: Pick<HotkeyBindingSettings, 'commandBindingsById'>,
+  commandId: string,
+): string {
+  return settings.commandBindingsById[commandId] ?? '';
 }
 
 export function getHotkeyBindingDefinition(key: HotkeyBindingKey): HotkeyBindingDefinition {

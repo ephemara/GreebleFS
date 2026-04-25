@@ -129,7 +129,7 @@ vi.mock("../components/ExplorerImageEditor", () => ({
               },
               {
                 id: "mock.image.tools.toggle",
-                title: "Show Tool Palette",
+                title: "Show Tool Rail",
                 onSelect: () => {},
               },
             ],
@@ -5807,7 +5807,7 @@ const value = 1;
 
     await screen.findByText("Image Menu Action");
     expect(screen.queryByText("Cutout Menu Action")).not.toBeInTheDocument();
-    expect(screen.queryByText("Show Tool Palette")).not.toBeInTheDocument();
+    expect(screen.queryByText("Show Tool Rail")).not.toBeInTheDocument();
 
     const previewModeToggle = getChromeControl("previewModeToggle");
     fireEvent.click(
@@ -5826,7 +5826,7 @@ const value = 1;
     fireEvent.contextMenu(screen.getByTestId("mock-explorer-image-editor"));
     await screen.findByText("Image Cutout Menu Action");
     expect(screen.getByText("Cutout Menu Action")).toBeInTheDocument();
-    expect(screen.getByText("Show Tool Palette")).toBeInTheDocument();
+    expect(screen.getByText("Show Tool Rail")).toBeInTheDocument();
   });
 
   it("lets child preview surfaces suppress the shared preview-pane context menu", async () => {

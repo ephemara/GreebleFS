@@ -1,3 +1,25 @@
+# 2026-04-25 - Explorer ZBrush Customize Mode Now Runs On A Shared Chrome Catalog And Ritual Hotkeys
+
+- Explorer chrome customization is now a real runtime-backed system instead of a layout-only shell trick.
+- Durable implementation shape:
+  - `src/config/explorerCustomizeCatalog.ts` is now the shared explorer chrome catalog. It merges built-in chrome controls and action-backed controls into one placeable registry with stable command ids (`explorer-control:*` for built-ins and `action:*` ids for authored actions). Future customize/browser work should consume this catalog instead of scraping JSX or leaning on legacy plugin context menu items.
+  - `src/components/explorer/ExplorerChromeSurface.tsx` now owns the ritual interaction contract for placed controls: plain click selects in customize mode, `Ctrl+Alt+Drag` moves, `Ctrl+Alt+Click` arms hotkey capture, and drop-target highlighting routes through store-managed edit-session state.
+  - `src/components/FileExplorer.tsx` now hosts the customize overlay browser/inspector, action-backed chrome execution, missing-action placeholders, hotkey capture, and delete-by-dropping-into-viewport behavior. Shared command hotkeys are intentionally scoped to the explorer instance that currently owns keyboard focus so multi-pane workspaces do not double-fire the same command.
+  - `src/components/explorer/ExplorerWorkspace.tsx` and `src/components/explorer/ExplorerSideRail.tsx` now bridge the shared command ids into local workspace-header and rail-header behaviors, so moved or rebound controls still work after leaving the main explorer toolbar.
+  - `src/config/hotkeys.ts` plus `src/store/settingsStore.ts` now persist dynamic explorer command bindings in `commandBindingsById` alongside the named app hotkeys. This is the only command-binding store for explorer chrome. Do not add a second explorer-only hotkey registry.
+  - `src/components/SettingsPage.tsx` now shows the currently assigned explorer ritual bindings on the Hotkeys page. Settings is the edit/clear surface for existing command bindings, while discovery and placement still belong to customize mode itself.
+- Durable product rule:
+  - Future explorer chrome work should register stable control/command ids and route through the shared customize catalog so authored actions, built-in widgets, and moved controls all speak the same placement and hotkey language.
+  - When an authored action disappears, preserve the persisted chrome/binding data as a missing-item placeholder instead of silently dropping it.
+- Durable validation:
+  - passed: `bun x vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts`
+  - passed: targeted `bun x tsc --noEmit --pretty false 2>&1 | rg "FileExplorer|ExplorerCustomizeOverlay|SettingsPage|ExplorerWorkspace|ExplorerSideRail|config/hotkeys|settingsStore"` produced no matches after the customize/hotkey wiring pass
+
+- Customize-mode stability follow-up:
+  - `ExplorerChromeSurface` registration effects must key off a semantic resolved-surface signature, not the raw `surface` or `editMode` object identities. Registering a surface writes back into `chromeEditSession.registeredSurfaces`, which recreates the session object; if the effect depends on the live objects, customize mode falls into a register/unregister rerender loop as soon as it opens.
+  - Validation addendum: `bun x vitest run src/test/ExplorerChromeSurface.test.tsx src/test/hotkeys.test.ts src/test/settingsStore.test.ts`
+  - Validation addendum: targeted `bun x tsc --noEmit --pretty false 2>&1 | rg "ExplorerChromeSurface|explorerChromeLayouts|explorerStore|ExplorerChromeSurface.test" || true` produced no matches after the surface-registration fix.
+
 # 2026-04-25 - Frontend Checkbox UI Now Routes Through A Shared Branded Toggle System
 
 - The app should no longer present browser-default checkbox chrome for normal boolean controls. GreebleFS now treats checkbox-like settings as a branded toggle lane inspired by desktop switch controls but rendered through the app theme system.
@@ -31,19 +53,20 @@
 - This is intentional workflow infrastructure, not duplicated source. Update the real skill content in `/home/ephemara/.codex/skills/<skill-name>/`, and keep the repo mirror as symlinks so workspace-local discovery stays convenient without creating drift.
 - Added `/home/ephemara/.codex/skills/refresh-relevant-skill` as the helper that tells agents to refresh the existing skill that matches their just-finished subsystem work.
 
-# 2026-04-25 - Image Cutout Is Back To One Real Lane With A Local Tool Palette
+# 2026-04-25 - Image Cutout Is Back To One Real Lane With A Docked Tool Rail
 
 - Explorer image isolation no longer splits the product into `Cutout` versus `Remove BG` header tabs. The durable shell is back to one visible `Cutout` wildcard tab, with automatic background removal exposed as an in-lane tool action instead of pretending to be a separate workflow lane in the preview header.
 - Durable implementation shape:
-  - `src/config/imageCutoutTools.ts` now treats image isolation as one visible workflow tab plus a tool catalog. The hidden `removeBackground` lane metadata still exists for internal bootstrap/reset use, but only `Cutout` registers into the preview header. The same config file now owns the compact tool palette definitions for `AI Select`, `Quick Select`, `Magic Wand`, `Lasso`, `Brush`, and `Erase`.
-  - `src/components/explorer/explorerImageCutoutMask.ts` now has two new local primitives that future tools should reuse instead of burying logic in React: `applyCircularBrushInPlace(...)` for direct paint/erase strokes and `applyPolygonSelectionInPlace(...)` for freeform lasso fills.
-  - `src/components/ExplorerImageCutoutSurface.tsx` was re-centered around a single cutout lane with a compact floating tool palette. `AI Select` still uses the backend prompt seam, but `Magic Wand`, `Quick Select`, `Lasso`, `Brush`, and `Erase` are now real local tools, `Auto Remove BG` merges its result into the current cutout history, and the top-right chrome stays icon-first with `Tools` and `Refine` as compact inspectors instead of extra header tabs or explainer cards.
-  - The preview-pane adaptive context menu for image cutout was intentionally kept minimal even after the tool expansion. The lane now registers only a compact set of preview actions (`Reset View`, `Reset Isolation`, `Auto Remove BG`, `Show/Hide Tool Palette`, `Show/Hide Refine Controls`) rather than mirroring every tool into right-click.
+  - `src/config/imageCutoutTools.ts` now treats image isolation as one visible workflow tab plus a grouped tool catalog. The hidden `removeBackground` lane metadata still exists for internal bootstrap/reset use, but only `Cutout` registers into the preview header. The same config file now owns the left-rail tool families for `AI Select`, `Quick Select`, `Magic Wand`, `Lasso`, `Brush`, and `Erase`.
+  - `src/components/explorer/explorerImageCutoutMask.ts` is now the real local selection-math seam. Future cutout tools should reuse it instead of burying pixel logic in React. In addition to direct brush/lasso primitives, the wand now uses perceptual color matching plus a contiguous toggle, and quick select now uses a bounded edge-aware grow pass instead of the earlier flat color brush.
+  - `src/components/ExplorerImageCutoutSurface.tsx` was re-centered around a single cutout lane with a docked left tool rail instead of a floating palette bubble. `AI Select` still uses the backend prompt seam, `Magic Wand`, `Quick Select`, `Lasso`, `Brush`, and `Erase` are real local tools, `Auto Remove BG` merges its result into the current cutout history, `Ctrl+D` clears the current selection without resetting the session, and native drag-out moved to `Ctrl/Cmd+Shift+drag` so `Shift` can be reused by selection tools.
+  - The preview-pane adaptive context menu for image cutout was intentionally kept minimal even after the tool expansion. The lane now registers only a compact set of preview actions (`Reset View`, `Reset Isolation`, `Auto Remove BG`, conditional `Deselect`, `Show/Hide Tool Rail`, `Show/Hide Refine Controls`) rather than mirroring every tool into right-click.
 - Durable implementation lesson:
   - The local mask preview path in tests depends on the canvas mock preserving image data through canvas-to-canvas draws. If new local mask tools look broken only in unit tests, inspect the `ExplorerImageCutoutSurface` canvas test harness before assuming the real tool math regressed.
 - Durable validation:
-  - passed: `bunx vitest run src/test/explorerImageCutoutMask.test.ts src/test/explorerImageEditor.test.tsx src/test/explorerImageCutoutSurface.test.tsx --reporter=dot --pool=forks`
+  - passed: `bunx vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/explorerImageCutoutMask.test.ts src/test/explorerImageCutoutSurface.test.tsx --reporter=dot --pool=forks`
   - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens editable image previews in fullscreen preview mode and only enters edit tools on demand|adapts preview-pane context-menu actions to the active image workflow tab" --reporter=dot --pool=forks`
+  - passed: grep-filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` returned no matches for the touched cutout/hotkey files
 
 # 2026-04-25 - Context Menu Composer Is Now Canvas-First And Shares A Reusable Drag Panel Primitive
 

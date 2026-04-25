@@ -450,12 +450,14 @@ describe("ExplorerImageCutoutSurface", () => {
     });
 
     expect(screen.getByRole("button", { name: "Toggle refine controls" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Toggle tool palette" })).toBeInTheDocument();
-    expect(screen.getByTestId("explorer-image-cutout-tool-palette")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Toggle tool rail" })).toBeInTheDocument();
+    expect(screen.getByTestId("explorer-image-cutout-tool-rail")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "AI Select" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lasso" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Brush" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Smart Select menu" }));
     expect(screen.getByRole("button", { name: "Quick Select" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Magic Wand" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Lasso" })).toBeInTheDocument();
     expect(
       screen.queryByText("Prompt-first cutout lane active."),
     ).not.toBeInTheDocument();
@@ -466,7 +468,7 @@ describe("ExplorerImageCutoutSurface", () => {
     expect(screen.getByText("Awaiting mask")).toBeInTheDocument();
   });
 
-  it("runs Auto Remove BG from the tool palette inside the single Cutout lane", async () => {
+  it("runs Auto Remove BG from the tool rail inside the single Cutout lane", async () => {
     renderSurface("cutout");
 
     await waitFor(() => {
@@ -538,7 +540,7 @@ describe("ExplorerImageCutoutSurface", () => {
     });
   });
 
-  it("pans on plain drag and only starts native drag on shift-drag", async () => {
+  it("pans on plain drag and only starts native drag on Ctrl+Shift-drag", async () => {
     renderSurface("cutout");
 
     await waitFor(() => {
@@ -582,6 +584,7 @@ describe("ExplorerImageCutoutSurface", () => {
       clientY: 120,
       button: 0,
       shiftKey: true,
+      ctrlKey: true,
     });
     fireEvent.pointerMove(stage, {
       pointerId: 2,
@@ -589,6 +592,7 @@ describe("ExplorerImageCutoutSurface", () => {
       clientY: 170,
       button: 0,
       shiftKey: true,
+      ctrlKey: true,
     });
     fireEvent.pointerUp(stage, {
       pointerId: 2,
@@ -596,6 +600,7 @@ describe("ExplorerImageCutoutSurface", () => {
       clientY: 170,
       button: 0,
       shiftKey: true,
+      ctrlKey: true,
     });
 
     await waitFor(() => {
@@ -613,6 +618,7 @@ describe("ExplorerImageCutoutSurface", () => {
       expect(backendMocks.openExplorerImageCutoutSession).toHaveBeenCalledTimes(1);
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "Open Smart Select menu" }));
     fireEvent.click(screen.getByRole("button", { name: "Magic Wand" }));
 
     const stage = screen.getByTestId("explorer-image-cutout-stage");
@@ -687,6 +693,37 @@ describe("ExplorerImageCutoutSurface", () => {
     });
   });
 
+  it("clears the current selection with Ctrl+D while the cutout surface owns focus", async () => {
+    renderSurface("cutout");
+
+    await waitFor(() => {
+      expect(backendMocks.openExplorerImageCutoutSession).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Auto Remove BG" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer-image-cutout-marching-ants")).toHaveAttribute(
+        "data-has-boundary",
+        "true",
+      );
+    });
+
+    const surface = screen.getByTestId("explorer-image-cutout-surface");
+    surface.focus();
+    fireEvent.keyDown(window, {
+      key: "d",
+      ctrlKey: true,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer-image-cutout-marching-ants")).toHaveAttribute(
+        "data-has-boundary",
+        "false",
+      );
+    });
+  });
+
   it("keeps refine controls hidden until requested and renders PremiumSlider-backed controls", async () => {
     renderSurface("cutout");
 
@@ -698,6 +735,7 @@ describe("ExplorerImageCutoutSurface", () => {
       screen.queryByTestId("explorer-image-cutout-refine-panel"),
     ).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Open Smart Select menu" }));
     fireEvent.click(screen.getByRole("button", { name: "Quick Select" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Toggle refine controls" }),
@@ -707,8 +745,9 @@ describe("ExplorerImageCutoutSurface", () => {
       await screen.findByTestId("explorer-image-cutout-refine-panel"),
     ).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Brush Size" })).toBeInTheDocument();
-    expect(screen.getByRole("slider", { name: "Selection Reach" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Tolerance" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Brush Softness" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Edge Awareness" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Edge Softness" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Edge Pull" })).toBeInTheDocument();
   });
@@ -730,6 +769,18 @@ describe("ExplorerImageCutoutSurface", () => {
             expect.objectContaining({ id: "image-cutout.refine.toggle" }),
           ]),
           workflowOverlays: [],
+        }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Auto Remove BG" }));
+
+    await waitFor(() => {
+      expect(registerContextMenu).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseActions: expect.arrayContaining([
+            expect.objectContaining({ id: "image-cutout.deselect" }),
+          ]),
         }),
       );
     });

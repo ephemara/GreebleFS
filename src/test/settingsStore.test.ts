@@ -188,9 +188,11 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.pythonWorkbenchRunManaged).toBe('F9');
     expect(settings.keybindings.pythonWorkbenchRunInTerminal).toBe('Ctrl+F9');
     expect(settings.keybindings.imageCutoutCopy).toBe('Ctrl+C');
+    expect(settings.keybindings.imageCutoutDeselect).toBe('Ctrl+D');
     expect(settings.keybindings.imageEditorUndo).toBe('Ctrl+Z');
     expect(settings.keybindings.imageEditorRedo).toBe('Ctrl+Shift+Z');
     expect(settings.keybindings.imageEditorReset).toBe('Escape');
+    expect(settings.keybindings.commandBindingsById).toEqual({});
   });
 
   it('has the correct default screenshot settings', () => {
@@ -305,6 +307,39 @@ describe('useSettingsStore.updateTerminal()', () => {
     expect(settings.terminal.showSidebar).toBe(false);
     expect(settings.terminal.fontSize).toBe(13);
     expect(settings.terminal.windowMode).toBe('windowed');
+  });
+});
+
+describe('useSettingsStore.setCommandKeybinding()', () => {
+  it('stores normalized explorer command hotkeys and clears them when blanked', () => {
+    const store = useSettingsStore.getState();
+
+    store.setCommandKeybinding(
+      ' explorer-control:refresh ',
+      ' Ctrl + Shift + R ',
+    );
+
+    expect(
+      useSettingsStore.getState().settings.keybindings.commandBindingsById,
+    ).toEqual({
+      'explorer-control:refresh': 'Ctrl+Shift+R',
+    });
+
+    store.setCommandKeybinding('explorer-control:refresh', '   ');
+
+    expect(
+      useSettingsStore.getState().settings.keybindings.commandBindingsById,
+    ).toEqual({});
+  });
+
+  it('ignores empty command ids', () => {
+    const store = useSettingsStore.getState();
+
+    store.setCommandKeybinding('   ', 'Ctrl+Alt+K');
+
+    expect(
+      useSettingsStore.getState().settings.keybindings.commandBindingsById,
+    ).toEqual({});
   });
 });
 
@@ -472,6 +507,10 @@ describe('useSettingsStore.updateExplorer()', () => {
         surfaceId: 'explorerToolbar',
         zone: 'primaryStart',
         order: 5,
+        hidden: false,
+        sizeVariant: undefined,
+        showLabel: undefined,
+        showIcon: undefined,
       },
     ]);
     expect(useExplorerStore.getState().session.shellLayoutId).toBe('focus');

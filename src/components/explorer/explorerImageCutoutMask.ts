@@ -169,26 +169,170 @@ export function buildCutoutBoundaryPoints(
   return points;
 }
 
-function colorDistanceSquared(
-  pixels: ExplorerImageCutoutSourcePixels,
-  x: number,
-  y: number,
+type OklabColor = {
+  l: number;
+  a: number;
+  b: number;
+};
+
+function srgbChannelToLinear(component: number): number {
+  const normalized = component / 255;
+  return normalized <= 0.04045
+    ? normalized / 12.92
+    : Math.pow((normalized + 0.055) / 1.055, 2.4);
+}
+
+function resolveOklabColorFromRgb(
   red: number,
   green: number,
   blue: number,
-): number {
+): OklabColor {
+  const linearRed = srgbChannelToLinear(red);
+  const linearGreen = srgbChannelToLinear(green);
+  const linearBlue = srgbChannelToLinear(blue);
+
+  const l =
+    0.4122214708 * linearRed +
+    0.5363325363 * linearGreen +
+    0.0514459929 * linearBlue;
+  const m =
+    0.2119034982 * linearRed +
+    0.6806995451 * linearGreen +
+    0.1073969566 * linearBlue;
+  const s =
+    0.0883024619 * linearRed +
+    0.2817188376 * linearGreen +
+    0.6299787005 * linearBlue;
+
+  const lRoot = Math.cbrt(l);
+  const mRoot = Math.cbrt(m);
+  const sRoot = Math.cbrt(s);
+
+  return {
+    l: 0.2104542553 * lRoot + 0.793617785 * mRoot - 0.0040720468 * sRoot,
+    a: 1.9779984951 * lRoot - 2.428592205 * mRoot + 0.4505937099 * sRoot,
+    b: 0.0259040371 * lRoot + 0.7827717662 * mRoot - 0.808675766 * sRoot,
+  };
+}
+
+function resolvePixelOklabColor(
+  pixels: ExplorerImageCutoutSourcePixels,
+  x: number,
+  y: number,
+): OklabColor {
   const offset = sourceOffset(pixels.width, x, y);
-  const deltaRed = (pixels.data[offset] ?? 0) - red;
-  const deltaGreen = (pixels.data[offset + 1] ?? 0) - green;
-  const deltaBlue = (pixels.data[offset + 2] ?? 0) - blue;
-  return deltaRed * deltaRed + deltaGreen * deltaGreen + deltaBlue * deltaBlue;
+  return resolveOklabColorFromRgb(
+    pixels.data[offset] ?? 0,
+    pixels.data[offset + 1] ?? 0,
+    pixels.data[offset + 2] ?? 0,
+  );
+}
+
+function colorDistanceSquared(left: OklabColor, right: OklabColor): number {
+  const deltaL = left.l - right.l;
+  const deltaA = left.a - right.a;
+  const deltaB = left.b - right.b;
+  return deltaL * deltaL + deltaA * deltaA + deltaB * deltaB;
+}
+
+function colorDistanceSquaredToPixel(
+  pixels: ExplorerImageCutoutSourcePixels,
+  x: number,
+  y: number,
+  color: OklabColor,
+): number {
+  return colorDistanceSquared(resolvePixelOklabColor(pixels, x, y), color);
+}
+
+function neighborColorDistanceSquared(
+  pixels: ExplorerImageCutoutSourcePixels,
+  leftX: number,
+  leftY: number,
+  rightX: number,
+  rightY: number,
+): number {
+  return colorDistanceSquared(
+    resolvePixelOklabColor(pixels, leftX, leftY),
+    resolvePixelOklabColor(pixels, rightX, rightY),
+  );
 }
 
 function resolveToleranceThreshold(tolerance: number): number {
   const clampedTolerance = Math.max(0, Math.min(100, tolerance));
-  const maxDistance = 441.6729559300637;
-  const threshold = (clampedTolerance / 100) * maxDistance;
+  const maxPerceptualDistance = 0.38;
+  const threshold =
+    Math.pow(clampedTolerance / 100, 1.35) * maxPerceptualDistance;
   return threshold * threshold;
+}
+
+function resolveEdgeBarrierThreshold(
+  tolerance: number,
+  edgeAwareness: number,
+): number {
+  const baseToleranceDistance = Math.sqrt(
+    resolveToleranceThreshold(Math.max(8, tolerance)),
+  );
+  const normalizedAwareness = Math.max(0, Math.min(100, edgeAwareness)) / 100;
+  const threshold =
+    baseToleranceDistance * (1.55 - normalizedAwareness * 1.1);
+  return threshold * threshold;
+}
+
+function resolveQuickSelectionSeedModel(args: {
+  targetMask: ExplorerImageCutoutAlphaMask;
+  sourcePixels: ExplorerImageCutoutSourcePixels;
+  centerX: number;
+  centerY: number;
+  radius: number;
+}): {
+  meanColor: OklabColor;
+  seedPoints: ExplorerImageCutoutMaskPoint[];
+} {
+  const { targetMask, sourcePixels, centerX, centerY, radius } = args;
+  const seedPoints: ExplorerImageCutoutMaskPoint[] = [{ x: centerX, y: centerY }];
+  const sampleRadius = Math.max(1, Math.min(6, Math.round(radius * 0.18)));
+  const sampleRadiusSquared = sampleRadius * sampleRadius;
+  const minX = Math.max(0, centerX - sampleRadius);
+  const maxX = Math.min(targetMask.width - 1, centerX + sampleRadius);
+  const minY = Math.max(0, centerY - sampleRadius);
+  const maxY = Math.min(targetMask.height - 1, centerY + sampleRadius);
+
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      if (x === centerX && y === centerY) {
+        continue;
+      }
+      const deltaX = x - centerX;
+      const deltaY = y - centerY;
+      if (deltaX * deltaX + deltaY * deltaY > sampleRadiusSquared) {
+        continue;
+      }
+      if ((targetMask.alpha[alphaIndex(targetMask.width, x, y)] ?? 0) < 160) {
+        continue;
+      }
+      seedPoints.push({ x, y });
+    }
+  }
+
+  let meanL = 0;
+  let meanA = 0;
+  let meanB = 0;
+  for (const point of seedPoints) {
+    const color = resolvePixelOklabColor(sourcePixels, point.x, point.y);
+    meanL += color.l;
+    meanA += color.a;
+    meanB += color.b;
+  }
+  const sampleCount = Math.max(1, seedPoints.length);
+
+  return {
+    meanColor: {
+      l: meanL / sampleCount,
+      a: meanA / sampleCount,
+      b: meanB / sampleCount,
+    },
+    seedPoints,
+  };
 }
 
 export function applySparkSelection(args: {
@@ -197,9 +341,18 @@ export function applySparkSelection(args: {
   centerX: number;
   centerY: number;
   tolerance: number;
+  contiguous?: boolean;
   mode: ExplorerImageCutoutEditMode;
 }): ExplorerImageCutoutAlphaMask {
-  const { baseMask, sourcePixels, centerX, centerY, tolerance, mode } = args;
+  const {
+    baseMask,
+    sourcePixels,
+    centerX,
+    centerY,
+    tolerance,
+    contiguous = true,
+    mode,
+  } = args;
   if (
     baseMask.width !== sourcePixels.width ||
     baseMask.height !== sourcePixels.height ||
@@ -222,11 +375,27 @@ export function applySparkSelection(args: {
   let head = 0;
   let tail = 0;
 
-  const centerOffset = sourceOffset(sourcePixels.width, centerX, centerY);
-  const seedRed = sourcePixels.data[centerOffset] ?? 0;
-  const seedGreen = sourcePixels.data[centerOffset + 1] ?? 0;
-  const seedBlue = sourcePixels.data[centerOffset + 2] ?? 0;
+  const seedColor = resolvePixelOklabColor(sourcePixels, centerX, centerY);
   const threshold = resolveToleranceThreshold(tolerance);
+
+  if (!contiguous) {
+    for (let y = 0; y < baseMask.height; y += 1) {
+      for (let x = 0; x < baseMask.width; x += 1) {
+        if (
+          colorDistanceSquaredToPixel(sourcePixels, x, y, seedColor) >
+          threshold
+        ) {
+          continue;
+        }
+        alpha[alphaIndex(baseMask.width, x, y)] = mode === "add" ? 255 : 0;
+      }
+    }
+    return {
+      width: baseMask.width,
+      height: baseMask.height,
+      alpha,
+    };
+  }
 
   queueX[tail] = centerX;
   queueY[tail] = centerY;
@@ -239,12 +408,8 @@ export function applySparkSelection(args: {
     head += 1;
 
     const colorDistance = colorDistanceSquared(
-      sourcePixels,
-      x,
-      y,
-      seedRed,
-      seedGreen,
-      seedBlue,
+      resolvePixelOklabColor(sourcePixels, x, y),
+      seedColor,
     );
     if (colorDistance > threshold) {
       continue;
@@ -306,6 +471,7 @@ export function applySweepSelection(args: {
   radius: number;
   tolerance: number;
   softness: number;
+  edgeAwareness?: number;
   mode: ExplorerImageCutoutEditMode;
 }): ExplorerImageCutoutAlphaMask {
   const {
@@ -316,6 +482,7 @@ export function applySweepSelection(args: {
     radius,
     tolerance,
     softness,
+    edgeAwareness = 68,
     mode,
   } = args;
   if (
@@ -333,62 +500,23 @@ export function applySweepSelection(args: {
     };
   }
 
-  const alpha = cloneCutoutMaskAlpha(baseMask.alpha);
-  const brushRadius = Math.max(2, Math.round(radius));
-  const brushRadiusSquared = brushRadius * brushRadius;
-  const threshold = resolveToleranceThreshold(tolerance);
-  const softnessRatio = Math.max(0, Math.min(1, softness / 100));
-  const innerRatio = 1 - softnessRatio * 0.92;
-  const centerOffset = sourceOffset(sourcePixels.width, centerX, centerY);
-  const seedRed = sourcePixels.data[centerOffset] ?? 0;
-  const seedGreen = sourcePixels.data[centerOffset + 1] ?? 0;
-  const seedBlue = sourcePixels.data[centerOffset + 2] ?? 0;
-  const minX = Math.max(0, centerX - brushRadius);
-  const maxX = Math.min(baseMask.width - 1, centerX + brushRadius);
-  const minY = Math.max(0, centerY - brushRadius);
-  const maxY = Math.min(baseMask.height - 1, centerY + brushRadius);
-
-  for (let y = minY; y <= maxY; y += 1) {
-    for (let x = minX; x <= maxX; x += 1) {
-      const deltaX = x - centerX;
-      const deltaY = y - centerY;
-      const distanceSquared = deltaX * deltaX + deltaY * deltaY;
-      if (distanceSquared > brushRadiusSquared) {
-        continue;
-      }
-
-      const colorDistance = colorDistanceSquared(
-        sourcePixels,
-        x,
-        y,
-        seedRed,
-        seedGreen,
-        seedBlue,
-      );
-      if (colorDistance > threshold) {
-        continue;
-      }
-
-      const distanceRatio = Math.sqrt(distanceSquared) / brushRadius;
-      const weight =
-        distanceRatio <= innerRatio
-          ? 1
-          : 1 - smoothstep(innerRatio, 1, distanceRatio);
-      const nextIndex = alphaIndex(baseMask.width, x, y);
-      const current = alpha[nextIndex] ?? 0;
-      if (mode === "add") {
-        alpha[nextIndex] = Math.max(current, clampByte(weight * 255));
-        continue;
-      }
-      alpha[nextIndex] = clampByte(current * (1 - weight));
-    }
-  }
-
-  return {
+  const nextMask = {
     width: baseMask.width,
     height: baseMask.height,
-    alpha,
+    alpha: cloneCutoutMaskAlpha(baseMask.alpha),
   };
+  applySweepSelectionInPlace({
+    targetMask: nextMask,
+    sourcePixels,
+    centerX,
+    centerY,
+    radius,
+    tolerance,
+    softness,
+    edgeAwareness,
+    mode,
+  });
+  return nextMask;
 }
 
 export function applySweepSelectionInPlace(args: {
@@ -399,6 +527,7 @@ export function applySweepSelectionInPlace(args: {
   radius: number;
   tolerance: number;
   softness: number;
+  edgeAwareness?: number;
   mode: ExplorerImageCutoutEditMode;
 }): void {
   const {
@@ -409,6 +538,7 @@ export function applySweepSelectionInPlace(args: {
     radius,
     tolerance,
     softness,
+    edgeAwareness = 68,
     mode,
   } = args;
   if (
@@ -425,50 +555,123 @@ export function applySweepSelectionInPlace(args: {
   const brushRadius = Math.max(2, Math.round(radius));
   const brushRadiusSquared = brushRadius * brushRadius;
   const threshold = resolveToleranceThreshold(tolerance);
+  const edgeThreshold = resolveEdgeBarrierThreshold(tolerance, edgeAwareness);
   const softnessRatio = Math.max(0, Math.min(1, softness / 100));
   const innerRatio = 1 - softnessRatio * 0.92;
-  const centerOffset = sourceOffset(sourcePixels.width, centerX, centerY);
-  const seedRed = sourcePixels.data[centerOffset] ?? 0;
-  const seedGreen = sourcePixels.data[centerOffset + 1] ?? 0;
-  const seedBlue = sourcePixels.data[centerOffset + 2] ?? 0;
-  const minX = Math.max(0, centerX - brushRadius);
-  const maxX = Math.min(targetMask.width - 1, centerX + brushRadius);
-  const minY = Math.max(0, centerY - brushRadius);
-  const maxY = Math.min(targetMask.height - 1, centerY + brushRadius);
+  const visited = new Uint8Array(targetMask.width * targetMask.height);
+  const queueCapacity = targetMask.width * targetMask.height;
+  const queueX = new Int32Array(queueCapacity);
+  const queueY = new Int32Array(queueCapacity);
+  const queueParentX = new Int32Array(queueCapacity);
+  const queueParentY = new Int32Array(queueCapacity);
+  let head = 0;
+  let tail = 0;
 
-  for (let y = minY; y <= maxY; y += 1) {
-    for (let x = minX; x <= maxX; x += 1) {
-      const deltaX = x - centerX;
-      const deltaY = y - centerY;
-      const distanceSquared = deltaX * deltaX + deltaY * deltaY;
-      if (distanceSquared > brushRadiusSquared) {
-        continue;
-      }
+  const seedModel = resolveQuickSelectionSeedModel({
+    targetMask,
+    sourcePixels,
+    centerX,
+    centerY,
+    radius: brushRadius,
+  });
+  let meanColor = seedModel.meanColor;
+  let acceptedCount = Math.max(1, seedModel.seedPoints.length);
 
-      const colorDistance = colorDistanceSquared(
-        sourcePixels,
-        x,
-        y,
-        seedRed,
-        seedGreen,
-        seedBlue,
-      );
-      if (colorDistance > threshold) {
-        continue;
-      }
+  const pushQueuePoint = (
+    x: number,
+    y: number,
+    parentX: number,
+    parentY: number,
+  ) => {
+    const nextIndex = alphaIndex(targetMask.width, x, y);
+    if (visited[nextIndex] !== 0) {
+      return;
+    }
+    visited[nextIndex] = 1;
+    queueX[tail] = x;
+    queueY[tail] = y;
+    queueParentX[tail] = parentX;
+    queueParentY[tail] = parentY;
+    tail += 1;
+  };
 
-      const distanceRatio = Math.sqrt(distanceSquared) / brushRadius;
-      const weight =
-        distanceRatio <= innerRatio
-          ? 1
-          : 1 - smoothstep(innerRatio, 1, distanceRatio);
-      const nextIndex = alphaIndex(targetMask.width, x, y);
-      const current = targetMask.alpha[nextIndex] ?? 0;
-      if (mode === "add") {
-        targetMask.alpha[nextIndex] = Math.max(current, clampByte(weight * 255));
-        continue;
-      }
+  for (const point of seedModel.seedPoints) {
+    pushQueuePoint(point.x, point.y, point.x, point.y);
+  }
+
+  while (head < tail) {
+    const x = queueX[head] ?? 0;
+    const y = queueY[head] ?? 0;
+    const parentX = queueParentX[head] ?? x;
+    const parentY = queueParentY[head] ?? y;
+    head += 1;
+
+    const deltaX = x - centerX;
+    const deltaY = y - centerY;
+    const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+    if (distanceSquared > brushRadiusSquared) {
+      continue;
+    }
+
+    const pixelColor = resolvePixelOklabColor(sourcePixels, x, y);
+    const colorDistance = colorDistanceSquared(pixelColor, meanColor);
+    if (colorDistance > threshold) {
+      continue;
+    }
+
+    const edgeDistance =
+      x === parentX && y === parentY
+        ? 0
+        : neighborColorDistanceSquared(sourcePixels, x, y, parentX, parentY);
+    if (edgeDistance > edgeThreshold) {
+      continue;
+    }
+
+    const distanceRatio = Math.sqrt(distanceSquared) / brushRadius;
+    const radialWeight =
+      distanceRatio <= innerRatio
+        ? 1
+        : 1 - smoothstep(innerRatio, 1, distanceRatio);
+    const colorConfidence =
+      threshold <= 1e-6
+        ? 1
+        : 1 - smoothstep(threshold * 0.35, threshold, colorDistance);
+    const edgeConfidence =
+      edgeThreshold <= 1e-6
+        ? 1
+        : 1 - smoothstep(edgeThreshold * 0.35, edgeThreshold, edgeDistance);
+    const confidenceWeight = Math.max(
+      softnessRatio > 0 ? 0.08 : 0.2,
+      colorConfidence * 0.72 + edgeConfidence * 0.28,
+    );
+    const weight = radialWeight * confidenceWeight;
+    const nextIndex = alphaIndex(targetMask.width, x, y);
+    const current = targetMask.alpha[nextIndex] ?? 0;
+    if (mode === "add") {
+      targetMask.alpha[nextIndex] = Math.max(current, clampByte(weight * 255));
+    } else {
       targetMask.alpha[nextIndex] = clampByte(current * (1 - weight));
+    }
+
+    acceptedCount += 1;
+    const blend = 1 / acceptedCount;
+    meanColor = {
+      l: meanColor.l + (pixelColor.l - meanColor.l) * blend,
+      a: meanColor.a + (pixelColor.a - meanColor.a) * blend,
+      b: meanColor.b + (pixelColor.b - meanColor.b) * blend,
+    };
+
+    if (x > 0) {
+      pushQueuePoint(x - 1, y, x, y);
+    }
+    if (x + 1 < targetMask.width) {
+      pushQueuePoint(x + 1, y, x, y);
+    }
+    if (y > 0) {
+      pushQueuePoint(x, y - 1, x, y);
+    }
+    if (y + 1 < targetMask.height) {
+      pushQueuePoint(x, y + 1, x, y);
     }
   }
 }

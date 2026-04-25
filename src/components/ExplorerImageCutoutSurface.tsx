@@ -11,6 +11,7 @@ import {
 
 import {
   Bot,
+  ChevronRight,
   Copy,
   Eraser,
   Palette,
@@ -28,10 +29,12 @@ import { useInteractionMotionController } from "../animation/interactionMotion";
 import { matchesKeybinding } from "../config/hotkeys";
 import {
   DEFAULT_IMAGE_CUTOUT_STAGE_TOOL_ID,
-  explorerImageCutoutStageToolDefinitions,
+  explorerImageCutoutToolGroupDefinitions,
   resolveExplorerImageCutoutStageToolDefinition,
+  resolveExplorerImageCutoutToolGroupForTool,
   resolveExplorerImageIsolationLaneDefinition,
   type ExplorerImageCutoutStageToolId,
+  type ExplorerImageCutoutToolGroupId,
   type ExplorerImageIsolationLaneDefinition,
   type ExplorerImageCutoutWorkflowMode,
 } from "../config/imageCutoutTools";
@@ -75,7 +78,10 @@ import {
   type ExplorerImageCutoutMaskPoint,
   type ExplorerImageCutoutSourcePixels,
 } from "./explorer/explorerImageCutoutMask";
-import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
+import type {
+  ExplorerPreviewContextMenuAction,
+  ExplorerPreviewContextMenuRegistration,
+} from "./explorer/explorerPreviewContextMenu";
 
 type ExplorerImageCutoutSurfaceProps = {
   workflowMode: ExplorerImageCutoutWorkflowMode;
@@ -119,10 +125,13 @@ type ExplorerImageCutoutLaneState = {
   transform: ExplorerImageStageTransform;
   showToolPalette: boolean;
   showRefinePanel: boolean;
+  openToolGroupId: ExplorerImageCutoutToolGroupId | null;
   activeStageTool: ExplorerImageCutoutStageToolId;
-  brushTolerance: number;
+  selectionTolerance: number;
   brushSize: number;
   brushSoftness: number;
+  magicWandContiguous: boolean;
+  quickSelectEdgeAwareness: number;
   edgeSoftness: number;
   edgePull: number;
   bootRequestId: number;
@@ -173,9 +182,11 @@ const HISTORY_LIMIT = 32;
 const POINTER_CLICK_THRESHOLD_PX = 6;
 const MARCHING_ANTS_WIDTH = 4;
 const MARCHING_ANTS_SPEED = 20;
-const DEFAULT_BRUSH_TOLERANCE = 30;
+const DEFAULT_SELECTION_TOLERANCE = 30;
 const DEFAULT_BRUSH_SIZE = 34;
 const DEFAULT_BRUSH_SOFTNESS = 42;
+const DEFAULT_MAGIC_WAND_CONTIGUOUS = true;
+const DEFAULT_QUICK_SELECT_EDGE_AWARENESS = 68;
 const DEFAULT_EDGE_SOFTNESS = 2;
 const DEFAULT_EDGE_PULL = 0;
 
@@ -197,6 +208,20 @@ function cloneMask(
 
 function hasVisibleBoundary(boundary: CutoutBoundarySnapshot | null): boolean {
   return (boundary?.points.length ?? 0) > 0;
+}
+
+function hasMaskSelection(mask: ExplorerImageCutoutAlphaMask | null): boolean {
+  return mask?.alpha.some((sample) => sample > 0) ?? false;
+}
+
+function createEmptyMaskLike(
+  mask: ExplorerImageCutoutAlphaMask,
+): ExplorerImageCutoutAlphaMask {
+  return {
+    width: mask.width,
+    height: mask.height,
+    alpha: new Uint8ClampedArray(mask.alpha.length),
+  };
 }
 
 function resolveLaneCopy(
@@ -228,10 +253,13 @@ function createDefaultLaneState(
     transform: { ...DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM },
     showToolPalette: true,
     showRefinePanel: false,
+    openToolGroupId: null,
     activeStageTool: resolveDefaultStageTool(workflowMode),
-    brushTolerance: DEFAULT_BRUSH_TOLERANCE,
+    selectionTolerance: DEFAULT_SELECTION_TOLERANCE,
     brushSize: DEFAULT_BRUSH_SIZE,
     brushSoftness: DEFAULT_BRUSH_SOFTNESS,
+    magicWandContiguous: DEFAULT_MAGIC_WAND_CONTIGUOUS,
+    quickSelectEdgeAwareness: DEFAULT_QUICK_SELECT_EDGE_AWARENESS,
     edgeSoftness: DEFAULT_EDGE_SOFTNESS,
     edgePull: DEFAULT_EDGE_PULL,
     bootRequestId: 0,
@@ -423,19 +451,6 @@ function floatingPanelStyle(): CSSProperties {
   };
 }
 
-function controlGroupStyle(): CSSProperties {
-  return {
-    display: "flex",
-    alignItems: "center",
-    gap: 4,
-    padding: 2,
-    borderRadius: "calc(var(--overlay-explorer-control-radius, 10px) + 2px)",
-    border: "1px solid var(--overlay-explorer-chip-border)",
-    background: "var(--overlay-explorer-chip-bg)",
-    flexWrap: "wrap",
-  };
-}
-
 function stageViewportStyle(cursor: string): CSSProperties {
   const checkerboardCss = `
     linear-gradient(45deg, rgba(255,255,255,0.035) 25%, transparent 25%),
@@ -504,6 +519,8 @@ type ExplorerIsolationButtonProps = {
   motionSurfaceId?: "previewWorkflowTab" | "actionButton";
   motionStepIndex?: number;
   onClick?: () => void;
+  onContextMenu?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  styleOverride?: CSSProperties;
   children: ReactNode;
 };
 
@@ -516,6 +533,8 @@ function ExplorerIsolationButton({
   motionSurfaceId,
   motionStepIndex = 0,
   onClick,
+  onContextMenu,
+  styleOverride,
   children,
 }: ExplorerIsolationButtonProps) {
   const interactionMotion = useInteractionMotionController();
@@ -598,6 +617,11 @@ function ExplorerIsolationButton({
           onClick?.();
         }
       }}
+      onContextMenu={(event) => {
+        if (!disabled) {
+          onContextMenu?.(event);
+        }
+      }}
       {...motionBinding.motionDataAttributes}
       onPointerEnter={motionBinding.onPointerEnter}
       onPointerLeave={motionBinding.onPointerLeave}
@@ -606,6 +630,7 @@ function ExplorerIsolationButton({
       onPointerCancel={motionBinding.onPointerCancel}
       style={{
         ...baseStyle,
+        ...styleOverride,
         ...motionBinding.motionStyle,
       }}
     >
@@ -676,13 +701,151 @@ function CutoutSliderField({
   );
 }
 
-function toolPaletteStyle(): CSSProperties {
+function CutoutToggleField({
+  label,
+  value,
+  onLabel,
+  offLabel,
+  helper,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onLabel: string;
+  offLabel: string;
+  helper: string;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            color: "var(--overlay-text-muted)",
+          }}
+        >
+          {label}
+        </span>
+        <ExplorerIsolationButton
+          ariaLabel={label}
+          title={helper}
+          active={value}
+          variant="chip"
+          motionStepIndex={0}
+          onClick={() => onChange(!value)}
+        >
+          <span>{value ? onLabel : offLabel}</span>
+        </ExplorerIsolationButton>
+      </div>
+      <span
+        style={{
+          fontSize: 10,
+          lineHeight: 1.45,
+          color: "var(--overlay-text-dim, rgba(255,255,255,0.52))",
+        }}
+      >
+        {helper}
+      </span>
+    </div>
+  );
+}
+
+function toolRailStyle(): CSSProperties {
   return {
     ...floatingPanelStyle(),
     display: "grid",
-    gap: 10,
-    padding: "12px",
-    maxWidth: "min(420px, calc(100% - 24px))",
+    gap: 8,
+    padding: "10px 8px",
+    width: 56,
+  };
+}
+
+function toolRailDividerStyle(): CSSProperties {
+  return {
+    width: "100%",
+    height: 1,
+    borderRadius: 999,
+    background:
+      "color-mix(in srgb, var(--overlay-explorer-preview-border) 74%, transparent)",
+    margin: "2px 0",
+  };
+}
+
+function toolGroupShellStyle(): CSSProperties {
+  return {
+    position: "relative",
+    display: "grid",
+    justifyItems: "center",
+  };
+}
+
+function toolGroupFlyoutStyle(): CSSProperties {
+  return {
+    ...floatingPanelStyle(),
+    position: "absolute",
+    left: "calc(100% + 10px)",
+    top: 0,
+    display: "grid",
+    gap: 6,
+    minWidth: 186,
+    padding: 8,
+    pointerEvents: "auto",
+    zIndex: 2,
+  };
+}
+
+function toolRailButtonStyle(): CSSProperties {
+  return {
+    width: 38,
+    minWidth: 38,
+    height: 38,
+    minHeight: 38,
+    padding: 0,
+    position: "relative",
+  };
+}
+
+function toolGroupMenuButtonStyle(isOpen: boolean): CSSProperties {
+  return {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 15,
+    height: 15,
+    minWidth: 15,
+    minHeight: 15,
+    borderRadius: 999,
+    border: isOpen
+      ? "1px solid var(--overlay-explorer-chip-active-border)"
+      : "1px solid var(--overlay-explorer-chip-border)",
+    background: isOpen
+      ? "var(--overlay-explorer-chip-active-bg)"
+      : "var(--overlay-explorer-chip-bg)",
+    color: isOpen
+      ? "var(--overlay-explorer-chip-active-text)"
+      : "var(--overlay-text-muted)",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: "0 8px 18px rgba(0,0,0,0.24)",
+  };
+}
+
+function toolFlyoutButtonStyle(): CSSProperties {
+  return {
+    justifyContent: "flex-start",
+    minHeight: 32,
+    minWidth: "100%",
+    width: "100%",
+    padding: "0 10px",
   };
 }
 
@@ -1019,8 +1182,9 @@ export function ExplorerImageCutoutSurface({
           centerX: point.x,
           centerY: point.y,
           radius: lane.brushSize,
-          tolerance: lane.brushTolerance,
+          tolerance: lane.selectionTolerance,
           softness: lane.brushSoftness,
+          edgeAwareness: lane.quickSelectEdgeAwareness,
           mode,
         });
         return;
@@ -1413,6 +1577,7 @@ export function ExplorerImageCutoutSurface({
       lane.history = [];
       lane.historyIndex = 0;
       lane.showRefinePanel = false;
+      lane.openToolGroupId = null;
       lane.activeStageTool = resolveDefaultStageTool(mode);
       syncLaneVisuals(mode);
 
@@ -1646,6 +1811,30 @@ export function ExplorerImageCutoutSurface({
     syncLaneVisuals(workflowMode);
   }, [getLaneState, syncLaneVisuals, workflowMode]);
 
+  const handleDeselect = useCallback(() => {
+    const lane = getLaneState(workflowMode);
+    const baseMask = lane.baseMask;
+    if (!baseMask || lane.isMutating) {
+      return;
+    }
+    if (!hasMaskSelection(baseMask)) {
+      lane.statusTone = "neutral";
+      lane.statusMessage = "Nothing is selected right now.";
+      invalidateActiveLane();
+      return;
+    }
+    commitMaskHistory(
+      workflowMode,
+      createEmptyMaskLike(baseMask),
+      "Selection cleared.",
+    );
+  }, [
+    commitMaskHistory,
+    getLaneState,
+    invalidateActiveLane,
+    workflowMode,
+  ]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const root = rootRef.current;
@@ -1659,6 +1848,12 @@ export function ExplorerImageCutoutSurface({
         event.preventDefault();
         event.stopPropagation();
         void handleCopyToClipboard();
+        return;
+      }
+      if (matchesKeybinding(event, keybindings.imageCutoutDeselect)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleDeselect();
         return;
       }
       if (matchesKeybinding(event, keybindings.saveFile)) {
@@ -1690,11 +1885,13 @@ export function ExplorerImageCutoutSurface({
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [
     handleCopyToClipboard,
+    handleDeselect,
     handleRedo,
     handleResetLane,
     handleSaveSibling,
     handleUndo,
     keybindings.imageCutoutCopy,
+    keybindings.imageCutoutDeselect,
     keybindings.imageEditorRedo,
     keybindings.imageEditorReset,
     keybindings.imageEditorUndo,
@@ -1705,6 +1902,9 @@ export function ExplorerImageCutoutSurface({
   const handleToolPaletteToggle = useCallback(() => {
     const lane = getLaneState(workflowMode);
     lane.showToolPalette = !lane.showToolPalette;
+    if (!lane.showToolPalette) {
+      lane.openToolGroupId = null;
+    }
     invalidateActiveLane();
   }, [getLaneState, invalidateActiveLane, workflowMode]);
 
@@ -1719,6 +1919,17 @@ export function ExplorerImageCutoutSurface({
       const lane = getLaneState(workflowMode);
       lane.activeStageTool = nextTool;
       lane.showToolPalette = true;
+      lane.openToolGroupId = null;
+      invalidateActiveLane();
+    },
+    [getLaneState, invalidateActiveLane, workflowMode],
+  );
+
+  const handleToggleToolGroup = useCallback(
+    (groupId: ExplorerImageCutoutToolGroupId) => {
+      const lane = getLaneState(workflowMode);
+      lane.openToolGroupId = lane.openToolGroupId === groupId ? null : groupId;
+      lane.showToolPalette = true;
       invalidateActiveLane();
     },
     [getLaneState, invalidateActiveLane, workflowMode],
@@ -1729,62 +1940,81 @@ export function ExplorerImageCutoutSurface({
       return;
     }
 
+    const baseActions: ExplorerPreviewContextMenuAction[] = [
+      {
+        id: "image-cutout.reset-view",
+        title: "Reset View",
+        description: "Restore the cutout stage zoom and pan.",
+        iconName: "RotateCcw",
+        group: "preview",
+        defaultOrder: 10,
+        priority: 10,
+        onSelect: () => handleResetStageView(),
+      },
+      {
+        id: "image-cutout.reset-workflow",
+        title: "Reset Isolation",
+        description: "Re-run the current isolation workflow from its source mask.",
+        iconName: "RefreshCw",
+        group: "preview",
+        defaultOrder: 20,
+        priority: 20,
+        onSelect: () => handleResetLane(workflowMode),
+      },
+      {
+        id: "image-cutout.auto-remove-background",
+        title: "Auto Remove BG",
+        description: "Run automatic background removal and merge the result into Cutout.",
+        iconName: "Sparkles",
+        group: "preview",
+        defaultOrder: 30,
+        priority: 30,
+        onSelect: () => {
+          void handleAutoRemoveBackground();
+        },
+      },
+    ];
+
+    if (hasMaskSelection(activeLane.baseMask)) {
+      baseActions.push({
+        id: "image-cutout.deselect",
+        title: "Deselect",
+        description:
+          "Clear the current subject selection without resetting the cutout session.",
+        iconName: "Circle",
+        group: "preview",
+        defaultOrder: 35,
+        priority: 35,
+        onSelect: () => handleDeselect(),
+      });
+    }
+
+    baseActions.push(
+      {
+        id: "image-cutout.tools.toggle",
+        title: activeLane.showToolPalette ? "Hide Tool Rail" : "Show Tool Rail",
+        description: "Reveal the compact left-docked cutout tool rail.",
+        iconName: "Palette",
+        group: "preview",
+        defaultOrder: 40,
+        priority: 40,
+        onSelect: () => handleToolPaletteToggle(),
+      },
+      {
+        id: "image-cutout.refine.toggle",
+        title: activeLane.showRefinePanel ? "Hide Refine Controls" : "Show Refine Controls",
+        description: "Reveal the compact edge and brush refinement controls.",
+        iconName: "Sliders",
+        group: "preview",
+        defaultOrder: 50,
+        priority: 50,
+        onSelect: () => handleRefineToggle(),
+      },
+    );
+
     onRegisterContextMenuRegistration({
       previewKind: "image",
-      baseActions: [
-        {
-          id: "image-cutout.reset-view",
-          title: "Reset View",
-          description: "Restore the cutout stage zoom and pan.",
-          iconName: "RotateCcw",
-          group: "preview",
-          defaultOrder: 10,
-          priority: 10,
-          onSelect: () => handleResetStageView(),
-        },
-        {
-          id: "image-cutout.reset-workflow",
-          title: "Reset Isolation",
-          description: "Re-run the current isolation workflow from its source mask.",
-          iconName: "RefreshCw",
-          group: "preview",
-          defaultOrder: 20,
-          priority: 20,
-          onSelect: () => handleResetLane(workflowMode),
-        },
-        {
-          id: "image-cutout.auto-remove-background",
-          title: "Auto Remove BG",
-          description: "Run automatic background removal and merge the result into Cutout.",
-          iconName: "Sparkles",
-          group: "preview",
-          defaultOrder: 30,
-          priority: 30,
-          onSelect: () => {
-            void handleAutoRemoveBackground();
-          },
-        },
-        {
-          id: "image-cutout.tools.toggle",
-          title: activeLane.showToolPalette ? "Hide Tool Palette" : "Show Tool Palette",
-          description: "Reveal the compact cutout tool palette.",
-          iconName: "Palette",
-          group: "preview",
-          defaultOrder: 40,
-          priority: 40,
-          onSelect: () => handleToolPaletteToggle(),
-        },
-        {
-          id: "image-cutout.refine.toggle",
-          title: activeLane.showRefinePanel ? "Hide Refine Controls" : "Show Refine Controls",
-          description: "Reveal the compact edge and brush refinement controls.",
-          iconName: "Sliders",
-          group: "preview",
-          defaultOrder: 50,
-          priority: 50,
-          onSelect: () => handleRefineToggle(),
-        },
-      ],
+      baseActions,
       workflowOverlays: [],
     });
 
@@ -1792,8 +2022,10 @@ export function ExplorerImageCutoutSurface({
       onRegisterContextMenuRegistration(null);
     };
   }, [
+    activeLane.baseMask,
     activeLane.showToolPalette,
     handleAutoRemoveBackground,
+    handleDeselect,
     handleToolPaletteToggle,
     activeLane.showRefinePanel,
     handleRefineToggle,
@@ -2032,7 +2264,8 @@ export function ExplorerImageCutoutSurface({
         sourcePixels: lane.sourcePixels,
         centerX: point.x,
         centerY: point.y,
-        tolerance: lane.brushTolerance,
+        tolerance: lane.selectionTolerance,
+        contiguous: lane.magicWandContiguous,
         mode: negativeMode ? "subtract" : "add",
       });
       commitMaskHistory(
@@ -2073,8 +2306,14 @@ export function ExplorerImageCutoutSurface({
       event.preventDefault();
       const forcePanGesture = event.button === 1;
       const negativeMode = event.altKey || event.button === 2;
+      const nativeDragModifierActive =
+        (event.ctrlKey || event.metaKey) && event.shiftKey;
+      if (lane.openToolGroupId) {
+        lane.openToolGroupId = null;
+        invalidateActiveLane();
+      }
 
-      if (event.shiftKey) {
+      if (nativeDragModifierActive) {
         pendingStageInteractionRef.current = {
           workflowMode,
           pointerId: event.pointerId,
@@ -2123,8 +2362,8 @@ export function ExplorerImageCutoutSurface({
       }
 
       if (lane.activeStageTool === "lasso") {
-        beginLassoStroke(event, point, negativeMode);
-        return;
+      beginLassoStroke(event, point, negativeMode);
+      return;
       }
 
       pendingStageInteractionRef.current = {
@@ -2282,9 +2521,10 @@ export function ExplorerImageCutoutSurface({
   const handleRefineSliderChange = useCallback(
     (
       key:
-        | "brushTolerance"
+        | "selectionTolerance"
         | "brushSize"
         | "brushSoftness"
+        | "quickSelectEdgeAwareness"
         | "edgeSoftness"
         | "edgePull",
       value: number,
@@ -2302,6 +2542,9 @@ export function ExplorerImageCutoutSurface({
   const canUndo = activeLane.historyIndex > 0;
   const canRedo = activeLane.historyIndex + 1 < activeHistoryLength;
   const activeToolDefinition = resolveExplorerImageCutoutStageToolDefinition(
+    activeLane.activeStageTool,
+  );
+  const activeToolGroupDefinition = resolveExplorerImageCutoutToolGroupForTool(
     activeLane.activeStageTool,
   );
   const activeLassoPoints =
@@ -2344,49 +2587,131 @@ export function ExplorerImageCutoutSurface({
       >
         {activeLane.showToolPalette ? (
           <div
-            data-testid="explorer-image-cutout-tool-palette"
+            data-testid="explorer-image-cutout-tool-rail"
             style={{
-              ...toolPaletteStyle(),
+              ...toolRailStyle(),
               pointerEvents: "auto",
             }}
           >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-                gap: 8,
+            {explorerImageCutoutToolGroupDefinitions.map((groupDefinition, index) => {
+              const groupTools = groupDefinition.toolIds.map((toolId) =>
+                resolveExplorerImageCutoutStageToolDefinition(toolId),
+              );
+              const activeGroupTool =
+                groupTools.find((toolDefinition) => toolDefinition.id === activeLane.activeStageTool) ??
+                groupTools[0];
+              const flyoutOpen = activeLane.openToolGroupId === groupDefinition.id;
+              const hasToolOptions = groupTools.length > 1;
+              return (
+                <div
+                  key={groupDefinition.id}
+                  data-testid={`explorer-image-cutout-tool-group-${groupDefinition.id}`}
+                  style={toolGroupShellStyle()}
+                >
+                  <ExplorerIsolationButton
+                    ariaLabel={activeGroupTool?.ariaLabel ?? groupDefinition.ariaLabel}
+                    title={activeGroupTool?.description ?? groupDefinition.description}
+                    active={activeLane.activeStageTool === activeGroupTool?.id}
+                    variant="action"
+                    disabled={activeLane.isBooting || activeLane.isMutating}
+                    motionStepIndex={index}
+                    styleOverride={toolRailButtonStyle()}
+                    onClick={() => {
+                      if (activeGroupTool) {
+                        handleSelectStageTool(activeGroupTool.id);
+                      }
+                    }}
+                    onContextMenu={(event) => {
+                      if (!hasToolOptions) {
+                        return;
+                      }
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleToggleToolGroup(groupDefinition.id);
+                    }}
+                  >
+                    {activeGroupTool
+                      ? renderCutoutToolIcon(activeGroupTool.iconName)
+                      : null}
+                    {hasToolOptions ? (
+                      <span
+                        aria-hidden
+                        style={{
+                          position: "absolute",
+                          right: 3,
+                          bottom: 3,
+                          width: 0,
+                          height: 0,
+                          borderLeft: "4px solid transparent",
+                          borderTop: "4px solid var(--overlay-text-muted)",
+                        }}
+                      />
+                    ) : null}
+                  </ExplorerIsolationButton>
+
+                  {hasToolOptions ? (
+                    <ExplorerIsolationButton
+                      ariaLabel={`Open ${groupDefinition.label} menu`}
+                      title={`Open ${groupDefinition.label} menu`}
+                      active={flyoutOpen}
+                      variant="action"
+                      disabled={activeLane.isBooting || activeLane.isMutating}
+                      motionStepIndex={index}
+                      styleOverride={toolGroupMenuButtonStyle(flyoutOpen)}
+                      onClick={() => handleToggleToolGroup(groupDefinition.id)}
+                    >
+                      <ChevronRight
+                        size={10}
+                        style={{
+                          transform: flyoutOpen ? "rotate(90deg)" : "none",
+                          transition: "transform 120ms ease",
+                        }}
+                      />
+                    </ExplorerIsolationButton>
+                  ) : null}
+
+                  {flyoutOpen ? (
+                    <div
+                      data-testid={`explorer-image-cutout-tool-flyout-${groupDefinition.id}`}
+                      style={toolGroupFlyoutStyle()}
+                    >
+                      {groupTools.map((toolDefinition, toolIndex) => (
+                        <ExplorerIsolationButton
+                          key={toolDefinition.id}
+                          ariaLabel={toolDefinition.ariaLabel}
+                          title={toolDefinition.description}
+                          active={activeLane.activeStageTool === toolDefinition.id}
+                          variant="action"
+                          disabled={activeLane.isBooting || activeLane.isMutating}
+                          motionStepIndex={toolIndex}
+                          styleOverride={toolFlyoutButtonStyle()}
+                          onClick={() => handleSelectStageTool(toolDefinition.id)}
+                        >
+                          {renderCutoutToolIcon(toolDefinition.iconName)}
+                          <span>{toolDefinition.label}</span>
+                        </ExplorerIsolationButton>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+
+            <div style={toolRailDividerStyle()} />
+
+            <ExplorerIsolationButton
+              ariaLabel="Auto Remove BG"
+              title="Run automatic background removal and merge it into Cutout"
+              variant="action"
+              disabled={activeLane.isBooting || activeLane.isMutating}
+              motionStepIndex={explorerImageCutoutToolGroupDefinitions.length}
+              styleOverride={toolRailButtonStyle()}
+              onClick={() => {
+                void handleAutoRemoveBackground();
               }}
             >
-              {explorerImageCutoutStageToolDefinitions.map((toolDefinition, index) => (
-                <ExplorerIsolationButton
-                  key={toolDefinition.id}
-                  ariaLabel={toolDefinition.ariaLabel}
-                  title={toolDefinition.description}
-                  active={activeLane.activeStageTool === toolDefinition.id}
-                  disabled={activeLane.isBooting || activeLane.isMutating}
-                  motionStepIndex={index}
-                  onClick={() => handleSelectStageTool(toolDefinition.id)}
-                >
-                  {renderCutoutToolIcon(toolDefinition.iconName)}
-                  <span>{toolDefinition.label}</span>
-                </ExplorerIsolationButton>
-              ))}
-            </div>
-
-            <div style={controlGroupStyle()}>
-              <ExplorerIsolationButton
-                ariaLabel="Auto Remove BG"
-                title="Run automatic background removal and merge it into Cutout"
-                disabled={activeLane.isBooting || activeLane.isMutating}
-                motionStepIndex={explorerImageCutoutStageToolDefinitions.length}
-                onClick={() => {
-                  void handleAutoRemoveBackground();
-                }}
-              >
-                <Sparkles size={15} />
-                <span>Auto Remove BG</span>
-              </ExplorerIsolationButton>
-            </div>
+              <Sparkles size={15} />
+            </ExplorerIsolationButton>
           </div>
         ) : (
           <div />
@@ -2440,8 +2765,8 @@ export function ExplorerImageCutoutSurface({
           </ExplorerIsolationButton>
 
           <ExplorerIsolationButton
-            ariaLabel="Toggle tool palette"
-            title="Toggle tool palette"
+            ariaLabel="Toggle tool rail"
+            title="Toggle tool rail"
             active={activeLane.showToolPalette}
             variant="action"
             disabled={activeLane.isBooting || activeLane.isMutating}
@@ -2565,6 +2890,7 @@ export function ExplorerImageCutoutSurface({
         }}
       >
         <span data-testid="explorer-image-cutout-zoom">{zoomPercent}%</span>
+        <span>{activeToolGroupDefinition.label}</span>
         <span>{activeToolDefinition.label}</span>
         <span>
           {activeLane.isBooting
@@ -2640,17 +2966,17 @@ export function ExplorerImageCutoutSurface({
                   helper="Larger strokes cover more nearby pixels per pass."
                 />
               ) : null}
-              {activeToolDefinition.usesBrushReach ? (
+              {activeToolDefinition.usesTolerance ? (
                 <CutoutSliderField
-                  label="Selection Reach"
-                  value={activeLane.brushTolerance}
+                  label="Tolerance"
+                  value={activeLane.selectionTolerance}
                   min={4}
                   max={100}
                   step={1}
                   onChange={(value) =>
-                    handleRefineSliderChange("brushTolerance", value)
+                    handleRefineSliderChange("selectionTolerance", value)
                   }
-                  helper="Higher reach accepts a wider color range around the sample."
+                  helper="Higher tolerance accepts a wider perceptual color range around the sampled pixels."
                 />
               ) : null}
               {activeToolDefinition.usesBrushSoftness ? (
@@ -2664,6 +2990,33 @@ export function ExplorerImageCutoutSurface({
                     handleRefineSliderChange("brushSoftness", value)
                   }
                   helper="Softer falloff feathers the stroke instead of carving a hard edge."
+                />
+              ) : null}
+              {activeToolDefinition.usesEdgeAwareness ? (
+                <CutoutSliderField
+                  label="Edge Awareness"
+                  value={activeLane.quickSelectEdgeAwareness}
+                  min={0}
+                  max={100}
+                  step={1}
+                  onChange={(value) =>
+                    handleRefineSliderChange("quickSelectEdgeAwareness", value)
+                  }
+                  helper="Higher edge awareness resists crossing strong contrast boundaries while the brush grows."
+                />
+              ) : null}
+              {activeToolDefinition.usesContiguous ? (
+                <CutoutToggleField
+                  label="Contiguous"
+                  value={activeLane.magicWandContiguous}
+                  onLabel="On"
+                  offLabel="Off"
+                  onChange={(value) => {
+                    const lane = getLaneState(workflowMode);
+                    lane.magicWandContiguous = value;
+                    invalidateActiveLane();
+                  }}
+                  helper="Contiguous keeps the wand on the clicked color island. Turn it off to target matching colors across the full preview."
                 />
               ) : null}
               <CutoutSliderField
