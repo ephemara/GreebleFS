@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, CopyPlus, MoreHorizontal, Plus, SquareSplitHorizontal, X } from '@/components/AppIcons';
 import { useShallow } from 'zustand/react/shallow';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
+import type { LoadedExplorerAction } from '../../config/actionPacks';
 import { detectClientPlatform } from '../../config/platform';
 import {
   moveExplorerChromeControlInResolvedSurfaces,
@@ -81,6 +82,7 @@ interface ExplorerWorkspaceProps {
   menuPacks?: LoadedExplorerMenuPack[];
   onOpenPanel?: (panelId: string) => void;
   onOpenSettingsSection?: (section: SettingsSectionKey) => void;
+  actions?: LoadedExplorerAction[];
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
@@ -190,6 +192,7 @@ export function ExplorerWorkspace({
   menuPacks = [],
   onOpenPanel = () => undefined,
   onOpenSettingsSection = () => undefined,
+  actions = [],
   pluginActions = [],
   pluginContextMenuItems = [],
   layoutMode = 'full',
@@ -1319,6 +1322,7 @@ export function ExplorerWorkspace({
           workspacePaneCount={workspacePaneCount}
           onWorkspaceRuntimeSnapshotChange={publishRuntimeSnapshot}
           onWorkspaceSelectionTransferComplete={handleWorkspaceSelectionTransferComplete}
+          actions={actions}
           pluginActions={pluginActions}
           pluginContextMenuItems={pluginContextMenuItems}
           explorerPicker={isActivePane ? explorerPicker : null}
@@ -1344,6 +1348,7 @@ export function ExplorerWorkspace({
     navigationRequestsByInstanceId,
     onAddBookmark,
     pendingOpenRequest,
+    actions,
     homePacks,
     onOpenInFilesystemAquarium,
     onOpenInTerminal,

@@ -1,5 +1,6 @@
 import {
   BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
+  normalizeExplorerActionContributions,
   normalizePluginContextMenuContributions,
   sortExplorerMenuLayoutEntries,
   type ExplorerBuiltInContextMenuActionId,
@@ -13,6 +14,7 @@ import {
   type ExplorerMenuLayoutEntry,
   type ExplorerMenuRendererKind,
   type ExplorerPreviewContextMenuCatalogItem,
+  type ExplorerResolvedActionContextMenuContribution,
   type ExplorerResolvedMenuCommandNode,
   type ExplorerResolvedMenuSeparatorNode,
   type ExplorerResolvedMenuSubmenuNode,
@@ -24,6 +26,7 @@ import {
   type LoadedExplorerMenuPack,
 } from '../../config/menuPacks';
 import type { OverlayPluginContextMenuContribution } from '../../config/pluginContributions';
+import type { LoadedExplorerAction } from '../../config/actionPacks';
 import type {
   ExplorerAssociatedProgram,
   ExplorerAssociatedProgramsCatalog,
@@ -145,10 +148,15 @@ export interface ExplorerMenuRuntimeEnvironment {
   refresh: () => void | Promise<void>;
   navigate: (path: string) => void | Promise<void>;
   openSettingsSection: (section: string) => void;
+  openContextMenuComposer: (context: ExplorerMenuContextKind) => void;
   runAudioBatch: (
     mode: 'convert' | 'normalize',
     entries: ExplorerMenuInvocationEntry[],
   ) => void | Promise<void>;
+  executeActionCommand: (
+    command: ExplorerResolvedActionContextMenuContribution,
+    context: ExplorerMenuRuntimeActionContext,
+  ) => Promise<void>;
   executePluginCommand: (
     command: ExplorerResolvedPluginContextMenuContribution,
     entry: ExplorerMenuInvocationEntry,
@@ -162,8 +170,10 @@ export interface BuildExplorerRuntimeMenuOptions {
   activeMenuPackId: string | null;
   layoutOverridesByContext: ExplorerMenuContextLayoutOverrideMap;
   themeRendererPreference?: ExplorerMenuRendererKind;
+  actions: LoadedExplorerAction[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   previewContextMenuRegistration?: ExplorerPreviewContextMenuRegistration | null;
+  includeEditMenuCommand?: boolean;
   environment: ExplorerMenuRuntimeEnvironment;
 }
 
@@ -461,7 +471,43 @@ function createPreviewContextMenuCommands(
   }));
 }
 
-function canShowBuiltInCommand(
+function matchesActionSelectionRules(
+  command: ExplorerResolvedActionContextMenuContribution,
+  targetEntries: ExplorerMenuInvocationEntry[],
+): boolean {
+  const { selection } = command.execution.action;
+  const count = targetEntries.length;
+  if (selection.minCount != null && count < selection.minCount) {
+    return false;
+  }
+  if (selection.maxCount != null && count > selection.maxCount) {
+    return false;
+  }
+
+  if (count === 0) {
+    return selection.minCount == null || selection.minCount === 0;
+  }
+
+  if (!selection.allowFiles && targetEntries.some((entry) => !entry.isDirectory)) {
+    return false;
+  }
+  if (!selection.allowDirectories && targetEntries.some((entry) => entry.isDirectory)) {
+    return false;
+  }
+
+  if (selection.extensions.length === 0) {
+    return true;
+  }
+
+  return targetEntries.every((entry) => {
+    if (entry.isDirectory) {
+      return selection.allowDirectories;
+    }
+    return selection.extensions.includes(entry.extension.toLowerCase());
+  });
+}
+
+function canShowCommand(
   command: ExplorerCommandDefinition,
   invocation: ExplorerMenuInvocationContext,
   targetEntries: ExplorerMenuInvocationEntry[],
@@ -477,6 +523,12 @@ function canShowBuiltInCommand(
 
   if (command.source === 'plugin' || command.source === 'preview') {
     return true;
+  }
+  if (command.source === 'action') {
+    return matchesActionSelectionRules(
+      command as ExplorerResolvedActionContextMenuContribution,
+      targetEntries,
+    );
   }
 
   const actionId = command.execution.actionId;
@@ -499,6 +551,8 @@ function canShowBuiltInCommand(
         && !environment.isExplorerArchiveVirtualPath(entryPath);
     case 'open-aquarium':
       return !environment.isCloudExplorerPath(entryPath);
+    case 'edit-menu':
+      return true;
     case 'send-to-mobile-download':
       return targetEntries.length === 1
         && !entry.isDirectory
@@ -589,6 +643,8 @@ function executeBuiltInLeaf(
         environment.openInFilesystemAquarium(
           entry.isDirectory ? entry.path : entry.parentPath || environment.currentPath,
         );
+    case 'edit-menu':
+      return () => environment.openContextMenuComposer(invocation.kind);
     case 'send-to-mobile-download':
       return () => environment.sendToMobileDownload(entry);
     case 'reveal':
@@ -722,11 +778,63 @@ function resolveBuiltInLabel(
       return primaryEntry && !primaryEntry.isDirectory
         ? 'Open Parent Habitat in Filesystem Aquarium'
         : 'Open Habitat in Filesystem Aquarium';
+    case 'edit-menu':
+      return 'Edit Menu';
     case 'send-to-mobile-download':
       return 'Send to iPhone';
     default:
       return command.title;
   }
+}
+
+function appendEditMenuCommand(
+  nodes: ExplorerRuntimeMenuNode[],
+  invocation: ExplorerMenuInvocationContext,
+  targetEntries: ExplorerMenuInvocationEntry[],
+  primaryEntry: ExplorerMenuInvocationEntry | null,
+  environment: ExplorerMenuRuntimeEnvironment,
+): ExplorerRuntimeMenuNode[] {
+  const editCommand: ExplorerCommandDefinition = {
+    id: 'built-in.edit-menu',
+    title: 'Edit Menu',
+    description:
+      'Open the context-menu composer in Settings with this menu context selected.',
+    contexts: ['entry', 'background', 'multi-select', 'search-result', 'preview-pane'],
+    appliesTo: 'any',
+    group: 'system',
+    defaultOrder: 9998,
+    priority: 9998,
+    source: 'built-in',
+    iconName: 'Sliders',
+    tone: 'accent',
+    shortcutId: undefined,
+    themeHints: undefined,
+    supportsQuickSlot: false,
+    behavior: 'leaf',
+    execution: {
+      kind: 'built-in',
+      actionId: 'edit-menu',
+    },
+  };
+
+  const node = createRuntimeNodeForCommand(
+    editCommand,
+    invocation,
+    targetEntries,
+    primaryEntry,
+    environment,
+    0,
+  );
+  if (!node) {
+    return nodes;
+  }
+
+  const nextNodes = [...nodes];
+  if (nextNodes.length > 0 && nextNodes[nextNodes.length - 1]?.kind !== 'separator') {
+    nextNodes.push(createFallbackSeparatorNode('edit-menu.separator'));
+  }
+  nextNodes.push(node);
+  return sanitizeNodeList(nextNodes);
 }
 
 function createRuntimeLeafNode(
@@ -737,7 +845,7 @@ function createRuntimeLeafNode(
   environment: ExplorerMenuRuntimeEnvironment,
   depth: number,
 ): ExplorerRuntimeMenuCommandNode | null {
-  if (!canShowBuiltInCommand(command, invocation, targetEntries, primaryEntry, environment)) {
+  if (!canShowCommand(command, invocation, targetEntries, primaryEntry, environment)) {
     return null;
   }
 
@@ -793,6 +901,31 @@ function createRuntimeLeafNode(
           command as ExplorerResolvedPluginContextMenuContribution,
           primaryEntry,
         ),
+    };
+  }
+
+  if (command.source === 'action') {
+    return {
+      kind: 'command',
+      id: command.id,
+      commandId: command.id,
+      label: command.title,
+      description: command.description,
+      depth,
+      iconName: command.iconName,
+      tone: command.tone,
+      source: command.source,
+      quickSlot: 'none',
+      fallbackBucket: 'default',
+      disabled: false,
+      shortcutId: command.shortcutId,
+      command,
+      onSelect: () =>
+        environment.executeActionCommand(command as ExplorerResolvedActionContextMenuContribution, {
+          invocation,
+          targetEntries,
+          primaryEntry,
+        }),
     };
   }
 
@@ -1008,7 +1141,7 @@ function createRuntimeNodeForCommand(
   depth: number,
 ): ExplorerRuntimeMenuNode | null {
   if (command.behavior === 'resolver') {
-    if (!canShowBuiltInCommand(command, invocation, targetEntries, primaryEntry, environment)) {
+    if (!canShowCommand(command, invocation, targetEntries, primaryEntry, environment)) {
       return null;
     }
     const children = sanitizeNodeList(
@@ -1275,6 +1408,65 @@ function injectFallbackPreviewNodes(
   return sanitizeNodeList(mergedNodes);
 }
 
+function injectFallbackActionNodes(
+  nodes: ExplorerRuntimeMenuNode[],
+  layout: ExplorerMenuContextLayout,
+  commandRegistry: ExplorerCommandDefinition[],
+  invocation: ExplorerMenuInvocationContext,
+  targetEntries: ExplorerMenuInvocationEntry[],
+  primaryEntry: ExplorerMenuInvocationEntry | null,
+  environment: ExplorerMenuRuntimeEnvironment,
+  handledCommandIds: Set<string>,
+): ExplorerRuntimeMenuNode[] {
+  if (layoutHasGroupSlot(layout, 'action')) {
+    return nodes;
+  }
+
+  const actionNodes = commandRegistry
+    .filter((command) => command.source === 'action' && !handledCommandIds.has(command.id))
+    .sort((left, right) => left.priority - right.priority)
+    .flatMap((command) => {
+      const node = createRuntimeNodeForCommand(
+        command,
+        invocation,
+        targetEntries,
+        primaryEntry,
+        environment,
+        0,
+      );
+      if (!node) {
+        return [];
+      }
+      handledCommandIds.add(command.id);
+      return [node];
+    });
+  const sanitizedActionNodes = sanitizeNodeList(actionNodes);
+  if (sanitizedActionNodes.length === 0) {
+    return nodes;
+  }
+
+  const insertionIndex = nodes.findIndex(
+    (node) =>
+      (node.kind === 'command' && node.command.source === 'plugin') ||
+      (node.kind === 'command' && node.command.source === 'built-in' && node.command.group === 'danger'),
+  );
+  const safeInsertionIndex = insertionIndex >= 0 ? insertionIndex : nodes.length;
+  const prefix = nodes.slice(0, safeInsertionIndex);
+  const suffix = nodes.slice(safeInsertionIndex);
+  const mergedNodes: ExplorerRuntimeMenuNode[] = [...prefix];
+
+  if (mergedNodes.length > 0 && mergedNodes[mergedNodes.length - 1]?.kind !== 'separator') {
+    mergedNodes.push(createFallbackSeparatorNode('action.fallback.leading-separator'));
+  }
+  mergedNodes.push(...sanitizedActionNodes);
+  if (suffix.length > 0) {
+    mergedNodes.push(createFallbackSeparatorNode('action.fallback.trailing-separator'));
+    mergedNodes.push(...suffix);
+  }
+
+  return sanitizeNodeList(mergedNodes);
+}
+
 function resolveActiveMenuPack(
   menuPacks: LoadedExplorerMenuPack[],
   activeMenuPackId: string | null,
@@ -1313,6 +1505,7 @@ export function buildExplorerRuntimeMenu(
   const pluginCommands = normalizePluginContextMenuContributions(
     options.pluginContextMenuItems,
   );
+  const actionCommands = normalizeExplorerActionContributions(options.actions);
   const menuPack = resolveActiveMenuPack(options.menuPacks, options.activeMenuPackId);
   const targetEntries = getActionEntries(options.invocation);
   const primaryEntry = getPrimaryActionEntry(
@@ -1332,6 +1525,7 @@ export function buildExplorerRuntimeMenu(
     ...BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
     ...dynamicCommands,
     ...previewCommands,
+    ...actionCommands,
     ...pluginCommands,
   ];
   const layout = getLayoutForContext(
@@ -1351,7 +1545,7 @@ export function buildExplorerRuntimeMenu(
     0,
     handledCommandIds,
   );
-  const nodes = injectFallbackPreviewNodes(
+  const previewInjectedNodes = injectFallbackPreviewNodes(
     layoutNodes,
     layout,
     commandRegistry,
@@ -1361,6 +1555,25 @@ export function buildExplorerRuntimeMenu(
     options.environment,
     handledCommandIds,
   );
+  const nodes = injectFallbackActionNodes(
+    previewInjectedNodes,
+    layout,
+    commandRegistry,
+    options.invocation,
+    targetEntries,
+    primaryEntry,
+    options.environment,
+    handledCommandIds,
+  );
+  const finalizedNodes = options.includeEditMenuCommand
+    ? appendEditMenuCommand(
+      nodes,
+      options.invocation,
+      targetEntries,
+      primaryEntry,
+      options.environment,
+    )
+    : nodes;
 
   return {
     menuPack,
@@ -1370,7 +1583,7 @@ export function buildExplorerRuntimeMenu(
       layout,
       options.themeRendererPreference,
     ),
-    nodes,
+    nodes: finalizedNodes,
     targetEntries,
     primaryEntry,
   };

@@ -47,6 +47,7 @@ import {
   type ExplorerThumbnailSettings,
 } from '../config/explorerThumbnails';
 import {
+  EXPLORER_MENU_CONTEXT_KINDS,
   BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
   normalizeExplorerMenuContextLayoutOverrideMap,
   normalizeExplorerContextMenuItemOverrideMap,
@@ -508,6 +509,14 @@ function normalizeExplorerMenuPackId(value: unknown): string | null {
 
   const trimmedValue = value.trim();
   return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+function normalizeExplorerMenuComposerContext(
+  value: unknown,
+): ExplorerMenuContextKind {
+  return EXPLORER_MENU_CONTEXT_KINDS.includes(value as ExplorerMenuContextKind)
+    ? (value as ExplorerMenuContextKind)
+    : 'entry';
 }
 
 function buildLegacyLayoutEntriesForContext(
@@ -1341,11 +1350,15 @@ interface SettingsState {
   settings: Settings;
   isOpen: boolean;
   activeSection: SettingsSectionKey;
+  activeContextMenuComposerContext: ExplorerMenuContextKind;
   
   // Actions
   openSettings: () => void;
   closeSettings: () => void;
   setActiveSection: (section: SettingsSectionKey) => void;
+  setActiveContextMenuComposerContext: (
+    context: ExplorerMenuContextKind,
+  ) => void;
   
   // Update settings
   updateEditor: (updates: Partial<EditorSettings>) => void;
@@ -1395,10 +1408,15 @@ export const useSettingsStore = create<SettingsState>()(
       settings: defaultSettings,
       isOpen: false,
       activeSection: 'overview',
+      activeContextMenuComposerContext: 'entry',
       
       openSettings: () => set({ isOpen: true }),
       closeSettings: () => set({ isOpen: false }),
       setActiveSection: (section) => set({ activeSection: normalizeSettingsSectionKey(section) }),
+      setActiveContextMenuComposerContext: (context) => set({
+        activeContextMenuComposerContext:
+          normalizeExplorerMenuComposerContext(context),
+      }),
       
       updateEditor: (updates) => set((state) => ({
         settings: {
@@ -1707,6 +1725,10 @@ export const useSettingsStore = create<SettingsState>()(
           ...currentState,
           ...persisted,
           activeSection: normalizeSettingsSectionKey(persisted?.activeSection ?? currentState.activeSection),
+          activeContextMenuComposerContext: normalizeExplorerMenuComposerContext(
+            persisted?.activeContextMenuComposerContext
+              ?? currentState.activeContextMenuComposerContext,
+          ),
           settings: mergeSettingsWithDefaults(persisted?.settings),
         };
       },

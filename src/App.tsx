@@ -111,6 +111,12 @@ import {
   type LoadedOverlayTopBarPackage,
 } from './config/topBarPackages';
 import {
+  actionPackSystemConfig,
+  loadExplorerActionPacks as discoverExplorerActionPacks,
+  type LoadedActionPack,
+  type LoadedExplorerAction,
+} from './config/actionPacks';
+import {
   homePackSystemConfig,
   loadExplorerHomePacks as discoverExplorerHomePacks,
   type LoadedExplorerHomePack,
@@ -669,6 +675,7 @@ function App() {
   const soundPacksSignatureRef = useRef('');
   const homePacksSignatureRef = useRef('');
   const menuPacksSignatureRef = useRef('');
+  const actionPacksSignatureRef = useRef('');
   const authoredAnimationsRefreshInFlightRef = useRef(false);
   const authoredAnimationsRefreshQueuedRef = useRef(false);
   const authoredShadersRefreshInFlightRef = useRef(false);
@@ -687,6 +694,8 @@ function App() {
   const homePacksRefreshQueuedRef = useRef(false);
   const menuPacksRefreshInFlightRef = useRef(false);
   const menuPacksRefreshQueuedRef = useRef(false);
+  const actionPacksRefreshInFlightRef = useRef(false);
+  const actionPacksRefreshQueuedRef = useRef(false);
   const frameTelemetryContextRef = useRef<{
     activePanelId: string | null;
     openPanelCount: number;
@@ -732,6 +741,10 @@ function App() {
   const [menuPacksLoading, setMenuPacksLoading] = useState(true);
   const [menuPacksError, setMenuPacksError] = useState<string | null>(null);
   const [menuPacksWarnings, setMenuPacksWarnings] = useState<string[]>([]);
+  const [actionPacks, setActionPacks] = useState<LoadedActionPack[]>([]);
+  const [actionPacksLoading, setActionPacksLoading] = useState(true);
+  const [actionPacksError, setActionPacksError] = useState<string | null>(null);
+  const [actionPacksWarnings, setActionPacksWarnings] = useState<string[]>([]);
   const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
   const [activeExplorerPickerRequest, setActiveExplorerPickerRequest] =
     useState<ExplorerPickerRequest | null>(null);
@@ -876,6 +889,8 @@ function App() {
     pluginThemePackages,
     pluginFonts,
     pluginCommands,
+    pluginActionPacks,
+    pluginActions,
     pluginExplorerActions,
     pluginContextMenuItems,
     folderPluginsError,
@@ -957,6 +972,26 @@ function App() {
     }
     return [...packMap.values()].sort((left, right) => left.name.localeCompare(right.name));
   }, [combinedThemePackages, menuPacks]);
+  const combinedActionPacks = useMemo(() => {
+    const packMap = new Map<string, LoadedActionPack>();
+    for (const pack of actionPacks) {
+      packMap.set(pack.id, pack);
+    }
+    for (const pack of pluginActionPacks) {
+      packMap.set(pack.id, pack);
+    }
+    return [...packMap.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [actionPacks, pluginActionPacks]);
+  const combinedExplorerActions = useMemo(() => {
+    const actionMap = new Map<string, LoadedExplorerAction>();
+    for (const action of combinedActionPacks.flatMap(pack => pack.actions)) {
+      actionMap.set(action.id, action);
+    }
+    for (const action of pluginActions) {
+      actionMap.set(action.id, action);
+    }
+    return [...actionMap.values()].sort((left, right) => left.title.localeCompare(right.title));
+  }, [combinedActionPacks, pluginActions]);
   const combinedSoundPacks = useMemo(() => {
     const packMap = new Map<string, LoadedOverlaySoundPack>();
     for (const pack of soundPacks) {
@@ -3277,6 +3312,66 @@ function App() {
     }
   }, []);
 
+  const refreshActionPacks = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setActionPacks([]);
+      setActionPacksError(null);
+      setActionPacksWarnings([]);
+      setActionPacksLoading(false);
+      return;
+    }
+
+    if (force) {
+      actionPacksRefreshQueuedRef.current = true;
+    }
+    if (actionPacksRefreshInFlightRef.current) {
+      actionPacksRefreshQueuedRef.current = true;
+      return;
+    }
+
+    actionPacksRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || actionPacksRefreshQueuedRef.current;
+        actionPacksRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          actionPacksSignatureRef.current = '';
+        }
+
+        setActionPacksLoading(prev => prev && !nextForce);
+        try {
+          await ensureDir(actionPackSystemConfig.actionsDirectory);
+          const listed = await listExplorerDir(actionPackSystemConfig.actionsDirectory, false);
+          const nextSignature = listed
+            .map(entry => `${entry.path}:${entry.modified}`)
+            .sort()
+            .join('|');
+
+          if (!nextForce && nextSignature === actionPacksSignatureRef.current) {
+            setActionPacksLoading(false);
+            continue;
+          }
+
+          actionPacksSignatureRef.current = nextSignature;
+          const result = await discoverExplorerActionPacks();
+          setActionPacks(result.packs);
+          setActionPacksError(result.sourceError);
+          setActionPacksWarnings(result.warnings);
+        } catch (error) {
+          setActionPacks([]);
+          setActionPacksError(String(error));
+          setActionPacksWarnings([]);
+        } finally {
+          setActionPacksLoading(false);
+        }
+      } while (actionPacksRefreshQueuedRef.current);
+    } finally {
+      actionPacksRefreshInFlightRef.current = false;
+    }
+  }, []);
+
   const refreshThemePackages = useCallback(async (force = false) => {
     if (!isTauri()) {
       setThemePackages([]);
@@ -3444,6 +3539,10 @@ function App() {
 
   const openMenuPacksFolder = useCallback(async () => {
     await openManagedContentDirectory('menuPacks');
+  }, [openManagedContentDirectory]);
+
+  const openActionsFolder = useCallback(async () => {
+    await openManagedContentDirectory('actions');
   }, [openManagedContentDirectory]);
 
   const openThemesFolder = useCallback(async () => {
@@ -3811,6 +3910,22 @@ function App() {
   }, [isOverlayVisible, liveReloadEnabled, refreshMenuPacks]);
 
   useEffect(() => {
+    void refreshActionPacks(true);
+  }, [refreshActionPacks]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !actionPackSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshActionPacks();
+    }, actionPackSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshActionPacks]);
+
+  useEffect(() => {
     void refreshThemePackages(true);
   }, [refreshThemePackages]);
 
@@ -3851,6 +3966,8 @@ function App() {
         isOpen: isOverlayVisible,
         hideOverlay,
         pluginCommands,
+        actionPacks: combinedActionPacks,
+        actions: combinedExplorerActions,
         pluginExplorerActions,
         pluginContextMenuItems,
         onOpenInTerminal: handleOpenInTerminal,
@@ -3866,12 +3983,16 @@ function App() {
         topBarPackagesWarnings,
         homePacks: combinedHomePacks,
         menuPacks: combinedMenuPacks,
+        actionsDirectory: actionPackSystemConfig.actionsDirectory,
         homePacksDirectory: homePackSystemConfig.homePacksDirectory,
         menuPacksDirectory: menuPackSystemConfig.menuPacksDirectory,
+        actionsLoading: actionPacksLoading,
         homePacksLoading,
         menuPacksLoading,
+        actionsError: actionPacksError,
         homePacksError,
         menuPacksError,
+        actionsWarnings: actionPacksWarnings,
         homePacksWarnings,
         menuPacksWarnings,
         themePackages: combinedThemePackages,
@@ -3906,6 +4027,8 @@ function App() {
         themeEnginePacksWarnings: themeBundleDependencyCatalogs.warnings,
         onRefreshTopBars: refreshTopBarCatalog,
         onOpenTopBarsFolder: openTopBarsFolder,
+        onRefreshActions: () => refreshActionPacks(true),
+        onOpenActionsFolder: openActionsFolder,
         onRefreshHomePacks: () => refreshHomePacks(true),
         onRefreshMenuPacks: () => refreshMenuPacks(true),
         onOpenHomePacksFolder: openHomePacksFolder,
@@ -4008,13 +4131,21 @@ function App() {
       availableAnimations,
       availableWallpapers,
       availableShaders,
+      actionPacksError,
+      actionPacksLoading,
+      actionPacksWarnings,
+      combinedActionPacks,
+      combinedExplorerActions,
       combinedHomePacks,
       pluginContributedShaders,
       pluginCommands,
+      pluginActionPacks,
+      pluginActions,
       pluginExplorerActions,
       pluginContextMenuItems,
       openAnimationsFolder,
       openAppearancePacksFolder,
+      openActionsFolder,
       openHomePacksFolder,
       openInteractionMotionPacksFolder,
       openMenuPacksFolder,
@@ -4034,6 +4165,7 @@ function App() {
       topBarPackagesError,
       topBarPackagesLoading,
       topBarPackagesWarnings,
+      refreshActionPacks,
       refreshThemePackages,
       refreshAuthoredAnimations,
       refreshAuthoredWallpapers,
@@ -5138,6 +5270,7 @@ function App() {
                 shaders: 0,
                 fonts: 0,
                 commands: 0,
+                actions: 0,
                 explorerActions: 0,
                 contextMenuItems: 0,
               },

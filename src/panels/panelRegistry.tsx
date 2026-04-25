@@ -1,6 +1,7 @@
 import React from 'react';
 import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, HardDrive, Settings2, ThemedPanelIcon } from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
+import type { LoadedActionPack, LoadedExplorerAction } from '../config/actionPacks';
 import type {
   OverlayPluginCommandContribution,
   OverlayPluginContextMenuContribution,
@@ -129,6 +130,8 @@ export function createBuiltInPanelDefinitions({
   isOpen,
   hideOverlay,
   pluginCommands,
+  actionPacks = [],
+  actions = [],
   pluginExplorerActions,
   pluginContextMenuItems,
   onOpenInTerminal,
@@ -144,12 +147,16 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesWarnings,
   homePacks = [],
   menuPacks = [],
+  actionsDirectory = '',
   homePacksDirectory = '',
   menuPacksDirectory = '',
+  actionsLoading = false,
   homePacksLoading = false,
   menuPacksLoading = false,
+  actionsError = null,
   homePacksError = null,
   menuPacksError = null,
+  actionsWarnings = [],
   homePacksWarnings = [],
   menuPacksWarnings = [],
   themePackages,
@@ -184,6 +191,8 @@ export function createBuiltInPanelDefinitions({
   themeEnginePacksWarnings = [],
   onRefreshTopBars,
   onOpenTopBarsFolder,
+  onRefreshActions = async () => {},
+  onOpenActionsFolder = async () => {},
   onRefreshHomePacks = async () => {},
   onRefreshMenuPacks = async () => {},
   onOpenHomePacksFolder = async () => {},
@@ -255,6 +264,8 @@ export function createBuiltInPanelDefinitions({
   isOpen: boolean;
   hideOverlay: () => void;
   pluginCommands: OverlayPluginCommandContribution[];
+  actionPacks?: LoadedActionPack[];
+  actions?: LoadedExplorerAction[];
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   onOpenInTerminal: (path: string) => void;
@@ -270,12 +281,16 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesWarnings: string[];
   homePacks?: LoadedExplorerHomePack[];
   menuPacks?: LoadedExplorerMenuPack[];
+  actionsDirectory?: string;
   homePacksDirectory?: string;
   menuPacksDirectory?: string;
+  actionsLoading?: boolean;
   homePacksLoading?: boolean;
   menuPacksLoading?: boolean;
+  actionsError?: string | null;
   homePacksError?: string | null;
   menuPacksError?: string | null;
+  actionsWarnings?: string[];
   homePacksWarnings?: string[];
   menuPacksWarnings?: string[];
   themePackages: LoadedOverlayThemePackage[];
@@ -310,6 +325,8 @@ export function createBuiltInPanelDefinitions({
   themeEnginePacksWarnings?: string[];
   onRefreshTopBars: () => Promise<void>;
   onOpenTopBarsFolder: () => Promise<void>;
+  onRefreshActions?: () => Promise<void>;
+  onOpenActionsFolder?: () => Promise<void>;
   onRefreshHomePacks?: () => Promise<void>;
   onRefreshMenuPacks?: () => Promise<void>;
   onOpenHomePacksFolder?: () => Promise<void>;
@@ -404,6 +421,7 @@ export function createBuiltInPanelDefinitions({
           onAddBookmark={onAddBookmark}
           homePacks={homePacks}
           menuPacks={menuPacks}
+          actions={actions}
           onOpenPanel={onActivatePanel}
           onOpenSettingsSection={onOpenSettingsSection}
           onExplorerPickerConfirm={onExplorerPickerConfirm}
@@ -543,12 +561,18 @@ export function createBuiltInPanelDefinitions({
             topBarPackagesWarnings={topBarPackagesWarnings}
             homePacks={homePacks}
             menuPacks={menuPacks}
+            actionPacks={actionPacks}
+            actions={actions}
+            actionsDirectory={actionsDirectory}
             homePacksDirectory={homePacksDirectory}
             menuPacksDirectory={menuPacksDirectory}
+            actionsLoading={actionsLoading}
             homePacksLoading={homePacksLoading}
             menuPacksLoading={menuPacksLoading}
+            actionsError={actionsError}
             homePacksError={homePacksError}
             menuPacksError={menuPacksError}
+            actionsWarnings={actionsWarnings}
             homePacksWarnings={homePacksWarnings}
             menuPacksWarnings={menuPacksWarnings}
             themePackages={themePackages}
@@ -583,6 +607,8 @@ export function createBuiltInPanelDefinitions({
             themeEnginePacksWarnings={themeEnginePacksWarnings}
             onRefreshTopBars={onRefreshTopBars}
             onOpenTopBarsFolder={onOpenTopBarsFolder}
+            onRefreshActions={onRefreshActions}
+            onOpenActionsFolder={onOpenActionsFolder}
             onRefreshHomePacks={onRefreshHomePacks}
             onRefreshMenuPacks={onRefreshMenuPacks}
             onOpenHomePacksFolder={onOpenHomePacksFolder}

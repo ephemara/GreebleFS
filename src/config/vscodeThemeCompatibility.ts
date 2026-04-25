@@ -451,11 +451,7 @@ async function resolveVsCodeExtensionFromEntry(
     }
   } else if (entryLooksLikeVsix(entry)) {
     sourceKind = 'vsix';
-    const extractionResult = await commands.fsExtractArchive({
-      archivePath: entry.path,
-      mode: 'openCached',
-      targetDirectory: null,
-    }).then(unwrapTauriResult);
+    const extractionResult = await commands.fsOpenArchive(entry.path).then(unwrapTauriResult);
     cachedExtractionPath = extractionResult.outputPath;
 
     const extractedRootPackageJsonPath = joinPlatformPath(extractionResult.outputPath, 'package.json');

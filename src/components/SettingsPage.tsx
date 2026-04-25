@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Bot, Camera, Cpu, Database, Download, FolderOpen, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, StickyNote, TerminalSquare, ThemedPanelIcon, Trash2, Type, Volume2, VolumeX } from '@/components/AppIcons';
+import { ArrowDown, ArrowUp, Bot, Camera, Clipboard, Copy, CopyPlus, Cpu, Database, Download, Edit3, Eraser, ExternalLink, Eye, FilePlus, FolderOpen, FolderPlus, getPanelIconSlotId, GitBranch, HardDrive, Home, Image, Info, LayoutGrid, Loader2, MonitorPlay, Music, Palette, Pencil, Plus, Puzzle, RefreshCw, RotateCcw, Save, Scissors, Search, Settings2, Shield, ShieldCheck, Sliders, SlidersHorizontal, Smartphone, Sparkles, Star, StickyNote, Tags, Terminal, TerminalSquare, ThemedPanelIcon, Trash2, Type, Undo2, Volume2, VolumeX } from '@/components/AppIcons';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import { PremiumSlider } from './PremiumSlider';
@@ -95,20 +95,30 @@ import {
   BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
   createExplorerMenuSubmenuEntry,
   createLegacyExplorerActionContextMenuContributions,
+  normalizeExplorerActionContributions,
   moveExplorerMenuLayoutEntry,
   normalizePluginContextMenuContributions,
+  placeExplorerMenuLayoutEntry,
   removeExplorerMenuLayoutEntry,
   sortExplorerMenuLayoutEntries,
   upsertExplorerMenuSubmenuEntry,
   withExplorerMenuLayoutEntryEnabled,
   withExplorerMenuLayoutEntryParent,
   withExplorerMenuLayoutEntryPlacement,
+  type ExplorerCommandDefinition,
   type ExplorerMenuContextKind,
   type ExplorerMenuContextLayout,
   type ExplorerMenuFallbackBucket,
+  type ExplorerMenuInvocationContext,
+  type ExplorerMenuInvocationEntry,
   type ExplorerMenuLayoutEntry,
   type ExplorerMenuQuickSlot,
 } from '../config/explorerContextMenu';
+import {
+  actionPackSystemConfig,
+  type LoadedActionPack,
+  type LoadedExplorerAction,
+} from '../config/actionPacks';
 import { getBuiltInIconTheme, resolveFileIconSrc } from '../config/iconTheme';
 import { animationSystemConfig, resolvePreferredAnimationId } from '../config/animations';
 import {
@@ -177,7 +187,7 @@ import {
 } from '../config/themeBundlePacks';
 import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import type { LoadedExplorerHomePack } from '../config/homePackages';
-import type { LoadedExplorerMenuPack } from '../config/menuPacks';
+import { createBuiltInExplorerMenuPack, type LoadedExplorerMenuPack } from '../config/menuPacks';
 import {
   DEFAULT_SOUND_PACK_ID,
   overlaySoundEffectCatalog,
@@ -289,6 +299,11 @@ import {
   type NativeNotificationPermissionState,
 } from '../runtime/nativeNotifications';
 import { previewSoundEffect } from '../runtime/soundEffects';
+import {
+  buildExplorerRuntimeMenu,
+  type ExplorerMenuRuntimeEnvironment,
+  type ExplorerRuntimeMenuNode,
+} from './explorer/explorerMenuRuntime';
 
 function ThemeBadge({ label, active = false }: { label: string; active?: boolean }) {
   return (
@@ -301,6 +316,360 @@ function ThemeBadge({ label, active = false }: { label: string; active?: boolean
     >
       {label}
     </span>
+  );
+}
+
+function renderSettingsContextMenuIcon(iconName?: string): ReactNode {
+  switch (iconName) {
+    case 'Clipboard':
+      return <Clipboard size={13} />;
+    case 'Copy':
+      return <Copy size={13} />;
+    case 'CopyPlus':
+      return <CopyPlus size={13} />;
+    case 'Edit3':
+      return <Edit3 size={13} />;
+    case 'Eraser':
+      return <Eraser size={13} />;
+    case 'ExternalLink':
+      return <ExternalLink size={13} />;
+    case 'Eye':
+      return <Eye size={13} />;
+    case 'FilePlus':
+      return <FilePlus size={13} />;
+    case 'FolderPlus':
+      return <FolderPlus size={13} />;
+    case 'Info':
+      return <Info size={13} />;
+    case 'Pencil':
+      return <Pencil size={13} />;
+    case 'RefreshCw':
+      return <RefreshCw size={13} />;
+    case 'RotateCcw':
+      return <RotateCcw size={13} />;
+    case 'Save':
+      return <Save size={13} />;
+    case 'Scissors':
+      return <Scissors size={13} />;
+    case 'Shield':
+      return <Shield size={13} />;
+    case 'Sliders':
+      return <Sliders size={13} />;
+    case 'Sparkles':
+      return <Sparkles size={13} />;
+    case 'Star':
+      return <Star size={13} />;
+    case 'Tags':
+      return <Tags size={13} />;
+    case 'Terminal':
+      return <Terminal size={13} />;
+    case 'Trash2':
+      return <Trash2 size={13} />;
+    case 'Undo2':
+      return <Undo2 size={13} />;
+    default:
+      return <Puzzle size={13} />;
+  }
+}
+
+function createSettingsContextMenuPreviewEntry(
+  path: string,
+  options?: Partial<ExplorerMenuInvocationEntry>,
+): ExplorerMenuInvocationEntry {
+  const normalizedPath = path.trim();
+  const segments = normalizedPath.split(/[\\/]/).filter(Boolean);
+  const name = options?.name ?? segments[segments.length - 1] ?? normalizedPath;
+  const isDirectory = options?.isDirectory ?? false;
+  const extension = isDirectory
+    ? ''
+    : (options?.extension ?? name.split('.').pop()?.toLowerCase() ?? '');
+
+  return {
+    path: normalizedPath,
+    name,
+    parentPath:
+      options?.parentPath
+      ?? normalizedPath.replace(/[\\/][^\\/]+$/, '')
+      ?? '',
+    extension,
+    stem: isDirectory
+      ? name
+      : (options?.stem ?? name.replace(/\.[^.]+$/, '')),
+    isDirectory,
+  };
+}
+
+function buildSettingsContextMenuPreviewInvocation(
+  contextKind: ExplorerMenuContextKind,
+): ExplorerMenuInvocationContext {
+  const currentLocation = '/workspace/greeblefs-demo';
+  const fileEntry = createSettingsContextMenuPreviewEntry(
+    '/workspace/greeblefs-demo/notes/alpha.txt',
+  );
+  const secondFileEntry = createSettingsContextMenuPreviewEntry(
+    '/workspace/greeblefs-demo/notes/beta.ts',
+  );
+  const previewEntry = createSettingsContextMenuPreviewEntry(
+    '/workspace/greeblefs-demo/renders/preview.png',
+  );
+
+  const baseInvocation: ExplorerMenuInvocationContext = {
+    kind: contextKind,
+    currentLocation,
+    selectedEntries: [],
+    primaryEntry: null,
+    searchResult: null,
+    previewTarget: null,
+    previewContext: null,
+    inputModality: 'mouse',
+    reducedMotion: false,
+    capabilities: {
+      mouse: true,
+      touch: false,
+      pen: false,
+      keyboard: true,
+    },
+  };
+
+  switch (contextKind) {
+    case 'background':
+      return baseInvocation;
+    case 'multi-select':
+      return {
+        ...baseInvocation,
+        selectedEntries: [fileEntry, secondFileEntry],
+        primaryEntry: fileEntry,
+      };
+    case 'search-result':
+      return {
+        ...baseInvocation,
+        selectedEntries: [fileEntry],
+        primaryEntry: fileEntry,
+        searchResult: {
+          query: 'alpha notes',
+          searchMode: 'semantic',
+        },
+      };
+    case 'preview-pane':
+      return {
+        ...baseInvocation,
+        selectedEntries: [previewEntry],
+        primaryEntry: previewEntry,
+        previewTarget: previewEntry,
+        previewContext: {
+          previewKind: 'image',
+          workflowTabId: 'preview',
+          workflowBaseMode: 'preview',
+        },
+      };
+    case 'entry':
+    default:
+      return {
+        ...baseInvocation,
+        selectedEntries: [fileEntry],
+        primaryEntry: fileEntry,
+      };
+  }
+}
+
+function resolveContextMenuCommandSourceLabel(
+  command: ExplorerCommandDefinition,
+): string {
+  if (command.source === 'action') {
+    return `Action · ${command.packName}`;
+  }
+  if (command.source === 'plugin') {
+    return `Plugin · ${command.pluginName}`;
+  }
+  if (command.source === 'preview') {
+    return 'Preview Lane';
+  }
+  return 'Built-In';
+}
+
+function getContextMenuPreviewPathKey(path: string[]): string {
+  return path.length > 0 ? path.join('/') : 'root';
+}
+
+function resolveContextMenuPreviewPanels(
+  rootNodes: ExplorerRuntimeMenuNode[],
+  openSubmenuPath: string[],
+): {
+  panels: ExplorerRuntimeMenuNode[][];
+  resolvedPath: string[];
+} {
+  const panels: ExplorerRuntimeMenuNode[][] = [rootNodes];
+  const resolvedPath: string[] = [];
+  let currentNodes = rootNodes;
+
+  for (const submenuId of openSubmenuPath) {
+    const submenuNode = currentNodes.find(
+      (node): node is Extract<ExplorerRuntimeMenuNode, { kind: 'submenu' }> =>
+        node.kind === 'submenu' && node.id === submenuId,
+    );
+    if (!submenuNode) {
+      break;
+    }
+    panels.push(submenuNode.children);
+    resolvedPath.push(submenuId);
+    currentNodes = submenuNode.children;
+  }
+
+  return { panels, resolvedPath };
+}
+
+function ExplorerContextMenuPreviewPanels({
+  nodes,
+  density,
+  showDescriptions,
+  selectedNodeId,
+  onSelectNode,
+}: {
+  nodes: ExplorerRuntimeMenuNode[];
+  density: 'compact' | 'balanced' | 'touch';
+  showDescriptions: boolean;
+  selectedNodeId: string | null;
+  onSelectNode?: (node: ExplorerRuntimeMenuNode) => void;
+}) {
+  const [openSubmenuPath, setOpenSubmenuPath] = useState<string[]>([]);
+  const panelState = useMemo(
+    () => resolveContextMenuPreviewPanels(nodes, openSubmenuPath),
+    [nodes, openSubmenuPath],
+  );
+
+  useEffect(() => {
+    setOpenSubmenuPath([]);
+  }, [nodes]);
+
+  if (nodes.length === 0) {
+    return (
+      <div
+        className="rounded border px-4 py-6 text-[11px] opacity-50"
+        style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'rgba(255,255,255,0.02)' }}
+      >
+        This context currently resolves to an empty menu.
+      </div>
+    );
+  }
+
+  const panelWidth = density === 'touch' ? 280 : density === 'compact' ? 228 : 248;
+
+  return (
+    <div className="flex min-h-0 gap-3 overflow-x-auto pb-1">
+      {panelState.panels.map((panelNodes, panelIndex) => {
+        const panelPath = panelState.resolvedPath.slice(0, panelIndex);
+        const panelKey = getContextMenuPreviewPathKey(panelPath);
+
+        return (
+          <div
+            key={panelKey}
+            className="shrink-0 rounded border py-1"
+            style={{
+              width: panelWidth,
+              minHeight: 220,
+              borderColor: 'var(--overlay-explorer-preview-border)',
+              background: 'var(--overlay-explorer-preview-bg)',
+              boxShadow: 'var(--overlay-explorer-ctx-menu-shadow)',
+              backdropFilter: 'blur(14px)',
+            }}
+          >
+            {panelNodes.map((node) => {
+              if (node.kind === 'separator') {
+                return (
+                  <div
+                    key={node.id}
+                    style={{
+                      height: 1,
+                      margin: '4px 0',
+                      background: 'var(--overlay-explorer-preview-border)',
+                    }}
+                  />
+                );
+              }
+
+              const isSubmenuOpen = panelState.resolvedPath[panelIndex] === node.id;
+              const isSelected = selectedNodeId === node.id;
+              const panelPrefix = panelState.resolvedPath.slice(0, panelIndex);
+
+              return (
+                <button
+                  key={node.id}
+                  type="button"
+                  onMouseEnter={() => {
+                    if (node.kind === 'submenu') {
+                      setOpenSubmenuPath([...panelPrefix, node.id]);
+                    } else {
+                      setOpenSubmenuPath(panelPrefix);
+                    }
+                  }}
+                  onClick={() => {
+                    if (node.kind === 'submenu') {
+                      setOpenSubmenuPath([...panelPrefix, node.id]);
+                    }
+                    onSelectNode?.(node);
+                  }}
+                  className="w-full border-0 text-left"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '16px minmax(0, 1fr) auto',
+                    alignItems: 'center',
+                    gap: density === 'touch' ? 12 : 10,
+                    padding: density === 'compact' ? '6px 10px' : density === 'touch' ? '10px 14px' : '7px 12px',
+                    background: isSubmenuOpen || isSelected
+                      ? 'var(--overlay-explorer-chip-active-bg)'
+                      : 'transparent',
+                    color: node.tone === 'danger'
+                      ? 'var(--overlay-explorer-danger-text)'
+                      : 'var(--overlay-text-primary)',
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', opacity: 0.78 }}>
+                    {renderSettingsContextMenuIcon(node.iconName)}
+                  </span>
+                  <span
+                    style={{
+                      minWidth: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
+                    }}
+                  >
+                    <span>{node.label}</span>
+                    {showDescriptions && node.kind === 'command' && node.description ? (
+                      <span
+                        style={{
+                          color: 'var(--overlay-text-muted)',
+                          fontSize: 10,
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {node.description}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      color: 'var(--overlay-text-muted)',
+                      fontSize: 10,
+                    }}
+                  >
+                    {node.kind === 'command' && node.shortcutId ? (
+                      <span>{node.shortcutId}</span>
+                    ) : null}
+                    {node.kind === 'submenu' ? (
+                      <span style={{ opacity: isSubmenuOpen ? 1 : 0.72 }}>▶</span>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -2018,6 +2387,7 @@ const explorerMenuGroupOptions: Array<
 > = [
   'create',
   'open',
+  'action',
   'system',
   'clipboard',
   'organize',
@@ -2036,14 +2406,20 @@ export function SettingsPage({
   topBarPackagesWarnings,
   homePacks = [],
   menuPacks = [],
+  actionPacks = [],
+  actions = [],
   homePacksDirectory = '',
   menuPacksDirectory = '',
+  actionsDirectory = actionPackSystemConfig.actionsDirectory,
   homePacksLoading = false,
   menuPacksLoading = false,
+  actionsLoading = false,
   homePacksError = null,
   menuPacksError = null,
+  actionsError = null,
   homePacksWarnings = [],
   menuPacksWarnings = [],
+  actionsWarnings = [],
   themePackages,
   themePackagesDirectory,
   themePackagesLoading,
@@ -2088,8 +2464,10 @@ export function SettingsPage({
   onOpenTopBarsFolder,
   onRefreshHomePacks = async () => { },
   onRefreshMenuPacks = async () => { },
+  onRefreshActions = async () => { },
   onOpenHomePacksFolder = async () => { },
   onOpenMenuPacksFolder = async () => { },
+  onOpenActionsFolder = async () => { },
   onRefreshAppearancePacks = async () => { },
   onOpenAppearancePacksFolder = async () => { },
   onRefreshInteractionMotionPacks = async () => { },
@@ -2140,14 +2518,20 @@ export function SettingsPage({
   topBarPackagesWarnings: string[];
   homePacks?: LoadedExplorerHomePack[];
   menuPacks?: LoadedExplorerMenuPack[];
+  actionPacks?: LoadedActionPack[];
+  actions?: LoadedExplorerAction[];
   homePacksDirectory?: string;
   menuPacksDirectory?: string;
+  actionsDirectory?: string;
   homePacksLoading?: boolean;
   menuPacksLoading?: boolean;
+  actionsLoading?: boolean;
   homePacksError?: string | null;
   menuPacksError?: string | null;
+  actionsError?: string | null;
   homePacksWarnings?: string[];
   menuPacksWarnings?: string[];
+  actionsWarnings?: string[];
   themePackages: LoadedOverlayThemePackage[];
   themePackagesDirectory: string;
   themePackagesLoading: boolean;
@@ -2192,8 +2576,10 @@ export function SettingsPage({
   onOpenTopBarsFolder: () => Promise<void>;
   onRefreshHomePacks?: () => Promise<void>;
   onRefreshMenuPacks?: () => Promise<void>;
+  onRefreshActions?: () => Promise<void>;
   onOpenHomePacksFolder?: () => Promise<void>;
   onOpenMenuPacksFolder?: () => Promise<void>;
+  onOpenActionsFolder?: () => Promise<void>;
   onRefreshAppearancePacks?: () => Promise<void>;
   onOpenAppearancePacksFolder?: () => Promise<void>;
   onRefreshInteractionMotionPacks?: () => Promise<void>;
@@ -2248,7 +2634,9 @@ export function SettingsPage({
   const [nativeNotificationFeedback, setNativeNotificationFeedback] = useState<string | null>(null);
   const {
     activeSection,
+    activeContextMenuComposerContext,
     setActiveSection,
+    setActiveContextMenuComposerContext,
     settings,
     updateTerminal,
     updatePython,
@@ -2269,7 +2657,9 @@ export function SettingsPage({
     resetToDefaults,
   } = useSettingsStore(useShallow(state => ({
     activeSection: state.activeSection,
+    activeContextMenuComposerContext: state.activeContextMenuComposerContext,
     setActiveSection: state.setActiveSection,
+    setActiveContextMenuComposerContext: state.setActiveContextMenuComposerContext,
     settings: state.settings,
     updateTerminal: state.updateTerminal,
     updatePython: state.updatePython,
@@ -2881,8 +3271,7 @@ export function SettingsPage({
   }, [activeSection]);
 
   const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [activeContextMenuContext, setActiveContextMenuContext] =
-    useState<ExplorerMenuContextKind>('entry');
+  const activeContextMenuContext = activeContextMenuComposerContext;
   const [contextMenuCommandDraftByContext, setContextMenuCommandDraftByContext] =
     useState<Partial<Record<ExplorerMenuContextKind, string>>>({});
   const [contextMenuGroupDraftByContext, setContextMenuGroupDraftByContext] =
@@ -2894,10 +3283,14 @@ export function SettingsPage({
         >
       >
     >({});
+  const [selectedContextMenuEntryId, setSelectedContextMenuEntryId] = useState<string | null>(null);
+  const [contextMenuCommandBrowserQuery, setContextMenuCommandBrowserQuery] = useState('');
+  const [draggedContextMenuEntryId, setDraggedContextMenuEntryId] = useState<string | null>(null);
   const contextMenuCommandCatalog = useMemo(
     () => (
       [
         ...BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
+        ...normalizeExplorerActionContributions(actions),
         ...normalizePluginContextMenuContributions([
           ...pluginContextMenuItems,
           ...createLegacyExplorerActionContextMenuContributions(pluginExplorerActions),
@@ -2909,7 +3302,7 @@ export function SettingsPage({
         return left.id.localeCompare(right.id);
       })
     ),
-    [pluginContextMenuItems, pluginExplorerActions],
+    [actions, pluginContextMenuItems, pluginExplorerActions],
   );
   const contextMenuCommandLookup = useMemo(
     () => new Map(contextMenuCommandCatalog.map(command => [command.id, command] as const)),
@@ -2981,6 +3374,178 @@ export function SettingsPage({
       contextMenuCommandCatalog,
     ],
   );
+  const selectedContextMenuEntry = useMemo(
+    () => activeContextMenuEntries.find((entry) => entry.id === selectedContextMenuEntryId) ?? null,
+    [activeContextMenuEntries, selectedContextMenuEntryId],
+  );
+  const filteredContextMenuBrowserCommands = useMemo(() => {
+    const normalizedQuery = contextMenuCommandBrowserQuery.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return availableContextMenuCommandsForActiveContext;
+    }
+
+    return availableContextMenuCommandsForActiveContext.filter((command) => {
+      const haystack = [
+        command.title,
+        command.description ?? '',
+        command.id,
+        command.group,
+        command.source,
+        resolveContextMenuCommandSourceLabel(command),
+      ].join(' ').toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [
+    availableContextMenuCommandsForActiveContext,
+    contextMenuCommandBrowserQuery,
+  ]);
+  const contextMenuPreviewInvocation = useMemo(
+    () => buildSettingsContextMenuPreviewInvocation(activeContextMenuContext),
+    [activeContextMenuContext],
+  );
+  const contextMenuPreviewTargetPath = useMemo(
+    () =>
+      contextMenuPreviewInvocation.primaryEntry?.path
+      ?? contextMenuPreviewInvocation.previewTarget?.path
+      ?? contextMenuPreviewInvocation.currentLocation,
+    [contextMenuPreviewInvocation],
+  );
+  const contextMenuPreviewEnvironment = useMemo<ExplorerMenuRuntimeEnvironment>(() => ({
+    currentPath: contextMenuPreviewInvocation.currentLocation,
+    currentPathIsCloud: false,
+    currentPathIsHome: false,
+    currentLocationSupportsMutation: true,
+    currentPathIsArchiveVirtual: false,
+    userHomePath: '/home/ephemara',
+    runtimePlatform: platform,
+    clipboardAvailable: true,
+    canCreateDirectory: true,
+    canCreateFile: true,
+    revealPathLabel: 'Reveal in Explorer',
+    propertiesLabel: 'Properties',
+    supportsNativeOpenWith: true,
+    supportsOpenWithSystemPicker: true,
+    supportsNativeProperties: true,
+    openWithProgramsByPath: {
+      [contextMenuPreviewTargetPath]: {
+        status: 'ready',
+        error: null,
+        requestId: null,
+        requestedAtEpochMs: null,
+        catalog: {
+          defaultProgram: {
+            name: platform === 'macos' ? 'Preview' : 'Default App',
+            path: platform === 'macos' ? 'com.apple.Preview' : '/usr/bin/xdg-open',
+            icon: null,
+            isDefault: true,
+          },
+          recommendedPrograms: [
+            {
+              name: 'VS Code',
+              path: '/usr/bin/code',
+              icon: null,
+              isDefault: false,
+            },
+          ],
+          otherPrograms: [],
+        },
+      },
+    },
+    supportsNativeIntegration: () => true,
+    isCloudExplorerPath: () => false,
+    isExplorerArchiveVirtualPath: () => false,
+    isSemanticSearchTextLikeExtension: (extension) => ['txt', 'ts', 'md', 'json'].includes(extension.toLowerCase()),
+    isExplorerArchiveEntry: (entry) => ['zip', 'tar', 'gz'].includes(entry.extension.toLowerCase()),
+    isBookmarked: () => false,
+    canRunAudioBatch: () => false,
+    openEntry: () => undefined,
+    openWithSystemPicker: async () => undefined,
+    openWithProgram: async () => undefined,
+    openAsAdmin: async () => undefined,
+    openInTerminal: () => undefined,
+    openInFilesystemAquarium: () => undefined,
+    sendToMobileDownload: async () => undefined,
+    revealExplorerPath: async () => undefined,
+    openExplorerPropertiesPanel: () => undefined,
+    copyToSysClipboard: () => undefined,
+    queueClipboard: () => undefined,
+    requestTransferDestination: () => undefined,
+    extractArchive: () => undefined,
+    duplicateEntries: () => undefined,
+    findSimilar: async () => undefined,
+    startRename: () => undefined,
+    openTagDialog: () => undefined,
+    toggleBookmark: () => undefined,
+    openTrashDialog: () => undefined,
+    openNew: () => undefined,
+    paste: () => undefined,
+    refresh: async () => undefined,
+    navigate: async () => undefined,
+    openSettingsSection: (section) => setActiveSection(section as SettingsSectionKey),
+    openContextMenuComposer: (context) => {
+      setActiveContextMenuComposerContext(context);
+      setActiveSection('context-menus');
+    },
+    runAudioBatch: async () => undefined,
+    executeActionCommand: async () => undefined,
+    executePluginCommand: async () => undefined,
+    onError: () => undefined,
+  }), [
+    contextMenuPreviewInvocation,
+    contextMenuPreviewTargetPath,
+    platform,
+    setActiveContextMenuComposerContext,
+    setActiveSection,
+  ]);
+  const contextMenuPreviewMenu = useMemo(
+    () => buildExplorerRuntimeMenu({
+      invocation: contextMenuPreviewInvocation,
+      menuPacks: menuPacks.length > 0 ? menuPacks : [createBuiltInExplorerMenuPack()],
+      activeMenuPackId: activeMenuPack?.id ?? null,
+      layoutOverridesByContext: settings.explorer.contextMenuLayoutOverridesByContext,
+      themeRendererPreference: activeContextMenuLayout.renderer ?? 'classic',
+      actions,
+      pluginContextMenuItems: [
+        ...pluginContextMenuItems,
+        ...createLegacyExplorerActionContextMenuContributions(pluginExplorerActions),
+      ],
+      includeEditMenuCommand: false,
+      environment: contextMenuPreviewEnvironment,
+    }),
+    [
+      actions,
+      activeContextMenuLayout.renderer,
+      activeMenuPack?.id,
+      contextMenuPreviewEnvironment,
+      contextMenuPreviewInvocation,
+      menuPacks,
+      pluginContextMenuItems,
+      pluginExplorerActions,
+      settings.explorer.contextMenuLayoutOverridesByContext,
+    ],
+  );
+
+  useEffect(() => {
+    setDraggedContextMenuEntryId(null);
+    setContextMenuCommandBrowserQuery('');
+  }, [activeContextMenuContext]);
+
+  useEffect(() => {
+    if (activeContextMenuEntries.length === 0) {
+      if (selectedContextMenuEntryId != null) {
+        setSelectedContextMenuEntryId(null);
+      }
+      return;
+    }
+
+    if (
+      selectedContextMenuEntryId == null
+      || !activeContextMenuEntries.some((entry) => entry.id === selectedContextMenuEntryId)
+    ) {
+      setSelectedContextMenuEntryId(activeContextMenuEntries[0]?.id ?? null);
+    }
+  }, [activeContextMenuEntries, selectedContextMenuEntryId]);
+
   const availableAnimations = useMemo(
     () => animations.filter(animation => !animation.error),
     [animations],
@@ -5194,6 +5759,14 @@ export function SettingsPage({
           </button>
           <button
             type="button"
+            onClick={() => void onOpenActionsFolder()}
+            className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+            style={{ border: `1px solid ${accent}55`, background: `${accent}14`, color: text }}
+          >
+            Open Actions Folder
+          </button>
+          <button
+            type="button"
             onClick={resetContextMenuLayout}
             className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
             style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
@@ -5258,9 +5831,58 @@ export function SettingsPage({
         </div>
       </div>
 
+      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+          <div className="font-semibold">Action Catalog</div>
+          <div className="mt-1 opacity-55">
+            {actionsLoading ? 'Scanning action packs…' : `${actions.length} action${actions.length === 1 ? '' : 's'} across ${actionPacks.length} pack${actionPacks.length === 1 ? '' : 's'}`}
+          </div>
+          <div className="mt-1 text-[10px] opacity-45">
+            {actionsDirectory}
+          </div>
+          {actionsError ? (
+            <div className="mt-1 text-[10px]" style={{ color: 'var(--overlay-danger)' }}>
+              {actionsError}
+            </div>
+          ) : null}
+        </div>
+        <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+          <div className="font-semibold">Source Mix</div>
+          <div className="mt-1 opacity-55">
+            {pluginContextMenuItems.length} legacy plugin menu items
+          </div>
+          <div className="mt-1 opacity-55">
+            {pluginExplorerActions.length} legacy plugin explorer actions
+          </div>
+          <div className="mt-1 opacity-55">
+            {actions.filter(action => action.pluginId != null).length} plugin-shipped authored actions
+          </div>
+        </div>
+        <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+          <div className="font-semibold">Refresh</div>
+          <button
+            type="button"
+            onClick={() => void onRefreshActions()}
+            className="mt-2 w-full rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
+            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+          >
+            Refresh Actions
+          </button>
+        </div>
+      </div>
+
       {menuPacksWarnings.length > 0 ? (
         <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${border}aa`, background: 'rgba(255,255,255,0.02)' }}>
           {menuPacksWarnings.map(warning => (
+            <div key={warning} className="opacity-55">
+              {warning}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {actionsWarnings.length > 0 ? (
+        <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${border}aa`, background: 'rgba(255,255,255,0.02)' }}>
+          {actionsWarnings.map(warning => (
             <div key={warning} className="opacity-55">
               {warning}
             </div>
@@ -5395,9 +6017,17 @@ export function SettingsPage({
                   <div className="text-[11px] font-semibold">{title}</div>
                   <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] opacity-60">
                     <ThemeBadge label={entry.kind} />
-                    {entry.kind === 'command' && resolvedCommand ? (
-                      <ThemeBadge label={resolvedCommand.source === 'built-in' ? 'Built-in' : `Plugin · ${resolvedCommand.pluginName}`} />
-                    ) : null}
+                      {entry.kind === 'command' && resolvedCommand ? (
+                        <ThemeBadge
+                          label={
+                            resolvedCommand.source === 'built-in'
+                              ? 'Built-in'
+                              : resolvedCommand.source === 'action'
+                                ? `Action · ${resolvedCommand.packName}`
+                                : `Plugin · ${resolvedCommand.pluginName}`
+                          }
+                        />
+                      ) : null}
                     {entry.kind === 'command' && resolvedCommand ? (
                       <ThemeBadge label={resolvedCommand.contexts.join(' + ')} />
                     ) : null}
@@ -5453,7 +6083,7 @@ export function SettingsPage({
                       className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
                       style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
                     >
-                      {['any', 'built-in', 'plugin'].map(sourceFilter => (
+                      {['any', 'built-in', 'plugin', 'action'].map(sourceFilter => (
                         <option key={sourceFilter} value={sourceFilter}>
                           {sourceFilter}
                         </option>
@@ -5665,7 +6295,7 @@ export function SettingsPage({
         </div>
 
         <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 0 }}>
-          <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-3 pb-5">
+          <div className="flex w-full min-w-0 flex-col gap-3 px-4 pt-3 pb-5">
             {activeSection === 'overview' && (
               <section className="rounded border p-4" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
                 <SectionTitle
@@ -11281,7 +11911,7 @@ export function SettingsPage({
             )}
 
             {activeSection === 'audio' && (
-              <div className="mx-auto max-w-5xl space-y-6 pt-2 pb-6">
+              <div className="w-full space-y-6 pt-2 pb-6">
                 <SectionTitle
                   icon={<Music size={14} />}
                   title="Audio Integration"

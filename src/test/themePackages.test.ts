@@ -59,6 +59,7 @@ function mockFilesystem(fixture: FilesystemFixture): void {
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     const path = normalizePath((args as { path?: string } | undefined)?.path);
     const requestPath = normalizePath((args as { request?: { archivePath?: string } } | undefined)?.request?.archivePath);
+    const archivePath = command === 'fs_open_archive' ? path : requestPath;
     const hasDirectory = Object.prototype.hasOwnProperty.call(fixture.directories, path);
     const hasTextFile = Object.prototype.hasOwnProperty.call(fixture.textFiles ?? {}, path);
     const hasBase64File = Object.prototype.hasOwnProperty.call(fixture.base64Files ?? {}, path);
@@ -84,11 +85,11 @@ function mockFilesystem(fixture: FilesystemFixture): void {
       throw new Error(`ENOENT: ${path}`);
     }
 
-    if (command === 'fs_extract_archive') {
-      if (Object.prototype.hasOwnProperty.call(fixture.archiveOutputs ?? {}, requestPath)) {
-        return fixture.archiveOutputs?.[requestPath];
+    if (command === 'fs_open_archive' || command === 'fs_extract_archive') {
+      if (Object.prototype.hasOwnProperty.call(fixture.archiveOutputs ?? {}, archivePath)) {
+        return fixture.archiveOutputs?.[archivePath];
       }
-      throw new Error(`ENOENT: ${requestPath}`);
+      throw new Error(`ENOENT: ${archivePath}`);
     }
 
     throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);

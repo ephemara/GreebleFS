@@ -1,3 +1,4 @@
+import type { LoadedExplorerAction } from './actionPacks';
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
@@ -33,6 +34,7 @@ export type ExplorerMenuFallbackBucket =
 export type ExplorerContextMenuItemGroup =
   | 'create'
   | 'open'
+  | 'action'
   | 'preview'
   | 'system'
   | 'clipboard'
@@ -47,6 +49,7 @@ export type ExplorerBuiltInContextMenuActionId =
   | 'open-admin'
   | 'open-terminal'
   | 'open-aquarium'
+  | 'edit-menu'
   | 'send-to-mobile-download'
   | 'reveal'
   | 'properties'
@@ -154,7 +157,7 @@ export interface ExplorerContextMenuCatalogItemBase {
   group: ExplorerContextMenuItemGroup;
   defaultOrder: number;
   priority: number;
-  source: 'built-in' | 'plugin' | 'preview';
+  source: 'built-in' | 'plugin' | 'preview' | 'action';
   iconName?: string;
   tone: ExplorerMenuTone;
   shortcutId?: string;
@@ -188,10 +191,24 @@ export interface ExplorerPreviewContextMenuCatalogItem
   };
 }
 
+export interface ExplorerResolvedActionContextMenuContribution
+  extends ExplorerContextMenuCatalogItemBase {
+  source: 'action';
+  packId: string;
+  packName: string;
+  pluginId?: string;
+  pluginName?: string;
+  execution: {
+    kind: 'action';
+    action: LoadedExplorerAction;
+  };
+}
+
 export type ExplorerCommandDefinition =
   | ExplorerBuiltInContextMenuCatalogItem
   | ExplorerResolvedPluginContextMenuContribution
-  | ExplorerPreviewContextMenuCatalogItem;
+  | ExplorerPreviewContextMenuCatalogItem
+  | ExplorerResolvedActionContextMenuContribution;
 export type ExplorerContextMenuCatalogItem = ExplorerCommandDefinition;
 
 export interface ExplorerSortableContextMenuItem {
@@ -227,7 +244,7 @@ export interface ExplorerMenuSeparatorEntry extends ExplorerMenuLayoutEntryBase 
 export interface ExplorerMenuGroupSlotEntry extends ExplorerMenuLayoutEntryBase {
   kind: 'group-slot';
   group: ExplorerContextMenuItemGroup;
-  sourceFilter?: 'any' | 'built-in' | 'plugin' | 'preview';
+  sourceFilter?: 'any' | 'built-in' | 'plugin' | 'preview' | 'action';
 }
 
 export type ExplorerMenuLayoutEntry =
@@ -265,7 +282,7 @@ export interface ExplorerResolvedMenuNodeBase {
   depth: number;
   iconName?: string;
   tone: ExplorerMenuTone;
-  source: 'built-in' | 'plugin' | 'preview' | 'layout';
+  source: 'built-in' | 'plugin' | 'preview' | 'action' | 'layout';
   quickSlot: ExplorerMenuQuickSlot;
   fallbackBucket: ExplorerMenuFallbackBucket;
 }
@@ -307,6 +324,7 @@ export const EXPLORER_MENU_CONTEXT_KINDS: ExplorerMenuContextKind[] = [
 const EXPLORER_CONTEXT_MENU_GROUPS: ExplorerContextMenuItemGroup[] = [
   'create',
   'open',
+  'action',
   'preview',
   'system',
   'clipboard',
@@ -619,7 +637,8 @@ export function normalizeExplorerMenuLayoutEntry(
       sourceFilter:
         record.sourceFilter === 'built-in' ||
         record.sourceFilter === 'plugin' ||
-        record.sourceFilter === 'preview'
+        record.sourceFilter === 'preview' ||
+        record.sourceFilter === 'action'
           ? record.sourceFilter
           : 'any',
     };
@@ -817,6 +836,99 @@ export function withExplorerMenuLayoutEntryParent(
           }
         : entry,
     ),
+  );
+}
+
+export function placeExplorerMenuLayoutEntry(
+  entries: ExplorerMenuLayoutEntry[],
+  entryId: string,
+  targetParentEntryId: string | null,
+  targetIndex: number,
+): ExplorerMenuLayoutEntry[] {
+  const sortedEntries = sortExplorerMenuLayoutEntries(entries);
+  const movingEntry = sortedEntries.find((entry) => entry.id === entryId);
+  if (!movingEntry) {
+    return sortedEntries;
+  }
+
+  if (targetParentEntryId === entryId) {
+    return sortedEntries;
+  }
+
+  const descendantIds = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    sortedEntries.forEach((entry) => {
+      if (
+        entry.parentEntryId
+        && (entry.parentEntryId === entryId || descendantIds.has(entry.parentEntryId))
+        && !descendantIds.has(entry.id)
+      ) {
+        descendantIds.add(entry.id);
+        changed = true;
+      }
+    });
+  }
+  if (targetParentEntryId && descendantIds.has(targetParentEntryId)) {
+    return sortedEntries;
+  }
+
+  const currentParentEntryId = movingEntry.parentEntryId ?? null;
+  const targetSiblings = sortedEntries.filter(
+    (entry) => entry.parentEntryId === targetParentEntryId && entry.id !== entryId,
+  );
+  const clampedTargetIndex = Math.max(0, Math.min(targetIndex, targetSiblings.length));
+  const reorderedTargetSiblings = [...targetSiblings];
+  reorderedTargetSiblings.splice(clampedTargetIndex, 0, {
+    ...movingEntry,
+    parentEntryId: targetParentEntryId,
+  });
+
+  const nextTargetOrders = Object.fromEntries(
+    reorderedTargetSiblings.map((entry, index) => [entry.id, (index + 1) * 10]),
+  );
+
+  const nextCurrentParentOrders = currentParentEntryId === targetParentEntryId
+    ? nextTargetOrders
+    : Object.fromEntries(
+      sortedEntries
+        .filter(
+          (entry) =>
+            entry.parentEntryId === currentParentEntryId && entry.id !== entryId,
+        )
+        .map((entry, index) => [entry.id, (index + 1) * 10]),
+    );
+
+  return sortExplorerMenuLayoutEntries(
+    sortedEntries.map((entry) => {
+      if (entry.id === entryId) {
+        return {
+          ...entry,
+          parentEntryId: targetParentEntryId,
+          order: nextTargetOrders[entry.id] ?? entry.order,
+        };
+      }
+
+      if (entry.parentEntryId === targetParentEntryId) {
+        return {
+          ...entry,
+          order: nextTargetOrders[entry.id] ?? entry.order,
+        };
+      }
+
+      if (
+        currentParentEntryId !== targetParentEntryId
+        && entry.parentEntryId === currentParentEntryId
+      ) {
+        return {
+          ...entry,
+          order: nextCurrentParentOrders[entry.id] ?? entry.order,
+        };
+      }
+
+      return entry;
+    }),
   );
 }
 
@@ -1076,6 +1188,50 @@ export function normalizePluginContextMenuContributions(
         themeHints: undefined,
         supportsQuickSlot: true,
         behavior: 'leaf' as const,
+      },
+    ];
+  });
+}
+
+export function normalizeExplorerActionContributions(
+  actions: ReadonlyArray<LoadedExplorerAction | null | undefined>,
+): ExplorerResolvedActionContextMenuContribution[] {
+  return actions.flatMap((action, index) => {
+    if (!action) {
+      return [];
+    }
+
+    const description =
+      typeof action.description === 'string' && action.description.trim().length > 0
+        ? action.description.trim()
+        : undefined;
+    const defaultOrder = 650 + index * 10;
+
+    return [
+      {
+        id: action.id,
+        title: action.title,
+        description,
+        contexts: sanitizeMenuContextKinds(action.contexts),
+        appliesTo: sanitizeContextMenuAppliesTo(action.appliesTo),
+        group: 'action',
+        defaultOrder,
+        priority: defaultOrder,
+        source: 'action' as const,
+        iconName: sanitizeContextMenuString(action.iconName, 'Sparkles'),
+        execution: {
+          kind: 'action',
+          action,
+        },
+        tone: 'safe',
+        shortcutId: undefined,
+        themeHints: undefined,
+        supportsQuickSlot: true,
+        behavior: 'leaf' as const,
+        packId: action.packId,
+        packName: action.packName,
+        pluginId: action.pluginId,
+        pluginName: action.pluginName,
       },
     ];
   });
@@ -1510,10 +1666,12 @@ export const BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerBuiltInContextMenuCat
 export function resolveExplorerCommandDefinitionById(
   commandId: string,
   pluginCommands: ExplorerResolvedPluginContextMenuContribution[] = [],
+  actionCommands: ExplorerResolvedActionContextMenuContribution[] = [],
 ): ExplorerCommandDefinition | null {
   return (
     BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS.find((item) => item.id === commandId) ??
     pluginCommands.find((item) => item.id === commandId) ??
+    actionCommands.find((item) => item.id === commandId) ??
     null
   );
 }

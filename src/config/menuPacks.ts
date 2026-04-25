@@ -242,6 +242,7 @@ function createEntry(
           (
             options.group === 'create' ||
             options.group === 'open' ||
+            options.group === 'action' ||
             options.group === 'system' ||
             options.group === 'clipboard' ||
             options.group === 'organize' ||
@@ -308,6 +309,12 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
       group: 'library',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
+    createEntry('entry.actions', 'submenu', 95, { title: 'Actions', iconName: 'Sparkles' }),
+    createEntry('entry.actions.slot', 'group-slot', 10, {
+      parentEntryId: 'entry.actions',
+      group: 'action',
+      sourceFilter: 'action',
+    } as Partial<ExplorerMenuLayoutEntry>),
     createEntry('entry.plugins', 'submenu', 100, { title: 'Plugins', iconName: 'Puzzle' }),
     createEntry('entry.plugins.slot', 'group-slot', 10, {
       parentEntryId: 'entry.plugins',
@@ -336,6 +343,10 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
       group: 'system',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
+    createEntry('background.actions.slot', 'group-slot', 55, {
+      group: 'action',
+      sourceFilter: 'action',
+    } as Partial<ExplorerMenuLayoutEntry>),
     createEntry('background.plugins.slot', 'group-slot', 60, {
       group: 'plugin',
       sourceFilter: 'plugin',
@@ -357,6 +368,10 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
     createEntry('multi.library.slot', 'group-slot', 60, {
       group: 'library',
       sourceFilter: 'any',
+    } as Partial<ExplorerMenuLayoutEntry>),
+    createEntry('multi.actions.slot', 'group-slot', 65, {
+      group: 'action',
+      sourceFilter: 'action',
     } as Partial<ExplorerMenuLayoutEntry>),
     createEntry('multi.plugins.slot', 'group-slot', 70, {
       group: 'plugin',
@@ -390,6 +405,10 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
       group: 'library',
       sourceFilter: 'any',
     } as Partial<ExplorerMenuLayoutEntry>),
+    createEntry('search.actions.slot', 'group-slot', 75, {
+      group: 'action',
+      sourceFilter: 'action',
+    } as Partial<ExplorerMenuLayoutEntry>),
     createEntry('search.plugins.slot', 'group-slot', 80, {
       group: 'plugin',
       sourceFilter: 'plugin',
@@ -413,6 +432,10 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
     createEntry('preview.copy-path', 'command', 70, {
       commandId: 'built-in.copy-path',
     }),
+    createEntry('preview.actions.slot', 'group-slot', 80, {
+      group: 'action',
+      sourceFilter: 'action',
+    } as Partial<ExplorerMenuLayoutEntry>),
   ];
 
   return {

@@ -6,6 +6,12 @@ use crate::acceleration_runtime::{
     PythonAccelerationOnnxRuntimeProbe, PythonAccelerationOptionalModuleProbe,
     PythonAccelerationProbe, PythonAccelerationTorchProbe, PythonCudaDeviceInfo,
 };
+use crate::action_commands::{
+    ActionExecutionDefinition, ActionExecutionRequest, ActionExecutionResult,
+    ActionInvocationCapabilities, ActionInvocationContext, ActionInvocationEntry,
+    ActionMenuContextKind, ActionOutputTarget, ActionPreviewContext, ActionRunnerKind,
+    ActionSearchResultContext,
+};
 use crate::archive_ops::{
     FsArchiveExtractionMode, FsArchiveExtractionRequest, FsArchiveExtractionResult,
 };
@@ -299,6 +305,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::python_sidecar::python_sidecar_call,
             crate::python_pyo3::python_execute_embedded,
             crate::acceleration_runtime::acceleration_runtime_get_status,
+            crate::action_commands::action_execute,
             crate::plugin_commands::plugin_run_backend,
             crate::plugin_commands::plugin_watch_directory,
             crate::plugin_commands::plugin_unwatch_directory,
@@ -424,6 +431,17 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<AudioEngineSetArmedDeckRequest>()
         .typ::<AudioEngineSetPluginParameterRequest>()
         .typ::<AudioEngineSyncSelectionRequest>()
+        .typ::<ActionRunnerKind>()
+        .typ::<ActionOutputTarget>()
+        .typ::<ActionMenuContextKind>()
+        .typ::<ActionExecutionDefinition>()
+        .typ::<ActionInvocationEntry>()
+        .typ::<ActionPreviewContext>()
+        .typ::<ActionSearchResultContext>()
+        .typ::<ActionInvocationCapabilities>()
+        .typ::<ActionInvocationContext>()
+        .typ::<ActionExecutionRequest>()
+        .typ::<ActionExecutionResult>()
         .typ::<DriveInfo>()
         .typ::<EntryStorageInfo>()
         .typ::<ExplorerTaskProgressEvent>()

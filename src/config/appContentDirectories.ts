@@ -75,6 +75,16 @@ export const managedContentDirectoryCatalog = [
     order: 29,
   },
   {
+    id: 'actions',
+    label: 'Actions',
+    description: 'Author runnable explorer actions, script packs, and custom pipeline commands here.',
+    keywords: ['actions', 'scripts', 'pipelines', 'context menu actions', 'automation'],
+    releaseDirectoryName: 'actions',
+    legacyRelativeDirectoryName: 'actions',
+    envVarSuffix: 'ACTIONS',
+    order: 29.5,
+  },
+  {
     id: 'iconThemes',
     label: 'Icon Themes',
     description: 'Drop native icon-theme packs plus VS Code icon-theme extension folders or .vsix archives here.',

@@ -89,6 +89,19 @@ describe("explorerMonaco", () => {
     ]));
   });
 
+  it("normalizes built-in Monaco UI colors away from raw rgba values", () => {
+    const appearance = resolveOverlayAppearance({
+      activeThemeId: "monokai",
+      panelTransparency: 0.35,
+    });
+
+    const descriptor = buildExplorerMonacoThemeDescriptor(appearance);
+
+    expect(descriptor.colors["editorLineNumber.foreground"]).toMatch(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/);
+    expect(descriptor.colors["scrollbarSlider.activeBackground"]).toMatch(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/);
+    expect(descriptor.colors["editor.selectionBackground"]).toMatch(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/);
+  });
+
   it("keeps Monaco surfaces off the hardcoded vs-dark path", () => {
     const fileExplorerSource = readFileSync(resolve(process.cwd(), "src/components/FileExplorer.tsx"), "utf8");
     const gitManagerSource = readFileSync(resolve(process.cwd(), "src/components/GitManager.tsx"), "utf8");

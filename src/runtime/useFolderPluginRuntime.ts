@@ -6,6 +6,7 @@ import * as TauriNotification from '@tauri-apps/plugin-notification';
 import * as TauriWindow from '@tauri-apps/api/window';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import type { LoadedActionPack, LoadedExplorerAction } from '../config/actionPacks';
 import {
   getPluginStorageDirectory,
   pluginSystemConfig,
@@ -38,6 +39,8 @@ export interface UseFolderPluginRuntimeResult {
   pluginThemePackages: LoadedOverlayThemePackage[];
   pluginFonts: OverlayRegisteredFontContribution[];
   pluginCommands: OverlayPluginCommandContribution[];
+  pluginActionPacks: LoadedActionPack[];
+  pluginActions: LoadedExplorerAction[];
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   folderPluginsError: string | null;
@@ -61,6 +64,8 @@ export function useFolderPluginRuntime(
   const [pluginThemePackages, setPluginThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
   const [pluginFonts, setPluginFonts] = useState<OverlayRegisteredFontContribution[]>([]);
   const [pluginCommands, setPluginCommands] = useState<OverlayPluginCommandContribution[]>([]);
+  const [pluginActionPacks, setPluginActionPacks] = useState<LoadedActionPack[]>([]);
+  const [pluginActions, setPluginActions] = useState<LoadedExplorerAction[]>([]);
   const [pluginExplorerActions, setPluginExplorerActions] = useState<OverlayPluginExplorerActionContribution[]>([]);
   const [pluginContextMenuItems, setPluginContextMenuItems] = useState<OverlayPluginContextMenuContribution[]>([]);
   const [folderPluginsError, setFolderPluginsError] = useState<string | null>(null);
@@ -154,6 +159,8 @@ export function useFolderPluginRuntime(
       setPluginThemePackages([]);
       setPluginFonts([]);
       setPluginCommands([]);
+      setPluginActionPacks([]);
+      setPluginActions([]);
       setPluginExplorerActions([]);
       setPluginContextMenuItems([]);
       setFolderPluginsError(null);
@@ -202,6 +209,8 @@ export function useFolderPluginRuntime(
           setPluginThemePackages(discovered.themePackages);
           setPluginFonts(discovered.fonts);
           setPluginCommands(discovered.commands);
+          setPluginActionPacks(discovered.actionPacks);
+          setPluginActions(discovered.actions);
           setPluginExplorerActions(discovered.explorerActions);
           setPluginContextMenuItems(discovered.contextMenuItems);
           setFolderPluginsError(discovered.warnings.length > 0 ? discovered.warnings.join('\n') : null);
@@ -211,6 +220,8 @@ export function useFolderPluginRuntime(
           setPluginThemePackages([]);
           setPluginFonts([]);
           setPluginCommands([]);
+          setPluginActionPacks([]);
+          setPluginActions([]);
           setPluginExplorerActions([]);
           setPluginContextMenuItems([]);
           setFolderPluginsError(String(error));
@@ -375,6 +386,8 @@ export function useFolderPluginRuntime(
     pluginThemePackages,
     pluginFonts,
     pluginCommands,
+    pluginActionPacks,
+    pluginActions,
     pluginExplorerActions,
     pluginContextMenuItems,
     folderPluginsError,

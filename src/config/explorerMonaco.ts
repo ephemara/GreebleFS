@@ -105,6 +105,17 @@ function clampByte(value: number): number {
   return Math.max(0, Math.min(255, value));
 }
 
+function clampUnitInterval(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, value));
+}
+
+function toHexComponent(value: number): string {
+  return clampByte(Math.round(value)).toString(16).padStart(2, "0");
+}
+
 function parseHexColor(color: string): { red: number; green: number; blue: number } | null {
   const trimmed = color.trim();
   if (!trimmed.startsWith("#")) {
@@ -138,6 +149,52 @@ function parseRgbColor(color: string): { red: number; green: number; blue: numbe
     green: clampByte(Number.parseFloat(match[2])),
     blue: clampByte(Number.parseFloat(match[3])),
   };
+}
+
+function normalizeMonacoColorValue(color: string | undefined): string | undefined {
+  if (typeof color !== "string") {
+    return color;
+  }
+
+  const trimmed = color.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith("#")) {
+    const hex = trimmed.slice(1);
+    if (/^[0-9a-fA-F]{3}$/.test(hex) || /^[0-9a-fA-F]{4}$/.test(hex)) {
+      return `#${hex.split("").map((character) => `${character}${character}`).join("")}`;
+    }
+    if (/^[0-9a-fA-F]{6}$/.test(hex) || /^[0-9a-fA-F]{8}$/.test(hex)) {
+      return trimmed;
+    }
+    return trimmed;
+  }
+
+  const rgbaMatch = trimmed.match(
+    /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i,
+  );
+  if (!rgbaMatch) {
+    return trimmed;
+  }
+
+  const red = clampByte(Number.parseFloat(rgbaMatch[1]));
+  const green = clampByte(Number.parseFloat(rgbaMatch[2]));
+  const blue = clampByte(Number.parseFloat(rgbaMatch[3]));
+  const alpha = rgbaMatch[4] === undefined
+    ? 1
+    : clampUnitInterval(Number.parseFloat(rgbaMatch[4]));
+  const alphaComponent = alpha >= 0.999 ? "" : toHexComponent(alpha * 255);
+  return `#${toHexComponent(red)}${toHexComponent(green)}${toHexComponent(blue)}${alphaComponent}`;
+}
+
+function normalizeMonacoThemeColors(
+  colors: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(colors).map(([key, value]) => [key, normalizeMonacoColorValue(value) ?? value]),
+  );
 }
 
 function isLightAppearance(appearance: ResolvedOverlayAppearance): boolean {
@@ -180,7 +237,7 @@ export function buildExplorerMonacoThemeDescriptor(
   const compatibilityTheme = appearance?.theme.assets?.monacoTheme;
   const base = compatibilityTheme?.baseTheme
     ?? (appearance && isLightAppearance(appearance) ? "vs" : "vs-dark");
-  const colors: Record<string, string> = {
+  const colors = normalizeMonacoThemeColors({
     "editor.background": appearance?.cssVars["--overlay-explorer-code-bg"]
       ?? appearance?.theme.palette.panelBackground
       ?? "#0f131a",
@@ -201,7 +258,7 @@ export function buildExplorerMonacoThemeDescriptor(
     "diffEditor.insertedTextBackground": appearance?.theme.palette.success ?? "#3fb95044",
     "diffEditor.removedTextBackground": appearance?.theme.palette.danger ?? "#ff7b7244",
     ...(compatibilityTheme?.colors ?? {}),
-  };
+  });
 
   return {
     id: resolveExplorerMonacoThemeId(appearance),

@@ -106,6 +106,7 @@ export interface OverlayPluginCapabilitySummary {
   shaders: number;
   fonts: number;
   commands: number;
+  actions: number;
   explorerActions: number;
   contextMenuItems: number;
 }
@@ -183,6 +184,7 @@ export async function loadPluginFromSource(
       shaders: options?.diagnostics?.capabilities?.shaders ?? 0,
       fonts: options?.diagnostics?.capabilities?.fonts ?? 0,
       commands: options?.diagnostics?.capabilities?.commands ?? 0,
+      actions: options?.diagnostics?.capabilities?.actions ?? 0,
       explorerActions: options?.diagnostics?.capabilities?.explorerActions ?? 0,
       contextMenuItems: options?.diagnostics?.capabilities?.contextMenuItems ?? 0,
     },

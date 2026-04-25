@@ -2,6 +2,11 @@ import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
 
 import type { OverlayRegisteredFontContribution } from './appearance';
+import {
+  loadExplorerActionPacksFromDirectoryEntries,
+  type LoadedActionPack,
+  type LoadedExplorerAction,
+} from './actionPacks';
 import type {
   OverlayPluginCommandContribution,
   OverlayPluginContextMenuContribution,
@@ -114,6 +119,8 @@ export interface OverlayPluginDiscoveryResult {
   shaders: LoadedOverlayShader[];
   fonts: OverlayRegisteredFontContribution[];
   commands: OverlayPluginCommandContribution[];
+  actionPacks: LoadedActionPack[];
+  actions: LoadedExplorerAction[];
   explorerActions: OverlayPluginExplorerActionContribution[];
   contextMenuItems: OverlayPluginContextMenuContribution[];
   warnings: string[];
@@ -638,6 +645,8 @@ async function loadPluginPackage(
     shaders: [],
     fonts: [],
     commands: [],
+    actionPacks: [],
+    actions: [],
     explorerActions: [],
     contextMenuItems: [],
     warnings: [],
@@ -746,6 +755,30 @@ async function loadPluginPackage(
     }))),
   );
 
+  const packageActionsDirectory = joinPlatformPath(record.directoryPath, 'actions');
+  try {
+    const actionEntries = await listDirectory(packageActionsDirectory);
+    const actionPackResult = await loadExplorerActionPacksFromDirectoryEntries(
+      actionEntries,
+      packageActionsDirectory,
+      {
+        sourceKind: 'plugin-action-pack',
+        sourceLabel: packageName,
+        sourceBadgeLabel: 'Plugin Action Pack',
+        pluginId: packageId,
+        pluginName: packageName,
+      },
+    );
+    result.actionPacks.push(...actionPackResult.packs);
+    result.actions.push(...actionPackResult.packs.flatMap(pack => pack.actions));
+    packageWarnings.push(...actionPackResult.warnings);
+    if (actionPackResult.sourceError) {
+      packageWarnings.push(`actions: ${actionPackResult.sourceError}`);
+    }
+  } catch {
+    // Plugin-local action packs are optional.
+  }
+
   result.explorerActions.push(
     ...((record.manifest.contributions?.explorerActions ?? []).map(action => ({
       id: action.id || deriveIdFromName(action.label || action.command, 'explorer-action'),
@@ -840,6 +873,7 @@ async function loadPluginPackage(
       shaders: result.shaders.length,
       fonts: result.fonts.length,
       commands: result.commands.length,
+      actions: result.actions.length,
       explorerActions: result.explorerActions.length,
       contextMenuItems: result.contextMenuItems.length,
     };
@@ -866,6 +900,8 @@ export async function discoverOverlayPlugins(
     shaders: [],
     fonts: [],
     commands: [],
+    actionPacks: [],
+    actions: [],
     explorerActions: [],
     contextMenuItems: [],
     warnings: [],
@@ -889,6 +925,8 @@ export async function discoverOverlayPlugins(
     shaders: [],
     fonts: [],
     commands: [],
+    actionPacks: [],
+    actions: [],
     explorerActions: [],
     contextMenuItems: [],
     warnings: [],
@@ -928,6 +966,8 @@ export async function discoverOverlayPlugins(
       aggregate.shaders.push(...packageResult.shaders);
       aggregate.fonts.push(...packageResult.fonts);
       aggregate.commands.push(...packageResult.commands);
+      aggregate.actionPacks.push(...packageResult.actionPacks);
+      aggregate.actions.push(...packageResult.actions);
       aggregate.explorerActions.push(...packageResult.explorerActions);
       aggregate.contextMenuItems.push(...packageResult.contextMenuItems);
       aggregate.warnings.push(...packageResult.warnings);
@@ -941,6 +981,8 @@ export async function discoverOverlayPlugins(
   aggregate.shaders.sort((left, right) => left.name.localeCompare(right.name));
   aggregate.fonts.sort((left, right) => left.name.localeCompare(right.name));
   aggregate.commands.sort((left, right) => left.name.localeCompare(right.name));
+  aggregate.actionPacks.sort((left, right) => left.name.localeCompare(right.name));
+  aggregate.actions.sort((left, right) => left.title.localeCompare(right.title));
   aggregate.explorerActions.sort((left, right) => left.label.localeCompare(right.label));
   aggregate.contextMenuItems.sort((left, right) => left.title.localeCompare(right.title));
 

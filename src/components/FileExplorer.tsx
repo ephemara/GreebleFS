@@ -82,6 +82,7 @@ import {
   type ExplorerMenuPreviewContext,
   type ExplorerResolvedPluginContextMenuContribution,
 } from "../config/explorerContextMenu";
+import type { LoadedExplorerAction } from "../config/actionPacks";
 import {
   buildExplorerArchiveVirtualPath,
   getExplorerArchiveContainerPath,
@@ -386,7 +387,12 @@ import {
   type ExplorerPropertiesPanelTab,
   type ExplorerRecursiveSizeCacheEntry,
 } from "../store/explorerStore";
-import { useExplorerTaskProgressFeed, useExplorerTaskSnapshots } from "../store/explorerTaskStore";
+import {
+  openExplorerTaskCenter,
+  useExplorerTaskProgressFeed,
+  useExplorerTaskSnapshots,
+} from "../store/explorerTaskStore";
+import { recordExplorerActionRun } from "../store/explorerActionRunStore";
 import {
   startMobileShareSession,
   useMobileShareStore,
@@ -473,6 +479,11 @@ import {
   type ExplorerTagMetadataSnapshot,
   queueExplorerTerminalDirectorySync,
 } from "../runtime/explorerBackend";
+import {
+  executeExplorerAction,
+  normalizeExplorerActionOutputTarget,
+  type ExplorerActionExecutionInput,
+} from "../runtime/actionBackend";
 import { runExplorerAudioBatchProcess } from "../runtime/audioWorkbenchBackend";
 import {
   openExplorerPicker,
@@ -7511,6 +7522,7 @@ interface FileExplorerProps {
   menuPacks?: LoadedExplorerMenuPack[];
   onOpenPanel?: (panelId: string) => void;
   onOpenSettingsSection?: (section: SettingsSectionKey) => void;
+  actions?: LoadedExplorerAction[];
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
@@ -7593,6 +7605,7 @@ export function FileExplorer({
   menuPacks = [],
   onOpenPanel = () => undefined,
   onOpenSettingsSection = () => undefined,
+  actions = [],
   pluginActions = [],
   pluginContextMenuItems = [],
   layoutMode = "full",
@@ -14819,6 +14832,208 @@ export function FileExplorer({
     },
     [refresh],
   );
+  const toExplorerActionInvocationEntry = useCallback(
+    (entry: ExplorerMenuInvocationEntry) => ({
+      path: entry.path,
+      name: entry.name,
+      parentPath: entry.parentPath,
+      extension: entry.extension,
+      stem: entry.stem,
+      isDirectory: entry.isDirectory,
+    }),
+    [],
+  );
+  const buildExplorerActionExecutionRequest = useCallback(
+    (
+      action: LoadedExplorerAction,
+      runtimeContext: {
+        invocation: ExplorerMenuInvocationContext;
+        primaryEntry: ExplorerMenuInvocationEntry | null;
+        targetEntries: ExplorerMenuInvocationEntry[];
+      },
+    ): ExplorerActionExecutionInput => ({
+      packId: action.packId,
+      actionId: action.actionId,
+      actionTitle: action.title,
+      actionDirectory: action.directoryPath,
+      execution: {
+        runner: action.execution.runner,
+        entry: action.execution.entry,
+        args: [...action.execution.args],
+        env: { ...action.execution.env },
+        interpreter: action.execution.interpreter ?? null,
+      },
+      outputTarget: normalizeExplorerActionOutputTarget(
+        action.presentation.outputTarget,
+      ),
+      timeoutMs: null,
+      context: {
+        kind: runtimeContext.invocation.kind,
+        currentLocation: runtimeContext.invocation.currentLocation,
+        selectedEntries: runtimeContext.targetEntries.map(
+          toExplorerActionInvocationEntry,
+        ),
+        primaryEntry: runtimeContext.primaryEntry
+          ? toExplorerActionInvocationEntry(runtimeContext.primaryEntry)
+          : null,
+        searchResult: runtimeContext.invocation.searchResult
+          ? {
+              query: runtimeContext.invocation.searchResult.query,
+              searchMode: runtimeContext.invocation.searchResult.searchMode,
+            }
+          : null,
+        previewTarget: runtimeContext.invocation.previewTarget
+          ? toExplorerActionInvocationEntry(
+              runtimeContext.invocation.previewTarget,
+            )
+          : null,
+        previewContext: runtimeContext.invocation.previewContext
+          ? {
+              previewKind: runtimeContext.invocation.previewContext.previewKind,
+              workflowTabId:
+                runtimeContext.invocation.previewContext.workflowTabId,
+              workflowBaseMode:
+                runtimeContext.invocation.previewContext.workflowBaseMode,
+            }
+          : null,
+        inputModality: runtimeContext.invocation.inputModality,
+        reducedMotion: runtimeContext.invocation.reducedMotion,
+        capabilities: {
+          mouse: runtimeContext.invocation.capabilities.mouse,
+          touch: runtimeContext.invocation.capabilities.touch,
+          pen: runtimeContext.invocation.capabilities.pen,
+          keyboard: runtimeContext.invocation.capabilities.keyboard,
+        },
+        runtimePlatform: explorerMenuRuntimePlatform,
+      },
+    }),
+    [explorerMenuRuntimePlatform, toExplorerActionInvocationEntry],
+  );
+  const announcePreviewTerminalActionResult = useCallback(
+    (status: "succeeded" | "failed") => {
+      if (!previewTerminalWorkingDirectory) {
+        return;
+      }
+
+      revealPreviewTerminal();
+      queuePreviewTerminalCommand(
+        status === "failed"
+          ? "echo [GreebleFS] Action failed. Check the activity drawer for details."
+          : "echo [GreebleFS] Action finished. Full output is in the activity drawer.",
+      );
+    },
+    [
+      previewTerminalWorkingDirectory,
+      queuePreviewTerminalCommand,
+      revealPreviewTerminal,
+    ],
+  );
+  const executeExplorerMenuAction = useCallback(
+    async (
+      action: LoadedExplorerAction,
+      runtimeContext: {
+        invocation: ExplorerMenuInvocationContext;
+        primaryEntry: ExplorerMenuInvocationEntry | null;
+        targetEntries: ExplorerMenuInvocationEntry[];
+      },
+    ) => {
+      const startedAt = Date.now();
+      const outputTarget = action.presentation.outputTarget;
+      const shouldRecordSuccessfulRun = outputTarget !== "silent";
+
+      try {
+        const result = await executeExplorerAction(
+          buildExplorerActionExecutionRequest(action, runtimeContext),
+        );
+        const finishedAt = Date.now();
+        const runStatus = result.launchedInNativeTerminal
+          ? "launched"
+          : result.success
+            ? "succeeded"
+            : "failed";
+
+        if (shouldRecordSuccessfulRun || !result.success) {
+          recordExplorerActionRun({
+            id: `${result.packId}:${result.actionId}:${startedAt}`,
+            packId: result.packId,
+            actionId: result.actionId,
+            actionTitle: result.actionTitle,
+            actionDirectory: action.directoryPath,
+            currentLocation: runtimeContext.invocation.currentLocation,
+            selectedPaths: runtimeContext.targetEntries.map((entry) => entry.path),
+            outputTarget,
+            status: runStatus,
+            startedAt,
+            finishedAt,
+            exitCode: result.exitCode,
+            timedOut: result.timedOut,
+            runtimeUsed: result.runtimeUsed,
+            commandDisplay: result.commandDisplay,
+            workingDirectory: result.workingDirectory,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            launchedInNativeTerminal: result.launchedInNativeTerminal,
+          });
+        }
+
+        if (!result.launchedInNativeTerminal && result.success) {
+          invalidateExplorerResultCaches();
+          await refresh();
+        }
+
+        if (outputTarget === "task-center") {
+          openExplorerTaskCenter();
+        } else if (outputTarget === "preview-terminal") {
+          announcePreviewTerminalActionResult(
+            result.success ? "succeeded" : "failed",
+          );
+        }
+
+        if (!result.success) {
+          openExplorerTaskCenter();
+          setError(
+            result.stderr.trim()
+              || result.stdout.trim()
+              || `Action "${action.title}" exited with status ${result.exitCode}.`,
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        recordExplorerActionRun({
+          id: `${action.packId}:${action.actionId}:${startedAt}`,
+          packId: action.packId,
+          actionId: action.actionId,
+          actionTitle: action.title,
+          actionDirectory: action.directoryPath,
+          currentLocation: runtimeContext.invocation.currentLocation,
+          selectedPaths: runtimeContext.targetEntries.map((entry) => entry.path),
+          outputTarget,
+          status: "failed",
+          startedAt,
+          finishedAt: Date.now(),
+          exitCode: null,
+          timedOut: false,
+          runtimeUsed: action.execution.interpreter ?? action.execution.runner,
+          commandDisplay: action.execution.entry,
+          workingDirectory: runtimeContext.invocation.currentLocation,
+          stdout: "",
+          stderr: message,
+          launchedInNativeTerminal: false,
+        });
+        openExplorerTaskCenter();
+        if (outputTarget === "preview-terminal") {
+          announcePreviewTerminalActionResult("failed");
+        }
+        setError(message);
+      }
+    },
+    [
+      announcePreviewTerminalActionResult,
+      buildExplorerActionExecutionRequest,
+      refresh,
+      setError,
+    ],
+  );
   const activeOpenWithTargetPath = useMemo(() => {
     if (!ctxMenu.visible || !ctxMenu.invocation) {
       return null;
@@ -14859,8 +15074,10 @@ export function FileExplorer({
       layoutOverridesByContext:
         explorerSettings.contextMenuLayoutOverridesByContext,
       themeRendererPreference: explorerTheme.menuPresentation.renderer,
+      actions,
       pluginContextMenuItems: combinedPluginContextMenuItems,
       previewContextMenuRegistration,
+      includeEditMenuCommand: true,
       environment: {
         currentPath,
         currentPathIsCloud,
@@ -14932,7 +15149,15 @@ export function FileExplorer({
         navigate,
         openSettingsSection: (section) =>
           onOpenSettingsSection(section as SettingsSectionKey),
+        openContextMenuComposer: (context) => {
+          useSettingsStore
+            .getState()
+            .setActiveContextMenuComposerContext(context);
+          onOpenSettingsSection("context-menus");
+        },
         runAudioBatch: runAudioBatchForEntries,
+        executeActionCommand: async (command, runtimeContext) =>
+          executeExplorerMenuAction(command.execution.action, runtimeContext),
         executePluginCommand: async (command, entry) => {
           try {
             await executePluginContextMenuItem(command, entry);
@@ -14945,6 +15170,7 @@ export function FileExplorer({
     });
   }, [
     bookmarkPathSet,
+    actions,
     canRunAudioBatchEntries,
     clipboard,
     combinedPluginContextMenuItems,
@@ -14957,6 +15183,7 @@ export function FileExplorer({
     currentPathIsCloud,
     currentPathIsHome,
     duplicateMenuEntries,
+    executeExplorerMenuAction,
     executePluginContextMenuItem,
     explorerPicker,
     explorerSettings.activeMenuPackId,

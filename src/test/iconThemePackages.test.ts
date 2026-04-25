@@ -56,6 +56,7 @@ function mockFilesystem(options: {
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     const path = normalizePath((args as { path?: string } | undefined)?.path);
     const requestPath = normalizePath((args as { request?: { archivePath?: string } } | undefined)?.request?.archivePath);
+    const archivePath = command === 'fs_open_archive' ? path : requestPath;
 
     if (command === 'fs_read_text_file') {
       if (Object.prototype.hasOwnProperty.call(options.textFiles ?? {}, path)) {
@@ -74,11 +75,11 @@ function mockFilesystem(options: {
       throw new Error(`ENOENT: ${path}`);
     }
 
-    if (command === 'fs_extract_archive') {
-      if (Object.prototype.hasOwnProperty.call(options.archiveOutputs ?? {}, requestPath)) {
-        return options.archiveOutputs?.[requestPath];
+    if (command === 'fs_open_archive' || command === 'fs_extract_archive') {
+      if (Object.prototype.hasOwnProperty.call(options.archiveOutputs ?? {}, archivePath)) {
+        return options.archiveOutputs?.[archivePath];
       }
-      throw new Error(`ENOENT: ${requestPath}`);
+      throw new Error(`ENOENT: ${archivePath}`);
     }
 
     throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);

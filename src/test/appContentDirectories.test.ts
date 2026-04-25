@@ -22,6 +22,10 @@ describe('managed content directories', () => {
     expect(getManagedContentDirectory('menuPacks')).toBe('menu-packs');
   });
 
+  it('defaults action storage to a portable managed directory name', () => {
+    expect(getManagedContentDirectory('actions')).toBe('actions');
+  });
+
   it('respects a notes directory override', () => {
     vi.stubEnv('VITE_GREEBLEFS_NOTES_DIR', '/tmp/greeblefs-notes');
 
@@ -46,6 +50,12 @@ describe('managed content directories', () => {
     expect(getManagedContentDirectory('menuPacks')).toBe('/tmp/greeblefs-menu-packs');
   });
 
+  it('respects an action directory override', () => {
+    vi.stubEnv('VITE_GREEBLEFS_ACTIONS_DIR', '/tmp/greeblefs-actions');
+
+    expect(getManagedContentDirectory('actions')).toBe('/tmp/greeblefs-actions');
+  });
+
   it('still honors the legacy notes directory override', () => {
     vi.stubEnv('VITE_OVERLAYTERM_NOTES_DIR', '/tmp/overlayterm-notes');
 
@@ -68,5 +78,11 @@ describe('managed content directories', () => {
     vi.stubEnv('VITE_OVERLAYTERM_MENU_PACKS_DIR', '/tmp/overlayterm-menu-packs');
 
     expect(getManagedContentDirectory('menuPacks')).toBe('/tmp/overlayterm-menu-packs');
+  });
+
+  it('still honors the legacy action directory override', () => {
+    vi.stubEnv('VITE_OVERLAYTERM_ACTIONS_DIR', '/tmp/overlayterm-actions');
+
+    expect(getManagedContentDirectory('actions')).toBe('/tmp/overlayterm-actions');
   });
 });

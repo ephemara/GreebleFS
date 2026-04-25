@@ -6,6 +6,7 @@ import type {
   ExplorerMenuInvocationEntry,
 } from '../config/explorerContextMenu';
 import type { OverlayPluginContextMenuContribution } from '../config/pluginContributions';
+import type { LoadedExplorerAction } from '../config/actionPacks';
 import {
   DEFAULT_EXPLORER_MENU_PACK_ID,
   createBuiltInExplorerMenuPack,
@@ -104,6 +105,7 @@ function createEnvironment(
     navigate: vi.fn(),
     openSettingsSection: vi.fn(),
     runAudioBatch: vi.fn(),
+    executeActionCommand: vi.fn(async () => {}),
     executePluginCommand: vi.fn(async () => {}),
     onError: vi.fn(),
     ...overrides,
@@ -113,6 +115,7 @@ function createEnvironment(
 function buildMenu(options?: {
   invocation?: Partial<ExplorerMenuInvocationContext>;
   environment?: Partial<ExplorerMenuRuntimeEnvironment>;
+  actions?: LoadedExplorerAction[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutOverridesByContext?: ExplorerMenuContextLayoutOverrideMap;
   previewContextMenuRegistration?: ExplorerPreviewContextMenuRegistration | null;
@@ -123,6 +126,7 @@ function buildMenu(options?: {
     activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
     layoutOverridesByContext: options?.layoutOverridesByContext ?? {},
     themeRendererPreference: 'radial',
+    actions: options?.actions ?? [],
     pluginContextMenuItems: options?.pluginContextMenuItems ?? [],
     previewContextMenuRegistration: options?.previewContextMenuRegistration,
     environment: createEnvironment(options?.environment),
@@ -167,6 +171,7 @@ describe('explorerMenuRuntime', () => {
       activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
       layoutOverridesByContext: {},
       themeRendererPreference: 'radial',
+      actions: [],
       pluginContextMenuItems: [],
       environment,
     });
@@ -254,6 +259,7 @@ describe('explorerMenuRuntime', () => {
       activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
       layoutOverridesByContext: {},
       themeRendererPreference: 'classic',
+      actions: [],
       pluginContextMenuItems: [],
       environment,
     });
@@ -352,6 +358,7 @@ describe('explorerMenuRuntime', () => {
       activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
       layoutOverridesByContext: {},
       themeRendererPreference: 'classic',
+      actions: [],
       pluginContextMenuItems: [
         {
           id: 'sample-plugin.context-menu.capture',

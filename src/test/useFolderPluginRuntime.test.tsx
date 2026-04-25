@@ -24,6 +24,8 @@ const emptyDiscoveryResult: pluginPackages.OverlayPluginDiscoveryResult = {
   shaders: [],
   fonts: [],
   commands: [],
+  actionPacks: [],
+  actions: [],
   explorerActions: [],
   contextMenuItems: [],
   warnings: [],

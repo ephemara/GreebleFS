@@ -13,6 +13,15 @@
   - `src/test/storagePanel.layout.test.tsx` now asserts the compact rail default, the unified inspector, and the queue drawer living in one place.
   - `src/test/storageStore.test.ts` now protects the legacy `previewSplitMode: "inline" -> "pane"` migration.
 
+# 2026-04-25 - Monaco Theme Defaults Must Be Hex-Safe And VSIX Imports Must Use fs_open_archive
+
+- Two follow-up compatibility fixes matter for future theme/import work:
+  - `src/config/explorerMonaco.ts` now normalizes Monaco UI colors away from raw CSS `rgb(...)` / `rgba(...)` strings into hex/hex8 before defining the Monaco theme. That is intentional because built-in GreebleFS themes and panel-transparency resolution frequently produce RGBA palette values, and Monaco can render obviously wrong UI accents when those values are passed through raw.
+  - `src/config/vscodeThemeCompatibility.ts` must use `fsOpenArchive(...)` for cached `.vsix` imports. The Rust host rejects `fsExtractArchive({ mode: "openCached" })` on purpose and returns `Use fs_open_archive for cached archive opening.` if the wrong bridge is used.
+- Durable validation:
+  - passed: `bunx vitest run src/test/explorerMonaco.test.ts src/test/iconThemePackages.test.ts src/test/themePackages.test.ts`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml vsix`
+
 # 2026-04-24 - VS Code Theme And Icon Imports Now Work As First-Class Compatibility Packages
 
 - GreebleFS now treats common VS Code theme extensions as compatibility sources instead of forcing users to rewrite them into native bundle format first. `themes/` can ingest VS Code color-theme folders or `.vsix` archives, and `icon-themes/` can ingest VS Code file-icon folders or `.vsix` archives.
