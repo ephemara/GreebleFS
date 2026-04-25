@@ -113,7 +113,7 @@ export function ExplorerChromeSurface({
     target instanceof Element &&
     target.closest("[data-explorer-customize-live-control='true']") != null;
 
-  const renderDropTarget = (
+  const renderInsertionGhost = (
     zoneId: ExplorerChromeZoneId,
     targetIndex: number,
   ) => {
@@ -129,35 +129,33 @@ export function ExplorerChromeSurface({
 
     return (
       <div
-        key={`${surface.surfaceId}:${zoneId}:drop:${targetIndex}`}
-        data-explorer-customize-drop-surface-id={surface.surfaceId}
-        data-explorer-customize-drop-zone-id={zoneId}
-        data-explorer-customize-drop-target-index={String(targetIndex)}
+        key={`${surface.surfaceId}:${zoneId}:ghost:${targetIndex}`}
+        data-explorer-customize-insertion-ghost="true"
         style={{
-          width: 10,
-          alignSelf: "stretch",
+          minWidth: 22,
+          height: 26,
           display: "flex",
-          alignItems: "stretch",
+          alignItems: "center",
           justifyContent: "center",
-          cursor: editMode.draggingControlId ? "grabbing" : "default",
           flexShrink: 0,
+          pointerEvents: "none",
         }}
       >
-        <span
-          aria-hidden="true"
+        <div
           style={{
-            width: 2,
-            borderRadius: 999,
+            width: isHighlighted ? 18 : 14,
+            height: isHighlighted ? 20 : 18,
+            borderRadius: 10,
+            border: isHighlighted
+              ? "1px solid color-mix(in srgb, var(--overlay-accent) 82%, white 18%)"
+              : "1px dashed color-mix(in srgb, var(--overlay-accent) 54%, transparent)",
             background: isHighlighted
-              ? "var(--overlay-accent)"
-              : editMode.draggingControlId
-                ? "color-mix(in srgb, var(--overlay-accent) 60%, transparent)"
-                : "color-mix(in srgb, var(--overlay-border) 82%, transparent)",
-            opacity: isHighlighted
-              ? 1
-              : editMode.draggingControlId
-                ? 0.75
-                : 0.35,
+              ? "color-mix(in srgb, var(--overlay-accent) 18%, transparent)"
+              : "color-mix(in srgb, var(--overlay-accent) 10%, transparent)",
+            boxShadow: isHighlighted
+              ? "0 0 0 1px color-mix(in srgb, var(--overlay-accent) 24%, transparent)"
+              : undefined,
+            transition: "width 120ms ease, height 120ms ease, background 120ms ease",
           }}
         />
       </div>
@@ -165,7 +163,16 @@ export function ExplorerChromeSurface({
   };
 
   return (
-    <div data-overlay-explorer-surface={surface.surfaceId} style={style}>
+    <div
+      data-overlay-explorer-surface={surface.surfaceId}
+      data-explorer-customize-surface-id={surface.surfaceId}
+      style={{
+        width: "100%",
+        minWidth: 0,
+        position: "relative",
+        ...style,
+      }}
+    >
       {surface.rows.map((row) => {
         const rowHasControls = row.zones.some(
           (zone) => zone.controls.length > 0,
@@ -178,36 +185,58 @@ export function ExplorerChromeSurface({
           <div
             key={row.id}
             data-overlay-explorer-row={row.id}
-            style={getRowStyle?.(row.id)}
+            data-explorer-customize-row-id={row.id}
+            style={{
+              width: "100%",
+              minWidth: 0,
+              position: "relative",
+              ...(getRowStyle?.(row.id) ?? {}),
+            }}
           >
             {row.zones.map((zone) => {
               if (zone.controls.length === 0 && !editModeActive) {
                 return null;
               }
 
+              const highlightedDropTarget = editMode?.highlightedDropTarget;
+              const zoneIsActiveDropTarget =
+                highlightedDropTarget?.surfaceId === surface.surfaceId &&
+                highlightedDropTarget.zoneId === zone.id;
+              const zoneInsertionIndex = zoneIsActiveDropTarget
+                ? highlightedDropTarget?.targetIndex ?? null
+                : null;
+
               return (
                 <div
                   key={zone.id}
                   data-overlay-explorer-zone={zone.id}
+                  data-explorer-customize-zone-id={zone.id}
                   style={{
+                    minWidth: 0,
+                    position: "relative",
                     ...(getZoneStyle?.(zone.id) ?? {}),
                     ...(editModeActive
                       ? {
-                          minHeight: 28,
+                          minHeight: 32,
                           padding:
-                            zone.controls.length === 0 ? "4px 6px" : undefined,
-                          borderRadius: 10,
-                          outline:
-                            zone.controls.length === 0
-                              ? "1px dashed color-mix(in srgb, var(--overlay-border) 72%, transparent)"
+                            zone.controls.length === 0 ? "4px 6px" : "2px 4px",
+                          borderRadius: 12,
+                          background: zoneIsActiveDropTarget
+                            ? "color-mix(in srgb, var(--overlay-accent) 10%, transparent)"
+                            : zone.controls.length === 0
+                              ? "color-mix(in srgb, var(--overlay-border) 8%, transparent)"
+                              : "transparent",
+                          boxShadow: zoneIsActiveDropTarget
+                            ? "inset 0 0 0 1px color-mix(in srgb, var(--overlay-accent) 40%, transparent)"
+                            : zone.controls.length === 0
+                              ? "inset 0 0 0 1px color-mix(in srgb, var(--overlay-border) 52%, transparent)"
                               : undefined,
-                          outlineOffset:
-                            zone.controls.length === 0 ? -1 : undefined,
+                          transition:
+                            "background 120ms ease, box-shadow 120ms ease",
                         }
                       : {}),
                   }}
                 >
-                  {editModeActive && renderDropTarget(zone.id, 0)}
                   {zone.controls.map((placement, index) => {
                     const isSelected =
                       editMode?.selectedControlId === placement.controlId;
@@ -217,6 +246,9 @@ export function ExplorerChromeSurface({
                       <React.Fragment
                         key={`${placement.surfaceId}:${placement.controlId}`}
                       >
+                        {editModeActive && zoneInsertionIndex === index
+                          ? renderInsertionGhost(zone.id, index)
+                          : null}
                         <div
                           data-overlay-explorer-control={placement.controlId}
                           data-overlay-explorer-control-zone={placement.zone}
@@ -393,10 +425,13 @@ export function ExplorerChromeSurface({
                             </button>
                           ) : null}
                         </div>
-                        {editModeActive && renderDropTarget(zone.id, index + 1)}
                       </React.Fragment>
                     );
                   })}
+                  {editModeActive &&
+                  zoneInsertionIndex === zone.controls.length
+                    ? renderInsertionGhost(zone.id, zone.controls.length)
+                    : null}
                 </div>
               );
             })}

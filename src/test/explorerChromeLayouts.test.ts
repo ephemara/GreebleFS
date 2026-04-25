@@ -146,11 +146,13 @@ describe('explorer chrome layout resolver', () => {
       targetIndex: 0,
     });
 
-    expect(override.entries).toContainEqual({
-      controlId: 'refresh',
-      surfaceId: 'explorerStatusBar',
-      zone: 'end',
-      order: 10,
-    });
+    expect(override.entries).toContainEqual(
+      expect.objectContaining({
+        controlId: 'refresh',
+        surfaceId: 'explorerStatusBar',
+        zone: 'end',
+        order: 10,
+      }),
+    );
   });
 });

@@ -267,4 +267,36 @@ describe("ExplorerChromeSurface", () => {
 
     expect(liveClicks).toEqual(["customizeModeToggle"]);
   });
+
+  it("renders a single inline insertion ghost instead of dedicated drop-strip rails", () => {
+    const rendered = render(
+      <ExplorerChromeSurface
+        surface={toolbarSurface}
+        renderControl={() => <button type="button">Refresh</button>}
+        editMode={{
+          active: true,
+          draggingControlId: "refresh",
+          highlightedDropTarget: {
+            surfaceId: "explorerToolbar",
+            zoneId: "primaryStart",
+            targetIndex: 1,
+          },
+          onDragStart: () => undefined,
+          onDragEnd: () => undefined,
+          onMoveControl: () => undefined,
+        }}
+      />,
+    );
+
+    expect(
+      rendered.container.querySelectorAll(
+        "[data-explorer-customize-insertion-ghost='true']",
+      ),
+    ).toHaveLength(1);
+    expect(
+      rendered.container.querySelector(
+        "[data-explorer-customize-drop-surface-id]",
+      ),
+    ).toBeNull();
+  });
 });

@@ -75,6 +75,10 @@ export interface BeginExplorerCustomizePointerSessionArgs {
 }
 
 const EXPLORER_CUSTOMIZE_POINTER_START_DISTANCE_PX = 6;
+const EXPLORER_CUSTOMIZE_SURFACE_ATTRIBUTE =
+  "data-explorer-customize-surface-id";
+const EXPLORER_CUSTOMIZE_REMOVE_ZONE_SELECTOR =
+  '[data-explorer-customize-remove-zone="true"]';
 
 const snapshotListeners = new Set<() => void>();
 
@@ -226,7 +230,187 @@ function restoreBodyDragState(): void {
   savedBodyCursor = null;
 }
 
-function resolveDropTargetFromPoint(point: ExplorerCustomizePointerPoint): {
+function pointIntersectsRect(
+  point: ExplorerCustomizePointerPoint,
+  rect: DOMRect,
+): boolean {
+  return (
+    point.x >= rect.left &&
+    point.x <= rect.right &&
+    point.y >= rect.top &&
+    point.y <= rect.bottom
+  );
+}
+
+function distanceFromPointToRect(
+  point: ExplorerCustomizePointerPoint,
+  rect: DOMRect,
+): number {
+  const horizontalDistance =
+    point.x < rect.left ? rect.left - point.x : point.x > rect.right ? point.x - rect.right : 0;
+  const verticalDistance =
+    point.y < rect.top ? rect.top - point.y : point.y > rect.bottom ? point.y - rect.bottom : 0;
+  return Math.hypot(horizontalDistance, verticalDistance);
+}
+
+function getImmediateCustomizeZoneElements(
+  rowElement: HTMLElement,
+): HTMLElement[] {
+  return Array.from(rowElement.children).filter(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement &&
+      child.dataset.explorerCustomizeZoneId != null,
+  );
+}
+
+function getImmediateCustomizeControlElements(
+  zoneElement: HTMLElement,
+  ignoredControlId?: ExplorerChromeControlId | null,
+): HTMLElement[] {
+  return Array.from(zoneElement.children).filter(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement &&
+      child.dataset.overlayExplorerControl != null &&
+      child.dataset.overlayExplorerControl !== ignoredControlId,
+  );
+}
+
+function resolveAmbientRowElementInSurface(
+  surfaceElement: HTMLElement,
+  point: ExplorerCustomizePointerPoint,
+): HTMLElement | null {
+  const rowElements = Array.from(surfaceElement.children).filter(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement &&
+      child.dataset.explorerCustomizeRowId != null,
+  );
+  if (rowElements.length === 0) {
+    return null;
+  }
+
+  for (const rowElement of rowElements) {
+    if (pointIntersectsRect(point, rowElement.getBoundingClientRect())) {
+      return rowElement;
+    }
+  }
+
+  return rowElements.reduce<HTMLElement | null>((closestRow, rowElement) => {
+    if (!closestRow) {
+      return rowElement;
+    }
+    return distanceFromPointToRect(
+      point,
+      rowElement.getBoundingClientRect(),
+    ) <
+      distanceFromPointToRect(point, closestRow.getBoundingClientRect())
+      ? rowElement
+      : closestRow;
+  }, null);
+}
+
+function resolveAmbientZoneElementInRow(
+  rowElement: HTMLElement,
+  point: ExplorerCustomizePointerPoint,
+): HTMLElement | null {
+  const zoneElements = getImmediateCustomizeZoneElements(rowElement);
+  if (zoneElements.length === 0) {
+    return null;
+  }
+
+  for (const zoneElement of zoneElements) {
+    if (pointIntersectsRect(point, zoneElement.getBoundingClientRect())) {
+      return zoneElement;
+    }
+  }
+
+  const rowRect = rowElement.getBoundingClientRect();
+  for (let index = 0; index < zoneElements.length; index += 1) {
+    const zoneElement = zoneElements[index];
+    const zoneRect = zoneElement.getBoundingClientRect();
+    const previousRect =
+      index > 0 ? zoneElements[index - 1]?.getBoundingClientRect() : null;
+    const nextRect =
+      index < zoneElements.length - 1
+        ? zoneElements[index + 1]?.getBoundingClientRect()
+        : null;
+    const territoryLeft =
+      previousRect == null ? rowRect.left : (previousRect.right + zoneRect.left) / 2;
+    const territoryRight =
+      nextRect == null ? rowRect.right : (zoneRect.right + nextRect.left) / 2;
+    if (point.x >= territoryLeft && point.x <= territoryRight) {
+      return zoneElement;
+    }
+  }
+
+  return zoneElements.reduce<HTMLElement | null>((closestZone, zoneElement) => {
+    if (!closestZone) {
+      return zoneElement;
+    }
+    return distanceFromPointToRect(
+      point,
+      zoneElement.getBoundingClientRect(),
+    ) <
+      distanceFromPointToRect(point, closestZone.getBoundingClientRect())
+      ? zoneElement
+      : closestZone;
+  }, null);
+}
+
+function resolveInsertionIndexForZone(
+  zoneElement: HTMLElement,
+  point: ExplorerCustomizePointerPoint,
+  ignoredControlId?: ExplorerChromeControlId | null,
+): number {
+  const controlElements = getImmediateCustomizeControlElements(
+    zoneElement,
+    ignoredControlId,
+  );
+  if (controlElements.length === 0) {
+    return 0;
+  }
+
+  for (let index = 0; index < controlElements.length; index += 1) {
+    const controlRect = controlElements[index].getBoundingClientRect();
+    const controlMidpointX = controlRect.left + controlRect.width / 2;
+    if (
+      point.y < controlRect.top ||
+      (point.y <= controlRect.bottom && point.x < controlMidpointX)
+    ) {
+      return index;
+    }
+  }
+
+  return controlElements.length;
+}
+
+function resolveAmbientSurfaceElementFromPoint(
+  point: ExplorerCustomizePointerPoint,
+): HTMLElement | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const surfaceElements = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      `[${EXPLORER_CUSTOMIZE_SURFACE_ATTRIBUTE}]`,
+    ),
+  );
+  if (surfaceElements.length === 0) {
+    return null;
+  }
+
+  for (const surfaceElement of surfaceElements) {
+    if (pointIntersectsRect(point, surfaceElement.getBoundingClientRect())) {
+      return surfaceElement;
+    }
+  }
+
+  return null;
+}
+
+export function resolveExplorerCustomizeDropTargetFromPoint(
+  point: ExplorerCustomizePointerPoint,
+): {
   dropTarget: ExplorerCustomizePointerDropTarget | null;
   removeTargetActive: boolean;
 } {
@@ -235,25 +419,36 @@ function resolveDropTargetFromPoint(point: ExplorerCustomizePointerPoint): {
   }
 
   const hoveredElement = document.elementFromPoint(point.x, point.y);
-  if (!(hoveredElement instanceof HTMLElement)) {
-    return { dropTarget: null, removeTargetActive: false };
-  }
 
-  const dropZone = hoveredElement.closest<HTMLElement>(
-    "[data-explorer-customize-drop-surface-id]",
-  );
-  if (dropZone) {
-    const surfaceId = dropZone.dataset.explorerCustomizeDropSurfaceId as
+  const ambientSurfaceElement = resolveAmbientSurfaceElementFromPoint(point);
+  if (ambientSurfaceElement) {
+    const surfaceId = ambientSurfaceElement.dataset
+      .explorerCustomizeSurfaceId as
       | ExplorerChromeSurfaceId
       | undefined;
-    const zoneId = dropZone.dataset.explorerCustomizeDropZoneId as
+    const ambientRowElement = resolveAmbientRowElementInSurface(
+      ambientSurfaceElement,
+      point,
+    );
+    const ambientZoneElement =
+      ambientRowElement == null
+        ? null
+        : resolveAmbientZoneElementInRow(ambientRowElement, point);
+    const zoneId = ambientZoneElement?.dataset.explorerCustomizeZoneId as
       | ExplorerChromeZoneId
       | undefined;
-    const targetIndexValue = dropZone.dataset.explorerCustomizeDropTargetIndex;
+    const ignoredControlId =
+      activeExplorerCustomizePointerSession?.sourceKind === "placed"
+        ? activeExplorerCustomizePointerSession.controlId
+        : null;
     const targetIndex =
-      targetIndexValue == null
+      ambientZoneElement == null
         ? Number.NaN
-        : Number.parseInt(targetIndexValue, 10);
+        : resolveInsertionIndexForZone(
+            ambientZoneElement,
+            point,
+            ignoredControlId,
+          );
     if (
       surfaceId &&
       zoneId &&
@@ -271,9 +466,10 @@ function resolveDropTargetFromPoint(point: ExplorerCustomizePointerPoint): {
     }
   }
 
-  const removeZone = hoveredElement.closest<HTMLElement>(
-    '[data-explorer-customize-remove-zone="true"]',
-  );
+  const removeZone =
+    hoveredElement instanceof HTMLElement
+      ? hoveredElement.closest<HTMLElement>(EXPLORER_CUSTOMIZE_REMOVE_ZONE_SELECTOR)
+      : null;
   return {
     dropTarget: null,
     removeTargetActive: removeZone != null,
@@ -331,7 +527,7 @@ function commitExplorerCustomizePointerMove(
     currentSession.active = true;
   }
 
-  const targetState = resolveDropTargetFromPoint(point);
+  const targetState = resolveExplorerCustomizeDropTargetFromPoint(point);
   updateHighlightedDropTarget(targetState.dropTarget);
   activeExplorerCustomizePointerSession = {
     ...currentSession,

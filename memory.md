@@ -1,3 +1,17 @@
+# 2026-04-25 - Explorer Customize Chrome Now Uses Ambient Band Targeting Instead Of Drop Rails
+
+- Explorer chrome customize no longer depends on explicit per-gap drop-strip DOM nodes for placement. The durable interaction shape is now:
+  - `src/components/explorer/explorerCustomizePointerRuntime.ts` resolves drop targets from ambient chrome geometry. It finds the hovered chrome surface, then infers the row, zone, and insertion index from full-band DOM rects plus control midpoints instead of relying on tiny dedicated drop targets.
+  - `src/components/explorer/ExplorerChromeSurface.tsx` now exposes ambient `surface -> row -> zone -> control` geometry attributes and renders a single inline insertion ghost inside the resolved zone. The old blue-line rail treatment is intentionally gone.
+  - The saved layout model is still the same `surfaceId + zone + order` override snapshot in `src/config/explorerChromeLayouts.ts`. Future customize work should keep persistence simple and make the freedom happen in the pointer/runtime layer, not by exploding the stored model into absolute-position noise.
+- Durable product rule:
+  - Any non-viewport explorer chrome band should feel droppable during customize mode. Do not reintroduce a UX where placement only works by hitting tiny explicit insertion rails.
+  - The explorer content viewport remains the removal ritual. Ambient targeting should only activate while the pointer is actually inside chrome; do not snap to the "nearest" surface from the viewport or drag-to-remove will feel broken.
+  - Same-zone reorder targeting now ignores the actively dragged placed control while computing insertion index, so reorder math should stay relative to the post-drop layout instead of the pre-drop DOM snapshot.
+- Durable validation:
+  - passed: `bun x vitest run src/test/explorerCustomizePointerRuntime.test.tsx src/test/ExplorerChromeSurface.test.tsx src/test/explorerChromeLayouts.test.ts src/test/explorerStore.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts`
+  - note: full `bun x tsc --noEmit --pretty false -p tsconfig.json` still fails in pre-existing vendored `src/vendor/tiptap/**` typing/dependency paths; the ambient customize files from this pass did not appear in that output.
+
 # 2026-04-25 - Explorer Phase 2 Replaced HTML Drag With Pointer Rituals And Promoted Actions Into A Real Pane
 
 - Explorer chrome customize is no longer hosted by a floating HTML drag/drop overlay. The durable phase-2 shape is now:

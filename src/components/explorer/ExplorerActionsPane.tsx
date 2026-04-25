@@ -206,7 +206,7 @@ export function ExplorerActionsPane({
             }}
           >
             {customizeMode
-              ? "Drag controls out of this pane to place them. Ctrl+Alt+click any supported control to bind a hotkey."
+              ? "Drag controls out of this pane and drop them into any explorer chrome band. Ctrl+Alt+click any supported control to bind a hotkey."
               : "Launch authored actions from the current explorer context. Ctrl+Alt+click an action to bind it instantly."}
           </div>
         </div>
