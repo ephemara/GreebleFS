@@ -469,6 +469,28 @@ button {
   gap: calc(10px * var(--mobile-interface-scale));
 }
 
+.mobile-virtual-surface {
+  position: relative;
+  width: 100%;
+}
+
+.mobile-virtual-row,
+.mobile-virtual-grid-row {
+  position: absolute;
+  inset: 0 0 auto;
+  width: 100%;
+  will-change: transform;
+}
+
+.mobile-virtual-grid-row {
+  display: grid;
+}
+
+.mobile-virtual-grid-spacer {
+  pointer-events: none;
+  opacity: 0;
+}
+
 .mobile-grid {
   display: grid;
   gap: calc(14px * var(--mobile-interface-scale));
@@ -878,27 +900,55 @@ button {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  padding: 0 max(var(--mobile-page-padding), 12px);
   background: rgba(4, 8, 13, 0.7);
   backdrop-filter: blur(12px);
 }
 
+.mobile-overlay__sheet {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  transform: translateY(0);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+  touch-action: pan-y;
+}
+
+.mobile-overlay__sheet--dragging {
+  transition: none;
+}
+
+.mobile-overlay__grabber,
 .mobile-overlay__header,
 .mobile-overlay__actions,
 .mobile-overlay__body {
-  width: min(100%, 720px);
-  margin: 0 auto;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--mobile-surface-strong) 96%, transparent), color-mix(in srgb, var(--mobile-bg-alt) 98%, transparent));
 }
 
-.mobile-overlay__header {
+.mobile-overlay__grabber {
   border-radius: 28px 28px 0 0;
-  padding:
-    calc(18px * var(--mobile-interface-scale))
-    calc(18px * var(--mobile-interface-scale))
-    calc(12px * var(--mobile-interface-scale));
+  padding: 12px 18px 4px;
   border: 1px solid color-mix(in srgb, var(--mobile-accent) 24%, var(--mobile-border));
   border-bottom: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.mobile-overlay__grabber-handle {
+  width: 52px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mobile-text-muted) 52%, transparent);
+}
+
+.mobile-overlay__header {
+  padding:
+    calc(14px * var(--mobile-interface-scale))
+    calc(18px * var(--mobile-interface-scale))
+    calc(12px * var(--mobile-interface-scale));
+  border-left: 1px solid color-mix(in srgb, var(--mobile-accent) 24%, var(--mobile-border));
+  border-right: 1px solid color-mix(in srgb, var(--mobile-accent) 24%, var(--mobile-border));
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -936,6 +986,8 @@ button {
     calc(env(safe-area-inset-bottom, 0px) + 18px);
   max-height: 72vh;
   overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .mobile-preview-surface {

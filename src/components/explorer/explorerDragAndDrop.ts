@@ -90,6 +90,14 @@ type ExplorerDropSurfaceBehavior = {
   onAutoOpen: (() => void) | null;
 };
 
+type ExplorerResolvedSurfaceMetadata = {
+  surfaceId: string;
+  scopeId: string;
+  role: ExplorerDropSurfaceRole;
+  targetPath: string | null;
+  rootPath: string | null;
+};
+
 export type ExplorerDropSurfaceBinding = {
   ref: (node: HTMLElement | null) => void;
   [EXPLORER_DROP_SCOPE_ATTRIBUTE]: string;
@@ -153,16 +161,43 @@ export function getExplorerPreviewDropSurfaceId(path: string): string {
 
 const EXPLORER_SHARED_DRAG_SESSION_LINGER_MS = 1500;
 
+const explorerDropSurfaceBindingById = new Map<
+  string,
+  ExplorerDropSurfaceBinding
+>();
 const explorerDropSurfaceBehaviorById = new Map<
   string,
   ExplorerDropSurfaceBehavior
 >();
 const explorerDropSurfaceElementById = new Map<string, HTMLElement>();
+const explorerDropSurfaceMetadataById = new Map<
+  string,
+  ExplorerResolvedSurfaceMetadata
+>();
+const explorerDropSurfaceMetadataByElement = new WeakMap<
+  HTMLElement,
+  ExplorerResolvedSurfaceMetadata
+>();
+const explorerDropScopeRootSurfaceIdByScopeId = new Map<string, string>();
+const explorerDropValidationContextByPaths = new WeakMap<
+  readonly string[],
+  Map<
+    RuntimePlatform,
+    {
+      normalizedSourcePaths: string[];
+      uniqueParentPaths: Set<string>;
+    }
+  >
+>();
 
 let explorerSharedDragSession: ExplorerSharedDragSession | null = null;
 let explorerSharedDragSessionExpiryTimer: ReturnType<typeof setTimeout> | null =
   null;
 let explorerDragPresentationTimer: ReturnType<typeof setTimeout> | null = null;
+let explorerLastResolvedDropHit: ExplorerResolvedDropHit | null = null;
+let explorerElementRectCacheClearFrame: number | null = null;
+let explorerElementRectCacheEnabled = false;
+let explorerElementRectCache = new WeakMap<HTMLElement, DOMRectReadOnly>();
 
 const explorerDragInteractionListeners = new Set<() => void>();
 function createEmptyExplorerDragInteractionState(): ExplorerDragInteractionState {
@@ -218,10 +253,14 @@ function setExplorerDragInteractionState(
         currentState: ExplorerDragInteractionState,
       ) => ExplorerDragInteractionState),
 ): void {
-  explorerDragInteractionState =
+  const resolvedNextState =
     typeof nextState === "function"
       ? nextState(explorerDragInteractionState)
       : nextState;
+  if (resolvedNextState === explorerDragInteractionState) {
+    return;
+  }
+  explorerDragInteractionState = resolvedNextState;
   emitExplorerDragInteractionState();
 }
 
@@ -251,7 +290,7 @@ function isPointWithinElementRect(
   element: HTMLElement,
   point: { x: number; y: number },
 ): boolean {
-  const rect = element.getBoundingClientRect();
+  const rect = getExplorerCachedElementRect(element);
   const hasUsableRect =
     rect.width > 0 ||
     rect.height > 0 ||
@@ -335,6 +374,11 @@ function getExplorerDragPresentationTargetPoint(
 }
 
 function resolveExplorerScopeElement(scopeId: string): HTMLElement | null {
+  const scopeRootSurfaceId =
+    explorerDropScopeRootSurfaceIdByScopeId.get(scopeId) ?? null;
+  if (scopeRootSurfaceId) {
+    return explorerDropSurfaceElementById.get(scopeRootSurfaceId) ?? null;
+  }
   const selector = `[${EXPLORER_DROP_SURFACE_ROLE_ATTRIBUTE}="scope-root"][${EXPLORER_DROP_SCOPE_ATTRIBUTE}="${CSS.escape(
     scopeId,
   )}"]`;
@@ -342,14 +386,22 @@ function resolveExplorerScopeElement(scopeId: string): HTMLElement | null {
   return element instanceof HTMLElement ? element : null;
 }
 
-function getSurfaceMetadataFromElement(element: HTMLElement): {
-  surfaceId: string;
-  scopeId: string;
-  role: ExplorerDropSurfaceRole;
-  targetPath: string | null;
-  rootPath: string | null;
-} | null {
+function getSurfaceMetadataFromElement(
+  element: HTMLElement,
+): ExplorerResolvedSurfaceMetadata | null {
+  const registeredMetadata =
+    explorerDropSurfaceMetadataByElement.get(element) ?? null;
+  if (registeredMetadata) {
+    return registeredMetadata;
+  }
+
   const surfaceId = element.getAttribute(EXPLORER_DROP_SURFACE_ID_ATTRIBUTE);
+  if (surfaceId) {
+    const cachedMetadata = explorerDropSurfaceMetadataById.get(surfaceId) ?? null;
+    if (cachedMetadata) {
+      return cachedMetadata;
+    }
+  }
   const scopeId = element.getAttribute(EXPLORER_DROP_SCOPE_ATTRIBUTE);
   const role = element.getAttribute(
     EXPLORER_DROP_SURFACE_ROLE_ATTRIBUTE,
@@ -364,6 +416,24 @@ function getSurfaceMetadataFromElement(element: HTMLElement): {
     targetPath: element.getAttribute(EXPLORER_DROP_TARGET_ATTRIBUTE),
     rootPath: element.getAttribute(EXPLORER_DROP_SCOPE_ROOT_PATH_ATTRIBUTE),
   };
+}
+
+function registerExplorerScopeRootSurface(
+  surfaceId: string,
+  previousMetadata: ExplorerResolvedSurfaceMetadata | null,
+  nextMetadata: ExplorerResolvedSurfaceMetadata | null,
+): void {
+  if (
+    previousMetadata?.role === "scope-root" &&
+    explorerDropScopeRootSurfaceIdByScopeId.get(previousMetadata.scopeId) ===
+      surfaceId
+  ) {
+    explorerDropScopeRootSurfaceIdByScopeId.delete(previousMetadata.scopeId);
+  }
+
+  if (nextMetadata?.role === "scope-root") {
+    explorerDropScopeRootSurfaceIdByScopeId.set(nextMetadata.scopeId, surfaceId);
+  }
 }
 
 function resolveDropHitFromSurfaceMetadata(args: {
@@ -602,11 +672,76 @@ function resolveExplorerDropHitFromCandidateElements(args: {
 }
 
 function getElementCenterPoint(element: HTMLElement): { x: number; y: number } {
-  const rect = element.getBoundingClientRect();
+  const rect = getExplorerCachedElementRect(element);
   return {
     x: rect.left + rect.width / 2,
     y: rect.top + rect.height / 2,
   };
+}
+
+function clearExplorerCachedElementRects(): void {
+  if (
+    explorerElementRectCacheClearFrame !== null &&
+    typeof cancelAnimationFrame === "function"
+  ) {
+    cancelAnimationFrame(explorerElementRectCacheClearFrame);
+  }
+  explorerElementRectCacheClearFrame = null;
+  explorerElementRectCacheEnabled = false;
+  explorerElementRectCache = new WeakMap<HTMLElement, DOMRectReadOnly>();
+}
+
+function scheduleExplorerCachedElementRectReset(): void {
+  if (explorerElementRectCacheClearFrame !== null) {
+    return;
+  }
+  if (typeof requestAnimationFrame !== "function") {
+    explorerElementRectCacheEnabled = false;
+    return;
+  }
+  explorerElementRectCacheClearFrame = requestAnimationFrame(() => {
+    explorerElementRectCacheClearFrame = null;
+    explorerElementRectCacheEnabled = false;
+    explorerElementRectCache = new WeakMap<HTMLElement, DOMRectReadOnly>();
+  });
+}
+
+function getExplorerCachedElementRect(element: HTMLElement): DOMRectReadOnly {
+  if (!explorerElementRectCacheEnabled) {
+    explorerElementRectCacheEnabled = true;
+    scheduleExplorerCachedElementRectReset();
+  }
+  const cachedRect = explorerElementRectCache.get(element);
+  if (cachedRect) {
+    return cachedRect;
+  }
+  const nextRect = element.getBoundingClientRect();
+  explorerElementRectCache.set(element, nextRect);
+  return nextRect;
+}
+
+function clearExplorerResolvedDropHitCache(): void {
+  explorerLastResolvedDropHit = null;
+}
+
+function tryResolveExplorerDropHitFromCachedTarget(point: {
+  x: number;
+  y: number;
+}): ExplorerResolvedDropHit | null {
+  const cachedHit = explorerLastResolvedDropHit;
+  const cachedTargetElement = cachedHit?.targetElement ?? null;
+  if (
+    !(cachedTargetElement instanceof HTMLElement) ||
+    !cachedTargetElement.isConnected ||
+    !isPointWithinElementRect(cachedTargetElement, point)
+  ) {
+    return null;
+  }
+  return resolveDropHitFromSurfaceMetadata({
+    metadata: getSurfaceMetadataFromElement(cachedTargetElement),
+    point,
+    targetElement: cachedTargetElement,
+  });
 }
 
 function resolveLegacyExplorerDropHitFromElement(
@@ -691,21 +826,35 @@ export function resolveExplorerDropHitFromPoint(
   }
 
   const point = normalizeExplorerDropPoint(pointer, scaleFactor);
+  const cachedHit = tryResolveExplorerDropHitFromCachedTarget(point);
+  if (cachedHit) {
+    explorerLastResolvedDropHit = cachedHit;
+    return cachedHit;
+  }
+
   const elementAtPointer = document.elementFromPoint(point.x, point.y);
   if (!(elementAtPointer instanceof HTMLElement)) {
+    clearExplorerResolvedDropHitCache();
     return null;
   }
 
   const candidates = getExplorerDropSurfaceCandidates(elementAtPointer);
   if (candidates.length === 0) {
-    return resolveLegacyExplorerDropHitFromElement(elementAtPointer, point);
+    const legacyHit = resolveLegacyExplorerDropHitFromElement(
+      elementAtPointer,
+      point,
+    );
+    explorerLastResolvedDropHit = legacyHit?.targetElement ? legacyHit : null;
+    return legacyHit;
   }
 
-  return resolveExplorerDropHitFromCandidateElements({
+  const resolvedHit = resolveExplorerDropHitFromCandidateElements({
     candidates,
     point,
     enforcePointContainment: true,
   });
+  explorerLastResolvedDropHit = resolvedHit?.targetElement ? resolvedHit : null;
+  return resolvedHit;
 }
 
 export function normalizeExplorerComparablePath(
@@ -738,9 +887,28 @@ export function validateExplorerDropTarget(args: {
     args.targetPath,
     args.platform,
   );
-  const normalizedSourcePaths = args.sourcePaths.map((sourcePath) =>
-    normalizeExplorerComparablePath(sourcePath, args.platform),
-  );
+  let platformValidationContext =
+    explorerDropValidationContextByPaths.get(args.sourcePaths)?.get(
+      args.platform,
+    ) ?? null;
+  if (!platformValidationContext) {
+    const normalizedSourcePaths = args.sourcePaths.map((sourcePath) =>
+      normalizeExplorerComparablePath(sourcePath, args.platform),
+    );
+    platformValidationContext = {
+      normalizedSourcePaths,
+      uniqueParentPaths: new Set(
+        normalizedSourcePaths.map((sourcePath) =>
+          getExplorerParentComparablePath(sourcePath, args.platform),
+        ),
+      ),
+    };
+    const contextByPlatform =
+      explorerDropValidationContextByPaths.get(args.sourcePaths) ?? new Map();
+    contextByPlatform.set(args.platform, platformValidationContext);
+    explorerDropValidationContextByPaths.set(args.sourcePaths, contextByPlatform);
+  }
+  const { normalizedSourcePaths, uniqueParentPaths } = platformValidationContext;
 
   if (normalizedSourcePaths.some((sourcePath) => sourcePath === normalizedTargetPath)) {
     return { valid: false, reason: "self" };
@@ -756,11 +924,6 @@ export function validateExplorerDropTarget(args: {
     return { valid: false, reason: "descendant" };
   }
 
-  const uniqueParentPaths = new Set(
-    normalizedSourcePaths.map((sourcePath) =>
-      getExplorerParentComparablePath(sourcePath, args.platform),
-    ),
-  );
   if (
     uniqueParentPaths.size === 1 &&
     uniqueParentPaths.has(normalizedTargetPath)
@@ -987,20 +1150,75 @@ export function createExplorerDropSurfaceBinding(
     typeof descriptor.rootPath === "string" && descriptor.rootPath.trim()
       ? descriptor.rootPath
       : undefined;
+  const nextMetadata: ExplorerResolvedSurfaceMetadata = {
+    surfaceId: descriptor.surfaceId,
+    scopeId: descriptor.scopeId,
+    role: descriptor.role,
+    targetPath: normalizedTargetPath ?? null,
+    rootPath:
+      descriptor.role === "scope-root" ? normalizedRootPath ?? null : null,
+  };
+  const previousMetadata =
+    explorerDropSurfaceMetadataById.get(descriptor.surfaceId) ?? null;
+  explorerDropSurfaceMetadataById.set(descriptor.surfaceId, nextMetadata);
+  explorerDropSurfaceBehaviorById.set(descriptor.surfaceId, {
+    autoOpenDelayMs: descriptor.autoOpenDelayMs ?? null,
+    label: descriptor.label ?? null,
+    onAutoOpen: descriptor.onAutoOpen ?? null,
+  });
 
-  return {
+  const mountedSurfaceElement =
+    explorerDropSurfaceElementById.get(descriptor.surfaceId) ?? null;
+  if (mountedSurfaceElement) {
+    explorerDropSurfaceMetadataByElement.set(mountedSurfaceElement, nextMetadata);
+    registerExplorerScopeRootSurface(
+      descriptor.surfaceId,
+      previousMetadata,
+      nextMetadata,
+    );
+  }
+
+  const existingBinding =
+    explorerDropSurfaceBindingById.get(descriptor.surfaceId) ?? null;
+  if (existingBinding) {
+    existingBinding[EXPLORER_DROP_SCOPE_ATTRIBUTE] = descriptor.scopeId;
+    existingBinding[EXPLORER_DROP_SURFACE_ROLE_ATTRIBUTE] = descriptor.role;
+    existingBinding[EXPLORER_DROP_SURFACE_ID_ATTRIBUTE] = descriptor.surfaceId;
+    if (normalizedTargetPath) {
+      existingBinding[EXPLORER_DROP_TARGET_ATTRIBUTE] = normalizedTargetPath;
+    } else {
+      delete existingBinding[EXPLORER_DROP_TARGET_ATTRIBUTE];
+    }
+    if (descriptor.role === "scope-root" && normalizedRootPath) {
+      existingBinding[EXPLORER_DROP_SCOPE_ROOT_PATH_ATTRIBUTE] =
+        normalizedRootPath;
+    } else {
+      delete existingBinding[EXPLORER_DROP_SCOPE_ROOT_PATH_ATTRIBUTE];
+    }
+    return existingBinding;
+  }
+
+  const binding: ExplorerDropSurfaceBinding = {
     ref: (node) => {
       if (!node) {
+        const removedMetadata =
+          explorerDropSurfaceMetadataById.get(descriptor.surfaceId) ?? null;
         explorerDropSurfaceBehaviorById.delete(descriptor.surfaceId);
         explorerDropSurfaceElementById.delete(descriptor.surfaceId);
+        explorerDropSurfaceMetadataById.delete(descriptor.surfaceId);
+        registerExplorerScopeRootSurface(
+          descriptor.surfaceId,
+          removedMetadata,
+          null,
+        );
+        explorerDropSurfaceBindingById.delete(descriptor.surfaceId);
         return;
       }
       explorerDropSurfaceElementById.set(descriptor.surfaceId, node);
-      explorerDropSurfaceBehaviorById.set(descriptor.surfaceId, {
-        autoOpenDelayMs: descriptor.autoOpenDelayMs ?? null,
-        label: descriptor.label ?? null,
-        onAutoOpen: descriptor.onAutoOpen ?? null,
-      });
+      const metadata =
+        explorerDropSurfaceMetadataById.get(descriptor.surfaceId) ?? nextMetadata;
+      explorerDropSurfaceMetadataByElement.set(node, metadata);
+      registerExplorerScopeRootSurface(descriptor.surfaceId, null, metadata);
     },
     [EXPLORER_DROP_SCOPE_ATTRIBUTE]: descriptor.scopeId,
     [EXPLORER_DROP_SURFACE_ROLE_ATTRIBUTE]: descriptor.role,
@@ -1012,6 +1230,8 @@ export function createExplorerDropSurfaceBinding(
       ? { [EXPLORER_DROP_SCOPE_ROOT_PATH_ATTRIBUTE]: normalizedRootPath }
       : {}),
   };
+  explorerDropSurfaceBindingById.set(descriptor.surfaceId, binding);
+  return binding;
 }
 
 export function getExplorerDropBindingElementProps(
@@ -1259,6 +1479,7 @@ export function updateExplorerDragInteractionFromResolvedHit(args: {
 }
 
 export function clearExplorerDragInteractionTarget(): void {
+  clearExplorerResolvedDropHitCache();
   scheduleExplorerDragAutoOpen(null);
   setExplorerDragInteractionState((currentState) => ({
     ...currentState,
@@ -1292,6 +1513,7 @@ export function finishExplorerDragInteractionPresentation(args: {
     y: number;
   } | null;
 }): void {
+  clearExplorerResolvedDropHitCache();
   clearExplorerDragAutoOpenState();
   clearExplorerDragPresentationTimer();
   setExplorerDragInteractionState((currentState) => {
@@ -1321,6 +1543,8 @@ export function finishExplorerDragInteractionPresentation(args: {
 }
 
 export function endExplorerDragInteraction(): void {
+  clearExplorerResolvedDropHitCache();
+  clearExplorerCachedElementRects();
   scheduleExplorerDragAutoOpen(null);
   clearExplorerDragPresentationTimer();
   setExplorerDragInteractionState(createEmptyExplorerDragInteractionState());

@@ -79,6 +79,7 @@ import {
   createLegacyExplorerActionContextMenuContributions,
   type ExplorerMenuInvocationContext,
   type ExplorerMenuInvocationEntry,
+  type ExplorerMenuPreviewContext,
   type ExplorerResolvedPluginContextMenuContribution,
 } from "../config/explorerContextMenu";
 import {
@@ -426,8 +427,10 @@ import {
   canRenderExplorerThumbnail,
 } from "../config/explorerThumbnails";
 import {
+  applyExplorerMonacoTheme,
   buildExplorerMonacoPreviewOptions,
   getExplorerTextPreviewMetrics,
+  resolveExplorerMonacoThemeId,
 } from "../config/explorerMonaco";
 import {
   clampSearchFocusLine,
@@ -3307,6 +3310,7 @@ function applyEditorSearchFocus(
 }
 
 function SearchAwareCodeView({
+  appearance,
   path,
   value,
   language,
@@ -3315,6 +3319,7 @@ function SearchAwareCodeView({
   onCursorPositionChange,
   options,
 }: {
+  appearance?: ResolvedOverlayAppearance;
   path: string;
   value: string;
   language: string;
@@ -3326,6 +3331,7 @@ function SearchAwareCodeView({
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
   const cursorListenerRef = useRef<{ dispose(): void } | null>(null);
+  const monacoThemeId = resolveExplorerMonacoThemeId(appearance);
 
   const publishCursorPosition = useCallback(
     (editor: any) => {
@@ -3345,6 +3351,7 @@ function SearchAwareCodeView({
     (editor: any, monaco: any) => {
       editorRef.current = editor;
       monacoRef.current = monaco;
+      applyExplorerMonacoTheme(monaco, appearance);
       cursorListenerRef.current?.dispose?.();
       cursorListenerRef.current =
         editor.onDidChangeCursorPosition?.(
@@ -3364,7 +3371,14 @@ function SearchAwareCodeView({
         });
       });
     },
-    [focusTarget, onCursorPositionChange, publishCursorPosition],
+    [appearance, focusTarget, onCursorPositionChange, publishCursorPosition],
+  );
+
+  const handleBeforeMount = useCallback(
+    (monaco: any) => {
+      applyExplorerMonacoTheme(monaco, appearance);
+    },
+    [appearance],
   );
 
   useEffect(() => {
@@ -3372,6 +3386,7 @@ function SearchAwareCodeView({
       return;
     }
 
+    applyExplorerMonacoTheme(monacoRef.current, appearance);
     const frame = window.requestAnimationFrame(() => {
       applyEditorSearchFocus(editorRef.current, monacoRef.current, focusTarget);
       publishCursorPosition(editorRef.current);
@@ -3380,7 +3395,7 @@ function SearchAwareCodeView({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [focusTarget?.requestId, path, publishCursorPosition, value]);
+  }, [appearance, focusTarget?.requestId, path, publishCursorPosition, value]);
 
   useEffect(() => {
     if (!editorRef.current) {
@@ -3404,7 +3419,8 @@ function SearchAwareCodeView({
         height="100%"
         language={language || "plaintext"}
         value={value}
-        theme="vs-dark"
+        theme={monacoThemeId}
+        beforeMount={handleBeforeMount}
         onMount={handleMount}
         saveViewState
         onChange={
@@ -3437,6 +3453,7 @@ function EditorFallback({ label }: { label: string }) {
 // ─── Resizable Preview Panel ──────────────────────────────────────────────────
 
 function PreviewPanel({
+  appearance,
   preview,
   width,
   placement,
@@ -3499,9 +3516,12 @@ function PreviewPanel({
   defaultFolderIcon,
   onOpenFolderPreviewEntry,
   onStartDragOutPreviewEntry,
+  onRegisterContextMenuRegistration,
+  onPreviewWorkflowContextChange,
   onExtractArchive,
   onContextMenu,
 }: {
+  appearance?: ResolvedOverlayAppearance;
   preview: PreviewState;
   width: number;
   placement: ExplorerPreviewPlacement;
@@ -3580,6 +3600,15 @@ function PreviewPanel({
   onStartDragOutPreviewEntry: (
     request: ExplorerPreviewEntryDragRequest<FileEntry>,
   ) => void;
+  onRegisterContextMenuRegistration?: (
+    registration: ExplorerPreviewContextMenuRegistration | null,
+  ) => void;
+  onPreviewWorkflowContextChange?: (
+    context: Pick<
+      ExplorerMenuPreviewContext,
+      "workflowTabId" | "workflowBaseMode"
+    > | null,
+  ) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
   onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
 }) {
@@ -3597,8 +3626,6 @@ function PreviewPanel({
   const [wildcardWorkflowTabs, setWildcardWorkflowTabs] = useState<
     ExplorerPreviewWildcardWorkflowTab[]
   >([]);
-  const [previewContextMenuRegistration, setPreviewContextMenuRegistration] =
-    useState<ExplorerPreviewContextMenuRegistration | null>(null);
   const currentViewModeRef = useRef(viewMode);
   const [pdfPageInputValue, setPdfPageInputValue] = useState("1");
   const [textPreviewCursor, setTextPreviewCursor] =
@@ -3688,9 +3715,20 @@ function PreviewPanel({
 
   useLayoutEffect(() => {
     setWildcardWorkflowTabs([]);
-    setPreviewContextMenuRegistration(null);
+    onRegisterContextMenuRegistration?.(null);
+    onPreviewWorkflowContextChange?.(null);
     onWorkflowTabChange(currentViewModeRef.current);
-  }, [onWorkflowTabChange, preview.path, preview.type]);
+    return () => {
+      onRegisterContextMenuRegistration?.(null);
+      onPreviewWorkflowContextChange?.(null);
+    };
+  }, [
+    onPreviewWorkflowContextChange,
+    onRegisterContextMenuRegistration,
+    onWorkflowTabChange,
+    preview.path,
+    preview.type,
+  ]);
 
   const activePythonPreviewMetadata =
     preview.type === "text" ? preview.pythonPreview : null;
@@ -3711,9 +3749,9 @@ function PreviewPanel({
   );
   const handlePreviewContextMenuRegistrationChange = useCallback(
     (registration: ExplorerPreviewContextMenuRegistration | null) => {
-      setPreviewContextMenuRegistration(registration);
+      onRegisterContextMenuRegistration?.(registration);
     },
-    [],
+    [onRegisterContextMenuRegistration],
   );
 
   const previewTitle = preview.type === "none" ? "Preview" : preview.name;
@@ -3867,17 +3905,6 @@ function PreviewPanel({
       ),
     [activeWorkflowTabId, previewWorkflowTabs],
   );
-  const previewMenuContext = useMemo(
-    () =>
-      preview.type === "none"
-        ? null
-        : {
-            previewKind: preview.type,
-            workflowTabId: activePreviewWorkflowTab.id,
-            workflowBaseMode: activePreviewWorkflowTab.baseMode,
-          },
-    [activePreviewWorkflowTab.baseMode, activePreviewWorkflowTab.id, preview.type],
-  );
   const isPythonRunWorkflowTab =
     isPythonTextPreview && activePreviewWorkflowTab.id === "run";
   const isPythonRuntimeWorkflowTab =
@@ -3894,6 +3921,22 @@ function PreviewPanel({
       onWorkflowTabChange(activePreviewWorkflowTab.id);
     }
   }, [activePreviewWorkflowTab.id, activeWorkflowTabId, onWorkflowTabChange]);
+
+  useEffect(() => {
+    onPreviewWorkflowContextChange?.(
+      preview.type === "none"
+        ? null
+        : {
+            workflowTabId: activePreviewWorkflowTab.id,
+            workflowBaseMode: activePreviewWorkflowTab.baseMode,
+          },
+    );
+  }, [
+    activePreviewWorkflowTab.baseMode,
+    activePreviewWorkflowTab.id,
+    onPreviewWorkflowContextChange,
+    preview.type,
+  ]);
   const previewHeaderRowStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
@@ -5047,6 +5090,7 @@ function PreviewPanel({
           )}
           {preview.type === "shader" && (
             <ExplorerShaderWorkbench
+              appearance={appearance}
               path={previewResolvedPath}
               name={preview.name}
               format={preview.format}
@@ -5111,6 +5155,7 @@ function PreviewPanel({
               preview.pythonPreview != null ||
               (preview.scriptPreview == null && !supportsRenderedPreview)) && (
               <SearchAwareCodeView
+                appearance={appearance}
                 path={previewResolvedPath}
                 value={preview.content || ""}
                 language={preview.language || "plaintext"}
@@ -7891,6 +7936,11 @@ export function FileExplorer({
     useState<ExplorerDocumentViewMode>(() => initialSession.documentViewMode);
   const [activePreviewWorkflowTabId, setActivePreviewWorkflowTabId] =
     useState<string>(() => initialSession.documentViewMode);
+  const [previewWorkflowContext, setPreviewWorkflowContext] = useState<
+    Pick<ExplorerMenuPreviewContext, "workflowTabId" | "workflowBaseMode"> | null
+  >(null);
+  const [previewContextMenuRegistration, setPreviewContextMenuRegistration] =
+    useState<ExplorerPreviewContextMenuRegistration | null>(null);
   const [previewEnabled, setPreviewEnabled] = useState(
     () => initialSession.previewEnabled,
   );
@@ -7928,6 +7978,20 @@ export function FileExplorer({
     y: 0,
     invocation: null,
   });
+  const previewMenuContext = useMemo<ExplorerMenuPreviewContext | null>(
+    () =>
+      preview.type === "none"
+        ? null
+        : {
+            previewKind: preview.type,
+            workflowTabId:
+              previewWorkflowContext?.workflowTabId ??
+              activePreviewWorkflowTabId ??
+              null,
+            workflowBaseMode: previewWorkflowContext?.workflowBaseMode ?? null,
+          },
+    [activePreviewWorkflowTabId, preview.type, previewWorkflowContext],
+  );
   const [openWithProgramsByPath, setOpenWithProgramsByPath] = useState<
     Record<string, ExplorerOpenWithProgramsState | undefined>
   >({});
@@ -8071,6 +8135,13 @@ export function FileExplorer({
   const previewSaveTimer = useRef<number | null>(null);
   const internalPointerDragCandidateRef =
     useRef<ExplorerInternalPointerDragCandidate | null>(null);
+  const internalPointerDragFrameRef = useRef<number | null>(null);
+  const internalPointerDragPendingPointerRef = useRef<{
+    x: number;
+    y: number;
+    altKey: boolean;
+    ctrlKey: boolean;
+  } | null>(null);
   const internalDragAutoScrollFrameRef = useRef<number | null>(null);
   const internalDragAutoScrollLastFrameRef = useRef<number | null>(null);
   const internalDragAutoScrollPointerRef = useRef<{
@@ -8091,7 +8162,6 @@ export function FileExplorer({
       paths: state.paths,
       operation: state.operation,
       scopeId: state.scopeId,
-      targetPath: state.targetPath,
       targetKind: state.targetKind,
       targetSurfaceId: state.targetSurfaceId,
       dwellSurfaceId: state.dwellSurfaceId,
@@ -8100,11 +8170,6 @@ export function FileExplorer({
     }),
     shallowEqualExplorerDragSelection,
   );
-  const dragOver =
-    activeDragInteraction.scopeId === explorerDropScopeId &&
-    activeDragInteraction.valid
-      ? activeDragInteraction.targetPath
-      : null;
   const windowDropState = useMemo(
     () => ({
       active:
@@ -15340,6 +15405,74 @@ export function FileExplorer({
     [explorerDropScopeId, runtimePlatform, suppressExplorerEntryClick],
   );
 
+  const clearExplorerInternalPointerDragFrame = useCallback(() => {
+    if (
+      internalPointerDragFrameRef.current !== null &&
+      typeof cancelAnimationFrame === "function"
+    ) {
+      cancelAnimationFrame(internalPointerDragFrameRef.current);
+    }
+    internalPointerDragFrameRef.current = null;
+    internalPointerDragPendingPointerRef.current = null;
+  }, []);
+
+  const commitExplorerInternalPointerDragPointer = useCallback(
+    (pointer: { x: number; y: number; altKey: boolean; ctrlKey: boolean }) => {
+      const candidate = internalPointerDragCandidateRef.current;
+      if (!candidate || !candidate.started || candidate.intent !== "internal") {
+        return;
+      }
+
+      updateExplorerDragInteractionFromPoint({
+        pointer: {
+          x: pointer.x,
+          y: pointer.y,
+        },
+        sourceKind: "internal",
+        sourceScopeId: explorerDropScopeId,
+        sourcePrimaryPath: candidate.sourceEntryPath,
+        sourceItemKind: candidate.sourceItemKind,
+        sourceIconSrc: candidate.sourceIconSrc,
+        sourceStackItems: candidate.sourceStackItems,
+        sourcePaths: candidate.sourcePaths,
+        operation: resolveExplorerDropOperation(pointer, runtimePlatform),
+        platform: runtimePlatform,
+        primaryLabel: candidate.primaryLabel,
+      });
+      updateExplorerInternalDragAutoScroll({
+        x: pointer.x,
+        y: pointer.y,
+      });
+    },
+    [explorerDropScopeId, runtimePlatform, updateExplorerInternalDragAutoScroll],
+  );
+
+  const scheduleExplorerInternalPointerDragPointer = useCallback(
+    (pointer: { x: number; y: number; altKey: boolean; ctrlKey: boolean }) => {
+      internalPointerDragPendingPointerRef.current = pointer;
+      if (internalPointerDragFrameRef.current !== null) {
+        return;
+      }
+      if (typeof requestAnimationFrame !== "function") {
+        const pendingPointer = internalPointerDragPendingPointerRef.current;
+        internalPointerDragPendingPointerRef.current = null;
+        if (pendingPointer) {
+          commitExplorerInternalPointerDragPointer(pendingPointer);
+        }
+        return;
+      }
+      internalPointerDragFrameRef.current = requestAnimationFrame(() => {
+        internalPointerDragFrameRef.current = null;
+        const pendingPointer = internalPointerDragPendingPointerRef.current;
+        internalPointerDragPendingPointerRef.current = null;
+        if (pendingPointer) {
+          commitExplorerInternalPointerDragPointer(pendingPointer);
+        }
+      });
+    },
+    [commitExplorerInternalPointerDragPointer],
+  );
+
   const buildExplorerPointerDragCandidate = useCallback(
     (args: {
       pointerId: number;
@@ -15444,37 +15577,18 @@ export function FileExplorer({
         { altKey: request.altKey, ctrlKey: request.ctrlKey },
         activeCandidate,
       );
-      updateExplorerDragInteractionFromPoint({
-        pointer: {
-          x: request.currentClientX,
-          y: request.currentClientY,
-        },
-        sourceKind: "internal",
-        sourceScopeId: explorerDropScopeId,
-        sourcePrimaryPath: activeCandidate.sourceEntryPath,
-        sourceItemKind: activeCandidate.sourceItemKind,
-        sourceIconSrc: activeCandidate.sourceIconSrc,
-        sourceStackItems: activeCandidate.sourceStackItems,
-        sourcePaths: activeCandidate.sourcePaths,
-        operation: resolveExplorerDropOperation(
-          { altKey: request.altKey, ctrlKey: request.ctrlKey },
-          runtimePlatform,
-        ),
-        platform: runtimePlatform,
-        primaryLabel: activeCandidate.primaryLabel,
-      });
-      updateExplorerInternalDragAutoScroll({
+      commitExplorerInternalPointerDragPointer({
         x: request.currentClientX,
         y: request.currentClientY,
+        altKey: request.altKey,
+        ctrlKey: request.ctrlKey,
       });
     },
     [
       beginExplorerInternalPointerDrag,
       buildExplorerPointerDragCandidate,
-      explorerDropScopeId,
-      runtimePlatform,
+      commitExplorerInternalPointerDragPointer,
       startExplorerNativeOutDrag,
-      updateExplorerInternalDragAutoScroll,
     ],
   );
 
@@ -15486,11 +15600,12 @@ export function FileExplorer({
       }
 
       internalPointerDragCandidateRef.current = null;
+      clearExplorerInternalPointerDragFrame();
       clearExplorerInternalDragAutoScroll();
       clearExplorerSharedDragSession();
       endExplorerDragInteraction();
     },
-    [clearExplorerInternalDragAutoScroll],
+    [clearExplorerInternalDragAutoScroll, clearExplorerInternalPointerDragFrame],
   );
 
   const executeExplorerDropTransfer = useCallback(
@@ -15564,25 +15679,11 @@ export function FileExplorer({
         return;
       }
 
-      updateExplorerDragInteractionFromPoint({
-        pointer: {
-          x: event.clientX,
-          y: event.clientY,
-        },
-        sourceKind: "internal",
-        sourceScopeId: explorerDropScopeId,
-        sourcePrimaryPath: candidate.sourceEntryPath,
-        sourceItemKind: candidate.sourceItemKind,
-        sourceIconSrc: candidate.sourceIconSrc,
-        sourceStackItems: candidate.sourceStackItems,
-        sourcePaths: candidate.sourcePaths,
-        operation: resolveExplorerDropOperation(event, runtimePlatform),
-        platform: runtimePlatform,
-        primaryLabel: candidate.primaryLabel,
-      });
-      updateExplorerInternalDragAutoScroll({
+      scheduleExplorerInternalPointerDragPointer({
         x: event.clientX,
         y: event.clientY,
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
       });
     };
 
@@ -15593,6 +15694,7 @@ export function FileExplorer({
       }
 
       internalPointerDragCandidateRef.current = null;
+      clearExplorerInternalPointerDragFrame();
       clearExplorerInternalDragAutoScroll();
 
       if (!candidate.started || candidate.intent !== "internal") {
@@ -15605,22 +15707,10 @@ export function FileExplorer({
         event === null
           ? { x: candidate.startClientX, y: candidate.startClientY }
           : { x: event.clientX, y: event.clientY };
-      const operation = resolveExplorerDropOperation(
-        event ?? { altKey: false, ctrlKey: false },
-        runtimePlatform,
-      );
-      updateExplorerDragInteractionFromPoint({
-        pointer,
-        sourceKind: "internal",
-        sourceScopeId: explorerDropScopeId,
-        sourcePrimaryPath: candidate.sourceEntryPath,
-        sourceItemKind: candidate.sourceItemKind,
-        sourceIconSrc: candidate.sourceIconSrc,
-        sourceStackItems: candidate.sourceStackItems,
-        sourcePaths: candidate.sourcePaths,
-        operation,
-        platform: runtimePlatform,
-        primaryLabel: candidate.primaryLabel,
+      commitExplorerInternalPointerDragPointer({
+        ...pointer,
+        altKey: event?.altKey ?? false,
+        ctrlKey: event?.ctrlKey ?? false,
       });
 
       const interactionState = getExplorerDragInteractionState();
@@ -15684,6 +15774,7 @@ export function FileExplorer({
     window.addEventListener("keydown", handleEscape);
 
     return () => {
+      clearExplorerInternalPointerDragFrame();
       clearExplorerInternalDragAutoScroll();
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
@@ -15694,11 +15785,12 @@ export function FileExplorer({
   }, [
     beginExplorerInternalPointerDrag,
     clearExplorerInternalDragAutoScroll,
+    clearExplorerInternalPointerDragFrame,
+    commitExplorerInternalPointerDragPointer,
     executeTransferRequest,
     refreshExplorerAfterTransferRequest,
-    runtimePlatform,
+    scheduleExplorerInternalPointerDragPointer,
     startExplorerNativeOutDrag,
-    updateExplorerInternalDragAutoScroll,
   ]);
 
   const onExplorerDropScopeDragOver = (e: React.DragEvent<HTMLElement>) => {
@@ -17725,7 +17817,7 @@ export function FileExplorer({
                                   : "var(--overlay-explorer-control-radius)",
                               position: "relative",
                               background:
-                                isBreadcrumbDropTarget || dragOver === c.path
+                                isBreadcrumbDropTarget
                                   ? "var(--overlay-explorer-chip-active-bg)"
                                   : explorerTheme.breadcrumbStyle === "plain"
                                     ? "transparent"
@@ -17735,7 +17827,7 @@ export function FileExplorer({
                               whiteSpace: "nowrap",
                               flexShrink: 0,
                               outline:
-                                isBreadcrumbDropTarget || dragOver === c.path
+                                isBreadcrumbDropTarget
                                   ? `1px solid ${accent}`
                                   : "none",
                               transform: isBreadcrumbDropTarget
@@ -21880,7 +21972,7 @@ export function FileExplorer({
     const dragPresentation = getExplorerEntryDragPresentation(entry);
     const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
     const isSel = selected.has(entry.path);
-    const isDrop = dragOver === entry.path && entry.is_dir;
+    const isDrop = dragPresentation.isDropTarget;
     const isDragHoverTarget = isDrop || dragPresentation.isDwellTarget;
     const isRenaming = rename.active && rename.path === entry.path;
     const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDragHoverTarget);
@@ -22428,8 +22520,8 @@ export function FileExplorer({
   ) => {
     const motionStepIndex = visibleEntryIndexLookup.get(node.entry.path) ?? 0;
     const isSel = selected.has(node.entry.path);
-    const isDrop = dragOver === node.entry.path && node.entry.is_dir;
     const dragPresentation = getExplorerEntryDragPresentation(node.entry);
+    const isDrop = dragPresentation.isDropTarget;
     const isDragHoverTarget = isDrop || dragPresentation.isDwellTarget;
     const isPinned = constellationPinnedPathSet.has(node.entry.path);
     const isRouteAnchor = constellationRouteState.anchorPath === node.entry.path;
@@ -23241,8 +23333,8 @@ export function FileExplorer({
   const renderTimelineSurfaceEntry = (entry: FileEntry) => {
     const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
     const isSel = selected.has(entry.path);
-    const isDrop = dragOver === entry.path && entry.is_dir;
     const dragPresentation = getExplorerEntryDragPresentation(entry);
+    const isDrop = dragPresentation.isDropTarget;
     const isDragHoverTarget = isDrop || dragPresentation.isDwellTarget;
     const isRenaming = rename.active && rename.path === entry.path;
     const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDragHoverTarget);
@@ -23667,6 +23759,7 @@ export function FileExplorer({
 
     return (
       <PreviewPanel
+        appearance={appearance}
         preview={preview}
         width={previewWidth}
         placement={previewPlacement}
@@ -23736,6 +23829,8 @@ export function FileExplorer({
         defaultFolderIcon={explorerSettings.defaultFolderIcon}
         onOpenFolderPreviewEntry={openFolderPreviewEntry}
         onStartDragOutPreviewEntry={startPreviewExplorerPointerDrag}
+        onRegisterContextMenuRegistration={setPreviewContextMenuRegistration}
+        onPreviewWorkflowContextChange={setPreviewWorkflowContext}
         onContextMenu={onPreviewContextMenu}
         onExtractArchive={(mode) => {
           if (preview.type === "archive") {
@@ -23764,6 +23859,7 @@ export function FileExplorer({
       />
     );
   }, [
+    appearance,
     activePreviewWorkflowTabId,
     closePreviewPanel,
     copyToSysClipboard,
@@ -24450,10 +24546,9 @@ export function FileExplorer({
                           const motionStepIndex =
                             visibleEntryIndexLookup.get(entry.path) ?? 0;
                           const isSel = selected.has(entry.path);
-                          const isDrop =
-                            dragOver === entry.path && entry.is_dir;
                           const dragPresentation =
                             getExplorerEntryDragPresentation(entry);
+                          const isDrop = dragPresentation.isDropTarget;
                           const isDragHoverTarget =
                             isDrop || dragPresentation.isDwellTarget;
                           const isRenaming =
@@ -24760,9 +24855,9 @@ export function FileExplorer({
                         const motionStepIndex =
                           visibleEntryIndexLookup.get(entry.path) ?? 0;
                         const isSel = selected.has(entry.path);
-                        const isDrop = dragOver === entry.path && entry.is_dir;
                         const dragPresentation =
                           getExplorerEntryDragPresentation(entry);
+                        const isDrop = dragPresentation.isDropTarget;
                         const isDragHoverTarget =
                           isDrop || dragPresentation.isDwellTarget;
                         const isRenaming =
@@ -25210,10 +25305,9 @@ export function FileExplorer({
                           const motionStepIndex =
                             visibleEntryIndexLookup.get(entry.path) ?? 0;
                           const isSel = selected.has(entry.path);
-                          const isDrop =
-                            dragOver === entry.path && entry.is_dir;
                           const dragPresentation =
                             getExplorerEntryDragPresentation(entry);
+                          const isDrop = dragPresentation.isDropTarget;
                           const isDragHoverTarget =
                             isDrop || dragPresentation.isDwellTarget;
                           const isRenaming =

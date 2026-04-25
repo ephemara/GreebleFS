@@ -1,8 +1,12 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  buildExplorerMonacoThemeDescriptor,
   buildExplorerMonacoPreviewOptions,
   getExplorerTextPreviewMetrics,
 } from "../config/explorerMonaco";
+import { normalizeThemeDefinition, resolveOverlayAppearance } from "../config/appearance";
 import { defaultSettings } from "../store/settingsStore";
 
 describe("explorerMonaco", () => {
@@ -39,5 +43,59 @@ describe("explorerMonaco", () => {
       wordCount: 0,
       lineCount: 1,
     });
+  });
+
+  it("derives Monaco theme colors and token rules from the active compatibility theme", () => {
+    const compatibilityTheme = normalizeThemeDefinition({
+      id: "vscode-import",
+      name: "VS Code Import",
+      extendsThemeId: "pilot-dark",
+      palette: {
+        panelBackground: "#272822",
+        textPrimary: "#f8f8f2",
+        accent: "#e6db74",
+      },
+      cssVars: {
+        "--overlay-explorer-code-bg": "#272822",
+      },
+      assets: {
+        monacoTheme: {
+          baseTheme: "vs-dark",
+          colors: {
+            "editor.background": "#272822",
+            "editor.foreground": "#f8f8f2",
+          },
+          rules: [
+            { token: "comment", foreground: "88846f" },
+            { token: "keyword", foreground: "F92672" },
+          ],
+        },
+      },
+    });
+    const appearance = resolveOverlayAppearance({
+      activeThemeId: "vscode-import",
+      packageThemes: [compatibilityTheme],
+    });
+
+    const descriptor = buildExplorerMonacoThemeDescriptor(appearance);
+
+    expect(descriptor.id).toBe("greeblefs-monaco-vscode-import");
+    expect(descriptor.base).toBe("vs-dark");
+    expect(descriptor.colors["editor.background"]).toBe("#272822");
+    expect(descriptor.colors["editor.foreground"]).toBe("#f8f8f2");
+    expect(descriptor.rules).toEqual(expect.arrayContaining([
+      expect.objectContaining({ token: "comment", foreground: "88846f" }),
+      expect.objectContaining({ token: "keyword", foreground: "F92672" }),
+    ]));
+  });
+
+  it("keeps Monaco surfaces off the hardcoded vs-dark path", () => {
+    const fileExplorerSource = readFileSync(resolve(process.cwd(), "src/components/FileExplorer.tsx"), "utf8");
+    const gitManagerSource = readFileSync(resolve(process.cwd(), "src/components/GitManager.tsx"), "utf8");
+    const shaderWorkbenchSource = readFileSync(resolve(process.cwd(), "src/components/ExplorerShaderWorkbench.tsx"), "utf8");
+
+    expect(fileExplorerSource).not.toContain('theme="vs-dark"');
+    expect(gitManagerSource).not.toContain('theme="vs-dark"');
+    expect(shaderWorkbenchSource).not.toContain('theme="vs-dark"');
   });
 });

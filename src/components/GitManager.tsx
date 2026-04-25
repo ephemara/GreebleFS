@@ -2,6 +2,10 @@ import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useSt
 import type { EditorProps } from '@monaco-editor/react';
 import { AlertTriangle, ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from '@/components/AppIcons';
 import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
+import {
+  applyExplorerMonacoTheme,
+  resolveExplorerMonacoThemeId,
+} from '../config/explorerMonaco';
 import { recordExplorerPerformanceSample } from '../config/performanceTelemetry';
 import {
   type GitPanelRepositoryState,
@@ -118,6 +122,7 @@ export function GitManager({
   };
   const uiFont = appearance?.fonts.ui ?? 'var(--overlay-font-ui)';
   const monoFont = appearance?.fonts.mono ?? 'var(--overlay-font-mono, "Cascadia Code", Consolas, monospace)';
+  const monacoThemeId = resolveExplorerMonacoThemeId(appearance);
 
   const [repos, setRepos] = useState<string[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
@@ -1008,6 +1013,13 @@ export function GitManager({
   }, [diffView, jumpToDiffHunk]);
 
   useEffect(() => {
+    if (!diffMonacoRef.current) {
+      return;
+    }
+    applyExplorerMonacoTheme(diffMonacoRef.current, appearance);
+  }, [appearance]);
+
+  useEffect(() => {
     const editor = diffEditorRef.current;
     const monaco = diffMonacoRef.current;
     const model = editor?.getModel?.();
@@ -1490,9 +1502,13 @@ export function GitManager({
                           <React.Suspense fallback={<div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 11 }}>Loading diff editor…</div>}>
                             <LazyMonacoEditor
                               height="100%"
+                              beforeMount={(monaco) => {
+                                applyExplorerMonacoTheme(monaco, appearance);
+                              }}
                               onMount={(editor, monaco) => {
                                 diffEditorRef.current = editor;
                                 diffMonacoRef.current = monaco;
+                                applyExplorerMonacoTheme(monaco, appearance);
                                 // Two-frame delay: first frame settles the flex layout,
                                 // second ensures Monaco measures the real post-zoom size.
                                 window.requestAnimationFrame(() => {
@@ -1503,7 +1519,7 @@ export function GitManager({
                               }}
                               value={diffView?.content ?? ''}
                               language="plaintext"
-                              theme="vs-dark"
+                              theme={monacoThemeId}
                               options={{
                                 automaticLayout: true,
                                 readOnly: true,

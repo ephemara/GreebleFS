@@ -330,7 +330,29 @@ function clampThemeDescription(text: string | undefined): string | null {
 }
 
 function getThemePackageSourceBadgeLabel(sourceKind: LoadedOverlayThemePackage['sourceKind']): string {
-  return sourceKind === 'plugin-package' ? 'Plugin Package' : 'Theme Folder';
+  switch (sourceKind) {
+    case 'plugin-package':
+      return 'Plugin Package';
+    case 'vscode-theme-directory':
+      return 'VS Code Folder';
+    case 'vscode-theme-vsix':
+      return 'VS Code VSIX';
+    default:
+      return 'Theme Folder';
+  }
+}
+
+function getIconThemePackageSourceBadgeLabel(sourceKind: LoadedIconThemePackage['sourceKind']): string {
+  switch (sourceKind) {
+    case 'built-in':
+      return 'Built-In';
+    case 'vscode-icon-theme-directory':
+      return 'VS Code Folder';
+    case 'vscode-icon-theme-vsix':
+      return 'VS Code VSIX';
+    default:
+      return 'Pack';
+  }
 }
 
 type ThemeCatalogSectionId = 'official-pilot' | 'built-in' | 'legacy-archive';
@@ -6356,8 +6378,8 @@ export function SettingsPage({
                       <div>
                         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Bundles</div>
                         <p className="mt-1 text-[11px] opacity-40">
-                          Drop theme bundles into <code>{themePackagesDirectory}</code> and GreebleFS will compose them as orchestration manifests over modular authored packs such as appearance, top bars, icons, wallpapers, shaders, animations, motion, renderers, and engine recipes.
-                          Official pilot bundles surface first, built-ins stay supported, and archive material remains selectable without dominating the page.
+                          Drop native theme bundles, VS Code color-theme extension folders, or <code>.vsix</code> archives into <code>{themePackagesDirectory}</code>. GreebleFS will compose native manifests as full theme bundles, and it will also adapt VS Code color themes into shell-safe theme packages with Monaco token colors plus any extension-contributed icon themes carried along as local catalog entries.
+                          Official pilot bundles surface first, built-ins stay supported, and compatibility imports stay clearly labeled so cached <code>.vsix</code> extracts never masquerade as authored bundles.
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -6906,7 +6928,7 @@ export function SettingsPage({
                       <div>
                         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Pack Directory</div>
                         <p className="mt-1 text-[11px] opacity-40">
-                          Drop `icon-theme.json` manifests into the icon-themes root. Packs can override file/folder mappings plus stock UI glyph slots without touching thumbnail generation.
+                          Drop native <code>icon-theme.json</code> packs, VS Code icon-theme extension folders, or <code>.vsix</code> archives into <code>{iconThemePackagesDirectory}</code>. GreebleFS imports the icon payload into the existing icon catalog automatically, including common VS Code font-backed file icons, without unpacking visible cache folders beside the archive.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -6994,7 +7016,7 @@ export function SettingsPage({
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-[11px] font-semibold">{iconThemePackage.name}</span>
                               <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: active ? accent : muted }}>
-                                {iconThemePackage.sourceKind === 'built-in' ? 'Built-In' : 'Pack'}
+                                {getIconThemePackageSourceBadgeLabel(iconThemePackage.sourceKind)}
                               </span>
                             </div>
                             <p className="mt-1 text-[11px] opacity-45">

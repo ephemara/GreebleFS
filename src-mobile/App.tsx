@@ -1,12 +1,16 @@
 import * as LucideIcons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import interact from "interactjs";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
+  type RefObject,
   type UIEvent,
 } from "react";
 
@@ -68,6 +72,16 @@ interface MobileLocationState {
 interface MobileViewportSnapshot {
   width: number;
   height: number;
+}
+
+interface MobileShellMetrics {
+  interfaceScale: number;
+  chromeScale: number;
+  panelGap: number;
+  touchTarget: number;
+  bottomNavHeight: number;
+  actionStripHeight: number;
+  pagePadding: number;
 }
 
 const BOTTOM_DOCK_TABS = [
@@ -322,6 +336,29 @@ function getLayoutPanelGap(layout: MobileLayoutSettings): number {
   }
 }
 
+function resolveMobileShellMetrics(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): MobileShellMetrics {
+  const interfaceScale = getResolvedInterfaceScale(layout, viewportWidth);
+  const chromeScale = getResolvedChromeScale(layout, viewportWidth);
+  const panelGap = getLayoutPanelGap(layout);
+  const touchTarget = getTouchTargetSize(layout);
+  const bottomNavHeight = Math.round(touchTarget * 1.52);
+  const actionStripHeight = Math.round(touchTarget * 1.2);
+  const pagePadding = Math.round(layout.pagePadding * Math.max(1, interfaceScale - 0.03));
+
+  return {
+    interfaceScale,
+    chromeScale,
+    panelGap,
+    touchTarget,
+    bottomNavHeight,
+    actionStripHeight,
+    pagePadding,
+  };
+}
+
 function getGridMinWidthForViewport(
   layout: MobileLayoutSettings,
   viewportWidth: number,
@@ -340,26 +377,79 @@ function getGridIconSizeForViewport(
   );
 }
 
+function getExplorerContainerInset(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): number {
+  return Math.round(14 * getResolvedInterfaceScale(layout, viewportWidth));
+}
+
+function getExplorerListGap(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): number {
+  return Math.round(10 * getResolvedInterfaceScale(layout, viewportWidth));
+}
+
+function getExplorerGridGap(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): number {
+  return Math.round(14 * getResolvedInterfaceScale(layout, viewportWidth));
+}
+
+function getExplorerListRowEstimateSize(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): number {
+  return Math.max(
+    Math.round(getTouchTargetSize(layout) * 1.14),
+    Math.round(78 * getResolvedInterfaceScale(layout, viewportWidth)),
+  );
+}
+
+function getExplorerGridColumnCount(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): number {
+  const shellMetrics = resolveMobileShellMetrics(layout, viewportWidth);
+  const containerInset = getExplorerContainerInset(layout, viewportWidth);
+  const gap = getExplorerGridGap(layout, viewportWidth);
+  const minWidth = getGridMinWidthForViewport(layout, viewportWidth);
+  const availableWidth = Math.max(
+    280,
+    viewportWidth - shellMetrics.pagePadding * 2 - containerInset * 2,
+  );
+
+  return Math.max(1, Math.floor((availableWidth + gap) / (minWidth + gap)));
+}
+
+function getExplorerGridRowEstimateSize(
+  layout: MobileLayoutSettings,
+  viewportWidth: number,
+): number {
+  const interfaceScale = getResolvedInterfaceScale(layout, viewportWidth);
+  const iconSize = getGridIconSizeForViewport(layout, viewportWidth);
+  return Math.max(
+    Math.round(176 * interfaceScale),
+    Math.round(iconSize + 88 * interfaceScale),
+  );
+}
+
 function buildMobileShellStyle(
   layout: MobileLayoutSettings,
   viewport: MobileViewportSnapshot,
 ): CSSProperties {
-  const interfaceScale = getResolvedInterfaceScale(layout, viewport.width);
-  const chromeScale = getResolvedChromeScale(layout, viewport.width);
-  const panelGap = getLayoutPanelGap(layout);
-  const touchTarget = getTouchTargetSize(layout);
-  const bottomNavHeight = Math.round(touchTarget * 1.52);
-  const actionStripHeight = Math.round(touchTarget * 1.2);
-  const pagePadding = Math.round(layout.pagePadding * Math.max(1, interfaceScale - 0.03));
+  const shellMetrics = resolveMobileShellMetrics(layout, viewport.width);
 
   return {
-    "--mobile-interface-scale": interfaceScale.toFixed(2),
-    "--mobile-chrome-scale": chromeScale.toFixed(2),
-    "--mobile-page-padding": `${pagePadding}px`,
-    "--mobile-panel-gap": `${panelGap}px`,
-    "--mobile-touch-target": `${touchTarget}px`,
-    "--mobile-bottom-nav-height": `${bottomNavHeight}px`,
-    "--mobile-action-strip-height": `${actionStripHeight}px`,
+    "--mobile-interface-scale": shellMetrics.interfaceScale.toFixed(2),
+    "--mobile-chrome-scale": shellMetrics.chromeScale.toFixed(2),
+    "--mobile-page-padding": `${shellMetrics.pagePadding}px`,
+    "--mobile-panel-gap": `${shellMetrics.panelGap}px`,
+    "--mobile-touch-target": `${shellMetrics.touchTarget}px`,
+    "--mobile-bottom-nav-height": `${shellMetrics.bottomNavHeight}px`,
+    "--mobile-action-strip-height": `${shellMetrics.actionStripHeight}px`,
     "--mobile-viewport-height": `${viewport.height}px`,
   } as CSSProperties;
 }
@@ -585,6 +675,189 @@ function MobileTransferRow({
   );
 }
 
+function MobileExplorerVirtualSurface({
+  entries,
+  layout,
+  viewportWidth,
+  gridCardSize,
+  themeSnapshot,
+  scrollElementRef,
+  onOpenEntry,
+  onPreviewEntry,
+  onDownloadEntry,
+}: {
+  entries: MobileShareEntry[];
+  layout: MobileLayoutSettings;
+  viewportWidth: number;
+  gridCardSize: number;
+  themeSnapshot: MobileShareThemeSnapshot | null;
+  scrollElementRef: RefObject<HTMLDivElement | null>;
+  onOpenEntry: (entry: MobileShareEntry) => void;
+  onPreviewEntry: (entry: MobileShareEntry) => void;
+  onDownloadEntry: (entry: MobileShareEntry) => void;
+}) {
+  const gridView = isMobileGridViewMode(layout.viewMode);
+  const listGap = getExplorerListGap(layout, viewportWidth);
+  const gridGap = getExplorerGridGap(layout, viewportWidth);
+  const gridColumnCount = gridView
+    ? getExplorerGridColumnCount(layout, viewportWidth)
+    : 1;
+  const rowCount = gridView
+    ? Math.ceil(entries.length / gridColumnCount)
+    : entries.length;
+
+  const virtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => scrollElementRef.current,
+    estimateSize: () =>
+      gridView
+        ? getExplorerGridRowEstimateSize(layout, viewportWidth)
+        : getExplorerListRowEstimateSize(layout, viewportWidth),
+    overscan: gridView ? 4 : 8,
+    getItemKey: (index) =>
+      gridView
+        ? `grid-row:${index}`
+        : entries[index]?.relativePath ?? `list-row:${index}`,
+  });
+
+  if (!gridView) {
+    return (
+      <div
+        className="mobile-virtual-surface mobile-virtual-surface--list"
+        style={{ height: `${virtualizer.getTotalSize()}px` }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const entry = entries[virtualItem.index];
+          if (!entry) {
+            return null;
+          }
+
+          return (
+            <div
+              key={entry.relativePath}
+              ref={virtualizer.measureElement}
+              className="mobile-virtual-row"
+              style={{
+                transform: `translateY(${virtualItem.start}px)`,
+                paddingBottom: `${listGap}px`,
+              }}
+            >
+              <article className="mobile-row">
+                <button
+                  type="button"
+                  className="mobile-row__main"
+                  onClick={() => {
+                    onOpenEntry(entry);
+                  }}
+                >
+                  <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} size={52} />
+                  <div className="mobile-row__content">
+                    <div className="mobile-row__name">{entry.name}</div>
+                    <div className="mobile-row__meta">{getRowMetaLabel(entry)}</div>
+                  </div>
+                </button>
+                <div className="mobile-row__actions">
+                  {entry.canPreview ? (
+                    <button
+                      type="button"
+                      className="mobile-icon-button"
+                      onClick={() => {
+                        onPreviewEntry(entry);
+                      }}
+                      aria-label={`Preview ${entry.name}`}
+                    >
+                      <LucideIcons.Eye size={18} strokeWidth={1.7} />
+                    </button>
+                  ) : null}
+                  {entry.canDownload ? (
+                    <button
+                      type="button"
+                      className="mobile-icon-button"
+                      onClick={() => {
+                        onDownloadEntry(entry);
+                      }}
+                      aria-label={`Download ${entry.name}`}
+                    >
+                      <LucideIcons.Download size={18} strokeWidth={1.7} />
+                    </button>
+                  ) : (
+                    <span className="mobile-row__chevron">
+                      <LucideIcons.ChevronRight size={18} strokeWidth={1.7} />
+                    </span>
+                  )}
+                </div>
+              </article>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mobile-virtual-surface mobile-virtual-surface--grid"
+      style={{ height: `${virtualizer.getTotalSize()}px` }}
+    >
+      {virtualizer.getVirtualItems().map((virtualItem) => {
+        const rowEntries = entries.slice(
+          virtualItem.index * gridColumnCount,
+          virtualItem.index * gridColumnCount + gridColumnCount,
+        );
+
+        return (
+          <div
+            key={`grid-row:${virtualItem.index}`}
+            ref={virtualizer.measureElement}
+            className={`mobile-virtual-grid-row mobile-virtual-grid-row--${layout.viewMode}`}
+            style={{
+              transform: `translateY(${virtualItem.start}px)`,
+              gap: `${gridGap}px`,
+              paddingBottom: `${gridGap}px`,
+              gridTemplateColumns: `repeat(${gridColumnCount}, minmax(0, 1fr))`,
+            }}
+          >
+            {rowEntries.map((entry) => (
+              <button
+                key={entry.relativePath}
+                type="button"
+                className={`mobile-grid-card${
+                  entry.isDir ? " mobile-grid-card--directory" : ""
+                }`}
+                onClick={() => {
+                  onOpenEntry(entry);
+                }}
+              >
+                <div className="mobile-grid-card__icon-wrap">
+                  <MobileEntryIcon
+                    entry={entry}
+                    themeSnapshot={themeSnapshot}
+                    openFolder={entry.isDir}
+                    size={gridCardSize}
+                  />
+                </div>
+                <div className="mobile-grid-card__content">
+                  <div className="mobile-grid-card__name">{entry.name}</div>
+                  <div className="mobile-grid-card__meta">
+                    {entry.isDir
+                      ? entry.isHidden
+                        ? "Hidden folder"
+                        : "Folder"
+                      : entry.size > 0
+                        ? formatBytes(entry.size)
+                        : getRowMetaLabel(entry)}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        );
+      })}
+      <div className="mobile-virtual-grid-spacer" style={{ height: `${gridGap}px` }} />
+    </div>
+  );
+}
+
 export default function App() {
   const {
     activeTab,
@@ -653,8 +926,11 @@ export default function App() {
   });
   const [pushRuntimeBusy, setPushRuntimeBusy] = useState(false);
   const [pushRuntimeError, setPushRuntimeError] = useState<string | null>(null);
+  const [previewSheetOffset, setPreviewSheetOffset] = useState(0);
+  const [previewSheetDragging, setPreviewSheetDragging] = useState(false);
 
   const explorerListRef = useRef<HTMLDivElement | null>(null);
+  const previewSheetRef = useRef<HTMLDivElement | null>(null);
   const generalUploadInputRef = useRef<HTMLInputElement | null>(null);
   const mediaUploadInputRef = useRef<HTMLInputElement | null>(null);
   const loadedPageKeysRef = useRef<Set<string>>(new Set());
@@ -667,6 +943,7 @@ export default function App() {
   const recoveredExplorerPathsRef = useRef<Set<string>>(new Set());
   const isApplyingPopStateRef = useRef(false);
   const consumedDownloadIntentKeyRef = useRef<string>("");
+  const previewSheetOffsetRef = useRef(0);
 
   const deferredFilterInput = useDeferredValue(filterInput.trim().toLowerCase());
   const showInstallTip = !installTipDismissed && isIosSafari() && !isStandalone;
@@ -711,15 +988,9 @@ export default function App() {
     () => buildMobileShellStyle(resolvedLayout, viewportSnapshot),
     [resolvedLayout, viewportSnapshot],
   );
-  const gridStyle = useMemo(
-    () =>
-      ({
-        "--mobile-grid-min-width": `${getGridMinWidthForViewport(
-          resolvedLayout,
-          viewportSnapshot.width,
-        )}px`,
-      }) as CSSProperties,
-    [resolvedLayout, viewportSnapshot.width],
+  const previewDismissThreshold = useMemo(
+    () => Math.max(136, Math.round(viewportSnapshot.height * 0.18)),
+    [viewportSnapshot.height],
   );
 
   function commitLocationState(
@@ -756,14 +1027,17 @@ export default function App() {
     scrollPositionsRef.current.set(path, explorerListRef.current?.scrollTop ?? 0);
   }
 
-  function clearPreview(): void {
+  const clearPreview = useCallback((): void => {
+    previewSheetOffsetRef.current = 0;
+    setPreviewSheetOffset(0);
+    setPreviewSheetDragging(false);
     setPreviewState({
       entry: null,
       preview: null,
       loading: false,
       error: null,
     });
-  }
+  }, []);
 
   function consumeDownloadIntent(
     relativePath: string,
@@ -1242,6 +1516,76 @@ export default function App() {
   }, [setActiveTab]);
 
   useEffect(() => {
+    if (!previewState.entry) {
+      previewSheetOffsetRef.current = 0;
+      setPreviewSheetOffset(0);
+      setPreviewSheetDragging(false);
+      return;
+    }
+
+    const previewSheet = previewSheetRef.current;
+    if (!previewSheet) {
+      return;
+    }
+
+    let currentOffset = 0;
+    const draggablePreviewSheet = interact(previewSheet).draggable({
+      startAxis: "y",
+      lockAxis: "y",
+      inertia: true,
+      allowFrom: ".mobile-overlay__grabber, .mobile-overlay__header",
+      ignoreFrom:
+        ".mobile-overlay__actions, .mobile-overlay__body, button, a, input, textarea, video, audio, iframe",
+      listeners: {
+        start() {
+          currentOffset = previewSheetOffsetRef.current;
+          setPreviewSheetDragging(true);
+        },
+        move(event) {
+          currentOffset = Math.max(0, currentOffset + event.dy);
+          previewSheetOffsetRef.current = currentOffset;
+          setPreviewSheetOffset(currentOffset);
+        },
+        end() {
+          setPreviewSheetDragging(false);
+          if (currentOffset >= previewDismissThreshold) {
+            clearPreview();
+            return;
+          }
+
+          currentOffset = 0;
+          previewSheetOffsetRef.current = 0;
+          setPreviewSheetOffset(0);
+        },
+      },
+    });
+
+    return () => {
+      draggablePreviewSheet.unset();
+      previewSheetOffsetRef.current = 0;
+      setPreviewSheetOffset(0);
+      setPreviewSheetDragging(false);
+    };
+  }, [clearPreview, previewDismissThreshold, previewState.entry]);
+
+  useEffect(() => {
+    if (!previewState.entry) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        clearPreview();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [clearPreview, previewState.entry]);
+
+  useEffect(() => {
     if (
       !loadingError
       || currentPath.length === 0
@@ -1551,107 +1895,28 @@ export default function App() {
       );
     }
 
-    if (!isMobileGridViewMode(resolvedLayout.viewMode)) {
-      return (
-        <div className="mobile-list-surface">
-          {filteredEntries.map((entry) => (
-            <article className="mobile-row" key={entry.relativePath}>
-              <button
-                type="button"
-                className="mobile-row__main"
-                onClick={() => {
-                  if (entry.isDir) {
-                    navigateToExplorerPath(entry.relativePath, "push");
-                    return;
-                  }
-                  void openPreviewForPath(entry.relativePath, entry);
-                }}
-              >
-                <MobileEntryIcon entry={entry} themeSnapshot={themeSnapshot} size={52} />
-                <div className="mobile-row__content">
-                  <div className="mobile-row__name">{entry.name}</div>
-                  <div className="mobile-row__meta">{getRowMetaLabel(entry)}</div>
-                </div>
-              </button>
-              <div className="mobile-row__actions">
-                {entry.canPreview ? (
-                  <button
-                    type="button"
-                    className="mobile-icon-button"
-                    onClick={() => {
-                      void openPreviewForPath(entry.relativePath, entry);
-                    }}
-                    aria-label={`Preview ${entry.name}`}
-                  >
-                    <LucideIcons.Eye size={18} strokeWidth={1.7} />
-                  </button>
-                ) : null}
-                {entry.canDownload ? (
-                  <button
-                    type="button"
-                    className="mobile-icon-button"
-                    onClick={() => {
-                      startDownload(entry);
-                    }}
-                    aria-label={`Download ${entry.name}`}
-                  >
-                    <LucideIcons.Download size={18} strokeWidth={1.7} />
-                  </button>
-                ) : (
-                  <span className="mobile-row__chevron">
-                    <LucideIcons.ChevronRight size={18} strokeWidth={1.7} />
-                  </span>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      );
-    }
-
     return (
-      <div
-        className={`mobile-grid mobile-grid--${resolvedLayout.viewMode}`}
-        style={gridStyle}
-      >
-        {filteredEntries.map((entry) => (
-          <button
-            key={entry.relativePath}
-            type="button"
-            className={`mobile-grid-card${
-              entry.isDir ? " mobile-grid-card--directory" : ""
-            }`}
-            onClick={() => {
-              if (entry.isDir) {
-                navigateToExplorerPath(entry.relativePath, "push");
-                return;
-              }
-              void openPreviewForPath(entry.relativePath, entry);
-            }}
-          >
-            <div className="mobile-grid-card__icon-wrap">
-              <MobileEntryIcon
-                entry={entry}
-                themeSnapshot={themeSnapshot}
-                openFolder={entry.isDir}
-                size={gridCardSize}
-              />
-            </div>
-            <div className="mobile-grid-card__content">
-              <div className="mobile-grid-card__name">{entry.name}</div>
-              <div className="mobile-grid-card__meta">
-                {entry.isDir
-                  ? entry.isHidden
-                    ? "Hidden folder"
-                    : "Folder"
-                  : entry.size > 0
-                    ? formatBytes(entry.size)
-                    : getRowMetaLabel(entry)}
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
+      <MobileExplorerVirtualSurface
+        entries={filteredEntries}
+        layout={resolvedLayout}
+        viewportWidth={viewportSnapshot.width}
+        gridCardSize={gridCardSize}
+        themeSnapshot={themeSnapshot}
+        scrollElementRef={explorerListRef}
+        onOpenEntry={(entry) => {
+          if (entry.isDir) {
+            navigateToExplorerPath(entry.relativePath, "push");
+            return;
+          }
+          void openPreviewForPath(entry.relativePath, entry);
+        }}
+        onPreviewEntry={(entry) => {
+          void openPreviewForPath(entry.relativePath, entry);
+        }}
+        onDownloadEntry={(entry) => {
+          startDownload(entry);
+        }}
+      />
     );
   }
 
@@ -2682,66 +2947,91 @@ export default function App() {
       />
 
       {previewState.entry ? (
-        <div className="mobile-overlay" role="dialog" aria-modal="true">
-          <div className="mobile-overlay__header">
-            <div>
-              <div className="mobile-overlay__title">{previewState.entry.name}</div>
-              <div className="mobile-overlay__subtitle">
-                {getRowMetaLabel(previewState.entry)}
-              </div>
+        <div
+          className="mobile-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              clearPreview();
+            }
+          }}
+        >
+          <div
+            ref={previewSheetRef}
+            className={`mobile-overlay__sheet${
+              previewSheetDragging ? " mobile-overlay__sheet--dragging" : ""
+            }`}
+            style={{
+              transform: `translateY(${previewSheetOffset}px)`,
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            <div className="mobile-overlay__grabber" aria-hidden="true">
+              <span className="mobile-overlay__grabber-handle" />
             </div>
-            <button
-              type="button"
-              className="mobile-pill-button"
-              onClick={() => {
-                clearPreview();
-              }}
-            >
-              Close
-            </button>
-          </div>
-          <div className="mobile-overlay__actions">
-            {previewState.entry.canDownload ? (
+            <div className="mobile-overlay__header">
+              <div>
+                <div className="mobile-overlay__title">{previewState.entry.name}</div>
+                <div className="mobile-overlay__subtitle">
+                  {getRowMetaLabel(previewState.entry)}
+                </div>
+              </div>
               <button
                 type="button"
-                className="mobile-action-button"
+                className="mobile-pill-button"
                 onClick={() => {
-                  if (previewState.entry) {
-                    startDownload(previewState.entry);
-                  }
+                  clearPreview();
                 }}
               >
-                <LucideIcons.Download size={18} strokeWidth={1.7} />
-                Download
+                Close
               </button>
-            ) : null}
-            {(previewState.preview?.openUrl ?? previewState.entry?.fileUrl) ? (
-              <button
-                type="button"
-                className="mobile-action-button"
-                onClick={() => {
-                  const targetUrl =
-                    previewState.preview?.openUrl ?? previewState.entry?.fileUrl;
-                  if (targetUrl) {
-                    window.open(targetUrl, "_blank", "noopener,noreferrer");
-                  }
-                }}
-              >
-                <LucideIcons.ExternalLink size={18} strokeWidth={1.7} />
-                Open
-              </button>
-            ) : null}
-          </div>
-          <div className="mobile-overlay__body">
-            {previewState.loading ? (
-              <div className="mobile-empty-state">Loading preview…</div>
-            ) : previewState.error ? (
-              <div className="mobile-empty-state">{previewState.error}</div>
-            ) : previewState.preview ? (
-              renderPreviewBody(previewState.preview)
-            ) : (
-              <div className="mobile-empty-state">Preview is standing by.</div>
-            )}
+            </div>
+            <div className="mobile-overlay__actions">
+              {previewState.entry.canDownload ? (
+                <button
+                  type="button"
+                  className="mobile-action-button"
+                  onClick={() => {
+                    if (previewState.entry) {
+                      startDownload(previewState.entry);
+                    }
+                  }}
+                >
+                  <LucideIcons.Download size={18} strokeWidth={1.7} />
+                  Download
+                </button>
+              ) : null}
+              {(previewState.preview?.openUrl ?? previewState.entry?.fileUrl) ? (
+                <button
+                  type="button"
+                  className="mobile-action-button"
+                  onClick={() => {
+                    const targetUrl =
+                      previewState.preview?.openUrl ?? previewState.entry?.fileUrl;
+                    if (targetUrl) {
+                      window.open(targetUrl, "_blank", "noopener,noreferrer");
+                    }
+                  }}
+                >
+                  <LucideIcons.ExternalLink size={18} strokeWidth={1.7} />
+                  Open
+                </button>
+              ) : null}
+            </div>
+            <div className="mobile-overlay__body">
+              {previewState.loading ? (
+                <div className="mobile-empty-state">Loading preview…</div>
+              ) : previewState.error ? (
+                <div className="mobile-empty-state">{previewState.error}</div>
+              ) : previewState.preview ? (
+                renderPreviewBody(previewState.preview)
+              ) : (
+                <div className="mobile-empty-state">Preview is standing by.</div>
+              )}
+            </div>
           </div>
         </div>
       ) : null}

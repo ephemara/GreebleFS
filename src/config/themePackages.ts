@@ -364,6 +364,19 @@ function mergeResolvedThemeAssets(
   };
 }
 
+function buildIconThemeCapabilitySummary(
+  iconTheme: OverlayResolvedIconTheme,
+): LoadedIconThemePackage['capabilitySummary'] {
+  return {
+    iconDefinitions: Object.keys(iconTheme.iconDefinitions).length,
+    fileExtensions: Object.keys(iconTheme.fileExtensions).length,
+    fileNames: Object.keys(iconTheme.fileNames).length,
+    folderNames: Object.keys(iconTheme.folderNames).length,
+    folderNamesExpanded: Object.keys(iconTheme.folderNamesExpanded).length,
+    uiIcons: Object.keys(iconTheme.uiIcons).length,
+  };
+}
+
 function asRecord(value: unknown): LooseRecord | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -1229,6 +1242,12 @@ async function buildThemeBundlePackage(
     manifestPath: record.manifestPath,
     sourceKind: options?.sourceKind ?? 'theme-directory',
     sourceLabel: options?.sourceLabel ?? record.directoryPath,
+    sourceInfo: {
+      compatibility: 'native',
+      source: options?.sourceKind === 'plugin-package' ? 'plugin' : 'folder',
+      originalPath: record.directoryPath,
+      resolvedRootPath: record.directoryPath,
+    },
     description: asString(record.manifest.description) || undefined,
     author: asString(record.manifest.author) || undefined,
     homepage: asString(record.manifest.homepage) || undefined,
@@ -1262,6 +1281,90 @@ async function buildThemeBundlePackage(
     packageInfo: rawPackage,
     shaders: themeContributedShaders,
     animations: themeContributedAnimations,
+    warnings: packageWarnings.map(warning => `${bundleName}: ${warning}`),
+  };
+}
+
+function createVsCodeThemePackage(
+  contribution: LoadedVsCodeColorThemeContribution,
+): { packageInfo: LoadedOverlayThemePackage; warnings: string[] } {
+  const bundleId = contribution.id;
+  const bundleName = contribution.name;
+  const localCatalogs = emptyLocalCatalogs();
+
+  localCatalogs.iconThemePackages.push(
+    ...contribution.localIconThemes.map(iconThemePackage => {
+      const localId = normalizeIdFragment(iconThemePackage.id, 'icon-theme');
+      const scopedId = createScopedId(bundleId, localId);
+      const sourceKind = iconThemePackage.sourceInfo.source === 'vsix'
+        ? 'vscode-icon-theme-vsix'
+        : 'vscode-icon-theme-directory';
+      return {
+        id: scopedId,
+        localId,
+        name: iconThemePackage.name,
+        version: iconThemePackage.version,
+        description: iconThemePackage.description,
+        directoryPath: iconThemePackage.directoryPath,
+        manifestPath: iconThemePackage.manifestPath,
+        sourceKind,
+        sourceInfo: iconThemePackage.sourceInfo,
+        warnings: iconThemePackage.warnings,
+        iconTheme: {
+          ...iconThemePackage.iconTheme,
+          id: scopedId,
+        },
+        capabilitySummary: buildIconThemeCapabilitySummary(iconThemePackage.iconTheme),
+      };
+    }),
+  );
+
+  const packageWarnings = [
+    ...contribution.warnings,
+    ...contribution.localIconThemes.flatMap(iconThemePackage =>
+      iconThemePackage.warnings.map(warning => `${iconThemePackage.name}: ${warning}`),
+    ),
+  ];
+  const sourceKind = contribution.sourceInfo.source === 'vsix'
+    ? 'vscode-theme-vsix'
+    : 'vscode-theme-directory';
+  const rawPackage: LoadedOverlayThemePackage = {
+    id: bundleId,
+    name: bundleName,
+    version: contribution.version,
+    directoryPath: contribution.directoryPath,
+    manifestPath: contribution.manifestPath,
+    sourceKind,
+    sourceLabel: contribution.sourceInfo.source === 'vsix'
+      ? `VS Code .vsix · ${contribution.directoryPath}`
+      : `VS Code Extension Folder · ${contribution.directoryPath}`,
+    sourceInfo: contribution.sourceInfo,
+    description: contribution.description,
+    author: contribution.sourceInfo.extensionId,
+    homepage: undefined,
+    tags: ['vscode-compatibility'],
+    previewUrl: undefined,
+    warnings: packageWarnings,
+    catalog: resolveThemeCatalogPackageMetadata(bundleId),
+    capabilitySummary: {
+      icons: localCatalogs.iconThemePackages.length > 0,
+      wallpaper: false,
+      dock: false,
+      visuals: contribution.theme.visuals?.length ?? 0,
+      shaders: 0,
+      animations: 0,
+      fonts: [contribution.theme.fonts?.ui, contribution.theme.fonts?.mono].filter(Boolean).length,
+      themeRenderer: false,
+      topBars: 0,
+    },
+    manifest: createThemeBundleManifestFromThemeDefinition(contribution.theme),
+    localCatalogs,
+    theme: contribution.theme,
+    topBars: [],
+  };
+
+  return {
+    packageInfo: rawPackage,
     warnings: packageWarnings.map(warning => `${bundleName}: ${warning}`),
   };
 }
@@ -1302,36 +1405,90 @@ export async function loadThemePackagesFromDirectoryEntries(
   try {
     const bundleRecords: OverlayThemeBundleRecord[] = [];
     const manifestWarnings: string[] = [];
+    const compatibilityPackages: LoadedOverlayThemePackage[] = [];
+    const compatibilityWarnings: string[] = [];
     for (const entry of directoryEntries) {
+      const normalizedEntry = normalizeThemePackageDirectoryEntry(entry);
       try {
-        const manifest = await readBundleManifest(entry.path);
-        if (!manifest) {
+        if (!normalizedEntry.isDirectory) {
+          const compatibilityResult = await loadVsCodeColorThemeContributionsFromEntry({
+            name: normalizedEntry.name,
+            path: normalizedEntry.path,
+            isDirectory: false,
+            extension: normalizedEntry.extension,
+          });
+          compatibilityWarnings.push(
+            ...compatibilityResult.warnings.map(warning => `${normalizedEntry.name}: ${warning}`),
+          );
+          compatibilityPackages.push(
+            ...compatibilityResult.packages.map(result => createVsCodeThemePackage(result).packageInfo),
+          );
           continue;
         }
-        bundleRecords.push({
-          directoryName: entry.name,
-          directoryPath: entry.path,
-          manifestPath: manifest.manifestPath,
-          manifest: manifest.manifest,
+
+        const manifest = await readBundleManifest(normalizedEntry.path);
+        if (manifest) {
+          bundleRecords.push({
+            directoryName: normalizedEntry.name,
+            directoryPath: normalizedEntry.path,
+            manifestPath: manifest.manifestPath,
+            manifest: manifest.manifest,
+          });
+          continue;
+        }
+
+        const compatibilityResult = await loadVsCodeColorThemeContributionsFromEntry({
+          name: normalizedEntry.name,
+          path: normalizedEntry.path,
+          isDirectory: true,
+          extension: normalizedEntry.extension,
         });
+        compatibilityWarnings.push(
+          ...compatibilityResult.warnings.map(warning => `${normalizedEntry.name}: ${warning}`),
+        );
+        compatibilityPackages.push(
+          ...compatibilityResult.packages.map(result => createVsCodeThemePackage(result).packageInfo),
+        );
       } catch (error) {
-        manifestWarnings.push(`${entry.name}: ${String(error)}`);
+        manifestWarnings.push(`${normalizedEntry.name}: ${String(error)}`);
       }
     }
 
     const builtPackages = await Promise.all(
       bundleRecords.map(record => buildThemeBundlePackage(record, options)),
     );
-    const rawPackages = builtPackages.map(result => result.packageInfo);
+    const rawPackages = [
+      ...builtPackages.map(result => result.packageInfo),
+      ...compatibilityPackages,
+    ];
     const dependencyCatalogs = options?.dependencyCatalogs ?? createEmptyGlobalThemeBundleCatalogs();
-    const resolvedPackages = resolveLoadedThemePackages(rawPackages, dependencyCatalogs);
+    const resolvedPackageMap = new Map(rawPackages.map(packageInfo => [packageInfo.id, packageInfo] as const));
+    const resolvedPackages = resolveLoadedThemePackages(rawPackages, dependencyCatalogs).map(packageInfo => {
+      const rawPackage = resolvedPackageMap.get(packageInfo.id);
+      if (!rawPackage?.theme.assets) {
+        return packageInfo;
+      }
+      return {
+        ...packageInfo,
+        theme: {
+          ...packageInfo.theme,
+          assets: mergeResolvedThemeAssets(packageInfo.theme.assets, rawPackage.theme.assets),
+        },
+      };
+    });
 
     return {
       packages: resolvedPackages,
       shaders: builtPackages.flatMap(result => result.shaders).sort((left, right) => left.name.localeCompare(right.name)),
       animations: builtPackages.flatMap(result => result.animations).sort((left, right) => left.name.localeCompare(right.name)),
       directory: directoryLabel,
-      warnings: [...dependencyCatalogs.warnings, ...manifestWarnings, ...builtPackages.flatMap(result => result.warnings)],
+      warnings: [
+        ...dependencyCatalogs.warnings,
+        ...manifestWarnings,
+        ...compatibilityWarnings,
+        ...builtPackages.flatMap(result => result.warnings),
+        ...compatibilityPackages.flatMap(packageInfo => packageInfo.warnings.map(warning => `${packageInfo.name}: ${warning}`)),
+      ],
       sourceError: null,
       dependencyCatalogs,
     };
@@ -1369,7 +1526,13 @@ export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
     ]);
 
     return loadThemePackagesFromDirectoryEntries(
-      rootEntries.filter(entry => entry.is_dir).map(entry => ({ name: entry.name, path: entry.path })),
+      rootEntries.map(entry => ({
+        name: entry.name,
+        path: entry.path,
+        isDirectory: entry.is_dir,
+        extension: entry.extension,
+        modified: entry.modified,
+      })),
       directory,
       { dependencyCatalogs },
     );

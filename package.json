@@ -62,6 +62,7 @@
     "framer-motion": "^12.38.0",
     "hyperformula": "^3.2.0",
     "interactjs": "^1.10.27",
+    "jsonc-parser": "^3.3.1",
     "jsondiffpatch": "^0.7.3",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.577.0",

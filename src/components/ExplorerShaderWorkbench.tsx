@@ -16,7 +16,12 @@ import {
   type ExplorerShaderPreviewFormat,
   type ExplorerShaderPreviewStage,
 } from "../runtime/shaderPreviewBackend";
-import { buildExplorerMonacoPreviewOptions } from "../config/explorerMonaco";
+import {
+  applyExplorerMonacoTheme,
+  buildExplorerMonacoPreviewOptions,
+  resolveExplorerMonacoThemeId,
+} from "../config/explorerMonaco";
+import type { ResolvedOverlayAppearance } from "../config/appearance";
 import {
   getShaderPerformanceProfile,
   type ShaderPerformanceMode,
@@ -43,6 +48,7 @@ type ExplorerShaderWorkbenchProps = {
   isSaving: boolean;
   error: string | null;
   viewMode: ExplorerDocumentViewMode;
+  appearance?: ResolvedOverlayAppearance;
   editorSettings: EditorSettings;
   shaderPerformanceMode: ShaderPerformanceMode;
   onSourceChange: (path: string, value: string) => void;
@@ -1058,6 +1064,7 @@ export function ExplorerShaderWorkbench({
   isSaving,
   error,
   viewMode,
+  appearance,
   editorSettings,
   shaderPerformanceMode,
   onSourceChange,
@@ -1066,6 +1073,8 @@ export function ExplorerShaderWorkbench({
   onRegisterCloseGuard,
 }: ExplorerShaderWorkbenchProps) {
   const compileRequestIdRef = useRef(0);
+  const monacoRef = useRef<any>(null);
+  const monacoThemeId = resolveExplorerMonacoThemeId(appearance);
 
   const stageOptions = useMemo(
     () => getShaderStageOptions(entryPoints),
@@ -1093,6 +1102,13 @@ export function ExplorerShaderWorkbench({
       onRegisterCloseGuard(null);
     };
   }, [isDirty, isReadOnly, name, onRegisterCloseGuard]);
+
+  useEffect(() => {
+    if (!monacoRef.current) {
+      return;
+    }
+    applyExplorerMonacoTheme(monacoRef.current, appearance);
+  }, [appearance]);
 
   useEffect(() => {
     if (format === "spv" && !selectedStage && entryPoints.length === 1) {
@@ -1210,9 +1226,16 @@ export function ExplorerShaderWorkbench({
           <Editor
             path={path}
             height="100%"
-            theme="vs-dark"
+            theme={monacoThemeId}
             language={format === "wgsl" ? "wgsl" : format === "hlsl" ? "hlsl" : "plaintext"}
             value={editableSource}
+            beforeMount={(monaco) => {
+              applyExplorerMonacoTheme(monaco, appearance);
+            }}
+            onMount={(_editor, monaco) => {
+              monacoRef.current = monaco;
+              applyExplorerMonacoTheme(monaco, appearance);
+            }}
             onChange={(value) => onSourceChange(path, value ?? "")}
             saveViewState
             options={buildExplorerMonacoPreviewOptions({

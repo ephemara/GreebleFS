@@ -166,13 +166,15 @@ type ResolvedVsCodeColorThemeFile = {
   tokenColors: unknown[];
 };
 
-const DEFAULT_FALLBACK_THEME =
-  overlayThemePresets.find(theme => theme.id === DEFAULT_PILOT_DARK_THEME_ID)
-  ?? overlayThemePresets[0];
+function getDefaultFallbackTheme(): OverlayThemeDefinition {
+  return overlayThemePresets.find(theme => theme.id === DEFAULT_PILOT_DARK_THEME_ID)
+    ?? overlayThemePresets[0];
+}
 
-const DEFAULT_LIGHT_FALLBACK_THEME =
-  overlayThemePresets.find(theme => theme.id === DEFAULT_PILOT_LIGHT_THEME_ID)
-  ?? overlayThemePresets[0];
+function getDefaultLightFallbackTheme(): OverlayThemeDefinition {
+  return overlayThemePresets.find(theme => theme.id === DEFAULT_PILOT_LIGHT_THEME_ID)
+    ?? overlayThemePresets[0];
+}
 
 const VSCODE_TO_OVERLAY_PALETTE: Array<{
   target: keyof OverlayThemePalette;
@@ -402,7 +404,7 @@ function formatJsoncErrors(errors: ParseError[]): string {
   return errors.map(error => printParseErrorCode(error.error)).join(', ');
 }
 
-function parseJsoncObject<TRecord extends LooseRecord>(source: string, filePath: string): TRecord {
+function parseJsoncObject<TRecord extends object>(source: string, filePath: string): TRecord {
   const errors: ParseError[] = [];
   const parsed = parseJsonc(source, errors, {
     allowTrailingComma: true,
@@ -583,7 +585,6 @@ function buildFontSvgDataUrl(args: {
 }
 
 async function loadVsCodeFontFaces(
-  extensionRootPath: string,
   themeDirectoryPath: string,
   themeDefinition: VsCodeIconThemeDefinition,
 ): Promise<Map<string, LoadedVsCodeFontFace>> {
@@ -618,7 +619,7 @@ async function buildVsCodeIconDefinitions(
 ): Promise<{ iconDefinitions: Record<string, string>; warnings: string[] }> {
   const warnings: string[] = [];
   const themeDirectoryPath = getParentDirectoryPath(themeFilePath);
-  const fontFaces = await loadVsCodeFontFaces(getParentDirectoryPath(themeFilePath), themeDirectoryPath, themeDefinition);
+  const fontFaces = await loadVsCodeFontFaces(themeDirectoryPath, themeDefinition);
   const defaultFontFace = fontFaces.values().next().value as LoadedVsCodeFontFace | undefined;
   const iconDefinitions: Record<string, string> = {};
 
@@ -936,8 +937,8 @@ function resolveVsCodeFallbackTheme(
 ): OverlayThemeDefinition {
   const baseTheme = deriveMonacoBaseTheme(themeType, contributionUiTheme);
   return baseTheme === 'vs'
-    ? DEFAULT_LIGHT_FALLBACK_THEME
-    : DEFAULT_FALLBACK_THEME;
+    ? getDefaultLightFallbackTheme()
+    : getDefaultFallbackTheme();
 }
 
 function buildVsCodeMonacoThemeCompatibility(

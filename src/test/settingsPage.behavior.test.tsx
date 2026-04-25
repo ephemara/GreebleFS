@@ -239,6 +239,49 @@ describe('SettingsPage behavior', () => {
     expect(screen.getByText('Choose a dedicated icon theme independently from the active shell theme, keep folder rules in one place, and decide when OS-native icons should still fill gaps.')).toBeInTheDocument();
   });
 
+  it('advertises VS Code folder and .vsix compatibility in theme settings copy', async () => {
+    const user = userEvent.setup();
+
+    renderSettingsPage({
+      themePackages: [
+        createThemePackageFixture({
+          id: 'vscode-monokai',
+          name: 'VS Code Monokai',
+          version: 1,
+          directoryPath: 'themes/monokai.vsix',
+          manifestPath: '/cache/monokai/extension/themes/monokai.json',
+          sourceKind: 'vscode-theme-vsix',
+          sourceLabel: 'VS Code .vsix · themes/monokai.vsix',
+          description: 'Imported from a VS Code color theme.',
+          tags: ['vscode-compatibility'],
+          warnings: [],
+          capabilitySummary: {
+            icons: false,
+            wallpaper: false,
+            dock: false,
+            visuals: 0,
+            shaders: 0,
+            animations: 0,
+            fonts: 0,
+            themeRenderer: false,
+            topBars: 0,
+          },
+          theme: normalizeThemeDefinition({
+            id: 'vscode-monokai',
+            name: 'VS Code Monokai',
+            extendsThemeId: 'pilot-dark',
+          }),
+        }),
+      ],
+    });
+
+    await user.click(findSectionButton('Appearance'));
+
+    expect(screen.getByText(/VS Code color-theme extension folders, or/i)).toBeInTheDocument();
+    expect(screen.getByText(/cached \.vsix extracts never masquerade as authored bundles/i)).toBeInTheDocument();
+    expect(screen.getByText('VS Code VSIX')).toBeInTheDocument();
+  });
+
   it('renders the models section, keeps CUDA disabled without an NVIDIA provider, and saves semantic root overrides', async () => {
     const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);

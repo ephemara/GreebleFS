@@ -27,7 +27,7 @@ export const managedContentDirectoryCatalog = [
   {
     id: 'themes',
     label: 'Themes',
-    description: 'Package theme bundle manifests and local child pack folders here.',
+    description: 'Drop native theme bundles plus VS Code color-theme extension folders or .vsix archives here.',
     keywords: ['theme', 'theme bundle', 'appearance', 'catalog'],
     releaseDirectoryName: 'themes',
     legacyRelativeDirectoryName: 'themes',
@@ -77,7 +77,7 @@ export const managedContentDirectoryCatalog = [
   {
     id: 'iconThemes',
     label: 'Icon Themes',
-    description: 'Drop VS Code-style icon-theme manifests here for explorer and shell icon swaps.',
+    description: 'Drop native icon-theme packs plus VS Code icon-theme extension folders or .vsix archives here.',
     keywords: ['icons', 'icon theme', 'folder icons', 'ui icons'],
     releaseDirectoryName: 'icon-themes',
     legacyRelativeDirectoryName: 'icon-themes',

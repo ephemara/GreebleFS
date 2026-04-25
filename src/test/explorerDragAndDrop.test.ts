@@ -131,6 +131,107 @@ describe("explorerDragAndDrop", () => {
     expect(hit?.targetPath).toBe("/workspace/alpha");
   });
 
+  it("reuses drop surface bindings for the same surface id across rerenders", () => {
+    const firstBinding = createExplorerDropSurfaceBinding({
+      surfaceId: "folder-surface",
+      scopeId: "pane-a",
+      role: "directory-target",
+      targetPath: "/workspace/alpha",
+      label: "alpha",
+    });
+    const secondBinding = createExplorerDropSurfaceBinding({
+      surfaceId: "folder-surface",
+      scopeId: "pane-a",
+      role: "directory-target",
+      targetPath: "/workspace/alpha",
+      label: "alpha (updated)",
+    });
+
+    expect(secondBinding).toBe(firstBinding);
+    expect(secondBinding.ref).toBe(firstBinding.ref);
+    expect(secondBinding["data-overlay-drop-target-path"]).toBe(
+      "/workspace/alpha",
+    );
+  });
+
+  it("reuses the last resolved drop target while the pointer stays inside the same surface", () => {
+    const scopeBinding = createExplorerDropSurfaceBinding({
+      surfaceId: "scope-root",
+      scopeId: "pane-a",
+      role: "scope-root",
+      rootPath: "/workspace",
+    });
+    const folderBinding = createExplorerDropSurfaceBinding({
+      surfaceId: "folder-surface",
+      scopeId: "pane-a",
+      role: "directory-target",
+      targetPath: "/workspace/alpha",
+      label: "alpha",
+    });
+
+    const scopeElement = document.createElement("div");
+    const folderElement = document.createElement("div");
+    const folderLabel = document.createElement("span");
+    folderElement.append(folderLabel);
+    scopeElement.append(folderElement);
+    document.body.append(scopeElement);
+
+    scopeElement.setAttribute(
+      "data-overlay-explorer-drop-scope-id",
+      scopeBinding["data-overlay-explorer-drop-scope-id"],
+    );
+    scopeElement.setAttribute(
+      "data-overlay-explorer-drop-surface-role",
+      scopeBinding["data-overlay-explorer-drop-surface-role"],
+    );
+    scopeElement.setAttribute(
+      "data-overlay-explorer-drop-surface-id",
+      scopeBinding["data-overlay-explorer-drop-surface-id"],
+    );
+    scopeElement.setAttribute(
+      "data-overlay-explorer-drop-root-path",
+      scopeBinding["data-overlay-explorer-drop-root-path"] ?? "",
+    );
+    folderElement.setAttribute(
+      "data-overlay-explorer-drop-scope-id",
+      folderBinding["data-overlay-explorer-drop-scope-id"],
+    );
+    folderElement.setAttribute(
+      "data-overlay-explorer-drop-surface-role",
+      folderBinding["data-overlay-explorer-drop-surface-role"],
+    );
+    folderElement.setAttribute(
+      "data-overlay-explorer-drop-surface-id",
+      folderBinding["data-overlay-explorer-drop-surface-id"],
+    );
+    folderElement.setAttribute(
+      "data-overlay-drop-target-path",
+      folderBinding["data-overlay-drop-target-path"] ?? "",
+    );
+
+    scopeBinding.ref(scopeElement);
+    folderBinding.ref(folderElement);
+
+    setElementRect(scopeElement, { left: 0, top: 0, right: 320, bottom: 240 });
+    setElementRect(folderElement, { left: 24, top: 24, right: 120, bottom: 120 });
+
+    const elementFromPoint = vi.fn(() => folderLabel);
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: elementFromPoint,
+    });
+
+    const firstHit = resolveExplorerDropHitFromPoint({ x: 72, y: 72 });
+    const secondHit = resolveExplorerDropHitFromPoint({ x: 80, y: 80 });
+
+    expect(firstHit?.targetPath).toBe("/workspace/alpha");
+    expect(secondHit?.targetPath).toBe("/workspace/alpha");
+    expect(elementFromPoint).toHaveBeenCalledTimes(1);
+
+    folderBinding.ref(null);
+    scopeBinding.ref(null);
+  });
+
   it("routes drop hit-testing to the correct explorer scope in a multi-pane window", () => {
     document.body.innerHTML = `
       <div data-overlay-explorer-drop-scope-id="pane-a" data-overlay-explorer-drop-root-path="/left">

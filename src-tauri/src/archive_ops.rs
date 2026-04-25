@@ -97,7 +97,7 @@ const ARCHIVE_SUFFIXES: &[(ArchiveFormat, &[&str])] = &[
     (ArchiveFormat::TarBz2, &[".tar.bz2", ".tbz2"]),
     (ArchiveFormat::TarXz, &[".tar.xz", ".txz"]),
     (ArchiveFormat::SevenZip, &[".7z"]),
-    (ArchiveFormat::Zip, &[".zip", ".cbz", ".jar", ".apk"]),
+    (ArchiveFormat::Zip, &[".zip", ".cbz", ".jar", ".apk", ".vsix"]),
     (ArchiveFormat::Tar, &[".tar"]),
     (ArchiveFormat::Gzip, &[".gz"]),
     (ArchiveFormat::Bzip2, &[".bz2"]),
@@ -1804,6 +1804,10 @@ mod tests {
             detect_archive_format(Path::new("/tmp/demo.gz")),
             Some(ArchiveFormat::Gzip)
         );
+        assert_eq!(
+            detect_archive_format(Path::new("/tmp/theme-pack.vsix")),
+            Some(ArchiveFormat::Zip)
+        );
     }
 
     #[test]
@@ -1871,6 +1875,21 @@ mod tests {
             fs::read_to_string(output_dir.join("nested/beta.txt")).expect("read beta"),
             "world"
         );
+    }
+
+    #[test]
+    fn open_cached_reuses_existing_cache_for_vsix_archives() {
+        let workspace = tempdir().expect("tempdir");
+        let archive_path = workspace.path().join("sample-theme.vsix");
+        create_zip_archive(&archive_path, &[("extension/package.json", "{\"name\":\"sample\"}")]);
+
+        let first_result = open_archive_cached(&archive_path).expect("cache first extract");
+        assert!(!first_result.reused_cached_output);
+        assert!(PathBuf::from(&first_result.output_path).exists());
+
+        let second_result = open_archive_cached(&archive_path).expect("reuse cached extract");
+        assert!(second_result.reused_cached_output);
+        assert_eq!(second_result.output_path, first_result.output_path);
     }
 
     #[test]

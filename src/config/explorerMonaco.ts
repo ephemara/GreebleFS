@@ -1,7 +1,19 @@
 import type { EditorProps } from "@monaco-editor/react";
 import type { EditorSettings } from "../store/settingsStore";
+import type {
+  OverlayMonacoThemeCompatibility,
+  OverlayMonacoThemeCompatibilityRule,
+  ResolvedOverlayAppearance,
+} from "./appearance";
 
 export type ExplorerMonacoEditorOptions = NonNullable<EditorProps["options"]>;
+
+type ExplorerMonacoThemeDescriptor = {
+  id: string;
+  base: "vs" | "vs-dark" | "hc-black";
+  colors: Record<string, string>;
+  rules: OverlayMonacoThemeCompatibilityRule[];
+};
 
 export type ExplorerTextPreviewMetrics = {
   characterCount: number;
@@ -88,6 +100,141 @@ const EXPLORER_MONACO_FAST_PATH_OPTIONS = {
   allowOverflow: false,
   wrappingIndent: "same",
 } as const satisfies ExplorerMonacoEditorOptions;
+
+function clampByte(value: number): number {
+  return Math.max(0, Math.min(255, value));
+}
+
+function parseHexColor(color: string): { red: number; green: number; blue: number } | null {
+  const trimmed = color.trim();
+  if (!trimmed.startsWith("#")) {
+    return null;
+  }
+
+  const hex = trimmed.slice(1);
+  const expanded = hex.length === 3
+    ? hex.split("").map(character => `${character}${character}`).join("")
+    : hex.length === 6 || hex.length === 8
+      ? hex.slice(0, 6)
+      : "";
+  if (!expanded || !/^[0-9a-fA-F]{6}$/.test(expanded)) {
+    return null;
+  }
+
+  return {
+    red: Number.parseInt(expanded.slice(0, 2), 16),
+    green: Number.parseInt(expanded.slice(2, 4), 16),
+    blue: Number.parseInt(expanded.slice(4, 6), 16),
+  };
+}
+
+function parseRgbColor(color: string): { red: number; green: number; blue: number } | null {
+  const match = color.trim().match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+  if (!match) {
+    return null;
+  }
+  return {
+    red: clampByte(Number.parseFloat(match[1])),
+    green: clampByte(Number.parseFloat(match[2])),
+    blue: clampByte(Number.parseFloat(match[3])),
+  };
+}
+
+function isLightAppearance(appearance: ResolvedOverlayAppearance): boolean {
+  const color = parseHexColor(appearance.theme.palette.appBackground)
+    ?? parseRgbColor(appearance.theme.palette.appBackground)
+    ?? parseHexColor(appearance.theme.palette.panelBackground)
+    ?? parseRgbColor(appearance.theme.palette.panelBackground);
+  if (!color) {
+    return false;
+  }
+  const luminance = (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue) / 255;
+  return luminance >= 0.62;
+}
+
+function normalizeMonacoThemeRules(
+  rules: OverlayMonacoThemeCompatibility["rules"],
+): OverlayMonacoThemeCompatibilityRule[] {
+  return (rules ?? [])
+    .filter(rule => typeof rule?.token === "string")
+    .map(rule => ({
+      token: rule.token,
+      foreground: rule.foreground,
+      background: rule.background,
+      fontStyle: rule.fontStyle,
+    }));
+}
+
+export function resolveExplorerMonacoThemeId(
+  appearance?: ResolvedOverlayAppearance | null,
+): string {
+  if (!appearance) {
+    return "greeblefs-monaco-default";
+  }
+  return `greeblefs-monaco-${appearance.theme.id}`;
+}
+
+export function buildExplorerMonacoThemeDescriptor(
+  appearance?: ResolvedOverlayAppearance | null,
+): ExplorerMonacoThemeDescriptor {
+  const compatibilityTheme = appearance?.theme.assets?.monacoTheme;
+  const base = compatibilityTheme?.baseTheme
+    ?? (appearance && isLightAppearance(appearance) ? "vs" : "vs-dark");
+  const colors: Record<string, string> = {
+    "editor.background": appearance?.cssVars["--overlay-explorer-code-bg"]
+      ?? appearance?.theme.palette.panelBackground
+      ?? "#0f131a",
+    "editor.foreground": appearance?.theme.palette.textPrimary ?? "#e5e7eb",
+    "editorLineNumber.foreground": appearance?.theme.palette.textDim ?? "#7c8697",
+    "editorLineNumber.activeForeground": appearance?.theme.palette.textPrimary ?? "#e5e7eb",
+    "editorCursor.foreground": appearance?.theme.palette.accent ?? "#8ab4ff",
+    "editor.selectionBackground": appearance?.theme.palette.selectionBackground ?? "rgba(138,180,255,0.18)",
+    "editor.lineHighlightBackground": appearance?.theme.palette.cardHoverBackground ?? "rgba(255,255,255,0.04)",
+    "editorWhitespace.foreground": appearance?.theme.palette.textDim ?? "#5b6472",
+    "editorIndentGuide.background": appearance?.theme.palette.border ?? "#2f3a4a",
+    "editorIndentGuide.activeBackground": appearance?.theme.palette.borderStrong ?? "#46566f",
+    "editorWidget.background": appearance?.theme.palette.cardBackground ?? "#141922",
+    "editorWidget.border": appearance?.theme.palette.borderStrong ?? "#46566f",
+    "scrollbarSlider.background": appearance?.theme.palette.border ?? "#394456",
+    "scrollbarSlider.hoverBackground": appearance?.theme.palette.borderStrong ?? "#516178",
+    "scrollbarSlider.activeBackground": appearance?.theme.palette.accentSoft ?? "#6d86aa",
+    "diffEditor.insertedTextBackground": appearance?.theme.palette.success ?? "#3fb95044",
+    "diffEditor.removedTextBackground": appearance?.theme.palette.danger ?? "#ff7b7244",
+    ...(compatibilityTheme?.colors ?? {}),
+  };
+
+  return {
+    id: resolveExplorerMonacoThemeId(appearance),
+    base,
+    colors,
+    rules: normalizeMonacoThemeRules(compatibilityTheme?.rules),
+  };
+}
+
+export function applyExplorerMonacoTheme(
+  monaco: {
+    editor?: {
+      defineTheme?: (themeName: string, data: {
+        base: "vs" | "vs-dark" | "hc-black";
+        inherit: boolean;
+        colors: Record<string, string>;
+        rules: OverlayMonacoThemeCompatibilityRule[];
+      }) => void;
+      setTheme?: (themeName: string) => void;
+    };
+  } | null | undefined,
+  appearance?: ResolvedOverlayAppearance | null,
+): string {
+  const descriptor = buildExplorerMonacoThemeDescriptor(appearance);
+  monaco?.editor?.defineTheme?.(descriptor.id, {
+    base: descriptor.base,
+    inherit: true,
+    colors: descriptor.colors,
+    rules: descriptor.rules,
+  });
+  monaco?.editor?.setTheme?.(descriptor.id);
+  return descriptor.id;
+}
 
 function getExplorerMonacoLineNumberMinChars(lineCount: number): number {
   const normalizedLineCount = Math.max(1, Math.trunc(lineCount));

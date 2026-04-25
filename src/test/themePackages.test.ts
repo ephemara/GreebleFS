@@ -22,6 +22,7 @@ interface FilesystemFixture {
   directories: Record<string, FileEntry[]>;
   textFiles?: Record<string, string>;
   base64Files?: Record<string, string>;
+  archiveOutputs?: Record<string, { outputPath: string; extractedEntryCount: number; reusedCachedOutput: boolean }>;
 }
 
 function normalizePath(path: string | undefined): string {
@@ -57,6 +58,7 @@ function createFileEntry(path: string, modified = 1711111111111): FileEntry {
 function mockFilesystem(fixture: FilesystemFixture): void {
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     const path = normalizePath((args as { path?: string } | undefined)?.path);
+    const requestPath = normalizePath((args as { request?: { archivePath?: string } } | undefined)?.request?.archivePath);
     const hasDirectory = Object.prototype.hasOwnProperty.call(fixture.directories, path);
     const hasTextFile = Object.prototype.hasOwnProperty.call(fixture.textFiles ?? {}, path);
     const hasBase64File = Object.prototype.hasOwnProperty.call(fixture.base64Files ?? {}, path);
@@ -80,6 +82,13 @@ function mockFilesystem(fixture: FilesystemFixture): void {
         return fixture.base64Files?.[path];
       }
       throw new Error(`ENOENT: ${path}`);
+    }
+
+    if (command === 'fs_extract_archive') {
+      if (Object.prototype.hasOwnProperty.call(fixture.archiveOutputs ?? {}, requestPath)) {
+        return fixture.archiveOutputs?.[requestPath];
+      }
+      throw new Error(`ENOENT: ${requestPath}`);
     }
 
     throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
@@ -505,6 +514,176 @@ describe('theme bundle loader', () => {
       'Shader bad.tsx: Error: missing shader entry',
     ]);
     expect(result.warnings).toContain('Broken Theme: Shader bad.tsx: Error: missing shader entry');
+  });
+
+  it('loads VS Code folder themes with JSONC include support and extension-contributed icon themes', async () => {
+    mockFilesystem({
+      directories: {},
+      textFiles: {
+        'themes/monokai-vscode/package.json': JSON.stringify({
+          name: 'monokai-theme',
+          publisher: 'vscode',
+          displayName: 'Monokai Import',
+          description: 'VS Code compatibility theme',
+          version: '11.4.0',
+          contributes: {
+            themes: [
+              {
+                id: 'monokai',
+                label: 'Monokai Import',
+                uiTheme: 'vs-dark',
+                path: './themes/monokai-color-theme.json',
+              },
+            ],
+            iconThemes: [
+              {
+                id: 'monokai-icons',
+                label: 'Monokai Icons',
+                path: './icons/file-icons.json',
+              },
+            ],
+          },
+        }),
+        'themes/monokai-vscode/themes/base.json': `{
+          // shared base colors
+          "colors": {
+            "focusBorder": "#e6db74",
+            "input.background": "#2d2a2e",
+            "button.background": "#75715E",
+            "terminal.background": "#161712",
+            "terminal.ansiBrightGreen": "#A6E22E"
+          }
+        }`,
+        'themes/monokai-vscode/themes/monokai-color-theme.json': `{
+          "include": "./base.json",
+          "type": "dark",
+          "colors": {
+            "editor.background": "#272822",
+            "editor.foreground": "#F8F8F2",
+            "editor.selectionBackground": "#878b9180",
+            "sideBar.background": "#1e1f1c",
+            "titleBar.activeBackground": "#1e1f1c",
+            "panel.border": "#414339",
+            "list.activeSelectionBackground": "#75715E",
+            "statusBar.background": "#414339",
+            "terminal.foreground": "#f8f8f2"
+          },
+          "tokenColors": [
+            {
+              "scope": "comment",
+              "settings": {
+                "foreground": "#88846f"
+              }
+            },
+            {
+              "scope": "keyword",
+              "settings": {
+                "foreground": "#F92672"
+              }
+            }
+          ]
+        }`,
+        'themes/monokai-vscode/icons/file-icons.json': JSON.stringify({
+          file: 'file',
+          folder: 'folder',
+          folderExpanded: 'folder_open',
+          iconDefinitions: {
+            file: { iconPath: './file.svg' },
+            folder: { iconPath: './folder.svg' },
+            folder_open: { iconPath: './folder-open.svg' },
+          },
+          fileExtensions: {
+            ts: 'file',
+          },
+        }),
+      },
+      base64Files: {
+        'themes/monokai-vscode/icons/file.svg': 'PHN2Zy8+',
+        'themes/monokai-vscode/icons/folder.svg': 'PHN2Zy8+',
+        'themes/monokai-vscode/icons/folder-open.svg': 'PHN2Zy8+',
+      },
+    });
+
+    const result = await loadThemePackagesFromDirectoryEntries([
+      { name: 'monokai-vscode', path: 'themes/monokai-vscode' },
+    ], 'themes');
+
+    const monokaiPackage = result.packages.find(pkg => pkg.id === 'vscode-vscode-monokai-theme-monokai');
+    expect(monokaiPackage?.sourceKind).toBe('vscode-theme-directory');
+    expect(monokaiPackage?.sourceInfo?.source).toBe('folder');
+    expect(monokaiPackage?.theme.palette.panelBackground).toBe('#272822');
+    expect(monokaiPackage?.theme.xterm.background).toBe('#161712');
+    expect(monokaiPackage?.theme.cssVars?.['--overlay-explorer-code-bg']).toBe('#272822');
+    expect(monokaiPackage?.theme.cssVars?.['--overlay-workbench-chrome-bg']).toBe('#1e1f1c');
+    expect(monokaiPackage?.theme.assets?.monacoTheme?.baseTheme).toBe('vs-dark');
+    expect(monokaiPackage?.theme.assets?.monacoTheme?.rules).toEqual(expect.arrayContaining([
+      expect.objectContaining({ token: 'comment', foreground: '88846f' }),
+      expect.objectContaining({ token: 'keyword', foreground: 'F92672' }),
+    ]));
+    expect(monokaiPackage?.localCatalogs?.iconThemePackages).toHaveLength(1);
+    expect(monokaiPackage?.localCatalogs?.iconThemePackages[0]?.sourceKind).toBe('vscode-icon-theme-directory');
+    expect(monokaiPackage?.theme.assets?.iconTheme?.name).toBe('Monokai Icons');
+  });
+
+  it('loads VS Code .vsix themes from cached extraction roots', async () => {
+    mockFilesystem({
+      directories: {},
+      archiveOutputs: {
+        'themes/material-night.vsix': {
+          outputPath: '/cache/material-night',
+          extractedEntryCount: 24,
+          reusedCachedOutput: true,
+        },
+      },
+      textFiles: {
+        '/cache/material-night/extension/package.json': JSON.stringify({
+          name: 'material-night',
+          publisher: 'greeble',
+          displayName: 'Material Night',
+          version: '3.1.0',
+          contributes: {
+            themes: [
+              {
+                id: 'material-night',
+                label: 'Material Night',
+                uiTheme: 'vs-dark',
+                path: './themes/material-night.json',
+              },
+            ],
+          },
+        }),
+        '/cache/material-night/extension/themes/material-night.json': `{
+          // comment to prove JSONC parsing works here too
+          "type": "dark",
+          "colors": {
+            "editor.background": "#1e1e1e",
+            "editor.foreground": "#d4d4d4",
+            "titleBar.activeBackground": "#202124",
+            "sideBar.background": "#252526",
+            "terminal.background": "#1e1e1e",
+            "terminal.foreground": "#d4d4d4"
+          },
+          "tokenColors": []
+        }`,
+      },
+    });
+
+    const result = await loadThemePackagesFromDirectoryEntries([
+      {
+        name: 'material-night.vsix',
+        path: 'themes/material-night.vsix',
+        isDirectory: false,
+        extension: 'vsix',
+      },
+    ], 'themes');
+
+    const materialPackage = result.packages.find(pkg => pkg.id === 'vscode-greeble-material-night-material-night');
+    expect(materialPackage?.sourceKind).toBe('vscode-theme-vsix');
+    expect(materialPackage?.sourceInfo?.source).toBe('vsix');
+    expect(materialPackage?.sourceInfo?.cachedExtractionPath).toBe('/cache/material-night');
+    expect(materialPackage?.manifestPath).toBe('/cache/material-night/extension/themes/material-night.json');
+    expect(materialPackage?.theme.assets?.monacoTheme?.baseTheme).toBe('vs-dark');
+    expect(materialPackage?.theme.palette.sidebarBackground).toBe('#252526');
   });
 
   it('prefers bundle-local packs when local ids collide and still resolves explicit external pack ids', async () => {
