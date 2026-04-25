@@ -92,8 +92,26 @@ let snapshotCache: ExplorerCustomizePointerSnapshot = {
   pointerPoint: null,
 };
 
-function syncSnapshotCache(): void {
-  snapshotCache = {
+function areExplorerCustomizePointerPointsEqual(
+  left: ExplorerCustomizePointerPoint | null,
+  right: ExplorerCustomizePointerPoint | null,
+): boolean {
+  return left?.x === right?.x && left?.y === right?.y;
+}
+
+function areExplorerCustomizePointerDropTargetsEqual(
+  left: ExplorerCustomizePointerDropTarget | null,
+  right: ExplorerCustomizePointerDropTarget | null,
+): boolean {
+  return (
+    left?.surfaceId === right?.surfaceId &&
+    left?.zoneId === right?.zoneId &&
+    left?.targetIndex === right?.targetIndex
+  );
+}
+
+function syncSnapshotCache(): boolean {
+  const nextSnapshot: ExplorerCustomizePointerSnapshot = {
     active: activeExplorerCustomizePointerSession?.active ?? false,
     draggingControlId: activeExplorerCustomizePointerSession?.controlId ?? null,
     sourceKind: activeExplorerCustomizePointerSession?.sourceKind ?? null,
@@ -102,10 +120,31 @@ function syncSnapshotCache(): void {
       activeExplorerCustomizePointerSession?.removeTargetActive ?? false,
     pointerPoint: activeExplorerCustomizePointerSession?.latestPoint ?? null,
   };
+  if (
+    snapshotCache.active === nextSnapshot.active &&
+    snapshotCache.draggingControlId === nextSnapshot.draggingControlId &&
+    snapshotCache.sourceKind === nextSnapshot.sourceKind &&
+    snapshotCache.removeTargetActive === nextSnapshot.removeTargetActive &&
+    areExplorerCustomizePointerDropTargetsEqual(
+      snapshotCache.dropTarget,
+      nextSnapshot.dropTarget,
+    ) &&
+    areExplorerCustomizePointerPointsEqual(
+      snapshotCache.pointerPoint,
+      nextSnapshot.pointerPoint,
+    )
+  ) {
+    return false;
+  }
+
+  snapshotCache = nextSnapshot;
+  return true;
 }
 
 function emitSnapshot(): void {
-  syncSnapshotCache();
+  if (!syncSnapshotCache()) {
+    return;
+  }
   for (const listener of snapshotListeners) {
     listener();
   }
