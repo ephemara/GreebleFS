@@ -1,3 +1,14 @@
+# 2026-04-26 - Windows Builds Now Vendor OpenSSL For Web Push
+
+- `web-push` pulls `openssl`/`openssl-sys` through the mobile push path in `src-tauri/src/lan_share/push.rs`, and the default Windows MSVC toolchain does not get a usable OpenSSL install for free.
+- The durable fix lives in `src-tauri/Cargo.toml` under the Windows target dependencies:
+  - `openssl = { version = "0.10", features = ["vendored"] }`
+  - this lets Cargo build OpenSSL from source for the target instead of depending on `OPENSSL_DIR`, `VCPKG_ROOT`, or a manually installed system tree
+- Product rule:
+  - if a future dependency reintroduces a native OpenSSL requirement on Windows, prefer a target-scoped vendored fix first before asking users to install OpenSSL by hand
+- Validation still needed:
+  - run a Windows-target `cargo check` / app build after the dependency lock settles to confirm no other native library assumptions remain in the MSVC path
+
 # 2026-04-26 - ResizablePane Now Uses A Local RAF Preview Lane Instead Of React State On Every Pixel
 
 - `src/components/ResizablePane.tsx` was a shell-wide low-FPS culprit because it called `onSizeChange(...)` on every mousemove, which forced parent React/state/layout work through every resize tick across Settings, Git, Notes, Plugins, Storage, Screenshots, and explorer rails/actions.
