@@ -1,3 +1,27 @@
+# 2026-04-26 - Folder And Archive Preview Now Share Persistent Collection Modes
+
+- Folder and archive preview lanes no longer own separate list UIs. `src/components/ExplorerCollectionPreviewSurface.tsx` is now the shared preview-pane collection surface used by both `ExplorerFolderPreview.tsx` and `ExplorerArchivePreview.tsx`.
+- Durable mode routing:
+  - `src/config/explorerCollectionPreviewModes.ts` is the source of truth for collection preview mode ids, labels, descriptions, and stepping order.
+  - `src/store/settingsStore.ts` persists `settings.explorer.collectionPreviewMode`, so the chosen mode is shared across folder and archive previews instead of resetting per document.
+  - `src/config/hotkeys.ts`, `src/components/SettingsPage.tsx`, and `src/components/FileExplorer.tsx` wire the shared cycling hotkeys (`Ctrl+Alt+V` forward, `Ctrl+Alt+Shift+V` backward).
+- Current shared modes are:
+  - `list`: dense row browser
+  - `overview`: forced-thumbnail mosaic
+  - `strata`: category ribbons
+  - `timeline`: recency-first icon river
+  - `orbit`: clustered category hub cards
+- Durable thumbnail rule for `overview`:
+  - `src/runtime/explorerCollectionPreviewThumbnails.ts` intentionally bypasses the normal explorer thumbnail toggle and requests artifact/model thumbnails anyway.
+  - Archive members must stage through `materializeExplorerArchiveEntry({ mode: "stageTemporary" })` before thumbnail reads; do not reintroduce direct virtual-archive thumbnail assumptions in React.
+- Durable interaction rule:
+  - Every collection mode must keep using `src/components/useExplorerPreviewEntryDirectDrag.ts` for selection, open, and drag-out behavior. If a new layout bypasses that hook, multi-select drag consistency between preview modes breaks.
+- Durable validation:
+  - passed: `bunx vitest run src/test/explorerCollectionPreviewThumbnails.test.ts src/test/explorerFolderPreview.test.tsx src/test/explorerArchivePreview.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "cycles shared folder preview modes from the explorer hotkeys" --reporter=dot`
+  - note: targeted `bunx tsc --noEmit --pretty false -p tsconfig.json` filtering still surfaces a pre-existing unrelated `src/components/SettingsPage.tsx` typing error around `activeSectionMeta.shell?.disableContentScroll`.
+
 # 2026-04-26 - Explorer Refresh Now Reconciles Stable File Identities And Shared Thumbnail Artifacts
 
 - Local explorer thumbnail churn is no longer purely path-first:

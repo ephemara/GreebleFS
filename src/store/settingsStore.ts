@@ -42,6 +42,10 @@ import {
   type ExplorerModeProfileId,
 } from '../config/explorerModeProfiles';
 import {
+  normalizeExplorerCollectionPreviewMode,
+  type ExplorerCollectionPreviewMode,
+} from '../config/explorerCollectionPreviewModes';
+import {
   defaultExplorerThumbnailSettings,
   normalizeExplorerThumbnailSettings,
   type ExplorerThumbnailSettings,
@@ -200,6 +204,7 @@ export interface ExplorerSettings {
   defaultFolderIcon: FolderIconValue;
   folderIconRules: FolderIconRule[];
   thumbnails: ExplorerThumbnailSettings;
+  collectionPreviewMode: ExplorerCollectionPreviewMode;
   modeProfileOverridesByThemeId: Record<string, ExplorerModeProfileId>;
   chromeLayoutOverridesByThemeId: Record<string, Record<string, ExplorerChromeOverrideSnapshot>>;
   activeMenuPackId: string | null;
@@ -485,6 +490,9 @@ function normalizeExplorerSettings(
     thumbnails: hasExplicitThumbnailSettings
       ? normalizeExplorerThumbnailSettings(updates?.thumbnails)
       : base.thumbnails,
+    collectionPreviewMode: normalizeExplorerCollectionPreviewMode(
+      updates?.collectionPreviewMode ?? base.collectionPreviewMode,
+    ),
     modeProfileOverridesByThemeId: hasExplicitModeProfileOverrides
       ? normalizeExplorerModeProfileOverrideMap(updates?.modeProfileOverridesByThemeId)
       : base.modeProfileOverridesByThemeId,
@@ -1094,6 +1102,7 @@ export const defaultSettings: Settings = {
     defaultFolderIcon: DEFAULT_FOLDER_ICON_VALUE,
     folderIconRules: createDefaultFolderIconRules(),
     thumbnails: defaultExplorerThumbnailSettings,
+    collectionPreviewMode: 'list',
     modeProfileOverridesByThemeId: {},
     chromeLayoutOverridesByThemeId: {},
     activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
@@ -1294,6 +1303,9 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       ...base.explorer,
       ...imported?.explorer,
       viewMode: normalizeExplorerViewMode(imported?.explorer?.viewMode ?? base.explorer.viewMode),
+      collectionPreviewMode: normalizeExplorerCollectionPreviewMode(
+        imported?.explorer?.collectionPreviewMode ?? base.explorer.collectionPreviewMode,
+      ),
       gridZoom: normalizeExplorerGridZoom(
         imported?.explorer?.gridZoom,
         normalizeExplorerViewMode(imported?.explorer?.viewMode ?? base.explorer.viewMode),

@@ -6,6 +6,7 @@ import { buildExplorerArchiveVirtualPath } from "../config/explorerArchives";
 import { getFolderIconSrc } from "../config/folderIcons";
 import { getBuiltInIconTheme, resolveFileIconSrc } from "../config/iconTheme";
 import { explorerBackendContract } from "../runtime/explorerBackend";
+import { useSettingsStore } from "../store/settingsStore";
 import { createTestExplorerFileEntry } from "./helpers/explorerEntries";
 
 vi.mock("../runtime/explorerBackend", () => ({
@@ -17,6 +18,7 @@ vi.mock("../runtime/explorerBackend", () => ({
 describe("ExplorerArchivePreview", () => {
   beforeEach(() => {
     vi.mocked(explorerBackendContract.listArchiveDir).mockReset();
+    useSettingsStore.getState().resetToDefaults();
   });
 
   const zipDescriptor = {
@@ -254,5 +256,110 @@ describe("ExplorerArchivePreview", () => {
     expect(
       screen.getByRole("button", { name: /Extract to New Folder/i }),
     ).toHaveAttribute("data-overlay-recommended-action", "true");
+  });
+
+  it("keeps orbit mode entries draggable in archive previews", async () => {
+    const archivePath = "C:\\Assets\\demo.zip";
+    const onOpenEntry = vi.fn();
+    const onStartDragOutEntry = vi.fn();
+    const texturesPath = buildExplorerArchiveVirtualPath({
+      archivePath,
+      entryPath: "textures",
+    });
+    const readmePath = buildExplorerArchiveVirtualPath({
+      archivePath,
+      entryPath: "docs/readme.txt",
+    });
+
+    useSettingsStore.getState().updateExplorer({
+      collectionPreviewMode: "orbit",
+    });
+
+    vi.mocked(explorerBackendContract.listArchiveDir).mockResolvedValue([
+      createTestExplorerFileEntry({
+        name: "textures",
+        path: texturesPath,
+        is_dir: true,
+        size: 0,
+        modified: 1713400000000,
+        extension: "",
+        is_hidden: false,
+        is_symlink: false,
+      }),
+      createTestExplorerFileEntry({
+        name: "readme.txt",
+        path: readmePath,
+        is_dir: false,
+        size: 1024,
+        modified: 1713400000000,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      }),
+    ]);
+
+    render(
+      <ExplorerArchivePreview
+        archivePath={archivePath}
+        archiveName="demo.zip"
+        archiveSize={2048}
+        descriptor={zipDescriptor}
+        onExtract={() => undefined}
+        onOpenEntry={onOpenEntry}
+        onStartDragOutEntry={onStartDragOutEntry}
+      />,
+    );
+
+    const folderOrbit = await screen.findByRole("button", {
+      name: /open archive folder textures/i,
+    });
+    const fileOrbit = await screen.findByRole("button", {
+      name: /open archive file readme\.txt/i,
+    });
+
+    expect(
+      screen.getByRole("button", { name: /use orbit preview mode/i }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(folderOrbit, { ctrlKey: true });
+    fireEvent.click(fileOrbit, { ctrlKey: true });
+
+    expect(folderOrbit).toHaveAttribute("aria-pressed", "true");
+    expect(fileOrbit).toHaveAttribute("aria-pressed", "true");
+    expect(onOpenEntry).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(fileOrbit, {
+      button: 0,
+      pointerId: 3,
+      clientX: 16,
+      clientY: 16,
+    });
+    fireEvent.pointerMove(window, {
+      pointerId: 3,
+      clientX: 30,
+      clientY: 16,
+    });
+    fireEvent.click(fileOrbit);
+
+    expect(onStartDragOutEntry).toHaveBeenCalledTimes(1);
+    expect(onStartDragOutEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entry: expect.objectContaining({
+          path: readmePath,
+          name: "readme.txt",
+        }),
+        entries: [
+          expect.objectContaining({
+            path: texturesPath,
+            name: "textures",
+          }),
+          expect.objectContaining({
+            path: readmePath,
+            name: "readme.txt",
+          }),
+        ],
+      }),
+    );
+    expect(onOpenEntry).not.toHaveBeenCalled();
   });
 });

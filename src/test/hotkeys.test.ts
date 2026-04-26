@@ -50,6 +50,8 @@ describe('hotkey config helpers', () => {
     expect(defaults.explorerMoveSelectionLeft).toBe('ArrowLeft');
     expect(defaults.explorerMoveSelectionRight).toBe('ArrowRight');
     expect(defaults.toggleExplorerSources).toBe('Ctrl+B');
+    expect(defaults.cycleCollectionPreviewMode).toBe('Ctrl+Alt+V');
+    expect(defaults.cycleCollectionPreviewModeReverse).toBe('Ctrl+Alt+Shift+V');
     expect(defaults.togglePreviewLock).toBe('Ctrl+Alt+P');
     expect(defaults.selectAllExplorer).toBe('Ctrl+A');
     expect(defaults.clearExplorerSelection).toBe('Ctrl+Shift+A');

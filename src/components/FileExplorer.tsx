@@ -94,6 +94,7 @@ import {
   parseExplorerArchiveVirtualPath,
   type ExplorerArchiveFormatDescriptor,
 } from "../config/explorerArchives";
+import { stepExplorerCollectionPreviewMode } from "../config/explorerCollectionPreviewModes";
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
@@ -8315,6 +8316,7 @@ export function FileExplorer({
   );
   const showHidden = explorerSettings.showHiddenFiles;
   const explorerThumbnailSettings = explorerSettings.thumbnails;
+  const collectionPreviewMode = explorerSettings.collectionPreviewMode;
   const viewMode = explorerSettings.viewMode;
   const gridZoom = explorerSettings.gridZoom;
   const experimentalViewMode = explorerSettings.experimentalViewMode;
@@ -23500,6 +23502,32 @@ export function FileExplorer({
         return;
       }
       if (
+        (preview.type === "folder" || preview.type === "archive") &&
+        matchesKeybinding(e, keybindings.cycleCollectionPreviewMode)
+      ) {
+        e.preventDefault();
+        updateExplorerSettings({
+          collectionPreviewMode: stepExplorerCollectionPreviewMode(
+            collectionPreviewMode,
+            1,
+          ),
+        });
+        return;
+      }
+      if (
+        (preview.type === "folder" || preview.type === "archive") &&
+        matchesKeybinding(e, keybindings.cycleCollectionPreviewModeReverse)
+      ) {
+        e.preventDefault();
+        updateExplorerSettings({
+          collectionPreviewMode: stepExplorerCollectionPreviewMode(
+            collectionPreviewMode,
+            -1,
+          ),
+        });
+        return;
+      }
+      if (
         matchesKeybinding(e, keybindings.terminalFocus) &&
         !isEmbeddedExplorerTerminalFocus &&
         explorerTerminalWorkingDirectory
@@ -23727,6 +23755,7 @@ export function FileExplorer({
     clearExplorerSelection,
     chromeHotkeyCaptureControlId,
     cancelExplorerPicker,
+    collectionPreviewMode,
     confirmExplorerPickerSelection,
     currentLocationSupportsMutation,
     currentPathIsArchiveVirtual,

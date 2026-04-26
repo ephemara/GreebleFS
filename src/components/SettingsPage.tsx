@@ -12888,6 +12888,8 @@ export function SettingsPage({
                       "explorerMoveSelectionLeft",
                       "explorerMoveSelectionRight",
                       "toggleExplorerSources",
+                      "cycleCollectionPreviewMode",
+                      "cycleCollectionPreviewModeReverse",
                       "togglePreviewLock",
                       "copyPath",
                       "copySelection",

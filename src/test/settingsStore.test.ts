@@ -86,6 +86,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.folderClickMode).toBe('double');
     expect(settings.explorer.doubleClickEmptyToGoBack).toBe(false);
     expect(settings.explorer.thumbnails).toEqual(defaultExplorerThumbnailSettings);
+    expect(settings.explorer.collectionPreviewMode).toBe('list');
     expect(settings.explorer.modeProfileOverridesByThemeId).toEqual({});
     expect(settings.explorer.chromeLayoutOverridesByThemeId).toEqual({});
     expect(settings.explorer.activeMenuPackId).toBe(DEFAULT_EXPLORER_MENU_PACK_ID);
@@ -161,6 +162,8 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.explorerMoveSelectionLeft).toBe('ArrowLeft');
     expect(settings.keybindings.explorerMoveSelectionRight).toBe('ArrowRight');
     expect(settings.keybindings.toggleExplorerSources).toBe('Ctrl+B');
+    expect(settings.keybindings.cycleCollectionPreviewMode).toBe('Ctrl+Alt+V');
+    expect(settings.keybindings.cycleCollectionPreviewModeReverse).toBe('Ctrl+Alt+Shift+V');
     expect(settings.keybindings.copySelection).toBe('Ctrl+C');
     expect(settings.keybindings.cutSelection).toBe('Ctrl+X');
     expect(settings.keybindings.pasteSelection).toBe('Ctrl+V');
@@ -473,6 +476,15 @@ describe('useSettingsStore.updateExplorer()', () => {
     const store = useSettingsStore.getState();
     store.updateExplorer({ folderClickMode: 'single' });
     expect(useSettingsStore.getState().settings.explorer.folderClickMode).toBe('single');
+  });
+
+  it('updates and normalizes the shared collection preview mode', () => {
+    const store = useSettingsStore.getState();
+    store.updateExplorer({ collectionPreviewMode: 'orbit' });
+    expect(useSettingsStore.getState().settings.explorer.collectionPreviewMode).toBe('orbit');
+
+    store.updateExplorer({ collectionPreviewMode: 'bogus' as never });
+    expect(useSettingsStore.getState().settings.explorer.collectionPreviewMode).toBe('list');
   });
 
   it('does not mutate other setting sections', () => {
@@ -1096,6 +1108,16 @@ describe('mergeSettingsWithDefaults()', () => {
     });
 
     expect(merged.explorer.folderClickMode).toBe(defaultSettings.explorer.folderClickMode);
+  });
+
+  it('normalizes unsupported collection preview modes back to the default', () => {
+    const merged = mergeSettingsWithDefaults({
+      explorer: {
+        collectionPreviewMode: 'mosaic-bad',
+      } as unknown as typeof defaultSettings.explorer,
+    });
+
+    expect(merged.explorer.collectionPreviewMode).toBe(defaultSettings.explorer.collectionPreviewMode);
   });
 
   it('maps legacy explorer grid mode and preserves persisted row layout presets', () => {

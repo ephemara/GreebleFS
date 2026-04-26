@@ -2304,6 +2304,91 @@ describe("FileExplorer view modes", () => {
     });
   });
 
+  it("cycles shared folder preview modes from the explorer hotkeys", async () => {
+    const folderEntries = [
+      {
+        name: "shots",
+        path: `${REPO_ROOT}\\alpha\\shots`,
+        is_dir: true,
+        size: 0,
+        modified: 1713400000000,
+        extension: "",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "readme.md",
+        path: `${REPO_ROOT}\\alpha\\readme.md`,
+        is_dir: false,
+        size: 1024,
+        modified: 1713400000000,
+        extension: "md",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ] as const;
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as
+          | { path?: string; showHidden?: boolean }
+          | undefined;
+        if (
+          (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
+          payload?.path === `${REPO_ROOT}\\alpha`
+        ) {
+          return folderEntries;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(screen.getByText("alpha"));
+    await screen.findByText("Folder Contents");
+
+    expect(useSettingsStore.getState().settings.explorer.collectionPreviewMode).toBe(
+      "list",
+    );
+
+    fireEvent.keyDown(window, { key: "v", ctrlKey: true, altKey: true });
+
+    await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer.collectionPreviewMode,
+      ).toBe("overview");
+      expect(
+        within(getPreviewPane()).getByRole("button", {
+          name: /use overview preview mode/i,
+        }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+
+    fireEvent.keyDown(window, {
+      key: "v",
+      ctrlKey: true,
+      altKey: true,
+      shiftKey: true,
+    });
+
+    await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer.collectionPreviewMode,
+      ).toBe("list");
+      expect(
+        within(getPreviewPane()).getByRole("button", {
+          name: /use list preview mode/i,
+        }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+  });
+
   it("uses Ctrl+C to arm Dolphin-style selection mode before copying", async () => {
     renderExplorer();
     await screen.findByText("notes.txt");

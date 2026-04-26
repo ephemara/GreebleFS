@@ -25,6 +25,8 @@ export type HotkeyBindingKey =
   | 'focusExplorerAddressBar'
   | 'focusExplorerPreview'
   | 'toggleExplorerSources'
+  | 'cycleCollectionPreviewMode'
+  | 'cycleCollectionPreviewModeReverse'
   | 'explorerMoveSelectionUp'
   | 'explorerMoveSelectionDown'
   | 'explorerMoveSelectionLeft'
@@ -291,6 +293,20 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Toggle Sources Panel',
     description: 'Show or hide the explorer sources panel.',
     defaultValue: 'Ctrl+B',
+    scope: 'local',
+  },
+  {
+    key: 'cycleCollectionPreviewMode',
+    label: 'Cycle Collection Preview Mode',
+    description: 'Advance the shared folder and archive preview pane through its collection preview modes.',
+    defaultValue: 'Ctrl+Alt+V',
+    scope: 'local',
+  },
+  {
+    key: 'cycleCollectionPreviewModeReverse',
+    label: 'Reverse Collection Preview Mode',
+    description: 'Move backward through the shared folder and archive preview pane collection preview modes.',
+    defaultValue: 'Ctrl+Alt+Shift+V',
     scope: 'local',
   },
   {
