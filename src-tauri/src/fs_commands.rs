@@ -18,6 +18,7 @@ use crate::explorer_identity::{
 };
 use crate::explorer_pro_commands::FsBatchRenameItem;
 use crate::telemetry::{finish_native_span, start_native_span};
+pub use crate::volume_inventory::DriveInfo;
 use md5::Context as Md5Context;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -70,15 +71,6 @@ pub struct FileEntry {
     pub identity_kind: ExplorerIdentityKind,
     #[serde(rename = "contentRevision")]
     pub content_revision: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
-pub struct DriveInfo {
-    pub letter: String,
-    pub label: String,
-    pub total_bytes: u64,
-    pub free_bytes: u64,
-    pub drive_type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
@@ -2959,278 +2951,10 @@ pub async fn fs_fuzzy_filter_entries(
     Ok(matches)
 }
 
-// ─── fs_get_drives (Windows) ──────────────────────────────────────────────────
-
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_get_drives() -> Result<Vec<DriveInfo>, String> {
-    #[cfg(target_os = "windows")]
-    {
-        let drives = get_windows_drives()?;
-        return Ok(drives);
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let mut drives = Vec::new();
-        if let Some(home_drive) = unix_home_drive_info() {
-            drives.push(home_drive);
-        }
-        drives.push(root_drive_info());
-        drives.extend(read_unix_mount_directories("/Volumes"));
-        return Ok(drives);
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let mut drives = Vec::new();
-        if let Some(home_drive) = unix_home_drive_info() {
-            drives.push(home_drive);
-        }
-        drives.push(root_drive_info());
-        drives.extend(read_unix_mount_directories("/run/media"));
-        drives.extend(read_nested_unix_mount_directories("/run/media"));
-        drives.extend(read_unix_mount_directories("/media"));
-        drives.extend(read_unix_mount_directories("/mnt"));
-        return Ok(deduplicate_drives(drives));
-    }
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    {
-        Ok(vec![root_drive_info()])
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn get_windows_drives() -> Result<Vec<DriveInfo>, String> {
-    use std::ffi::OsString;
-    use std::os::windows::ffi::OsStringExt;
-
-    // GetLogicalDriveStringsW returns a multi-string (double-null terminated)
-    let mut buffer = vec![0u16; 256];
-    let len = unsafe {
-        windows_sys::Win32::Storage::FileSystem::GetLogicalDriveStringsW(
-            buffer.len() as u32,
-            buffer.as_mut_ptr(),
-        )
-    };
-
-    if len == 0 {
-        return Err("Failed to enumerate drives".to_string());
-    }
-
-    let mut drives = Vec::new();
-    let mut start = 0;
-    for i in 0..len as usize {
-        if buffer[i] == 0 {
-            if i > start {
-                let drive_str = OsString::from_wide(&buffer[start..i])
-                    .to_string_lossy()
-                    .to_string();
-                let letter = drive_str.trim_end_matches('\\').to_string();
-
-                // Get drive info
-                let mut total_bytes: u64 = 0;
-                let mut free_bytes: u64 = 0;
-                let drive_w: Vec<u16> =
-                    drive_str.encode_utf16().chain(std::iter::once(0)).collect();
-
-                unsafe {
-                    windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
-                        drive_w.as_ptr(),
-                        std::ptr::null_mut(),
-                        &mut total_bytes as *mut u64,
-                        &mut free_bytes as *mut u64,
-                    );
-                }
-
-                let drive_type = unsafe {
-                    let t =
-                        windows_sys::Win32::Storage::FileSystem::GetDriveTypeW(drive_w.as_ptr());
-                    match t {
-                        2 => "removable",
-                        3 => "fixed",
-                        4 => "remote",
-                        5 => "cdrom",
-                        6 => "ramdisk",
-                        _ => "unknown",
-                    }
-                };
-
-                // Get volume label
-                let mut vol_buf = vec![0u16; 128];
-                unsafe {
-                    windows_sys::Win32::Storage::FileSystem::GetVolumeInformationW(
-                        drive_w.as_ptr(),
-                        vol_buf.as_mut_ptr(),
-                        vol_buf.len() as u32,
-                        std::ptr::null_mut(),
-                        std::ptr::null_mut(),
-                        std::ptr::null_mut(),
-                        std::ptr::null_mut(),
-                        0,
-                    );
-                }
-                let label_end = vol_buf.iter().position(|&c| c == 0).unwrap_or(0);
-                let label = OsString::from_wide(&vol_buf[..label_end])
-                    .to_string_lossy()
-                    .to_string();
-                let label = if label.is_empty() {
-                    letter.clone()
-                } else {
-                    label
-                };
-
-                drives.push(DriveInfo {
-                    letter: letter.clone(),
-                    label,
-                    total_bytes,
-                    free_bytes,
-                    drive_type: drive_type.to_string(),
-                });
-            }
-            start = i + 1;
-        }
-    }
-
-    Ok(drives)
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn root_drive_info() -> DriveInfo {
-    let (total_bytes, free_bytes) = unix_drive_capacity(Path::new("/"));
-    DriveInfo {
-        letter: "/".to_string(),
-        label: "Root".to_string(),
-        total_bytes,
-        free_bytes,
-        drive_type: "fixed".to_string(),
-    }
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-fn root_drive_info() -> DriveInfo {
-    DriveInfo {
-        letter: "/".to_string(),
-        label: "Root".to_string(),
-        total_bytes: 0,
-        free_bytes: 0,
-        drive_type: "fixed".to_string(),
-    }
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn unix_home_drive_info() -> Option<DriveInfo> {
-    let home_dir = dirs::home_dir()?;
-    let normalized_path = home_dir.to_string_lossy().trim().to_string();
-    if normalized_path.is_empty() {
-        return None;
-    }
-    let (total_bytes, free_bytes) = unix_drive_capacity(&home_dir);
-
-    Some(DriveInfo {
-        letter: normalized_path,
-        label: "Home".to_string(),
-        total_bytes,
-        free_bytes,
-        drive_type: "home".to_string(),
-    })
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn unix_drive_capacity(path: &Path) -> (u64, u64) {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-
-    let Ok(path_bytes) = CString::new(path.as_os_str().as_bytes()) else {
-        return (0, 0);
-    };
-
-    let mut stats = unsafe { std::mem::zeroed::<libc::statvfs>() };
-    let status = unsafe { libc::statvfs(path_bytes.as_ptr(), &mut stats) };
-    if status != 0 {
-        return (0, 0);
-    }
-
-    let block_size = stats.f_bsize as u64;
-    let total_bytes = (stats.f_blocks as u64).saturating_mul(block_size);
-    let free_bytes = (stats.f_bavail as u64).saturating_mul(block_size);
-    (total_bytes, free_bytes)
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn read_unix_mount_directories(base_path: &str) -> Vec<DriveInfo> {
-    let path = Path::new(base_path);
-    let read_dir = match std::fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(_) => return Vec::new(),
-    };
-
-    let mut drives = Vec::new();
-    for entry in read_dir.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if !file_type.is_dir() {
-            continue;
-        }
-
-        let mount_path = entry.path();
-        let label = entry.file_name().to_string_lossy().to_string();
-        let (total_bytes, free_bytes) = unix_drive_capacity(&mount_path);
-        drives.push(DriveInfo {
-            letter: mount_path.to_string_lossy().to_string(),
-            label: if label.is_empty() {
-                mount_path.to_string_lossy().to_string()
-            } else {
-                label
-            },
-            total_bytes,
-            free_bytes,
-            drive_type: "mounted".to_string(),
-        });
-    }
-
-    drives.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
-    drives
-}
-
-#[cfg(target_os = "linux")]
-fn read_nested_unix_mount_directories(base_path: &str) -> Vec<DriveInfo> {
-    let path = Path::new(base_path);
-    let read_dir = match std::fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(_) => return Vec::new(),
-    };
-
-    let mut drives = Vec::new();
-    for entry in read_dir.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if !file_type.is_dir() {
-            continue;
-        }
-
-        let child_path = entry.path().to_string_lossy().to_string();
-        drives.extend(read_unix_mount_directories(&child_path));
-    }
-
-    drives
-}
-
-#[cfg(target_os = "linux")]
-fn deduplicate_drives(drives: Vec<DriveInfo>) -> Vec<DriveInfo> {
-    use std::collections::HashSet;
-
-    let mut seen = HashSet::new();
-    let mut unique = Vec::new();
-    for drive in drives {
-        if seen.insert(drive.letter.clone()) {
-            unique.push(drive);
-        }
-    }
-    unique
+    crate::volume_inventory::list_local_volumes()
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -5886,24 +5610,42 @@ pub async fn fs_is_process_elevated() -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::explorer_identity::initialize_explorer_identity_store;
     use image::{Rgba, RgbaImage};
     use std::fs;
     use std::path::PathBuf;
+    use tauri::Manager;
     use tempfile::TempDir;
 
     // ── helper: build a FileEntry directly (bypasses async/Tauri) ──────────────
 
     fn make_entry(name: &str, is_dir: bool, size: u64, ext: &str, hidden: bool) -> FileEntry {
+        let modified = 1_700_000_000_000;
+        let revision = build_local_entry_content_revision(size, modified, is_dir, false);
+        let identity =
+            build_virtual_identity("test-entry", &format!(r"C:\test\{name}"), &revision);
         FileEntry {
             name: name.to_string(),
-            path: format!("C:\\test\\{}", name),
+            path: format!(r"C:\test\{name}"),
             is_dir,
             size,
-            modified: 1_700_000_000_000,
+            modified,
             extension: ext.to_string(),
             is_hidden: hidden,
             is_symlink: false,
+            entity_id: identity.entity_id,
+            identity_kind: identity.identity_kind,
+            content_revision: identity.content_revision,
         }
+    }
+
+    fn create_test_app() -> tauri::App {
+        let app = tauri::Builder::default()
+            .build(tauri::generate_context!())
+            .expect("failed to create test app");
+        app.manage(ExplorerIdentityManager::default());
+        let _ = initialize_explorer_identity_store(app.handle());
+        app
     }
 
     // ── Sorting logic (extracted so we can test it without async/Tauri) ─────────
@@ -6085,15 +5827,24 @@ mod tests {
     #[test]
     fn drive_info_serialises_to_json() {
         let drive = DriveInfo {
-            letter: "C:".to_string(),
+            id: "volume:system".to_string(),
+            path: "C:\\".to_string(),
             label: "OS".to_string(),
             total_bytes: 512_000_000_000,
             free_bytes: 128_000_000_000,
-            drive_type: "fixed".to_string(),
+            classification: crate::volume_inventory::DriveClassification::System,
+            volume_id: "disk-serial-123".to_string(),
+            file_system_type: Some("ntfs".to_string()),
+            is_removable: false,
+            is_network: false,
+            is_read_only: false,
+            supports_scan: true,
         };
         let json = serde_json::to_string(&drive).expect("serialisation failed");
-        assert!(json.contains("\"letter\":\"C:\""));
-        assert!(json.contains("\"drive_type\":\"fixed\""));
+        assert!(json.contains("\"id\":\"volume:system\""));
+        assert!(json.contains("\"path\":\"C:\\\\\""));
+        assert!(json.contains("\"classification\":\"system\""));
+        assert!(json.contains("\"supportsScan\":true"));
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -6105,14 +5856,34 @@ mod tests {
     }
 
     async fn test_fs_list_dir(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
-        list_dir(PathBuf::from(path), show_hidden, false).await
+        let app = create_test_app();
+        let app_handle = app.handle().clone();
+        let identity_manager = app.state::<ExplorerIdentityManager>();
+        list_dir(
+            &app_handle,
+            &identity_manager,
+            PathBuf::from(path),
+            show_hidden,
+            false,
+        )
+        .await
     }
 
     async fn test_fs_list_dir_uncached(
         path: String,
         show_hidden: bool,
     ) -> Result<Vec<FileEntry>, String> {
-        list_dir(PathBuf::from(path), show_hidden, true).await
+        let app = create_test_app();
+        let app_handle = app.handle().clone();
+        let identity_manager = app.state::<ExplorerIdentityManager>();
+        list_dir(
+            &app_handle,
+            &identity_manager,
+            PathBuf::from(path),
+            show_hidden,
+            true,
+        )
+        .await
     }
 
     async fn test_fs_search_entries(
@@ -6169,6 +5940,46 @@ mod tests {
                 .collect(),
             force_refresh.unwrap_or(false),
         ))
+    }
+
+    async fn fs_rename(old_path: String, new_path: String) -> Result<(), String> {
+        let app = create_test_app();
+        super::fs_rename(
+            app.handle().clone(),
+            app.state::<ExplorerIdentityManager>(),
+            old_path,
+            new_path,
+        )
+        .await
+    }
+
+    async fn fs_move(src: String, dst: String) -> Result<(), String> {
+        let app = create_test_app();
+        super::fs_move(
+            app.handle().clone(),
+            app.state::<ExplorerIdentityManager>(),
+            src,
+            dst,
+        )
+        .await
+    }
+
+    async fn fs_transfer_items(
+        target_dir: String,
+        sources: Vec<String>,
+        operation: FileTransferOperation,
+        collision_policy: Option<FileTransferCollisionPolicy>,
+    ) -> Result<Vec<FileTransferResult>, String> {
+        let app = create_test_app();
+        super::fs_transfer_items(
+            app.handle().clone(),
+            app.state::<ExplorerIdentityManager>(),
+            target_dir,
+            sources,
+            operation,
+            collision_policy,
+        )
+        .await
     }
 
     #[cfg(test)]
@@ -8726,68 +8537,36 @@ mod tests {
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
-    fn unix_home_drive_info_returns_absolute_home_drive() {
-        let drive = unix_home_drive_info().expect("unix home drive should exist");
+    fn local_volume_inventory_surfaces_absolute_home_drive() {
+        let drive = crate::volume_inventory::list_local_volumes()
+            .expect("local volume inventory should succeed")
+            .into_iter()
+            .find(|drive| {
+                drive.classification == crate::volume_inventory::DriveClassification::Home
+            })
+            .expect("unix home drive should exist");
         assert_eq!(drive.label, "Home");
-        assert_eq!(drive.drive_type, "home");
         assert!(
-            Path::new(&drive.letter).is_absolute(),
+            Path::new(&drive.path).is_absolute(),
             "home drive path '{}' should be absolute",
-            drive.letter
+            drive.path
         );
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
-    fn unix_drive_capacity_returns_bytes_for_existing_path() {
-        let temp = tempfile::tempdir().expect("failed to create tempdir");
-        let (total_bytes, free_bytes) = unix_drive_capacity(temp.path());
+    fn local_volume_inventory_reports_capacity() {
+        let drives = crate::volume_inventory::list_local_volumes()
+            .expect("local volume inventory should succeed");
         assert!(
-            total_bytes > 0,
-            "expected positive total bytes for tempdir filesystem"
+            drives.iter().any(|drive| drive.total_bytes > 0),
+            "expected at least one surfaced volume to report capacity"
         );
         assert!(
-            free_bytes <= total_bytes,
+            drives
+                .iter()
+                .all(|drive| drive.free_bytes <= drive.total_bytes),
             "free bytes should not exceed total bytes"
-        );
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[test]
-    fn read_unix_mount_directories_populates_capacity_for_existing_directories() {
-        let temp = tempfile::tempdir().expect("failed to create tempdir");
-        fs::create_dir_all(temp.path().join("USB")).expect("failed to create synthetic mount dir");
-
-        let base_path = temp.path().to_string_lossy().to_string();
-        let drives = read_unix_mount_directories(&base_path);
-        let drive = drives
-            .iter()
-            .find(|drive| drive.label == "USB")
-            .expect("expected synthetic mount directory");
-
-        assert!(
-            drive.total_bytes > 0,
-            "expected capacity for unix mount directory entries"
-        );
-        assert!(
-            drive.free_bytes <= drive.total_bytes,
-            "free bytes should not exceed total bytes"
-        );
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn read_nested_unix_mount_directories_reads_second_level_mounts() {
-        let temp = tempfile::tempdir().expect("failed to create tempdir");
-        fs::create_dir_all(temp.path().join("alice").join("Archive"))
-            .expect("failed to create nested synthetic mount dir");
-
-        let base_path = temp.path().to_string_lossy().to_string();
-        let drives = read_nested_unix_mount_directories(&base_path);
-
-        assert!(
-            drives.iter().any(|drive| drive.label == "Archive"),
-            "expected nested unix mount discovery to include second-level directories"
         );
     }
 

@@ -3142,17 +3142,29 @@
 - Durable implementation shape:
   - `src/runtime/fileOperationsWindow.ts` is the shared request/completion bridge for the `file-operations` window. It owns the window label, persisted request keys, cross-window event names, and the helpers that create/focus the popout plus broadcast completed transfers.
   - `src/main.tsx` now bootstraps by webview label. The normal `main` window still renders `App`, while the `file-operations` label renders `src/windows/FileOperationsWindowApp.tsx`.
-  - `src/windows/FileOperationsWindowApp.tsx` is a standalone themed destination picker plus Task Center surface. It can browse folders, create a destination folder, submit copy/move operations, and then fall back to the shared explorer task feed.
+  - `src/windows/FileOperationsWindowApp.tsx` is now the standalone themed Task Center surface. Destination picking moved into the dedicated explorer picker window path, while the popout keeps transfer/task visibility in one shell-owned place.
   - `src/components/explorer/ExplorerTaskCenterContent.tsx` is the shared task-center body used by both the inline explorer badge and the dedicated popout window.
   - `src/components/explorer/ExplorerTaskStatusBadge.tsx` now exposes a `Pop Out` action so operators can move from the inline status surface into the standalone file-operations window.
-  - `src/components/FileExplorer.tsx` now routes explicit `Copy To...` / `Move To...` context-menu actions through the popout destination picker, and all successful transfer paths publish a cross-window completion event so other explorer instances can refresh when source or target folders change.
+  - `src/components/FileExplorer.tsx` now routes explicit `Copy To...` / `Move To...` context-menu actions through the dedicated explorer picker window, and all successful transfer paths publish a cross-window completion event so other explorer instances can refresh when source or target folders change.
   - `src/App.tsx` now routes the command-palette task-center action into the dedicated file-operations window instead of only toggling the inline badge.
 - Durable product note:
-  - the file-operations window is intentionally a shell surface, not a second filesystem truth layer. Rust task/transfer truth still flows through `src/runtime/explorerBackend.ts`; the popout only owns presentation, destination selection, and cross-window coordination.
+  - the file-operations window is intentionally a shell surface, not a second filesystem truth layer. Rust task/transfer truth still flows through `src/runtime/explorerBackend.ts`; the popout only owns task presentation and cross-window coordination.
 - Validation:
   - passed: `bunx vitest run src/test/fileOperationsWindow.test.ts src/test/pluginPanelRequests.test.ts src/test/app.dockMode.test.tsx`
   - passed: targeted file-operations/window mock coverage in `src/test/fileOperationsWindow.test.ts`
   - blocked: narrowed `npx tsc --noEmit ...` still reports a pre-existing unrelated `src/components/ScreenshotsManager.tsx` type error (`SelectionHandle` includes `"move"` but the resize-handle prop does not)
+
+## 2026-04-26 — Explorer Picker Window Wiring Pass
+
+- The dedicated explorer picker window was present in the codebase but not reliably reachable in the live app because the Tauri capability set never granted secondary webview-window creation to the `picker` / `file-operations` labels.
+- Durable implementation shape:
+  - `src-tauri/capabilities/default.json` now explicitly includes the `picker` and `file-operations` window labels plus `core:webview:allow-create-webview-window`, which is required for `new WebviewWindow(...)` to succeed at runtime.
+  - `src/runtime/explorerPicker.ts` now waits for `tauri://created`, rejects on `tauri://error`, and times out secondary-window launches instead of silently hanging forever when a picker window fails to appear.
+  - `src/runtime/fileOperationsWindow.ts` now uses the same secondary-window readiness/error contract, but it degrades to a logged failure plus `null` return because many callers fire-and-forget the Task Center popout.
+  - `src/components/SettingsPage.tsx` no longer tries to use `@tauri-apps/plugin-fs` as a folder dialog for VST scan paths. The Audio settings `Add Folder…` action now routes through `openExplorerPicker({ kind: 'openFolders', presentation: 'window' })` and merges unique folder picks back into settings state.
+  - `src/App.tsx` now uses the same picker window for repository import, so folder-selection UX stays consistent instead of mixing embedded and secondary-window picker paths for similarly scoped tasks.
+- Durable product note:
+  - if a future agent adds another file/folder selection flow, route it through `src/runtime/explorerPicker.ts` first. Avoid inventing a fresh native dialog call unless the product intentionally wants a non-explorer picker experience.
 
 ## 2026-04-15 — Explorer Transfer Collision Pass
 

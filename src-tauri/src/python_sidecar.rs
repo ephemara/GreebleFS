@@ -6,9 +6,11 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 
 use include_dir::{include_dir, Dir, DirEntry};
+use greeble_ipc_contracts::{IpcArtifactDescriptor, IpcArtifactRef, IpcResourceHandle};
 use serde::de::DeserializeOwned;
 use tauri::{AppHandle, Manager};
 
+use crate::ipc_runtime::IpcRuntimeState;
 use crate::python_commands::{
     build_runtime_paths, ensure_runtime_directories, managed_python_path, path_to_string,
     prepare_managed_python_runtime, pythonpath_environment, resolve_runtime_config,
@@ -91,6 +93,8 @@ pub struct PythonSidecarActionRequest {
     pub config: Option<PythonRuntimeConfig>,
     pub action_id: String,
     pub payload_json: Option<String>,
+    pub input_artifacts: Option<Vec<IpcArtifactRef>>,
+    pub resource_handles: Option<Vec<IpcResourceHandle>>,
     pub working_directory: Option<String>,
     pub environment: Option<HashMap<String, String>>,
     pub start_if_needed: Option<bool>,
@@ -104,6 +108,8 @@ pub struct PythonSidecarActionResponse {
     pub request_id: String,
     pub action_id: String,
     pub result_json: String,
+    pub output_artifacts: Vec<IpcArtifactDescriptor>,
+    pub resource_handles: Vec<IpcResourceHandle>,
 }
 
 pub mod action_ids {
@@ -140,6 +146,7 @@ struct PythonSidecarSession {
     runtime_root: PathBuf,
     sidecar_paths: PythonSidecarPaths,
     manifest: PythonSidecarWorkspaceManifest,
+    resource_handle: IpcResourceHandle,
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
@@ -162,6 +169,8 @@ struct PythonSidecarProtocolRequest {
     kind: String,
     action_id: Option<String>,
     payload_json: Option<String>,
+    input_artifacts: Option<Vec<IpcArtifactRef>>,
+    resource_handles: Option<Vec<IpcResourceHandle>>,
     cwd: Option<String>,
     environment: Option<HashMap<String, String>>,
 }
@@ -172,6 +181,8 @@ struct PythonSidecarProtocolResponse {
     request_id: String,
     ok: bool,
     result_json: Option<String>,
+    output_artifacts: Option<Vec<IpcArtifactDescriptor>>,
+    resource_handles: Option<Vec<IpcResourceHandle>>,
     error: Option<String>,
 }
 
@@ -256,6 +267,8 @@ where
             config,
             action_id: action_id.into(),
             payload_json: encode_sidecar_payload_json(payload.as_ref())?,
+            input_artifacts: None,
+            resource_handles: None,
             working_directory,
             environment,
             start_if_needed,
@@ -291,6 +304,8 @@ impl PythonSidecarSession {
         kind: &str,
         action_id: Option<String>,
         payload_json: Option<String>,
+        input_artifacts: Option<Vec<IpcArtifactRef>>,
+        resource_handles: Option<Vec<IpcResourceHandle>>,
         cwd: Option<String>,
         environment: Option<HashMap<String, String>>,
     ) -> Result<PythonSidecarProtocolResponse, String> {
@@ -301,6 +316,8 @@ impl PythonSidecarSession {
             kind: kind.to_string(),
             action_id,
             payload_json,
+            input_artifacts,
+            resource_handles,
             cwd,
             environment,
         };
@@ -341,7 +358,7 @@ impl PythonSidecarSession {
     }
 
     fn stop(&mut self) {
-        let _ = self.send_request("shutdown", None, None, None, None);
+        let _ = self.send_request("shutdown", None, None, None, None, None, None);
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -629,10 +646,14 @@ fn prepend_python_workspace_to_environment(
 }
 
 fn spawn_sidecar_session(
+    app: &AppHandle,
     paths: &RuntimePaths,
     manifest: PythonSidecarWorkspaceManifest,
     sidecar_paths: PythonSidecarPaths,
 ) -> Result<PythonSidecarSession, String> {
+    let ipc_runtime = app.state::<IpcRuntimeState>();
+    let resource_handle =
+        ipc_runtime.register_resource("python-sidecar-session", Some(&path_to_string(&paths.root_dir)))?;
     let managed_python = managed_python_path(paths);
     let log_file = OpenOptions::new()
         .create(true)
@@ -687,6 +708,7 @@ fn spawn_sidecar_session(
         runtime_root: paths.root_dir.clone(),
         sidecar_paths,
         manifest: manifest.clone(),
+        resource_handle,
         child,
         stdin,
         stdout: BufReader::new(stdout),
@@ -694,12 +716,13 @@ fn spawn_sidecar_session(
         request_counter: 0,
     };
 
-    let handshake = session.send_request("handshake", None, None, None, None)?;
+    let handshake = session.send_request("handshake", None, None, None, None, None, None)?;
     if !handshake.ok {
         let error = handshake
             .error
             .unwrap_or_else(|| "Python sidecar handshake failed.".to_string());
         session.stop();
+        let _ = ipc_runtime.release_resource(&session.resource_handle.id);
         return Err(error);
     }
 
@@ -718,6 +741,7 @@ fn spawn_sidecar_session(
         || handshake_payload.transport != manifest.transport
     {
         session.stop();
+        let _ = ipc_runtime.release_resource(&session.resource_handle.id);
         return Err("Python sidecar handshake did not match the local manifest.".to_string());
     }
 
@@ -729,6 +753,7 @@ fn spawn_sidecar_session(
     expected_actions.sort();
     if handshake_payload.available_actions != expected_actions {
         session.stop();
+        let _ = ipc_runtime.release_resource(&session.resource_handle.id);
         return Err("Python sidecar handshake returned an unexpected action registry.".to_string());
     }
 
@@ -768,6 +793,7 @@ fn session_matches_runtime_root(session: &PythonSidecarSession, runtime_root: &P
 }
 
 fn current_sidecar_process_status(
+    app: &AppHandle,
     manager: &PythonSidecarManager,
     runtime_root: &Path,
 ) -> Result<(bool, Option<u32>), String> {
@@ -790,6 +816,9 @@ fn current_sidecar_process_status(
                 "Python sidecar exited with status {}.",
                 status.code().unwrap_or(-1)
             )))?;
+            let _ = app
+                .state::<IpcRuntimeState>()
+                .release_resource(&session.resource_handle.id);
             *session_guard = None;
             Ok((false, None))
         }
@@ -798,19 +827,28 @@ fn current_sidecar_process_status(
             manager.set_last_error(Some(format!(
                 "Failed to inspect Python sidecar process state: {error}"
             )))?;
+            let _ = app
+                .state::<IpcRuntimeState>()
+                .release_resource(&session.resource_handle.id);
             *session_guard = None;
             Ok((false, None))
         }
     }
 }
 
-fn stop_current_sidecar_session(manager: &PythonSidecarManager) -> Result<(), String> {
+fn stop_current_sidecar_session(
+    app: &AppHandle,
+    manager: &PythonSidecarManager,
+) -> Result<(), String> {
     let mut session_guard = manager
         .session
         .lock()
         .map_err(|_| "python sidecar session lock poisoned".to_string())?;
     if let Some(session) = session_guard.as_mut() {
         session.stop();
+        let _ = app
+            .state::<IpcRuntimeState>()
+            .release_resource(&session.resource_handle.id);
     }
     *session_guard = None;
     Ok(())
@@ -825,7 +863,7 @@ fn get_sidecar_status_impl(
     let resolved = resolve_runtime_config(app, config)?;
     let paths = build_runtime_paths(&resolved.runtime_root);
     let sidecar_paths = build_sidecar_paths(&paths, &manifest);
-    let (running, pid) = current_sidecar_process_status(&manager, &paths.root_dir)?;
+    let (running, pid) = current_sidecar_process_status(app, &manager, &paths.root_dir)?;
 
     Ok(sidecar_status_from_parts(
         &paths,
@@ -859,7 +897,7 @@ fn start_sidecar_impl(
 
     let manifest = load_sidecar_manifest()?;
     let sidecar_paths = build_sidecar_paths(&paths, &manifest);
-    let (running, pid) = current_sidecar_process_status(&manager, &paths.root_dir)?;
+    let (running, pid) = current_sidecar_process_status(app, &manager, &paths.root_dir)?;
     if running {
         manager.set_last_error(None)?;
         return Ok(PythonSidecarStartResponse {
@@ -868,10 +906,10 @@ fn start_sidecar_impl(
         });
     }
 
-    stop_current_sidecar_session(&manager)?;
+    stop_current_sidecar_session(app, &manager)?;
 
     let (synced_manifest, synced_paths) = sync_python_workspace(&paths)?;
-    let session = spawn_sidecar_session(&paths, synced_manifest.clone(), synced_paths.clone())?;
+    let session = spawn_sidecar_session(app, &paths, synced_manifest.clone(), synced_paths.clone())?;
     let pid = session.pid;
     {
         let mut session_guard = manager
@@ -905,7 +943,7 @@ fn stop_sidecar_impl(
     let paths = build_runtime_paths(&resolved.runtime_root);
     let sidecar_paths = build_sidecar_paths(&paths, &manifest);
 
-    stop_current_sidecar_session(&manager)?;
+    stop_current_sidecar_session(app, &manager)?;
     manager.set_last_error(None)?;
 
     Ok(sidecar_status_from_parts(
@@ -968,6 +1006,8 @@ fn call_sidecar_impl(
         "action",
         Some(action_id.clone()),
         request.payload_json.clone(),
+        request.input_artifacts.clone(),
+        request.resource_handles.clone(),
         Some(working_directory),
         request.environment.clone(),
     )?;
@@ -996,6 +1036,10 @@ fn call_sidecar_impl(
         request_id: response.request_id,
         action_id,
         result_json: response.result_json.unwrap_or_else(|| "null".to_string()),
+        output_artifacts: response.output_artifacts.unwrap_or_default(),
+        resource_handles: response
+            .resource_handles
+            .unwrap_or_else(|| vec![session.resource_handle.clone()]),
     })
 }
 

@@ -49,16 +49,52 @@ def _emit(payload: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def _response(request_id: str, *, ok: bool, result_json: str | None = None, error: str | None = None) -> dict[str, Any]:
+def _response(
+    request_id: str,
+    *,
+    ok: bool,
+    result_json: str | None = None,
+    output_artifacts: list[dict[str, Any]] | None = None,
+    resource_handles: list[dict[str, Any]] | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "requestId": request_id,
         "ok": ok,
     }
     if result_json is not None:
         payload["resultJson"] = result_json
+    if output_artifacts is not None:
+        payload["outputArtifacts"] = output_artifacts
+    if resource_handles is not None:
+        payload["resourceHandles"] = resource_handles
     if error is not None:
         payload["error"] = error
     return payload
+
+
+def _normalize_descriptor_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _unwrap_action_result(result: Any) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
+    if not isinstance(result, dict):
+        return result, [], []
+
+    if (
+        "result" not in result
+        and "outputArtifacts" not in result
+        and "resourceHandles" not in result
+    ):
+        return result, [], []
+
+    return (
+        result.get("result"),
+        _normalize_descriptor_list(result.get("outputArtifacts")),
+        _normalize_descriptor_list(result.get("resourceHandles")),
+    )
 
 
 def _handle_handshake(request_id: str) -> dict[str, Any]:
@@ -94,19 +130,26 @@ def _handle_action(request: dict[str, Any]) -> dict[str, Any]:
 
     environment = request.get("environment")
     environment_dict = environment if isinstance(environment, dict) else {}
+    input_artifacts = _normalize_descriptor_list(request.get("inputArtifacts"))
+    resource_handles = _normalize_descriptor_list(request.get("resourceHandles"))
     context = PythonActionContext(
         action_id=action_id,
         runtime_root=_runtime_root(),
         workspace_root=_workspace_root(),
         cwd=cwd,
         environment={str(key): str(value) for key, value in environment_dict.items()},
+        input_artifacts=input_artifacts,
+        resource_handles=resource_handles,
     )
 
-    result = dispatch_python_action(action_id, payload, context)
+    raw_result = dispatch_python_action(action_id, payload, context)
+    result, output_artifacts, returned_resource_handles = _unwrap_action_result(raw_result)
     return _response(
         request_id,
         ok=True,
         result_json=json.dumps(result, ensure_ascii=False, default=_json_default),
+        output_artifacts=output_artifacts,
+        resource_handles=returned_resource_handles,
     )
 
 

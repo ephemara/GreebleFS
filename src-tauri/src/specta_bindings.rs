@@ -111,7 +111,8 @@ use crate::telemetry::{
 };
 use crate::terminal::{
     ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalShellIntegrationState,
-    TerminalShellIntegrationStateEvent, TerminalShellKind, TerminalWriteRequest,
+    TerminalOutputStreamPacket, TerminalShellIntegrationStateEvent, TerminalShellKind,
+    TerminalWriteRequest,
 };
 use crate::thumbnail_commands::{
     ExplorerEntryThumbnail, ExplorerEntryThumbnailRequest, ExplorerThumbnailArtifact,
@@ -131,6 +132,10 @@ use crate::vst_host_runtime::{
     VstEditorSessionRectRequest, VstEditorSessionState,
 };
 use crate::wayland_dock::{WaylandDockAnchor, WaylandDockHostStatus};
+use greeble_ipc_contracts::{
+    IpcArtifactDescriptor, IpcArtifactRef, IpcArtifactRetention, IpcResourceHandle,
+    IpcStreamHandle, IpcStreamPacketMetadata,
+};
 use overlay_contracts::{
     ExplorerLayoutMode, LayoutBackBehavior, LayoutBarPosition, LayoutBehaviorConfig,
     LayoutChromeConfig, LayoutControlDockConfig, LayoutDockSide, LayoutInteractionConfig,
@@ -162,7 +167,11 @@ pub fn bindings_output_path() -> PathBuf {
 pub fn app_specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
         .commands(collect_commands![
+            crate::ipc_runtime::ipc_release_artifact,
+            crate::ipc_runtime::ipc_release_resource,
+            crate::ipc_runtime::ipc_release_stream,
             crate::terminal::terminal_spawn,
+            crate::terminal::terminal_open_output_stream,
             crate::terminal::terminal_write,
             crate::terminal::terminal_write_many,
             crate::terminal::terminal_resize,
@@ -391,6 +400,12 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<NativeIconResponse>()
         .typ::<CloudProviderConfigurationSource>()
         .typ::<CloudProviderConfigurationStatus>()
+        .typ::<IpcArtifactRetention>()
+        .typ::<IpcArtifactRef>()
+        .typ::<IpcArtifactDescriptor>()
+        .typ::<IpcResourceHandle>()
+        .typ::<IpcStreamHandle>()
+        .typ::<IpcStreamPacketMetadata>()
         .typ::<CloudAccountSummary>()
         .typ::<CloudAccountsSnapshot>()
         .typ::<CloudAuthSession>()
@@ -591,6 +606,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ScreenshotRegion>()
         .typ::<ScreenshotStage>()
         .typ::<ExternalTerminalRequest>()
+        .typ::<TerminalOutputStreamPacket>()
         .typ::<TerminalShellKind>()
         .typ::<TerminalShellIntegrationState>()
         .typ::<TerminalShellIntegrationRequest>()
@@ -700,10 +716,6 @@ fn sanitize_generated_typescript(path: &PathBuf) -> Result<(), String> {
         .map_err(|error| format!("Failed to read generated Specta bindings: {error}"))?;
     let sanitized = source
         .replace(
-            "import {\n\tinvoke as TAURI_INVOKE,\n\tChannel as TAURI_CHANNEL,\n} from \"@tauri-apps/api/core\";",
-            "import { invoke as TAURI_INVOKE } from \"@tauri-apps/api/core\";",
-        )
-        .replace(
             "export type ThemeDesignToken = { id: string; name: string; kind: ThemeTokenKind; value: any }",
             "export type ThemeValue = string | number | boolean | null | ThemeValue[] | { [key: string]: ThemeValue };\nexport type ThemeDesignToken = { id: string; name: string; kind: ThemeTokenKind; value: ThemeValue }",
         )
@@ -731,7 +743,7 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn sanitize_generated_typescript_removes_channel_import_and_exports_event_helper() {
+    fn sanitize_generated_typescript_preserves_channel_import_and_exports_event_helper() {
         let tempdir = tempfile::tempdir().expect("tempdir");
         let path = tempdir.path().join("tauri.ts");
         fs::write(
@@ -744,12 +756,8 @@ mod tests {
 
         let sanitized = fs::read_to_string(&path).expect("read sanitized bindings");
         assert!(
-            !sanitized.contains("Channel as TAURI_CHANNEL"),
-            "sanitizer should remove the unused Channel import"
-        );
-        assert!(
-            sanitized.contains("import { invoke as TAURI_INVOKE } from \"@tauri-apps/api/core\";"),
-            "sanitizer should collapse the import to the invoke binding"
+            sanitized.contains("Channel as TAURI_CHANNEL"),
+            "sanitizer should preserve the generated Channel import for stream-capable bindings"
         );
         assert!(
             sanitized.contains("export function __makeEvents__<T>() {}"),

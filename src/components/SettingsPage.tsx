@@ -138,6 +138,7 @@ import {
   type ExplorerCloudProviderConfigurationSource,
   type ExplorerCloudProviderId,
 } from "../runtime/explorerBackend";
+import { openExplorerPicker } from "../runtime/explorerPicker";
 import {
   createDefaultFolderIconRules,
   FOLDER_ICON_OPTIONS,
@@ -17799,24 +17800,43 @@ export function SettingsPage({
                       background: "rgba(255,255,255,0.05)",
                     }}
                     onClick={async () => {
-                      const { open } =
-                        await import("@tauri-apps/plugin-fs").catch(() => ({
-                          open: null as any,
-                        }));
-                      if (open) {
-                        const picked = (await open({
-                          directory: true,
-                          multiple: true,
-                        })) as string[] | null;
-                        if (picked && picked.length > 0) {
-                          const newFolders = [
-                            ...settings.audio.vst3AdditionalFolders,
-                          ];
-                          picked.forEach((p) => {
-                            if (!newFolders.includes(p)) newFolders.push(p);
-                          });
-                          updateAudio({ vst3AdditionalFolders: newFolders });
+                      try {
+                        const pickerResult = await openExplorerPicker({
+                          kind: "openFolders",
+                          presentation: "window",
+                          title: "Add VST Scan Folders",
+                          confirmLabel: "Add Folders",
+                          allowCreateDirectory: false,
+                          startPath:
+                            settings.audio.vst3AdditionalFolders[
+                              settings.audio.vst3AdditionalFolders.length - 1
+                            ] ?? null,
+                        });
+                        const pickedFolders = Array.from(
+                          new Set(
+                            (pickerResult?.entries ?? [])
+                              .map((entry) => entry.path.trim())
+                              .filter(Boolean),
+                          ),
+                        );
+                        if (pickedFolders.length === 0) {
+                          return;
                         }
+
+                        const nextFolders = [
+                          ...settings.audio.vst3AdditionalFolders,
+                        ];
+                        pickedFolders.forEach((folderPath) => {
+                          if (!nextFolders.includes(folderPath)) {
+                            nextFolders.push(folderPath);
+                          }
+                        });
+                        updateAudio({ vst3AdditionalFolders: nextFolders });
+                      } catch (error) {
+                        console.error(
+                          "OverlayTerm: failed to open the VST folder picker",
+                          error,
+                        );
                       }
                     }}
                   >

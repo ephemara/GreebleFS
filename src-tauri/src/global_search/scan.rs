@@ -145,6 +145,7 @@ fn build_walker(root_path: &Path, scan_depth: usize) -> ignore::Walk {
         .git_exclude(false)
         .git_global(false)
         .parents(false)
+        .same_file_system(true)
         .max_depth(Some(scan_depth.max(1)));
     builder.build()
 }

@@ -12,6 +12,7 @@ pub mod explorer_pro_commands;
 pub mod fs_commands;
 pub mod global_search;
 pub mod gpu_runtime;
+pub mod ipc_runtime;
 pub mod image_cutout_commands;
 pub mod image_commands;
 pub mod lan_share;
@@ -35,6 +36,7 @@ pub mod tailscale_commands;
 pub mod telemetry;
 pub mod terminal;
 pub mod thumbnail_commands;
+pub mod volume_inventory;
 #[cfg(target_os = "windows")]
 pub mod url_drop;
 pub mod video_commands;
@@ -77,11 +79,7 @@ struct GlobalSearchQueryUnderPathInvokeArgs {
 fn parse_json_invoke_args<T: for<'de> serde::Deserialize<'de>>(
     message: &tauri::ipc::InvokeMessage<tauri::Wry>,
 ) -> Result<T, String> {
-    match message.payload() {
-        tauri::ipc::InvokeBody::Json(payload) => serde_json::from_value(payload.clone())
-            .map_err(|error| format!("Invalid command payload: {error}")),
-        tauri::ipc::InvokeBody::Raw(_) => Err("Command expects JSON arguments.".to_string()),
-    }
+    ipc_runtime::binary::parse_json_invoke_args(message)
 }
 
 fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
@@ -97,13 +95,10 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
                 }
             };
             let resolver = invoke.resolver;
-            tauri::async_runtime::spawn(async move {
-                resolver.respond(
-                    fs_commands::fs_read_preview_bytes(args.path, args.max_bytes)
-                        .await
-                        .map_err(Into::into),
-                );
-            });
+            ipc_runtime::binary::spawn_raw_invoke_response(
+                resolver,
+                fs_commands::fs_read_preview_bytes(args.path, args.max_bytes),
+            );
             true
         }
         "cloud_read_preview_bytes" => {
@@ -116,13 +111,10 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
             };
             let resolver = invoke.resolver;
             let app = invoke.message.webview().app_handle().clone();
-            tauri::async_runtime::spawn(async move {
-                resolver.respond(
-                    cloud_commands::cloud_read_preview_bytes(app, args.path, args.max_bytes)
-                        .await
-                        .map_err(Into::into),
-                );
-            });
+            ipc_runtime::binary::spawn_raw_invoke_response(
+                resolver,
+                cloud_commands::cloud_read_preview_bytes(app, args.path, args.max_bytes),
+            );
             true
         }
         "global_search_query_under_path" => {
@@ -137,18 +129,15 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
             };
             let resolver = invoke.resolver;
             let app = invoke.message.webview().app_handle().clone();
-            tauri::async_runtime::spawn(async move {
-                resolver.respond(
-                    global_search::query::global_search_query_under_path(
-                        app,
-                        args.root_path,
-                        args.query,
-                        args.options,
-                    )
-                    .await
-                    .map_err(Into::into),
-                );
-            });
+            ipc_runtime::binary::spawn_raw_invoke_response(
+                resolver,
+                global_search::query::global_search_query_under_path(
+                    app,
+                    args.root_path,
+                    args.query,
+                    args.options,
+                ),
+            );
             true
         }
         _ => false,
@@ -193,6 +182,7 @@ pub fn run() {
             initialize_explorer_identity_store(app.handle())?;
             let gpu_runtime = gpu_runtime::GpuRuntimeManager::new(app.handle().clone());
             gpu_runtime::set_global_gpu_runtime(gpu_runtime.clone());
+            app.manage(ipc_runtime::IpcRuntimeState::new());
             app.manage(TerminalManager::new());
             app.manage(CloudRuntimeState::default());
             app.manage(AudioEngineManager::default());

@@ -4,10 +4,13 @@
   "description": "enables the default permissions",
   "windows": [
     "main",
-    "dock"
+    "dock",
+    "picker",
+    "file-operations"
   ],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
     "core:window:allow-close",
     "core:window:allow-minimize",
     "core:window:allow-maximize",

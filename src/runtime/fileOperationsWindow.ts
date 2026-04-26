@@ -32,6 +32,8 @@ export const FILE_OPERATIONS_WINDOW_CONFIG = {
   width: 980,
 } as const;
 
+const SECONDARY_WINDOW_READY_TIMEOUT_MS = 4_000;
+
 export interface FileOperationsTaskWindowRequest {
   nonce: string;
   requestedAt: number;
@@ -158,10 +160,15 @@ export async function openFileOperationsWindow(
       focus: true,
       url: getCurrentWindowUrl(),
     });
-
-    void fileOperationsWindow.once('tauri://created', async () => {
-      await invokeOptionalWindowMethod(fileOperationsWindow, 'setFocus');
-    });
+    try {
+      await waitForSecondaryWindowCreation(
+        fileOperationsWindow,
+        FILE_OPERATIONS_WINDOW_BASE_TITLE,
+      );
+    } catch (error) {
+      console.error('OverlayTerm: failed to open file operations window', error);
+      return null;
+    }
   }
 
   return request;
@@ -520,6 +527,77 @@ function getCurrentWindowUrl(): string {
 
   const { pathname, search, hash } = window.location;
   return `${pathname || '/'}${search}${hash}`;
+}
+
+async function waitForSecondaryWindowCreation(
+  windowHandle: object,
+  windowName: string,
+): Promise<void> {
+  const onceMethod = Reflect.get(windowHandle, 'once');
+  if (typeof onceMethod !== 'function') {
+    await invokeOptionalWindowMethod(windowHandle, 'setFocus');
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const settle = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutHandle);
+      callback();
+    };
+    const timeoutHandle = setTimeout(() => {
+      settle(() => reject(new Error(`Timed out while opening ${windowName}`)));
+    }, SECONDARY_WINDOW_READY_TIMEOUT_MS);
+
+    const handleCreated = () => {
+      settle(resolve);
+      void invokeOptionalWindowMethod(windowHandle, 'setFocus');
+    };
+
+    const handleError = (error: unknown) => {
+      const message = describeSecondaryWindowCreationError(error);
+      settle(() => reject(new Error(`Failed to open ${windowName}: ${message}`)));
+    };
+
+    try {
+      void Promise.resolve(onceMethod.call(windowHandle, 'tauri://created', handleCreated))
+        .catch(handleError);
+      void Promise.resolve(onceMethod.call(windowHandle, 'tauri://error', handleError))
+        .catch(handleError);
+    } catch (error) {
+      handleError(error);
+    }
+  });
+}
+
+function describeSecondaryWindowCreationError(error: unknown): string {
+  if (typeof error === 'string') {
+    const normalized = error.trim();
+    return normalized || 'unknown window creation error';
+  }
+
+  if (error instanceof Error) {
+    const normalized = error.message.trim();
+    return normalized || 'unknown window creation error';
+  }
+
+  if (error && typeof error === 'object') {
+    const payload = Reflect.get(error, 'payload');
+    if (typeof payload === 'string' && payload.trim()) {
+      return payload.trim();
+    }
+
+    const message = Reflect.get(error, 'message');
+    if (typeof message === 'string' && message.trim()) {
+      return message.trim();
+    }
+  }
+
+  return 'unknown window creation error';
 }
 
 async function invokeOptionalWindowMethod(

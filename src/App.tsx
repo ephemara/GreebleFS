@@ -1559,7 +1559,7 @@ function App() {
     setPendingRepositoryImports([]);
     void openExplorerPicker({
       kind: 'openFolders',
-      presentation: 'embedded',
+      presentation: 'window',
       title: 'Import Git Repositories',
       confirmLabel: 'Add Repositories',
       allowCreateDirectory: false,

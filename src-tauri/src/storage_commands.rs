@@ -8,6 +8,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+use crate::volume_inventory::is_same_volume;
+
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
 
@@ -952,6 +954,11 @@ fn scan_storage_root(
 
                 if metadata.is_dir() {
                     scanned_directory_count = scanned_directory_count.saturating_add(1);
+                    if !is_same_volume(root, &path) {
+                        current_directory.directory_count =
+                            current_directory.directory_count.saturating_add(1);
+                        continue;
+                    }
                     let depth = current_directory.depth.saturating_add(1);
                     match fs::read_dir(&path) {
                         Ok(read_dir) => {

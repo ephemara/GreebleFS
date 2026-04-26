@@ -38,6 +38,8 @@ class PythonActionContext:
     workspace_root: Path
     cwd: Path
     environment: dict[str, str]
+    input_artifacts: list[dict[str, Any]]
+    resource_handles: list[dict[str, Any]]
 
 
 PythonActionHandler = Callable[[Any, PythonActionContext], Any]

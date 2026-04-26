@@ -3,9 +3,11 @@ use crate::explorer_identity::{
     build_content_revision, build_virtual_identity, record_thumbnail_artifact,
     PersistedThumbnailArtifactRecordInput,
 };
+use crate::ipc_runtime::artifacts::RegisterArtifactPathRequest;
 use ab_glyph::{FontArc, PxScale};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use fontdb::{Database, Family, Query, Source};
+use greeble_ipc_contracts::{IpcArtifactDescriptor, IpcArtifactRetention};
 use image::codecs::png::PngEncoder;
 use image::imageops::{resize, FilterType};
 use image::{ColorType, ImageEncoder, ImageReader, Rgba, RgbaImage};
@@ -103,8 +105,8 @@ pub struct ExplorerThumbnailArtifact {
     pub entity_id: String,
     pub content_revision: String,
     pub kind: ExplorerThumbnailKind,
-    pub poster_path: String,
-    pub hover_frame_paths: Vec<String>,
+    pub poster: IpcArtifactDescriptor,
+    pub hover_frames: Vec<IpcArtifactDescriptor>,
     pub hover_frame_delay_ms: Option<u32>,
 }
 
@@ -238,16 +240,16 @@ fn build_entry_thumbnail_from_artifact(
     request: &NormalizedThumbnailRequest,
     artifact: ExplorerThumbnailArtifact,
 ) -> Result<ExplorerEntryThumbnail, String> {
-    let poster_data_url = artifact_path_to_data_url(Path::new(&artifact.poster_path))?;
+    let poster_data_url = artifact_path_to_data_url(Path::new(&artifact.poster.file_path))?;
     let hover_timestamps =
-        sample_thumbnail_hover_timestamps(request, artifact.kind.clone(), artifact.hover_frame_paths.len());
+        sample_thumbnail_hover_timestamps(request, artifact.kind.clone(), artifact.hover_frames.len());
     let hover_frames = artifact
-        .hover_frame_paths
+        .hover_frames
         .iter()
         .enumerate()
-        .map(|(index, path)| {
+        .map(|(index, descriptor)| {
             Ok(ExplorerVideoHoverFrame {
-                image_data_url: artifact_path_to_data_url(Path::new(path))?,
+                image_data_url: artifact_path_to_data_url(Path::new(&descriptor.file_path))?,
                 timestamp_seconds: *hover_timestamps.get(index).unwrap_or(&0.0),
             })
         })
@@ -363,12 +365,18 @@ where
     ) -> Result<PathBuf, String>,
 {
     let poster_path = ensure_poster_path(app, gpu_runtime, request, variant)?;
+    let poster = register_thumbnail_artifact_descriptor(
+        app,
+        request,
+        "thumbnail.poster",
+        &poster_path,
+    )?;
     let artifact = ExplorerThumbnailArtifact {
         entity_id: request.entity_id.clone(),
         content_revision: request.content_revision.clone(),
         kind: kind.clone(),
-        poster_path: poster_path.to_string_lossy().to_string(),
-        hover_frame_paths: Vec::new(),
+        poster,
+        hover_frames: Vec::new(),
         hover_frame_delay_ms: None,
     };
     persist_thumbnail_artifact_record(app, request, &artifact, variant)?;
@@ -423,11 +431,36 @@ fn persist_thumbnail_artifact_record(
                     None
                 },
             ),
-            poster_path: artifact.poster_path.clone(),
-            hover_frame_paths: artifact.hover_frame_paths.clone(),
+            poster_path: artifact.poster.file_path.clone(),
+            hover_frame_paths: artifact
+                .hover_frames
+                .iter()
+                .map(|descriptor| descriptor.file_path.clone())
+                .collect(),
             hover_frame_delay_ms: artifact.hover_frame_delay_ms,
         },
     )
+}
+
+fn register_thumbnail_artifact_descriptor(
+    app: &AppHandle,
+    request: &NormalizedThumbnailRequest,
+    artifact_kind: &str,
+    artifact_path: &Path,
+) -> Result<IpcArtifactDescriptor, String> {
+    let media_type = mime_guess::from_path(artifact_path)
+        .first_raw()
+        .map(str::to_string);
+    let ipc_runtime = app.state::<crate::ipc_runtime::IpcRuntimeState>();
+    ipc_runtime.register_artifact_path(RegisterArtifactPathRequest {
+        kind: artifact_kind.to_string(),
+        file_path: artifact_path.to_path_buf(),
+        media_type,
+        retention: IpcArtifactRetention::Persistent,
+        identity_key: Some(request.entity_id.clone()),
+        content_revision: Some(request.content_revision.clone()),
+        delete_on_release: false,
+    })
 }
 
 fn thumbnail_kind_storage_label(kind: &ExplorerThumbnailKind) -> &'static str {
@@ -1485,26 +1518,32 @@ fn build_video_thumbnail_artifact(
         "png",
         || render_video_poster_png(&request.input_path, request.max_width, request.max_height),
     )?;
-    let mut hover_frame_paths = Vec::new();
+    let poster =
+        register_thumbnail_artifact_descriptor(app, request, "thumbnail.poster", &poster_path)?;
+    let mut hover_frames = Vec::new();
     let mut hover_frame_delay_ms = None;
     if request.include_video_hover_scrub {
-    let frame_paths = build_and_render_video_hover_frame_paths(
-        app,
-        request,
-        request.video_hover_frame_count,
-    )?;
+        let frame_paths =
+            build_and_render_video_hover_frame_paths(app, request, request.video_hover_frame_count)?;
         hover_frame_delay_ms = Some(150);
-        hover_frame_paths = frame_paths
+        hover_frames = frame_paths
             .into_iter()
-            .map(|path| path.to_string_lossy().to_string())
-            .collect();
+            .map(|path| {
+                register_thumbnail_artifact_descriptor(
+                    app,
+                    request,
+                    "thumbnail.hover-frame",
+                    &path,
+                )
+            })
+            .collect::<Result<Vec<_>, String>>()?;
     }
     let artifact = ExplorerThumbnailArtifact {
         entity_id: request.entity_id.clone(),
         content_revision: request.content_revision.clone(),
         kind: ExplorerThumbnailKind::Video,
-        poster_path: poster_path.to_string_lossy().to_string(),
-        hover_frame_paths,
+        poster,
+        hover_frames,
         hover_frame_delay_ms,
     };
     persist_thumbnail_artifact_record(app, request, &artifact, "video-poster")?;

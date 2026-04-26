@@ -25,6 +25,7 @@ import {
   type LoadedThemeShellRendererPack,
 } from '../config/themeBundlePacks';
 import { compileThemeEngineManifest, normalizeThemeManifestDraft } from '../runtime/themeEngineBackend';
+import * as explorerPickerRuntime from '../runtime/explorerPicker';
 import { createLoadedTopBarDefinition } from '../config/topBars';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
 import { useAccelerationRuntimeStore } from '../store/accelerationRuntimeStore';
@@ -1657,6 +1658,48 @@ describe('SettingsPage behavior', () => {
       expect(invokeMock).toHaveBeenCalledWith('fs_open_file', { path: screenshotDir });
     });
   }, 30000);
+
+  it('routes VST scan folder selection through the explorer picker window', async () => {
+    const user = userEvent.setup();
+    const openExplorerPickerMock = vi
+      .spyOn(explorerPickerRuntime, 'openExplorerPicker')
+      .mockResolvedValue({
+        cancelled: false,
+        completedAt: Date.now(),
+        currentDirectory: '/plugins',
+        entries: [
+          { kind: 'folder', name: 'Glue', path: '/plugins/glue' },
+          { kind: 'folder', name: 'Synth Rack', path: '/plugins/synth-rack' },
+          { kind: 'folder', name: 'Synth Rack', path: '/plugins/synth-rack' },
+        ],
+        nonce: 'picker-audio-1',
+      });
+
+    useSettingsStore.getState().updateAudio({
+      vst3AdditionalFolders: ['/plugins/glue'],
+    });
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Audio'));
+    await user.click(screen.getByRole('button', { name: /Add Folder/i }));
+
+    expect(openExplorerPickerMock).toHaveBeenCalledWith({
+      kind: 'openFolders',
+      presentation: 'window',
+      title: 'Add VST Scan Folders',
+      confirmLabel: 'Add Folders',
+      allowCreateDirectory: false,
+      startPath: '/plugins/glue',
+    });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.audio.vst3AdditionalFolders).toEqual([
+        '/plugins/glue',
+        '/plugins/synth-rack',
+      ]);
+    });
+  });
 
   it('renders packaged theme preview metadata and badges in the picker', async () => {
     const packageTheme = normalizeThemeDefinition({

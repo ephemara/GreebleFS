@@ -1,7 +1,9 @@
 // Copyright 2026 K-Studio. All Rights Reserved.
 // Terminal PTY implementation for ULTACODE
 
+use crate::ipc_runtime::IpcRuntimeState;
 use crate::telemetry::{finish_native_span, start_native_span};
+use greeble_ipc_contracts::{IpcStreamHandle, IpcStreamPacketMetadata};
 use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -27,6 +29,7 @@ pub struct TerminalInstance {
 pub struct TerminalManager {
     terminals: Mutex<HashMap<String, Arc<Mutex<TerminalInstance>>>>,
     shell_states: Mutex<HashMap<String, TerminalShellIntegrationState>>,
+    output_streams: Mutex<HashMap<String, IpcStreamHandle>>,
 }
 
 const TERMINAL_SHELL_INTEGRATION_CWD_PREFIX: &[u8] = b"\x1b]633;GreebleFS;Cwd=";
@@ -180,6 +183,14 @@ pub struct TerminalWriteRequest {
     pub data: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalOutputStreamPacket {
+    pub terminal_id: String,
+    pub metadata: IpcStreamPacketMetadata,
+    pub data: String,
+}
+
 fn emit_terminal_shell_integration_state_event(
     app: &AppHandle,
     id: String,
@@ -199,6 +210,7 @@ impl TerminalManager {
         Self {
             terminals: Mutex::new(HashMap::new()),
             shell_states: Mutex::new(HashMap::new()),
+            output_streams: Mutex::new(HashMap::new()),
         }
     }
 
@@ -464,7 +476,32 @@ impl TerminalManager {
             .ok_or_else(|| format!("Terminal {} not found", id))
     }
 
-    pub fn kill(&self, id: &str) -> Result<(), String> {
+    pub fn open_output_stream(
+        &self,
+        id: &str,
+        ipc_runtime: &IpcRuntimeState,
+    ) -> Result<IpcStreamHandle, String> {
+        let _ = self.terminal_instance(id)?;
+        if let Some(existing) = self
+            .output_streams
+            .lock()
+            .map_err(|_| "terminal output stream lock poisoned".to_string())?
+            .get(id)
+            .cloned()
+        {
+            return Ok(existing);
+        }
+
+        let handle = ipc_runtime.register_stream("terminal-output", Some(id))?;
+        let mut output_streams = self
+            .output_streams
+            .lock()
+            .map_err(|_| "terminal output stream lock poisoned".to_string())?;
+        output_streams.insert(id.to_string(), handle.clone());
+        Ok(handle)
+    }
+
+    pub fn kill(&self, id: &str, ipc_runtime: &IpcRuntimeState) -> Result<(), String> {
         let mut terminals = self.terminals.lock().unwrap();
         terminals
             .remove(id)
@@ -472,6 +509,15 @@ impl TerminalManager {
         drop(terminals);
         let mut shell_states = self.shell_states.lock().unwrap();
         shell_states.remove(id);
+        drop(shell_states);
+        if let Some(stream_handle) = self
+            .output_streams
+            .lock()
+            .map_err(|_| "terminal output stream lock poisoned".to_string())?
+            .remove(id)
+        {
+            ipc_runtime.release_stream(&stream_handle.id)?;
+        }
         Ok(())
     }
 
@@ -612,7 +658,14 @@ impl TerminalManager {
         });
 
         if let Some(mut reader) = reader {
-            let event_name = format!("terminal-output-{}", id);
+            let ipc_runtime = app.state::<IpcRuntimeState>();
+            let stream_handle = match self.open_output_stream(&id, &ipc_runtime) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    log::warn!("failed to open terminal output stream for {id}: {error}");
+                    return;
+                }
+            };
             let terminal_id = id.clone();
 
             std::thread::spawn(move || {
@@ -626,7 +679,28 @@ impl TerminalManager {
                             if !parsed_chunk.visible_output.is_empty() {
                                 let data = String::from_utf8_lossy(&parsed_chunk.visible_output)
                                     .to_string();
-                                let _ = app.emit(&event_name, data);
+                                let metadata = match app
+                                    .state::<IpcRuntimeState>()
+                                    .next_stream_packet_metadata(&stream_handle.id)
+                                {
+                                    Ok(metadata) => metadata,
+                                    Err(error) => {
+                                        log::warn!(
+                                            "failed to advance terminal stream packet metadata for {}: {}",
+                                            terminal_id,
+                                            error
+                                        );
+                                        continue;
+                                    }
+                                };
+                                let _ = app.emit(
+                                    &stream_handle.event_name,
+                                    TerminalOutputStreamPacket {
+                                        terminal_id: terminal_id.clone(),
+                                        metadata,
+                                        data,
+                                    },
+                                );
                             }
 
                             for reported_cwd in parsed_chunk.reported_cwds {
@@ -1234,12 +1308,26 @@ pub async fn terminal_spawn(
 
     let result = terminal_manager.spawn(&id, working_dir, shell, rows, cols);
     if result.is_ok() {
+        let ipc_runtime = app.state::<IpcRuntimeState>();
+        if let Err(error) = terminal_manager.open_output_stream(&id, &ipc_runtime) {
+            log::warn!("failed to prime terminal output stream for {id}: {error}");
+        }
         terminal_manager.start_reader_thread(id, app.clone());
     }
     let status = if result.is_ok() { "ok" } else { "error" };
     let error = result.as_ref().err().cloned();
     finish_native_span(&app, span, status, std::collections::BTreeMap::new(), error);
     result
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn terminal_open_output_stream(
+    terminal_manager: tauri::State<'_, TerminalManager>,
+    ipc_runtime: tauri::State<'_, IpcRuntimeState>,
+    id: String,
+) -> Result<IpcStreamHandle, String> {
+    terminal_manager.open_output_stream(&id, &ipc_runtime)
 }
 
 #[tauri::command]
@@ -1280,9 +1368,10 @@ pub async fn terminal_resize(
 #[specta::specta]
 pub async fn terminal_kill(
     terminal_manager: tauri::State<'_, TerminalManager>,
+    ipc_runtime: tauri::State<'_, IpcRuntimeState>,
     id: String,
 ) -> Result<(), String> {
-    terminal_manager.kill(&id)
+    terminal_manager.kill(&id, &ipc_runtime)
 }
 
 #[tauri::command]

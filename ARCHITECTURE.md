@@ -558,11 +558,14 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/runtime/explorerBackend.ts` is the only TS entry point for explorer task list/retry/cancel/clear operations; React surfaces should not call raw `invoke(...)` for task actions
   - `src/components/explorer/ExplorerTaskStatusBadge.tsx` is now an explorer-local Task Center popover instead of a transient badge-only indicator, and it is intentionally scoped to the explorer chrome rather than a global shell panel
   - `src/components/explorer/ExplorerTaskCenterContent.tsx` is the shared Task Center renderer used by both the inline explorer popover and the dedicated file-operations popout window
-  - `src/runtime/fileOperationsWindow.ts` plus `src/windows/FileOperationsWindowApp.tsx` are now the shell-owned copy/move popout path:
-    - `FileExplorer.tsx` can issue explicit `Copy To...` / `Move To...` requests into the popout
+  - `src/runtime/explorerPicker.ts` plus `src/windows/PickerWindowApp.tsx` are the shell-owned secondary picker surface:
+    - archive extraction, `Copy To...`, `Move To...`, repository import, and other file/folder selection flows should route through this runtime instead of ad hoc OS dialog calls
+    - `src/main.tsx` boots the `picker` webview label into `PickerWindowApp`, while `App.tsx` only handles embedded picker mode for the few workflows that intentionally stay in-surface
+    - picker requests/results are persisted and broadcast cross-window so the requester and picker surface can stay decoupled without inventing a second filesystem truth layer
+  - `src/runtime/fileOperationsWindow.ts` plus `src/windows/FileOperationsWindowApp.tsx` are now the shell-owned Task Center popout path:
     - successful transfers publish completion events so other explorer instances can refresh source and target folders without inventing a second transfer backend
     - those completion events now include identity-aware `affectedEntries[]`; future targeting work should extend that payload instead of adding another transfer notification path
-    - the popout is destination-picking and task-visibility UI only; transfer truth still stays in Rust plus `src/runtime/explorerBackend.ts`
+    - the popout is task-visibility UI only; transfer truth still stays in Rust plus `src/runtime/explorerBackend.ts`
   - tags and saved searches live under Tauri app-local explorer metadata
   - trash currently uses a GreebleFS-managed trash root so restore locations stay deterministic across platforms
 - Explorer drag behavior now defaults to native file export while keeping internal drop metadata available:
@@ -577,6 +580,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - bookmark structure editing, category authoring, recolor, rename, and delete controls only appear in `Manage` mode
   - this keeps the default rail lighter in dock mode without removing the deeper bookmark tooling
 - Overlay monitor placement is now resolved from the current or last-active monitor instead of always using the primary monitor, and `computeOverlayWindowLayout()` now left-anchors the overlay on X instead of centering it.
+- Secondary Tauri windows require both halves of the contract:
+  - the frontend must launch them through `src/runtime/explorerPicker.ts` or `src/runtime/fileOperationsWindow.ts` instead of scattered ad hoc `WebviewWindow` calls
+  - `src-tauri/capabilities/default.json` must explicitly include the `picker` / `file-operations` labels plus `core:webview:allow-create-webview-window`, otherwise the UI can look wired while the secondary window silently never appears at runtime
 - Overlay/dock mode now treats position as edge-owned state:
   - `src/config/overlayWindow.ts` exposes `computeAnchoredOverlayWindowLayout()` so current overlay bounds can preserve size without preserving stale X/Y drift
   - `src/App.tsx` re-applies dock geometry after show on Linux so WMs that recenter undecorated windows cannot leave the dock floating in the middle of the screen

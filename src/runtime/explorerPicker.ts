@@ -83,6 +83,8 @@ export const EXPLORER_PICKER_WINDOW_CONFIG = {
   width: 1080,
 } as const;
 
+const SECONDARY_WINDOW_READY_TIMEOUT_MS = 4_000;
+
 export function isCurrentExplorerPickerWindow(): boolean {
   if (!isTauri()) {
     return false;
@@ -192,10 +194,10 @@ export async function openExplorerPicker(
         title: request.title || EXPLORER_PICKER_WINDOW_BASE_TITLE,
         url: getCurrentWindowUrl(),
       });
-
-      void pickerWindow.once('tauri://created', async () => {
-        await invokeOptionalWindowMethod(pickerWindow, 'setFocus');
-      });
+      await waitForSecondaryWindowCreation(
+        pickerWindow,
+        request.title || EXPLORER_PICKER_WINDOW_BASE_TITLE,
+      );
     }
   }
 
@@ -611,6 +613,77 @@ function getCurrentWindowUrl(): string {
 
   const { pathname, search, hash } = window.location;
   return `${pathname || '/'}${search}${hash}`;
+}
+
+async function waitForSecondaryWindowCreation(
+  windowHandle: object,
+  windowName: string,
+): Promise<void> {
+  const onceMethod = Reflect.get(windowHandle, 'once');
+  if (typeof onceMethod !== 'function') {
+    await invokeOptionalWindowMethod(windowHandle, 'setFocus');
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const settle = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutHandle);
+      callback();
+    };
+    const timeoutHandle = setTimeout(() => {
+      settle(() => reject(new Error(`Timed out while opening ${windowName}`)));
+    }, SECONDARY_WINDOW_READY_TIMEOUT_MS);
+
+    const handleCreated = () => {
+      settle(resolve);
+      void invokeOptionalWindowMethod(windowHandle, 'setFocus');
+    };
+
+    const handleError = (error: unknown) => {
+      const message = describeSecondaryWindowCreationError(error);
+      settle(() => reject(new Error(`Failed to open ${windowName}: ${message}`)));
+    };
+
+    try {
+      void Promise.resolve(onceMethod.call(windowHandle, 'tauri://created', handleCreated))
+        .catch(handleError);
+      void Promise.resolve(onceMethod.call(windowHandle, 'tauri://error', handleError))
+        .catch(handleError);
+    } catch (error) {
+      handleError(error);
+    }
+  });
+}
+
+function describeSecondaryWindowCreationError(error: unknown): string {
+  if (typeof error === 'string') {
+    const normalized = error.trim();
+    return normalized || 'unknown window creation error';
+  }
+
+  if (error instanceof Error) {
+    const normalized = error.message.trim();
+    return normalized || 'unknown window creation error';
+  }
+
+  if (error && typeof error === 'object') {
+    const payload = Reflect.get(error, 'payload');
+    if (typeof payload === 'string' && payload.trim()) {
+      return payload.trim();
+    }
+
+    const message = Reflect.get(error, 'message');
+    if (typeof message === 'string' && message.trim()) {
+      return message.trim();
+    }
+  }
+
+  return 'unknown window creation error';
 }
 
 async function invokeOptionalWindowMethod(

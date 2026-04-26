@@ -1,4 +1,7 @@
 import type {
+  IpcArtifactDescriptor,
+  IpcArtifactRef,
+  IpcResourceHandle,
   PythonActionResponse,
   PythonEmbeddedSnippetRequest,
   PythonEmbeddedSnippetResponse,
@@ -28,11 +31,16 @@ export type ManagedPythonSidecarStartResponse = PythonSidecarStartResponse;
 export type ManagedPythonSidecarActionDescriptor = PythonSidecarActionDescriptor;
 export type ManagedPythonSidecarPackagePreset = PythonSidecarPackagePreset;
 export type ManagedPythonSidecarWorkspaceManifest = PythonSidecarWorkspaceManifest;
+export type ManagedIpcArtifactDescriptor = IpcArtifactDescriptor;
+export type ManagedIpcArtifactRef = IpcArtifactRef;
+export type ManagedIpcResourceHandle = IpcResourceHandle;
 
 export interface PythonSidecarActionRunnerRequest<TPayload = unknown> {
   config: ManagedPythonRuntimeConfig | null;
   actionId: string;
   payload?: TPayload;
+  inputArtifacts?: ManagedIpcArtifactRef[] | null;
+  resourceHandles?: ManagedIpcResourceHandle[] | null;
   workingDirectory?: string | null;
   environment?: Record<string, string> | null;
   startIfNeeded?: boolean | null;
@@ -222,6 +230,8 @@ export async function runPythonSidecarAction<TResult = unknown, TPayload = unkno
     config: request.config,
     actionId: request.actionId,
     payloadJson: encodeJsonPayload(request.payload),
+    inputArtifacts: request.inputArtifacts ?? null,
+    resourceHandles: request.resourceHandles ?? null,
     workingDirectory: request.workingDirectory ?? null,
     environment: request.environment ?? null,
     startIfNeeded: request.startIfNeeded ?? true,
