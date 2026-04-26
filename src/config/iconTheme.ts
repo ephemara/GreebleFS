@@ -1,4 +1,13 @@
 import canonicalIconThemeJson from './canonicalIconTheme.json';
+import {
+  isAudioPreviewExtension,
+  isExecutableScriptExtension,
+  isFontPreviewExtension,
+  isImagePreviewExtension,
+  isPdfPreviewExtension,
+  isSqlitePreviewExtension,
+  isVideoPreviewExtension,
+} from './filePreview';
 
 export interface OverlayIconDefinition {
   iconPath?: string;
@@ -42,9 +51,74 @@ export interface OverlayFileIconResolution {
 }
 
 const ICON_BASE = '/icons/';
+const GENERIC_FILE_EXTENSION_METADATA_VALUES = new Set<string>([
+  'bin',
+  'blob',
+  'file',
+  'octet_stream',
+  'octet-stream',
+  'text',
+  'txt',
+  'unknown',
+]);
 
 export function normalizeIconId(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+}
+
+function normalizeFileExtension(value: string): string {
+  return value.trim().replace(/^\./, '').toLowerCase();
+}
+
+function inferFileNameExtension(entryName: string): string {
+  const trimmedEntryName = entryName.trim();
+  const lastDotIndex = trimmedEntryName.lastIndexOf('.');
+  if (lastDotIndex <= 0 || lastDotIndex === trimmedEntryName.length - 1) {
+    return '';
+  }
+  return trimmedEntryName.slice(lastDotIndex + 1).toLowerCase();
+}
+
+function resolveSemanticFileIconId(
+  extension: string,
+  iconTheme: OverlayResolvedIconTheme,
+): string | null {
+  const normalizedExtension = normalizeFileExtension(extension);
+  if (!normalizedExtension) {
+    return null;
+  }
+
+  if (resolveIconSrc(normalizedExtension, iconTheme)) {
+    return normalizedExtension;
+  }
+  if (isImagePreviewExtension(normalizedExtension) && resolveIconSrc('image', iconTheme)) {
+    return 'image';
+  }
+  if (isAudioPreviewExtension(normalizedExtension) && resolveIconSrc('audio', iconTheme)) {
+    return 'audio';
+  }
+  if (isVideoPreviewExtension(normalizedExtension) && resolveIconSrc('video', iconTheme)) {
+    return 'video';
+  }
+  if (isExecutableScriptExtension(normalizedExtension)) {
+    if (normalizedExtension === 'ps1' && resolveIconSrc('powershell', iconTheme)) {
+      return 'powershell';
+    }
+    if (resolveIconSrc('shell', iconTheme)) {
+      return 'shell';
+    }
+  }
+  if (isPdfPreviewExtension(normalizedExtension) && resolveIconSrc('pdf', iconTheme)) {
+    return 'pdf';
+  }
+  if (isFontPreviewExtension(normalizedExtension) && resolveIconSrc('font', iconTheme)) {
+    return 'font';
+  }
+  if (isSqlitePreviewExtension(normalizedExtension) && resolveIconSrc('database', iconTheme)) {
+    return 'database';
+  }
+
+  return null;
 }
 
 function normalizeMatcherMap(source: Record<string, string> | undefined): Record<string, string> {
@@ -255,7 +329,7 @@ export function resolveFileIcon(
 ): OverlayFileIconResolution {
   const theme = iconTheme ?? BUILT_IN_ICON_THEME;
   const normalizedName = entryName.trim().toLowerCase();
-  const normalizedExtension = extension.trim().replace(/^\./, '').toLowerCase();
+  const normalizedExtension = normalizeFileExtension(extension);
   const fileNameMatch = theme.fileNames[normalizedName];
   if (fileNameMatch) {
     return {
@@ -264,12 +338,39 @@ export function resolveFileIcon(
     };
   }
 
-  const extensionMatch = theme.fileExtensions[normalizedExtension];
-  if (extensionMatch) {
-    return {
-      iconId: extensionMatch,
-      matchKind: 'extension',
-    };
+  const derivedFileNameExtension = inferFileNameExtension(entryName);
+  const shouldPrioritizeDerivedFileNameExtension =
+    Boolean(derivedFileNameExtension) &&
+    derivedFileNameExtension !== normalizedExtension &&
+    (
+      !normalizedExtension ||
+      normalizedExtension === theme.file ||
+      GENERIC_FILE_EXTENSION_METADATA_VALUES.has(normalizedExtension)
+    );
+  const extensionCandidates = (
+    shouldPrioritizeDerivedFileNameExtension
+      ? [derivedFileNameExtension, normalizedExtension]
+      : [normalizedExtension, derivedFileNameExtension]
+  ).filter((candidate, index, values) => candidate && values.indexOf(candidate) === index);
+
+  for (const extensionCandidate of extensionCandidates) {
+    const extensionMatch = theme.fileExtensions[extensionCandidate];
+    if (extensionMatch) {
+      return {
+        iconId: extensionMatch,
+        matchKind: 'extension',
+      };
+    }
+  }
+
+  for (const extensionCandidate of extensionCandidates) {
+    const semanticFallbackIconId = resolveSemanticFileIconId(extensionCandidate, theme);
+    if (semanticFallbackIconId) {
+      return {
+        iconId: semanticFallbackIconId,
+        matchKind: 'extension',
+      };
+    }
   }
 
   return {

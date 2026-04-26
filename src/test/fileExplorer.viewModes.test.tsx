@@ -5614,6 +5614,56 @@ const value = 1;
     ).toBe(false);
   });
 
+  it("keeps managed semantic icons ahead of native fallback when entry metadata drifts from the filename extension", async () => {
+    useSettingsStore.getState().updateAppearance({ useNativeOsIcons: true });
+
+    const driftedEntries = ENTRIES.map((entry) =>
+      entry.name === "preview.png"
+        ? {
+            ...entry,
+            extension: "mystery",
+          }
+        : entry,
+    );
+
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return driftedEntries;
+        }
+        if (command === "fs_resolve_native_icons") {
+          const payload = args as
+            | { requests?: Array<{ path: string }> }
+            | undefined;
+          return (payload?.requests ?? []).map(({ path }) => ({
+            path,
+            src: "data:image/png;base64,bmF0aXZlLWljb24=",
+          }));
+        }
+
+        return baseInvokeImplementation(
+          command,
+          args as Parameters<typeof invoke>[1],
+        );
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("preview.png");
+
+    expect(getEntryIconSrc("preview.png")).toContain("/icons/image.svg");
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([command]) => command === "fs_resolve_native_icons"),
+    ).toBe(false);
+  });
+
   it("keeps ctrl-wheel scaling responsive after the explorer remounts its layout shell", async () => {
     useSettingsStore
       .getState()
