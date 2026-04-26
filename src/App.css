@@ -18,7 +18,8 @@ html, body, #root {
   --overlay-scrollbar-size: 11px;
   --overlay-scrollbar-thumb: color-mix(in srgb, var(--overlay-border-strong) 72%, transparent);
   --overlay-scrollbar-thumb-hover: color-mix(in srgb, var(--overlay-accent) 46%, var(--overlay-border-strong));
-  --overlay-scrollbar-track: transparent;
+  --overlay-scrollbar-track: color-mix(in srgb, var(--overlay-bg-panel-alt) 82%, black 18%);
+  --overlay-scrollbar-corner: color-mix(in srgb, var(--overlay-bg-panel) 88%, black 12%);
   --overlay-scrollbar-thumb-border-width: 3px;
   --overlay-toggle-width: 48px;
   --overlay-toggle-height: 26px;
@@ -132,31 +133,42 @@ html, body, #root {
   --overlay-toggle-height: 18px;
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none) {
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport)) {
   scrollbar-width: thin;
   scrollbar-color: var(--overlay-scrollbar-thumb) var(--overlay-scrollbar-track);
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none)::-webkit-scrollbar {
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport))::-webkit-scrollbar {
   width: var(--overlay-scrollbar-size);
   height: var(--overlay-scrollbar-size);
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none)::-webkit-scrollbar-track {
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport))::-webkit-scrollbar-track {
   background: var(--overlay-scrollbar-track);
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none)::-webkit-scrollbar-thumb {
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport))::-webkit-scrollbar-thumb {
   background: var(--overlay-scrollbar-thumb);
   border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none):hover::-webkit-scrollbar-thumb {
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport)):hover::-webkit-scrollbar-thumb {
   background: var(--overlay-scrollbar-thumb-hover);
   border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
   background-clip: padding-box;
+}
+
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport))::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  display: none;
+  background: transparent;
+}
+
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport))::-webkit-scrollbar-corner {
+  background: var(--overlay-scrollbar-corner);
 }
 
 /* Shared scroll system for overlay panels */
@@ -239,9 +251,17 @@ html, body, #root {
   background-clip: padding-box;
 }
 
+.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar-button,
+.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  display: none;
+  background: transparent;
+}
+
 .overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar-corner,
 .overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-corner {
-  background: transparent;
+  background: var(--overlay-scrollbar-corner);
 }
 
 .overlay-scroll-area__viewport--explorer-file-list {
