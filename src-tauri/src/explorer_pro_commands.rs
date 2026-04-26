@@ -1,3 +1,4 @@
+use crate::explorer_identity::{build_content_revision, build_virtual_identity};
 use crate::fs_commands::{
     complete_manual_explorer_task, create_manual_explorer_task,
     create_manual_explorer_task_with_id, fail_manual_explorer_task,
@@ -1090,12 +1091,20 @@ fn to_file_entry(path: &Path) -> Result<FileEntry, String> {
         .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|value| value.as_millis() as u64)
         .unwrap_or(0);
+    let size = if is_dir { 0 } else { metadata.len() };
+    let is_symlink = metadata.file_type().is_symlink();
+    let content_revision = build_content_revision(size, modified, is_dir, is_symlink);
+    let identity = build_virtual_identity(
+        "duplicate-scan-path",
+        &path.to_string_lossy(),
+        &content_revision,
+    );
 
     Ok(FileEntry {
         name,
         path: path.to_string_lossy().to_string(),
         is_dir,
-        size: if is_dir { 0 } else { metadata.len() },
+        size,
         modified,
         extension: path
             .extension()
@@ -1105,7 +1114,10 @@ fn to_file_entry(path: &Path) -> Result<FileEntry, String> {
             .file_name()
             .map(|value| value.to_string_lossy().starts_with('.'))
             .unwrap_or(false),
-        is_symlink: metadata.file_type().is_symlink(),
+        is_symlink,
+        entity_id: identity.entity_id,
+        identity_kind: identity.identity_kind,
+        content_revision: identity.content_revision,
     })
 }
 

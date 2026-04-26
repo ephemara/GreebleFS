@@ -6,7 +6,6 @@
  * the current desktop webview cannot decode the original file directly.
  */
 
-import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   useCallback,
   useEffect,
@@ -35,14 +34,27 @@ import {
 } from '@/components/AppIcons';
 import {
   createExplorerVideoPreviewProxy,
+  EXPLORER_VIDEO_PREVIEW_MAX_BYTES,
+  readExplorerVideoPreviewBytes,
   resolveExplorerVideoPreviewSource,
   type ExplorerVideoPreviewSource,
 } from '../runtime/videoEditorBackend';
+import {
+  applyExplorerImageStageWheelZoom,
+  DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM,
+  EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_COLOR,
+  EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_IMAGE,
+  EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_POSITION,
+  EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_SIZE,
+  normalizeExplorerImageStageTransform,
+  type ExplorerImageStageTransform,
+} from './explorer/explorerImageStage';
 import { PremiumSlider } from './PremiumSlider';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type InspectorTab = 'transform' | 'color' | 'audio';
+type VideoPreviewTransform = ExplorerImageStageTransform;
 
 interface VideoTransform {
   scaleX: number; // %
@@ -117,70 +129,14 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
-const MEDIA_SOURCE_PROTOCOL_PATTERN = /^(https?:|file:|asset:|tauri:|blob:)/i;
-
-function buildEncodedFileUrl(sourcePath: string): string | null {
-  const trimmedPath = sourcePath.trim();
-  if (!trimmedPath) {
-    return null;
+function describeErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
   }
-
-  if (trimmedPath.toLowerCase().startsWith('file:')) {
-    return encodeURI(trimmedPath);
+  if (typeof error === 'string') {
+    return error;
   }
-
-  if (MEDIA_SOURCE_PROTOCOL_PATTERN.test(trimmedPath)) {
-    return null;
-  }
-
-  const normalizedPath = trimmedPath.replace(/\\/g, '/');
-  if (/^[a-zA-Z]:\//.test(normalizedPath)) {
-    return encodeURI(`file:///${normalizedPath}`);
-  }
-
-  if (normalizedPath.startsWith('/')) {
-    return encodeURI(`file://${normalizedPath}`);
-  }
-
-  return encodeURI(`file:///${normalizedPath}`);
-}
-
-function buildVideoPlaybackSourceCandidates(
-  sourcePath: string,
-  fallbackSource?: string,
-): string[] {
-  const uniqueCandidates = new Set<string>();
-
-  const registerSource = (candidate: string | null | undefined) => {
-    const trimmedCandidate = candidate?.trim();
-    if (!trimmedCandidate) {
-      return;
-    }
-
-    if (MEDIA_SOURCE_PROTOCOL_PATTERN.test(trimmedCandidate)) {
-      uniqueCandidates.add(trimmedCandidate);
-      return;
-    }
-
-    try {
-      uniqueCandidates.add(convertFileSrc(trimmedCandidate));
-    } catch {
-      // Fall through to the explicit file:// fallback below.
-    }
-
-    const fileUrl = buildEncodedFileUrl(trimmedCandidate);
-    if (fileUrl) {
-      uniqueCandidates.add(fileUrl);
-    }
-  };
-
-  registerSource(sourcePath);
-
-  if (fallbackSource && fallbackSource.trim() !== sourcePath.trim()) {
-    registerSource(fallbackSource);
-  }
-
-  return Array.from(uniqueCandidates);
+  return 'Unknown playback transport failure.';
 }
 
 /** Convert AudioBuffer → WAV Blob without any server or ffmpeg dependency */
@@ -308,24 +264,15 @@ function ControlSlider({ label, value, min, max, reset, onChange }: ControlSlide
 export function ExplorerVideoEditor({
   videoPath,
   videoName,
-  videoSource,
   videoExtension,
   videoMimeType,
   videoSize,
   mode = 'edit',
 }: ExplorerVideoEditorProps) {
   const isEditMode = mode === 'edit';
-  const nativeSourceCandidates = useMemo(
-    () => buildVideoPlaybackSourceCandidates(videoPath, videoSource),
-    [videoPath, videoSource],
-  );
-  const nativeUrl = nativeSourceCandidates[0] ?? videoSource;
 
   // ── Proxy resolution state ──
-  const [playbackSourceCandidates, setPlaybackSourceCandidates] = useState<string[]>(
-    [],
-  );
-  const [activePlaybackSourceIndex, setActivePlaybackSourceIndex] = useState(0);
+  const [playSrc, setPlaySrc] = useState<string | null>(null);
   const [playbackMimeType, setPlaybackMimeType] = useState<string | null>(videoMimeType);
   const [isProxying, setIsProxying] = useState(true);
   const [proxyError, setProxyError] = useState('');
@@ -333,6 +280,9 @@ export function ExplorerVideoEditor({
     useState<ExplorerVideoPreviewSource['sourceKind'] | null>(null);
   const [hasAttemptedRuntimeProxyFallback, setHasAttemptedRuntimeProxyFallback] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const previewViewportRef = useRef<HTMLDivElement | null>(null);
+  const previewStageContentRef = useRef<HTMLDivElement | null>(null);
+  const playbackObjectUrlRef = useRef<string | null>(null);
   const rafRef = useRef<number>(0);
   const loadGenerationRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -351,37 +301,106 @@ export function ExplorerVideoEditor({
   const [activeTab, setActiveTab] = useState<InspectorTab>('transform');
   const [transform, setTransform] = useState<VideoTransform>(DEFAULT_TRANSFORM);
   const [color, setColor] = useState<VideoColor>(DEFAULT_COLOR);
+  const [previewTransform, setPreviewTransform] = useState<VideoPreviewTransform>(
+    DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM,
+  );
+  const [isPreviewDragging, setIsPreviewDragging] = useState(false);
   const [isExtractingAudio, setIsExtractingAudio] = useState(false);
   const [audioExtractMsg, setAudioExtractMsg] = useState('');
-  const playSrc = playbackSourceCandidates[activePlaybackSourceIndex];
+  const revokePlaybackObjectUrl = useCallback(() => {
+    const currentPlaybackObjectUrl = playbackObjectUrlRef.current;
+    if (currentPlaybackObjectUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(currentPlaybackObjectUrl);
+    }
+    playbackObjectUrlRef.current = null;
+  }, []);
 
-  const applyPlaybackSource = useCallback(
-    (
-      sourcePath: string,
-      sourceKind: ExplorerVideoPreviewSource['sourceKind'],
-      mimeType: string | null,
-      fallbackSource?: string,
-    ) => {
-      setResolvedSourceKind(sourceKind);
-      setPlaybackMimeType(mimeType ?? videoMimeType);
-      setPlaybackSourceCandidates(
-        buildVideoPlaybackSourceCandidates(sourcePath, fallbackSource),
-      );
-      setActivePlaybackSourceIndex(0);
-      setProxyError('');
-    },
-    [videoMimeType],
-  );
+  const resetPreviewViewport = useCallback(() => {
+    setPreviewTransform(DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM);
+    setIsPreviewDragging(false);
+  }, []);
 
   const applyResolvedPreviewSource = useCallback(
-    (resolvedSource: ExplorerVideoPreviewSource) => {
-      applyPlaybackSource(
-        resolvedSource.sourcePath,
-        resolvedSource.sourceKind,
-        resolvedSource.mimeType ?? videoMimeType,
-      );
+    async (
+      resolvedSource: ExplorerVideoPreviewSource,
+      allowProxyFallback = true,
+    ) => {
+      const loadGeneration = loadGenerationRef.current;
+      setResolvedSourceKind(resolvedSource.sourceKind);
+      setPlaybackMimeType(resolvedSource.mimeType ?? videoMimeType);
+      setPlaySrc(null);
+      setProxyError('');
+      setIsProxying(true);
+      setIsPlaybackReady(false);
+      setIsPlaying(false);
+      revokePlaybackObjectUrl();
+
+      try {
+        const previewBytes = await readExplorerVideoPreviewBytes(
+          resolvedSource.sourcePath,
+          EXPLORER_VIDEO_PREVIEW_MAX_BYTES,
+        );
+        if (loadGenerationRef.current !== loadGeneration) {
+          return;
+        }
+
+        const playbackObjectUrl = URL.createObjectURL(
+          new Blob([previewBytes], {
+            type: resolvedSource.mimeType ?? videoMimeType ?? 'application/octet-stream',
+          }),
+        );
+
+        if (loadGenerationRef.current !== loadGeneration) {
+          URL.revokeObjectURL(playbackObjectUrl);
+          return;
+        }
+
+        playbackObjectUrlRef.current = playbackObjectUrl;
+        setPlaySrc(playbackObjectUrl);
+      } catch (error) {
+        if (loadGenerationRef.current !== loadGeneration) {
+          return;
+        }
+
+        const errorMessage = describeErrorMessage(error);
+        console.error('[VideoEditor] Native playback transport failed', {
+          resolvedSource,
+          error,
+        });
+
+        if (resolvedSource.sourceKind === 'direct' && allowProxyFallback) {
+          setHasAttemptedRuntimeProxyFallback(true);
+          try {
+            const proxySource = await createExplorerVideoPreviewProxy(videoPath);
+            if (loadGenerationRef.current !== loadGeneration) {
+              return;
+            }
+            await applyResolvedPreviewSource(proxySource, false);
+            return;
+          } catch (proxyFallbackError) {
+            if (loadGenerationRef.current !== loadGeneration) {
+              return;
+            }
+            console.error('[VideoEditor] preview proxy fallback failed', proxyFallbackError);
+            setProxyError(
+              `Preview proxy generation failed after native video transport failed. ${describeErrorMessage(proxyFallbackError)}`,
+            );
+            return;
+          }
+        }
+
+        setProxyError(
+          resolvedSource.sourceKind === 'proxy'
+            ? `Native preview proxy transport failed before playback could begin. ${errorMessage}`
+            : `Native video transport failed before playback could begin. ${errorMessage}`,
+        );
+      } finally {
+        if (loadGenerationRef.current === loadGeneration) {
+          setIsProxying(false);
+        }
+      }
     },
-    [applyPlaybackSource, videoMimeType],
+    [revokePlaybackObjectUrl, videoMimeType, videoPath],
   );
 
   // Reset on file change and resolve source
@@ -389,8 +408,8 @@ export function ExplorerVideoEditor({
     let isMounted = true;
     const loadGeneration = loadGenerationRef.current + 1;
     loadGenerationRef.current = loadGeneration;
-    setPlaybackSourceCandidates([]);
-    setActivePlaybackSourceIndex(0);
+    revokePlaybackObjectUrl();
+    setPlaySrc(null);
     setPlaybackMimeType(videoMimeType);
     setIsProxying(true);
     setProxyError('');
@@ -404,6 +423,7 @@ export function ExplorerVideoEditor({
     setTrimEnd(0);
     setTransform(DEFAULT_TRANSFORM);
     setColor(DEFAULT_COLOR);
+    resetPreviewViewport();
     setAudioExtractMsg('');
     cancelAnimationFrame(rafRef.current);
 
@@ -411,29 +431,37 @@ export function ExplorerVideoEditor({
       try {
         const resolvedSource = await resolveExplorerVideoPreviewSource(videoPath);
         if (isMounted && loadGenerationRef.current === loadGeneration) {
-          applyResolvedPreviewSource(resolvedSource);
+          await applyResolvedPreviewSource(resolvedSource);
         }
       } catch (err: any) {
-        // Fallback to native `<video>` src playback if the backend proxy fails
-        // so that we don't block natively supported formats (MP4, WebM, etc.)
         if (isMounted && loadGenerationRef.current === loadGeneration) {
-          console.warn('[VideoEditor] Backend resolve failed, falling back to direct url:', err);
-          applyPlaybackSource(videoPath, 'direct', videoMimeType, videoSource);
-        }
-      } finally {
-        if (isMounted && loadGenerationRef.current === loadGeneration) {
-          setIsProxying(false);
+          console.warn(
+            '[VideoEditor] Backend resolve failed, falling back to native byte transport:',
+            err,
+          );
+          await applyResolvedPreviewSource(
+            {
+              sourcePath: videoPath,
+              sourceKind: 'direct',
+              mimeType: videoMimeType,
+              generatedFromPath: null,
+            },
+            true,
+          );
         }
       }
     })();
 
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+      revokePlaybackObjectUrl();
+    };
   }, [
-    applyPlaybackSource,
     applyResolvedPreviewSource,
+    resetPreviewViewport,
+    revokePlaybackObjectUrl,
     videoMimeType,
     videoPath,
-    videoSource,
   ]);
 
   useEffect(() => {
@@ -455,7 +483,7 @@ export function ExplorerVideoEditor({
 
   const attemptRuntimeProxyFallback = useCallback(async () => {
     if (hasAttemptedRuntimeProxyFallback) {
-      setProxyError('This desktop webview could not play the generated preview proxy either.');
+      setProxyError('This desktop webview could not play the generated native preview proxy either.');
       return;
     }
 
@@ -470,7 +498,7 @@ export function ExplorerVideoEditor({
       if (loadGenerationRef.current !== loadGeneration) {
         return;
       }
-      applyResolvedPreviewSource(proxySource);
+      await applyResolvedPreviewSource(proxySource, false);
     } catch (error) {
       if (loadGenerationRef.current !== loadGeneration) {
         return;
@@ -483,6 +511,10 @@ export function ExplorerVideoEditor({
       }
     }
   }, [applyResolvedPreviewSource, hasAttemptedRuntimeProxyFallback, videoPath]);
+
+  useEffect(() => () => {
+    revokePlaybackObjectUrl();
+  }, [revokePlaybackObjectUrl]);
 
   // RAF loop for smooth playhead update while playing
   const tickPlayhead = useCallback(() => {
@@ -592,22 +624,82 @@ export function ExplorerVideoEditor({
     window.addEventListener('mouseup', up);
   }, [clientXToTime, duration, seekTo]);
 
-  // ── Viewer: zoom + pan ──
-  const viewerRef = useRef<HTMLDivElement | null>(null);
-
-  const handleViewerWheel = useCallback((e: React.WheelEvent) => {
-    if (!isEditMode) {
+  // ── Viewer: stage zoom + edit transform drag ──
+  const handlePreviewWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    if (!playSrc) {
       return;
     }
-    e.preventDefault();
-    const speed = 0.18;
-    setTransform((prev) => {
-      const next = clamp(prev.scaleX - e.deltaY * speed, 10, 500);
-      return { ...prev, scaleX: next, scaleY: next };
-    });
-  }, [isEditMode]);
 
-  const handleViewerMouseDown = useCallback((e: React.MouseEvent) => {
+    const viewport = previewViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    setPreviewTransform((current) => {
+      return applyExplorerImageStageWheelZoom({
+        currentTransform: current,
+        viewport,
+        content: previewStageContentRef.current,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        deltaY: event.deltaY,
+      });
+    });
+  }, [playSrc]);
+
+  const handlePreviewMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      !playSrc ||
+      isEditMode ||
+      event.button !== 0 ||
+      event.target !== event.currentTarget
+    ) {
+      return;
+    }
+
+    const viewport = previewViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const startTransform = previewTransform;
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+
+    setIsPreviewDragging(true);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      setPreviewTransform(
+        normalizeExplorerImageStageTransform(
+          {
+            scale: startTransform.scale,
+            offsetX: startTransform.offsetX + (moveEvent.clientX - startClientX),
+            offsetY: startTransform.offsetY + (moveEvent.clientY - startClientY),
+          },
+          viewport,
+          previewStageContentRef.current,
+        ),
+      );
+    };
+
+    const stopDragging = () => {
+      setIsPreviewDragging(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', stopDragging);
+      window.removeEventListener('blur', stopDragging);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', stopDragging);
+    window.addEventListener('blur', stopDragging);
+  }, [isEditMode, playSrc, previewTransform]);
+
+  const handleVideoTransformMouseDown = useCallback((e: React.MouseEvent) => {
     if (!isEditMode) {
       return;
     }
@@ -629,10 +721,14 @@ export function ExplorerVideoEditor({
 
   // ── Audio extraction ──
   const extractAudio = useCallback(async () => {
+    if (!playSrc) {
+      setAudioExtractMsg('Playback source is not ready yet.');
+      return;
+    }
     setIsExtractingAudio(true);
     setAudioExtractMsg('Decoding via WebAudio…');
     try {
-      const resp = await fetch(nativeUrl);
+      const resp = await fetch(playSrc);
       const arrayBuf = await resp.arrayBuffer();
       const ctx = new AudioContext();
       const audioBuf = await ctx.decodeAudioData(arrayBuf);
@@ -651,7 +747,7 @@ export function ExplorerVideoEditor({
     } finally {
       setIsExtractingAudio(false);
     }
-  }, [nativeUrl, videoName]);
+  }, [playSrc, videoName]);
 
   // ── Computed style values ──
   const videoFilter = useMemo(() => (
@@ -665,6 +761,12 @@ export function ExplorerVideoEditor({
   const wrapperTransform = useMemo(() => (
     `translate(${transform.posX}px, ${transform.posY}px) scale(${transform.scaleX / 100}, ${transform.scaleY / 100})`
   ), [transform]);
+  const previewStageTransform = useMemo(
+    () =>
+      `translate(${previewTransform.offsetX}px, ${previewTransform.offsetY}px) scale(${previewTransform.scale})`,
+    [previewTransform],
+  );
+  const previewZoomPercent = Math.round(previewTransform.scale * 100);
 
   const selectionLeft = duration > 0 ? `${(trimStart / duration) * 100}%` : '0%';
   const selectionWidth = duration > 0 ? `${((trimEnd - trimStart) / duration) * 100}%` : '0%';
@@ -706,9 +808,11 @@ export function ExplorerVideoEditor({
 
         {/* Viewer */}
         <div
-          ref={viewerRef}
-          onWheel={handleViewerWheel}
-          onMouseDown={handleViewerMouseDown}
+          ref={previewViewportRef}
+          onWheel={handlePreviewWheel}
+          onMouseDown={
+            isEditMode ? handleVideoTransformMouseDown : handlePreviewMouseDown
+          }
           style={{
             flex: 1,
             position: 'relative',
@@ -716,120 +820,152 @@ export function ExplorerVideoEditor({
             alignItems: 'center',
             justifyContent: 'center',
             overflow: 'hidden',
-            background: 'radial-gradient(circle at 50% 30%, rgba(255,255,255,0.04), transparent 70%), rgba(0,0,0,0.82)',
-            cursor: isEditMode ? 'grab' : 'default',
+            background: 'var(--overlay-explorer-preview-bg, #111827)',
+            backgroundImage:
+              EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_IMAGE,
+            backgroundSize:
+              EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_SIZE,
+            backgroundPosition:
+              EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_POSITION,
+            backgroundColor:
+              EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_COLOR,
+            cursor: isEditMode
+              ? 'grab'
+              : isPreviewDragging
+                ? 'grabbing'
+                : previewTransform.scale > 1
+                  ? 'grab'
+                  : 'default',
           }}
         >
-          {/* Checkerboard mask (shows crop/transparent areas) */}
-          <div style={{
-            position: 'absolute',
-            inset: 0,
-            opacity: 0.08,
-            backgroundImage:
-              'linear-gradient(45deg,#666 25%,transparent 25%),' +
-              'linear-gradient(-45deg,#666 25%,transparent 25%),' +
-              'linear-gradient(45deg,transparent 75%,#666 75%),' +
-              'linear-gradient(-45deg,transparent 75%,#666 75%)',
-            backgroundSize: '18px 18px',
-            backgroundPosition: '0 0,0 9px,9px -9px,-9px 0',
-            pointerEvents: 'none',
-          }} />
-
           <div
+            ref={previewStageContentRef}
             style={{
               position: 'relative',
               maxWidth: '100%',
               maxHeight: '100%',
-              transform: wrapperTransform,
-              transformOrigin: 'center',
+              transform: previewStageTransform,
+              transformOrigin: 'center center',
+              transition: isPreviewDragging ? undefined : 'transform 120ms ease-out',
             }}
           >
-            <video
-              ref={videoRef}
-              preload="metadata"
-              playsInline
-              controls={!isEditMode}
-              muted={isMuted}
-              aria-label={`Video preview: ${videoName}`}
-              onError={() => {
-                if (!playSrc) {
-                  return;
-                }
-                const hasNextPlaybackSourceCandidate =
-                  activePlaybackSourceIndex + 1 < playbackSourceCandidates.length;
-                if (hasNextPlaybackSourceCandidate) {
-                  setIsPlaybackReady(false);
-                  setProxyError('');
-                  setActivePlaybackSourceIndex((currentIndex) => currentIndex + 1);
-                  return;
-                }
-                if (resolvedSourceKind === 'direct' && !hasAttemptedRuntimeProxyFallback) {
-                  void attemptRuntimeProxyFallback();
-                  return;
-                }
-                setProxyError(
-                  resolvedSourceKind === 'proxy'
-                    ? 'Video playback failed for both local proxy URLs in this desktop webview.'
-                    : 'Video playback failed in this desktop webview.',
-                );
-                setIsPlaybackReady(false);
-              }}
-              onCanPlay={() => setIsPlaybackReady(true)}
-              onLoadedMetadata={handleLoadedMetadata}
-              onDurationChange={handleLoadedMetadata}
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
-              onTimeUpdate={() => {
-                const vid = videoRef.current;
-                if (!vid) {
-                  return;
-                }
-                setCurrentTime(vid.currentTime);
-              }}
-              onVolumeChange={() => {
-                const vid = videoRef.current;
-                if (!vid) {
-                  return;
-                }
-                setVolume(vid.volume);
-                setIsMuted(vid.muted || vid.volume === 0);
-              }}
-              onEnded={() => {
-                if (isEditMode && loopTrim) {
-                  seekTo(trimStart);
-                } else {
-                  setIsPlaying(false);
-                }
-              }}
+            <div
               style={{
-                display: 'block',
+                position: 'relative',
                 maxWidth: '100%',
                 maxHeight: '100%',
-                filter: videoFilter,
-                clipPath: videoClipPath,
+                transform: wrapperTransform,
+                transformOrigin: 'center',
               }}
             >
-              {playSrc ? (
-                <source src={playSrc} type={playbackMimeType ?? undefined} />
-              ) : null}
-            </video>
-            {/* Transform overlay border */}
-            {isEditMode && activeTab === 'transform' && (
-              <div
-                className="vt-handle"
-                style={{
-                  position: 'absolute',
-                  top: `${transform.cropTop}%`,
-                  bottom: `${transform.cropBottom}%`,
-                  left: `${transform.cropLeft}%`,
-                  right: `${transform.cropRight}%`,
-                  border: '1px solid rgba(99,179,237,0.7)',
-                  pointerEvents: 'none',
-                  boxShadow: '0 0 0 1px rgba(99,179,237,0.15)',
+              <video
+                ref={videoRef}
+                preload="metadata"
+                playsInline
+                controls={!isEditMode}
+                muted={isMuted}
+                aria-label={`Video preview: ${videoName}`}
+                onError={() => {
+                  if (!playSrc) {
+                    return;
+                  }
+                  if (resolvedSourceKind === 'direct' && !hasAttemptedRuntimeProxyFallback) {
+                    void attemptRuntimeProxyFallback();
+                    return;
+                  }
+                  setProxyError(
+                    resolvedSourceKind === 'proxy'
+                      ? 'Video playback failed after loading the native preview proxy in this desktop webview.'
+                      : 'Video playback failed in this desktop webview.',
+                  );
+                  setIsPlaybackReady(false);
                 }}
-              />
-            )}
+                onCanPlay={() => setIsPlaybackReady(true)}
+                onLoadedMetadata={handleLoadedMetadata}
+                onDurationChange={handleLoadedMetadata}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onTimeUpdate={() => {
+                  const vid = videoRef.current;
+                  if (!vid) {
+                    return;
+                  }
+                  setCurrentTime(vid.currentTime);
+                }}
+                onVolumeChange={() => {
+                  const vid = videoRef.current;
+                  if (!vid) {
+                    return;
+                  }
+                  setVolume(vid.volume);
+                  setIsMuted(vid.muted || vid.volume === 0);
+                }}
+                onEnded={() => {
+                  if (isEditMode && loopTrim) {
+                    seekTo(trimStart);
+                  } else {
+                    setIsPlaying(false);
+                  }
+                }}
+                style={{
+                  display: 'block',
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  filter: videoFilter,
+                  clipPath: videoClipPath,
+                }}
+              >
+                {playSrc ? (
+                  <source src={playSrc} type={playbackMimeType ?? undefined} />
+                ) : null}
+              </video>
+              {/* Transform overlay border */}
+              {isEditMode && activeTab === 'transform' && (
+                <div
+                  className="vt-handle"
+                  style={{
+                    position: 'absolute',
+                    top: `${transform.cropTop}%`,
+                    bottom: `${transform.cropBottom}%`,
+                    left: `${transform.cropLeft}%`,
+                    right: `${transform.cropRight}%`,
+                    border: '1px solid rgba(99,179,237,0.7)',
+                    pointerEvents: 'none',
+                    boxShadow: '0 0 0 1px rgba(99,179,237,0.15)',
+                  }}
+                />
+              )}
+            </div>
           </div>
+
+          {playSrc ? (
+            <div
+              style={{
+                position: 'absolute',
+                right: 12,
+                bottom: 12,
+                zIndex: 11,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 10px',
+                borderRadius: 999,
+                background: 'rgba(10, 14, 24, 0.58)',
+                border: '1px solid rgba(255, 255, 255, 0.14)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.24)',
+                color: 'var(--overlay-text-primary)',
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: '0.03em',
+                pointerEvents: 'none',
+              }}
+            >
+              <span style={{ opacity: 0.72 }}>Preview</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {previewZoomPercent}%
+              </span>
+            </div>
+          ) : null}
 
           {/* No-video overlay */}
           {(!playSrc || !isPlaybackReady || Boolean(proxyError)) && (
@@ -1108,12 +1244,8 @@ export function ExplorerVideoEditor({
                 : proxyError
                   ? proxyError
                   : resolvedSourceKind === 'proxy'
-                    ? activePlaybackSourceIndex > 0
-                      ? 'Proxy playback (file URL fallback)'
-                      : 'Proxy playback'
-                    : activePlaybackSourceIndex > 0
-                      ? 'Direct playback (file URL fallback)'
-                      : 'Direct playback'}
+                    ? 'Proxy playback (native bytes)'
+                    : 'Direct playback (native bytes)'}
             </div>
           </div>
         )}

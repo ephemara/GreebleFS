@@ -3,29 +3,33 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ExplorerVideoEditor } from '../components/ExplorerVideoEditor';
 
 const {
-  convertFileSrcMock,
   createExplorerVideoPreviewProxyMock,
+  readExplorerVideoPreviewBytesMock,
   resolveExplorerVideoPreviewSourceMock,
+  createObjectUrlMock,
+  revokeObjectUrlMock,
 } = vi.hoisted(() => ({
-  convertFileSrcMock: vi.fn((path: string) => `asset://localhost/${path}`),
   createExplorerVideoPreviewProxyMock: vi.fn(),
+  readExplorerVideoPreviewBytesMock: vi.fn(),
   resolveExplorerVideoPreviewSourceMock: vi.fn(),
-}));
-
-vi.mock('@tauri-apps/api/core', () => ({
-  convertFileSrc: convertFileSrcMock,
+  createObjectUrlMock: vi.fn(),
+  revokeObjectUrlMock: vi.fn(),
 }));
 
 vi.mock('../runtime/videoEditorBackend', () => ({
+  EXPLORER_VIDEO_PREVIEW_MAX_BYTES: 256 * 1024 * 1024,
   createExplorerVideoPreviewProxy: createExplorerVideoPreviewProxyMock,
+  readExplorerVideoPreviewBytes: readExplorerVideoPreviewBytesMock,
   resolveExplorerVideoPreviewSource: resolveExplorerVideoPreviewSourceMock,
 }));
 
 describe('ExplorerVideoEditor', () => {
   beforeEach(() => {
-    convertFileSrcMock.mockClear();
     createExplorerVideoPreviewProxyMock.mockReset();
+    readExplorerVideoPreviewBytesMock.mockReset();
     resolveExplorerVideoPreviewSourceMock.mockReset();
+    createObjectUrlMock.mockReset();
+    revokeObjectUrlMock.mockReset();
 
     resolveExplorerVideoPreviewSourceMock.mockResolvedValue({
       sourcePath: '/tmp/demo.mp4',
@@ -38,6 +42,20 @@ describe('ExplorerVideoEditor', () => {
       sourceKind: 'proxy',
       mimeType: 'video/mp4',
       generatedFromPath: '/tmp/demo.mp4',
+    });
+    readExplorerVideoPreviewBytesMock.mockImplementation(async (path: string) =>
+      new TextEncoder().encode(`video-bytes:${path}`),
+    );
+    createObjectUrlMock
+      .mockReturnValueOnce('blob:direct-preview')
+      .mockReturnValueOnce('blob:proxy-preview');
+    Object.defineProperty(globalThis, 'URL', {
+      configurable: true,
+      value: {
+        ...globalThis.URL,
+        createObjectURL: createObjectUrlMock,
+        revokeObjectURL: revokeObjectUrlMock,
+      },
     });
 
     Object.defineProperty(HTMLMediaElement.prototype, 'load', {
@@ -57,12 +75,12 @@ describe('ExplorerVideoEditor', () => {
     });
   });
 
-  it('retries direct playback with a file URL before escalating to a generated proxy', async () => {
+  it('reads native bytes into a blob URL before escalating to a generated proxy', async () => {
     render(
       <ExplorerVideoEditor
         videoPath="/tmp/demo.mp4"
         videoName="demo.mp4"
-        videoSource="asset://localhost//tmp/demo.mp4"
+        videoSource="/tmp/demo.mp4"
         videoExtension="mp4"
         videoMimeType="video/mp4"
         videoSize={1024}
@@ -73,16 +91,15 @@ describe('ExplorerVideoEditor', () => {
 
     await waitFor(() => {
       const source = player.querySelector('source');
-      expect(source?.getAttribute('src')).toBe('asset://localhost//tmp/demo.mp4');
+      expect(source?.getAttribute('src')).toBe('blob:direct-preview');
       expect(source?.getAttribute('type')).toBe('video/mp4');
     });
 
-    fireEvent.error(player);
-
     await waitFor(() => {
-      const source = player.querySelector('source');
-      expect(source?.getAttribute('src')).toBe('file:///tmp/demo.mp4');
-      expect(createExplorerVideoPreviewProxyMock).not.toHaveBeenCalled();
+      expect(readExplorerVideoPreviewBytesMock).toHaveBeenCalledWith(
+        '/tmp/demo.mp4',
+        256 * 1024 * 1024,
+      );
     });
 
     fireEvent.error(player);
@@ -93,8 +110,15 @@ describe('ExplorerVideoEditor', () => {
 
     await waitFor(() => {
       const source = player.querySelector('source');
-      expect(source?.getAttribute('src')).toBe('asset://localhost//tmp/demo.preview.mp4');
+      expect(source?.getAttribute('src')).toBe('blob:proxy-preview');
       expect(source?.getAttribute('type')).toBe('video/mp4');
+    });
+
+    await waitFor(() => {
+      expect(readExplorerVideoPreviewBytesMock).toHaveBeenCalledWith(
+        '/tmp/demo.preview.mp4',
+        256 * 1024 * 1024,
+      );
     });
   });
 
@@ -103,7 +127,7 @@ describe('ExplorerVideoEditor', () => {
       <ExplorerVideoEditor
         videoPath="/tmp/demo.mp4"
         videoName="demo.mp4"
-        videoSource="asset://localhost//tmp/demo.mp4"
+        videoSource="/tmp/demo.mp4"
         videoExtension="mp4"
         videoMimeType="video/mp4"
         videoSize={1024}
@@ -117,12 +141,12 @@ describe('ExplorerVideoEditor', () => {
 
     await waitFor(() => {
       const source = player.querySelector('source');
-      expect(source?.getAttribute('src')).toBe('asset://localhost//tmp/demo.mp4');
+      expect(source?.getAttribute('src')).toBe('blob:direct-preview');
     });
 
     expect(player.controls).toBe(true);
     expect(screen.queryByText('Inspector')).toBeNull();
     expect(screen.queryByRole('button', { name: /set in/i })).toBeNull();
-    expect(screen.getByText('Direct playback')).toBeInTheDocument();
+    expect(screen.getByText('Direct playback (native bytes)')).toBeInTheDocument();
   });
 });

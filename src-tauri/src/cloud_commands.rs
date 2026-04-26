@@ -1,3 +1,4 @@
+use crate::explorer_identity::{build_content_revision, build_virtual_identity};
 use crate::fs_commands::{
     fs_open_file, FileEntry, FileTransferCollisionPolicy, FileTransferDisposition,
     FileTransferOperation, FileTransferResult, FsWriteFileContent,
@@ -866,12 +867,21 @@ pub async fn cloud_transfer_items(
                 operation,
             )
             .await?;
+            let content_revision = build_content_revision(0, 0, false, false);
+            let identity = build_virtual_identity(
+                "cloud-transfer",
+                &format!("{source}->{target_dir}::{operation:?}"),
+                &content_revision,
+            );
             results.push(FileTransferResult {
                 source_path: source.clone(),
                 destination_path: target_dir.clone(),
                 operation,
                 collision_policy: FileTransferCollisionPolicy::KeepBoth,
                 disposition: FileTransferDisposition::Transferred,
+                entity_id: identity.entity_id,
+                identity_kind: identity.identity_kind,
+                content_revision: identity.content_revision,
             });
         }
     }
@@ -1947,19 +1957,27 @@ fn google_file_to_entry(account_id: &str, file: GoogleDriveFile) -> FileEntry {
             .unwrap_or_default()
             .to_string()
     };
+    let path = build_cloud_item_path(CloudProviderId::GoogleDrive, account_id, &file.id);
+    let size = file
+        .size
+        .as_deref()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    let modified = parse_timestamp_ms(file.modified_time.as_deref());
+    let content_revision = build_content_revision(size, modified, is_dir, false);
+    let identity = build_virtual_identity("cloud-google-drive", &path, &content_revision);
     FileEntry {
         name: file.name.clone(),
-        path: build_cloud_item_path(CloudProviderId::GoogleDrive, account_id, &file.id),
+        path,
         is_dir,
-        size: file
-            .size
-            .as_deref()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(0),
-        modified: parse_timestamp_ms(file.modified_time.as_deref()),
+        size,
+        modified,
         extension,
         is_hidden: false,
         is_symlink: false,
+        entity_id: identity.entity_id,
+        identity_kind: identity.identity_kind,
+        content_revision: identity.content_revision,
     }
 }
 
@@ -2041,15 +2059,23 @@ fn dropbox_entry_to_file_entry(account_id: &str, entry: DropboxMetadataEntry) ->
             .unwrap_or_default()
             .to_string()
     };
+    let path = build_cloud_item_path(CloudProviderId::Dropbox, account_id, &item_path);
+    let size = entry.size.unwrap_or(0);
+    let modified = parse_timestamp_ms(entry.server_modified.as_deref());
+    let content_revision = build_content_revision(size, modified, is_dir, false);
+    let identity = build_virtual_identity("cloud-dropbox", &path, &content_revision);
     Some(FileEntry {
         name: entry.name.clone(),
-        path: build_cloud_item_path(CloudProviderId::Dropbox, account_id, &item_path),
+        path,
         is_dir,
-        size: entry.size.unwrap_or(0),
-        modified: parse_timestamp_ms(entry.server_modified.as_deref()),
+        size,
+        modified,
         extension,
         is_hidden: entry.name.starts_with('.'),
         is_symlink: false,
+        entity_id: identity.entity_id,
+        identity_kind: identity.identity_kind,
+        content_revision: identity.content_revision,
     })
 }
 

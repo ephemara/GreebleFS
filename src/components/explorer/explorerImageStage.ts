@@ -13,6 +13,17 @@ export const DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM: ExplorerImageStageTransform
 export const EXPLORER_IMAGE_STAGE_MIN_SCALE = 0.5;
 export const EXPLORER_IMAGE_STAGE_MAX_SCALE = 6;
 export const EXPLORER_IMAGE_STAGE_ZOOM_SENSITIVITY = 0.0015;
+export const EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_IMAGE = `
+  linear-gradient(45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
+  linear-gradient(-45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
+  linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.02) 75%),
+  linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.02) 75%)
+`;
+export const EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_SIZE = '16px 16px';
+export const EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_POSITION =
+  '0 0, 0 8px, 8px -8px, -8px 0px';
+export const EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_COLOR =
+  'rgba(0,0,0,0.4)';
 
 function clampExplorerImageStageValue(
   value: number,

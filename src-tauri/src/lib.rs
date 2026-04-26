@@ -7,6 +7,7 @@ pub mod cloud_commands;
 pub mod desktop_integration;
 pub mod domain_commands;
 pub mod entry_size_cache;
+pub mod explorer_identity;
 pub mod explorer_pro_commands;
 pub mod fs_commands;
 pub mod global_search;
@@ -46,6 +47,7 @@ pub mod window_commands;
 use audio_engine::AudioEngineManager;
 use cloud_commands::CloudRuntimeState;
 use entry_size_cache::{initialize_entry_size_cache, EntrySizeWatcherState};
+use explorer_identity::{initialize_explorer_identity_store, ExplorerIdentityManager};
 use fs_commands::initialize_fs_command_events;
 use plugin_commands::PluginWatcherState;
 use tauri::{
@@ -188,11 +190,13 @@ pub fn run() {
         .setup(move |app| {
             builder.mount_events(app);
             initialize_fs_command_events(app.handle().clone());
+            initialize_explorer_identity_store(app.handle())?;
             let gpu_runtime = gpu_runtime::GpuRuntimeManager::new(app.handle().clone());
             gpu_runtime::set_global_gpu_runtime(gpu_runtime.clone());
             app.manage(TerminalManager::new());
             app.manage(CloudRuntimeState::default());
             app.manage(AudioEngineManager::default());
+            app.manage(ExplorerIdentityManager::default());
             app.manage(gpu_runtime);
             app.manage(image_cutout_commands::ImageCutoutManager::default());
             app.manage(image_commands::ImageEditorManager::default());

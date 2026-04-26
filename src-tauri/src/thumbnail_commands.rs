@@ -1,4 +1,8 @@
 use crate::audio_engine::analyze_audio_file_native;
+use crate::explorer_identity::{
+    build_content_revision, build_virtual_identity, record_thumbnail_artifact,
+    PersistedThumbnailArtifactRecordInput,
+};
 use ab_glyph::{FontArc, PxScale};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use fontdb::{Database, Family, Query, Source};
@@ -53,7 +57,7 @@ static THUMBNAIL_SANS_FONT_CACHE: LazyLock<Mutex<Option<FontArc>>> =
 static THUMBNAIL_MONO_FONT_CACHE: LazyLock<Mutex<Option<FontArc>>> =
     LazyLock::new(|| Mutex::new(None));
 
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum ExplorerThumbnailKind {
     Image,
@@ -87,6 +91,21 @@ pub struct ExplorerEntryThumbnailRequest {
     pub max_height: u32,
     pub include_video_hover_scrub: Option<bool>,
     pub video_hover_frame_count: Option<u32>,
+    #[serde(rename = "entityId")]
+    pub entity_id: Option<String>,
+    #[serde(rename = "contentRevision")]
+    pub content_revision: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplorerThumbnailArtifact {
+    pub entity_id: String,
+    pub content_revision: String,
+    pub kind: ExplorerThumbnailKind,
+    pub poster_path: String,
+    pub hover_frame_paths: Vec<String>,
+    pub hover_frame_delay_ms: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +124,8 @@ struct NormalizedThumbnailRequest {
     max_height: u32,
     include_video_hover_scrub: bool,
     video_hover_frame_count: u32,
+    entity_id: String,
+    content_revision: String,
 }
 
 #[derive(Debug, Clone)]
@@ -129,10 +150,29 @@ pub async fn fs_read_entry_thumbnail(
 ) -> Result<ExplorerEntryThumbnail, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let normalized = normalize_thumbnail_request(request)?;
-        build_entry_thumbnail(&app, crate::gpu_runtime::global_gpu_runtime(), &normalized)
+        let artifact = build_entry_thumbnail_artifact(
+            &app,
+            crate::gpu_runtime::global_gpu_runtime(),
+            &normalized,
+        )?;
+        build_entry_thumbnail_from_artifact(&normalized, artifact)
     })
     .await
     .map_err(|error| format!("Thumbnail generation task failed to join: {error}"))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_read_entry_thumbnail_artifact(
+    app: AppHandle,
+    request: ExplorerEntryThumbnailRequest,
+) -> Result<ExplorerThumbnailArtifact, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let normalized = normalize_thumbnail_request(request)?;
+        build_entry_thumbnail_artifact(&app, crate::gpu_runtime::global_gpu_runtime(), &normalized)
+    })
+    .await
+    .map_err(|error| format!("Thumbnail artifact generation task failed to join: {error}"))?
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -150,6 +190,26 @@ pub(crate) fn build_image_thumbnail_data_url_with_runtime(
     max_width: u32,
     max_height: u32,
 ) -> Result<String, String> {
+    let extension = normalized_extension(path);
+    if extension == "svg" {
+        let bytes = fs::read(path)
+            .map_err(|error| format!("Failed to read SVG image '{}': {error}", path.display()))?;
+        return Ok(format!(
+            "data:image/svg+xml;base64,{}",
+            BASE64_STANDARD.encode(bytes)
+        ));
+    }
+
+    let png = build_image_thumbnail_png_with_runtime(gpu_runtime, path, max_width, max_height)?;
+    Ok(png_bytes_to_data_url(&png))
+}
+
+fn build_image_thumbnail_png_with_runtime(
+    gpu_runtime: Option<&crate::gpu_runtime::GpuRuntimeManager>,
+    path: &Path,
+    max_width: u32,
+    max_height: u32,
+) -> Result<Vec<u8>, String> {
     validate_thumbnail_bounds(max_width, max_height)?;
     let metadata = fs::metadata(path).map_err(|error| {
         format!(
@@ -159,16 +219,6 @@ pub(crate) fn build_image_thumbnail_data_url_with_runtime(
     })?;
     if metadata.len() > THUMBNAIL_IMAGE_MAX_BYTES {
         return Err("Image is too large to thumbnail (> 64 MB)".to_string());
-    }
-
-    let extension = normalized_extension(path);
-    if extension == "svg" {
-        let bytes = fs::read(path)
-            .map_err(|error| format!("Failed to read SVG image '{}': {error}", path.display()))?;
-        return Ok(format!(
-            "data:image/svg+xml;base64,{}",
-            BASE64_STANDARD.encode(bytes)
-        ));
     }
 
     let image = read_image_file_as_rgba(path)?;
@@ -181,87 +231,212 @@ pub(crate) fn build_image_thumbnail_data_url_with_runtime(
     } else {
         resize_image_to_fit(&image, max_width, max_height)
     };
-    let png = encode_rgba_image_as_png(&thumbnail)?;
-    Ok(png_bytes_to_data_url(&png))
+    encode_rgba_image_as_png(&thumbnail)
 }
 
-fn build_entry_thumbnail(
+fn build_entry_thumbnail_from_artifact(
+    request: &NormalizedThumbnailRequest,
+    artifact: ExplorerThumbnailArtifact,
+) -> Result<ExplorerEntryThumbnail, String> {
+    let poster_data_url = artifact_path_to_data_url(Path::new(&artifact.poster_path))?;
+    let hover_timestamps =
+        sample_thumbnail_hover_timestamps(request, artifact.kind.clone(), artifact.hover_frame_paths.len());
+    let hover_frames = artifact
+        .hover_frame_paths
+        .iter()
+        .enumerate()
+        .map(|(index, path)| {
+            Ok(ExplorerVideoHoverFrame {
+                image_data_url: artifact_path_to_data_url(Path::new(path))?,
+                timestamp_seconds: *hover_timestamps.get(index).unwrap_or(&0.0),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(ExplorerEntryThumbnail {
+        kind: artifact.kind,
+        poster_data_url,
+        hover_frames,
+        hover_frame_delay_ms: artifact.hover_frame_delay_ms,
+    })
+}
+
+fn build_entry_thumbnail_artifact(
     app: &AppHandle,
     gpu_runtime: Option<&crate::gpu_runtime::GpuRuntimeManager>,
     request: &NormalizedThumbnailRequest,
-) -> Result<ExplorerEntryThumbnail, String> {
+) -> Result<ExplorerThumbnailArtifact, String> {
     let kind = classify_thumbnail_kind(&request.input_path)?;
     match kind {
-        ThumbnailRenderKind::Image => Ok(ExplorerEntryThumbnail {
-            kind: ExplorerThumbnailKind::Image,
-            poster_data_url: build_image_thumbnail_data_url_with_runtime(
-                gpu_runtime,
-                &request.input_path,
+        ThumbnailRenderKind::Image => build_static_thumbnail_artifact(
+            app,
+            request,
+            ExplorerThumbnailKind::Image,
+            "image-v1",
+            gpu_runtime,
+            ensure_image_thumbnail_artifact_path,
+        ),
+        ThumbnailRenderKind::Code => build_static_thumbnail_artifact(
+            app,
+            request,
+            ExplorerThumbnailKind::Code,
+            "code-v3",
+            None,
+            |artifact_app, _, artifact_request, variant| {
+                ensure_cached_static_thumbnail_path(
+                    artifact_app,
+                    artifact_request,
+                    variant,
+                    "png",
+                    || {
+                        render_code_thumbnail_png(
+                            &artifact_request.input_path,
+                            artifact_request.max_width,
+                            artifact_request.max_height,
+                        )
+                    },
+                )
+            },
+        ),
+        ThumbnailRenderKind::Shader => build_static_thumbnail_artifact(
+            app,
+            request,
+            ExplorerThumbnailKind::Shader,
+            "shader-v2",
+            None,
+            |artifact_app, _, artifact_request, variant| {
+                ensure_cached_static_thumbnail_path(
+                    artifact_app,
+                    artifact_request,
+                    variant,
+                    "png",
+                    || {
+                        render_shader_thumbnail_png(
+                            &artifact_request.input_path,
+                            artifact_request.max_width,
+                            artifact_request.max_height,
+                        )
+                    },
+                )
+            },
+        ),
+        ThumbnailRenderKind::Audio => build_static_thumbnail_artifact(
+            app,
+            request,
+            ExplorerThumbnailKind::Audio,
+            "audio-v2",
+            gpu_runtime,
+            |artifact_app, artifact_gpu_runtime, artifact_request, variant| {
+                ensure_cached_static_thumbnail_path(
+                    artifact_app,
+                    artifact_request,
+                    variant,
+                    "png",
+                    || {
+                        render_audio_thumbnail_png_with_runtime(
+                            artifact_gpu_runtime,
+                            &artifact_request.input_path,
+                            artifact_request.max_width,
+                            artifact_request.max_height,
+                        )
+                    },
+                )
+            },
+        ),
+        ThumbnailRenderKind::Video => build_video_thumbnail_artifact(app, request),
+    }
+}
+
+fn build_static_thumbnail_artifact<F>(
+    app: &AppHandle,
+    request: &NormalizedThumbnailRequest,
+    kind: ExplorerThumbnailKind,
+    variant: &str,
+    gpu_runtime: Option<&crate::gpu_runtime::GpuRuntimeManager>,
+    ensure_poster_path: F,
+) -> Result<ExplorerThumbnailArtifact, String>
+where
+    F: FnOnce(
+        &AppHandle,
+        Option<&crate::gpu_runtime::GpuRuntimeManager>,
+        &NormalizedThumbnailRequest,
+        &str,
+    ) -> Result<PathBuf, String>,
+{
+    let poster_path = ensure_poster_path(app, gpu_runtime, request, variant)?;
+    let artifact = ExplorerThumbnailArtifact {
+        entity_id: request.entity_id.clone(),
+        content_revision: request.content_revision.clone(),
+        kind: kind.clone(),
+        poster_path: poster_path.to_string_lossy().to_string(),
+        hover_frame_paths: Vec::new(),
+        hover_frame_delay_ms: None,
+    };
+    persist_thumbnail_artifact_record(app, request, &artifact, variant)?;
+    Ok(artifact)
+}
+
+fn artifact_path_to_data_url(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path)
+        .map_err(|error| format!("Failed to read thumbnail artifact '{}': {error}", path.display()))?;
+    let mime = if normalized_extension(path) == "svg" {
+        "image/svg+xml"
+    } else {
+        "image/png"
+    };
+    Ok(format!(
+        "data:{mime};base64,{}",
+        BASE64_STANDARD.encode(bytes)
+    ))
+}
+
+fn sample_thumbnail_hover_timestamps(
+    request: &NormalizedThumbnailRequest,
+    kind: ExplorerThumbnailKind,
+    frame_count: usize,
+) -> Vec<f64> {
+    if kind != ExplorerThumbnailKind::Video || frame_count == 0 {
+        return vec![0.0; frame_count];
+    }
+    let duration = probe_video_duration_seconds(&request.input_path).unwrap_or(0.0);
+    sample_video_timestamps(duration, frame_count as u32)
+}
+
+fn persist_thumbnail_artifact_record(
+    app: &AppHandle,
+    request: &NormalizedThumbnailRequest,
+    artifact: &ExplorerThumbnailArtifact,
+    variant: &str,
+) -> Result<(), String> {
+    record_thumbnail_artifact(
+        app,
+        PersistedThumbnailArtifactRecordInput {
+            entity_id: request.entity_id.clone(),
+            content_revision: request.content_revision.clone(),
+            kind: thumbnail_kind_storage_label(&artifact.kind).to_string(),
+            variant_key: build_thumbnail_variant_key(
+                variant,
                 request.max_width,
                 request.max_height,
-            )?,
-            hover_frames: Vec::new(),
-            hover_frame_delay_ms: None,
-        }),
-        ThumbnailRenderKind::Code => Ok(ExplorerEntryThumbnail {
-            kind: ExplorerThumbnailKind::Code,
-            poster_data_url: generate_cached_static_thumbnail_data_url(
-                app,
-                &request.input_path,
-                request.max_width,
-                request.max_height,
-                "code-v3",
-                || {
-                    render_code_thumbnail_png(
-                        &request.input_path,
-                        request.max_width,
-                        request.max_height,
-                    )
+                if request.include_video_hover_scrub {
+                    Some(request.video_hover_frame_count)
+                } else {
+                    None
                 },
-            )?,
-            hover_frames: Vec::new(),
-            hover_frame_delay_ms: None,
-        }),
-        ThumbnailRenderKind::Shader => Ok(ExplorerEntryThumbnail {
-            kind: ExplorerThumbnailKind::Shader,
-            poster_data_url: generate_cached_static_thumbnail_data_url(
-                app,
-                &request.input_path,
-                request.max_width,
-                request.max_height,
-                "shader-v2",
-                || {
-                    render_shader_thumbnail_png(
-                        &request.input_path,
-                        request.max_width,
-                        request.max_height,
-                    )
-                },
-            )?,
-            hover_frames: Vec::new(),
-            hover_frame_delay_ms: None,
-        }),
-        ThumbnailRenderKind::Audio => Ok(ExplorerEntryThumbnail {
-            kind: ExplorerThumbnailKind::Audio,
-            poster_data_url: generate_cached_static_thumbnail_data_url(
-                app,
-                &request.input_path,
-                request.max_width,
-                request.max_height,
-                "audio-v2",
-                || {
-                    render_audio_thumbnail_png_with_runtime(
-                        gpu_runtime,
-                        &request.input_path,
-                        request.max_width,
-                        request.max_height,
-                    )
-                },
-            )?,
-            hover_frames: Vec::new(),
-            hover_frame_delay_ms: None,
-        }),
-        ThumbnailRenderKind::Video => build_video_thumbnail(app, request),
+            ),
+            poster_path: artifact.poster_path.clone(),
+            hover_frame_paths: artifact.hover_frame_paths.clone(),
+            hover_frame_delay_ms: artifact.hover_frame_delay_ms,
+        },
+    )
+}
+
+fn thumbnail_kind_storage_label(kind: &ExplorerThumbnailKind) -> &'static str {
+    match kind {
+        ExplorerThumbnailKind::Image => "image",
+        ExplorerThumbnailKind::Code => "code",
+        ExplorerThumbnailKind::Shader => "shader",
+        ExplorerThumbnailKind::Audio => "audio",
+        ExplorerThumbnailKind::Video => "video",
     }
 }
 
@@ -286,6 +461,33 @@ fn normalize_thumbnail_request(
             input_path.display()
         ));
     }
+    let metadata = fs::symlink_metadata(&input_path).map_err(|error| {
+        format!(
+            "Failed to inspect thumbnail source '{}': {error}",
+            input_path.display()
+        )
+    })?;
+    let is_symlink = metadata.file_type().is_symlink();
+    let is_dir = metadata.is_dir();
+    let size = if is_dir { 0 } else { metadata.len() };
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_millis() as u64)
+        .unwrap_or(0);
+    let fallback_content_revision = build_content_revision(size, modified, is_dir, is_symlink);
+    let content_revision = request
+        .content_revision
+        .unwrap_or(fallback_content_revision);
+    let entity_id = request.entity_id.unwrap_or_else(|| {
+        build_virtual_identity(
+            "thumbnail-path",
+            &input_path.to_string_lossy(),
+            &content_revision,
+        )
+        .entity_id
+    });
     Ok(NormalizedThumbnailRequest {
         input_path,
         max_width: request.max_width,
@@ -295,6 +497,8 @@ fn normalize_thumbnail_request(
             .video_hover_frame_count
             .unwrap_or(THUMBNAIL_VIDEO_FRAME_COUNT_DEFAULT)
             .clamp(1, THUMBNAIL_VIDEO_FRAME_COUNT_MAX),
+        entity_id,
+        content_revision,
     })
 }
 
@@ -545,44 +749,36 @@ fn png_bytes_to_data_url(bytes: &[u8]) -> String {
     format!("data:image/png;base64,{}", BASE64_STANDARD.encode(bytes))
 }
 
-fn generate_cached_static_thumbnail_data_url<F>(
+fn ensure_cached_static_thumbnail_path<F>(
     app: &AppHandle,
-    input_path: &Path,
-    max_width: u32,
-    max_height: u32,
+    request: &NormalizedThumbnailRequest,
     variant: &str,
+    output_extension: &str,
     render_png: F,
-) -> Result<String, String>
+) -> Result<PathBuf, String>
 where
     F: FnOnce() -> Result<Vec<u8>, String>,
 {
-    let cache_path = static_thumbnail_cache_path(app, input_path, max_width, max_height, variant)?;
-    if cache_path.exists() {
-        let bytes = fs::read(&cache_path).map_err(|error| {
+    let cache_path =
+        thumbnail_artifact_cache_path(app, request, variant, output_extension, None, None)?;
+    if !cache_path.exists() {
+        let png = render_png()?;
+        if let Some(parent) = cache_path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "Failed to create thumbnail cache directory '{}': {error}",
+                    parent.display()
+                )
+            })?;
+        }
+        fs::write(&cache_path, &png).map_err(|error| {
             format!(
-                "Failed to read cached thumbnail '{}': {error}",
+                "Failed to write cached thumbnail '{}': {error}",
                 cache_path.display()
             )
         })?;
-        return Ok(png_bytes_to_data_url(&bytes));
     }
-
-    let png = render_png()?;
-    if let Some(parent) = cache_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create thumbnail cache directory '{}': {error}",
-                parent.display()
-            )
-        })?;
-    }
-    fs::write(&cache_path, &png).map_err(|error| {
-        format!(
-            "Failed to write cached thumbnail '{}': {error}",
-            cache_path.display()
-        )
-    })?;
-    Ok(png_bytes_to_data_url(&png))
+    Ok(cache_path)
 }
 
 fn resolve_thumbnail_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -600,82 +796,135 @@ fn resolve_thumbnail_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(root)
 }
 
-fn static_thumbnail_cache_path(
+fn thumbnail_artifact_cache_path(
     app: &AppHandle,
-    input_path: &Path,
-    max_width: u32,
-    max_height: u32,
+    request: &NormalizedThumbnailRequest,
     variant: &str,
+    output_extension: &str,
+    extra_number: Option<u32>,
+    frame_index: Option<u32>,
 ) -> Result<PathBuf, String> {
-    let root = resolve_thumbnail_runtime_root(app)?.join("static");
-    let digest = thumbnail_cache_digest(input_path, max_width, max_height, variant, None)?;
+    let root = resolve_thumbnail_runtime_root(app)?.join("artifacts");
+    let digest = thumbnail_artifact_digest(
+        request,
+        variant,
+        extra_number,
+        frame_index,
+        output_extension,
+    );
     let digest_prefix = &digest[..16];
     let stem = sanitize_thumbnail_file_stem(
-        input_path
+        request
+            .input_path
             .file_stem()
             .and_then(|value| value.to_str())
             .unwrap_or("thumb"),
     );
-    Ok(root.join(format!("{stem}.{digest_prefix}.{variant}.png")))
+    let variant_key = build_thumbnail_variant_key(
+        variant,
+        request.max_width,
+        request.max_height,
+        extra_number,
+    );
+    let index_suffix = frame_index
+        .map(|index| format!(".{:02}", index + 1))
+        .unwrap_or_default();
+    Ok(root.join(format!(
+        "{stem}.{digest_prefix}.{variant_key}{index_suffix}.{output_extension}"
+    )))
 }
 
-fn video_hover_frame_cache_paths(
+fn build_video_hover_frame_artifact_paths(
     app: &AppHandle,
-    input_path: &Path,
-    max_width: u32,
-    max_height: u32,
+    request: &NormalizedThumbnailRequest,
     frame_count: u32,
 ) -> Result<Vec<PathBuf>, String> {
-    let root = resolve_thumbnail_runtime_root(app)?.join("video-hover");
-    let digest = thumbnail_cache_digest(
-        input_path,
-        max_width,
-        max_height,
-        "video-hover",
-        Some(frame_count),
-    )?;
-    let digest_prefix = &digest[..16];
-    let stem = sanitize_thumbnail_file_stem(
-        input_path
-            .file_stem()
-            .and_then(|value| value.to_str())
-            .unwrap_or("video"),
-    );
     Ok((0..frame_count)
-        .map(|index| root.join(format!("{stem}.{digest_prefix}.hover-{:02}.png", index + 1)))
-        .collect())
+        .map(|index| {
+            thumbnail_artifact_cache_path(
+                app,
+                request,
+                "video-hover",
+                "png",
+                Some(frame_count),
+                Some(index),
+            )
+        })
+        .collect::<Result<Vec<_>, String>>()?)
 }
 
-fn thumbnail_cache_digest(
-    input_path: &Path,
-    max_width: u32,
-    max_height: u32,
+fn thumbnail_artifact_digest(
+    request: &NormalizedThumbnailRequest,
     variant: &str,
     extra_number: Option<u32>,
-) -> Result<String, String> {
-    let metadata = fs::metadata(input_path).map_err(|error| {
-        format!(
-            "Failed to read thumbnail source metadata '{}': {error}",
-            input_path.display()
-        )
-    })?;
-    let modified_nanos = metadata
-        .modified()
-        .ok()
-        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-        .map(|value| value.as_nanos())
-        .unwrap_or_default();
+    frame_index: Option<u32>,
+    output_extension: &str,
+) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(input_path.to_string_lossy().as_bytes());
-    hasher.update(metadata.len().to_le_bytes());
-    hasher.update(modified_nanos.to_le_bytes());
-    hasher.update(max_width.to_le_bytes());
-    hasher.update(max_height.to_le_bytes());
+    hasher.update(request.entity_id.as_bytes());
+    hasher.update(request.content_revision.as_bytes());
+    hasher.update(request.max_width.to_le_bytes());
+    hasher.update(request.max_height.to_le_bytes());
     hasher.update(variant.as_bytes());
     if let Some(extra_number) = extra_number {
         hasher.update(extra_number.to_le_bytes());
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    if let Some(frame_index) = frame_index {
+        hasher.update(frame_index.to_le_bytes());
+    }
+    hasher.update(output_extension.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn build_thumbnail_variant_key(
+    variant: &str,
+    max_width: u32,
+    max_height: u32,
+    extra_number: Option<u32>,
+) -> String {
+    match extra_number {
+        Some(extra_number) => format!("{variant}-{max_width}x{max_height}-{extra_number}"),
+        None => format!("{variant}-{max_width}x{max_height}"),
+    }
+}
+
+fn ensure_image_thumbnail_artifact_path(
+    app: &AppHandle,
+    gpu_runtime: Option<&crate::gpu_runtime::GpuRuntimeManager>,
+    request: &NormalizedThumbnailRequest,
+    variant: &str,
+) -> Result<PathBuf, String> {
+    if normalized_extension(&request.input_path) == "svg" {
+        let cache_path =
+            thumbnail_artifact_cache_path(app, request, variant, "svg", None, None)?;
+        if !cache_path.exists() {
+            if let Some(parent) = cache_path.parent() {
+                fs::create_dir_all(parent).map_err(|error| {
+                    format!(
+                        "Failed to create thumbnail cache directory '{}': {error}",
+                        parent.display()
+                    )
+                })?;
+            }
+            fs::copy(&request.input_path, &cache_path).map_err(|error| {
+                format!(
+                    "Failed to copy SVG thumbnail artifact '{}' to '{}': {error}",
+                    request.input_path.display(),
+                    cache_path.display()
+                )
+            })?;
+        }
+        return Ok(cache_path);
+    }
+
+    ensure_cached_static_thumbnail_path(app, request, variant, "png", || {
+        build_image_thumbnail_png_with_runtime(
+            gpu_runtime,
+            &request.input_path,
+            request.max_width,
+            request.max_height,
+        )
+    })
 }
 
 fn sanitize_thumbnail_file_stem(value: &str) -> String {
@@ -1225,37 +1474,41 @@ fn render_audio_thumbnail_png_with_runtime(
     render_audio_thumbnail_png(input_path, max_width, max_height)
 }
 
-fn build_video_thumbnail(
+fn build_video_thumbnail_artifact(
     app: &AppHandle,
     request: &NormalizedThumbnailRequest,
-) -> Result<ExplorerEntryThumbnail, String> {
-    let poster_data_url = generate_cached_static_thumbnail_data_url(
+) -> Result<ExplorerThumbnailArtifact, String> {
+    let poster_path = ensure_cached_static_thumbnail_path(
         app,
-        &request.input_path,
-        request.max_width,
-        request.max_height,
+        request,
         "video-poster",
+        "png",
         || render_video_poster_png(&request.input_path, request.max_width, request.max_height),
     )?;
-    let mut hover_frames = Vec::new();
+    let mut hover_frame_paths = Vec::new();
     let mut hover_frame_delay_ms = None;
     if request.include_video_hover_scrub {
-        let frame_sources = render_video_hover_scrub_data_urls(
-            app,
-            &request.input_path,
-            request.max_width,
-            request.max_height,
-            request.video_hover_frame_count,
-        )?;
+    let frame_paths = build_and_render_video_hover_frame_paths(
+        app,
+        request,
+        request.video_hover_frame_count,
+    )?;
         hover_frame_delay_ms = Some(150);
-        hover_frames = frame_sources;
+        hover_frame_paths = frame_paths
+            .into_iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect();
     }
-    Ok(ExplorerEntryThumbnail {
+    let artifact = ExplorerThumbnailArtifact {
+        entity_id: request.entity_id.clone(),
+        content_revision: request.content_revision.clone(),
         kind: ExplorerThumbnailKind::Video,
-        poster_data_url,
-        hover_frames,
+        poster_path: poster_path.to_string_lossy().to_string(),
+        hover_frame_paths,
         hover_frame_delay_ms,
-    })
+    };
+    persist_thumbnail_artifact_record(app, request, &artifact, "video-poster")?;
+    Ok(artifact)
 }
 
 fn render_video_poster_png(
@@ -1281,16 +1534,13 @@ fn render_video_poster_png(
     Ok(png)
 }
 
-fn render_video_hover_scrub_data_urls(
+fn build_and_render_video_hover_frame_paths(
     app: &AppHandle,
-    input_path: &Path,
-    max_width: u32,
-    max_height: u32,
+    request: &NormalizedThumbnailRequest,
     frame_count: u32,
-) -> Result<Vec<ExplorerVideoHoverFrame>, String> {
-    let frame_paths =
-        video_hover_frame_cache_paths(app, input_path, max_width, max_height, frame_count)?;
-    let duration = probe_video_duration_seconds(input_path).unwrap_or(0.0);
+) -> Result<Vec<PathBuf>, String> {
+    let frame_paths = build_video_hover_frame_artifact_paths(app, request, frame_count)?;
+    let duration = probe_video_duration_seconds(&request.input_path).unwrap_or(0.0);
     let timestamps = sample_video_timestamps(duration, frame_count);
     for (index, frame_path) in frame_paths.iter().enumerate() {
         if frame_path.exists() {
@@ -1305,29 +1555,14 @@ fn render_video_hover_scrub_data_urls(
             })?;
         }
         generate_video_frame_png(
-            input_path,
+            &request.input_path,
             frame_path,
-            max_width,
-            max_height,
+            request.max_width,
+            request.max_height,
             *timestamps.get(index).unwrap_or(&0.0),
         )?;
     }
-    frame_paths
-        .iter()
-        .enumerate()
-        .map(|(index, path)| {
-            let bytes = fs::read(path).map_err(|error| {
-                format!(
-                    "Failed to read cached hover frame '{}': {error}",
-                    path.display()
-                )
-            })?;
-            Ok(ExplorerVideoHoverFrame {
-                image_data_url: png_bytes_to_data_url(&bytes),
-                timestamp_seconds: *timestamps.get(index).unwrap_or(&0.0),
-            })
-        })
-        .collect()
+    Ok(frame_paths)
 }
 
 fn sample_video_timestamps(duration_seconds: f64, frame_count: u32) -> Vec<f64> {

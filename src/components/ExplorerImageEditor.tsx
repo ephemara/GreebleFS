@@ -45,6 +45,10 @@ import type { ExplorerImageCutoutStagedExportArtifact } from "../runtime/imageCu
 import {
   applyExplorerImageStageWheelZoom,
   DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM,
+  EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_COLOR,
+  EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_IMAGE,
+  EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_POSITION,
+  EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_SIZE,
   normalizeExplorerImageStageTransform,
   type ExplorerImageStageTransform,
 } from "./explorer/explorerImageStage";
@@ -995,13 +999,6 @@ export const ExplorerImageEditor = forwardRef<
     );
   }
 
-  const checkerboardCSS = `
-    linear-gradient(45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.02) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.02) 75%)
-  `;
-
   return (
     <div
       ref={rootRef}
@@ -1029,10 +1026,14 @@ export const ExplorerImageEditor = forwardRef<
           borderBottom: showEditingChrome
             ? "1px solid var(--overlay-explorer-preview-border, rgba(255,255,255,0.1))"
             : "none",
-          backgroundImage: checkerboardCSS,
-          backgroundSize: "16px 16px",
-          backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
-          backgroundColor: "rgba(0,0,0,0.4)",
+          backgroundImage:
+            EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_IMAGE,
+          backgroundSize:
+            EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_SIZE,
+          backgroundPosition:
+            EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_POSITION,
+          backgroundColor:
+            EXPLORER_PREVIEW_STAGE_CHECKERBOARD_BACKGROUND_COLOR,
         }}
       >
         {!isCropping && (

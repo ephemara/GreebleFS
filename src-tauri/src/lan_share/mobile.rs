@@ -666,6 +666,8 @@ async fn mobile_thumbnail_handler(
         max_height: query.h.unwrap_or(MOBILE_THUMBNAIL_HEIGHT).max(1),
         include_video_hover_scrub: Some(false),
         video_hover_frame_count: Some(0),
+        entity_id: None,
+        content_revision: None,
     };
 
     let thumbnail = match thumbnail_commands::fs_read_entry_thumbnail(

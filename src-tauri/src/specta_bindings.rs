@@ -113,6 +113,10 @@ use crate::terminal::{
     ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalShellIntegrationState,
     TerminalShellIntegrationStateEvent, TerminalShellKind, TerminalWriteRequest,
 };
+use crate::thumbnail_commands::{
+    ExplorerEntryThumbnail, ExplorerEntryThumbnailRequest, ExplorerThumbnailArtifact,
+    ExplorerThumbnailKind, ExplorerVideoHoverFrame,
+};
 use crate::video_commands::{
     ResolvedVideoPreviewSource, VideoPreviewSourceKind, VideoTrimExportRequest,
     VideoTrimExportResult,
@@ -261,6 +265,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_read_file_base64,
             crate::fs_commands::fs_read_image_thumbnail,
             crate::thumbnail_commands::fs_read_entry_thumbnail,
+            crate::thumbnail_commands::fs_read_entry_thumbnail_artifact,
             crate::fs_commands::fs_write_file,
             crate::fs_commands::fs_get_runtime_cache_policy,
             crate::fs_commands::fs_list_dir_uncached,
@@ -541,6 +546,11 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<FileSearchContentCacheStatus>()
         .typ::<FileSearchDiagnostics>()
         .typ::<FileSearchResponse>()
+        .typ::<ExplorerThumbnailKind>()
+        .typ::<ExplorerVideoHoverFrame>()
+        .typ::<ExplorerEntryThumbnail>()
+        .typ::<ExplorerEntryThumbnailRequest>()
+        .typ::<ExplorerThumbnailArtifact>()
         .typ::<PluginBackendResult>()
         .typ::<PluginDirectoryWatchEvent>()
         .typ::<PythonRuntimeConfig>()

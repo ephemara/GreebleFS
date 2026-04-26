@@ -11,6 +11,11 @@ use crate::entry_size_cache::{
     delete_entry_size_subtree, load_entry_size_cache, mark_path_and_ancestors_dirty,
     normalize_cache_path, upsert_entry_size_cache, PersistedEntrySize,
 };
+use crate::explorer_identity::{
+    apply_move_operation_continuity, build_content_revision, build_virtual_identity,
+    prepare_move_operation_continuity, resolve_local_identity, ExplorerIdentityKind,
+    ExplorerIdentityManager,
+};
 use crate::explorer_pro_commands::FsBatchRenameItem;
 use crate::telemetry::{finish_native_span, start_native_span};
 use md5::Context as Md5Context;
@@ -24,7 +29,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{ipc::Response, AppHandle};
+use tauri::{ipc::Response, AppHandle, State};
 use tauri_specta::Event;
 use uuid::Uuid;
 use yazi_fs::{
@@ -59,6 +64,12 @@ pub struct FileEntry {
     pub extension: String,
     pub is_hidden: bool,
     pub is_symlink: bool,
+    #[serde(rename = "entityId")]
+    pub entity_id: String,
+    #[serde(rename = "identityKind")]
+    pub identity_kind: ExplorerIdentityKind,
+    #[serde(rename = "contentRevision")]
+    pub content_revision: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
@@ -1988,6 +1999,114 @@ fn cha_modified_ms(metadata: &Cha) -> Option<u64> {
         .map(|duration| duration.as_millis() as u64)
 }
 
+fn build_local_entry_content_revision(
+    size: u64,
+    modified_ms: u64,
+    is_dir: bool,
+    is_symlink: bool,
+) -> String {
+    build_content_revision(size, modified_ms, is_dir, is_symlink)
+}
+
+fn build_local_entry_identity(
+    app: &AppHandle,
+    identity_manager: &ExplorerIdentityManager,
+    path: &Path,
+    size: u64,
+    modified_ms: u64,
+    is_dir: bool,
+    is_symlink: bool,
+) -> Result<(String, ExplorerIdentityKind, String), String> {
+    let content_revision =
+        build_local_entry_content_revision(size, modified_ms, is_dir, is_symlink);
+    let resolved_identity = resolve_local_identity(app, identity_manager, path, &content_revision)?;
+    Ok((
+        resolved_identity.entity_id,
+        resolved_identity.identity_kind,
+        resolved_identity.content_revision,
+    ))
+}
+
+fn build_transfer_result_from_destination(
+    app: &AppHandle,
+    identity_manager: &ExplorerIdentityManager,
+    source_path: &Path,
+    destination_path: &Path,
+    operation: FileTransferOperation,
+    collision_policy: FileTransferCollisionPolicy,
+    disposition: FileTransferDisposition,
+) -> Result<FileTransferResult, String> {
+    let metadata = fs::symlink_metadata(destination_path).map_err(|error| {
+        format!(
+            "Failed to inspect transferred destination '{}': {error}",
+            destination_path.display()
+        )
+    })?;
+    let is_symlink = metadata.file_type().is_symlink();
+    let is_dir = metadata.is_dir();
+    let size = if is_dir { 0 } else { metadata.len() };
+    let modified = metadata_modified_ms(&metadata).unwrap_or(0);
+    let (entity_id, identity_kind, content_revision) = build_local_entry_identity(
+        app,
+        identity_manager,
+        destination_path,
+        size,
+        modified,
+        is_dir,
+        is_symlink,
+    )?;
+    Ok(FileTransferResult {
+        source_path: source_path.to_string_lossy().to_string(),
+        destination_path: destination_path.to_string_lossy().to_string(),
+        operation,
+        collision_policy,
+        disposition,
+        entity_id,
+        identity_kind,
+        content_revision,
+    })
+}
+
+fn build_transfer_result_from_source(
+    app: &AppHandle,
+    identity_manager: &ExplorerIdentityManager,
+    source_path: &Path,
+    destination_path: &Path,
+    operation: FileTransferOperation,
+    collision_policy: FileTransferCollisionPolicy,
+    disposition: FileTransferDisposition,
+) -> Result<FileTransferResult, String> {
+    let metadata = fs::symlink_metadata(source_path).map_err(|error| {
+        format!(
+            "Failed to inspect transfer source '{}': {error}",
+            source_path.display()
+        )
+    })?;
+    let is_symlink = metadata.file_type().is_symlink();
+    let is_dir = metadata.is_dir();
+    let size = if is_dir { 0 } else { metadata.len() };
+    let modified = metadata_modified_ms(&metadata).unwrap_or(0);
+    let (entity_id, identity_kind, content_revision) = build_local_entry_identity(
+        app,
+        identity_manager,
+        source_path,
+        size,
+        modified,
+        is_dir,
+        is_symlink,
+    )?;
+    Ok(FileTransferResult {
+        source_path: source_path.to_string_lossy().to_string(),
+        destination_path: destination_path.to_string_lossy().to_string(),
+        operation,
+        collision_policy,
+        disposition,
+        entity_id,
+        identity_kind,
+        content_revision,
+    })
+}
+
 fn current_time_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2288,6 +2407,12 @@ pub struct FileTransferResult {
     pub operation: FileTransferOperation,
     pub collision_policy: FileTransferCollisionPolicy,
     pub disposition: FileTransferDisposition,
+    #[serde(rename = "entityId")]
+    pub entity_id: String,
+    #[serde(rename = "identityKind")]
+    pub identity_kind: ExplorerIdentityKind,
+    #[serde(rename = "contentRevision")]
+    pub content_revision: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
@@ -2312,6 +2437,12 @@ pub struct FileSearchResult {
     pub match_kind: FileSearchMatchKind,
     pub snippet: String,
     pub line_number: Option<u64>,
+    #[serde(rename = "entityId")]
+    pub entity_id: String,
+    #[serde(rename = "identityKind")]
+    pub identity_kind: ExplorerIdentityKind,
+    #[serde(rename = "contentRevision")]
+    pub content_revision: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
@@ -2368,6 +2499,8 @@ struct SearchableEntry {
 // ─── fs_list_dir ─────────────────────────────────────────────────────────────
 
 async fn build_listed_file_entry<T>(
+    app: &AppHandle,
+    identity_manager: &ExplorerIdentityManager,
     entry: T,
     show_hidden: bool,
 ) -> Result<Option<ListedFileEntry>, String>
@@ -2403,6 +2536,17 @@ where
     let metadata = target_metadata.as_ref().unwrap_or(&entry_metadata);
     let is_symlink = entry_type == ChaType::Link;
     let is_dir = entry_type.is_dir() || ChaType::from(metadata.mode).is_dir();
+    let size = if is_dir { 0 } else { metadata.len };
+    let modified = cha_modified_ms(metadata).unwrap_or(0);
+    let (entity_id, identity_kind, content_revision) = build_local_entry_identity(
+        app,
+        identity_manager,
+        &path,
+        size,
+        modified,
+        is_dir,
+        is_symlink,
+    )?;
 
     Ok(Some(ListedFileEntry {
         sort_name: name.to_lowercase(),
@@ -2410,8 +2554,8 @@ where
             name,
             path: path.to_string_lossy().to_string(),
             is_dir,
-            size: if is_dir { 0 } else { metadata.len },
-            modified: cha_modified_ms(metadata).unwrap_or(0),
+            size,
+            modified,
             extension: if is_dir {
                 String::new()
             } else {
@@ -2419,11 +2563,19 @@ where
             },
             is_hidden,
             is_symlink,
+            entity_id,
+            identity_kind,
+            content_revision,
         },
     }))
 }
 
-async fn list_dir_via_yazi(dir_path: &Path, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
+async fn list_dir_via_yazi(
+    app: &AppHandle,
+    identity_manager: &ExplorerIdentityManager,
+    dir_path: &Path,
+    show_hidden: bool,
+) -> Result<Vec<FileEntry>, String> {
     let mut read_dir = Local::regular(dir_path)
         .read_dir()
         .await
@@ -2435,7 +2587,8 @@ async fn list_dir_via_yazi(dir_path: &Path, show_hidden: bool) -> Result<Vec<Fil
         .await
         .map_err(|error| format!("Failed to read directory: {error}"))?
     {
-        if let Some(listed) = build_listed_file_entry(entry, show_hidden).await? {
+        if let Some(listed) = build_listed_file_entry(app, identity_manager, entry, show_hidden).await?
+        {
             entries.push(listed);
         }
     }
@@ -2480,10 +2633,18 @@ where
     let metadata = target_metadata.as_ref().unwrap_or(&entry_metadata);
     let is_symlink = entry_type == ChaType::Link;
     let is_dir = entry_type.is_dir() || ChaType::from(metadata.mode).is_dir();
+    let size = if is_dir { 0 } else { metadata.len };
+    let modified = cha_modified_ms(metadata).unwrap_or(0);
     let relative_path = path
         .strip_prefix(root)
         .map(|relative| relative.to_string_lossy().to_string())
         .unwrap_or_else(|_| path.to_string_lossy().to_string());
+    let content_revision = build_local_entry_content_revision(size, modified, is_dir, is_symlink);
+    let identity = build_virtual_identity(
+        "local-search-path",
+        &path.to_string_lossy(),
+        &content_revision,
+    );
 
     Some(SearchableEntry {
         content_searchable: !is_dir
@@ -2496,8 +2657,8 @@ where
             path: path.to_string_lossy().to_string(),
             relative_path,
             is_dir,
-            size: if is_dir { 0 } else { metadata.len },
-            modified: cha_modified_ms(metadata).unwrap_or(0),
+            size,
+            modified,
             extension: if is_dir {
                 String::new()
             } else {
@@ -2508,11 +2669,16 @@ where
             match_kind: FileSearchMatchKind::Name,
             snippet: String::new(),
             line_number: None,
+            entity_id: identity.entity_id,
+            identity_kind: identity.identity_kind,
+            content_revision: identity.content_revision,
         },
     })
 }
 
 async fn list_dir(
+    app: &AppHandle,
+    identity_manager: &ExplorerIdentityManager,
     dir_path: PathBuf,
     show_hidden: bool,
     bypass_cache: bool,
@@ -2544,7 +2710,7 @@ async fn list_dir(
         }
     }
 
-    let entries = list_dir_via_yazi(&dir_path, show_hidden).await?;
+    let entries = list_dir_via_yazi(app, identity_manager, &dir_path, show_hidden).await?;
     if !policy.dir_list_cache_ttl.is_zero() {
         if let Ok(mut cache) = dir_list_cache().lock() {
             prune_expired_dir_list_cache(&mut cache);
@@ -2572,6 +2738,7 @@ pub fn fs_get_runtime_cache_policy() -> FsRuntimeCachePolicy {
 #[specta::specta]
 pub async fn fs_list_dir(
     app: AppHandle,
+    identity_manager: State<'_, ExplorerIdentityManager>,
     path: String,
     show_hidden: bool,
 ) -> Result<Vec<FileEntry>, String> {
@@ -2587,7 +2754,14 @@ pub async fn fs_list_dir(
         .into_iter()
         .collect(),
     );
-    let result = list_dir(PathBuf::from(path), show_hidden, false).await;
+    let result = list_dir(
+        &app,
+        &identity_manager,
+        PathBuf::from(path),
+        show_hidden,
+        false,
+    )
+    .await;
     let status = if result.is_ok() { "ok" } else { "error" };
     let error = result.as_ref().err().cloned();
     let entry_count = result
@@ -2611,6 +2785,7 @@ pub async fn fs_list_dir(
 #[specta::specta]
 pub async fn fs_list_dir_uncached(
     app: AppHandle,
+    identity_manager: State<'_, ExplorerIdentityManager>,
     path: String,
     show_hidden: bool,
 ) -> Result<Vec<FileEntry>, String> {
@@ -2626,7 +2801,14 @@ pub async fn fs_list_dir_uncached(
         .into_iter()
         .collect(),
     );
-    let result = list_dir(PathBuf::from(path), show_hidden, true).await;
+    let result = list_dir(
+        &app,
+        &identity_manager,
+        PathBuf::from(path),
+        show_hidden,
+        true,
+    )
+    .await;
     let status = if result.is_ok() { "ok" } else { "error" };
     let error = result.as_ref().err().cloned();
     let entry_count = result
@@ -4454,13 +4636,43 @@ pub async fn fs_delete_many(paths: Vec<String>) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String> {
+pub async fn fs_rename(
+    app: AppHandle,
+    identity_manager: State<'_, ExplorerIdentityManager>,
+    old_path: String,
+    new_path: String,
+) -> Result<(), String> {
     let old_path_ref = Path::new(&old_path);
     let new_path_ref = Path::new(&new_path);
+    let continuity_entity_id = fs::symlink_metadata(old_path_ref)
+        .ok()
+        .and_then(|metadata| {
+            let is_symlink = metadata.file_type().is_symlink();
+            let is_dir = metadata.is_dir();
+            let size = if is_dir { 0 } else { metadata.len() };
+            let modified = metadata_modified_ms(&metadata).unwrap_or(0);
+            let content_revision =
+                build_local_entry_content_revision(size, modified, is_dir, is_symlink);
+            prepare_move_operation_continuity(
+                &app,
+                &identity_manager,
+                old_path_ref,
+                &content_revision,
+            )
+            .ok()
+            .flatten()
+        });
 
     #[cfg(test)]
     {
         std::fs::rename(old_path_ref, new_path_ref).map_err(|error| error.to_string())?;
+        let _ = apply_move_operation_continuity(
+            &app,
+            &identity_manager,
+            old_path_ref,
+            new_path_ref,
+            continuity_entity_id.as_deref(),
+        );
         invalidate_all_fs_caches(old_path_ref);
         invalidate_all_fs_caches(new_path_ref);
         if let Some(parent) = old_path_ref.parent() {
@@ -4477,6 +4689,13 @@ pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String>
         .await
         .map_err(|error| error.to_string());
     if result.is_ok() {
+        let _ = apply_move_operation_continuity(
+            &app,
+            &identity_manager,
+            old_path_ref,
+            new_path_ref,
+            continuity_entity_id.as_deref(),
+        );
         invalidate_all_fs_caches(old_path_ref);
         invalidate_all_fs_caches(new_path_ref);
         if let Some(parent) = old_path_ref.parent() {
@@ -4491,11 +4710,36 @@ pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String>
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_move(src: String, dst: String) -> Result<(), String> {
+pub async fn fs_move(
+    app: AppHandle,
+    identity_manager: State<'_, ExplorerIdentityManager>,
+    src: String,
+    dst: String,
+) -> Result<(), String> {
     let src_path = Path::new(&src);
     let dst_path = Path::new(&dst);
     validate_transfer_destination(src_path, dst_path, FileTransferOperation::Move)?;
+    let continuity_entity_id = fs::symlink_metadata(src_path)
+        .ok()
+        .and_then(|metadata| {
+            let is_symlink = metadata.file_type().is_symlink();
+            let is_dir = metadata.is_dir();
+            let size = if is_dir { 0 } else { metadata.len() };
+            let modified = metadata_modified_ms(&metadata).unwrap_or(0);
+            let content_revision =
+                build_local_entry_content_revision(size, modified, is_dir, is_symlink);
+            prepare_move_operation_continuity(&app, &identity_manager, src_path, &content_revision)
+                .ok()
+                .flatten()
+        });
     move_path(src_path, dst_path, true).await?;
+    let _ = apply_move_operation_continuity(
+        &app,
+        &identity_manager,
+        src_path,
+        dst_path,
+        continuity_entity_id.as_deref(),
+    );
 
     invalidate_all_fs_caches(src_path);
     invalidate_all_fs_caches(dst_path);
@@ -4579,6 +4823,8 @@ pub async fn fs_plan_transfer_items(
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_transfer_items(
+    app: AppHandle,
+    identity_manager: State<'_, ExplorerIdentityManager>,
     target_dir: String,
     sources: Vec<String>,
     operation: FileTransferOperation,
@@ -4622,17 +4868,41 @@ pub async fn fs_transfer_items(
             && preferred_destination.exists()
             && preferred_destination != source_path
         {
-            results.push(FileTransferResult {
-                source_path: source_path.to_string_lossy().to_string(),
-                destination_path: preferred_destination.to_string_lossy().to_string(),
+            results.push(build_transfer_result_from_source(
+                &app,
+                &identity_manager,
+                &source_path,
+                &preferred_destination,
                 operation,
-                collision_policy: resolved_collision_policy,
-                disposition: FileTransferDisposition::SkippedExisting,
-            });
+                resolved_collision_policy,
+                FileTransferDisposition::SkippedExisting,
+            )?);
             continue;
         }
 
         validate_transfer_destination(&source_path, &destination, operation)?;
+        let continuity_entity_id = if operation == FileTransferOperation::Move {
+            let metadata = fs::symlink_metadata(&source_path).map_err(|error| {
+                format!(
+                    "Failed to inspect transfer source '{}': {error}",
+                    source_path.display()
+                )
+            })?;
+            let is_symlink = metadata.file_type().is_symlink();
+            let is_dir = metadata.is_dir();
+            let size = if is_dir { 0 } else { metadata.len() };
+            let modified = metadata_modified_ms(&metadata).unwrap_or(0);
+            let content_revision =
+                build_local_entry_content_revision(size, modified, is_dir, is_symlink);
+            prepare_move_operation_continuity(
+                &app,
+                &identity_manager,
+                &source_path,
+                &content_revision,
+            )?
+        } else {
+            None
+        };
 
         let operation_result = match operation {
             FileTransferOperation::Copy => copy_path(&source_path, &destination, true).await,
@@ -4643,13 +4913,25 @@ pub async fn fs_transfer_items(
             return Err(error);
         }
 
-        results.push(FileTransferResult {
-            source_path: source_path.to_string_lossy().to_string(),
-            destination_path: destination.to_string_lossy().to_string(),
+        if operation == FileTransferOperation::Move {
+            let _ = apply_move_operation_continuity(
+                &app,
+                &identity_manager,
+                &source_path,
+                &destination,
+                continuity_entity_id.as_deref(),
+            );
+        }
+
+        results.push(build_transfer_result_from_destination(
+            &app,
+            &identity_manager,
+            &source_path,
+            &destination,
             operation,
-            collision_policy: resolved_collision_policy,
-            disposition: FileTransferDisposition::Transferred,
-        });
+            resolved_collision_policy,
+            FileTransferDisposition::Transferred,
+        )?);
     }
 
     for result in &results {
