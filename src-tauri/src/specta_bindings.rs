@@ -714,7 +714,18 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
 fn sanitize_generated_typescript(path: &PathBuf) -> Result<(), String> {
     let source = fs::read_to_string(path)
         .map_err(|error| format!("Failed to read generated Specta bindings: {error}"))?;
-    let sanitized = source
+    let mut sanitized = source.clone();
+
+    if sanitized.contains("Channel as TAURI_CHANNEL") && !sanitized.contains("void TAURI_CHANNEL;")
+    {
+        sanitized = sanitized.replacen(
+            "} from \"@tauri-apps/api/core\";",
+            "} from \"@tauri-apps/api/core\";\nvoid TAURI_CHANNEL;",
+            1,
+        );
+    }
+
+    sanitized = sanitized
         .replace(
             "export type ThemeDesignToken = { id: string; name: string; kind: ThemeTokenKind; value: any }",
             "export type ThemeValue = string | number | boolean | null | ThemeValue[] | { [key: string]: ThemeValue };\nexport type ThemeDesignToken = { id: string; name: string; kind: ThemeTokenKind; value: ThemeValue }",
@@ -758,6 +769,10 @@ mod tests {
         assert!(
             sanitized.contains("Channel as TAURI_CHANNEL"),
             "sanitizer should preserve the generated Channel import for stream-capable bindings"
+        );
+        assert!(
+            sanitized.contains("void TAURI_CHANNEL;"),
+            "sanitizer should mark the generated Channel import as intentionally retained"
         );
         assert!(
             sanitized.contains("export function __makeEvents__<T>() {}"),

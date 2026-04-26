@@ -51,6 +51,7 @@ describe("explorerStore persistence", () => {
     );
     expect(defaultExplorerSession.actionsVisible).toBe(false);
     expect(defaultExplorerSession.actionsWidth).toBeNull();
+    expect(defaultExplorerSession.previewJumpToFolderEnabled).toBe(true);
   });
 
   it("persists session and rail updates together", () => {
@@ -68,6 +69,7 @@ describe("explorerStore persistence", () => {
       previewWidth: 420,
       actionsWidth: 348,
       previewEnabled: false,
+      previewJumpToFolderEnabled: false,
       shellLayoutId: "inspector",
       documentViewMode: "preview",
       actionsVisible: true,
@@ -83,6 +85,7 @@ describe("explorerStore persistence", () => {
     expect(hydrated.session.actionsWidth).toBe(348);
     expect(hydrated.session.actionsVisible).toBe(true);
     expect(hydrated.session.previewEnabled).toBe(false);
+    expect(hydrated.session.previewJumpToFolderEnabled).toBe(false);
     expect(hydrated.session.shellLayoutId).toBe("inspector");
     expect(hydrated.session.documentViewMode).toBe("preview");
     expect(hydrated.workspace.tabs[0]?.id).toBe(PRIMARY_EXPLORER_TAB_ID);

@@ -59,7 +59,10 @@ import {
   type OverlayThemeDefinition,
   type ResolvedOverlayAppearance,
 } from '../config/appearance';
-import type { TerminalShellIntegrationStateEvent } from '../generated/tauri';
+import type {
+  TerminalOutputStreamPacket,
+  TerminalShellIntegrationStateEvent,
+} from '../generated/tauri';
 import type { ResolvedWorkbenchThemeRecipe } from '../config/workbenchTheme';
 import {
   buildManagedPythonReplCommand,
@@ -85,6 +88,7 @@ import {
 import { useSettingsStore } from '../store/settingsStore';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import { subscribeIpcStream } from '../runtime/ipc';
 import {
   bootstrapManagedPythonRuntime,
   executeManagedPython,
@@ -724,10 +728,16 @@ const XTermPane = memo(function XTermPane({
       outputFrameRef.current = window.requestAnimationFrame(flushBufferedOutput);
     };
 
-    const unlisten = await listen<string>(`terminal-output-${id}`, ev => {
-      bufferedOutputRef.current += ev.payload;
-      scheduleBufferedFlush();
-    });
+    const outputStream = unwrapTauriResult(
+      await commands.terminalOpenOutputStream(id),
+    );
+    const unlisten = await subscribeIpcStream<TerminalOutputStreamPacket>(
+      outputStream,
+      packet => {
+        bufferedOutputRef.current += packet.data;
+        scheduleBufferedFlush();
+      },
+    );
     term.onData(data => {
       onFocusRef.current?.(id);
       onDataRef.current?.(id, data);

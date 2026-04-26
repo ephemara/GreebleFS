@@ -1,0 +1,20 @@
+version = 1
+id = "detect-duplicates"
+name = "Detect Duplicates"
+description = "Finds duplicate files by comparing checksums (MD5 and SHA256). Identifies identical files."
+icon = "FileCopy"
+tags = ["batch", "duplicates", "checksums", "edge-cases"]
+contexts = ["multi-select"]
+appliesTo = "file"
+
+[selection]
+minCount = 2
+allowFiles = true
+allowDirectories = false
+
+[execution]
+runner = "interpreter"
+entry = "python/detect_duplicates.py"
+
+[presentation]
+outputTarget = "task-center"

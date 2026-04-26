@@ -187,6 +187,7 @@ describe("ExplorerFolderPreview", () => {
     const folderPath = "C:\\Assets\\alpha";
     const onOpenEntry = vi.fn();
     const onStartDragOutEntry = vi.fn();
+    const onToggleJumpToFolder = vi.fn();
 
     useSettingsStore.getState().updateExplorer({
       collectionPreviewMode: "overview",
@@ -226,6 +227,8 @@ describe("ExplorerFolderPreview", () => {
         showHiddenFiles={false}
         onOpenEntry={onOpenEntry}
         onStartDragOutEntry={onStartDragOutEntry}
+        jumpToFolderEnabled={false}
+        onToggleJumpToFolder={onToggleJumpToFolder}
       />,
     );
 
@@ -239,11 +242,19 @@ describe("ExplorerFolderPreview", () => {
     expect(
       screen.getByRole("button", { name: /use overview preview mode/i }),
     ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: /jump to folder/i }),
+    ).toHaveTextContent("Jump Off");
+    expect(screen.getByText("notes.txt")).toBeInTheDocument();
+    expect(screen.getByText("readme.md")).toBeInTheDocument();
 
     await screen.findByRole("button", { name: /open file readme\.md/i });
     await waitFor(() => {
       expect(readExplorerCollectionPreviewOverviewThumbnail).toHaveBeenCalled();
     });
+
+    fireEvent.click(screen.getByRole("button", { name: /jump to folder/i }));
+    expect(onToggleJumpToFolder).toHaveBeenCalledTimes(1);
 
     fireEvent.click(notesTile, { ctrlKey: true });
     fireEvent.click(readmeTile, { ctrlKey: true });

@@ -121,7 +121,44 @@ describe('TerminalOverlay', () => {
     mockXtermInstances.length = 0;
     resetTerminalWebglSupportCacheForTests();
     vi.mocked(invoke).mockReset();
-    vi.mocked(invoke).mockResolvedValue(null);
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      const invokeArgs =
+        typeof args === 'object' && args !== null
+          ? (args as Record<string, unknown>)
+          : undefined;
+      const terminalId =
+        typeof invokeArgs?.id === 'string' ? invokeArgs.id : 'overlay-0';
+      const shellState = {
+        shellKind: 'unknown',
+        supportsAutoCd: true,
+        atPrompt: true,
+        reportedCwd: null,
+        pendingCwd: null,
+        lastSyncedCwd: null,
+      };
+
+      switch (command) {
+        case 'terminal_open_output_stream':
+          return {
+            id: `stream-${terminalId}`,
+            kind: 'terminal-output',
+            eventName: `ipc-stream-terminal-output-${terminalId}`,
+          };
+        case 'terminal_register_shell_integration':
+        case 'terminal_sync_cwd':
+        case 'terminal_set_prompt_state':
+          return shellState;
+        case 'terminal_spawn':
+        case 'terminal_write':
+        case 'terminal_write_many':
+        case 'terminal_resize':
+        case 'terminal_kill':
+        case 'ipc_release_stream':
+          return null;
+        default:
+          return null;
+      }
+    });
     vi.mocked(listen).mockReset();
     vi.mocked(listen).mockResolvedValue(() => {});
     useSettingsStore.getState().resetToDefaults();
@@ -384,7 +421,7 @@ describe('TerminalOverlay', () => {
     );
 
     await waitFor(() => {
-      expect(eventHandlers.has('terminal-output-preview-pane-0')).toBe(true);
+      expect(eventHandlers.has('ipc-stream-terminal-output-preview-pane-0')).toBe(true);
       expect(eventHandlers.has('terminal-shell-integration-state-event')).toBe(true);
     });
 
@@ -496,6 +533,29 @@ describe('TerminalOverlay', () => {
   it('launches the managed Python REPL into the active terminal tab', async () => {
     const invokeMock = vi.mocked(invoke);
     invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'terminal_open_output_stream') {
+        return {
+          id: 'stream-overlay-0',
+          kind: 'terminal-output',
+          eventName: 'ipc-stream-terminal-output-overlay-0',
+        };
+      }
+
+      if (
+        command === 'terminal_register_shell_integration' ||
+        command === 'terminal_sync_cwd' ||
+        command === 'terminal_set_prompt_state'
+      ) {
+        return {
+          shellKind: 'unknown',
+          supportsAutoCd: true,
+          atPrompt: true,
+          reportedCwd: null,
+          pendingCwd: null,
+          lastSyncedCwd: null,
+        };
+      }
+
       if (command === 'python_get_runtime_status') {
         return {
           ready: true,

@@ -11,6 +11,7 @@ import {
 } from "../config/explorerArchives";
 import { isExplorerVirtualPath } from "../config/explorerVirtualLocations";
 import { commands, events, unwrapTauriResult } from "./tauriClient";
+import { readIpcBinaryBytes } from "./ipc";
 import { useExplorerStore } from "../store/explorerStore";
 import {
   type CloudAccountStatus,
@@ -361,8 +362,8 @@ function toLocalDriveInfo(drive: DriveInfo): ExplorerLocalDriveInfo {
   return {
     ...drive,
     kind: "local",
-    id: drive.letter,
-    path: drive.letter,
+    id: drive.id,
+    path: drive.path,
   };
 }
 
@@ -1004,9 +1005,9 @@ export async function readExplorerPreviewBytes(
   maxBytes: number,
 ): Promise<Uint8Array> {
   if (isCloudExplorerPath(path)) {
-    return commands.cloudReadPreviewBytes(path, maxBytes);
+    return readIpcBinaryBytes("cloudPreviewBytes", path, maxBytes);
   }
-  return commands.fsReadPreviewBytes(path, maxBytes);
+  return readIpcBinaryBytes("fsPreviewBytes", path, maxBytes);
 }
 
 export async function readExplorerImageThumbnail(

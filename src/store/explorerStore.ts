@@ -101,6 +101,7 @@ export interface ExplorerSessionSnapshot {
   actionsWidth: number | null;
   previewEnabled: boolean;
   previewLocked: boolean;
+  previewJumpToFolderEnabled: boolean;
   previewSplitMode: "inline" | "pane";
   shellLayoutId: ExplorerShellLayoutId;
   search: string;
@@ -227,6 +228,7 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   actionsWidth: null,
   previewEnabled: true,
   previewLocked: false,
+  previewJumpToFolderEnabled: true,
   previewSplitMode: "inline",
   shellLayoutId: "balanced",
   search: "",
@@ -489,6 +491,10 @@ export function normalizeExplorerSessionSnapshot(
       typeof source?.previewLocked === "boolean"
         ? source.previewLocked
         : defaultExplorerSession.previewLocked,
+    previewJumpToFolderEnabled:
+      typeof source?.previewJumpToFolderEnabled === "boolean"
+        ? source.previewJumpToFolderEnabled
+        : defaultExplorerSession.previewJumpToFolderEnabled,
     previewSplitMode: source?.previewSplitMode === "pane" ? "pane" : "inline",
     shellLayoutId: normalizedShellLayoutId,
     search: typeof source?.search === "string" ? source.search : "",

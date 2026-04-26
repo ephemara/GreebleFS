@@ -3772,6 +3772,138 @@ const value = 1;
     );
   });
 
+  it("lets the preview pane browse folders in place when jump to folder is off", async () => {
+    const alphaPath = `${REPO_ROOT}\\alpha`;
+    const shotsPath = `${alphaPath}\\shots`;
+    const alphaEntries = [
+      {
+        name: "shots",
+        path: shotsPath,
+        is_dir: true,
+        size: 0,
+        modified: 1713400000000,
+        extension: "",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "child.txt",
+        path: `${alphaPath}\\child.txt`,
+        is_dir: false,
+        size: 512,
+        modified: 1713400000000,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ] as const;
+    const shotsEntries = [
+      {
+        name: "take01.txt",
+        path: `${shotsPath}\\take01.txt`,
+        is_dir: false,
+        size: 256,
+        modified: 1713400000000,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ] as const;
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          if (payload?.path === alphaPath) {
+            return alphaEntries;
+          }
+          if (payload?.path === shotsPath) {
+            return shotsEntries;
+          }
+        }
+        if (
+          command === "fs_read_text_file" &&
+          payload?.path === `${shotsPath}\\take01.txt`
+        ) {
+          return "hello from nested preview";
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(screen.getByText("alpha"));
+
+    const previewPane = getPreviewPane();
+    await within(previewPane).findByRole("button", {
+      name: /open folder shots/i,
+    });
+    const jumpToggle = within(previewPane).getByRole("button", {
+      name: /jump to folder/i,
+    });
+    expect(jumpToggle).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(jumpToggle);
+    expect(
+      within(getPreviewPane()).getByRole("button", { name: /jump to folder/i }),
+    ).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(
+      within(getPreviewPane()).getByRole("button", { name: /open folder shots/i }),
+    );
+
+    await within(getPreviewPane()).findByRole("button", {
+      name: /open file take01\.txt/i,
+    });
+    expect(within(getExplorerContentViewport()).getByText("alpha")).toBeInTheDocument();
+    expect(
+      within(getExplorerContentViewport()).queryByText("take01.txt"),
+    ).not.toBeInTheDocument();
+    expect(getChromeControl("previewNavigateBack")).not.toBeNull();
+
+    fireEvent.click(
+      within(getPreviewPane()).getByRole("button", {
+        name: /open file take01\.txt/i,
+      }),
+    );
+
+    expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
+      "hello from nested preview",
+    );
+    expect(within(getExplorerContentViewport()).getByText("alpha")).toBeInTheDocument();
+
+    const previewBackControl = getChromeControl("previewNavigateBack");
+    if (!(previewBackControl instanceof HTMLElement)) {
+      throw new Error("Expected preview back control");
+    }
+
+    fireEvent.click(
+      within(previewBackControl).getByRole("button", {
+        name: /go back in preview/i,
+      }),
+    );
+
+    await within(getPreviewPane()).findByRole("button", {
+      name: /open file take01\.txt/i,
+    });
+    expect(
+      within(getExplorerContentViewport()).queryByText("take01.txt"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(within(getExplorerContentViewport()).getByText("notes.txt"));
+
+    expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
+      "hello from text file",
+    );
+    expect(getChromeControl("previewNavigateBack")).toBeNull();
+  });
+
   it("routes folder preview row drags through the app-owned explorer drag runtime", async () => {
     const alphaPath = `${REPO_ROOT}\\alpha`;
     const alphaEntries = [

@@ -129,6 +129,12 @@ const browserMocks = vi.hoisted(() => {
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: browserMocks.invoke,
+  Channel: class<T = unknown> {
+    onmessage?: ((message: T) => void) | null;
+    send(message: T) {
+      this.onmessage?.(message);
+    }
+  },
   convertFileSrc: (path: string) => `asset://localhost/${path}`,
   isTauri: browserMocks.isTauri,
 }));

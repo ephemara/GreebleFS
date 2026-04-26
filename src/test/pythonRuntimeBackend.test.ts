@@ -79,6 +79,8 @@ describe('pythonRuntimeBackend', () => {
         requestId: 'sidecar-1',
         actionId: 'ml.probe',
         resultJson: '{"torch":{"installed":true},"onnxInstalled":true}',
+        outputArtifacts: [],
+        resourceHandles: [],
       },
     });
 
@@ -161,6 +163,8 @@ describe('pythonRuntimeBackend', () => {
           },
           optionalModules: [],
         }),
+        outputArtifacts: [],
+        resourceHandles: [],
       },
     });
 

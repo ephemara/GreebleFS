@@ -31,6 +31,8 @@ export interface ExplorerArchivePreviewProps {
   onStartDragOutEntry?: (
     request: ExplorerPreviewEntryDragRequest<ExplorerFileEntry>,
   ) => void;
+  jumpToFolderEnabled?: boolean;
+  onToggleJumpToFolder?: () => void;
   iconTheme?: OverlayResolvedIconTheme;
   folderIconRules?: readonly FolderIconRule[];
   defaultFolderIcon?: FolderIconValue;
@@ -74,6 +76,8 @@ export function ExplorerArchivePreview({
   onExtract,
   onOpenEntry,
   onStartDragOutEntry,
+  jumpToFolderEnabled,
+  onToggleJumpToFolder,
   iconTheme,
   folderIconRules,
   defaultFolderIcon,
@@ -335,6 +339,8 @@ export function ExplorerArchivePreview({
         }}
         onOpenEntry={onOpenEntry}
         onStartDragOutEntry={onStartDragOutEntry}
+        jumpToFolderEnabled={jumpToFolderEnabled}
+        onToggleJumpToFolder={onToggleJumpToFolder}
         iconTheme={iconTheme}
         folderIconRules={folderIconRules}
         defaultFolderIcon={defaultFolderIcon}

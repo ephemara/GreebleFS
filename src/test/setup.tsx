@@ -93,6 +93,12 @@ if (typeof globalThis.matchMedia !== 'function') {
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn().mockResolvedValue(null),
+  Channel: class<T = unknown> {
+    onmessage?: ((message: T) => void) | null;
+    send(message: T) {
+      this.onmessage?.(message);
+    }
+  },
   convertFileSrc: (path: string) => `asset://localhost/${path}`,
   isTauri: vi.fn(() => true),
 }));

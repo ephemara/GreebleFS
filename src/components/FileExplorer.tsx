@@ -3596,6 +3596,41 @@ function getPreviewStateResolvedPath(preview: PreviewState): string {
   return preview.resolvedPath ?? preview.path;
 }
 
+function createPreviewNavigationHistoryEntry(
+  preview: PreviewState,
+): FileEntry | null {
+  if (preview.type === "none") {
+    return null;
+  }
+
+  const previewName =
+    "name" in preview ? preview.name : getPathLeaf(preview.path) || "Preview";
+  const isDirectory = preview.type === "folder";
+  const previewSize =
+    "size" in preview && typeof preview.size === "number" ? preview.size : 0;
+  const previewExtension = isDirectory
+    ? ""
+    : getEntryExtension({
+        name: previewName,
+        extension:
+          "extension" in preview && typeof preview.extension === "string"
+            ? preview.extension
+            : previewName.split(".").pop() ?? "",
+        is_dir: false,
+      });
+
+  return createDerivedExplorerFileEntry({
+    path: preview.path,
+    name: previewName,
+    size: previewSize,
+    modified: Date.now(),
+    extension: previewExtension,
+    is_dir: isDirectory,
+    is_hidden: false,
+    is_symlink: false,
+  });
+}
+
 function supportsExplorerCommandPreviewModeToggle(
   preview: PreviewState,
 ): boolean {
@@ -3919,6 +3954,7 @@ function PreviewPanel({
   placement,
   presentationMode,
   previewLocked,
+  previewJumpToFolderEnabled,
   previewSurfaceMode,
   previewTerminalMounted,
   refreshRevision,
@@ -3949,6 +3985,8 @@ function PreviewPanel({
   onCopyPath,
   onTogglePresentationMode,
   onTogglePreviewLock,
+  onTogglePreviewJumpToFolder,
+  onNavigatePreviewBack,
   onTogglePreviewTerminal,
   onPreviewTerminalCommandHandled,
   onPreviewTerminalReportedWorkingDirectoryChange,
@@ -3981,6 +4019,7 @@ function PreviewPanel({
   onPreviewWorkflowContextChange,
   onExtractArchive,
   onContextMenu,
+  canNavigatePreviewBack,
   externalChromeControls = [],
 }: {
   appearance?: ResolvedOverlayAppearance;
@@ -3989,6 +4028,7 @@ function PreviewPanel({
   placement: ExplorerPreviewPlacement;
   presentationMode: ExplorerPreviewSplitMode;
   previewLocked: boolean;
+  previewJumpToFolderEnabled: boolean;
   previewSurfaceMode: PreviewSurfaceMode;
   previewTerminalMounted: boolean;
   refreshRevision: number;
@@ -4033,6 +4073,8 @@ function PreviewPanel({
   onCopyPath: (path: string) => void;
   onTogglePresentationMode: () => void;
   onTogglePreviewLock: () => void;
+  onTogglePreviewJumpToFolder: () => void;
+  onNavigatePreviewBack: () => void;
   onTogglePreviewTerminal: () => void;
   onPreviewTerminalCommandHandled: (requestId: string) => void;
   onPreviewTerminalReportedWorkingDirectoryChange: (cwd: string) => void;
@@ -4077,6 +4119,7 @@ function PreviewPanel({
   ) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
   onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
+  canNavigatePreviewBack: boolean;
   externalChromeControls?: ExplorerRenderedChromeControlDefinition[];
 }) {
   const interactionMotion = useInteractionMotionController();
@@ -5039,6 +5082,35 @@ function PreviewPanel({
         },
       },
       {
+        id: "previewNavigateBack",
+        label: "Preview Navigate Back",
+        surfaces: ["previewHeader"],
+        isVisible: () => canNavigatePreviewBack,
+        render: () => (
+          <button
+            type="button"
+            onClick={onNavigatePreviewBack}
+            aria-label="Go back in preview"
+            title="Go back to the previous preview location"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--overlay-explorer-chip-bg)",
+              border: "1px solid var(--overlay-explorer-chip-border)",
+              borderRadius: "var(--overlay-explorer-control-radius)",
+              cursor: "pointer",
+              color: EXP.muted,
+              width: 28,
+              height: 28,
+              padding: 0,
+            }}
+          >
+            <ChevronLeft size={12} />
+          </button>
+        ),
+      },
+      {
         id: "previewLockToggle",
         label: "Preview Lock Toggle",
         surfaces: ["previewHeader"],
@@ -5176,11 +5248,13 @@ function PreviewPanel({
     ],
     [
       copyPathLabel,
+      canNavigatePreviewBack,
       commitPdfPageInput,
       isPdfPreview,
       isPreviewTerminalMode,
       onClose,
       onCopyPath,
+      onNavigatePreviewBack,
       onTogglePresentationMode,
       onTogglePreviewLock,
       onTogglePreviewTerminal,
@@ -5495,6 +5569,8 @@ function PreviewPanel({
               onExtract={onExtractArchive}
               onOpenEntry={onOpenFolderPreviewEntry}
               onStartDragOutEntry={onStartDragOutPreviewEntry}
+              jumpToFolderEnabled={previewJumpToFolderEnabled}
+              onToggleJumpToFolder={onTogglePreviewJumpToFolder}
               iconTheme={iconTheme}
               folderIconRules={folderIconRules}
               defaultFolderIcon={defaultFolderIcon}
@@ -5508,6 +5584,8 @@ function PreviewPanel({
               showHiddenFiles={showHiddenFiles}
               onOpenEntry={onOpenFolderPreviewEntry}
               onStartDragOutEntry={onStartDragOutPreviewEntry}
+              jumpToFolderEnabled={previewJumpToFolderEnabled}
+              onToggleJumpToFolder={onTogglePreviewJumpToFolder}
               iconTheme={iconTheme}
               folderIconRules={folderIconRules}
               defaultFolderIcon={defaultFolderIcon}
@@ -8263,6 +8341,11 @@ export function FileExplorer({
       state.sessions[instanceId]?.previewLocked ??
       defaultExplorerSession.previewLocked,
   );
+  const storedPreviewJumpToFolderEnabled = useExplorerStore(
+    (state) =>
+      state.sessions[instanceId]?.previewJumpToFolderEnabled ??
+      defaultExplorerSession.previewJumpToFolderEnabled,
+  );
   const storedPreviewSplitMode = useExplorerStore(
     (state) =>
       state.sessions[instanceId]?.previewSplitMode ??
@@ -8466,6 +8549,9 @@ export function FileExplorer({
   const [previewLocked, setPreviewLocked] = useState(
     () => initialSession.previewLocked,
   );
+  const [previewJumpToFolderEnabled, setPreviewJumpToFolderEnabled] = useState(
+    () => initialSession.previewJumpToFolderEnabled,
+  );
   const [previewSplitMode, setPreviewSplitMode] =
     useState<ExplorerPreviewSplitMode>(() => initialSession.previewSplitMode);
   const [sourcesVisible, setSourcesVisible] = useState(
@@ -8500,6 +8586,9 @@ export function FileExplorer({
     type: "none",
     path: "",
   });
+  const [previewNavigationHistory, setPreviewNavigationHistory] = useState<
+    FileEntry[]
+  >([]);
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState>({
     visible: false,
     x: 0,
@@ -8654,6 +8743,9 @@ export function FileExplorer({
   const lastSelected = useRef<string | null>(null);
   const selectionRangeAnchorPathRef = useRef<string | null>(null);
   const previewRef = useRef(preview);
+  const pendingPreviewCollectionNavigationTargetPathRef = useRef<string | null>(
+    null,
+  );
   const activePreviewDropTarget = useMemo(
     () => resolveExplorerPreviewDropTarget(preview),
     [preview],
@@ -8909,6 +9001,8 @@ export function FileExplorer({
   const previewPanelVisible =
     !isCompactDock && previewEnabled && !usesWorkspaceCompactChrome;
   const hasPreview = previewPanelVisible && preview.type !== "none";
+  const canNavigatePreviewBack =
+    previewNavigationHistory.length > 0 && preview.type !== "none";
   const isExperimentalViewEligible =
     !isCompactDock && search.trim().length === 0;
 
@@ -9293,6 +9387,10 @@ export function FileExplorer({
   }, [storedPreviewLocked]);
 
   useEffect(() => {
+    setPreviewJumpToFolderEnabled(storedPreviewJumpToFolderEnabled);
+  }, [storedPreviewJumpToFolderEnabled]);
+
+  useEffect(() => {
     setPreviewSplitMode(storedPreviewSplitMode);
   }, [storedPreviewSplitMode]);
 
@@ -9344,6 +9442,20 @@ export function FileExplorer({
   useEffect(() => {
     previewRef.current = preview;
   }, [preview]);
+
+  useEffect(() => {
+    const pendingPreviewPath =
+      pendingPreviewCollectionNavigationTargetPathRef.current;
+    if (pendingPreviewPath && preview.path === pendingPreviewPath) {
+      pendingPreviewCollectionNavigationTargetPathRef.current = null;
+      return;
+    }
+
+    pendingPreviewCollectionNavigationTargetPathRef.current = null;
+    setPreviewNavigationHistory((current) =>
+      current.length === 0 ? current : [],
+    );
+  }, [preview.path]);
 
   useEffect(() => {
     setShowArchiveActionsMenu(false);
@@ -9501,6 +9613,7 @@ export function FileExplorer({
       actionsWidth,
       previewEnabled,
       previewLocked,
+      previewJumpToFolderEnabled,
       previewSplitMode,
       search,
       searchMode,
@@ -9525,6 +9638,7 @@ export function FileExplorer({
     actionsWidth,
     previewEnabled,
     previewLocked,
+    previewJumpToFolderEnabled,
     previewSplitMode,
     previewWidth,
     search,
@@ -13103,6 +13217,8 @@ export function FileExplorer({
   const clearPreviewSurface = useCallback(() => {
     previewCloseGuardRef.current = null;
     resetPreviewTerminalState();
+    pendingPreviewCollectionNavigationTargetPathRef.current = null;
+    setPreviewNavigationHistory([]);
     setPreview({ type: "none", path: "" });
     setPreviewLoading(false);
     setPdfPreviewChromeState(null);
@@ -13307,6 +13423,15 @@ export function FileExplorer({
     }
     setPreviewLocked((current) => !current);
   }, [preview.type]);
+
+  const togglePreviewJumpToFolder = useCallback(() => {
+    const nextEnabled = !previewJumpToFolderEnabled;
+    setPreviewJumpToFolderEnabled(nextEnabled);
+    if (nextEnabled) {
+      pendingPreviewCollectionNavigationTargetPathRef.current = null;
+      setPreviewNavigationHistory([]);
+    }
+  }, [previewJumpToFolderEnabled]);
 
   const closePreviewPanel = useCallback(async () => {
     previewReopenOnSelectionRef.current = true;
@@ -14118,6 +14243,45 @@ export function FileExplorer({
     ],
   );
 
+  const openPreviewOnlyCollectionEntry = useCallback(
+    async (entry: FileEntry) => {
+      const currentPreviewEntry = createPreviewNavigationHistoryEntry(
+        previewRef.current,
+      );
+      if (currentPreviewEntry && currentPreviewEntry.path !== entry.path) {
+        setPreviewNavigationHistory((current) => [
+          ...current,
+          currentPreviewEntry,
+        ]);
+      }
+      pendingPreviewCollectionNavigationTargetPathRef.current = entry.path;
+      await previewEntry(
+        entry,
+        entry.is_dir ? null : getSearchFocusTarget(entry),
+        "explicit",
+      );
+    },
+    [getSearchFocusTarget, previewEntry],
+  );
+
+  const navigatePreviewBack = useCallback(async () => {
+    let targetEntry: FileEntry | null = null;
+    setPreviewNavigationHistory((current) => {
+      targetEntry = current[current.length - 1] ?? null;
+      return current.slice(0, -1);
+    });
+    if (!targetEntry) {
+      return;
+    }
+
+    pendingPreviewCollectionNavigationTargetPathRef.current = targetEntry.path;
+    await previewEntry(
+      targetEntry,
+      targetEntry.is_dir ? null : getSearchFocusTarget(targetEntry),
+      "explicit",
+    );
+  }, [getSearchFocusTarget, previewEntry]);
+
   const selectVisibleEntryAtIndex = useCallback(
     (index: number, extendRange: boolean) => {
       if (visibleEntries.length === 0) return;
@@ -14230,6 +14394,11 @@ export function FileExplorer({
 
   const openFolderPreviewEntry = useCallback(
     async (entry: FileEntry) => {
+      if (!previewJumpToFolderEnabled) {
+        await openPreviewOnlyCollectionEntry(entry);
+        return;
+      }
+
       if (entry.is_dir) {
         await navigate(entry.path);
         await previewEntry(entry, null, "explicit");
@@ -14250,7 +14419,14 @@ export function FileExplorer({
       selectionRangeAnchorPathRef.current = entry.path;
       await previewEntry(entry, getSearchFocusTarget(entry), "explicit");
     },
-    [currentPath, getSearchFocusTarget, navigate, previewEntry],
+    [
+      currentPath,
+      getSearchFocusTarget,
+      navigate,
+      openPreviewOnlyCollectionEntry,
+      previewEntry,
+      previewJumpToFolderEnabled,
+    ],
   );
 
   // ── Duplicate ──
@@ -26347,6 +26523,7 @@ export function FileExplorer({
         placement={previewPlacement}
         presentationMode={previewSplitMode}
         previewLocked={previewLocked}
+        previewJumpToFolderEnabled={previewJumpToFolderEnabled}
         previewSurfaceMode={previewSurfaceMode}
         previewTerminalMounted={previewTerminalMounted}
         refreshRevision={previewRefreshRevision}
@@ -26382,6 +26559,8 @@ export function FileExplorer({
           )
         }
         onTogglePreviewLock={togglePreviewLock}
+        onTogglePreviewJumpToFolder={togglePreviewJumpToFolder}
+        onNavigatePreviewBack={navigatePreviewBack}
         onTogglePreviewTerminal={togglePreviewTerminal}
         onPreviewTerminalCommandHandled={handlePreviewTerminalCommandHandled}
         onPreviewTerminalReportedWorkingDirectoryChange={
@@ -26415,6 +26594,7 @@ export function FileExplorer({
         onRegisterContextMenuRegistration={setPreviewContextMenuRegistration}
         onPreviewWorkflowContextChange={setPreviewWorkflowContext}
         onContextMenu={onPreviewContextMenu}
+        canNavigatePreviewBack={canNavigatePreviewBack}
         externalChromeControls={previewExternalChromeControls}
         onExtractArchive={(mode) => {
           if (preview.type === "archive") {
@@ -26445,6 +26625,7 @@ export function FileExplorer({
   }, [
     appearance,
     activePreviewWorkflowTabId,
+    canNavigatePreviewBack,
     closePreviewPanel,
     copyToSysClipboard,
     documentViewMode,
@@ -26462,6 +26643,7 @@ export function FileExplorer({
     persistShaderPreviewSource,
     preview,
     previewExternalChromeControls,
+    previewJumpToFolderEnabled,
     previewLocked,
     previewPanelVisible,
     previewPlacement,
@@ -26484,6 +26666,7 @@ export function FileExplorer({
     registerPreviewCloseGuard,
     handlePreviewTerminalCommandHandled,
     handlePreviewTerminalReportedWorkingDirectoryChange,
+    navigatePreviewBack,
     runPreviewPythonInTerminal,
     runPreviewPythonManaged,
     runPreviewTextScript,
@@ -26496,6 +26679,7 @@ export function FileExplorer({
     startPreviewExplorerPointerDrag,
     stopPreviewTextScriptRun,
     togglePreviewLock,
+    togglePreviewJumpToFolder,
     togglePreviewTerminal,
     openManagedPythonRepl,
     imageCutoutModelBinding,

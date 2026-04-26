@@ -15,7 +15,7 @@ pub fn spawn_raw_invoke_response<T, TFut>(
     resolver: tauri::ipc::InvokeResolver<tauri::Wry>,
     future: TFut,
 ) where
-    T: serde::Serialize + Send + 'static,
+    T: tauri::ipc::IpcResponse + Send + 'static,
     TFut: std::future::Future<Output = Result<T, String>> + Send + 'static,
 {
     tauri::async_runtime::spawn(async move {

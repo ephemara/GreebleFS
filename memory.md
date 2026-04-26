@@ -1,3 +1,33 @@
+# 2026-04-26 - Shared Desktop IPC Foundation Now Owns Artifacts, Streams, Resources, And Raw Byte Exceptions
+
+- GreebleFS now has one reusable desktop IPC foundation instead of a pile of feature-local transport hacks:
+  - `crates/greeble-ipc-contracts` is the shared contract crate exported through Specta.
+  - `src-tauri/src/ipc_runtime/` owns the host-side artifact store, stream registry, resource registry, and shared raw-byte helper.
+  - `src/runtime/ipc/` is the frontend-owned runtime seam for artifact URL resolution, stream subscription, resource release, and shared binary reads.
+- Durable transport rule for new host-facing work:
+  - `control`: Specta-generated commands/events for small typed metadata and intent payloads
+  - `artifact`: backend-owned files/descriptors for thumbnails, previews, staged exports, and other cacheable bulk outputs
+  - `stream`: ordered packet feeds for terminal output, progress, or any higher-rate event lane
+  - `resource`: opaque handles for long-lived native or Python state such as sessions, jobs, caches, and engines
+  - Do not add new base64/data-URL payloads, `number[]` byte arrays, or ad hoc custom event-name streams when one of those four lanes fits.
+- First adopter shape:
+  - `src/components/TerminalOverlay.tsx` now opens a typed terminal output stream handle and subscribes through `src/runtime/ipc/streams.ts`; terminal output should no longer depend on per-pane `listen("terminal-output-*")` names.
+  - `src/runtime/explorerThumbnailArtifactRuntime.ts` now resolves `IpcArtifactDescriptor` values instead of assuming raw artifact paths, so thumbnail reuse stays inside the shared artifact lane.
+  - `src/runtime/explorerBackend.ts` preview-byte reads now flow through the shared `src/runtime/ipc/binary.ts` helper instead of feature-local raw invoke code.
+  - `src/runtime/pythonRuntimeBackend.ts` plus `src-tauri/src/python_sidecar.rs` now allow sidecar actions to exchange `inputArtifacts`, `outputArtifacts`, and `resourceHandles` so media/ML flows can move bulk data off the JSON control plane.
+- Durable binding rule:
+  - `src-tauri/src/specta_bindings.rs` must keep the generated `Channel as TAURI_CHANNEL` import alive, emit `void TAURI_CHANNEL;`, and export `__makeEvents__`. If that sanitizer regresses, stream-capable generated bindings silently rot even though Rust support still exists.
+- Durable validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml sanitize_generated_typescript_preserves_channel_import_and_exports_event_helper --lib`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml persistent_artifact_registration_reuses_the_same_descriptor_id --lib`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml resource_release_is_safe_to_repeat --lib`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml stream_packet_metadata_is_ordered_per_stream --lib`
+  - passed: `python3 -m py_compile src-python/greeblefs_sidecar/actions.py src-python/greeblefs_sidecar/server.py`
+  - passed: `bunx vitest run src/test/ipcArtifactsRuntime.test.ts src/test/ipcStreamsRuntime.test.ts src/test/pythonRuntimeBackend.test.ts src/test/terminalOverlay.test.tsx --reporter=dot`
+  - note: repo-wide `bunx tsc --noEmit` is still red on unrelated pre-existing settings/audio/vendored-editor paths, so IPC validation should keep using the repo’s filtered TS pattern against the touched runtime/test files until those workspace-wide failures are cleaned up.
+
 # 2026-04-26 - Folder And Archive Preview Now Share Persistent Collection Modes
 
 - Folder and archive preview lanes no longer own separate list UIs. `src/components/ExplorerCollectionPreviewSurface.tsx` is now the shared preview-pane collection surface used by both `ExplorerFolderPreview.tsx` and `ExplorerArchivePreview.tsx`.

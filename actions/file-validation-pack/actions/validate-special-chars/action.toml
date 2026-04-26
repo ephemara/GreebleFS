@@ -1,0 +1,20 @@
+version = 1
+id = "validate-special-chars"
+name = "Validate Special Characters"
+description = "Checks if selected files have special characters in names that might cause issues."
+icon = "AlertTriangle"
+tags = ["validation", "filename", "compatibility"]
+contexts = ["entry", "multi-select"]
+appliesTo = "any"
+
+[selection]
+minCount = 1
+allowFiles = true
+allowDirectories = true
+
+[execution]
+runner = "interpreter"
+entry = "python/validate_special_chars.py"
+
+[presentation]
+outputTarget = "task-center"

@@ -262,6 +262,7 @@ describe("ExplorerArchivePreview", () => {
     const archivePath = "C:\\Assets\\demo.zip";
     const onOpenEntry = vi.fn();
     const onStartDragOutEntry = vi.fn();
+    const onToggleJumpToFolder = vi.fn();
     const texturesPath = buildExplorerArchiveVirtualPath({
       archivePath,
       entryPath: "textures",
@@ -307,6 +308,8 @@ describe("ExplorerArchivePreview", () => {
         onExtract={() => undefined}
         onOpenEntry={onOpenEntry}
         onStartDragOutEntry={onStartDragOutEntry}
+        jumpToFolderEnabled={false}
+        onToggleJumpToFolder={onToggleJumpToFolder}
       />,
     );
 
@@ -320,6 +323,14 @@ describe("ExplorerArchivePreview", () => {
     expect(
       screen.getByRole("button", { name: /use orbit preview mode/i }),
     ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: /jump to folder/i }),
+    ).toHaveTextContent("Jump Off");
+    expect(screen.getByText("textures")).toBeInTheDocument();
+    expect(screen.getByText("readme.txt")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /jump to folder/i }));
+    expect(onToggleJumpToFolder).toHaveBeenCalledTimes(1);
 
     fireEvent.click(folderOrbit, { ctrlKey: true });
     fireEvent.click(fileOrbit, { ctrlKey: true });

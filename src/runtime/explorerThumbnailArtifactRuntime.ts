@@ -1,9 +1,9 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   readExplorerThumbnailArtifact,
   type ExplorerEntryThumbnailData,
   type ExplorerFileEntry,
 } from "./explorerBackend";
+import { resolveIpcArtifactUrl } from "./ipc";
 
 type ExplorerThumbnailSourceEntry = Pick<
   ExplorerFileEntry,
@@ -95,26 +95,11 @@ function mapThumbnailArtifactToEntryThumbnail(artifact: Awaited<
 
   return {
     kind: artifact.kind,
-    posterDataUrl: toLocalAssetUrl(artifact.posterPath),
-    hoverFrames: artifact.hoverFramePaths.map((hoverFramePath, index) => ({
-      imageDataUrl: toLocalAssetUrl(hoverFramePath),
+    posterDataUrl: resolveIpcArtifactUrl(artifact.poster),
+    hoverFrames: artifact.hoverFrames.map((hoverFrameArtifact, index) => ({
+      imageDataUrl: resolveIpcArtifactUrl(hoverFrameArtifact),
       timestampSeconds: Number((index * timestampStepSeconds).toFixed(3)),
     })),
     hoverFrameDelayMs,
   };
-}
-
-function toLocalAssetUrl(filePath: string): string {
-  if (typeof window === "undefined") {
-    return filePath;
-  }
-
-  try {
-    return convertFileSrc(filePath);
-  } catch {
-    const normalizedPath = filePath.replace(/\\/g, "/");
-    return normalizedPath.startsWith("/")
-      ? `file://${encodeURI(normalizedPath)}`
-      : `file:///${encodeURI(normalizedPath)}`;
-  }
 }

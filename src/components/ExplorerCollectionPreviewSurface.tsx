@@ -98,6 +98,8 @@ export interface ExplorerCollectionPreviewSurfaceProps {
   onStartDragOutEntry?: (
     request: ExplorerPreviewEntryDragRequest<ExplorerFileEntry>,
   ) => void;
+  jumpToFolderEnabled?: boolean;
+  onToggleJumpToFolder?: () => void;
   iconTheme?: OverlayResolvedIconTheme;
   folderIconRules?: readonly FolderIconRule[];
   defaultFolderIcon?: FolderIconValue;
@@ -138,6 +140,8 @@ export function ExplorerCollectionPreviewSurface({
   emptyState,
   onOpenEntry,
   onStartDragOutEntry,
+  jumpToFolderEnabled,
+  onToggleJumpToFolder,
   iconTheme,
   folderIconRules,
   defaultFolderIcon,
@@ -332,7 +336,50 @@ export function ExplorerCollectionPreviewSurface({
           gap: 10,
         }}
       >
-        <div style={{ minWidth: 0 }}>{sectionLabel}</div>
+        <div
+          style={{
+            minWidth: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>{sectionLabel}</span>
+          {typeof jumpToFolderEnabled === "boolean" && onToggleJumpToFolder ? (
+            <button
+              type="button"
+              aria-label="Jump to folder"
+              aria-pressed={jumpToFolderEnabled}
+              title={buildCollectionJumpToggleTitle(jumpToFolderEnabled)}
+              onClick={onToggleJumpToFolder}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "4px 8px",
+                borderRadius: 999,
+                border: jumpToFolderEnabled
+                  ? "1px solid var(--overlay-explorer-chip-active-border)"
+                  : "1px solid var(--overlay-explorer-chip-border)",
+                background: jumpToFolderEnabled
+                  ? "var(--overlay-explorer-chip-active-bg)"
+                  : "var(--overlay-explorer-chip-bg)",
+                color: jumpToFolderEnabled
+                  ? "var(--overlay-explorer-chip-active-text)"
+                  : "var(--overlay-text-dim)",
+                cursor: "pointer",
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+              }}
+            >
+              <FolderTree size={11} strokeWidth={1.8} />
+              {jumpToFolderEnabled ? "Jump On" : "Jump Off"}
+            </button>
+          ) : null}
+        </div>
         <div
           role="toolbar"
           aria-label={`${sectionLabel} preview mode`}
@@ -1059,6 +1106,39 @@ function renderOverviewEntryCard(args: {
           {getCollectionEntryBadgeLabel(entry)}
         </div>
       </div>
+      <div
+        style={{
+          minWidth: 0,
+          display: "grid",
+          gap: 3,
+          textAlign: "left",
+        }}
+      >
+        <div
+          data-overlay-preview-entry-name="true"
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: "var(--overlay-text-primary)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {entry.name}
+        </div>
+        <div
+          style={{
+            fontSize: 10,
+            color: "var(--overlay-text-muted)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {resolveCollectionEntrySecondaryLabel(entry)}
+        </div>
+      </div>
     </button>
   );
 }
@@ -1086,7 +1166,8 @@ function renderIconNode(args: {
     onHoverStart,
   } = args;
   const previewEntryDragBindings = bindPreviewEntryDirectDrag(entry);
-  const dimension = variant === "timeline" ? 42 : 48;
+  const shellWidth = variant === "timeline" ? 78 : 88;
+  const iconFrameSize = variant === "timeline" ? 34 : 40;
   return (
     <button
       type="button"
@@ -1098,10 +1179,11 @@ function renderIconNode(args: {
       title={buildCollectionEntryTitle(collectionKind, entry)}
       aria-pressed={isSelected}
       style={{
-        width: dimension,
-        height: dimension,
+        width: shellWidth,
+        minHeight: variant === "timeline" ? 66 : 78,
+        padding: variant === "timeline" ? "8px 8px 6px" : "10px 8px 8px",
         position: "relative",
-        borderRadius: variant === "timeline" ? 999 : 14,
+        borderRadius: variant === "timeline" ? 18 : 16,
         border: resolveCardBorder(isSelected),
         background: resolveEntryBackground({
           isSelected,
@@ -1109,7 +1191,9 @@ function renderIconNode(args: {
           variant: variant === "timeline" ? "orb" : "card",
         }),
         display: "grid",
-        placeItems: "center",
+        justifyItems: "center",
+        alignContent: "start",
+        gap: 6,
         cursor: "pointer",
         boxShadow: isSelected
           ? "0 10px 22px color-mix(in srgb, var(--overlay-accent) 22%, transparent)"
@@ -1119,21 +1203,51 @@ function renderIconNode(args: {
       onMouseLeave={() => onHoverStart(null)}
       {...previewEntryDragBindings}
     >
-      {iconSrc ? <ExplorerPreviewEntryIconImage src={iconSrc} size={20} /> : null}
       <div
         style={{
-          position: "absolute",
-          right: 4,
-          bottom: 4,
-          minWidth: 8,
-          height: 8,
-          borderRadius: 999,
-          background: entry.is_dir
-            ? "var(--overlay-accent)"
-            : "var(--overlay-warning)",
-          boxShadow: "0 0 0 2px color-mix(in srgb, black 40%, transparent)",
+          position: "relative",
+          width: iconFrameSize,
+          height: iconFrameSize,
+          borderRadius: variant === "timeline" ? 999 : 12,
+          border:
+            "1px solid color-mix(in srgb, var(--overlay-explorer-preview-border) 82%, transparent)",
+          background:
+            "linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-card) 84%, var(--overlay-accent) 16%), color-mix(in srgb, var(--overlay-bg-panel) 96%, transparent))",
+          display: "grid",
+          placeItems: "center",
         }}
-      />
+      >
+        {iconSrc ? <ExplorerPreviewEntryIconImage src={iconSrc} size={20} /> : null}
+        <div
+          style={{
+            position: "absolute",
+            right: 4,
+            bottom: 4,
+            minWidth: 8,
+            height: 8,
+            borderRadius: 999,
+            background: entry.is_dir
+              ? "var(--overlay-accent)"
+              : "var(--overlay-warning)",
+            boxShadow: "0 0 0 2px color-mix(in srgb, black 40%, transparent)",
+          }}
+        />
+      </div>
+      <div
+        data-overlay-preview-entry-name="true"
+        style={{
+          width: "100%",
+          fontSize: variant === "timeline" ? 10 : 10.5,
+          fontWeight: 700,
+          color: "var(--overlay-text-primary)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          textAlign: "center",
+        }}
+      >
+        {entry.name}
+      </div>
     </button>
   );
 }
@@ -1167,6 +1281,8 @@ function renderOrbitEntry(args: {
   const radius = total <= 4 ? 42 : total <= 7 ? 48 : 54;
   const x = Math.cos(angle) * radius;
   const y = Math.sin(angle) * radius;
+  const shellWidth = 92;
+  const shellHeight = 64;
   return (
     <button
       type="button"
@@ -1179,29 +1295,60 @@ function renderOrbitEntry(args: {
       aria-pressed={isSelected}
       style={{
         position: "absolute",
-        left: `calc(50% + ${x}px - 18px)`,
-        top: `calc(50% + ${y}px - 18px)`,
-        width: 36,
-        height: 36,
-        borderRadius: 999,
-        border: resolveCardBorder(isSelected),
-        background: resolveEntryBackground({
-          isSelected,
-          isHovered,
-          variant: "orb",
-        }),
+        left: `calc(50% + ${x}px - ${shellWidth / 2}px)`,
+        top: `calc(50% + ${y}px - ${shellHeight / 2}px)`,
+        width: shellWidth,
+        height: shellHeight,
+        border: "none",
+        background: "transparent",
         display: "grid",
-        placeItems: "center",
+        justifyItems: "center",
+        alignContent: "start",
+        gap: 6,
         cursor: "pointer",
-        boxShadow: isSelected
-          ? "0 10px 22px color-mix(in srgb, var(--overlay-accent) 24%, transparent)"
-          : "none",
       }}
       onMouseEnter={() => onHoverStart(entry.path)}
       onMouseLeave={() => onHoverStart(null)}
       {...previewEntryDragBindings}
     >
-      {iconSrc ? <ExplorerPreviewEntryIconImage src={iconSrc} size={18} /> : null}
+      <div
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: 999,
+          border: resolveCardBorder(isSelected),
+          background: resolveEntryBackground({
+            isSelected,
+            isHovered,
+            variant: "orb",
+          }),
+          display: "grid",
+          placeItems: "center",
+          boxShadow: isSelected
+            ? "0 10px 22px color-mix(in srgb, var(--overlay-accent) 24%, transparent)"
+            : "none",
+        }}
+      >
+        {iconSrc ? <ExplorerPreviewEntryIconImage src={iconSrc} size={18} /> : null}
+      </div>
+      <div
+        data-overlay-preview-entry-name="true"
+        style={{
+          maxWidth: "100%",
+          padding: "2px 8px",
+          borderRadius: 999,
+          border: "1px solid var(--overlay-explorer-chip-border)",
+          background: "var(--overlay-explorer-chip-bg)",
+          color: "var(--overlay-text-primary)",
+          fontSize: 10,
+          fontWeight: 700,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {entry.name}
+      </div>
     </button>
   );
 }
@@ -1304,6 +1451,13 @@ function getCollectionEntryBadgeLabel(entry: ExplorerFileEntry): string {
   return extension.slice(0, 4).toUpperCase();
 }
 
+function resolveCollectionEntrySecondaryLabel(entry: ExplorerFileEntry): string {
+  if (entry.is_dir) {
+    return "Folder";
+  }
+  return formatSize(entry.size);
+}
+
 function getCollectionEntryParentLabel(path: string): string | null {
   const archiveLocation = parseExplorerArchiveVirtualPath(path);
   if (archiveLocation) {
@@ -1343,6 +1497,12 @@ function buildCollectionEntryTitle(
   return `${buildCollectionEntryActionLabel(collectionKind, entry)}${
     entry.is_dir ? "" : ` • ${formatSize(entry.size)}`
   }`;
+}
+
+function buildCollectionJumpToggleTitle(enabled: boolean): string {
+  return enabled
+    ? "Jump is on. Opening items in this preview also syncs the main explorer."
+    : "Jump is off. Browse inside this preview without changing the main explorer. Selecting a new item in Explorer still resets the preview normally.";
 }
 
 function resolveEntryBackground(args: {
