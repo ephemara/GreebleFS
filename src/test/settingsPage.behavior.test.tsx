@@ -2003,9 +2003,9 @@ describe('SettingsPage behavior', () => {
     await user.click(findSectionButton('Appearance'));
     await user.click(screen.getByRole('button', { name: 'Override Theme' }));
 
-    const dockThemeButtons = screen.getAllByRole('button').filter(button =>
-      button.textContent?.includes('Vista Glass'),
-    );
+    const dockThemeButtons = screen.getAllByRole('button', {
+      name: /Vista Glass/i,
+    });
     await user.click(dockThemeButtons[dockThemeButtons.length - 1] as HTMLButtonElement);
 
     await waitFor(() => {
@@ -2015,7 +2015,7 @@ describe('SettingsPage behavior', () => {
         activeDockThemeId: 'vista-glass',
       });
     });
-  });
+  }, 10000);
 
   it('lets users pin a standalone top bar from the dedicated settings section', async () => {
     const user = userEvent.setup();

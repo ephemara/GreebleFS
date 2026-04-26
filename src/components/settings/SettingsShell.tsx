@@ -11,6 +11,7 @@ export function SettingsShell({
   activeSectionKey,
   activeArchetype,
   preferredContentDensity,
+  disableContentScroll = false,
   railWidth,
   onRailWidthChange,
   accent,
@@ -25,6 +26,7 @@ export function SettingsShell({
   activeSectionKey?: string;
   activeArchetype?: string;
   preferredContentDensity?: string;
+  disableContentScroll?: boolean;
   railWidth: number;
   onRailWidthChange: (width: number) => void;
   accent: string;
@@ -33,6 +35,26 @@ export function SettingsShell({
   blurEnabled: boolean;
 }) {
   const floatingShell = settingsStyle === 'floating' || settingsStyle === 'glass';
+  const contentGrid = (
+    <div
+      className={`grid w-full min-w-0 gap-3 px-4 pt-3 ${disableContentScroll ? 'h-full min-h-0 pb-3' : 'pb-5'} ${inspector ? 'xl:grid-cols-[minmax(0,1fr)_320px]' : ''}`.trim()}
+      data-settings-shell-content="true"
+      data-settings-active-section={activeSectionKey}
+      data-settings-active-archetype={activeArchetype}
+      data-settings-content-density={preferredContentDensity}
+    >
+      <div className={disableContentScroll ? 'flex min-h-0 min-w-0 flex-col' : 'min-w-0'}>
+        {children}
+      </div>
+      {inspector ? (
+        <aside
+          className={disableContentScroll ? 'flex min-h-0 min-w-0 flex-col' : 'min-w-0'}
+        >
+          {inspector}
+        </aside>
+      ) : null}
+    </div>
+  );
 
   return (
     <div
@@ -71,17 +93,23 @@ export function SettingsShell({
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col" data-settings-shell-main="true">
         {header}
-        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 0 }}>
-          <div
-            className={`grid w-full min-w-0 gap-3 px-4 pt-3 pb-5 ${inspector ? 'xl:grid-cols-[minmax(0,1fr)_320px]' : ''}`.trim()}
-            data-settings-shell-content="true"
-            data-settings-active-section={activeSectionKey}
-            data-settings-active-archetype={activeArchetype}
-            data-settings-content-density={preferredContentDensity}
-          >
-            <div className="min-w-0">{children}</div>
-            {inspector ? <aside className="min-w-0">{inspector}</aside> : null}
-          </div>
+        <OverlayScrollArea
+          style={{ flex: 1, minHeight: 0 }}
+          viewportStyle={{
+            padding: 0,
+            overflow: disableContentScroll ? 'hidden' : undefined,
+          }}
+          contentStyle={
+            disableContentScroll
+              ? {
+                  flex: '1 1 auto',
+                  minHeight: 0,
+                  height: '100%',
+                }
+              : undefined
+          }
+        >
+          {contentGrid}
         </OverlayScrollArea>
       </main>
     </div>

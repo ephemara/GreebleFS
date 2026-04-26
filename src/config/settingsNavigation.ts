@@ -3,6 +3,7 @@ export type SettingsPageArchetype = 'rows' | 'catalog-inspector' | 'tool-editor'
 export interface SettingsSectionShellHints {
   inspector?: boolean;
   preferredContentDensity?: 'compact' | 'comfortable' | 'immersive';
+  disableContentScroll?: boolean;
 }
 
 export interface SettingsSectionCatalogEntry {
@@ -81,7 +82,11 @@ export const settingsSectionCatalog = [
     overviewSummary: 'Explorer menu packs, renderer choices, and context-specific composer overrides.',
     featuredInOverview: true,
     archetype: 'tool-editor',
-    shell: { inspector: true, preferredContentDensity: 'comfortable' },
+    shell: {
+      inspector: true,
+      preferredContentDensity: 'immersive',
+      disableContentScroll: true,
+    },
     order: 42,
   },
   {

@@ -8643,6 +8643,9 @@ export function SettingsPage({
         preferredContentDensity={
           activeSectionMeta.shell?.preferredContentDensity
         }
+        disableContentScroll={
+          activeSectionMeta.shell?.disableContentScroll
+        }
         rail={
           <>
             <div className="border-b px-4 py-3" style={{ borderColor: border }}>

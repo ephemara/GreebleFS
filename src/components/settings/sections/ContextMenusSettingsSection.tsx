@@ -42,6 +42,7 @@ import {
 
 import { DraggablePanelList } from '../../DraggablePanelList';
 import { OverlayActionButton } from '../../OverlayActionButton';
+import { OverlayScrollArea } from '../../OverlayScrollArea';
 import type { ResolvedOverlayAppearance } from '../../../config/appearance';
 import type { LoadedActionPack, LoadedExplorerAction } from '../../../config/actionPacks';
 import {
@@ -829,6 +830,8 @@ export function ContextMenusSettingsSection({
       : contextMenuPreviewMenu.presentation.density === 'compact'
         ? 236
         : 256;
+  const shouldStretchContextMenuEditorPanels =
+    editorPanelState.panels.length <= 2;
 
   useEffect(() => {
     setOpenEditorSubmenuPath((currentPath) =>
@@ -1390,7 +1393,10 @@ export function ContextMenusSettingsSection({
   };
 
   return (
-    <section className="space-y-4" data-settings-section="context-menus">
+    <section
+      className="flex h-full min-h-0 flex-col gap-4"
+      data-settings-section="context-menus"
+    >
       <SettingsSectionHeader
         icon={<Puzzle size={12} />}
         title="Context Menus"
@@ -1405,7 +1411,7 @@ export function ContextMenusSettingsSection({
           activeMenuPack?.name ?? 'No Pack',
           `${menuPacks.length} pack${menuPacks.length === 1 ? '' : 's'}`,
           `${customizedContextCount} customized context${customizedContextCount === 1 ? '' : 's'}`,
-        ]}
+        ]} 
         actions={(
           <SettingsActionStrip>
             <OverlayActionButton
@@ -1458,6 +1464,8 @@ export function ContextMenusSettingsSection({
             </OverlayActionButton>
           </SettingsActionStrip>
         )}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        contentClassName="mt-3 flex min-h-0 flex-1 flex-col"
       >
         {menuPacksWarnings.length > 0 ? (
           <div className="rounded border px-3 py-2 text-[11px]" style={insetSurfaceStyle}>
@@ -1489,8 +1497,8 @@ export function ContextMenusSettingsSection({
           ))}
         </SettingsActionStrip>
 
-        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[220px_minmax(0,1fr)_320px]">
-          <div className="space-y-3">
+        <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[240px_minmax(0,1.35fr)_360px]">
+          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
             <div className="rounded border p-3" style={panelSurfaceStyle}>
               <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">
                 Context Setup
@@ -1649,8 +1657,11 @@ export function ContextMenusSettingsSection({
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="rounded border p-3" style={panelSurfaceStyle}>
+          <div className="flex min-h-0 flex-col">
+            <div
+              className="flex min-h-0 flex-1 flex-col rounded border p-3"
+              style={panelSurfaceStyle}
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">
@@ -1686,11 +1697,14 @@ export function ContextMenusSettingsSection({
                 </SettingsActionStrip>
               </div>
               <div
-                className="mt-3 rounded-[20px] border p-3"
+                className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border p-3"
                 style={{ borderColor: border, background: 'rgba(0,0,0,0.16)' }}
               >
                 {canvasMode === 'preview' ? (
-                  <div data-context-menu-canvas-mode="preview">
+                  <div
+                    data-context-menu-canvas-mode="preview"
+                    className="min-h-0 flex-1 overflow-auto"
+                  >
                     <ExplorerContextMenuPreviewPanels
                       nodes={contextMenuPreviewMenu.nodes}
                       density={contextMenuPreviewMenu.presentation.density}
@@ -1700,7 +1714,10 @@ export function ContextMenusSettingsSection({
                     />
                   </div>
                 ) : (
-                  <div data-context-menu-canvas-mode="edit">
+                  <div
+                    data-context-menu-canvas-mode="edit"
+                    className="flex min-h-0 flex-1 flex-col"
+                  >
                     <div
                       className="mb-3 flex flex-wrap items-center gap-2 px-1"
                       style={{ color: muted }}
@@ -1749,14 +1766,35 @@ export function ContextMenusSettingsSection({
                         Open folders from the menu row to branch deeper.
                       </span>
                     </div>
-                    <div className="flex min-h-[420px] gap-3 overflow-x-auto pb-1">
+                    <div
+                      className={
+                        shouldStretchContextMenuEditorPanels
+                          ? 'grid min-h-0 flex-1 gap-3'
+                          : 'flex min-h-0 flex-1 gap-3 overflow-x-auto pb-1'
+                      }
+                      style={
+                        shouldStretchContextMenuEditorPanels
+                          ? {
+                              gridTemplateColumns: `repeat(${editorPanelState.panels.length}, minmax(0, 1fr))`,
+                            }
+                          : undefined
+                      }
+                    >
                       {editorPanelState.panels.map((panel) => (
                         <div
                           key={panel.key}
-                          className="shrink-0 rounded border py-1"
+                          className="rounded border py-1"
                           style={{
-                            width: contextMenuEditorPanelWidth,
-                            minHeight: 220,
+                            width: shouldStretchContextMenuEditorPanels
+                              ? '100%'
+                              : contextMenuEditorPanelWidth,
+                            minWidth: shouldStretchContextMenuEditorPanels
+                              ? 0
+                              : contextMenuEditorPanelWidth,
+                            minHeight: 0,
+                            height: '100%',
+                            display: 'flex',
+                            flexDirection: 'column',
                             borderColor: 'var(--overlay-explorer-preview-border)',
                             background: 'var(--overlay-explorer-preview-bg)',
                             boxShadow: 'var(--overlay-explorer-ctx-menu-shadow)',
@@ -1820,6 +1858,7 @@ export function ContextMenusSettingsSection({
                               </div>
                             }
                             className="space-y-0.5 px-1 pb-1"
+                            style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
                             renderItem={({ item, isActive, isDragging, dragHandleProps }) => {
                               const resolvedCommand =
                                 item.kind === 'command'
@@ -1942,8 +1981,11 @@ export function ContextMenusSettingsSection({
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="rounded border p-3" style={panelSurfaceStyle}>
+          <div className="flex min-h-0 flex-col">
+            <div
+              className="flex min-h-0 flex-1 flex-col rounded border p-3"
+              style={panelSurfaceStyle}
+            >
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">
                   Menu Library
@@ -1972,99 +2014,101 @@ export function ContextMenusSettingsSection({
                   style={settingsFieldStyle}
                 />
               </div>
-              <div className="mt-3 max-h-[540px] space-y-3 overflow-y-auto pr-1">
-                {contextMenuLibrarySections.length === 0 ? (
-                  <div
-                    className="rounded border px-3 py-4 text-[11px] opacity-50"
-                    style={insetSurfaceStyle}
-                  >
-                    No library items match the current filter.
-                  </div>
-                ) : (
-                  contextMenuLibrarySections.map((section) => (
-                    <section key={section.key} className="space-y-2">
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">
-                        {section.label}
-                      </div>
-                      <div className="space-y-2">
-                        {section.items.map((item) => (
-                          <div
-                            key={item.id}
-                            className="rounded-[14px] border px-3 py-2.5"
-                            style={insetSurfaceStyle}
-                          >
-                            <div className="flex items-start gap-2">
-                              <button
-                                type="button"
-                                aria-label={`Drag ${item.label} into menu`}
-                                onPointerDown={(event) =>
-                                  beginContextMenuLibraryDrag(item, event)
-                                }
-                                className="mt-0.5 shrink-0 select-none rounded border px-2 py-1 text-[8px] font-semibold tracking-[0.2em]"
-                                style={{
-                                  borderColor: `${border}aa`,
-                                  background: 'rgba(255,255,255,0.025)',
-                                  color: muted,
-                                  touchAction: 'none',
-                                  cursor: 'grab',
-                                }}
-                              >
-                                ⋮⋮
-                              </button>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="opacity-75">
+              <OverlayScrollArea style={{ flex: 1, minHeight: 0, marginTop: 12 }}>
+                <div className="space-y-3 pr-1">
+                  {contextMenuLibrarySections.length === 0 ? (
+                    <div
+                      className="rounded border px-3 py-4 text-[11px] opacity-50"
+                      style={insetSurfaceStyle}
+                    >
+                      No library items match the current filter.
+                    </div>
+                  ) : (
+                    contextMenuLibrarySections.map((section) => (
+                      <section key={section.key} className="space-y-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">
+                          {section.label}
+                        </div>
+                        <div className="space-y-2">
+                          {section.items.map((item) => (
+                            <div
+                              key={item.id}
+                              className="rounded-[14px] border px-3 py-2.5"
+                              style={insetSurfaceStyle}
+                            >
+                              <div className="flex items-start gap-2">
+                                <button
+                                  type="button"
+                                  aria-label={`Drag ${item.label} into menu`}
+                                  onPointerDown={(event) =>
+                                    beginContextMenuLibraryDrag(item, event)
+                                  }
+                                  className="mt-0.5 shrink-0 select-none rounded border px-2 py-1 text-[8px] font-semibold tracking-[0.2em]"
+                                  style={{
+                                    borderColor: `${border}aa`,
+                                    background: 'rgba(255,255,255,0.025)',
+                                    color: muted,
+                                    touchAction: 'none',
+                                    cursor: 'grab',
+                                  }}
+                                >
+                                  ⋮⋮
+                                </button>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="opacity-75">
+                                      {item.kind === 'command' ? (
+                                        renderSettingsContextMenuIcon(
+                                          item.command.iconName,
+                                        )
+                                      ) : item.kind === 'structure-submenu' ? (
+                                        <FolderTree size={13} />
+                                      ) : item.kind === 'structure-group-slot' ? (
+                                        <Sparkles size={13} />
+                                      ) : (
+                                        <Puzzle size={13} />
+                                      )}
+                                    </span>
+                                    <span className="truncate text-[11px] font-semibold">
+                                      {item.label}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 text-[10px] leading-4 opacity-45">
+                                    {item.description}
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
+                                    <ThemeBadge label={item.sourceLabel} />
                                     {item.kind === 'command' ? (
-                                      renderSettingsContextMenuIcon(
-                                        item.command.iconName,
-                                      )
-                                    ) : item.kind === 'structure-submenu' ? (
-                                      <FolderTree size={13} />
+                                      <ThemeBadge label={item.command.group} />
                                     ) : item.kind === 'structure-group-slot' ? (
-                                      <Sparkles size={13} />
-                                    ) : (
-                                      <Puzzle size={13} />
-                                    )}
-                                  </span>
-                                  <span className="truncate text-[11px] font-semibold">
-                                    {item.label}
-                                  </span>
+                                      <ThemeBadge
+                                        label={
+                                          contextMenuGroupDraftByContext[
+                                            activeContextMenuContext
+                                          ] ?? 'plugin'
+                                        }
+                                      />
+                                    ) : null}
+                                  </div>
                                 </div>
-                                <div className="mt-1 text-[10px] leading-4 opacity-45">
-                                  {item.description}
-                                </div>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  <ThemeBadge label={item.sourceLabel} />
-                                  {item.kind === 'command' ? (
-                                    <ThemeBadge label={item.command.group} />
-                                  ) : item.kind === 'structure-group-slot' ? (
-                                    <ThemeBadge
-                                      label={
-                                        contextMenuGroupDraftByContext[
-                                          activeContextMenuContext
-                                        ] ?? 'plugin'
-                                      }
-                                    />
-                                  ) : null}
-                                </div>
+                                <OverlayActionButton
+                                  appearance={appearance}
+                                  size="compact"
+                                  tone="quiet"
+                                  onClick={() => runContextMenuLibraryQuickAdd(item)}
+                                  className="shrink-0"
+                                >
+                                  Add
+                                </OverlayActionButton>
                               </div>
-                              <OverlayActionButton
-                                appearance={appearance}
-                                size="compact"
-                                tone="quiet"
-                                onClick={() => runContextMenuLibraryQuickAdd(item)}
-                                className="shrink-0"
-                              >
-                                Add
-                              </OverlayActionButton>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  ))
-                )}
-              </div>
+                          ))}
+                        </div>
+                      </section>
+                    ))
+                  )}
+                </div>
+              </OverlayScrollArea>
             </div>
           </div>
         </div>

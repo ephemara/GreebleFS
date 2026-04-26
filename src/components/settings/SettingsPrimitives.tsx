@@ -114,6 +114,7 @@ export function SettingsSectionBlock({
   tone = 'default',
   accent,
   className = '',
+  contentClassName = '',
   style,
 }: {
   children: ReactNode;
@@ -124,6 +125,7 @@ export function SettingsSectionBlock({
   tone?: SettingsSurfaceTone;
   accent?: string;
   className?: string;
+  contentClassName?: string;
   style?: CSSProperties;
 }) {
   return (
@@ -144,7 +146,11 @@ export function SettingsSectionBlock({
           actions={actions}
         />
       ) : null}
-      {title ? <div className="mt-3">{children}</div> : children}
+      {title ? (
+        <div className={`mt-3 ${contentClassName}`.trim()}>{children}</div>
+      ) : (
+        children
+      )}
     </div>
   );
 }

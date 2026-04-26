@@ -17,6 +17,21 @@
   - passed: `jq empty src-tauri/tauri.conf.json`
   - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json | rg 'ExplorerVideoEditor|explorerVideoEditor'`
 
+# 2026-04-26 - Tool-Editor Settings Pages Can Now Opt Into A Fixed Viewport Shell
+
+- The Settings shell now supports editor-style sections that should behave like a docked workbench surface instead of a scroll document:
+  - `src/config/settingsNavigation.ts` now supports `shell.disableContentScroll`.
+  - `src/components/settings/SettingsShell.tsx` keeps one stable scroll-host DOM node, but can lock the main viewport scroll and hand scrolling off to section-local lanes when `disableContentScroll` is enabled.
+- `Context Menus` is the first section using that mode:
+  - `src/components/settings/sections/ContextMenusSettingsSection.tsx` is now a fixed-height three-lane editor. The page itself should not scroll; the left utility lane, center menu canvas, and right library own their own overflow behavior.
+  - The center `Menu Canvas` now stretches like a real editor stage. When only one or two menu columns are open, they expand to use the available width; deeper submenu stacks still spill horizontally like a real cascading menu authoring surface.
+  - The right `Menu Library` now behaves more like Explorer’s docked actions pane by using the full lane height with an internal scroll surface instead of a short card sitting in a taller column.
+- Durable product rule:
+  - If a settings section is acting like a DCC/editor viewport, prefer `shell.disableContentScroll` plus internal lane scrolling over letting the whole page drift vertically.
+- Durable validation:
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - note: the appearance override behavior spec is heavy enough now that it uses an explicit `10000` ms per-test timeout; keep queries narrow before widening more global time budgets.
+
 # 2026-04-25 - Context Menu Composer Now Edits The Actual Menu Stack
 
 - The context-menu editor should no longer read like a toy inspector around a fake list. The durable authoring model is now “edit the menu itself”:
