@@ -2701,7 +2701,7 @@ describe("FileExplorer view modes", () => {
     );
   });
 
-  it("switches text files back to Monaco with a loading fallback while text content resolves", async () => {
+  it("keeps the previous fast preview mounted and only shows preview loading chrome after the delay threshold", async () => {
     const textLoad = createDeferred<string>();
     const defaultInvoke = vi.mocked(invoke).getMockImplementation();
     if (!defaultInvoke) {
@@ -2731,19 +2731,105 @@ describe("FileExplorer view modes", () => {
       await screen.findByTestId("mock-explorer-image-editor"),
     ).toHaveTextContent("preview.png");
 
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText("notes.txt"));
+    expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
+      "preview.png",
+    );
+    expect(screen.queryByText(/loading editor/i)).toBeNull();
+    expect(screen.queryByText(/^Loading…$/)).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(140);
+    });
+    expect(screen.queryByText(/^Loading…$/)).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(screen.getByText(/^Loading…$/)).toBeInTheDocument();
+
+    await act(async () => {
+      textLoad.resolve("const value = 1;");
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("monaco-editor")).toHaveTextContent("const value = 1;");
+    expect(screen.queryByText(/^Loading…$/)).toBeNull();
+  });
+
+  it("prefetches adjacent text and image previews for the active selection", async () => {
+    const invokeMock = vi.mocked(invoke);
+    const baseInvokeImplementation = invokeMock.getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+    const prefetchEntries = [
+      {
+        name: "alpha.txt",
+        path: `${REPO_ROOT}\\\\alpha.txt`,
+        is_dir: false,
+        size: 64,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "beta.txt",
+        path: `${REPO_ROOT}\\\\beta.txt`,
+        is_dir: false,
+        size: 96,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "gamma.png",
+        path: `${REPO_ROOT}\\\\gamma.png`,
+        is_dir: false,
+        size: 2048,
+        modified: 0,
+        extension: "png",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ];
+
+    invokeMock.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+        return prefetchEntries;
+      }
+      return baseInvokeImplementation(command, args as never);
+    });
+
+    renderExplorer();
+    await screen.findByText("beta.txt");
+
+    fireEvent.click(screen.getByText("beta.txt"));
+    expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
+      "hello from preview",
+    );
 
     await waitFor(() => {
-      expect(useExplorerStore.getState().session.documentViewMode).toBe("edit");
+      expect(
+        invokeMock.mock.calls.some(
+          ([command, args]) =>
+            command === "fs_read_text_file" &&
+            (args as { path?: string } | undefined)?.path ===
+              `${REPO_ROOT}\\\\alpha.txt`,
+        ),
+      ).toBe(true);
+      expect(
+        invokeMock.mock.calls.some(
+          ([command, args]) =>
+            command === "fs_read_file_base64" &&
+            (args as { path?: string } | undefined)?.path ===
+              `${REPO_ROOT}\\\\gamma.png`,
+        ),
+      ).toBe(true);
     });
-    expect(await screen.findByText(/loading editor/i)).toBeInTheDocument();
-    expect(screen.queryByTestId("mock-explorer-image-editor")).toBeNull();
-
-    textLoad.resolve("const value = 1;");
-
-    expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
-      "const value = 1;",
-    );
   });
 
   it("shows Monaco text preview metrics and cursor location in the preview status strip", async () => {

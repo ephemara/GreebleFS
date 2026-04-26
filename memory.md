@@ -1,3 +1,20 @@
+# 2026-04-26 - Fast Preview Switching Now Keeps The Previous Surface Mounted And Delays Loading Chrome
+
+- The fast-switch explorer preview lanes now follow a VS Code-style handoff instead of replacing the pane with generic loading copy:
+  - `src/components/FileExplorer.tsx` keeps the current preview surface mounted while the next `image`, `pdf`, `script`, or `text` preview request resolves.
+  - A request-scoped loading chip now waits `160` ms before showing. It is driven by a timer/ref pair in `FileExplorer.tsx` and must be cleared on preview close, request replacement, and unmount.
+  - Generic loading fallback panes are still valid for heavier async work such as the shader workbench, but fast lanes should prefer preserved content plus delayed chrome over instant fallback takeover.
+- Adjacent preview prefetch is now intentional:
+  - `FileExplorer.tsx` warms the immediately previous/next selected neighbors for `image`, `script`, and `text` into `src/components/explorer/explorerPreviewCache.ts`.
+  - Prefetch currently skips directories, cloud paths, and archive-virtual entries.
+  - Do not casually extend that prefetch path to resource-backed lanes like PDF unless the session/resource lifetime cost is understood first.
+- Durable product rule:
+  - If a preview lane is expected to feel snappy during keyboard/selection traversal, bias toward “keep last preview visible, delay the loading indicator, swap only when ready.”
+  - Reserve visible loading takeover states for genuinely heavy work where silence would look broken instead of fast.
+- Durable validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "keeps the previous fast preview mounted|prefetches adjacent text and image previews|opens html files in preview mode when a rendered document preview is available|closes split previews cleanly and reopens them in the remembered pane mode" --reporter=dot`
+  - passed: `bash -lc 'bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "FileExplorer\\.tsx|fileExplorer\\.viewModes\\.test\\.tsx" || true'`
+
 # 2026-04-26 - Shared Desktop IPC Foundation Now Owns Artifacts, Streams, Resources, And Raw Byte Exceptions
 
 - GreebleFS now has one reusable desktop IPC foundation instead of a pile of feature-local transport hacks:

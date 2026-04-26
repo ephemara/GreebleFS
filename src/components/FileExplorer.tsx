@@ -368,6 +368,7 @@ import {
   buildExplorerPreviewLoadingFallback,
   buildExplorerUnsupportedPreviewFallback,
   resolveExplorerPreviewDescriptor,
+  type ExplorerResolvedPreviewDescriptor,
 } from "./explorer/explorerPreviewSystem";
 import {
   probeExecutableTextScriptPreview,
@@ -2395,6 +2396,29 @@ function getPreviewAssetUrl(filePath: string): string {
   }
 }
 
+const FAST_PREVIEW_LOADING_INDICATOR_DELAY_MS = 160;
+
+function isFastSwitchPreviewKind(
+  kind: ExplorerResolvedPreviewDescriptor["kind"],
+): kind is "image" | "pdf" | "script" | "text" {
+  return (
+    kind === "image" || kind === "pdf" || kind === "script" || kind === "text"
+  );
+}
+
+function isAdjacentPreviewPrefetchKind(
+  kind: ExplorerResolvedPreviewDescriptor["kind"],
+): kind is "image" | "script" | "text" {
+  return kind === "image" || kind === "script" || kind === "text";
+}
+
+function getExplorerPreviewCacheKey(
+  kind: "image" | "script" | "text",
+  path: string,
+): string {
+  return `${kind}:${path}`;
+}
+
 function getEntryTypeLabel(
   entry: Pick<FileEntry, "is_dir" | "name" | "extension">,
 ): string {
@@ -3603,8 +3627,7 @@ function createPreviewNavigationHistoryEntry(
     return null;
   }
 
-  const previewName =
-    "name" in preview ? preview.name : getPathLeaf(preview.path) || "Preview";
+  const previewName = preview.name;
   const isDirectory = preview.type === "folder";
   const previewSize =
     "size" in preview && typeof preview.size === "number" ? preview.size : 0;
@@ -8754,7 +8777,9 @@ export function FileExplorer({
   const previewCloseGuardRef = useRef<PreviewCloseGuard | null>(null);
   const previewReopenOnSelectionRef = useRef(false);
   const allowPreviewLoadWhileClosedRef = useRef(false);
+  const previewLoadingDelayTimerRef = useRef<number | null>(null);
   const previewSaveTimer = useRef<number | null>(null);
+  const previewPrefetchInFlightRef = useRef<Set<string>>(new Set());
   const internalPointerDragCandidateRef =
     useRef<ExplorerInternalPointerDragCandidate | null>(null);
   const internalPointerDragFrameRef = useRef<number | null>(null);
@@ -9548,6 +9573,10 @@ export function FileExplorer({
 
   useEffect(() => {
     return () => {
+      if (previewLoadingDelayTimerRef.current) {
+        window.clearTimeout(previewLoadingDelayTimerRef.current);
+        previewLoadingDelayTimerRef.current = null;
+      }
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);
         previewSaveTimer.current = null;
@@ -13220,6 +13249,28 @@ export function FileExplorer({
     },
     [currentPath, navigate],
   );
+  const dismissPreviewLoadingIndicator = useCallback(() => {
+    if (previewLoadingDelayTimerRef.current != null) {
+      window.clearTimeout(previewLoadingDelayTimerRef.current);
+      previewLoadingDelayTimerRef.current = null;
+    }
+    setPreviewLoading(false);
+  }, []);
+  const beginDelayedPreviewLoadingIndicator = useCallback((requestId: number) => {
+    if (previewLoadingDelayTimerRef.current != null) {
+      window.clearTimeout(previewLoadingDelayTimerRef.current);
+    }
+    setPreviewLoading(false);
+    previewLoadingDelayTimerRef.current = window.setTimeout(() => {
+      previewLoadingDelayTimerRef.current = null;
+      if (
+        isExplorerMountedRef.current &&
+        previewLoadRequestIdRef.current === requestId
+      ) {
+        setPreviewLoading(true);
+      }
+    }, FAST_PREVIEW_LOADING_INDICATOR_DELAY_MS);
+  }, []);
   const clearPreviewSurface = useCallback(() => {
     previewCloseGuardRef.current = null;
     resetPreviewTerminalState();
@@ -13227,10 +13278,10 @@ export function FileExplorer({
     previewNavigationHistoryRef.current = [];
     setPreviewNavigationHistory([]);
     setPreview({ type: "none", path: "" });
-    setPreviewLoading(false);
+    dismissPreviewLoadingIndicator();
     setPdfPreviewChromeState(null);
     setPreviewLocked(false);
-  }, [resetPreviewTerminalState]);
+  }, [dismissPreviewLoadingIndicator, resetPreviewTerminalState]);
   const togglePreviewTerminal = useCallback(() => {
     if (!previewTerminalWorkingDirectory) {
       return;
@@ -13293,6 +13344,64 @@ export function FileExplorer({
     clearPreviewSurface();
     return true;
   }, [clearPreviewSurface, flushPreviewTextSave, requestCurrentPreviewClose]);
+
+  const prefetchExplorerAdjacentPreview = useCallback(
+    async (entry: FileEntry) => {
+      if (
+        entry.is_dir ||
+        isExplorerArchiveVirtualPath(entry.path) ||
+        isCloudExplorerPath(entry.path)
+      ) {
+        return;
+      }
+
+      const resolvedPreview = resolveExplorerPreviewDescriptor(entry, {
+        assetUrlResolver: getPreviewAssetUrl,
+        documentPreviewKindResolver: getDocumentPreviewKind,
+      });
+      if (!isAdjacentPreviewPrefetchKind(resolvedPreview.kind)) {
+        return;
+      }
+
+      const previewCacheKey = getExplorerPreviewCacheKey(
+        resolvedPreview.kind,
+        entry.path,
+      );
+      if (
+        readCachedExplorerPreview<string>(previewCacheKey) != null ||
+        previewPrefetchInFlightRef.current.has(previewCacheKey)
+      ) {
+        return;
+      }
+
+      previewPrefetchInFlightRef.current.add(previewCacheKey);
+      try {
+        if (resolvedPreview.kind === "image") {
+          const dataUri = await readExplorerFileBase64(entry.path);
+          storeCachedExplorerPreview({
+            key: previewCacheKey,
+            path: entry.path,
+            value: dataUri,
+            bytes: estimateStringPreviewCacheBytes(dataUri),
+          });
+          return;
+        }
+
+        const content = await readExplorerTextFile(entry.path);
+        storeCachedExplorerPreview({
+          key: previewCacheKey,
+          path: entry.path,
+          value: content,
+          bytes: estimateStringPreviewCacheBytes(content),
+        });
+      } catch {
+        // Adjacent prefetch should stay invisible; real preview requests own errors.
+      } finally {
+        previewPrefetchInFlightRef.current.delete(previewCacheKey);
+      }
+    },
+    [isCloudExplorerPath, readExplorerFileBase64, readExplorerTextFile],
+  );
 
   useEffect(() => {
     if (isCompactDock) {
@@ -13518,6 +13627,11 @@ export function FileExplorer({
         assetUrlResolver: getPreviewAssetUrl,
         documentPreviewKindResolver: getDocumentPreviewKind,
       });
+      if (isFastSwitchPreviewKind(resolvedPreview.kind)) {
+        beginDelayedPreviewLoadingIndicator(requestId);
+      } else {
+        dismissPreviewLoadingIndicator();
+      }
       if (
         resolvedPreview.kind === "text" ||
         resolvedPreview.kind === "unsupported"
@@ -13576,7 +13690,7 @@ export function FileExplorer({
             lastSavedAt: hasRestoredDraft ? null : Date.now(),
             error: null,
           });
-          setPreviewLoading(false);
+          dismissPreviewLoadingIndicator();
           return;
         }
 
@@ -13590,7 +13704,7 @@ export function FileExplorer({
             label: fallback.label,
             detail: fallback.detail,
           });
-          setPreviewLoading(false);
+          dismissPreviewLoadingIndicator();
           return;
         }
       }
@@ -13604,7 +13718,7 @@ export function FileExplorer({
               ...previewResolvedPathProps,
               name: entry.name,
             });
-            setPreviewLoading(false);
+            dismissPreviewLoadingIndicator();
           }
           return;
         case "model3d":
@@ -13617,7 +13731,7 @@ export function FileExplorer({
               name: entry.name,
               size: entry.size,
             });
-            setPreviewLoading(false);
+            dismissPreviewLoadingIndicator();
           }
           return;
         case "archive":
@@ -13630,7 +13744,7 @@ export function FileExplorer({
               size: entry.size,
               descriptor: resolvedPreview.descriptor,
             });
-            setPreviewLoading(false);
+            dismissPreviewLoadingIndicator();
           }
           return;
         case "audio":
@@ -13646,7 +13760,7 @@ export function FileExplorer({
               mimeType: resolvedPreview.mimeType,
               size: entry.size,
             });
-            setPreviewLoading(false);
+            dismissPreviewLoadingIndicator();
           }
           return;
         case "video":
@@ -13662,26 +13776,15 @@ export function FileExplorer({
               mimeType: resolvedPreview.mimeType,
               size: entry.size,
             });
-            setPreviewLoading(false);
+            dismissPreviewLoadingIndicator();
           }
           return;
         case "image": {
           setDocumentViewMode("preview");
-          const loadingFallback =
-            buildExplorerPreviewLoadingFallback(resolvedPreview);
-          if (loadingFallback && isCurrentPreviewRequest()) {
-            setPreviewLoading(true);
-            setPreview({
-              type: "fallback",
-              path: entry.path,
-              ...previewResolvedPathProps,
-              name: entry.name,
-              label: loadingFallback.label,
-              detail: loadingFallback.detail,
-            });
-          }
-
-          const previewCacheKey = `${resolvedPreview.kind}:${entry.path}`;
+          const previewCacheKey = getExplorerPreviewCacheKey(
+            resolvedPreview.kind,
+            entry.path,
+          );
           const cachedDataUri =
             readCachedExplorerPreview<string>(previewCacheKey);
           if (cachedDataUri != null) {
@@ -13689,11 +13792,12 @@ export function FileExplorer({
               setPreview({
                 type: "image",
                 path: entry.path,
+                ...previewResolvedPathProps,
                 name: entry.name,
                 extension: resolvedPreview.extension,
                 content: cachedDataUri,
               });
-              setPreviewLoading(false);
+              dismissPreviewLoadingIndicator();
             }
             return;
           }
@@ -13735,7 +13839,7 @@ export function FileExplorer({
             });
           } finally {
             if (isCurrentPreviewRequest()) {
-              setPreviewLoading(false);
+              dismissPreviewLoadingIndicator();
             }
           }
           return;
@@ -13751,7 +13855,7 @@ export function FileExplorer({
               extension: resolvedPreview.extension,
               size: entry.size,
             });
-            setPreviewLoading(false);
+            dismissPreviewLoadingIndicator();
           }
           return;
         case "sqlite":
@@ -13763,7 +13867,7 @@ export function FileExplorer({
               name: entry.name,
               size: entry.size,
             });
-            setPreviewLoading(false);
+            dismissPreviewLoadingIndicator();
           }
           return;
         case "pdf": {
@@ -13783,23 +13887,9 @@ export function FileExplorer({
                     }
                   : prev,
               );
-              setPreviewLoading(false);
+              dismissPreviewLoadingIndicator();
             }
             return;
-          }
-
-          const loadingFallback =
-            buildExplorerPreviewLoadingFallback(resolvedPreview);
-          if (loadingFallback && isCurrentPreviewRequest()) {
-            setPreviewLoading(true);
-            setPreview({
-              type: "fallback",
-              path: entry.path,
-              ...previewResolvedPathProps,
-              name: entry.name,
-              label: loadingFallback.label,
-              detail: loadingFallback.detail,
-            });
           }
 
           try {
@@ -13834,7 +13924,7 @@ export function FileExplorer({
             });
           } finally {
             if (isCurrentPreviewRequest()) {
-              setPreviewLoading(false);
+              dismissPreviewLoadingIndicator();
             }
           }
           return;
@@ -13851,7 +13941,7 @@ export function FileExplorer({
               size: entry.size,
               fileKind: resolvedPreview.fileKind,
             });
-            setPreviewLoading(false);
+            dismissPreviewLoadingIndicator();
           }
           return;
         case "docx":
@@ -13864,7 +13954,7 @@ export function FileExplorer({
               extension: resolvedPreview.extension,
               size: entry.size,
             });
-            setPreviewLoading(false);
+            dismissPreviewLoadingIndicator();
           }
           return;
         case "shader": {
@@ -13961,7 +14051,7 @@ export function FileExplorer({
             });
           } finally {
             if (isCurrentPreviewRequest()) {
-              setPreviewLoading(false);
+              dismissPreviewLoadingIndicator();
             }
           }
           return;
@@ -13997,27 +14087,16 @@ export function FileExplorer({
                     }
                   : prev,
               );
-              setPreviewLoading(false);
+              dismissPreviewLoadingIndicator();
             }
             return;
           }
 
-          const loadingFallback =
-            buildExplorerPreviewLoadingFallback(resolvedPreview);
-          if (loadingFallback && isCurrentPreviewRequest()) {
-            setPreviewLoading(true);
-            setPreview({
-              type: "fallback",
-              path: entry.path,
-              ...previewResolvedPathProps,
-              name: entry.name,
-              label: loadingFallback.label,
-              detail: loadingFallback.detail,
-            });
-          }
-
           try {
-            const previewCacheKey = `${resolvedPreview.kind}:${entry.path}`;
+            const previewCacheKey = getExplorerPreviewCacheKey(
+              resolvedPreview.kind,
+              entry.path,
+            );
             let content = readCachedExplorerPreview<string>(previewCacheKey);
             if (content == null) {
               content = await readExplorerTextFile(previewResolvedPath);
@@ -14078,7 +14157,7 @@ export function FileExplorer({
             });
           } finally {
             if (isCurrentPreviewRequest()) {
-              setPreviewLoading(false);
+              dismissPreviewLoadingIndicator();
             }
           }
           return;
@@ -14117,27 +14196,16 @@ export function FileExplorer({
                     }
                   : prev,
               );
-              setPreviewLoading(false);
+              dismissPreviewLoadingIndicator();
             }
             return;
           }
 
-          const loadingFallback =
-            buildExplorerPreviewLoadingFallback(resolvedPreview);
-          if (loadingFallback && isCurrentPreviewRequest()) {
-            setPreviewLoading(true);
-            setPreview({
-              type: "fallback",
-              path: entry.path,
-              ...previewResolvedPathProps,
-              name: entry.name,
-              label: loadingFallback.label,
-              detail: loadingFallback.detail,
-            });
-          }
-
           try {
-            const previewCacheKey = `${resolvedPreview.kind}:${entry.path}`;
+            const previewCacheKey = getExplorerPreviewCacheKey(
+              resolvedPreview.kind,
+              entry.path,
+            );
             let content = readCachedExplorerPreview<string>(previewCacheKey);
             if (content == null) {
               content = await readExplorerTextFile(previewResolvedPath);
@@ -14194,7 +14262,7 @@ export function FileExplorer({
             });
           } finally {
             if (isCurrentPreviewRequest()) {
-              setPreviewLoading(false);
+              dismissPreviewLoadingIndicator();
             }
           }
           return;
@@ -14210,13 +14278,15 @@ export function FileExplorer({
               label: fallback.label,
               detail: fallback.detail,
             });
-            setPreviewLoading(false);
+            dismissPreviewLoadingIndicator();
           }
           return;
         }
       }
     },
     [
+      beginDelayedPreviewLoadingIndicator,
+      dismissPreviewLoadingIndicator,
       getDocumentPreviewKind,
       getExplorerItemProperties,
       getPreviewAssetUrl,
@@ -14227,6 +14297,7 @@ export function FileExplorer({
       materializeArchiveVirtualEntry,
       previewRef,
       previewEnabled,
+      readExplorerFileBase64,
       readExplorerTextFile,
       requestCurrentPreviewClose,
       runtimePlatform,
@@ -14250,6 +14321,34 @@ export function FileExplorer({
       explorerPicker,
     ],
   );
+
+  useEffect(() => {
+    if (!previewEnabled || isCompactDock || selectedEntries.length !== 1) {
+      return;
+    }
+
+    const anchorEntry = selectedEntries[0];
+    const anchorIndex = visibleEntryIndexLookup.get(anchorEntry.path);
+    if (anchorIndex == null) {
+      return;
+    }
+
+    const adjacentCandidates = [
+      visibleEntries[anchorIndex - 1] ?? null,
+      visibleEntries[anchorIndex + 1] ?? null,
+    ].filter((entry): entry is FileEntry => Boolean(entry));
+
+    adjacentCandidates.forEach((candidate) => {
+      void prefetchExplorerAdjacentPreview(candidate);
+    });
+  }, [
+    isCompactDock,
+    prefetchExplorerAdjacentPreview,
+    previewEnabled,
+    selectedEntries,
+    visibleEntries,
+    visibleEntryIndexLookup,
+  ]);
 
   const openPreviewOnlyCollectionEntry = useCallback(
     async (entry: FileEntry) => {
