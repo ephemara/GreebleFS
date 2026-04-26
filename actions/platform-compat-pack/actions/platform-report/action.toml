@@ -1,0 +1,66 @@
+version = 1
+id = "platform-report"
+name = "Platform Report"
+description = "Reports current platform info and environment variables relevant to file operations."
+icon = "Monitor"
+tags = ["platform", "environment", "system", "diagnostics"]
+contexts = ["background"]
+appliesTo = "any"
+
+[selection]
+allowFiles = true
+allowDirectories = true
+
+[execution]
+runner = "shell"
+entry = '''#!/bin/bash
+
+echo "Platform Compatibility: Platform Report"
+echo "============================================================"
+echo ""
+echo "System Information:"
+echo "  OS: $(uname -s)"
+echo "  Kernel: $(uname -r)"
+echo "  Architecture: $(uname -m)"
+echo "  Hostname: $(hostname)"
+echo ""
+echo "File System:"
+echo "  Current directory: $PWD"
+echo "  Path separator: /"
+echo "  Home directory: $HOME"
+echo "  Temp directory: ${TMPDIR:-/tmp}"
+echo ""
+echo "GreebleFS Context:"
+echo "  Current location: ${GREEBLEFS_CURRENT_LOCATION:-<none>}"
+echo "  Selected count: ${GREEBLEFS_SELECTED_COUNT:-0}"
+echo "  Primary path: ${GREEBLEFS_PRIMARY_PATH:-<none>}"
+echo "  Action pack: ${GREEBLEFS_ACTION_PACK_ID:-<none>}"
+echo "  Action ID: ${GREEBLEFS_ACTION_ID:-<none>}"
+echo ""
+echo "Locale & Encoding:"
+echo "  LANG: ${LANG:-<not set>}"
+echo "  LC_ALL: ${LC_ALL:-<not set>}"
+echo "  LC_CTYPE: ${LC_CTYPE:-<not set>}"
+echo ""
+echo "Shell Environment:"
+echo "  SHELL: ${SHELL:-<not set>}"
+echo "  TERM: ${TERM:-<not set>}"
+echo "  USER: ${USER:-<not set>}"
+echo ""
+echo "Path Information:"
+if command -v python3 &> /dev/null; then
+    echo "  Python3: $(which python3)"
+fi
+if command -v node &> /dev/null; then
+    echo "  Node: $(which node)"
+fi
+if command -v git &> /dev/null; then
+    echo "  Git: $(which git)"
+fi
+echo ""
+echo "============================================================"
+echo "Platform report complete."
+'''
+
+[presentation]
+outputTarget = "task-center"
