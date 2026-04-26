@@ -5,6 +5,7 @@ import type {
 
 export type OverlayTopBarSource = 'built-in' | 'theme-package' | 'top-bar-package';
 export type OverlayTopBarNavigationMode = 'auto' | 'summary';
+export type OverlayTopBarBandId = 'leading' | 'navigation' | 'trailing';
 export type OverlayTopBarControlId =
   | 'layout-cycle'
   | 'window-mode'
@@ -16,6 +17,7 @@ export type OverlayTopBarControlId =
   | 'command-palette'
   | 'settings-shortcut'
   | 'explorer-shortcut'
+  | 'customize-top-bar'
   | 'shortcut-badge'
   | 'close-overlay';
 
@@ -81,6 +83,7 @@ const topBarControlCatalog = new Set<OverlayTopBarControlId>([
   'command-palette',
   'settings-shortcut',
   'explorer-shortcut',
+  'customize-top-bar',
   'shortcut-badge',
   'close-overlay',
 ]);
@@ -481,6 +484,39 @@ export function getTopBarSourceLabel(source: OverlayTopBarSource): string {
   return 'Built In';
 }
 
+export function getTopBarControlCatalog(): OverlayTopBarControlId[] {
+  return Array.from(topBarControlCatalog.values());
+}
+
+export function flattenTopBarDefinitionControls(
+  topBar: Pick<
+    LoadedOverlayTopBarDefinition,
+    'leadingControls' | 'navigationShortcuts' | 'trailingControls'
+  >,
+): Array<{
+  controlId: OverlayTopBarControlId;
+  bandId: OverlayTopBarBandId;
+  order: number;
+}> {
+  return [
+    ...topBar.leadingControls.map((controlId, index) => ({
+      controlId,
+      bandId: 'leading' as const,
+      order: index,
+    })),
+    ...topBar.navigationShortcuts.map((controlId, index) => ({
+      controlId,
+      bandId: 'navigation' as const,
+      order: index,
+    })),
+    ...topBar.trailingControls.map((controlId, index) => ({
+      controlId,
+      bandId: 'trailing' as const,
+      order: index,
+    })),
+  ];
+}
+
 export function getTopBarControlLabel(controlId: OverlayTopBarControlId): string {
   switch (controlId) {
     case 'layout-cycle':
@@ -503,6 +539,8 @@ export function getTopBarControlLabel(controlId: OverlayTopBarControlId): string
       return 'Settings';
     case 'explorer-shortcut':
       return 'Explorer';
+    case 'customize-top-bar':
+      return 'Customize';
     case 'shortcut-badge':
       return 'Shortcut';
     case 'close-overlay':

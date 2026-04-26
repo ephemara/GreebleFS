@@ -42,12 +42,20 @@ import {
   useInteractionMotionController,
   type InteractionMotionBinding,
 } from '../animation/interactionMotion';
+import { useLayoutDynamicsController } from '../animation/layoutDynamics';
 import { MobileShareQrDialog } from './MobileShareQrDialog';
 import { MobileShareRouteMenu } from './MobileShareRouteMenu';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { WindowControls } from './WindowControls';
 import type { MobileShareSession } from '../runtime/mobileShareRuntime';
 import { playSoundEffect } from '../runtime/soundEffects';
+import type { LayoutDynamicsAuthoringSnapshot } from '../config/layoutDynamics';
+import {
+  flattenTopBarDefinitionControls,
+  getTopBarControlCatalog,
+  getTopBarControlLabel,
+} from '../config/topBars';
+import { LayoutDynamicsCanvas } from './layoutDynamics/LayoutDynamicsCanvas';
 
 interface WorkbenchTopBarProps {
   appearance: ResolvedOverlayAppearance;
@@ -93,6 +101,12 @@ interface WorkbenchTopBarProps {
   onToggleZenFocusMode: () => void;
   topBarShaderLayer?: ReactNode;
   topBarDefinition: LoadedOverlayTopBarDefinition;
+  topBarCustomizeActive: boolean;
+  onToggleTopBarCustomize: () => void;
+  topBarLayoutSnapshot?: LayoutDynamicsAuthoringSnapshot | null;
+  onCommitTopBarLayoutSnapshot: (
+    snapshot: LayoutDynamicsAuthoringSnapshot,
+  ) => void;
 }
 
 function renderControlZone(
@@ -131,6 +145,7 @@ interface CompactChromeButtonProps {
   controlRadius: number;
   ariaLabel?: string;
   style?: CSSProperties;
+  dataAttributes?: Record<string, string | undefined>;
   onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
@@ -146,6 +161,7 @@ function CompactChromeButton({
   controlRadius,
   ariaLabel,
   style,
+  dataAttributes,
   onClick,
   onContextMenu,
   children,
@@ -187,6 +203,7 @@ function CompactChromeButton({
   return (
     <button
       aria-label={ariaLabel}
+      {...dataAttributes}
       onClick={(event) => {
         onClick?.(event);
         if (!event.defaultPrevented) {
@@ -290,6 +307,10 @@ export function WorkbenchTopBar({
   onToggleZenFocusMode,
   topBarShaderLayer,
   topBarDefinition,
+  topBarCustomizeActive,
+  onToggleTopBarCustomize,
+  topBarLayoutSnapshot,
+  onCommitTopBarLayoutSnapshot,
 }: WorkbenchTopBarProps) {
   const borderColor = appearance.theme.palette.border;
   const muted = appearance.theme.palette.textMuted;
@@ -329,6 +350,8 @@ export function WorkbenchTopBar({
     blurPx: Math.min(blurStrength, 18),
   });
   const interactionMotion = useInteractionMotionController(appearance);
+  const layoutDynamics = useLayoutDynamicsController(appearance);
+  const [selectedTopBarControlId, setSelectedTopBarControlId] = useState<string | null>(null);
   const topBarButtonTransition = 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s, opacity 0.15s';
   const panelTabTransition = 'background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s, box-shadow 0.15s';
   const openPanels = useMemo(
@@ -492,6 +515,12 @@ export function WorkbenchTopBar({
   useEffect(() => () => {
     clearMobileMenuTimers();
   }, [clearMobileMenuTimers]);
+
+  useEffect(() => {
+    if (!topBarCustomizeActive) {
+      setSelectedTopBarControlId(null);
+    }
+  }, [topBarCustomizeActive]);
 
   const handleShowMobileQrDialog = useCallback(async () => {
     clearMobileMenuTimers();
@@ -750,6 +779,7 @@ export function WorkbenchTopBar({
       onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
       ariaLabel?: string;
       style?: CSSProperties;
+      dataAttributes?: Record<string, string | undefined>;
     },
   ): ReactNode => {
     const motionBinding = bindTopBarButtonMotion(
@@ -768,6 +798,7 @@ export function WorkbenchTopBar({
         accent={accent}
         controlRadius={workbench.metrics.controlRadius}
         aria-label={options.ariaLabel}
+        dataAttributes={options.dataAttributes}
         onClick={options.onClick}
         onContextMenu={options.onContextMenu}
       >
@@ -1034,6 +1065,32 @@ export function WorkbenchTopBar({
             onClick: onOpenCommandPalette,
           },
         );
+      case 'customize-top-bar':
+        return renderCompactButton(
+          <LayoutGrid size={11} />,
+          {
+            key: controlId,
+            active: topBarCustomizeActive,
+            title: topBarCustomizeActive
+              ? 'Save and leave top-bar customize mode'
+              : 'Enable top-bar customize mode',
+            motionStepIndex,
+            onClick: onToggleTopBarCustomize,
+            style: {
+              color: topBarCustomizeActive ? accent : muted,
+              borderColor: topBarCustomizeActive ? accent : borderColor,
+              background: topBarCustomizeActive
+                ? `${accent}14`
+                : 'var(--overlay-workbench-chrome-button-bg)',
+            },
+            dataAttributes: {
+              'data-layout-dynamics-live-control': 'true',
+            },
+            ariaLabel: topBarCustomizeActive
+              ? 'Save and leave top-bar customize mode'
+              : 'Enable top-bar customize mode',
+          },
+        );
       case 'shortcut-badge':
         if (!layoutProfile.chrome.showShortcutBadge || isWindowedMode) {
           return null;
@@ -1262,6 +1319,163 @@ export function WorkbenchTopBar({
     text,
     layoutProfile.chrome.showSettingsShortcut,
   ]);
+
+  const topBarSurfaceSettings = layoutDynamics.resolveSurfaceSettings('workbenchTopBar');
+  const seededTopBarControls = useMemo(() => {
+    const flattened = flattenTopBarDefinitionControls(topBarDefinition);
+    if (!flattened.some(entry => entry.controlId === 'customize-top-bar')) {
+      flattened.push({
+        controlId: 'customize-top-bar',
+        bandId: 'trailing',
+        order: flattened.length,
+      });
+    }
+    return flattened;
+  }, [topBarDefinition]);
+  const topBarRenderedControlPlacements = useMemo(
+    () =>
+      seededTopBarControls
+        .map((placement, index) => ({
+          ...placement,
+          node: renderNavigationShortcutControl(placement.controlId, index),
+        }))
+        .filter(
+          (
+            placement,
+          ): placement is typeof placement & { node: ReactNode } =>
+            placement.node != null,
+        ),
+    [renderNavigationShortcutControl, seededTopBarControls],
+  );
+  const topBarLayoutEntries = topBarLayoutSnapshot?.entries ?? [];
+  const topBarVisibleEntryById = useMemo(
+    () =>
+      new Map(
+        topBarLayoutEntries
+          .filter(entry => entry.hidden !== true)
+          .map(entry => [entry.nodeId, entry] as const),
+      ),
+    [topBarLayoutEntries],
+  );
+  const topBarHiddenEntryById = useMemo(
+    () =>
+      new Map(
+        topBarLayoutEntries
+          .filter(entry => entry.hidden === true)
+          .map(entry => [entry.nodeId, entry] as const),
+      ),
+    [topBarLayoutEntries],
+  );
+  const topBarUsesLayoutDynamics =
+    topBarSurfaceSettings.enabled &&
+    (topBarCustomizeActive || topBarLayoutEntries.length > 0);
+  const topBarDynamicItems = useMemo(
+    () =>
+      topBarRenderedControlPlacements
+        .filter(placement => !topBarHiddenEntryById.has(placement.controlId))
+        .map((placement, index) => {
+          const authoredEntry = topBarVisibleEntryById.get(placement.controlId);
+          return {
+            id: placement.controlId,
+            label: getTopBarControlLabel(placement.controlId),
+            bandId: authoredEntry?.bandId ?? 'topbar',
+            order: index,
+            anchorX: authoredEntry?.x,
+            anchorY: authoredEntry?.y,
+            selected: selectedTopBarControlId === placement.controlId,
+            removable: placement.controlId !== 'customize-top-bar',
+            content: placement.node,
+          };
+        }),
+    [
+      selectedTopBarControlId,
+      topBarHiddenEntryById,
+      topBarRenderedControlPlacements,
+      topBarVisibleEntryById,
+    ],
+  );
+  const topBarHiddenControls = useMemo(
+    () =>
+      seededTopBarControls
+        .filter(placement => topBarHiddenEntryById.has(placement.controlId))
+        .map(placement => placement.controlId),
+    [seededTopBarControls, topBarHiddenEntryById],
+  );
+  const commitTopBarLayoutSnapshot = useCallback(
+    (snapshot: LayoutDynamicsAuthoringSnapshot) => {
+      const preservedHiddenEntries = topBarLayoutEntries.filter(
+        entry => entry.hidden === true,
+      );
+      onCommitTopBarLayoutSnapshot({
+        entries: [...snapshot.entries, ...preservedHiddenEntries],
+      });
+    },
+    [onCommitTopBarLayoutSnapshot, topBarLayoutEntries],
+  );
+  const removeTopBarControl = useCallback(
+    (controlId: string) => {
+      const visibleEntries = topBarDynamicItems
+        .filter(item => item.id !== controlId)
+        .map((item, index) => ({
+          nodeId: item.id,
+          bandId: item.bandId,
+          x: item.anchorX ?? index * 112,
+          y: item.anchorY ?? 0,
+        }));
+      const existingHiddenEntries = topBarLayoutEntries.filter(
+        entry => entry.hidden === true && entry.nodeId !== controlId,
+      );
+      const hiddenEntry = topBarVisibleEntryById.get(controlId)
+        ?? topBarHiddenEntryById.get(controlId)
+        ?? {
+          nodeId: controlId,
+          bandId: 'topbar',
+          x: 0,
+          y: 0,
+        };
+      onCommitTopBarLayoutSnapshot({
+        entries: [
+          ...visibleEntries,
+          { ...hiddenEntry, hidden: true },
+          ...existingHiddenEntries,
+        ],
+      });
+      setSelectedTopBarControlId(current =>
+        current === controlId ? null : current,
+      );
+    },
+    [
+      onCommitTopBarLayoutSnapshot,
+      topBarDynamicItems,
+      topBarHiddenEntryById,
+      topBarLayoutEntries,
+      topBarVisibleEntryById,
+    ],
+  );
+  const restoreTopBarControl = useCallback(
+    (controlId: OverlayTopBarControlId) => {
+      const nextVisibleEntries = topBarDynamicItems.map((item, index) => ({
+        nodeId: item.id,
+        bandId: item.bandId,
+        x: item.anchorX ?? index * 112,
+        y: item.anchorY ?? 0,
+      }));
+      nextVisibleEntries.push({
+        nodeId: controlId,
+        bandId: 'topbar',
+        x: nextVisibleEntries.length * 120,
+        y: 0,
+      });
+      const remainingHiddenEntries = topBarLayoutEntries.filter(
+        entry => entry.hidden === true && entry.nodeId !== controlId,
+      );
+      onCommitTopBarLayoutSnapshot({
+        entries: [...nextVisibleEntries, ...remainingHiddenEntries],
+      });
+      setSelectedTopBarControlId(controlId);
+    },
+    [onCommitTopBarLayoutSnapshot, topBarDynamicItems, topBarLayoutEntries],
+  );
 
   const leadingControls = topBarDefinition.leadingControls
     .map((controlId, index) => renderCompactControl(controlId, index))

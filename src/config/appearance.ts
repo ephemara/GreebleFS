@@ -34,6 +34,11 @@ import {
   normalizeInteractionMotionThemeRecipe,
   type OverlayInteractionMotionThemeRecipe,
 } from './interactionMotion';
+import {
+  createDefaultLayoutDynamicsThemeRecipe,
+  normalizeLayoutDynamicsThemeRecipe,
+  type LayoutDynamicsThemeRecipe,
+} from './layoutDynamics';
 import { DEFAULT_SOUND_PACK_ID } from './soundPacks';
 import { clampOverlayVisualControlValue } from './overlayWindow';
 import {
@@ -188,6 +193,7 @@ export interface OverlayThemeDefinition {
   defaultOpenAnimationId?: string;
   defaultCloseAnimationId?: string;
   interactionMotion?: OverlayInteractionMotionThemeRecipe;
+  layoutDynamics?: LayoutDynamicsThemeRecipe;
   palette: OverlayThemePalette;
   effects: OverlayThemeEffects;
   xterm: OverlayXTermTheme;
@@ -480,6 +486,7 @@ function createTheme(
     explorer?: OverlayExplorerThemeRecipe;
     dock?: OverlayThemeDefinition['dock'];
     interactionMotion?: OverlayInteractionMotionThemeRecipe;
+    layoutDynamics?: LayoutDynamicsThemeRecipe;
   },
 ): OverlayThemeDefinition {
   return {
@@ -575,6 +582,10 @@ function createTheme(
     interactionMotion: normalizeInteractionMotionThemeRecipe(
       options?.interactionMotion,
       createDefaultInteractionMotionThemeRecipe(),
+    ),
+    layoutDynamics: normalizeLayoutDynamicsThemeRecipe(
+      options?.layoutDynamics,
+      createDefaultLayoutDynamicsThemeRecipe(),
     ),
     dock: options?.dock ?? {
       workbench: pilotDockWorkbenchThemeRecipe,
@@ -1377,6 +1388,10 @@ export function normalizeThemeDefinition(
     interactionMotion: normalizeInteractionMotionThemeRecipe(
       theme.interactionMotion,
       fallback.interactionMotion,
+    ),
+    layoutDynamics: normalizeLayoutDynamicsThemeRecipe(
+      theme.layoutDynamics,
+      fallback.layoutDynamics,
     ),
     source: theme.source ?? fallback.source ?? 'custom',
     extendsThemeId: theme.extendsThemeId ?? fallback.extendsThemeId,

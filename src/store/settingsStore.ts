@@ -82,6 +82,15 @@ import {
   type OverlayInteractionMotionSurfaceOverrideMap,
 } from '../config/interactionMotion';
 import {
+  clampLayoutDynamicsIntensity,
+  createDefaultLayoutDynamicsSettings,
+  normalizeLayoutDynamicsPresetId,
+  normalizeLayoutDynamicsSurfaceOverrideMap,
+  normalizeLayoutDynamicsTopBarLayoutMap,
+  type LayoutDynamicsAuthoringSnapshot,
+  type LayoutDynamicsSurfaceOverrideMap,
+} from '../config/layoutDynamics';
+import {
   clampOverlayVisualControlValue,
   overlayVisualControls,
   overlayWindowGeometry,
@@ -253,6 +262,11 @@ export interface AppearanceSettings {
   interactionMotionIntensity: number;
   interactionMotionModuleOverrides: OverlayInteractionMotionModuleOverrideMap;
   interactionMotionSurfaceOverrides: OverlayInteractionMotionSurfaceOverrideMap;
+  layoutDynamicsEnabled: boolean;
+  layoutDynamicsPresetId: string | null;
+  layoutDynamicsIntensity: number;
+  layoutDynamicsSurfaceOverrides: LayoutDynamicsSurfaceOverrideMap;
+  topBarLayoutSnapshotsById: Record<string, LayoutDynamicsAuthoringSnapshot>;
 }
 
 export interface HomeSettings {
@@ -385,6 +399,8 @@ type LegacyImportedSettings = Partial<Settings> & {
 const getDefaultPath = (): string => {
   return EXPLORER_HOME_PATH;
 };
+
+const defaultLayoutDynamicsSettings = createDefaultLayoutDynamicsSettings();
 
 export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAnchor {
   return value === 'top' ? 'top' : 'bottom';
@@ -932,6 +948,21 @@ function normalizeAppearanceSettings(
     interactionMotionSurfaceOverrides: normalizeInteractionMotionSurfaceOverrideMap(
       merged.interactionMotionSurfaceOverrides ?? base.interactionMotionSurfaceOverrides,
     ),
+    layoutDynamicsEnabled: merged.layoutDynamicsEnabled !== false,
+    layoutDynamicsPresetId: normalizeLayoutDynamicsPresetId(
+      merged.layoutDynamicsPresetId,
+    )
+      ?? normalizeLayoutDynamicsPresetId(base.layoutDynamicsPresetId)
+      ?? null,
+    layoutDynamicsIntensity: clampLayoutDynamicsIntensity(
+      merged.layoutDynamicsIntensity,
+    ),
+    layoutDynamicsSurfaceOverrides: normalizeLayoutDynamicsSurfaceOverrideMap(
+      merged.layoutDynamicsSurfaceOverrides ?? base.layoutDynamicsSurfaceOverrides,
+    ),
+    topBarLayoutSnapshotsById: normalizeLayoutDynamicsTopBarLayoutMap(
+      merged.topBarLayoutSnapshotsById ?? base.topBarLayoutSnapshotsById,
+    ),
   };
 }
 
@@ -1156,6 +1187,13 @@ export const defaultSettings: Settings = {
     interactionMotionIntensity: 1.0,
     interactionMotionModuleOverrides: {},
     interactionMotionSurfaceOverrides: {},
+    layoutDynamicsEnabled: defaultLayoutDynamicsSettings.enabled,
+    layoutDynamicsPresetId: defaultLayoutDynamicsSettings.presetId,
+    layoutDynamicsIntensity: defaultLayoutDynamicsSettings.intensity,
+    layoutDynamicsSurfaceOverrides:
+      defaultLayoutDynamicsSettings.surfaceOverrides,
+    topBarLayoutSnapshotsById:
+      defaultLayoutDynamicsSettings.topBarLayoutsById,
   },
   system: {
     launchAtStartup: false,
