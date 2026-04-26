@@ -456,9 +456,14 @@ describe("ExplorerImageCutoutSurface", () => {
       );
     });
 
+    expect(screen.getByRole("button", { name: "Toggle mask preview" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Toggle refine controls" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Toggle tool rail" })).toBeInTheDocument();
     expect(screen.getByTestId("explorer-image-cutout-tool-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("explorer-image-cutout-preview-canvas")).toHaveAttribute(
+      "data-preview-mode",
+      "source",
+    );
     expect(screen.getByRole("button", { name: "AI Select" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Lasso" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Brush" })).toBeInTheDocument();
@@ -490,6 +495,34 @@ describe("ExplorerImageCutoutSurface", () => {
       expect(backendMocks.openExplorerImageCutoutSession).toHaveBeenCalledWith(
         expect.objectContaining({ workflowMode: "removeBackground" }),
       );
+    });
+  });
+
+  it("keeps the full source image visible until mask preview is explicitly toggled on", async () => {
+    renderSurface("cutout");
+
+    await waitFor(() => {
+      expect(backendMocks.openExplorerImageCutoutSession).toHaveBeenCalledTimes(1);
+    });
+
+    const previewCanvas = screen.getByTestId("explorer-image-cutout-preview-canvas");
+    expect(previewCanvas).toHaveAttribute("data-preview-mode", "source");
+
+    fireEvent.click(screen.getByRole("button", { name: "Auto Remove BG" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("explorer-image-cutout-marching-ants")).toHaveAttribute(
+        "data-has-boundary",
+        "true",
+      );
+      expect(previewCanvas).toHaveAttribute("data-preview-mode", "source");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle mask preview" }));
+
+    await waitFor(() => {
+      expect(previewCanvas).toHaveAttribute("data-preview-mode", "mask");
+      expect(screen.getByText("Mask Preview")).toBeInTheDocument();
     });
   });
 
@@ -827,6 +860,7 @@ describe("ExplorerImageCutoutSurface", () => {
           baseActions: expect.arrayContaining([
             expect.objectContaining({ id: "image-cutout.reset-view" }),
             expect.objectContaining({ id: "image-cutout.auto-remove-background" }),
+            expect.objectContaining({ id: "image-cutout.mask-preview.toggle" }),
             expect.objectContaining({ id: "image-cutout.tools.toggle" }),
             expect.objectContaining({ id: "image-cutout.refine.toggle" }),
           ]),

@@ -14,6 +14,8 @@ import {
   ChevronRight,
   Copy,
   Eraser,
+  Eye,
+  Image,
   Palette,
   Pencil,
   RefreshCw,
@@ -128,6 +130,7 @@ type ExplorerImageCutoutLaneState = {
   statusTone: CutoutStatusTone;
   statusMessage: string;
   transform: ExplorerImageStageTransform;
+  showMaskPreview: boolean;
   showToolPalette: boolean;
   showRefinePanel: boolean;
   openToolGroupId: ExplorerImageCutoutToolGroupId | null;
@@ -256,6 +259,7 @@ function createDefaultLaneState(
     statusTone: "neutral",
     statusMessage: `Preparing ${lane.label.toLowerCase()}…`,
     transform: { ...DEFAULT_EXPLORER_IMAGE_STAGE_TRANSFORM },
+    showMaskPreview: false,
     showToolPalette: true,
     showRefinePanel: false,
     openToolGroupId: null,
@@ -996,14 +1000,16 @@ export function ExplorerImageCutoutSurface({
         resolvedMask.width,
         resolvedMask.height,
       );
-      previewContext.globalCompositeOperation = "destination-in";
-      previewContext.drawImage(
-        resolvedMaskCanvasRef.current,
-        0,
-        0,
-        resolvedMask.width,
-        resolvedMask.height,
-      );
+      if (lane.showMaskPreview && hasMaskSelection(resolvedMask)) {
+        previewContext.globalCompositeOperation = "destination-in";
+        previewContext.drawImage(
+          resolvedMaskCanvasRef.current,
+          0,
+          0,
+          resolvedMask.width,
+          resolvedMask.height,
+        );
+      }
       previewContext.globalCompositeOperation = "source-over";
 
       lane.boundary = {
@@ -1592,6 +1598,7 @@ export function ExplorerImageCutoutSurface({
       lane.history = [];
       lane.historyIndex = 0;
       lane.showRefinePanel = false;
+      lane.showMaskPreview = false;
       lane.openToolGroupId = null;
       lane.activeStageTool = resolveDefaultStageTool(mode);
       syncLaneVisuals(mode);
@@ -1929,6 +1936,17 @@ export function ExplorerImageCutoutSurface({
     invalidateActiveLane();
   }, [getLaneState, invalidateActiveLane, workflowMode]);
 
+  const handleMaskPreviewToggle = useCallback(() => {
+    const lane = getLaneState(workflowMode);
+    lane.showMaskPreview = !lane.showMaskPreview;
+    lane.previewReady = false;
+    lane.statusTone = "neutral";
+    lane.statusMessage = lane.showMaskPreview
+      ? "Mask preview enabled."
+      : "Source image preview enabled.";
+    syncLaneVisuals(workflowMode);
+  }, [getLaneState, syncLaneVisuals, workflowMode]);
+
   const handleSelectStageTool = useCallback(
     (nextTool: ExplorerImageCutoutStageToolId) => {
       const lane = getLaneState(workflowMode);
@@ -2006,6 +2024,20 @@ export function ExplorerImageCutoutSurface({
 
     baseActions.push(
       {
+        id: "image-cutout.mask-preview.toggle",
+        title: activeLane.showMaskPreview
+          ? "Disable Mask Preview"
+          : "Enable Mask Preview",
+        description: activeLane.showMaskPreview
+          ? "Return to the full source image while keeping the current selection."
+          : "Preview the isolated subject instead of the full source image.",
+        iconName: activeLane.showMaskPreview ? "Image" : "Eye",
+        group: "preview",
+        defaultOrder: 38,
+        priority: 38,
+        onSelect: () => handleMaskPreviewToggle(),
+      },
+      {
         id: "image-cutout.tools.toggle",
         title: activeLane.showToolPalette ? "Hide Tool Rail" : "Show Tool Rail",
         description: "Reveal the compact left-docked cutout tool rail.",
@@ -2038,9 +2070,11 @@ export function ExplorerImageCutoutSurface({
     };
   }, [
     activeLane.baseMask,
+    activeLane.showMaskPreview,
     activeLane.showToolPalette,
     handleAutoRemoveBackground,
     handleDeselect,
+    handleMaskPreviewToggle,
     handleToolPaletteToggle,
     activeLane.showRefinePanel,
     handleRefineToggle,
@@ -2553,6 +2587,9 @@ export function ExplorerImageCutoutSurface({
   );
 
   const activeBoundaryVisible = hasVisibleBoundary(activeLane.boundary);
+  const maskPreviewVisible =
+    activeLane.showMaskPreview &&
+    hasMaskSelection(activeLane.resolvedMask ?? activeLane.baseMask);
   const activeHistoryLength = activeLane.history.length;
   const canUndo = activeLane.historyIndex > 0;
   const canRedo = activeLane.historyIndex + 1 < activeHistoryLength;
@@ -2780,12 +2817,28 @@ export function ExplorerImageCutoutSurface({
           </ExplorerIsolationButton>
 
           <ExplorerIsolationButton
+            ariaLabel="Toggle mask preview"
+            title={
+              activeLane.showMaskPreview
+                ? "Disable mask preview"
+                : "Enable mask preview"
+            }
+            active={activeLane.showMaskPreview}
+            variant="action"
+            disabled={activeLane.isBooting || activeLane.isMutating}
+            motionStepIndex={3}
+            onClick={handleMaskPreviewToggle}
+          >
+            {activeLane.showMaskPreview ? <Image size={15} /> : <Eye size={15} />}
+          </ExplorerIsolationButton>
+
+          <ExplorerIsolationButton
             ariaLabel="Toggle tool rail"
             title="Toggle tool rail"
             active={activeLane.showToolPalette}
             variant="action"
             disabled={activeLane.isBooting || activeLane.isMutating}
-            motionStepIndex={3}
+            motionStepIndex={4}
             onClick={handleToolPaletteToggle}
           >
             <Palette size={15} />
@@ -2797,7 +2850,7 @@ export function ExplorerImageCutoutSurface({
             active={activeLane.showRefinePanel}
             variant="action"
             disabled={activeLane.isBooting || activeLane.isMutating}
-            motionStepIndex={4}
+            motionStepIndex={5}
             onClick={handleRefineToggle}
           >
             <Sliders size={15} />
@@ -2808,7 +2861,7 @@ export function ExplorerImageCutoutSurface({
             title="Save sibling PNG"
             variant="action"
             disabled={!activeLane.sessionSnapshot || activeLane.isMutating}
-            motionStepIndex={5}
+            motionStepIndex={6}
             onClick={() => {
               void handleSaveSibling();
             }}
@@ -2821,7 +2874,7 @@ export function ExplorerImageCutoutSurface({
             title="Copy cutout to clipboard"
             variant="action"
             disabled={!activeLane.sessionSnapshot || activeLane.isMutating}
-            motionStepIndex={6}
+            motionStepIndex={7}
             onClick={() => {
               void handleCopyToClipboard();
             }}
@@ -2851,6 +2904,8 @@ export function ExplorerImageCutoutSurface({
           <canvas
             ref={previewCanvasRef}
             aria-hidden
+            data-testid="explorer-image-cutout-preview-canvas"
+            data-preview-mode={maskPreviewVisible ? "mask" : "source"}
             style={previewCanvasStyle(filterCss)}
           />
           <canvas
@@ -2907,6 +2962,7 @@ export function ExplorerImageCutoutSurface({
         <span data-testid="explorer-image-cutout-zoom">{zoomPercent}%</span>
         <span>{activeToolGroupDefinition.label}</span>
         <span>{activeToolDefinition.label}</span>
+        <span>{maskPreviewVisible ? "Mask Preview" : "Image View"}</span>
         <span>
           {activeLane.isBooting
             ? "Preparing"
