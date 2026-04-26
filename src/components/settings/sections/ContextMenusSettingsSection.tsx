@@ -1146,16 +1146,10 @@ export function ContextMenusSettingsSection({
   ]);
 
   const renderInlineContextMenuEditor = (entry: ExplorerMenuLayoutEntry) => {
-    const inlineSelectedCommand =
-      entry.kind === 'command'
-        ? selectedContextMenuCommand ??
-          contextMenuCommandLookup.get(entry.commandId) ??
-          null
-        : null;
     const branchChildCount =
       entry.kind === 'submenu' ? getBranchEntries(entry.id).length : 0;
-    const sharedEditorActions = (
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+    const sharedEditorActionButtons = (
+      <>
         <OverlayActionButton
           appearance={appearance}
           size="compact"
@@ -1191,7 +1185,7 @@ export function ContextMenusSettingsSection({
         >
           Remove
         </OverlayActionButton>
-      </div>
+      </>
     );
 
     if (entry.kind === 'submenu') {
@@ -1225,9 +1219,8 @@ export function ContextMenusSettingsSection({
                 contents in the sidecar panel it opens.
               </div>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              <ThemeBadge label="Folder" />
-              <ThemeBadge label={`Order ${entry.order}`} />
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-45">
+              #{entry.order}
             </div>
           </div>
 
@@ -1299,142 +1292,118 @@ export function ContextMenusSettingsSection({
             </div>
           </div>
 
-          {sharedEditorActions}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {sharedEditorActionButtons}
+          </div>
         </div>
       );
     }
 
     return (
       <div
-        className="mt-2 rounded-[14px] border px-3 py-3"
+        className="mt-1 border-t px-2.5 pb-2 pt-2"
         style={{
-          borderColor: `${accent}44`,
-          background: 'rgba(255,255,255,0.035)',
+          borderColor: `${accent}2c`,
+          background:
+            'linear-gradient(180deg, rgba(255,255,255,0.024), rgba(255,255,255,0.01))',
         }}
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-semibold">
-            {resolveContextMenuEntryTitle(entry, contextMenuCommandLookup)}
-          </div>
-          <div className="mt-1 text-[10px] leading-4 opacity-45">
-            {resolveContextMenuEntrySupportingCopy({
-              entry,
-              commandLookup: contextMenuCommandLookup,
-              childCount:
-                entry.kind === 'submenu' ? getBranchEntries(entry.id).length : 0,
-            })}
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {inlineSelectedCommand ? (
-            <ThemeBadge
-              label={resolveContextMenuCommandSourceLabel(inlineSelectedCommand)}
-            />
-          ) : null}
-          <ThemeBadge label={`Order ${entry.order}`} />
-          {entry.quickSlot && entry.quickSlot !== 'none' ? (
-            <ThemeBadge label={entry.quickSlot} />
-          ) : null}
-        </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
-        <label
-          className="flex items-center justify-between gap-3 rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
-          style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}
-        >
-          <span>Enabled</span>
-          <input
-            type="checkbox"
-            checked={entry.enabled !== false}
-            onChange={(event) =>
-              toggleContextMenuLayoutEntryEnabled(entry.id, event.target.checked)
-            }
-          />
-        </label>
-
-        <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
-          <span>Place Inside</span>
-          <select
-            value={entry.parentEntryId ?? ''}
-            onChange={(event) =>
-              setContextMenuLayoutEntryParent(entry.id, event.target.value || null)
-            }
-            className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
-            style={settingsSelectStyle}
+        <div className="grid grid-cols-1 gap-2 xl:grid-cols-[132px_minmax(0,1.25fr)_minmax(132px,0.75fr)_minmax(150px,0.9fr)_auto]">
+          <label
+            className="flex items-center justify-between gap-3 rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
+            style={{
+              borderColor: border,
+              background: 'rgba(255,255,255,0.02)',
+            }}
           >
-            <option value="">Root</option>
-            {availableParentSubmenus.map((submenu) => (
-              <option key={submenu.id} value={submenu.id}>
-                {submenu.title}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {entry.kind !== 'submenu' ? (
-          <>
-            <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
-              <span>Quick Slot</span>
-              <select
-                value={entry.quickSlot ?? 'none'}
-                onChange={(event) =>
-                  setContextMenuLayoutEntryQuickSlot(
-                    entry.id,
-                    event.target.value as ExplorerMenuQuickSlot,
-                  )
-                }
-                className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
-                style={settingsSelectStyle}
-              >
-                {explorerMenuQuickSlotOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
-              <span>Fallback Bucket</span>
-              <select
-                value={entry.fallbackBucket ?? 'default'}
-                onChange={(event) =>
-                  setContextMenuLayoutEntryFallbackBucket(
-                    entry.id,
-                    event.target.value as ExplorerMenuFallbackBucket,
-                  )
-                }
-                className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
-                style={settingsSelectStyle}
-              >
-                {explorerMenuFallbackBucketOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </>
-        ) : null}
-
-        {entry.kind === 'submenu' ? (
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70 lg:col-span-2">
-            <span>Folder Name</span>
+            <span>Enabled</span>
             <input
-              value={entry.title}
+              type="checkbox"
+              checked={entry.enabled !== false}
               onChange={(event) =>
-                setContextMenuSubmenuTitle(entry.id, event.target.value)
+                toggleContextMenuLayoutEntryEnabled(
+                  entry.id,
+                  event.target.checked,
+                )
               }
-              className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
-              style={settingsFieldStyle}
             />
           </label>
-        ) : null}
+
+          <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+            <span className="block truncate">Place Inside</span>
+            <select
+              value={entry.parentEntryId ?? ''}
+              onChange={(event) =>
+                setContextMenuLayoutEntryParent(
+                  entry.id,
+                  event.target.value || null,
+                )
+              }
+              className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+              style={settingsSelectStyle}
+            >
+              <option value="">Root</option>
+              {availableParentSubmenus.map((submenu) => (
+                <option key={submenu.id} value={submenu.id}>
+                  {submenu.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {entry.kind === 'command' || entry.kind === 'group-slot' ? (
+            <>
+              <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                <span>Quick Slot</span>
+                <select
+                  value={entry.quickSlot ?? 'none'}
+                  onChange={(event) =>
+                    setContextMenuLayoutEntryQuickSlot(
+                      entry.id,
+                      event.target.value as ExplorerMenuQuickSlot,
+                    )
+                  }
+                  className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsSelectStyle}
+                >
+                  {explorerMenuQuickSlotOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                <span>Fallback Bucket</span>
+                <select
+                  value={entry.fallbackBucket ?? 'default'}
+                  onChange={(event) =>
+                    setContextMenuLayoutEntryFallbackBucket(
+                      entry.id,
+                      event.target.value as ExplorerMenuFallbackBucket,
+                    )
+                  }
+                  className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsSelectStyle}
+                >
+                  {explorerMenuFallbackBucketOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : null}
+
+          <div className="flex flex-wrap items-end gap-2 xl:justify-end">
+            {sharedEditorActionButtons}
+          </div>
+        </div>
 
         {entry.kind === 'group-slot' ? (
-          <>
+          <div className="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-2">
             <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
               <span>Group</span>
               <select
@@ -1483,11 +1452,8 @@ export function ContextMenusSettingsSection({
                 )}
               </select>
             </label>
-          </>
+          </div>
         ) : null}
-      </div>
-
-      {sharedEditorActions}
       </div>
     );
   };
@@ -2204,6 +2170,20 @@ export function ContextMenusSettingsSection({
                                   </button>
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2">
+                                      <span
+                                        aria-hidden
+                                        className="h-2 w-2 shrink-0 rounded-full"
+                                        style={{
+                                          background:
+                                            section.key === 'actions'
+                                              ? accent
+                                              : section.key === 'extensions'
+                                                ? 'var(--overlay-info, #7fd1ff)'
+                                                : section.key === 'commands'
+                                                  ? `${text}b8`
+                                                  : `${accent}88`,
+                                        }}
+                                      />
                                       <span className="opacity-75">
                                         {item.kind === 'command' ? (
                                           renderSettingsContextMenuIcon(
@@ -2223,43 +2203,6 @@ export function ContextMenusSettingsSection({
                                     </div>
                                     <div className="mt-0.5 text-[10px] leading-4 opacity-45">
                                       {item.description}
-                                    </div>
-                                    <div className="mt-1.5 flex flex-wrap gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] opacity-55">
-                                      <span
-                                        className="rounded border px-2 py-0.5"
-                                        style={{
-                                          borderColor: `${border}82`,
-                                          background: 'rgba(255,255,255,0.02)',
-                                          color: text,
-                                        }}
-                                      >
-                                        {item.sourceLabel}
-                                      </span>
-                                      {item.kind === 'command' ? (
-                                        <span
-                                          className="rounded border px-2 py-0.5"
-                                          style={{
-                                            borderColor: `${border}72`,
-                                            background: 'rgba(255,255,255,0.015)',
-                                            color: text,
-                                          }}
-                                        >
-                                          {item.command.group}
-                                        </span>
-                                      ) : item.kind === 'structure-group-slot' ? (
-                                        <span
-                                          className="rounded border px-2 py-0.5"
-                                          style={{
-                                            borderColor: `${border}72`,
-                                            background: 'rgba(255,255,255,0.015)',
-                                            color: text,
-                                          }}
-                                        >
-                                          {contextMenuGroupDraftByContext[
-                                            activeContextMenuContext
-                                          ] ?? 'plugin'}
-                                        </span>
-                                      ) : null}
                                     </div>
                                   </div>
                                   <OverlayActionButton

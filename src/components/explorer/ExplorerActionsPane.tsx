@@ -145,6 +145,15 @@ export function ExplorerActionsPane({
       appearance?.fonts.ui ??
       'var(--overlay-font-body, "Segoe UI", sans-serif)',
   };
+  const resolveEntryTone = (entry: ExplorerCustomizeCatalogEntry) => {
+    if (entry.source === "action") {
+      return accent;
+    }
+    if (entry.source === "missing-action") {
+      return "var(--overlay-danger)";
+    }
+    return "color-mix(in srgb, var(--overlay-explorer-text) 74%, transparent)";
+  };
 
   return (
     <div
@@ -324,6 +333,7 @@ export function ExplorerActionsPane({
                     {entries.map((entry) => {
                       const isSelected =
                         entry.controlId === selectedEntry?.controlId;
+                      const entryTone = resolveEntryTone(entry);
                       return (
                         <button
                           key={entry.controlId}
@@ -350,7 +360,7 @@ export function ExplorerActionsPane({
                             onSelectControl(entry.controlId);
                           }}
                           style={{
-                            borderRadius: 14,
+                            borderRadius: 12,
                             border: isSelected
                               ? `1px solid ${accent}88`
                               : "1px solid var(--overlay-explorer-chip-border)",
@@ -358,7 +368,7 @@ export function ExplorerActionsPane({
                               ? `color-mix(in srgb, ${accent} 10%, transparent)`
                               : "var(--overlay-explorer-chip-bg)",
                             color: text,
-                            padding: "10px 12px",
+                            padding: "8px 10px",
                             cursor: "grab",
                             textAlign: "left",
                           }}
@@ -371,50 +381,49 @@ export function ExplorerActionsPane({
                               gap: 8,
                             }}
                           >
-                            <div style={{ minWidth: 0 }}>
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  color: text,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {entry.label}
-                              </div>
-                              <div
-                                style={{
-                                  marginTop: 4,
-                                  fontSize: 10,
-                                  color: muted,
-                                  lineHeight: 1.4,
-                                }}
-                              >
-                                {entry.description}
-                              </div>
-                            </div>
-                            <span
+                            <div
                               style={{
-                                flexShrink: 0,
-                                borderRadius: 999,
-                                border:
-                                  "1px solid var(--overlay-explorer-chip-border)",
-                                padding: "3px 7px",
-                                fontSize: 9,
-                                fontWeight: 700,
-                                letterSpacing: "0.08em",
-                                textTransform: "uppercase",
-                                color: muted,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                minWidth: 0,
                               }}
                             >
-                              {entry.source === "built-in"
-                                ? "Built-In"
-                                : entry.source === "action"
-                                  ? "Action"
-                                  : "Missing"}
-                            </span>
+                              <span
+                                aria-hidden
+                                style={{
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: 999,
+                                  flexShrink: 0,
+                                  background: entryTone,
+                                }}
+                              />
+                              <div style={{ minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    color: text,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {entry.label}
+                                </div>
+                                <div
+                                  style={{
+                                    marginTop: 3,
+                                    fontSize: 10,
+                                    color: muted,
+                                    lineHeight: 1.35,
+                                  }}
+                                >
+                                  {entry.description}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </button>
                       );
@@ -441,6 +450,7 @@ export function ExplorerActionsPane({
                   <div style={{ display: "grid", gap: 8 }}>
                     {entries.map((entry) => {
                       const canExecute = runtimeCanExecuteEntry(entry);
+                      const entryTone = resolveEntryTone(entry);
                       const bindingLabel = formatHotkeyLabel(
                         commandBinding &&
                           selectedEntry?.controlId === entry.controlId
@@ -464,12 +474,12 @@ export function ExplorerActionsPane({
                             onInvokeCatalogEntry(entry);
                           }}
                           style={{
-                            borderRadius: 14,
+                            borderRadius: 12,
                             border:
                               "1px solid var(--overlay-explorer-chip-border)",
                             background: "var(--overlay-explorer-chip-bg)",
                             color: canExecute ? text : muted,
-                            padding: "11px 12px",
+                            padding: "8px 10px",
                             cursor: canExecute ? "pointer" : "default",
                             opacity: canExecute ? 1 : 0.66,
                             textAlign: "left",
@@ -483,60 +493,64 @@ export function ExplorerActionsPane({
                               gap: 10,
                             }}
                           >
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  color: text,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {entry.label}
-                              </div>
-                              <div
-                                style={{
-                                  marginTop: 4,
-                                  fontSize: 10,
-                                  color: muted,
-                                  lineHeight: 1.45,
-                                }}
-                              >
-                                {entry.description}
-                              </div>
-                              {bindingLabel ? (
-                                <div
-                                  style={{
-                                    marginTop: 7,
-                                    fontSize: 9,
-                                    fontWeight: 700,
-                                    letterSpacing: "0.08em",
-                                    textTransform: "uppercase",
-                                    color: accent,
-                                  }}
-                                >
-                                  {bindingLabel}
-                                </div>
-                              ) : null}
-                            </div>
-                            <span
+                            <div
                               style={{
-                                flexShrink: 0,
-                                borderRadius: 999,
-                                border:
-                                  "1px solid var(--overlay-explorer-chip-border)",
-                                padding: "3px 7px",
-                                fontSize: 9,
-                                fontWeight: 700,
-                                letterSpacing: "0.08em",
-                                textTransform: "uppercase",
-                                color: muted,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                minWidth: 0,
+                                flex: 1,
                               }}
                             >
-                              Run
-                            </span>
+                              <span
+                                aria-hidden
+                                style={{
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: 999,
+                                  flexShrink: 0,
+                                  background: entryTone,
+                                }}
+                              />
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    color: text,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {entry.label}
+                                </div>
+                                <div
+                                  style={{
+                                    marginTop: 3,
+                                    fontSize: 10,
+                                    color: muted,
+                                    lineHeight: 1.35,
+                                  }}
+                                >
+                                  {entry.description}
+                                </div>
+                                {bindingLabel ? (
+                                  <div
+                                    style={{
+                                      marginTop: 6,
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                      letterSpacing: "0.08em",
+                                      textTransform: "uppercase",
+                                      color: accent,
+                                    }}
+                                  >
+                                    {bindingLabel}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
                           </div>
                         </button>
                       );

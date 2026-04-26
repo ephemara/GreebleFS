@@ -1,3 +1,15 @@
+# 2026-04-26 - Explorer And Context-Menu Action Browsers Now Share A Dense Row Grammar
+
+- The explorer actions pane and the context-menu `Menu Library` were drifting into two different UI systems even though both are really action browsers. The visual noise problem came from repeated text badges and overly tall inline editors:
+  - `src/components/explorer/ExplorerActionsPane.tsx` now uses compact rows with simple source-color dots instead of per-row `Built-In` / `Action` / `Run` pills. Durable product rule: the actions pane should read like a dense browser, not a stack of marketing cards.
+  - `src/components/settings/sections/ContextMenusSettingsSection.tsx` now follows that same direction in the right `Menu Library`: the redundant source/group chips are gone, rows are denser, and section grouping does the classification work instead of extra tag text on every item.
+  - The active command-row editor in the center `Menu Canvas` no longer re-renders a tall mini inspector with duplicated title/source metadata. It now behaves like a compact inline control tray so editing a command feels closer to nudging a real menu row than opening a second form underneath it.
+- Durable product rule:
+  - When a surface is fundamentally an action browser, prefer section grouping plus subtle color/tone cues over repeated textual badges. If the user already knows they are in `Actions`, do not make every row say `Action` again.
+- Durable validation:
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "commits the active chrome customize draft when Done closes the actions pane" --reporter=dot`
+
 # 2026-04-26 - Fast Preview Switching Now Keeps The Previous Surface Mounted And Delays Loading Chrome
 
 - The fast-switch explorer preview lanes now follow a VS Code-style handoff instead of replacing the pane with generic loading copy:
