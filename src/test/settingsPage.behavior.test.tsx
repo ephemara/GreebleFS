@@ -81,6 +81,23 @@ function findSectionButton(label: string): HTMLButtonElement {
   return button as HTMLButtonElement;
 }
 
+function assignRect(
+  element: Element,
+  rect: Partial<DOMRectReadOnly>,
+): void {
+  vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+    x: rect.left ?? 0,
+    y: rect.top ?? 0,
+    width: rect.width ?? 100,
+    height: rect.height ?? 24,
+    top: rect.top ?? 0,
+    right: rect.right ?? ((rect.left ?? 0) + (rect.width ?? 100)),
+    bottom: rect.bottom ?? ((rect.top ?? 0) + (rect.height ?? 24)),
+    left: rect.left ?? 0,
+    toJSON: () => ({}),
+  } as DOMRectReadOnly);
+}
+
 function renderSettingsPage(options?: {
   appearanceThemeId?: string;
   topBarPackages?: LoadedOverlayTopBarPackage[];
@@ -1137,6 +1154,124 @@ describe('SettingsPage behavior', () => {
       kind: 'command',
       commandId: 'sample-plugin.context-menu.capture',
       parentEntryId: createdFolderEntry?.id,
+    });
+  }, 30000);
+
+  it('drops library commands into the open folder panel inside the menu canvas', async () => {
+    const user = userEvent.setup();
+    renderSettingsPage({
+      pluginContextMenuItems: [
+        {
+          id: 'sample-plugin.context-menu.capture',
+          pluginId: 'sample-plugin',
+          pluginName: 'Sample Tools',
+          title: 'Capture Memory Snapshot',
+          contexts: ['entry'],
+          appliesTo: 'file',
+          group: 'plugin',
+          defaultOrder: 650,
+          execution: {
+            kind: 'plugin-backend',
+            entry: 'backend/capture-snapshot',
+            args: ['{path}'],
+          },
+        },
+      ],
+    });
+
+    await user.click(findSectionButton('Context Menus'));
+    await user.click(screen.getByRole('button', { name: 'Create Folder' }));
+
+    const createdFolderEntry = useSettingsStore
+      .getState()
+      .settings.explorer.contextMenuLayoutOverridesByContext.entry?.entries
+      .find((entry) => entry.kind === 'submenu');
+    if (!createdFolderEntry) {
+      throw new Error('Expected created folder entry');
+    }
+
+    await waitFor(() => {
+      expect(
+        document.querySelectorAll('[data-draggable-panel-runtime-list-id]').length,
+      ).toBeGreaterThanOrEqual(2);
+    });
+
+    const folderPanelList = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-draggable-panel-runtime-list-id]',
+      ),
+    ).find(
+      (element) =>
+        element.dataset.draggablePanelList !== 'context-menu-editor-root',
+    );
+    const folderEmptyState = document.querySelector<HTMLElement>(
+      `[data-context-menu-canvas-empty="${createdFolderEntry.id}"]`,
+    );
+    if (
+      !(folderPanelList instanceof HTMLElement) ||
+      !(folderEmptyState instanceof HTMLElement)
+    ) {
+      throw new Error('Expected open folder panel in context menu canvas');
+    }
+
+    assignRect(folderPanelList, { top: 0, left: 0, width: 260, height: 220 });
+
+    await user.type(
+      screen.getByPlaceholderText('Search actions, commands, folders...'),
+      'Capture',
+    );
+
+    const dragHandle = screen.getByRole('button', {
+      name: 'Drag Capture Memory Snapshot into menu',
+    });
+
+    const originalElementFromPoint = document.elementFromPoint;
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: vi.fn(() => folderEmptyState),
+    });
+
+    try {
+      fireEvent.pointerDown(dragHandle, {
+        button: 0,
+        pointerId: 7,
+        clientX: 18,
+        clientY: 18,
+      });
+      fireEvent.pointerMove(window, {
+        pointerId: 7,
+        clientX: 120,
+        clientY: 84,
+      });
+      fireEvent.pointerUp(window, {
+        pointerId: 7,
+        clientX: 120,
+        clientY: 84,
+      });
+    } finally {
+      if (originalElementFromPoint) {
+        Object.defineProperty(document, 'elementFromPoint', {
+          configurable: true,
+          value: originalElementFromPoint,
+        });
+      } else {
+        Reflect.deleteProperty(document, 'elementFromPoint');
+      }
+    }
+
+    const nestedCommandEntry = useSettingsStore
+      .getState()
+      .settings.explorer.contextMenuLayoutOverridesByContext.entry?.entries
+      .find(
+        (entry) =>
+          entry.kind === 'command' &&
+          entry.commandId === 'sample-plugin.context-menu.capture',
+      );
+
+    expect(nestedCommandEntry).toMatchObject({
+      kind: 'command',
+      commandId: 'sample-plugin.context-menu.capture',
+      parentEntryId: createdFolderEntry.id,
     });
   }, 30000);
 

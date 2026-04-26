@@ -14,6 +14,12 @@ type PanelPointerPoint = {
   y: number;
 };
 
+export interface DraggablePanelListDropTarget {
+  listRuntimeId: string;
+  listLabel: string;
+  index: number;
+}
+
 type PanelListDragSnapshot = {
   active: boolean;
   draggedItemId: string | null;
@@ -236,7 +242,7 @@ function restorePanelListDragBodyState(): void {
 
 function resolvePanelListDropTargetFromPoint(
   point: PanelPointerPoint,
-): { listId: string; index: number } | null {
+): DraggablePanelListDropTarget | null {
   if (typeof document === 'undefined') {
     return null;
   }
@@ -250,26 +256,36 @@ function resolvePanelListDropTargetFromPoint(
     '[data-draggable-panel-drop-zone-list-id]',
   );
   if (explicitDropZone) {
-    const listId =
+    const listRuntimeId =
       explicitDropZone.dataset.draggablePanelDropZoneListId ?? null;
+    const listLabel =
+      explicitDropZone
+        .closest<HTMLElement>('[data-draggable-panel-list]')
+        ?.dataset.draggablePanelList ?? null;
     const indexValue =
       explicitDropZone.dataset.draggablePanelDropZoneIndex ?? null;
     const index =
       indexValue == null ? Number.NaN : Number.parseInt(indexValue, 10);
-    if (listId && Number.isFinite(index) && panelListRegistry.has(listId)) {
-      return { listId, index };
+    if (
+      listRuntimeId &&
+      listLabel &&
+      Number.isFinite(index) &&
+      panelListRegistry.has(listRuntimeId)
+    ) {
+      return { listRuntimeId, listLabel, index };
     }
   }
 
   const hoveredListElement = hoveredElement.closest<HTMLElement>(
     '[data-draggable-panel-runtime-list-id]',
   );
-  const listId = hoveredListElement?.dataset.draggablePanelRuntimeListId;
-  if (!listId) {
+  const listRuntimeId = hoveredListElement?.dataset.draggablePanelRuntimeListId;
+  const listLabel = hoveredListElement?.dataset.draggablePanelList;
+  if (!listRuntimeId || !listLabel) {
     return null;
   }
 
-  const listEntry = panelListRegistry.get(listId);
+  const listEntry = panelListRegistry.get(listRuntimeId);
   if (!listEntry) {
     return null;
   }
@@ -280,9 +296,16 @@ function resolvePanelListDropTargetFromPoint(
   }
 
   return {
-    listId,
+    listRuntimeId,
+    listLabel,
     index: resolvedIndex,
   };
+}
+
+export function resolveDraggablePanelListDropTargetFromPoint(
+  point: PanelPointerPoint,
+): DraggablePanelListDropTarget | null {
+  return resolvePanelListDropTargetFromPoint(point);
 }
 
 function commitPanelListPointerMove(point: PanelPointerPoint, pointerId: number) {
@@ -317,7 +340,10 @@ function commitPanelListPointerMove(point: PanelPointerPoint, pointerId: number)
   }
 
   const dropTarget = resolvePanelListDropTargetFromPoint(point);
-  setPanelListHoveredTarget(dropTarget?.listId ?? null, dropTarget?.index ?? null);
+  setPanelListHoveredTarget(
+    dropTarget?.listRuntimeId ?? null,
+    dropTarget?.index ?? null,
+  );
 }
 
 function finishPanelListDragSession(args: {
@@ -632,7 +658,7 @@ export function DraggablePanelList<TItem>({
   };
 
   if (items.length === 0) {
-    const emptyActive = dragActive && hoveredDropIndex === 0;
+    const emptyActive = dragActive && effectiveHoveredDropIndex === 0;
 
     return (
       <div

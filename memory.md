@@ -1,21 +1,37 @@
-# 2026-04-25 - Explorer Video Preview Now Uses Asset/File URL Fallback And MP4 Proxies Everywhere
+# 2026-04-25 - Explorer Video Preview Now Uses Native Byte Transport Plus MP4 Proxy Fallback
 
 - The explorer video lane had two independent playback regressions that compounded into “video never works”:
-  - `src-tauri/tauri.conf.json` was missing `security.assetProtocol`, so `convertFileSrc(...)` did not have the Tauri-side protocol contract that ZenMocap relied on.
+  - `src-tauri/tauri.conf.json` was missing `security.assetProtocol`, so the Tauri-side local-media contract that ZenMocap relied on was incomplete.
   - `src-tauri/src/video_commands.rs` was still generating Linux-only VP9/WebM preview proxies, even though the durable repo intent and the working ZenMocap example both point to H.264/`yuv420p`/`+faststart` MP4 as the safe embedded-webview target.
 - Durable implementation shape:
   - `src-tauri/tauri.conf.json` now enables `security.assetProtocol` with `scope = ["**"]`, and `src-tauri/Cargo.toml` now carries the matching Tauri feature `protocol-asset`. These two settings are coupled. If one moves without the other, local explorer media playback breaks again.
   - `src-tauri/src/video_commands.rs` now emits MP4 preview proxies on every platform using `libx264`, `yuv420p`, `+faststart`, AAC audio when present, and a width-capped preview scale filter so tall mobile/screen-recorded clips stay lighter without regressing decode safety.
-  - `src/components/ExplorerVideoEditor.tsx` no longer assumes one URL is enough. For each resolved source it now tries the Tauri asset URL first, then an encoded `file://` URL fallback, and only then escalates from direct playback into generated proxy playback.
-  - `src/test/explorerVideoEditor.test.tsx` now locks that fallback order down: first direct asset URL, then direct `file://`, then MP4 proxy.
+  - `src/components/ExplorerVideoEditor.tsx` now treats source loading as host-owned byte transport. It resolves a direct-safe path or proxy-safe path through the typed backend, reads preview bytes through `readExplorerPreviewBytes(...)`, feeds the `<video>` element with a `blob:` URL, and only escalates from direct source to MP4 proxy when native transport or decode fails.
+  - `src/runtime/videoEditorBackend.ts` now exposes the narrow preview-byte bridge used by the video lane, so the React surface does not reach into raw explorer transport helpers directly.
+  - `src/test/explorerVideoEditor.test.tsx` now locks that fallback order down as direct native-byte playback first, then MP4 proxy native-byte playback.
 - Durable product rule:
-  - Future explorer video work must preserve the full local-media contract, not just the leaf `<video>` tag. Treat `security.assetProtocol`, the Cargo `protocol-asset` feature, the React asset/file fallback list, and MP4/H.264/AAC preview proxies as one pipeline.
+  - Future explorer video work must preserve the full local-media contract, not just the leaf `<video>` tag. Treat `security.assetProtocol`, the Cargo `protocol-asset` feature, the native preview-byte bridge, and MP4/H.264/AAC preview proxies as one pipeline.
 - Durable validation:
   - passed: `bunx vitest run src/test/explorerVideoEditor.test.tsx --reporter=dot`
   - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "defaults videos to playback preview and only enters video edit mode when requested" --reporter=dot`
   - passed: `cargo test --manifest-path src-tauri/Cargo.toml preview_ --lib`
   - passed: `jq empty src-tauri/tauri.conf.json`
   - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json | rg 'ExplorerVideoEditor|explorerVideoEditor'`
+
+# 2026-04-26 - Video Preview Stage Now Shares The Image Preview Zoom And Background Contract
+
+- The video lane was playable again, but it still felt visually and behaviorally detached from the image lane:
+  - wheel zoom did not work in the preview surface
+  - the stage background/checkerboard treatment drifted from the image preview lane
+- Durable implementation shape:
+  - `src/components/explorer/explorerImageStage.ts` now owns shared checkerboard background constants in addition to the existing zoom/pan math, making it the reusable stage contract for preview-first visual media lanes.
+  - `src/components/ExplorerImageEditor.tsx` now consumes those shared checkerboard constants instead of carrying duplicate lane-local literals.
+  - `src/components/ExplorerVideoEditor.tsx` now reuses the same stage vocabulary: wheel zoom updates a shared preview-stage transform, the bottom-right zoom badge matches the image lane, and the preview surface background now uses the same checkerboard contract.
+  - Video edit transforms still remain lane-specific, but preview-stage zoom/pan is now intentionally shared so image and video feel like the same preview system.
+- Durable product rule:
+  - If a visual-media preview lane needs stage treatment changes, route them through `src/components/explorer/explorerImageStage.ts` first. Do not let image and video drift into copy-pasted stage CSS or incompatible zoom semantics again.
+- Durable validation:
+  - passed: `bunx vitest run src/test/explorerVideoEditor.test.tsx --reporter=dot`
 
 # 2026-04-26 - Tool-Editor Settings Pages Can Now Opt Into A Fixed Viewport Shell
 
@@ -28,7 +44,15 @@
   - The right `Menu Library` now behaves more like Explorer’s docked actions pane by using the full lane height with an internal scroll surface instead of a short card sitting in a taller column.
 - Durable product rule:
   - If a settings section is acting like a DCC/editor viewport, prefer `shell.disableContentScroll` plus internal lane scrolling over letting the whole page drift vertically.
+- Context-menu composer follow-up polish from the same lane:
+  - `src/components/settings/sections/ContextMenusSettingsSection.tsx` now treats the right `Menu Library` as a compact action browser instead of a stack of puffy cards. Library categories are collapsible, built-in/extension-heavy sections can stay tucked away by default, and the library lane owns its full height like Explorer’s actions pane.
+  - Submenu/folder rows in the menu canvas should read differently from leaf commands. Folder rows now keep a lighter summary treatment, while leaf-command rows remain the place for fuller inline tweaks.
+  - External library drags no longer depend on tiny explicit drop rails. `src/components/DraggablePanelList.tsx` now exports the ambient drop-target resolver used by the shared pointer runtime, and the context-menu library drag path reuses that helper so dropping into open submenu panels works across the full panel body.
+  - The next compactness pass pushed that distinction further: selected submenu rows now use a branch-focused inline editor instead of expanding into the same heavy inspector block as leaf commands. Durable product rule: if a folder is already open as a sidecar menu column, keep its inline controls about branch naming/placement and leave content authoring to the open branch panel.
+  - The right `Menu Library` should read like Explorer’s actions pane, not a stack of rounded cards. Keep section headers collapsible, flatten items into denser list rows, and prefer light metadata labels over large badge piles.
+  - Empty folder targets now participate in external drag hover/highlight correctly because `src/components/DraggablePanelList.tsx` uses the effective external hovered drop index for empty lists too. This matters for newly created submenu branches with no children yet.
 - Durable validation:
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "lets the dedicated context menu composer|adds new command nodes into the selected folder|drops library commands into the open folder panel|opens the dedicated context menu section" --reporter=dot`
   - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`
   - note: the appearance override behavior spec is heavy enough now that it uses an explicit `10000` ms per-test timeout; keep queries narrow before widening more global time budgets.
 

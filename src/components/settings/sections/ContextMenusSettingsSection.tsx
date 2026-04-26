@@ -40,7 +40,10 @@ import {
   Undo2,
 } from '@/components/AppIcons';
 
-import { DraggablePanelList } from '../../DraggablePanelList';
+import {
+  DraggablePanelList,
+  resolveDraggablePanelListDropTargetFromPoint,
+} from '../../DraggablePanelList';
 import { OverlayActionButton } from '../../OverlayActionButton';
 import { OverlayScrollArea } from '../../OverlayScrollArea';
 import type { ResolvedOverlayAppearance } from '../../../config/appearance';
@@ -471,6 +474,8 @@ interface ContextMenuLibraryDragState {
   currentY: number;
   active: boolean;
   targetListLabel: string | null;
+  targetParentEntryId: string | null;
+  targetPanelLabel: string | null;
   targetIndex: number | null;
 }
 
@@ -734,6 +739,13 @@ export function ContextMenusSettingsSection({
   const [openEditorSubmenuPath, setOpenEditorSubmenuPath] = useState<string[]>([]);
   const [libraryDragState, setLibraryDragState] =
     useState<ContextMenuLibraryDragState | null>(null);
+  const [collapsedLibrarySectionsByKey, setCollapsedLibrarySectionsByKey] =
+    useState<Record<string, boolean>>({
+      structure: false,
+      actions: false,
+      commands: true,
+      extensions: true,
+    });
 
   useEffect(() => {
     setCanvasMode('edit');
@@ -945,6 +957,8 @@ export function ContextMenusSettingsSection({
       ].filter((section) => section.items.length > 0),
     [contextMenuLibraryItems],
   );
+  const forceExpandLibrarySections =
+    contextMenuCommandBrowserQuery.trim().length > 0;
 
   const beginContextMenuLibraryDrag = (
     item: ContextMenuLibraryItem,
@@ -964,6 +978,8 @@ export function ContextMenusSettingsSection({
       currentY: event.clientY,
       active: false,
       targetListLabel: null,
+      targetParentEntryId: null,
+      targetPanelLabel: null,
       targetIndex: null,
     });
   };
@@ -1008,50 +1024,6 @@ export function ContextMenusSettingsSection({
       return undefined;
     }
 
-    const resolveLibraryDropTarget = (x: number, y: number) => {
-      if (typeof document === 'undefined') {
-        return { targetListLabel: null, targetIndex: null };
-      }
-      const hoveredElement = document.elementFromPoint(x, y);
-      if (!(hoveredElement instanceof Element)) {
-        return { targetListLabel: null, targetIndex: null };
-      }
-
-      const explicitDropZone = hoveredElement.closest<HTMLElement>(
-        '[data-draggable-panel-drop-zone-index]',
-      );
-      if (explicitDropZone) {
-        const listRoot = explicitDropZone.closest<HTMLElement>(
-          '[data-draggable-panel-list]',
-        );
-        const targetListLabel = listRoot?.dataset.draggablePanelList ?? null;
-        const parsedIndex = Number.parseInt(
-          explicitDropZone.dataset.draggablePanelDropZoneIndex ?? '',
-          10,
-        );
-        return {
-          targetListLabel,
-          targetIndex:
-            targetListLabel && Number.isFinite(parsedIndex) ? parsedIndex : null,
-        };
-      }
-
-      const emptySurface = hoveredElement.closest<HTMLElement>(
-        '[data-draggable-panel-empty]',
-      );
-      if (emptySurface) {
-        const listRoot = emptySurface.closest<HTMLElement>(
-          '[data-draggable-panel-list]',
-        );
-        return {
-          targetListLabel: listRoot?.dataset.draggablePanelList ?? null,
-          targetIndex: 0,
-        };
-      }
-
-      return { targetListLabel: null, targetIndex: null };
-    };
-
     const completeLibraryDrag = (
       shouldDrop: boolean,
       pointerId?: number,
@@ -1070,18 +1042,13 @@ export function ContextMenusSettingsSection({
         if (
           shouldDrop &&
           currentState.active &&
-          currentState.targetListLabel &&
+          currentState.targetParentEntryId !== undefined &&
           currentState.targetIndex != null
         ) {
-          const targetPanel = editorPanelByListLabel.get(
-            currentState.targetListLabel,
-          );
-          if (targetPanel) {
-            insertContextMenuLibraryItemAt(currentState.item, {
-              parentEntryId: targetPanel.parentEntryId,
-              insertionIndex: currentState.targetIndex,
-            });
-          }
+          insertContextMenuLibraryItemAt(currentState.item, {
+            parentEntryId: currentState.targetParentEntryId,
+            insertionIndex: currentState.targetIndex,
+          });
         }
 
         return null;
@@ -1100,8 +1067,15 @@ export function ContextMenusSettingsSection({
         libraryDragState.active ||
         distance >= CONTEXT_MENU_LIBRARY_DRAG_THRESHOLD_PX;
       const nextTarget = active
-        ? resolveLibraryDropTarget(event.clientX, event.clientY)
-        : { targetListLabel: null, targetIndex: null };
+        ? resolveDraggablePanelListDropTargetFromPoint({
+            x: event.clientX,
+            y: event.clientY,
+          })
+        : null;
+      const nextTargetPanel =
+        nextTarget == null
+          ? null
+          : editorPanelByListLabel.get(nextTarget.listLabel) ?? null;
 
       setLibraryDragState((currentState) =>
         currentState && currentState.pointerId === event.pointerId
@@ -1110,8 +1084,15 @@ export function ContextMenusSettingsSection({
               currentX: event.clientX,
               currentY: event.clientY,
               active,
-              targetListLabel: nextTarget.targetListLabel,
-              targetIndex: nextTarget.targetIndex,
+              targetListLabel: nextTargetPanel?.listLabel ?? null,
+              targetParentEntryId: nextTargetPanel?.parentEntryId ?? null,
+              targetPanelLabel:
+                nextTargetPanel == null
+                  ? null
+                  : nextTargetPanel.path.length === 0
+                    ? 'Root'
+                    : nextTargetPanel.title,
+              targetIndex: nextTargetPanel ? nextTarget?.index ?? null : null,
             }
           : currentState,
       );
@@ -1171,6 +1152,157 @@ export function ContextMenusSettingsSection({
           contextMenuCommandLookup.get(entry.commandId) ??
           null
         : null;
+    const branchChildCount =
+      entry.kind === 'submenu' ? getBranchEntries(entry.id).length : 0;
+    const sharedEditorActions = (
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <OverlayActionButton
+          appearance={appearance}
+          size="compact"
+          tone="quiet"
+          onClick={() => moveContextMenuLayoutEntry(entry.id, 'up')}
+          disabled={selectedContextMenuSiblingIndex <= 0}
+          className="gap-1"
+        >
+          <ArrowUp size={11} />
+          Nudge Up
+        </OverlayActionButton>
+        <OverlayActionButton
+          appearance={appearance}
+          size="compact"
+          tone="quiet"
+          onClick={() => moveContextMenuLayoutEntry(entry.id, 'down')}
+          disabled={
+            selectedContextMenuSiblingIndex < 0 ||
+            selectedContextMenuSiblingIndex >=
+              selectedContextMenuSiblingEntriesCount - 1
+          }
+          className="gap-1"
+        >
+          <ArrowDown size={11} />
+          Nudge Down
+        </OverlayActionButton>
+        <OverlayActionButton
+          appearance={appearance}
+          size="compact"
+          tone="danger"
+          onClick={() => removeContextMenuLayoutEntry(entry.id)}
+          className="gap-1"
+        >
+          Remove
+        </OverlayActionButton>
+      </div>
+    );
+
+    if (entry.kind === 'submenu') {
+      return (
+        <div
+          className="mt-2 rounded-[12px] border px-3 py-2.5"
+          style={{
+            borderColor: `${accent}3a`,
+            background:
+              'linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.018))',
+          }}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-65">
+                <FolderTree size={11} />
+                <span>Folder Branch</span>
+                <span
+                  className="rounded border px-2 py-0.5 text-[9px]"
+                  style={{
+                    borderColor: `${border}99`,
+                    background: 'rgba(255,255,255,0.03)',
+                    color: text,
+                  }}
+                >
+                  {branchChildCount} item{branchChildCount === 1 ? '' : 's'}
+                </span>
+              </div>
+              <div className="mt-1 text-[10px] leading-4 opacity-45">
+                This row owns branch placement and naming. Edit the folder
+                contents in the sidecar panel it opens.
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <ThemeBadge label="Folder" />
+              <ThemeBadge label={`Order ${entry.order}`} />
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)]">
+            <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+              <span>Folder Name</span>
+              <input
+                value={entry.title}
+                onChange={(event) =>
+                  setContextMenuSubmenuTitle(entry.id, event.target.value)
+                }
+                className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                style={settingsFieldStyle}
+              />
+            </label>
+            <label
+              className="flex items-center justify-between gap-3 rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
+              style={{
+                borderColor: border,
+                background: 'rgba(255,255,255,0.02)',
+              }}
+            >
+              <span>Enabled</span>
+              <input
+                type="checkbox"
+                checked={entry.enabled !== false}
+                onChange={(event) =>
+                  toggleContextMenuLayoutEntryEnabled(
+                    entry.id,
+                    event.target.checked,
+                  )
+                }
+              />
+            </label>
+          </div>
+
+          <div className="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+              <span>Place Inside</span>
+              <select
+                value={entry.parentEntryId ?? ''}
+                onChange={(event) =>
+                  setContextMenuLayoutEntryParent(
+                    entry.id,
+                    event.target.value || null,
+                  )
+                }
+                className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                style={settingsSelectStyle}
+              >
+                <option value="">Root</option>
+                {availableParentSubmenus.map((submenu) => (
+                  <option key={submenu.id} value={submenu.id}>
+                    {submenu.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div
+              className="rounded border px-3 py-2 text-[10px] leading-4 opacity-55"
+              style={{
+                alignSelf: 'end',
+                borderColor: `${border}99`,
+                background: 'rgba(255,255,255,0.02)',
+              }}
+            >
+              Drag actions straight into this branch from the library or keep
+              the folder selected for left-lane inserts.
+            </div>
+          </div>
+
+          {sharedEditorActions}
+        </div>
+      );
+    }
 
     return (
       <div
@@ -1207,7 +1339,7 @@ export function ContextMenusSettingsSection({
         </div>
         </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
         <label
           className="flex items-center justify-between gap-3 rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
           style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}
@@ -1241,47 +1373,51 @@ export function ContextMenusSettingsSection({
           </select>
         </label>
 
-        <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
-          <span>Quick Slot</span>
-          <select
-            value={entry.quickSlot ?? 'none'}
-            onChange={(event) =>
-              setContextMenuLayoutEntryQuickSlot(
-                entry.id,
-                event.target.value as ExplorerMenuQuickSlot,
-              )
-            }
-            className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
-            style={settingsSelectStyle}
-          >
-            {explorerMenuQuickSlotOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
+        {entry.kind !== 'submenu' ? (
+          <>
+            <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+              <span>Quick Slot</span>
+              <select
+                value={entry.quickSlot ?? 'none'}
+                onChange={(event) =>
+                  setContextMenuLayoutEntryQuickSlot(
+                    entry.id,
+                    event.target.value as ExplorerMenuQuickSlot,
+                  )
+                }
+                className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                style={settingsSelectStyle}
+              >
+                {explorerMenuQuickSlotOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
-          <span>Fallback Bucket</span>
-          <select
-            value={entry.fallbackBucket ?? 'default'}
-            onChange={(event) =>
-              setContextMenuLayoutEntryFallbackBucket(
-                entry.id,
-                event.target.value as ExplorerMenuFallbackBucket,
-              )
-            }
-            className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
-            style={settingsSelectStyle}
-          >
-            {explorerMenuFallbackBucketOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
+            <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+              <span>Fallback Bucket</span>
+              <select
+                value={entry.fallbackBucket ?? 'default'}
+                onChange={(event) =>
+                  setContextMenuLayoutEntryFallbackBucket(
+                    entry.id,
+                    event.target.value as ExplorerMenuFallbackBucket,
+                  )
+                }
+                className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                style={settingsSelectStyle}
+              >
+                {explorerMenuFallbackBucketOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : null}
 
         {entry.kind === 'submenu' ? (
           <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70 lg:col-span-2">
@@ -1351,43 +1487,7 @@ export function ContextMenusSettingsSection({
         ) : null}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <OverlayActionButton
-          appearance={appearance}
-          size="compact"
-          tone="quiet"
-          onClick={() => moveContextMenuLayoutEntry(entry.id, 'up')}
-          disabled={selectedContextMenuSiblingIndex <= 0}
-          className="gap-1"
-        >
-          <ArrowUp size={11} />
-          Nudge Up
-        </OverlayActionButton>
-        <OverlayActionButton
-          appearance={appearance}
-          size="compact"
-          tone="quiet"
-          onClick={() => moveContextMenuLayoutEntry(entry.id, 'down')}
-          disabled={
-            selectedContextMenuSiblingIndex < 0 ||
-            selectedContextMenuSiblingIndex >=
-              selectedContextMenuSiblingEntriesCount - 1
-          }
-          className="gap-1"
-        >
-          <ArrowDown size={11} />
-          Nudge Down
-        </OverlayActionButton>
-        <OverlayActionButton
-          appearance={appearance}
-          size="compact"
-          tone="danger"
-          onClick={() => removeContextMenuLayoutEntry(entry.id)}
-          className="gap-1"
-        >
-          Remove
-        </OverlayActionButton>
-      </div>
+      {sharedEditorActions}
       </div>
     );
   };
@@ -1872,6 +1972,7 @@ export function ContextMenusSettingsSection({
                                 item,
                                 contextMenuCommandLookup,
                               );
+                              const isSubmenuEntry = item.kind === 'submenu';
                               const metaParts: string[] = [];
                               if (resolvedCommand) {
                                 metaParts.push(
@@ -1879,6 +1980,7 @@ export function ContextMenusSettingsSection({
                                 );
                               }
                               if (item.kind === 'submenu') {
+                                metaParts.push('folder');
                                 metaParts.push(
                                   `${childCount} item${childCount === 1 ? '' : 's'}`,
                                 );
@@ -1896,14 +1998,18 @@ export function ContextMenusSettingsSection({
                               return (
                                 <div
                                   data-context-menu-canvas-item={item.id}
-                                  className="rounded-[14px] border"
+                                  className="rounded-[12px] border"
                                   style={{
                                     borderColor: isActive
                                       ? accent
-                                      : `${border}b8`,
+                                      : isSubmenuEntry
+                                        ? `${accent}30`
+                                        : `${border}b8`,
                                     background: isActive
                                       ? `${accent}12`
-                                      : 'transparent',
+                                      : isSubmenuEntry
+                                        ? 'rgba(255,255,255,0.018)'
+                                        : 'transparent',
                                     color: text,
                                     boxShadow: isActive
                                       ? `0 0 0 1px ${accent}20 inset`
@@ -1962,8 +2068,11 @@ export function ContextMenusSettingsSection({
                                           </span>
                                         ) : null}
                                       </span>
-                                      <span className="text-[9px] opacity-45">
-                                        {item.kind === 'submenu' ? '▶' : `#${item.order}`}
+                                      <span
+                                        className="text-[9px] font-semibold opacity-45"
+                                        style={{ color: isSubmenuEntry ? text : undefined }}
+                                      >
+                                        {item.kind === 'submenu' ? 'OPEN ›' : `#${item.order}`}
                                       </span>
                                     </div>
                                   </button>
@@ -2025,85 +2134,148 @@ export function ContextMenusSettingsSection({
                     </div>
                   ) : (
                     contextMenuLibrarySections.map((section) => (
-                      <section key={section.key} className="space-y-2">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">
-                          {section.label}
-                        </div>
-                        <div className="space-y-2">
-                          {section.items.map((item) => (
-                            <div
-                              key={item.id}
-                              className="rounded-[14px] border px-3 py-2.5"
-                              style={insetSurfaceStyle}
-                            >
-                              <div className="flex items-start gap-2">
-                                <button
-                                  type="button"
-                                  aria-label={`Drag ${item.label} into menu`}
-                                  onPointerDown={(event) =>
-                                    beginContextMenuLibraryDrag(item, event)
-                                  }
-                                  className="mt-0.5 shrink-0 select-none rounded border px-2 py-1 text-[8px] font-semibold tracking-[0.2em]"
-                                  style={{
-                                    borderColor: `${border}aa`,
-                                    background: 'rgba(255,255,255,0.025)',
-                                    color: muted,
-                                    touchAction: 'none',
-                                    cursor: 'grab',
-                                  }}
-                                >
-                                  ⋮⋮
-                                </button>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="opacity-75">
+                      <section
+                        key={section.key}
+                        className="overflow-hidden rounded-[14px] border"
+                        style={{
+                          borderColor: `${border}9a`,
+                          background: 'rgba(255,255,255,0.014)',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCollapsedLibrarySectionsByKey((current) => ({
+                              ...current,
+                              [section.key]: !current[section.key],
+                            }))
+                          }
+                          className="flex w-full items-center justify-between px-2.5 py-2 text-left"
+                          style={{
+                            borderBottom:
+                              forceExpandLibrarySections ||
+                              !collapsedLibrarySectionsByKey[section.key]
+                                ? `1px solid ${border}72`
+                                : 'none',
+                            color: text,
+                          }}
+                        >
+                          <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                            <span style={{ color: muted }}>
+                              {forceExpandLibrarySections
+                                ? '▾'
+                                : collapsedLibrarySectionsByKey[section.key]
+                                  ? '▸'
+                                  : '▾'}
+                            </span>
+                            <span>{section.label}</span>
+                          </span>
+                          <ThemeBadge label={`${section.items.length}`} />
+                        </button>
+                        {forceExpandLibrarySections ||
+                        !collapsedLibrarySectionsByKey[section.key] ? (
+                          <div>
+                            {section.items.map((item, index) => (
+                              <div
+                                key={item.id}
+                                className="px-2.5 py-2"
+                                style={{
+                                  borderTop:
+                                    index === 0 ? 'none' : `1px solid ${border}55`,
+                                }}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <button
+                                    type="button"
+                                    aria-label={`Drag ${item.label} into menu`}
+                                    onPointerDown={(event) =>
+                                      beginContextMenuLibraryDrag(item, event)
+                                    }
+                                    className="mt-0.5 shrink-0 select-none rounded border px-1.5 py-1 text-[8px] font-semibold tracking-[0.2em]"
+                                    style={{
+                                      borderColor: `${border}aa`,
+                                      background: 'rgba(255,255,255,0.018)',
+                                      color: muted,
+                                      touchAction: 'none',
+                                      cursor: 'grab',
+                                    }}
+                                  >
+                                    ⋮⋮
+                                  </button>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="opacity-75">
+                                        {item.kind === 'command' ? (
+                                          renderSettingsContextMenuIcon(
+                                            item.command.iconName,
+                                          )
+                                        ) : item.kind === 'structure-submenu' ? (
+                                          <FolderTree size={13} />
+                                        ) : item.kind === 'structure-group-slot' ? (
+                                          <Sparkles size={13} />
+                                        ) : (
+                                          <Puzzle size={13} />
+                                        )}
+                                      </span>
+                                      <span className="truncate text-[11px] font-semibold">
+                                        {item.label}
+                                      </span>
+                                    </div>
+                                    <div className="mt-0.5 text-[10px] leading-4 opacity-45">
+                                      {item.description}
+                                    </div>
+                                    <div className="mt-1.5 flex flex-wrap gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] opacity-55">
+                                      <span
+                                        className="rounded border px-2 py-0.5"
+                                        style={{
+                                          borderColor: `${border}82`,
+                                          background: 'rgba(255,255,255,0.02)',
+                                          color: text,
+                                        }}
+                                      >
+                                        {item.sourceLabel}
+                                      </span>
                                       {item.kind === 'command' ? (
-                                        renderSettingsContextMenuIcon(
-                                          item.command.iconName,
-                                        )
-                                      ) : item.kind === 'structure-submenu' ? (
-                                        <FolderTree size={13} />
+                                        <span
+                                          className="rounded border px-2 py-0.5"
+                                          style={{
+                                            borderColor: `${border}72`,
+                                            background: 'rgba(255,255,255,0.015)',
+                                            color: text,
+                                          }}
+                                        >
+                                          {item.command.group}
+                                        </span>
                                       ) : item.kind === 'structure-group-slot' ? (
-                                        <Sparkles size={13} />
-                                      ) : (
-                                        <Puzzle size={13} />
-                                      )}
-                                    </span>
-                                    <span className="truncate text-[11px] font-semibold">
-                                      {item.label}
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 text-[10px] leading-4 opacity-45">
-                                    {item.description}
-                                  </div>
-                                  <div className="mt-2 flex flex-wrap gap-1.5">
-                                    <ThemeBadge label={item.sourceLabel} />
-                                    {item.kind === 'command' ? (
-                                      <ThemeBadge label={item.command.group} />
-                                    ) : item.kind === 'structure-group-slot' ? (
-                                      <ThemeBadge
-                                        label={
-                                          contextMenuGroupDraftByContext[
+                                        <span
+                                          className="rounded border px-2 py-0.5"
+                                          style={{
+                                            borderColor: `${border}72`,
+                                            background: 'rgba(255,255,255,0.015)',
+                                            color: text,
+                                          }}
+                                        >
+                                          {contextMenuGroupDraftByContext[
                                             activeContextMenuContext
-                                          ] ?? 'plugin'
-                                        }
-                                      />
-                                    ) : null}
+                                          ] ?? 'plugin'}
+                                        </span>
+                                      ) : null}
+                                    </div>
                                   </div>
+                                  <OverlayActionButton
+                                    appearance={appearance}
+                                    size="compact"
+                                    tone="quiet"
+                                    onClick={() => runContextMenuLibraryQuickAdd(item)}
+                                    className="shrink-0"
+                                  >
+                                    Add
+                                  </OverlayActionButton>
                                 </div>
-                                <OverlayActionButton
-                                  appearance={appearance}
-                                  size="compact"
-                                  tone="quiet"
-                                  onClick={() => runContextMenuLibraryQuickAdd(item)}
-                                  className="shrink-0"
-                                >
-                                  Add
-                                </OverlayActionButton>
                               </div>
-                            </div>
-                          ))}
-                        </div>
+                            ))}
+                          </div>
+                        ) : null}
                       </section>
                     ))
                   )}
@@ -2145,7 +2317,7 @@ export function ContextMenusSettingsSection({
             }}
           >
             {libraryDragState.targetListLabel
-              ? 'Drop into menu'
+              ? `Drop into ${libraryDragState.targetPanelLabel ?? 'menu'}`
               : 'Drag into a menu panel'}
           </div>
         </div>
