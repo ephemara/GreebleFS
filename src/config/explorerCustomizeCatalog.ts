@@ -48,6 +48,7 @@ export interface ExplorerCustomizeCatalogEntry {
 const defaultActionChromeSurfaces: ExplorerChromeSurfaceId[] = [
   "explorerTopbar",
   "explorerToolbar",
+  "workspaceHeader",
   "previewHeader",
   "explorerStatusBar",
 ];

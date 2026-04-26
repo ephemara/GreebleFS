@@ -197,6 +197,7 @@ describe("explorerCustomizePointerRuntime", () => {
         surfaceId: "explorerToolbar",
         zoneId: "primaryEnd",
         targetIndex: 0,
+        offsetPx: 6,
       },
       removeTargetActive: false,
     });
@@ -234,6 +235,7 @@ describe("explorerCustomizePointerRuntime", () => {
       surfaceId: "explorerToolbar",
       zoneId: "primaryCenter",
       targetIndex: 1,
+      offsetPx: 6,
     });
     expect(dropState.removeTargetActive).toBe(false);
   });

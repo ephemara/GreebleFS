@@ -175,7 +175,41 @@ describe('explorer chrome layout resolver', () => {
         surfaceId: 'explorerStatusBar',
         zone: 'end',
         order: 10,
+        offsetPx: 0,
         widthPx: 180,
+      }),
+    );
+  });
+
+  it('persists authored free-space offsets when controls move between chrome surfaces', () => {
+    const toolbar = resolveExplorerChromeSurfaceLayout({
+      layoutId: 'default',
+      surfaceId: 'explorerToolbar',
+      controlDefinitions: toolbarDefinitions,
+      isControlVisible: () => true,
+    });
+    const workspaceHeader = resolveExplorerChromeSurfaceLayout({
+      layoutId: 'default',
+      surfaceId: 'workspaceHeader',
+      controlDefinitions: toolbarDefinitions,
+      isControlVisible: () => true,
+    });
+
+    const override = moveExplorerChromeControlInResolvedSurfaces({
+      surfaces: [toolbar, workspaceHeader],
+      controlId: 'refresh',
+      targetSurfaceId: 'workspaceHeader',
+      targetZoneId: 'end',
+      targetIndex: 0,
+      targetOffsetPx: 136,
+    });
+
+    expect(override.entries).toContainEqual(
+      expect.objectContaining({
+        controlId: 'refresh',
+        surfaceId: 'workspaceHeader',
+        zone: 'end',
+        offsetPx: 136,
       }),
     );
   });

@@ -130,6 +130,7 @@ interface ExplorerSideRailProps {
       surfaceId: ExplorerChromeSurfaceId;
       zoneId: ExplorerChromeZoneId;
       targetIndex: number;
+      offsetPx: number;
     } | null;
     selectedControlId?: ExplorerChromeControlId | null;
     pendingHotkeyControlId?: ExplorerChromeControlId | null;
@@ -149,6 +150,7 @@ interface ExplorerSideRailProps {
         surfaceId: ExplorerChromeSurfaceId;
         zoneId: ExplorerChromeZoneId;
         targetIndex: number;
+        offsetPx: number;
       } | null,
     ) => void;
     onSetSelectedControl?: (controlId: ExplorerChromeControlId | null) => void;
@@ -161,6 +163,7 @@ interface ExplorerSideRailProps {
       targetSurfaceId: ExplorerChromeSurfaceId;
       targetZoneId: ExplorerChromeZoneId;
       targetIndex: number;
+      targetOffsetPx?: number;
     }) => void;
     onRemoveControl?: (controlId: ExplorerChromeControlId) => void;
   };

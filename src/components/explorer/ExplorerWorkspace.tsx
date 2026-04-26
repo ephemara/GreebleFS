@@ -28,8 +28,10 @@ import {
   cancelExplorerChromeResizeSession,
 } from "./explorerChromeResizeRuntime";
 import {
+  buildExplorerCustomizeCatalog,
   getExplorerChromeCommandId,
   isExplorerActionChromeControlId,
+  type ExplorerCustomizeCatalogEntry,
 } from "../../config/explorerCustomizeCatalog";
 import {
   moveExplorerChromeControlInResolvedSurfaces,
@@ -76,6 +78,13 @@ import {
 import { useSettingsStore } from "../../store/settingsStore";
 import type { SettingsSectionKey } from "../../config/settingsNavigation";
 import type { ExplorerPickerRequest } from "../../runtime/explorerPicker";
+import {
+  executeExplorerAction,
+  normalizeExplorerActionOutputTarget,
+  type ExplorerActionExecutionInput,
+} from "../../runtime/actionBackend";
+import { recordExplorerActionRun } from "../../store/explorerActionRunStore";
+import { openExplorerTaskCenter } from "../../store/explorerTaskStore";
 import { ExplorerChromeSurface } from "./ExplorerChromeSurface";
 import { ExplorerDragOverlay } from "./ExplorerDragOverlay";
 import { FileExplorer } from "../FileExplorer";
@@ -138,6 +147,37 @@ function getPathLeaf(path: string): string {
   }
   const parts = trimmed.split(/[\\/]/).filter(Boolean);
   return parts.length > 0 ? (parts[parts.length - 1] ?? trimmed) : trimmed;
+}
+
+function getPathParent(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const normalizedPath = trimmed.replace(/[\\/]+$/, "");
+  const parts = normalizedPath.split(/[\\/]/).filter(Boolean);
+  if (parts.length <= 1) {
+    return normalizedPath.startsWith("/") ? "/" : "";
+  }
+  return `${normalizedPath.startsWith("/") ? "/" : ""}${parts
+    .slice(0, -1)
+    .join("/")}`;
+}
+
+function getFileExtension(name: string): string {
+  const dotIndex = name.lastIndexOf(".");
+  if (dotIndex <= 0 || dotIndex === name.length - 1) {
+    return "";
+  }
+  return name.slice(dotIndex + 1).toLowerCase();
+}
+
+function getFileStem(name: string): string {
+  const dotIndex = name.lastIndexOf(".");
+  if (dotIndex <= 0) {
+    return name;
+  }
+  return name.slice(0, dotIndex);
 }
 
 function getPaneShortLabel(paneId: ExplorerPaneId): string {
@@ -576,6 +616,21 @@ export function ExplorerWorkspace({
       persistedExplorerChromeOverride,
     ],
   );
+  const workspaceCustomizeCatalog = useMemo(
+    () =>
+      buildExplorerCustomizeCatalog({
+        actions,
+        persistedEntries: explorerChromeOverride?.entries ?? null,
+      }),
+    [actions, explorerChromeOverride],
+  );
+  const workspaceCustomizeCatalogByControlId = useMemo(
+    () =>
+      new Map(
+        workspaceCustomizeCatalog.map((entry) => [entry.controlId, entry] as const),
+      ),
+    [workspaceCustomizeCatalog],
+  );
   const workspaceLayoutMode = activeWorkspaceTab?.layoutMode ?? "single";
   const workspaceColumnSplitRatio = activeWorkspaceTab?.columnSplitRatio ?? 0.5;
   const workspaceRowSplitRatio = activeWorkspaceTab?.rowSplitRatio ?? 0.5;
@@ -939,6 +994,7 @@ export function ExplorerWorkspace({
       targetSurfaceId: ExplorerChromeSurfaceId;
       targetZoneId: ExplorerChromeZoneId;
       targetIndex: number;
+      targetOffsetPx?: number;
     }) => {
       if (!chromeEditSession) {
         return;
@@ -955,6 +1011,7 @@ export function ExplorerWorkspace({
         targetSurfaceId: args.targetSurfaceId,
         targetZoneId: args.targetZoneId,
         targetIndex: args.targetIndex,
+        targetOffsetPx: args.targetOffsetPx,
       });
       const hiddenEntries = chromeEditSession.draftOverride.entries.filter(
         (entry) => entry.hidden && entry.controlId !== args.controlId,
@@ -1016,6 +1073,7 @@ export function ExplorerWorkspace({
           "workspaceHeader",
         zone: existingEntry?.zone ?? visiblePlacement?.zone ?? "center",
         order: existingEntry?.order ?? visiblePlacement?.order ?? 9990,
+        offsetPx: existingEntry?.offsetPx ?? visiblePlacement?.offsetPx ?? 0,
         hidden: existingEntry?.hidden ?? false,
         sizeVariant:
           existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
@@ -1055,6 +1113,7 @@ export function ExplorerWorkspace({
           "workspaceHeader",
         zone: existingEntry?.zone ?? visiblePlacement?.zone ?? "end",
         order: existingEntry?.order ?? visiblePlacement?.order ?? 9990,
+        offsetPx: existingEntry?.offsetPx ?? visiblePlacement?.offsetPx ?? 0,
         hidden: true,
         sizeVariant: existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
         widthPx: existingEntry?.widthPx ?? visiblePlacement?.widthPx,
@@ -1129,6 +1188,7 @@ export function ExplorerWorkspace({
             targetSurfaceId: target.surfaceId,
             targetZoneId: target.zoneId,
             targetIndex: target.targetIndex,
+            targetOffsetPx: target.offsetPx,
           });
         },
         onRemove: (controlId) => {
@@ -1159,10 +1219,55 @@ export function ExplorerWorkspace({
         return;
       }
 
+      const catalogEntry = workspaceCustomizeCatalogByControlId.get(
+        args.controlId,
+      );
+      if (!catalogEntry) {
+        return;
+      }
+
       const visiblePlacement = findRegisteredWorkspaceChromePlacement(
         args.controlId,
       );
-      if (args.controlId !== "workspaceTabStrip") {
+      const explicitEntry =
+        chromeEditSession.draftOverride.entries.find(
+          (entry) => entry.controlId === args.controlId,
+        ) ?? null;
+
+      if (catalogEntry.supportsWidthPx) {
+        beginExplorerChromeResizeSession({
+          pointerId: args.pointerId,
+          controlId: args.controlId,
+          startPoint: args.startPoint,
+          kind: "width-px",
+          initialWidthPx:
+            explicitEntry?.widthPx ??
+            visiblePlacement?.widthPx ??
+            catalogEntry.defaultWidthPx ??
+            catalogEntry.minWidthPx ??
+            160,
+          minWidthPx: catalogEntry.minWidthPx ?? 96,
+          maxWidthPx: catalogEntry.maxWidthPx ?? 1600,
+          onActivate: () => {
+            setWorkspaceResizingControlId(args.controlId);
+            setChromeEditSelectedControl(args.controlId);
+          },
+          onWidthChange: (widthPx) => {
+            updateWorkspaceChromeEditEntry(args.controlId, {
+              hidden: false,
+              widthPx,
+            });
+          },
+          onComplete: () => {
+            setWorkspaceResizingControlId((current) =>
+              current === args.controlId ? null : current,
+            );
+          },
+        });
+        return;
+      }
+
+      if (!catalogEntry.supportsSizeVariant) {
         return;
       }
 
@@ -1170,18 +1275,23 @@ export function ExplorerWorkspace({
         pointerId: args.pointerId,
         controlId: args.controlId,
         startPoint: args.startPoint,
-        kind: "width-px",
-        initialWidthPx: visiblePlacement?.widthPx ?? 760,
-        minWidthPx: 320,
-        maxWidthPx: 1600,
+        kind: "size-variant",
+        initialSizeVariant:
+          explicitEntry?.sizeVariant ??
+          visiblePlacement?.sizeVariant ??
+          "regular",
+        sizeVariants:
+          catalogEntry.sizeVariants.length > 0
+            ? catalogEntry.sizeVariants
+            : ["compact", "regular", "wide"],
         onActivate: () => {
           setWorkspaceResizingControlId(args.controlId);
           setChromeEditSelectedControl(args.controlId);
         },
-        onWidthChange: (widthPx) => {
+        onSizeVariantChange: (sizeVariant) => {
           updateWorkspaceChromeEditEntry(args.controlId, {
             hidden: false,
-            widthPx,
+            sizeVariant,
           });
         },
         onComplete: () => {
@@ -1196,6 +1306,7 @@ export function ExplorerWorkspace({
       findRegisteredWorkspaceChromePlacement,
       setChromeEditSelectedControl,
       updateWorkspaceChromeEditEntry,
+      workspaceCustomizeCatalogByControlId,
     ],
   );
   const workspaceChromeEditMode = useMemo(() => {
@@ -1238,7 +1349,12 @@ export function ExplorerWorkspace({
       onRequestHotkeyCapture: requestWorkspaceChromeHotkeyCapture,
       onMoveControl: handleWorkspaceChromeControlMove,
       isControlResizable: (placement: ExplorerChromeResolvedControlPlacement) =>
-        placement.controlId === "workspaceTabStrip",
+        Boolean(
+          workspaceCustomizeCatalogByControlId.get(placement.controlId)
+            ?.supportsWidthPx ||
+            workspaceCustomizeCatalogByControlId.get(placement.controlId)
+              ?.supportsSizeVariant,
+        ),
       onRemoveControl: sessionActive
         ? removeWorkspaceChromeControlFromDraft
         : undefined,
@@ -1256,6 +1372,7 @@ export function ExplorerWorkspace({
     setChromeEditHighlightedDropTarget,
     setChromeEditPendingHotkeyControl,
     setChromeEditSelectedControl,
+    workspaceCustomizeCatalogByControlId,
     workspaceResizingControlId,
     requestWorkspaceChromeHotkeyCapture,
     removeWorkspaceChromeControlFromDraft,
@@ -1951,6 +2068,355 @@ export function ExplorerWorkspace({
       workspaceDragState.valid,
     ],
   );
+  const toWorkspaceActionInvocationEntry = useCallback(
+    (entry: ExplorerWorkspaceRuntimeSelectionEntry) => ({
+      path: entry.path,
+      name: entry.name,
+      parentPath: getPathParent(entry.path),
+      extension: entry.is_dir ? "" : getFileExtension(entry.name),
+      stem: entry.is_dir ? entry.name : getFileStem(entry.name),
+      isDirectory: entry.is_dir,
+    }),
+    [],
+  );
+  const buildWorkspaceActionExecutionRequest = useCallback(
+    (
+      action: LoadedExplorerAction,
+      runtimeContext: {
+        invocation: ExplorerActionExecutionInput["context"];
+        primaryEntry: ReturnType<typeof toWorkspaceActionInvocationEntry> | null;
+        targetEntries: ReturnType<typeof toWorkspaceActionInvocationEntry>[];
+      },
+    ): ExplorerActionExecutionInput => ({
+      packId: action.packId,
+      actionId: action.actionId,
+      actionTitle: action.title,
+      actionDirectory: action.directoryPath,
+      execution: {
+        runner: action.execution.runner,
+        entry: action.execution.entry,
+        args: [...action.execution.args],
+        env: { ...action.execution.env },
+        interpreter: action.execution.interpreter ?? null,
+      },
+      outputTarget: normalizeExplorerActionOutputTarget(
+        action.presentation.outputTarget,
+      ),
+      timeoutMs: null,
+      context: {
+        kind: runtimeContext.invocation.kind,
+        currentLocation: runtimeContext.invocation.currentLocation,
+        selectedEntries: runtimeContext.targetEntries,
+        primaryEntry: runtimeContext.primaryEntry,
+        searchResult: null,
+        previewTarget: null,
+        previewContext: null,
+        inputModality: runtimeContext.invocation.inputModality,
+        reducedMotion: runtimeContext.invocation.reducedMotion,
+        capabilities: runtimeContext.invocation.capabilities,
+        runtimePlatform,
+      },
+    }),
+    [runtimePlatform, toWorkspaceActionInvocationEntry],
+  );
+  const buildWorkspaceChromeActionRuntimeContext = useCallback(
+    (
+      inputModality: ExplorerActionExecutionInput["context"]["inputModality"] =
+        "keyboard",
+    ) => {
+      const targetEntries = (activeRuntime?.selectedEntries ?? []).map(
+        toWorkspaceActionInvocationEntry,
+      );
+      const primaryEntry = targetEntries[0] ?? null;
+      const invocationKind: ExplorerActionExecutionInput["context"]["kind"] =
+        targetEntries.length > 1
+          ? "multi-select"
+          : targetEntries.length === 1
+            ? "entry"
+            : "background";
+      const reducedMotion =
+        typeof window !== "undefined" &&
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const touchCapable =
+        typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
+      return {
+        invocation: {
+          kind: invocationKind,
+          currentLocation: activePanePath,
+          selectedEntries: targetEntries,
+          primaryEntry,
+          searchResult: null,
+          previewTarget: null,
+          previewContext: null,
+          inputModality,
+          reducedMotion,
+          capabilities: {
+            mouse: true,
+            touch: touchCapable,
+            pen: false,
+            keyboard: true,
+          },
+          runtimePlatform,
+        },
+        primaryEntry,
+        targetEntries,
+      };
+    },
+    [activePanePath, activeRuntime?.selectedEntries, runtimePlatform, toWorkspaceActionInvocationEntry],
+  );
+  const canExecuteWorkspaceChromeAction = useCallback(
+    (action: LoadedExplorerAction): boolean => {
+      const runtimeContext = buildWorkspaceChromeActionRuntimeContext();
+      if (!action.contexts.includes(runtimeContext.invocation.kind)) {
+        return false;
+      }
+
+      const targetEntries = runtimeContext.targetEntries;
+      const { selection } = action;
+      const count = targetEntries.length;
+      if (selection.minCount != null && count < selection.minCount) {
+        return false;
+      }
+      if (selection.maxCount != null && count > selection.maxCount) {
+        return false;
+      }
+      if (count === 0) {
+        return selection.minCount == null || selection.minCount === 0;
+      }
+      if (
+        !selection.allowFiles &&
+        targetEntries.some((entry) => !entry.isDirectory)
+      ) {
+        return false;
+      }
+      if (
+        !selection.allowDirectories &&
+        targetEntries.some((entry) => entry.isDirectory)
+      ) {
+        return false;
+      }
+      if (selection.extensions.length === 0) {
+        return true;
+      }
+      return targetEntries.every((entry) => {
+        if (entry.isDirectory) {
+          return selection.allowDirectories;
+        }
+        return selection.extensions.includes(entry.extension.toLowerCase());
+      });
+    },
+    [buildWorkspaceChromeActionRuntimeContext],
+  );
+  const executeWorkspaceChromeActionControl = useCallback(
+    async (
+      action: LoadedExplorerAction,
+      inputModality: ExplorerActionExecutionInput["context"]["inputModality"] =
+        "keyboard",
+    ) => {
+      const runtimeContext =
+        buildWorkspaceChromeActionRuntimeContext(inputModality);
+      const startedAt = Date.now();
+      const outputTarget = action.presentation.outputTarget;
+
+      try {
+        const result = await executeExplorerAction(
+          buildWorkspaceActionExecutionRequest(action, runtimeContext),
+        );
+        const finishedAt = Date.now();
+        const runStatus = result.launchedInNativeTerminal
+          ? "launched"
+          : result.success
+            ? "succeeded"
+            : "failed";
+
+        if (outputTarget !== "silent" || !result.success) {
+          recordExplorerActionRun({
+            id: `${result.packId}:${result.actionId}:${startedAt}`,
+            packId: result.packId,
+            actionId: result.actionId,
+            actionTitle: result.actionTitle,
+            actionDirectory: action.directoryPath,
+            currentLocation: runtimeContext.invocation.currentLocation,
+            selectedPaths: runtimeContext.targetEntries.map((entry) => entry.path),
+            outputTarget,
+            status: runStatus,
+            startedAt,
+            finishedAt,
+            exitCode: result.exitCode,
+            timedOut: result.timedOut,
+            runtimeUsed: result.runtimeUsed,
+            commandDisplay: result.commandDisplay,
+            workingDirectory: result.workingDirectory,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            launchedInNativeTerminal: result.launchedInNativeTerminal,
+          });
+        }
+
+        if (
+          result.success &&
+          !result.launchedInNativeTerminal &&
+          activePaneSnapshot?.instanceId
+        ) {
+          issueRefreshRequest(activePaneSnapshot.instanceId);
+        }
+
+        if (
+          outputTarget === "task-center" ||
+          outputTarget === "preview-terminal" ||
+          !result.success
+        ) {
+          openExplorerTaskCenter();
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        recordExplorerActionRun({
+          id: `${action.packId}:${action.actionId}:${startedAt}`,
+          packId: action.packId,
+          actionId: action.actionId,
+          actionTitle: action.title,
+          actionDirectory: action.directoryPath,
+          currentLocation: runtimeContext.invocation.currentLocation,
+          selectedPaths: runtimeContext.targetEntries.map((entry) => entry.path),
+          outputTarget,
+          status: "failed",
+          startedAt,
+          finishedAt: Date.now(),
+          exitCode: null,
+          timedOut: false,
+          runtimeUsed: action.execution.interpreter ?? action.execution.runner,
+          commandDisplay: action.execution.entry,
+          workingDirectory: runtimeContext.invocation.currentLocation,
+          stdout: "",
+          stderr: message,
+          launchedInNativeTerminal: false,
+        });
+        openExplorerTaskCenter();
+      }
+    },
+    [
+      activePaneSnapshot?.instanceId,
+      buildWorkspaceActionExecutionRequest,
+      buildWorkspaceChromeActionRuntimeContext,
+      issueRefreshRequest,
+    ],
+  );
+  const renderWorkspaceActionChromeControl = useCallback(
+    (
+      catalogEntry: ExplorerCustomizeCatalogEntry,
+      placement: ExplorerChromeResolvedControlPlacement,
+    ) => {
+      const sizeVariant = placement.sizeVariant ?? "regular";
+      const wantsIcon = placement.showIcon ?? true;
+      const wantsLabel = placement.showLabel ?? true;
+      const showIcon = wantsIcon || !wantsLabel;
+      const showLabel = wantsLabel || !wantsIcon;
+      const iconSize =
+        sizeVariant === "wide" ? 14 : sizeVariant === "compact" ? 10 : 12;
+      const isMissing = catalogEntry.source === "missing-action";
+      const action = catalogEntry.action;
+      const disabled =
+        isMissing || !action || !canExecuteWorkspaceChromeAction(action);
+
+      return (
+        <button
+          type="button"
+          disabled={disabled}
+          title={catalogEntry.description}
+          onClick={() => {
+            if (!action || disabled) {
+              return;
+            }
+            void executeWorkspaceChromeActionControl(action, "mouse");
+          }}
+          style={{
+            ...paneActionButtonStyle(false, theme.accent, disabled),
+            justifyContent: showLabel ? "flex-start" : "center",
+            gap: showIcon && showLabel ? 6 : 0,
+            padding:
+              sizeVariant === "wide"
+                ? "7px 12px"
+                : sizeVariant === "compact"
+                  ? "4px 8px"
+                  : "5px 10px",
+            minHeight:
+              sizeVariant === "wide" ? 32 : sizeVariant === "compact" ? 24 : 28,
+            minWidth: showLabel
+              ? sizeVariant === "wide"
+                ? 132
+                : 84
+              : undefined,
+            background: isMissing
+              ? "color-mix(in srgb, #f59e0b 12%, black 4%)"
+              : undefined,
+            border: isMissing
+              ? "1px solid color-mix(in srgb, #f59e0b 58%, transparent)"
+              : undefined,
+            color: disabled ? "var(--overlay-text-dim)" : undefined,
+            overflow: "hidden",
+          }}
+        >
+          {showIcon ? (
+            <span
+              aria-hidden="true"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              {isMissing ? <X size={iconSize} /> : <Plus size={iconSize} />}
+            </span>
+          ) : null}
+          {showLabel ? (
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {catalogEntry.label}
+            </span>
+          ) : null}
+        </button>
+      );
+    },
+    [
+      canExecuteWorkspaceChromeAction,
+      executeWorkspaceChromeActionControl,
+      theme.accent,
+    ],
+  );
+  const workspaceChromeActionRegistry = useMemo<
+    Array<
+      ExplorerChromeControlDefinition & {
+        isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
+        render: (
+          placement: ExplorerChromeResolvedControlPlacement,
+        ) => React.ReactNode;
+      }
+    >
+  >(
+    () =>
+      workspaceCustomizeCatalog
+        .filter(
+          (entry) =>
+            entry.source !== "built-in" &&
+            entry.surfaces.includes("workspaceHeader"),
+        )
+        .map((entry) => ({
+          id: entry.controlId,
+          label: entry.label,
+          surfaces: entry.surfaces,
+          isVisible: (surfaceId) => entry.surfaces.includes(surfaceId),
+          render: (placement) =>
+            renderWorkspaceActionChromeControl(entry, placement),
+        })),
+    [renderWorkspaceActionChromeControl, workspaceCustomizeCatalog],
+  );
   const workspaceChromeControlRegistry = useMemo<
     Array<
       ExplorerChromeControlDefinition & {
@@ -2004,10 +2470,12 @@ export function ExplorerWorkspace({
         isVisible: () => false,
         render: () => null,
       },
+      ...workspaceChromeActionRegistry,
     ],
     [
       activePane,
       activeWorkspaceTab,
+      actions,
       canUseCommanderActions,
       closeActiveTab,
       closeWorkspaceTab,
@@ -2035,6 +2503,7 @@ export function ExplorerWorkspace({
       syncCommanderTargetToActivePane,
       theme.accent,
       visiblePaneIds,
+      workspaceChromeActionRegistry,
       workspaceColumnSplitRatio,
       workspaceLayoutMode,
       workspaceLayout.supportsColumnSplit,
@@ -2076,6 +2545,19 @@ export function ExplorerWorkspace({
   );
   const activateWorkspaceChromeCommand = useCallback(
     (controlId: ExplorerChromeControlId): boolean => {
+      const catalogEntry = workspaceCustomizeCatalogByControlId.get(controlId);
+      if (
+        catalogEntry &&
+        catalogEntry.source !== "built-in" &&
+        catalogEntry.action
+      ) {
+        if (!canExecuteWorkspaceChromeAction(catalogEntry.action)) {
+          return false;
+        }
+        void executeWorkspaceChromeActionControl(catalogEntry.action, "keyboard");
+        return true;
+      }
+
       switch (controlId) {
         case "workspaceTabStrip":
         case "workspacePaneCounts":
@@ -2190,10 +2672,12 @@ export function ExplorerWorkspace({
       commanderTargetPaneId,
       commanderTargetPaneSnapshot,
       commanderTargetPath,
+      canExecuteWorkspaceChromeAction,
       copySelectionToCommanderTarget,
       createTabInFocusedPane,
       cycleWorkspaceLayout,
       duplicateActiveTab,
+      executeWorkspaceChromeActionControl,
       focusNextPane,
       focusPreviousPane,
       issueNavigationRequest,
@@ -2203,6 +2687,7 @@ export function ExplorerWorkspace({
       syncCommanderTargetToActivePane,
       togglePaneActionsMenu,
       visiblePaneIds.length,
+      workspaceCustomizeCatalogByControlId,
       workspaceTabs.length,
     ],
   );

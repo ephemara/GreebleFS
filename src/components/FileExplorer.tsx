@@ -1231,6 +1231,7 @@ interface ExplorerChromeEditModeState {
     surfaceId: ExplorerChromeSurfaceId;
     zoneId: ExplorerChromeZoneId;
     targetIndex: number;
+    offsetPx: number;
   } | null;
   selectedControlId?: ExplorerChromeControlId | null;
   pendingHotkeyControlId?: ExplorerChromeControlId | null;
@@ -1250,6 +1251,7 @@ interface ExplorerChromeEditModeState {
       surfaceId: ExplorerChromeSurfaceId;
       zoneId: ExplorerChromeZoneId;
       targetIndex: number;
+      offsetPx: number;
     } | null,
   ) => void;
   onSetSelectedControl?: (controlId: ExplorerChromeControlId | null) => void;
@@ -1262,6 +1264,7 @@ interface ExplorerChromeEditModeState {
     targetSurfaceId: ExplorerChromeSurfaceId;
     targetZoneId: ExplorerChromeZoneId;
     targetIndex: number;
+    targetOffsetPx?: number;
   }) => void;
   onRemoveControl?: (controlId: ExplorerChromeControlId) => void;
 }
@@ -16983,6 +16986,7 @@ export function FileExplorer({
         surfaceId: existingEntry?.surfaceId ?? fallbackSurfaceId,
         zone: existingEntry?.zone ?? fallbackZone,
         order: existingEntry?.order ?? fallbackOrder,
+        offsetPx: existingEntry?.offsetPx ?? visiblePlacement?.offsetPx ?? 0,
         hidden: existingEntry?.hidden ?? false,
         sizeVariant:
           existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
@@ -17012,6 +17016,7 @@ export function FileExplorer({
       targetSurfaceId: ExplorerChromeSurfaceId;
       targetZoneId: ExplorerChromeZoneId;
       targetIndex: number;
+      targetOffsetPx?: number;
     }) => {
       if (!activeChromeEditSession) {
         return;
@@ -17023,6 +17028,7 @@ export function FileExplorer({
         targetSurfaceId: args.targetSurfaceId,
         targetZoneId: args.targetZoneId,
         targetIndex: args.targetIndex,
+        targetOffsetPx: args.targetOffsetPx,
       });
       const hiddenEntries =
         activeChromeEditSession.draftOverride.entries.filter(
@@ -17073,6 +17079,8 @@ export function FileExplorer({
               zone:
                 existingEntry?.zone ?? visiblePlacement?.zone ?? "primaryEnd",
               order: existingEntry?.order ?? visiblePlacement?.order ?? 9990,
+              offsetPx:
+                existingEntry?.offsetPx ?? visiblePlacement?.offsetPx ?? 0,
               hidden: true,
               sizeVariant:
                 existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
@@ -17146,6 +17154,7 @@ export function FileExplorer({
         surfaceId: fallbackSurfaceId,
         zone: fallbackZone,
         order: fallbackOrder,
+        offsetPx: explicitEntry?.offsetPx ?? visiblePlacement?.offsetPx ?? 0,
         hidden: explicitEntry?.hidden ?? false,
         sizeVariant:
           explicitEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
@@ -17194,6 +17203,7 @@ export function FileExplorer({
             targetSurfaceId: target.surfaceId,
             targetZoneId: target.zoneId,
             targetIndex: target.targetIndex,
+            targetOffsetPx: target.offsetPx,
           });
         },
         onRemove: (controlId) => {
@@ -17345,6 +17355,7 @@ export function FileExplorer({
             targetSurfaceId: target.surfaceId,
             targetZoneId: target.zoneId,
             targetIndex: target.targetIndex,
+            targetOffsetPx: target.offsetPx,
           });
         },
         onComplete: () => {

@@ -268,6 +268,38 @@ describe("ExplorerChromeSurface", () => {
     expect(control?.style.maxWidth).toBe("240px");
   });
 
+  it("preserves authored free-space offsets on rendered chrome controls", () => {
+    const rendered = render(
+      <ExplorerChromeSurface
+        surface={{
+          ...toolbarSurface,
+          rows: [
+            {
+              ...toolbarSurface.rows[0]!,
+              zones: [
+                {
+                  ...toolbarSurface.rows[0]!.zones[0]!,
+                  controls: [
+                    {
+                      ...toolbarSurface.rows[0]!.zones[0]!.controls[0]!,
+                      offsetPx: 48,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+        renderControl={() => <button type="button">Refresh</button>}
+      />,
+    );
+
+    const control = rendered.container.querySelector(
+      "[data-overlay-explorer-control='refresh']",
+    ) as HTMLElement | null;
+    expect(control?.style.marginLeft).toBe("48px");
+  });
+
   it("shows a resize affordance for resizable controls and forwards pointer resize requests", () => {
     const resizeRequests: Array<{
       controlId: string;
@@ -378,6 +410,7 @@ describe("ExplorerChromeSurface", () => {
             surfaceId: "explorerToolbar",
             zoneId: "primaryStart",
             targetIndex: 1,
+            offsetPx: 0,
           },
           onDragStart: () => undefined,
           onDragEnd: () => undefined,

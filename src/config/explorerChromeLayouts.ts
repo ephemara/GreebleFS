@@ -146,6 +146,7 @@ export interface ExplorerChromeOverrideEntry {
   surfaceId: ExplorerChromeSurfaceId;
   zone: ExplorerChromeZoneId;
   order: number;
+  offsetPx?: number;
   hidden?: boolean;
   sizeVariant?: ExplorerChromeSizeVariant;
   widthPx?: number;
@@ -160,6 +161,7 @@ export interface ExplorerChromeOverrideSnapshot {
 export interface ExplorerChromeResolvedControlPlacement extends ExplorerChromeSlotDefinition {
   controlId: ExplorerChromeControlId;
   surfaceId: ExplorerChromeSurfaceId;
+  offsetPx?: number;
   hidden?: boolean;
   sizeVariant?: ExplorerChromeSizeVariant;
   widthPx?: number;
@@ -1063,6 +1065,13 @@ function normalizeExplorerChromeWidthPx(value: unknown): number | undefined {
   return Math.max(56, Math.min(1600, Math.round(value)));
 }
 
+function normalizeExplorerChromeOffsetPx(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.max(0, Math.min(4000, Math.round(value)));
+}
+
 const explorerChromeFlexibleSurfaceSupport: Partial<
   Record<BuiltInExplorerChromeControlId, ExplorerChromeSurfaceId[]>
 > = {
@@ -1212,6 +1221,7 @@ export function normalizeExplorerChromeOverrideSnapshot(
     const surfaceId = entry?.surfaceId;
     const zone = entry?.zone;
     const order = asFiniteInteger(entry?.order);
+    const offsetPx = normalizeExplorerChromeOffsetPx(entry?.offsetPx);
     const hidden = asBooleanOrUndefined(entry?.hidden) ?? false;
     const sizeVariant = normalizeExplorerChromeSizeVariant(entry?.sizeVariant);
     const widthPx = normalizeExplorerChromeWidthPx(entry?.widthPx);
@@ -1233,6 +1243,7 @@ export function normalizeExplorerChromeOverrideSnapshot(
       surfaceId,
       zone,
       order,
+      offsetPx,
       hidden,
       sizeVariant,
       widthPx,
@@ -1321,6 +1332,7 @@ function getBasePlacement(
     controlId,
     surfaceId,
     ...placement,
+    offsetPx: 0,
     hidden: false,
   };
 }
@@ -1352,6 +1364,7 @@ function getOverridePlacement(
     surfaceId,
     zone: overridePlacement.zone,
     order: overridePlacement.order,
+    offsetPx: overridePlacement.offsetPx ?? basePlacement?.offsetPx,
     grow: basePlacement?.grow,
     shrink: basePlacement?.shrink,
     collapsePriority: basePlacement?.collapsePriority,
@@ -1383,6 +1396,7 @@ export function createExplorerChromeOverrideSnapshotFromResolvedSurfaces(
         surfaceId: placement.surfaceId,
         zone: placement.zone,
         order: placement.order,
+        offsetPx: placement.offsetPx,
         hidden: placement.hidden,
         sizeVariant: placement.sizeVariant,
         widthPx: placement.widthPx,
@@ -1407,6 +1421,7 @@ export function getExplorerChromeResolvedSurfaceSignature(
           surfaceId: placement.surfaceId,
           zone: placement.zone,
           order: placement.order,
+          offsetPx: placement.offsetPx,
           grow: placement.grow,
           shrink: placement.shrink,
           collapsePriority: placement.collapsePriority,
@@ -1428,8 +1443,12 @@ export function moveExplorerChromeControlInResolvedSurfaces(input: {
   targetSurfaceId: ExplorerChromeSurfaceId;
   targetZoneId: ExplorerChromeZoneId;
   targetIndex: number;
+  targetOffsetPx?: number;
 }): ExplorerChromeOverrideSnapshot {
   const normalizedTargetIndex = Math.max(0, Math.trunc(input.targetIndex));
+  const normalizedTargetOffsetPx = normalizeExplorerChromeOffsetPx(
+    input.targetOffsetPx,
+  );
   const placementsBySurfaceAndZone = new Map<
     string,
     ExplorerChromeResolvedControlPlacement[]
@@ -1472,12 +1491,14 @@ export function moveExplorerChromeControlInResolvedSurfaces(input: {
     surfaceId: input.targetSurfaceId,
     zone: input.targetZoneId,
     order: 10,
+    offsetPx: 0,
     hidden: false,
   };
   const nextPlacement: ExplorerChromeResolvedControlPlacement = {
     ...fallbackPlacement,
     surfaceId: input.targetSurfaceId,
     zone: input.targetZoneId,
+    offsetPx: normalizedTargetOffsetPx ?? fallbackPlacement.offsetPx ?? 0,
   };
   const insertionIndex = Math.min(normalizedTargetIndex, targetControls.length);
   targetControls.splice(insertionIndex, 0, nextPlacement);
@@ -1495,6 +1516,7 @@ export function moveExplorerChromeControlInResolvedSurfaces(input: {
             surfaceId: surface.surfaceId,
             zone: zone.id,
             order: (index + 1) * 10,
+            offsetPx: placement.offsetPx,
             hidden: placement.hidden,
             sizeVariant: placement.sizeVariant,
             widthPx: placement.widthPx,
@@ -1554,6 +1576,9 @@ export function resolveExplorerChromeSurfaceLayout(input: {
   resolvedPlacements.sort((left, right) => {
     if (left.order !== right.order) {
       return left.order - right.order;
+    }
+    if ((left.offsetPx ?? 0) !== (right.offsetPx ?? 0)) {
+      return (left.offsetPx ?? 0) - (right.offsetPx ?? 0);
     }
     return left.controlId.localeCompare(right.controlId);
   });

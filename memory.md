@@ -1,3 +1,17 @@
+# 2026-04-25 - Explorer Chrome Free-Space Placement Now Persists And Workspace Header Accepts Authored Actions
+
+- Explorer chrome placement is no longer just zone reorder with a pretty ghost. The durable model now also persists authored empty-space offsets:
+  - `src/config/explorerChromeLayouts.ts` carries `offsetPx` on both override entries and resolved placements. `moveExplorerChromeControlInResolvedSurfaces(...)` now preserves that offset when controls move between surfaces, so customize mode can leave intentional dead space instead of collapsing everything back into the next flex slot.
+  - `src/components/explorer/explorerCustomizePointerRuntime.ts` now resolves an insertion `offsetPx` from ambient chrome territory, not just `surfaceId + zoneId + targetIndex`. `src/components/explorer/ExplorerChromeSurface.tsx` renders that back out as `marginLeft`, so the authored look during customize mode matches the saved look after customize mode exits.
+  - Durable product rule: if a placed control is intentionally offset inside a chrome band, leaving customize mode must not snap it back into a packed slot layout. `offsetPx` is now part of layout truth for explorer chrome.
+- Authored actions can now live in the workspace top strip, not just the toolbar/topbar/preview/status surfaces:
+  - `src/config/explorerCustomizeCatalog.ts` now includes `workspaceHeader` in the default authored-action chrome surfaces.
+  - `src/components/explorer/ExplorerWorkspace.tsx` now builds a workspace-local action registry from the shared customize catalog, renders action-backed controls on `workspaceHeader`, and routes keyboard-triggered command ids for those controls through the same action execution path as mouse clicks.
+  - Durable product rule: the workspace header is a first-class explorer chrome band. If action-backed controls cannot be placed beside the tab strip / layout strip there, treat it as a regression.
+- Durable validation:
+  - passed: `bun x vitest run src/test/explorerCustomizePointerRuntime.test.tsx src/test/ExplorerChromeSurface.test.tsx src/test/explorerChromeLayouts.test.ts src/test/explorerCustomizeCatalog.test.ts src/test/ExplorerWorkspace.test.tsx src/test/explorerStore.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts`
+  - note: full `bun x tsc --noEmit --pretty false -p tsconfig.json` still fails in pre-existing unrelated icon-theme / VS Code theme compatibility paths plus vendored `src/vendor/tiptap/**`; the explorer chrome files from this pass no longer appear in that output.
+
 # 2026-04-25 - Explorer Chrome Now Treats Workspace Tabs, Status Controls, And Width Editing As First-Class
 
 - Explorer chrome no longer stops at the top toolbar. The durable v2 shape is now:

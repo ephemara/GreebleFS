@@ -24,6 +24,7 @@ interface ExplorerChromeSurfaceProps {
       surfaceId: ExplorerChromeSurfaceId;
       zoneId: ExplorerChromeZoneId;
       targetIndex: number;
+      offsetPx: number;
     } | null;
     resizingControlId?: ExplorerChromeControlId | null;
     selectedControlId?: ExplorerChromeControlId | null;
@@ -49,6 +50,7 @@ interface ExplorerChromeSurfaceProps {
         surfaceId: ExplorerChromeSurfaceId;
         zoneId: ExplorerChromeZoneId;
         targetIndex: number;
+        offsetPx: number;
       } | null,
     ) => void;
     onSetSelectedControl?: (controlId: ExplorerChromeControlId | null) => void;
@@ -61,6 +63,7 @@ interface ExplorerChromeSurfaceProps {
       targetSurfaceId: ExplorerChromeSurfaceId;
       targetZoneId: ExplorerChromeZoneId;
       targetIndex: number;
+      targetOffsetPx?: number;
     }) => void;
     isControlResizable?: (
       placement: ExplorerChromeResolvedControlPlacement,
@@ -129,6 +132,7 @@ export function ExplorerChromeSurface({
   const renderInsertionGhost = (
     zoneId: ExplorerChromeZoneId,
     targetIndex: number,
+    offsetPx: number,
   ) => {
     if (!editModeActive || !editMode) {
       return null;
@@ -151,6 +155,7 @@ export function ExplorerChromeSurface({
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
+          marginLeft: offsetPx > 0 ? `${offsetPx}px` : undefined,
           pointerEvents: "none",
         }}
       >
@@ -218,6 +223,9 @@ export function ExplorerChromeSurface({
               const zoneInsertionIndex = zoneIsActiveDropTarget
                 ? highlightedDropTarget?.targetIndex ?? null
                 : null;
+              const zoneInsertionOffsetPx = zoneIsActiveDropTarget
+                ? highlightedDropTarget?.offsetPx ?? 0
+                : 0;
 
               return (
                 <div
@@ -265,7 +273,11 @@ export function ExplorerChromeSurface({
                         key={`${placement.surfaceId}:${placement.controlId}`}
                       >
                         {editModeActive && zoneInsertionIndex === index
-                          ? renderInsertionGhost(zone.id, index)
+                          ? renderInsertionGhost(
+                              zone.id,
+                              index,
+                              zoneInsertionOffsetPx,
+                            )
                           : null}
                         <div
                           data-overlay-explorer-control={placement.controlId}
@@ -371,6 +383,10 @@ export function ExplorerChromeSurface({
                             flexBasis: hasExplicitWidth ? placement.widthPx : undefined,
                             width: hasExplicitWidth ? placement.widthPx : undefined,
                             maxWidth: hasExplicitWidth ? placement.widthPx : undefined,
+                            marginLeft:
+                              (placement.offsetPx ?? 0) > 0
+                                ? `${placement.offsetPx}px`
+                                : undefined,
                             overflow: placement.overflowEligible
                               ? "hidden"
                               : "visible",
@@ -550,7 +566,11 @@ export function ExplorerChromeSurface({
                   })}
                   {editModeActive &&
                   zoneInsertionIndex === zone.controls.length
-                    ? renderInsertionGhost(zone.id, zone.controls.length)
+                    ? renderInsertionGhost(
+                        zone.id,
+                        zone.controls.length,
+                        zoneInsertionOffsetPx,
+                      )
                     : null}
                 </div>
               );

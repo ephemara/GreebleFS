@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { LoadedExplorerAction } from '../config/actionPacks';
 import { resolveOverlayAppearance } from '../config/appearance';
 import { defaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
 import {
@@ -9,6 +10,7 @@ import {
   defaultExplorerWorkspace,
   useExplorerStore,
 } from '../store/explorerStore';
+import { useSettingsStore } from '../store/settingsStore';
 import type {
   ExplorerWorkspaceRuntimeSnapshot,
   ExplorerWorkspaceSelectionTransferResult,
@@ -94,7 +96,44 @@ function getActiveWorkspaceTab() {
   return workspace.tabs.find((tab) => tab.id === workspace.activeWorkspaceTabId) ?? workspace.tabs[0] ?? null;
 }
 
-function renderWorkspace(appearance?: ReturnType<typeof resolveOverlayAppearance>) {
+const workspaceHeaderAction: LoadedExplorerAction = {
+  id: 'workspace.sample-action',
+  actionId: 'sample-action',
+  packId: 'workspace-pack',
+  packName: 'Workspace Pack',
+  version: 1,
+  title: 'Sample Workspace Action',
+  description: 'Used by workspace header action rendering tests.',
+  tags: [],
+  directoryPath: '/actions/workspace-pack/sample-action',
+  manifestPath: '/actions/workspace-pack/sample-action/action.json',
+  sourceKind: 'action-pack-directory',
+  sourceLabel: 'Actions',
+  sourceBadgeLabel: 'ACTION',
+  contexts: ['background', 'entry', 'multi-select'],
+  appliesTo: 'any',
+  selection: {
+    minCount: 0,
+    allowFiles: true,
+    allowDirectories: true,
+    extensions: [],
+  },
+  execution: {
+    runner: 'shell',
+    entry: 'echo',
+    args: ['workspace'],
+    env: {},
+  },
+  presentation: {
+    outputTarget: 'silent',
+  },
+  warnings: [],
+};
+
+function renderWorkspace(
+  appearance?: ReturnType<typeof resolveOverlayAppearance>,
+  props?: Partial<Parameters<typeof ExplorerWorkspace>[0]>,
+) {
   return render(
     <ExplorerWorkspace
       appearance={appearance}
@@ -109,6 +148,7 @@ function renderWorkspace(appearance?: ReturnType<typeof resolveOverlayAppearance
       onOpenInFilesystemAquarium={() => undefined}
       onOpenInTerminal={() => undefined}
       onAddBookmark={() => undefined}
+      {...props}
     />,
   );
 }
@@ -133,6 +173,20 @@ describe('ExplorerWorkspace', () => {
       chromeEditSession: null,
       pendingOpenRequest: null,
     });
+    useSettingsStore.setState((state) => ({
+      ...state,
+      settings: {
+        ...state.settings,
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'operator',
+        },
+        explorer: {
+          ...state.settings.explorer,
+          chromeLayoutOverridesByThemeId: {},
+        },
+      },
+    }));
   });
 
   afterEach(() => {
@@ -154,6 +208,20 @@ describe('ExplorerWorkspace', () => {
       chromeEditSession: null,
       pendingOpenRequest: null,
     });
+    useSettingsStore.setState((state) => ({
+      ...state,
+      settings: {
+        ...state.settings,
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'operator',
+        },
+        explorer: {
+          ...state.settings.explorer,
+          chromeLayoutOverridesByThemeId: {},
+        },
+      },
+    }));
   });
 
   it('renders the primary workspace pane', async () => {
@@ -379,5 +447,51 @@ describe('ExplorerWorkspace', () => {
     await waitFor(() => {
       expect(useExplorerStore.getState().workspace.tabs).toHaveLength(2);
     });
+  });
+
+  it('renders action-backed workspace header controls from persisted chrome overrides', async () => {
+    useSettingsStore.setState((state) => ({
+      ...state,
+      settings: {
+        ...state.settings,
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'operator',
+        },
+        explorer: {
+          ...state.settings.explorer,
+          chromeLayoutOverridesByThemeId: {
+            ...state.settings.explorer.chromeLayoutOverridesByThemeId,
+            operator: {
+              ...(state.settings.explorer.chromeLayoutOverridesByThemeId.operator ?? {}),
+              default: {
+                entries: [
+                  {
+                    controlId: 'action:workspace.sample-action',
+                    surfaceId: 'workspaceHeader',
+                    zone: 'end',
+                    order: 10,
+                    offsetPx: 64,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    }));
+
+    renderWorkspace(undefined, {
+      actions: [workspaceHeaderAction],
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /sample workspace action/i }),
+      ).toBeInTheDocument();
+    });
+
+    const placedControl = getWorkspaceControl('action:workspace.sample-action');
+    expect(placedControl?.style.marginLeft).toBe('64px');
   });
 });

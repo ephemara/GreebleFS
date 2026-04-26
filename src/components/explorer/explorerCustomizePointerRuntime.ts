@@ -17,6 +17,7 @@ export interface ExplorerCustomizePointerDropTarget {
   surfaceId: ExplorerChromeSurfaceId;
   zoneId: ExplorerChromeZoneId;
   targetIndex: number;
+  offsetPx: number;
 }
 
 export interface ExplorerCustomizePointerSnapshot {
@@ -110,7 +111,8 @@ function areExplorerCustomizePointerDropTargetsEqual(
   return (
     left?.surfaceId === right?.surfaceId &&
     left?.zoneId === right?.zoneId &&
-    left?.targetIndex === right?.targetIndex
+    left?.targetIndex === right?.targetIndex &&
+    left?.offsetPx === right?.offsetPx
   );
 }
 
@@ -275,6 +277,12 @@ function getImmediateCustomizeControlElements(
   );
 }
 
+interface ExplorerCustomizeAmbientZoneTarget {
+  zoneElement: HTMLElement;
+  territoryLeft: number;
+  territoryRight: number;
+}
+
 function resolveAmbientRowElementInSurface(
   surfaceElement: HTMLElement,
   point: ExplorerCustomizePointerPoint,
@@ -308,10 +316,10 @@ function resolveAmbientRowElementInSurface(
   }, null);
 }
 
-function resolveAmbientZoneElementInRow(
+function resolveAmbientZoneTargetInRow(
   rowElement: HTMLElement,
   point: ExplorerCustomizePointerPoint,
-): HTMLElement | null {
+): ExplorerCustomizeAmbientZoneTarget | null {
   const zoneElements = getImmediateCustomizeZoneElements(rowElement);
   if (zoneElements.length === 0) {
     return null;
@@ -319,7 +327,12 @@ function resolveAmbientZoneElementInRow(
 
   for (const zoneElement of zoneElements) {
     if (pointIntersectsRect(point, zoneElement.getBoundingClientRect())) {
-      return zoneElement;
+      const zoneRect = zoneElement.getBoundingClientRect();
+      return {
+        zoneElement,
+        territoryLeft: zoneRect.left,
+        territoryRight: zoneRect.right,
+      };
     }
   }
 
@@ -338,49 +351,96 @@ function resolveAmbientZoneElementInRow(
     const territoryRight =
       nextRect == null ? rowRect.right : (zoneRect.right + nextRect.left) / 2;
     if (point.x >= territoryLeft && point.x <= territoryRight) {
-      return zoneElement;
+      return {
+        zoneElement,
+        territoryLeft,
+        territoryRight,
+      };
     }
   }
 
-  return zoneElements.reduce<HTMLElement | null>((closestZone, zoneElement) => {
-    if (!closestZone) {
-      return zoneElement;
-    }
-    return distanceFromPointToRect(
-      point,
-      zoneElement.getBoundingClientRect(),
-    ) <
-      distanceFromPointToRect(point, closestZone.getBoundingClientRect())
-      ? zoneElement
-      : closestZone;
-  }, null);
+  return zoneElements.reduce<ExplorerCustomizeAmbientZoneTarget | null>(
+    (closestZone, zoneElement) => {
+      if (!closestZone) {
+        const zoneRect = zoneElement.getBoundingClientRect();
+        return {
+          zoneElement,
+          territoryLeft: zoneRect.left,
+          territoryRight: zoneRect.right,
+        };
+      }
+      const currentRect = zoneElement.getBoundingClientRect();
+      const closestRect = closestZone.zoneElement.getBoundingClientRect();
+      return distanceFromPointToRect(point, currentRect) <
+        distanceFromPointToRect(point, closestRect)
+        ? {
+            zoneElement,
+            territoryLeft: currentRect.left,
+            territoryRight: currentRect.right,
+          }
+        : closestZone;
+    },
+    null,
+  );
 }
 
-function resolveInsertionIndexForZone(
-  zoneElement: HTMLElement,
+function resolveInsertionPositionForZone(input: {
+  zoneElement: HTMLElement;
+  territoryLeft: number;
+  territoryRight: number;
   point: ExplorerCustomizePointerPoint,
-  ignoredControlId?: ExplorerChromeControlId | null,
-): number {
+  ignoredControlId?: ExplorerChromeControlId | null;
+}): {
+  targetIndex: number;
+  offsetPx: number;
+} {
   const controlElements = getImmediateCustomizeControlElements(
-    zoneElement,
-    ignoredControlId,
+    input.zoneElement,
+    input.ignoredControlId,
+  );
+  const clampedPointX = Math.max(
+    input.territoryLeft,
+    Math.min(input.territoryRight, input.point.x),
   );
   if (controlElements.length === 0) {
-    return 0;
+    return {
+      targetIndex: 0,
+      offsetPx: Math.max(0, Math.round(clampedPointX - input.territoryLeft)),
+    };
   }
 
+  let targetIndex = controlElements.length;
   for (let index = 0; index < controlElements.length; index += 1) {
     const controlRect = controlElements[index].getBoundingClientRect();
     const controlMidpointX = controlRect.left + controlRect.width / 2;
     if (
-      point.y < controlRect.top ||
-      (point.y <= controlRect.bottom && point.x < controlMidpointX)
+      input.point.y < controlRect.top ||
+      (input.point.y <= controlRect.bottom && clampedPointX < controlMidpointX)
     ) {
-      return index;
+      targetIndex = index;
+      break;
     }
   }
 
-  return controlElements.length;
+  const previousControlRect =
+    targetIndex > 0
+      ? controlElements[targetIndex - 1]?.getBoundingClientRect()
+      : null;
+  const nextControlRect =
+    targetIndex < controlElements.length
+      ? controlElements[targetIndex]?.getBoundingClientRect()
+      : null;
+  const slotStart = previousControlRect?.right ?? input.territoryLeft;
+  const slotEnd = nextControlRect?.left ?? input.territoryRight;
+  const clampedSlotPointX = Math.max(
+    slotStart,
+    Math.min(slotEnd, clampedPointX),
+  );
+
+  return {
+    targetIndex,
+    offsetPx: Math.max(0, Math.round(clampedSlotPointX - slotStart)),
+  };
 }
 
 function resolveAmbientSurfaceElementFromPoint(
@@ -430,36 +490,40 @@ export function resolveExplorerCustomizeDropTargetFromPoint(
       ambientSurfaceElement,
       point,
     );
-    const ambientZoneElement =
+    const ambientZoneTarget =
       ambientRowElement == null
         ? null
-        : resolveAmbientZoneElementInRow(ambientRowElement, point);
-    const zoneId = ambientZoneElement?.dataset.explorerCustomizeZoneId as
+        : resolveAmbientZoneTargetInRow(ambientRowElement, point);
+    const zoneId = ambientZoneTarget?.zoneElement.dataset.explorerCustomizeZoneId as
       | ExplorerChromeZoneId
       | undefined;
     const ignoredControlId =
       activeExplorerCustomizePointerSession?.sourceKind === "placed"
         ? activeExplorerCustomizePointerSession.controlId
         : null;
-    const targetIndex =
-      ambientZoneElement == null
-        ? Number.NaN
-        : resolveInsertionIndexForZone(
-            ambientZoneElement,
+    const insertionPosition =
+      ambientZoneTarget == null
+        ? null
+        : resolveInsertionPositionForZone({
+            zoneElement: ambientZoneTarget.zoneElement,
+            territoryLeft: ambientZoneTarget.territoryLeft,
+            territoryRight: ambientZoneTarget.territoryRight,
             point,
             ignoredControlId,
-          );
+          });
     if (
       surfaceId &&
       zoneId &&
-      Number.isFinite(targetIndex) &&
-      Number.isInteger(targetIndex)
+      insertionPosition &&
+      Number.isFinite(insertionPosition.targetIndex) &&
+      Number.isInteger(insertionPosition.targetIndex)
     ) {
       return {
         dropTarget: {
           surfaceId,
           zoneId,
-          targetIndex,
+          targetIndex: insertionPosition.targetIndex,
+          offsetPx: insertionPosition.offsetPx,
         },
         removeTargetActive: false,
       };
@@ -490,9 +554,10 @@ function updateHighlightedDropTarget(
 
   const currentDropTarget = currentSession.dropTarget;
   if (
-    currentDropTarget?.surfaceId === nextDropTarget?.surfaceId &&
-    currentDropTarget?.zoneId === nextDropTarget?.zoneId &&
-    currentDropTarget?.targetIndex === nextDropTarget?.targetIndex
+    areExplorerCustomizePointerDropTargetsEqual(
+      currentDropTarget,
+      nextDropTarget,
+    )
   ) {
     return;
   }
