@@ -1,3 +1,19 @@
+# 2026-04-25 - Context Menu Composer Now Edits The Actual Menu Stack
+
+- The context-menu editor should no longer read like a toy inspector around a fake list. The durable authoring model is now “edit the menu itself”:
+  - `src/components/settings/sections/ContextMenusSettingsSection.tsx` uses the center lane as the real menu stack. Submenu/folder rows open sidecar panels, selected rows expand inline controls, and a breadcrumb strip shows the current open branch so nested editing stays readable.
+  - The right lane is now a `Menu Library` sourced from structure nodes plus the shared actions/command catalog. Library items support direct pointer drag into exact menu branches, with quick-add as a fallback instead of the main ritual.
+  - The left lane was intentionally slimmed to setup plus fallback quick-insert controls. Treat it as backup for keyboard-friendly inserts, not the primary editing experience.
+- Durable implementation shape behind that UX:
+  - `src/components/SettingsPage.tsx` now exposes explicit `insertContextMenuCommandEntryAt(...)`, `insertContextMenuSubmenuAt(...)`, `insertContextMenuSeparatorAt(...)`, and `insertContextMenuGroupSlotAt(...)` callbacks so external drags can target an exact `parentEntryId + insertionIndex` instead of piggybacking on selection-only add flows.
+  - `src/components/DraggablePanelList.tsx` now supports external drag highlighting through `externalDragActive` and `externalHoveredDropIndex`, which lets Settings-hosted libraries reuse the same insertion affordance as in-list reorder without falling back to browser HTML drag/drop.
+- Durable product rule:
+  - Future context-menu work should preserve the illusion that the user is shaping the live explorer menu. Prefer inline row editing, sidecar submenu panels, breadcrumbs, and direct drag/drop over rebuilding a detached inspector-heavy CRUD layout.
+- Durable validation:
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "lets the dedicated context menu composer|adds new command nodes into the selected folder|opens the dedicated context menu section" --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx --reporter=dot`
+  - note: repo-wide `bunx tsc --noEmit` still fails in pre-existing unrelated icon-theme / VS Code compatibility paths plus vendored `src/vendor/tiptap/**`; the context-menu pass was validated through the settings behavior suite instead.
+
 # 2026-04-25 - Explorer Customize Exit Now Commits Draft Layouts By Default
 
 - The explorer chrome customize ritual now treats the obvious user exit paths as save/commit, not discard:

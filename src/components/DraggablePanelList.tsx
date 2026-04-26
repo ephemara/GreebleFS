@@ -70,6 +70,8 @@ export interface DraggablePanelListProps<TItem> {
   listLabel?: string;
   accentColor?: string;
   borderColor?: string;
+  externalDragActive?: boolean;
+  externalHoveredDropIndex?: number | null;
 }
 
 const DEFAULT_ACCENT_COLOR = 'var(--overlay-accent)';
@@ -468,6 +470,8 @@ export function DraggablePanelList<TItem>({
   listLabel = 'panel-list',
   accentColor = DEFAULT_ACCENT_COLOR,
   borderColor = DEFAULT_BORDER_COLOR,
+  externalDragActive = false,
+  externalHoveredDropIndex = null,
 }: DraggablePanelListProps<TItem>) {
   const listRuntimeIdRef = useRef<string>(
     `draggable-panel-list-${nextPanelListRuntimeId++}`,
@@ -478,7 +482,11 @@ export function DraggablePanelList<TItem>({
   const [hoveredDropIndex, setHoveredDropIndex] = useState<number | null>(null);
   const dragSnapshot = usePanelListDragSnapshot();
   const effectiveDraggedItemId = draggedItemId ?? dragSnapshot.draggedItemId;
-  const dragActive = effectiveDraggedItemId != null;
+  const dragActive = effectiveDraggedItemId != null || externalDragActive;
+  const effectiveHoveredDropIndex =
+    externalDragActive && externalHoveredDropIndex != null
+      ? externalHoveredDropIndex
+      : hoveredDropIndex;
 
   useEffect(() => {
     panelListRegistry.set(listRuntimeId, {
@@ -553,7 +561,8 @@ export function DraggablePanelList<TItem>({
   );
 
   const renderDropZone = (dropIndex: number) => {
-    const indicatorActive = dragActive && hoveredDropIndex === dropIndex;
+    const indicatorActive =
+      dragActive && effectiveHoveredDropIndex === dropIndex;
 
     return (
       <div

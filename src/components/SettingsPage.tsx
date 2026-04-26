@@ -5990,6 +5990,60 @@ export function SettingsPage({
       updateActiveContextMenuEntries,
     ],
   );
+  const insertContextMenuCommandEntryAt = useCallback(
+    (
+      commandId: string,
+      target: { parentEntryId: string | null; insertionIndex: number },
+    ) => {
+      if (!commandId) {
+        return;
+      }
+
+      let createdEntryId: string | null = null;
+      updateActiveContextMenuEntries((entries) => {
+        const existingEntry = entries.find(
+          (entry) => entry.kind === "command" && entry.commandId === commandId,
+        );
+        if (existingEntry) {
+          createdEntryId = existingEntry.id;
+          return placeExplorerMenuLayoutEntry(
+            entries,
+            existingEntry.id,
+            target.parentEntryId,
+            target.insertionIndex,
+          );
+        }
+
+        const nextOrder =
+          Math.max(0, ...entries.map((entry) => entry.order)) + 10;
+        const nextEntryId = `${activeContextMenuContext}.command.${commandId.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${Date.now()}`;
+        createdEntryId = nextEntryId;
+        return placeExplorerMenuLayoutEntry(
+          [
+            ...entries,
+            {
+              id: nextEntryId,
+              kind: "command",
+              commandId,
+              parentEntryId: target.parentEntryId,
+              order: nextOrder,
+              enabled: true,
+              quickSlot: "none",
+              fallbackBucket: "default",
+            },
+          ],
+          nextEntryId,
+          target.parentEntryId,
+          target.insertionIndex,
+        );
+      });
+
+      if (createdEntryId) {
+        setSelectedContextMenuEntryId(createdEntryId);
+      }
+    },
+    [activeContextMenuContext, updateActiveContextMenuEntries],
+  );
   const addContextMenuSubmenu = useCallback(() => {
     let createdEntryId: string | null = null;
     updateActiveContextMenuEntries((entries) => {
@@ -6021,6 +6075,35 @@ export function SettingsPage({
     resolveActiveContextMenuInsertionTarget,
     updateActiveContextMenuEntries,
   ]);
+  const insertContextMenuSubmenuAt = useCallback(
+    (target: { parentEntryId: string | null; insertionIndex: number }) => {
+      let createdEntryId: string | null = null;
+      updateActiveContextMenuEntries((entries) => {
+        const nextOrder =
+          Math.max(0, ...entries.map((entry) => entry.order)) + 10;
+        const submenuEntry = createExplorerMenuSubmenuEntry({
+          contextKind: activeContextMenuContext,
+          title: "New Folder",
+          order: nextOrder,
+        });
+        createdEntryId = submenuEntry.id;
+        return placeExplorerMenuLayoutEntry(
+          upsertExplorerMenuSubmenuEntry(entries, {
+            ...submenuEntry,
+            parentEntryId: target.parentEntryId,
+          }),
+          submenuEntry.id,
+          target.parentEntryId,
+          target.insertionIndex,
+        );
+      });
+
+      if (createdEntryId) {
+        setSelectedContextMenuEntryId(createdEntryId);
+      }
+    },
+    [activeContextMenuContext, updateActiveContextMenuEntries],
+  );
   const addContextMenuSeparator = useCallback(() => {
     let createdEntryId: string | null = null;
     updateActiveContextMenuEntries((entries) => {
@@ -6056,6 +6139,39 @@ export function SettingsPage({
     resolveActiveContextMenuInsertionTarget,
     updateActiveContextMenuEntries,
   ]);
+  const insertContextMenuSeparatorAt = useCallback(
+    (target: { parentEntryId: string | null; insertionIndex: number }) => {
+      let createdEntryId: string | null = null;
+      updateActiveContextMenuEntries((entries) => {
+        const nextOrder =
+          Math.max(0, ...entries.map((entry) => entry.order)) + 10;
+        const nextEntryId = `${activeContextMenuContext}.separator-${Date.now()}`;
+        createdEntryId = nextEntryId;
+        return placeExplorerMenuLayoutEntry(
+          [
+            ...entries,
+            {
+              id: nextEntryId,
+              kind: "separator",
+              parentEntryId: target.parentEntryId,
+              order: nextOrder,
+              enabled: true,
+              quickSlot: "none",
+              fallbackBucket: "default",
+            },
+          ],
+          nextEntryId,
+          target.parentEntryId,
+          target.insertionIndex,
+        );
+      });
+
+      if (createdEntryId) {
+        setSelectedContextMenuEntryId(createdEntryId);
+      }
+    },
+    [activeContextMenuContext, updateActiveContextMenuEntries],
+  );
   const addContextMenuGroupSlot = useCallback(() => {
     const group =
       contextMenuGroupDraftByContext[activeContextMenuContext] ?? "plugin";
@@ -6096,6 +6212,55 @@ export function SettingsPage({
     resolveActiveContextMenuInsertionTarget,
     updateActiveContextMenuEntries,
   ]);
+  const insertContextMenuGroupSlotAt = useCallback(
+    (
+      target: { parentEntryId: string | null; insertionIndex: number },
+      requestedGroup?: Extract<
+        ExplorerMenuLayoutEntry,
+        { kind: "group-slot" }
+      >["group"],
+    ) => {
+      const group =
+        requestedGroup ??
+        contextMenuGroupDraftByContext[activeContextMenuContext] ??
+        "plugin";
+      let createdEntryId: string | null = null;
+      updateActiveContextMenuEntries((entries) => {
+        const nextOrder =
+          Math.max(0, ...entries.map((entry) => entry.order)) + 10;
+        const nextEntryId = `${activeContextMenuContext}.group.${group}-${Date.now()}`;
+        createdEntryId = nextEntryId;
+        return placeExplorerMenuLayoutEntry(
+          [
+            ...entries,
+            {
+              id: nextEntryId,
+              kind: "group-slot",
+              group,
+              sourceFilter: "any",
+              parentEntryId: target.parentEntryId,
+              order: nextOrder,
+              enabled: true,
+              quickSlot: "none",
+              fallbackBucket: "default",
+            },
+          ],
+          nextEntryId,
+          target.parentEntryId,
+          target.insertionIndex,
+        );
+      });
+
+      if (createdEntryId) {
+        setSelectedContextMenuEntryId(createdEntryId);
+      }
+    },
+    [
+      activeContextMenuContext,
+      contextMenuGroupDraftByContext,
+      updateActiveContextMenuEntries,
+    ],
+  );
   const selectContextMenuEntryFromRuntimeNode = useCallback(
     (node: ExplorerRuntimeMenuNode) => {
       if (activeContextMenuEntries.some((entry) => entry.id === node.id)) {
@@ -14855,13 +15020,17 @@ export function SettingsPage({
               availableContextMenuCommandsForActiveContext
             }
             addContextMenuCommandEntry={addContextMenuCommandEntry}
+            insertContextMenuCommandEntryAt={insertContextMenuCommandEntryAt}
             contextMenuGroupDraftByContext={contextMenuGroupDraftByContext}
             setContextMenuGroupDraftByContext={
               setContextMenuGroupDraftByContext
             }
             addContextMenuGroupSlot={addContextMenuGroupSlot}
+            insertContextMenuGroupSlotAt={insertContextMenuGroupSlotAt}
             addContextMenuSubmenu={addContextMenuSubmenu}
+            insertContextMenuSubmenuAt={insertContextMenuSubmenuAt}
             addContextMenuSeparator={addContextMenuSeparator}
+            insertContextMenuSeparatorAt={insertContextMenuSeparatorAt}
             filteredContextMenuBrowserCommands={
               filteredContextMenuBrowserCommands
             }

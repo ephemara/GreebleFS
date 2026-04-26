@@ -1023,7 +1023,7 @@ describe('SettingsPage behavior', () => {
     expect(telemetryCaptureSelect.style.backgroundImage).not.toBe('');
   });
 
-  it('lets the dedicated context menu composer add plugin menu items and edit them through the inspector', async () => {
+  it('lets the dedicated context menu composer add plugin menu items and edit them inline on the menu row', async () => {
     const user = userEvent.setup();
     renderSettingsPage({
       pluginContextMenuItems: [
@@ -1048,13 +1048,13 @@ describe('SettingsPage behavior', () => {
     await user.click(findSectionButton('Context Menus'));
     expect(screen.getByText('Context Menu Composer')).toBeInTheDocument();
     expect(screen.getByText('Menu Canvas')).toBeInTheDocument();
-    expect(screen.getByText('Action Browser')).toBeInTheDocument();
+    expect(screen.getByText('Menu Library')).toBeInTheDocument();
     const activePackSelect = screen.getByRole('combobox', { name: 'Active Menu Pack' });
     expect(activePackSelect).toHaveValue(BUILT_IN_MENU_PACK_FIXTURES[0]?.id ?? '');
 
     const addCommandSelect = screen.getByRole('combobox', { name: 'Add Command' });
     await user.selectOptions(addCommandSelect, 'sample-plugin.context-menu.capture');
-    await user.click(screen.getByRole('button', { name: 'Add Command Node' }));
+    await user.click(screen.getByRole('button', { name: 'Insert Command' }));
 
     expect(screen.getAllByText('Capture Memory Snapshot').length).toBeGreaterThan(0);
 
@@ -1126,7 +1126,7 @@ describe('SettingsPage behavior', () => {
 
     const addCommandSelect = screen.getByRole('combobox', { name: 'Add Command' });
     await user.selectOptions(addCommandSelect, 'sample-plugin.context-menu.capture');
-    await user.click(screen.getByRole('button', { name: 'Add Command Node' }));
+    await user.click(screen.getByRole('button', { name: 'Insert Command' }));
 
     const nestedCommandEntry = useSettingsStore
       .getState()
@@ -1150,7 +1150,11 @@ describe('SettingsPage behavior', () => {
 
     expect(screen.getByText('Context Menu Composer')).toBeInTheDocument();
     expect(screen.getByText('Menu Canvas')).toBeInTheDocument();
-    expect(screen.getByText('Shape the live explorer menu directly. Select a folder to author into it, reorder with the canvas itself, and only flip to runtime preview when you want the final render pass.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Author the explorer menu by editing the menu itself/i,
+      ),
+    ).toBeInTheDocument();
   });
 
   it('saves cloud provider credentials from settings and enables the provider login action', async () => {
