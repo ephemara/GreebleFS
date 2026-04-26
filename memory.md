@@ -1,3 +1,15 @@
+# 2026-04-25 - Explorer Customize Exit Now Commits Draft Layouts By Default
+
+- The explorer chrome customize ritual now treats the obvious user exit paths as save/commit, not discard:
+  - `src/components/FileExplorer.tsx` now persists the active `ExplorerChromeEditSession.draftOverride` through one shared helper before closing the customize session. The commit uses the session’s own `themeId` and `layoutId`, so a draft still lands in the right theme/layout bucket even if the active explorer mode/layout changes while customize mode is open.
+  - The live `customizeModeToggle` control, the command-path `customizeModeToggle` handler, and the docked Actions-pane `Done` / close flow now all exit through that save path. This fixes the user-facing bug where the authored layout looked correct during customize mode but snapped back as soon as customize was turned off.
+  - The explicit discard path still exists, but it is now intentionally separate in the mode menu as `Discard Draft`. Durable product rule: the normal “turn customize off” ritual must keep the authored layout. If we want to throw the draft away, that has to be an explicit discard action.
+- Durable validation:
+  - passed: `bun x vitest run src/test/fileExplorer.viewModes.test.tsx -t 'commits the active chrome customize draft' --reporter=verbose`
+  - passed: `bun x vitest run src/test/ExplorerChromeSurface.test.tsx src/test/explorerChromeLayouts.test.ts src/test/explorerCustomizePointerRuntime.test.tsx src/test/settingsStore.test.ts src/test/explorerStore.test.ts src/test/hotkeys.test.ts --reporter=dot`
+  - passed: grep-filtered `bun x tsc --noEmit --pretty false -p tsconfig.json` produced no matches for `FileExplorer.tsx`, `fileExplorer.viewModes.test.tsx`, `ExplorerChromeSurface`, `explorerChromeLayouts`, `explorerCustomizePointerRuntime`, `settingsStore`, `explorerStore`, or `hotkeys`
+  - note: a wider `fileExplorer.viewModes.test.tsx` batch still surfaces pre-existing unrelated heavy-suite failures / worker OOM outside this customize-exit seam, so keep validation focused when touching chrome customization.
+
 # 2026-04-25 - Explorer Chrome Free-Space Placement Now Persists And Workspace Header Accepts Authored Actions
 
 - Explorer chrome placement is no longer just zone reorder with a pretty ghost. The durable model now also persists authored empty-space offsets:

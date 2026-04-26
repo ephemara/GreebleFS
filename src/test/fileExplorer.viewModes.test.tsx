@@ -807,6 +807,20 @@ function expectChromeControlButtonOrder(
   }
 }
 
+function getChromeControlLiveButton(controlId: string) {
+  const control = getChromeControl(controlId);
+  if (!control) {
+    throw new Error(`${controlId} control not found`);
+  }
+  const button = control.querySelector(
+    '[data-explorer-customize-live-control="true"], button[title]',
+  ) as HTMLButtonElement | null;
+  if (!button) {
+    throw new Error(`${controlId} live button not found`);
+  }
+  return button;
+}
+
 function getExplorerViewport(anchorText: string) {
   const anchor = screen.getByText(anchorText);
   const viewport = anchor.closest(".overlay-scroll-area__content")
@@ -891,6 +905,20 @@ function getExplorerContentViewport() {
     throw new Error("Explorer content viewport not found");
   }
   return viewport;
+}
+
+function queryExplorerActionsPane() {
+  return document.querySelector(
+    '[data-overlay-explorer-plane="actions"]',
+  ) as HTMLElement | null;
+}
+
+function getExplorerActionsPane() {
+  const pane = queryExplorerActionsPane();
+  if (!pane) {
+    throw new Error("Explorer actions pane not found");
+  }
+  return pane;
 }
 
 function getPreviewCloseButton() {
@@ -1571,6 +1599,115 @@ describe("FileExplorer view modes", () => {
     ).toBe("primaryStart");
     expect(useExplorerStore.getState().session.shellLayoutId).toBe("focus");
     expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
+  });
+
+  it("commits the active chrome customize draft when the live customize toggle exits the mode", async () => {
+    useExplorerStore.getState().openChromeEditSession({
+      themeId: "operator",
+      layoutId: "default",
+      initialOverride: {
+        entries: [
+          {
+            controlId: "refresh",
+            surfaceId: "explorerToolbar",
+            zone: "primaryEnd",
+            order: 5,
+            offsetPx: 28,
+          },
+        ],
+      },
+    });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    expect(getChromeControl("refresh")?.getAttribute("data-overlay-explorer-control-zone")).toBe(
+      "primaryEnd",
+    );
+    expect(getChromeControl("refresh")?.style.marginLeft).toBe("28px");
+
+    fireEvent.click(getChromeControlLiveButton("customizeModeToggle"));
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().chromeEditSession).toBeNull();
+    });
+
+    await waitFor(() => {
+      expect(
+        getChromeControl("refresh")?.getAttribute(
+          "data-overlay-explorer-control-zone",
+        ),
+      ).toBe("primaryEnd");
+      expect(getChromeControl("refresh")?.style.marginLeft).toBe("28px");
+    });
+
+    expect(
+      useSettingsStore.getState().settings.explorer.chromeLayoutOverridesByThemeId
+        .operator?.default?.entries,
+    ).toEqual([
+      expect.objectContaining({
+        controlId: "refresh",
+        surfaceId: "explorerToolbar",
+        zone: "primaryEnd",
+        order: 5,
+        offsetPx: 28,
+        hidden: false,
+      }),
+    ]);
+  });
+
+  it("commits the active chrome customize draft when Done closes the actions pane", async () => {
+    useExplorerStore.getState().openChromeEditSession({
+      themeId: "operator",
+      layoutId: "default",
+      initialOverride: {
+        entries: [
+          {
+            controlId: "refresh",
+            surfaceId: "explorerToolbar",
+            zone: "primaryEnd",
+            order: 7,
+            offsetPx: 44,
+          },
+        ],
+      },
+    });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    await waitFor(() => {
+      expect(queryExplorerActionsPane()).not.toBeNull();
+    });
+
+    fireEvent.click(
+      within(getExplorerActionsPane()).getByRole("button", { name: "Done" }),
+    );
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().chromeEditSession).toBeNull();
+      expect(queryExplorerActionsPane()).toBeNull();
+    });
+
+    expect(
+      getChromeControl("refresh")?.getAttribute(
+        "data-overlay-explorer-control-zone",
+      ),
+    ).toBe("primaryEnd");
+    expect(getChromeControl("refresh")?.style.marginLeft).toBe("44px");
+    expect(
+      useSettingsStore.getState().settings.explorer.chromeLayoutOverridesByThemeId
+        .operator?.default?.entries,
+    ).toEqual([
+      expect.objectContaining({
+        controlId: "refresh",
+        surfaceId: "explorerToolbar",
+        zone: "primaryEnd",
+        order: 7,
+        offsetPx: 44,
+        hidden: false,
+      }),
+    ]);
   });
 
   it("honors the preview toggle before opening previewable files", async () => {

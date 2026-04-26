@@ -387,6 +387,7 @@ import {
   PRIMARY_EXPLORER_INSTANCE_ID,
   defaultExplorerSession,
   useExplorerStore,
+  type ExplorerChromeEditSession,
   type ExplorerDocumentViewMode,
   type ExplorerInstanceId,
   type ExplorerPreviewSplitMode,
@@ -17446,37 +17447,37 @@ export function FileExplorer({
     openChromeEditSession,
     persistedExplorerChromeOverride,
   ]);
+  const persistExplorerChromeCustomizationDraft = useCallback(
+    (session: ExplorerChromeEditSession) => {
+      if (session.draftOverride.entries.length > 0) {
+        setExplorerChromeLayoutOverride(
+          session.themeId,
+          session.layoutId,
+          session.draftOverride,
+        );
+        return;
+      }
+      clearExplorerChromeLayoutOverride(session.themeId, session.layoutId);
+    },
+    [clearExplorerChromeLayoutOverride, setExplorerChromeLayoutOverride],
+  );
+  const closeExplorerChromeCustomizationSession = useCallback(() => {
+    cancelExplorerCustomizePointerSession();
+    cancelExplorerChromeResizeSession();
+    setResizingExplorerChromeControlId(null);
+    closeChromeEditSession();
+    setShowModeProfileMenu(false);
+  }, [closeChromeEditSession, setResizingExplorerChromeControlId]);
   const saveExplorerChromeCustomization = useCallback(() => {
     if (!activeChromeEditSession) {
       return;
     }
-
-    cancelExplorerCustomizePointerSession();
-    cancelExplorerChromeResizeSession();
-    setResizingExplorerChromeControlId(null);
-
-    if (activeChromeEditSession.draftOverride.entries.length > 0) {
-      setExplorerChromeLayoutOverride(
-        explorerChromeThemeId,
-        effectiveChromeLayoutId,
-        activeChromeEditSession.draftOverride,
-      );
-    } else {
-      clearExplorerChromeLayoutOverride(
-        explorerChromeThemeId,
-        effectiveChromeLayoutId,
-      );
-    }
-
-    closeChromeEditSession();
-    setShowModeProfileMenu(false);
+    persistExplorerChromeCustomizationDraft(activeChromeEditSession);
+    closeExplorerChromeCustomizationSession();
   }, [
     activeChromeEditSession,
-    clearExplorerChromeLayoutOverride,
-    closeChromeEditSession,
-    effectiveChromeLayoutId,
-    explorerChromeThemeId,
-    setExplorerChromeLayoutOverride,
+    closeExplorerChromeCustomizationSession,
+    persistExplorerChromeCustomizationDraft,
   ]);
   const resetExplorerChromeCustomization = useCallback(() => {
     if (!activeChromeEditSession) {
@@ -17503,12 +17504,8 @@ export function FileExplorer({
     updateChromeEditDraft,
   ]);
   const cancelExplorerChromeCustomization = useCallback(() => {
-    cancelExplorerCustomizePointerSession();
-    cancelExplorerChromeResizeSession();
-    setResizingExplorerChromeControlId(null);
-    closeChromeEditSession();
-    setShowModeProfileMenu(false);
-  }, [closeChromeEditSession]);
+    closeExplorerChromeCustomizationSession();
+  }, [closeExplorerChromeCustomizationSession]);
   const setSelectedExplorerChromeSizeVariant = useCallback(
     (sizeVariant: ExplorerChromeSizeVariant) => {
       if (!activeChromeEditSession?.selectedControlId) {
@@ -17563,17 +17560,15 @@ export function FileExplorer({
       (chromeEditSession.themeId !== explorerChromeThemeId ||
         chromeEditSession.layoutId !== effectiveChromeLayoutId)
     ) {
-      cancelExplorerCustomizePointerSession();
-      cancelExplorerChromeResizeSession();
-      setResizingExplorerChromeControlId(null);
-      closeChromeEditSession();
+      persistExplorerChromeCustomizationDraft(chromeEditSession);
+      closeExplorerChromeCustomizationSession();
     }
   }, [
     chromeEditSession,
-    closeChromeEditSession,
+    closeExplorerChromeCustomizationSession,
     effectiveChromeLayoutId,
     explorerChromeThemeId,
-    setResizingExplorerChromeControlId,
+    persistExplorerChromeCustomizationDraft,
   ]);
   useEffect(
     () => () => {
@@ -17757,9 +17752,9 @@ export function FileExplorer({
     setActionsVisible(false);
     setActionsPaneSelectedControlId(null);
     if (activeChromeEditSession) {
-      cancelExplorerChromeCustomization();
+      saveExplorerChromeCustomization();
     }
-  }, [activeChromeEditSession, cancelExplorerChromeCustomization]);
+  }, [activeChromeEditSession, saveExplorerChromeCustomization]);
   const toggleActionsPanel = useCallback(() => {
     if (actionsPaneVisible) {
       closeActionsPanel();
@@ -20472,12 +20467,12 @@ export function FileExplorer({
             aria-pressed={Boolean(activeChromeEditSession)}
             onClick={() =>
               activeChromeEditSession
-                ? cancelExplorerChromeCustomization()
+                ? saveExplorerChromeCustomization()
                 : beginExplorerChromeCustomization()
             }
             title={
               activeChromeEditSession
-                ? "Leave explorer customize mode"
+                ? "Save and leave explorer customize mode"
                 : "Enable explorer customize mode"
             }
             style={toolbarToggleButtonStyle(
@@ -20692,7 +20687,7 @@ export function FileExplorer({
                           style={toolbarActionButtonStyle()}
                         >
                           <X size={12} />
-                          Cancel
+                          Discard Draft
                         </button>
                       </div>
                     </>
@@ -21881,7 +21876,7 @@ export function FileExplorer({
           return true;
         case "customizeModeToggle":
           if (activeChromeEditSession) {
-            cancelExplorerChromeCustomization();
+            saveExplorerChromeCustomization();
           } else {
             beginExplorerChromeCustomization();
           }
