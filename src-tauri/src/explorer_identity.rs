@@ -508,7 +508,7 @@ fn resolve_native_identity_key(path: &Path) -> Result<Option<String>, String> {
     };
 
     let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::zeroed();
-    let handle = file.as_raw_handle() as isize;
+    let handle = file.as_raw_handle();
     let success = unsafe { GetFileInformationByHandle(handle, info.as_mut_ptr()) };
     if success == 0 {
         return Ok(None);

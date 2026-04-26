@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::collections::HashSet;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::path::PathBuf;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::Command;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
@@ -664,9 +669,14 @@ fn list_windows_volumes() -> Result<Vec<DriveInfo>, String> {
     use std::os::windows::ffi::OsStringExt;
     use windows_sys::Win32::Storage::FileSystem::{
         GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDriveStringsW, GetVolumeInformationW,
-        DRIVE_CDROM, DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE, DRIVE_REMOVABLE,
-        FILE_READ_ONLY_VOLUME,
     };
+
+    const DRIVE_REMOVABLE: u32 = 2;
+    const DRIVE_FIXED: u32 = 3;
+    const DRIVE_REMOTE: u32 = 4;
+    const DRIVE_CDROM: u32 = 5;
+    const DRIVE_RAMDISK: u32 = 6;
+    const FILE_READ_ONLY_VOLUME: u32 = 0x0008_0000;
 
     let mut buffer = vec![0u16; 512];
     let length = unsafe { GetLogicalDriveStringsW(buffer.len() as u32, buffer.as_mut_ptr()) };
@@ -764,6 +774,8 @@ fn list_windows_volumes() -> Result<Vec<DriveInfo>, String> {
 
 #[cfg(target_os = "windows")]
 fn utf16_buffer_to_string(buffer: &[u16]) -> Option<String> {
+    use std::os::windows::ffi::OsStringExt;
+
     let end = buffer.iter().position(|value| *value == 0)?;
     Some(
         std::ffi::OsString::from_wide(&buffer[..end])

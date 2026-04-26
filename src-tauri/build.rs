@@ -1,3 +1,4 @@
+use std::fs;
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -42,7 +43,30 @@ fn main() {
         }
     }
 
+    ensure_optional_mobile_bundle_directory(&workspace_root)
+        .expect("failed to prepare optional mobile bundle directory");
     tauri_build::build()
+}
+
+fn ensure_optional_mobile_bundle_directory(workspace_root: &Path) -> Result<(), String> {
+    let mobile_bundle_dir = workspace_root.join("dist-mobile");
+    if mobile_bundle_dir.is_dir() {
+        return Ok(());
+    }
+    if mobile_bundle_dir.exists() {
+        return Err(format!(
+            "optional mobile bundle path exists but is not a directory: {}",
+            mobile_bundle_dir.display()
+        ));
+    }
+
+    fs::create_dir_all(&mobile_bundle_dir).map_err(|error| {
+        format!(
+            "failed to create optional mobile bundle directory {}: {error}",
+            mobile_bundle_dir.display()
+        )
+    })?;
+    Ok(())
 }
 
 fn load_dotenv_values(paths: &[PathBuf]) -> HashMap<String, String> {

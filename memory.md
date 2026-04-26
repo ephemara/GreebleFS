@@ -1,13 +1,20 @@
-# 2026-04-26 - Windows Builds Now Vendor OpenSSL For Web Push
+# 2026-04-26 - Windows Builds Now Gate Web Push And Fill In The Missing Win32 Surface
 
-- `web-push` pulls `openssl`/`openssl-sys` through the mobile push path in `src-tauri/src/lan_share/push.rs`, and the default Windows MSVC toolchain does not get a usable OpenSSL install for free.
-- The durable fix lives in `src-tauri/Cargo.toml` under the Windows target dependencies:
-  - `openssl = { version = "0.10", features = ["vendored"] }`
-  - this lets Cargo build OpenSSL from source for the target instead of depending on `OPENSSL_DIR`, `VCPKG_ROOT`, or a manually installed system tree
+- The Windows MSVC build was failing because the mobile push path pulled `web-push -> ece -> openssl-sys`, which then required a local OpenSSL install. The durable fix is now target-gated instead of vendored:
+  - `src-tauri/Cargo.toml` keeps `web-push = "0.11"` on non-Windows targets only.
+  - `src-tauri/src/lan_share/push.rs` now returns a clear unsupported response on Windows while still preserving the rest of the LAN-share flow.
+- The Windows host also needed a few explicit native fixes to finish compiling:
+  - `src-tauri/Cargo.toml` now declares the Win32 shell / registry / environment feature flags the code actually uses, plus a direct `windows-core` dependency for the `#[implement(...)]` drop-target macro.
+  - `src-tauri/src/open_with/windows/associated_programs.rs` no longer references the missing `default_file_manager` helper and now always surfaces File Explorer for directory targets.
+  - `src-tauri/src/open_with/windows/shell_menu.rs`, `src-tauri/src/volume_inventory.rs`, `src-tauri/src/remote_storage_commands.rs`, and `src-tauri/src/explorer_identity.rs` now use Windows-safe APIs and constants so the host compiles cleanly on MSVC.
+  - `src-tauri/src/open_with/windows/utils.rs` now has the `ExpandEnvironmentStringsW` path available via the explicit Windows feature flags.
+  - `src-tauri/src/volume_inventory.rs` no longer depends on Unix-only `libc::S_IF*` constants for remote SFTP metadata or on incorrect Win32 constant import paths.
+- Build-system detail:
+  - `src-tauri/build.rs` now creates the optional `dist-mobile` resource directory if it is absent, so the desktop build does not fail on a missing mobile bundle checkout.
+- Validation:
+  - passed: `cargo build --manifest-path src-tauri/Cargo.toml`
 - Product rule:
-  - if a future dependency reintroduces a native OpenSSL requirement on Windows, prefer a target-scoped vendored fix first before asking users to install OpenSSL by hand
-- Validation still needed:
-  - run a Windows-target `cargo check` / app build after the dependency lock settles to confirm no other native library assumptions remain in the MSVC path
+  - on Windows, prefer target-gated feature removal for native-only stacks that drag in missing system libraries. Only vendor the native dependency if the functionality truly has to ship on Windows.
 
 # 2026-04-26 - ResizablePane Now Uses A Local RAF Preview Lane Instead Of React State On Every Pixel
 

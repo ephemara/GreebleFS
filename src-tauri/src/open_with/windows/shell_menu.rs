@@ -5,6 +5,8 @@ use crate::open_with::utils::canonicalize_path;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
+use image::codecs::png::PngEncoder;
+use image::ImageEncoder;
 use windows::core::{HSTRING, PSTR};
 use windows::Win32::Foundation::TRUE;
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
@@ -212,19 +214,17 @@ unsafe fn extract_bitmap_to_base64(
     }
 
     let mut png_data: Vec<u8> = Vec::new();
+    let encoder = PngEncoder::new(&mut png_data);
+    if encoder
+        .write_image(
+            &rgba_pixels,
+            width as u32,
+            height as u32,
+            image::ExtendedColorType::Rgba8,
+        )
+        .is_err()
     {
-        let mut encoder = png::Encoder::new(&mut png_data, width as u32, height as u32);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-
-        match encoder.write_header() {
-            Ok(mut writer) => {
-                if writer.write_image_data(&rgba_pixels).is_err() {
-                    return None;
-                }
-            }
-            Err(_) => return None,
-        }
+        return None;
     }
 
     let base64_str = general_purpose::STANDARD.encode(&png_data);

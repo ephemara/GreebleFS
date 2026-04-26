@@ -39,6 +39,9 @@ const REMOTE_KEYRING_SERVICE: &str = "co.greeblefs.app.remote-storage";
 const REMOTE_TEXT_PREVIEW_MAX_BYTES: usize = 10 * 1024 * 1024;
 const REMOTE_BASE64_PREVIEW_MAX_BYTES: usize = 12 * 1024 * 1024;
 const REMOTE_PREVIEW_BYTES_MAX_BYTES: usize = 256 * 1024 * 1024;
+const UNIX_S_IFMT: u32 = 0o170000;
+const UNIX_S_IFDIR: u32 = 0o040000;
+const UNIX_S_IFLNK: u32 = 0o120000;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -2163,8 +2166,8 @@ fn remote_dir_entry_is_symlink(entry: &SftpDirEntry) -> bool {
 }
 
 fn remote_attrs_is_dir(attrs: &Attrs, assume_root_directory: bool) -> bool {
-    match attrs.perm.map(|perm| perm & libc::S_IFMT as u32) {
-        Some(mode) if mode == libc::S_IFDIR as u32 => true,
+    match attrs.perm.map(|perm| perm & UNIX_S_IFMT) {
+        Some(mode) if mode == UNIX_S_IFDIR => true,
         Some(_) => false,
         None => assume_root_directory,
     }
@@ -2172,8 +2175,8 @@ fn remote_attrs_is_dir(attrs: &Attrs, assume_root_directory: bool) -> bool {
 
 fn remote_attrs_is_symlink(attrs: &Attrs) -> bool {
     matches!(
-        attrs.perm.map(|perm| perm & libc::S_IFMT as u32),
-        Some(mode) if mode == libc::S_IFLNK as u32
+        attrs.perm.map(|perm| perm & UNIX_S_IFMT),
+        Some(mode) if mode == UNIX_S_IFLNK
     )
 }
 

@@ -10,11 +10,13 @@ use tauri::AppHandle;
 use tauri::Manager;
 use tokio::sync::Mutex;
 use url::Url;
+#[cfg(not(target_os = "windows"))]
 use web_push::{
     ContentEncoding, IsahcWebPushClient, SubscriptionInfo, Urgency, VapidSignatureBuilder,
     WebPushClient, WebPushMessageBuilder,
 };
 
+#[cfg(not(target_os = "windows"))]
 use super::types::ACTIVE_SERVER;
 
 const MOBILE_PUSH_STATE_VERSION: u32 = 1;
@@ -181,6 +183,7 @@ fn generate_mobile_push_private_key_base64url() -> String {
     URL_SAFE_NO_PAD.encode(secret_key.to_bytes())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn create_mobile_push_partial_signature_builder(
     private_key_base64url: &str,
 ) -> Result<web_push::PartialVapidSignatureBuilder, String> {
@@ -188,6 +191,7 @@ fn create_mobile_push_partial_signature_builder(
         .map_err(|error| format!("Failed to initialize the mobile push VAPID signer: {error}"))
 }
 
+#[cfg(not(target_os = "windows"))]
 fn create_mobile_push_public_key(private_key_base64url: &str) -> Result<String, String> {
     let builder = create_mobile_push_partial_signature_builder(private_key_base64url)?;
     Ok(URL_SAFE_NO_PAD.encode(builder.get_public_key()))
@@ -279,6 +283,7 @@ fn summarize_mobile_push_devices(
     paired_devices
 }
 
+#[cfg(not(target_os = "windows"))]
 pub async fn get_mobile_push_config(
     app_handle: &AppHandle,
 ) -> Result<MobilePushConfigResponse, String> {
@@ -286,6 +291,19 @@ pub async fn get_mobile_push_config(
     Ok(MobilePushConfigResponse {
         supported: true,
         vapid_public_key: create_mobile_push_public_key(&state.private_key_base64url)?,
+        subscription_count: state.subscriptions.len(),
+        paired_devices: summarize_mobile_push_devices(&state.subscriptions),
+    })
+}
+
+#[cfg(target_os = "windows")]
+pub async fn get_mobile_push_config(
+    app_handle: &AppHandle,
+) -> Result<MobilePushConfigResponse, String> {
+    let state = load_mobile_push_state_cached(app_handle).await?;
+    Ok(MobilePushConfigResponse {
+        supported: false,
+        vapid_public_key: String::new(),
         subscription_count: state.subscriptions.len(),
         paired_devices: summarize_mobile_push_devices(&state.subscriptions),
     })
@@ -409,6 +427,7 @@ fn build_mobile_download_open_url(share_url: &str, relative_path: &str) -> Resul
     Ok(url.to_string())
 }
 
+#[cfg(not(target_os = "windows"))]
 async fn send_mobile_push_notification_payload(
     app_handle: &AppHandle,
     payload: &MobilePushNotificationEnvelope,
@@ -475,6 +494,7 @@ async fn send_mobile_push_notification_payload(
     })
 }
 
+#[cfg(not(target_os = "windows"))]
 pub async fn send_mobile_download_notification(
     app_handle: &AppHandle,
     request: MobilePushDownloadNotificationRequest,
@@ -527,4 +547,12 @@ pub async fn send_mobile_download_notification(
     };
 
     send_mobile_push_notification_payload(app_handle, &payload).await
+}
+
+#[cfg(target_os = "windows")]
+pub async fn send_mobile_download_notification(
+    _app_handle: &AppHandle,
+    _request: MobilePushDownloadNotificationRequest,
+) -> Result<MobilePushDispatchResult, String> {
+    Err("Mobile push notifications are not supported on Windows in this build.".to_string())
 }
