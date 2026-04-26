@@ -29,6 +29,16 @@ export const explorerPerformanceBudgets = {
     targetMs: 140,
     description: 'A single `fs_resolve_native_icons` batch resolving for the visible viewport.',
   },
+  explorer_thumbnail_batch: {
+    label: 'Thumbnail Batch',
+    targetMs: 150,
+    description: 'A single explorer thumbnail artifact batch resolving for the visible viewport.',
+  },
+  explorer_refresh_reconcile: {
+    label: 'Refresh Reconcile',
+    targetMs: 55,
+    description: 'Explorer refresh diffing and state reconciliation after an uncached directory relist.',
+  },
   explorer_first_interactive: {
     label: 'Explorer First Interactive',
     targetMs: 350,
@@ -341,6 +351,8 @@ function createMetricRecord<T>(factory: (metricId: ExplorerPerformanceMetricId) 
     explorer_search: factory('explorer_search'),
     explorer_entry_size_batch: factory('explorer_entry_size_batch'),
     explorer_native_icon_batch: factory('explorer_native_icon_batch'),
+    explorer_thumbnail_batch: factory('explorer_thumbnail_batch'),
+    explorer_refresh_reconcile: factory('explorer_refresh_reconcile'),
     explorer_first_interactive: factory('explorer_first_interactive'),
     explorer_layout_zoom: factory('explorer_layout_zoom'),
     overlay_frame_time: factory('overlay_frame_time'),

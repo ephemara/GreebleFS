@@ -41,7 +41,18 @@ export interface FileOperationsTaskWindowRequest {
 
 export type FileOperationsWindowRequest = FileOperationsTaskWindowRequest;
 
+export type FileOperationsAffectedEntryMutationKind = 'copy' | 'move' | 'skip';
+
+export interface FileOperationsAffectedEntry {
+  entityId: string;
+  sourcePath: string;
+  destinationPath: string;
+  contentRevision: string;
+  mutationKind: FileOperationsAffectedEntryMutationKind;
+}
+
 export interface FileOperationsTransferCompletedEventDetail {
+  affectedEntries: FileOperationsAffectedEntry[];
   completedAt: number;
   destinationPaths: string[];
   nonce: string;
@@ -222,10 +233,15 @@ function createFileOperationsTransferCompletedEvent(value: {
   }
 
   const completedAt = Date.now();
+  const affectedEntries = buildFileOperationsAffectedEntries(
+    value.operation,
+    value.results,
+  );
   return {
+    affectedEntries,
     completedAt,
-    destinationPaths: value.results
-      .map((result) => result.destination_path.trim())
+    destinationPaths: affectedEntries
+      .map((entry) => entry.destinationPath.trim())
       .filter(Boolean),
     nonce: `${completedAt}-${Math.random().toString(36).slice(2, 10)}`,
     operation: value.operation === 'move' ? 'move' : 'copy',
@@ -279,6 +295,12 @@ function parseFileOperationsTransferCompletedEvent(
   const results = Array.isArray(record.results)
     ? record.results.filter(isExplorerFileTransferResult)
     : [];
+  const operation = record.operation === 'move' ? 'move' : 'copy';
+  const affectedEntries = Array.isArray(record.affectedEntries)
+    ? dedupeFileOperationsAffectedEntries(
+      record.affectedEntries.filter(isFileOperationsAffectedEntry),
+    )
+    : buildFileOperationsAffectedEntries(operation, results);
   const sourcePaths = Array.isArray(record.sourcePaths)
     ? Array.from(
       new Set(record.sourcePaths.filter((entry): entry is string => typeof entry === 'string').map((entry) => entry.trim()).filter(Boolean)),
@@ -290,14 +312,15 @@ function parseFileOperationsTransferCompletedEvent(
   }
 
   return {
+    affectedEntries,
     completedAt: typeof record.completedAt === 'number' ? record.completedAt : 0,
     destinationPaths: Array.isArray(record.destinationPaths)
       ? Array.from(
         new Set(record.destinationPaths.filter((entry): entry is string => typeof entry === 'string').map((entry) => entry.trim()).filter(Boolean)),
       )
-      : results.map((result) => result.destination_path),
+      : affectedEntries.map((entry) => entry.destinationPath),
     nonce,
-    operation: record.operation === 'move' ? 'move' : 'copy',
+    operation,
     results,
     sourcePaths,
     targetDir,
@@ -313,6 +336,75 @@ function isExplorerFileTransferResult(value: unknown): value is ExplorerFileTran
   return typeof record.source_path === 'string'
     && typeof record.destination_path === 'string'
     && (record.operation === 'copy' || record.operation === 'move');
+}
+
+function isFileOperationsAffectedEntry(
+  value: unknown,
+): value is FileOperationsAffectedEntry {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return typeof record.entityId === 'string'
+    && typeof record.sourcePath === 'string'
+    && typeof record.destinationPath === 'string'
+    && typeof record.contentRevision === 'string'
+    && (
+      record.mutationKind === 'copy'
+      || record.mutationKind === 'move'
+      || record.mutationKind === 'skip'
+    );
+}
+
+function buildFileOperationsAffectedEntries(
+  operation: ExplorerFileTransferOperation,
+  results: readonly ExplorerFileTransferResult[],
+): FileOperationsAffectedEntry[] {
+  return dedupeFileOperationsAffectedEntries(
+    results.map((result) => ({
+      entityId: result.entityId,
+      sourcePath: result.source_path.trim(),
+      destinationPath: result.destination_path.trim(),
+      contentRevision: result.contentRevision,
+      mutationKind: result.disposition === 'skipped_existing'
+        ? 'skip'
+        : operation === 'move'
+          ? 'move'
+          : 'copy',
+    })),
+  );
+}
+
+function dedupeFileOperationsAffectedEntries(
+  entries: readonly FileOperationsAffectedEntry[],
+): FileOperationsAffectedEntry[] {
+  const seenEntries = new Set<string>();
+  const nextEntries: FileOperationsAffectedEntry[] = [];
+  for (const entry of entries) {
+    if (
+      !entry.entityId.trim()
+      || !entry.sourcePath.trim()
+      || !entry.destinationPath.trim()
+      || !entry.contentRevision.trim()
+    ) {
+      continue;
+    }
+
+    const dedupeKey = [
+      entry.entityId,
+      entry.sourcePath,
+      entry.destinationPath,
+      entry.contentRevision,
+      entry.mutationKind,
+    ].join('::');
+    if (seenEntries.has(dedupeKey)) {
+      continue;
+    }
+    seenEntries.add(dedupeKey);
+    nextEntries.push(entry);
+  }
+  return nextEntries;
 }
 
 function registerCrossWindowListener<T>(args: {

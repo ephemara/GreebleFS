@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildExplorerBatchRenamePreview } from '../components/explorerBatchRename';
+import { createTestExplorerFileEntry } from './helpers/explorerEntries';
 
 const REPO_ROOT = 'C:\\workspace\\repo';
 
@@ -13,7 +14,7 @@ describe('buildExplorerBatchRenamePreview', () => {
     vi.setSystemTime(new Date('2026-04-16T09:30:00-04:00'));
 
     const preview = buildExplorerBatchRenamePreview([
-      {
+      createTestExplorerFileEntry({
         name: 'alpha-01.txt',
         path: `${REPO_ROOT}\\assets\\alpha-01.txt`,
         is_dir: false,
@@ -22,8 +23,8 @@ describe('buildExplorerBatchRenamePreview', () => {
         extension: 'txt',
         is_hidden: false,
         is_symlink: false,
-      },
-      {
+      }),
+      createTestExplorerFileEntry({
         name: 'alpha-02.txt',
         path: `${REPO_ROOT}\\assets\\alpha-02.txt`,
         is_dir: false,
@@ -32,7 +33,7 @@ describe('buildExplorerBatchRenamePreview', () => {
         extension: 'txt',
         is_hidden: false,
         is_symlink: false,
-      },
+      }),
     ], {
       mode: 'regex',
       findText: '^(?<stem>alpha)-(?<serial>\\d+)$',
@@ -63,7 +64,7 @@ describe('buildExplorerBatchRenamePreview', () => {
 
   it('surfaces invalid regex recipes as inline validation state', () => {
     const preview = buildExplorerBatchRenamePreview([
-      {
+      createTestExplorerFileEntry({
         name: 'notes.txt',
         path: `${REPO_ROOT}\\notes.txt`,
         is_dir: false,
@@ -72,7 +73,7 @@ describe('buildExplorerBatchRenamePreview', () => {
         extension: 'txt',
         is_hidden: false,
         is_symlink: false,
-      },
+      }),
     ], {
       mode: 'regex',
       findText: '[',

@@ -16,6 +16,7 @@ import {
   readFileOperationsTransferCompletedEvent,
   readFileOperationsWindowRequest,
 } from '../runtime/fileOperationsWindow';
+import { createTestExplorerTransferResult } from './helpers/explorerEntries';
 
 describe('fileOperationsWindow', () => {
   beforeEach(async () => {
@@ -91,13 +92,13 @@ describe('fileOperationsWindow', () => {
       operation: 'move',
       sourcePaths: ['/tmp/source-a'],
       targetDir: '/tmp/destination',
-      results: [{
+      results: [createTestExplorerTransferResult({
         source_path: '/tmp/source-a',
         destination_path: '/tmp/destination/source-a',
         operation: 'move',
         collision_policy: 'keep_both',
         disposition: 'transferred',
-      }],
+      })],
     });
 
     stopListening();
@@ -107,6 +108,12 @@ describe('fileOperationsWindow', () => {
       sourcePaths: ['/tmp/source-a'],
       targetDir: '/tmp/destination',
       destinationPaths: ['/tmp/destination/source-a'],
+      affectedEntries: [
+        expect.objectContaining({
+          entityId: 'test:/tmp/destination/source-a',
+          mutationKind: 'move',
+        }),
+      ],
     });
     expect(receivedTransfers).toHaveLength(1);
     expect(readFileOperationsTransferCompletedEvent()).toMatchObject({

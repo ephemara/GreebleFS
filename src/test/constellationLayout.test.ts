@@ -4,9 +4,10 @@ import {
   type ConstellationOrbitBandInput,
 } from "../components/explorer/constellationLayout";
 import type { ExplorerFileEntry as FileEntry } from "../runtime/explorerBackend";
+import { createTestExplorerFileEntry } from "./helpers/explorerEntries";
 
 function makeEntry(index: number, overrides: Partial<FileEntry> = {}): FileEntry {
-  return {
+  return createTestExplorerFileEntry({
     name: `entry-${index}`,
     path: `C:\\workspace\\entry-${index}`,
     is_dir: false,
@@ -16,7 +17,7 @@ function makeEntry(index: number, overrides: Partial<FileEntry> = {}): FileEntry
     is_hidden: false,
     is_symlink: false,
     ...overrides,
-  };
+  });
 }
 
 describe("buildConstellationFieldLayout", () => {

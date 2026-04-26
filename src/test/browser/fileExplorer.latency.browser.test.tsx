@@ -3,8 +3,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildExplorerBatchRenamePreview, type ExplorerBatchRenameRecipe } from '../../components/explorerBatchRename';
 import { useExplorerStore, type ExplorerRecursiveSizeCacheEntry } from '../../store/explorerStore';
+import type { ExplorerFileEntry } from '../../runtime/explorerBackend';
+import { createTestExplorerFileEntry } from '../helpers/explorerEntries';
 
-interface FixtureEntry {
+interface LargeDirectoryFixtureEntry {
   name: string;
   path: string;
   is_dir: boolean;
@@ -14,6 +16,8 @@ interface FixtureEntry {
   is_hidden: boolean;
   is_symlink: boolean;
 }
+
+type FixtureEntry = ExplorerFileEntry;
 
 const REPO_ROOT = 'C:\\workspace\\repo';
 const LARGE_DIRECTORY_FIXTURE = Array.from({ length: 5000 }, (_, index) => ({
@@ -27,9 +31,9 @@ const LARGE_DIRECTORY_FIXTURE = Array.from({ length: 5000 }, (_, index) => ({
   extension: index % 11 === 0 ? '' : 'txt',
   is_hidden: false,
   is_symlink: false,
-} satisfies FixtureEntry));
+} satisfies LargeDirectoryFixtureEntry));
 const RENAME_FIXTURE: FixtureEntry[] = [
-  {
+  createTestExplorerFileEntry({
     name: 'notes.txt',
     path: `${REPO_ROOT}\\notes.txt`,
     is_dir: false,
@@ -38,8 +42,8 @@ const RENAME_FIXTURE: FixtureEntry[] = [
     extension: 'txt',
     is_hidden: false,
     is_symlink: false,
-  },
-  {
+  }),
+  createTestExplorerFileEntry({
     name: 'preview.png',
     path: `${REPO_ROOT}\\preview.png`,
     is_dir: false,
@@ -48,7 +52,7 @@ const RENAME_FIXTURE: FixtureEntry[] = [
     extension: 'png',
     is_hidden: false,
     is_symlink: false,
-  },
+  }),
 ];
 
 function ExplorerLatencyProbe() {

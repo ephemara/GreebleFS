@@ -14,6 +14,10 @@ vi.mock('../runtime/explorerBackend', () => {
 import { ExplorerSideRail } from '../components/explorer/ExplorerSideRail';
 import { createDefaultExplorerRailSnapshot, normalizeExplorerRailSnapshot } from '../components/explorer/explorerRailState';
 import { useExplorerStore } from '../store/explorerStore';
+import {
+  createTestExplorerFileEntry,
+  createTestExplorerLocationListing,
+} from './helpers/explorerEntries';
 
 function createDataTransfer(payloads: Record<string, string>) {
   return {
@@ -25,6 +29,19 @@ function createDataTransfer(payloads: Record<string, string>) {
 
 function enableAutoExpandToOpenFolder() {
   fireEvent.click(screen.getByRole('button', { name: 'Toggle expand to open folder' }));
+}
+
+function createFolderEntry(name: string, path: string) {
+  return createTestExplorerFileEntry({
+    name,
+    path,
+    is_dir: true,
+    size: 0,
+    modified: 0,
+    extension: '',
+    is_hidden: false,
+    is_symlink: false,
+  });
 }
 
 beforeEach(() => {
@@ -334,57 +351,32 @@ describe('ExplorerSideRail', () => {
 
   it('renders a lazy local folder tree under the active drive path and navigates nested folders', async () => {
     const onNavigate = vi.fn();
-    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string, _showHidden: boolean) => {
       if (path === 'C:\\') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: null,
           breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
-          entries: [
-            {
-              name: 'Users',
-              path: 'C:\\Users',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
-          ],
-        };
+          entries: [createFolderEntry('Users', 'C:\\Users')],
+        });
       }
       if (path === 'C:\\Users') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: 'C:\\',
           breadcrumbs: [
             { label: 'C:\\', path: 'C:\\' },
             { label: 'Users', path: 'C:\\Users' },
           ],
-          entries: [
-            {
-              name: 'alice',
-              path: 'C:\\Users\\alice',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
-          ],
-        };
+          entries: [createFolderEntry('alice', 'C:\\Users\\alice')],
+        });
       }
-      return {
-        kind: 'local',
+      return createTestExplorerLocationListing({
         path,
         parentPath: null,
         breadcrumbs: [],
         entries: [],
-      };
+      });
     });
 
     render(
@@ -430,40 +422,20 @@ describe('ExplorerSideRail', () => {
   });
 
   it('collapses unrelated local tree branches when navigation moves to a different branch', async () => {
-    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string, _showHidden: boolean) => {
       if (path === 'C:\\') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: null,
           breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
           entries: [
-            {
-              name: 'Users',
-              path: 'C:\\Users',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
-            {
-              name: 'Projects',
-              path: 'C:\\Projects',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
+            createFolderEntry('Users', 'C:\\Users'),
+            createFolderEntry('Projects', 'C:\\Projects'),
           ],
-        };
+        });
       }
       if (path === 'C:\\Users') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: 'C:\\',
           breadcrumbs: [
@@ -471,59 +443,28 @@ describe('ExplorerSideRail', () => {
             { label: 'Users', path: 'C:\\Users' },
           ],
           entries: [
-            {
-              name: 'alice',
-              path: 'C:\\Users\\alice',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
-            {
-              name: 'bob',
-              path: 'C:\\Users\\bob',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
+            createFolderEntry('alice', 'C:\\Users\\alice'),
+            createFolderEntry('bob', 'C:\\Users\\bob'),
           ],
-        };
+        });
       }
       if (path === 'C:\\Projects') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: 'C:\\',
           breadcrumbs: [
             { label: 'C:\\', path: 'C:\\' },
             { label: 'Projects', path: 'C:\\Projects' },
           ],
-          entries: [
-            {
-              name: 'zeta',
-              path: 'C:\\Projects\\zeta',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
-          ],
-        };
+          entries: [createFolderEntry('zeta', 'C:\\Projects\\zeta')],
+        });
       }
-      return {
-        kind: 'local',
+      return createTestExplorerLocationListing({
         path,
         parentPath: null,
         breadcrumbs: [],
         entries: [],
-      };
+      });
     });
 
     const { rerender } = render(
@@ -605,42 +546,20 @@ describe('ExplorerSideRail', () => {
 
   it('reloads the active local tree branch when the explorer bumps the tree refresh revision', async () => {
     let usersChildren = [
-      {
-        name: 'alpha',
-        path: 'C:\\Users\\alpha',
-        is_dir: true,
-        size: 0,
-        modified: 0,
-        extension: '',
-        is_hidden: false,
-        is_symlink: false,
-      },
+      createFolderEntry('alpha', 'C:\\Users\\alpha'),
     ];
 
-    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string, _showHidden: boolean) => {
       if (path === 'C:\\') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: null,
           breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
-          entries: [
-            {
-              name: 'Users',
-              path: 'C:\\Users',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
-          ],
-        };
+          entries: [createFolderEntry('Users', 'C:\\Users')],
+        });
       }
       if (path === 'C:\\Users') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: 'C:\\',
           breadcrumbs: [
@@ -648,15 +567,14 @@ describe('ExplorerSideRail', () => {
             { label: 'Users', path: 'C:\\Users' },
           ],
           entries: usersChildren,
-        };
+        });
       }
-      return {
-        kind: 'local',
+      return createTestExplorerLocationListing({
         path,
         parentPath: null,
         breadcrumbs: [],
         entries: [],
-      };
+      });
     });
 
     const { rerender } = render(
@@ -702,18 +620,7 @@ describe('ExplorerSideRail', () => {
       .calls
       .filter(([path]) => path === 'C:\\Users').length;
 
-    usersChildren = [
-      {
-        name: 'beta',
-        path: 'C:\\Users\\beta',
-        is_dir: true,
-        size: 0,
-        modified: 0,
-        extension: '',
-        is_hidden: false,
-        is_symlink: false,
-      },
-    ];
+    usersChildren = [createFolderEntry('beta', 'C:\\Users\\beta')];
 
     rerender(
       <ExplorerSideRail
@@ -757,34 +664,21 @@ describe('ExplorerSideRail', () => {
   });
 
   it('stores compact rail view mode and hides local tree metadata in compact mode', async () => {
-    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string, _showHidden: boolean) => {
       if (path === 'C:\\') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: null,
           breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
-          entries: [
-            {
-              name: 'Users',
-              path: 'C:\\Users',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
-          ],
-        };
+          entries: [createFolderEntry('Users', 'C:\\Users')],
+        });
       }
-      return {
-        kind: 'local',
+      return createTestExplorerLocationListing({
         path,
         parentPath: null,
         breadcrumbs: [],
         entries: [],
-      };
+      });
     });
 
     render(
@@ -870,34 +764,21 @@ describe('ExplorerSideRail', () => {
   });
 
   it('keeps navigation manual until the user expands a branch with the chevron', async () => {
-    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string, _showHidden: boolean) => {
       if (path === 'C:\\') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: null,
           breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
-          entries: [
-            {
-              name: 'Users',
-              path: 'C:\\Users',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
-          ],
-        };
+          entries: [createFolderEntry('Users', 'C:\\Users')],
+        });
       }
-      return {
-        kind: 'local',
+      return createTestExplorerLocationListing({
         path,
         parentPath: null,
         breadcrumbs: [],
         entries: [],
-      };
+      });
     });
 
     render(
@@ -996,10 +877,9 @@ describe('ExplorerSideRail', () => {
   });
 
   it('prefers the most specific Unix drive root so home paths do not auto-expand the system root tree', async () => {
-    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string, _showHidden: boolean) => {
       if (path === '/home/alice') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: '/home',
           breadcrumbs: [
@@ -1007,49 +887,25 @@ describe('ExplorerSideRail', () => {
             { label: 'home', path: '/home' },
             { label: 'alice', path: '/home/alice' },
           ],
-          entries: [
-            {
-              name: 'Projects',
-              path: '/home/alice/Projects',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
-          ],
-        };
+          entries: [createFolderEntry('Projects', '/home/alice/Projects')],
+        });
       }
 
       if (path === '/') {
-        return {
-          kind: 'local',
+        return createTestExplorerLocationListing({
           path,
           parentPath: null,
           breadcrumbs: [{ label: '/', path: '/' }],
-          entries: [
-            {
-              name: 'bin',
-              path: '/bin',
-              is_dir: true,
-              size: 0,
-              modified: 0,
-              extension: '',
-              is_hidden: false,
-              is_symlink: false,
-            },
-          ],
-        };
+          entries: [createFolderEntry('bin', '/bin')],
+        });
       }
 
-      return {
-        kind: 'local',
+      return createTestExplorerLocationListing({
         path,
         parentPath: null,
         breadcrumbs: [],
         entries: [],
-      };
+      });
     });
 
     render(

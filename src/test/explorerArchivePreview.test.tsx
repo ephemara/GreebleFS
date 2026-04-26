@@ -6,6 +6,7 @@ import { buildExplorerArchiveVirtualPath } from "../config/explorerArchives";
 import { getFolderIconSrc } from "../config/folderIcons";
 import { getBuiltInIconTheme, resolveFileIconSrc } from "../config/iconTheme";
 import { explorerBackendContract } from "../runtime/explorerBackend";
+import { createTestExplorerFileEntry } from "./helpers/explorerEntries";
 
 vi.mock("../runtime/explorerBackend", () => ({
   explorerBackendContract: {
@@ -41,7 +42,7 @@ describe("ExplorerArchivePreview", () => {
     });
 
     vi.mocked(explorerBackendContract.listArchiveDir).mockResolvedValue([
-      {
+      createTestExplorerFileEntry({
         name: "textures",
         path: texturesPath,
         is_dir: true,
@@ -50,8 +51,8 @@ describe("ExplorerArchivePreview", () => {
         extension: "",
         is_hidden: false,
         is_symlink: false,
-      },
-      {
+      }),
+      createTestExplorerFileEntry({
         name: "readme.txt",
         path: readmePath,
         is_dir: false,
@@ -60,7 +61,7 @@ describe("ExplorerArchivePreview", () => {
         extension: "txt",
         is_hidden: false,
         is_symlink: false,
-      },
+      }),
     ]);
 
     render(
@@ -134,7 +135,7 @@ describe("ExplorerArchivePreview", () => {
     });
 
     vi.mocked(explorerBackendContract.listArchiveDir).mockResolvedValue([
-      {
+      createTestExplorerFileEntry({
         name: "textures",
         path: texturesPath,
         is_dir: true,
@@ -143,8 +144,8 @@ describe("ExplorerArchivePreview", () => {
         extension: "",
         is_hidden: false,
         is_symlink: false,
-      },
-      {
+      }),
+      createTestExplorerFileEntry({
         name: "readme.txt",
         path: readmePath,
         is_dir: false,
@@ -153,7 +154,7 @@ describe("ExplorerArchivePreview", () => {
         extension: "txt",
         is_hidden: false,
         is_symlink: false,
-      },
+      }),
     ]);
 
     render(

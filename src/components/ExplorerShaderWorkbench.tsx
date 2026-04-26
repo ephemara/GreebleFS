@@ -615,6 +615,8 @@ function ShaderPreviewCanvas({
     setFallbackPosterDataUrl(null);
     void readExplorerEntryThumbnail({
       path,
+      entityId: null,
+      contentRevision: null,
       maxWidth: 640,
       maxHeight: 360,
       includeVideoHoverScrub: false,

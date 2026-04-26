@@ -500,6 +500,10 @@ import {
 } from "../runtime/explorerPicker";
 import { readExplorerModelThumbnail } from "../runtime/modelThumbnailBackend";
 import {
+  peekExplorerThumbnailForEntry,
+  readExplorerThumbnailForEntry,
+} from "../runtime/explorerThumbnailArtifactRuntime";
+import {
   openExplorerPdfPreviewDocument,
   type ExplorerPdfPreviewDocument,
   type ExplorerPdfSaveEditsOutput,
@@ -627,16 +631,8 @@ function awaitPromiseWithTimeout<T>(
   });
 }
 
-type ExplorerNormalizedSearchResult = {
-  name: string;
-  path: string;
+type ExplorerNormalizedSearchResult = FileEntry & {
   relative_path: string;
-  is_dir: boolean;
-  size: number;
-  modified: number;
-  extension: string;
-  is_hidden: boolean;
-  is_symlink: boolean;
   match_kind: FileSearchResult["match_kind"] | null;
   snippet: string;
   line_number: number | null;
@@ -873,15 +869,17 @@ function normalizeSemanticSearchResult(
   result: ExplorerSemanticSearchResultValue,
 ): ExplorerNormalizedSearchResult {
   return {
-    name: result.name,
-    path: result.path,
+    ...createDerivedExplorerFileEntry({
+      name: result.name,
+      path: result.path,
+      is_dir: result.isDir,
+      size: result.size,
+      modified: result.modified,
+      extension: result.extension,
+      is_hidden: result.isHidden,
+      is_symlink: result.isSymlink,
+    }),
     relative_path: result.relativePath,
-    is_dir: result.isDir,
-    size: result.size,
-    modified: result.modified,
-    extension: result.extension,
-    is_hidden: result.isHidden,
-    is_symlink: result.isSymlink,
     match_kind: result.matchKind,
     snippet: result.snippet,
     line_number: result.lineNumber,
@@ -1380,6 +1378,18 @@ function shouldRefreshExplorerForTransferEvent(
     return true;
   }
 
+  if (
+    detail.affectedEntries.some(
+      (entry) =>
+        getPathParent(entry.sourcePath) === normalizedCurrentPath ||
+        getPathParent(entry.destinationPath) === normalizedCurrentPath ||
+        isSameOrDescendantPath(normalizedCurrentPath, entry.sourcePath) ||
+        isSameOrDescendantPath(normalizedCurrentPath, entry.destinationPath),
+    )
+  ) {
+    return true;
+  }
+
   return detail.sourcePaths.some((sourcePath) => {
     const parentPath = getPathParent(sourcePath);
     return (
@@ -1387,6 +1397,244 @@ function shouldRefreshExplorerForTransferEvent(
       isSameOrDescendantPath(normalizedCurrentPath, sourcePath)
     );
   });
+}
+
+function buildExplorerEntryIdentityRevisionKey(
+  entry: Pick<FileEntry, "entityId" | "contentRevision">,
+): string {
+  return `${entry.entityId}::${entry.contentRevision}`;
+}
+
+function buildDerivedExplorerFileEntryContentRevision(
+  entry: Pick<
+    FileEntry,
+    "path" | "is_dir" | "size" | "modified" | "extension" | "is_symlink"
+  >,
+): string {
+  return [
+    entry.path,
+    entry.is_dir ? "dir" : "file",
+    entry.size,
+    entry.modified,
+    entry.extension,
+    entry.is_symlink ? "symlink" : "direct",
+  ].join("::");
+}
+
+function createDerivedExplorerFileEntry(
+  entry: Omit<FileEntry, "entityId" | "identityKind" | "contentRevision">,
+): FileEntry {
+  return {
+    ...entry,
+    entityId: `derived:${entry.path}`,
+    identityKind: "derived",
+    contentRevision: buildDerivedExplorerFileEntryContentRevision(entry),
+  };
+}
+
+function isExplorerSearchResultEntry(
+  entry: FileEntry | ExplorerNormalizedSearchResult,
+): entry is ExplorerNormalizedSearchResult {
+  return "relative_path" in entry;
+}
+
+function buildExplorerPosterThumbnailRequest(entry: FileEntry) {
+  return {
+    entry,
+    maxWidth: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+    maxHeight: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+    includeVideoHoverScrub: false,
+    videoHoverFrameCount: null,
+  } as const;
+}
+
+function buildExplorerVideoHoverThumbnailRequest(
+  entry: FileEntry,
+  videoHoverFrameCount: number,
+) {
+  return {
+    entry,
+    maxWidth: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+    maxHeight: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+    includeVideoHoverScrub: true,
+    videoHoverFrameCount,
+  } as const;
+}
+
+function buildExplorerEntryIdentityLookup(
+  entries: readonly FileEntry[],
+): Map<string, FileEntry> {
+  return new Map(
+    entries.map((entry) => [buildExplorerEntryIdentityRevisionKey(entry), entry]),
+  );
+}
+
+function buildExplorerEntryPathLookup(
+  entries: readonly FileEntry[],
+): Map<string, FileEntry> {
+  return new Map(entries.map((entry) => [entry.path, entry] as const));
+}
+
+function reconcileExplorerPathValueRecord<T>(args: {
+  previousEntries: readonly FileEntry[];
+  nextEntries: readonly FileEntry[];
+  currentValues: Record<string, T>;
+}): Record<string, T> {
+  const previousEntriesByPath = buildExplorerEntryPathLookup(args.previousEntries);
+  const previousEntriesByIdentity = buildExplorerEntryIdentityLookup(
+    args.previousEntries,
+  );
+  const nextValues: Record<string, T> = {};
+
+  for (const nextEntry of args.nextEntries) {
+    const nextIdentityKey = buildExplorerEntryIdentityRevisionKey(nextEntry);
+    const previousSamePathEntry = previousEntriesByPath.get(nextEntry.path);
+    if (
+      previousSamePathEntry &&
+      buildExplorerEntryIdentityRevisionKey(previousSamePathEntry) ===
+        nextIdentityKey
+    ) {
+      const existingValue = args.currentValues[nextEntry.path];
+      if (existingValue !== undefined) {
+        nextValues[nextEntry.path] = existingValue;
+        continue;
+      }
+    }
+
+    const previousEntry = previousEntriesByIdentity.get(nextIdentityKey);
+    if (!previousEntry) {
+      continue;
+    }
+
+    const movedValue = args.currentValues[previousEntry.path];
+    if (movedValue !== undefined) {
+      nextValues[nextEntry.path] = movedValue;
+    }
+  }
+
+  return nextValues;
+}
+
+function reconcileExplorerPathSet(args: {
+  previousEntries: readonly FileEntry[];
+  nextEntries: readonly FileEntry[];
+  currentPaths: ReadonlySet<string>;
+}): Set<string> {
+  const previousEntriesByPath = buildExplorerEntryPathLookup(args.previousEntries);
+  const previousEntriesByIdentity = buildExplorerEntryIdentityLookup(
+    args.previousEntries,
+  );
+  const nextPaths = new Set<string>();
+
+  for (const nextEntry of args.nextEntries) {
+    const nextIdentityKey = buildExplorerEntryIdentityRevisionKey(nextEntry);
+    const previousSamePathEntry = previousEntriesByPath.get(nextEntry.path);
+    if (
+      previousSamePathEntry &&
+      buildExplorerEntryIdentityRevisionKey(previousSamePathEntry) ===
+        nextIdentityKey &&
+      args.currentPaths.has(nextEntry.path)
+    ) {
+      nextPaths.add(nextEntry.path);
+      continue;
+    }
+
+    const previousEntry = previousEntriesByIdentity.get(nextIdentityKey);
+    if (previousEntry && args.currentPaths.has(previousEntry.path)) {
+      nextPaths.add(nextEntry.path);
+    }
+  }
+
+  return nextPaths;
+}
+
+function buildSeededExplorerThumbnailMap(
+  entries: readonly FileEntry[],
+): Record<string, ExplorerEntryThumbnailData | null> {
+  const nextThumbnails: Record<string, ExplorerEntryThumbnailData | null> = {};
+  for (const entry of entries) {
+    const cachedThumbnail = peekExplorerThumbnailForEntry(
+      buildExplorerPosterThumbnailRequest(entry),
+    );
+    if (cachedThumbnail !== undefined) {
+      nextThumbnails[entry.path] = cachedThumbnail;
+    }
+  }
+  return nextThumbnails;
+}
+
+function reconcileExplorerThumbnailMap(args: {
+  previousEntries: readonly FileEntry[];
+  nextEntries: readonly FileEntry[];
+  currentThumbnails: Record<string, ExplorerEntryThumbnailData | null>;
+}): {
+  nextThumbnails: Record<string, ExplorerEntryThumbnailData | null>;
+  preservedCount: number;
+  hydratedCount: number;
+  invalidatedCount: number;
+} {
+  const previousEntriesByPath = buildExplorerEntryPathLookup(args.previousEntries);
+  const previousEntriesByIdentity = buildExplorerEntryIdentityLookup(
+    args.previousEntries,
+  );
+  const nextIdentityKeys = new Set(
+    args.nextEntries.map((entry) => buildExplorerEntryIdentityRevisionKey(entry)),
+  );
+  const nextThumbnails: Record<string, ExplorerEntryThumbnailData | null> = {};
+  let preservedCount = 0;
+  let hydratedCount = 0;
+  let invalidatedCount = 0;
+
+  for (const previousEntry of args.previousEntries) {
+    if (
+      args.currentThumbnails[previousEntry.path] !== undefined &&
+      !nextIdentityKeys.has(buildExplorerEntryIdentityRevisionKey(previousEntry))
+    ) {
+      invalidatedCount += 1;
+    }
+  }
+
+  for (const nextEntry of args.nextEntries) {
+    const nextIdentityKey = buildExplorerEntryIdentityRevisionKey(nextEntry);
+    const previousSamePathEntry = previousEntriesByPath.get(nextEntry.path);
+    if (
+      previousSamePathEntry &&
+      buildExplorerEntryIdentityRevisionKey(previousSamePathEntry) ===
+        nextIdentityKey
+    ) {
+      const existingThumbnail = args.currentThumbnails[nextEntry.path];
+      if (existingThumbnail !== undefined) {
+        nextThumbnails[nextEntry.path] = existingThumbnail;
+        preservedCount += 1;
+        continue;
+      }
+    }
+
+    const previousEntry = previousEntriesByIdentity.get(nextIdentityKey);
+    if (previousEntry) {
+      const movedThumbnail = args.currentThumbnails[previousEntry.path];
+      if (movedThumbnail !== undefined) {
+        nextThumbnails[nextEntry.path] = movedThumbnail;
+        preservedCount += 1;
+        continue;
+      }
+    }
+
+    const cachedThumbnail = peekExplorerThumbnailForEntry(
+      buildExplorerPosterThumbnailRequest(nextEntry),
+    );
+    if (cachedThumbnail !== undefined) {
+      nextThumbnails[nextEntry.path] = cachedThumbnail;
+      hydratedCount += 1;
+    }
+  }
+
+  return {
+    nextThumbnails,
+    preservedCount,
+    hydratedCount,
+    invalidatedCount,
+  };
 }
 
 function toolbarChipButtonStyle(disabled: boolean): CSSProperties {
@@ -7869,7 +8117,6 @@ export function FileExplorer({
     openPathWithProgram: openExplorerPathWithProgram,
     openPathAsAdmin: openExplorerPathAsAdmin,
     readFileBase64: readExplorerFileBase64,
-    readEntryThumbnail: readExplorerEntryThumbnail,
     readTextFile: readExplorerTextFile,
     renamePath: renameExplorerPath,
     revealPath: revealExplorerPath,
@@ -9365,6 +9612,9 @@ export function FileExplorer({
           showHidden,
           listLocation: listExplorerLocation,
         });
+        const seededThumbnailMap = buildSeededExplorerThumbnailMap(
+          nextListing.entries,
+        );
         if (!isActiveDirectoryLoadRequest()) {
           return;
         }
@@ -9384,7 +9634,11 @@ export function FileExplorer({
         setSemanticSearchDiagnostics(null);
         setSearchLoading(false);
         setEntries(nextListing.entries);
+        setEntryThumbnailMap(seededThumbnailMap);
         setEntrySizeLoadingPaths(new Set());
+        setEntryThumbnailLoadingPaths(new Set());
+        setVideoHoverThumbnailLoadingPaths(new Set());
+        setHoveredVideoThumbnailPath(null);
         setLocationBreadcrumbs(nextListing.breadcrumbs);
         setLocationParentPath(nextListing.parentPath);
         resetExplorerViewport();
@@ -9770,6 +10024,7 @@ export function FileExplorer({
   );
 
   const refresh = useCallback(async () => {
+    const refreshStartedAt = getExplorerPerformanceNow();
     const refreshPath = pendingNavigationPathRef.current?.trim() || currentPath;
     if (!refreshPath || !isExplorerMountedRef.current) return;
     if (isExplorerHomePath(refreshPath)) {
@@ -9789,43 +10044,16 @@ export function FileExplorer({
     const isActiveDirectoryLoadRequest = () =>
       isExplorerMountedRef.current &&
       directoryLoadRequestIdRef.current === requestId;
-    const entriesToInvalidate = search.trim() ? searchResults : entries;
     const pendingNavigationPath = pendingNavigationPathRef.current;
+    const previousEntries = entries;
+    const previousEntrySizes = entrySizes;
+    const previousEntrySizeLoadingPaths = entrySizeLoadingPaths;
+    const previousEntryThumbnailLoadingPaths = entryThumbnailLoadingPaths;
+    const previousVideoHoverThumbnailLoadingPaths =
+      videoHoverThumbnailLoadingPaths;
     invalidateExplorerResultCaches(refreshPath);
     setLocalTreeRefreshRevision((current) => current + 1);
     setLoading(true);
-    setEntrySizes((current) => {
-      if (entriesToInvalidate.length === 0) {
-        return current;
-      }
-      const next = { ...current };
-      let changed = false;
-      for (const entry of entriesToInvalidate) {
-        if (next[entry.path]) {
-          delete next[entry.path];
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-    setEntrySizeLoadingPaths(new Set());
-    setEntryThumbnailMap((current) => {
-      if (entriesToInvalidate.length === 0) {
-        return current;
-      }
-      const next = { ...current };
-      let changed = false;
-      for (const entry of entriesToInvalidate) {
-        if (next[entry.path] !== undefined) {
-          delete next[entry.path];
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-    setEntryThumbnailLoadingPaths(new Set());
-    setVideoHoverThumbnailLoadingPaths(new Set());
-    setHoveredVideoThumbnailPath(null);
     try {
       const nextListing = await listExplorerLocationUncached(
         refreshPath,
@@ -9839,6 +10067,53 @@ export function FileExplorer({
         showHidden,
         listing: nextListing,
       });
+      const reconciledEntrySizes = reconcileExplorerPathValueRecord({
+        previousEntries,
+        nextEntries: nextListing.entries,
+        currentValues: previousEntrySizes,
+      });
+      const reconciledEntrySizeLoadingPaths = reconcileExplorerPathSet({
+        previousEntries,
+        nextEntries: nextListing.entries,
+        currentPaths: previousEntrySizeLoadingPaths,
+      });
+      const reconciledThumbnailState = reconcileExplorerThumbnailMap({
+        previousEntries,
+        nextEntries: nextListing.entries,
+        currentThumbnails: entryThumbnailMap,
+      });
+      const reconciledThumbnailLoadingPaths = reconcileExplorerPathSet({
+        previousEntries,
+        nextEntries: nextListing.entries,
+        currentPaths: previousEntryThumbnailLoadingPaths,
+      });
+      const reconciledVideoHoverThumbnailLoadingPaths = reconcileExplorerPathSet(
+        {
+          previousEntries,
+          nextEntries: nextListing.entries,
+          currentPaths: previousVideoHoverThumbnailLoadingPaths,
+        },
+      );
+      const nextVisiblePaths = new Set(
+        nextListing.entries.map((entry) => entry.path),
+      );
+      const shouldClearHoveredVideoThumbnail =
+        hoveredVideoThumbnailPath !== null &&
+        !nextVisiblePaths.has(hoveredVideoThumbnailPath);
+
+      recordExplorerMetric({
+        metricId: "explorer_refresh_reconcile",
+        durationMs: getExplorerPerformanceNow() - refreshStartedAt,
+        metadata: {
+          previousEntryCount: previousEntries.length,
+          nextEntryCount: nextListing.entries.length,
+          preservedThumbnailCount: reconciledThumbnailState.preservedCount,
+          hydratedThumbnailCount: reconciledThumbnailState.hydratedCount,
+          invalidatedThumbnailCount: reconciledThumbnailState.invalidatedCount,
+          success: true,
+        },
+      });
+
       startTransition(() => {
         if (isActiveDirectoryLoadRequest()) {
           if (pendingNavigationPath && refreshPath === pendingNavigationPath) {
@@ -9855,7 +10130,17 @@ export function FileExplorer({
             setHistory(pendingHistory);
             setHistoryIdx(pendingHistoryIdx);
           }
+          setEntrySizes(reconciledEntrySizes);
+          setEntrySizeLoadingPaths(reconciledEntrySizeLoadingPaths);
           setEntries(nextListing.entries);
+          setEntryThumbnailMap(reconciledThumbnailState.nextThumbnails);
+          setEntryThumbnailLoadingPaths(reconciledThumbnailLoadingPaths);
+          setVideoHoverThumbnailLoadingPaths(
+            reconciledVideoHoverThumbnailLoadingPaths,
+          );
+          if (shouldClearHoveredVideoThumbnail) {
+            setHoveredVideoThumbnailPath(null);
+          }
           setLocationBreadcrumbs(nextListing.breadcrumbs);
           setLocationParentPath(nextListing.parentPath);
         }
@@ -9868,6 +10153,18 @@ export function FileExplorer({
           pendingNavigationHistoryIdxRef.current = null;
         }
         setError(String(e));
+        recordExplorerMetric({
+          metricId: "explorer_refresh_reconcile",
+          durationMs: getExplorerPerformanceNow() - refreshStartedAt,
+          metadata: {
+            previousEntryCount: previousEntries.length,
+            nextEntryCount: 0,
+            preservedThumbnailCount: 0,
+            hydratedThumbnailCount: 0,
+            invalidatedThumbnailCount: 0,
+            success: false,
+          },
+        });
       }
     } finally {
       if (isActiveDirectoryLoadRequest()) {
@@ -9888,14 +10185,20 @@ export function FileExplorer({
   }, [
     currentPath,
     entries,
+    entrySizeLoadingPaths,
+    entrySizes,
+    entryThumbnailLoadingPaths,
+    entryThumbnailMap,
+    hoveredVideoThumbnailPath,
     listExplorerLocationUncached,
+    recordExplorerMetric,
     search,
     searchMode,
-    searchResults,
     semanticSearchSourcePath,
     showHidden,
     runSearch,
     supportsSearch,
+    videoHoverThumbnailLoadingPaths,
   ]);
 
   useEffect(() => {
@@ -11591,7 +11894,11 @@ export function FileExplorer({
       ) {
         return null;
       }
-      return entryThumbnailMap[entry.path] ?? null;
+      return (
+        entryThumbnailMap[entry.path] ??
+        peekExplorerThumbnailForEntry(buildExplorerPosterThumbnailRequest(entry)) ??
+        null
+      );
     },
     [canRenderEntryThumbnail, entryThumbnailMap],
   );
@@ -12199,15 +12506,14 @@ export function FileExplorer({
   // ── Open ──
   const getSearchFocusTarget = useCallback(
     (entry: FileEntry): EditorSearchFocusTarget | null => {
-      if (!isSearchActive) {
+      if (!isSearchActive || !isExplorerSearchResultEntry(entry)) {
         return null;
       }
 
-      const searchEntry = entry as ExplorerNormalizedSearchResult;
       const nextRequestId = searchFocusRequestIdRef.current + 1;
       const target = createEditorSearchFocus(nextRequestId, search.trim(), {
-        line_number: searchEntry.line_number ?? null,
-        match_kind: searchEntry.match_kind,
+        line_number: entry.line_number ?? null,
+        match_kind: entry.match_kind,
       });
 
       if (target) {
@@ -14841,19 +15147,10 @@ export function FileExplorer({
     (entry: ExplorerMenuInvocationEntry): FileEntry => {
       const resolvedEntry = contextMenuEntryLookup.get(entry.path);
       if (resolvedEntry) {
-        return {
-          name: resolvedEntry.name,
-          path: resolvedEntry.path,
-          is_dir: resolvedEntry.is_dir,
-          size: resolvedEntry.size,
-          modified: resolvedEntry.modified,
-          extension: resolvedEntry.extension,
-          is_hidden: resolvedEntry.is_hidden,
-          is_symlink: resolvedEntry.is_symlink,
-        };
+        return { ...resolvedEntry };
       }
 
-      return {
+      return createDerivedExplorerFileEntry({
         name: entry.name,
         path: entry.path,
         is_dir: entry.isDirectory,
@@ -14862,7 +15159,7 @@ export function FileExplorer({
         extension: entry.extension,
         is_hidden: false,
         is_symlink: false,
-      };
+      });
     },
     [contextMenuEntryLookup],
   );
@@ -23856,6 +24153,9 @@ export function FileExplorer({
         (entry) =>
           canRenderEntryThumbnail(entry) &&
           entryThumbnailMap[entry.path] === undefined &&
+          peekExplorerThumbnailForEntry(
+            buildExplorerPosterThumbnailRequest(entry),
+          ) === undefined &&
           !entryThumbnailLoadingPaths.has(entry.path),
       )
       .slice(0, EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.batchSize);
@@ -23866,6 +24166,7 @@ export function FileExplorer({
 
     const pendingPaths = pendingEntries.map((entry) => entry.path);
     const batchTimer = window.setTimeout(() => {
+      const startedAt = getExplorerPerformanceNow();
       setEntryThumbnailLoadingPaths((current) => {
         const next = new Set(current);
         let changed = false;
@@ -23890,24 +24191,40 @@ export function FileExplorer({
                   maxHeight:
                     EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
                 })
-              : await readExplorerEntryThumbnail({
-                  path: entry.path,
-                  maxWidth:
-                    EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
-                  maxHeight:
-                    EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
-                  includeVideoHoverScrub: false,
-                  videoHoverFrameCount: null,
-                });
-            return { path: entry.path, thumbnail };
+              : await readExplorerThumbnailForEntry(
+                  buildExplorerPosterThumbnailRequest(entry),
+                );
+            return {
+              path: entry.path,
+              thumbnail,
+              usedModelRenderer: Boolean(modelPreviewFormat),
+            };
           } catch {
-            return { path: entry.path, thumbnail: null };
+            return {
+              path: entry.path,
+              thumbnail: null,
+              usedModelRenderer: false,
+            };
           }
         }),
       ).then((results) => {
         if (!isExplorerMountedRef.current) {
           return;
         }
+
+        recordExplorerMetric({
+          metricId: "explorer_thumbnail_batch",
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            pathCount: pendingEntries.length,
+            resultCount: results.filter((result) => result.thumbnail !== null)
+              .length,
+            modelCount: results.filter((result) => result.usedModelRenderer)
+              .length,
+            hoverScrub: false,
+            success: true,
+          },
+        });
 
         startTransition(() => {
           setEntryThumbnailMap((current) => {
@@ -23941,7 +24258,7 @@ export function FileExplorer({
     entryThumbnailMap,
     isSearchActive,
     loading,
-    readExplorerEntryThumbnail,
+    recordExplorerMetric,
     virtualWindow.kind,
     deferredVirtualizedEntries,
   ]);
@@ -23977,38 +24294,38 @@ export function FileExplorer({
 
     let cancelled = false;
     const targetPath = hoveredVideoThumbnailPath;
+    const startedAt = getExplorerPerformanceNow();
     setVideoHoverThumbnailLoadingPaths((current) => {
       const next = new Set(current);
       next.add(targetPath);
       return next;
     });
 
-    void readExplorerEntryThumbnail({
-      path: targetPath,
-      maxWidth: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
-      maxHeight: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
-      includeVideoHoverScrub: true,
-      videoHoverFrameCount: explorerThumbnailSettings.videoHoverScrubFrameCount,
-    })
+    void readExplorerThumbnailForEntry(
+      buildExplorerVideoHoverThumbnailRequest(
+        hoveredEntry,
+        explorerThumbnailSettings.videoHoverScrubFrameCount,
+      ),
+    )
       .then((thumbnail) => {
         if (cancelled || !isExplorerMountedRef.current) {
           return;
         }
+        recordExplorerMetric({
+          metricId: "explorer_thumbnail_batch",
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            pathCount: 1,
+            resultCount: thumbnail ? 1 : 0,
+            modelCount: 0,
+            hoverScrub: true,
+            success: true,
+          },
+        });
         startTransition(() => {
           setEntryThumbnailMap((current) => ({
             ...current,
             [targetPath]: thumbnail,
-          }));
-        });
-      })
-      .catch(() => {
-        if (cancelled || !isExplorerMountedRef.current) {
-          return;
-        }
-        startTransition(() => {
-          setEntryThumbnailMap((current) => ({
-            ...current,
-            [targetPath]: current[targetPath] ?? null,
           }));
         });
       })
@@ -24036,7 +24353,8 @@ export function FileExplorer({
     hoveredVideoThumbnailPath,
     isSearchActive,
     layoutZoomGestureActive,
-    readExplorerEntryThumbnail,
+    readExplorerThumbnailForEntry,
+    recordExplorerMetric,
     videoHoverThumbnailLoadingPaths,
     visibleEntryLookup,
   ]);
@@ -24068,8 +24386,8 @@ export function FileExplorer({
   ]);
 
   const renderSearchMetadata = (entry: FileEntry) => {
-    if (!isSearchActive) return null;
-    const searchEntry = entry as ExplorerNormalizedSearchResult;
+    if (!isSearchActive || !isExplorerSearchResultEntry(entry)) return null;
+    const searchEntry = entry;
     const matchLabel =
       searchEntry.search_mode === "semantic"
         ? "Semantic match"
@@ -24163,8 +24481,10 @@ export function FileExplorer({
   };
 
   const getSearchTooltip = (entry: FileEntry) => {
-    if (!isSearchActive) return undefined;
-    const searchEntry = entry as ExplorerNormalizedSearchResult;
+    if (!isSearchActive || !isExplorerSearchResultEntry(entry)) {
+      return undefined;
+    }
+    const searchEntry = entry;
     const parts = [searchEntry.relative_path || searchEntry.path];
     if (searchEntry.line_number != null) {
       parts.push(`Line ${searchEntry.line_number}`);
@@ -26070,7 +26390,7 @@ export function FileExplorer({
         onExtractArchive={(mode) => {
           if (preview.type === "archive") {
             void handleArchiveAction(
-              {
+              createDerivedExplorerFileEntry({
                 path: getPreviewStateResolvedPath(preview),
                 name: preview.name,
                 size: preview.size,
@@ -26083,7 +26403,7 @@ export function FileExplorer({
                 }),
                 is_hidden: false,
                 is_symlink: false,
-              },
+              }),
               mode,
             );
           }
@@ -27162,7 +27482,7 @@ export function FileExplorer({
                           src={
                             newItem.kind === "folder"
                               ? getIconSrc(
-                                  {
+                                  createDerivedExplorerFileEntry({
                                     name: "folder",
                                     path: currentPath,
                                     is_dir: true,
@@ -27171,7 +27491,7 @@ export function FileExplorer({
                                     extension: "",
                                     is_hidden: false,
                                     is_symlink: false,
-                                  },
+                                  }),
                                   false,
                                   {
                                     rules: explorerSettings.folderIconRules,
@@ -27517,7 +27837,7 @@ export function FileExplorer({
                                   src={
                                     newItem.kind === "folder"
                                       ? getIconSrc(
-                                          {
+                                          createDerivedExplorerFileEntry({
                                             name: "folder",
                                             path: currentPath,
                                             is_dir: true,
@@ -27526,7 +27846,7 @@ export function FileExplorer({
                                             extension: "",
                                             is_hidden: false,
                                             is_symlink: false,
-                                          },
+                                          }),
                                           false,
                                           {
                                             rules:

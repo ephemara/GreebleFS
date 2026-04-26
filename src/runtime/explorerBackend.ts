@@ -29,6 +29,7 @@ import {
   type ExplorerDuplicateScanStartResponse,
   type ExplorerDuplicateScanStatus,
   type ExplorerEntryThumbnail,
+  type ExplorerThumbnailArtifact,
   type ExplorerEntryThumbnailRequest,
   type ExplorerSavedSearchRecord,
   type ExplorerSavedSearchSaveRequest,
@@ -145,6 +146,7 @@ export type ExplorerDuplicateScanStart = ExplorerDuplicateScanStartResponse;
 export type ExplorerDuplicateScan = ExplorerDuplicateScanStatus;
 export type ExplorerEntryThumbnailData = ExplorerEntryThumbnail;
 export type ExplorerEntryThumbnailInput = ExplorerEntryThumbnailRequest;
+export type ExplorerThumbnailArtifactData = ExplorerThumbnailArtifact;
 export type ExplorerChecksumInfo = FsChecksumEntryInfo;
 export type ExplorerItemProperties = FsItemPropertiesInfo;
 export type ExplorerJumpFilterEntryInput = FsJumpFilterEntry;
@@ -312,6 +314,27 @@ function getLeafName(path: string): string {
   return match?.[1] ?? trimmed;
 }
 
+function buildDerivedExplorerEntityId(
+  namespace: string,
+  stableKey: string,
+): string {
+  return `${namespace}:${stableKey}`;
+}
+
+function buildArchiveEntryContentRevision(
+  entry: ExplorerArchiveListingEntry,
+  normalizedRelativePath: string,
+): string {
+  return [
+    "archive-entry",
+    normalizedRelativePath,
+    entry.isDir ? "dir" : "file",
+    entry.size,
+    entry.modified,
+    entry.extension,
+  ].join("::");
+}
+
 function getParentDir(path: string): string {
   if (isCloudExplorerPath(path)) {
     const parentPath = getCloudParentPath(path);
@@ -402,6 +425,7 @@ export type ExplorerBackendContract = {
   readPreviewBytes: typeof readExplorerPreviewBytes;
   readImageThumbnail: typeof readExplorerImageThumbnail;
   readEntryThumbnail: typeof readExplorerEntryThumbnail;
+  readEntryThumbnailArtifact: typeof readExplorerThumbnailArtifact;
   renamePath: typeof renameExplorerPath;
   deletePath: typeof deleteExplorerPath;
   trashPaths: typeof trashExplorerPaths;
@@ -488,19 +512,30 @@ function toExplorerArchiveVirtualEntry(
   const normalizedRelativePath = normalizeExplorerArchiveEntryPath(
     entry.relativePath,
   );
+  const contentRevision = buildArchiveEntryContentRevision(
+    entry,
+    normalizedRelativePath,
+  );
+  const virtualPath = buildExplorerArchiveVirtualPath({
+    archivePath,
+    entryPath: normalizedRelativePath,
+  });
 
   return {
     name: entry.name,
-    path: buildExplorerArchiveVirtualPath({
-      archivePath,
-      entryPath: normalizedRelativePath,
-    }),
+    path: virtualPath,
     is_dir: entry.isDir,
     size: entry.size,
     modified: entry.modified,
     extension: entry.extension,
     is_hidden: entry.name.startsWith("."),
     is_symlink: false,
+    entityId: buildDerivedExplorerEntityId(
+      "archive-entry",
+      `${archivePath}::${normalizedRelativePath}`,
+    ),
+    identityKind: "derived",
+    contentRevision,
   };
 }
 
@@ -998,6 +1033,17 @@ export async function readExplorerEntryThumbnail(
   return unwrapTauriResult(await commands.fsReadEntryThumbnail(request));
 }
 
+export async function readExplorerThumbnailArtifact(
+  request: ExplorerEntryThumbnailInput,
+): Promise<ExplorerThumbnailArtifactData> {
+  if (isCloudExplorerPath(request.path)) {
+    throw new Error(
+      "Generated thumbnails are not available for cloud filesystem items yet.",
+    );
+  }
+  return unwrapTauriResult(await commands.fsReadEntryThumbnailArtifact(request));
+}
+
 export async function renameExplorerPath(
   oldPath: string,
   newPath: string,
@@ -1302,6 +1348,7 @@ export const explorerBackendContract: ExplorerBackendContract = {
   readPreviewBytes: readExplorerPreviewBytes,
   readImageThumbnail: readExplorerImageThumbnail,
   readEntryThumbnail: readExplorerEntryThumbnail,
+  readEntryThumbnailArtifact: readExplorerThumbnailArtifact,
   renamePath: renameExplorerPath,
   deletePath: deleteExplorerPath,
   trashPaths: trashExplorerPaths,

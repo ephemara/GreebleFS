@@ -5,6 +5,7 @@ import { ExplorerFolderPreview } from "../components/ExplorerFolderPreview";
 import { getFolderIconSrc } from "../config/folderIcons";
 import { getBuiltInIconTheme, resolveFileIconSrc } from "../config/iconTheme";
 import { listExplorerDirUncached } from "../runtime/explorerBackend";
+import { createTestExplorerFileEntry } from "./helpers/explorerEntries";
 
 vi.mock("../runtime/explorerBackend", () => ({
   listExplorerDirUncached: vi.fn(),
@@ -20,7 +21,7 @@ describe("ExplorerFolderPreview", () => {
     const iconTheme = getBuiltInIconTheme();
 
     vi.mocked(listExplorerDirUncached).mockResolvedValue([
-      {
+      createTestExplorerFileEntry({
         name: "shots",
         path: `${folderPath}\\shots`,
         is_dir: true,
@@ -29,8 +30,8 @@ describe("ExplorerFolderPreview", () => {
         extension: "",
         is_hidden: false,
         is_symlink: false,
-      },
-      {
+      }),
+      createTestExplorerFileEntry({
         name: "readme.md",
         path: `${folderPath}\\readme.md`,
         is_dir: false,
@@ -39,7 +40,7 @@ describe("ExplorerFolderPreview", () => {
         extension: "md",
         is_hidden: false,
         is_symlink: false,
-      },
+      }),
     ]);
 
     render(
@@ -86,7 +87,7 @@ describe("ExplorerFolderPreview", () => {
     const onStartDragOutEntry = vi.fn();
 
     vi.mocked(listExplorerDirUncached).mockResolvedValue([
-      {
+      createTestExplorerFileEntry({
         name: "notes.txt",
         path: `${folderPath}\\notes.txt`,
         is_dir: false,
@@ -95,8 +96,8 @@ describe("ExplorerFolderPreview", () => {
         extension: "txt",
         is_hidden: false,
         is_symlink: false,
-      },
-      {
+      }),
+      createTestExplorerFileEntry({
         name: "readme.md",
         path: `${folderPath}\\readme.md`,
         is_dir: false,
@@ -105,7 +106,7 @@ describe("ExplorerFolderPreview", () => {
         extension: "md",
         is_hidden: false,
         is_symlink: false,
-      },
+      }),
     ]);
 
     render(

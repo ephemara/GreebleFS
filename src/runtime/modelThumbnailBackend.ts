@@ -4,7 +4,10 @@ import { renderModelThumbnailDataUrl } from "./modelThumbnailRenderer";
 import type { ExplorerEntryThumbnailData, ExplorerFileEntry } from "./explorerBackend";
 
 export interface ExplorerModelThumbnailRequest {
-  entry: Pick<ExplorerFileEntry, "path" | "size" | "modified" | "extension">;
+  entry: Pick<
+    ExplorerFileEntry,
+    "path" | "size" | "modified" | "extension" | "entityId" | "contentRevision"
+  >;
   maxWidth: number;
   maxHeight: number;
 }
@@ -79,9 +82,8 @@ function buildExplorerModelThumbnailCacheKey(
   return [
     "model-thumbnail",
     format,
-    entry.path,
-    entry.size,
-    entry.modified,
+    entry.entityId,
+    entry.contentRevision,
     normalizedWidth,
     normalizedHeight,
   ].join("::");

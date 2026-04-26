@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invalidateExplorerPreviewCache } from "../components/explorer/explorerPreviewCache";
+import { createTestExplorerFileEntry } from "./helpers/explorerEntries";
 
 const { renderModelThumbnailDataUrlMock } = vi.hoisted(() => ({
   renderModelThumbnailDataUrlMock: vi.fn(),
@@ -20,12 +21,13 @@ describe("modelThumbnailBackend", () => {
   it("renders model thumbnails through the shared GPU renderer and caches the result", async () => {
     renderModelThumbnailDataUrlMock.mockResolvedValueOnce("data:image/png;base64,thumb-one");
 
-    const entry = {
+    const entry = createTestExplorerFileEntry({
+      name: "cube.glb",
       path: "/models/cube.glb",
       size: 2048,
       modified: 172,
       extension: "glb",
-    };
+    });
 
     const firstThumbnail = await readExplorerModelThumbnail({
       entry,

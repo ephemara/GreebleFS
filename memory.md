@@ -1,3 +1,32 @@
+# 2026-04-26 - Explorer Refresh Now Reconciles Stable File Identities And Shared Thumbnail Artifacts
+
+- Local explorer thumbnail churn is no longer purely path-first:
+  - Rust now ships a backend-owned explorer identity/artifact layer (`src-tauri/src/explorer_identity.rs`) that resolves stable local file identities, preserves move/rename continuity, and persists thumbnail artifact metadata.
+  - Local `FileEntry`, `FileSearchResult`, and `FileTransferResult` payloads now carry `entityId`, `identityKind`, and `contentRevision`. The frontend should treat those as the durable identity contract for refresh/reconcile work.
+- Thumbnail generation is now split into two contracts:
+  - `src-tauri/src/thumbnail_commands.rs` still exposes the legacy `fs_read_entry_thumbnail` data-URL command for old callers, but it now routes through the new artifact pipeline.
+  - The new `fs_read_entry_thumbnail_artifact` command returns artifact file paths keyed by `entityId + contentRevision + variant + dimensions`. `src/runtime/explorerBackend.ts` exposes that bridge and `src/runtime/explorerThumbnailArtifactRuntime.ts` is now the shared TS cache/runtime that turns artifact paths into browser-safe URLs.
+- `src/components/FileExplorer.tsx` now follows the stable-identity thumbnail rules:
+  - navigation seeds thumbnail state from the shared artifact cache instead of treating every folder open like a cold start
+  - refresh reconciles by `entityId + contentRevision` instead of clearing `entryThumbnailMap`
+  - unchanged rows keep their thumbnails across relists and in-folder move/rename flows
+  - visible thumbnail batches now read through `readExplorerThumbnailForEntry(...)`, while `getRenderableEntryThumbnail(...)` can also fall back to the shared cache directly
+  - video hover scrub still loads lazily, but now rides the same artifact/runtime path
+- Model thumbnails now use the same semantic cache key shape:
+  - `src/runtime/modelThumbnailBackend.ts` keys cached renders by `entityId + contentRevision` instead of `path + size + modified`, so rename/move keeps model thumbnails hot too.
+- File-operations window events now include resolved affected entries:
+  - `src/runtime/fileOperationsWindow.ts` publishes `affectedEntries[]` with `entityId`, `sourcePath`, `destinationPath`, `contentRevision`, and `mutationKind`.
+  - Current explorer listeners still refresh the affected folder, but refresh is now reconcile-based instead of path-wipe churn. Future targeted patching should build on `affectedEntries`, not invent another transfer event.
+- Durable product rule:
+  - Do not clear explorer thumbnail state wholesale on local refreshes anymore. If a future change needs to invalidate thumbnails, do it by comparing `entityId + contentRevision` and preserve move/rename continuity whenever the content revision is unchanged.
+  - For normal explorer grid/list thumbnails, prefer `src/runtime/explorerThumbnailArtifactRuntime.ts` over direct `readExplorerEntryThumbnail(...)` calls.
+- Durable validation:
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json | rg "ExplorerShaderWorkbench|FileExplorer|explorerBackend|modelThumbnailBackend|fileOperationsWindow|performanceTelemetry|explorerThumbnailArtifactRuntime|fileExplorer.latency.browser.test|constellationLayout.test|explorerArchivePreview.test|explorerBatchRename.test|explorerFolderPreview.test|explorerSideRail.test|fileOperationsWindow.test"`
+  - passed: `bunx vitest run src/test/modelThumbnailBackend.test.ts src/test/fileOperationsWindow.test.ts src/test/explorerArchivePreview.test.tsx src/test/explorerFolderPreview.test.tsx src/test/explorerBatchRename.test.ts src/test/constellationLayout.test.ts src/test/performanceTelemetry.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/explorerSideRail.test.tsx --reporter=dot`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - note: repo-wide `bunx tsc --noEmit` is still red on unrelated pre-existing settings/icon-theme/vendored tiptap paths, so keep validation filtered to touched explorer/runtime surfaces until those workspace-level failures are cleaned up.
+
 # 2026-04-25 - Explorer Video Preview Now Uses Native Byte Transport Plus MP4 Proxy Fallback
 
 - The explorer video lane had two independent playback regressions that compounded into “video never works”:
