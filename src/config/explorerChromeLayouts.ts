@@ -88,6 +88,7 @@ export type BuiltInExplorerChromeControlId =
   | "railManageToggle"
   | "previewIdentity"
   | "previewState"
+  | "previewNavigateBack"
   | "previewModeToggle"
   | "previewSplitToggle"
   | "previewLockToggle"
@@ -538,6 +539,9 @@ const builtInExplorerChromeLayouts: Record<
           overflowEligible: true,
         },
       },
+      previewNavigateBack: {
+        previewHeader: { zone: "end", order: 5 },
+      },
       previewModeToggle: {
         previewHeader: { zone: "end", order: 10 },
       },
@@ -896,6 +900,9 @@ const builtInExplorerChromeLayouts: Record<
           collapsePriority: 20,
           overflowEligible: true,
         },
+      },
+      previewNavigateBack: {
+        previewHeader: { zone: "end", order: 15 },
       },
       previewModeToggle: {
         previewHeader: { zone: "end", order: 20 },

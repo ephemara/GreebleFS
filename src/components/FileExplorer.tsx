@@ -8743,6 +8743,7 @@ export function FileExplorer({
   const lastSelected = useRef<string | null>(null);
   const selectionRangeAnchorPathRef = useRef<string | null>(null);
   const previewRef = useRef(preview);
+  const previewNavigationHistoryRef = useRef<FileEntry[]>([]);
   const pendingPreviewCollectionNavigationTargetPathRef = useRef<string | null>(
     null,
   );
@@ -9444,6 +9445,10 @@ export function FileExplorer({
   }, [preview]);
 
   useEffect(() => {
+    previewNavigationHistoryRef.current = previewNavigationHistory;
+  }, [previewNavigationHistory]);
+
+  useEffect(() => {
     const pendingPreviewPath =
       pendingPreviewCollectionNavigationTargetPathRef.current;
     if (pendingPreviewPath && preview.path === pendingPreviewPath) {
@@ -9452,6 +9457,7 @@ export function FileExplorer({
     }
 
     pendingPreviewCollectionNavigationTargetPathRef.current = null;
+    previewNavigationHistoryRef.current = [];
     setPreviewNavigationHistory((current) =>
       current.length === 0 ? current : [],
     );
@@ -13218,6 +13224,7 @@ export function FileExplorer({
     previewCloseGuardRef.current = null;
     resetPreviewTerminalState();
     pendingPreviewCollectionNavigationTargetPathRef.current = null;
+    previewNavigationHistoryRef.current = [];
     setPreviewNavigationHistory([]);
     setPreview({ type: "none", path: "" });
     setPreviewLoading(false);
@@ -13429,6 +13436,7 @@ export function FileExplorer({
     setPreviewJumpToFolderEnabled(nextEnabled);
     if (nextEnabled) {
       pendingPreviewCollectionNavigationTargetPathRef.current = null;
+      previewNavigationHistoryRef.current = [];
       setPreviewNavigationHistory([]);
     }
   }, [previewJumpToFolderEnabled]);
@@ -14249,10 +14257,11 @@ export function FileExplorer({
         previewRef.current,
       );
       if (currentPreviewEntry && currentPreviewEntry.path !== entry.path) {
-        setPreviewNavigationHistory((current) => [
-          ...current,
-          currentPreviewEntry,
-        ]);
+        setPreviewNavigationHistory((current) => {
+          const nextHistory = [...current, currentPreviewEntry];
+          previewNavigationHistoryRef.current = nextHistory;
+          return nextHistory;
+        });
       }
       pendingPreviewCollectionNavigationTargetPathRef.current = entry.path;
       await previewEntry(
@@ -14265,15 +14274,15 @@ export function FileExplorer({
   );
 
   const navigatePreviewBack = useCallback(async () => {
-    let targetEntry: FileEntry | null = null;
-    setPreviewNavigationHistory((current) => {
-      targetEntry = current[current.length - 1] ?? null;
-      return current.slice(0, -1);
-    });
+    const currentHistory = previewNavigationHistoryRef.current;
+    const targetEntry = currentHistory[currentHistory.length - 1] ?? null;
     if (!targetEntry) {
       return;
     }
 
+    const nextHistory = currentHistory.slice(0, -1);
+    previewNavigationHistoryRef.current = nextHistory;
+    setPreviewNavigationHistory(nextHistory);
     pendingPreviewCollectionNavigationTargetPathRef.current = targetEntry.path;
     await previewEntry(
       targetEntry,

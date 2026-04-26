@@ -3899,7 +3899,7 @@ const value = 1;
     fireEvent.click(within(getExplorerContentViewport()).getByText("notes.txt"));
 
     expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
-      "hello from text file",
+      "hello from preview",
     );
     expect(getChromeControl("previewNavigateBack")).toBeNull();
   });
