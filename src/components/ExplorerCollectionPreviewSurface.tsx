@@ -861,20 +861,23 @@ export function ExplorerCollectionPreviewSurface({
                 }}
               >
                 {categorizedEntries.map((group) => {
-                  const visibleOrbitEntries = group.entries.slice(0, 10);
-                  const overflowCount = Math.max(0, group.entries.length - 10);
+                  const visibleOrbitEntries = group.entries.slice(0, 8);
+                  const overflowCount = Math.max(
+                    0,
+                    group.entries.length - visibleOrbitEntries.length,
+                  );
                   const CenterIcon = group.icon;
                   return (
                     <section
                       key={group.id}
                       style={{
                         position: "relative",
-                        minHeight: 156,
+                        minHeight: 144,
                         borderRadius: 18,
                         border:
                           "1px solid color-mix(in srgb, var(--overlay-explorer-preview-border) 78%, transparent)",
                         background:
-                          "radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--overlay-accent) 18%, transparent) 0%, transparent 46%), linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-card) 92%, transparent), color-mix(in srgb, var(--overlay-bg-panel) 94%, transparent))",
+                          "radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--overlay-accent) 10%, transparent) 0%, transparent 38%), linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-card) 92%, transparent), color-mix(in srgb, var(--overlay-bg-panel) 95%, transparent))",
                         overflow: "hidden",
                       }}
                     >
@@ -884,8 +887,8 @@ export function ExplorerCollectionPreviewSurface({
                           inset: 0,
                           pointerEvents: "none",
                           background:
-                            "radial-gradient(circle at center, transparent 34%, color-mix(in srgb, var(--overlay-border) 26%, transparent) 35%, transparent 36%)",
-                          opacity: 0.7,
+                            "radial-gradient(circle at center, transparent 28%, color-mix(in srgb, var(--overlay-border) 20%, transparent) 29%, transparent 30%), radial-gradient(circle at center, transparent 47%, color-mix(in srgb, var(--overlay-border) 14%, transparent) 48%, transparent 49%)",
+                          opacity: 0.58,
                         }}
                       />
                       <div
@@ -894,32 +897,22 @@ export function ExplorerCollectionPreviewSurface({
                           left: "50%",
                           top: "50%",
                           transform: "translate(-50%, -50%)",
-                          width: 60,
-                          height: 60,
+                          width: 42,
+                          height: 42,
                           borderRadius: 999,
                           border:
-                            "1px solid color-mix(in srgb, var(--overlay-accent) 45%, var(--overlay-explorer-chip-border))",
+                            "1px solid color-mix(in srgb, var(--overlay-accent) 28%, var(--overlay-explorer-chip-border))",
                           background:
-                            "color-mix(in srgb, var(--overlay-explorer-chip-active-bg) 74%, var(--overlay-bg-card))",
+                            "color-mix(in srgb, var(--overlay-explorer-chip-active-bg) 58%, var(--overlay-bg-card))",
                           display: "grid",
                           placeItems: "center",
-                          gap: 2,
                           color: "var(--overlay-text-primary)",
                           boxShadow:
-                            "0 12px 28px color-mix(in srgb, black 34%, transparent)",
+                            "0 10px 22px color-mix(in srgb, black 26%, transparent)",
+                          zIndex: 1,
                         }}
                       >
-                        <CenterIcon size={16} strokeWidth={1.8} />
-                        <div
-                          style={{
-                            fontSize: 9,
-                            fontWeight: 700,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.06em",
-                          }}
-                        >
-                          {group.entries.length}
-                        </div>
+                        <CenterIcon size={14} strokeWidth={1.8} />
                       </div>
                       <div
                         style={{
@@ -938,6 +931,25 @@ export function ExplorerCollectionPreviewSurface({
                       >
                         <CenterIcon size={12} strokeWidth={1.8} />
                         {group.label}
+                      </div>
+                      <div
+                        style={{
+                          position: "absolute",
+                          right: 12,
+                          top: 12,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          border:
+                            "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 88%, transparent)",
+                          background:
+                            "color-mix(in srgb, var(--overlay-explorer-chip-bg) 92%, transparent)",
+                          color: "var(--overlay-text-muted)",
+                          fontSize: 10,
+                          fontWeight: 700,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {group.entries.length}
                       </div>
                       {visibleOrbitEntries.map((entry, index) =>
                         renderOrbitEntry({
@@ -1277,12 +1289,9 @@ function renderOrbitEntry(args: {
     onHoverStart,
   } = args;
   const previewEntryDragBindings = bindPreviewEntryDirectDrag(entry);
-  const angle = ((Math.PI * 2) / Math.max(total, 1)) * index - Math.PI / 2;
-  const radius = total <= 4 ? 42 : total <= 7 ? 48 : 54;
-  const x = Math.cos(angle) * radius;
-  const y = Math.sin(angle) * radius;
-  const shellWidth = 92;
-  const shellHeight = 64;
+  const placement = resolveOrbitEntryPlacement(index, total);
+  const shellWidth = 88;
+  const shellHeight = 32;
   return (
     <button
       type="button"
@@ -1295,17 +1304,25 @@ function renderOrbitEntry(args: {
       aria-pressed={isSelected}
       style={{
         position: "absolute",
-        left: `calc(50% + ${x}px - ${shellWidth / 2}px)`,
-        top: `calc(50% + ${y}px - ${shellHeight / 2}px)`,
+        left: `calc(50% + ${placement.x}px - ${shellWidth / 2}px)`,
+        top: `calc(50% + ${placement.y}px - ${shellHeight / 2}px)`,
         width: shellWidth,
         height: shellHeight,
-        border: "none",
-        background: "transparent",
-        display: "grid",
-        justifyItems: "center",
-        alignContent: "start",
+        padding: "4px 8px 4px 6px",
+        borderRadius: 999,
+        border: resolveCardBorder(isSelected),
+        background: resolveEntryBackground({
+          isSelected,
+          isHovered,
+          variant: "orb",
+        }),
+        display: "flex",
+        alignItems: "center",
         gap: 6,
         cursor: "pointer",
+        boxShadow: isSelected
+          ? "0 10px 22px color-mix(in srgb, var(--overlay-accent) 20%, transparent)"
+          : "none",
       }}
       onMouseEnter={() => onHoverStart(entry.path)}
       onMouseLeave={() => onHoverStart(null)}
@@ -1313,44 +1330,75 @@ function renderOrbitEntry(args: {
     >
       <div
         style={{
-          width: 38,
-          height: 38,
+          width: 20,
+          height: 20,
           borderRadius: 999,
-          border: resolveCardBorder(isSelected),
-          background: resolveEntryBackground({
-            isSelected,
-            isHovered,
-            variant: "orb",
-          }),
+          border:
+            "1px solid color-mix(in srgb, var(--overlay-explorer-preview-border) 82%, transparent)",
+          background:
+            "linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-card) 84%, var(--overlay-accent) 16%), color-mix(in srgb, var(--overlay-bg-panel) 96%, transparent))",
           display: "grid",
           placeItems: "center",
-          boxShadow: isSelected
-            ? "0 10px 22px color-mix(in srgb, var(--overlay-accent) 24%, transparent)"
-            : "none",
+          flexShrink: 0,
         }}
       >
-        {iconSrc ? <ExplorerPreviewEntryIconImage src={iconSrc} size={18} /> : null}
+        {iconSrc ? <ExplorerPreviewEntryIconImage src={iconSrc} size={12} /> : null}
       </div>
       <div
         data-overlay-preview-entry-name="true"
         style={{
-          maxWidth: "100%",
-          padding: "2px 8px",
-          borderRadius: 999,
-          border: "1px solid var(--overlay-explorer-chip-border)",
-          background: "var(--overlay-explorer-chip-bg)",
+          minWidth: 0,
+          flex: 1,
           color: "var(--overlay-text-primary)",
           fontSize: 10,
           fontWeight: 700,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
+          textAlign: "left",
         }}
       >
         {entry.name}
       </div>
     </button>
   );
+}
+
+function resolveOrbitEntryPlacement(
+  index: number,
+  total: number,
+): { x: number; y: number } {
+  const compactPresets: Record<number, Array<{ x: number; y: number }>> = {
+    1: [{ x: 0, y: 46 }],
+    2: [
+      { x: -56, y: 10 },
+      { x: 56, y: 10 },
+    ],
+    3: [
+      { x: 0, y: -42 },
+      { x: -58, y: 34 },
+      { x: 58, y: 34 },
+    ],
+    4: [
+      { x: -56, y: -14 },
+      { x: 56, y: -14 },
+      { x: -56, y: 38 },
+      { x: 56, y: 38 },
+    ],
+  };
+  const preset = compactPresets[total];
+  if (preset) {
+    return preset[index] ?? preset[preset.length - 1] ?? { x: 0, y: 0 };
+  }
+
+  const safeTotal = Math.max(total, 1);
+  const angle = ((Math.PI * 2) / safeTotal) * index - Math.PI / 2;
+  const radiusX = safeTotal >= 8 ? 68 : safeTotal >= 6 ? 62 : 58;
+  const radiusY = safeTotal >= 8 ? 38 : safeTotal >= 6 ? 36 : 34;
+  return {
+    x: Math.cos(angle) * radiusX,
+    y: Math.sin(angle) * radiusY + 6,
+  };
 }
 
 function resolveModeIcon(mode: ExplorerCollectionPreviewMode) {

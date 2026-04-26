@@ -54,12 +54,14 @@
   - `src/components/FileExplorer.tsx` keeps preview-only navigation history in both React state and a synced ref. Do not rely on mutating local variables inside `setState` updater callbacks for back/forward logic; React concurrent scheduling can make that nondeterministic.
 - Durable readability rule:
   - Non-list collection modes in `ExplorerCollectionPreviewSurface.tsx` should keep visible filename labels in the pane. The layouts can stay icon-forward, but unlabeled icon clusters become hard to navigate in narrow preview widths.
+  - `orbit` mode now uses a compact hub plus horizontal satellite capsules, and low-count groups (`1` to `4` entries) use explicit placement presets instead of a naive circular formula. Preserve that adaptive layout so small archive/folder groups do not collide with the hub or waste most of the pane on one giant bubble.
 - Durable validation:
   - passed: `bunx vitest run src/test/explorerCollectionPreviewThumbnails.test.ts src/test/explorerFolderPreview.test.tsx src/test/explorerArchivePreview.test.tsx --reporter=dot`
   - passed: `bunx vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot`
   - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "cycles shared folder preview modes from the explorer hotkeys" --reporter=dot`
   - passed: `bunx vitest run src/test/explorerFolderPreview.test.tsx src/test/explorerArchivePreview.test.tsx src/test/explorerStore.test.ts --reporter=dot`
   - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "lets the preview pane browse folders in place when jump to folder is off" --reporter=dot`
+  - passed: `bunx vitest run src/test/explorerFolderPreview.test.tsx src/test/explorerArchivePreview.test.tsx --reporter=dot`
   - note: targeted `bunx tsc --noEmit --pretty false -p tsconfig.json` filtering still surfaces a pre-existing unrelated `src/components/SettingsPage.tsx` typing error around `activeSectionMeta.shell?.disableContentScroll`.
 
 # 2026-04-26 - Explorer Refresh Now Reconciles Stable File Identities And Shared Thumbnail Artifacts
