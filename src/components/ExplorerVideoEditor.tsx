@@ -117,6 +117,72 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
+const MEDIA_SOURCE_PROTOCOL_PATTERN = /^(https?:|file:|asset:|tauri:|blob:)/i;
+
+function buildEncodedFileUrl(sourcePath: string): string | null {
+  const trimmedPath = sourcePath.trim();
+  if (!trimmedPath) {
+    return null;
+  }
+
+  if (trimmedPath.toLowerCase().startsWith('file:')) {
+    return encodeURI(trimmedPath);
+  }
+
+  if (MEDIA_SOURCE_PROTOCOL_PATTERN.test(trimmedPath)) {
+    return null;
+  }
+
+  const normalizedPath = trimmedPath.replace(/\\/g, '/');
+  if (/^[a-zA-Z]:\//.test(normalizedPath)) {
+    return encodeURI(`file:///${normalizedPath}`);
+  }
+
+  if (normalizedPath.startsWith('/')) {
+    return encodeURI(`file://${normalizedPath}`);
+  }
+
+  return encodeURI(`file:///${normalizedPath}`);
+}
+
+function buildVideoPlaybackSourceCandidates(
+  sourcePath: string,
+  fallbackSource?: string,
+): string[] {
+  const uniqueCandidates = new Set<string>();
+
+  const registerSource = (candidate: string | null | undefined) => {
+    const trimmedCandidate = candidate?.trim();
+    if (!trimmedCandidate) {
+      return;
+    }
+
+    if (MEDIA_SOURCE_PROTOCOL_PATTERN.test(trimmedCandidate)) {
+      uniqueCandidates.add(trimmedCandidate);
+      return;
+    }
+
+    try {
+      uniqueCandidates.add(convertFileSrc(trimmedCandidate));
+    } catch {
+      // Fall through to the explicit file:// fallback below.
+    }
+
+    const fileUrl = buildEncodedFileUrl(trimmedCandidate);
+    if (fileUrl) {
+      uniqueCandidates.add(fileUrl);
+    }
+  };
+
+  registerSource(sourcePath);
+
+  if (fallbackSource && fallbackSource.trim() !== sourcePath.trim()) {
+    registerSource(fallbackSource);
+  }
+
+  return Array.from(uniqueCandidates);
+}
+
 /** Convert AudioBuffer → WAV Blob without any server or ffmpeg dependency */
 function audioBufferToWav(buf: AudioBuffer): Blob {
   const numCh = buf.numberOfChannels;
@@ -249,17 +315,17 @@ export function ExplorerVideoEditor({
   mode = 'edit',
 }: ExplorerVideoEditorProps) {
   const isEditMode = mode === 'edit';
-  // Resolve fallback static native-file URL (mostly used for audio extraction)
-  const nativeUrl = useMemo(() => {
-    try {
-      return convertFileSrc(videoPath);
-    } catch {
-      return videoSource;
-    }
-  }, [videoPath, videoSource]);
+  const nativeSourceCandidates = useMemo(
+    () => buildVideoPlaybackSourceCandidates(videoPath, videoSource),
+    [videoPath, videoSource],
+  );
+  const nativeUrl = nativeSourceCandidates[0] ?? videoSource;
 
   // ── Proxy resolution state ──
-  const [playSrc, setPlaySrc] = useState<string | undefined>(undefined);
+  const [playbackSourceCandidates, setPlaybackSourceCandidates] = useState<string[]>(
+    [],
+  );
+  const [activePlaybackSourceIndex, setActivePlaybackSourceIndex] = useState(0);
   const [playbackMimeType, setPlaybackMimeType] = useState<string | null>(videoMimeType);
   const [isProxying, setIsProxying] = useState(true);
   const [proxyError, setProxyError] = useState('');
@@ -287,14 +353,35 @@ export function ExplorerVideoEditor({
   const [color, setColor] = useState<VideoColor>(DEFAULT_COLOR);
   const [isExtractingAudio, setIsExtractingAudio] = useState(false);
   const [audioExtractMsg, setAudioExtractMsg] = useState('');
+  const playSrc = playbackSourceCandidates[activePlaybackSourceIndex];
+
+  const applyPlaybackSource = useCallback(
+    (
+      sourcePath: string,
+      sourceKind: ExplorerVideoPreviewSource['sourceKind'],
+      mimeType: string | null,
+      fallbackSource?: string,
+    ) => {
+      setResolvedSourceKind(sourceKind);
+      setPlaybackMimeType(mimeType ?? videoMimeType);
+      setPlaybackSourceCandidates(
+        buildVideoPlaybackSourceCandidates(sourcePath, fallbackSource),
+      );
+      setActivePlaybackSourceIndex(0);
+      setProxyError('');
+    },
+    [videoMimeType],
+  );
 
   const applyResolvedPreviewSource = useCallback(
     (resolvedSource: ExplorerVideoPreviewSource) => {
-      setResolvedSourceKind(resolvedSource.sourceKind);
-      setPlaybackMimeType(resolvedSource.mimeType ?? videoMimeType);
-      setPlaySrc(convertFileSrc(resolvedSource.sourcePath));
+      applyPlaybackSource(
+        resolvedSource.sourcePath,
+        resolvedSource.sourceKind,
+        resolvedSource.mimeType ?? videoMimeType,
+      );
     },
-    [videoMimeType],
+    [applyPlaybackSource, videoMimeType],
   );
 
   // Reset on file change and resolve source
@@ -302,7 +389,8 @@ export function ExplorerVideoEditor({
     let isMounted = true;
     const loadGeneration = loadGenerationRef.current + 1;
     loadGenerationRef.current = loadGeneration;
-    setPlaySrc(undefined);
+    setPlaybackSourceCandidates([]);
+    setActivePlaybackSourceIndex(0);
     setPlaybackMimeType(videoMimeType);
     setIsProxying(true);
     setProxyError('');
@@ -330,9 +418,7 @@ export function ExplorerVideoEditor({
         // so that we don't block natively supported formats (MP4, WebM, etc.)
         if (isMounted && loadGenerationRef.current === loadGeneration) {
           console.warn('[VideoEditor] Backend resolve failed, falling back to direct url:', err);
-          setResolvedSourceKind('direct');
-          setPlaybackMimeType(videoMimeType);
-          setPlaySrc(nativeUrl);
+          applyPlaybackSource(videoPath, 'direct', videoMimeType, videoSource);
         }
       } finally {
         if (isMounted && loadGenerationRef.current === loadGeneration) {
@@ -342,7 +428,13 @@ export function ExplorerVideoEditor({
     })();
 
     return () => { isMounted = false; };
-  }, [applyResolvedPreviewSource, nativeUrl, videoMimeType, videoPath]);
+  }, [
+    applyPlaybackSource,
+    applyResolvedPreviewSource,
+    videoMimeType,
+    videoPath,
+    videoSource,
+  ]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -663,11 +755,23 @@ export function ExplorerVideoEditor({
                 if (!playSrc) {
                   return;
                 }
+                const hasNextPlaybackSourceCandidate =
+                  activePlaybackSourceIndex + 1 < playbackSourceCandidates.length;
+                if (hasNextPlaybackSourceCandidate) {
+                  setIsPlaybackReady(false);
+                  setProxyError('');
+                  setActivePlaybackSourceIndex((currentIndex) => currentIndex + 1);
+                  return;
+                }
                 if (resolvedSourceKind === 'direct' && !hasAttemptedRuntimeProxyFallback) {
                   void attemptRuntimeProxyFallback();
                   return;
                 }
-                setProxyError('Video playback failed in this desktop webview.');
+                setProxyError(
+                  resolvedSourceKind === 'proxy'
+                    ? 'Video playback failed for both local proxy URLs in this desktop webview.'
+                    : 'Video playback failed in this desktop webview.',
+                );
                 setIsPlaybackReady(false);
               }}
               onCanPlay={() => setIsPlaybackReady(true)}
@@ -1004,8 +1108,12 @@ export function ExplorerVideoEditor({
                 : proxyError
                   ? proxyError
                   : resolvedSourceKind === 'proxy'
-                    ? 'Proxy playback'
-                    : 'Direct playback'}
+                    ? activePlaybackSourceIndex > 0
+                      ? 'Proxy playback (file URL fallback)'
+                      : 'Proxy playback'
+                    : activePlaybackSourceIndex > 0
+                      ? 'Direct playback (file URL fallback)'
+                      : 'Direct playback'}
             </div>
           </div>
         )}

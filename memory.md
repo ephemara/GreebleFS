@@ -1,3 +1,22 @@
+# 2026-04-25 - Explorer Video Preview Now Uses Asset/File URL Fallback And MP4 Proxies Everywhere
+
+- The explorer video lane had two independent playback regressions that compounded into “video never works”:
+  - `src-tauri/tauri.conf.json` was missing `security.assetProtocol`, so `convertFileSrc(...)` did not have the Tauri-side protocol contract that ZenMocap relied on.
+  - `src-tauri/src/video_commands.rs` was still generating Linux-only VP9/WebM preview proxies, even though the durable repo intent and the working ZenMocap example both point to H.264/`yuv420p`/`+faststart` MP4 as the safe embedded-webview target.
+- Durable implementation shape:
+  - `src-tauri/tauri.conf.json` now enables `security.assetProtocol` with `scope = ["**"]`, and `src-tauri/Cargo.toml` now carries the matching Tauri feature `protocol-asset`. These two settings are coupled. If one moves without the other, local explorer media playback breaks again.
+  - `src-tauri/src/video_commands.rs` now emits MP4 preview proxies on every platform using `libx264`, `yuv420p`, `+faststart`, AAC audio when present, and a width-capped preview scale filter so tall mobile/screen-recorded clips stay lighter without regressing decode safety.
+  - `src/components/ExplorerVideoEditor.tsx` no longer assumes one URL is enough. For each resolved source it now tries the Tauri asset URL first, then an encoded `file://` URL fallback, and only then escalates from direct playback into generated proxy playback.
+  - `src/test/explorerVideoEditor.test.tsx` now locks that fallback order down: first direct asset URL, then direct `file://`, then MP4 proxy.
+- Durable product rule:
+  - Future explorer video work must preserve the full local-media contract, not just the leaf `<video>` tag. Treat `security.assetProtocol`, the Cargo `protocol-asset` feature, the React asset/file fallback list, and MP4/H.264/AAC preview proxies as one pipeline.
+- Durable validation:
+  - passed: `bunx vitest run src/test/explorerVideoEditor.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "defaults videos to playback preview and only enters video edit mode when requested" --reporter=dot`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml preview_ --lib`
+  - passed: `jq empty src-tauri/tauri.conf.json`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json | rg 'ExplorerVideoEditor|explorerVideoEditor'`
+
 # 2026-04-25 - Context Menu Composer Now Edits The Actual Menu Stack
 
 - The context-menu editor should no longer read like a toy inspector around a fake list. The durable authoring model is now “edit the menu itself”:

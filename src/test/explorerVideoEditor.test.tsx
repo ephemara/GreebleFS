@@ -34,9 +34,9 @@ describe('ExplorerVideoEditor', () => {
       generatedFromPath: null,
     });
     createExplorerVideoPreviewProxyMock.mockResolvedValue({
-      sourcePath: '/tmp/demo.preview.webm',
+      sourcePath: '/tmp/demo.preview.mp4',
       sourceKind: 'proxy',
-      mimeType: 'video/webm',
+      mimeType: 'video/mp4',
       generatedFromPath: '/tmp/demo.mp4',
     });
 
@@ -57,7 +57,7 @@ describe('ExplorerVideoEditor', () => {
     });
   });
 
-  it('falls back to a generated proxy when direct playback fails in the webview', async () => {
+  it('retries direct playback with a file URL before escalating to a generated proxy', async () => {
     render(
       <ExplorerVideoEditor
         videoPath="/tmp/demo.mp4"
@@ -80,13 +80,21 @@ describe('ExplorerVideoEditor', () => {
     fireEvent.error(player);
 
     await waitFor(() => {
+      const source = player.querySelector('source');
+      expect(source?.getAttribute('src')).toBe('file:///tmp/demo.mp4');
+      expect(createExplorerVideoPreviewProxyMock).not.toHaveBeenCalled();
+    });
+
+    fireEvent.error(player);
+
+    await waitFor(() => {
       expect(createExplorerVideoPreviewProxyMock).toHaveBeenCalledWith('/tmp/demo.mp4');
     });
 
     await waitFor(() => {
       const source = player.querySelector('source');
-      expect(source?.getAttribute('src')).toBe('asset://localhost//tmp/demo.preview.webm');
-      expect(source?.getAttribute('type')).toBe('video/webm');
+      expect(source?.getAttribute('src')).toBe('asset://localhost//tmp/demo.preview.mp4');
+      expect(source?.getAttribute('type')).toBe('video/mp4');
     });
   });
 

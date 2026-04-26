@@ -15,12 +15,10 @@ use std::time::{Duration as StdDuration, UNIX_EPOCH};
 use tauri::AppHandle;
 
 const VIDEO_PREVIEW_PROXY_AUDIO_BITRATE: &str = "160k";
-#[cfg(not(target_os = "linux"))]
 const VIDEO_PREVIEW_PROXY_MP4_CRF: u8 = 23;
-#[cfg(not(target_os = "linux"))]
 const VIDEO_PREVIEW_PROXY_MP4_PRESET: &str = "veryfast";
-#[cfg(target_os = "linux")]
-const VIDEO_PREVIEW_PROXY_WEBM_CRF: u8 = 31;
+const VIDEO_PREVIEW_PROXY_SCALE_FILTER: &str =
+    "scale='trunc(min(1280,iw)/2)*2':-2:flags=lanczos";
 const VIDEO_TRIM_AUDIO_BITRATE: &str = "192k";
 const VIDEO_TRIM_CRF: u8 = 18;
 const VIDEO_TRIM_PRESET: &str = "veryfast";
@@ -332,7 +330,7 @@ async fn generate_video_preview_proxy(
         .log_level(FFmpegLogLevel::Error)
         .overwrite()
         .input_path(path_to_string(input_path))
-        .raw_args(["-vf", VIDEO_TRIM_SCALE_FILTER])
+        .raw_args(["-vf", VIDEO_PREVIEW_PROXY_SCALE_FILTER])
         .output(build_preview_proxy_output(proxy_path, has_audio_track))
         .run()
         .await
@@ -342,65 +340,30 @@ async fn generate_video_preview_proxy(
 }
 
 fn build_preview_proxy_output(proxy_path: &Path, has_audio_track: bool) -> Output {
-    #[cfg(target_os = "linux")]
-    let output = Output::new(path_to_string(proxy_path))
-        .format("webm")
-        .video_codec_opts(
-            CodecOptions::new(Codec::new("libvpx-vp9"))
-                .quality(VIDEO_PREVIEW_PROXY_WEBM_CRF)
-                .pixel_format(PixelFormat::yuv420p())
-                .option("b:v", "0")
-                .option("row-mt", "1")
-                .option("cpu-used", "4"),
-        )
-        .option("deadline", "good");
-
-    #[cfg(not(target_os = "linux"))]
     let output = Output::new(path_to_string(proxy_path))
         .format("mp4")
         .video_codec_opts(
             CodecOptions::new(Codec::new("libx264"))
                 .quality(VIDEO_PREVIEW_PROXY_MP4_CRF)
-                .pixel_format(PixelFormat::yuv420p()),
+                .pixel_format(PixelFormat::yuv420p())
+                .option("profile:v", "high"),
         )
         .preset(VIDEO_PREVIEW_PROXY_MP4_PRESET)
         .faststart();
 
     if has_audio_track {
-        #[cfg(target_os = "linux")]
-        {
-            output.audio_codec_opts(
-                CodecOptions::new(Codec::new("libopus")).bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE),
-            )
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        {
-            output.audio_codec_opts(
-                CodecOptions::new(Codec::aac()).bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE),
-            )
-        }
+        output.audio_codec_opts(
+            CodecOptions::new(Codec::aac()).bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE),
+        )
     } else {
         output.no_audio()
     }
 }
 
-#[cfg(target_os = "linux")]
-fn video_preview_proxy_extension() -> &'static str {
-    "webm"
-}
-
-#[cfg(not(target_os = "linux"))]
 fn video_preview_proxy_extension() -> &'static str {
     "mp4"
 }
 
-#[cfg(target_os = "linux")]
-fn video_preview_proxy_mime_type() -> &'static str {
-    "video/webm"
-}
-
-#[cfg(not(target_os = "linux"))]
 fn video_preview_proxy_mime_type() -> &'static str {
     "video/mp4"
 }
@@ -830,16 +793,8 @@ mod tests {
 
         let temp_directory = tempdir().expect("video proxy tempdir");
         let expected_output_extension = video_preview_proxy_extension();
-        let expected_video_codec = if cfg!(target_os = "linux") {
-            "vp9"
-        } else {
-            "h264"
-        };
-        let expected_audio_codec = if cfg!(target_os = "linux") {
-            "opus"
-        } else {
-            "aac"
-        };
+        let expected_video_codec = "h264";
+        let expected_audio_codec = "aac";
         for extension in ["mov", "mkv", "avi"] {
             let input_path =
                 build_fixture_path(temp_directory.path(), &format!("proxy-source.{extension}"));
@@ -960,5 +915,13 @@ mod tests {
         let args = output.build_args();
         assert!(args.contains(&"-f".to_string()));
         assert!(args.contains(&video_preview_proxy_extension().to_string()));
+    }
+
+    #[test]
+    fn preview_proxy_filter_caps_width_and_keeps_even_dimensions() {
+        assert_eq!(
+            super::VIDEO_PREVIEW_PROXY_SCALE_FILTER,
+            "scale='trunc(min(1280,iw)/2)*2':-2:flags=lanczos"
+        );
     }
 }
