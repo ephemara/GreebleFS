@@ -26,7 +26,7 @@ function deduplicateDriveRoots(drives: DriveInfo[]): string[] {
   const roots: string[] = [];
 
   for (const drive of drives) {
-    const root = drive.letter.trim();
+    const root = drive.path.trim();
     if (!root || seen.has(root)) {
       continue;
     }
@@ -35,6 +35,18 @@ function deduplicateDriveRoots(drives: DriveInfo[]): string[] {
   }
 
   return roots;
+}
+
+function shouldAutoIndexDrive(drive: DriveInfo): boolean {
+  if (!drive.supportsScan || drive.isNetwork || drive.isRemovable) {
+    return false;
+  }
+
+  return (
+    drive.classification !== "optical"
+    && drive.classification !== "virtual"
+    && drive.classification !== "unknown"
+  );
 }
 
 function mergeGlobalSearchResults(args: {
@@ -72,7 +84,7 @@ export async function getGlobalSearchStatus(): Promise<GlobalSearchStatusValue> 
 
 export async function getGlobalSearchDriveRoots(): Promise<string[]> {
   const drives = unwrapTauriResult(await commands.fsGetDrives());
-  return deduplicateDriveRoots(drives);
+  return deduplicateDriveRoots(drives.filter(shouldAutoIndexDrive));
 }
 
 export async function startGlobalSearchScan(

@@ -14,7 +14,11 @@ pub struct ResourceRegistry {
 }
 
 impl ResourceRegistry {
-    pub fn register(&self, kind: &str, stable_key: Option<&str>) -> Result<IpcResourceHandle, String> {
+    pub fn register(
+        &self,
+        kind: &str,
+        stable_key: Option<&str>,
+    ) -> Result<IpcResourceHandle, String> {
         let handle = IpcResourceHandle {
             id: stable_resource_id(kind, stable_key),
             kind: kind.to_string(),
@@ -70,15 +74,15 @@ mod tests {
             .register("python-sidecar-session", Some("/tmp/runtime"))
             .expect("handle should register");
 
-        registry.release(&handle.id).expect("first release should succeed");
+        registry
+            .release(&handle.id)
+            .expect("first release should succeed");
         registry
             .release(&handle.id)
             .expect("second release should also succeed");
-        assert!(
-            registry
-                .get(&handle.id)
-                .expect("lookup should succeed")
-                .is_none()
-        );
+        assert!(registry
+            .get(&handle.id)
+            .expect("lookup should succeed")
+            .is_none());
     }
 }

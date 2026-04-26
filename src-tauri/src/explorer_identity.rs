@@ -214,7 +214,9 @@ pub fn record_thumbnail_artifact(
                     u64_to_i64(now_ms())?,
                 ],
             )
-            .map_err(|error| format!("Failed to persist explorer thumbnail artifact record: {error}"))?;
+            .map_err(|error| {
+                format!("Failed to persist explorer thumbnail artifact record: {error}")
+            })?;
         Ok(())
     })
 }

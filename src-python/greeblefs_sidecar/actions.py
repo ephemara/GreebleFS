@@ -6,7 +6,7 @@ import importlib.util
 import os
 import platform
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -38,8 +38,8 @@ class PythonActionContext:
     workspace_root: Path
     cwd: Path
     environment: dict[str, str]
-    input_artifacts: list[dict[str, Any]]
-    resource_handles: list[dict[str, Any]]
+    input_artifacts: list[dict[str, Any]] = field(default_factory=list)
+    resource_handles: list[dict[str, Any]] = field(default_factory=list)
 
 
 PythonActionHandler = Callable[[Any, PythonActionContext], Any]

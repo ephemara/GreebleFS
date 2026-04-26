@@ -61,9 +61,8 @@ use crate::image_cutout_commands::{
     ImageCutoutApplyPromptsRequest, ImageCutoutCopyToClipboardRequest,
     ImageCutoutExportFilterState, ImageCutoutExportMode, ImageCutoutPreviewMask,
     ImageCutoutPromptKind, ImageCutoutPromptPoint, ImageCutoutProviderDiagnostics,
-    ImageCutoutResetSessionRequest, ImageCutoutSessionOpenRequest,
-    ImageCutoutSessionSnapshot, ImageCutoutStagedExportArtifact,
-    ImageCutoutWorkflowMode,
+    ImageCutoutResetSessionRequest, ImageCutoutSessionOpenRequest, ImageCutoutSessionSnapshot,
+    ImageCutoutStagedExportArtifact, ImageCutoutWorkflowMode,
 };
 use crate::lan_share::types::LanShareResult;
 use crate::linux_graphics::{
@@ -110,8 +109,8 @@ use crate::telemetry::{
     TelemetrySessionStatus, TelemetrySupportBundleResult,
 };
 use crate::terminal::{
-    ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalShellIntegrationState,
-    TerminalOutputStreamPacket, TerminalShellIntegrationStateEvent, TerminalShellKind,
+    ExternalTerminalRequest, TerminalOutputStreamPacket, TerminalShellIntegrationRequest,
+    TerminalShellIntegrationState, TerminalShellIntegrationStateEvent, TerminalShellKind,
     TerminalWriteRequest,
 };
 use crate::thumbnail_commands::{
@@ -133,8 +132,8 @@ use crate::vst_host_runtime::{
 };
 use crate::wayland_dock::{WaylandDockAnchor, WaylandDockHostStatus};
 use greeble_ipc_contracts::{
-    IpcArtifactDescriptor, IpcArtifactRef, IpcArtifactRetention, IpcResourceHandle,
-    IpcStreamHandle, IpcStreamPacketMetadata,
+    IpcArtifactDescriptor, IpcArtifactRef, IpcArtifactRetention, IpcRegisterArtifactPathRequest,
+    IpcResourceHandle, IpcStreamHandle, IpcStreamPacketMetadata,
 };
 use overlay_contracts::{
     ExplorerLayoutMode, LayoutBackBehavior, LayoutBarPosition, LayoutBehaviorConfig,
@@ -165,8 +164,9 @@ pub fn bindings_output_path() -> PathBuf {
 }
 
 pub fn app_specta_builder() -> Builder<tauri::Wry> {
-    Builder::<tauri::Wry>::new()
+        Builder::<tauri::Wry>::new()
         .commands(collect_commands![
+            crate::ipc_runtime::ipc_register_artifact_path,
             crate::ipc_runtime::ipc_release_artifact,
             crate::ipc_runtime::ipc_release_resource,
             crate::ipc_runtime::ipc_release_stream,
@@ -197,6 +197,24 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::cloud_commands::cloud_rename_path,
             crate::cloud_commands::cloud_delete_path,
             crate::cloud_commands::cloud_transfer_items,
+            crate::remote_storage_commands::remote_list_connections,
+            crate::remote_storage_commands::remote_upsert_connection,
+            crate::remote_storage_commands::remote_delete_connection,
+            crate::remote_storage_commands::remote_connect,
+            crate::remote_storage_commands::remote_disconnect,
+            crate::remote_storage_commands::remote_list_trusted_hosts,
+            crate::remote_storage_commands::remote_trust_pending_host,
+            crate::remote_storage_commands::remote_remove_trusted_host,
+            crate::remote_storage_commands::remote_list_dir,
+            crate::remote_storage_commands::remote_open_file,
+            crate::remote_storage_commands::remote_read_text_file,
+            crate::remote_storage_commands::remote_read_file_base64,
+            crate::remote_storage_commands::remote_write_file,
+            crate::remote_storage_commands::remote_create_file,
+            crate::remote_storage_commands::remote_create_directory,
+            crate::remote_storage_commands::remote_rename_path,
+            crate::remote_storage_commands::remote_delete_path,
+            crate::remote_storage_commands::remote_transfer_items,
             crate::share_commands::lan_share_start,
             crate::share_commands::lan_share_stop,
             crate::share_commands::lan_share_get_local_ip,
@@ -401,6 +419,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<CloudProviderConfigurationSource>()
         .typ::<CloudProviderConfigurationStatus>()
         .typ::<IpcArtifactRetention>()
+        .typ::<IpcRegisterArtifactPathRequest>()
         .typ::<IpcArtifactRef>()
         .typ::<IpcArtifactDescriptor>()
         .typ::<IpcResourceHandle>()

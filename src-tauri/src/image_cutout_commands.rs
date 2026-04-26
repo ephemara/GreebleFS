@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
+use greeble_ipc_contracts::{IpcArtifactDescriptor, IpcArtifactRef};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
@@ -14,6 +15,8 @@ use crate::screenshot_commands::copy_rgba_image_to_clipboard;
 
 const IMAGE_CUTOUT_STAGE_DIR: &str = "image-cutout-staging";
 const DEFAULT_IMAGE_CUTOUT_PREVIEW_MAX_DIMENSION: u32 = 1280;
+const PREVIEW_MASK_ARTIFACT_TOKEN: &str = "preview-mask";
+const CUTOUT_PREVIEW_ARTIFACT_TOKEN: &str = "cutout-preview";
 static IMAGE_CUTOUT_STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -34,7 +37,7 @@ pub struct ImageCutoutPromptPoint {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageCutoutPreviewMask {
-    pub data_url: String,
+    pub artifact: IpcArtifactDescriptor,
     pub width: u32,
     pub height: u32,
 }
@@ -61,6 +64,7 @@ pub enum ImageCutoutWorkflowMode {
 #[serde(rename_all = "camelCase")]
 pub struct ImageCutoutSessionOpenRequest {
     pub input_path: Option<String>,
+    pub input_artifact: Option<IpcArtifactRef>,
     pub input_data_url: Option<String>,
     pub logical_output_path: Option<String>,
     pub preview_max_dimension: Option<u32>,
@@ -110,6 +114,7 @@ pub struct ImageCutoutStageExportRequest {
     pub export_mode: ImageCutoutExportMode,
     pub logical_output_path: Option<String>,
     pub filters: Option<ImageCutoutExportFilterState>,
+    pub override_mask_artifact: Option<IpcArtifactRef>,
     pub override_mask_data_url: Option<String>,
 }
 
@@ -119,6 +124,7 @@ pub struct ImageCutoutCopyToClipboardRequest {
     pub session_id: String,
     pub logical_output_path: Option<String>,
     pub filters: Option<ImageCutoutExportFilterState>,
+    pub override_mask_artifact: Option<IpcArtifactRef>,
     pub override_mask_data_url: Option<String>,
 }
 
@@ -127,7 +133,7 @@ pub struct ImageCutoutCopyToClipboardRequest {
 pub struct ImageCutoutSessionSnapshot {
     pub session_id: String,
     pub preview_mask: ImageCutoutPreviewMask,
-    pub cutout_preview_data_url: String,
+    pub cutout_preview_artifact: IpcArtifactDescriptor,
     pub preview_width: u32,
     pub preview_height: u32,
     pub prompt_count: usize,
@@ -162,6 +168,8 @@ struct ImageCutoutManagerInner {
 struct ImageCutoutSession {
     logical_output_path: Option<String>,
     workflow_mode: ImageCutoutWorkflowMode,
+    preview_mask_artifact_id: Option<String>,
+    cutout_preview_artifact_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -169,6 +177,7 @@ struct ImageCutoutSession {
 struct PythonImageCutoutOpenSessionPayload {
     session_id: String,
     input_path: Option<String>,
+    input_artifact_id: Option<String>,
     input_data_url: Option<String>,
     logical_output_path: Option<String>,
     preview_max_dimension: u32,
@@ -196,6 +205,7 @@ struct PythonImageCutoutStageExportPayload {
     session_id: String,
     output_path: String,
     filters: Option<ImageCutoutExportFilterState>,
+    override_mask_artifact_id: Option<String>,
     override_mask_data_url: Option<String>,
 }
 
@@ -203,8 +213,8 @@ struct PythonImageCutoutStageExportPayload {
 #[serde(rename_all = "camelCase")]
 struct PythonImageCutoutSessionSnapshot {
     session_id: String,
-    preview_mask_data_url: String,
-    cutout_preview_data_url: String,
+    preview_mask_artifact_token: String,
+    cutout_preview_artifact_token: String,
     preview_width: u32,
     preview_height: u32,
     prompt_count: usize,
@@ -320,18 +330,19 @@ impl ImageCutoutManager {
             .preview_max_dimension
             .unwrap_or(DEFAULT_IMAGE_CUTOUT_PREVIEW_MAX_DIMENSION)
             .clamp(256, 2048);
-        let logical_output_path = normalize_optional_output_path(request.logical_output_path.clone());
+        let logical_output_path =
+            normalize_optional_output_path(request.logical_output_path.clone());
         let workflow_mode = request.workflow_mode;
 
-        let PythonSidecarDecodedActionResponse { result, .. }: PythonSidecarDecodedActionResponse<
-            PythonImageCutoutSessionSnapshot,
-        > = python_sidecar::call_sidecar_action_json(
+        let response: PythonSidecarDecodedActionResponse<PythonImageCutoutSessionSnapshot> =
+            python_sidecar::call_sidecar_action_json_with_ipc(
             &app,
             request.config.clone(),
             python_sidecar::action_ids::IMAGE_CUTOUT_OPEN_SESSION,
             Some(PythonImageCutoutOpenSessionPayload {
                 session_id: session_id.clone(),
                 input_path: request.input_path.clone(),
+                input_artifact_id: request.input_artifact.as_ref().map(|artifact| artifact.id.clone()),
                 input_data_url: request.input_data_url.clone(),
                 logical_output_path: logical_output_path.clone(),
                 preview_max_dimension,
@@ -339,24 +350,38 @@ impl ImageCutoutManager {
                 backend_preference: request.backend_preference.clone(),
                 workflow_mode,
             }),
+            request.input_artifact.clone().map(|artifact| vec![artifact]),
+            None,
             None,
             None,
             Some(true),
         )?;
+        let snapshot = build_cutout_snapshot(
+            response.result,
+            &response.raw.output_artifacts,
+            &response.raw.output_artifact_tokens,
+        )?;
 
-        self.inner
+        let snapshot_artifact_ids = collect_snapshot_artifact_ids(&snapshot);
+        let mut sessions = self
+            .inner
             .sessions
             .lock()
-            .map_err(|_| "Image cutout session map was poisoned.".to_string())?
-            .insert(
-                session_id.clone(),
-                ImageCutoutSession {
-                    logical_output_path,
-                    workflow_mode,
-                },
-            );
+            .map_err(|_| {
+                release_ipc_artifacts(&app, &snapshot_artifact_ids);
+                "Image cutout session map was poisoned.".to_string()
+            })?;
+        sessions.insert(
+            session_id.clone(),
+            ImageCutoutSession {
+                logical_output_path,
+                workflow_mode,
+                preview_mask_artifact_id: Some(snapshot.preview_mask.artifact.id.clone()),
+                cutout_preview_artifact_id: Some(snapshot.cutout_preview_artifact.id.clone()),
+            },
+        );
 
-        Ok(build_cutout_snapshot(result))
+        Ok(snapshot)
     }
 
     fn apply_prompts(
@@ -366,10 +391,10 @@ impl ImageCutoutManager {
     ) -> Result<ImageCutoutSessionSnapshot, String> {
         let session_id = request.session_id.trim().to_string();
         self.get_session(&session_id)?;
+        let session_id_for_update = session_id.clone();
 
-        let PythonSidecarDecodedActionResponse { result, .. }: PythonSidecarDecodedActionResponse<
-            PythonImageCutoutSessionSnapshot,
-        > = python_sidecar::call_sidecar_action_json(
+        let response: PythonSidecarDecodedActionResponse<PythonImageCutoutSessionSnapshot> =
+            python_sidecar::call_sidecar_action_json(
             &app,
             None,
             python_sidecar::action_ids::IMAGE_CUTOUT_APPLY_PROMPTS,
@@ -381,8 +406,13 @@ impl ImageCutoutManager {
             None,
             Some(true),
         )?;
-
-        Ok(build_cutout_snapshot(result))
+        let snapshot = build_cutout_snapshot(
+            response.result,
+            &response.raw.output_artifacts,
+            &response.raw.output_artifact_tokens,
+        )?;
+        self.replace_session_preview_artifacts(&app, &session_id_for_update, &snapshot)?;
+        Ok(snapshot)
     }
 
     fn reset_session(
@@ -392,10 +422,10 @@ impl ImageCutoutManager {
     ) -> Result<ImageCutoutSessionSnapshot, String> {
         let session_id = request.session_id.trim().to_string();
         self.get_session(&session_id)?;
+        let session_id_for_update = session_id.clone();
 
-        let PythonSidecarDecodedActionResponse { result, .. }: PythonSidecarDecodedActionResponse<
-            PythonImageCutoutSessionSnapshot,
-        > = python_sidecar::call_sidecar_action_json(
+        let response: PythonSidecarDecodedActionResponse<PythonImageCutoutSessionSnapshot> =
+            python_sidecar::call_sidecar_action_json(
             &app,
             None,
             python_sidecar::action_ids::IMAGE_CUTOUT_RESET_SESSION,
@@ -404,8 +434,13 @@ impl ImageCutoutManager {
             None,
             Some(true),
         )?;
-
-        Ok(build_cutout_snapshot(result))
+        let snapshot = build_cutout_snapshot(
+            response.result,
+            &response.raw.output_artifacts,
+            &response.raw.output_artifact_tokens,
+        )?;
+        self.replace_session_preview_artifacts(&app, &session_id_for_update, &snapshot)?;
+        Ok(snapshot)
     }
 
     fn stage_export(
@@ -439,6 +474,7 @@ impl ImageCutoutManager {
             output_path,
             request.export_mode,
             request.filters,
+            request.override_mask_artifact,
             request.override_mask_data_url,
         )
     }
@@ -455,6 +491,7 @@ impl ImageCutoutManager {
                 export_mode: ImageCutoutExportMode::Staging,
                 logical_output_path: request.logical_output_path.clone(),
                 filters: request.filters,
+                override_mask_artifact: request.override_mask_artifact,
                 override_mask_data_url: request.override_mask_data_url,
             },
         )?;
@@ -479,11 +516,17 @@ impl ImageCutoutManager {
 
     fn close_session(&self, app: AppHandle, session_id: String) -> Result<(), String> {
         let trimmed_session_id = session_id.trim().to_string();
-        self.inner
+        let removed_session = self.inner
             .sessions
             .lock()
             .map_err(|_| "Image cutout session map was poisoned.".to_string())?
             .remove(trimmed_session_id.as_str());
+        if let Some(session) = removed_session {
+            release_ipc_artifacts(
+                &app,
+                &collect_session_preview_artifact_ids(&session),
+            );
+        }
 
         let _ = python_sidecar::call_sidecar_action_json::<_, serde_json::Value>(
             &app,
@@ -510,6 +553,38 @@ impl ImageCutoutManager {
             .ok_or_else(|| format!("Image cutout session was not found: {session_id}"))
     }
 
+    fn replace_session_preview_artifacts(
+        &self,
+        app: &AppHandle,
+        session_id: &str,
+        snapshot: &ImageCutoutSessionSnapshot,
+    ) -> Result<(), String> {
+        let new_artifact_ids = collect_snapshot_artifact_ids(snapshot);
+        let previous_artifact_ids = {
+            let mut sessions = self
+                .inner
+                .sessions
+                .lock()
+                .map_err(|_| {
+                    release_ipc_artifacts(app, &new_artifact_ids);
+                    "Image cutout session map was poisoned.".to_string()
+                })?;
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| {
+                    release_ipc_artifacts(app, &new_artifact_ids);
+                    format!("Image cutout session was not found: {session_id}")
+                })?;
+            let previous_artifact_ids = collect_session_preview_artifact_ids(session);
+            session.preview_mask_artifact_id = Some(snapshot.preview_mask.artifact.id.clone());
+            session.cutout_preview_artifact_id = Some(snapshot.cutout_preview_artifact.id.clone());
+            previous_artifact_ids
+        };
+
+        release_ipc_artifacts(app, &previous_artifact_ids);
+        Ok(())
+    }
+
     fn stage_export_to_path(
         &self,
         app: AppHandle,
@@ -517,12 +592,12 @@ impl ImageCutoutManager {
         output_path: PathBuf,
         mode: ImageCutoutExportMode,
         filters: Option<ImageCutoutExportFilterState>,
+        override_mask_artifact: Option<IpcArtifactRef>,
         override_mask_data_url: Option<String>,
     ) -> Result<ImageCutoutStagedExportArtifact, String> {
         let output_path_string = output_path.to_string_lossy().to_string();
-        let PythonSidecarDecodedActionResponse { result, .. }: PythonSidecarDecodedActionResponse<
-            PythonImageCutoutStageExportResult,
-        > = python_sidecar::call_sidecar_action_json(
+        let response: PythonSidecarDecodedActionResponse<PythonImageCutoutStageExportResult> =
+            python_sidecar::call_sidecar_action_json_with_ipc(
             &app,
             None,
             python_sidecar::action_ids::IMAGE_CUTOUT_STAGE_EXPORT,
@@ -530,12 +605,18 @@ impl ImageCutoutManager {
                 session_id: session_id.to_string(),
                 output_path: output_path_string,
                 filters,
+                override_mask_artifact_id: override_mask_artifact
+                    .as_ref()
+                    .map(|artifact| artifact.id.clone()),
                 override_mask_data_url,
             }),
+            override_mask_artifact.map(|artifact| vec![artifact]),
+            None,
             None,
             None,
             Some(true),
         )?;
+        let result = response.result;
 
         let file_name = Path::new(&result.output_path)
             .file_name()
@@ -554,18 +635,59 @@ impl ImageCutoutManager {
     }
 }
 
-fn build_cutout_snapshot(snapshot: PythonImageCutoutSessionSnapshot) -> ImageCutoutSessionSnapshot {
+fn resolve_output_artifact_descriptor_by_token(
+    output_artifacts: &[IpcArtifactDescriptor],
+    output_artifact_tokens: &[Option<String>],
+    token: &str,
+    fallback_index: usize,
+) -> Result<IpcArtifactDescriptor, String> {
+    if let Some((index, _)) = output_artifact_tokens
+        .iter()
+        .enumerate()
+        .find(|(_, candidate)| candidate.as_deref() == Some(token))
+    {
+        return output_artifacts
+            .get(index)
+            .cloned()
+            .ok_or_else(|| format!("Python cutout artifact token was missing a descriptor: {token}"));
+    }
+
+    output_artifacts.get(fallback_index).cloned().ok_or_else(|| {
+        format!(
+            "Python cutout response did not include the expected artifact token or fallback index: {token}"
+        )
+    })
+}
+
+fn build_cutout_snapshot(
+    snapshot: PythonImageCutoutSessionSnapshot,
+    output_artifacts: &[IpcArtifactDescriptor],
+    output_artifact_tokens: &[Option<String>],
+) -> Result<ImageCutoutSessionSnapshot, String> {
     let prompt_count = snapshot.prompt_count;
     let preview_width = snapshot.preview_width;
     let preview_height = snapshot.preview_height;
-    ImageCutoutSessionSnapshot {
+    let preview_mask_artifact = resolve_output_artifact_descriptor_by_token(
+        output_artifacts,
+        output_artifact_tokens,
+        snapshot.preview_mask_artifact_token.as_str(),
+        0,
+    )?;
+    let cutout_preview_artifact = resolve_output_artifact_descriptor_by_token(
+        output_artifacts,
+        output_artifact_tokens,
+        snapshot.cutout_preview_artifact_token.as_str(),
+        1,
+    )?;
+
+    Ok(ImageCutoutSessionSnapshot {
         session_id: snapshot.session_id,
         preview_mask: ImageCutoutPreviewMask {
-            data_url: snapshot.preview_mask_data_url,
+            artifact: preview_mask_artifact,
             width: preview_width,
             height: preview_height,
         },
-        cutout_preview_data_url: snapshot.cutout_preview_data_url,
+        cutout_preview_artifact,
         preview_width,
         preview_height,
         prompt_count,
@@ -579,6 +701,29 @@ fn build_cutout_snapshot(snapshot: PythonImageCutoutSessionSnapshot) -> ImageCut
             family: snapshot.diagnostics.family,
             message: snapshot.diagnostics.message,
         },
+    })
+}
+
+fn collect_snapshot_artifact_ids(snapshot: &ImageCutoutSessionSnapshot) -> Vec<String> {
+    vec![
+        snapshot.preview_mask.artifact.id.clone(),
+        snapshot.cutout_preview_artifact.id.clone(),
+    ]
+}
+
+fn collect_session_preview_artifact_ids(session: &ImageCutoutSession) -> Vec<String> {
+    session
+        .preview_mask_artifact_id
+        .iter()
+        .chain(session.cutout_preview_artifact_id.iter())
+        .cloned()
+        .collect()
+}
+
+fn release_ipc_artifacts(app: &AppHandle, artifact_ids: &[String]) {
+    let ipc_runtime = app.state::<crate::ipc_runtime::IpcRuntimeState>();
+    for artifact_id in artifact_ids {
+        let _ = ipc_runtime.release_artifact(artifact_id);
     }
 }
 
@@ -593,10 +738,13 @@ fn validate_cutout_input(request: &ImageCutoutSessionOpenRequest) -> Result<(), 
         .as_deref()
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false);
-    if !has_input_path && !has_input_data_url {
-        return Err(
-            "Image cutout session open requires either an inputPath or inputDataUrl.".to_string(),
-        );
+    let has_input_artifact = request
+        .input_artifact
+        .as_ref()
+        .map(|artifact| !artifact.id.trim().is_empty() && !artifact.file_path.trim().is_empty())
+        .unwrap_or(false);
+    if !has_input_path && !has_input_data_url && !has_input_artifact {
+        return Err("Image cutout session open requires an inputPath, inputArtifact, or inputDataUrl.".to_string());
     }
     Ok(())
 }
@@ -642,12 +790,12 @@ fn create_cutout_stage_path(
             .and_then(cutout_source_file_stem)
             .unwrap_or("cutout"),
     );
-    Ok(stage_root.join(format!(
-        "{file_stem}-{created_at}-{sequence}.png"
-    )))
+    Ok(stage_root.join(format!("{file_stem}-{created_at}-{sequence}.png")))
 }
 
-fn resolve_cutout_sibling_output_path(logical_output_path: Option<&str>) -> Result<PathBuf, String> {
+fn resolve_cutout_sibling_output_path(
+    logical_output_path: Option<&str>,
+) -> Result<PathBuf, String> {
     let source_path = normalize_local_output_source_path(logical_output_path)?;
     let parent = source_path.parent().ok_or_else(|| {
         format!(
@@ -661,7 +809,9 @@ fn resolve_cutout_sibling_output_path(logical_output_path: Option<&str>) -> Resu
     Ok(parent.join(format!("{cutout_stem}.cutout.png")))
 }
 
-fn normalize_local_output_source_path(logical_output_path: Option<&str>) -> Result<PathBuf, String> {
+fn normalize_local_output_source_path(
+    logical_output_path: Option<&str>,
+) -> Result<PathBuf, String> {
     let candidate = logical_output_path
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -723,12 +873,12 @@ fn current_timestamp_millis() -> Result<u128, String> {
 mod tests {
     use std::path::PathBuf;
 
-    use serde_json::json;
     use super::{
         create_cutout_stage_path, normalize_local_output_source_path,
         resolve_cutout_sibling_output_path, resolve_cutout_stage_root_under,
         sanitize_cutout_file_stem, ImageCutoutManager,
     };
+    use serde_json::json;
     use tempfile::tempdir;
 
     #[test]
@@ -766,7 +916,10 @@ mod tests {
 
     #[test]
     fn sanitize_cutout_file_stem_normalizes_ascii_tokens() {
-        assert_eq!(sanitize_cutout_file_stem("Dog Portrait 01"), "dog-portrait-01");
+        assert_eq!(
+            sanitize_cutout_file_stem("Dog Portrait 01"),
+            "dog-portrait-01"
+        );
         assert_eq!(sanitize_cutout_file_stem(""), "cutout");
     }
 
@@ -774,6 +927,7 @@ mod tests {
     fn open_request_carries_workflow_mode() {
         let request = super::ImageCutoutSessionOpenRequest {
             input_path: Some("/tmp/sample.png".to_string()),
+            input_artifact: None,
             input_data_url: None,
             logical_output_path: None,
             preview_max_dimension: None,

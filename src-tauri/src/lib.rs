@@ -12,9 +12,9 @@ pub mod explorer_pro_commands;
 pub mod fs_commands;
 pub mod global_search;
 pub mod gpu_runtime;
-pub mod ipc_runtime;
-pub mod image_cutout_commands;
 pub mod image_commands;
+pub mod image_cutout_commands;
+pub mod ipc_runtime;
 pub mod lan_share;
 mod linux_graphics;
 pub mod native_terminal;
@@ -24,6 +24,7 @@ pub mod plugin_commands;
 pub mod python_commands;
 pub mod python_pyo3;
 pub mod python_sidecar;
+pub mod remote_storage_commands;
 pub mod screenshot_commands;
 pub mod semantic_search;
 pub mod shader_preview_commands;
@@ -36,11 +37,11 @@ pub mod tailscale_commands;
 pub mod telemetry;
 pub mod terminal;
 pub mod thumbnail_commands;
-pub mod volume_inventory;
 #[cfg(target_os = "windows")]
 pub mod url_drop;
 pub mod video_commands;
 pub mod video_engine;
+pub mod volume_inventory;
 pub mod vst_commands;
 pub mod vst_host_runtime;
 pub mod wayland_dock;
@@ -52,6 +53,7 @@ use entry_size_cache::{initialize_entry_size_cache, EntrySizeWatcherState};
 use explorer_identity::{initialize_explorer_identity_store, ExplorerIdentityManager};
 use fs_commands::initialize_fs_command_events;
 use plugin_commands::PluginWatcherState;
+use remote_storage_commands::RemoteStorageState;
 use tauri::{
     menu::{MenuBuilder, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -117,6 +119,29 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
             );
             true
         }
+        "remote_read_preview_bytes" => {
+            let args = match parse_json_invoke_args::<PreviewBytesInvokeArgs>(&invoke.message) {
+                Ok(args) => args,
+                Err(error) => {
+                    invoke.resolver.reject(error);
+                    return true;
+                }
+            };
+            let resolver = invoke.resolver;
+            let command_app = invoke.message.webview().app_handle().clone();
+            let state_app = command_app.clone();
+            ipc_runtime::binary::spawn_raw_invoke_response(resolver, async move {
+                let state = state_app.state::<RemoteStorageState>();
+                remote_storage_commands::remote_read_preview_bytes(
+                    command_app,
+                    state,
+                    args.path,
+                    args.max_bytes,
+                )
+                .await
+            });
+            true
+        }
         "global_search_query_under_path" => {
             let args = match parse_json_invoke_args::<GlobalSearchQueryUnderPathInvokeArgs>(
                 &invoke.message,
@@ -160,6 +185,7 @@ pub fn run() {
         move |invoke: tauri::ipc::Invoke<tauri::Wry>| match invoke.message.command() {
             "fs_read_preview_bytes"
             | "cloud_read_preview_bytes"
+            | "remote_read_preview_bytes"
             | "global_search_query_under_path" => raw_preview_invoke_handler(invoke),
             _ => specta_invoke_handler(invoke),
         };
@@ -185,6 +211,7 @@ pub fn run() {
             app.manage(ipc_runtime::IpcRuntimeState::new());
             app.manage(TerminalManager::new());
             app.manage(CloudRuntimeState::default());
+            app.manage(RemoteStorageState::default());
             app.manage(AudioEngineManager::default());
             app.manage(ExplorerIdentityManager::default());
             app.manage(gpu_runtime);

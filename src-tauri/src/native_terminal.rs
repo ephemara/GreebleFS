@@ -123,8 +123,16 @@ mod linux {
         let native_window = Window::new(WindowType::Toplevel);
         native_window.set_title(&resolve_window_title(request));
         native_window.set_default_size(
-            clamp_window_dimension(request.width, DEFAULT_NATIVE_TERMINAL_WIDTH, MIN_NATIVE_TERMINAL_WIDTH),
-            clamp_window_dimension(request.height, DEFAULT_NATIVE_TERMINAL_HEIGHT, MIN_NATIVE_TERMINAL_HEIGHT),
+            clamp_window_dimension(
+                request.width,
+                DEFAULT_NATIVE_TERMINAL_WIDTH,
+                MIN_NATIVE_TERMINAL_WIDTH,
+            ),
+            clamp_window_dimension(
+                request.height,
+                DEFAULT_NATIVE_TERMINAL_HEIGHT,
+                MIN_NATIVE_TERMINAL_HEIGHT,
+            ),
         );
         native_window.set_transient_for(Some(parent_gtk_window.upcast_ref::<Window>()));
         native_window.set_destroy_with_parent(false);
@@ -135,7 +143,8 @@ mod linux {
         }
 
         let terminal_widget: gtk::Widget = unsafe { from_glib_none(terminal_ptr) };
-        let scrolled_window = ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+        let scrolled_window =
+            ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
         scrolled_window.set_hexpand(true);
         scrolled_window.set_vexpand(true);
         scrolled_window.add(&terminal_widget);
@@ -215,8 +224,9 @@ mod linux {
     ) -> Result<(), String> {
         let working_dir = path_to_cstring(working_dir)?;
         let shell_display = shell.to_string();
-        let shell = CString::new(shell)
-            .map_err(|error| format!("Native shell path contains an interior null byte: {error}"))?;
+        let shell = CString::new(shell).map_err(|error| {
+            format!("Native shell path contains an interior null byte: {error}")
+        })?;
         let mut argv_strings = vec![shell];
         let mut argv = argv_strings
             .iter_mut()
@@ -293,8 +303,15 @@ mod linux {
     fn resolve_native_working_dir(path: &str) -> Result<PathBuf, String> {
         if path.trim().is_empty() {
             return std::env::current_dir()
-                .or_else(|_| dirs::home_dir().ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound)))
-                .map_err(|error| format!("Unable to resolve a working directory for the native terminal: {error}"));
+                .or_else(|_| {
+                    dirs::home_dir()
+                        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))
+                })
+                .map_err(|error| {
+                    format!(
+                        "Unable to resolve a working directory for the native terminal: {error}"
+                    )
+                });
         }
 
         let requested = PathBuf::from(path);
@@ -302,10 +319,9 @@ mod linux {
             return Ok(requested);
         }
         if requested.is_file() {
-            return requested
-                .parent()
-                .map(Path::to_path_buf)
-                .ok_or_else(|| format!("Working directory does not have a parent directory: {path}"));
+            return requested.parent().map(Path::to_path_buf).ok_or_else(|| {
+                format!("Working directory does not have a parent directory: {path}")
+            });
         }
 
         Err(format!("Working directory does not exist: {path}"))
@@ -343,7 +359,11 @@ mod linux {
     }
 
     fn resolve_cursor_blink_mode(cursor_blink: Option<bool>) -> Option<i32> {
-        let blink_mode_nick = if cursor_blink.unwrap_or(true) { "on" } else { "off" };
+        let blink_mode_nick = if cursor_blink.unwrap_or(true) {
+            "on"
+        } else {
+            "off"
+        };
         resolve_gobject_enum_value("VteCursorBlinkMode", blink_mode_nick).ok()
     }
 
@@ -363,7 +383,10 @@ mod linux {
             .map_err(|error| format!("Invalid GObject enum value nick: {error}"))?;
         let enum_type = unsafe { glib::gobject_ffi::g_type_from_name(type_name.as_ptr()) };
         if enum_type == 0 {
-            return Err(format!("GObject enum type is unavailable: {}", type_name.to_string_lossy()));
+            return Err(format!(
+                "GObject enum type is unavailable: {}",
+                type_name.to_string_lossy()
+            ));
         }
 
         let enum_class_ptr = unsafe { glib::gobject_ffi::g_type_class_ref(enum_type) };
@@ -376,7 +399,8 @@ mod linux {
 
         let value = unsafe {
             let enum_class = enum_class_ptr as *mut glib::gobject_ffi::GEnumClass;
-            let enum_value = glib::gobject_ffi::g_enum_get_value_by_nick(enum_class, value_nick.as_ptr());
+            let enum_value =
+                glib::gobject_ffi::g_enum_get_value_by_nick(enum_class, value_nick.as_ptr());
             let resolved_value = if enum_value.is_null() {
                 None
             } else {
@@ -416,7 +440,10 @@ mod linux {
                     library,
                     b"vte_terminal_set_cursor_blink_mode\0",
                 )?,
-                terminal_set_cursor_shape: load_symbol(library, b"vte_terminal_set_cursor_shape\0")?,
+                terminal_set_cursor_shape: load_symbol(
+                    library,
+                    b"vte_terminal_set_cursor_shape\0",
+                )?,
                 terminal_set_font: load_symbol(library, b"vte_terminal_set_font\0")?,
                 terminal_spawn_sync: load_symbol(library, b"vte_terminal_spawn_sync\0")?,
                 terminal_watch_child: load_symbol(library, b"vte_terminal_watch_child\0")?,
@@ -438,7 +465,10 @@ mod linux {
         )
     }
 
-    fn load_symbol<T: Copy>(library: &'static Library, symbol_name: &'static [u8]) -> Result<T, String> {
+    fn load_symbol<T: Copy>(
+        library: &'static Library,
+        symbol_name: &'static [u8],
+    ) -> Result<T, String> {
         let symbol = unsafe { library.get::<T>(symbol_name) }
             .map_err(|error| format!("Failed to load {:?} from libvte: {error}", symbol_name))?;
         Ok(*symbol)
@@ -459,7 +489,6 @@ mod linux {
             .recv()
             .map_err(|error| format!("Failed to receive GTK main-thread result: {error}"))
     }
-
 }
 
 #[cfg(target_os = "linux")]

@@ -17,8 +17,7 @@ use tauri::AppHandle;
 const VIDEO_PREVIEW_PROXY_AUDIO_BITRATE: &str = "160k";
 const VIDEO_PREVIEW_PROXY_MP4_CRF: u8 = 23;
 const VIDEO_PREVIEW_PROXY_MP4_PRESET: &str = "veryfast";
-const VIDEO_PREVIEW_PROXY_SCALE_FILTER: &str =
-    "scale='trunc(min(1280,iw)/2)*2':-2:flags=lanczos";
+const VIDEO_PREVIEW_PROXY_SCALE_FILTER: &str = "scale='trunc(min(1280,iw)/2)*2':-2:flags=lanczos";
 const VIDEO_TRIM_AUDIO_BITRATE: &str = "192k";
 const VIDEO_TRIM_CRF: u8 = 18;
 const VIDEO_TRIM_PRESET: &str = "veryfast";

@@ -1,14 +1,13 @@
-use crate::explorer_identity::build_virtual_identity;
+use crate::explorer_identity::{build_content_revision, build_virtual_identity};
 use crate::fs_commands::{
-    build_content_revision, fs_open_file, FileEntry, FileTransferCollisionPolicy,
-    FileTransferDisposition, FileTransferOperation, FileTransferResult, FsWriteFileContent,
+    fs_open_file, FileEntry, FileTransferCollisionPolicy, FileTransferDisposition,
+    FileTransferOperation, FileTransferResult, FsWriteFileContent,
 };
 use base64::Engine as _;
 use keyring::{Entry, Error as KeyringError};
 use russh::{
-    client::{Handle as RusshHandle, Msg},
+    client::Handle as RusshHandle,
     keys::{HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyBase64},
-    Channel, ChannelStream,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -178,7 +177,7 @@ struct RemoteSftpSession {
 pub struct RemoteStorageState {
     sessions: AsyncMutex<HashMap<String, Arc<RemoteSftpSession>>>,
     statuses: Mutex<HashMap<String, RemoteConnectionRuntimeStatus>>,
-    pending_host_verifications: Mutex<HashMap<String, RemotePendingHostVerification>>,
+    pending_host_verifications: Arc<Mutex<HashMap<String, RemotePendingHostVerification>>>,
 }
 
 impl Default for RemoteStorageState {
@@ -186,7 +185,7 @@ impl Default for RemoteStorageState {
         Self {
             sessions: AsyncMutex::new(HashMap::new()),
             statuses: Mutex::new(HashMap::new()),
-            pending_host_verifications: Mutex::new(HashMap::new()),
+            pending_host_verifications: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -210,8 +209,7 @@ struct RemoteClientHandler {
     host: String,
     port: u16,
     trusted_host: Option<RemoteTrustedHostRecord>,
-    pending_host_verifications:
-        Arc<Mutex<HashMap<String, RemotePendingHostVerification>>>,
+    pending_host_verifications: Arc<Mutex<HashMap<String, RemotePendingHostVerification>>>,
 }
 
 impl russh::client::Handler for RemoteClientHandler {
@@ -231,7 +229,8 @@ impl russh::client::Handler for RemoteClientHandler {
                 clear_pending_host_verification(
                     &self.pending_host_verifications,
                     &self.connection_id,
-                )?;
+                )
+                .map_err(russh::Error::InvalidConfig)?;
                 Ok(true)
             }
             _ => {
@@ -306,16 +305,13 @@ pub async fn remote_upsert_connection(
     request: RemoteConnectionUpsertRequest,
 ) -> Result<RemoteConnectionSummary, String> {
     let existing_connections = read_remote_connections(&app)?;
-    let existing = request
-        .id
-        .as_deref()
-        .and_then(|id| {
-            existing_connections
-                .connections
-                .iter()
-                .find(|connection| connection.id == id)
-                .cloned()
-        });
+    let existing = request.id.as_deref().and_then(|id| {
+        existing_connections
+            .connections
+            .iter()
+            .find(|connection| connection.id == id)
+            .cloned()
+    });
 
     let id = request
         .id
@@ -330,12 +326,9 @@ pub async fn remote_upsert_connection(
     let private_key_path = match request.auth_mode {
         RemoteAuthMode::Password => None,
         RemoteAuthMode::PrivateKeyFile => Some(normalize_required_text(
-            request
-                .private_key_path
-                .as_deref()
-                .ok_or_else(|| {
-                    "Private key file path is required for private-key authentication.".to_string()
-                })?,
+            request.private_key_path.as_deref().ok_or_else(|| {
+                "Private key file path is required for private-key authentication.".to_string()
+            })?,
             "Private key file path",
         )?),
     };
@@ -355,12 +348,7 @@ pub async fn remote_upsert_connection(
     persist_remote_auth_secrets(&connection, &request, existing.as_ref())?;
     upsert_remote_connection(&app, connection.clone())?;
     remote_disconnect_inner(&state, &id).await?;
-    update_remote_status(
-        &state,
-        &id,
-        RemoteConnectionStatus::Disconnected,
-        None,
-    )?;
+    update_remote_status(&state, &id, RemoteConnectionStatus::Disconnected, None)?;
     summarize_remote_connection(&state, connection)
 }
 
@@ -375,10 +363,7 @@ pub async fn remote_delete_connection(
     delete_remote_auth_secrets(&connection_id)?;
     remote_disconnect_inner(&state, &connection_id).await?;
     clear_remote_status(&state, &connection_id)?;
-    clear_pending_host_verification(
-        &state.pending_host_verifications,
-        &connection_id,
-    )?;
+    clear_pending_host_verification(&state.pending_host_verifications, &connection_id)?;
     Ok(())
 }
 
@@ -429,10 +414,9 @@ pub async fn remote_trust_pending_host(
             .pending_host_verifications
             .lock()
             .map_err(|_| "remote pending host verification lock poisoned".to_string())?;
-        pending
-            .get(&connection_id)
-            .cloned()
-            .ok_or_else(|| "No pending host verification is available for that connection.".to_string())?
+        pending.get(&connection_id).cloned().ok_or_else(|| {
+            "No pending host verification is available for that connection.".to_string()
+        })?
     };
     let trusted = RemoteTrustedHostRecord {
         host: pending.host.clone(),
@@ -443,10 +427,7 @@ pub async fn remote_trust_pending_host(
         trusted_at: now_ms(),
     };
     upsert_trusted_host(&app, trusted.clone())?;
-    clear_pending_host_verification(
-        &state.pending_host_verifications,
-        &connection_id,
-    )?;
+    clear_pending_host_verification(&state.pending_host_verifications, &connection_id)?;
     remote_disconnect_inner(&state, &connection_id).await?;
     update_remote_status(
         &state,
@@ -498,11 +479,7 @@ pub async fn remote_list_dir(
         .await
         .map_err(|error| remote_operation_error(error, true).message)?
     {
-        entries.push(remote_dir_entry_to_file_entry(
-            &connection,
-            &parsed,
-            entry,
-        ));
+        entries.push(remote_dir_entry_to_file_entry(&connection, &parsed, entry));
     }
     sort_entries(&mut entries);
     Ok(RemoteDirectoryListing {
@@ -521,7 +498,7 @@ pub async fn remote_open_file(
     path: String,
 ) -> Result<(), String> {
     let staged_path = stage_remote_file(&app, &state, &path).await?;
-    fs_open_file(staged_path.to_string_lossy().into_owned())
+    fs_open_file(staged_path.to_string_lossy().into_owned()).await
 }
 
 #[tauri::command]
@@ -531,8 +508,8 @@ pub async fn remote_read_text_file(
     state: State<'_, RemoteStorageState>,
     path: String,
 ) -> Result<String, String> {
-    let bytes = read_remote_file_bytes(&app, &state, &path, REMOTE_TEXT_PREVIEW_MAX_BYTES as u64)
-        .await?;
+    let bytes =
+        read_remote_file_bytes(&app, &state, &path, REMOTE_TEXT_PREVIEW_MAX_BYTES as u64).await?;
     String::from_utf8(bytes).map_err(|error| format!("Remote file is not valid UTF-8: {error}"))
 }
 
@@ -636,7 +613,8 @@ pub async fn remote_rename_path(
         .last_mut()
         .expect("non-root remote paths always have at least one segment") =
         normalize_remote_leaf_name(&new_name)?;
-    let source_actual_path = build_actual_remote_path(&connection.start_path, &parsed.relative_segments)?;
+    let source_actual_path =
+        build_actual_remote_path(&connection.start_path, &parsed.relative_segments)?;
     let destination_actual_path =
         build_actual_remote_path(&connection.start_path, &destination_segments)?;
     rename_remote_path(&session, &source_actual_path, &destination_actual_path).await
@@ -677,7 +655,9 @@ pub async fn remote_transfer_items(
     } else {
         None
     };
-    if sources.iter().any(|source| source.trim().starts_with("cloud://"))
+    if sources
+        .iter()
+        .any(|source| source.trim().starts_with("cloud://"))
         || target_dir.trim().starts_with("cloud://")
     {
         return Err(
@@ -688,9 +668,15 @@ pub async fn remote_transfer_items(
 
     let mut results = Vec::new();
     for source in sources {
-        let destination_path =
-            transfer_single_source(&app, &state, target_remote.as_ref(), &target_dir, &source, operation)
-                .await?;
+        let destination_path = transfer_single_source(
+            &app,
+            &state,
+            target_remote.as_ref(),
+            &target_dir,
+            &source,
+            operation,
+        )
+        .await?;
         let content_revision = build_content_revision(0, now_ms(), false, false);
         let identity = build_virtual_identity(
             "remote-transfer",
@@ -725,8 +711,13 @@ async fn transfer_single_source(
             transfer_remote_to_remote(app, state, source, target_remote, operation).await
         }
         (true, None) => transfer_remote_to_local(app, state, source, target_dir, operation).await,
-        (false, Some(target_remote)) => transfer_local_to_remote(app, state, source, target_remote, operation).await,
-        (false, None) => Err("remote_transfer_items only handles transfers with at least one remote endpoint.".to_string()),
+        (false, Some(target_remote)) => {
+            transfer_local_to_remote(app, state, source, target_remote, operation).await
+        }
+        (false, None) => Err(
+            "remote_transfer_items only handles transfers with at least one remote endpoint."
+                .to_string(),
+        ),
     }
 }
 
@@ -740,20 +731,14 @@ async fn transfer_remote_to_local(
     let source_path = parse_remote_virtual_path(source)?;
     let connection = load_remote_connection(app, &source_path.connection_id)?;
     let session = get_or_connect_remote_session(app, state, &connection).await?;
-    let source_actual_path = build_actual_remote_path(&connection.start_path, &source_path.relative_segments)?;
+    let source_actual_path =
+        build_actual_remote_path(&connection.start_path, &source_path.relative_segments)?;
     let source_metadata = stat_remote_path(&session, &source_actual_path).await?;
     let source_name = remote_virtual_leaf_name(&connection, &source_path)?;
-    let destination_path = resolve_local_keep_both_target_path(
-        Path::new(target_dir),
-        &source_name,
-    )?;
+    let destination_path =
+        resolve_local_keep_both_target_path(Path::new(target_dir), &source_name)?;
     if remote_attrs_is_dir(&source_metadata, true) {
-        copy_remote_directory_to_local(
-            &session,
-            &source_actual_path,
-            &destination_path,
-        )
-        .await?;
+        copy_remote_directory_to_local(&session, &source_actual_path, &destination_path).await?;
         if operation == FileTransferOperation::Move {
             delete_remote_tree(&session, &source_actual_path).await?;
         }
@@ -776,12 +761,21 @@ async fn transfer_local_to_remote(
     let connection = load_remote_connection(app, &target_remote.connection_id)?;
     let session = get_or_connect_remote_session(app, state, &connection).await?;
     let source_path = PathBuf::from(source);
-    let metadata = fs::symlink_metadata(&source_path)
-        .map_err(|error| format!("Failed to inspect local transfer source {}: {error}", source_path.display()))?;
+    let metadata = fs::symlink_metadata(&source_path).map_err(|error| {
+        format!(
+            "Failed to inspect local transfer source {}: {error}",
+            source_path.display()
+        )
+    })?;
     let source_name = source_path
         .file_name()
         .and_then(OsStr::to_str)
-        .ok_or_else(|| format!("Unable to derive a transfer name for {}", source_path.display()))?
+        .ok_or_else(|| {
+            format!(
+                "Unable to derive a transfer name for {}",
+                source_path.display()
+            )
+        })?
         .to_string();
     let target_path = resolve_remote_keep_both_target_path(
         &session,
@@ -794,18 +788,27 @@ async fn transfer_local_to_remote(
         copy_local_directory_to_remote(&source_path, &session, &target_path).await?;
         if operation == FileTransferOperation::Move {
             fs::remove_dir_all(&source_path).map_err(|error| {
-                format!("Failed to remove local directory {} after move: {error}", source_path.display())
+                format!(
+                    "Failed to remove local directory {} after move: {error}",
+                    source_path.display()
+                )
             })?;
         }
     } else {
         copy_local_file_to_remote(&source_path, &session, &target_path).await?;
         if operation == FileTransferOperation::Move {
             fs::remove_file(&source_path).map_err(|error| {
-                format!("Failed to remove local file {} after move: {error}", source_path.display())
+                format!(
+                    "Failed to remove local file {} after move: {error}",
+                    source_path.display()
+                )
             })?;
         }
     }
-    Ok(build_remote_virtual_path_from_actual(&connection, &target_path)?)
+    Ok(build_remote_virtual_path_from_actual(
+        &connection,
+        &target_path,
+    )?)
 }
 
 async fn transfer_remote_to_remote(
@@ -820,8 +823,10 @@ async fn transfer_remote_to_remote(
     let target_connection = load_remote_connection(app, &target_remote.connection_id)?;
     let source_session = get_or_connect_remote_session(app, state, &source_connection).await?;
     let target_session = get_or_connect_remote_session(app, state, &target_connection).await?;
-    let source_actual_path =
-        build_actual_remote_path(&source_connection.start_path, &source_path.relative_segments)?;
+    let source_actual_path = build_actual_remote_path(
+        &source_connection.start_path,
+        &source_path.relative_segments,
+    )?;
     let source_metadata = stat_remote_path(&source_session, &source_actual_path).await?;
     let source_name = remote_virtual_leaf_name(&source_connection, &source_path)?;
     let target_actual_path = resolve_remote_keep_both_target_path(
@@ -871,6 +876,7 @@ async fn transfer_remote_to_remote(
     )?)
 }
 
+#[async_recursion::async_recursion]
 async fn copy_remote_directory_to_local(
     session: &Arc<RemoteSftpSession>,
     source_actual_path: &str,
@@ -889,7 +895,11 @@ async fn copy_remote_directory_to_local(
         .map_err(|error| remote_operation_error(error, true).message)?
     {
         let entry_name = remote_dir_entry_name(&entry);
-        let child_source_path = format!("{}/{}", trim_trailing_slashes(source_actual_path), entry_name);
+        let child_source_path = format!(
+            "{}/{}",
+            trim_trailing_slashes(source_actual_path),
+            entry_name
+        );
         let child_destination = destination_path.join(&entry_name);
         if remote_dir_entry_is_dir(&entry) {
             copy_remote_directory_to_local(session, &child_source_path, &child_destination).await?;
@@ -900,6 +910,7 @@ async fn copy_remote_directory_to_local(
     Ok(())
 }
 
+#[async_recursion::async_recursion]
 async fn copy_remote_directory_to_remote(
     source_session: &Arc<RemoteSftpSession>,
     source_actual_path: &str,
@@ -914,8 +925,16 @@ async fn copy_remote_directory_to_remote(
         .map_err(|error| remote_operation_error(error, true).message)?
     {
         let entry_name = remote_dir_entry_name(&entry);
-        let child_source_path = format!("{}/{}", trim_trailing_slashes(source_actual_path), entry_name);
-        let child_target_path = format!("{}/{}", trim_trailing_slashes(target_actual_path), entry_name);
+        let child_source_path = format!(
+            "{}/{}",
+            trim_trailing_slashes(source_actual_path),
+            entry_name
+        );
+        let child_target_path = format!(
+            "{}/{}",
+            trim_trailing_slashes(target_actual_path),
+            entry_name
+        );
         if remote_dir_entry_is_dir(&entry) {
             copy_remote_directory_to_remote(
                 source_session,
@@ -937,6 +956,7 @@ async fn copy_remote_directory_to_remote(
     Ok(())
 }
 
+#[async_recursion::async_recursion]
 async fn copy_local_directory_to_remote(
     source_path: &Path,
     session: &Arc<RemoteSftpSession>,
@@ -950,12 +970,20 @@ async fn copy_local_directory_to_remote(
         )
     })?;
     for entry in entries {
-        let entry = entry.map_err(|error| format!("Failed to read local directory entry: {error}"))?;
-        let metadata = entry
-            .metadata()
-            .map_err(|error| format!("Failed to inspect local upload entry {}: {error}", entry.path().display()))?;
+        let entry =
+            entry.map_err(|error| format!("Failed to read local directory entry: {error}"))?;
+        let metadata = entry.metadata().map_err(|error| {
+            format!(
+                "Failed to inspect local upload entry {}: {error}",
+                entry.path().display()
+            )
+        })?;
         let child_name = entry.file_name().to_string_lossy().into_owned();
-        let child_target_path = format!("{}/{}", trim_trailing_slashes(target_actual_path), child_name);
+        let child_target_path = format!(
+            "{}/{}",
+            trim_trailing_slashes(target_actual_path),
+            child_name
+        );
         if metadata.is_dir() {
             copy_local_directory_to_remote(&entry.path(), session, &child_target_path).await?;
         } else {
@@ -970,17 +998,19 @@ async fn copy_local_file_to_remote(
     session: &Arc<RemoteSftpSession>,
     target_actual_path: &str,
 ) -> Result<(), String> {
-    let mut source_file = tokio_fs::File::open(source_path)
-        .await
-        .map_err(|error| format!("Failed to open local upload source {}: {error}", source_path.display()))?;
+    let mut source_file = tokio_fs::File::open(source_path).await.map_err(|error| {
+        format!(
+            "Failed to open local upload source {}: {error}",
+            source_path.display()
+        )
+    })?;
     let mut target_file = open_remote_file_for_write(session, target_actual_path).await?;
     tokio::io::copy(&mut source_file, &mut target_file)
         .await
         .map_err(|error| format!("Failed to upload {}: {error}", source_path.display()))?;
-    target_file
-        .shutdown()
-        .await
-        .map_err(|error| format!("Failed to finalize remote upload to {target_actual_path}: {error}"))?;
+    target_file.shutdown().await.map_err(|error| {
+        format!("Failed to finalize remote upload to {target_actual_path}: {error}")
+    })?;
     Ok(())
 }
 
@@ -1000,14 +1030,21 @@ async fn copy_remote_file_to_local(
     let mut source_file = open_remote_file_for_read(session, source_actual_path).await?;
     let mut destination_file = tokio_fs::File::create(destination_path)
         .await
-        .map_err(|error| format!("Failed to create local destination {}: {error}", destination_path.display()))?;
+        .map_err(|error| {
+            format!(
+                "Failed to create local destination {}: {error}",
+                destination_path.display()
+            )
+        })?;
     tokio::io::copy(&mut source_file, &mut destination_file)
         .await
         .map_err(|error| format!("Failed to download remote file {source_actual_path}: {error}"))?;
-    destination_file
-        .flush()
-        .await
-        .map_err(|error| format!("Failed to flush local destination {}: {error}", destination_path.display()))?;
+    destination_file.flush().await.map_err(|error| {
+        format!(
+            "Failed to flush local destination {}: {error}",
+            destination_path.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -1022,10 +1059,9 @@ async fn copy_remote_file_to_remote(
     tokio::io::copy(&mut source_file, &mut target_file)
         .await
         .map_err(|error| format!("Failed to copy remote file {source_actual_path}: {error}"))?;
-    target_file
-        .shutdown()
-        .await
-        .map_err(|error| format!("Failed to finalize remote copy to {target_actual_path}: {error}"))?;
+    target_file.shutdown().await.map_err(|error| {
+        format!("Failed to finalize remote copy to {target_actual_path}: {error}")
+    })?;
     Ok(())
 }
 
@@ -1044,14 +1080,21 @@ async fn stage_remote_file(
     let staged_path = temp_root.join(format!("{}-{}", Uuid::new_v4(), file_name));
     let mut destination_file = tokio_fs::File::create(&staged_path)
         .await
-        .map_err(|error| format!("Failed to create staged remote file {}: {error}", staged_path.display()))?;
+        .map_err(|error| {
+            format!(
+                "Failed to create staged remote file {}: {error}",
+                staged_path.display()
+            )
+        })?;
     tokio::io::copy(&mut source_file, &mut destination_file)
         .await
         .map_err(|error| format!("Failed to stage remote file {path}: {error}"))?;
-    destination_file
-        .flush()
-        .await
-        .map_err(|error| format!("Failed to flush staged remote file {}: {error}", staged_path.display()))?;
+    destination_file.flush().await.map_err(|error| {
+        format!(
+            "Failed to flush staged remote file {}: {error}",
+            staged_path.display()
+        )
+    })?;
     Ok(staged_path)
 }
 
@@ -1145,7 +1188,7 @@ async fn create_remote_directory(
         Err(yazi_sftp::Error::Status(status))
             if matches!(
                 status.code,
-                yazi_sftp::responses::status::StatusCode::FileAlreadyExists
+                yazi_sftp::responses::StatusCode::FileAlreadyExists
             ) =>
         {
             Ok(())
@@ -1160,7 +1203,10 @@ async fn rename_remote_path(
     to_actual_path: &str,
 ) -> Result<(), String> {
     let operator = session.operator.lock().await;
-    match operator.rename_posix(from_actual_path, to_actual_path).await {
+    match operator
+        .rename_posix(from_actual_path, to_actual_path)
+        .await
+    {
         Ok(()) => Ok(()),
         Err(yazi_sftp::Error::Unsupported) => operator
             .rename(from_actual_path, to_actual_path)
@@ -1170,6 +1216,7 @@ async fn rename_remote_path(
     }
 }
 
+#[async_recursion::async_recursion]
 async fn delete_remote_tree(
     session: &Arc<RemoteSftpSession>,
     actual_path: &str,
@@ -1252,8 +1299,8 @@ async fn remote_path_exists(
         Err(yazi_sftp::Error::Status(status))
             if matches!(
                 status.code,
-                yazi_sftp::responses::status::StatusCode::NoSuchFile
-                    | yazi_sftp::responses::status::StatusCode::NoSuchPath
+                yazi_sftp::responses::StatusCode::NoSuchFile
+                    | yazi_sftp::responses::StatusCode::NoSuchPath
             ) =>
         {
             Ok(false)
@@ -1333,10 +1380,7 @@ async fn get_or_connect_remote_session(
                 RemoteConnectionStatus::Connected,
                 None,
             )?;
-            clear_pending_host_verification(
-                &state.pending_host_verifications,
-                &connection.id,
-            )?;
+            clear_pending_host_verification(&state.pending_host_verifications, &connection.id)?;
             Ok(session)
         }
         Err(error) => {
@@ -1360,7 +1404,7 @@ async fn connect_remote_session(
         .hosts
         .into_iter()
         .find(|entry| entry.host == connection.host && entry.port == connection.port);
-    let pending_host_verifications = Arc::new(state.pending_host_verifications.clone());
+    let pending_host_verifications = state.pending_host_verifications.clone();
     let handler = RemoteClientHandler {
         connection_id: connection.id.clone(),
         host: connection.host.clone(),
@@ -1373,13 +1417,15 @@ async fn connect_remote_session(
         keepalive_interval: Some(Duration::from_secs(10)),
         ..Default::default()
     });
-    let mut client = russh::client::connect(
-        config,
-        (connection.host.as_str(), connection.port),
-        handler,
-    )
-    .await
-    .map_err(|error| format!("Failed to connect to {}:{}: {error}", connection.host, connection.port))?;
+    let mut client =
+        russh::client::connect(config, (connection.host.as_str(), connection.port), handler)
+            .await
+            .map_err(|error| {
+                format!(
+                    "Failed to connect to {}:{}: {error}",
+                    connection.host, connection.port
+                )
+            })?;
 
     authenticate_remote_client(connection, &mut client).await?;
 
@@ -1435,10 +1481,15 @@ async fn authenticate_remote_client(
                     &connection.username,
                     PrivateKeyWithHashAlg::new(
                         Arc::new(key),
-                        client.best_supported_rsa_hash().await.map_err(|error| {
-                            format!("Failed to negotiate an SSH public-key hash algorithm: {error}")
-                        })?
-                        .flatten(),
+                        client
+                            .best_supported_rsa_hash()
+                            .await
+                            .map_err(|error| {
+                                format!(
+                                    "Failed to negotiate an SSH public-key hash algorithm: {error}"
+                                )
+                            })?
+                            .flatten(),
                     ),
                 )
                 .await
@@ -1524,10 +1575,7 @@ fn update_remote_status(
     Ok(())
 }
 
-fn clear_remote_status(
-    state: &RemoteStorageState,
-    connection_id: &str,
-) -> Result<(), String> {
+fn clear_remote_status(state: &RemoteStorageState, connection_id: &str) -> Result<(), String> {
     let mut statuses = state
         .statuses
         .lock()
@@ -1573,13 +1621,17 @@ fn record_pending_host_verification(
 ) -> Result<(), russh::Error> {
     pending_host_verifications
         .lock()
-        .map_err(|_| russh::Error::InvalidConfig("remote pending host verification lock poisoned".to_string()))?
+        .map_err(|_| {
+            russh::Error::InvalidConfig(
+                "remote pending host verification lock poisoned".to_string(),
+            )
+        })?
         .insert(verification.connection_id.clone(), verification);
     Ok(())
 }
 
 fn clear_pending_host_verification(
-    pending_host_verifications: &Mutex<HashMap<String, RemotePendingHostVerification>>,
+    pending_host_verifications: &Arc<Mutex<HashMap<String, RemotePendingHostVerification>>>,
     connection_id: &str,
 ) -> Result<(), String> {
     pending_host_verifications
@@ -1590,7 +1642,7 @@ fn clear_pending_host_verification(
 }
 
 fn clear_pending_hosts_for_target(
-    pending_host_verifications: &Mutex<HashMap<String, RemotePendingHostVerification>>,
+    pending_host_verifications: &Arc<Mutex<HashMap<String, RemotePendingHostVerification>>>,
     host: &str,
     port: u16,
 ) -> Result<(), String> {
@@ -1713,7 +1765,10 @@ fn read_trusted_hosts(app: &AppHandle) -> Result<PersistedTrustedHosts, String> 
         .map_err(|error| format!("Failed to parse the remote trusted-hosts store: {error}"))
 }
 
-fn write_trusted_hosts(app: &AppHandle, trusted_hosts: &PersistedTrustedHosts) -> Result<(), String> {
+fn write_trusted_hosts(
+    app: &AppHandle,
+    trusted_hosts: &PersistedTrustedHosts,
+) -> Result<(), String> {
     let path = remote_trusted_hosts_file_path(app)?;
     let content = serde_json::to_string_pretty(trusted_hosts)
         .map_err(|error| format!("Failed to serialize trusted remote hosts: {error}"))?;
@@ -1749,8 +1804,11 @@ fn remove_trusted_host(app: &AppHandle, host: &str, port: u16) -> Result<(), Str
 }
 
 fn keyring_entry(connection_id: &str, secret_kind: &str) -> Result<Entry, String> {
-    Entry::new(REMOTE_KEYRING_SERVICE, &format!("{connection_id}:{secret_kind}"))
-        .map_err(|error| format!("Failed to open the remote-storage keychain entry: {error}"))
+    Entry::new(
+        REMOTE_KEYRING_SERVICE,
+        &format!("{connection_id}:{secret_kind}"),
+    )
+    .map_err(|error| format!("Failed to open the remote-storage keychain entry: {error}"))
 }
 
 fn persist_remote_auth_secrets(
@@ -1774,13 +1832,17 @@ fn persist_remote_auth_secrets(
                 .ok_or_else(|| "Password authentication requires a password.".to_string())?;
             keyring_entry(&connection.id, "password")?
                 .set_password(&password)
-                .map_err(|error| format!("Failed to store the remote password in the OS keychain: {error}"))?;
+                .map_err(|error| {
+                    format!("Failed to store the remote password in the OS keychain: {error}")
+                })?;
             delete_remote_key_passphrase(&connection.id)?;
         }
         RemoteAuthMode::PrivateKeyFile => {
             delete_remote_password(&connection.id)?;
             match request.key_passphrase.as_deref() {
-                Some(value) if value.trim().is_empty() => delete_remote_key_passphrase(&connection.id)?,
+                Some(value) if value.trim().is_empty() => {
+                    delete_remote_key_passphrase(&connection.id)?
+                }
                 Some(value) => {
                     keyring_entry(&connection.id, "key-passphrase")?
                         .set_password(value)
@@ -1824,14 +1886,18 @@ fn delete_keyring_secret(connection_id: &str, secret_kind: &str) -> Result<(), S
 fn read_remote_password(connection_id: &str) -> Result<String, String> {
     keyring_entry(connection_id, "password")?
         .get_password()
-        .map_err(|error| format!("Failed to read the remote password from the OS keychain: {error}"))
+        .map_err(|error| {
+            format!("Failed to read the remote password from the OS keychain: {error}")
+        })
 }
 
 fn read_remote_key_passphrase(connection_id: &str) -> Result<String, String> {
     keyring_entry(connection_id, "key-passphrase")?
         .get_password()
         .map_err(|error| {
-            format!("Failed to read the remote private-key passphrase from the OS keychain: {error}")
+            format!(
+                "Failed to read the remote private-key passphrase from the OS keychain: {error}"
+            )
         })
 }
 
@@ -1861,10 +1927,7 @@ fn parse_remote_virtual_path(path: &str) -> Result<RemoteVirtualPath, String> {
 }
 
 fn build_remote_virtual_path(connection_id: &str, relative_segments: &[String]) -> String {
-    let mut path = format!(
-        "remote://sftp/{}/root",
-        urlencoding::encode(connection_id)
-    );
+    let mut path = format!("remote://sftp/{}/root", urlencoding::encode(connection_id));
     for segment in relative_segments {
         path.push('/');
         path.push_str(&urlencoding::encode(segment));
@@ -1895,7 +1958,10 @@ fn build_remote_virtual_path_from_actual(
             .map(str::to_string)
             .collect::<Vec<_>>()
     };
-    Ok(build_remote_virtual_path(&connection.id, &relative_segments))
+    Ok(build_remote_virtual_path(
+        &connection.id,
+        &relative_segments,
+    ))
 }
 
 fn normalize_remote_relative_segments(raw_segments: &[&str]) -> Result<Vec<String>, String> {
@@ -1911,7 +1977,9 @@ fn normalize_remote_relative_segments(raw_segments: &[&str]) -> Result<Vec<Strin
             "" | "." => {}
             ".." => {
                 if normalized.pop().is_none() {
-                    return Err("Remote path cannot navigate above its configured root.".to_string());
+                    return Err(
+                        "Remote path cannot navigate above its configured root.".to_string()
+                    );
                 }
             }
             _ => normalized.push(decoded),
@@ -1920,7 +1988,10 @@ fn normalize_remote_relative_segments(raw_segments: &[&str]) -> Result<Vec<Strin
     Ok(normalized)
 }
 
-fn build_actual_remote_path(start_path: &str, relative_segments: &[String]) -> Result<String, String> {
+fn build_actual_remote_path(
+    start_path: &str,
+    relative_segments: &[String],
+) -> Result<String, String> {
     let root = normalize_remote_start_path(start_path)?;
     if relative_segments.is_empty() {
         return Ok(root);
@@ -1999,7 +2070,10 @@ fn normalize_remote_leaf_name(name: &str) -> Result<String, String> {
         return Err("Remote item name is required.".to_string());
     }
     if trimmed == "." || trimmed == ".." || trimmed.contains('/') || trimmed.contains('\\') {
-        return Err("Remote item names cannot contain path separators or reserved relative segments.".to_string());
+        return Err(
+            "Remote item names cannot contain path separators or reserved relative segments."
+                .to_string(),
+        );
     }
     Ok(trimmed.to_string())
 }
@@ -2016,7 +2090,10 @@ fn remote_virtual_leaf_name(
         .and_then(OsStr::to_str)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
-        .ok_or_else(|| "Remote root cannot be transferred because it does not have a stable leaf name.".to_string())
+        .ok_or_else(|| {
+            "Remote root cannot be transferred because it does not have a stable leaf name."
+                .to_string()
+        })
 }
 
 impl RemoteVirtualPath {
@@ -2105,7 +2182,11 @@ fn sort_entries(entries: &mut [FileEntry]) {
         right
             .is_dir
             .cmp(&left.is_dir)
-            .then_with(|| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()))
+            .then_with(|| {
+                left.name
+                    .to_ascii_lowercase()
+                    .cmp(&right.name.to_ascii_lowercase())
+            })
             .then_with(|| left.path.cmp(&right.path))
     });
 }
@@ -2117,7 +2198,10 @@ struct RemoteOperationError {
 fn remote_operation_error(error: yazi_sftp::Error, include_hint: bool) -> RemoteOperationError {
     let message = match error {
         yazi_sftp::Error::Status(status) if include_hint => {
-            format!("Remote SFTP request failed: {:?} ({})", status.code, status.message)
+            format!(
+                "Remote SFTP request failed: {:?} ({})",
+                status.code, status.message
+            )
         }
         other => format!("Remote SFTP operation failed: {other}"),
     };
@@ -2165,10 +2249,7 @@ mod tests {
     fn parses_remote_virtual_root_path() {
         let parsed = parse_remote_virtual_path("remote://sftp/demo-connection/root")
             .expect("root remote path should parse");
-        assert_eq!(
-            parsed.connection_id,
-            "demo-connection".to_string()
-        );
+        assert_eq!(parsed.connection_id, "demo-connection".to_string());
         assert!(parsed.relative_segments.is_empty());
         assert_eq!(parsed.parent_path(), None);
     }
@@ -2202,7 +2283,8 @@ mod tests {
 
     #[test]
     fn rejects_remote_relative_escape() {
-        let error = normalize_remote_relative_segments(&[".."]).expect_err("root escape should fail");
+        let error =
+            normalize_remote_relative_segments(&[".."]).expect_err("root escape should fail");
         assert!(error.contains("cannot navigate above"));
     }
 
@@ -2235,7 +2317,8 @@ mod tests {
             "/mnt/storage".to_string()
         );
         assert_eq!(
-            normalize_remote_start_path("C:/Users/remote/").expect("windows-like start path should normalize"),
+            normalize_remote_start_path("C:/Users/remote/")
+                .expect("windows-like start path should normalize"),
             "C:/Users/remote".to_string()
         );
     }

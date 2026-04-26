@@ -186,14 +186,16 @@ fn build_linux_drive_info(mount: &LinuxMountInfo, home_dir: Option<&Path>) -> Dr
     let metadata = linux_query_udisks_metadata(&mount.source);
     let mount_path = mount.mount_point.to_string_lossy().to_string();
     let volume_id = format!("linux:{}:{}", mount.major, mount.minor);
-    let is_network = linux_is_network_filesystem(&mount.file_system_type) || linux_is_network_source(&mount.source);
+    let is_network = linux_is_network_filesystem(&mount.file_system_type)
+        || linux_is_network_source(&mount.source);
     let is_optical = linux_is_optical_mount(mount);
     let removable_hint = metadata
         .as_ref()
         .and_then(|value| value.is_removable)
         .or_else(|| linux_sysfs_removable_flag(&mount.source))
         .unwrap_or(false);
-    let is_removable = removable_hint || (!is_network && mount_path != "/" && is_external_mount_path(&mount.mount_point));
+    let is_removable = removable_hint
+        || (!is_network && mount_path != "/" && is_external_mount_path(&mount.mount_point));
     let is_read_only = metadata
         .as_ref()
         .and_then(|value| value.is_read_only)
@@ -212,11 +214,7 @@ fn build_linux_drive_info(mount: &LinuxMountInfo, home_dir: Option<&Path>) -> Dr
         DriveClassification::External
     } else if mount_path == "/" || mount.source.starts_with("/dev/") {
         DriveClassification::System
-    } else if metadata
-        .as_ref()
-        .and_then(|value| value.hint_system)
-        == Some(false)
-    {
+    } else if metadata.as_ref().and_then(|value| value.hint_system) == Some(false) {
         DriveClassification::External
     } else {
         DriveClassification::Virtual
@@ -229,7 +227,13 @@ fn build_linux_drive_info(mount: &LinuxMountInfo, home_dir: Option<&Path>) -> Dr
         metadata
             .as_ref()
             .and_then(|value| value.label.clone())
-            .or_else(|| mount.mount_point.file_name().and_then(OsStr::to_str).map(|value| value.to_string()))
+            .or_else(|| {
+                mount
+                    .mount_point
+                    .file_name()
+                    .and_then(OsStr::to_str)
+                    .map(|value| value.to_string())
+            })
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| mount_path.clone())
     };
@@ -265,7 +269,9 @@ fn should_surface_linux_mount(mount: &LinuxMountInfo) -> bool {
     if linux_is_pseudo_filesystem(&mount.file_system_type) {
         return false;
     }
-    if linux_is_network_filesystem(&mount.file_system_type) || linux_is_network_source(&mount.source) {
+    if linux_is_network_filesystem(&mount.file_system_type)
+        || linux_is_network_source(&mount.source)
+    {
         return true;
     }
     if is_external_mount_path(&mount.mount_point) {
@@ -307,8 +313,7 @@ fn linux_is_pseudo_filesystem(file_system_type: &str) -> bool {
 fn linux_is_network_filesystem(file_system_type: &str) -> bool {
     matches!(
         file_system_type,
-        "9p"
-            | "afpfs"
+        "9p" | "afpfs"
             | "cifs"
             | "davfs"
             | "davfs2"
@@ -346,7 +351,9 @@ fn linux_is_optical_mount(mount: &LinuxMountInfo) -> bool {
 #[cfg(target_os = "linux")]
 fn linux_sysfs_removable_flag(device_path: &str) -> Option<bool> {
     let block_device_name = linux_block_device_name(device_path)?;
-    let sysfs_path = Path::new("/sys/block").join(block_device_name).join("removable");
+    let sysfs_path = Path::new("/sys/block")
+        .join(block_device_name)
+        .join("removable");
     match std::fs::read_to_string(sysfs_path).ok()?.trim() {
         "0" => Some(false),
         "1" => Some(true),
@@ -529,7 +536,9 @@ fn list_macos_volumes() -> Result<Vec<DriveInfo>, String> {
         let removable = diskutil
             .as_ref()
             .and_then(|value| value.removable.or(value.ejectable))
-            .unwrap_or_else(|| !is_root && !is_home_mount && !is_network && mount_path.starts_with("/Volumes/"));
+            .unwrap_or_else(|| {
+                !is_root && !is_home_mount && !is_network && mount_path.starts_with("/Volumes/")
+            });
         let read_only = diskutil
             .as_ref()
             .and_then(|value| value.read_only)
@@ -553,7 +562,12 @@ fn list_macos_volumes() -> Result<Vec<DriveInfo>, String> {
             diskutil
                 .as_ref()
                 .and_then(|value| value.volume_name.clone())
-                .or_else(|| mount_path_buf.file_name().and_then(OsStr::to_str).map(str::to_string))
+                .or_else(|| {
+                    mount_path_buf
+                        .file_name()
+                        .and_then(OsStr::to_str)
+                        .map(str::to_string)
+                })
                 .unwrap_or_else(|| mount_path.clone())
         };
         let (total_bytes, free_bytes) = unix_drive_capacity(&mount_path_buf);
@@ -649,9 +663,9 @@ fn list_windows_volumes() -> Result<Vec<DriveInfo>, String> {
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
     use windows_sys::Win32::Storage::FileSystem::{
+        GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDriveStringsW, GetVolumeInformationW,
         DRIVE_CDROM, DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE, DRIVE_REMOVABLE,
-        FILE_READ_ONLY_VOLUME, GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDriveStringsW,
-        GetVolumeInformationW,
+        FILE_READ_ONLY_VOLUME,
     };
 
     let mut buffer = vec![0u16; 512];
@@ -681,7 +695,10 @@ fn list_windows_volumes() -> Result<Vec<DriveInfo>, String> {
 
         let drive_root = drive_string;
         let drive_path = drive_root.trim_end_matches('\\').to_string();
-        let drive_wide = drive_root.encode_utf16().chain(std::iter::once(0)).collect::<Vec<_>>();
+        let drive_wide = drive_root
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
         let mut total_bytes = 0_u64;
         let mut free_bytes = 0_u64;
         unsafe {
@@ -721,7 +738,8 @@ fn list_windows_volumes() -> Result<Vec<DriveInfo>, String> {
         let label = utf16_buffer_to_string(&volume_name_buffer)
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| drive_path.clone());
-        let file_system_type = utf16_buffer_to_string(&file_system_buffer).filter(|value| !value.is_empty());
+        let file_system_type =
+            utf16_buffer_to_string(&file_system_buffer).filter(|value| !value.is_empty());
         let volume_id = format!("windows:{volume_serial_number:08X}");
 
         drives.push(DriveInfo {
@@ -747,7 +765,11 @@ fn list_windows_volumes() -> Result<Vec<DriveInfo>, String> {
 #[cfg(target_os = "windows")]
 fn utf16_buffer_to_string(buffer: &[u16]) -> Option<String> {
     let end = buffer.iter().position(|value| *value == 0)?;
-    Some(std::ffi::OsString::from_wide(&buffer[..end]).to_string_lossy().to_string())
+    Some(
+        std::ffi::OsString::from_wide(&buffer[..end])
+            .to_string_lossy()
+            .to_string(),
+    )
 }
 
 #[cfg(target_os = "windows")]
@@ -761,18 +783,17 @@ fn windows_volume_root(path: &Path) -> Option<String> {
         .chain(std::iter::once(0))
         .collect::<Vec<_>>();
     let mut buffer = vec![0u16; 512];
-    let success = unsafe {
-        GetVolumePathNameW(
-            wide_path.as_ptr(),
-            buffer.as_mut_ptr(),
-            buffer.len() as u32,
-        )
-    };
+    let success =
+        unsafe { GetVolumePathNameW(wide_path.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32) };
     if success == 0 {
         return None;
     }
     let end = buffer.iter().position(|value| *value == 0)?;
-    Some(std::ffi::OsString::from_wide(&buffer[..end]).to_string_lossy().to_string())
+    Some(
+        std::ffi::OsString::from_wide(&buffer[..end])
+            .to_string_lossy()
+            .to_string(),
+    )
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

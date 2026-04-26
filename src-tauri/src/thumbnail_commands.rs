@@ -241,8 +241,11 @@ fn build_entry_thumbnail_from_artifact(
     artifact: ExplorerThumbnailArtifact,
 ) -> Result<ExplorerEntryThumbnail, String> {
     let poster_data_url = artifact_path_to_data_url(Path::new(&artifact.poster.file_path))?;
-    let hover_timestamps =
-        sample_thumbnail_hover_timestamps(request, artifact.kind.clone(), artifact.hover_frames.len());
+    let hover_timestamps = sample_thumbnail_hover_timestamps(
+        request,
+        artifact.kind.clone(),
+        artifact.hover_frames.len(),
+    );
     let hover_frames = artifact
         .hover_frames
         .iter()
@@ -365,12 +368,8 @@ where
     ) -> Result<PathBuf, String>,
 {
     let poster_path = ensure_poster_path(app, gpu_runtime, request, variant)?;
-    let poster = register_thumbnail_artifact_descriptor(
-        app,
-        request,
-        "thumbnail.poster",
-        &poster_path,
-    )?;
+    let poster =
+        register_thumbnail_artifact_descriptor(app, request, "thumbnail.poster", &poster_path)?;
     let artifact = ExplorerThumbnailArtifact {
         entity_id: request.entity_id.clone(),
         content_revision: request.content_revision.clone(),
@@ -384,8 +383,12 @@ where
 }
 
 fn artifact_path_to_data_url(path: &Path) -> Result<String, String> {
-    let bytes = fs::read(path)
-        .map_err(|error| format!("Failed to read thumbnail artifact '{}': {error}", path.display()))?;
+    let bytes = fs::read(path).map_err(|error| {
+        format!(
+            "Failed to read thumbnail artifact '{}': {error}",
+            path.display()
+        )
+    })?;
     let mime = if normalized_extension(path) == "svg" {
         "image/svg+xml"
     } else {
@@ -853,12 +856,8 @@ fn thumbnail_artifact_cache_path(
             .and_then(|value| value.to_str())
             .unwrap_or("thumb"),
     );
-    let variant_key = build_thumbnail_variant_key(
-        variant,
-        request.max_width,
-        request.max_height,
-        extra_number,
-    );
+    let variant_key =
+        build_thumbnail_variant_key(variant, request.max_width, request.max_height, extra_number);
     let index_suffix = frame_index
         .map(|index| format!(".{:02}", index + 1))
         .unwrap_or_default();
@@ -928,8 +927,7 @@ fn ensure_image_thumbnail_artifact_path(
     variant: &str,
 ) -> Result<PathBuf, String> {
     if normalized_extension(&request.input_path) == "svg" {
-        let cache_path =
-            thumbnail_artifact_cache_path(app, request, variant, "svg", None, None)?;
+        let cache_path = thumbnail_artifact_cache_path(app, request, variant, "svg", None, None)?;
         if !cache_path.exists() {
             if let Some(parent) = cache_path.parent() {
                 fs::create_dir_all(parent).map_err(|error| {
@@ -1511,30 +1509,25 @@ fn build_video_thumbnail_artifact(
     app: &AppHandle,
     request: &NormalizedThumbnailRequest,
 ) -> Result<ExplorerThumbnailArtifact, String> {
-    let poster_path = ensure_cached_static_thumbnail_path(
-        app,
-        request,
-        "video-poster",
-        "png",
-        || render_video_poster_png(&request.input_path, request.max_width, request.max_height),
-    )?;
+    let poster_path =
+        ensure_cached_static_thumbnail_path(app, request, "video-poster", "png", || {
+            render_video_poster_png(&request.input_path, request.max_width, request.max_height)
+        })?;
     let poster =
         register_thumbnail_artifact_descriptor(app, request, "thumbnail.poster", &poster_path)?;
     let mut hover_frames = Vec::new();
     let mut hover_frame_delay_ms = None;
     if request.include_video_hover_scrub {
-        let frame_paths =
-            build_and_render_video_hover_frame_paths(app, request, request.video_hover_frame_count)?;
+        let frame_paths = build_and_render_video_hover_frame_paths(
+            app,
+            request,
+            request.video_hover_frame_count,
+        )?;
         hover_frame_delay_ms = Some(150);
         hover_frames = frame_paths
             .into_iter()
             .map(|path| {
-                register_thumbnail_artifact_descriptor(
-                    app,
-                    request,
-                    "thumbnail.hover-frame",
-                    &path,
-                )
+                register_thumbnail_artifact_descriptor(app, request, "thumbnail.hover-frame", &path)
             })
             .collect::<Result<Vec<_>, String>>()?;
     }

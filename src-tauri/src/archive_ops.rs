@@ -97,7 +97,10 @@ const ARCHIVE_SUFFIXES: &[(ArchiveFormat, &[&str])] = &[
     (ArchiveFormat::TarBz2, &[".tar.bz2", ".tbz2"]),
     (ArchiveFormat::TarXz, &[".tar.xz", ".txz"]),
     (ArchiveFormat::SevenZip, &[".7z"]),
-    (ArchiveFormat::Zip, &[".zip", ".cbz", ".jar", ".apk", ".vsix"]),
+    (
+        ArchiveFormat::Zip,
+        &[".zip", ".cbz", ".jar", ".apk", ".vsix"],
+    ),
     (ArchiveFormat::Tar, &[".tar"]),
     (ArchiveFormat::Gzip, &[".gz"]),
     (ArchiveFormat::Bzip2, &[".bz2"]),
@@ -1881,7 +1884,10 @@ mod tests {
     fn open_cached_reuses_existing_cache_for_vsix_archives() {
         let workspace = tempdir().expect("tempdir");
         let archive_path = workspace.path().join("sample-theme.vsix");
-        create_zip_archive(&archive_path, &[("extension/package.json", "{\"name\":\"sample\"}")]);
+        create_zip_archive(
+            &archive_path,
+            &[("extension/package.json", "{\"name\":\"sample\"}")],
+        );
 
         let first_result = open_archive_cached(&archive_path).expect("cache first extract");
         assert!(!first_result.reused_cached_output);

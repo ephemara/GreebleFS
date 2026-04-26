@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 
+use greeble_ipc_contracts::{
+    IpcArtifactDescriptor, IpcArtifactRef, IpcArtifactRetention, IpcResourceHandle,
+};
 use include_dir::{include_dir, Dir, DirEntry};
-use greeble_ipc_contracts::{IpcArtifactDescriptor, IpcArtifactRef, IpcResourceHandle};
 use serde::de::DeserializeOwned;
 use tauri::{AppHandle, Manager};
 
@@ -109,6 +111,7 @@ pub struct PythonSidecarActionResponse {
     pub action_id: String,
     pub result_json: String,
     pub output_artifacts: Vec<IpcArtifactDescriptor>,
+    pub output_artifact_tokens: Vec<Option<String>>,
     pub resource_handles: Vec<IpcResourceHandle>,
 }
 
@@ -181,9 +184,35 @@ struct PythonSidecarProtocolResponse {
     request_id: String,
     ok: bool,
     result_json: Option<String>,
-    output_artifacts: Option<Vec<IpcArtifactDescriptor>>,
+    output_artifacts: Option<Vec<PythonSidecarOutputArtifactEnvelope>>,
     resource_handles: Option<Vec<IpcResourceHandle>>,
     error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PythonSidecarOutputArtifactCandidate {
+    token: Option<String>,
+    kind: String,
+    file_path: String,
+    media_type: Option<String>,
+    retention: Option<IpcArtifactRetention>,
+    identity_key: Option<String>,
+    content_revision: Option<String>,
+    delete_on_release: Option<bool>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(untagged)]
+enum PythonSidecarOutputArtifactEnvelope {
+    Descriptor(IpcArtifactDescriptor),
+    Candidate(PythonSidecarOutputArtifactCandidate),
+}
+
+#[derive(Debug, Default)]
+struct ResolvedPythonSidecarOutputArtifacts {
+    descriptors: Vec<IpcArtifactDescriptor>,
+    tokens: Vec<Option<String>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -261,14 +290,42 @@ where
     TPayload: serde::Serialize,
     TResult: DeserializeOwned,
 {
+    call_sidecar_action_json_with_ipc(
+        app,
+        config,
+        action_id,
+        payload,
+        None,
+        None,
+        working_directory,
+        environment,
+        start_if_needed,
+    )
+}
+
+pub fn call_sidecar_action_json_with_ipc<TPayload, TResult>(
+    app: &AppHandle,
+    config: Option<PythonRuntimeConfig>,
+    action_id: impl Into<String>,
+    payload: Option<TPayload>,
+    input_artifacts: Option<Vec<IpcArtifactRef>>,
+    resource_handles: Option<Vec<IpcResourceHandle>>,
+    working_directory: Option<String>,
+    environment: Option<HashMap<String, String>>,
+    start_if_needed: Option<bool>,
+) -> Result<PythonSidecarDecodedActionResponse<TResult>, String>
+where
+    TPayload: serde::Serialize,
+    TResult: DeserializeOwned,
+{
     let raw = call_sidecar_impl(
         app,
         PythonSidecarActionRequest {
             config,
             action_id: action_id.into(),
             payload_json: encode_sidecar_payload_json(payload.as_ref())?,
-            input_artifacts: None,
-            resource_handles: None,
+            input_artifacts,
+            resource_handles,
             working_directory,
             environment,
             start_if_needed,
@@ -652,8 +709,10 @@ fn spawn_sidecar_session(
     sidecar_paths: PythonSidecarPaths,
 ) -> Result<PythonSidecarSession, String> {
     let ipc_runtime = app.state::<IpcRuntimeState>();
-    let resource_handle =
-        ipc_runtime.register_resource("python-sidecar-session", Some(&path_to_string(&paths.root_dir)))?;
+    let resource_handle = ipc_runtime.register_resource(
+        "python-sidecar-session",
+        Some(&path_to_string(&paths.root_dir)),
+    )?;
     let managed_python = managed_python_path(paths);
     let log_file = OpenOptions::new()
         .create(true)
@@ -909,7 +968,8 @@ fn start_sidecar_impl(
     stop_current_sidecar_session(app, &manager)?;
 
     let (synced_manifest, synced_paths) = sync_python_workspace(&paths)?;
-    let session = spawn_sidecar_session(app, &paths, synced_manifest.clone(), synced_paths.clone())?;
+    let session =
+        spawn_sidecar_session(app, &paths, synced_manifest.clone(), synced_paths.clone())?;
     let pid = session.pid;
     {
         let mut session_guard = manager
@@ -954,6 +1014,71 @@ fn stop_sidecar_impl(
         None,
         None,
     ))
+}
+
+fn resolve_sidecar_output_artifacts(
+    ipc_runtime: &IpcRuntimeState,
+    output_artifacts: Option<Vec<PythonSidecarOutputArtifactEnvelope>>,
+) -> Result<ResolvedPythonSidecarOutputArtifacts, String> {
+    let Some(output_artifacts) = output_artifacts else {
+        return Ok(ResolvedPythonSidecarOutputArtifacts::default());
+    };
+
+    let mut resolved = ResolvedPythonSidecarOutputArtifacts {
+        descriptors: Vec::with_capacity(output_artifacts.len()),
+        tokens: Vec::with_capacity(output_artifacts.len()),
+    };
+    let mut newly_registered_artifact_ids: Vec<String> = Vec::new();
+
+    for artifact in output_artifacts {
+        match artifact {
+            PythonSidecarOutputArtifactEnvelope::Descriptor(descriptor) => {
+                resolved.tokens.push(None);
+                resolved.descriptors.push(descriptor);
+            }
+            PythonSidecarOutputArtifactEnvelope::Candidate(candidate) => {
+                let trimmed_file_path = candidate.file_path.trim();
+                if trimmed_file_path.is_empty() {
+                    for artifact_id in newly_registered_artifact_ids {
+                        let _ = ipc_runtime.release_artifact(&artifact_id);
+                    }
+                    return Err(
+                        "Python sidecar output artifact candidates require a non-empty filePath."
+                            .to_string(),
+                    );
+                }
+
+                let retention = candidate.retention.unwrap_or(IpcArtifactRetention::Ephemeral);
+                let delete_on_release = candidate
+                    .delete_on_release
+                    .unwrap_or(matches!(retention, IpcArtifactRetention::Ephemeral));
+                let descriptor = match ipc_runtime.register_artifact_path(
+                    crate::ipc_runtime::artifacts::RegisterArtifactPathRequest {
+                        kind: candidate.kind,
+                        file_path: PathBuf::from(trimmed_file_path),
+                        media_type: candidate.media_type,
+                        retention,
+                        identity_key: candidate.identity_key,
+                        content_revision: candidate.content_revision,
+                        delete_on_release,
+                    },
+                ) {
+                    Ok(descriptor) => descriptor,
+                    Err(error) => {
+                        for artifact_id in newly_registered_artifact_ids {
+                            let _ = ipc_runtime.release_artifact(&artifact_id);
+                        }
+                        return Err(error);
+                    }
+                };
+                newly_registered_artifact_ids.push(descriptor.id.clone());
+                resolved.tokens.push(candidate.token);
+                resolved.descriptors.push(descriptor);
+            }
+        }
+    }
+
+    Ok(resolved)
 }
 
 fn call_sidecar_impl(
@@ -1022,6 +1147,10 @@ fn call_sidecar_impl(
     }
 
     manager.set_last_error(None)?;
+    let resolved_output_artifacts = resolve_sidecar_output_artifacts(
+        &app.state::<IpcRuntimeState>(),
+        response.output_artifacts,
+    )?;
 
     Ok(PythonSidecarActionResponse {
         runtime_status,
@@ -1036,7 +1165,8 @@ fn call_sidecar_impl(
         request_id: response.request_id,
         action_id,
         result_json: response.result_json.unwrap_or_else(|| "null".to_string()),
-        output_artifacts: response.output_artifacts.unwrap_or_default(),
+        output_artifacts: resolved_output_artifacts.descriptors,
+        output_artifact_tokens: resolved_output_artifacts.tokens,
         resource_handles: response
             .resource_handles
             .unwrap_or_else(|| vec![session.resource_handle.clone()]),
@@ -1090,6 +1220,7 @@ pub async fn python_sidecar_call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use greeble_ipc_contracts::IpcArtifactRetention;
     use tempfile::tempdir;
 
     #[test]
@@ -1160,5 +1291,38 @@ mod tests {
             .expect("expected catalog should be valid json");
 
         assert_eq!(seeded_catalog_json, expected_catalog_json);
+    }
+
+    #[test]
+    fn sidecar_output_artifact_candidates_register_into_ipc_descriptors() {
+        let tempdir = tempdir().expect("tempdir");
+        let preview_path = tempdir.path().join("preview.png");
+        fs::write(&preview_path, b"preview-artifact").expect("preview artifact should be written");
+
+        let resolved = resolve_sidecar_output_artifacts(
+            &IpcRuntimeState::new(),
+            Some(vec![PythonSidecarOutputArtifactEnvelope::Candidate(
+                PythonSidecarOutputArtifactCandidate {
+                    token: Some("preview-mask".to_string()),
+                    kind: "image.cutout.preview-mask".to_string(),
+                    file_path: preview_path.to_string_lossy().to_string(),
+                    media_type: Some("image/png".to_string()),
+                    retention: Some(IpcArtifactRetention::Ephemeral),
+                    identity_key: Some("session-1:preview-mask".to_string()),
+                    content_revision: Some("rev-1".to_string()),
+                    delete_on_release: Some(true),
+                },
+            )]),
+        )
+        .expect("artifact candidates should register");
+
+        assert_eq!(resolved.tokens, vec![Some("preview-mask".to_string())]);
+        assert_eq!(resolved.descriptors.len(), 1);
+        assert_eq!(resolved.descriptors[0].kind, "image.cutout.preview-mask");
+        assert_eq!(resolved.descriptors[0].media_type.as_deref(), Some("image/png"));
+        assert_eq!(
+            resolved.descriptors[0].content_revision.as_deref(),
+            Some("rev-1")
+        );
     }
 }

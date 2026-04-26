@@ -136,6 +136,10 @@ const baseCommands = {
     invoke<ArrayBuffer>("cloud_read_preview_bytes", { path, maxBytes }).then(
       (buffer) => new Uint8Array(buffer),
     ),
+  remoteReadPreviewBytes: (path: string, maxBytes: number) =>
+    invoke<ArrayBuffer>("remote_read_preview_bytes", { path, maxBytes }).then(
+      (buffer) => new Uint8Array(buffer),
+    ),
   audioEngineSetPluginParameter: (request: {
     deckId: "a" | "b";
     parameterId: number;

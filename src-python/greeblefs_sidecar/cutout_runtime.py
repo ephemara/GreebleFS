@@ -7,6 +7,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .ipc import (
+    build_output_artifact_candidate,
+    delete_existing_paths,
+    require_input_artifact_path,
+)
 from .model_management import normalize_model_backend_preference, resolve_model_descriptor
 
 if TYPE_CHECKING:
@@ -30,6 +35,9 @@ DEFAULT_PREVIEW_MAX_DIMENSION = 1280
 MASK_THRESHOLD = 164
 WORKFLOW_MODE_CUTOUT = "cutout"
 WORKFLOW_MODE_REMOVE_BACKGROUND = "removeBackground"
+PREVIEW_MASK_ARTIFACT_TOKEN = "preview-mask"
+CUTOUT_PREVIEW_ARTIFACT_TOKEN = "cutout-preview"
+IMAGE_CUTOUT_ARTIFACT_ROOT = Path("ipc-artifacts/python-sidecar/image-cutout")
 _CUTOUT_SESSION_CACHE: dict[str, "CutoutSession"] = {}
 PIL_RESAMPLE_LANCZOS = getattr(
     getattr(Image, "Resampling", Image),
@@ -59,6 +67,8 @@ class CutoutSession:
     provider_kind: str = "python-sidecar"
     backend_kind: str = "cpu"
     message: str | None = None
+    preview_revision: int = 0
+    preview_artifact_paths: list[Path] = field(default_factory=list)
 
 
 def _require_pillow() -> None:
@@ -127,7 +137,12 @@ def _decode_data_url_image(data_url: str) -> Any:
     return Image.open(io.BytesIO(image_bytes)).convert("RGBA")
 
 
-def _load_input_image(payload_dict: dict[str, Any]) -> Any:
+def _load_input_image(payload_dict: dict[str, Any], context: "PythonActionContext") -> Any:
+    input_artifact_id = str(payload_dict.get("inputArtifactId") or "").strip()
+    if input_artifact_id:
+        artifact_path = require_input_artifact_path(context, artifact_id=input_artifact_id)
+        return Image.open(artifact_path).convert("RGBA")
+
     input_data_url = payload_dict.get("inputDataUrl")
     if isinstance(input_data_url, str) and input_data_url.strip():
         return _decode_data_url_image(input_data_url.strip())
@@ -139,24 +154,54 @@ def _load_input_image(payload_dict: dict[str, Any]) -> Any:
             raise FileNotFoundError(f"Cutout source image was not found: {path}")
         return Image.open(path).convert("RGBA")
 
-    raise ValueError("Cutout session open requires either inputPath or inputDataUrl.")
+    raise ValueError("Cutout session open requires an inputArtifactId, inputPath, or inputDataUrl.")
 
 
 def _load_override_mask(
     payload_dict: dict[str, Any],
     expected_size: tuple[int, int],
+    context: "PythonActionContext",
 ) -> Any | None:
-    override_mask_data_url = payload_dict.get("overrideMaskDataUrl")
-    if not isinstance(override_mask_data_url, str) or not override_mask_data_url.strip():
-        return None
+    override_mask_artifact_id = str(payload_dict.get("overrideMaskArtifactId") or "").strip()
+    if override_mask_artifact_id:
+        override_image = Image.open(
+            require_input_artifact_path(context, artifact_id=override_mask_artifact_id)
+        ).convert("RGBA")
+    else:
+        override_mask_data_url = payload_dict.get("overrideMaskDataUrl")
+        if not isinstance(override_mask_data_url, str) or not override_mask_data_url.strip():
+            return None
 
-    override_image = _decode_data_url_image(override_mask_data_url.strip())
+        override_image = _decode_data_url_image(override_mask_data_url.strip())
+
     mask_alpha = override_image.getchannel("A")
     if mask_alpha.getextrema()[0] == mask_alpha.getextrema()[1]:
         mask_alpha = _rgba_to_luminance(override_image)
     if mask_alpha.size != expected_size:
         mask_alpha = mask_alpha.resize(expected_size, PIL_RESAMPLE_LANCZOS)
     return mask_alpha.convert("L")
+
+
+def _sanitize_session_path_token(value: str) -> str:
+    sanitized = "".join(
+        character.lower() if character.isascii() and character.isalnum() else "-"
+        for character in value
+    )
+    normalized = "-".join(segment for segment in sanitized.split("-") if segment)
+    return normalized or "session"
+
+
+def _session_artifact_root(context: "PythonActionContext", session: CutoutSession) -> Path:
+    return (
+        context.runtime_root
+        / IMAGE_CUTOUT_ARTIFACT_ROOT
+        / _sanitize_session_path_token(session.session_id)
+    )
+
+
+def _write_png_artifact(image: Any, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path, format="PNG")
 
 
 def _fit_image(image: Any, max_dimension: int) -> Any:
@@ -436,16 +481,65 @@ def _diagnostics_payload(session: CutoutSession) -> dict[str, Any]:
     }
 
 
-def _build_session_payload(session: CutoutSession) -> dict[str, Any]:
+def _build_session_preview_artifacts(
+    session: CutoutSession,
+    context: "PythonActionContext",
+    preview_cutout: Any,
+) -> list[dict[str, Any]]:
+    session.preview_revision += 1
+    artifact_root = _session_artifact_root(context, session)
+    preview_mask_path = artifact_root / f"preview-mask-r{session.preview_revision}.png"
+    cutout_preview_path = artifact_root / f"cutout-preview-r{session.preview_revision}.png"
+
+    _write_png_artifact(session.current_mask, preview_mask_path)
+    _write_png_artifact(preview_cutout, cutout_preview_path)
+
+    previous_paths = list(session.preview_artifact_paths)
+    session.preview_artifact_paths = [preview_mask_path, cutout_preview_path]
+    delete_existing_paths(previous_paths)
+
+    content_revision = str(session.preview_revision)
+    return [
+        build_output_artifact_candidate(
+            token=PREVIEW_MASK_ARTIFACT_TOKEN,
+            kind="image.cutout.preview-mask",
+            file_path=preview_mask_path,
+            media_type="image/png",
+            retention="ephemeral",
+            identity_key=f"{session.session_id}:preview-mask",
+            content_revision=content_revision,
+            delete_on_release=True,
+        ),
+        build_output_artifact_candidate(
+            token=CUTOUT_PREVIEW_ARTIFACT_TOKEN,
+            kind="image.cutout.preview",
+            file_path=cutout_preview_path,
+            media_type="image/png",
+            retention="ephemeral",
+            identity_key=f"{session.session_id}:cutout-preview",
+            content_revision=content_revision,
+            delete_on_release=True,
+        ),
+    ]
+
+
+def _build_session_payload(
+    session: CutoutSession,
+    context: "PythonActionContext",
+) -> dict[str, Any]:
     preview_cutout = _compose_preview_cutout(session.analysis_image, session.current_mask)
+    output_artifacts = _build_session_preview_artifacts(session, context, preview_cutout)
     return {
-        "sessionId": session.session_id,
-        "previewMaskDataUrl": _image_to_png_data_url(session.current_mask),
-        "cutoutPreviewDataUrl": _image_to_png_data_url(preview_cutout),
-        "previewWidth": session.analysis_image.width,
-        "previewHeight": session.analysis_image.height,
-        "promptCount": len(session.prompts),
-        "diagnostics": _diagnostics_payload(session),
+        "result": {
+            "sessionId": session.session_id,
+            "previewMaskArtifactToken": PREVIEW_MASK_ARTIFACT_TOKEN,
+            "cutoutPreviewArtifactToken": CUTOUT_PREVIEW_ARTIFACT_TOKEN,
+            "previewWidth": session.analysis_image.width,
+            "previewHeight": session.analysis_image.height,
+            "promptCount": len(session.prompts),
+            "diagnostics": _diagnostics_payload(session),
+        },
+        "outputArtifacts": output_artifacts,
     }
 
 
@@ -477,7 +571,7 @@ def image_cutout_open_session_action(
         fallback_provider_model_id="facebook/sam2-hiera-small",
         fallback_family="image-cutout",
     )
-    input_image = _load_input_image(payload_dict)
+    input_image = _load_input_image(payload_dict, context)
     analysis_image = _fit_image(input_image, preview_max_dimension)
     base_mask = _build_workflow_base_mask(analysis_image, workflow_mode)
     current_mask = base_mask.copy()
@@ -500,14 +594,13 @@ def image_cutout_open_session_action(
         message=message,
     )
     _CUTOUT_SESSION_CACHE[session_id] = session
-    return _build_session_payload(session)
+    return _build_session_payload(session, context)
 
 
 def image_cutout_apply_prompts_action(
     payload: Any,
     context: PythonActionContext,
 ) -> dict[str, Any]:
-    _ = context
     payload_dict = _payload_dict(payload)
     session_id = str(payload_dict.get("sessionId") or "").strip()
     session = _CUTOUT_SESSION_CACHE.get(session_id)
@@ -523,14 +616,13 @@ def image_cutout_apply_prompts_action(
             prompts,
         )
 
-    return _build_session_payload(session)
+    return _build_session_payload(session, context)
 
 
 def image_cutout_reset_session_action(
     payload: Any,
     context: PythonActionContext,
 ) -> dict[str, Any]:
-    _ = context
     payload_dict = _payload_dict(payload)
     session_id = str(payload_dict.get("sessionId") or "").strip()
     session = _CUTOUT_SESSION_CACHE.get(session_id)
@@ -539,14 +631,13 @@ def image_cutout_reset_session_action(
 
     session.prompts.clear()
     _reset_session_masks(session)
-    return _build_session_payload(session)
+    return _build_session_payload(session, context)
 
 
 def image_cutout_stage_export_action(
     payload: Any,
     context: PythonActionContext,
 ) -> dict[str, Any]:
-    _ = context
     payload_dict = _payload_dict(payload)
     session_id = str(payload_dict.get("sessionId") or "").strip()
     output_path = str(payload_dict.get("outputPath") or "").strip()
@@ -558,7 +649,7 @@ def image_cutout_stage_export_action(
         raise KeyError(f"Image cutout session was not found: {session_id}")
 
     output = _apply_filter_state(session.original_image, payload_dict.get("filters"))
-    override_mask = _load_override_mask(payload_dict, session.analysis_image.size)
+    override_mask = _load_override_mask(payload_dict, session.analysis_image.size, context)
     export_mask = _resize_mask_for_export(
         override_mask if override_mask is not None else session.current_mask,
         output.size,
@@ -583,5 +674,7 @@ def image_cutout_close_session_action(
     _ = context
     payload_dict = _payload_dict(payload)
     session_id = str(payload_dict.get("sessionId") or "").strip()
-    _CUTOUT_SESSION_CACHE.pop(session_id, None)
+    session = _CUTOUT_SESSION_CACHE.pop(session_id, None)
+    if session is not None:
+        delete_existing_paths(session.preview_artifact_paths)
     return {"closed": True}

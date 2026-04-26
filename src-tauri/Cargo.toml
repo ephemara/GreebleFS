@@ -59,7 +59,7 @@ file_icon_provider = "1.0.0"
 ignore = "0.4.25"
 notify = "8.2.0"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread", "sync", "time"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 keyring = "3.6.2"
 rand = "0.8"
@@ -98,9 +98,11 @@ yazi-config = { path = "../crates/fileexplorer/crates/yazi-config" }
 yazi-dds = { path = "../crates/fileexplorer/crates/yazi-dds" }
 yazi-fs = { path = "../crates/fileexplorer/crates/yazi-fs" }
 yazi-scheduler = { path = "../crates/fileexplorer/crates/yazi-scheduler" }
+yazi-sftp = { path = "../crates/fileexplorer/crates/yazi-sftp" }
 yazi-shared = { path = "../crates/fileexplorer/crates/yazi-shared" }
 yazi-term = { path = "../crates/fileexplorer/crates/yazi-term" }
 yazi-vfs = { path = "../crates/fileexplorer/crates/yazi-vfs" }
+russh = { workspace = true }
 arc-swap = "1.7.1"
 cpal = "0.17.3"
 rubato = "2.0.0"

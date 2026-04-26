@@ -16,7 +16,11 @@ pub struct StreamRegistry {
 }
 
 impl StreamRegistry {
-    pub fn register(&self, kind: &str, stable_key: Option<&str>) -> Result<IpcStreamHandle, String> {
+    pub fn register(
+        &self,
+        kind: &str,
+        stable_key: Option<&str>,
+    ) -> Result<IpcStreamHandle, String> {
         let handle = IpcStreamHandle {
             id: stable_stream_id(kind, stable_key),
             kind: kind.to_string(),

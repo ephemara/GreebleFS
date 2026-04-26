@@ -27,7 +27,10 @@ export type StorageTypeBucketSnapshot = StorageTypeBucketSummary;
 
 export async function getStorageRoots(): Promise<ExplorerLocalDriveInfo[]> {
   const drives = await getExplorerDrives();
-  return drives.filter((drive): drive is ExplorerLocalDriveInfo => drive.kind === 'local');
+  return drives.filter(
+    (drive): drive is ExplorerLocalDriveInfo =>
+      drive.kind === 'local' && drive.capabilities.supportsScan,
+  );
 }
 
 export async function startStorageScan(rootPath: string): Promise<StorageScanStart> {

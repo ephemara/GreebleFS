@@ -4,8 +4,11 @@ pub mod resources;
 pub mod streams;
 
 use artifacts::{ArtifactRegistry, RegisterArtifactPathRequest};
-use greeble_ipc_contracts::{IpcArtifactDescriptor, IpcResourceHandle, IpcStreamHandle};
+use greeble_ipc_contracts::{
+    IpcArtifactDescriptor, IpcRegisterArtifactPathRequest, IpcResourceHandle, IpcStreamHandle,
+};
 use resources::ResourceRegistry;
+use std::path::PathBuf;
 use streams::StreamRegistry;
 use tauri::State;
 
@@ -62,6 +65,28 @@ impl IpcRuntimeState {
     ) -> Result<greeble_ipc_contracts::IpcStreamPacketMetadata, String> {
         self.streams.next_packet_metadata(id)
     }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn ipc_register_artifact_path(
+    state: State<'_, IpcRuntimeState>,
+    request: IpcRegisterArtifactPathRequest,
+) -> Result<IpcArtifactDescriptor, String> {
+    let trimmed_file_path = request.file_path.trim();
+    if trimmed_file_path.is_empty() {
+        return Err("IPC artifact registration requires a non-empty filePath.".to_string());
+    }
+
+    state.register_artifact_path(RegisterArtifactPathRequest {
+        kind: request.kind,
+        file_path: PathBuf::from(trimmed_file_path),
+        media_type: request.media_type,
+        retention: request.retention,
+        identity_key: request.identity_key,
+        content_revision: request.content_revision,
+        delete_on_release: request.delete_on_release,
+    })
 }
 
 #[tauri::command]

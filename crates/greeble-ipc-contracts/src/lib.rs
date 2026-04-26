@@ -9,6 +9,18 @@ pub enum IpcArtifactRetention {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub struct IpcRegisterArtifactPathRequest {
+    pub kind: String,
+    pub file_path: String,
+    pub media_type: Option<String>,
+    pub retention: IpcArtifactRetention,
+    pub identity_key: Option<String>,
+    pub content_revision: Option<String>,
+    pub delete_on_release: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct IpcArtifactRef {
     pub id: String,
     pub kind: String,

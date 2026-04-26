@@ -6,7 +6,7 @@ use crate::telemetry::{finish_native_span, start_native_span};
 use greeble_ipc_contracts::{IpcStreamHandle, IpcStreamPacketMetadata};
 use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
@@ -30,6 +30,7 @@ pub struct TerminalManager {
     terminals: Mutex<HashMap<String, Arc<Mutex<TerminalInstance>>>>,
     shell_states: Mutex<HashMap<String, TerminalShellIntegrationState>>,
     output_streams: Mutex<HashMap<String, IpcStreamHandle>>,
+    hidden_host_command_echoes: Mutex<HashMap<String, VecDeque<Vec<u8>>>>,
 }
 
 const TERMINAL_SHELL_INTEGRATION_CWD_PREFIX: &[u8] = b"\x1b]633;GreebleFS;Cwd=";
@@ -101,6 +102,72 @@ impl TerminalShellIntegrationOutputParser {
     }
 }
 
+#[derive(Debug, Default)]
+struct TerminalHostCommandEchoSuppressor {
+    pending_command_echoes: VecDeque<Vec<u8>>,
+    visible_carryover: Vec<u8>,
+    awaiting_line_ending_after_hidden_command: bool,
+}
+
+impl TerminalHostCommandEchoSuppressor {
+    fn enqueue_pending_command_echoes<I>(&mut self, commands: I)
+    where
+        I: IntoIterator<Item = Vec<u8>>,
+    {
+        self.pending_command_echoes
+            .extend(commands.into_iter().filter(|command| !command.is_empty()));
+    }
+
+    fn consume(&mut self, chunk: &[u8]) -> Vec<u8> {
+        let mut combined = std::mem::take(&mut self.visible_carryover);
+        combined.extend_from_slice(chunk);
+
+        let mut visible_output = Vec::with_capacity(combined.len());
+        let mut cursor = 0usize;
+
+        if self.awaiting_line_ending_after_hidden_command {
+            let (consumed, continue_waiting) =
+                consume_optional_hidden_command_line_ending(&combined[cursor..]);
+            cursor += consumed;
+            self.awaiting_line_ending_after_hidden_command = continue_waiting;
+            if consumed == 0 {
+                self.awaiting_line_ending_after_hidden_command = false;
+            }
+        }
+
+        while let Some(command) = self.pending_command_echoes.front() {
+            if let Some(relative_start) = find_subslice(&combined[cursor..], command) {
+                let command_start = cursor + relative_start;
+                visible_output.extend_from_slice(&combined[cursor..command_start]);
+
+                let command_end = command_start + command.len();
+                let (consumed_line_ending_bytes, continue_waiting) =
+                    consume_optional_hidden_command_line_ending(&combined[command_end..]);
+                cursor = command_end + consumed_line_ending_bytes;
+                self.awaiting_line_ending_after_hidden_command = continue_waiting
+                    || (consumed_line_ending_bytes == 0 && command_end == combined.len());
+                self.pending_command_echoes.pop_front();
+                continue;
+            }
+
+            let remaining = &combined[cursor..];
+            let partial_prefix_len = longest_suffix_matching_prefix(remaining, command);
+            if partial_prefix_len > 0 {
+                let visible_end = remaining.len() - partial_prefix_len;
+                visible_output.extend_from_slice(&remaining[..visible_end]);
+                self.visible_carryover = remaining[visible_end..].to_vec();
+                return visible_output;
+            }
+
+            visible_output.extend_from_slice(remaining);
+            return visible_output;
+        }
+
+        visible_output.extend_from_slice(&combined[cursor..]);
+        visible_output
+    }
+}
+
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
         return None;
@@ -124,6 +191,24 @@ fn longest_suffix_matching_prefix(input: &[u8], prefix: &[u8]) -> usize {
     }
 
     0
+}
+
+fn consume_optional_hidden_command_line_ending(input: &[u8]) -> (usize, bool) {
+    match input {
+        [b'\r', b'\n', ..] => (2, false),
+        [b'\r'] => (1, true),
+        [b'\r', ..] => (1, false),
+        [b'\n', ..] => (1, false),
+        _ => (0, false),
+    }
+}
+
+fn trim_hidden_host_command_echo_bytes(command: &str) -> Option<Vec<u8>> {
+    let trimmed = command.trim_end_matches(['\r', '\n']);
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.as_bytes().to_vec())
 }
 
 #[derive(Debug, serde::Deserialize, specta::Type)]
@@ -211,6 +296,7 @@ impl TerminalManager {
             terminals: Mutex::new(HashMap::new()),
             shell_states: Mutex::new(HashMap::new()),
             output_streams: Mutex::new(HashMap::new()),
+            hidden_host_command_echoes: Mutex::new(HashMap::new()),
         }
     }
 
@@ -385,7 +471,7 @@ impl TerminalManager {
         if let Some(bootstrap_command) = terminal_shell_integration_bootstrap_command(
             &terminal_shell_kind_from_executable(&shell),
         ) {
-            if let Err(error) = self.write(id, bootstrap_command.as_bytes()) {
+            if let Err(error) = self.write_hidden_host_command(id, &bootstrap_command) {
                 log::warn!("failed to install terminal shell integration for {id}: {error}");
             }
         }
@@ -425,6 +511,44 @@ impl TerminalManager {
         }
 
         Ok(())
+    }
+
+    fn write_hidden_host_command(&self, id: &str, command: &str) -> Result<(), String> {
+        let trimmed_command = trim_hidden_host_command_echo_bytes(command);
+        if let Some(trimmed_command) = trimmed_command.clone() {
+            let mut hidden_host_command_echoes = self
+                .hidden_host_command_echoes
+                .lock()
+                .map_err(|_| "terminal hidden host command echoes lock poisoned".to_string())?;
+            hidden_host_command_echoes
+                .entry(id.to_string())
+                .or_default()
+                .push_back(trimmed_command);
+        }
+        if let Err(error) = self.write(id, command.as_bytes()) {
+            if trimmed_command.is_some() {
+                if let Ok(mut hidden_host_command_echoes) = self.hidden_host_command_echoes.lock() {
+                    if let Some(queued_commands) = hidden_host_command_echoes.get_mut(id) {
+                        queued_commands.pop_back();
+                        if queued_commands.is_empty() {
+                            hidden_host_command_echoes.remove(id);
+                        }
+                    }
+                }
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn drain_hidden_host_command_echoes(&self, id: &str) -> Vec<Vec<u8>> {
+        let Ok(mut hidden_host_command_echoes) = self.hidden_host_command_echoes.lock() else {
+            return Vec::new();
+        };
+        hidden_host_command_echoes
+            .remove(id)
+            .map(|commands| commands.into_iter().collect())
+            .unwrap_or_default()
     }
 
     pub fn read(&self, id: &str) -> Result<Vec<u8>, String> {
@@ -517,6 +641,9 @@ impl TerminalManager {
             .remove(id)
         {
             ipc_runtime.release_stream(&stream_handle.id)?;
+        }
+        if let Ok(mut hidden_host_command_echoes) = self.hidden_host_command_echoes.lock() {
+            hidden_host_command_echoes.remove(id);
         }
         Ok(())
     }
@@ -645,7 +772,7 @@ impl TerminalManager {
         let Some(command) = terminal_auto_cd_command(&state.shell_kind, &cwd) else {
             return Ok(None);
         };
-        self.write(id, command.as_bytes())?;
+        self.write_hidden_host_command(id, &command)?;
         state.last_synced_cwd = Some(cwd.clone());
         state.pending_cwd = None;
         Ok(Some(cwd))
@@ -671,14 +798,21 @@ impl TerminalManager {
             std::thread::spawn(move || {
                 let mut buffer = [0u8; 4096];
                 let mut shell_integration_parser = TerminalShellIntegrationOutputParser::default();
+                let mut hidden_host_command_echo_suppressor =
+                    TerminalHostCommandEchoSuppressor::default();
                 loop {
                     match reader.read(&mut buffer) {
                         Ok(0) => break, // EOF
                         Ok(n) => {
                             let parsed_chunk = shell_integration_parser.consume(&buffer[..n]);
-                            if !parsed_chunk.visible_output.is_empty() {
-                                let data = String::from_utf8_lossy(&parsed_chunk.visible_output)
-                                    .to_string();
+                            let terminal_manager = app.state::<TerminalManager>();
+                            hidden_host_command_echo_suppressor.enqueue_pending_command_echoes(
+                                terminal_manager.drain_hidden_host_command_echoes(&terminal_id),
+                            );
+                            let visible_output = hidden_host_command_echo_suppressor
+                                .consume(&parsed_chunk.visible_output);
+                            if !visible_output.is_empty() {
+                                let data = String::from_utf8_lossy(&visible_output).to_string();
                                 let metadata = match app
                                     .state::<IpcRuntimeState>()
                                     .next_stream_packet_metadata(&stream_handle.id)
@@ -704,7 +838,6 @@ impl TerminalManager {
                             }
 
                             for reported_cwd in parsed_chunk.reported_cwds {
-                                let terminal_manager = app.state::<TerminalManager>();
                                 match terminal_manager
                                     .report_prompt_ready_cwd(&terminal_id, &reported_cwd)
                                 {
@@ -1526,6 +1659,60 @@ mod tests {
             "\x1b[32mok\x1b[0m"
         );
         assert!(chunk.reported_cwds.is_empty());
+    }
+
+    #[test]
+    fn terminal_host_command_echo_suppressor_hides_app_owned_commands() {
+        let mut suppressor = TerminalHostCommandEchoSuppressor::default();
+        suppressor.enqueue_pending_command_echoes(vec![b"builtin cd -- '/tmp/demo'".to_vec()]);
+
+        let chunk = suppressor.consume(b"builtin cd -- '/tmp/demo'\r\nprompt");
+        assert_eq!(String::from_utf8_lossy(&chunk), "prompt");
+    }
+
+    #[test]
+    fn terminal_host_command_echo_suppressor_handles_split_commands_and_crlf_boundaries() {
+        let mut suppressor = TerminalHostCommandEchoSuppressor::default();
+        let bootstrap_command =
+            terminal_shell_integration_bootstrap_command(&TerminalShellKind::Bash)
+                .expect("bash bootstrap");
+        let bootstrap_echo = trim_hidden_host_command_echo_bytes(&bootstrap_command)
+            .expect("trimmed bootstrap echo");
+        let bootstrap_split_index = bootstrap_echo.len() / 2;
+        let auto_cd_command = terminal_auto_cd_command(&TerminalShellKind::Bash, "/tmp/demo")
+            .expect("bash auto-cd command");
+        let auto_cd_echo =
+            trim_hidden_host_command_echo_bytes(&auto_cd_command).expect("trimmed auto-cd echo");
+        suppressor
+            .enqueue_pending_command_echoes(vec![bootstrap_echo.clone(), auto_cd_echo.clone()]);
+
+        let first_chunk = [
+            b"old prompt> ".as_slice(),
+            &bootstrap_echo[..bootstrap_split_index],
+        ]
+        .concat();
+        assert_eq!(
+            String::from_utf8_lossy(&suppressor.consume(&first_chunk)),
+            "old prompt> "
+        );
+
+        let second_chunk = [
+            &bootstrap_echo[bootstrap_split_index..],
+            b"\r\nnext prompt> ".as_slice(),
+            auto_cd_echo.as_slice(),
+            b"\r".as_slice(),
+        ]
+        .concat();
+        assert_eq!(
+            String::from_utf8_lossy(&suppressor.consume(&second_chunk)),
+            "next prompt> "
+        );
+
+        let third_chunk = b"\nfinal prompt".to_vec();
+        assert_eq!(
+            String::from_utf8_lossy(&suppressor.consume(&third_chunk)),
+            "final prompt"
+        );
     }
 
     #[test]

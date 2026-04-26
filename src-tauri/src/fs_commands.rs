@@ -2579,7 +2579,8 @@ async fn list_dir_via_yazi(
         .await
         .map_err(|error| format!("Failed to read directory: {error}"))?
     {
-        if let Some(listed) = build_listed_file_entry(app, identity_manager, entry, show_hidden).await?
+        if let Some(listed) =
+            build_listed_file_entry(app, identity_manager, entry, show_hidden).await?
         {
             entries.push(listed);
         }
@@ -4443,19 +4444,17 @@ pub async fn fs_move(
     let src_path = Path::new(&src);
     let dst_path = Path::new(&dst);
     validate_transfer_destination(src_path, dst_path, FileTransferOperation::Move)?;
-    let continuity_entity_id = fs::symlink_metadata(src_path)
-        .ok()
-        .and_then(|metadata| {
-            let is_symlink = metadata.file_type().is_symlink();
-            let is_dir = metadata.is_dir();
-            let size = if is_dir { 0 } else { metadata.len() };
-            let modified = metadata_modified_ms(&metadata).unwrap_or(0);
-            let content_revision =
-                build_local_entry_content_revision(size, modified, is_dir, is_symlink);
-            prepare_move_operation_continuity(&app, &identity_manager, src_path, &content_revision)
-                .ok()
-                .flatten()
-        });
+    let continuity_entity_id = fs::symlink_metadata(src_path).ok().and_then(|metadata| {
+        let is_symlink = metadata.file_type().is_symlink();
+        let is_dir = metadata.is_dir();
+        let size = if is_dir { 0 } else { metadata.len() };
+        let modified = metadata_modified_ms(&metadata).unwrap_or(0);
+        let content_revision =
+            build_local_entry_content_revision(size, modified, is_dir, is_symlink);
+        prepare_move_operation_continuity(&app, &identity_manager, src_path, &content_revision)
+            .ok()
+            .flatten()
+    });
     move_path(src_path, dst_path, true).await?;
     let _ = apply_move_operation_continuity(
         &app,
@@ -5622,8 +5621,7 @@ mod tests {
     fn make_entry(name: &str, is_dir: bool, size: u64, ext: &str, hidden: bool) -> FileEntry {
         let modified = 1_700_000_000_000;
         let revision = build_local_entry_content_revision(size, modified, is_dir, false);
-        let identity =
-            build_virtual_identity("test-entry", &format!(r"C:\test\{name}"), &revision);
+        let identity = build_virtual_identity("test-entry", &format!(r"C:\test\{name}"), &revision);
         FileEntry {
             name: name.to_string(),
             path: format!(r"C:\test\{name}"),

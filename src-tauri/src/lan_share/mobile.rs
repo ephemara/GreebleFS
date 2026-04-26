@@ -24,9 +24,8 @@ use tauri::Manager;
 
 use super::handlers::handle_multipart_upload;
 use super::push::{
-    get_mobile_push_config, register_mobile_push_subscription,
-    unregister_mobile_push_subscription, MobilePushSubscriptionInput,
-    MobilePushSubscriptionRemovalRequest,
+    get_mobile_push_config, register_mobile_push_subscription, unregister_mobile_push_subscription,
+    MobilePushSubscriptionInput, MobilePushSubscriptionRemovalRequest,
 };
 use super::streaming::{resolve_sub_path, share_root_label, stream_file_response};
 use super::types::{
@@ -284,7 +283,10 @@ pub(super) fn build_mobile_router(state: ShareState) -> Router {
         .route("/api/upload", post(mobile_upload_handler))
         .route("/api/push/config", get(mobile_push_config_handler))
         .route("/api/push/subscribe", post(mobile_push_subscribe_handler))
-        .route("/api/push/unsubscribe", post(mobile_push_unsubscribe_handler))
+        .route(
+            "/api/push/unsubscribe",
+            post(mobile_push_unsubscribe_handler),
+        )
         .route("/files/{*path}", get(mobile_file_handler))
         .route("/icons/{*path}", get(mobile_built_in_icon_handler))
         .route("/app-icon.png", get(app_icon_handler))

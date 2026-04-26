@@ -264,14 +264,18 @@ pub async fn action_execute(
         BTreeMap::from([
             ("packId".to_string(), request.pack_id.clone()),
             ("actionId".to_string(), request.action_id.clone()),
-            ("runner".to_string(), format!("{:?}", request.execution.runner)),
+            (
+                "runner".to_string(),
+                format!("{:?}", request.execution.runner),
+            ),
         ]),
     );
 
     let request_for_task = request.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || execute_action_request(&request_for_task))
-        .await
-        .map_err(|error| format!("Action execution task failed to join: {error}"))?;
+    let result =
+        tauri::async_runtime::spawn_blocking(move || execute_action_request(&request_for_task))
+            .await
+            .map_err(|error| format!("Action execution task failed to join: {error}"))?;
 
     let status = if result.is_ok() { "ok" } else { "error" };
     let error = result.as_ref().err().cloned();
@@ -292,20 +296,21 @@ pub async fn action_execute(
     result
 }
 
-fn execute_action_request(request: &ActionExecutionRequest) -> Result<ActionExecutionResult, String> {
+fn execute_action_request(
+    request: &ActionExecutionRequest,
+) -> Result<ActionExecutionResult, String> {
     let action_directory = resolve_action_directory(&request.action_directory)?;
     let temp_root = ensure_action_temp_root()?;
     let context_file_path = write_action_context_file(request, &action_directory, &temp_root)?;
 
     let injected_env = build_injected_action_env(request, &action_directory, &context_file_path);
-    let prepared = prepare_action_command(request, &action_directory, &context_file_path, injected_env)?;
+    let prepared =
+        prepare_action_command(request, &action_directory, &context_file_path, injected_env)?;
 
     match request.output_target {
-        ActionOutputTarget::NativeTerminal => launch_prepared_action_in_native_terminal(
-            request,
-            &prepared,
-            &temp_root,
-        ),
+        ActionOutputTarget::NativeTerminal => {
+            launch_prepared_action_in_native_terminal(request, &prepared, &temp_root)
+        }
         _ => {
             let result = run_prepared_action(request, &prepared);
             let _ = fs::remove_file(&context_file_path);
@@ -507,11 +512,8 @@ fn prepare_binary_action(
     _context_file_path: &Path,
     injected_env: BTreeMap<String, String>,
 ) -> Result<PreparedActionCommand, String> {
-    let entry_path = resolve_relative_action_path(
-        action_directory,
-        &request.execution.entry,
-        "binary entry",
-    )?;
+    let entry_path =
+        resolve_relative_action_path(action_directory, &request.execution.entry, "binary entry")?;
     ensure_unix_executable_permissions_if_present(&entry_path)?;
 
     let program = normalize_windows_command_path(&entry_path)
@@ -683,7 +685,10 @@ fn capitalize_first(value: &str) -> String {
     }
 }
 
-fn resolve_interpreter_for_entry(entry_path: &Path, action_directory: &Path) -> Result<String, String> {
+fn resolve_interpreter_for_entry(
+    entry_path: &Path,
+    action_directory: &Path,
+) -> Result<String, String> {
     let extension = entry_path
         .extension()
         .and_then(|value| value.to_str())
@@ -698,7 +703,12 @@ fn resolve_interpreter_for_entry(entry_path: &Path, action_directory: &Path) -> 
     let runtime_entry = INTERPRETER_RUNTIME_TABLE
         .iter()
         .find(|candidate| candidate.extension.eq_ignore_ascii_case(&extension))
-        .ok_or_else(|| format!("No interpreter candidates are configured for '{}'.", extension))?;
+        .ok_or_else(|| {
+            format!(
+                "No interpreter candidates are configured for '{}'.",
+                extension
+            )
+        })?;
 
     let candidates = if cfg!(windows) {
         runtime_entry.windows_candidates
@@ -825,7 +835,11 @@ fn run_prepared_action(
     request: &ActionExecutionRequest,
     prepared: &PreparedActionCommand,
 ) -> Result<ActionExecutionResult, String> {
-    let timeout = Duration::from_millis(request.timeout_ms.unwrap_or(DEFAULT_ACTION_TIMEOUT.as_millis() as u64));
+    let timeout = Duration::from_millis(
+        request
+            .timeout_ms
+            .unwrap_or(DEFAULT_ACTION_TIMEOUT.as_millis() as u64),
+    );
 
     let mut command = Command::new(&prepared.program);
     command
@@ -860,8 +874,12 @@ fn run_prepared_action(
                     .wait_with_output()
                     .map_err(|error| format!("Failed to collect action output: {error}"))?;
                 let exit_code = output.status.code().unwrap_or(-1);
-                let stdout = String::from_utf8_lossy(&output.stdout).trim_end().to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).trim_end().to_string();
+                let stdout = String::from_utf8_lossy(&output.stdout)
+                    .trim_end()
+                    .to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr)
+                    .trim_end()
+                    .to_string();
                 return Ok(ActionExecutionResult {
                     pack_id: request.pack_id.clone(),
                     action_id: request.action_id.clone(),
@@ -904,7 +922,9 @@ fn run_prepared_action(
                 std::thread::sleep(Duration::from_millis(20));
             }
             Err(error) => {
-                return Err(format!("Failed while waiting for action execution: {error}"));
+                return Err(format!(
+                    "Failed while waiting for action execution: {error}"
+                ));
             }
         }
     }
@@ -984,10 +1004,7 @@ fn launch_prepared_action_in_native_terminal_macos(
     temp_root: &Path,
 ) -> Result<(), String> {
     let wrapper_path = write_unix_action_wrapper(request, prepared, temp_root)?;
-    let shell_command = format!(
-        "sh {}",
-        shell_quote_single(&wrapper_path.to_string_lossy())
-    );
+    let shell_command = format!("sh {}", shell_quote_single(&wrapper_path.to_string_lossy()));
     let applescript = format!(
         "tell application \"Terminal\"\nactivate\ndo script \"{}\"\nend tell",
         applescript_escape(&shell_command)
@@ -1126,7 +1143,8 @@ fn build_windows_action_wrapper(prepared: &PreparedActionCommand) -> String {
     ));
     lines.push("set \"GREEBLEFS_ACTION_EXIT=%ERRORLEVEL%\"".to_string());
     lines.push("echo.".to_string());
-    lines.push("echo [ GreebleFS action finished with status %GREEBLEFS_ACTION_EXIT% ]".to_string());
+    lines
+        .push("echo [ GreebleFS action finished with status %GREEBLEFS_ACTION_EXIT% ]".to_string());
     lines.push("pause".to_string());
     lines.push("exit /b %GREEBLEFS_ACTION_EXIT%".to_string());
     lines.join("\r\n")
@@ -1137,11 +1155,7 @@ fn build_unix_action_wrapper(prepared: &PreparedActionCommand) -> String {
     let mut lines = vec!["#!/bin/sh".to_string()];
 
     for (key, value) in &prepared.env {
-        lines.push(format!(
-            "export {}={}",
-            key,
-            shell_quote_single(value)
-        ));
+        lines.push(format!("export {}={}", key, shell_quote_single(value)));
     }
 
     lines.push(format!(
@@ -1150,7 +1164,10 @@ fn build_unix_action_wrapper(prepared: &PreparedActionCommand) -> String {
     ));
     lines.push(build_unix_exec_line(&prepared.program, &prepared.args));
     lines.push("GREEBLEFS_ACTION_EXIT=$?".to_string());
-    lines.push("printf '\\n[ GreebleFS action finished with status %s ]\\n' \"$GREEBLEFS_ACTION_EXIT\"".to_string());
+    lines.push(
+        "printf '\\n[ GreebleFS action finished with status %s ]\\n' \"$GREEBLEFS_ACTION_EXIT\""
+            .to_string(),
+    );
     lines.push("printf 'Press Enter to close... '".to_string());
     lines.push("read _greeblefs_action_ack".to_string());
     lines.push("exit \"$GREEBLEFS_ACTION_EXIT\"".to_string());
@@ -1167,7 +1184,10 @@ fn build_unix_exec_line(program: &str, args: &[String]) -> String {
 #[cfg(target_os = "windows")]
 fn build_windows_command_line(program: &str, args: &[String]) -> String {
     let mut parts = vec![quote_windows_command_argument(program)];
-    parts.extend(args.iter().map(|argument| quote_windows_command_argument(argument)));
+    parts.extend(
+        args.iter()
+            .map(|argument| quote_windows_command_argument(argument)),
+    );
     parts.join(" ")
 }
 
@@ -1313,7 +1333,10 @@ mod tests {
                 kind: ActionMenuContextKind::Entry,
                 current_location: action_directory.to_string_lossy().to_string(),
                 selected_entries: vec![ActionInvocationEntry {
-                    path: action_directory.join("sample.txt").to_string_lossy().to_string(),
+                    path: action_directory
+                        .join("sample.txt")
+                        .to_string_lossy()
+                        .to_string(),
                     name: "sample.txt".to_string(),
                     parent_path: action_directory.to_string_lossy().to_string(),
                     extension: "txt".to_string(),
@@ -1362,8 +1385,11 @@ mod tests {
         let action_root = temp.path().join("action");
         let crate_dir = action_root.join("cargo-tool");
         fs::create_dir_all(&crate_dir).expect("crate dir should be created");
-        fs::write(crate_dir.join("Cargo.toml"), "[package]\nname=\"demo\"\nversion=\"0.1.0\"\n")
-            .expect("manifest should be written");
+        fs::write(
+            crate_dir.join("Cargo.toml"),
+            "[package]\nname=\"demo\"\nversion=\"0.1.0\"\n",
+        )
+        .expect("manifest should be written");
 
         let manifest = resolve_cargo_manifest_path(&action_root, "cargo-tool")
             .expect("crate directory should resolve to Cargo.toml");

@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 use url::Url;
 use web_push::{
     ContentEncoding, IsahcWebPushClient, SubscriptionInfo, Urgency, VapidSignatureBuilder,
-    WebPushMessageBuilder, WebPushClient,
+    WebPushClient, WebPushMessageBuilder,
 };
 
 use super::types::ACTIVE_SERVER;
@@ -207,7 +207,9 @@ fn persist_mobile_push_state(
         .map_err(|error| format!("Failed to write the mobile push registry: {error}"))
 }
 
-fn load_mobile_push_state_from_disk(app_handle: &AppHandle) -> Result<StoredMobilePushState, String> {
+fn load_mobile_push_state_from_disk(
+    app_handle: &AppHandle,
+) -> Result<StoredMobilePushState, String> {
     let state_path = build_mobile_push_state_path(app_handle)?;
     if !state_path.exists() {
         let state = StoredMobilePushState {
@@ -370,16 +372,16 @@ fn build_mobile_download_relative_path(
         .collect::<Vec<_>>();
 
     if segments.is_empty() {
-        return Err("The selected path is not a downloadable file inside the current mobile share.".to_string());
+        return Err(
+            "The selected path is not a downloadable file inside the current mobile share."
+                .to_string(),
+        );
     }
 
     Ok(segments.join("/"))
 }
 
-fn build_mobile_download_open_url(
-    share_url: &str,
-    relative_path: &str,
-) -> Result<String, String> {
+fn build_mobile_download_open_url(share_url: &str, relative_path: &str) -> Result<String, String> {
     let mut url = Url::parse(share_url)
         .map_err(|error| format!("Invalid active mobile share URL: {error}"))?;
     let display_name = Path::new(relative_path)
@@ -496,7 +498,8 @@ pub async fn send_mobile_download_notification(
         return Err("The selected path is not a regular file.".to_string());
     }
 
-    let relative_path = build_mobile_download_relative_path(&active_server.share_path, &absolute_path)?;
+    let relative_path =
+        build_mobile_download_relative_path(&active_server.share_path, &absolute_path)?;
     let open_url = build_mobile_download_open_url(&request.share_url, &relative_path)?;
     let display_name = absolute_path
         .file_name()

@@ -245,6 +245,150 @@ async cloudTransferItems(targetDir: string, sources: string[], operation: FileTr
     else return { status: "error", error: e  as any };
 }
 },
+async remoteListConnections() : Promise<Result<RemoteConnectionSummary[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_list_connections") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteUpsertConnection(request: RemoteConnectionUpsertRequest) : Promise<Result<RemoteConnectionSummary, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_upsert_connection", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteDeleteConnection(connectionId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_delete_connection", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteConnect(connectionId: string) : Promise<Result<RemoteConnectionSummary, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_connect", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteDisconnect(connectionId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_disconnect", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteListTrustedHosts() : Promise<Result<RemoteTrustedHostRecord[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_list_trusted_hosts") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteTrustPendingHost(connectionId: string) : Promise<Result<RemoteTrustedHostRecord, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_trust_pending_host", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteRemoveTrustedHost(request: RemoteTrustedHostRemovalRequest) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_remove_trusted_host", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteListDir(path: string) : Promise<Result<RemoteDirectoryListing, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_list_dir", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteOpenFile(path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_open_file", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteReadTextFile(path: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_read_text_file", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteReadFileBase64(path: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_read_file_base64", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteWriteFile(path: string, content: FsWriteFileContent) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_write_file", { path, content }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteCreateFile(parentPath: string, name: string, content: FsWriteFileContent) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_create_file", { parentPath, name, content }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteCreateDirectory(parentPath: string, name: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_create_directory", { parentPath, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteRenamePath(path: string, newName: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_rename_path", { path, newName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteDeletePath(path: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_delete_path", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async remoteTransferItems(targetDir: string, sources: string[], operation: FileTransferOperation) : Promise<Result<FileTransferResult[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remote_transfer_items", { targetDir, sources, operation }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async lanShareStart(path: string, shareMode: string, hubPaths: string[] | null, remoteAccessMode: string | null) : Promise<Result<LanShareResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("lan_share_start", { path, shareMode, hubPaths, remoteAccessMode }) };
@@ -1983,6 +2127,16 @@ export type PythonSidecarPackagePreset = { id: string; label: string; descriptio
 export type PythonSidecarStartResponse = { runtimeStatus: PythonRuntimeStatus; sidecar: PythonSidecarStatus }
 export type PythonSidecarStatus = { runtimeRoot: string; workspaceRoot: string; manifestPath: string; guidePath: string; logPath: string; running: boolean; pid: number | null; moduleName: string; entryModule: string; transport: string; actionIds: string[]; lastError: string | null }
 export type PythonSidecarWorkspaceManifest = { schemaVersion: number; id: string; displayName: string; moduleName: string; entryModule: string; transport: string; guidePath: string; packagePresets: PythonSidecarPackagePreset[]; actions: PythonSidecarActionDescriptor[] }
+export type RemoteAuthMode = "password" | "private-key-file"
+export type RemoteBreadcrumb = { label: string; path: string }
+export type RemoteConnectionStatus = "disconnected" | "connecting" | "connected" | "error" | "untrusted_host"
+export type RemoteConnectionSummary = { id: string; label: string; protocol: RemoteProtocol; host: string; port: number; username: string; startPath: string; authMode: RemoteAuthMode; privateKeyPath: string | null; status: RemoteConnectionStatus; lastError: string | null; pendingHostVerification: RemotePendingHostVerification | null }
+export type RemoteConnectionUpsertRequest = { id: string | null; label: string; host: string; port: number | null; username: string; startPath: string; authMode: RemoteAuthMode; privateKeyPath: string | null; password: string | null; keyPassphrase: string | null }
+export type RemoteDirectoryListing = { path: string; parentPath: string | null; breadcrumbs: RemoteBreadcrumb[]; entries: FileEntry[] }
+export type RemotePendingHostVerification = { connectionId: string; host: string; port: number; algorithm: string; fingerprintSha256: string; publicKey: string; observedAt: number }
+export type RemoteProtocol = "sftp"
+export type RemoteTrustedHostRecord = { host: string; port: number; algorithm: string; fingerprintSha256: string; publicKey: string; trustedAt: number }
+export type RemoteTrustedHostRemovalRequest = { host: string; port: number }
 export type ResolvedVideoPreviewSource = { sourcePath: string; sourceKind: VideoPreviewSourceKind; mimeType: string | null; generatedFromPath: string | null }
 export type SavedScreenshot = { path: string; file_name: string; created_at: number }
 export type ScreenshotRegion = { x: number; y: number; width: number; height: number }
