@@ -197,6 +197,11 @@ import {
   resolveInteractionMotionModuleProfileId,
 } from "../config/interactionMotion";
 import {
+  getLayoutDynamicsPreset,
+  layoutDynamicsSurfaceCatalog,
+  resolveLayoutDynamicsPresetId,
+} from "../config/layoutDynamics";
+import {
   getOverlayWallpaperFitModeLabel,
   overlayWallpaperFitModes,
   wallpaperSystemConfig,
@@ -231,6 +236,7 @@ import { AppearanceSettingsSection } from "./settings/sections/AppearanceSetting
 import { IconSettingsSection } from "./settings/sections/IconSettingsSection";
 import { SystemSettingsSection } from "./settings/sections/SystemSettingsSection";
 import { ContextMenusSettingsSection } from "./settings/sections/ContextMenusSettingsSection";
+import { LayoutDynamicsSettingsSection } from "./settings/sections/LayoutDynamicsSettingsSection";
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   loadExternalLayoutManifest,
@@ -2587,6 +2593,8 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <RotateCcw size={14} />;
     case "interaction-motion":
       return <Sparkles size={14} />;
+    case "layout-dynamics":
+      return <LayoutGrid size={14} />;
     case "theme-json":
       return <Type size={14} />;
   }
@@ -2648,6 +2656,9 @@ interface SettingsSectionContentContext {
   interactionMotionEnabled: boolean;
   interactionMotionProfileLabel: string;
   interactionMotionSurfaceCount: number;
+  layoutDynamicsEnabled: boolean;
+  layoutDynamicsProfileLabel: string;
+  layoutDynamicsSurfaceCount: number;
   topBarSelectionSummary: string;
   availableTopBarsCount: number;
   followThemeTopBarDetail: string;
@@ -2809,6 +2820,12 @@ function getSettingsSectionContent(
         summary: `${context.interactionMotionProfileLabel} · ${context.interactionMotionEnabled ? "Live" : "Disabled"} · ${context.interactionMotionSurfaceCount} surfaces`,
         detail:
           "Control shell micro-interactions separately from window transitions, including presets, per-surface toggles, and the Motion Lab preview harness.",
+      };
+    case "layout-dynamics":
+      return {
+        summary: `${context.layoutDynamicsProfileLabel} · ${context.layoutDynamicsEnabled ? "Live" : "Disabled"} · ${context.layoutDynamicsSurfaceCount} surfaces`,
+        detail:
+          "Control the shell-wide layout-authoring physics runtime, including shared presets, surface overrides, and the live layout-dynamics lab harness.",
       };
     case "theme-json":
       return {
@@ -5416,6 +5433,20 @@ export function SettingsPage({
         .join(" · "),
     [interactionMotionModuleEditorStates],
   );
+  const effectiveLayoutDynamicsPresetLabel = useMemo(
+    () =>
+      getLayoutDynamicsPreset(
+        resolveLayoutDynamicsPresetId({
+          requestedPresetId: settings.appearance.layoutDynamicsPresetId,
+          themeDefaultPresetId:
+            appAppearance.baseTheme.layoutDynamics?.defaultPresetId ?? null,
+        }),
+      ).label,
+    [
+      appAppearance.baseTheme.layoutDynamics?.defaultPresetId,
+      settings.appearance.layoutDynamicsPresetId,
+    ],
+  );
   const bindSettingsCardMotion = useCallback(
     (active = false) =>
       settingsInteractionMotion.bindSurface({
@@ -7419,6 +7450,9 @@ export function SettingsPage({
       interactionMotionEnabled: settings.appearance.interactionMotionEnabled,
       interactionMotionProfileLabel: effectiveInteractionMotionProfileLabel,
       interactionMotionSurfaceCount: interactionMotionSurfaceCatalog.length,
+      layoutDynamicsEnabled: settings.appearance.layoutDynamicsEnabled,
+      layoutDynamicsProfileLabel: effectiveLayoutDynamicsPresetLabel,
+      layoutDynamicsSurfaceCount: layoutDynamicsSurfaceCatalog.length,
       topBarSelectionSummary,
       availableTopBarsCount: availableTopBars.length,
       followThemeTopBarDetail,
@@ -7441,6 +7475,7 @@ export function SettingsPage({
       mobileRemoteAccessDefinition.label,
       effectiveTheme.name,
       effectiveInteractionMotionProfileLabel,
+      effectiveLayoutDynamicsPresetLabel,
       followThemeTopBarDetail,
       homePackSummary,
       iconThemeSelectionSummary,
@@ -7451,6 +7486,7 @@ export function SettingsPage({
       availableShellRendererEntries.length,
       installedLocalModelCount,
       interactionMotionSurfaceCatalog.length,
+      layoutDynamicsSurfaceCatalog.length,
       layoutManifestState.manifest.profiles.length,
       localModelCacheFootprint,
       menuPacks.length,
@@ -7464,7 +7500,9 @@ export function SettingsPage({
       settings.appearance.appBlurStrength,
       settings.appearance.appOpacity,
       settings.appearance.interactionMotionEnabled,
+      settings.appearance.layoutDynamicsEnabled,
       settings.appearance.appZoom,
+      settings.appearance.layoutDynamicsPresetId,
       settings.appearance.panelTransparency,
       settings.explorer.contextMenuLayoutOverridesByContext,
       settings.explorer.folderClickMode,
@@ -12815,6 +12853,26 @@ export function SettingsPage({
               </div>
             </div>
           </section>
+        )}
+
+        {activeSection === "layout-dynamics" && (
+          <LayoutDynamicsSettingsSection
+            appearance={appAppearance}
+            layoutDynamicsEnabled={settings.appearance.layoutDynamicsEnabled}
+            layoutDynamicsPresetId={settings.appearance.layoutDynamicsPresetId}
+            layoutDynamicsIntensity={settings.appearance.layoutDynamicsIntensity}
+            layoutDynamicsSurfaceOverrides={
+              settings.appearance.layoutDynamicsSurfaceOverrides
+            }
+            topBarLayoutSnapshotsById={
+              settings.appearance.topBarLayoutSnapshotsById
+            }
+            border={border}
+            accent={accent}
+            text={text}
+            muted={muted}
+            onUpdateAppearance={updateAppearance}
+          />
         )}
 
         {activeSection === "hotkeys" && (

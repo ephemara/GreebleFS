@@ -927,6 +927,7 @@ describe('SettingsPage behavior', () => {
       'Shaders',
       'Animations',
       'Interaction Motion',
+      'Layout Dynamics',
       'Theme JSON',
     ];
     const orderedButtons = orderedLabels.map(findSectionButton);
@@ -1016,6 +1017,85 @@ describe('SettingsPage behavior', () => {
     const motionLabEntry = screen.getByText('Idle folder').closest('button');
     expect(motionLabEntry).not.toBeNull();
     expect(motionLabEntry).toHaveAttribute('data-interaction-motion-surface', 'explorerEntry');
+  }, 30000);
+
+  it('updates layout dynamics settings and exposes layout-physics lab surfaces', async () => {
+    const user = userEvent.setup();
+
+    useSettingsStore.getState().updateAppearance({
+      topBarLayoutSnapshotsById: {
+        default: {
+          entries: [
+            {
+              nodeId: 'search',
+              bandId: 'leading',
+              x: 24,
+              y: 0,
+            },
+          ],
+        },
+      },
+    });
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Layout Dynamics'));
+
+    const enabledToggle = screen.getByRole('checkbox', {
+      name: /enable layout dynamics/i,
+    });
+    const explorerTopBarToggle = screen.getByRole('checkbox', {
+      name: /enable explorer top bar layout dynamics/i,
+    });
+
+    expect(enabledToggle).toBeChecked();
+    expect(explorerTopBarToggle).toBeChecked();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: /heavy orbit/i,
+      }),
+    );
+    expect(
+      useSettingsStore.getState().settings.appearance.layoutDynamicsPresetId,
+    ).toBe('heavy-orbit');
+
+    const sharedIntensitySlider = screen.getByRole('slider', {
+      name: /shared intensity/i,
+    });
+    sharedIntensitySlider.focus();
+    for (let stepIndex = 0; stepIndex < 4; stepIndex += 1) {
+      await user.keyboard('{ArrowRight}');
+    }
+    expect(
+      useSettingsStore.getState().settings.appearance.layoutDynamicsIntensity,
+    ).toBeGreaterThan(1);
+
+    await user.click(explorerTopBarToggle);
+    expect(
+      useSettingsStore.getState().settings.appearance.layoutDynamicsSurfaceOverrides
+        .explorerTopbar,
+    ).toMatchObject({ enabled: false });
+
+    await user.click(
+      screen.getByRole('button', {
+        name: /reset top bar layout dynamics snapshots/i,
+      }),
+    );
+    expect(
+      useSettingsStore.getState().settings.appearance.topBarLayoutSnapshotsById,
+    ).toEqual({});
+
+    expect(
+      document.querySelector(
+        '[data-layout-dynamics-surface="settings-layout-dynamics-band"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      document.querySelector(
+        '[data-layout-dynamics-surface="settings-layout-dynamics-free-2d"]',
+      ),
+    ).not.toBeNull();
   }, 30000);
 
   it('applies themed select styling in terminal and system settings', async () => {

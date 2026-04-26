@@ -171,11 +171,14 @@ export const layoutDynamicsSurfaceCatalog = [
   },
 ] as const satisfies readonly LayoutDynamicsSurfaceProfile[];
 
-const layoutDynamicsPresetById = new Map(
+const layoutDynamicsPresetById = new Map<string, LayoutDynamicsSolverProfile>(
   layoutDynamicsPresetCatalog.map((profile) => [profile.id, profile] as const),
 );
 
-const layoutDynamicsSurfaceById = new Map(
+const layoutDynamicsSurfaceById = new Map<
+  LayoutDynamicsSurfaceId,
+  LayoutDynamicsSurfaceProfile
+>(
   layoutDynamicsSurfaceCatalog.map((surface) => [surface.id, surface] as const),
 );
 

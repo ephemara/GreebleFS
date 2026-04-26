@@ -1,13 +1,22 @@
 import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { X } from "@/components/AppIcons";
 import type {
+  LayoutDynamicsAuthoringSnapshot,
+  LayoutDynamicsAxisMode,
+  LayoutDynamicsSolverProfile,
+} from "../../config/layoutDynamics";
+import type {
   ExplorerChromeControlId,
   ExplorerChromeResolvedControlPlacement,
   ExplorerChromeResolvedSurface,
   ExplorerChromeSurfaceId,
   ExplorerChromeZoneId,
 } from "../../config/explorerChromeLayouts";
-import { getExplorerChromeResolvedSurfaceSignature } from "../../config/explorerChromeLayouts";
+import {
+  getExplorerChromeResolvedSurfaceSignature,
+  getExplorerChromeSurfaceDefinition,
+} from "../../config/explorerChromeLayouts";
+import { LayoutDynamicsCanvas } from "../layoutDynamics/LayoutDynamicsCanvas";
 
 interface ExplorerChromeSurfaceProps {
   surface: ExplorerChromeResolvedSurface;
@@ -17,9 +26,17 @@ interface ExplorerChromeSurfaceProps {
   renderControl: (
     placement: ExplorerChromeResolvedControlPlacement,
   ) => React.ReactNode;
+  layoutDynamics?: {
+    enabled: boolean;
+    axisMode: LayoutDynamicsAxisMode;
+    solver: LayoutDynamicsSolverProfile;
+    intensity: number;
+    onCommitSnapshot?: (snapshot: LayoutDynamicsAuthoringSnapshot) => void;
+  };
   editMode?: {
     active: boolean;
     draggingControlId: ExplorerChromeControlId | null;
+    pointerSourceKind?: "placed" | "catalog" | null;
     highlightedDropTarget?: {
       surfaceId: ExplorerChromeSurfaceId;
       zoneId: ExplorerChromeZoneId;
@@ -78,6 +95,7 @@ export function ExplorerChromeSurface({
   getRowStyle,
   getZoneStyle,
   renderControl,
+  layoutDynamics,
   editMode,
 }: ExplorerChromeSurfaceProps) {
   const editModeActive = editMode?.active === true;
@@ -95,6 +113,71 @@ export function ExplorerChromeSurface({
   const stableRegisteredSurface = useMemo(
     () => surface,
     [surfaceRegistrationSignature],
+  );
+  const surfaceDefinition = useMemo(
+    () => getExplorerChromeSurfaceDefinition(surface.surfaceId),
+    [surface.surfaceId],
+  );
+  const surfaceHasDynamicAnchors = useMemo(
+    () =>
+      surface.rows.some((row) =>
+        row.zones.some((zone) =>
+          zone.controls.some(
+            (placement) =>
+              placement.bandId != null ||
+              placement.anchorX != null ||
+              placement.anchorY != null,
+          ),
+        ),
+      ),
+    [surface],
+  );
+  const useDynamicSurfaceLayout =
+    layoutDynamics?.enabled === true &&
+    editMode?.pointerSourceKind !== "catalog" &&
+    surfaceHasDynamicAnchors;
+  const dynamicSurfaceItems = useMemo(
+    () =>
+      surface.rows.flatMap((row) =>
+        row.zones.flatMap((zone) =>
+          zone.controls.map((placement) => {
+            const controlIsResizable =
+              editMode?.isControlResizable?.(placement) ?? false;
+            return {
+              id: placement.controlId,
+              label: placement.controlId,
+              bandId: placement.bandId ?? row.id,
+              order: placement.order,
+              anchorX: placement.anchorX,
+              anchorY: placement.anchorY,
+              widthPx: placement.widthPx,
+              selected: editMode?.selectedControlId === placement.controlId,
+              removable: editMode?.onRemoveControl != null,
+              resizable: controlIsResizable,
+              content: renderControl(placement),
+              style: {
+                overflow: placement.overflowEligible ? "hidden" : "visible",
+                paddingRight:
+                  editModeActive && controlIsResizable ? 12 : 0,
+              },
+              dataAttributes: {
+                "data-overlay-explorer-control": placement.controlId,
+                "data-overlay-explorer-control-zone": placement.zone,
+              },
+            };
+          }),
+        ),
+      ),
+    [editMode, editModeActive, renderControl, surface.rows],
+  );
+  const dynamicSurfaceBands = useMemo(
+    () =>
+      surfaceDefinition.rows.map((row) => ({
+        id: row.id,
+        minHeightPx: 32,
+        style: getRowStyle?.(row.id),
+      })),
+    [getRowStyle, surfaceDefinition.rows],
   );
 
   useEffect(() => {
@@ -115,6 +198,59 @@ export function ExplorerChromeSurface({
 
   if (!hasControls && !editModeActive) {
     return null;
+  }
+
+  if (useDynamicSurfaceLayout && layoutDynamics) {
+    return (
+      <div
+        data-overlay-explorer-surface={surface.surfaceId}
+        data-explorer-customize-surface-id={surface.surfaceId}
+        style={{
+          width: "100%",
+          minWidth: 0,
+          position: "relative",
+          ...style,
+        }}
+      >
+        <LayoutDynamicsCanvas
+          surfaceId={surface.surfaceId}
+          axisMode={layoutDynamics.axisMode}
+          solver={layoutDynamics.solver}
+          intensity={layoutDynamics.intensity}
+          authoringActive={editModeActive}
+          bands={dynamicSurfaceBands}
+          items={dynamicSurfaceItems}
+          onSelectItem={(controlId) =>
+            editMode?.onSetSelectedControl?.(
+              controlId as ExplorerChromeControlId | null,
+            )
+          }
+          onRemoveItem={
+            editMode?.onRemoveControl
+              ? (controlId) =>
+                  editMode.onRemoveControl?.(
+                    controlId as ExplorerChromeControlId,
+                  )
+              : undefined
+          }
+          onBeginResizeItem={
+            editMode?.onBeginPointerResize
+              ? ({ itemId, pointerId, startPoint }) => {
+                  editMode.onSetSelectedControl?.(
+                    itemId as ExplorerChromeControlId,
+                  );
+                  editMode.onBeginPointerResize?.({
+                    controlId: itemId as ExplorerChromeControlId,
+                    pointerId,
+                    startPoint,
+                  });
+                }
+              : undefined
+          }
+          onCommitSnapshot={layoutDynamics.onCommitSnapshot}
+        />
+      </div>
+    );
   }
 
   const targetUsesCustomizeRemoveControl = (target: EventTarget | null) =>

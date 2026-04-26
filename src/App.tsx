@@ -175,6 +175,7 @@ import {
 } from './config/overlayWindow';
 import { resolveConditionalBlurFilter } from './config/chromeEffects';
 import { detectClientPlatform, joinPlatformPath } from './config/platform';
+import type { LayoutDynamicsAuthoringSnapshot } from './config/layoutDynamics';
 import { resolveActiveTopBarSelection } from './config/topBars';
 import { resolveOverlayShellEffectsPolicy } from './config/workbenchPerformance';
 import {
@@ -750,6 +751,7 @@ function App() {
     useState<ExplorerPickerRequest | null>(null);
   const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState('');
+  const [topBarCustomizeActive, setTopBarCustomizeActive] = useState(false);
   const deferredCommandPaletteQuery = useDeferredValue(commandPaletteQuery);
   const explorerTasks = useExplorerTaskSnapshots();
   useExplorerTaskProgressFeed();
@@ -784,6 +786,7 @@ function App() {
     audioSettings,
     systemSettings,
     setActiveSection,
+    updateAppearance,
     updateTerminal,
     updateLayout,
     updateMobile,
@@ -799,6 +802,7 @@ function App() {
     audioSettings: state.settings.audio,
     systemSettings: state.settings.system,
     setActiveSection: state.setActiveSection,
+    updateAppearance: state.updateAppearance,
     updateTerminal: state.updateTerminal,
     updateLayout: state.updateLayout,
     updateMobile: state.updateMobile,
@@ -1278,6 +1282,36 @@ function App() {
       resolvedAppearance.baseTheme,
     ],
   );
+  const resolvedTopBarLayoutSnapshot = useMemo(
+    () => appearance.topBarLayoutSnapshotsById[resolvedTopBarSelection.topBar.id] ?? null,
+    [appearance.topBarLayoutSnapshotsById, resolvedTopBarSelection.topBar.id],
+  );
+  const handleCommitTopBarLayoutSnapshot = useCallback(
+    (snapshot: LayoutDynamicsAuthoringSnapshot) => {
+      const nextSnapshotsById = {
+        ...appearance.topBarLayoutSnapshotsById,
+      };
+      if (snapshot.entries.length === 0) {
+        delete nextSnapshotsById[resolvedTopBarSelection.topBar.id];
+      } else {
+        nextSnapshotsById[resolvedTopBarSelection.topBar.id] = snapshot;
+      }
+      updateAppearance({
+        topBarLayoutSnapshotsById: nextSnapshotsById,
+      });
+    },
+    [
+      appearance.topBarLayoutSnapshotsById,
+      resolvedTopBarSelection.topBar.id,
+      updateAppearance,
+    ],
+  );
+  const handleToggleTopBarCustomize = useCallback(() => {
+    setTopBarCustomizeActive((active) => !active);
+  }, []);
+  useEffect(() => {
+    setTopBarCustomizeActive(false);
+  }, [resolvedTopBarSelection.topBar.id]);
   const isOverlayVisible = overlayPhase !== 'closed';
   overlayVisibleRef.current = isOverlayVisible;
   const isWindowedMode = windowMode === 'windowed';
@@ -5456,6 +5490,10 @@ function App() {
           )
         : null}
       topBarDefinition={resolvedTopBarSelection.topBar}
+      topBarCustomizeActive={topBarCustomizeActive}
+      onToggleTopBarCustomize={handleToggleTopBarCustomize}
+      topBarLayoutSnapshot={resolvedTopBarLayoutSnapshot}
+      onCommitTopBarLayoutSnapshot={handleCommitTopBarLayoutSnapshot}
     />
   );
   const defaultShellBody = (

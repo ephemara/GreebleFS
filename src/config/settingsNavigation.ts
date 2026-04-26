@@ -288,6 +288,17 @@ export const settingsSectionCatalog = [
     order: 155,
   },
   {
+    key: 'layout-dynamics',
+    label: 'Layout Dynamics',
+    subtitle: 'Repo-wide chrome-authoring physics, anchor persistence, and live layout labs.',
+    keywords: ['layout dynamics', 'layout physics', 'kinematic repulsion', 'authoring', 'widget canvas', 'top bar'],
+    overviewSummary: 'Shared shell layout-authoring physics for explorer chrome, top bars, and future widget-style surfaces.',
+    featuredInOverview: false,
+    archetype: 'hybrid',
+    shell: { preferredContentDensity: 'comfortable' },
+    order: 156,
+  },
+  {
     key: 'theme-json',
     label: 'Theme JSON',
     subtitle: 'Raw theme authoring and import.',

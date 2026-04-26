@@ -109,12 +109,12 @@ export function stepLayoutDynamicsSimulation(args: {
 }): LayoutDynamicsSimulationState {
   const deltaTimeSeconds = clamp(args.deltaTimeSeconds, 1 / 240, 1 / 20);
   const intensity = clamp(args.intensity ?? 1, 0, 2);
-  const draggedNode = args.draggedNodeId
-    ? args.state.nodes.find((node) => node.id === args.draggedNodeId) ?? null
+  const draggedNode = args.state.draggedNodeId
+    ? args.state.nodes.find((node) => node.id === args.state.draggedNodeId) ?? null
     : null;
 
   for (const [nodeIndex, node] of args.state.nodes.entries()) {
-    if (node.id === args.draggedNodeId) {
+    if (node.id === args.state.draggedNodeId) {
       node.velocityX = 0;
       node.velocityY = 0;
       continue;

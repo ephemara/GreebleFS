@@ -95,7 +95,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/home/ExplorerHomeSurface.tsx`, `src/components/home/homePackRuntime.tsx`, and `src/config/homePackages.ts`
   Explorer Home surface runtime. This subsystem owns the virtual `greeblefs://home` route, the constrained host data/actions exposed to Home packs, built-in Home packs (`command-center`, `favorites-deck`), and authored pack discovery from `home-packs/`.
 - `src/components/WorkbenchTopBar.tsx`
-  Data-driven shell top bar renderer. It resolves launcher controls, navigation tabs or summary mode, window chrome, and theme-shader layering from the standalone top-bar catalog instead of burying the whole shell header inside `App.tsx`.
+  Data-driven shell top bar renderer. It resolves launcher controls, navigation tabs or summary mode, window chrome, theme-shader layering, and now the live top-bar customize mode from the standalone top-bar catalog instead of burying the whole shell header inside `App.tsx`.
 - `src/config/appearance.ts`
   Core overlay theme model and resolved CSS variables.
 - `src/config/pilotThemeContract.ts`
@@ -104,6 +104,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   App-wide workbench recipe resolution and workbench-scoped CSS variable contract.
 - `src/config/topBars.ts`
   Standalone top-bar catalog and resolver. It owns built-in top-bar variants, theme-package top-bar contribution loading, legacy `theme.workbench.topBarStyle` fallback mapping, and the active selection resolution path used by `App.tsx` and Settings.
+- `src/config/layoutDynamics.ts`, `src/runtime/layoutDynamicsRuntime.ts`, `src/components/layoutDynamics/LayoutDynamicsCanvas.tsx`, and `src/animation/layoutDynamics.tsx`
+  Shared layout-authoring physics subsystem. This lane owns the solver presets, adopted-surface catalog, theme/settings normalization, per-frame repulsion/spring math, the reusable authoring canvas, and the runtime controller that resolves the effective surface settings for explorer chrome and the shell top bar.
 - `src/config/explorerTheme.ts`
   Explorer-specific theme recipe resolution, metrics scaling, and explorer-scoped CSS variable contract.
 - `src/config/explorerModeProfiles.ts`
@@ -111,7 +113,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/explorerShellLayouts.ts`
   Pane-layout presets that still own rail visibility, preview placement, and live pane sizing behavior. These remain the pane-composition layer even after mode profiles and chrome layouts were split out.
 - `src/config/explorerChromeLayouts.ts`
-  Explorer chrome layout registry/resolver for adaptive topbar, toolbar, workspace header, rail header, preview header, and status-strip control placement plus zone-based layout override snapshots. This is the persistence layer for moveable explorer chrome; `widthPx`, `sizeVariant`, `showLabel`, and `showIcon` overrides should survive moves between supported surfaces.
+  Explorer chrome layout registry/resolver for adaptive topbar, toolbar, workspace header, rail header, preview header, and status-strip control placement plus zone-based layout override snapshots. This is the persistence layer for moveable explorer chrome; `widthPx`, `sizeVariant`, `showLabel`, and `showIcon` overrides should survive moves between supported surfaces, and v1 layout-dynamics adoption can now also persist authored `bandId` / `anchorX` / `anchorY` metadata alongside the legacy slot data.
 - `src/config/explorerCustomizeCatalog.ts`
   Unified placeable explorer-control catalog for built-ins and authored actions. It is the source of truth for shared command ids, supported surfaces, resize/size capabilities, default width hints, and customize-browser grouping. New explorer chrome should register here instead of being wired as JSX-only hardcoded buttons.
 - `src/config/explorerContextMenu.ts` and `src/config/menuPacks.ts`
@@ -297,6 +299,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/animation/interactionMotion.tsx` is the only supported integration path for high-frequency shell controls. Components should use the shared surface binder instead of writing one-off `transform`/`transition` hover logic inline
   - `src/components/SettingsPage.tsx` exposes this lane inside `Animations` as `Interaction Motion`, including global enablement, preset selection, intensity scaling, per-surface toggles, and a compact `Motion Lab` preview harness that exercises the same resolver as the live shell
   - folder-authored modules under `animations/` and `src/components/animationRuntime.tsx` remain the shell-transition / authored-overlay lane; they are not the default engine for explorer rows, rail chips, tabs, or other hot-path shell controls
+- Layout dynamics is now a first-class appearance lane separate from interaction motion:
+  - `src/config/layoutDynamics.ts` defines the built-in solver preset catalog (`precision-flow`, `liquid-repulse`, `heavy-orbit`), the adopted surface catalog (`explorerTopbar`, `explorerToolbar`, `workbenchTopBar`), the theme recipe contract, and the authoring snapshot types used for persisted anchor truth
+  - `src/runtime/layoutDynamicsRuntime.ts` owns the solver math and the band/free-2d stepping rules, while `src/components/layoutDynamics/LayoutDynamicsCanvas.tsx` is the only supported hot-path integration path for live repulsion, collision recovery, and anchor-return authoring UI
+  - `src/store/settingsStore.ts` persists `settings.appearance.layoutDynamicsEnabled`, `layoutDynamicsPresetId`, `layoutDynamicsIntensity`, `layoutDynamicsSurfaceOverrides`, and `topBarLayoutSnapshotsById`; those top-bar snapshots store authored anchors only, never the transient repelled positions
+  - `src/components/explorer/ExplorerChromeSurface.tsx` and `src/components/WorkbenchTopBar.tsx` are the first adopters. Explorer adoption is intentionally mixed-mode in v1: surfaces that already carry authored `bandId` / `anchorX` / `anchorY` metadata switch into the layout-dynamics canvas, while untouched legacy slot drafts stay on the old zone/order/offset path until they are explicitly adopted
+  - `src/components/SettingsPage.tsx` now exposes a dedicated `Layout Dynamics` section plus `src/animation/LayoutDynamicsLab.tsx`, and those settings are the supported place to tune shared presets, per-surface overrides, and top-bar snapshot resets
 - Icon theming is now a first-class managed subsystem instead of an explorer-only concern:
   - `src/config/iconTheme.ts` resolves the canonical built-in icon map, folder/file matchers, UI icon slots, and merge rules for theme-default or user-selected icon packs
   - `src/config/canonicalIconTheme.json` now advertises the full built-in app-chrome slot surface via `uiIcons`, not just file/folder glyph ids; the built-in manifest should mirror the live `AppIcons.tsx` exports so theme authors can discover every overridable shell glyph from one place

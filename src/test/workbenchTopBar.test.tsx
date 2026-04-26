@@ -129,6 +129,9 @@ describe('WorkbenchTopBar', () => {
         zenFocusShortcutLabel="Ctrl+."
         onToggleZenFocusMode={vi.fn()}
         topBarDefinition={topBarDefinition}
+        topBarCustomizeActive={false}
+        onToggleTopBarCustomize={vi.fn()}
+        onCommitTopBarLayoutSnapshot={vi.fn()}
       />,
     );
 
@@ -244,6 +247,9 @@ describe('WorkbenchTopBar', () => {
           ...topBarDefinition,
           trailingControls: ['mobile-share'],
         }}
+        topBarCustomizeActive={false}
+        onToggleTopBarCustomize={vi.fn()}
+        onCommitTopBarLayoutSnapshot={vi.fn()}
       />,
     );
 

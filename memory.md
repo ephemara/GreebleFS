@@ -1,3 +1,25 @@
+# 2026-04-26 - Layout Dynamics Is Now A Repo-Wide Authoring Physics Lane
+
+- GreebleFS now has a real shell-level layout-authoring physics subsystem instead of explorer-only slot math pretending to be freeform:
+  - `src/config/layoutDynamics.ts` is the source of truth for solver presets, adopted surfaces, theme recipe defaults, per-surface overrides, and persisted authoring snapshots.
+  - `src/runtime/layoutDynamicsRuntime.ts` owns the kinematic repulsion + damped-return stepping rules, while `src/components/layoutDynamics/LayoutDynamicsCanvas.tsx` is the shared hot-path canvas that writes motion through transforms instead of React state churn.
+  - `src/animation/layoutDynamics.tsx` is the supported resolver/controller seam for consumers. If a surface wants layout dynamics, it should resolve through that controller instead of hand-rolling theme/settings precedence.
+- First adopters:
+  - `src/components/WorkbenchTopBar.tsx` now supports full in-place top-bar customize mode backed by persisted anchor snapshots in `settings.appearance.topBarLayoutSnapshotsById`.
+  - `src/components/explorer/ExplorerChromeSurface.tsx` can switch adopted explorer surfaces into the shared layout-dynamics canvas.
+  - Important v1 guardrail: explorer adoption is mixed-mode on purpose. Surfaces only enter the physics canvas when they actually carry authored `bandId` / `anchorX` / `anchorY` metadata. Untouched legacy slot/offset drafts stay on the old zone/order/offset path so customize regressions do not spread while adoption is still in progress.
+- Settings/runtime exposure:
+  - `src/components/SettingsPage.tsx`, `src/config/settingsNavigation.ts`, and `src/components/settings/sections/LayoutDynamicsSettingsSection.tsx` now expose a dedicated `Layout Dynamics` section separate from `Interaction Motion`.
+  - `src/animation/LayoutDynamicsLab.tsx` is the live preview harness. It uses the same shared canvas/runtime as the real shell and intentionally demonstrates both horizontal-band and free-2d scenes.
+- Durable product rule:
+  - Persist authored anchors only. Repelled/displaced positions are runtime-only and should never become saved layout truth.
+  - If a new shell strip adopts this system, wire it through `layoutDynamics.ts` + `useLayoutDynamicsController(...)` + `LayoutDynamicsCanvas` instead of inventing another drag/runtime path.
+- Durable validation:
+  - passed: `bunx vitest run src/test/ExplorerChromeSurface.test.tsx src/test/workbenchTopBar.test.tsx src/test/layoutDynamicsRuntime.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "updates layout dynamics settings and exposes layout-physics lab surfaces|routes migrated sections through the shared settings shell archetypes|prioritizes core settings ahead of appearance sections in the rail" --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "commits the active chrome customize draft when the live customize toggle exits the mode" --reporter=dot`
+  - note: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` is still red on unrelated cutout/storage/icon-theme/vendor paths plus the pre-existing `SettingsPage.tsx` shell-hints typing seam around `disableContentScroll`. A filtered grep for `LayoutDynamicsLab|LayoutDynamicsSettingsSection|ExplorerChromeSurface|SettingsPage\.tsx` only surfaced that old `SettingsPage.tsx(8686,36)` error and no new layout-dynamics file errors.
+
 # 2026-04-26 - Explorer And Context-Menu Action Browsers Now Share A Dense Row Grammar
 
 - The explorer actions pane and the context-menu `Menu Library` were drifting into two different UI systems even though both are really action browsers. The visual noise problem came from repeated text badges and overly tall inline editors:

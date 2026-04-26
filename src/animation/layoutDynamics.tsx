@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type { ResolvedOverlayAppearance } from "../config/appearance";
 import {
   getLayoutDynamicsPreset,
@@ -26,13 +27,13 @@ export function useLayoutDynamicsController(
     layoutDynamicsIntensity,
     layoutDynamicsPresetId,
     layoutDynamicsSurfaceOverrides,
-  } = useSettingsStore((state) => ({
+  } = useSettingsStore(useShallow((state) => ({
     layoutDynamicsEnabled: state.settings.appearance.layoutDynamicsEnabled,
     layoutDynamicsIntensity: state.settings.appearance.layoutDynamicsIntensity,
     layoutDynamicsPresetId: state.settings.appearance.layoutDynamicsPresetId,
     layoutDynamicsSurfaceOverrides:
       state.settings.appearance.layoutDynamicsSurfaceOverrides,
-  }));
+  })));
 
   const prefersReducedMotion = useMemo(() => {
     if (typeof window === "undefined" || !("matchMedia" in window)) {

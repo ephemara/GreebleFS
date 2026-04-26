@@ -52,7 +52,6 @@ import { playSoundEffect } from '../runtime/soundEffects';
 import type { LayoutDynamicsAuthoringSnapshot } from '../config/layoutDynamics';
 import {
   flattenTopBarDefinitionControls,
-  getTopBarControlCatalog,
   getTopBarControlLabel,
 } from '../config/topBars';
 import { LayoutDynamicsCanvas } from './layoutDynamics/LayoutDynamicsCanvas';
@@ -797,7 +796,7 @@ export function WorkbenchTopBar({
         muted={muted}
         accent={accent}
         controlRadius={workbench.metrics.controlRadius}
-        aria-label={options.ariaLabel}
+        ariaLabel={options.ariaLabel}
         dataAttributes={options.dataAttributes}
         onClick={options.onClick}
         onContextMenu={options.onContextMenu}
@@ -1476,6 +1475,79 @@ export function WorkbenchTopBar({
     },
     [onCommitTopBarLayoutSnapshot, topBarDynamicItems, topBarLayoutEntries],
   );
+  const topBarRestoreShelf = topBarCustomizeActive && topBarHiddenControls.length > 0 ? (
+    <div
+      style={{
+        position: 'absolute',
+        left: 12,
+        right: 12,
+        ...(isBottomBar ? { top: 6 } : { bottom: 6 }),
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 8px',
+        borderRadius: workbench.metrics.panelRadius,
+        border: '1px solid var(--overlay-workbench-chrome-border)',
+        background: 'color-mix(in srgb, var(--overlay-workbench-chrome-bg) 86%, black 14%)',
+        boxShadow: 'var(--overlay-workbench-shell-shadow)',
+        zIndex: 6,
+        pointerEvents: 'auto',
+        maxWidth: 'calc(100% - 24px)',
+        overflow: 'hidden',
+        backdropFilter: topBarBackdropFilter,
+        WebkitBackdropFilter: topBarBackdropFilter,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 9,
+          fontWeight: 800,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: muted,
+          flexShrink: 0,
+        }}
+      >
+        Restore
+      </span>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flexWrap: 'wrap',
+          minWidth: 0,
+        }}
+      >
+        {topBarHiddenControls.map((controlId, index) => (
+          <CompactChromeButton
+            key={`restore-top-bar-control:${controlId}`}
+            title={`Restore ${getTopBarControlLabel(controlId)}`}
+            motionBinding={bindTopBarButtonMotion(false, 200 + index)}
+            text={text}
+            muted={muted}
+            accent={accent}
+            controlRadius={workbench.metrics.controlRadius}
+            onClick={() => restoreTopBarControl(controlId)}
+            style={{
+              height: 20,
+              minWidth: 0,
+              width: 'auto',
+              padding: '0 8px',
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+            }}
+          >
+            <span style={{ whiteSpace: 'nowrap' }}>
+              {getTopBarControlLabel(controlId)}
+            </span>
+          </CompactChromeButton>
+        ))}
+      </div>
+    </div>
+  ) : null;
 
   const leadingControls = topBarDefinition.leadingControls
     .map((controlId, index) => renderCompactControl(controlId, index))
@@ -1624,6 +1696,60 @@ export function WorkbenchTopBar({
       </span>
     </div>
   );
+  const topBarMainSurface = topBarUsesLayoutDynamics ? (
+    <div
+      style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'stretch',
+        flex: 1,
+        minWidth: 0,
+        background: 'rgba(0,0,0,0.08)',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: topBarCustomizeActive ? 0.26 : 1,
+          pointerEvents: topBarCustomizeActive ? 'none' : 'auto',
+        }}
+      >
+        {centerContent}
+      </div>
+      <LayoutDynamicsCanvas
+        surfaceId={topBarSurfaceSettings.surface.id}
+        axisMode={topBarSurfaceSettings.surface.axisMode}
+        solver={topBarSurfaceSettings.preset}
+        intensity={topBarSurfaceSettings.intensity}
+        authoringActive={topBarCustomizeActive}
+        bands={[
+          {
+            id: 'topbar',
+            minHeightPx: chromeHeight,
+            style: {
+              height: '100%',
+            },
+          },
+        ]}
+        items={topBarDynamicItems}
+        style={{
+          height: '100%',
+          minHeight: chromeHeight,
+          zIndex: 2,
+        }}
+        onSelectItem={setSelectedTopBarControlId}
+        onRemoveItem={removeTopBarControl}
+        onCommitSnapshot={commitTopBarLayoutSnapshot}
+      />
+      {topBarRestoreShelf}
+    </div>
+  ) : (
+    <div style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}>
+      {navigationShortcuts}
+      {centerContent}
+    </div>
+  );
 
   return (
     <div
@@ -1672,11 +1798,8 @@ export function WorkbenchTopBar({
           />
         </div>
       ) : null}
-      {renderControlZone(leadingControls, 'leading')}
-      <div style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}>
-        {navigationShortcuts}
-        {centerContent}
-      </div>
+      {topBarUsesLayoutDynamics ? null : renderControlZone(leadingControls, 'leading')}
+      {topBarMainSurface}
 
       {isWindowedMode ? (
         <div
@@ -1695,7 +1818,7 @@ export function WorkbenchTopBar({
           }}
         />
       ) : null}
-      {renderControlZone(trailingControls, 'trailing')}
+      {topBarUsesLayoutDynamics ? null : renderControlZone(trailingControls, 'trailing')}
       {shouldShowTrailingWindowControls ? (
         <div
           style={{

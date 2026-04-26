@@ -178,6 +178,22 @@ export function useExplorerCustomizePointerSnapshot(): ExplorerCustomizePointerS
   );
 }
 
+export function useExplorerCustomizePointerActive(): boolean {
+  return useSyncExternalStore(
+    subscribeToExplorerCustomizePointerSnapshot,
+    () => getExplorerCustomizePointerSnapshot().active,
+    () => getExplorerCustomizePointerSnapshot().active,
+  );
+}
+
+export function useExplorerCustomizePointerSourceKind(): ExplorerCustomizePointerSourceKind | null {
+  return useSyncExternalStore(
+    subscribeToExplorerCustomizePointerSnapshot,
+    () => getExplorerCustomizePointerSnapshot().sourceKind,
+    () => getExplorerCustomizePointerSnapshot().sourceKind,
+  );
+}
+
 export function isExplorerCustomizePointerActive(): boolean {
   return getExplorerCustomizePointerSnapshot().active;
 }

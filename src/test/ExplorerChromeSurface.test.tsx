@@ -27,6 +27,28 @@ const toolbarSurface: ExplorerChromeResolvedSurface = {
   visibleControlIds: ["refresh"],
 };
 
+const dynamicToolbarSurface: ExplorerChromeResolvedSurface = {
+  ...toolbarSurface,
+  rows: [
+    {
+      ...toolbarSurface.rows[0]!,
+      zones: [
+        {
+          ...toolbarSurface.rows[0]!.zones[0]!,
+          controls: [
+            {
+              ...toolbarSurface.rows[0]!.zones[0]!.controls[0]!,
+              bandId: "primary",
+              anchorX: 24,
+              anchorY: 0,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 const customizeSurface: ExplorerChromeResolvedSurface = {
   surfaceId: "explorerToolbar",
   rows: [
@@ -429,5 +451,59 @@ describe("ExplorerChromeSurface", () => {
         "[data-explorer-customize-drop-surface-id]",
       ),
     ).toBeNull();
+  });
+
+  it("switches adopted explorer surfaces into the layout-dynamics canvas during customize mode", () => {
+    const rendered = render(
+      <ExplorerChromeSurface
+        surface={dynamicToolbarSurface}
+        renderControl={() => <button type="button">Refresh</button>}
+        layoutDynamics={{
+          enabled: true,
+          axisMode: "horizontal-band",
+          solver: {
+            id: "test-solver",
+            label: "Test Solver",
+            description: "Test",
+            groupId: "system",
+            auraRadiusPx: 140,
+            auraStrength: 900,
+            collisionStrength: 30,
+            springStiffness: 15,
+            damping: 8,
+            maxDisplacementPx: 240,
+            maxVelocityPx: 1800,
+            settleVelocityPx: 12,
+            gapPx: 12,
+          },
+          intensity: 1,
+        }}
+        editMode={{
+          active: true,
+          draggingControlId: null,
+          pointerSourceKind: "placed",
+          highlightedDropTarget: {
+            surfaceId: "explorerToolbar",
+            zoneId: "primaryStart",
+            targetIndex: 1,
+            offsetPx: 0,
+          },
+          onDragStart: () => undefined,
+          onDragEnd: () => undefined,
+          onMoveControl: () => undefined,
+        }}
+      />,
+    );
+
+    expect(
+      rendered.container.querySelector(
+        '[data-layout-dynamics-surface="explorerToolbar"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      rendered.container.querySelectorAll(
+        "[data-explorer-customize-insertion-ghost='true']",
+      ),
+    ).toHaveLength(0);
   });
 });

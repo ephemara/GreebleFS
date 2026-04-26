@@ -301,11 +301,13 @@ import {
 } from "./explorer/explorerMenuRuntime";
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 import { useInteractionMotionController } from "../animation/interactionMotion";
+import { useLayoutDynamicsController } from "../animation/layoutDynamics";
 import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
 import {
   beginExplorerCustomizePointerSession,
   cancelExplorerCustomizePointerSession,
-  useExplorerCustomizePointerSnapshot,
+  useExplorerCustomizePointerActive,
+  useExplorerCustomizePointerSourceKind,
 } from "./explorer/explorerCustomizePointerRuntime";
 import {
   buildExplorerPreviewWorkflowTabs,
@@ -535,6 +537,7 @@ import {
 import { commands, unwrapTauriResult } from "../runtime/tauriClient";
 import { playSoundEffect } from "../runtime/soundEffects";
 import {
+  getExplorerChromeSurfaceDefinition,
   moveExplorerChromeControlInResolvedSurfaces,
   resolveExplorerChromeSurfaceLayout,
   type ExplorerChromeControlId,
@@ -1228,12 +1231,14 @@ const EXPLORER_EMBEDDED_TERMINAL_HEIGHT_BOUNDS = {
 interface ExplorerChromeEditModeState {
   active: boolean;
   draggingControlId: ExplorerChromeControlId | null;
+  pointerSourceKind?: "placed" | "catalog" | null;
   highlightedDropTarget?: {
     surfaceId: ExplorerChromeSurfaceId;
     zoneId: ExplorerChromeZoneId;
     targetIndex: number;
     offsetPx: number;
   } | null;
+  resizingControlId?: ExplorerChromeControlId | null;
   selectedControlId?: ExplorerChromeControlId | null;
   pendingHotkeyControlId?: ExplorerChromeControlId | null;
   onRegisterSurface?: (surface: ExplorerChromeResolvedSurface) => void;
@@ -1246,6 +1251,11 @@ interface ExplorerChromeEditModeState {
     sourceKind: "placed";
     startPoint: { x: number; y: number };
     onTap?: (controlId: ExplorerChromeControlId) => void;
+  }) => void;
+  onBeginPointerResize?: (args: {
+    controlId: ExplorerChromeControlId;
+    pointerId: number;
+    startPoint: { x: number; y: number };
   }) => void;
   onSetHighlightedDropTarget?: (
     target: {
@@ -1267,6 +1277,22 @@ interface ExplorerChromeEditModeState {
     targetIndex: number;
     targetOffsetPx?: number;
   }) => void;
+  onCommitDynamicSurfaceSnapshot?: (args: {
+    surfaceId: ExplorerChromeSurfaceId;
+    snapshot: {
+      entries: Array<{
+        nodeId: string;
+        bandId: string;
+        x: number;
+        y: number;
+        widthPx?: number;
+        heightPx?: number;
+      }>;
+    };
+  }) => void;
+  isControlResizable?: (
+    placement: ExplorerChromeResolvedControlPlacement,
+  ) => boolean;
   onRemoveControl?: (controlId: ExplorerChromeControlId) => void;
 }
 
@@ -8380,10 +8406,11 @@ export function FileExplorer({
       defaultExplorerSession.shellLayoutId,
   );
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
-  const explorerCustomizePointerSnapshot =
-    useExplorerCustomizePointerSnapshot();
+  const layoutDynamics = useLayoutDynamicsController(appearance);
   const explorerCustomizePointerActive =
-    explorerCustomizePointerSnapshot.active;
+    useExplorerCustomizePointerActive();
+  const explorerCustomizePointerSourceKind =
+    useExplorerCustomizePointerSourceKind();
   const explorerSearchScopeId = useId();
   const explorerDropScopeId = useMemo(
     () => getExplorerDropScopeId(instanceId),
@@ -17632,6 +17659,98 @@ export function FileExplorer({
       updateChromeEditDraft,
     ],
   );
+  const handleExplorerChromeDynamicSurfaceCommit = useCallback(
+    (args: {
+      surfaceId: ExplorerChromeSurfaceId;
+      snapshot: {
+        entries: Array<{
+          nodeId: string;
+          bandId: string;
+          x: number;
+          y: number;
+          widthPx?: number;
+          heightPx?: number;
+        }>;
+      };
+    }) => {
+      if (!activeChromeEditSession) {
+        return;
+      }
+
+      const currentSurface =
+        getRegisteredExplorerChromeSurfaces().find(
+          (surface) => surface.surfaceId === args.surfaceId,
+        ) ?? null;
+      const visibleControlIdsOnSurface = new Set(
+        currentSurface?.visibleControlIds ?? [],
+      );
+      const surfaceDefinition = getExplorerChromeSurfaceDefinition(
+        args.surfaceId,
+      );
+      const rowDefinitionById = new Map(
+        surfaceDefinition.rows.map((row) => [row.id, row] as const),
+      );
+      const bandOrderCursorById = new Map<string, number>();
+      const nextSurfaceEntries = args.snapshot.entries.map((entry) => {
+        const controlId = entry.nodeId as ExplorerChromeControlId;
+        const existingEntry =
+          activeChromeEditSession.draftOverride.entries.find(
+            (draftEntry) => draftEntry.controlId === controlId,
+          ) ?? null;
+        const visiblePlacement = findRegisteredExplorerChromePlacement(controlId);
+        const surfaceRow = rowDefinitionById.get(entry.bandId);
+        const fallbackZone =
+          surfaceRow?.zones[0] ??
+          visiblePlacement?.zone ??
+          surfaceDefinition.rows[0]?.zones[0] ??
+          "start";
+        const bandEntryOrder = (bandOrderCursorById.get(entry.bandId) ?? 0) + 1;
+        bandOrderCursorById.set(entry.bandId, bandEntryOrder);
+        const bandRowIndex = Math.max(
+          0,
+          surfaceDefinition.rows.findIndex((row) => row.id === entry.bandId),
+        );
+        return {
+          controlId,
+          surfaceId: args.surfaceId,
+          zone: fallbackZone,
+          order: bandRowIndex * 1000 + bandEntryOrder * 10,
+          bandId: entry.bandId,
+          anchorX: entry.x,
+          anchorY: entry.y,
+          offsetPx: 0,
+          hidden: false,
+          sizeVariant:
+            existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
+          widthPx:
+            entry.widthPx ??
+            existingEntry?.widthPx ??
+            visiblePlacement?.widthPx,
+          showLabel:
+            existingEntry?.showLabel ?? visiblePlacement?.showLabel,
+          showIcon:
+            existingEntry?.showIcon ?? visiblePlacement?.showIcon,
+        };
+      });
+      const preservedEntries = activeChromeEditSession.draftOverride.entries.filter(
+        (entry) =>
+          entry.hidden === true ||
+          entry.surfaceId !== args.surfaceId ||
+          !visibleControlIdsOnSurface.has(entry.controlId),
+      );
+      updateChromeEditDraft({
+        entries: [...preservedEntries, ...nextSurfaceEntries],
+      });
+      setChromeEditHighlightedDropTarget(null);
+    },
+    [
+      activeChromeEditSession,
+      findRegisteredExplorerChromePlacement,
+      getRegisteredExplorerChromeSurfaces,
+      setChromeEditHighlightedDropTarget,
+      updateChromeEditDraft,
+    ],
+  );
   const removeExplorerChromeControlFromDraft = useCallback(
     (controlId: ExplorerChromeControlId) => {
       if (!activeChromeEditSession) {
@@ -17956,10 +18075,11 @@ export function FileExplorer({
       setChromeEditSelectedControl,
     ],
   );
-  const explorerChromeEditMode = useMemo(
+  const explorerChromeEditMode = useMemo<ExplorerChromeEditModeState>(
     () => ({
       active: Boolean(activeChromeEditSession),
       draggingControlId: activeChromeEditSession?.draggingControlId ?? null,
+      pointerSourceKind: explorerCustomizePointerSourceKind,
       highlightedDropTarget:
         activeChromeEditSession?.highlightedDropTarget ?? null,
       resizingControlId: resizingExplorerChromeControlId,
@@ -17988,6 +18108,10 @@ export function FileExplorer({
       onSetPendingHotkeyControl: setChromeEditPendingHotkeyControl,
       onRequestHotkeyCapture: requestExplorerChromeHotkeyCapture,
       onMoveControl: handleExplorerChromeControlMove,
+      onCommitDynamicSurfaceSnapshot:
+        activeChromeEditSession
+          ? handleExplorerChromeDynamicSurfaceCommit
+          : undefined,
       isControlResizable: (placement: ExplorerChromeResolvedControlPlacement) =>
         Boolean(
           explorerCustomizeCatalogByControlId.get(placement.controlId)
@@ -18004,8 +18128,10 @@ export function FileExplorer({
       actionsPaneSelectedControlId,
       beginPlacedExplorerChromePointerDrag,
       beginExplorerChromePointerResize,
+      explorerCustomizePointerSourceKind,
       chromeHotkeyCaptureControlId,
       explorerCustomizeCatalogByControlId,
+      handleExplorerChromeDynamicSurfaceCommit,
       handleExplorerChromeControlMove,
       registerChromeEditSurface,
       resizingExplorerChromeControlId,
@@ -18016,6 +18142,72 @@ export function FileExplorer({
       setChromeEditHighlightedDropTarget,
       setChromeEditPendingHotkeyControl,
       unregisterChromeEditSurface,
+    ],
+  );
+  const explorerTopbarLayoutDynamicsSettings =
+    layoutDynamics.resolveSurfaceSettings("explorerTopbar");
+  const explorerToolbarLayoutDynamicsSettings =
+    layoutDynamics.resolveSurfaceSettings("explorerToolbar");
+  const explorerTopbarLayoutDynamics = useMemo(
+    () => ({
+      enabled:
+        explorerTopbarLayoutDynamicsSettings.enabled ||
+        Boolean(activeChromeEditSession),
+      axisMode: explorerTopbarLayoutDynamicsSettings.surface.axisMode,
+      solver: explorerTopbarLayoutDynamicsSettings.preset,
+      intensity: explorerTopbarLayoutDynamicsSettings.intensity,
+      onCommitSnapshot: activeChromeEditSession
+        ? (snapshot: {
+            entries: Array<{
+              nodeId: string;
+              bandId: string;
+              x: number;
+              y: number;
+              widthPx?: number;
+              heightPx?: number;
+            }>;
+          }) =>
+            handleExplorerChromeDynamicSurfaceCommit({
+              surfaceId: "explorerTopbar",
+              snapshot,
+            })
+        : undefined,
+    }),
+    [
+      activeChromeEditSession,
+      explorerTopbarLayoutDynamicsSettings,
+      handleExplorerChromeDynamicSurfaceCommit,
+    ],
+  );
+  const explorerToolbarLayoutDynamics = useMemo(
+    () => ({
+      enabled:
+        explorerToolbarLayoutDynamicsSettings.enabled ||
+        Boolean(activeChromeEditSession),
+      axisMode: explorerToolbarLayoutDynamicsSettings.surface.axisMode,
+      solver: explorerToolbarLayoutDynamicsSettings.preset,
+      intensity: explorerToolbarLayoutDynamicsSettings.intensity,
+      onCommitSnapshot: activeChromeEditSession
+        ? (snapshot: {
+            entries: Array<{
+              nodeId: string;
+              bandId: string;
+              x: number;
+              y: number;
+              widthPx?: number;
+              heightPx?: number;
+            }>;
+          }) =>
+            handleExplorerChromeDynamicSurfaceCommit({
+              surfaceId: "explorerToolbar",
+              snapshot,
+            })
+        : undefined,
+    }),
+    [
+      activeChromeEditSession,
+      explorerToolbarLayoutDynamicsSettings,
+      handleExplorerChromeDynamicSurfaceCommit,
     ],
   );
   const beginExplorerChromeCustomization = useCallback(() => {
@@ -26595,6 +26787,7 @@ export function FileExplorer({
             getRowStyle={getExplorerChromeRowStyle}
             getZoneStyle={getExplorerChromeZoneStyle}
             renderControl={renderExplorerChromeControl}
+            layoutDynamics={explorerTopbarLayoutDynamics}
             editMode={explorerChromeEditMode}
           />
         )}
@@ -26603,13 +26796,16 @@ export function FileExplorer({
           getRowStyle={getExplorerChromeRowStyle}
           getZoneStyle={getExplorerChromeZoneStyle}
           renderControl={renderExplorerChromeControl}
+          layoutDynamics={explorerToolbarLayoutDynamics}
           editMode={explorerChromeEditMode}
         />
       </div>
     ),
     [
       explorerChromeEditMode,
+      explorerToolbarLayoutDynamics,
       explorerToolbarSurface,
+      explorerTopbarLayoutDynamics,
       explorerTopbarSurface,
       getExplorerChromeRowStyle,
       getExplorerChromeZoneStyle,
