@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export function clampPanelSize(value: number, minSize: number, maxSize: number): number {
   return Math.max(minSize, Math.min(maxSize, value));
@@ -53,6 +53,61 @@ export function ResizablePane({
   children: React.ReactNode;
   style?: React.CSSProperties;
 }) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const previewFrameRef = useRef<number | null>(null);
+  const activeResizePointerIdRef = useRef<number | null>(null);
+  const previewSizeRef = useRef<number | null>(null);
+
+  const applyPreviewSize = useCallback((nextSize: number) => {
+    const paneElement = rootRef.current;
+    if (!paneElement) {
+      return;
+    }
+
+    const widthPx = `${Math.round(nextSize)}px`;
+    paneElement.style.width = widthPx;
+    paneElement.style.minWidth = widthPx;
+    paneElement.style.maxWidth = widthPx;
+  }, []);
+
+  const cancelPreviewFrame = useCallback(() => {
+    if (previewFrameRef.current !== null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(previewFrameRef.current);
+    }
+    previewFrameRef.current = null;
+  }, []);
+
+  const schedulePreviewFlush = useCallback(() => {
+    if (previewFrameRef.current !== null || typeof window === 'undefined') {
+      return;
+    }
+
+    previewFrameRef.current = window.requestAnimationFrame(() => {
+      previewFrameRef.current = null;
+      if (previewSizeRef.current != null) {
+        applyPreviewSize(previewSizeRef.current);
+      }
+    });
+  }, [applyPreviewSize]);
+
+  useEffect(() => {
+    if (activeResizePointerIdRef.current != null) {
+      return;
+    }
+
+    previewSizeRef.current = null;
+    applyPreviewSize(clampPanelSize(size, minSize, maxSize));
+  }, [applyPreviewSize, maxSize, minSize, size]);
+
+  useEffect(
+    () => () => {
+      cancelPreviewFrame();
+      activeResizePointerIdRef.current = null;
+      previewSizeRef.current = null;
+    },
+    [cancelPreviewFrame],
+  );
+
   const handleStyle = useMemo<React.CSSProperties>(() => ({
     position: 'absolute',
     top: 0,
@@ -67,10 +122,12 @@ export function ResizablePane({
 
   return (
     <div
+      ref={rootRef}
+      data-resizable-pane-root="true"
       style={{
-        width: size,
-        minWidth: size,
-        maxWidth: size,
+        width: previewSizeRef.current ?? size,
+        minWidth: previewSizeRef.current ?? size,
+        maxWidth: previewSizeRef.current ?? size,
         flexShrink: 0,
         position: 'relative',
         overflow: 'hidden',
@@ -79,23 +136,118 @@ export function ResizablePane({
     >
       {children}
       <div
-        onMouseDown={event => {
+        data-resizable-pane-handle={handleSide}
+        onPointerDown={event => {
+          if (event.button !== 0) {
+            return;
+          }
           event.preventDefault();
           const startX = event.clientX;
           const startSize = size;
           const direction = handleSide === 'right' ? 1 : -1;
+          const handleElement = event.currentTarget;
+          const paneElement = rootRef.current;
+          const previousUserSelect = document.body.style.userSelect;
+          const previousCursor = document.body.style.cursor;
+          const previousWillChange = paneElement?.style.willChange ?? '';
 
-          const onMouseMove = (moveEvent: MouseEvent) => {
-            const delta = (moveEvent.clientX - startX) * direction;
-            onSizeChange(clampPanelSize(startSize + delta, minSize, maxSize));
-          };
-          const onMouseUp = () => {
-            window.removeEventListener('mousemove', onMouseMove);
-            window.removeEventListener('mouseup', onMouseUp);
+          activeResizePointerIdRef.current = event.pointerId;
+          previewSizeRef.current = clampPanelSize(startSize, minSize, maxSize);
+          applyPreviewSize(previewSizeRef.current);
+          if (paneElement) {
+            paneElement.style.willChange = 'width';
+          }
+          document.body.style.userSelect = 'none';
+          document.body.style.cursor = 'col-resize';
+          handleElement.style.background = borderColor;
+
+          if (typeof handleElement.setPointerCapture === 'function') {
+            try {
+              handleElement.setPointerCapture(event.pointerId);
+            } catch {
+              // Ignore pointer-capture failures and rely on global listeners.
+            }
+          }
+
+          const cleanupResize = (nextCommittedSize: number | null) => {
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerCancel);
+            window.removeEventListener('blur', onWindowBlur);
+            window.removeEventListener('keydown', onWindowKeyDown);
+            document.body.style.userSelect = previousUserSelect;
+            document.body.style.cursor = previousCursor;
+            handleElement.style.background = 'transparent';
+            if (paneElement) {
+              paneElement.style.willChange = previousWillChange;
+            }
+
+            if (typeof handleElement.releasePointerCapture === 'function') {
+              try {
+                handleElement.releasePointerCapture(event.pointerId);
+              } catch {
+                // Ignore pointer-capture release failures for browsers/tests.
+              }
+            }
+
+            cancelPreviewFrame();
+            activeResizePointerIdRef.current = null;
+
+            if (nextCommittedSize == null) {
+              previewSizeRef.current = null;
+              applyPreviewSize(clampPanelSize(startSize, minSize, maxSize));
+              return;
+            }
+
+            previewSizeRef.current = null;
+            applyPreviewSize(nextCommittedSize);
+            if (nextCommittedSize !== size) {
+              onSizeChange(nextCommittedSize);
+            }
           };
 
-          window.addEventListener('mousemove', onMouseMove);
-          window.addEventListener('mouseup', onMouseUp);
+          const resolveNextSize = (clientX: number) =>
+            clampPanelSize(startSize + (clientX - startX) * direction, minSize, maxSize);
+
+          const onPointerMove = (moveEvent: PointerEvent) => {
+            if (activeResizePointerIdRef.current !== moveEvent.pointerId) {
+              return;
+            }
+            previewSizeRef.current = resolveNextSize(moveEvent.clientX);
+            schedulePreviewFlush();
+          };
+
+          const onPointerUp = (moveEvent: PointerEvent) => {
+            if (activeResizePointerIdRef.current !== moveEvent.pointerId) {
+              return;
+            }
+            cleanupResize(resolveNextSize(moveEvent.clientX));
+          };
+
+          const onPointerCancel = (moveEvent: PointerEvent) => {
+            if (activeResizePointerIdRef.current !== moveEvent.pointerId) {
+              return;
+            }
+            cleanupResize(null);
+          };
+
+          const onWindowBlur = () => {
+            cleanupResize(null);
+          };
+
+          const onWindowKeyDown = (keyboardEvent: KeyboardEvent) => {
+            if (keyboardEvent.key !== 'Escape') {
+              return;
+            }
+            keyboardEvent.preventDefault();
+            cleanupResize(null);
+          };
+
+          window.addEventListener('pointermove', onPointerMove);
+          window.addEventListener('pointerup', onPointerUp);
+          window.addEventListener('pointercancel', onPointerCancel);
+          window.addEventListener('blur', onWindowBlur);
+          window.addEventListener('keydown', onWindowKeyDown);
         }}
         style={handleStyle}
         onMouseEnter={event => { event.currentTarget.style.background = borderColor; }}

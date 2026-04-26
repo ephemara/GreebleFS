@@ -1,3 +1,22 @@
+# 2026-04-26 - ResizablePane Now Uses A Local RAF Preview Lane Instead Of React State On Every Pixel
+
+- `src/components/ResizablePane.tsx` was a shell-wide low-FPS culprit because it called `onSizeChange(...)` on every mousemove, which forced parent React/state/layout work through every resize tick across Settings, Git, Notes, Plugins, Storage, Screenshots, and explorer rails/actions.
+- Durable interaction rule for pane resizing:
+  - live resize feedback should stay local to the pane through mutable refs, `requestAnimationFrame`, and direct width writes on the pane element
+  - durable state should commit once on release instead of being rewritten on every pointer move
+  - cancel paths such as `Escape`, `pointercancel`, and window blur should restore the starting width instead of committing a half-finished drag
+- `ResizablePane.tsx` now follows that rule:
+  - pointer-driven resize session instead of mouse-only listeners
+  - local preview width writes through the pane DOM node plus `will-change: width` during the active gesture
+  - one final `onSizeChange(...)` commit on pointer-up
+  - `Escape` / cancel restore the original width
+- Important current tradeoff:
+  - the default contract now prioritizes smooth shell resizing over live parent-state churn. Consumers still receive the committed width at gesture end, but width-prop-driven breakpoint logic inside children will not update every pixel during drag unless a future surface explicitly opts into a live callback path.
+- Durable validation:
+  - passed: `bunx vitest run src/test/resizablePane.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "routes migrated sections through the shared settings shell archetypes" --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "commits the active chrome customize draft when the live customize toggle exits the mode" --reporter=dot`
+
 # 2026-04-26 - Layout Dynamics Is Now A Repo-Wide Authoring Physics Lane
 
 - GreebleFS now has a real shell-level layout-authoring physics subsystem instead of explorer-only slot math pretending to be freeform:
