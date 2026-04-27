@@ -9,6 +9,15 @@ import {
 } from '../config/explorerLayouts';
 
 describe('explorerLayouts', () => {
+  it('ships built-in explorer layout presets alongside the canonical restore target', () => {
+    expect(getBuiltInExplorerLayouts().map((layout) => layout.id)).toEqual([
+      EXPLORER_CANONICAL_LAYOUT_ID,
+      'navigator',
+      'focus',
+      'inspector',
+    ]);
+  });
+
   it('normalizes unified-header snapshots away from the legacy workspaceHeader surface', () => {
     const normalized = normalizeExplorerLayoutDefinition(
       {
@@ -67,10 +76,8 @@ describe('explorerLayouts', () => {
       EXPLORER_CANONICAL_LAYOUT_ID,
     );
 
-    expect(mergedLayouts[mergedLayouts.length - 1]?.id).toBe(
-      EXPLORER_CANONICAL_LAYOUT_ID,
-    );
     expect(resolvedCanonical?.readOnly).toBe(true);
     expect(resolvedCanonical?.name).toBe('Canonical');
+    expect(mergedLayouts.some((layout) => layout.id === 'navigator')).toBe(true);
   });
 });

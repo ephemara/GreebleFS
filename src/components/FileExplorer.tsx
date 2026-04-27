@@ -104,6 +104,7 @@ import type { LoadedExplorerMenuPack } from "../config/menuPacks";
 import {
   EXPLORER_CANONICAL_LAYOUT_ID,
   findExplorerLayoutById,
+  getBuiltInExplorerLayouts,
   saveUserExplorerLayout,
   type ExplorerLayoutBandMetrics,
   type LoadedExplorerLayoutDefinition,
@@ -8318,7 +8319,7 @@ export function FileExplorer({
   onOpenInTerminal,
   onOpenInFilesystemAquarium = () => undefined,
   onAddBookmark,
-  explorerLayouts = [],
+  explorerLayouts = getBuiltInExplorerLayouts(),
   homePacks = [],
   menuPacks = [],
   onOpenPanel = () => undefined,
@@ -8562,6 +8563,27 @@ export function FileExplorer({
     LoadedExplorerLayoutDefinition[]
   >([]);
   const availableExplorerLayouts = useMemo(() => {
+    const builtInLayoutOrder = [
+      EXPLORER_CANONICAL_LAYOUT_ID,
+      "navigator",
+      "focus",
+      "inspector",
+    ];
+    const getLayoutSortRank = (layout: LoadedExplorerLayoutDefinition) => {
+      if (layout.source === "built-in") {
+        const builtInIndex = builtInLayoutOrder.indexOf(layout.id);
+        return builtInIndex >= 0
+          ? builtInIndex
+          : builtInLayoutOrder.length + 20;
+      }
+      if (layout.source === "theme-package") {
+        return 100;
+      }
+      if (layout.source === "explorer-layout-package") {
+        return 200;
+      }
+      return 300;
+    };
     const layoutMap = new Map<string, LoadedExplorerLayoutDefinition>();
     for (const layout of explorerLayouts) {
       layoutMap.set(layout.id, layout);
@@ -8569,9 +8591,14 @@ export function FileExplorer({
     for (const layout of optimisticExplorerLayouts) {
       layoutMap.set(layout.id, layout);
     }
-    return [...layoutMap.values()].sort((left, right) =>
-      left.name.localeCompare(right.name),
-    );
+    return [...layoutMap.values()].sort((left, right) => {
+      const rankDifference =
+        getLayoutSortRank(left) - getLayoutSortRank(right);
+      if (rankDifference !== 0) {
+        return rankDifference;
+      }
+      return left.name.localeCompare(right.name);
+    });
   }, [explorerLayouts, optimisticExplorerLayouts]);
   const explorerChromeThemeId = useMemo(() => {
     const resolvedAppearanceThemeId = appearance?.baseTheme.id?.trim();
@@ -17984,7 +18011,7 @@ export function FileExplorer({
   );
   const explorerLayoutsBySource = useMemo(
     () => ({
-      canonical: availableExplorerLayouts.filter(
+      builtIn: availableExplorerLayouts.filter(
         (layout) => layout.source === "built-in",
       ),
       theme: availableExplorerLayouts.filter(
@@ -17996,6 +18023,14 @@ export function FileExplorer({
     }),
     [availableExplorerLayouts],
   );
+  const cycleableExplorerLayouts = useMemo(() => {
+    const nonCanonicalLayouts = availableExplorerLayouts.filter(
+      (layout) => layout.id !== EXPLORER_CANONICAL_LAYOUT_ID,
+    );
+    return nonCanonicalLayouts.length > 0
+      ? nonCanonicalLayouts
+      : availableExplorerLayouts;
+  }, [availableExplorerLayouts]);
   const selectExplorerLayout = useCallback(
     (nextLayout: LoadedExplorerLayoutDefinition) => {
       setFollowThemeExplorerLayout(false);
@@ -18006,29 +18041,29 @@ export function FileExplorer({
   );
   const cycleExplorerLayout = useCallback(
     (direction: "next" | "previous" = "next") => {
-      if (availableExplorerLayouts.length === 0) {
+      if (cycleableExplorerLayouts.length === 0) {
         return;
       }
       const currentLayoutId =
         resolvedExplorerLayout?.id ??
         themeExplorerLayoutId ??
         EXPLORER_CANONICAL_LAYOUT_ID;
-      const currentIndex = availableExplorerLayouts.findIndex(
+      const currentIndex = cycleableExplorerLayouts.findIndex(
         (layout) => layout.id === currentLayoutId,
       );
-      const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
+      const safeCurrentIndex = currentIndex >= 0 ? currentIndex : -1;
       const step = direction === "previous" ? -1 : 1;
       const nextIndex =
-        (safeCurrentIndex + step + availableExplorerLayouts.length) %
-        availableExplorerLayouts.length;
+        (safeCurrentIndex + step + cycleableExplorerLayouts.length) %
+        cycleableExplorerLayouts.length;
       const nextLayout =
-        availableExplorerLayouts[nextIndex] ?? availableExplorerLayouts[0];
+        cycleableExplorerLayouts[nextIndex] ?? cycleableExplorerLayouts[0];
       if (nextLayout) {
         selectExplorerLayout(nextLayout);
       }
     },
     [
-      availableExplorerLayouts,
+      cycleableExplorerLayouts,
       resolvedExplorerLayout?.id,
       selectExplorerLayout,
       themeExplorerLayoutId,
@@ -22412,7 +22447,7 @@ export function FileExplorer({
               >
                 {(
                   [
-                    ["Canonical", explorerLayoutsBySource.canonical],
+                    ["Built-In", explorerLayoutsBySource.builtIn],
                     ["Theme", explorerLayoutsBySource.theme],
                     ["User", explorerLayoutsBySource.user],
                   ] as const
@@ -22565,7 +22600,10 @@ export function FileExplorer({
                   >
                     <button
                       type="button"
-                      onClick={restoreCanonicalExplorerLayout}
+                      onClick={() => {
+                        restoreCanonicalExplorerLayout();
+                        setShowModeProfileMenu(false);
+                      }}
                       style={toolbarActionButtonStyle()}
                     >
                       <RotateCcw size={12} />
@@ -27884,71 +27922,83 @@ export function FileExplorer({
         data-overlay-explorer-plane="rail"
         style={{
           display: "flex",
+          flexDirection: "column",
           minHeight: 0,
           minWidth: 0,
-          paddingTop: explorerHeaderStackHeight,
-          boxSizing: "border-box",
         }}
       >
-        <ResizablePane
-          size={sidebarWidth}
-          minSize={sidebarBounds.minWidth}
-          maxSize={sidebarBounds.maxWidth}
-          onSizeChange={setSidebarWidth}
-          borderColor={`${accent}55`}
-          handleSide={effectiveRailPosition === "right" ? "left" : "right"}
-          style={sidebarPaneStyle}
-        >
-          <ExplorerSideRail
-            appearance={appearance}
-            accent={accent}
-            brandLabel={explorerTheme.railBrandLabel}
-            sidebarWidth={sidebarWidth}
-            currentPath={currentPath}
-            dropScopeId={explorerDropScopeId}
-            locationTitle={locationTitle}
-            locationLabel={locationLabel}
-            drives={drives}
-            drivesLoading={drivesLoading}
-            showHiddenFiles={showHidden}
-            isCompactDock={isCompactDock}
-            savedSearches={savedSearches}
-            availableTags={tagMetadata.tags}
-            activeTagFilterIds={activeTagFilterIds}
-            onNavigate={navigate}
-            onGoHome={goHome}
-            localTreeRefreshRevision={localTreeRefreshRevision}
-            onOpenSavedSearch={(savedSearch) => {
-              void applySavedSearch(savedSearch);
+        {explorerHeaderStackHeight > 0 ? (
+          <div
+            aria-hidden="true"
+            style={{
+              minHeight: explorerHeaderStackHeight,
+              flexShrink: 0,
+              background: "var(--overlay-explorer-sidebar-bg)",
+              borderBottom: "1px solid var(--overlay-explorer-sidebar-border)",
             }}
-            onDeleteSavedSearch={(savedSearchId) => {
-              void deleteExplorerSavedSearch(savedSearchId)
-                .then(() =>
-                  setSavedSearches((current) =>
-                    current.filter(
-                      (savedSearch) => savedSearch.id !== savedSearchId,
-                    ),
-                  ),
-                )
-                .catch((deleteError) => setError(String(deleteError)));
-            }}
-            onToggleTagFilter={(tagId) =>
-              setActiveTagFilterIds((current) =>
-                current.includes(tagId)
-                  ? current.filter((candidate) => candidate !== tagId)
-                  : [...current, tagId],
-              )
-            }
-            onClearTagFilters={() => setActiveTagFilterIds([])}
-            onBookmarkCreated={handleBookmarkCreated}
-            resolveDroppedSources={resolveDroppedBookmarkSources}
-            onCloseSources={closeSourcesPanel}
-            chromeLayoutId={effectiveChromeLayoutId}
-            chromeOverride={explorerChromeOverride}
-            chromeEditMode={explorerChromeEditMode}
-            railHeaderLayoutDynamics={explorerRailHeaderLayoutDynamics}
           />
-        </ResizablePane>
+        ) : null}
+        <div style={{ display: "flex", minHeight: 0, minWidth: 0, flex: 1 }}>
+          <ResizablePane
+            size={sidebarWidth}
+            minSize={sidebarBounds.minWidth}
+            maxSize={sidebarBounds.maxWidth}
+            onSizeChange={setSidebarWidth}
+            borderColor={`${accent}55`}
+            handleSide={effectiveRailPosition === "right" ? "left" : "right"}
+            style={sidebarPaneStyle}
+          >
+            <ExplorerSideRail
+              appearance={appearance}
+              accent={accent}
+              brandLabel={explorerTheme.railBrandLabel}
+              sidebarWidth={sidebarWidth}
+              currentPath={currentPath}
+              dropScopeId={explorerDropScopeId}
+              locationTitle={locationTitle}
+              locationLabel={locationLabel}
+              drives={drives}
+              drivesLoading={drivesLoading}
+              showHiddenFiles={showHidden}
+              isCompactDock={isCompactDock}
+              savedSearches={savedSearches}
+              availableTags={tagMetadata.tags}
+              activeTagFilterIds={activeTagFilterIds}
+              onNavigate={navigate}
+              onGoHome={goHome}
+              localTreeRefreshRevision={localTreeRefreshRevision}
+              onOpenSavedSearch={(savedSearch) => {
+                void applySavedSearch(savedSearch);
+              }}
+              onDeleteSavedSearch={(savedSearchId) => {
+                void deleteExplorerSavedSearch(savedSearchId)
+                  .then(() =>
+                    setSavedSearches((current) =>
+                      current.filter(
+                        (savedSearch) => savedSearch.id !== savedSearchId,
+                      ),
+                    ),
+                  )
+                  .catch((deleteError) => setError(String(deleteError)));
+              }}
+              onToggleTagFilter={(tagId) =>
+                setActiveTagFilterIds((current) =>
+                  current.includes(tagId)
+                    ? current.filter((candidate) => candidate !== tagId)
+                    : [...current, tagId],
+                )
+              }
+              onClearTagFilters={() => setActiveTagFilterIds([])}
+              onBookmarkCreated={handleBookmarkCreated}
+              resolveDroppedSources={resolveDroppedBookmarkSources}
+              onCloseSources={closeSourcesPanel}
+              chromeLayoutId={effectiveChromeLayoutId}
+              chromeOverride={explorerChromeOverride}
+              chromeEditMode={explorerChromeEditMode}
+              railHeaderLayoutDynamics={explorerRailHeaderLayoutDynamics}
+            />
+          </ResizablePane>
+        </div>
       </div>
     );
   }, [

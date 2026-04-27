@@ -448,6 +448,7 @@ import {
   FileExplorer,
   invalidateExplorerResultCaches,
 } from "../components/FileExplorer";
+import { EXPLORER_CANONICAL_LAYOUT_ID } from "../config/explorerLayouts";
 import { invalidateExplorerThumbnailArtifactRuntimeCache } from "../runtime/explorerThumbnailArtifactRuntime";
 import { EXPLORER_PREVIEW_WIDTH_BOUNDS } from "../config/explorerShellLayouts";
 import {
@@ -1577,27 +1578,32 @@ describe("FileExplorer view modes", () => {
     await screen.findByText("alpha");
 
     fireEvent.click(
-      screen.getByRole("button", { name: /cycle explorer layout presets/i }),
+      screen.getByRole("button", { name: /cycle explorer layouts/i }),
     );
 
     await waitFor(() => {
       expect(
-        useSettingsStore.getState().settings.explorer
-          .modeProfileOverridesByThemeId.operator,
+        useSettingsStore.getState().settings.explorer.activeExplorerLayoutId,
       ).toBe("navigator");
+      expect(
+        useSettingsStore.getState().settings.explorer.followThemeExplorerLayout,
+      ).toBe(false);
+      expect(
+        screen.getByRole("button", { name: /cycle explorer layouts/i }),
+      ).toHaveAccessibleName(/current: navigator/i);
     });
   });
 
   it("restores the canonical explorer layout preset from the menu", async () => {
     useSettingsStore
       .getState()
-      .setExplorerModeProfileOverride("operator", "focus");
+      .setActiveExplorerLayoutId("focus");
 
     renderExplorer();
     await screen.findByText("alpha");
 
     fireEvent.click(
-      screen.getByRole("button", { name: /open explorer layout preset menu/i }),
+      screen.getByRole("button", { name: /open explorer layout menu/i }),
     );
     fireEvent.click(
       screen.getByRole("button", { name: /restore canonical/i }),
@@ -1605,12 +1611,14 @@ describe("FileExplorer view modes", () => {
 
     await waitFor(() => {
       expect(
-        useSettingsStore.getState().settings.explorer
-          .modeProfileOverridesByThemeId.operator,
-      ).toBe("balanced");
+        useSettingsStore.getState().settings.explorer.activeExplorerLayoutId,
+      ).toBe(EXPLORER_CANONICAL_LAYOUT_ID);
+      expect(
+        useSettingsStore.getState().settings.explorer.followThemeExplorerLayout,
+      ).toBe(false);
       expect(
         screen.queryByRole("menu", {
-          name: /explorer layout preset menu/i,
+          name: /explorer layout menu/i,
         }),
       ).toBeNull();
     });
@@ -1657,7 +1665,7 @@ describe("FileExplorer view modes", () => {
     ).toBeNull();
   });
 
-  it("applies persisted chrome layout overrides without mutating shell layout state", async () => {
+  it("does not let legacy chrome layout overrides displace the file-backed explorer layouts", async () => {
     useExplorerStore.getState().updateSession({
       shellLayoutId: "focus",
       sourcesVisible: false,
@@ -1682,9 +1690,11 @@ describe("FileExplorer view modes", () => {
       getChromeControl("refresh")?.getAttribute(
         "data-overlay-explorer-control-zone",
       ),
-    ).toBe("primaryStart");
+    ).toBe("primaryEnd");
     expect(useExplorerStore.getState().session.shellLayoutId).toBe("focus");
-    expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
+    expect(
+      useSettingsStore.getState().settings.explorer.activeExplorerLayoutId,
+    ).toBeNull();
   });
 
   it("commits the active chrome customize draft when the live customize toggle exits the mode", async () => {

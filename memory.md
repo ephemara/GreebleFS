@@ -1,3 +1,24 @@
+# 2026-04-27 - File-Backed Explorer Layouts Now Ship Real Built-In Presets And The Unified Header/Rail Need Stable Muscle-Memory Geometry
+
+- The new explorer-layout lane is no longer just a loader/save shell around one canonical fallback.
+  - `src/config/explorerLayouts.ts` now ships built-in read-only layout definitions for:
+    - `canonical` as the hard reset target
+    - `navigator`
+    - `focus`
+    - `inspector`
+  - These are real `LoadedExplorerLayoutDefinition` entries with `modeProfileId`, pane metrics, band metrics, and optional chrome snapshot truth, so the dedicated layout control can cycle through layouts even when no theme package or user-authored `explorer-layouts/` files exist yet.
+- Durable explorer-layout rule:
+  - `src/components/FileExplorer.tsx` must default `explorerLayouts` to `getBuiltInExplorerLayouts()` instead of `[]`. The parent shell can extend or override that catalog, but the explorer itself should never boot without the built-in layout lane. If the cycle button starts doing nothing or the merged header loses `workspaceTabStrip` / `1-Up` / `2-Up` controls again in isolated renders/tests, check this default prop first.
+  - The main layout-cycle face should treat `canonical` as the reset anchor, not as the only cycle target. `cycleExplorerLayout(...)` now excludes `canonical` whenever any other layout exists, so the face button steps directly into the real presets while `Restore Canonical` remains the explicit snap-back path.
+- Durable compatibility rule:
+  - Legacy `settings.explorer.chromeLayoutOverridesByThemeId` should no longer silently drive the live merged-header layout when the file-backed explorer-layout lane is active. The saved chrome truth now belongs to `LoadedExplorerLayoutDefinition.chromeSnapshot`. If a test still expects theme-level chrome overrides to move merged-header controls on first render, that test is asserting the old architecture.
+- Unified header / left rail geometry rule:
+  - The file-tree rail still needs to align with the main explorer viewport, but it must not do that through raw empty top padding. `FileExplorer.tsx` now renders a persistent rail cap using the measured merged-header stack height, so the top-left plane stays visually stable instead of opening a floating void that shifts muscle memory.
+  - If future work touches merged-header height or rail alignment, preserve the pattern of `persistent cap + real sidebar surface` instead of `paddingTop` on the rail shell.
+- Focused validation that passed after this stabilization:
+  - `bunx vitest run src/test/explorerLayouts.test.ts src/test/ExplorerWorkspace.test.tsx src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx -t "cycles explorer layout presets directly from the toolbar control face|restores the canonical explorer layout preset from the menu|does not let legacy chrome layout overrides displace the file-backed explorer layouts|ExplorerWorkspace|explorerLayouts|pins the active explorer layout independently from legacy chrome overrides|restores the canonical explorer layout without mutating explorer session geometry" --reporter=verbose`
+  - filtered clean: `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'src/(components/FileExplorer\\.tsx|components/explorer/ExplorerWorkspace\\.tsx|config/explorerLayouts\\.ts|test/fileExplorer\\.viewModes\\.test\\.tsx|test/explorerLayouts\\.test\\.ts|test/ExplorerWorkspace\\.test\\.tsx|test/settingsStore\\.test\\.ts)'`
+
 # 2026-04-27 - Universal Polyglot Runtime Pipeline P1/P2 Hardening Pass
 
 - Five findings closed in `src-tauri/src/runtime_pipeline/` and `src/components/GoPanelHost.tsx`:

@@ -5,6 +5,12 @@ import { parse as parseToml } from 'smol-toml';
 import { getManagedContentDirectory } from './appContentDirectories';
 import { normalizeExplorerChromeOverrideSnapshot, type ExplorerChromeOverrideSnapshot } from './explorerChromeLayouts';
 import { defaultExplorerModeProfileId, normalizeExplorerModeProfileId, type ExplorerModeProfileId } from './explorerModeProfiles';
+import { getExplorerRailWidthBounds } from './explorerRail';
+import {
+  EXPLORER_ACTIONS_WIDTH_BOUNDS,
+  EXPLORER_PREVIEW_WIDTH_BOUNDS,
+  getExplorerShellLayoutWidthSuggestion,
+} from './explorerShellLayouts';
 import { joinPlatformPath } from './platform';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
@@ -157,6 +163,85 @@ const explorerLayoutBuiltInCanonicalDefinition: LoadedExplorerLayoutDefinition =
   source: 'built-in',
   sourceLabel: 'Built-in canonical explorer layout',
 };
+
+const builtInExplorerLayoutBaselineWidths = {
+  sidebarWidthPx: getExplorerRailWidthBounds(false).defaultWidth,
+  previewWidthPx: Math.max(
+    EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+    Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, 360),
+  ),
+  actionsWidthPx: EXPLORER_ACTIONS_WIDTH_BOUNDS.default,
+} as const;
+
+function createBuiltInExplorerModePresetLayout(input: {
+  id: string;
+  name: string;
+  description: string;
+  modeProfileId: ExplorerModeProfileId;
+  sourcesVisible: boolean;
+}): LoadedExplorerLayoutDefinition {
+  const widthSuggestion = getExplorerShellLayoutWidthSuggestion({
+    layoutId: input.modeProfileId as 'balanced' | 'navigator' | 'focus' | 'inspector',
+    railWidth: builtInExplorerLayoutBaselineWidths.sidebarWidthPx,
+    railMinWidth: getExplorerRailWidthBounds(false).minWidth,
+    railMaxWidth: getExplorerRailWidthBounds(false).maxWidth,
+    previewWidth: builtInExplorerLayoutBaselineWidths.previewWidthPx,
+    previewMinWidth: EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+    previewMaxWidth: EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
+  });
+
+  return {
+    id: input.id,
+    localId: input.id,
+    name: input.name,
+    description: input.description,
+    tags: ['built-in', 'preset'],
+    modeProfileId: input.modeProfileId,
+    workspaceLayoutMode: 'single',
+    tabStripVisible: true,
+    tabStripSurfaceId: 'explorerTopbar',
+    paneMetrics: {
+      sidebarWidthPx: widthSuggestion.sidebarWidth,
+      previewWidthPx: widthSuggestion.previewWidth,
+      actionsWidthPx: builtInExplorerLayoutBaselineWidths.actionsWidthPx,
+      sourcesVisible: input.sourcesVisible,
+      previewEnabled: true,
+      previewSplitMode: 'inline',
+    },
+    bandMetrics: {
+      ...explorerLayoutBuiltInCanonicalDefinition.bandMetrics,
+    },
+    chromeSnapshot: undefined,
+    basedOnLayoutId: EXPLORER_CANONICAL_LAYOUT_ID,
+    readOnly: true,
+    source: 'built-in',
+    sourceLabel: 'Built-in explorer layout preset',
+  };
+}
+
+const builtInExplorerModePresetLayouts: LoadedExplorerLayoutDefinition[] = [
+  createBuiltInExplorerModePresetLayout({
+    id: 'navigator',
+    name: 'Navigator',
+    description: 'Rail-first browsing with a stronger emphasis on source navigation.',
+    modeProfileId: 'navigator',
+    sourcesVisible: true,
+  }),
+  createBuiltInExplorerModePresetLayout({
+    id: 'focus',
+    name: 'Focus',
+    description: 'Minimal browsing chrome with search-forward emphasis.',
+    modeProfileId: 'focus',
+    sourcesVisible: false,
+  }),
+  createBuiltInExplorerModePresetLayout({
+    id: 'inspector',
+    name: 'Inspector',
+    description: 'Preview-heavy browsing tuned for inspection and triage.',
+    modeProfileId: 'inspector',
+    sourcesVisible: true,
+  }),
+];
 
 function asRecord(value: unknown): LooseRecord | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -551,7 +636,10 @@ export async function loadExplorerLayoutPackages(): Promise<ExplorerLayoutPackag
 }
 
 export function getBuiltInExplorerLayouts(): LoadedExplorerLayoutDefinition[] {
-  return [explorerLayoutBuiltInCanonicalDefinition];
+  return [
+    explorerLayoutBuiltInCanonicalDefinition,
+    ...builtInExplorerModePresetLayouts,
+  ];
 }
 
 export function collectExplorerLayoutsFromPackages(

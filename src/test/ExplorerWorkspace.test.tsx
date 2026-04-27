@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LoadedExplorerAction } from '../config/actionPacks';
@@ -74,7 +75,7 @@ vi.mock('../components/FileExplorer', () => ({
                       order: 10,
                       offsetPx: 0,
                       sizeVariant: 'regular',
-                    })}
+                    }) as ReactNode}
                   </div>
                 );
               })}
