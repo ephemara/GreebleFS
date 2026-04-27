@@ -175,13 +175,10 @@ function categorizeBuiltInExplorerChromeControl(
 
 const unsupportedBuiltInExplorerCustomizeControlIds =
   new Set<BuiltInExplorerChromeControlId>([
-    "workspacePaneCounts",
     "workspaceMode",
     "workspaceCommanderSummary",
     "workspaceLayoutHint",
     "workspaceTabs",
-    "workspaceNewTab",
-    "workspacePaneActionsMenu",
     "workspaceDuplicateTab",
     "workspaceFocusLeft",
     "workspaceFocusRight",
@@ -260,6 +257,18 @@ const builtInExplorerCustomizeCapabilities: Partial<
     defaultWidthPx: 760,
     minWidthPx: 320,
     maxWidthPx: 1600,
+  },
+  workspacePaneCounts: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  workspaceNewTab: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
+  },
+  workspacePaneActionsMenu: {
+    supportsSizeVariant: true,
+    sizeVariants: ["compact", "regular", "wide"],
   },
   toggleSources: {
     supportsSizeVariant: true,

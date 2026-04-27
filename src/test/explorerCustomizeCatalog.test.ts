@@ -41,6 +41,32 @@ const sampleExplorerAction: LoadedExplorerAction = {
 };
 
 describe("explorer customize catalog", () => {
+  it("surfaces modular workspace chrome controls in the built-in catalog", () => {
+    const catalog = buildExplorerCustomizeCatalog({});
+
+    expect(
+      catalog.find((entry) => entry.controlId === "workspacePaneCounts"),
+    ).toMatchObject({
+      category: "workspace",
+      surfaces: ["workspaceHeader"],
+      supportsSizeVariant: true,
+    });
+    expect(
+      catalog.find((entry) => entry.controlId === "workspaceNewTab"),
+    ).toMatchObject({
+      category: "workspace",
+      surfaces: ["workspaceHeader"],
+      supportsSizeVariant: true,
+    });
+    expect(
+      catalog.find((entry) => entry.controlId === "workspacePaneActionsMenu"),
+    ).toMatchObject({
+      category: "workspace",
+      surfaces: ["workspaceHeader"],
+      supportsSizeVariant: true,
+    });
+  });
+
   it("treats authored actions as workspace-header placeables", () => {
     const catalog = buildExplorerCustomizeCatalog({
       actions: [sampleExplorerAction],

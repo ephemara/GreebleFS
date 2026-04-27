@@ -425,7 +425,7 @@ const builtInExplorerChromeLayouts: Record<
         explorerToolbar: { zone: "secondaryEnd", order: 100 },
       },
       workspacePaneCounts: {
-        workspaceHeader: { zone: "start", order: 10 },
+        workspaceHeader: { zone: "end", order: 30 },
       },
       workspaceMode: {
         workspaceHeader: { zone: "start", order: 20 },
@@ -795,7 +795,7 @@ const builtInExplorerChromeLayouts: Record<
         explorerToolbar: { zone: "secondaryEnd", order: 120 },
       },
       workspacePaneCounts: {
-        workspaceHeader: { zone: "start", order: 10 },
+        workspaceHeader: { zone: "end", order: 30 },
       },
       workspaceMode: {
         workspaceHeader: { zone: "end", order: 10 },
@@ -822,7 +822,7 @@ const builtInExplorerChromeLayouts: Record<
         workspaceHeader: { zone: "center", order: 10, grow: 1, shrink: 1 },
       },
       workspaceNewTab: {
-        workspaceHeader: { zone: "start", order: 20 },
+        workspaceHeader: { zone: "end", order: 10 },
       },
       workspacePaneActionsMenu: {
         workspaceHeader: { zone: "end", order: 20 },

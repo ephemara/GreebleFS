@@ -1,3 +1,22 @@
+# 2026-04-27 - Workspace Header Controls Are Now Modular Instead Of Being Welded To The Tab Strip
+
+- The explorer workspace header no longer treats `+`, `...`, and `1-Up` / `2-Up` / `3-Up` / `4-Up` as one hardcoded chunk embedded inside `workspaceTabStrip`.
+  - `src/components/explorer/ExplorerWorkspace.tsx` now renders:
+    - `workspaceTabStrip` as the tabs surface
+    - `workspaceNewTab` as its own button
+    - `workspacePaneActionsMenu` as its own overflow/menu button
+    - `workspacePaneCounts` as the dedicated layout-switcher group
+- Durable product rule:
+  - If future workspace-header work touches layout buttons, tab creation, or pane actions, keep them as first-class chrome controls so the customize/actions pane can place them independently.
+  - Do not regress back to a monolithic tab-strip renderer that hides those controls from the customize catalog.
+- Catalog/layout contract changes:
+  - `src/config/explorerCustomizeCatalog.ts` now exposes `workspacePaneCounts`, `workspaceNewTab`, and `workspacePaneActionsMenu` as supported built-ins with size variants.
+  - `src/config/explorerChromeLayouts.ts` now places those controls in the `workspaceHeader` end zone by default instead of leaving the layout switcher glued to the strip body.
+- Validation:
+  - passed: `bunx vitest run src/test/ExplorerWorkspace.test.tsx src/test/explorerChromeLayouts.test.ts src/test/explorerCustomizeCatalog.test.ts --reporter=dot`
+  - scoped clean: `bash -lc "bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'ExplorerWorkspace\\.tsx|explorerChromeLayouts\\.test\\.ts|explorerCustomizeCatalog\\.test\\.ts|ExplorerWorkspace\\.test\\.tsx|explorerCustomizeCatalog\\.ts|explorerChromeLayouts\\.ts'"` produced no matches after the workspace-header fix.
+  - blocked on unrelated repo-wide errors: plain `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails in pre-existing cutout, storage/drive typing, icon-theme package typing, Python runtime tests, and vendored Tiptap paths unrelated to this workspace-header change.
+
 # 2026-04-26 - IDE Workbench Shell Phase 1 Adds A Canonical Dock-Graph Shell Without Replacing Classic Dock
 
 - GreebleFS now has two canonical shell families instead of one layout lane pretending to cover both:

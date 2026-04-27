@@ -36,12 +36,20 @@ function getWorkspaceControl(controlId: string) {
   return document.querySelector(`[data-overlay-explorer-control="${controlId}"]`) as HTMLElement | null;
 }
 
-function getWorkspaceTabStrip(): HTMLElement {
-  const control = getWorkspaceControl('workspaceTabStrip');
+function getRequiredWorkspaceControl(controlId: string): HTMLElement {
+  const control = getWorkspaceControl(controlId);
   if (!control) {
-    throw new Error('Workspace tab strip not found');
+    throw new Error(`Workspace control ${controlId} not found`);
   }
   return control;
+}
+
+function getWorkspaceTabStrip(): HTMLElement {
+  return getRequiredWorkspaceControl('workspaceTabStrip');
+}
+
+function getWorkspacePaneCountsControl(): HTMLElement {
+  return getRequiredWorkspaceControl('workspacePaneCounts');
 }
 
 function getWorkspaceTabsRegion(): HTMLElement {
@@ -49,11 +57,11 @@ function getWorkspaceTabsRegion(): HTMLElement {
 }
 
 function getWorkspaceLayoutButton(label: string): HTMLButtonElement {
-  return within(getWorkspaceTabStrip()).getByRole('button', { name: label });
+  return within(getWorkspacePaneCountsControl()).getByRole('button', { name: label });
 }
 
 function getWorkspacePaneActionsButton(): HTMLButtonElement {
-  return within(getWorkspaceTabStrip()).getByRole('button', {
+  return within(getRequiredWorkspaceControl('workspacePaneActionsMenu')).getByRole('button', {
     name: 'Workspace pane actions',
   });
 }
@@ -240,7 +248,9 @@ describe('ExplorerWorkspace', () => {
     renderWorkspace();
 
     expect(screen.getByLabelText('Workspace tabs')).toBeInTheDocument();
-    expect(getWorkspaceControl('workspacePaneActionsMenu')).toBeNull();
+    expect(getWorkspaceControl('workspacePaneCounts')).not.toBeNull();
+    expect(getWorkspaceControl('workspaceNewTab')).not.toBeNull();
+    expect(getWorkspaceControl('workspacePaneActionsMenu')).not.toBeNull();
   });
 
   it('mounts the shared drag overlay during normal live workspace panes', () => {

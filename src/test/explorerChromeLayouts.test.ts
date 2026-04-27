@@ -13,6 +13,9 @@ const toolbarDefinitions: ExplorerChromeControlDefinition[] = [
   { id: 'experimentalModes', label: 'Experimental Modes', surfaces: ['explorerToolbar', 'explorerTopbar'] },
   { id: 'refresh', label: 'Refresh', surfaces: ['explorerToolbar'] },
   { id: 'workspaceTabStrip', label: 'Workspace Tab Strip', surfaces: ['workspaceHeader'] },
+  { id: 'workspacePaneCounts', label: 'Workspace Layout', surfaces: ['workspaceHeader'] },
+  { id: 'workspaceNewTab', label: 'New Tab', surfaces: ['workspaceHeader'] },
+  { id: 'workspacePaneActionsMenu', label: 'Pane Actions Menu', surfaces: ['workspaceHeader'] },
   { id: 'railIdentity', label: 'Rail Identity', surfaces: ['railHeader'] },
   { id: 'railClose', label: 'Rail Close', surfaces: ['railHeader'] },
   { id: 'railManageToggle', label: 'Rail Manage Toggle', surfaces: ['railHeader'] },
@@ -118,6 +121,11 @@ describe('explorer chrome layout resolver', () => {
 
     expect(workspaceHeader.rows[0]?.zones.find((zone) => zone.id === 'center')?.controls.map((control) => control.controlId)).toEqual([
       'workspaceTabStrip',
+    ]);
+    expect(workspaceHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toEqual([
+      'workspaceNewTab',
+      'workspacePaneActionsMenu',
+      'workspacePaneCounts',
     ]);
     expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('railIdentity');
     expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('railClose');
