@@ -77,6 +77,10 @@ import {
   type ResolvedOverlayAppearance,
 } from "../config/appearance";
 import {
+  BOUNDED_CHROME_CONTAINMENT_STYLE,
+  resolveInnerSurfaceBlurFilter,
+} from "../config/chromeEffects";
+import {
   createLegacyExplorerActionContextMenuContributions,
   type ExplorerMenuInvocationContext,
   type ExplorerMenuInvocationEntry,
@@ -507,6 +511,16 @@ import {
   type ExplorerTagMetadataSnapshot,
   queueExplorerTerminalDirectorySync,
 } from "../runtime/explorerBackend";
+import {
+  compareExplorerEntries as compareSharedExplorerEntries,
+  computeExplorerBaseVisibleEntries,
+  getEntryExtension as getSharedEntryExtension,
+  getEntryTypeLabel as getSharedEntryTypeLabel,
+  sortExplorerEntries as sortSharedExplorerEntries,
+  type ExplorerVisibleEntriesComputeInput,
+  type ExplorerVisibleEntriesSortKey,
+} from "../runtime/explorerVisibleEntries";
+import { computeExplorerBaseVisibleEntriesInBackground } from "../runtime/explorerVisibleEntriesRuntime";
 import {
   executeExplorerAction,
   normalizeExplorerActionOutputTarget,
@@ -1255,7 +1269,7 @@ interface NewItemState {
   visible: boolean;
   kind: "file" | "folder";
 }
-type ExplorerSortKey = "name" | "size" | "date" | "type";
+type ExplorerSortKey = ExplorerVisibleEntriesSortKey;
 interface PendingExplorerTransferRequest {
   targetDir: string;
   sources: string[];
@@ -1408,6 +1422,11 @@ const EXPLORER_LAYOUT_BAND_HEIGHT_BOUNDS = {
 } satisfies Partial<
   Record<keyof ExplorerLayoutBandMetrics, { min: number; max: number }>
 >;
+
+const EXPLORER_FIXED_UTILITY_CONTROL_IDS = [
+  "shellLayout",
+  "customizeModeToggle",
+] as const satisfies ExplorerChromeControlId[];
 
 function clampExplorerLayoutBandMetricValue(
   metricKey: keyof ExplorerLayoutBandMetrics,
@@ -2169,287 +2188,6 @@ function resolveExplorerDirectionalSelectionIndex(args: {
   }
 }
 
-const EXT_TYPE_LABEL: Record<string, string> = {
-  // Rust / Systems
-  rs: "Rust",
-  c: "C",
-  h: "C Header",
-  cpp: "C++",
-  cc: "C++",
-  cxx: "C++",
-  hpp: "C++ Header",
-  hxx: "C++ Header",
-  zig: "Zig",
-  d: "D",
-  nim: "Nim",
-  odin: "Odin",
-  v: "V",
-  // JVM / managed
-  java: "Java",
-  kt: "Kotlin",
-  kts: "Kotlin",
-  cs: "C#",
-  fs: "F#",
-  fsi: "F#",
-  fsx: "F# Script",
-  vb: "VB.NET",
-  scala: "Scala",
-  groovy: "Groovy",
-  clj: "Clojure",
-  cljs: "ClojureScript",
-  cljc: "Clojure",
-  // Scripting
-  py: "Python",
-  pyw: "Python",
-  rb: "Ruby",
-  rbw: "Ruby",
-  php: "PHP",
-  pl: "Perl",
-  pm: "Perl",
-  lua: "Lua",
-  tcl: "Tcl",
-  r: "R",
-  // TypeScript / JavaScript
-  ts: "TypeScript",
-  tsx: "TypeScript",
-  mts: "TypeScript",
-  cts: "TypeScript",
-  js: "JavaScript",
-  jsx: "JavaScript",
-  mjs: "JavaScript",
-  cjs: "JavaScript",
-  // Web
-  vue: "Vue",
-  svelte: "Svelte",
-  astro: "Astro",
-  html: "HTML",
-  htm: "HTML",
-  css: "CSS",
-  scss: "SCSS",
-  sass: "Sass",
-  less: "Less",
-  // Shell
-  sh: "Shell",
-  bash: "Shell",
-  zsh: "Shell",
-  fish: "Shell",
-  ksh: "Shell",
-  ps1: "PowerShell",
-  bat: "Batch",
-  cmd: "Command",
-  // Functional
-  hs: "Haskell",
-  lhs: "Haskell",
-  ml: "OCaml",
-  mli: "OCaml",
-  ex: "Elixir",
-  exs: "Elixir",
-  erl: "Erlang",
-  hrl: "Erlang",
-  elm: "Elm",
-  purs: "PureScript",
-  lisp: "Lisp",
-  el: "Emacs Lisp",
-  scm: "Scheme",
-  rkt: "Racket",
-  f: "Fortran",
-  f90: "Fortran",
-  f95: "Fortran",
-  // Go / Swift / Dart
-  go: "Go",
-  swift: "Swift",
-  dart: "Dart",
-  // Shader
-  glsl: "GLSL",
-  hlsl: "HLSL",
-  wgsl: "WGSL",
-  vert: "Shader",
-  frag: "Shader",
-  comp: "Compute Shader",
-  metal: "Metal",
-  // Data / config
-  json: "JSON",
-  jsonc: "JSON",
-  json5: "JSON5",
-  jsonl: "JSON Lines",
-  toml: "TOML",
-  yaml: "YAML",
-  yml: "YAML",
-  xml: "XML",
-  ini: "Config",
-  cfg: "Config",
-  conf: "Config",
-  env: "Env",
-  properties: "Properties",
-  hcl: "HCL",
-  tf: "Terraform",
-  tfvars: "Terraform",
-  nix: "Nix",
-  dhall: "Dhall",
-  ron: "RON",
-  kdl: "KDL",
-  pkl: "Pkl",
-  graphql: "GraphQL",
-  gql: "GraphQL",
-  proto: "Protobuf",
-  fbs: "FlatBuffers",
-  capnp: "Cap'n Proto",
-  // Docs / markup
-  md: "Markdown",
-  mdx: "MDX",
-  markdown: "Markdown",
-  rst: "reStructuredText",
-  adoc: "AsciiDoc",
-  tex: "LaTeX",
-  latex: "LaTeX",
-  txt: "Text",
-  log: "Log",
-  // DB
-  sql: "SQL",
-  psql: "PostgreSQL",
-  cql: "CQL",
-  db: "Database",
-  sqlite: "SQLite",
-  sqlite3: "SQLite",
-  // PDF
-  pdf: "PDF",
-  // Spreadsheet
-  csv: "CSV",
-  tsv: "TSV",
-  xls: "Spreadsheet",
-  xlsx: "Spreadsheet",
-  xlsm: "Spreadsheet",
-  xlsb: "Spreadsheet",
-  ods: "Spreadsheet",
-  // Word processor / rich text
-  docx: "Word Document",
-  doc: "Word Document",
-  rtf: "Rich Text",
-  odt: "OpenDocument Text",
-  pptx: "PowerPoint",
-  ppt: "PowerPoint",
-  odp: "OpenDocument Presentation",
-  epub: "E-Book",
-  // Font
-  ttf: "Font",
-  otf: "Font",
-  woff: "Font",
-  woff2: "Font",
-  // 3D
-  fbx: "3D Model",
-  obj: "3D Model",
-  glb: "3D Model",
-  gltf: "3D Model",
-  stl: "3D Model",
-  uasset: "UE Asset",
-  uproject: "UE Project",
-  // Image
-  jpg: "Image",
-  jpeg: "Image",
-  png: "Image",
-  gif: "Image",
-  webp: "Image",
-  bmp: "Image",
-  ico: "Image",
-  svg: "Vector",
-  tiff: "Image",
-  tif: "Image",
-  avif: "Image",
-  heic: "Image",
-  heif: "Image",
-  jxl: "Image",
-  psd: "Photoshop",
-  ai: "Illustrator",
-  xcf: "GIMP",
-  // Video
-  mp4: "Video",
-  mkv: "Video",
-  avi: "Video",
-  mov: "Video",
-  wmv: "Video",
-  flv: "Video",
-  webm: "Video",
-  // Audio
-  mp3: "Audio",
-  wav: "Audio",
-  flac: "Audio",
-  ogg: "Audio",
-  m4a: "Audio",
-  aac: "Audio",
-  opus: "Audio",
-  aiff: "Audio",
-  // Archive
-  zip: "Archive",
-  rar: "Archive",
-  "7z": "Archive",
-  tar: "Archive",
-  gz: "Archive",
-  bz2: "Archive",
-  xz: "Archive",
-  zst: "Archive",
-  lz4: "Archive",
-  deb: "Debian Package",
-  rpm: "RPM Package",
-  dmg: "Disk Image",
-  iso: "Disk Image",
-  // Binary
-  exe: "Executable",
-  msi: "Installer",
-  dll: "Library",
-  so: "Library",
-  dylib: "Library",
-  // Blockchain / emerging
-  sol: "Solidity",
-  move: "Move",
-  cairo: "Cairo",
-  vyper: "Vyper",
-  // Subtitles
-  srt: "Subtitles",
-  vtt: "WebVTT",
-  ass: "Subtitles",
-  ssa: "Subtitles",
-  // Misc
-  lock: "Lockfile",
-  diff: "Diff",
-  patch: "Patch",
-  pem: "Certificate",
-  crt: "Certificate",
-  cer: "Certificate",
-  pub: "Public Key",
-  asc: "PGP Key",
-  wat: "WebAssembly",
-  jl: "Julia",
-  coffee: "CoffeeScript",
-  cr: "Crystal",
-  // GIS
-  geojson: "GeoJSON",
-  gpx: "GPS Track",
-  kml: "KML",
-  kmz: "KMZ",
-  shp: "Shapefile",
-  prj: "Projection",
-  // Project-specific
-  kain: "Kain",
-  ink: "Ink",
-};
-
-const FILENAME_TYPE_LABEL: Record<string, string> = {
-  dockerfile: "Docker",
-  makefile: "Makefile",
-  rakefile: "Ruby",
-  cmake: "CMake",
-  ".gitignore": "Git",
-  ".gitattributes": "Git",
-  ".gitmodules": "Git",
-  ".env": "Environment",
-  ".env.local": "Environment",
-  ".editorconfig": "EditorConfig",
-  "package.json": "NPM Package",
-  "package-lock.json": "NPM Lockfile",
-  "cargo.toml": "Cargo Manifest",
-  "cargo.lock": "Cargo Lockfile",
-};
-
 function isEditableKeyboardTarget(target: EventTarget | null): boolean {
   const element = target instanceof HTMLElement ? target : null;
   if (!element) {
@@ -2499,28 +2237,7 @@ function getDefaultExplorerSortOrder(sortBy: ExplorerSortKey): "asc" | "desc" {
   return sortBy === "size" || sortBy === "date" ? "desc" : "asc";
 }
 
-function getEntryExtension(
-  entry: Pick<FileEntry, "is_dir" | "name" | "extension">,
-): string {
-  if (entry.is_dir) {
-    return "";
-  }
-
-  const normalizedExtension = (entry.extension ?? "")
-    .trim()
-    .replace(/^\./, "")
-    .toLowerCase();
-  if (normalizedExtension) {
-    return normalizedExtension;
-  }
-
-  const lastDotIndex = entry.name.lastIndexOf(".");
-  if (lastDotIndex <= 0 || lastDotIndex === entry.name.length - 1) {
-    return "";
-  }
-
-  return entry.name.slice(lastDotIndex + 1).toLowerCase();
-}
+const getEntryExtension = getSharedEntryExtension;
 
 function getPreviewAssetUrl(filePath: string): string {
   if (typeof window === "undefined") {
@@ -2538,6 +2255,7 @@ function getPreviewAssetUrl(filePath: string): string {
 }
 
 const FAST_PREVIEW_LOADING_INDICATOR_DELAY_MS = 160;
+const EXPLORER_VISIBLE_ENTRIES_BACKGROUND_MIN_COUNT = 180;
 
 function isFastSwitchPreviewKind(
   kind: ExplorerResolvedPreviewDescriptor["kind"],
@@ -2560,34 +2278,7 @@ function getExplorerPreviewCacheKey(
   return `${kind}:${path}`;
 }
 
-function getEntryTypeLabel(
-  entry: Pick<FileEntry, "is_dir" | "name" | "extension">,
-): string {
-  if (entry.is_dir) {
-    return "Folder";
-  }
-
-  const filename = entry.name.toLowerCase();
-  if (FILENAME_TYPE_LABEL[filename]) {
-    return FILENAME_TYPE_LABEL[filename];
-  }
-
-  const extension = getEntryExtension(entry);
-  if (!extension) {
-    return "File";
-  }
-
-  return EXT_TYPE_LABEL[extension] ?? `${extension.toUpperCase()} File`;
-}
-
-const EXPLORER_ENTRY_TEXT_COLLATOR = new Intl.Collator(undefined, {
-  sensitivity: "base",
-  numeric: true,
-});
-
-function compareExplorerEntryText(left: string, right: string): number {
-  return EXPLORER_ENTRY_TEXT_COLLATOR.compare(left, right);
-}
+const getEntryTypeLabel = getSharedEntryTypeLabel;
 
 function compareExplorerEntries(
   left: FileEntry,
@@ -2595,35 +2286,7 @@ function compareExplorerEntries(
   sortBy: ExplorerSortKey,
   sortOrder: "asc" | "desc",
 ): number {
-  if (left.is_dir !== right.is_dir) {
-    return left.is_dir ? -1 : 1;
-  }
-
-  let comparison = 0;
-  switch (sortBy) {
-    case "size":
-      comparison = left.size - right.size;
-      break;
-    case "date":
-      comparison = left.modified - right.modified;
-      break;
-    case "type":
-      comparison = compareExplorerEntryText(
-        getEntryTypeLabel(left),
-        getEntryTypeLabel(right),
-      );
-      break;
-    case "name":
-    default:
-      comparison = compareExplorerEntryText(left.name, right.name);
-      break;
-  }
-
-  if (comparison === 0) {
-    comparison = compareExplorerEntryText(left.name, right.name);
-  }
-
-  return sortOrder === "asc" ? comparison : -comparison;
+  return compareSharedExplorerEntries(left, right, sortBy, sortOrder);
 }
 
 function sortExplorerEntries(
@@ -2631,38 +2294,7 @@ function sortExplorerEntries(
   sortBy: ExplorerSortKey,
   sortOrder: "asc" | "desc",
 ): FileEntry[] {
-  if (entries.length <= 1) {
-    return entries;
-  }
-
-  if (sortBy !== "type") {
-    return [...entries].sort((left, right) =>
-      compareExplorerEntries(left, right, sortBy, sortOrder),
-    );
-  }
-
-  const decoratedEntries = entries.map((entry, index) => ({
-    entry,
-    index,
-    typeLabel: getEntryTypeLabel(entry),
-  }));
-
-  decoratedEntries.sort((left, right) => {
-    if (left.entry.is_dir !== right.entry.is_dir) {
-      return left.entry.is_dir ? -1 : 1;
-    }
-
-    let comparison = compareExplorerEntryText(left.typeLabel, right.typeLabel);
-    if (comparison === 0) {
-      comparison = compareExplorerEntryText(left.entry.name, right.entry.name);
-    }
-    if (comparison === 0) {
-      comparison = left.index - right.index;
-    }
-    return sortOrder === "asc" ? comparison : -comparison;
-  });
-
-  return decoratedEntries.map(({ entry }) => entry);
+  return sortSharedExplorerEntries(entries, sortBy, sortOrder);
 }
 
 function getIconSrc(
@@ -5502,14 +5134,14 @@ function PreviewPanel({
     [previewChromeControlRegistryById],
   );
   const previewGlassBlurStyle: CSSProperties = {
-    backdropFilter:
-      blurEnabled && explorerTheme.previewStyle === "glass"
-        ? "blur(18px)"
-        : "none",
-    WebkitBackdropFilter:
-      blurEnabled && explorerTheme.previewStyle === "glass"
-        ? "blur(18px)"
-        : "none",
+    backdropFilter: resolveInnerSurfaceBlurFilter({
+      enabled: blurEnabled && explorerTheme.previewStyle === "glass",
+      blurPx: 18,
+    }),
+    WebkitBackdropFilter: resolveInnerSurfaceBlurFilter({
+      enabled: blurEnabled && explorerTheme.previewStyle === "glass",
+      blurPx: 18,
+    }),
   };
   const previewShellBaseStyle: CSSProperties = {
     width,
@@ -6342,14 +5974,14 @@ function ExplorerEmbeddedTerminalLayer({
           minWidth: 0,
           minHeight: 0,
           overflow: "hidden",
-          backdropFilter:
-            blurEnabled && explorerTheme.previewStyle === "glass"
-              ? "blur(18px)"
-              : "none",
-          WebkitBackdropFilter:
-            blurEnabled && explorerTheme.previewStyle === "glass"
-              ? "blur(18px)"
-              : "none",
+          backdropFilter: resolveInnerSurfaceBlurFilter({
+            enabled: blurEnabled && explorerTheme.previewStyle === "glass",
+            blurPx: 18,
+          }),
+          WebkitBackdropFilter: resolveInnerSurfaceBlurFilter({
+            enabled: blurEnabled && explorerTheme.previewStyle === "glass",
+            blurPx: 18,
+          }),
         }}
       >
         <TerminalOverlay
@@ -8636,12 +8268,43 @@ export function FileExplorer({
       canonicalExplorerLayout,
     ],
   );
+  const effectiveModeProfile = useMemo(
+    () =>
+      resolveEffectiveExplorerModeProfile({
+        themeOverrideModeProfileId:
+          resolvedExplorerLayout?.modeProfileId ??
+          explorerSettings.modeProfileOverridesByThemeId[
+            explorerChromeThemeId
+          ] ?? null,
+        themeDefaultModeProfileId:
+          defaultModeProfileId ?? explorerTheme.defaultModeProfileId,
+        legacyShellLayoutId: storedShellLayoutId,
+      }),
+    [
+      defaultModeProfileId,
+      explorerChromeThemeId,
+      explorerSettings.followThemeExplorerLayout,
+      explorerSettings.modeProfileOverridesByThemeId,
+      explorerTheme.defaultModeProfileId,
+      resolvedExplorerLayout?.modeProfileId,
+      storedShellLayoutId,
+    ],
+  );
   const sidebarBounds = getExplorerRailWidthBounds(isCompactDock);
   const uiFont = appearance?.fonts.ui ?? "Inter,system-ui,sans-serif";
   const themeIconTheme =
     appearance?.theme.assets?.iconTheme ?? getBuiltInIconTheme();
   const useNativeOsIcons = appearanceSettings.useNativeOsIcons;
   const explorerBlurEnabled = appearanceSettings.appBlur !== false;
+  const resolveExplorerInnerBlurFilter = useCallback(
+    (blurPx: number) =>
+      resolveInnerSurfaceBlurFilter({
+        enabled: explorerBlurEnabled,
+        blurPx,
+        platform: runtimePlatform,
+      }),
+    [explorerBlurEnabled, runtimePlatform],
+  );
   const shaderPerformanceMode = appearanceSettings.shaderPerformanceMode;
   const shaderPerformanceProfile = getShaderPerformanceProfile(
     shaderPerformanceMode,
@@ -8655,6 +8318,25 @@ export function FileExplorer({
   const experimentalDensity = explorerSettings.experimentalDensity;
   const folderClickMode = explorerSettings.folderClickMode;
   const doubleClickEmptyToGoBack = explorerSettings.doubleClickEmptyToGoBack;
+  const preferredViewMode =
+    effectiveModeProfile.preferredViewMode ?? explorerTheme.preferredViewMode;
+  const preferredExperimentalViewMode =
+    effectiveModeProfile.preferredExperimentalViewMode ??
+    explorerTheme.preferredExperimentalViewMode;
+  const themedViewMode = useMemo(
+    () =>
+      viewMode === "details" && preferredViewMode
+        ? preferredViewMode
+        : viewMode,
+    [preferredViewMode, viewMode],
+  );
+  const themedExperimentalViewMode = useMemo(
+    () =>
+      experimentalViewMode === "off" && preferredExperimentalViewMode
+        ? preferredExperimentalViewMode
+        : experimentalViewMode,
+    [experimentalViewMode, preferredExperimentalViewMode],
+  );
   // Session is only used to seed the explorer's local state. Avoid subscribing to it
   // so high-frequency local changes (typing, resizing) don't force extra store-driven renders.
   const initialSession = useMemo(
@@ -9202,6 +8884,10 @@ export function FileExplorer({
   const previewContentHostRef = useRef<HTMLDivElement | null>(null);
   const bottomTerminalAnchorRef = useRef<HTMLDivElement | null>(null);
   const explorerViewportRef = useRef<HTMLDivElement | null>(null);
+  const [explorerFileAreaNode, setExplorerFileAreaNode] =
+    useState<HTMLDivElement | null>(null);
+  const [explorerViewportNode, setExplorerViewportNode] =
+    useState<HTMLDivElement | null>(null);
   const explorerViewportScrollTopRef = useRef(0);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
@@ -9241,6 +8927,14 @@ export function FileExplorer({
       clientHeight: 0,
       clientWidth: 0,
     });
+  const bindExplorerFileAreaRef = useCallback((node: HTMLDivElement | null) => {
+    explorerFileAreaRef.current = node;
+    setExplorerFileAreaNode(node);
+  }, []);
+  const bindExplorerViewportRef = useCallback((node: HTMLDivElement | null) => {
+    explorerViewportRef.current = node;
+    setExplorerViewportNode(node);
+  }, []);
   const currentPathIsHome = isExplorerHomePath(currentPath);
   const currentArchiveVirtualLocation = useMemo(
     () => parseExplorerArchiveVirtualPath(currentPath),
@@ -9281,9 +8975,6 @@ export function FileExplorer({
   const hasPreview = previewPanelVisible && preview.type !== "none";
   const canNavigatePreviewBack =
     previewNavigationHistory.length > 0 && preview.type !== "none";
-  const isExperimentalViewEligible =
-    !isCompactDock && search.trim().length === 0;
-
   useEffect(() => {
     setJumpFilter(null);
   }, [currentPath, setJumpFilter]);
@@ -11022,6 +10713,13 @@ export function FileExplorer({
       typeof semanticSearchSourcePath === "string" &&
       semanticSearchSourcePath.trim().length > 0);
   const explorerThumbnailRenderContext = isSearchActive ? "search" : "browse";
+  const effectiveExperimentalViewMode = useMemo(
+    () =>
+      !isCompactDock && !isSearchActive && themedExperimentalViewMode !== "off"
+        ? themedExperimentalViewMode
+        : "off",
+    [isCompactDock, isSearchActive, themedExperimentalViewMode],
+  );
   const toggleSort = useCallback(
     (nextSortBy: ExplorerSortKey) => {
       const nextSortOrder =
@@ -11051,32 +10749,78 @@ export function FileExplorer({
       ),
     [tagMetadata.assignments],
   );
-  const filteredEntries = useMemo(
-    () =>
-      (isSearchActive ? searchResults : entries).filter((entry) => {
-        if (activeTagFilterIds.length === 0) {
-          return true;
-        }
-        const tagIds = pathTagIdsByPath.get(entry.path) ?? [];
-        return activeTagFilterIds.every((tagId) => tagIds.includes(tagId));
-      }),
+  const baseVisibleEntriesInput = useMemo<ExplorerVisibleEntriesComputeInput<FileEntry>>(
+    () => ({
+      entries: isSearchActive ? searchResults : entries,
+      activeTagFilterIds,
+      pathTagAssignments: tagMetadata.assignments,
+      sortBy: explorerSettings.sortBy,
+      sortOrder: explorerSettings.sortOrder,
+    }),
     [
       activeTagFilterIds,
       entries,
+      explorerSettings.sortBy,
+      explorerSettings.sortOrder,
       isSearchActive,
-      pathTagIdsByPath,
       searchResults,
+      tagMetadata.assignments,
     ],
   );
-  const baseVisibleEntries = useMemo(
+  const immediateBaseVisibleEntries = useMemo(
     () =>
-      sortExplorerEntries(
-        filteredEntries,
-        explorerSettings.sortBy,
-        explorerSettings.sortOrder,
-      ),
-    [filteredEntries, explorerSettings.sortBy, explorerSettings.sortOrder],
+      baseVisibleEntriesInput.entries.length <=
+      EXPLORER_VISIBLE_ENTRIES_BACKGROUND_MIN_COUNT
+        ? computeExplorerBaseVisibleEntries(baseVisibleEntriesInput)
+        : null,
+    [baseVisibleEntriesInput],
   );
+  const [backgroundBaseVisibleEntries, setBackgroundBaseVisibleEntries] =
+    useState<FileEntry[]>(() =>
+      computeExplorerBaseVisibleEntries(baseVisibleEntriesInput),
+    );
+  const baseVisibleEntriesWorkerRequestIdRef = useRef(0);
+  useEffect(() => {
+    if (immediateBaseVisibleEntries != null) {
+      startTransition(() => {
+        setBackgroundBaseVisibleEntries(immediateBaseVisibleEntries);
+      });
+      return;
+    }
+
+    let cancelled = false;
+    const requestId = baseVisibleEntriesWorkerRequestIdRef.current + 1;
+    baseVisibleEntriesWorkerRequestIdRef.current = requestId;
+
+    void computeExplorerBaseVisibleEntriesInBackground(baseVisibleEntriesInput)
+      .then((nextEntries) => {
+        if (
+          cancelled ||
+          baseVisibleEntriesWorkerRequestIdRef.current !== requestId
+        ) {
+          return;
+        }
+
+        startTransition(() => {
+          setBackgroundBaseVisibleEntries(nextEntries);
+        });
+      })
+      .catch((error) => {
+        if (
+          cancelled ||
+          baseVisibleEntriesWorkerRequestIdRef.current !== requestId
+        ) {
+          return;
+        }
+        setError(String(error));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [baseVisibleEntriesInput, immediateBaseVisibleEntries, setError]);
+  const baseVisibleEntries =
+    immediateBaseVisibleEntries ?? backgroundBaseVisibleEntries;
   const baseVisibleEntryLookup = useMemo(
     () => new Map(baseVisibleEntries.map((entry) => [entry.path, entry])),
     [baseVisibleEntries],
@@ -11207,13 +10951,13 @@ export function FileExplorer({
     () => new Set(constellationPinnedPaths),
     [constellationPinnedPaths],
   );
+  const shouldBuildAdaptiveSemanticBands =
+    effectiveExperimentalViewMode === "adaptive-semantic-grid";
+  const shouldBuildConstellationCompute =
+    effectiveExperimentalViewMode === "constellation";
   const experimentalSemanticBands = useMemo(
     () =>
-      isExperimentalViewEligible &&
-      (experimentalViewMode === "adaptive-semantic-grid" ||
-        (experimentalViewMode === "off" &&
-          explorerTheme.preferredExperimentalViewMode ===
-            "adaptive-semantic-grid"))
+      shouldBuildAdaptiveSemanticBands
         ? buildAdaptiveSemanticBands(
             visibleEntries,
             selected,
@@ -11226,43 +10970,46 @@ export function FileExplorer({
       currentPath,
       explorerSettings.sortBy,
       explorerSettings.sortOrder,
-      experimentalViewMode,
-      explorerTheme.preferredExperimentalViewMode,
-      isExperimentalViewEligible,
+      shouldBuildAdaptiveSemanticBands,
       selected,
       visibleEntries,
     ],
   );
   const constellationGraph = useMemo(
     () =>
-      buildConstellationGraph({
-        entries: visibleEntries,
-        selectedPaths: selected,
-        pinnedPaths: constellationPinnedPathSet,
-        bookmarkPaths: bookmarkPathSet,
-        pathTagIds: pathTagIdsByPath,
-      }),
+      shouldBuildConstellationCompute
+        ? buildConstellationGraph({
+            entries: visibleEntries,
+            selectedPaths: selected,
+            pinnedPaths: constellationPinnedPathSet,
+            bookmarkPaths: bookmarkPathSet,
+            pathTagIds: pathTagIdsByPath,
+          })
+        : { nodes: [], edges: [] },
     [
       bookmarkPathSet,
       constellationPinnedPathSet,
       pathTagIdsByPath,
       selected,
+      shouldBuildConstellationCompute,
       visibleEntries,
     ],
   );
   const constellationLensBands = useMemo(
     () =>
-      buildConstellationLensBands({
-        entries: visibleEntries,
-        selectedPaths: selected,
-        pinnedPaths: constellationPinnedPathSet,
-        bookmarkPaths: bookmarkPathSet,
-        pathTagIds: pathTagIdsByPath,
-        currentPath,
-        activeLens: constellationActiveLens,
-        sortBy: explorerSettings.sortBy,
-        sortOrder: explorerSettings.sortOrder,
-      }),
+      shouldBuildConstellationCompute
+        ? buildConstellationLensBands({
+            entries: visibleEntries,
+            selectedPaths: selected,
+            pinnedPaths: constellationPinnedPathSet,
+            bookmarkPaths: bookmarkPathSet,
+            pathTagIds: pathTagIdsByPath,
+            currentPath,
+            activeLens: constellationActiveLens,
+            sortBy: explorerSettings.sortBy,
+            sortOrder: explorerSettings.sortOrder,
+          })
+        : [],
     [
       bookmarkPathSet,
       constellationActiveLens,
@@ -11272,6 +11019,7 @@ export function FileExplorer({
       explorerSettings.sortOrder,
       pathTagIdsByPath,
       selected,
+      shouldBuildConstellationCompute,
       visibleEntries,
     ],
   );
@@ -11284,7 +11032,7 @@ export function FileExplorer({
   );
   const constellationRouteState = useMemo(
     () =>
-      constellationRouteModeEnabled
+      shouldBuildConstellationCompute && constellationRouteModeEnabled
         ? resolveConstellationRouteState({
             graph: constellationGraph,
             activeLens: constellationActiveLens,
@@ -11307,6 +11055,7 @@ export function FileExplorer({
       constellationPinnedPathSet,
       constellationRouteModeEnabled,
       selected,
+      shouldBuildConstellationCompute,
       visibleEntries,
     ],
   );
@@ -17977,28 +17726,6 @@ export function FileExplorer({
     [accent],
   );
 
-  const effectiveModeProfile = useMemo(
-    () =>
-      resolveEffectiveExplorerModeProfile({
-        themeOverrideModeProfileId:
-          resolvedExplorerLayout?.modeProfileId ??
-          explorerSettings.modeProfileOverridesByThemeId[
-            explorerChromeThemeId
-          ] ?? null,
-        themeDefaultModeProfileId:
-          defaultModeProfileId ?? explorerTheme.defaultModeProfileId,
-        legacyShellLayoutId: storedShellLayoutId,
-      }),
-    [
-      defaultModeProfileId,
-      explorerChromeThemeId,
-      explorerSettings.followThemeExplorerLayout,
-      explorerSettings.modeProfileOverridesByThemeId,
-      explorerTheme.defaultModeProfileId,
-      resolvedExplorerLayout?.modeProfileId,
-      storedShellLayoutId,
-    ],
-  );
   const effectiveChromeLayoutId = useMemo(
     () =>
       resolveExplorerModeProfileChromeLayoutId({
@@ -18128,6 +17855,14 @@ export function FileExplorer({
     persistedExplorerChromeOverride?.entries,
     resolvedExplorerLayout?.tabStripVisible,
   ]);
+  const fixedExplorerUtilityControlIdSet = useMemo(
+    () => new Set<ExplorerChromeControlId>(EXPLORER_FIXED_UTILITY_CONTROL_IDS),
+    [],
+  );
+  const stableFixedExplorerUtilityControlIds = useMemo<ExplorerChromeControlId[]>(
+    () => [...EXPLORER_FIXED_UTILITY_CONTROL_IDS],
+    [],
+  );
   const saveCurrentExplorerLayout = useCallback(
     async ({ duplicate }: { duplicate: boolean }) => {
       const baseLayout = resolvedExplorerLayout ?? canonicalExplorerLayout;
@@ -18240,8 +17975,15 @@ export function FileExplorer({
           explorerChromeOverride?.entries ??
           persistedExplorerChromeOverride?.entries ??
           [],
-      }),
-    [actions, explorerChromeOverride, persistedExplorerChromeOverride],
+      }).filter(
+        (entry) => !fixedExplorerUtilityControlIdSet.has(entry.controlId),
+      ),
+    [
+      actions,
+      explorerChromeOverride,
+      fixedExplorerUtilityControlIdSet,
+      persistedExplorerChromeOverride,
+    ],
   );
   const explorerCustomizeCatalogByCommandId = useMemo(
     () =>
@@ -19284,25 +19026,6 @@ export function FileExplorer({
     () => getExplorerShellLayoutDefinition(effectiveModeProfile.paneLayoutId),
     [effectiveModeProfile.paneLayoutId],
   );
-  const preferredViewMode =
-    effectiveModeProfile.preferredViewMode ?? explorerTheme.preferredViewMode;
-  const preferredExperimentalViewMode =
-    effectiveModeProfile.preferredExperimentalViewMode ??
-    explorerTheme.preferredExperimentalViewMode;
-  const themedViewMode = useMemo(
-    () =>
-      viewMode === "details" && preferredViewMode
-        ? preferredViewMode
-        : viewMode,
-    [preferredViewMode, viewMode],
-  );
-  const themedExperimentalViewMode = useMemo(
-    () =>
-      experimentalViewMode === "off" && preferredExperimentalViewMode
-        ? preferredExperimentalViewMode
-        : experimentalViewMode,
-    [experimentalViewMode, preferredExperimentalViewMode],
-  );
   useEffect(() => {
     if (layoutZoomGestureActiveRef.current) {
       return;
@@ -19364,13 +19087,6 @@ export function FileExplorer({
       isCompactDock,
       isSearchActive,
     },
-  );
-  const effectiveExperimentalViewMode = useMemo(
-    () =>
-      !isCompactDock && !isSearchActive && themedExperimentalViewMode !== "off"
-        ? themedExperimentalViewMode
-        : "off",
-    [isCompactDock, isSearchActive, themedExperimentalViewMode],
   );
   const adaptiveDensityStop =
     useMemo<AdaptiveSemanticDensityStopDefinition | null>(
@@ -20437,21 +20153,20 @@ export function FileExplorer({
         ? "var(--overlay-explorer-toolbar-shadow)"
         : "none",
       backdropFilter:
-        explorerBlurEnabled &&
-        (explorerTheme.toolbarStyle === "glass" ||
-          explorerTheme.toolbarStyle === "floating")
-          ? "blur(18px)"
+        explorerTheme.toolbarStyle === "glass" ||
+        explorerTheme.toolbarStyle === "floating"
+          ? resolveExplorerInnerBlurFilter(18)
           : "none",
       WebkitBackdropFilter:
-        explorerBlurEnabled &&
-        (explorerTheme.toolbarStyle === "glass" ||
-          explorerTheme.toolbarStyle === "floating")
-          ? "blur(18px)"
+        explorerTheme.toolbarStyle === "glass" ||
+        explorerTheme.toolbarStyle === "floating"
+          ? resolveExplorerInnerBlurFilter(18)
           : "none",
       flexShrink: 0,
+      isolation: "isolate",
     };
   }, [
-    explorerBlurEnabled,
+    resolveExplorerInnerBlurFilter,
     explorerTheme.toolbarStyle,
     usesWorkspaceCompactChrome,
     usesWorkspaceDenseChrome,
@@ -22388,14 +22103,14 @@ export function FileExplorer({
               </button>
               <button
                 type="button"
-                aria-label={`Open explorer layout menu. Current: ${resolvedExplorerLayout?.name ?? effectiveModeProfile.label}`}
+                aria-label={`Open explorer layout preset menu. Current: ${resolvedExplorerLayout?.name ?? effectiveModeProfile.label}`}
                 aria-haspopup="menu"
                 aria-expanded={showModeProfileMenu}
                 onClick={() => {
                   setShowLayoutMenu(false);
                   setShowModeProfileMenu((current) => !current);
                 }}
-                title={`Open explorer layout menu (current: ${resolvedExplorerLayout?.name ?? effectiveModeProfile.label})`}
+                title={`Open explorer layout preset menu (current: ${resolvedExplorerLayout?.name ?? effectiveModeProfile.label})`}
                 style={{
                   ...toolbarIconButtonStyle(false, placement.sizeVariant),
                   color: showModeProfileMenu ? EXP.text : EXP.muted,
@@ -22712,11 +22427,10 @@ export function FileExplorer({
                   border: `1px solid ${accent}55`,
                   background: "var(--overlay-explorer-popup-bg)",
                   boxShadow: "var(--overlay-explorer-popup-shadow)",
-                  backdropFilter: explorerBlurEnabled ? "blur(10px)" : "none",
-                  WebkitBackdropFilter: explorerBlurEnabled
-                    ? "blur(10px)"
-                    : "none",
+                  backdropFilter: resolveExplorerInnerBlurFilter(10),
+                  WebkitBackdropFilter: resolveExplorerInnerBlurFilter(10),
                   pointerEvents: "none",
+                  ...BOUNDED_CHROME_CONTAINMENT_STYLE,
                 }}
               >
                 <div
@@ -23218,13 +22932,10 @@ export function FileExplorer({
                       border: `1px solid ${accent}55`,
                       background: "var(--overlay-explorer-popup-bg)",
                       boxShadow: "var(--overlay-explorer-popup-shadow)",
-                      backdropFilter: explorerBlurEnabled
-                        ? "blur(10px)"
-                        : "none",
-                      WebkitBackdropFilter: explorerBlurEnabled
-                        ? "blur(10px)"
-                        : "none",
+                      backdropFilter: resolveExplorerInnerBlurFilter(10),
+                      WebkitBackdropFilter: resolveExplorerInnerBlurFilter(10),
                       pointerEvents: "none",
+                      ...BOUNDED_CHROME_CONTAINMENT_STYLE,
                     }}
                   >
                     <div
@@ -24079,6 +23790,59 @@ export function FileExplorer({
         ?.render(placement) ?? null,
     [explorerChromeControlRegistryById],
   );
+  const fixedExplorerUtilityPlacements = useMemo<
+    ExplorerChromeResolvedControlPlacement[]
+  >(
+    () => [
+      {
+        controlId: "shellLayout",
+        surfaceId: resolvedUnifiedHeaderSurfaceId,
+        zone: "primaryEnd",
+        order: -2000,
+        sizeVariant: usesWorkspaceDenseChrome ? "compact" : "regular",
+        hidden: false,
+      },
+      {
+        controlId: "customizeModeToggle",
+        surfaceId: resolvedUnifiedHeaderSurfaceId,
+        zone: "primaryEnd",
+        order: -1990,
+        sizeVariant: usesWorkspaceDenseChrome ? "compact" : "regular",
+        hidden: false,
+      },
+    ],
+    [resolvedUnifiedHeaderSurfaceId, usesWorkspaceDenseChrome],
+  );
+  const explorerFixedUtilityStrip = useMemo(
+    () => (
+      <div
+        data-overlay-explorer-plane="fixed-utility-strip"
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          alignSelf: "flex-end",
+          gap: 6,
+          flexShrink: 0,
+          flexWrap: "wrap",
+          justifyContent: "flex-end",
+          maxWidth: "100%",
+        }}
+      >
+        {fixedExplorerUtilityPlacements.map((placement) => (
+          <div
+            key={`fixed-utility:${placement.controlId}`}
+            data-overlay-explorer-fixed-control={placement.controlId}
+            data-overlay-explorer-control={placement.controlId}
+            data-overlay-explorer-control-zone={placement.zone}
+            style={{ position: "relative", flexShrink: 0 }}
+          >
+            {renderExplorerChromeControl(placement)}
+          </div>
+        ))}
+      </div>
+    ),
+    [fixedExplorerUtilityPlacements, renderExplorerChromeControl],
+  );
   const shouldRenderStatusBar =
     !usesWorkspaceCompactChrome && explorerTheme.statusBarStyle !== "hidden";
   const statusBarStyle = useMemo<CSSProperties>(
@@ -24107,15 +23871,16 @@ export function FileExplorer({
           ? "var(--overlay-explorer-toolbar-shadow)"
           : "none",
       backdropFilter:
-        explorerBlurEnabled && explorerTheme.statusBarStyle === "floating"
-          ? "blur(18px)"
+        explorerTheme.statusBarStyle === "floating"
+          ? resolveExplorerInnerBlurFilter(18)
           : "none",
       WebkitBackdropFilter:
-        explorerBlurEnabled && explorerTheme.statusBarStyle === "floating"
-          ? "blur(18px)"
+        explorerTheme.statusBarStyle === "floating"
+          ? resolveExplorerInnerBlurFilter(18)
           : "none",
+      ...BOUNDED_CHROME_CONTAINMENT_STYLE,
     }),
-    [explorerBlurEnabled, explorerTheme.statusBarStyle],
+    [explorerTheme.statusBarStyle, resolveExplorerInnerBlurFilter],
   );
 
   useEffect(
@@ -24174,7 +23939,7 @@ export function FileExplorer({
   }, [layoutZoomGestureActive]);
 
   useLayoutEffect(() => {
-    const viewport = explorerViewportRef.current;
+    const viewport = explorerViewportNode;
     if (!viewport) {
       return;
     }
@@ -24213,10 +23978,14 @@ export function FileExplorer({
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [syncExplorerViewportScrollTop, syncExplorerViewportSize]);
+  }, [
+    explorerViewportNode,
+    syncExplorerViewportScrollTop,
+    syncExplorerViewportSize,
+  ]);
 
   useLayoutEffect(() => {
-    const fileArea = explorerFileAreaRef.current;
+    const fileArea = explorerFileAreaNode;
     if (!fileArea) {
       return;
     }
@@ -24235,7 +24004,7 @@ export function FileExplorer({
     return () => {
       fileArea.removeEventListener("wheel", handleNativeLayoutWheel);
     };
-  }, [shouldHandleExplorerLayoutWheelEvent]);
+  }, [explorerFileAreaNode, shouldHandleExplorerLayoutWheelEvent]);
 
   const createLayoutZoomPointerAnchor = useCallback(
     (event: Pick<WheelEvent, "clientX" | "clientY">) => {
@@ -24543,8 +24312,8 @@ export function FileExplorer({
   // while zooming. Attach a native non-passive listener in the capture phase so
   // preventDefault genuinely cancels the default scroll, locking the scroll
   // position for the duration of the zoom gesture.
-  useEffect(() => {
-    const node = explorerFileAreaRef.current;
+  useLayoutEffect(() => {
+    const node = explorerFileAreaNode;
     if (!node) {
       return;
     }
@@ -24559,7 +24328,7 @@ export function FileExplorer({
     return () => {
       node.removeEventListener("wheel", listener, options);
     };
-  }, [handleExplorerLayoutWheel]);
+  }, [explorerFileAreaNode, handleExplorerLayoutWheel]);
 
   useEffect(() => {
     if (explorerPicker) {
@@ -24745,12 +24514,906 @@ export function FileExplorer({
     visibleEntries.length,
   ]);
 
+  const cancelRename = useCallback(
+    () => setRename({ active: false, path: "", name: "" }),
+    [],
+  );
+  const renderSearchMetadata = useCallback(
+    (entry: FileEntry) => {
+      if (!isSearchActive || !isExplorerSearchResultEntry(entry)) return null;
+      const searchEntry = entry;
+      const matchLabel =
+        searchEntry.search_mode === "semantic"
+          ? "Semantic match"
+          : searchEntry.match_kind === "name_and_content"
+            ? "Name + content"
+            : searchEntry.match_kind === "content"
+              ? "Content match"
+              : "Name match";
+
+      return (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            marginTop: 4,
+            minWidth: 0,
+            maxHeight: 42,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 9,
+              color: EXP.muted2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {searchEntry.relative_path || searchEntry.path}
+          </div>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}
+          >
+            {searchEntry.semantic_score != null && (
+              <span
+                style={{
+                  fontSize: 9,
+                  color: accent,
+                  fontFamily: "monospace",
+                  flexShrink: 0,
+                }}
+              >
+                {(searchEntry.semantic_score * 100).toFixed(1)}%
+              </span>
+            )}
+            {searchEntry.line_number != null && (
+              <span
+                style={{
+                  fontSize: 9,
+                  color: accent,
+                  fontFamily: "monospace",
+                  flexShrink: 0,
+                }}
+              >
+                L{searchEntry.line_number}
+              </span>
+            )}
+            {searchEntry.snippet && (
+              <span
+                style={{
+                  fontSize: 9,
+                  color: EXP.text,
+                  opacity: 0.88,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  minWidth: 0,
+                }}
+              >
+                {searchEntry.snippet}
+              </span>
+            )}
+          </div>
+          <div
+            style={{
+              fontSize: 9,
+              color: EXP.muted,
+              letterSpacing: "0.03em",
+              textTransform: "uppercase",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {matchLabel}
+          </div>
+        </div>
+      );
+    },
+    [accent, isSearchActive],
+  );
+  const getSearchTooltip = useCallback(
+    (entry: FileEntry) => {
+      if (!isSearchActive || !isExplorerSearchResultEntry(entry)) {
+        return undefined;
+      }
+      const searchEntry = entry;
+      const parts = [searchEntry.relative_path || searchEntry.path];
+      if (searchEntry.line_number != null) {
+        parts.push(`Line ${searchEntry.line_number}`);
+      }
+      if (searchEntry.semantic_score != null) {
+        parts.push(`Semantic ${(searchEntry.semantic_score * 100).toFixed(1)}%`);
+      }
+      if (searchEntry.snippet) {
+        parts.push(searchEntry.snippet);
+      }
+      return parts.join("\n");
+    },
+    [isSearchActive],
+  );
+  const renderEntryInlineMeta = useCallback(
+    (entry: FileEntry) => {
+      const parts = [
+        getEntryTypeLabel(entry),
+        getEntryStorageLabel(entry),
+        formatDate(entry.modified),
+      ].filter(Boolean);
+      return parts.join("  •  ");
+    },
+    [],
+  );
   const virtualizedEntries = useMemo(
     () =>
       visibleEntries.slice(virtualWindow.startIndex, virtualWindow.endIndex),
     [virtualWindow.endIndex, virtualWindow.startIndex, visibleEntries],
   );
   const deferredVirtualizedEntries = useDeferredValue(virtualizedEntries);
+  const gridVirtualizedEntryElements = useMemo(() => {
+    if (virtualWindow.kind !== "grid" || !activeGridMetrics) {
+      return [];
+    }
+
+    return virtualizedEntries.map((entry) => {
+      const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
+      const isSel = selected.has(entry.path);
+      const dragPresentation = getExplorerEntryDragPresentation(entry);
+      const isDrop = dragPresentation.isDropTarget;
+      const isDragHoverTarget = isDrop || dragPresentation.isDwellTarget;
+      const isRenaming = rename.active && rename.path === entry.path;
+      const iconSrc = getExplorerEntryIconSrc(
+        entry,
+        isSel,
+        isDragHoverTarget,
+      );
+      const thumbnail = getRenderableEntryThumbnail(
+        entry,
+        activeGridMetrics.iconStageSize,
+      );
+      const iconStagePresentation = getExplorerEntryIconStageStyle(
+        entry,
+        dragPresentation,
+        Boolean(thumbnail),
+      );
+      const gridEntryMotion = bindExplorerEntryMotion({
+        entry,
+        isSelected: isSel,
+        isDropTarget: isDragHoverTarget,
+        baseTransform: isDrop
+          ? dropEntrySurface.transform
+          : isSel
+            ? selectedEntrySurface.transform
+            : idleEntrySurface.transform,
+        motionStepIndex,
+        baseTransition: layoutZoomGestureActive
+          ? "none"
+          : "background 0.14s ease, border-color 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+      });
+
+      return (
+        <div
+          key={entry.path}
+          data-entry-path={entry.path}
+          data-overlay-drag-source="file"
+          {...getExplorerDropBindingElementProps(
+            getExplorerDirectoryDropBinding(entry),
+          )}
+          onClick={(e) => onEntryClick(e, entry)}
+          onDoubleClick={() => onEntryDoubleClick(entry)}
+          onContextMenu={(e) => onRightClick(e, entry)}
+          title={getSearchTooltip(entry)}
+          {...gridEntryMotion.motionDataAttributes}
+          onPointerEnter={gridEntryMotion.onPointerEnter}
+          onPointerLeave={gridEntryMotion.onPointerLeave}
+          onPointerDown={gridEntryMotion.onPointerDown}
+          onPointerUp={gridEntryMotion.onPointerUp}
+          onPointerCancel={gridEntryMotion.onPointerCancel}
+          style={{
+            position: "relative",
+            background: isDrop
+              ? dropEntrySurface.background
+              : isSel
+                ? selectedEntrySurface.background
+                : idleEntrySurface.background,
+            border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : idleEntrySurface.borderColor}`,
+            borderRadius: "var(--overlay-explorer-grid-tile-radius)",
+            padding: "var(--overlay-explorer-grid-item-padding)",
+            cursor: "pointer",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "flex-start",
+            gap: 8,
+            height: "100%",
+            minHeight: 0,
+            boxSizing: "border-box",
+            overflow: "hidden",
+            userSelect: "none",
+            boxShadow:
+              dragPresentation.boxShadow ??
+              (isDrop
+                ? dropEntrySurface.boxShadow
+                : isSel
+                  ? selectedEntrySurface.boxShadow
+                  : idleEntrySurface.boxShadow),
+            opacity: (entry.is_hidden ? 0.5 : 1) * dragPresentation.opacity,
+            filter: dragPresentation.filter,
+            ...gridEntryMotion.motionStyle,
+            transform: appendExplorerTransform(
+              gridEntryMotion.motionStyle.transform,
+              dragPresentation.extraTransform,
+            ),
+          }}
+        >
+          {dragPresentation.isDwellTarget ? (
+            <span
+              aria-hidden="true"
+              style={createExplorerDwellIndicatorStyle(
+                true,
+                EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
+              )}
+            />
+          ) : null}
+          <div
+            style={{
+              width: "var(--overlay-explorer-grid-icon-stage-size)",
+              height: "var(--overlay-explorer-grid-icon-stage-size)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              flexShrink: 0,
+              borderRadius: thumbnail
+                ? "var(--overlay-explorer-grid-thumbnail-radius)"
+                : undefined,
+              border: thumbnail
+                ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
+                : undefined,
+              background: thumbnail
+                ? isSel
+                  ? "color-mix(in srgb, var(--overlay-bg-selection) 72%, var(--overlay-bg-panel))"
+                  : "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
+                : undefined,
+              boxShadow: thumbnail
+                ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
+                : undefined,
+              transition: explorerGridStageSizeTransition,
+              ...(iconStagePresentation ?? {}),
+            }}
+          >
+            <ExplorerEntryThumbnailStageContent
+              entry={entry}
+              fallbackIconSize={activeGridMetrics.iconSize}
+              fallbackIconSrc={iconSrc}
+              hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
+              iconTheme={themeIconTheme}
+              motionAppearance={appearance}
+              motionStepIndex={motionStepIndex}
+              motionTriggerState={{
+                select: isSel,
+                dropHover: isDragHoverTarget,
+              }}
+              stageSize={activeGridMetrics.iconStageSize}
+              thumbnail={thumbnail}
+            />
+          </div>
+          {isRenaming ? (
+            <RenameInput
+              state={rename}
+              onCommit={commitRename}
+              onCancel={cancelRename}
+            />
+          ) : (
+            <span
+              style={{
+                fontSize: "var(--overlay-explorer-entry-title-size)",
+                textAlign:
+                  explorerTheme.labelMode === "inline" ? "left" : "center",
+                color: EXP.text,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                display: "-webkit-box",
+                WebkitLineClamp: activeGridMetrics.nameLines,
+                WebkitBoxOrient: "vertical",
+                width: "100%",
+                lineHeight: 1.28,
+                fontWeight: "var(--overlay-explorer-entry-title-weight)",
+                letterSpacing: "var(--overlay-explorer-label-spacing)",
+              }}
+            >
+              {entry.name}
+            </span>
+          )}
+          <span
+            style={{
+              fontSize: "var(--overlay-explorer-entry-meta-size)",
+              textAlign:
+                explorerTheme.labelMode === "inline" ? "left" : "center",
+              color: EXP.muted2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              width: "100%",
+              marginTop: -2,
+            }}
+          >
+            {getEntryStorageLabel(entry)}
+          </span>
+          {renderSearchMetadata(entry)}
+        </div>
+      );
+    });
+  }, [
+    activeGridMetrics,
+    appearance,
+    bindExplorerEntryMotion,
+    cancelRename,
+    commitRename,
+    dropEntrySurface,
+    explorerGridStageSizeTransition,
+    explorerTheme.labelMode,
+    getExplorerDirectoryDropBinding,
+    getExplorerEntryDragPresentation,
+    getExplorerEntryIconSrc,
+    getExplorerEntryIconStageStyle,
+    getRenderableEntryThumbnail,
+    getSearchTooltip,
+    hoveredVideoThumbnailPath,
+    idleEntrySurface,
+    layoutZoomGestureActive,
+    onEntryClick,
+    onEntryDoubleClick,
+    onRightClick,
+    rename,
+    renderSearchMetadata,
+    selected,
+    selectedEntrySurface,
+    themeIconTheme,
+    virtualWindow.kind,
+    visibleEntryIndexLookup,
+    virtualizedEntries,
+  ]);
+  const listVirtualizedEntryElements = useMemo(() => {
+    if (virtualWindow.kind !== "list" || activeRowMetrics == null) {
+      return [];
+    }
+
+    return virtualizedEntries.map((entry) => {
+      const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
+      const isSel = selected.has(entry.path);
+      const dragPresentation = getExplorerEntryDragPresentation(entry);
+      const isDrop = dragPresentation.isDropTarget;
+      const isDragHoverTarget = isDrop || dragPresentation.isDwellTarget;
+      const isRenaming = rename.active && rename.path === entry.path;
+      const iconSrc = getExplorerEntryIconSrc(
+        entry,
+        isSel,
+        isDragHoverTarget,
+      );
+      const rowThumbnailStageSize = Math.max(
+        (activeRowMetrics.iconSize ?? 16) + 12,
+        28,
+      );
+      const thumbnail = getRenderableEntryThumbnail(entry, rowThumbnailStageSize);
+      const iconStagePresentation = getExplorerEntryIconStageStyle(
+        entry,
+        dragPresentation,
+        Boolean(thumbnail),
+      );
+      const listEntryMotion = bindExplorerEntryMotion({
+        entry,
+        isSelected: isSel,
+        isDropTarget: isDragHoverTarget,
+        baseTransform: isDrop
+          ? dropEntrySurface.transform
+          : isSel
+            ? selectedEntrySurface.transform
+            : idleEntrySurface.transform,
+        motionStepIndex,
+      });
+
+      return (
+        <div
+          key={entry.path}
+          data-entry-path={entry.path}
+          data-overlay-drag-source="file"
+          {...getExplorerDropBindingElementProps(
+            getExplorerDirectoryDropBinding(entry),
+          )}
+          onClick={(e) => onEntryClick(e, entry)}
+          onDoubleClick={() => onEntryDoubleClick(entry)}
+          onContextMenu={(e) => onRightClick(e, entry)}
+          title={getSearchTooltip(entry)}
+          {...listEntryMotion.motionDataAttributes}
+          onPointerEnter={listEntryMotion.onPointerEnter}
+          onPointerLeave={listEntryMotion.onPointerLeave}
+          onPointerDown={listEntryMotion.onPointerDown}
+          onPointerUp={listEntryMotion.onPointerUp}
+          onPointerCancel={listEntryMotion.onPointerCancel}
+          style={{
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            height: "var(--overlay-explorer-list-row-height)",
+            padding: "0 var(--overlay-explorer-list-padding)",
+            borderBottomWidth: 1,
+            borderBottomStyle: "solid",
+            borderBottomColor: isDrop
+              ? dropEntrySurface.borderColor
+              : isSel
+                ? selectedEntrySurface.borderColor
+                : "var(--overlay-explorer-toolbar-border)",
+            background: isDrop
+              ? dropEntrySurface.background
+              : isSel
+                ? selectedEntrySurface.background
+                : idleEntrySurface.background,
+            cursor: "pointer",
+            opacity: (entry.is_hidden ? 0.5 : 1) * dragPresentation.opacity,
+            userSelect: "none",
+            boxSizing: "border-box",
+            boxShadow:
+              dragPresentation.boxShadow ??
+              (isDrop
+                ? dropEntrySurface.boxShadow
+                : isSel
+                  ? selectedEntrySurface.boxShadow
+                  : idleEntrySurface.boxShadow),
+            filter: dragPresentation.filter,
+            ...listEntryMotion.motionStyle,
+            transform: appendExplorerTransform(
+              listEntryMotion.motionStyle.transform,
+              dragPresentation.extraTransform,
+            ),
+          }}
+        >
+          {dragPresentation.isDwellTarget ? (
+            <span
+              aria-hidden="true"
+              style={createExplorerDwellIndicatorStyle(
+                true,
+                EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
+              )}
+            />
+          ) : null}
+          <div
+            style={{
+              minWidth: 0,
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                width: "var(--overlay-explorer-list-thumbnail-size)",
+                height: "var(--overlay-explorer-list-thumbnail-size)",
+                minWidth: "var(--overlay-explorer-list-thumbnail-size)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
+                borderRadius: thumbnail ? 10 : undefined,
+                border: thumbnail
+                  ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
+                  : undefined,
+                background: thumbnail
+                  ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
+                  : undefined,
+                boxShadow: thumbnail
+                  ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
+                  : undefined,
+                flexShrink: 0,
+                ...(iconStagePresentation ?? {}),
+              }}
+            >
+              <ExplorerEntryThumbnailStageContent
+                entry={entry}
+                fallbackIconSize={activeRowMetrics.iconSize ?? 16}
+                fallbackIconSrc={iconSrc}
+                hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
+                iconTheme={themeIconTheme}
+                motionAppearance={appearance}
+                motionStepIndex={motionStepIndex}
+                motionTriggerState={{
+                  select: isSel,
+                  dropHover: isDragHoverTarget,
+                }}
+                stageSize={rowThumbnailStageSize}
+                thumbnail={thumbnail}
+              />
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              {isRenaming ? (
+                <RenameInput
+                  state={rename}
+                  onCommit={commitRename}
+                  onCancel={cancelRename}
+                />
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    minWidth: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      color: isSel
+                        ? EXP.text
+                        : entry.is_dir
+                          ? EXP.yellow
+                          : EXP.text,
+                      fontWeight: entry.is_dir ? 600 : 450,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      minWidth: 0,
+                    }}
+                  >
+                    {entry.name}
+                  </span>
+                  {entry.is_symlink && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        color: EXP.muted,
+                        background: "var(--overlay-explorer-chip-bg)",
+                        borderRadius:
+                          "var(--overlay-explorer-control-radius)",
+                        padding: "1px 4px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      symlink
+                    </span>
+                  )}
+                </div>
+              )}
+              <div
+                style={{
+                  marginTop: 2,
+                  fontSize: 10,
+                  color: EXP.muted2,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {renderEntryInlineMeta(entry)}
+              </div>
+              {renderSearchMetadata(entry)}
+            </div>
+          </div>
+          <div
+            style={{
+              flexShrink: 0,
+              fontSize: 10,
+              color: EXP.muted,
+              whiteSpace: "nowrap",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+            }}
+          >
+            {getEntryTypeLabel(entry)}
+          </div>
+        </div>
+      );
+    });
+  }, [
+    activeRowMetrics,
+    appearance,
+    bindExplorerEntryMotion,
+    cancelRename,
+    commitRename,
+    dropEntrySurface,
+    getExplorerDirectoryDropBinding,
+    getExplorerEntryDragPresentation,
+    getExplorerEntryIconSrc,
+    getExplorerEntryIconStageStyle,
+    getRenderableEntryThumbnail,
+    getSearchTooltip,
+    hoveredVideoThumbnailPath,
+    idleEntrySurface,
+    onEntryClick,
+    onEntryDoubleClick,
+    onRightClick,
+    rename,
+    renderEntryInlineMeta,
+    renderSearchMetadata,
+    selected,
+    selectedEntrySurface,
+    themeIconTheme,
+    virtualWindow.kind,
+    visibleEntryIndexLookup,
+    virtualizedEntries,
+  ]);
+  const tableVirtualizedEntryElements = useMemo(() => {
+    if (virtualWindow.kind !== "list" || activeRowMetrics == null) {
+      return [];
+    }
+
+    return virtualizedEntries.map((entry) => {
+      const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
+      const isSel = selected.has(entry.path);
+      const dragPresentation = getExplorerEntryDragPresentation(entry);
+      const isDrop = dragPresentation.isDropTarget;
+      const isDragHoverTarget = isDrop || dragPresentation.isDwellTarget;
+      const isRenaming = rename.active && rename.path === entry.path;
+      const iconSrc = getExplorerEntryIconSrc(
+        entry,
+        isSel,
+        isDragHoverTarget,
+      );
+      const rowThumbnailStageSize = Math.max(
+        (activeRowMetrics.iconSize ?? 16) + 12,
+        28,
+      );
+      const thumbnail = getRenderableEntryThumbnail(entry, rowThumbnailStageSize);
+      const iconStagePresentation = getExplorerEntryIconStageStyle(
+        entry,
+        dragPresentation,
+        Boolean(thumbnail),
+      );
+      const isDetailsMode = effectiveViewMode === "details";
+      const tableEntryMotion = bindExplorerEntryMotion({
+        entry,
+        isSelected: isSel,
+        isDropTarget: isDragHoverTarget,
+        baseTransform: isDrop
+          ? dropEntrySurface.transform
+          : isSel
+            ? selectedEntrySurface.transform
+            : idleEntrySurface.transform,
+        motionStepIndex,
+      });
+
+      return (
+        <tr
+          key={entry.path}
+          data-entry-path={entry.path}
+          data-overlay-drag-source="file"
+          {...getExplorerDropBindingElementProps(
+            getExplorerDirectoryDropBinding(entry),
+          )}
+          onClick={(e) => onEntryClick(e, entry)}
+          onDoubleClick={() => onEntryDoubleClick(entry)}
+          onContextMenu={(e) => onRightClick(e, entry)}
+          title={getSearchTooltip(entry)}
+          {...tableEntryMotion.motionDataAttributes}
+          onPointerEnter={tableEntryMotion.onPointerEnter}
+          onPointerLeave={tableEntryMotion.onPointerLeave}
+          onPointerDown={tableEntryMotion.onPointerDown}
+          onPointerUp={tableEntryMotion.onPointerUp}
+          onPointerCancel={tableEntryMotion.onPointerCancel}
+          style={{
+            background: isDrop
+              ? dropEntrySurface.background
+              : isSel
+                ? selectedEntrySurface.background
+                : idleEntrySurface.background,
+            cursor: "pointer",
+            opacity: (entry.is_hidden ? 0.5 : 1) * dragPresentation.opacity,
+            userSelect: "none",
+            borderBottom: "1px solid var(--overlay-explorer-toolbar-border)",
+            height: virtualWindow.rowHeight,
+            boxSizing: "border-box",
+            boxShadow:
+              dragPresentation.boxShadow ??
+              (isDrop
+                ? dropEntrySurface.boxShadow
+                : isSel
+                  ? selectedEntrySurface.boxShadow
+                  : idleEntrySurface.boxShadow),
+            filter: dragPresentation.filter,
+            ...tableEntryMotion.motionStyle,
+            transform: appendExplorerTransform(
+              tableEntryMotion.motionStyle.transform,
+              dragPresentation.extraTransform,
+            ),
+          }}
+        >
+          <td
+            style={{
+              padding: isDetailsMode ? "6px 12px" : "4px 12px",
+              verticalAlign: "top",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                minWidth: 0,
+              }}
+            >
+              <div
+                style={{
+                  width: rowThumbnailStageSize,
+                  height: rowThumbnailStageSize,
+                  minWidth: rowThumbnailStageSize,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  overflow: "hidden",
+                  borderRadius: thumbnail ? 10 : undefined,
+                  border: thumbnail
+                    ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
+                    : undefined,
+                  background: thumbnail
+                    ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
+                    : undefined,
+                  boxShadow: thumbnail
+                    ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
+                    : undefined,
+                  flexShrink: 0,
+                  ...(iconStagePresentation ?? {}),
+                }}
+              >
+                <ExplorerEntryThumbnailStageContent
+                  entry={entry}
+                  fallbackIconSize={activeRowMetrics.iconSize ?? 16}
+                  fallbackIconSrc={iconSrc}
+                  hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
+                  iconTheme={themeIconTheme}
+                  motionAppearance={appearance}
+                  motionStepIndex={motionStepIndex}
+                  motionTriggerState={{
+                    select: isSel,
+                    dropHover: isDragHoverTarget,
+                  }}
+                  stageSize={rowThumbnailStageSize}
+                  thumbnail={thumbnail}
+                />
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                {isRenaming ? (
+                  <RenameInput
+                    state={rename}
+                    onCommit={commitRename}
+                    onCancel={cancelRename}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      minWidth: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: isSel
+                          ? EXP.text
+                          : entry.is_dir
+                            ? EXP.yellow
+                            : EXP.text,
+                        fontWeight: entry.is_dir
+                          ? 600
+                          : isDetailsMode
+                            ? 500
+                            : 400,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        minWidth: 0,
+                        flex: 1,
+                      }}
+                    >
+                      {entry.name}
+                    </span>
+                    {entry.is_symlink && (
+                      <span
+                        style={{
+                          fontSize: 9,
+                          color: EXP.muted,
+                          background: "var(--overlay-explorer-chip-bg)",
+                          borderRadius:
+                            "var(--overlay-explorer-control-radius)",
+                          padding: "1px 4px",
+                          flexShrink: 0,
+                        }}
+                      >
+                        symlink
+                      </span>
+                    )}
+                  </div>
+                )}
+                {isDetailsMode && !isRenaming && (
+                  <div
+                    style={{
+                      marginTop: 2,
+                      fontSize: 10,
+                      color: EXP.muted2,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {renderEntryInlineMeta(entry)}
+                  </div>
+                )}
+                {renderSearchMetadata(entry)}
+              </div>
+            </div>
+          </td>
+          <td
+            style={{
+              padding: isDetailsMode ? "6px 12px" : "4px 12px",
+              color: EXP.muted,
+              fontFamily: "monospace",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {getEntryStorageLabel(entry)}
+          </td>
+          <td
+            style={{
+              padding: isDetailsMode ? "6px 12px" : "4px 12px",
+              color: EXP.muted,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {formatDate(entry.modified)}
+          </td>
+          <td
+            style={{
+              padding: isDetailsMode ? "6px 12px" : "4px 12px",
+              color: EXP.muted2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {getEntryTypeLabel(entry)}
+          </td>
+        </tr>
+      );
+    });
+  }, [
+    activeRowMetrics,
+    appearance,
+    bindExplorerEntryMotion,
+    cancelRename,
+    commitRename,
+    dropEntrySurface,
+    effectiveViewMode,
+    getExplorerDirectoryDropBinding,
+    getExplorerEntryDragPresentation,
+    getExplorerEntryIconSrc,
+    getExplorerEntryIconStageStyle,
+    getRenderableEntryThumbnail,
+    getSearchTooltip,
+    hoveredVideoThumbnailPath,
+    idleEntrySurface,
+    onEntryClick,
+    onEntryDoubleClick,
+    onRightClick,
+    rename,
+    renderEntryInlineMeta,
+    renderSearchMetadata,
+    selected,
+    selectedEntrySurface,
+    themeIconTheme,
+    virtualWindow.kind,
+    virtualWindow.rowHeight,
+    visibleEntryIndexLookup,
+    virtualizedEntries,
+  ]);
 
   // ── Keyboard ──
   useEffect(() => {
@@ -26091,128 +26754,6 @@ export function FileExplorer({
     visibleEntryLookup,
   ]);
 
-  const renderSearchMetadata = (entry: FileEntry) => {
-    if (!isSearchActive || !isExplorerSearchResultEntry(entry)) return null;
-    const searchEntry = entry;
-    const matchLabel =
-      searchEntry.search_mode === "semantic"
-        ? "Semantic match"
-        : searchEntry.match_kind === "name_and_content"
-          ? "Name + content"
-          : searchEntry.match_kind === "content"
-            ? "Content match"
-            : "Name match";
-
-    return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 2,
-          marginTop: 4,
-          minWidth: 0,
-          maxHeight: 42,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 9,
-            color: EXP.muted2,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {searchEntry.relative_path || searchEntry.path}
-        </div>
-        <div
-          style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}
-        >
-          {searchEntry.semantic_score != null && (
-            <span
-              style={{
-                fontSize: 9,
-                color: accent,
-                fontFamily: "monospace",
-                flexShrink: 0,
-              }}
-            >
-              {(searchEntry.semantic_score * 100).toFixed(1)}%
-            </span>
-          )}
-          {searchEntry.line_number != null && (
-            <span
-              style={{
-                fontSize: 9,
-                color: accent,
-                fontFamily: "monospace",
-                flexShrink: 0,
-              }}
-            >
-              L{searchEntry.line_number}
-            </span>
-          )}
-          {searchEntry.snippet && (
-            <span
-              style={{
-                fontSize: 9,
-                color: EXP.text,
-                opacity: 0.88,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                minWidth: 0,
-              }}
-            >
-              {searchEntry.snippet}
-            </span>
-          )}
-        </div>
-        <div
-          style={{
-            fontSize: 9,
-            color: EXP.muted,
-            letterSpacing: "0.03em",
-            textTransform: "uppercase",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {matchLabel}
-        </div>
-      </div>
-    );
-  };
-
-  const getSearchTooltip = (entry: FileEntry) => {
-    if (!isSearchActive || !isExplorerSearchResultEntry(entry)) {
-      return undefined;
-    }
-    const searchEntry = entry;
-    const parts = [searchEntry.relative_path || searchEntry.path];
-    if (searchEntry.line_number != null) {
-      parts.push(`Line ${searchEntry.line_number}`);
-    }
-    if (searchEntry.semantic_score != null) {
-      parts.push(`Semantic ${(searchEntry.semantic_score * 100).toFixed(1)}%`);
-    }
-    if (searchEntry.snippet) {
-      parts.push(searchEntry.snippet);
-    }
-    return parts.join("\n");
-  };
-
-  const renderEntryInlineMeta = (entry: FileEntry) => {
-    const parts = [
-      getEntryTypeLabel(entry),
-      getEntryStorageLabel(entry),
-      formatDate(entry.modified),
-    ].filter(Boolean);
-    return parts.join("  •  ");
-  };
-
   const renderAdaptiveSemanticEntry = (
     entry: FileEntry,
     densityStop: AdaptiveSemanticDensityStopDefinition,
@@ -27049,15 +27590,19 @@ export function FileExplorer({
     );
     const zoomPercent = Math.round(constellationCamera.zoom * 100);
     const densityLabel = experimentalDensityDescriptor?.label ?? "Orbit";
+    const constellationHudBackdropFilter = resolveExplorerInnerBlurFilter(16);
+    const constellationBandChipBackdropFilter =
+      resolveExplorerInnerBlurFilter(12);
     const hudCardStyle: CSSProperties = {
       borderRadius: 999,
       border: "1px solid rgba(255,255,255,0.12)",
       background: "rgba(7, 10, 16, 0.68)",
-      backdropFilter: explorerBlurEnabled ? "blur(16px)" : "none",
-      WebkitBackdropFilter: explorerBlurEnabled ? "blur(16px)" : "none",
+      backdropFilter: constellationHudBackdropFilter,
+      WebkitBackdropFilter: constellationHudBackdropFilter,
       boxShadow: "0 18px 42px rgba(0,0,0,0.22)",
       color: EXP.text,
       pointerEvents: "auto",
+      ...BOUNDED_CHROME_CONTAINMENT_STYLE,
     };
     const lensButtonStyle = (active: boolean): CSSProperties => ({
       borderRadius: 999,
@@ -27429,13 +27974,12 @@ export function FileExplorer({
                     borderRadius: 18,
                     border: "1px solid rgba(255,255,255,0.14)",
                     background: "rgba(8, 11, 18, 0.9)",
-                    backdropFilter: explorerBlurEnabled ? "blur(16px)" : "none",
-                    WebkitBackdropFilter: explorerBlurEnabled
-                      ? "blur(16px)"
-                      : "none",
+                    backdropFilter: constellationHudBackdropFilter,
+                    WebkitBackdropFilter: constellationHudBackdropFilter,
                     boxShadow: "0 20px 40px rgba(0,0,0,0.24)",
                     padding: "12px 14px",
                     color: EXP.text,
+                    ...BOUNDED_CHROME_CONTAINMENT_STYLE,
                   }}
                 >
                   <div
@@ -27542,14 +28086,13 @@ export function FileExplorer({
                   borderRadius: 999,
                   border: `1px solid ${band.dominant ? `${accent}44` : "rgba(255,255,255,0.12)"}`,
                   background: "rgba(12, 15, 22, 0.72)",
-                  backdropFilter: explorerBlurEnabled ? "blur(12px)" : "none",
-                  WebkitBackdropFilter: explorerBlurEnabled
-                    ? "blur(12px)"
-                    : "none",
+                  backdropFilter: constellationBandChipBackdropFilter,
+                  WebkitBackdropFilter: constellationBandChipBackdropFilter,
                   padding: "8px 12px",
                   boxShadow: "0 12px 28px rgba(0,0,0,0.16)",
                   color: EXP.text,
                   pointerEvents: "none",
+                  ...BOUNDED_CHROME_CONTAINMENT_STYLE,
                   opacity:
                     constellationRouteActive &&
                     !band.nodes.some(
@@ -27991,61 +28534,83 @@ export function FileExplorer({
   const explorerToolbarPane = useMemo(
     () => (
       <div data-overlay-explorer-plane="toolbar" style={toolbarContainerStyle}>
-        {showsGlobalChromeControls && (
-          <>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: usesWorkspaceDenseChrome ? 6 : 8,
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {showsGlobalChromeControls && (
+              <>
+                <ExplorerChromeSurface
+                  surface={explorerTopbarSurface}
+                  getRowStyle={getExplorerTopbarRowStyle}
+                  getZoneStyle={getExplorerChromeZoneStyle}
+                  dynamicCanvasMinHeightPx={resolvedUnifiedHeaderHeightPx}
+                  excludedControlIds={stableFixedExplorerUtilityControlIds}
+                  renderControl={renderExplorerChromeControl}
+                  layoutDynamics={explorerTopbarLayoutDynamics}
+                  editMode={explorerChromeEditMode}
+                />
+                <div
+                  data-overlay-explorer-layout-band-resize="unifiedHeaderHeightPx"
+                  onPointerDown={(event) =>
+                    startExplorerLayoutBandResize(
+                      event,
+                      "unifiedHeaderHeightPx",
+                      1,
+                    )
+                  }
+                  style={getExplorerBandResizeHandleStyle(
+                    "unifiedHeaderHeightPx",
+                    "bottom",
+                  )}
+                />
+              </>
+            )}
             <ExplorerChromeSurface
-              surface={explorerTopbarSurface}
-              getRowStyle={getExplorerTopbarRowStyle}
+              surface={explorerToolbarSurface}
+              getRowStyle={getExplorerToolbarRowStyle}
               getZoneStyle={getExplorerChromeZoneStyle}
-              dynamicCanvasMinHeightPx={resolvedUnifiedHeaderHeightPx}
+              dynamicCanvasMinHeightPx={
+                showsGlobalChromeControls
+                  ? resolvedExplorerToolbarHeightPx * 2
+                  : resolvedUnifiedHeaderHeightPx * 2
+              }
+              excludedControlIds={stableFixedExplorerUtilityControlIds}
               renderControl={renderExplorerChromeControl}
-              layoutDynamics={explorerTopbarLayoutDynamics}
+              layoutDynamics={explorerToolbarLayoutDynamics}
               editMode={explorerChromeEditMode}
             />
-            <div
-              data-overlay-explorer-layout-band-resize="unifiedHeaderHeightPx"
-              onPointerDown={(event) =>
-                startExplorerLayoutBandResize(
-                  event,
+            {!showsGlobalChromeControls ? (
+              <div
+                data-overlay-explorer-layout-band-resize="unifiedHeaderHeightPx"
+                onPointerDown={(event) =>
+                  startExplorerLayoutBandResize(event, "unifiedHeaderHeightPx", 1)
+                }
+                style={getExplorerBandResizeHandleStyle(
                   "unifiedHeaderHeightPx",
-                  1,
-                )
-              }
-              style={getExplorerBandResizeHandleStyle(
-                "unifiedHeaderHeightPx",
-                "bottom",
-              )}
-            />
-          </>
-        )}
-        <ExplorerChromeSurface
-          surface={explorerToolbarSurface}
-          getRowStyle={getExplorerToolbarRowStyle}
-          getZoneStyle={getExplorerChromeZoneStyle}
-          dynamicCanvasMinHeightPx={
-            showsGlobalChromeControls
-              ? resolvedExplorerToolbarHeightPx * 2
-              : resolvedUnifiedHeaderHeightPx * 2
-          }
-          renderControl={renderExplorerChromeControl}
-          layoutDynamics={explorerToolbarLayoutDynamics}
-          editMode={explorerChromeEditMode}
-        />
-        {!showsGlobalChromeControls ? (
-          <div
-            data-overlay-explorer-layout-band-resize="unifiedHeaderHeightPx"
-            onPointerDown={(event) =>
-              startExplorerLayoutBandResize(event, "unifiedHeaderHeightPx", 1)
-            }
-            style={getExplorerBandResizeHandleStyle(
-              "unifiedHeaderHeightPx",
-              "bottom",
-            )}
-          />
-        ) : null}
+                  "bottom",
+                )}
+              />
+            ) : null}
+          </div>
+          {explorerFixedUtilityStrip}
+        </div>
       </div>
     ),
     [
+      explorerFixedUtilityStrip,
       explorerChromeEditMode,
       explorerToolbarLayoutDynamics,
       explorerToolbarSurface,
@@ -28060,7 +28625,9 @@ export function FileExplorer({
       resolvedUnifiedHeaderHeightPx,
       showsGlobalChromeControls,
       startExplorerLayoutBandResize,
+      stableFixedExplorerUtilityControlIds,
       toolbarContainerStyle,
+      usesWorkspaceDenseChrome,
     ],
   );
   const explorerPreviewPane = useMemo(() => {
@@ -28406,16 +28973,26 @@ export function FileExplorer({
         onBackgroundContextMenu(e);
       }}
     >
-      <div style={explorerContentRowStyle}>
-        {/* ══ SIDEBAR ══ */}
-        {explorerRailPane}
-
-        {/* ══ MAIN ══ */}
-        <div data-overlay-explorer-plane="main" style={mainColumnStyle}>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {/* Toolbar */}
-            {explorerToolbarPane}
-            {explorerPicker && (
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+          minWidth: 0,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            minWidth: 0,
+            flexShrink: 0,
+          }}
+        >
+          {explorerToolbarPane}
+          {explorerPicker && (
               <div
                 style={{
                   display: "flex",
@@ -28549,10 +29126,8 @@ export function FileExplorer({
                   Cancel
                 </button>
               </div>
-            )}
-          </div>
+          )}
 
-          {/* Error bar */}
           {error && (
             <div
               style={{
@@ -28579,77 +29154,81 @@ export function FileExplorer({
               </button>
             </div>
           )}
+        </div>
 
-          {/* File area + preview/actions */}
-          <div
-            ref={explorerFileAreaRef}
-            data-overlay-explorer-plane="file-area"
-            data-overlay-explorer-preview-split-mode={
-              previewSplitIsPane ? "pane" : "inline"
-            }
-            style={fileAreaStyle}
-          >
-            {previewPlacement === "leading" ? explorerPreviewPane : null}
-            {previewPlacement === "leading" ? explorerActionsPane : null}
+        <div style={explorerContentRowStyle}>
+          {explorerRailPane}
+
+          <div data-overlay-explorer-plane="main" style={mainColumnStyle}>
             <div
-              data-overlay-explorer-plane="content-shell"
-              style={contentPaneShellStyle}
+              ref={bindExplorerFileAreaRef}
+              data-overlay-explorer-plane="file-area"
+              data-overlay-explorer-preview-split-mode={
+                previewSplitIsPane ? "pane" : "inline"
+              }
+              style={fileAreaStyle}
             >
-              <OverlayScrollArea
-                style={{ flex: 1, minHeight: 0 }}
-                scrollbarStyle="explorer-file-list"
-                viewportStyle={{
-                  padding: 0,
-                  ...(usesConstellationCanvas ? { overflow: "hidden" } : {}),
-                }}
-                contentStyle={
-                  usesConstellationCanvas
-                    ? {
-                        flex: "1 1 auto",
-                        minHeight: "100%",
-                      }
-                    : undefined
-                }
-                viewportRef={explorerViewportRef}
+              {previewPlacement === "leading" ? explorerPreviewPane : null}
+              {previewPlacement === "leading" ? explorerActionsPane : null}
+              <div
+                data-overlay-explorer-plane="content-shell"
+                style={contentPaneShellStyle}
               >
-                <div
-                  ref={mainRef}
-                  data-overlay-explorer-plane="content-viewport"
-                  data-overlay-explorer-instance-id={String(instanceId)}
-                  data-overlay-explorer-selection-mode={
-                    selectionModeActive ? "active" : "idle"
+                <OverlayScrollArea
+                  style={{ flex: 1, minHeight: 0 }}
+                  scrollbarStyle="explorer-file-list"
+                  viewportStyle={{
+                    padding: 0,
+                    ...(usesConstellationCanvas ? { overflow: "hidden" } : {}),
+                  }}
+                  contentStyle={
+                    usesConstellationCanvas
+                      ? {
+                          flex: "1 1 auto",
+                          minHeight: "100%",
+                        }
+                      : undefined
                   }
-                  data-explorer-customize-remove-zone={
-                    activeChromeEditSession ? "true" : undefined
-                  }
-                  tabIndex={0}
-                  aria-busy={loading ? true : undefined}
-                  style={{
-                    minHeight: "100%",
-                    ...(usesConstellationCanvas ? { height: "100%" } : {}),
-                    outline: "none",
-                    background: "var(--overlay-explorer-content-bg)",
-                    position: "relative",
-                  }}
-                  onClick={() => mainRef.current?.focus()}
-                  onContextMenu={(e) => {
-                    if (e.target !== e.currentTarget) return;
-                    onBackgroundContextMenu(e);
-                  }}
-                  onDoubleClick={(e) => {
-                    if (
-                      !shouldNavigateUpOnEmptyExplorerDoubleClick({
-                        enabled: doubleClickEmptyToGoBack,
-                        target: e.target,
-                        currentTarget: e.currentTarget,
-                      })
-                    ) {
-                      return;
-                    }
-
-                    goUp();
-                  }}
+                  viewportRef={bindExplorerViewportRef}
                 >
+                  <div
+                    ref={mainRef}
+                    data-overlay-explorer-plane="content-viewport"
+                    data-overlay-explorer-instance-id={String(instanceId)}
+                    data-overlay-explorer-selection-mode={
+                      selectionModeActive ? "active" : "idle"
+                    }
+                    data-explorer-customize-remove-zone={
+                      activeChromeEditSession ? "true" : undefined
+                    }
+                    tabIndex={0}
+                    aria-busy={loading ? true : undefined}
+                    style={{
+                      minHeight: "100%",
+                      ...(usesConstellationCanvas ? { height: "100%" } : {}),
+                      outline: "none",
+                      background: "var(--overlay-explorer-content-bg)",
+                      position: "relative",
+                    }}
+                    onClick={() => mainRef.current?.focus()}
+                    onContextMenu={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      onBackgroundContextMenu(e);
+                    }}
+                    onDoubleClick={(e) => {
+                      if (
+                        !shouldNavigateUpOnEmptyExplorerDoubleClick({
+                          enabled: doubleClickEmptyToGoBack,
+                          target: e.target,
+                          currentTarget: e.currentTarget,
+                        })
+                      ) {
+                        return;
+                      }
+
+                      goUp();
+                    }}
+                  >
                   {(currentFolderDropState.active ||
                     windowDropState.active) && (
                     <div style={createExplorerScopeDropOverlayHostStyle()}>
@@ -28663,11 +29242,13 @@ export function FileExplorer({
                             background: `linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-panel) 88%, ${accent} 12%), color-mix(in srgb, var(--overlay-bg-panel) 78%, black 22%))`,
                             boxShadow:
                               "0 18px 42px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.04)",
-                            backdropFilter: "blur(18px)",
-                            WebkitBackdropFilter: "blur(18px)",
+                            backdropFilter: resolveExplorerInnerBlurFilter(18),
+                            WebkitBackdropFilter:
+                              resolveExplorerInnerBlurFilter(18),
                             padding: "12px 16px 13px",
                             textAlign: "center",
                             color: "var(--overlay-text-primary)",
+                            ...BOUNDED_CHROME_CONTAINMENT_STYLE,
                           }}
                         >
                           <div
@@ -28709,11 +29290,13 @@ export function FileExplorer({
                             background: `linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-panel) 90%, ${accent} 10%), color-mix(in srgb, var(--overlay-bg-panel) 78%, black 22%))`,
                             boxShadow:
                               "0 18px 42px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.04)",
-                            backdropFilter: "blur(18px)",
-                            WebkitBackdropFilter: "blur(18px)",
+                            backdropFilter: resolveExplorerInnerBlurFilter(18),
+                            WebkitBackdropFilter:
+                              resolveExplorerInnerBlurFilter(18),
                             padding: "12px 16px 13px",
                             textAlign: "center",
                             color: "var(--overlay-text-primary)",
+                            ...BOUNDED_CHROME_CONTAINMENT_STYLE,
                           }}
                         >
                           <div
@@ -29006,226 +29589,7 @@ export function FileExplorer({
                             transition: explorerGridContainerTransition,
                           }}
                         >
-                          {virtualizedEntries.map((entry) => {
-                            const motionStepIndex =
-                              visibleEntryIndexLookup.get(entry.path) ?? 0;
-                            const isSel = selected.has(entry.path);
-                            const dragPresentation =
-                              getExplorerEntryDragPresentation(entry);
-                            const isDrop = dragPresentation.isDropTarget;
-                            const isDragHoverTarget =
-                              isDrop || dragPresentation.isDwellTarget;
-                            const isRenaming =
-                              rename.active && rename.path === entry.path;
-                            const iconSrc = getExplorerEntryIconSrc(
-                              entry,
-                              isSel,
-                              isDragHoverTarget,
-                            );
-                            const thumbnail = getRenderableEntryThumbnail(
-                              entry,
-                              activeGridMetrics.iconStageSize,
-                            );
-                            const iconStagePresentation =
-                              getExplorerEntryIconStageStyle(
-                                entry,
-                                dragPresentation,
-                                Boolean(thumbnail),
-                              );
-                            const gridEntryMotion = bindExplorerEntryMotion({
-                              entry,
-                              isSelected: isSel,
-                              isDropTarget: isDragHoverTarget,
-                              baseTransform: isDrop
-                                ? dropEntrySurface.transform
-                                : isSel
-                                  ? selectedEntrySurface.transform
-                                  : idleEntrySurface.transform,
-                              motionStepIndex,
-                              baseTransition: layoutZoomGestureActive
-                                ? "none"
-                                : "background 0.14s ease, border-color 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
-                            });
-                            return (
-                              <div
-                                key={entry.path}
-                                data-entry-path={entry.path}
-                                data-overlay-drag-source="file"
-                                {...getExplorerDropBindingElementProps(
-                                  getExplorerDirectoryDropBinding(entry),
-                                )}
-                                onClick={(e) => onEntryClick(e, entry)}
-                                onDoubleClick={() => onEntryDoubleClick(entry)}
-                                onContextMenu={(e) => onRightClick(e, entry)}
-                                title={getSearchTooltip(entry)}
-                                {...gridEntryMotion.motionDataAttributes}
-                                onPointerEnter={gridEntryMotion.onPointerEnter}
-                                onPointerLeave={gridEntryMotion.onPointerLeave}
-                                onPointerDown={gridEntryMotion.onPointerDown}
-                                onPointerUp={gridEntryMotion.onPointerUp}
-                                onPointerCancel={
-                                  gridEntryMotion.onPointerCancel
-                                }
-                                style={{
-                                  position: "relative",
-                                  background: isDrop
-                                    ? dropEntrySurface.background
-                                    : isSel
-                                      ? selectedEntrySurface.background
-                                      : idleEntrySurface.background,
-                                  border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : idleEntrySurface.borderColor}`,
-                                  borderRadius:
-                                    "var(--overlay-explorer-grid-tile-radius)",
-                                  padding:
-                                    "var(--overlay-explorer-grid-item-padding)",
-                                  cursor: "pointer",
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  alignItems: "center",
-                                  justifyContent: "flex-start",
-                                  gap: 8,
-                                  height: "100%",
-                                  minHeight: 0,
-                                  boxSizing: "border-box",
-                                  overflow: "hidden",
-                                  userSelect: "none",
-                                  boxShadow:
-                                    dragPresentation.boxShadow ??
-                                    (isDrop
-                                      ? dropEntrySurface.boxShadow
-                                      : isSel
-                                        ? selectedEntrySurface.boxShadow
-                                        : idleEntrySurface.boxShadow),
-                                  opacity:
-                                    (entry.is_hidden ? 0.5 : 1) *
-                                    dragPresentation.opacity,
-                                  filter: dragPresentation.filter,
-                                  ...gridEntryMotion.motionStyle,
-                                  transform: appendExplorerTransform(
-                                    gridEntryMotion.motionStyle.transform,
-                                    dragPresentation.extraTransform,
-                                  ),
-                                }}
-                              >
-                                {dragPresentation.isDwellTarget ? (
-                                  <span
-                                    aria-hidden="true"
-                                    style={createExplorerDwellIndicatorStyle(
-                                      true,
-                                      EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
-                                    )}
-                                  />
-                                ) : null}
-                                <div
-                                  style={{
-                                    width:
-                                      "var(--overlay-explorer-grid-icon-stage-size)",
-                                    height:
-                                      "var(--overlay-explorer-grid-icon-stage-size)",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    overflow: "hidden",
-                                    flexShrink: 0,
-                                    borderRadius: thumbnail
-                                      ? "var(--overlay-explorer-grid-thumbnail-radius)"
-                                      : undefined,
-                                    border: thumbnail
-                                      ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-                                      : undefined,
-                                    background: thumbnail
-                                      ? isSel
-                                        ? "color-mix(in srgb, var(--overlay-bg-selection) 72%, var(--overlay-bg-panel))"
-                                        : "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-                                      : undefined,
-                                    boxShadow: thumbnail
-                                      ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-                                      : undefined,
-                                    transition: explorerGridStageSizeTransition,
-                                    ...(iconStagePresentation ?? {}),
-                                  }}
-                                >
-                                  <ExplorerEntryThumbnailStageContent
-                                    entry={entry}
-                                    fallbackIconSize={
-                                      activeGridMetrics.iconSize
-                                    }
-                                    fallbackIconSrc={iconSrc}
-                                    hoverScrubEnabled={
-                                      hoveredVideoThumbnailPath === entry.path
-                                    }
-                                    iconTheme={themeIconTheme}
-                                    motionAppearance={appearance}
-                                    motionStepIndex={motionStepIndex}
-                                    motionTriggerState={{
-                                      select: isSel,
-                                      dropHover: isDragHoverTarget,
-                                    }}
-                                    stageSize={activeGridMetrics.iconStageSize}
-                                    thumbnail={thumbnail}
-                                  />
-                                </div>
-                                {isRenaming ? (
-                                  <RenameInput
-                                    state={rename}
-                                    onCommit={commitRename}
-                                    onCancel={() =>
-                                      setRename({
-                                        active: false,
-                                        path: "",
-                                        name: "",
-                                      })
-                                    }
-                                  />
-                                ) : (
-                                  <span
-                                    style={{
-                                      fontSize:
-                                        "var(--overlay-explorer-entry-title-size)",
-                                      textAlign:
-                                        explorerTheme.labelMode === "inline"
-                                          ? "left"
-                                          : "center",
-                                      color: EXP.text,
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      display: "-webkit-box",
-                                      WebkitLineClamp:
-                                        activeGridMetrics.nameLines,
-                                      WebkitBoxOrient: "vertical",
-                                      width: "100%",
-                                      lineHeight: 1.28,
-                                      fontWeight:
-                                        "var(--overlay-explorer-entry-title-weight)",
-                                      letterSpacing:
-                                        "var(--overlay-explorer-label-spacing)",
-                                    }}
-                                  >
-                                    {entry.name}
-                                  </span>
-                                )}
-                                <span
-                                  style={{
-                                    fontSize:
-                                      "var(--overlay-explorer-entry-meta-size)",
-                                    textAlign:
-                                      explorerTheme.labelMode === "inline"
-                                        ? "left"
-                                        : "center",
-                                    color: EXP.muted2,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
-                                    width: "100%",
-                                    marginTop: -2,
-                                  }}
-                                >
-                                  {getEntryStorageLabel(entry)}
-                                </span>
-                                {renderSearchMetadata(entry)}
-                              </div>
-                            );
-                          })}
+                          {gridVirtualizedEntryElements}
                         </div>
                         <div style={{ height: virtualWindow.bottomSpacer }} />
                       </div>
@@ -29319,258 +29683,7 @@ export function FileExplorer({
                     effectiveViewModeDefinition.presentation === "list" && (
                       <div style={{ minHeight: 0 }}>
                         <div style={{ height: virtualWindow.topSpacer }} />
-                        {virtualizedEntries.map((entry) => {
-                          const motionStepIndex =
-                            visibleEntryIndexLookup.get(entry.path) ?? 0;
-                          const isSel = selected.has(entry.path);
-                          const dragPresentation =
-                            getExplorerEntryDragPresentation(entry);
-                          const isDrop = dragPresentation.isDropTarget;
-                          const isDragHoverTarget =
-                            isDrop || dragPresentation.isDwellTarget;
-                          const isRenaming =
-                            rename.active && rename.path === entry.path;
-                          const iconSrc = getExplorerEntryIconSrc(
-                            entry,
-                            isSel,
-                            isDragHoverTarget,
-                          );
-                          const rowThumbnailStageSize = Math.max(
-                            (activeRowMetrics?.iconSize ?? 16) + 12,
-                            28,
-                          );
-                          const thumbnail = getRenderableEntryThumbnail(
-                            entry,
-                            rowThumbnailStageSize,
-                          );
-                          const iconStagePresentation =
-                            getExplorerEntryIconStageStyle(
-                              entry,
-                              dragPresentation,
-                              Boolean(thumbnail),
-                            );
-                          const listEntryMotion = bindExplorerEntryMotion({
-                            entry,
-                            isSelected: isSel,
-                            isDropTarget: isDragHoverTarget,
-                            baseTransform: isDrop
-                              ? dropEntrySurface.transform
-                              : isSel
-                                ? selectedEntrySurface.transform
-                                : idleEntrySurface.transform,
-                            motionStepIndex,
-                          });
-                          return (
-                            <div
-                              key={entry.path}
-                              data-entry-path={entry.path}
-                              data-overlay-drag-source="file"
-                              {...getExplorerDropBindingElementProps(
-                                getExplorerDirectoryDropBinding(entry),
-                              )}
-                              onClick={(e) => onEntryClick(e, entry)}
-                              onDoubleClick={() => onEntryDoubleClick(entry)}
-                              onContextMenu={(e) => onRightClick(e, entry)}
-                              title={getSearchTooltip(entry)}
-                              {...listEntryMotion.motionDataAttributes}
-                              onPointerEnter={listEntryMotion.onPointerEnter}
-                              onPointerLeave={listEntryMotion.onPointerLeave}
-                              onPointerDown={listEntryMotion.onPointerDown}
-                              onPointerUp={listEntryMotion.onPointerUp}
-                              onPointerCancel={listEntryMotion.onPointerCancel}
-                              style={{
-                                position: "relative",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                gap: 12,
-                                height:
-                                  "var(--overlay-explorer-list-row-height)",
-                                padding:
-                                  "0 var(--overlay-explorer-list-padding)",
-                                borderBottomWidth: 1,
-                                borderBottomStyle: "solid",
-                                borderBottomColor: isDrop
-                                  ? dropEntrySurface.borderColor
-                                  : isSel
-                                    ? selectedEntrySurface.borderColor
-                                    : "var(--overlay-explorer-toolbar-border)",
-                                background: isDrop
-                                  ? dropEntrySurface.background
-                                  : isSel
-                                    ? selectedEntrySurface.background
-                                    : idleEntrySurface.background,
-                                cursor: "pointer",
-                                opacity:
-                                  (entry.is_hidden ? 0.5 : 1) *
-                                  dragPresentation.opacity,
-                                userSelect: "none",
-                                boxSizing: "border-box",
-                                boxShadow:
-                                  dragPresentation.boxShadow ??
-                                  (isDrop
-                                    ? dropEntrySurface.boxShadow
-                                    : isSel
-                                      ? selectedEntrySurface.boxShadow
-                                      : idleEntrySurface.boxShadow),
-                                filter: dragPresentation.filter,
-                                ...listEntryMotion.motionStyle,
-                                transform: appendExplorerTransform(
-                                  listEntryMotion.motionStyle.transform,
-                                  dragPresentation.extraTransform,
-                                ),
-                              }}
-                            >
-                              {dragPresentation.isDwellTarget ? (
-                                <span
-                                  aria-hidden="true"
-                                  style={createExplorerDwellIndicatorStyle(
-                                    true,
-                                    EXPLORER_DIRECTORY_AUTO_OPEN_DELAY_MS,
-                                  )}
-                                />
-                              ) : null}
-                              <div
-                                style={{
-                                  minWidth: 0,
-                                  flex: 1,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 10,
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    width:
-                                      "var(--overlay-explorer-list-thumbnail-size)",
-                                    height:
-                                      "var(--overlay-explorer-list-thumbnail-size)",
-                                    minWidth:
-                                      "var(--overlay-explorer-list-thumbnail-size)",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    overflow: "hidden",
-                                    borderRadius: thumbnail ? 10 : undefined,
-                                    border: thumbnail
-                                      ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-                                      : undefined,
-                                    background: thumbnail
-                                      ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-                                      : undefined,
-                                    boxShadow: thumbnail
-                                      ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-                                      : undefined,
-                                    flexShrink: 0,
-                                    ...(iconStagePresentation ?? {}),
-                                  }}
-                                >
-                                  <ExplorerEntryThumbnailStageContent
-                                    entry={entry}
-                                    fallbackIconSize={
-                                      activeRowMetrics?.iconSize ?? 16
-                                    }
-                                    fallbackIconSrc={iconSrc}
-                                    hoverScrubEnabled={
-                                      hoveredVideoThumbnailPath === entry.path
-                                    }
-                                    iconTheme={themeIconTheme}
-                                    motionAppearance={appearance}
-                                    motionStepIndex={motionStepIndex}
-                                    motionTriggerState={{
-                                      select: isSel,
-                                      dropHover: isDragHoverTarget,
-                                    }}
-                                    stageSize={rowThumbnailStageSize}
-                                    thumbnail={thumbnail}
-                                  />
-                                </div>
-                                <div style={{ minWidth: 0, flex: 1 }}>
-                                  {isRenaming ? (
-                                    <RenameInput
-                                      state={rename}
-                                      onCommit={commitRename}
-                                      onCancel={() =>
-                                        setRename({
-                                          active: false,
-                                          path: "",
-                                          name: "",
-                                        })
-                                      }
-                                    />
-                                  ) : (
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 8,
-                                        minWidth: 0,
-                                      }}
-                                    >
-                                      <span
-                                        style={{
-                                          color: isSel
-                                            ? EXP.text
-                                            : entry.is_dir
-                                              ? EXP.yellow
-                                              : EXP.text,
-                                          fontWeight: entry.is_dir ? 600 : 450,
-                                          overflow: "hidden",
-                                          textOverflow: "ellipsis",
-                                          whiteSpace: "nowrap",
-                                          minWidth: 0,
-                                        }}
-                                      >
-                                        {entry.name}
-                                      </span>
-                                      {entry.is_symlink && (
-                                        <span
-                                          style={{
-                                            fontSize: 9,
-                                            color: EXP.muted,
-                                            background:
-                                              "var(--overlay-explorer-chip-bg)",
-                                            borderRadius:
-                                              "var(--overlay-explorer-control-radius)",
-                                            padding: "1px 4px",
-                                            flexShrink: 0,
-                                          }}
-                                        >
-                                          symlink
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                  <div
-                                    style={{
-                                      marginTop: 2,
-                                      fontSize: 10,
-                                      color: EXP.muted2,
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
-                                    }}
-                                  >
-                                    {renderEntryInlineMeta(entry)}
-                                  </div>
-                                  {renderSearchMetadata(entry)}
-                                </div>
-                              </div>
-                              <div
-                                style={{
-                                  flexShrink: 0,
-                                  fontSize: 10,
-                                  color: EXP.muted,
-                                  whiteSpace: "nowrap",
-                                  textTransform: "uppercase",
-                                  letterSpacing: "0.06em",
-                                }}
-                              >
-                                {getEntryTypeLabel(entry)}
-                              </div>
-                            </div>
-                          );
-                        })}
+                        {listVirtualizedEntryElements}
                         <div style={{ height: virtualWindow.bottomSpacer }} />
                       </div>
                     )}
@@ -29773,284 +29886,7 @@ export function FileExplorer({
                               style={{ padding: 0, border: "none" }}
                             />
                           </tr>
-                          {virtualizedEntries.map((entry) => {
-                            const motionStepIndex =
-                              visibleEntryIndexLookup.get(entry.path) ?? 0;
-                            const isSel = selected.has(entry.path);
-                            const dragPresentation =
-                              getExplorerEntryDragPresentation(entry);
-                            const isDrop = dragPresentation.isDropTarget;
-                            const isDragHoverTarget =
-                              isDrop || dragPresentation.isDwellTarget;
-                            const isRenaming =
-                              rename.active && rename.path === entry.path;
-                            const iconSrc = getExplorerEntryIconSrc(
-                              entry,
-                              isSel,
-                              isDragHoverTarget,
-                            );
-                            const rowThumbnailStageSize = Math.max(
-                              (activeRowMetrics?.iconSize ?? 16) + 12,
-                              28,
-                            );
-                            const thumbnail = getRenderableEntryThumbnail(
-                              entry,
-                              rowThumbnailStageSize,
-                            );
-                            const iconStagePresentation =
-                              getExplorerEntryIconStageStyle(
-                                entry,
-                                dragPresentation,
-                                Boolean(thumbnail),
-                              );
-                            const isDetailsMode =
-                              effectiveViewMode === "details";
-                            const tableEntryMotion = bindExplorerEntryMotion({
-                              entry,
-                              isSelected: isSel,
-                              isDropTarget: isDragHoverTarget,
-                              baseTransform: isDrop
-                                ? dropEntrySurface.transform
-                                : isSel
-                                  ? selectedEntrySurface.transform
-                                  : idleEntrySurface.transform,
-                              motionStepIndex,
-                            });
-                            return (
-                              <tr
-                                key={entry.path}
-                                data-entry-path={entry.path}
-                                data-overlay-drag-source="file"
-                                {...getExplorerDropBindingElementProps(
-                                  getExplorerDirectoryDropBinding(entry),
-                                )}
-                                onClick={(e) => onEntryClick(e, entry)}
-                                onDoubleClick={() => onEntryDoubleClick(entry)}
-                                onContextMenu={(e) => onRightClick(e, entry)}
-                                title={getSearchTooltip(entry)}
-                                {...tableEntryMotion.motionDataAttributes}
-                                onPointerEnter={tableEntryMotion.onPointerEnter}
-                                onPointerLeave={tableEntryMotion.onPointerLeave}
-                                onPointerDown={tableEntryMotion.onPointerDown}
-                                onPointerUp={tableEntryMotion.onPointerUp}
-                                onPointerCancel={
-                                  tableEntryMotion.onPointerCancel
-                                }
-                                style={{
-                                  background: isDrop
-                                    ? dropEntrySurface.background
-                                    : isSel
-                                      ? selectedEntrySurface.background
-                                      : idleEntrySurface.background,
-                                  cursor: "pointer",
-                                  opacity:
-                                    (entry.is_hidden ? 0.5 : 1) *
-                                    dragPresentation.opacity,
-                                  userSelect: "none",
-                                  borderBottom:
-                                    "1px solid var(--overlay-explorer-toolbar-border)",
-                                  height: virtualWindow.rowHeight,
-                                  boxSizing: "border-box",
-                                  boxShadow:
-                                    dragPresentation.boxShadow ??
-                                    (isDrop
-                                      ? dropEntrySurface.boxShadow
-                                      : isSel
-                                        ? selectedEntrySurface.boxShadow
-                                        : idleEntrySurface.boxShadow),
-                                  filter: dragPresentation.filter,
-                                  ...tableEntryMotion.motionStyle,
-                                  transform: appendExplorerTransform(
-                                    tableEntryMotion.motionStyle.transform,
-                                    dragPresentation.extraTransform,
-                                  ),
-                                }}
-                              >
-                                <td
-                                  style={{
-                                    padding: isDetailsMode
-                                      ? "6px 12px"
-                                      : "4px 12px",
-                                    verticalAlign: "top",
-                                    overflow: "hidden",
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "flex-start",
-                                      gap: 8,
-                                      minWidth: 0,
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        width: rowThumbnailStageSize,
-                                        height: rowThumbnailStageSize,
-                                        minWidth: rowThumbnailStageSize,
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        overflow: "hidden",
-                                        borderRadius: thumbnail
-                                          ? 10
-                                          : undefined,
-                                        border: thumbnail
-                                          ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-                                          : undefined,
-                                        background: thumbnail
-                                          ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-                                          : undefined,
-                                        boxShadow: thumbnail
-                                          ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-                                          : undefined,
-                                        flexShrink: 0,
-                                        ...(iconStagePresentation ?? {}),
-                                      }}
-                                    >
-                                      <ExplorerEntryThumbnailStageContent
-                                        entry={entry}
-                                        fallbackIconSize={
-                                          activeRowMetrics?.iconSize ?? 16
-                                        }
-                                        fallbackIconSrc={iconSrc}
-                                        hoverScrubEnabled={
-                                          hoveredVideoThumbnailPath ===
-                                          entry.path
-                                        }
-                                        iconTheme={themeIconTheme}
-                                        motionAppearance={appearance}
-                                        motionStepIndex={motionStepIndex}
-                                        motionTriggerState={{
-                                          select: isSel,
-                                          dropHover: isDragHoverTarget,
-                                        }}
-                                        stageSize={rowThumbnailStageSize}
-                                        thumbnail={thumbnail}
-                                      />
-                                    </div>
-                                    <div style={{ minWidth: 0, flex: 1 }}>
-                                      {isRenaming ? (
-                                        <RenameInput
-                                          state={rename}
-                                          onCommit={commitRename}
-                                          onCancel={() =>
-                                            setRename({
-                                              active: false,
-                                              path: "",
-                                              name: "",
-                                            })
-                                          }
-                                        />
-                                      ) : (
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 8,
-                                            minWidth: 0,
-                                          }}
-                                        >
-                                          <span
-                                            style={{
-                                              color: isSel
-                                                ? EXP.text
-                                                : entry.is_dir
-                                                  ? EXP.yellow
-                                                  : EXP.text,
-                                              fontWeight: entry.is_dir
-                                                ? 600
-                                                : isDetailsMode
-                                                  ? 500
-                                                  : 400,
-                                              overflow: "hidden",
-                                              textOverflow: "ellipsis",
-                                              whiteSpace: "nowrap",
-                                              minWidth: 0,
-                                              flex: 1,
-                                            }}
-                                          >
-                                            {entry.name}
-                                          </span>
-                                          {entry.is_symlink && (
-                                            <span
-                                              style={{
-                                                fontSize: 9,
-                                                color: EXP.muted,
-                                                background:
-                                                  "var(--overlay-explorer-chip-bg)",
-                                                borderRadius:
-                                                  "var(--overlay-explorer-control-radius)",
-                                                padding: "1px 4px",
-                                                flexShrink: 0,
-                                              }}
-                                            >
-                                              symlink
-                                            </span>
-                                          )}
-                                        </div>
-                                      )}
-                                      {isDetailsMode && !isRenaming && (
-                                        <div
-                                          style={{
-                                            marginTop: 2,
-                                            fontSize: 10,
-                                            color: EXP.muted2,
-                                            overflow: "hidden",
-                                            textOverflow: "ellipsis",
-                                            whiteSpace: "nowrap",
-                                          }}
-                                        >
-                                          {renderEntryInlineMeta(entry)}
-                                        </div>
-                                      )}
-                                      {renderSearchMetadata(entry)}
-                                    </div>
-                                  </div>
-                                </td>
-                                <td
-                                  style={{
-                                    padding: isDetailsMode
-                                      ? "6px 12px"
-                                      : "4px 12px",
-                                    color: EXP.muted,
-                                    fontFamily: "monospace",
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                >
-                                  {getEntryStorageLabel(entry)}
-                                </td>
-                                <td
-                                  style={{
-                                    padding: isDetailsMode
-                                      ? "6px 12px"
-                                      : "4px 12px",
-                                    color: EXP.muted,
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                >
-                                  {formatDate(entry.modified)}
-                                </td>
-                                <td
-                                  style={{
-                                    padding: isDetailsMode
-                                      ? "6px 12px"
-                                      : "4px 12px",
-                                    color: EXP.muted2,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
-                                  }}
-                                >
-                                  {getEntryTypeLabel(entry)}
-                                </td>
-                              </tr>
-                            );
-                          })}
+                          {tableVirtualizedEntryElements}
                           <tr style={{ height: virtualWindow.bottomSpacer }}>
                             <td
                               colSpan={4}
@@ -30060,11 +29896,12 @@ export function FileExplorer({
                         </tbody>
                       </table>
                     )}
-                </div>
-              </OverlayScrollArea>
+                  </div>
+                </OverlayScrollArea>
+              </div>
+              {previewPlacement === "trailing" ? explorerPreviewPane : null}
+              {previewPlacement === "trailing" ? explorerActionsPane : null}
             </div>
-            {previewPlacement === "trailing" ? explorerPreviewPane : null}
-            {previewPlacement === "trailing" ? explorerActionsPane : null}
           </div>
         </div>
       </div>
@@ -30348,8 +30185,9 @@ export function FileExplorer({
               background:
                 "color-mix(in srgb, var(--overlay-explorer-preview-bg) 92%, transparent)",
               boxShadow: "var(--overlay-explorer-hud-shadow)",
-              backdropFilter: "blur(18px)",
-              WebkitBackdropFilter: "blur(18px)",
+              backdropFilter: resolveExplorerInnerBlurFilter(18),
+              WebkitBackdropFilter: resolveExplorerInnerBlurFilter(18),
+              ...BOUNDED_CHROME_CONTAINMENT_STYLE,
             }}
           >
             <div

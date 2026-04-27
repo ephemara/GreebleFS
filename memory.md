@@ -1,3 +1,59 @@
+# 2026-04-27 - Explorer Visible-Entry Compute Now Has A Shared Worker Lane, And Bounded Chrome Surfaces Need Localized Compositor Rules
+
+- The broad frontend performance pass established four durable rules that future explorer/shell work should preserve together:
+  - bounded chrome islands now have a shared containment contract in `src/config/chromeEffects.ts`
+  - inner-panel glass blur now caps more aggressively on Linux before the shell identity itself is flattened
+  - standard explorer visible-entry shaping now belongs in one shared runtime module with a worker-backed path
+  - experimental constellation/adaptive-semantic compute should stay dormant unless the matching experimental view is actually active
+- Durable chrome/compositor rule:
+  - Use `BOUNDED_CHROME_CONTAINMENT_STYLE` plus `resolveInnerSurfaceBlurFilter(...)` for bounded heavy surfaces such as top-bar glass, terminal glass, layout-dynamics canvases, explorer HUD cards, and floating status surfaces.
+  - Do not jump straight to `contain: strict`; the current safe contract is `contain: layout paint style` + `isolation: isolate`.
+  - The goal is to localize layout/paint churn and reduce Linux compositor cost on inner panels without flattening the root shell look.
+- Durable explorer visible-entry rule:
+  - `src/runtime/explorerVisibleEntries.ts` is now the canonical home for base tag-filter + dir-first sort semantics (`name/date/size/type`).
+  - `src/runtime/explorerVisibleEntriesRuntime.ts` is the only sanctioned worker-backed entrypoint for that pipeline.
+  - `FileExplorer.tsx` should not reintroduce its own private copies of extension/type-label maps or base visible-entry sort/filter helpers.
+  - `src/runtime/workerHost.ts` now owns an `explorer-compute` lane in addition to `runtime-module`; keep worker tasks fully serializable and preserve the main-thread fallback path.
+- Durable explorer compute-gating rule:
+  - `adaptive-semantic-grid` bands, constellation graph/lens/route prep, and similar heavy experimental structures must be gated by `effectiveExperimentalViewMode` before they build.
+  - Standard list/grid/details/table browsing should not pay constellation/adaptive-semantic setup cost when experimental mode is `off`.
+- Durable validation/workflow rule:
+  - `DevPerformanceHud.tsx` now aggregates worker telemetry across all worker lanes, not just runtime-module compilation, so local performance work can verify explorer-compute activity/fallbacks.
+  - Focused validation that passed for this pass:
+    - `bunx vitest run src/test/chromeEffects.test.ts src/test/explorerVisibleEntries.test.ts src/test/explorerVisibleEntries.workerBridge.test.ts src/test/moduleRuntime.workerBridge.test.ts src/test/ExplorerChromeSurface.test.tsx src/test/workbenchTopBar.test.tsx src/test/layoutDynamicsRuntime.test.ts --reporter=dot`
+    - filtered clean on touched files: `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "FileExplorer\\.tsx|explorerVisibleEntries|workerHost|chromeEffects|WorkbenchTopBar|TerminalOverlay|LayoutDynamicsCanvas|DevPerformanceHud"`
+  - Residual risk still worth rechecking before a release:
+    - the focused `src/test/fileExplorer.viewModes.test.tsx` ctrl-wheel remount/row-origin cases are still sensitive around the existing layout-zoom shell and may need a dedicated follow-up once the concurrent explorer layout work settles
+
+# 2026-04-27 - Explorer Authoring Needs A Fixed Utility Strip, Static Header Geometry, And A Truly Idle Physics Lane
+
+- The latest explorer-customize cleanup closed four product regressions that are easy to accidentally reintroduce together:
+  - opening the sources/file-tree rail or other panes could shove the authored top canvas to the right because the header still lived inside the same row geometry as the rail/content shell
+  - `layout/customize` could disappear because those controls were still part of the movable chrome surface instead of owning a fixed muscle-memory location
+  - customize mode still allowed live controls to fire real actions while the user was trying to move them
+  - layout-dynamics nodes could occasionally “ghost drift” when customize mode was off because the runtime still carried prior velocities/positions and re-scheduled frames outside true authoring
+- Durable explorer-shell rules after the fix:
+  - `src/components/FileExplorer.tsx` must render the explorer header stack outside the rail/content row. The top authored canvas is now supposed to stay visually static while the left rail, preview pane, or actions pane opens below it.
+  - `shellLayout` and `customizeModeToggle` now live in a fixed utility strip on the explorer header edge instead of inside the movable layout-dynamics surfaces.
+    - They are excluded from `ExplorerChromeSurface` through `excludedControlIds`.
+    - If layout switching or customize mode ever becomes “hideable by layout” again, treat that as a regression.
+  - That fixed utility strip should still expose normal explorer control metadata (`data-overlay-explorer-control`, zone attrs) so tests and shared helpers can find those controls even though they are no longer rendered inside a movable chrome surface wrapper.
+- Durable customize-mode interaction rule:
+  - When customize mode is active, clicking a live chrome control should select/author it, not execute the underlying action.
+  - Resize/remove affordances still work, and Ctrl+Alt hotkey capture still works, but ordinary live button activation is now a regression in both:
+    - the dynamic `LayoutDynamicsCanvas.tsx` path
+    - the legacy `ExplorerChromeSurface.tsx` flex-render path
+- Durable layout-dynamics idle rule:
+  - `LayoutDynamicsCanvas.tsx` must snap nodes back to anchors and zero velocities when `authoringActive` is false.
+  - It must not schedule new RAF work from sync/resize/cleanup paths when not actively authoring.
+  - `src/runtime/layoutDynamicsRuntime.ts` may snap settled nodes exactly onto anchors, but only when there is no actively dragged node; otherwise pre-contact aura motion gets canceled and the premium “parting” feel disappears.
+- Durable authoring-canvas accessibility/product rule:
+  - The customize canvas root should scroll when authoring is active so users can still reach controls that extend beyond the visible band after resizing.
+  - The scrollable extent must come from authored node bounds plus external drag preview bounds, not from fake spacer rows.
+- Focused validation that passed after this stabilization:
+  - `bunx vitest run src/test/ExplorerChromeSurface.test.tsx src/test/layoutDynamicsRuntime.test.ts src/test/ExplorerWorkspace.test.tsx src/test/fileExplorer.viewModes.test.tsx -t "commits the active chrome customize draft when the live customize toggle exits the mode|renders the status bar through layout dynamics during explorer customize mode|commits the active chrome customize draft when Done closes the actions pane|does not let legacy chrome layout overrides displace the file-backed explorer layouts|restores the canonical explorer layout preset from the menu|switches adopted explorer surfaces into the layout-dynamics canvas during customize mode even before anchors exist|suppresses live customize control clicks while customize mode is on|starts aura repulsion before controls overlap" --reporter=dot`
+  - filtered clean: `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'LayoutDynamicsCanvas|layoutDynamicsRuntime|ExplorerChromeSurface|FileExplorer\.tsx|ExplorerWorkspace\.tsx'`
+
 # 2026-04-27 - Explorer Header Freeform Canvas Now Owns Its Bounds; The Rail Must Not Reserve Ghost Space
 
 - The explorer header regression after the unified-header/layout-file pass came from a geometry mismatch:

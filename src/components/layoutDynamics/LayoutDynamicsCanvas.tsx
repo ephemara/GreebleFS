@@ -8,6 +8,7 @@ import React, {
   type ReactNode,
 } from "react";
 import { X } from "@/components/AppIcons";
+import { BOUNDED_CHROME_CONTAINMENT_STYLE } from "../../config/chromeEffects";
 import type {
   LayoutDynamicsAuthoringSnapshot,
   LayoutDynamicsAxisMode,
@@ -208,6 +209,7 @@ export function LayoutDynamicsCanvas({
   externalDragPreview = null,
 }: LayoutDynamicsCanvasProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number | null>(null);
   const bandElementMapRef = useRef(new Map<string, HTMLDivElement>());
@@ -223,8 +225,8 @@ export function LayoutDynamicsCanvas({
   );
 
   const measureBandBounds = useCallback((): LayoutDynamicsBandBounds[] => {
-    const rootRect = rootRef.current?.getBoundingClientRect();
-    if (!rootRect) {
+    const contentRect = contentRef.current?.getBoundingClientRect();
+    if (!contentRect) {
       return [];
     }
 
@@ -237,14 +239,66 @@ export function LayoutDynamicsCanvas({
         }
         return {
           id: band.id,
-          x: bandRect.left - rootRect.left,
-          y: bandRect.top - rootRect.top,
+          x: bandRect.left - contentRect.left,
+          y: bandRect.top - contentRect.top,
           width: bandRect.width,
           height: bandRect.height,
         } satisfies LayoutDynamicsBandBounds;
       })
       .filter((band): band is LayoutDynamicsBandBounds => band != null);
   }, [bands]);
+
+  const updateCanvasContentExtent = useCallback(() => {
+    const rootElement = rootRef.current;
+    const contentElement = contentRef.current;
+    if (!rootElement || !contentElement) {
+      return;
+    }
+
+    if (!authoringActive) {
+      contentElement.style.width = "100%";
+      contentElement.style.height = "100%";
+      return;
+    }
+
+    const bandBounds = measureBandBounds();
+    const rootClientWidth = rootElement.clientWidth;
+    const rootClientHeight = rootElement.clientHeight;
+    const bandMaxX = bandBounds.reduce(
+      (maxValue, band) => Math.max(maxValue, band.x + band.width),
+      rootClientWidth,
+    );
+    const bandMaxY = bandBounds.reduce(
+      (maxValue, band) => Math.max(maxValue, band.y + band.height),
+      rootClientHeight,
+    );
+    const dynamicNodes = [
+      ...Array.from(nodesRef.current.values()),
+      ...(externalDragPreviewNodeRef.current
+        ? [externalDragPreviewNodeRef.current]
+        : []),
+    ];
+    const nodeMaxX = dynamicNodes.reduce(
+      (maxValue, node) =>
+        Math.max(maxValue, node.x + Math.max(node.measuredWidth, node.width) + 20),
+      bandMaxX,
+    );
+    const nodeMaxY = dynamicNodes.reduce(
+      (maxValue, node) =>
+        Math.max(
+          maxValue,
+          node.y + Math.max(node.measuredHeight, node.height) + 20,
+        ),
+      bandMaxY,
+    );
+
+    contentElement.style.width = `${Math.ceil(
+      Math.max(rootClientWidth, bandMaxX, nodeMaxX),
+    )}px`;
+    contentElement.style.height = `${Math.ceil(
+      Math.max(rootClientHeight, bandMaxY, nodeMaxY),
+    )}px`;
+  }, [authoringActive, measureBandBounds]);
 
   const flushNodeTransforms = useCallback(() => {
     const selectedItemIds = new Set(
@@ -285,7 +339,8 @@ export function LayoutDynamicsCanvas({
       externalDragPreviewElement.style.opacity = "0.9";
       externalDragPreviewElement.style.zIndex = "5";
     }
-  }, [items]);
+    updateCanvasContentExtent();
+  }, [items, updateCanvasContentExtent]);
 
   const scheduleFrame = useCallback(() => {
     if (rafRef.current != null) {
@@ -384,16 +439,16 @@ export function LayoutDynamicsCanvas({
       nextNodes.set(item.id, {
         id: item.id,
         bandId: item.bandId,
-        x: previousNode?.x ?? anchorX,
-        y: previousNode?.y ?? anchorY,
+        x: authoringActive ? (previousNode?.x ?? anchorX) : anchorX,
+        y: authoringActive ? (previousNode?.y ?? anchorY) : anchorY,
         anchorX,
         anchorY,
         width: measuredWidth,
         height: measuredHeight,
         measuredWidth,
         measuredHeight,
-        velocityX: previousNode?.velocityX ?? 0,
-        velocityY: previousNode?.velocityY ?? 0,
+        velocityX: authoringActive ? (previousNode?.velocityX ?? 0) : 0,
+        velocityY: authoringActive ? (previousNode?.velocityY ?? 0) : 0,
         order: item.order,
         hasPersistedAnchor: item.anchorX != null || item.anchorY != null,
         hidden: item.hidden === true,
@@ -402,14 +457,21 @@ export function LayoutDynamicsCanvas({
 
     nodesRef.current = nextNodes;
     flushNodeTransforms();
-  }, [axisMode, flushNodeTransforms, measureBandBounds, solver.gapPx, visibleItems]);
+  }, [
+    authoringActive,
+    axisMode,
+    flushNodeTransforms,
+    measureBandBounds,
+    solver.gapPx,
+    visibleItems,
+  ]);
 
   const updateExternalDragPreviewNode = useCallback(() => {
     if (
       !authoringActive ||
       !externalDragPreview ||
       !externalDragPreview.pointerPoint ||
-      !rootRef.current
+      !contentRef.current
     ) {
       if (externalDragPreviewNodeRef.current) {
         externalDragPreviewNodeRef.current = null;
@@ -435,9 +497,9 @@ export function LayoutDynamicsCanvas({
       externalDragPreview.heightPx ??
       previewElement?.getBoundingClientRect().height ??
       AUTO_LAYOUT_FALLBACK_HEIGHT;
-    const rootRect = rootRef.current.getBoundingClientRect();
-    const pointerX = externalDragPreview.pointerPoint.x - rootRect.left;
-    const pointerY = externalDragPreview.pointerPoint.y - rootRect.top;
+    const contentRect = contentRef.current.getBoundingClientRect();
+    const pointerX = externalDragPreview.pointerPoint.x - contentRect.left;
+    const pointerY = externalDragPreview.pointerPoint.y - contentRect.top;
     const nextBandId =
       axisMode === "free-2d"
         ? (externalDragPreview.bandId ?? fallbackBandId)
@@ -539,8 +601,17 @@ export function LayoutDynamicsCanvas({
     }
 
     onCommitSnapshot?.({ entries: nextEntries });
-    scheduleFrame();
-  }, [axisMode, measureBandBounds, onCommitSnapshot, scheduleFrame, solver.gapPx]);
+    if (authoringActive) {
+      scheduleFrame();
+    }
+  }, [
+    authoringActive,
+    axisMode,
+    measureBandBounds,
+    onCommitSnapshot,
+    scheduleFrame,
+    solver.gapPx,
+  ]);
 
   const finishDrag = useCallback(
     (cancelled: boolean) => {
@@ -557,6 +628,8 @@ export function LayoutDynamicsCanvas({
         draggedNode.y = dragState.originY;
         draggedNode.anchorX = dragState.originX;
         draggedNode.anchorY = dragState.originY;
+        draggedNode.velocityX = 0;
+        draggedNode.velocityY = 0;
       }
 
       if (!cancelled && draggedNode) {
@@ -565,9 +638,16 @@ export function LayoutDynamicsCanvas({
         flushNodeTransforms();
       }
 
-      scheduleFrame();
+      if (authoringActive) {
+        scheduleFrame();
+      }
     },
-    [commitSnapshotFromCurrentNodes, flushNodeTransforms, scheduleFrame],
+    [
+      authoringActive,
+      commitSnapshotFromCurrentNodes,
+      flushNodeTransforms,
+      scheduleFrame,
+    ],
   );
 
   useLayoutEffect(() => {
@@ -582,7 +662,9 @@ export function LayoutDynamicsCanvas({
     const handleResize = () => {
       syncNodesFromItems();
       updateExternalDragPreviewNode();
-      scheduleFrame();
+      if (authoringActive) {
+        scheduleFrame();
+      }
     };
 
     handleResize();
@@ -590,7 +672,7 @@ export function LayoutDynamicsCanvas({
     return () => {
       window.removeEventListener("resize", handleResize);
     };
-  }, [scheduleFrame, syncNodesFromItems, updateExternalDragPreviewNode]);
+  }, [authoringActive, scheduleFrame, syncNodesFromItems, updateExternalDragPreviewNode]);
 
   useEffect(() => {
     if (!authoringActive && dragStateRef.current) {
@@ -602,9 +684,8 @@ export function LayoutDynamicsCanvas({
     if (!authoringActive && externalDragPreviewNodeRef.current) {
       externalDragPreviewNodeRef.current = null;
       flushNodeTransforms();
-      scheduleFrame();
     }
-  }, [authoringActive, flushNodeTransforms, scheduleFrame]);
+  }, [authoringActive, flushNodeTransforms]);
 
   useEffect(
     () => () => {
@@ -644,11 +725,6 @@ export function LayoutDynamicsCanvas({
       }
 
       if (
-        getOverlayTargetFlag(event.target, "data-layout-dynamics-live-control") ||
-        getOverlayTargetFlag(
-          event.target,
-          "data-explorer-customize-live-control",
-        ) ||
         getOverlayTargetFlag(
           event.target,
           "data-layout-dynamics-remove-control",
@@ -666,8 +742,8 @@ export function LayoutDynamicsCanvas({
       }
 
       const node = nodesRef.current.get(item.id);
-      const rootRect = rootRef.current?.getBoundingClientRect();
-      if (!node || !rootRect) {
+      const contentRect = contentRef.current?.getBoundingClientRect();
+      if (!node || !contentRect) {
         return;
       }
 
@@ -677,8 +753,8 @@ export function LayoutDynamicsCanvas({
       dragStateRef.current = {
         nodeId: item.id,
         pointerId: event.pointerId,
-        grabOffsetX: event.clientX - rootRect.left - node.x,
-        grabOffsetY: event.clientY - rootRect.top - node.y,
+        grabOffsetX: event.clientX - contentRect.left - node.x,
+        grabOffsetY: event.clientY - contentRect.top - node.y,
         originBandId: node.bandId,
         originX: node.anchorX,
         originY: node.anchorY,
@@ -690,7 +766,7 @@ export function LayoutDynamicsCanvas({
         if (
           !dragState ||
           dragState.pointerId !== pointerEvent.pointerId ||
-          !rootRef.current
+          !contentRef.current
         ) {
           return;
         }
@@ -701,17 +777,17 @@ export function LayoutDynamicsCanvas({
         }
 
         const bandBounds = measureBandBounds();
-        const rootBounds = rootRef.current.getBoundingClientRect();
+        const contentBounds = contentRef.current.getBoundingClientRect();
         const relativePointerX =
-          pointerEvent.clientX - rootBounds.left - dragState.grabOffsetX;
+          pointerEvent.clientX - contentBounds.left - dragState.grabOffsetX;
         const relativePointerY =
-          pointerEvent.clientY - rootBounds.top - dragState.grabOffsetY;
+          pointerEvent.clientY - contentBounds.top - dragState.grabOffsetY;
         const nextBandId =
           axisMode === "free-2d"
             ? draggingNode.bandId
             : resolveNearestBandId(
                 bandBounds,
-                pointerEvent.clientY - rootBounds.top,
+                pointerEvent.clientY - contentBounds.top,
                 draggingNode.bandId,
               );
         const bandBoundsForNode =
@@ -854,10 +930,19 @@ export function LayoutDynamicsCanvas({
         position: "relative",
         width: "100%",
         minWidth: 0,
-        overflow: "hidden",
+        overflow: authoringActive ? "auto" : "hidden",
         ...style,
+        ...BOUNDED_CHROME_CONTAINMENT_STYLE,
       }}
     >
+      <div
+        ref={contentRef}
+        style={{
+          position: "relative",
+          minWidth: "100%",
+          minHeight: "100%",
+        }}
+      >
       <div style={{ display: "grid", width: "100%", minWidth: 0 }}>
         {bands.map((band) => (
           <div
@@ -880,8 +965,9 @@ export function LayoutDynamicsCanvas({
         style={{
           position: "absolute",
           inset: 0,
-          overflow: "hidden",
+          overflow: authoringActive ? "visible" : "hidden",
           pointerEvents: authoringActive ? "auto" : "none",
+          ...BOUNDED_CHROME_CONTAINMENT_STYLE,
         }}
       >
         {visibleItems.map((item) => {
@@ -895,6 +981,27 @@ export function LayoutDynamicsCanvas({
               data-layout-dynamics-item={item.id}
               data-layout-dynamics-band-id={item.bandId}
               onPointerDown={(event) => beginDrag(event, item)}
+              onClickCapture={(event) => {
+                if (
+                  !authoringActive ||
+                  !(
+                    getOverlayTargetFlag(
+                      event.target,
+                      "data-layout-dynamics-live-control",
+                    ) ||
+                    getOverlayTargetFlag(
+                      event.target,
+                      "data-explorer-customize-live-control",
+                    )
+                  )
+                ) {
+                  return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                onSelectItem?.(item.id);
+              }}
               onClick={(event) => {
                 if (!authoringActive) {
                   return;
@@ -943,7 +1050,14 @@ export function LayoutDynamicsCanvas({
               }}
               {...item.dataAttributes}
             >
-              {item.content}
+              <div
+                style={{
+                  minWidth: 0,
+                  pointerEvents: authoringActive ? "none" : "auto",
+                }}
+              >
+                {item.content}
+              </div>
               {authoringActive && item.removable !== false ? (
                 <button
                   type="button"
@@ -1067,6 +1181,7 @@ export function LayoutDynamicsCanvas({
             {externalDragPreview.content}
           </div>
         ) : null}
+      </div>
       </div>
     </div>
   );

@@ -24,7 +24,10 @@ import {
 } from '@/components/AppIcons';
 import type { OverlayPanelDefinition } from '../panels/panelRegistry';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
-import { resolveConditionalBlurFilter } from '../config/chromeEffects';
+import {
+  BOUNDED_CHROME_CONTAINMENT_STYLE,
+  resolveInnerSurfaceBlurFilter,
+} from '../config/chromeEffects';
 import {
   getWorkbenchShellFamilyForLayoutProfile,
   type LayoutProfile,
@@ -356,9 +359,10 @@ export function WorkbenchTopBar({
   const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
   const isWindowedMode = windowMode === 'windowed';
   const windowedChromeTopInset = isWindowedMode && blurPlatform === 'windows' && !isWindowMaximized ? 10 : 0;
-  const topBarBackdropFilter = resolveConditionalBlurFilter({
+  const topBarBackdropFilter = resolveInnerSurfaceBlurFilter({
     enabled: blur && effectiveTopBarStyle === 'glass',
     blurPx: Math.min(blurStrength, 18),
+    platform: blurPlatform,
   });
   const interactionMotion = useInteractionMotionController(appearance);
   const layoutDynamics = useLayoutDynamicsController(appearance);
@@ -2040,6 +2044,7 @@ export function WorkbenchTopBar({
         flex: 1,
         minWidth: 0,
         background: 'rgba(0,0,0,0.08)',
+        ...BOUNDED_CHROME_CONTAINMENT_STYLE,
       }}
     >
       <div
@@ -2048,6 +2053,7 @@ export function WorkbenchTopBar({
           inset: 0,
           opacity: topBarCustomizeActive ? 0.26 : 1,
           pointerEvents: topBarCustomizeActive ? 'none' : 'auto',
+          ...BOUNDED_CHROME_CONTAINMENT_STYLE,
         }}
       >
         {centerContent}

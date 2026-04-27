@@ -1,4 +1,4 @@
-export type FrontendWorkerLaneId = 'runtime-module';
+export type FrontendWorkerLaneId = 'runtime-module' | 'explorer-compute';
 
 export interface FrontendWorkerLaneTelemetry {
   activeTaskCount: number;
@@ -43,6 +43,9 @@ const workerLaneDefinitions: Record<FrontendWorkerLaneId, WorkerLaneDefinition> 
   'runtime-module': {
     createWorker: () => new Worker(new URL('./moduleRuntime.worker.ts', import.meta.url), { type: 'module' }),
   },
+  'explorer-compute': {
+    createWorker: () => new Worker(new URL('./explorerVisibleEntries.worker.ts', import.meta.url), { type: 'module' }),
+  },
 };
 
 const workerTelemetryListeners = new Set<(snapshot: FrontendWorkerTelemetrySnapshot) => void>();
@@ -62,6 +65,7 @@ function createEmptyLaneTelemetry(): FrontendWorkerLaneTelemetry {
 let workerTelemetrySnapshot: FrontendWorkerTelemetrySnapshot = {
   lanes: {
     'runtime-module': createEmptyLaneTelemetry(),
+    'explorer-compute': createEmptyLaneTelemetry(),
   },
 };
 
@@ -239,6 +243,7 @@ class WorkerLaneRuntime {
 
 const laneRuntimes: Record<FrontendWorkerLaneId, WorkerLaneRuntime> = {
   'runtime-module': new WorkerLaneRuntime('runtime-module', workerLaneDefinitions['runtime-module']),
+  'explorer-compute': new WorkerLaneRuntime('explorer-compute', workerLaneDefinitions['explorer-compute']),
 };
 
 export async function runFrontendWorkerTask<Result>(args: {
@@ -265,6 +270,7 @@ export function readFrontendWorkerTelemetrySnapshot(): FrontendWorkerTelemetrySn
   return {
     lanes: {
       'runtime-module': { ...workerTelemetrySnapshot.lanes['runtime-module'] },
+      'explorer-compute': { ...workerTelemetrySnapshot.lanes['explorer-compute'] },
     },
   };
 }
@@ -283,6 +289,7 @@ export function resetFrontendWorkerTelemetryForTests(): void {
   workerTelemetrySnapshot = {
     lanes: {
       'runtime-module': createEmptyLaneTelemetry(),
+      'explorer-compute': createEmptyLaneTelemetry(),
     },
   };
 }

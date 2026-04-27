@@ -82,6 +82,10 @@ import {
   resolveIntegratedTerminalSpawnShellCommand,
   type RuntimePlatform,
 } from '../config/platform';
+import {
+  BOUNDED_CHROME_CONTAINMENT_STYLE,
+  resolveInnerSurfaceBlurFilter,
+} from '../config/chromeEffects';
 import { useExplorerStore } from '../store/explorerStore';
 import { useTerminalStore, type Bookmark } from '../store/terminalStore';
 import { buildTerminalCdCommand } from './terminalCommandUtils';
@@ -1657,6 +1661,12 @@ export function TerminalOverlay({
   );
   const uiFont = appearance.fonts.ui;
   const blurEnabled = appearanceSettings.appBlur !== false;
+  const terminalGlassBackdropFilter = resolveInnerSurfaceBlurFilter({
+    enabled:
+      blurEnabled && appearance.workbenchTheme.terminalStyle === 'glass',
+    blurPx: 18,
+    platform: runtimePlatform,
+  });
   const terminalIdNamespaceRef = useRef(terminalIdNamespace);
   const initialTabIdRef = useRef(getTerminalTabId(terminalIdNamespaceRef.current, 0));
   const initialPaneIdRef = useRef(getTerminalPaneId(terminalIdNamespaceRef.current, 0));
@@ -2791,7 +2801,13 @@ export function TerminalOverlay({
   const sidebarPanelNode = sidebarOpen && activePanel ? (
     <div
       className="shrink-0 overflow-hidden relative"
-      style={{ width: sidebarWidth, background: 'var(--overlay-workbench-terminal-panel-bg)', borderRight: '1px solid var(--overlay-workbench-terminal-border)', color: theme.text }}
+      style={{
+        width: sidebarWidth,
+        background: 'var(--overlay-workbench-terminal-panel-bg)',
+        borderRight: '1px solid var(--overlay-workbench-terminal-border)',
+        color: theme.text,
+        ...BOUNDED_CHROME_CONTAINMENT_STYLE,
+      }}
     >
       <SidebarContent
         panel={activePanel}
@@ -2825,7 +2841,13 @@ export function TerminalOverlay({
   ) : null;
 
   const workspaceArea = (
-    <div className="flex-1 min-w-0 min-h-0 flex flex-col" style={{ background: theme.bgTerm }}>
+    <div
+      className="flex-1 min-w-0 min-h-0 flex flex-col"
+      style={{
+        background: theme.bgTerm,
+        ...BOUNDED_CHROME_CONTAINMENT_STYLE,
+      }}
+    >
       <div className="flex-1 min-h-0 min-w-0 p-3">
         <div
           ref={workspaceCanvasRef}
@@ -2967,7 +2989,12 @@ export function TerminalOverlay({
   const statusBar = (
     <div
       className="flex items-center gap-3 px-3 shrink-0 border-t"
-      style={{ height: embedded ? 20 : 22, background: theme.statusBg ?? `${theme.accent}18`, borderColor: 'var(--overlay-workbench-terminal-border)' }}
+      style={{
+        height: embedded ? 20 : 22,
+        background: theme.statusBg ?? `${theme.accent}18`,
+        borderColor: 'var(--overlay-workbench-terminal-border)',
+        ...BOUNDED_CHROME_CONTAINMENT_STYLE,
+      }}
     >
       <div className="flex items-center gap-1.5">
         <Circle size={embedded ? 5 : 6} className="fill-current" style={{ color: appearance.theme.palette.success }} />
@@ -3000,6 +3027,7 @@ export function TerminalOverlay({
           color: theme.text,
           fontFamily: uiFont,
           borderRadius: 'var(--overlay-workbench-panel-radius)',
+          ...BOUNDED_CHROME_CONTAINMENT_STYLE,
         }}
       >
         <div
@@ -3041,7 +3069,10 @@ export function TerminalOverlay({
 
         <TerminalActionToolbar actions={terminalToolbarActions} theme={theme} detail={terminalToolbarDetail} />
 
-        <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div
+          className="flex flex-1 min-h-0 overflow-hidden"
+          style={BOUNDED_CHROME_CONTAINMENT_STYLE}
+        >
           {sidebarPanelNode}
           {workspaceArea}
         </div>
@@ -3060,8 +3091,9 @@ export function TerminalOverlay({
         fontFamily: uiFont,
         boxShadow: 'var(--overlay-workbench-shell-shadow)',
         borderTop: '1px solid var(--overlay-workbench-terminal-border)',
-        backdropFilter: blurEnabled && appearance.workbenchTheme.terminalStyle === 'glass' ? 'blur(18px)' : 'none',
-        WebkitBackdropFilter: blurEnabled && appearance.workbenchTheme.terminalStyle === 'glass' ? 'blur(18px)' : 'none',
+        backdropFilter: terminalGlassBackdropFilter,
+        WebkitBackdropFilter: terminalGlassBackdropFilter,
+        ...BOUNDED_CHROME_CONTAINMENT_STYLE,
       }}
     >
       <div
@@ -3113,7 +3145,10 @@ export function TerminalOverlay({
 
       <TerminalActionToolbar actions={terminalToolbarActions} theme={theme} detail={terminalToolbarDetail} />
 
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div
+        className="flex flex-1 min-h-0 overflow-hidden"
+        style={BOUNDED_CHROME_CONTAINMENT_STYLE}
+      >
         <div className="flex flex-col items-center gap-0.5 py-2 shrink-0"
           style={{ width: 36, background: 'var(--overlay-workbench-terminal-panel-bg)', borderRight: '1px solid var(--overlay-workbench-terminal-border)' }}>
           {TERMINAL_SIDEBAR_ITEMS.map(({ id, icon: Icon, title, accent }) => {

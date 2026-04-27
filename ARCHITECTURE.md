@@ -173,7 +173,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/runtime/moduleRuntime.ts`
   Shared runtime-authored module bridge. It compiles authored TS/TSX module graphs for plugins, theme renderers, wallpapers, shaders, and animations, and now routes serializable compile work through the frontend worker host before falling back to the main thread.
 - `src/runtime/workerHost.ts`
-  Browser-worker orchestration layer for frontend CPU-heavy tasks. It owns worker-lane lifecycle, per-lane telemetry, fallback-to-main-thread behavior, and the shared request/response bridge used by runtime module compilation.
+  Browser-worker orchestration layer for frontend CPU-heavy tasks. It owns worker-lane lifecycle, per-lane telemetry, fallback-to-main-thread behavior, and the shared request/response bridge used by runtime module compilation plus explorer visible-entry shaping.
+- `src/runtime/explorerVisibleEntries.ts` and `src/runtime/explorerVisibleEntriesRuntime.ts`
+  Shared explorer visible-entry compute lane. Keep canonical tag-filter + dir-first sort semantics here so `FileExplorer.tsx`, the `explorer-compute` worker lane, and any future non-React callers do not drift.
 - `src/runtime/tauriClient.ts` and `src/runtime/explorerBackend.ts`
   Typed frontend bridge for native explorer/media commands. Large 3D preview reads now use raw-byte preview transport commands (`fs_read_preview_bytes` / `cloud_read_preview_bytes`) that return `Uint8Array` payloads instead of base64 strings. Explorer `Open With` association lookup and explicit app launch also belong here through the `open_with_*` commands; React should not reintroduce raw platform pickers or per-component shelling-out. Explorer thumbnail callers should enter through this seam too: it now exposes both the legacy data-URL thumbnail command and the identity-aware thumbnail-artifact command used by the shared explorer thumbnail runtime.
 - `src/runtime/ipc/` and `src-tauri/src/ipc_runtime/`
@@ -448,9 +450,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `App.tsx` now also renders a fixed `DevPerformanceHud` in local development so frame and browser telemetry stay visible without a manual diagnostics toggle.
 - Frontend worker execution is now a first-class runtime lane instead of an ad hoc optimization:
   - `src/runtime/workerHost.ts` is the only place that should create browser `Worker` instances for shared shell/runtime workloads
-  - runtime-authored module transpilation now uses the `runtime-module` worker lane, while final React/component materialization still stays on the main thread
+  - runtime-authored module transpilation uses the `runtime-module` worker lane, while explorer visible-entry shaping uses the `explorer-compute` lane and final React/component materialization still stays on the main thread
   - worker tasks must stay fully serializable; React elements, host APIs, DOM state, and Tauri handles must not cross the worker boundary
-  - worker lanes must always keep a safe fallback path so test mode, unsupported environments, or worker boot failures do not break plugin/theme/shader loading
+  - worker lanes must always keep a safe fallback path so test mode, unsupported environments, or worker boot failures do not break plugin/theme/shader loading or core explorer rendering
   - `DevPerformanceHud.tsx` now surfaces worker activity, fallback count, error count, and last-task duration so frontend threading changes are observable during local performance work
 - Universal polyglot runtime pipeline (`runtime-host-v1`):
   - `src-tauri/src/runtime_pipeline/` is the host-owned subsystem that generalizes the Python sidecar pattern into a shared system for `native-sidecar`, `native-command`, `native-tui`, `wasm-panel`, and `wasm-worker` runtime packages

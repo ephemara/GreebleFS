@@ -379,13 +379,30 @@ function useDevPerformanceHudSnapshot(enabled: boolean, navigationKey: string): 
     }
 
     const applyWorkerSnapshot = (workerSnapshot: FrontendWorkerTelemetrySnapshot) => {
-      const runtimeTelemetry = workerSnapshot.lanes['runtime-module'];
+      const laneTelemetry = Object.values(workerSnapshot.lanes);
+      const activeTaskCount = laneTelemetry.reduce(
+        (sum, lane) => sum + lane.activeTaskCount,
+        0,
+      );
+      const fallbackCount = laneTelemetry.reduce(
+        (sum, lane) => sum + lane.fallbackCount,
+        0,
+      );
+      const errorCount = laneTelemetry.reduce(
+        (sum, lane) => sum + lane.errorCount,
+        0,
+      );
+      const lastDurationMs =
+        [...laneTelemetry]
+          .map(lane => lane.lastDurationMs)
+          .filter((value): value is number => value != null)
+          .slice(-1)[0] ?? null;
       snapshotRef.current = {
         ...snapshotRef.current,
-        workerActiveTaskCount: runtimeTelemetry.activeTaskCount,
-        workerFallbackCount: runtimeTelemetry.fallbackCount,
-        workerErrorCount: runtimeTelemetry.errorCount,
-        workerLastDurationMs: runtimeTelemetry.lastDurationMs,
+        workerActiveTaskCount: activeTaskCount,
+        workerFallbackCount: fallbackCount,
+        workerErrorCount: errorCount,
+        workerLastDurationMs: lastDurationMs,
       };
       setSnapshot({ ...snapshotRef.current });
     };
