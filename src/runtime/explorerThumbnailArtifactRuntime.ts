@@ -27,6 +27,11 @@ const pendingExplorerThumbnailReads = new Map<
   Promise<ExplorerEntryThumbnailData | null>
 >();
 
+export function invalidateExplorerThumbnailArtifactRuntimeCache(): void {
+  resolvedExplorerThumbnailCache.clear();
+  pendingExplorerThumbnailReads.clear();
+}
+
 export function peekExplorerThumbnailForEntry(
   request: ReadExplorerThumbnailForEntryInput,
 ): ExplorerEntryThumbnailData | null | undefined {
@@ -87,17 +92,25 @@ function buildExplorerArtifactThumbnailCacheKey(
   ].join("::");
 }
 
-function mapThumbnailArtifactToEntryThumbnail(artifact: Awaited<
+async function mapThumbnailArtifactToEntryThumbnail(artifact: Awaited<
   ReturnType<typeof readExplorerThumbnailArtifact>
->): ExplorerEntryThumbnailData {
+>): Promise<ExplorerEntryThumbnailData> {
   const hoverFrameDelayMs = artifact.hoverFrameDelayMs ?? null;
   const timestampStepSeconds = Math.max(hoverFrameDelayMs ?? 0, 1) / 1000;
+  const [posterDataUrl, hoverFrameImageUrls] = await Promise.all([
+    resolveIpcArtifactUrl(artifact.poster),
+    Promise.all(
+      artifact.hoverFrames.map((hoverFrameArtifact) =>
+        resolveIpcArtifactUrl(hoverFrameArtifact),
+      ),
+    ),
+  ]);
 
   return {
     kind: artifact.kind,
-    posterDataUrl: resolveIpcArtifactUrl(artifact.poster),
-    hoverFrames: artifact.hoverFrames.map((hoverFrameArtifact, index) => ({
-      imageDataUrl: resolveIpcArtifactUrl(hoverFrameArtifact),
+    posterDataUrl,
+    hoverFrames: hoverFrameImageUrls.map((imageDataUrl, index) => ({
+      imageDataUrl,
       timestampSeconds: Number((index * timestampStepSeconds).toFixed(3)),
     })),
     hoverFrameDelayMs,

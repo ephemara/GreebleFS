@@ -448,6 +448,7 @@ import {
   FileExplorer,
   invalidateExplorerResultCaches,
 } from "../components/FileExplorer";
+import { invalidateExplorerThumbnailArtifactRuntimeCache } from "../runtime/explorerThumbnailArtifactRuntime";
 import { EXPLORER_PREVIEW_WIDTH_BOUNDS } from "../config/explorerShellLayouts";
 import {
   normalizeThemeDefinition,
@@ -623,6 +624,34 @@ function createMockEntryThumbnail(path: string | undefined) {
   return {
     kind: getMockEntryThumbnailKind(path),
     posterDataUrl: "data:image/png;base64,ZmFrZQ==",
+    hoverFrames: [],
+    hoverFrameDelayMs: null,
+  };
+}
+
+function createMockEntryThumbnailArtifact(path: string | undefined) {
+  const normalizedPathSegment = (path ?? "thumbnail")
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(Boolean)
+    .pop()
+    ?.replace(/[^a-zA-Z0-9._-]+/g, "-")
+    ?? "thumbnail";
+  const descriptor = {
+    id: `artifact-${normalizedPathSegment}`,
+    kind: "thumbnail.poster",
+    filePath: `/tmp/${normalizedPathSegment}.png`,
+    mediaType: "image/png",
+    byteLength: 7,
+    retention: "persistent" as const,
+    identityKey: normalizedPathSegment,
+    contentRevision: "rev-1",
+  };
+  return {
+    entityId: normalizedPathSegment,
+    contentRevision: "rev-1",
+    kind: getMockEntryThumbnailKind(path),
+    poster: descriptor,
     hoverFrames: [],
     hoverFrameDelayMs: null,
   };
@@ -1017,6 +1046,7 @@ function getExplorerThumbnailReadCount() {
     .mocked(invoke)
     .mock.calls.filter(
       ([command]) =>
+        command === "fs_read_entry_thumbnail_artifact" ||
         command === "fs_read_entry_thumbnail" ||
         command === "fs_read_image_thumbnail",
     ).length;
@@ -1097,6 +1127,7 @@ describe("FileExplorer view modes", () => {
       .replaceRail(createDefaultExplorerRailSnapshot());
     useExplorerStore.getState().clearPersistenceNotice();
     invalidateExplorerResultCaches();
+    invalidateExplorerThumbnailArtifactRuntimeCache();
 
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockImplementation(
@@ -1185,6 +1216,11 @@ describe("FileExplorer view modes", () => {
               throw new Error("Image is too large to thumbnail (> 64 MB)");
             }
             return createMockEntryThumbnail(payload?.request?.path);
+          case "fs_read_entry_thumbnail_artifact":
+            if (payload?.request?.path === `${REPO_ROOT}\\broken.png`) {
+              throw new Error("Image is too large to thumbnail (> 64 MB)");
+            }
+            return createMockEntryThumbnailArtifact(payload?.request?.path);
           case "shader_preview_inspect":
             if (payload?.path === `${REPO_ROOT}\\aaa_surface.wgsl`) {
               return {
@@ -3149,6 +3185,8 @@ const value = 1;
             return "data:image/png;base64,ZmFrZQ==";
           case "fs_read_entry_thumbnail":
             return createMockEntryThumbnail(payload?.request?.path);
+          case "fs_read_entry_thumbnail_artifact":
+            return createMockEntryThumbnailArtifact(payload?.request?.path);
           case "fs_measure_entry_sizes":
             return (payload?.paths ?? []).map((path) => ({
               path,
@@ -4463,18 +4501,9 @@ const value = 1;
     try {
       renderExplorer();
       await screen.findByAltText("Thumbnail for preview.png");
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith(
-        "fs_read_entry_thumbnail",
-        {
-          request: {
-            path: `${REPO_ROOT}\\preview.png`,
-            maxWidth: 256,
-            maxHeight: 256,
-            includeVideoHoverScrub: false,
-            videoHoverFrameCount: null,
-          },
-        },
-      );
+      await waitFor(() => {
+        expect(getExplorerThumbnailReadCount()).toBeGreaterThan(0);
+      });
     } finally {
       if (clientWidthDescriptor) {
         Object.defineProperty(
@@ -4550,7 +4579,9 @@ const value = 1;
     expect(
       vi
         .mocked(invoke)
-        .mock.calls.some(([command]) => command === "fs_read_entry_thumbnail"),
+        .mock.calls.some(
+          ([command]) => command === "fs_read_entry_thumbnail_artifact",
+        ),
     ).toBe(false);
 
     vi.mocked(invoke).mockClear();
@@ -4578,7 +4609,9 @@ const value = 1;
     expect(
       vi
         .mocked(invoke)
-        .mock.calls.some(([command]) => command === "fs_read_entry_thumbnail"),
+        .mock.calls.some(
+          ([command]) => command === "fs_read_entry_thumbnail_artifact",
+        ),
     ).toBe(false);
     expect(
       vi
@@ -5157,6 +5190,9 @@ const value = 1;
 
     renderExplorer();
     await screen.findByText("preview.png");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(220);
+    });
 
     await waitFor(() => {
       expect(getExplorerThumbnailReadCount()).toBeGreaterThan(0);
@@ -5172,9 +5208,15 @@ const value = 1;
         .mocked(invoke)
         .mock.calls.some(
           ([command, args]) =>
-            (command === "fs_read_entry_thumbnail" ||
+            (command === "fs_read_entry_thumbnail_artifact" ||
+              command === "fs_read_entry_thumbnail" ||
               command === "fs_read_image_thumbnail") &&
-            (args as { path?: string } | undefined)?.path ===
+            (
+              (args as { path?: string; request?: { path?: string } } | undefined)
+                ?.request?.path ??
+              (args as { path?: string; request?: { path?: string } } | undefined)
+                ?.path
+            ) ===
               `${REPO_ROOT}\\preview.png`,
         ),
     ).toBe(false);

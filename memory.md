@@ -209,6 +209,9 @@
   - `src/runtime/pythonRuntimeBackend.ts` plus `src-tauri/src/python_sidecar.rs` now allow sidecar actions to exchange `inputArtifacts`, `outputArtifacts`, and `resourceHandles` so media/ML flows can move bulk data off the JSON control plane.
 - Durable binding rule:
   - `src-tauri/src/specta_bindings.rs` must keep the generated `Channel as TAURI_CHANNEL` import alive, emit `void TAURI_CHANNEL;`, and export `__makeEvents__`. If that sanitizer regresses, stream-capable generated bindings silently rot even though Rust support still exists.
+- Durable artifact URL rule:
+  - `src/runtime/ipc/artifacts.ts` should not assume Tauri asset-protocol URLs are safe for persistent files under app-local data. Explorer thumbnail artifacts now hydrate to cached `blob:` URLs from bytes first and only fall back to `convertFileSrc(...)` / file URLs if byte hydration fails.
+  - `src/runtime/explorerThumbnailArtifactRuntime.ts` now exposes `invalidateExplorerThumbnailArtifactRuntimeCache()` because the thumbnail cache is intentionally shared across explorer mounts. Tests that care about fresh-read counts must clear that cache explicitly instead of assuming component remount isolation.
 - Durable validation:
   - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
   - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
