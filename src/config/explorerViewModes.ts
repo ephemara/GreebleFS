@@ -9,7 +9,7 @@ export type ExplorerViewMode =
 
 export type ExplorerViewPresentation = 'grid' | 'table' | 'list';
 export type ExplorerViewWheelDirection = 'larger' | 'smaller';
-export type ExplorerLayoutZoomFamily = 'grid' | 'list';
+export type ExplorerLayoutZoomFamily = 'grid' | 'table' | 'list';
 
 export interface ExplorerGridMetrics {
   minWidth: number;
@@ -50,7 +50,7 @@ export interface ExplorerLayoutZoomState {
 
 export interface ExplorerResolvedLayoutZoomState {
   family: ExplorerLayoutZoomFamily;
-  viewMode: 'icons-xl' | 'icons-l' | 'icons-m' | 'icons-s' | 'list';
+  viewMode: ExplorerViewMode;
   definition: ExplorerViewModeDefinition;
   gridZoom: number;
   zoomPercent: number | null;
@@ -62,8 +62,14 @@ export const EXPLORER_GRID_ZOOM_STEP = 0.08;
 export const EXPLORER_LAYOUT_ZOOM_MIN = -0.18;
 export const EXPLORER_LIVE_GRID_ZOOM_MAX = 2.8;
 export const EXPLORER_LAYOUT_ZOOM_MAX = EXPLORER_LIVE_GRID_ZOOM_MAX;
-export const EXPLORER_LAYOUT_ZOOM_LIST_ENTER = -0.08;
-export const EXPLORER_LAYOUT_ZOOM_LIST_EXIT = -0.02;
+export const EXPLORER_LAYOUT_ZOOM_TABLE_ENTER = -0.04;
+export const EXPLORER_LAYOUT_ZOOM_TABLE_EXIT = 0.02;
+export const EXPLORER_LAYOUT_ZOOM_LIST_ENTER = -0.12;
+export const EXPLORER_LAYOUT_ZOOM_LIST_EXIT = -0.06;
+// Bisection point between columns and details inside the table family.
+// Single source of truth used by commit, live-resolve, anchor, and HUD code.
+export const EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT =
+  (EXPLORER_LAYOUT_ZOOM_LIST_ENTER + EXPLORER_LAYOUT_ZOOM_TABLE_EXIT) / 2;
 
 export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
   {
@@ -325,6 +331,22 @@ export function createExplorerLayoutZoomState(
     };
   }
 
+  if (viewMode === 'columns' || viewMode === 'details') {
+    // Park columns in the lower half of the table range and details in the upper
+    // half so the family resolver and commit logic agree on the active view mode.
+    const columnsAnchor =
+      (EXPLORER_LAYOUT_ZOOM_LIST_ENTER + EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT) /
+      2;
+    const detailsAnchor =
+      (EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT + EXPLORER_LAYOUT_ZOOM_TABLE_EXIT) /
+      2;
+    return {
+      family: 'table',
+      layoutZoom: viewMode === 'columns' ? columnsAnchor : detailsAnchor,
+      storedGridZoom: normalizedGridZoom,
+    };
+  }
+
   return {
     family: 'list',
     layoutZoom: EXPLORER_LAYOUT_ZOOM_MIN,
@@ -370,6 +392,21 @@ export function resolveExplorerLayoutZoomState(
     };
   }
 
+  if (state.family === 'table') {
+    const viewMode: ExplorerViewMode =
+      state.layoutZoom < EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT
+        ? 'columns'
+        : 'details';
+    const definition = getExplorerViewModeDefinition(viewMode);
+    return {
+      family: 'table',
+      viewMode,
+      definition,
+      gridZoom: state.storedGridZoom,
+      zoomPercent: null,
+    };
+  }
+
   const resolvedGridZoom = normalizeExplorerGridZoom(
     Math.max(EXPLORER_GRID_ZOOM_MIN, state.layoutZoom),
     'icons-l',
@@ -392,6 +429,14 @@ export function commitExplorerLayoutZoomState(
 } {
   if (state.family === 'list') {
     return { viewMode: 'list' };
+  }
+
+  if (state.family === 'table') {
+    const viewMode: ExplorerViewMode =
+      state.layoutZoom < EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT
+        ? 'columns'
+        : 'details';
+    return { viewMode };
   }
 
   const resolvedGridZoom = normalizeExplorerGridZoom(
@@ -487,7 +532,23 @@ function resolveExplorerLayoutZoomFamily(
   previousFamily: ExplorerLayoutZoomFamily,
 ): ExplorerLayoutZoomFamily {
   if (previousFamily === 'list') {
-    return layoutZoom >= EXPLORER_LAYOUT_ZOOM_LIST_EXIT ? 'grid' : 'list';
+    if (layoutZoom >= EXPLORER_LAYOUT_ZOOM_LIST_EXIT) {
+      return 'table';
+    }
+    return 'list';
   }
-  return layoutZoom <= EXPLORER_LAYOUT_ZOOM_LIST_ENTER ? 'list' : 'grid';
+  if (previousFamily === 'table') {
+    if (layoutZoom >= EXPLORER_LAYOUT_ZOOM_TABLE_EXIT) {
+      return 'grid';
+    }
+    if (layoutZoom <= EXPLORER_LAYOUT_ZOOM_LIST_ENTER) {
+      return 'list';
+    }
+    return 'table';
+  }
+  // previousFamily === 'grid'
+  if (layoutZoom <= EXPLORER_LAYOUT_ZOOM_TABLE_ENTER) {
+    return 'table';
+  }
+  return 'grid';
 }

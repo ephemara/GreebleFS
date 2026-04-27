@@ -4,12 +4,14 @@ export type DockPresentation = 'stack' | 'floating';
 export type DockOrientation = 'horizontal' | 'vertical';
 export type DockStackPlacement = Exclude<DockPlacement, 'floating'>;
 export type WorkbenchSurfaceDefaultVisibility = 'visible' | 'collapsed' | 'hidden';
+export type WorkbenchSurfaceIdeRole = 'explorer-core' | 'utility';
 
 export interface WorkbenchSurfaceLayoutSeed {
   id: string;
   defaultDockPlacement: DockStackPlacement;
   defaultOrder: number;
   defaultVisibility: WorkbenchSurfaceDefaultVisibility;
+  ideRole?: WorkbenchSurfaceIdeRole;
 }
 
 export interface DockStackNode {
@@ -49,18 +51,40 @@ export interface IdeWorkbenchRailState {
   width: number;
 }
 
+export interface IdeWorkbenchSourcesRailState {
+  visible: boolean;
+  preferredWidth: number;
+  emphasizeLocalTree: boolean;
+  followActiveFolder: boolean;
+}
+
+export interface IdeWorkbenchInspectorRailState {
+  visible: boolean;
+  preferredWidth: number;
+  mode: 'preview-inspector';
+}
+
+export interface IdeWorkbenchBottomDockState {
+  collapsed: boolean;
+  preferredHeight: number;
+}
+
 export interface IdeWorkbenchSurfaceState {
   hidden: boolean;
   collapsed: boolean;
 }
 
 export interface IdeWorkbenchLayoutState {
-  version: 1;
+  version: 2;
   rootDockNode: DockNode;
   floatingNodes: FloatingDockNode[];
   focusedSurfaceId: string | null;
   maximizedNodeId: string | null;
-  railState: IdeWorkbenchRailState;
+  activityRailState: IdeWorkbenchRailState;
+  sourcesRailState: IdeWorkbenchSourcesRailState;
+  inspectorRailState: IdeWorkbenchInspectorRailState;
+  bottomDockState: IdeWorkbenchBottomDockState;
+  explorerInspectorLinkMode: 'live-linked';
   surfaceStateById: Record<string, IdeWorkbenchSurfaceState>;
 }
 
@@ -76,10 +100,31 @@ export const IDE_WORKBENCH_SPLIT_IDS = {
   centerColumn: 'ide:center-column',
 } as const satisfies Record<string, string>;
 
-const DEFAULT_RAIL_STATE: IdeWorkbenchRailState = {
+const EXPLORER_CORE_SURFACE_ID = 'explorer';
+const CURRENT_IDE_WORKBENCH_LAYOUT_STATE_VERSION = 2;
+
+const DEFAULT_ACTIVITY_RAIL_STATE: IdeWorkbenchRailState = {
   placement: 'left',
   collapsed: false,
   width: 64,
+};
+
+const DEFAULT_SOURCES_RAIL_STATE: IdeWorkbenchSourcesRailState = {
+  visible: true,
+  preferredWidth: 320,
+  emphasizeLocalTree: true,
+  followActiveFolder: true,
+};
+
+const DEFAULT_INSPECTOR_RAIL_STATE: IdeWorkbenchInspectorRailState = {
+  visible: true,
+  preferredWidth: 420,
+  mode: 'preview-inspector',
+};
+
+const DEFAULT_BOTTOM_DOCK_STATE: IdeWorkbenchBottomDockState = {
+  collapsed: true,
+  preferredHeight: 320,
 };
 
 const DEFAULT_FLOATING_SIZE = {
@@ -89,6 +134,12 @@ const DEFAULT_FLOATING_SIZE = {
 
 const MIN_RAIL_WIDTH = 48;
 const MAX_RAIL_WIDTH = 120;
+const MIN_SOURCES_RAIL_WIDTH = 220;
+const MAX_SOURCES_RAIL_WIDTH = 520;
+const MIN_INSPECTOR_RAIL_WIDTH = 280;
+const MAX_INSPECTOR_RAIL_WIDTH = 680;
+const MIN_BOTTOM_DOCK_HEIGHT = 180;
+const MAX_BOTTOM_DOCK_HEIGHT = 640;
 const MIN_FLOATING_WIDTH = 320;
 const MIN_FLOATING_HEIGHT = 220;
 const MIN_SPLIT_SIZE = 0.12;
@@ -103,6 +154,18 @@ const dockPlacementToStackId: Record<DockStackPlacement, string> = {
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function isExplorerCoreSurface(surfaceId: string): boolean {
+  return surfaceId === EXPLORER_CORE_SURFACE_ID;
+}
+
+function normalizeUtilityDockPlacement(placement: DockStackPlacement): DockStackPlacement {
+  if (placement === 'center' || placement === 'left-sidebar') {
+    return 'right-sidebar';
+  }
+
+  return placement;
 }
 
 function uniqueSurfaceIds(ids: string[]): string[] {
@@ -187,55 +250,46 @@ function createDefaultRootDockNode(
     return left.id.localeCompare(right.id);
   });
   const visibleSeeds = sortedSeeds.filter(seed => seed.defaultVisibility !== 'hidden');
-  const leftTabs = visibleSeeds
-    .filter(seed => seed.defaultDockPlacement === 'left-sidebar')
-    .map(seed => seed.id);
   const centerTabs = visibleSeeds
-    .filter(seed => seed.defaultDockPlacement === 'center')
+    .filter(seed => isExplorerCoreSurface(seed.id))
     .map(seed => seed.id);
-  const rightTabs = visibleSeeds
-    .filter(seed => seed.defaultDockPlacement === 'right-sidebar')
-    .map(seed => seed.id);
-  const bottomTabs = visibleSeeds
-    .filter(seed => seed.defaultDockPlacement === 'bottom-panel')
-    .map(seed => seed.id);
-
-  const leftCollapsed = leftTabs.length === 0
-    || leftTabs.every(tabId => (
-      seeds.find(seed => seed.id === tabId)?.defaultVisibility === 'collapsed'
-    ));
-  const bottomCollapsed = bottomTabs.length > 0;
-  const rightCollapsed = rightTabs.length === 0;
+  const rightSeeds = visibleSeeds
+    .filter(seed => !isExplorerCoreSurface(seed.id))
+    .filter(seed => normalizeUtilityDockPlacement(seed.defaultDockPlacement) === 'right-sidebar')
+    .sort((left, right) => left.defaultOrder - right.defaultOrder);
+  const bottomSeeds = visibleSeeds
+    .filter(seed => !isExplorerCoreSurface(seed.id))
+    .filter(seed => normalizeUtilityDockPlacement(seed.defaultDockPlacement) === 'bottom-panel')
+    .sort((left, right) => left.defaultOrder - right.defaultOrder);
+  const rightTabs = rightSeeds.map(seed => seed.id);
+  const bottomTabs = bottomSeeds.map(seed => seed.id);
+  const rightCollapsed = rightSeeds.length === 0
+    ? true
+    : rightSeeds.every(seed => seed.defaultVisibility === 'collapsed');
+  const bottomCollapsed = bottomSeeds.length === 0
+    ? true
+    : bottomSeeds.every(seed => seed.defaultVisibility === 'collapsed');
 
   return {
     type: 'split',
     id: IDE_WORKBENCH_SPLIT_IDS.root,
     orientation: 'horizontal',
-    sizes: [0.24, 1, 0.3],
+    sizes: [1, 0.34],
     children: [
-      withStackActiveSurface(
-        createDockStackNode(
-          IDE_WORKBENCH_STACK_IDS.leftSidebar,
-          'left-sidebar',
-          leftTabs,
-          leftCollapsed,
-        ),
-        leftTabs[0],
-      ),
       {
         type: 'split',
         id: IDE_WORKBENCH_SPLIT_IDS.centerColumn,
         orientation: 'vertical',
-        sizes: [1, 0.3],
+        sizes: [1, 0.32],
         children: [
           withStackActiveSurface(
             createDockStackNode(
               IDE_WORKBENCH_STACK_IDS.center,
               'center',
-              centerTabs.length > 0 ? centerTabs : seeds.slice(0, 1).map(seed => seed.id),
+              centerTabs.length > 0 ? centerTabs : [EXPLORER_CORE_SURFACE_ID],
               false,
             ),
-            centerTabs[0] ?? seeds[0]?.id ?? null,
+            centerTabs[0] ?? EXPLORER_CORE_SURFACE_ID,
           ),
           withStackActiveSurface(
             createDockStackNode(
@@ -268,8 +322,12 @@ function createDefaultSurfaceStateById(
     seeds.map(seed => [
       seed.id,
       {
-        hidden: seed.defaultVisibility === 'hidden',
-        collapsed: seed.defaultVisibility === 'collapsed',
+        hidden: isExplorerCoreSurface(seed.id)
+          ? false
+          : seed.defaultVisibility === 'hidden',
+        collapsed: isExplorerCoreSurface(seed.id)
+          ? false
+          : seed.defaultVisibility === 'collapsed',
       },
     ]),
   );
@@ -466,6 +524,44 @@ function appendSurfaceToDockStack(
   });
 }
 
+function normalizeDockNodeAfterMutation(node: DockNode): DockNode {
+  return updateDockNode(node, (candidate) => {
+    if (candidate.type !== 'stack') {
+      return candidate;
+    }
+
+    return withStackActiveSurface(
+      {
+        ...candidate,
+        collapsed: candidate.id === IDE_WORKBENCH_STACK_IDS.center
+          ? false
+          : candidate.tabs.length === 0
+            ? true
+            : candidate.collapsed,
+      },
+      candidate.activeSurfaceId,
+    );
+  });
+}
+
+function synchronizeBottomDockState(
+  rootDockNode: DockNode,
+  bottomDockState: IdeWorkbenchBottomDockState,
+): IdeWorkbenchBottomDockState {
+  const bottomStack = findDockStackById(rootDockNode, IDE_WORKBENCH_STACK_IDS.bottomPanel);
+  if (!bottomStack || bottomStack.tabs.length === 0) {
+    return {
+      ...bottomDockState,
+      collapsed: true,
+    };
+  }
+
+  return {
+    ...bottomDockState,
+    collapsed: bottomStack.collapsed,
+  };
+}
+
 function normalizeFloatingNode(
   value: unknown,
   availableSurfaceIds: Set<string>,
@@ -576,17 +672,36 @@ function buildNormalizedRootDockNode(
     const overrideTabs = normalizeSurfaceTabs(override?.tabs, availableSurfaceIds)
       .filter(surfaceId => !hiddenSurfaceIds.has(surfaceId))
       .filter((surfaceId) => {
+        if (candidate.id === IDE_WORKBENCH_STACK_IDS.center) {
+          return isExplorerCoreSurface(surfaceId);
+        }
+
+        return !isExplorerCoreSurface(surfaceId);
+      })
+      .filter((surfaceId) => {
         if (placedSurfaceIds.has(surfaceId)) {
           return false;
         }
         placedSurfaceIds.add(surfaceId);
         return true;
       });
-    const nextTabs = overrideTabs.length > 0 ? overrideTabs : candidate.tabs.filter(surfaceId => !hiddenSurfaceIds.has(surfaceId));
+    const nextTabs = overrideTabs.length > 0
+      ? overrideTabs
+      : candidate.tabs
+        .filter(surfaceId => !hiddenSurfaceIds.has(surfaceId))
+        .filter((surfaceId) => {
+          if (candidate.id === IDE_WORKBENCH_STACK_IDS.center) {
+            return isExplorerCoreSurface(surfaceId);
+          }
+
+          return !isExplorerCoreSurface(surfaceId);
+        });
     const nextStack: DockStackNode = {
       ...candidate,
       tabs: nextTabs,
-      collapsed: typeof override?.collapsed === 'boolean' ? override.collapsed : candidate.collapsed,
+      collapsed: candidate.id === IDE_WORKBENCH_STACK_IDS.center
+        ? false
+        : (typeof override?.collapsed === 'boolean' ? override.collapsed : candidate.collapsed),
     };
 
     return withStackActiveSurface(nextStack, override?.activeSurfaceId ?? nextStack.activeSurfaceId);
@@ -599,9 +714,11 @@ function buildNormalizedRootDockNode(
 
     nextRoot = appendSurfaceToDockStack(
       nextRoot,
-      dockPlacementToStackId[seed.defaultDockPlacement],
+      isExplorerCoreSurface(seed.id)
+        ? dockPlacementToStackId.center
+        : dockPlacementToStackId[normalizeUtilityDockPlacement(seed.defaultDockPlacement)],
       seed.id,
-      seed.defaultDockPlacement === 'center',
+      isExplorerCoreSurface(seed.id),
     );
     placedSurfaceIds.add(seed.id);
   }
@@ -625,10 +742,14 @@ function normalizeSurfaceStateById(
       return [
         seed.id,
         {
-          hidden: typeof partialState?.hidden === 'boolean'
+          hidden: isExplorerCoreSurface(seed.id)
+            ? false
+            : typeof partialState?.hidden === 'boolean'
             ? partialState.hidden
             : defaultSurfaceStateById[seed.id]?.hidden ?? false,
-          collapsed: typeof partialState?.collapsed === 'boolean'
+          collapsed: isExplorerCoreSurface(seed.id)
+            ? false
+            : typeof partialState?.collapsed === 'boolean'
             ? partialState.collapsed
             : defaultSurfaceStateById[seed.id]?.collapsed ?? false,
         },
@@ -646,12 +767,16 @@ export function createDefaultIdeWorkbenchLayoutState(
   const focusedSurfaceId = resolvePreferredDockSurfaceId(rootDockNode, floatingNodes);
 
   return {
-    version: 1,
+    version: CURRENT_IDE_WORKBENCH_LAYOUT_STATE_VERSION,
     rootDockNode,
     floatingNodes,
     focusedSurfaceId,
     maximizedNodeId: null,
-    railState: DEFAULT_RAIL_STATE,
+    activityRailState: DEFAULT_ACTIVITY_RAIL_STATE,
+    sourcesRailState: DEFAULT_SOURCES_RAIL_STATE,
+    inspectorRailState: DEFAULT_INSPECTOR_RAIL_STATE,
+    bottomDockState: DEFAULT_BOTTOM_DOCK_STATE,
+    explorerInspectorLinkMode: 'live-linked',
     surfaceStateById,
   };
 }
@@ -664,43 +789,111 @@ export function normalizeIdeWorkbenchLayoutState(
   const source = value && typeof value === 'object' && !Array.isArray(value)
     ? value as Partial<IdeWorkbenchLayoutState>
     : {};
-  const surfaceStateById = normalizeSurfaceStateById(source.surfaceStateById, seeds);
-  const rootDockNode = buildNormalizedRootDockNode(source.rootDockNode, seeds, surfaceStateById);
+  const sourceVersion = typeof source.version === 'number' ? source.version : null;
+  const shouldResetLegacyWorkbenchLayout = sourceVersion !== CURRENT_IDE_WORKBENCH_LAYOUT_STATE_VERSION;
+  const surfaceStateById = shouldResetLegacyWorkbenchLayout
+    ? defaultState.surfaceStateById
+    : normalizeSurfaceStateById(source.surfaceStateById, seeds);
+  const rootDockNode = shouldResetLegacyWorkbenchLayout
+    ? defaultState.rootDockNode
+    : buildNormalizedRootDockNode(source.rootDockNode, seeds, surfaceStateById);
   const availableSurfaceIds = new Set(seeds.map(seed => seed.id));
   const usedSurfaceIds = new Set(collectSurfaceIdsFromDockNode(rootDockNode));
-  const floatingNodes = Array.isArray(source.floatingNodes)
-    ? source.floatingNodes
-      .map((entry, index) => normalizeFloatingNode(entry, availableSurfaceIds, usedSurfaceIds, index))
-      .filter((entry): entry is FloatingDockNode => Boolean(entry))
-    : defaultState.floatingNodes;
+  const floatingNodes = shouldResetLegacyWorkbenchLayout
+    ? defaultState.floatingNodes
+    : Array.isArray(source.floatingNodes)
+      ? source.floatingNodes
+        .map((entry, index) => normalizeFloatingNode(entry, availableSurfaceIds, usedSurfaceIds, index))
+        .filter((entry): entry is FloatingDockNode => Boolean(entry))
+      : defaultState.floatingNodes;
   const placedSurfaceIds = new Set([
     ...collectSurfaceIdsFromDockNode(rootDockNode),
     ...collectSurfaceIdsFromFloatingNodes(floatingNodes),
   ]);
-  const focusedSurfaceId = typeof source.focusedSurfaceId === 'string' && placedSurfaceIds.has(source.focusedSurfaceId)
-    ? source.focusedSurfaceId
-    : resolvePreferredDockSurfaceId(rootDockNode, floatingNodes);
+  const focusedSurfaceId = shouldResetLegacyWorkbenchLayout
+    ? defaultState.focusedSurfaceId
+    : typeof source.focusedSurfaceId === 'string' && placedSurfaceIds.has(source.focusedSurfaceId)
+      ? source.focusedSurfaceId
+      : resolvePreferredDockSurfaceId(rootDockNode, floatingNodes);
 
-  const railStateSource = source.railState && typeof source.railState === 'object' && !Array.isArray(source.railState)
-    ? source.railState as Partial<IdeWorkbenchRailState>
+  const legacyRailStateSource = (source as { railState?: unknown }).railState;
+  const railStateSource = source.activityRailState && typeof source.activityRailState === 'object' && !Array.isArray(source.activityRailState)
+    ? source.activityRailState as Partial<IdeWorkbenchRailState>
+    : legacyRailStateSource && typeof legacyRailStateSource === 'object' && !Array.isArray(legacyRailStateSource)
+      ? legacyRailStateSource as Partial<IdeWorkbenchRailState>
     : {};
-  const railState: IdeWorkbenchRailState = {
-    placement: railStateSource.placement === 'right' ? 'right' : DEFAULT_RAIL_STATE.placement,
+  const activityRailState: IdeWorkbenchRailState = {
+    placement: railStateSource.placement === 'right' ? 'right' : DEFAULT_ACTIVITY_RAIL_STATE.placement,
     collapsed: railStateSource.collapsed === true,
     width: clampNumber(
       typeof railStateSource.width === 'number' && Number.isFinite(railStateSource.width)
         ? railStateSource.width
-        : DEFAULT_RAIL_STATE.width,
+        : DEFAULT_ACTIVITY_RAIL_STATE.width,
       MIN_RAIL_WIDTH,
       MAX_RAIL_WIDTH,
     ),
   };
+  const sourcesRailSource = source.sourcesRailState && typeof source.sourcesRailState === 'object' && !Array.isArray(source.sourcesRailState)
+    ? source.sourcesRailState as Partial<IdeWorkbenchSourcesRailState>
+    : {};
+  const sourcesRailState: IdeWorkbenchSourcesRailState = {
+    visible: typeof sourcesRailSource.visible === 'boolean'
+      ? sourcesRailSource.visible
+      : DEFAULT_SOURCES_RAIL_STATE.visible,
+    preferredWidth: clampNumber(
+      typeof sourcesRailSource.preferredWidth === 'number' && Number.isFinite(sourcesRailSource.preferredWidth)
+        ? sourcesRailSource.preferredWidth
+        : DEFAULT_SOURCES_RAIL_STATE.preferredWidth,
+      MIN_SOURCES_RAIL_WIDTH,
+      MAX_SOURCES_RAIL_WIDTH,
+    ),
+    emphasizeLocalTree: typeof sourcesRailSource.emphasizeLocalTree === 'boolean'
+      ? sourcesRailSource.emphasizeLocalTree
+      : DEFAULT_SOURCES_RAIL_STATE.emphasizeLocalTree,
+    followActiveFolder: typeof sourcesRailSource.followActiveFolder === 'boolean'
+      ? sourcesRailSource.followActiveFolder
+      : DEFAULT_SOURCES_RAIL_STATE.followActiveFolder,
+  };
+  const inspectorRailSource = source.inspectorRailState && typeof source.inspectorRailState === 'object' && !Array.isArray(source.inspectorRailState)
+    ? source.inspectorRailState as Partial<IdeWorkbenchInspectorRailState>
+    : {};
+  const inspectorRailState: IdeWorkbenchInspectorRailState = {
+    visible: typeof inspectorRailSource.visible === 'boolean'
+      ? inspectorRailSource.visible
+      : DEFAULT_INSPECTOR_RAIL_STATE.visible,
+    preferredWidth: clampNumber(
+      typeof inspectorRailSource.preferredWidth === 'number' && Number.isFinite(inspectorRailSource.preferredWidth)
+        ? inspectorRailSource.preferredWidth
+        : DEFAULT_INSPECTOR_RAIL_STATE.preferredWidth,
+      MIN_INSPECTOR_RAIL_WIDTH,
+      MAX_INSPECTOR_RAIL_WIDTH,
+    ),
+    mode: inspectorRailSource.mode === 'preview-inspector'
+      ? 'preview-inspector'
+      : DEFAULT_INSPECTOR_RAIL_STATE.mode,
+  };
+  const bottomDockSource = source.bottomDockState && typeof source.bottomDockState === 'object' && !Array.isArray(source.bottomDockState)
+    ? source.bottomDockState as Partial<IdeWorkbenchBottomDockState>
+    : {};
+  const bottomDockState: IdeWorkbenchBottomDockState = {
+    collapsed: typeof bottomDockSource.collapsed === 'boolean'
+      ? bottomDockSource.collapsed
+      : DEFAULT_BOTTOM_DOCK_STATE.collapsed,
+    preferredHeight: clampNumber(
+      typeof bottomDockSource.preferredHeight === 'number' && Number.isFinite(bottomDockSource.preferredHeight)
+        ? bottomDockSource.preferredHeight
+        : DEFAULT_BOTTOM_DOCK_STATE.preferredHeight,
+      MIN_BOTTOM_DOCK_HEIGHT,
+      MAX_BOTTOM_DOCK_HEIGHT,
+    ),
+  };
 
-  const nextMaximizedNodeId = typeof source.maximizedNodeId === 'string' && source.maximizedNodeId.trim().length > 0
+  const nextMaximizedNodeId = !shouldResetLegacyWorkbenchLayout
+    && typeof source.maximizedNodeId === 'string'
+    && source.maximizedNodeId.trim().length > 0
     ? source.maximizedNodeId.trim()
     : null;
   const dockIds = new Set([
-    IDE_WORKBENCH_STACK_IDS.leftSidebar,
     IDE_WORKBENCH_STACK_IDS.center,
     IDE_WORKBENCH_STACK_IDS.rightSidebar,
     IDE_WORKBENCH_STACK_IDS.bottomPanel,
@@ -708,14 +901,20 @@ export function normalizeIdeWorkbenchLayoutState(
   ]);
 
   return {
-    version: 1,
+    version: CURRENT_IDE_WORKBENCH_LAYOUT_STATE_VERSION,
     rootDockNode,
     floatingNodes,
     focusedSurfaceId,
     maximizedNodeId: nextMaximizedNodeId && dockIds.has(nextMaximizedNodeId)
       ? nextMaximizedNodeId
       : null,
-    railState,
+    activityRailState,
+    sourcesRailState,
+    inspectorRailState,
+    bottomDockState,
+    explorerInspectorLinkMode: source.explorerInspectorLinkMode === 'live-linked'
+      ? 'live-linked'
+      : 'live-linked',
     surfaceStateById,
   };
 }
@@ -792,6 +991,14 @@ export function moveSurfaceToDockPlacement(
   surfaceId: string,
   placement: DockStackPlacement,
 ): IdeWorkbenchLayoutState {
+  if (isExplorerCoreSurface(surfaceId)) {
+    return {
+      ...ensureSurfaceVisibleState(layoutState, surfaceId),
+      focusedSurfaceId: surfaceId,
+    };
+  }
+
+  const normalizedPlacement = normalizeUtilityDockPlacement(placement);
   const withoutFloatingSurface = updateFloatingNodesForSurface(
     layoutState.floatingNodes,
     surfaceId,
@@ -810,11 +1017,20 @@ export function moveSurfaceToDockPlacement(
       };
     },
   );
-  const nextRoot = appendSurfaceToDockStack(
+  const nextRoot = normalizeDockNodeAfterMutation(appendSurfaceToDockStack(
     removeSurfaceFromDockNode(layoutState.rootDockNode, surfaceId),
-    dockPlacementToStackId[placement],
+    dockPlacementToStackId[normalizedPlacement],
     surfaceId,
     true,
+  ));
+  const nextBottomDockState = synchronizeBottomDockState(
+    nextRoot,
+    normalizedPlacement === 'bottom-panel'
+      ? {
+        ...layoutState.bottomDockState,
+        collapsed: false,
+      }
+      : layoutState.bottomDockState,
   );
 
   return {
@@ -822,6 +1038,7 @@ export function moveSurfaceToDockPlacement(
     rootDockNode: nextRoot,
     floatingNodes: withoutFloatingSurface,
     focusedSurfaceId: surfaceId,
+    bottomDockState: nextBottomDockState,
   };
 }
 
@@ -856,6 +1073,12 @@ export function focusDockSurface(
         ),
       })),
       focusedSurfaceId: surfaceId,
+      bottomDockState: currentPlacement === 'bottom-panel'
+        ? {
+          ...layoutState.bottomDockState,
+          collapsed: false,
+        }
+        : layoutState.bottomDockState,
     };
   }
 
@@ -873,7 +1096,11 @@ export function hideDockSurface(
   layoutState: IdeWorkbenchLayoutState,
   surfaceId: string,
 ): IdeWorkbenchLayoutState {
-  const nextRoot = removeSurfaceFromDockNode(layoutState.rootDockNode, surfaceId);
+  if (isExplorerCoreSurface(surfaceId)) {
+    return layoutState;
+  }
+
+  const nextRoot = normalizeDockNodeAfterMutation(removeSurfaceFromDockNode(layoutState.rootDockNode, surfaceId));
   const nextFloatingNodes = updateFloatingNodesForSurface(layoutState.floatingNodes, surfaceId, node => {
     const nextTabs = node.tabs.filter(tabId => tabId !== surfaceId);
     if (nextTabs.length === 0) {
@@ -896,6 +1123,7 @@ export function hideDockSurface(
     focusedSurfaceId: layoutState.focusedSurfaceId === surfaceId
       ? resolvePreferredDockSurfaceId(nextRoot, nextFloatingNodes)
       : layoutState.focusedSurfaceId,
+    bottomDockState: synchronizeBottomDockState(nextRoot, layoutState.bottomDockState),
     surfaceStateById: {
       ...layoutState.surfaceStateById,
       [surfaceId]: {
@@ -910,6 +1138,10 @@ export function floatDockSurface(
   layoutState: IdeWorkbenchLayoutState,
   surfaceId: string,
 ): IdeWorkbenchLayoutState {
+  if (isExplorerCoreSurface(surfaceId)) {
+    return layoutState;
+  }
+
   const existingNode = layoutState.floatingNodes.find(node => node.tabs.includes(surfaceId));
   if (existingNode) {
     return {
@@ -945,12 +1177,16 @@ export function floatDockSurface(
       height: DEFAULT_FLOATING_SIZE.height,
     },
   ];
+  const nextRootDockNode = normalizeDockNodeAfterMutation(
+    removeSurfaceFromDockNode(layoutState.rootDockNode, surfaceId),
+  );
 
   return {
     ...ensureSurfaceVisibleState(layoutState, surfaceId),
-    rootDockNode: removeSurfaceFromDockNode(layoutState.rootDockNode, surfaceId),
+    rootDockNode: nextRootDockNode,
     floatingNodes: nextFloatingNodes,
     focusedSurfaceId: surfaceId,
+    bottomDockState: synchronizeBottomDockState(nextRootDockNode, layoutState.bottomDockState),
   };
 }
 
@@ -959,12 +1195,22 @@ export function updateDockStackCollapsed(
   stackId: string,
   collapsed: boolean,
 ): IdeWorkbenchLayoutState {
+  const nextRootDockNode = normalizeDockNodeAfterMutation(updateDockStackById(layoutState.rootDockNode, stackId, stack => ({
+    ...stack,
+    collapsed: stack.id === IDE_WORKBENCH_STACK_IDS.center ? false : collapsed,
+  })));
   return {
     ...layoutState,
-    rootDockNode: updateDockStackById(layoutState.rootDockNode, stackId, stack => ({
-      ...stack,
-      collapsed,
-    })),
+    rootDockNode: nextRootDockNode,
+    bottomDockState: synchronizeBottomDockState(
+      nextRootDockNode,
+      stackId === IDE_WORKBENCH_STACK_IDS.bottomPanel
+        ? {
+          ...layoutState.bottomDockState,
+          collapsed,
+        }
+        : layoutState.bottomDockState,
+    ),
   };
 }
 
@@ -1065,13 +1311,13 @@ export function updateIdeRailState(
 ): IdeWorkbenchLayoutState {
   return {
     ...layoutState,
-    railState: {
-      placement: updates.placement === 'right' ? 'right' : (updates.placement === 'left' ? 'left' : layoutState.railState.placement),
-      collapsed: typeof updates.collapsed === 'boolean' ? updates.collapsed : layoutState.railState.collapsed,
+    activityRailState: {
+      placement: updates.placement === 'right' ? 'right' : (updates.placement === 'left' ? 'left' : layoutState.activityRailState.placement),
+      collapsed: typeof updates.collapsed === 'boolean' ? updates.collapsed : layoutState.activityRailState.collapsed,
       width: clampNumber(
         typeof updates.width === 'number' && Number.isFinite(updates.width)
           ? updates.width
-          : layoutState.railState.width,
+          : layoutState.activityRailState.width,
         MIN_RAIL_WIDTH,
         MAX_RAIL_WIDTH,
       ),

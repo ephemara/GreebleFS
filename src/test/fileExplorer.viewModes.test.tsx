@@ -1460,7 +1460,9 @@ describe("FileExplorer view modes", () => {
 
     expect(screen.getByRole("button", { name: /manage/i })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /explorer mode:/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /open explorer layout preset menu/i }),
+    );
     fireEvent.click(screen.getByRole("menuitemradio", { name: /focus/i }));
 
     await waitFor(() => {
@@ -1486,7 +1488,9 @@ describe("FileExplorer view modes", () => {
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(screen.getByRole("button", { name: /explorer mode:/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /open explorer layout preset menu/i }),
+    );
     fireEvent.click(screen.getByRole("menuitemradio", { name: /focus/i }));
 
     await waitFor(() => {
@@ -1517,7 +1521,9 @@ describe("FileExplorer view modes", () => {
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(screen.getByRole("button", { name: /explorer mode:/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /open explorer layout preset menu/i }),
+    );
     fireEvent.click(screen.getByRole("menuitemradio", { name: /inspector/i }));
 
     await waitFor(() => {
@@ -1562,6 +1568,50 @@ describe("FileExplorer view modes", () => {
       ).toBeInTheDocument();
       expect(
         screen.queryByRole("button", { name: /open sources panel/i }),
+      ).toBeNull();
+    });
+  });
+
+  it("cycles explorer layout presets directly from the toolbar control face", async () => {
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /cycle explorer layout presets/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer
+          .modeProfileOverridesByThemeId.operator,
+      ).toBe("navigator");
+    });
+  });
+
+  it("restores the canonical explorer layout preset from the menu", async () => {
+    useSettingsStore
+      .getState()
+      .setExplorerModeProfileOverride("operator", "focus");
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /open explorer layout preset menu/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /restore canonical/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer
+          .modeProfileOverridesByThemeId.operator,
+      ).toBe("balanced");
+      expect(
+        screen.queryByRole("menu", {
+          name: /explorer layout preset menu/i,
+        }),
       ).toBeNull();
     });
   });

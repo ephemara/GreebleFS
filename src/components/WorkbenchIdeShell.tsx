@@ -78,6 +78,10 @@ function dockNodeContainsStackId(node: DockNode, stackId: string): boolean {
 }
 
 function computeCollapsedSize(stack: DockStackNode): number {
+  if (stack.tabs.length === 0) {
+    return 0;
+  }
+
   return stack.placement === 'bottom-panel' ? COLLAPSED_BOTTOM_SIZE : COLLAPSED_EDGE_SIZE;
 }
 
@@ -212,6 +216,18 @@ export function WorkbenchIdeShell({
     () => new Map(surfaces.map(surface => [surface.id, surface] as const)),
     [surfaces],
   );
+  const explorerSurface = useMemo(
+    () => surfaces.find(surface => surface.ideRole === 'explorer-core') ?? null,
+    [surfaces],
+  );
+  const primaryRailSurfaces = useMemo(
+    () => surfaces.filter(surface => surface.railShortcut && surface.ideNavigationTier === 'primary'),
+    [surfaces],
+  );
+  const secondaryRailSurfaces = useMemo(
+    () => surfaces.filter(surface => surface.railShortcut && surface.ideNavigationTier === 'secondary'),
+    [surfaces],
+  );
 
   const commitLayoutState = useCallback((nextState: IdeWorkbenchLayoutState) => {
     onLayoutStateChange(nextState);
@@ -247,8 +263,6 @@ export function WorkbenchIdeShell({
     activeSurfaceId: string,
   ) => {
     const actions: Array<{ key: string; title: string; placement: DockPlacement }> = [
-      { key: 'left', title: 'Dock left sidebar', placement: 'left-sidebar' },
-      { key: 'center', title: 'Dock center', placement: 'center' },
       { key: 'right', title: 'Dock right sidebar', placement: 'right-sidebar' },
       { key: 'bottom', title: 'Dock bottom panel', placement: 'bottom-panel' },
       { key: 'float', title: 'Float panel', placement: 'floating' },
@@ -375,9 +389,35 @@ export function WorkbenchIdeShell({
       ? stack.activeSurfaceId
       : stack.tabs[0] ?? null;
     const activeSurface = activeSurfaceId ? surfaceById.get(activeSurfaceId) ?? null : null;
+    const centerExplorerSurfaceId = explorerSurface?.id ?? 'explorer';
+    const rendersExplorerCenter = stack.id === IDE_WORKBENCH_STACK_IDS.center && explorerSurface != null;
 
     if (stack.collapsed) {
       return renderCollapsedStack(stack);
+    }
+
+    if (rendersExplorerCenter) {
+      const explorerIsActive = (layoutState.focusedSurfaceId ?? centerExplorerSurfaceId) === centerExplorerSurfaceId;
+      return (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            width: '100%',
+            height: '100%',
+            minWidth: 0,
+            minHeight: 0,
+            background: theme.palette.panelBackground,
+            border: `1px solid ${theme.palette.border}`,
+            borderRadius: workbench.metrics.panelRadius,
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0 }}>
+            {renderSurfaceBody(centerExplorerSurfaceId, explorerIsActive)}
+          </div>
+        </div>
+      );
     }
 
     return (
@@ -508,9 +548,11 @@ export function WorkbenchIdeShell({
       </div>
     );
   }, [
+    explorerSurface,
     handleFocusSurface,
     handleToggleStackCollapsed,
     handleToggleStackMaximized,
+    layoutState.focusedSurfaceId,
     layoutState.maximizedNodeId,
     renderCollapsedStack,
     renderStackSurfaceActions,
@@ -716,8 +758,8 @@ export function WorkbenchIdeShell({
           {activeSurface ? (
             <>
               <DockActionButton
-                title="Dock to center"
-                onClick={() => handleMoveSurface(activeSurface.id, 'center')}
+                title={`Dock ${dockPlacementLabel(activeSurface.defaultDockPlacement)}`}
+                onClick={() => handleMoveSurface(activeSurface.id, activeSurface.defaultDockPlacement)}
               >
                 <SquareSplitHorizontal size={12} />
               </DockActionButton>
@@ -790,12 +832,13 @@ export function WorkbenchIdeShell({
     workbench.surfaces.shellShadow,
   ]);
 
-  const railPlacementStyle = layoutState.railState.placement === 'right'
+  const railPlacementStyle = layoutState.activityRailState.placement === 'right'
     ? { order: 2, borderLeft: `1px solid ${theme.palette.border}` }
     : { order: 0, borderRight: `1px solid ${theme.palette.border}` };
-  const dockPlacementStyle = layoutState.railState.placement === 'right'
+  const dockPlacementStyle = layoutState.activityRailState.placement === 'right'
     ? { order: 0 }
     : { order: 2 };
+  const railActiveSurfaceId = layoutState.focusedSurfaceId ?? explorerSurface?.id ?? null;
 
   return (
     <div style={{ position: 'relative', display: 'flex', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
@@ -804,9 +847,9 @@ export function WorkbenchIdeShell({
           ...railPlacementStyle,
           display: 'flex',
           flexDirection: 'column',
-          width: layoutState.railState.width,
-          minWidth: layoutState.railState.width,
-          maxWidth: layoutState.railState.width,
+          width: layoutState.activityRailState.width,
+          minWidth: layoutState.activityRailState.width,
+          maxWidth: layoutState.activityRailState.width,
           flexShrink: 0,
           background: theme.palette.shellBackground,
           padding: '8px 6px',
@@ -816,24 +859,23 @@ export function WorkbenchIdeShell({
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
           <DockActionButton
-            title={layoutState.railState.placement === 'left' ? 'Move rail right' : 'Move rail left'}
+            title={layoutState.activityRailState.placement === 'left' ? 'Move rail right' : 'Move rail left'}
             onClick={() => {
               commitLayoutState(updateIdeRailState(layoutState, {
-                placement: layoutState.railState.placement === 'left' ? 'right' : 'left',
+                placement: layoutState.activityRailState.placement === 'left' ? 'right' : 'left',
               }));
             }}
           >
-            {layoutState.railState.placement === 'left' ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+            {layoutState.activityRailState.placement === 'left' ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
           </DockActionButton>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', paddingRight: 2 }}>
-          {surfaces
-            .filter(surface => surface.railShortcut)
-            .map((surface) => {
-              const isActive = layoutState.focusedSurfaceId === surface.id;
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', paddingRight: 2 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {primaryRailSurfaces.map((surface) => {
+              const isActive = railActiveSurfaceId === surface.id;
               return (
                 <button
-                  key={`rail:${surface.id}`}
+                  key={`rail:primary:${surface.id}`}
                   type="button"
                   onClick={() => handleFocusSurface(surface.id)}
                   title={surface.label}
@@ -854,6 +896,45 @@ export function WorkbenchIdeShell({
                 </button>
               );
             })}
+          </div>
+          {secondaryRailSurfaces.length > 0 ? (
+            <div
+              style={{
+                height: 1,
+                margin: '0 6px',
+                background: theme.palette.border,
+                opacity: 0.7,
+              }}
+            />
+          ) : null}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {secondaryRailSurfaces.map((surface) => {
+              const isActive = railActiveSurfaceId === surface.id;
+              return (
+                <button
+                  key={`rail:secondary:${surface.id}`}
+                  type="button"
+                  onClick={() => handleFocusSurface(surface.id)}
+                  title={surface.label}
+                  style={{
+                    width: '100%',
+                    minHeight: 34,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 10,
+                    border: `1px solid ${isActive ? theme.palette.accent : theme.palette.border}`,
+                    background: isActive ? `${theme.palette.accent}16` : 'transparent',
+                    color: isActive ? theme.palette.textPrimary : theme.palette.textMuted,
+                    cursor: 'pointer',
+                    opacity: 0.82,
+                  }}
+                >
+                  {surface.icon}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 

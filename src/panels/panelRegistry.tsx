@@ -34,6 +34,7 @@ import {
 import type {
   DockStackPlacement,
   WorkbenchSurfaceDefaultVisibility,
+  WorkbenchSurfaceIdeRole,
 } from '../config/ideWorkbenchLayout';
 import type { TerminalWindowMode } from '../store/settingsStore';
 import type { SettingsSectionKey } from '../config/settingsNavigation';
@@ -130,6 +131,8 @@ export interface OverlayPanelDefinition {
     defaultVisibility: WorkbenchSurfaceDefaultVisibility;
     allowedPresentations?: Array<'stack' | 'floating'>;
     railShortcut?: boolean;
+    ideRole?: WorkbenchSurfaceIdeRole;
+    ideNavigationTier?: 'primary' | 'secondary';
   };
   render: () => React.ReactNode;
 }
@@ -147,6 +150,8 @@ export interface WorkbenchSurfaceDefinition {
   defaultVisibility: WorkbenchSurfaceDefaultVisibility;
   allowedPresentations: Array<'stack' | 'floating'>;
   railShortcut: boolean;
+  ideRole: WorkbenchSurfaceIdeRole;
+  ideNavigationTier: 'primary' | 'secondary';
   render: () => React.ReactNode;
 }
 
@@ -166,6 +171,8 @@ function createWorkbenchSurfaceDefinition(
     defaultVisibility: panel.dock?.defaultVisibility ?? 'hidden',
     allowedPresentations: panel.dock?.allowedPresentations ?? ['stack', 'floating'],
     railShortcut: panel.dock?.railShortcut ?? true,
+    ideRole: panel.dock?.ideRole ?? 'utility',
+    ideNavigationTier: panel.dock?.ideNavigationTier ?? 'secondary',
     render: panel.render,
   };
 }
@@ -478,6 +485,8 @@ export function createBuiltInPanelDefinitions({
         defaultVisibility: 'visible',
         allowedPresentations: ['stack', 'floating'],
         railShortcut: true,
+        ideRole: 'explorer-core',
+        ideNavigationTier: 'primary',
       },
       render: () => (
         <MemoExplorerWorkspace
@@ -517,11 +526,13 @@ export function createBuiltInPanelDefinitions({
         itemOrder: 20,
       },
       dock: {
-        defaultPlacement: 'left-sidebar',
+        defaultPlacement: 'right-sidebar',
         defaultOrder: 20,
-        defaultVisibility: 'collapsed',
+        defaultVisibility: 'hidden',
         allowedPresentations: ['stack', 'floating'],
         railShortcut: true,
+        ideRole: 'utility',
+        ideNavigationTier: 'secondary',
       },
       render: () => (
         <DeferredPanel>
@@ -546,9 +557,11 @@ export function createBuiltInPanelDefinitions({
       dock: {
         defaultPlacement: 'bottom-panel',
         defaultOrder: 10,
-        defaultVisibility: 'visible',
+        defaultVisibility: 'collapsed',
         allowedPresentations: ['stack', 'floating'],
         railShortcut: true,
+        ideRole: 'utility',
+        ideNavigationTier: 'primary',
       },
       render: () => (
         <MemoTerminalOverlay
@@ -576,9 +589,11 @@ export function createBuiltInPanelDefinitions({
       dock: {
         defaultPlacement: 'bottom-panel',
         defaultOrder: 20,
-        defaultVisibility: 'visible',
+        defaultVisibility: 'collapsed',
         allowedPresentations: ['stack', 'floating'],
         railShortcut: true,
+        ideRole: 'utility',
+        ideNavigationTier: 'primary',
       },
       render: () => (
         <DeferredPanel>
@@ -610,6 +625,8 @@ export function createBuiltInPanelDefinitions({
         defaultVisibility: 'hidden',
         allowedPresentations: ['stack', 'floating'],
         railShortcut: true,
+        ideRole: 'utility',
+        ideNavigationTier: 'secondary',
       },
       render: () => (
         <DeferredPanel>
@@ -636,6 +653,8 @@ export function createBuiltInPanelDefinitions({
         defaultVisibility: 'hidden',
         allowedPresentations: ['stack', 'floating'],
         railShortcut: true,
+        ideRole: 'utility',
+        ideNavigationTier: 'secondary',
       },
       render: () => (
         <DeferredPanel>
@@ -662,6 +681,8 @@ export function createBuiltInPanelDefinitions({
         defaultVisibility: 'hidden',
         allowedPresentations: ['stack', 'floating'],
         railShortcut: true,
+        ideRole: 'utility',
+        ideNavigationTier: 'secondary',
       },
       render: () => (
         <DeferredPanel>
@@ -800,6 +821,8 @@ export function createBuiltInPanelDefinitions({
         defaultVisibility: 'hidden',
         allowedPresentations: ['stack', 'floating'],
         railShortcut: true,
+        ideRole: 'utility',
+        ideNavigationTier: 'secondary',
       },
       render: renderPluginsManager,
     },
@@ -831,9 +854,11 @@ export function createFolderPluginPanelDefinitions({
     dock: {
       defaultPlacement: 'right-sidebar',
       defaultOrder: 200,
-      defaultVisibility: plugin.defaultOpen ? 'collapsed' : 'hidden',
+      defaultVisibility: 'hidden',
       allowedPresentations: ['stack', 'floating'],
       railShortcut: true,
+      ideRole: 'utility',
+      ideNavigationTier: 'secondary',
     },
     render: () => (
       <FolderPluginRenderer

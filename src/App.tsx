@@ -4266,6 +4266,7 @@ function App() {
       defaultDockPlacement: surface.defaultDockPlacement,
       defaultOrder: surface.defaultOrder,
       defaultVisibility: surface.defaultVisibility,
+      ideRole: surface.ideRole,
     })),
     [workbenchSurfaceDefinitions],
   );
@@ -4674,6 +4675,13 @@ function App() {
   ]);
   const handleTopBarTogglePanel = useCallback((panelId: string) => {
     if (activeShellUsesIdeWorkbench) {
+      if (panelId === 'explorer') {
+        updateActiveIdeWorkbenchLayoutState(
+          focusDockSurface(resolvedIdeWorkbenchLayoutState, panelId, workbenchSurfaceSeeds),
+        );
+        return;
+      }
+
       updateActiveIdeWorkbenchLayoutState(
         activeWorkbenchOpenPanelIds.includes(panelId)
           ? hideDockSurface(resolvedIdeWorkbenchLayoutState, panelId)
@@ -4693,6 +4701,13 @@ function App() {
   ]);
   const handleTopBarClosePanel = useCallback((panelId: string) => {
     if (activeShellUsesIdeWorkbench) {
+      if (panelId === 'explorer') {
+        updateActiveIdeWorkbenchLayoutState(
+          focusDockSurface(resolvedIdeWorkbenchLayoutState, panelId, workbenchSurfaceSeeds),
+        );
+        return;
+      }
+
       updateActiveIdeWorkbenchLayoutState(hideDockSurface(resolvedIdeWorkbenchLayoutState, panelId));
       return;
     }
@@ -4703,6 +4718,7 @@ function App() {
     handleClosePanel,
     resolvedIdeWorkbenchLayoutState,
     updateActiveIdeWorkbenchLayoutState,
+    workbenchSurfaceSeeds,
   ]);
 
   const handleReorderPanels = useCallback((draggedId: string, targetId: string) => {

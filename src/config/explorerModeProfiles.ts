@@ -68,6 +68,25 @@ const builtInExplorerModeProfiles: Record<BuiltInExplorerModeProfileId, Explorer
 export const defaultExplorerModeProfileId: BuiltInExplorerModeProfileId = 'balanced';
 export const explorerModeProfiles = Object.values(builtInExplorerModeProfiles);
 
+export function stepExplorerModeProfile(input: {
+  currentModeProfileId?: ExplorerModeProfileId | null;
+  direction?: 'next' | 'previous';
+}): ExplorerModeProfileDefinition {
+  const direction = input.direction ?? 'next';
+  const currentModeProfileId = normalizeExplorerModeProfileId(
+    input.currentModeProfileId,
+  );
+  const currentIndex = explorerModeProfiles.findIndex(
+    (modeProfile) => modeProfile.id === currentModeProfileId,
+  );
+  const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
+  const offset = direction === 'previous' ? -1 : 1;
+  const nextIndex =
+    (safeCurrentIndex + offset + explorerModeProfiles.length) %
+    explorerModeProfiles.length;
+  return explorerModeProfiles[nextIndex] ?? explorerModeProfiles[0];
+}
+
 function asTrimmedString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0
     ? value.trim()
