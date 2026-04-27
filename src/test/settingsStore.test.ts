@@ -52,6 +52,10 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.terminal.windowedWidth).toBe(1440);
     expect(settings.terminal.windowedHeight).toBe(920);
     expect(settings.terminal.fontSize).toBe(13);
+    expect(settings.terminal.shell).toBe(defaultSettings.terminal.shell);
+    expect(settings.terminal.shellProfile).toBe(defaultSettings.terminal.shellProfile);
+    expect(settings.terminal.shellPath).toBe(defaultSettings.terminal.shellPath);
+    expect(settings.terminal.shellArgs).toBe(defaultSettings.terminal.shellArgs);
     expect(settings.terminal.preferredOpenMode).toBe('integrated');
     expect(settings.terminal.externalTerminalProfile).toBe('auto');
   });
@@ -292,6 +296,21 @@ describe('useSettingsStore.updateTerminal()', () => {
     expect(settings.terminal.externalTerminalProfile).toBe('custom');
     expect(settings.terminal.externalTerminalCommand).toBe('wt.exe');
     expect(settings.terminal.externalTerminalArgs).toBe('--focus');
+  });
+
+  it('updates integrated shell profile fields and keeps the resolved shell string in sync', () => {
+    const store = useSettingsStore.getState();
+    store.updateTerminal({
+      shellProfile: 'pwsh',
+      shellPath: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+      shellArgs: '-NoLogo -NoProfile',
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.shellProfile).toBe('pwsh');
+    expect(settings.terminal.shellPath).toBe('C:\\Program Files\\PowerShell\\7\\pwsh.exe');
+    expect(settings.terminal.shellArgs).toBe('-NoLogo -NoProfile');
+    expect(settings.terminal.shell).toBe('"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoLogo -NoProfile');
   });
 
   it('updates cursor settings', () => {
@@ -1005,6 +1024,21 @@ describe('useSettingsStore.importSettings()', () => {
     expect(settings.appearance.activeThemeId).toBe('catppuccin');
     expect(settings.appearance.uiFontFamily).toBe('Geist, Inter, system-ui, sans-serif');
   });
+
+  it('migrates a legacy integrated shell string into the new shell profile fields on import', () => {
+    const store = useSettingsStore.getState();
+    store.importSettings({
+      terminal: {
+        shell: '"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoLogo -NoProfile',
+      } as typeof defaultSettings.terminal,
+    });
+
+    const { terminal } = useSettingsStore.getState().settings;
+    expect(terminal.shellProfile).toBe('pwsh');
+    expect(terminal.shellPath).toBe('C:\\Program Files\\PowerShell\\7\\pwsh.exe');
+    expect(terminal.shellArgs).toBe('-NoLogo -NoProfile');
+    expect(terminal.shell).toBe('"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoLogo -NoProfile');
+  });
 });
 
 describe('useSettingsStore.exportSettings()', () => {
@@ -1049,6 +1083,9 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.appearance.appBlurStrength).toBe(defaultSettings.appearance.appBlurStrength);
     expect(merged.appearance.appOpenAnimation).toBe(defaultSettings.appearance.appOpenAnimation);
     expect(merged.appearance.appCloseAnimation).toBe(defaultSettings.appearance.appCloseAnimation);
+    expect(merged.terminal.shellProfile).toBe(defaultSettings.terminal.shellProfile);
+    expect(merged.terminal.shellPath).toBe(defaultSettings.terminal.shellPath);
+    expect(merged.terminal.shellArgs).toBe(defaultSettings.terminal.shellArgs);
     expect(merged.terminal.overlayAnchor).toBe(defaultSettings.terminal.overlayAnchor);
     expect(merged.terminal.windowMode).toBe(defaultSettings.terminal.windowMode);
     expect(merged.terminal.windowedWidth).toBe(defaultSettings.terminal.windowedWidth);

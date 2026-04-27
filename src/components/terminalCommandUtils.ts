@@ -50,7 +50,7 @@ export function buildTerminalCdCommand(path: string, shell: string): string {
   }
 
   if (isPowerShellShell(normalizedShell)) {
-    return `Set-Location -LiteralPath '${escapeSingleQuotedPath(normalizedPath)}'`;
+    return `Set-Location -LiteralPath '${escapePowerShellSingleQuotedPath(normalizedPath)}'`;
   }
 
   if (isCmdShell(normalizedShell)) {

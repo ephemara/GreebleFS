@@ -1,3 +1,27 @@
+# 2026-04-26 - Integrated Terminal Shells Now Have VS Code-Style Profiles, Paths, And Args
+
+- The Windows integrated terminal no longer relies on one opaque `settings.terminal.shell` string pretending to be both user config and a launch contract.
+  - `src/store/settingsStore.ts` now persists `settings.terminal.shellProfile`, `shellPath`, and `shellArgs`.
+  - `settings.terminal.shell` is still kept as the derived effective command string so existing frontend shell-aware helpers (`cwd` sync, Python handoff, script runners, tab labels) stay compatible.
+- The frontend shell-routing contract is now:
+  - `src/config/platform.ts` owns the integrated-shell profile catalog plus Windows/macOS/Linux defaults and legacy-shell migration helpers.
+  - `src/components/SettingsPage.tsx` exposes `Integrated Shell Profile`, `Shell Path`, `Shell Args`, and a read-only `Effective Launch Command` preview.
+  - `src/components/TerminalOverlay.tsx` must not pass the derived preview string blindly into PTY spawn anymore. It now resolves a separate launch override through the profile-aware helper so `auto` remains a real backend fallback.
+- The Rust PTY host fix that made this work:
+  - `src-tauri/src/terminal.rs` no longer strips everything after the executable when a shell override is provided.
+  - Quoted shell paths such as `"C:\Program Files\PowerShell\7\pwsh.exe"` and custom arg lists such as `-NoLogo -NoProfile` now survive parsing into `portable_pty`.
+  - Windows `pwsh` resolution now prefers the requested explicit path when provided, otherwise prefers installed PowerShell 7, then falls back to Windows PowerShell, while still preserving custom args.
+- Durable product rule:
+  - Treat `settings.terminal.shell` as a derived compatibility string, not the source of truth for integrated shell configuration.
+  - If a future change needs to launch the integrated PTY, route through the profile-aware spawn helper so `auto` can still fall back on the Rust side.
+  - If a future change needs to understand shell syntax for commands injected into the pane, it is still correct to inspect the derived `settings.terminal.shell` string.
+- Validation:
+  - passed: `npx vitest run src/test/platform.test.ts src/test/settingsStore.test.ts src/test/terminalCommandUtils.test.ts --reporter=dot`
+  - passed: `npx vitest run src/test/settingsPage.behavior.test.tsx -t "applies themed select styling in terminal and system settings" --reporter=dot`
+  - passed: `npx vitest run src/test/terminalOverlay.test.tsx -t "injects a shell-specific cd command when the explorer queues a terminal cwd sync|spawns and restarts preview-scoped panes with namespaced ids and working directories" --reporter=dot`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - note: `cargo test --manifest-path src-tauri/Cargo.toml shell_ --lib` compiled but the Windows test binary aborted at startup with `STATUS_ENTRYPOINT_NOT_FOUND`, so use `cargo check` plus the JS-side tests as the current reliable validation path on this machine until that host-runtime issue is cleaned up.
+
 # 2026-04-26 - Windows Builds Now Gate Web Push And Fill In The Missing Win32 Surface
 
 - The Windows MSVC build was failing because the mobile push path pulled `web-push -> ece -> openssl-sys`, which then required a local OpenSSL install. The durable fix is now target-gated instead of vendored:

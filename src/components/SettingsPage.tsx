@@ -86,7 +86,10 @@ import {
   createDefaultDirectoryBookmarks,
   detectClientPlatform,
   getExternalTerminalProfileOptions,
+  getIntegratedTerminalProfileOptions,
+  getIntegratedTerminalProfileTemplate,
   type ExternalTerminalProfile,
+  type IntegratedTerminalProfile,
 } from "../config/platform";
 import {
   getGpuTierModeLabel,
@@ -215,6 +218,7 @@ import {
   settingsSectionCatalog,
   type SettingsPageArchetype,
   type SettingsSectionKey,
+  type SettingsSectionShellHints,
 } from "../config/settingsNavigation";
 import {
   getMobileRemoteAccessModeDefinition,
@@ -3430,7 +3434,11 @@ export function SettingsPage({
   );
   const homeTasks = useExplorerTaskSnapshots();
 
-  const profileOptions = useMemo(
+  const integratedShellProfileOptions = useMemo(
+    () => getIntegratedTerminalProfileOptions(platform),
+    [platform],
+  );
+  const externalProfileOptions = useMemo(
     () => getExternalTerminalProfileOptions(platform),
     [platform],
   );
@@ -7600,6 +7608,8 @@ export function SettingsPage({
   const activeSectionMeta =
     settingsSections.find((section) => section.key === activeSection) ??
     settingsSections[0];
+  const activeSectionShellHints =
+    activeSectionMeta.shell as SettingsSectionShellHints | undefined;
   const ActiveHomePackSettingsComponent =
     activeHomePack?.runtime.settingsComponent ?? null;
   const selectedContextMenuCommand =
@@ -8166,68 +8176,74 @@ export function SettingsPage({
                 color: text,
               }}
             />
-            <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
-              {filteredContextMenuBrowserCommands.length === 0 ? (
-                <div
-                  className="rounded border px-3 py-4 text-[11px] opacity-50"
-                  style={{
-                    borderColor: border,
-                    background: "rgba(255,255,255,0.02)",
-                  }}
-                >
-                  No commands match the current browser filter.
-                </div>
-              ) : (
-                filteredContextMenuBrowserCommands.map((command) => (
+            <OverlayScrollArea
+              style={{ marginTop: 12, maxHeight: 420 }}
+              scrollbarStyle="themed"
+              viewportStyle={{ paddingRight: 4 }}
+            >
+              <div className="space-y-2">
+                {filteredContextMenuBrowserCommands.length === 0 ? (
                   <div
-                    key={command.id}
-                    className="rounded border px-3 py-2"
+                    className="rounded border px-3 py-4 text-[11px] opacity-50"
                     style={{
                       borderColor: border,
                       background: "rgba(255,255,255,0.02)",
                     }}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="opacity-70">
-                            {renderSettingsContextMenuIcon(command.iconName)}
-                          </span>
-                          <span className="text-[11px] font-semibold">
-                            {command.title}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                          <ThemeBadge
-                            label={resolveContextMenuCommandSourceLabel(
-                              command,
-                            )}
-                          />
-                          <ThemeBadge label={command.group} />
-                        </div>
-                        {command.description ? (
-                          <p className="mt-2 text-[11px] opacity-45">
-                            {command.description}
-                          </p>
-                        ) : null}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => addContextMenuCommandEntry(command.id)}
-                        className="shrink-0 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        style={{
-                          border: `1px solid ${border}`,
-                          background: "rgba(255,255,255,0.04)",
-                          color: text,
-                        }}
-                      >
-                        Add
-                      </button>
-                    </div>
+                    No commands match the current browser filter.
                   </div>
-                ))
-              )}
-            </div>
+                ) : (
+                  filteredContextMenuBrowserCommands.map((command) => (
+                    <div
+                      key={command.id}
+                      className="rounded border px-3 py-2"
+                      style={{
+                        borderColor: border,
+                        background: "rgba(255,255,255,0.02)",
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="opacity-70">
+                              {renderSettingsContextMenuIcon(command.iconName)}
+                            </span>
+                            <span className="text-[11px] font-semibold">
+                              {command.title}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            <ThemeBadge
+                              label={resolveContextMenuCommandSourceLabel(
+                                command,
+                              )}
+                            />
+                            <ThemeBadge label={command.group} />
+                          </div>
+                          {command.description ? (
+                            <p className="mt-2 text-[11px] opacity-45">
+                              {command.description}
+                            </p>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => addContextMenuCommandEntry(command.id)}
+                          className="shrink-0 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{
+                            border: `1px solid ${border}`,
+                            background: "rgba(255,255,255,0.04)",
+                            color: text,
+                          }}
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </OverlayScrollArea>
           </div>
         </div>
 
@@ -8297,7 +8313,11 @@ export function SettingsPage({
                 label={`${activeContextMenuEntries.length} authored node${activeContextMenuEntries.length === 1 ? "" : "s"}`}
               />
             </div>
-            <div className="mt-3 max-h-[560px] overflow-y-auto pr-1">
+            <OverlayScrollArea
+              style={{ marginTop: 12, maxHeight: 560 }}
+              scrollbarStyle="themed"
+              viewportStyle={{ paddingRight: 4 }}
+            >
               {activeContextMenuEntries.length === 0 ? (
                 <div
                   className="rounded border px-3 py-4 text-[11px] opacity-50"
@@ -8313,7 +8333,7 @@ export function SettingsPage({
               ) : (
                 renderContextMenuStructureBranch(null)
               )}
-            </div>
+            </OverlayScrollArea>
           </div>
         </div>
 
@@ -8680,10 +8700,10 @@ export function SettingsPage({
         activeSectionKey={activeSectionMeta.key}
         activeArchetype={activeSectionMeta.archetype}
         preferredContentDensity={
-          activeSectionMeta.shell?.preferredContentDensity
+          activeSectionShellHints?.preferredContentDensity
         }
         disableContentScroll={
-          activeSectionMeta.shell?.disableContentScroll
+          activeSectionShellHints?.disableContentScroll
         }
         rail={
           <>
@@ -13429,18 +13449,111 @@ export function SettingsPage({
                 </label>
               </div>
 
+              <div className="space-y-1.5 md:col-span-2">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                  Integrated Shell Profile
+                </label>
+                <select
+                  aria-label="Integrated Shell Profile"
+                  value={settings.terminal.shellProfile}
+                  onChange={(event) => {
+                    const nextProfile = event.target
+                      .value as IntegratedTerminalProfile;
+                    const template = getIntegratedTerminalProfileTemplate(
+                      nextProfile,
+                      platform,
+                    );
+                    updateTerminal({
+                      shellProfile: nextProfile,
+                      shellPath:
+                        nextProfile === "custom"
+                          ? settings.terminal.shellPath
+                          : template.shellPath,
+                      shellArgs:
+                        nextProfile === "custom"
+                          ? settings.terminal.shellArgs
+                          : template.shellArgs,
+                    });
+                  }}
+                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsSelectStyle}
+                >
+                  {integratedShellProfileOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] opacity-40">
+                  {integratedShellProfileOptions.find(
+                    (option) => option.id === settings.terminal.shellProfile,
+                  )?.description ??
+                    "Choose the shell profile the integrated terminal should launch."}
+                </p>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
-                  Integrated Shell
+                  Shell Path
                 </label>
                 <input
-                  value={settings.terminal.shell}
+                  aria-label="Integrated Shell Path"
+                  value={settings.terminal.shellPath}
+                  disabled={settings.terminal.shellProfile === "auto"}
                   onChange={(event) =>
-                    updateTerminal({ shell: event.target.value })
+                    updateTerminal({ shellPath: event.target.value })
                   }
-                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  placeholder={
+                    settings.terminal.shellProfile === "auto"
+                      ? "Auto chooses the best installed shell"
+                      : platform === "windows"
+                        ? "pwsh.exe or C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+                        : "/bin/zsh"
+                  }
+                  className="w-full rounded border px-3 py-2 text-[11px] outline-none disabled:opacity-45"
                   style={settingsMonoFieldStyle}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                  Shell Args
+                </label>
+                <textarea
+                  aria-label="Integrated Shell Args"
+                  value={settings.terminal.shellArgs}
+                  disabled={settings.terminal.shellProfile === "auto"}
+                  onChange={(event) =>
+                    updateTerminal({ shellArgs: event.target.value })
+                  }
+                  placeholder={
+                    settings.terminal.shellProfile === "auto"
+                      ? "Auto profile uses host defaults"
+                      : platform === "windows"
+                        ? "-NoLogo -NoProfile"
+                        : "-l"
+                  }
+                  className="min-h-[92px] w-full rounded border px-3 py-2 text-[11px] outline-none disabled:opacity-45"
+                  style={settingsMonoFieldStyle}
+                />
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                  Effective Launch Command
+                </label>
+                <input
+                  aria-label="Effective Launch Command"
+                  readOnly
+                  value={settings.terminal.shell}
+                  className="w-full rounded border px-3 py-2 text-[11px] outline-none opacity-80"
+                  style={settingsMonoFieldStyle}
+                />
+                <p className="text-[11px] opacity-40">
+                  {settings.terminal.shellProfile === "auto"
+                    ? "Auto previews the preferred shell while the native host still falls back if PowerShell 7 is missing."
+                    : "The integrated terminal, cwd sync, and in-terminal script runners all use this resolved shell command."}
+                </p>
               </div>
 
               <div className="space-y-1.5">
@@ -13541,14 +13654,14 @@ export function SettingsPage({
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
                   style={settingsSelectStyle}
                 >
-                  {profileOptions.map((option) => (
+                  {externalProfileOptions.map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.label}
                     </option>
                   ))}
                 </select>
                 <p className="text-[11px] opacity-40">
-                  {profileOptions.find(
+                  {externalProfileOptions.find(
                     (option) =>
                       option.id === settings.terminal.externalTerminalProfile,
                   )?.description ??
@@ -15114,7 +15227,6 @@ export function SettingsPage({
             setDraggedContextMenuEntryId={setDraggedContextMenuEntryId}
             contextMenuCommandLookup={contextMenuCommandLookup}
             selectedContextMenuEntry={selectedContextMenuEntry}
-            selectedContextMenuCommand={selectedContextMenuCommand}
             activeContextMenuSubmenus={activeContextMenuSubmenus}
             selectedContextMenuSiblingIndex={selectedContextMenuSiblingIndex}
             selectedContextMenuSiblingEntriesCount={

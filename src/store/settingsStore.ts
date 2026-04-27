@@ -14,8 +14,14 @@ import {
   type FolderIconValue,
 } from '../config/folderIcons';
 import {
+  getDefaultIntegratedTerminalProfile,
   getDefaultIntegratedShell,
+  getIntegratedTerminalProfileTemplate,
+  inferIntegratedTerminalProfileFromShell,
+  normalizeIntegratedTerminalProfile,
+  resolveIntegratedTerminalShellCommand,
   type ExternalTerminalProfile,
+  type IntegratedTerminalProfile,
 } from '../config/platform';
 import {
   getExplorerGridZoomAnchor,
@@ -167,6 +173,9 @@ export interface TerminalSettings {
   fontSize: number;
   fontFamily: string;
   shell: string;
+  shellProfile: IntegratedTerminalProfile;
+  shellPath: string;
+  shellArgs: string;
   showSidebar: boolean;
   cursorBlink: boolean;
   cursorStyle: 'bar' | 'block' | 'underline';
@@ -401,6 +410,10 @@ const getDefaultPath = (): string => {
 };
 
 const defaultLayoutDynamicsSettings = createDefaultLayoutDynamicsSettings();
+const defaultIntegratedTerminalProfile = getDefaultIntegratedTerminalProfile();
+const defaultIntegratedTerminalTemplate = getIntegratedTerminalProfileTemplate(
+  defaultIntegratedTerminalProfile,
+);
 
 export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAnchor {
   return value === 'top' ? 'top' : 'bottom';
@@ -680,13 +693,66 @@ function normalizeSavedWindowDimension(value: unknown, fallback: number, min: nu
   return Math.max(Math.round(value), min);
 }
 
+function normalizeTerminalShellText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function normalizeTerminalSettings(
   base: TerminalSettings,
   updates?: Partial<TerminalSettings>,
 ): TerminalSettings {
   const merged = { ...base, ...updates };
+  const hasExplicitShellProfile = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'shellProfile');
+  const hasExplicitShellPath = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'shellPath');
+  const hasExplicitShellArgs = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'shellArgs');
+  const hasExplicitLegacyShell = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'shell');
+
+  const baseShellProfile = normalizeIntegratedTerminalProfile(base.shellProfile);
+  const baseShellPath = normalizeTerminalShellText(base.shellPath);
+  const baseShellArgs = normalizeTerminalShellText(base.shellArgs);
+
+  const normalizedShellConfig = hasExplicitLegacyShell
+    && !hasExplicitShellProfile
+    && !hasExplicitShellPath
+    && !hasExplicitShellArgs
+    ? inferIntegratedTerminalProfileFromShell({
+      shell: normalizeTerminalShellText(updates?.shell ?? ''),
+    })
+    : {
+      shellProfile: hasExplicitShellProfile
+        ? normalizeIntegratedTerminalProfile(updates?.shellProfile)
+        : baseShellProfile,
+      shellPath: hasExplicitShellPath
+        ? normalizeTerminalShellText(updates?.shellPath)
+        : baseShellPath,
+      shellArgs: hasExplicitShellArgs
+        ? normalizeTerminalShellText(updates?.shellArgs)
+        : baseShellArgs,
+    };
+
+  const normalizedShellProfile = normalizeIntegratedTerminalProfile(
+    normalizedShellConfig.shellProfile,
+  );
+  const shellTemplate = getIntegratedTerminalProfileTemplate(
+    normalizedShellProfile,
+  );
+  const normalizedShellPath = normalizedShellConfig.shellPath || shellTemplate.shellPath;
+  const normalizedShellArgs = normalizedShellConfig.shellArgs || shellTemplate.shellArgs;
+
   return {
     ...merged,
+    shellProfile: normalizedShellProfile,
+    shellPath: normalizedShellPath,
+    shellArgs: normalizedShellArgs,
+    shell: resolveIntegratedTerminalShellCommand({
+      profile: normalizedShellProfile,
+      shellPath: normalizedShellPath,
+      shellArgs: normalizedShellArgs,
+    }),
     showSidebar: merged.showSidebar !== false,
     overlayHeight: normalizeSavedWindowDimension(
       merged.overlayHeight,
@@ -1092,6 +1158,9 @@ export const defaultSettings: Settings = {
     fontSize: 13,
     fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace',
     shell: getDefaultIntegratedShell(),
+    shellProfile: defaultIntegratedTerminalProfile,
+    shellPath: defaultIntegratedTerminalTemplate.shellPath,
+    shellArgs: defaultIntegratedTerminalTemplate.shellArgs,
     showSidebar: true,
     cursorBlink: true,
     cursorStyle: 'bar',

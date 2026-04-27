@@ -302,13 +302,14 @@ impl TerminalManager {
 
     /// Get the appropriate shell for the current platform
     fn get_shell(shell_override: Option<&str>) -> (String, Vec<String>) {
-        let requested = shell_override
-            .map(shell_executable_name)
-            .unwrap_or_default();
+        let (requested_executable, requested_args) = shell_override
+            .map(parse_shell_command)
+            .unwrap_or_else(|| (String::new(), Vec::new()));
 
         #[cfg(target_os = "windows")]
         {
-            let requested = requested.as_str();
+            let requested = requested_executable.as_str();
+            let requested_args = requested_args.clone();
             let system_root =
                 std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
             let powershell_path = format!(
@@ -317,6 +318,7 @@ impl TerminalManager {
             );
             let pwsh_path =
                 std::env::var("ProgramFiles").unwrap_or_default() + "\\PowerShell\\7\\pwsh.exe";
+            let requested_path_is_explicit = command_looks_like_path(requested);
 
             let default_shell = || {
                 if Path::new(&pwsh_path).exists() {
@@ -335,29 +337,65 @@ impl TerminalManager {
 
             let normalized = requested.to_ascii_lowercase();
             if normalized.ends_with("cmd") || normalized.ends_with("cmd.exe") {
-                return (requested.to_string(), Vec::new());
+                let executable = if requested_path_is_explicit {
+                    requested.to_string()
+                } else {
+                    format!("{}\\System32\\cmd.exe", system_root)
+                };
+                return (
+                    executable,
+                    if requested_args.is_empty() {
+                        Vec::new()
+                    } else {
+                        requested_args
+                    },
+                );
             }
 
             if normalized.ends_with("pwsh") || normalized.ends_with("pwsh.exe") {
-                let executable = if Path::new(&pwsh_path).exists() {
-                    pwsh_path
-                } else {
+                let executable = if requested_path_is_explicit {
                     requested.to_string()
+                } else if Path::new(&pwsh_path).exists() {
+                    pwsh_path
+                } else if command_exists(requested) {
+                    requested.to_string()
+                } else if Path::new(&powershell_path).exists() {
+                    powershell_path.clone()
+                } else {
+                    default_shell().0
                 };
-                return (executable, vec!["-NoLogo".to_string()]);
+                return (
+                    executable,
+                    if requested_args.is_empty() {
+                        vec!["-NoLogo".to_string()]
+                    } else {
+                        requested_args
+                    },
+                );
             }
 
             if normalized.ends_with("powershell") || normalized.ends_with("powershell.exe") {
-                let executable = if Path::new(&powershell_path).exists() {
-                    powershell_path
-                } else {
+                let executable = if requested_path_is_explicit {
                     requested.to_string()
+                } else if Path::new(&powershell_path).exists() {
+                    powershell_path
+                } else if command_exists(requested) {
+                    requested.to_string()
+                } else {
+                    default_shell().0
                 };
-                return (executable, vec!["-NoLogo".to_string()]);
+                return (
+                    executable,
+                    if requested_args.is_empty() {
+                        vec!["-NoLogo".to_string()]
+                    } else {
+                        requested_args
+                    },
+                );
             }
 
             if Path::new(requested).exists() || command_exists(requested) {
-                return (requested.to_string(), Vec::new());
+                return (requested.to_string(), requested_args);
             }
 
             default_shell()
@@ -365,8 +403,15 @@ impl TerminalManager {
 
         #[cfg(target_os = "macos")]
         {
-            if !requested.is_empty() {
-                return (requested.clone(), vec!["-l".to_string()]);
+            if !requested_executable.is_empty() {
+                return (
+                    requested_executable.clone(),
+                    if requested_args.is_empty() {
+                        vec!["-l".to_string()]
+                    } else {
+                        requested_args
+                    },
+                );
             }
             // Use zsh on macOS (default since Catalina)
             if std::path::Path::new("/bin/zsh").exists() {
@@ -377,8 +422,15 @@ impl TerminalManager {
 
         #[cfg(target_os = "linux")]
         {
-            if !requested.is_empty() {
-                return (requested.clone(), vec!["-l".to_string()]);
+            if !requested_executable.is_empty() {
+                return (
+                    requested_executable.clone(),
+                    if requested_args.is_empty() {
+                        vec!["-l".to_string()]
+                    } else {
+                        requested_args
+                    },
+                );
             }
             // Check for user's preferred shell
             if let Ok(shell) = std::env::var("SHELL") {
@@ -389,8 +441,8 @@ impl TerminalManager {
 
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
         {
-            if !requested.is_empty() {
-                return (requested.clone(), Vec::new());
+            if !requested_executable.is_empty() {
+                return (requested_executable.clone(), requested_args);
             }
             ("/bin/sh".to_string(), vec![])
         }
@@ -1013,21 +1065,71 @@ fn normalize_windows_drive_path(path: &str) -> Option<String> {
     }
 }
 
-fn shell_executable_name(shell: &str) -> String {
+fn parse_shell_command(shell: &str) -> (String, Vec<String>) {
     let trimmed = shell.trim();
     if trimmed.is_empty() {
-        return String::new();
+        return (String::new(), Vec::new());
     }
 
-    let without_quotes = if let Some(rest) = trimmed.strip_prefix('"') {
-        rest.split_once('"').map(|(head, _)| head).unwrap_or(rest)
-    } else if let Some(rest) = trimmed.strip_prefix('\'') {
-        rest.split_once('\'').map(|(head, _)| head).unwrap_or(rest)
-    } else {
-        trimmed.split_whitespace().next().unwrap_or(trimmed)
-    };
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut active_quote: Option<char> = None;
+    let mut chars = trimmed.chars();
 
-    without_quotes.to_string()
+    while let Some(ch) = chars.next() {
+        if let Some(quote) = active_quote {
+            if quote == '"' && ch == '\\' {
+                if let Some(next) = chars.next() {
+                    if next == '"' || next == '\\' {
+                        current.push(next);
+                    } else {
+                        current.push('\\');
+                        current.push(next);
+                    }
+                } else {
+                    current.push('\\');
+                }
+                continue;
+            }
+
+            if ch == quote {
+                active_quote = None;
+                continue;
+            }
+
+            current.push(ch);
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => {
+                active_quote = Some(ch);
+            }
+            ch if ch.is_whitespace() => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    let executable = tokens.first().cloned().unwrap_or_default();
+    let args = tokens.into_iter().skip(1).collect();
+    (executable, args)
+}
+
+fn shell_executable_name(shell: &str) -> String {
+    parse_shell_command(shell).0
+}
+
+fn command_looks_like_path(command: &str) -> bool {
+    let command_path = Path::new(command);
+    command_path.components().count() > 1 || command_path.is_absolute()
 }
 
 fn command_exists(command: &str) -> bool {
@@ -1036,7 +1138,7 @@ fn command_exists(command: &str) -> bool {
     }
 
     let command_path = Path::new(command);
-    if command_path.components().count() > 1 || command_path.is_absolute() {
+    if command_looks_like_path(command) {
         return command_path.exists();
     }
 
@@ -1831,6 +1933,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_shell_command_preserves_a_quoted_shell_path_and_args() {
+        let (executable, args) = parse_shell_command(
+            "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -NoLogo -NoProfile",
+        );
+
+        assert_eq!(executable, "C:\\Program Files\\PowerShell\\7\\pwsh.exe");
+        assert_eq!(args, vec!["-NoLogo".to_string(), "-NoProfile".to_string()]);
+    }
+
+    #[test]
     fn optional_args_clones_the_input_vector() {
         let args = Some(vec!["--flag".to_string(), "value".to_string()]);
         assert_eq!(
@@ -1860,6 +1972,17 @@ mod tests {
             .map(|arg| arg.to_string_lossy().to_string())
             .collect();
         assert_eq!(args, vec!["/K".to_string()]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_shell_resolution_keeps_requested_pwsh_args() {
+        let (shell, args) = TerminalManager::get_shell(Some(
+            "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -NoLogo -NoProfile",
+        ));
+
+        assert_eq!(shell, "C:\\Program Files\\PowerShell\\7\\pwsh.exe");
+        assert_eq!(args, vec!["-NoLogo".to_string(), "-NoProfile".to_string()]);
     }
 
     #[cfg(target_os = "windows")]

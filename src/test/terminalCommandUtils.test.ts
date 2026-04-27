@@ -8,7 +8,7 @@ import {
 describe('buildTerminalCdCommand', () => {
   it('uses a PowerShell literal path for PowerShell shells', () => {
     expect(buildTerminalCdCommand("C:\\Dev\\Taloor's Lab", 'pwsh.exe')).toBe(
-      "Set-Location -LiteralPath 'C:\\Dev\\Taloor'\"'\"'s Lab'",
+      "Set-Location -LiteralPath 'C:\\Dev\\Taloor''s Lab'",
     );
   });
 

@@ -76,7 +76,12 @@ import {
   type PythonExamplePreset,
   type PythonRuntimeStatus,
 } from '../config/python';
-import { detectClientPlatform, type RuntimePlatform } from '../config/platform';
+import {
+  detectClientPlatform,
+  getShellCommandDisplayLabel,
+  resolveIntegratedTerminalSpawnShellCommand,
+  type RuntimePlatform,
+} from '../config/platform';
 import { useExplorerStore } from '../store/explorerStore';
 import { useTerminalStore, type Bookmark } from '../store/terminalStore';
 import { buildTerminalCdCommand } from './terminalCommandUtils';
@@ -332,16 +337,6 @@ function createPaneTelemetry(): TerminalPaneTelemetry {
   };
 }
 
-function getShellDisplayLabel(shell: string): string {
-  const normalized = shell.trim().replace(/["']/g, '');
-  if (!normalized) {
-    return 'shell';
-  }
-  const segments = normalized.split(/[\\/]/).filter(Boolean);
-  return segments[segments.length - 1] ?? normalized;
-}
-
-
 function countPayloadLines(payload: string): number {
   const matches = payload.match(/\r?\n/g);
   return matches?.length ?? 0;
@@ -588,6 +583,22 @@ const XTermPane = memo(function XTermPane({
   const webglContextLossDisposableRef = useRef<{ dispose: () => void } | null>(null);
   const [rendererMode, setRendererMode] = useState<TerminalRendererMode>('dom');
   const settings = useSettingsStore(s => s.settings.terminal);
+  const runtimePlatform = useMemo(() => detectClientPlatform(), []);
+  const spawnShellOverride = useMemo(
+    () =>
+      resolveIntegratedTerminalSpawnShellCommand({
+        profile: settings.shellProfile,
+        shellPath: settings.shellPath,
+        shellArgs: settings.shellArgs,
+        platform: runtimePlatform,
+      }),
+    [
+      runtimePlatform,
+      settings.shellArgs,
+      settings.shellPath,
+      settings.shellProfile,
+    ],
+  );
   const onReadyRef = useRef(onReady);
   const onFocusRef = useRef(onFocus);
   const onDataRef = useRef(onData);
@@ -693,7 +704,7 @@ const XTermPane = memo(function XTermPane({
       unwrapTauriResult(await commands.terminalSpawn(
         id,
         workingDirectory,
-        settings.shell,
+        spawnShellOverride,
         term.rows,
         term.cols,
       ));
@@ -782,7 +793,7 @@ const XTermPane = memo(function XTermPane({
     onResizeRef.current?.(id, term.rows, term.cols);
     onReadyRef.current?.(id);
     term.focus();
-  }, [attachWebglRenderer, disposeWebglRenderer, id, settings, theme, workingDirectory]);
+  }, [attachWebglRenderer, disposeWebglRenderer, id, settings, spawnShellOverride, theme, workingDirectory]);
 
   useEffect(() => {
     if (visible && bootReady) {
@@ -1602,6 +1613,21 @@ export function TerminalOverlay({
     updateTerminal: state.updateTerminal,
   })));
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
+  const resolvedSpawnShell = useMemo(
+    () =>
+      resolveIntegratedTerminalSpawnShellCommand({
+        profile: settings.shellProfile,
+        shellPath: settings.shellPath,
+        shellArgs: settings.shellArgs,
+        platform: runtimePlatform,
+      }),
+    [
+      runtimePlatform,
+      settings.shellArgs,
+      settings.shellPath,
+      settings.shellProfile,
+    ],
+  );
   const appearance = useMemo(
     () => appearanceProp ?? resolveOverlayAppearance({
       activeThemeId: appearanceSettings.activeThemeId,
@@ -1644,7 +1670,10 @@ export function TerminalOverlay({
     ensureFontFamilyLoaded(settings.fontFamily);
   }, [settings.fontFamily, uiFont]);
 
-  const initialShellLabel = useMemo(() => getShellDisplayLabel(settings.shell), [settings.shell]);
+  const initialShellLabel = useMemo(
+    () => getShellCommandDisplayLabel(settings.shell),
+    [settings.shell],
+  );
   const [tabs, setTabs] = useState<Tab[]>(() => [{
     id: initialTabIdRef.current,
     label: initialShellLabel,
@@ -2012,7 +2041,7 @@ export function TerminalOverlay({
       unwrapTauriResult(await commands.terminalSpawn(
         paneId,
         normalizedWorkingDirectory,
-        settings.shell,
+        resolvedSpawnShell,
         entry.xterm.rows,
         entry.xterm.cols,
       ));
@@ -2039,8 +2068,8 @@ export function TerminalOverlay({
     markTerminalReady,
     normalizedWorkingDirectory,
     paneSessions,
+    resolvedSpawnShell,
     setTransientActionMessage,
-    settings.shell,
   ]);
   useEffect(() => {
     if (
@@ -2208,7 +2237,7 @@ export function TerminalOverlay({
     tabCounterRef.current += 1;
     const nextTabs = [...tabs, {
       id: tabId,
-      label: `${getShellDisplayLabel(settings.shell)} (${tabs.length + 1})`,
+      label: `${getShellCommandDisplayLabel(settings.shell)} (${tabs.length + 1})`,
       layout: createTerminalPaneLayout(pane.id),
       activePaneId: pane.id,
       lastSplitDirection: 'columns' as const,

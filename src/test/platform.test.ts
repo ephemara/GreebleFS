@@ -4,10 +4,15 @@ import {
   createDefaultDirectoryBookmarks,
   detectClientPlatform,
   getDefaultIntegratedShell,
+  getDefaultIntegratedTerminalProfile,
   getExternalTerminalProfileOptions,
   getFallbackExplorerPath,
+  getIntegratedTerminalProfileOptions,
   getPlatformPathSeparator,
+  inferIntegratedTerminalProfileFromShell,
   joinPlatformPath,
+  resolveIntegratedTerminalShellCommand,
+  resolveIntegratedTerminalSpawnShellCommand,
 } from '../config/platform';
 
 afterEach(() => {
@@ -26,10 +31,28 @@ describe('platform config', () => {
   });
 
   it('returns terminal defaults for each platform', () => {
-    expect(getDefaultIntegratedShell('windows')).toBe('powershell.exe');
-    expect(getDefaultIntegratedShell('macos')).toBe('/bin/zsh');
-    expect(getDefaultIntegratedShell('linux')).toBe('/bin/bash');
+    expect(getDefaultIntegratedTerminalProfile('windows')).toBe('auto');
+    expect(getDefaultIntegratedShell('windows')).toBe('pwsh.exe -NoLogo');
+    expect(getDefaultIntegratedShell('macos')).toBe('/bin/zsh -l');
+    expect(getDefaultIntegratedShell('linux')).toBe('/bin/bash -l');
     expect(getDefaultIntegratedShell('unknown')).toBe('');
+  });
+
+  it('returns platform-specific integrated terminal profiles', () => {
+    expect(getIntegratedTerminalProfileOptions('windows').map(option => option.id)).toEqual([
+      'auto',
+      'pwsh',
+      'powershell',
+      'cmd',
+      'custom',
+    ]);
+    expect(getIntegratedTerminalProfileOptions('linux').map(option => option.id)).toEqual([
+      'auto',
+      'bash',
+      'zsh',
+      'fish',
+      'custom',
+    ]);
   });
 
   it('returns platform-specific external terminal profiles', () => {
@@ -49,6 +72,43 @@ describe('platform config', () => {
       'xterm',
       'custom',
     ]);
+  });
+
+  it('resolves integrated shell commands from profile defaults and overrides', () => {
+    expect(resolveIntegratedTerminalShellCommand({
+      profile: 'pwsh',
+      platform: 'windows',
+    })).toBe('pwsh.exe -NoLogo');
+    expect(resolveIntegratedTerminalShellCommand({
+      profile: 'pwsh',
+      shellPath: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+      shellArgs: '-NoLogo -NoProfile',
+      platform: 'windows',
+    })).toBe('"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoLogo -NoProfile');
+  });
+
+  it('keeps auto launch shells null so the native host can fall back cleanly', () => {
+    expect(resolveIntegratedTerminalSpawnShellCommand({
+      profile: 'auto',
+      shellPath: '',
+      shellArgs: '',
+      platform: 'windows',
+    })).toBeNull();
+    expect(resolveIntegratedTerminalSpawnShellCommand({
+      profile: 'pwsh',
+      platform: 'windows',
+    })).toBe('pwsh.exe -NoLogo');
+  });
+
+  it('infers integrated shell profile settings from a legacy shell string', () => {
+    expect(inferIntegratedTerminalProfileFromShell({
+      shell: '"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoLogo -NoProfile',
+      platform: 'windows',
+    })).toEqual({
+      shellProfile: 'pwsh',
+      shellPath: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+      shellArgs: '-NoLogo -NoProfile',
+    });
   });
 
   it('joins paths using the target platform separator', () => {
