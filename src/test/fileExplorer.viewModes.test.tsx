@@ -1603,7 +1603,7 @@ describe("FileExplorer view modes", () => {
     await screen.findByText("alpha");
 
     fireEvent.click(
-      screen.getByRole("button", { name: /open explorer layout menu/i }),
+      screen.getByRole("button", { name: /open explorer layout preset menu/i }),
     );
     fireEvent.click(
       screen.getByRole("button", { name: /restore canonical/i }),
@@ -1622,6 +1622,28 @@ describe("FileExplorer view modes", () => {
         }),
       ).toBeNull();
     });
+  });
+
+  it("keeps the fixed explorer layout preset menu above the preview stack", async () => {
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const menuButton = screen.getByRole("button", {
+      name: /open explorer layout preset menu/i,
+    });
+    fireEvent.click(menuButton);
+
+    const fixedUtilityStrip = menuButton.closest(
+      "[data-overlay-explorer-plane='fixed-utility-strip']",
+    ) as HTMLDivElement | null;
+    const menu = screen.getByRole("menu", {
+      name: /explorer layout menu/i,
+    }) as HTMLDivElement;
+
+    expect(fixedUtilityStrip).not.toBeNull();
+    expect(fixedUtilityStrip?.style.position).toBe("relative");
+    expect(fixedUtilityStrip?.style.zIndex).toBe("24");
+    expect(menu.style.zIndex).toBe("60");
   });
 
   it("moves toolbar controls when the active theme changes the default mode profile", async () => {
