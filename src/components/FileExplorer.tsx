@@ -302,7 +302,10 @@ import {
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { useLayoutDynamicsController } from "../animation/layoutDynamics";
-import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
+import {
+  ExplorerChromeSurface,
+  type ExplorerChromeSurfaceLayoutDynamics,
+} from "./explorer/ExplorerChromeSurface";
 import {
   beginExplorerCustomizePointerSession,
   cancelExplorerCustomizePointerSession,
@@ -4056,6 +4059,7 @@ function PreviewPanel({
   chromeLayoutId,
   chromeOverride,
   chromeEditMode,
+  previewHeaderLayoutDynamics,
   showHiddenFiles,
   editorSettings,
   shaderPerformanceMode,
@@ -4147,6 +4151,7 @@ function PreviewPanel({
   chromeLayoutId: ExplorerChromeLayoutId;
   chromeOverride?: ExplorerChromeOverrideSnapshot | null;
   chromeEditMode?: ExplorerChromeEditModeState;
+  previewHeaderLayoutDynamics?: ExplorerChromeSurfaceLayoutDynamics;
   showHiddenFiles: boolean;
   editorSettings: import("../store/settingsStore").EditorSettings;
   shaderPerformanceMode: ShaderPerformanceMode;
@@ -5526,6 +5531,7 @@ function PreviewPanel({
           getRowStyle={() => previewHeaderRowStyle}
           getZoneStyle={getPreviewHeaderZoneStyle}
           renderControl={renderPreviewChromeControl}
+          layoutDynamics={previewHeaderLayoutDynamics}
           editMode={chromeEditMode}
         />
       </div>
@@ -18148,68 +18154,127 @@ export function FileExplorer({
     layoutDynamics.resolveSurfaceSettings("explorerTopbar");
   const explorerToolbarLayoutDynamicsSettings =
     layoutDynamics.resolveSurfaceSettings("explorerToolbar");
-  const explorerTopbarLayoutDynamics = useMemo(
-    () => ({
-      enabled:
-        explorerTopbarLayoutDynamicsSettings.enabled ||
-        Boolean(activeChromeEditSession),
-      axisMode: explorerTopbarLayoutDynamicsSettings.surface.axisMode,
-      solver: explorerTopbarLayoutDynamicsSettings.preset,
-      intensity: explorerTopbarLayoutDynamicsSettings.intensity,
-      onCommitSnapshot: activeChromeEditSession
-        ? (snapshot: {
-            entries: Array<{
-              nodeId: string;
-              bandId: string;
-              x: number;
-              y: number;
-              widthPx?: number;
-              heightPx?: number;
-            }>;
-          }) =>
-            handleExplorerChromeDynamicSurfaceCommit({
-              surfaceId: "explorerTopbar",
-              snapshot,
-            })
-        : undefined,
-    }),
-    [
-      activeChromeEditSession,
-      explorerTopbarLayoutDynamicsSettings,
-      handleExplorerChromeDynamicSurfaceCommit,
-    ],
-  );
-  const explorerToolbarLayoutDynamics = useMemo(
-    () => ({
-      enabled:
-        explorerToolbarLayoutDynamicsSettings.enabled ||
-        Boolean(activeChromeEditSession),
-      axisMode: explorerToolbarLayoutDynamicsSettings.surface.axisMode,
-      solver: explorerToolbarLayoutDynamicsSettings.preset,
-      intensity: explorerToolbarLayoutDynamicsSettings.intensity,
-      onCommitSnapshot: activeChromeEditSession
-        ? (snapshot: {
-            entries: Array<{
-              nodeId: string;
-              bandId: string;
-              x: number;
-              y: number;
-              widthPx?: number;
-              heightPx?: number;
-            }>;
-          }) =>
-            handleExplorerChromeDynamicSurfaceCommit({
-              surfaceId: "explorerToolbar",
-              snapshot,
-            })
-        : undefined,
-    }),
-    [
-      activeChromeEditSession,
-      explorerToolbarLayoutDynamicsSettings,
-      handleExplorerChromeDynamicSurfaceCommit,
-    ],
-  );
+  const explorerRailHeaderLayoutDynamicsSettings =
+    layoutDynamics.resolveSurfaceSettings("railHeader");
+  const explorerPreviewHeaderLayoutDynamicsSettings =
+    layoutDynamics.resolveSurfaceSettings("previewHeader");
+  const explorerStatusBarLayoutDynamicsSettings =
+    layoutDynamics.resolveSurfaceSettings("explorerStatusBar");
+  const explorerTopbarLayoutDynamics =
+    useMemo<ExplorerChromeSurfaceLayoutDynamics>(
+      () => ({
+        enabled:
+          explorerTopbarLayoutDynamicsSettings.enabled ||
+          Boolean(activeChromeEditSession),
+        axisMode: explorerTopbarLayoutDynamicsSettings.surface.axisMode,
+        solver: explorerTopbarLayoutDynamicsSettings.preset,
+        intensity: explorerTopbarLayoutDynamicsSettings.intensity,
+        onCommitSnapshot: activeChromeEditSession
+          ? (snapshot) =>
+              handleExplorerChromeDynamicSurfaceCommit({
+                surfaceId: "explorerTopbar",
+                snapshot,
+              })
+          : undefined,
+      }),
+      [
+        activeChromeEditSession,
+        explorerTopbarLayoutDynamicsSettings,
+        handleExplorerChromeDynamicSurfaceCommit,
+      ],
+    );
+  const explorerToolbarLayoutDynamics =
+    useMemo<ExplorerChromeSurfaceLayoutDynamics>(
+      () => ({
+        enabled:
+          explorerToolbarLayoutDynamicsSettings.enabled ||
+          Boolean(activeChromeEditSession),
+        axisMode: explorerToolbarLayoutDynamicsSettings.surface.axisMode,
+        solver: explorerToolbarLayoutDynamicsSettings.preset,
+        intensity: explorerToolbarLayoutDynamicsSettings.intensity,
+        onCommitSnapshot: activeChromeEditSession
+          ? (snapshot) =>
+              handleExplorerChromeDynamicSurfaceCommit({
+                surfaceId: "explorerToolbar",
+                snapshot,
+              })
+          : undefined,
+      }),
+      [
+        activeChromeEditSession,
+        explorerToolbarLayoutDynamicsSettings,
+        handleExplorerChromeDynamicSurfaceCommit,
+      ],
+    );
+  const explorerRailHeaderLayoutDynamics =
+    useMemo<ExplorerChromeSurfaceLayoutDynamics>(
+      () => ({
+        enabled:
+          explorerRailHeaderLayoutDynamicsSettings.enabled ||
+          Boolean(activeChromeEditSession),
+        axisMode: explorerRailHeaderLayoutDynamicsSettings.surface.axisMode,
+        solver: explorerRailHeaderLayoutDynamicsSettings.preset,
+        intensity: explorerRailHeaderLayoutDynamicsSettings.intensity,
+        onCommitSnapshot: activeChromeEditSession
+          ? (snapshot) =>
+              handleExplorerChromeDynamicSurfaceCommit({
+                surfaceId: "railHeader",
+                snapshot,
+              })
+          : undefined,
+      }),
+      [
+        activeChromeEditSession,
+        explorerRailHeaderLayoutDynamicsSettings,
+        handleExplorerChromeDynamicSurfaceCommit,
+      ],
+    );
+  const explorerPreviewHeaderLayoutDynamics =
+    useMemo<ExplorerChromeSurfaceLayoutDynamics>(
+      () => ({
+        enabled:
+          explorerPreviewHeaderLayoutDynamicsSettings.enabled ||
+          Boolean(activeChromeEditSession),
+        axisMode: explorerPreviewHeaderLayoutDynamicsSettings.surface.axisMode,
+        solver: explorerPreviewHeaderLayoutDynamicsSettings.preset,
+        intensity: explorerPreviewHeaderLayoutDynamicsSettings.intensity,
+        onCommitSnapshot: activeChromeEditSession
+          ? (snapshot) =>
+              handleExplorerChromeDynamicSurfaceCommit({
+                surfaceId: "previewHeader",
+                snapshot,
+              })
+          : undefined,
+      }),
+      [
+        activeChromeEditSession,
+        explorerPreviewHeaderLayoutDynamicsSettings,
+        handleExplorerChromeDynamicSurfaceCommit,
+      ],
+    );
+  const explorerStatusBarLayoutDynamics =
+    useMemo<ExplorerChromeSurfaceLayoutDynamics>(
+      () => ({
+        enabled:
+          explorerStatusBarLayoutDynamicsSettings.enabled ||
+          Boolean(activeChromeEditSession),
+        axisMode: explorerStatusBarLayoutDynamicsSettings.surface.axisMode,
+        solver: explorerStatusBarLayoutDynamicsSettings.preset,
+        intensity: explorerStatusBarLayoutDynamicsSettings.intensity,
+        onCommitSnapshot: activeChromeEditSession
+          ? (snapshot) =>
+              handleExplorerChromeDynamicSurfaceCommit({
+                surfaceId: "explorerStatusBar",
+                snapshot,
+              })
+          : undefined,
+      }),
+      [
+        activeChromeEditSession,
+        explorerStatusBarLayoutDynamicsSettings,
+        handleExplorerChromeDynamicSurfaceCommit,
+      ],
+    );
   const beginExplorerChromeCustomization = useCallback(() => {
     openChromeEditSession({
       themeId: explorerChromeThemeId,
@@ -26738,6 +26803,7 @@ export function FileExplorer({
             chromeLayoutId={effectiveChromeLayoutId}
             chromeOverride={explorerChromeOverride}
             chromeEditMode={explorerChromeEditMode}
+            railHeaderLayoutDynamics={explorerRailHeaderLayoutDynamics}
           />
         </ResizablePane>
       </div>
@@ -26755,10 +26821,11 @@ export function FileExplorer({
     explorerDropScopeId,
     effectiveChromeLayoutId,
     effectiveRailPosition,
-    explorerChromeEditMode,
-    explorerChromeOverride,
-    explorerTheme.railBrandLabel,
-    goHome,
+      explorerChromeEditMode,
+      explorerChromeOverride,
+      explorerRailHeaderLayoutDynamics,
+      explorerTheme.railBrandLabel,
+      goHome,
     handleBookmarkCreated,
     isCompactDock,
     localTreeRefreshRevision,
@@ -26887,6 +26954,7 @@ export function FileExplorer({
         chromeLayoutId={effectiveChromeLayoutId}
         chromeOverride={explorerChromeOverride}
         chromeEditMode={explorerChromeEditMode}
+        previewHeaderLayoutDynamics={explorerPreviewHeaderLayoutDynamics}
         showHiddenFiles={showHidden}
         editorSettings={editorSettings}
         shaderPerformanceMode={shaderPerformanceMode}
@@ -26938,6 +27006,7 @@ export function FileExplorer({
     explorerBlurEnabled,
     explorerChromeEditMode,
     explorerChromeOverride,
+    explorerPreviewHeaderLayoutDynamics,
     explorerTheme,
     handleArchiveAction,
     handlePdfPreviewChromeStateChange,
@@ -28850,6 +28919,7 @@ export function FileExplorer({
             getRowStyle={getExplorerStatusBarRowStyle}
             getZoneStyle={getExplorerStatusBarZoneStyle}
             renderControl={renderExplorerChromeControl}
+            layoutDynamics={explorerStatusBarLayoutDynamics}
             editMode={explorerChromeEditMode}
           />
         </div>

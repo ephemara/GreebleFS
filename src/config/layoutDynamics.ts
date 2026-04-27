@@ -4,6 +4,10 @@ export type LayoutDynamicsBoundsMode = "band" | "surface";
 export type LayoutDynamicsSurfaceId =
   | "explorerTopbar"
   | "explorerToolbar"
+  | "workspaceHeader"
+  | "railHeader"
+  | "previewHeader"
+  | "explorerStatusBar"
   | "workbenchTopBar";
 
 export interface LayoutDynamicsNode {
@@ -154,6 +158,42 @@ export const layoutDynamicsSurfaceCatalog = [
   {
     id: "explorerToolbar",
     label: "Explorer Toolbar",
+    supportsAuthoring: true,
+    axisMode: "horizontal-band",
+    boundsMode: "band",
+    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
+    controlCatalog: "explorerChrome",
+  },
+  {
+    id: "workspaceHeader",
+    label: "Explorer Workspace Header",
+    supportsAuthoring: true,
+    axisMode: "horizontal-band",
+    boundsMode: "band",
+    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
+    controlCatalog: "explorerChrome",
+  },
+  {
+    id: "railHeader",
+    label: "Explorer Sources Rail Header",
+    supportsAuthoring: true,
+    axisMode: "horizontal-band",
+    boundsMode: "band",
+    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
+    controlCatalog: "explorerChrome",
+  },
+  {
+    id: "previewHeader",
+    label: "Explorer Preview Header",
+    supportsAuthoring: true,
+    axisMode: "horizontal-band",
+    boundsMode: "band",
+    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
+    controlCatalog: "explorerChrome",
+  },
+  {
+    id: "explorerStatusBar",
+    label: "Explorer Status Bar",
     supportsAuthoring: true,
     axisMode: "horizontal-band",
     boundsMode: "band",

@@ -68,12 +68,14 @@
 - First adopters:
   - `src/components/WorkbenchTopBar.tsx` now supports full in-place top-bar customize mode backed by persisted anchor snapshots in `settings.appearance.topBarLayoutSnapshotsById`.
   - `src/components/explorer/ExplorerChromeSurface.tsx` can switch adopted explorer surfaces into the shared layout-dynamics canvas.
-  - Important v1 guardrail: explorer adoption is mixed-mode on purpose. Surfaces only enter the physics canvas when they actually carry authored `bandId` / `anchorX` / `anchorY` metadata. Untouched legacy slot/offset drafts stay on the old zone/order/offset path so customize regressions do not spread while adoption is still in progress.
+  - Current explorer adopters are `explorerTopbar`, `explorerToolbar`, `workspaceHeader`, `railHeader`, `previewHeader`, and `explorerStatusBar`. Normal rendering and customize mode now use the shared layout-dynamics canvas for those surfaces whenever they have a layout-dynamics binding.
+  - Important remaining v1 guardrail: catalog-origin drags still fall back to the legacy zone/order insertion runtime while that path is unmigrated. If the pink orb or slot rails reappear during a placed-control drag, that is a regression; if they appear while dragging directly out of the customize catalog, that is the one old seam still intentionally alive.
 - Settings/runtime exposure:
   - `src/components/SettingsPage.tsx`, `src/config/settingsNavigation.ts`, and `src/components/settings/sections/LayoutDynamicsSettingsSection.tsx` now expose a dedicated `Layout Dynamics` section separate from `Interaction Motion`.
   - `src/animation/LayoutDynamicsLab.tsx` is the live preview harness. It uses the same shared canvas/runtime as the real shell and intentionally demonstrates both horizontal-band and free-2d scenes.
 - Durable product rule:
   - Persist authored anchors only. Repelled/displaced positions are runtime-only and should never become saved layout truth.
+  - Do not write new tests that assert `marginLeft`/slot-offset presentation on adopted layout-dynamics explorer surfaces. Assert surface adoption, control presence/zone, and persisted override truth instead.
   - If a new shell strip adopts this system, wire it through `layoutDynamics.ts` + `useLayoutDynamicsController(...)` + `LayoutDynamicsCanvas` instead of inventing another drag/runtime path.
 - Durable validation:
   - passed: `bunx vitest run src/test/ExplorerChromeSurface.test.tsx src/test/workbenchTopBar.test.tsx src/test/layoutDynamicsRuntime.test.ts --reporter=dot`

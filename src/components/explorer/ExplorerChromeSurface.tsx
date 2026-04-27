@@ -18,6 +18,14 @@ import {
 } from "../../config/explorerChromeLayouts";
 import { LayoutDynamicsCanvas } from "../layoutDynamics/LayoutDynamicsCanvas";
 
+export interface ExplorerChromeSurfaceLayoutDynamics {
+  enabled: boolean;
+  axisMode: LayoutDynamicsAxisMode;
+  solver: LayoutDynamicsSolverProfile;
+  intensity: number;
+  onCommitSnapshot?: (snapshot: LayoutDynamicsAuthoringSnapshot) => void;
+}
+
 interface ExplorerChromeSurfaceProps {
   surface: ExplorerChromeResolvedSurface;
   style?: CSSProperties;
@@ -26,13 +34,7 @@ interface ExplorerChromeSurfaceProps {
   renderControl: (
     placement: ExplorerChromeResolvedControlPlacement,
   ) => React.ReactNode;
-  layoutDynamics?: {
-    enabled: boolean;
-    axisMode: LayoutDynamicsAxisMode;
-    solver: LayoutDynamicsSolverProfile;
-    intensity: number;
-    onCommitSnapshot?: (snapshot: LayoutDynamicsAuthoringSnapshot) => void;
-  };
+  layoutDynamics?: ExplorerChromeSurfaceLayoutDynamics;
   editMode?: {
     active: boolean;
     draggingControlId: ExplorerChromeControlId | null;
@@ -118,24 +120,9 @@ export function ExplorerChromeSurface({
     () => getExplorerChromeSurfaceDefinition(surface.surfaceId),
     [surface.surfaceId],
   );
-  const surfaceHasDynamicAnchors = useMemo(
-    () =>
-      surface.rows.some((row) =>
-        row.zones.some((zone) =>
-          zone.controls.some(
-            (placement) =>
-              placement.bandId != null ||
-              placement.anchorX != null ||
-              placement.anchorY != null,
-          ),
-        ),
-      ),
-    [surface],
-  );
   const useDynamicSurfaceLayout =
     layoutDynamics?.enabled === true &&
-    editMode?.pointerSourceKind !== "catalog" &&
-    surfaceHasDynamicAnchors;
+    editMode?.pointerSourceKind !== "catalog";
   const dynamicSurfaceItems = useMemo(
     () =>
       surface.rows.flatMap((row) =>

@@ -17,6 +17,7 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import type { ResolvedOverlayAppearance } from "../../config/appearance";
 import type { LoadedExplorerAction } from "../../config/actionPacks";
+import { useLayoutDynamicsController } from "../../animation/layoutDynamics";
 import { detectClientPlatform } from "../../config/platform";
 import { matchesKeybinding } from "../../config/hotkeys";
 import {
@@ -34,6 +35,7 @@ import {
   type ExplorerCustomizeCatalogEntry,
 } from "../../config/explorerCustomizeCatalog";
 import {
+  getExplorerChromeSurfaceDefinition,
   moveExplorerChromeControlInResolvedSurfaces,
   resolveExplorerChromeSurfaceLayout,
   type ExplorerChromeControlId,
@@ -85,7 +87,10 @@ import {
 } from "../../runtime/actionBackend";
 import { recordExplorerActionRun } from "../../store/explorerActionRunStore";
 import { openExplorerTaskCenter } from "../../store/explorerTaskStore";
-import { ExplorerChromeSurface } from "./ExplorerChromeSurface";
+import {
+  ExplorerChromeSurface,
+  type ExplorerChromeSurfaceLayoutDynamics,
+} from "./ExplorerChromeSurface";
 import { ExplorerDragOverlay } from "./ExplorerDragOverlay";
 import { FileExplorer } from "../FileExplorer";
 import type {
@@ -394,6 +399,7 @@ export function ExplorerWorkspace({
     () => appearance?.explorerTheme ?? resolveExplorerThemeRecipe(appearance),
     [appearance],
   );
+  const layoutDynamics = useLayoutDynamicsController(appearance);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const explorerChromeThemeId = useMemo(() => {
     const resolvedAppearanceThemeId = appearance?.baseTheme.id?.trim();
@@ -1094,6 +1100,91 @@ export function ExplorerWorkspace({
     },
     [chromeEditSession, findRegisteredWorkspaceChromePlacement, updateChromeEditDraft],
   );
+  const handleWorkspaceChromeDynamicSurfaceCommit = useCallback(
+    (snapshot: {
+      entries: Array<{
+        nodeId: string;
+        bandId: string;
+        x: number;
+        y: number;
+        widthPx?: number;
+        heightPx?: number;
+      }>;
+    }) => {
+      if (!chromeEditSession) {
+        return;
+      }
+
+      const currentSurface =
+        chromeEditSession.registeredSurfaces.find(
+          (surface) => surface.surfaceId === "workspaceHeader",
+        ) ?? null;
+      const visibleControlIdsOnSurface = new Set(
+        currentSurface?.visibleControlIds ?? [],
+      );
+      const surfaceDefinition =
+        getExplorerChromeSurfaceDefinition("workspaceHeader");
+      const rowDefinitionById = new Map(
+        surfaceDefinition.rows.map((row) => [row.id, row] as const),
+      );
+      const bandOrderCursorById = new Map<string, number>();
+      const nextSurfaceEntries = snapshot.entries.map((entry) => {
+        const controlId = entry.nodeId as ExplorerChromeControlId;
+        const existingEntry =
+          chromeEditSession.draftOverride.entries.find(
+            (draftEntry) => draftEntry.controlId === controlId,
+          ) ?? null;
+        const visiblePlacement = findRegisteredWorkspaceChromePlacement(controlId);
+        const surfaceRow = rowDefinitionById.get(entry.bandId);
+        const fallbackZone =
+          surfaceRow?.zones[0] ??
+          visiblePlacement?.zone ??
+          surfaceDefinition.rows[0]?.zones[0] ??
+          "start";
+        const bandEntryOrder = (bandOrderCursorById.get(entry.bandId) ?? 0) + 1;
+        bandOrderCursorById.set(entry.bandId, bandEntryOrder);
+        const bandRowIndex = Math.max(
+          0,
+          surfaceDefinition.rows.findIndex((row) => row.id === entry.bandId),
+        );
+        return {
+          controlId,
+          surfaceId: "workspaceHeader" as const,
+          zone: fallbackZone,
+          order: bandRowIndex * 1000 + bandEntryOrder * 10,
+          bandId: entry.bandId,
+          anchorX: entry.x,
+          anchorY: entry.y,
+          offsetPx: 0,
+          hidden: false,
+          sizeVariant:
+            existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
+          widthPx:
+            entry.widthPx ??
+            existingEntry?.widthPx ??
+            visiblePlacement?.widthPx,
+          showLabel: existingEntry?.showLabel ?? visiblePlacement?.showLabel,
+          showIcon: existingEntry?.showIcon ?? visiblePlacement?.showIcon,
+        };
+      });
+      const preservedEntries = chromeEditSession.draftOverride.entries.filter(
+        (entry) =>
+          entry.hidden === true ||
+          entry.surfaceId !== "workspaceHeader" ||
+          !visibleControlIdsOnSurface.has(entry.controlId),
+      );
+      updateChromeEditDraft({
+        entries: [...preservedEntries, ...nextSurfaceEntries],
+      });
+      setChromeEditHighlightedDropTarget(null);
+    },
+    [
+      chromeEditSession,
+      findRegisteredWorkspaceChromePlacement,
+      setChromeEditHighlightedDropTarget,
+      updateChromeEditDraft,
+    ],
+  );
   const removeWorkspaceChromeControlFromDraft = useCallback(
     (controlId: ExplorerChromeControlId) => {
       if (!chromeEditSession) {
@@ -1378,6 +1469,27 @@ export function ExplorerWorkspace({
     removeWorkspaceChromeControlFromDraft,
     unregisterChromeEditSurface,
   ]);
+  const workspaceHeaderLayoutDynamicsSettings =
+    layoutDynamics.resolveSurfaceSettings("workspaceHeader");
+  const workspaceHeaderLayoutDynamics =
+    useMemo<ExplorerChromeSurfaceLayoutDynamics>(
+      () => ({
+        enabled:
+          workspaceHeaderLayoutDynamicsSettings.enabled ||
+          Boolean(workspaceChromeEditMode.active),
+        axisMode: workspaceHeaderLayoutDynamicsSettings.surface.axisMode,
+        solver: workspaceHeaderLayoutDynamicsSettings.preset,
+        intensity: workspaceHeaderLayoutDynamicsSettings.intensity,
+        onCommitSnapshot: workspaceChromeEditMode.active
+          ? handleWorkspaceChromeDynamicSurfaceCommit
+          : undefined,
+      }),
+      [
+        handleWorkspaceChromeDynamicSurfaceCommit,
+        workspaceChromeEditMode.active,
+        workspaceHeaderLayoutDynamicsSettings,
+      ],
+    );
   useEffect(() => {
     if (
       chromeEditSession &&
@@ -2985,6 +3097,7 @@ export function ExplorerWorkspace({
           getRowStyle={() => workspaceHeaderRowStyle}
           getZoneStyle={getWorkspaceHeaderZoneStyle}
           renderControl={renderWorkspaceChromeControl}
+          layoutDynamics={workspaceHeaderLayoutDynamics}
           editMode={workspaceChromeEditMode}
         />
       </div>

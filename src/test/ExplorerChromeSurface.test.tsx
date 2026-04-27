@@ -27,28 +27,6 @@ const toolbarSurface: ExplorerChromeResolvedSurface = {
   visibleControlIds: ["refresh"],
 };
 
-const dynamicToolbarSurface: ExplorerChromeResolvedSurface = {
-  ...toolbarSurface,
-  rows: [
-    {
-      ...toolbarSurface.rows[0]!,
-      zones: [
-        {
-          ...toolbarSurface.rows[0]!.zones[0]!,
-          controls: [
-            {
-              ...toolbarSurface.rows[0]!.zones[0]!.controls[0]!,
-              bandId: "primary",
-              anchorX: 24,
-              anchorY: 0,
-            },
-          ],
-        },
-      ],
-    },
-  ],
-};
-
 const customizeSurface: ExplorerChromeResolvedSurface = {
   surfaceId: "explorerToolbar",
   rows: [
@@ -453,10 +431,10 @@ describe("ExplorerChromeSurface", () => {
     ).toBeNull();
   });
 
-  it("switches adopted explorer surfaces into the layout-dynamics canvas during customize mode", () => {
+  it("switches adopted explorer surfaces into the layout-dynamics canvas during customize mode even before anchors exist", () => {
     const rendered = render(
       <ExplorerChromeSurface
-        surface={dynamicToolbarSurface}
+        surface={toolbarSurface}
         renderControl={() => <button type="button">Refresh</button>}
         layoutDynamics={{
           enabled: true,

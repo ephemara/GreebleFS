@@ -1624,7 +1624,6 @@ describe("FileExplorer view modes", () => {
     expect(getChromeControl("refresh")?.getAttribute("data-overlay-explorer-control-zone")).toBe(
       "primaryEnd",
     );
-    expect(getChromeControl("refresh")?.style.marginLeft).toBe("28px");
 
     fireEvent.click(getChromeControlLiveButton("customizeModeToggle"));
 
@@ -1638,7 +1637,6 @@ describe("FileExplorer view modes", () => {
           "data-overlay-explorer-control-zone",
         ),
       ).toBe("primaryEnd");
-      expect(getChromeControl("refresh")?.style.marginLeft).toBe("28px");
     });
 
     expect(
@@ -1654,6 +1652,27 @@ describe("FileExplorer view modes", () => {
         hidden: false,
       }),
     ]);
+  });
+
+  it("renders the status bar through layout dynamics during explorer customize mode", async () => {
+    useExplorerStore.getState().openChromeEditSession({
+      themeId: "operator",
+      layoutId: "default",
+      initialOverride: {
+        entries: [],
+      },
+    });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    await waitFor(() => {
+      expect(
+        document.querySelector(
+          '[data-layout-dynamics-surface="explorerStatusBar"]',
+        ),
+      ).not.toBeNull();
+    });
   });
 
   it("commits the active chrome customize draft when Done closes the actions pane", async () => {

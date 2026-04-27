@@ -32,7 +32,10 @@ import type { ResolvedOverlayAppearance } from "../../config/appearance";
 import { matchesKeybinding } from "../../config/hotkeys";
 import { useExplorerStore } from "../../store/explorerStore";
 import { useSettingsStore } from "../../store/settingsStore";
-import { ExplorerChromeSurface } from "./ExplorerChromeSurface";
+import {
+  ExplorerChromeSurface,
+  type ExplorerChromeSurfaceLayoutDynamics,
+} from "./ExplorerChromeSurface";
 import {
   applyExplorerBookmarkImportPlan,
   buildExplorerBookmarkTree,
@@ -123,6 +126,7 @@ interface ExplorerSideRailProps {
   localTreeRefreshRevision?: number;
   chromeLayoutId: ExplorerChromeLayoutId;
   chromeOverride?: ExplorerChromeOverrideSnapshot | null;
+  railHeaderLayoutDynamics?: ExplorerChromeSurfaceLayoutDynamics;
   chromeEditMode?: {
     active: boolean;
     draggingControlId: ExplorerChromeControlId | null;
@@ -261,6 +265,7 @@ export function ExplorerSideRail({
   localTreeRefreshRevision = 0,
   chromeLayoutId,
   chromeOverride,
+  railHeaderLayoutDynamics,
   chromeEditMode,
 }: ExplorerSideRailProps) {
   const railRootRef = useRef<HTMLDivElement>(null);
@@ -1005,6 +1010,7 @@ export function ExplorerSideRail({
           getRowStyle={() => railHeaderRowStyle}
           getZoneStyle={getRailHeaderZoneStyle}
           renderControl={renderRailChromeControl}
+          layoutDynamics={railHeaderLayoutDynamics}
           editMode={chromeEditMode}
         />
         <div

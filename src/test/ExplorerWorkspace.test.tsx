@@ -492,6 +492,29 @@ describe('ExplorerWorkspace', () => {
     });
 
     const placedControl = getWorkspaceControl('action:workspace.sample-action');
-    expect(placedControl?.style.marginLeft).toBe('64px');
+    expect(placedControl).not.toBeNull();
+    expect(
+      placedControl?.getAttribute('data-overlay-explorer-control-zone'),
+    ).toBe('end');
+  });
+
+  it('uses the layout-dynamics canvas for the workspace header during customize mode', async () => {
+    useExplorerStore.getState().openChromeEditSession({
+      themeId: 'operator',
+      layoutId: 'default',
+      initialOverride: {
+        entries: [],
+      },
+    });
+
+    const { container } = renderWorkspace();
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          '[data-layout-dynamics-surface="workspaceHeader"]',
+        ),
+      ).not.toBeNull();
+    });
   });
 });
