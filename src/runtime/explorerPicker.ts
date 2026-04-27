@@ -1,5 +1,6 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import type { ScrollBarStyle } from '@tauri-apps/api/window';
 import { WebviewWindow, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 interface StorageLike {
@@ -191,6 +192,7 @@ export async function openExplorerPicker(
       const pickerWindow = new WebviewWindow(EXPLORER_PICKER_WINDOW_LABEL, {
         ...EXPLORER_PICKER_WINDOW_CONFIG,
         focus: true,
+        scrollBarStyle: 'default' as ScrollBarStyle,
         title: request.title || EXPLORER_PICKER_WINDOW_BASE_TITLE,
         url: getCurrentWindowUrl(),
       });

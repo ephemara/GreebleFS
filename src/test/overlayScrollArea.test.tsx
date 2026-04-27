@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { OverlayScrollArea } from '../components/OverlayScrollArea';
 
@@ -83,5 +83,40 @@ describe('OverlayScrollArea', () => {
     const viewport = getViewport(container, 'vertical');
     expect(viewport.dataset.overlayScrollbarStyle).toBe('explorer-file-list');
     expect(viewport.classList.contains('overlay-scroll-area__viewport--explorer-file-list')).toBe(true);
+  });
+
+  it('renders app-owned scrollbar chrome when themed scrolling overflows', async () => {
+    const { container } = render(
+      <OverlayScrollArea scrollbarStyle="themed">
+        <div>content</div>
+      </OverlayScrollArea>,
+    );
+
+    const viewport = getViewport(container, 'vertical');
+    const verticalTrack = container.querySelector('.overlay-scroll-area__scrollbar--vertical');
+    const verticalThumb = container.querySelector('.overlay-scroll-area__scrollbar-thumb--vertical');
+    if (!(verticalTrack instanceof HTMLDivElement) || !(verticalThumb instanceof HTMLDivElement)) {
+      throw new Error('Missing custom vertical scrollbar chrome.');
+    }
+
+    Object.defineProperty(viewport, 'clientHeight', {
+      configurable: true,
+      value: 120,
+    });
+    Object.defineProperty(viewport, 'scrollHeight', {
+      configurable: true,
+      value: 720,
+    });
+    Object.defineProperty(verticalTrack, 'clientHeight', {
+      configurable: true,
+      value: 120,
+    });
+
+    viewport.dispatchEvent(new Event('scroll'));
+
+    await waitFor(() => {
+      expect(verticalTrack.dataset.visible).toBe('true');
+      expect(Number.parseFloat(verticalThumb.style.height)).toBeGreaterThan(0);
+    });
   });
 });

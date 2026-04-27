@@ -164,7 +164,7 @@ pub fn bindings_output_path() -> PathBuf {
 }
 
 pub fn app_specta_builder() -> Builder<tauri::Wry> {
-        Builder::<tauri::Wry>::new()
+    Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             crate::ipc_runtime::ipc_register_artifact_path,
             crate::ipc_runtime::ipc_release_artifact,

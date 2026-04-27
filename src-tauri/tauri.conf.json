@@ -16,6 +16,7 @@
         "width": 1000,
         "height": 500,
         "dragDropEnabled": true,
+        "scrollBarStyle": "default",
         "transparent": true,
         "decorations": false,
         "visible": false,

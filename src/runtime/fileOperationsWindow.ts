@@ -1,5 +1,6 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import type { ScrollBarStyle } from '@tauri-apps/api/window';
 import { WebviewWindow, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type { ExplorerFileTransferOperation, ExplorerFileTransferResult } from './explorerBackend';
 
@@ -158,6 +159,7 @@ export async function openFileOperationsWindow(
     const fileOperationsWindow = new WebviewWindow(FILE_OPERATIONS_WINDOW_LABEL, {
       ...FILE_OPERATIONS_WINDOW_CONFIG,
       focus: true,
+      scrollBarStyle: 'default' as ScrollBarStyle,
       url: getCurrentWindowUrl(),
     });
     try {

@@ -49,6 +49,7 @@ import {
   normalizeExplorerImageStageTransform,
   type ExplorerImageStageTransform,
 } from './explorer/explorerImageStage';
+import { OverlayScrollArea } from './OverlayScrollArea';
 import { PremiumSlider } from './PremiumSlider';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1308,7 +1309,11 @@ export function ExplorerVideoEditor({
         </div>
 
         {/* Inspector body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 10 }}>
+        <OverlayScrollArea
+          style={{ flex: 1, minHeight: 0 }}
+          scrollbarStyle="themed"
+          viewportStyle={{ padding: 10 }}
+        >
 
           {activeTab === 'transform' && (
             <div>
@@ -1418,7 +1423,7 @@ export function ExplorerVideoEditor({
               </InspectorSection>
             </div>
           )}
-        </div>
+        </OverlayScrollArea>
         </div>
       ) : null}
     </div>

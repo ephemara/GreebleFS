@@ -2,11 +2,11 @@
 
 use crate::open_with::types::{GetShellContextMenuResult, OpenWithResult, ShellContextMenuItem};
 use crate::open_with::utils::canonicalize_path;
+use image::codecs::png::PngEncoder;
+use image::ImageEncoder;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
-use image::codecs::png::PngEncoder;
-use image::ImageEncoder;
 use windows::core::{HSTRING, PSTR};
 use windows::Win32::Foundation::TRUE;
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};

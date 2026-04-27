@@ -1,6 +1,6 @@
-use std::fs;
 use std::collections::HashMap;
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 const CLOUD_PROVIDER_ENV_KEYS: [&str; 4] = [

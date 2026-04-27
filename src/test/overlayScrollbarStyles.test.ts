@@ -23,9 +23,18 @@ describe("overlay scrollbar style contract", () => {
     );
   });
 
-  it("suppresses native webkit scrollbar buttons for themed explorer scroll hosts", () => {
+  it("suppresses native viewport scrollbars for themed explorer scroll hosts", () => {
     expect(overlayScrollbarStylesSource).toMatch(
-      /\.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar-button,\s*\.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-button\s*{\s*width:\s*0;\s*height:\s*0;\s*display:\s*none;/s,
+      /\.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar,\s*\.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar\s*{\s*width:\s*0;\s*height:\s*0;\s*display:\s*none;/s,
+    );
+  });
+
+  it("defines app-owned overlay scrollbar chrome for shared scroll areas", () => {
+    expect(overlayScrollbarStylesSource).toContain(
+      ".overlay-scroll-area__scrollbar-thumb",
+    );
+    expect(overlayScrollbarStylesSource).toContain(
+      ".overlay-scroll-area__scrollbar--vertical",
     );
   });
 });

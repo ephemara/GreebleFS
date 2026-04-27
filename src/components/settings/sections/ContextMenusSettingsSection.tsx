@@ -402,27 +402,6 @@ function resolveContextMenuEntryTitle(
   return 'Separator';
 }
 
-function resolveContextMenuEntrySupportingCopy(args: {
-  entry: ExplorerMenuLayoutEntry;
-  commandLookup: Map<string, ExplorerCommandDefinition>;
-  childCount: number;
-}): string {
-  const { entry, commandLookup, childCount } = args;
-  if (entry.kind === 'command') {
-    const resolvedCommand = commandLookup.get(entry.commandId);
-    return resolvedCommand?.description ?? resolvedCommand?.id ?? entry.commandId;
-  }
-  if (entry.kind === 'submenu') {
-    return childCount > 0
-      ? `${childCount} node${childCount === 1 ? '' : 's'} nested inside this folder.`
-      : 'Drop nodes here or add into this folder from the library.';
-  }
-  if (entry.kind === 'group-slot') {
-    return `Injects ${entry.sourceFilter ?? 'any'} ${entry.group} commands into this branch at runtime.`;
-  }
-  return 'A lightweight divider between neighboring commands.';
-}
-
 function resolveContextMenuInsertionLabel(args: {
   selectedEntry: ExplorerMenuLayoutEntry | null;
   commandLookup: Map<string, ExplorerCommandDefinition>;
@@ -614,7 +593,6 @@ export function ContextMenusSettingsSection({
   setDraggedContextMenuEntryId,
   contextMenuCommandLookup,
   selectedContextMenuEntry,
-  selectedContextMenuCommand,
   activeContextMenuSubmenus,
   selectedContextMenuSiblingIndex,
   selectedContextMenuSiblingEntriesCount,
@@ -707,7 +685,6 @@ export function ContextMenusSettingsSection({
   setDraggedContextMenuEntryId: (entryId: string | null) => void;
   contextMenuCommandLookup: Map<string, ExplorerCommandDefinition>;
   selectedContextMenuEntry: ExplorerMenuLayoutEntry | null;
-  selectedContextMenuCommand: ExplorerCommandDefinition | null;
   activeContextMenuSubmenus: Array<Extract<ExplorerMenuLayoutEntry, { kind: 'submenu' }>>;
   selectedContextMenuSiblingIndex: number;
   selectedContextMenuSiblingEntriesCount: number;
@@ -1564,164 +1541,170 @@ export function ContextMenusSettingsSection({
         </SettingsActionStrip>
 
         <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[240px_minmax(0,1.35fr)_360px]">
-          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-            <div className="rounded border p-3" style={panelSurfaceStyle}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">
-                Context Setup
-              </div>
-              <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
-                <span>Active Menu Pack</span>
-                <select
-                  value={activeMenuPack?.id ?? ''}
-                  onChange={event => setActiveMenuPackId(event.target.value)}
-                  className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={settingsSelectStyle}
-                >
-                  {menuPacks.map(pack => (
-                    <option key={pack.id} value={pack.id}>{pack.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
-                <span>Context Renderer</span>
-                <select
-                  value={activeContextMenuLayout.renderer ?? 'classic'}
-                  onChange={event => setContextMenuRendererForActiveContext(event.target.value as ExplorerMenuContextLayout['renderer'])}
-                  className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={settingsSelectStyle}
-                >
-                  {['classic', 'hybrid', 'radial', 'sheet', 'hud'].map(renderer => (
-                    <option key={renderer} value={renderer}>{renderer}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={insetSurfaceStyle}>
-                <div className="flex flex-wrap gap-1.5">
-                  <ThemeBadge label={menuPacksLoading ? 'Scanning Packs' : `${menuPacks.length} packs`} />
-                  <ThemeBadge label={actionsLoading ? 'Scanning Actions' : `${actions.length} actions`} />
-                  <ThemeBadge label={`${actionPacks.length} action packs`} />
-                  <ThemeBadge label={`${authoredPluginActionCount} plugin authored`} />
-                </div>
-                <div className="mt-3 opacity-55">
-                  The canvas is the editor now. Open folders like a real menu stack,
-                  drag from the library on the right, and only use these left-side
-                  controls as fallback.
-                </div>
-                <div className="mt-2 text-[10px] opacity-45">
-                  New nodes currently land {insertionTargetLabel}.
-                </div>
-                <div className="mt-2 text-[10px] opacity-45">
-                  {legacyPluginMenuItemCount} legacy plugin menu items •{' '}
-                  {legacyPluginActionCount} legacy plugin explorer actions
-                </div>
-                <div className="mt-2 text-[10px] opacity-35">{menuPacksDirectory}</div>
-                <div className="mt-1 text-[10px] opacity-35">{actionsDirectory}</div>
-                {menuPacksError ? (
-                  <div className="mt-2 text-[10px]" style={{ color: 'var(--overlay-danger)' }}>
-                    {menuPacksError}
-                  </div>
-                ) : null}
-                {actionsError ? (
-                  <div className="mt-1 text-[10px]" style={{ color: 'var(--overlay-danger)' }}>
-                    {actionsError}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="rounded border p-3" style={panelSurfaceStyle}>
-              <div className="flex items-center justify-between gap-2">
+          <OverlayScrollArea
+            style={{ minHeight: 0 }}
+            scrollbarStyle="themed"
+            viewportStyle={{ paddingRight: 4 }}
+          >
+            <div className="flex flex-col gap-3">
+              <div className="rounded border p-3" style={panelSurfaceStyle}>
                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">
-                  Quick Insert
+                  Context Setup
                 </div>
-                <ThemeBadge
-                  label={`${availableContextMenuCommandsForActiveContext.length} available`}
-                />
-              </div>
-              <label className="mt-3 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
-                <span>Add Command</span>
-                <select
-                  value={contextMenuCommandDraftByContext[activeContextMenuContext] ?? ''}
-                  onChange={event => setContextMenuCommandDraftByContext(current => ({
-                    ...current,
-                    [activeContextMenuContext]: event.target.value,
-                  }))}
-                  className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={settingsSelectStyle}
-                >
-                  <option value="">
-                    {availableContextMenuCommandsForActiveContext.length > 0
-                      ? 'Choose command…'
-                      : 'No more commands for this context'}
-                  </option>
-                  {availableContextMenuCommandsForActiveContext.map(command => (
-                    <option key={command.id} value={command.id}>{command.title}</option>
-                  ))}
-                </select>
-              </label>
-              <OverlayActionButton
-                appearance={appearance}
-                size="compact"
-                tone="accent"
-                onClick={() => addContextMenuCommandEntry()}
-                className="mt-2 w-full justify-center"
-              >
-                Insert Command
-              </OverlayActionButton>
-              <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-1">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
-                  <span>Add Group Slot</span>
+                <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                  <span>Active Menu Pack</span>
                   <select
-                    value={contextMenuGroupDraftByContext[activeContextMenuContext] ?? 'plugin'}
-                    onChange={event => setContextMenuGroupDraftByContext(current => ({
+                    value={activeMenuPack?.id ?? ''}
+                    onChange={event => setActiveMenuPackId(event.target.value)}
+                    className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                    style={settingsSelectStyle}
+                  >
+                    {menuPacks.map(pack => (
+                      <option key={pack.id} value={pack.id}>{pack.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                  <span>Context Renderer</span>
+                  <select
+                    value={activeContextMenuLayout.renderer ?? 'classic'}
+                    onChange={event => setContextMenuRendererForActiveContext(event.target.value as ExplorerMenuContextLayout['renderer'])}
+                    className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                    style={settingsSelectStyle}
+                  >
+                    {['classic', 'hybrid', 'radial', 'sheet', 'hud'].map(renderer => (
+                      <option key={renderer} value={renderer}>{renderer}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={insetSurfaceStyle}>
+                  <div className="flex flex-wrap gap-1.5">
+                    <ThemeBadge label={menuPacksLoading ? 'Scanning Packs' : `${menuPacks.length} packs`} />
+                    <ThemeBadge label={actionsLoading ? 'Scanning Actions' : `${actions.length} actions`} />
+                    <ThemeBadge label={`${actionPacks.length} action packs`} />
+                    <ThemeBadge label={`${authoredPluginActionCount} plugin authored`} />
+                  </div>
+                  <div className="mt-3 opacity-55">
+                    The canvas is the editor now. Open folders like a real menu stack,
+                    drag from the library on the right, and only use these left-side
+                    controls as fallback.
+                  </div>
+                  <div className="mt-2 text-[10px] opacity-45">
+                    New nodes currently land {insertionTargetLabel}.
+                  </div>
+                  <div className="mt-2 text-[10px] opacity-45">
+                    {legacyPluginMenuItemCount} legacy plugin menu items •{' '}
+                    {legacyPluginActionCount} legacy plugin explorer actions
+                  </div>
+                  <div className="mt-2 text-[10px] opacity-35">{menuPacksDirectory}</div>
+                  <div className="mt-1 text-[10px] opacity-35">{actionsDirectory}</div>
+                  {menuPacksError ? (
+                    <div className="mt-2 text-[10px]" style={{ color: 'var(--overlay-danger)' }}>
+                      {menuPacksError}
+                    </div>
+                  ) : null}
+                  {actionsError ? (
+                    <div className="mt-1 text-[10px]" style={{ color: 'var(--overlay-danger)' }}>
+                      {actionsError}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="rounded border p-3" style={panelSurfaceStyle}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">
+                    Quick Insert
+                  </div>
+                  <ThemeBadge
+                    label={`${availableContextMenuCommandsForActiveContext.length} available`}
+                  />
+                </div>
+                <label className="mt-3 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                  <span>Add Command</span>
+                  <select
+                    value={contextMenuCommandDraftByContext[activeContextMenuContext] ?? ''}
+                    onChange={event => setContextMenuCommandDraftByContext(current => ({
                       ...current,
-                      [activeContextMenuContext]: event.target.value as Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['group'],
+                      [activeContextMenuContext]: event.target.value,
                     }))}
                     className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
                     style={settingsSelectStyle}
                   >
-                    {explorerMenuGroupOptions.map(group => (
-                      <option key={group} value={group}>{group}</option>
+                    <option value="">
+                      {availableContextMenuCommandsForActiveContext.length > 0
+                        ? 'Choose command…'
+                        : 'No more commands for this context'}
+                    </option>
+                    {availableContextMenuCommandsForActiveContext.map(command => (
+                      <option key={command.id} value={command.id}>{command.title}</option>
                     ))}
                   </select>
                 </label>
                 <OverlayActionButton
                   appearance={appearance}
                   size="compact"
-                  tone="quiet"
-                  onClick={addContextMenuGroupSlot}
-                  className="self-end justify-center"
+                  tone="accent"
+                  onClick={() => addContextMenuCommandEntry()}
+                  className="mt-2 w-full justify-center"
                 >
-                  Add Group Slot
+                  Insert Command
                 </OverlayActionButton>
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <OverlayActionButton
-                  appearance={appearance}
-                  size="compact"
-                  tone="quiet"
-                  onClick={addContextMenuSubmenu}
-                  className="justify-center"
-                >
-                  Create Folder
-                </OverlayActionButton>
-                <OverlayActionButton
-                  appearance={appearance}
-                  size="compact"
-                  tone="quiet"
-                  onClick={addContextMenuSeparator}
-                  className="justify-center"
-                >
-                  Add Separator
-                </OverlayActionButton>
-              </div>
-              <div className="mt-3 rounded border px-3 py-3 text-[10px] opacity-55" style={insetSurfaceStyle}>
-                The right-side library is the fast path. These controls stay here
-                for keyboard-friendly inserts and recovery when you already know
-                exactly what you want.
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-1">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                    <span>Add Group Slot</span>
+                    <select
+                      value={contextMenuGroupDraftByContext[activeContextMenuContext] ?? 'plugin'}
+                      onChange={event => setContextMenuGroupDraftByContext(current => ({
+                        ...current,
+                        [activeContextMenuContext]: event.target.value as Extract<ExplorerMenuLayoutEntry, { kind: 'group-slot' }>['group'],
+                      }))}
+                      className="mt-1 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={settingsSelectStyle}
+                    >
+                      {explorerMenuGroupOptions.map(group => (
+                        <option key={group} value={group}>{group}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <OverlayActionButton
+                    appearance={appearance}
+                    size="compact"
+                    tone="quiet"
+                    onClick={addContextMenuGroupSlot}
+                    className="self-end justify-center"
+                  >
+                    Add Group Slot
+                  </OverlayActionButton>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <OverlayActionButton
+                    appearance={appearance}
+                    size="compact"
+                    tone="quiet"
+                    onClick={addContextMenuSubmenu}
+                    className="justify-center"
+                  >
+                    Create Folder
+                  </OverlayActionButton>
+                  <OverlayActionButton
+                    appearance={appearance}
+                    size="compact"
+                    tone="quiet"
+                    onClick={addContextMenuSeparator}
+                    className="justify-center"
+                  >
+                    Add Separator
+                  </OverlayActionButton>
+                </div>
+                <div className="mt-3 rounded border px-3 py-3 text-[10px] opacity-55" style={insetSurfaceStyle}>
+                  The right-side library is the fast path. These controls stay here
+                  for keyboard-friendly inserts and recovery when you already know
+                  exactly what you want.
+                </div>
               </div>
             </div>
-          </div>
+          </OverlayScrollArea>
 
           <div className="flex min-h-0 flex-col">
             <div

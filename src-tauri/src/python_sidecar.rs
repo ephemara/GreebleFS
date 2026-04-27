@@ -1048,7 +1048,9 @@ fn resolve_sidecar_output_artifacts(
                     );
                 }
 
-                let retention = candidate.retention.unwrap_or(IpcArtifactRetention::Ephemeral);
+                let retention = candidate
+                    .retention
+                    .unwrap_or(IpcArtifactRetention::Ephemeral);
                 let delete_on_release = candidate
                     .delete_on_release
                     .unwrap_or(matches!(retention, IpcArtifactRetention::Ephemeral));
@@ -1319,7 +1321,10 @@ mod tests {
         assert_eq!(resolved.tokens, vec![Some("preview-mask".to_string())]);
         assert_eq!(resolved.descriptors.len(), 1);
         assert_eq!(resolved.descriptors[0].kind, "image.cutout.preview-mask");
-        assert_eq!(resolved.descriptors[0].media_type.as_deref(), Some("image/png"));
+        assert_eq!(
+            resolved.descriptors[0].media_type.as_deref(),
+            Some("image/png")
+        );
         assert_eq!(
             resolved.descriptors[0].content_revision.as_deref(),
             Some("rev-1")
