@@ -604,6 +604,7 @@ const EXPLORER_THUMBNAIL_TYPE_BADGE_KINDS = new Set<
 const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
 const EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS = 88;
+const EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS = 180;
 const EXPLORER_OPEN_WITH_REQUEST_TIMEOUT_MS = 4000;
 const EXPLORER_TEXT_DRAFT_SCOPE = "text";
 const EXPLORER_SHADER_DRAFT_SCOPE = "shader";
@@ -8567,6 +8568,9 @@ export function FileExplorer({
   const [hoveredVideoThumbnailPath, setHoveredVideoThumbnailPath] = useState<
     string | null
   >(null);
+  const [folderActivationPrimedPath, setFolderActivationPrimedPath] = useState<
+    string | null
+  >(null);
   const previewLoadRequestIdRef = useRef(0);
   const [searchResults, setSearchResults] = useState<
     ExplorerNormalizedSearchResult[]
@@ -8811,6 +8815,8 @@ export function FileExplorer({
   const previewReopenOnSelectionRef = useRef(false);
   const allowPreviewLoadWhileClosedRef = useRef(false);
   const previewLoadingDelayTimerRef = useRef<number | null>(null);
+  const folderActivationPrimeTimerRef = useRef<number | null>(null);
+  const pendingFolderActivationPathRef = useRef<string | null>(null);
   const previewSaveTimer = useRef<number | null>(null);
   const previewPrefetchInFlightRef = useRef<Set<string>>(new Set());
   const internalPointerDragCandidateRef =
@@ -9717,12 +9723,26 @@ export function FileExplorer({
     updateExplorerSessionForInstance,
   ]);
 
+  const clearPendingFolderActivationPrime = useCallback((
+    preservePrimedPath: string | null = null,
+  ) => {
+    if (folderActivationPrimeTimerRef.current != null) {
+      window.clearTimeout(folderActivationPrimeTimerRef.current);
+      folderActivationPrimeTimerRef.current = null;
+    }
+    pendingFolderActivationPathRef.current = null;
+    setFolderActivationPrimedPath((current) =>
+      current === preservePrimedPath ? current : null,
+    );
+  }, []);
+
   // ── Navigate ──
   const navigate = useCallback(
     async (path: string, push = true) => {
       if (!isExplorerMountedRef.current) {
         return;
       }
+      clearPendingFolderActivationPrime();
       const startedAt = getExplorerPerformanceNow();
       const normalizedPath = normalizeExplorerPath(path);
       const requestId = directoryLoadRequestIdRef.current + 1;
@@ -9873,6 +9893,7 @@ export function FileExplorer({
       }
     },
     [
+      clearPendingFolderActivationPrime,
       homeSettings.usageTrackingEnabled,
       listExplorerLocation,
       recordExplorerMetric,
@@ -12011,10 +12032,11 @@ export function FileExplorer({
           isDirectory: entry.is_dir,
           isSelected,
           isDropTarget,
+          isOpenPrimed: folderActivationPrimedPath === entry.path,
           folderClickMode,
         }),
       ),
-    [folderClickMode, getRenderableIconSrc],
+    [folderActivationPrimedPath, folderClickMode, getRenderableIconSrc],
   );
 
   const buildExplorerDragAvatarStackItems = useCallback(
@@ -14355,6 +14377,103 @@ export function FileExplorer({
     ],
   );
 
+  const openSelectionPreviewFromClick = useCallback(
+    (entry: FileEntry) => {
+      if (explorerPicker || isCompactDock) {
+        return;
+      }
+      const shouldAutoReopenPreview =
+        previewReopenOnSelectionRef.current && !previewEnabled;
+      if (!previewEnabled && !shouldAutoReopenPreview) {
+        return;
+      }
+      if (shouldAutoReopenPreview) {
+        previewReopenOnSelectionRef.current = false;
+        allowPreviewLoadWhileClosedRef.current = true;
+        setPreviewEnabled(true);
+      }
+      void previewEntry(entry, getSearchFocusTarget(entry), "selection");
+    },
+    [
+      explorerPicker,
+      getSearchFocusTarget,
+      isCompactDock,
+      previewEnabled,
+      previewEntry,
+    ],
+  );
+
+  const queueFolderActivationPrime = useCallback(
+    (entry: FileEntry) => {
+      clearPendingFolderActivationPrime(entry.path);
+      setFolderActivationPrimedPath((current) =>
+        current === entry.path ? current : null,
+      );
+      pendingFolderActivationPathRef.current = entry.path;
+      void loadCachedExplorerLocation({
+        path: entry.path,
+        showHidden,
+        listLocation: listExplorerLocation,
+      }).catch(() => {});
+      folderActivationPrimeTimerRef.current = window.setTimeout(() => {
+        folderActivationPrimeTimerRef.current = null;
+        if (
+          !isExplorerMountedRef.current ||
+          pendingFolderActivationPathRef.current !== entry.path
+        ) {
+          return;
+        }
+        pendingFolderActivationPathRef.current = null;
+        setFolderActivationPrimedPath(entry.path);
+        openSelectionPreviewFromClick(entry);
+      }, EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS);
+    },
+    [
+      clearPendingFolderActivationPrime,
+      listExplorerLocation,
+      openSelectionPreviewFromClick,
+      showHidden,
+    ],
+  );
+
+  const warmSingleClickDirectoryNavigation = useCallback(
+    (entry: FileEntry) => {
+      if (
+        folderClickMode !== "single" ||
+        !entry.is_dir ||
+        explorerPicker ||
+        selectionModeActive
+      ) {
+        return;
+      }
+      void loadCachedExplorerLocation({
+        path: entry.path,
+        showHidden,
+        listLocation: listExplorerLocation,
+      }).catch(() => {});
+    },
+    [
+      explorerPicker,
+      folderClickMode,
+      listExplorerLocation,
+      selectionModeActive,
+      showHidden,
+    ],
+  );
+
+  useEffect(() => {
+    const pendingOrPrimedPath =
+      pendingFolderActivationPathRef.current ?? folderActivationPrimedPath;
+    if (!pendingOrPrimedPath || selected.has(pendingOrPrimedPath)) {
+      return;
+    }
+    clearPendingFolderActivationPrime();
+  }, [
+    clearPendingFolderActivationPrime,
+    folderActivationPrimedPath,
+    selected,
+  ]);
+
   useEffect(() => {
     if (!previewEnabled || isCompactDock || selectedEntries.length !== 1) {
       return;
@@ -14478,6 +14597,7 @@ export function FileExplorer({
 
   const openEntry = useCallback(
     async (entry: FileEntry) => {
+      clearPendingFolderActivationPrime();
       void playSoundEffect("explorer-open-entry");
 
       if (entry.is_dir) {
@@ -14522,6 +14642,7 @@ export function FileExplorer({
       );
     },
     [
+      clearPendingFolderActivationPrime,
       getSearchFocusTarget,
       isCompactDock,
       materializeArchiveVirtualEntry,
@@ -16410,12 +16531,28 @@ export function FileExplorer({
       return;
     }
     const plainClick = !e.shiftKey && !e.ctrlKey && !e.metaKey;
+    const shouldOpenEntryOnClick = shouldOpenExplorerEntryOnTrigger({
+      isDirectory: entry.is_dir,
+      trigger: "click",
+      plainClick,
+      folderClickMode,
+    });
+    const shouldNavigateDirectoryWithoutSelection =
+      shouldOpenEntryOnClick &&
+      entry.is_dir &&
+      plainClick &&
+      !selectionModeActive;
     const shouldAutoReopenPreview =
       plainClick &&
       !selectionModeActive &&
       !previewEnabled &&
       previewReopenOnSelectionRef.current &&
       !isCompactDock;
+    if (shouldNavigateDirectoryWithoutSelection) {
+      clearExplorerSelection();
+      void openEntry(entry);
+      return;
+    }
     if (e.shiftKey) {
       const anchorPath =
         selectionRangeAnchorPathRef.current ?? lastSelected.current;
@@ -16463,24 +16600,20 @@ export function FileExplorer({
       }
       return;
     }
-    if (
-      shouldOpenExplorerEntryOnTrigger({
-        isDirectory: entry.is_dir,
-        trigger: "click",
-        plainClick,
-        folderClickMode,
-      })
-    ) {
+    if (shouldOpenEntryOnClick) {
       void openEntry(entry);
       return;
     }
-    if ((previewEnabled || shouldAutoReopenPreview) && !isCompactDock) {
-      if (shouldAutoReopenPreview) {
-        previewReopenOnSelectionRef.current = false;
-        allowPreviewLoadWhileClosedRef.current = true;
-        setPreviewEnabled(true);
+    if (entry.is_dir && folderClickMode === "double" && plainClick) {
+      if (e.detail > 1) {
+        clearPendingFolderActivationPrime(entry.path);
+        return;
       }
-      void previewEntry(entry, getSearchFocusTarget(entry), "selection");
+      queueFolderActivationPrime(entry);
+      return;
+    }
+    if ((previewEnabled || shouldAutoReopenPreview) && !isCompactDock) {
+      openSelectionPreviewFromClick(entry);
     }
   };
 
@@ -16840,11 +16973,17 @@ export function FileExplorer({
 
   const onExplorerEntryPointerDown = useCallback(
     (event: React.PointerEvent<HTMLElement>, entry: FileEntry) => {
-      if (
-        event.button !== 0 ||
-        currentPathIsHome ||
-        explorerCustomizePointerActive
-      ) {
+      if (event.button !== 0 || explorerCustomizePointerActive) {
+        return;
+      }
+
+      const plainPointerDown =
+        !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
+      if (plainPointerDown) {
+        warmSingleClickDirectoryNavigation(entry);
+      }
+
+      if (currentPathIsHome) {
         return;
       }
 
@@ -16864,6 +17003,7 @@ export function FileExplorer({
       currentPathIsHome,
       explorerCustomizePointerActive,
       resolveEntriesForAction,
+      warmSingleClickDirectoryNavigation,
     ],
   );
 
@@ -23020,6 +23160,9 @@ export function FileExplorer({
       }
       if (layoutZoomCommitTimerRef.current != null) {
         window.clearTimeout(layoutZoomCommitTimerRef.current);
+      }
+      if (folderActivationPrimeTimerRef.current != null) {
+        window.clearTimeout(folderActivationPrimeTimerRef.current);
       }
       if (layoutZoomFrameRafRef.current != null) {
         window.cancelAnimationFrame(layoutZoomFrameRafRef.current);

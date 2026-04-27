@@ -1,3 +1,37 @@
+# 2026-04-26 - Single-Click Folder Navigation Now Skips Selection Churn And Warms On Pointer-Down
+
+- Direct-open folder clicks should not feel like they are waiting for row selection chrome before navigation:
+  - `src/components/FileExplorer.tsx` now bypasses the normal `setSelected(...)` path when a plain click is already going to open a directory in `folderClickMode: "single"`.
+  - The direct-open click clears durable selection immediately and hands off to `openEntry(...)`, so the user sees hover/press feedback without the stale “selected row” linger while the next listing loads.
+- Explorer navigation now gets a small head start before the click lands:
+  - `onExplorerEntryPointerDown(...)` warms `loadCachedExplorerLocation(...)` for plain single-click directory targets.
+  - Because the directory cache stores in-flight promises, the eventual `navigate(...)` call can reuse that same listing request instead of starting cold on click-up.
+- Durable product rule:
+  - If a folder click is semantically a navigation click, do not force the user through a temporary selection-state detour first.
+  - Keep selection as bonus feedback, not as a prerequisite for entry, on direct-open explorer flows.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "keeps folder icons closed during single-click navigation in|primes the open-folder icon only after a short grace window in double-click mode for|cancels folder preview priming when a double click opens the directory|shows folder contents in preview pane when a folder is single-clicked in double-click mode" --reporter=dot`
+
+# 2026-04-26 - Double-Click Folder Navigation Now Primes Quietly And Reuses Shared Directory Cache
+
+- Folder opening in double-click mode no longer has to visually “play through” the preview/open-icon state before navigation:
+  - `src/components/FileExplorer.tsx` now gives double-click folders a short `180ms` grace window on the first plain click.
+  - During that window, the folder stays visually closed, the preview pane does not immediately swap, and the first click only warms the target directory cache in the background.
+  - If the user follows through with a double click, that pending preview/icon prime is cancelled before navigation so the directory change feels immediate instead of staged.
+- The first-click folder preview affordance still exists, but it now happens after the grace window:
+  - once the timer completes, the selected folder can show the open-folder glyph and run the normal preview selection path
+  - preview reopen-on-selection behavior is still preserved when the preview pane had been closed intentionally
+- Folder previews now reuse the shared explorer directory cache instead of always issuing a separate uncached listing request:
+  - `src/components/ExplorerFolderPreview.tsx` now loads through `src/components/explorer/explorerDirectoryCache.ts` plus `listExplorerLocation(...)`
+  - `refreshRevision` still forces a fresh read when it changes, but repeated folder previews and the delayed prime now share the same warmed listing path as normal explorer navigation
+- Durable product rule:
+  - In double-click folder mode, the first click should feel like a quiet prime, not a mandatory mini-transition the user has to wait through.
+  - If future work touches folder preview, folder-open icons, or first-click selection behavior, preserve the pattern of: warm cache immediately, delay preview/icon state briefly, cancel the prime on actual double-click navigation.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorerClickBehavior.test.ts src/test/explorerFolderPreview.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "shows folder contents in preview pane when a folder is single-clicked in double-click mode|primes the open-folder icon only after a short grace window in double-click mode|cancels folder preview priming when a double click opens the directory" --reporter=dot`
+  - passed: `bash -lc 'bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "FileExplorer\\.tsx|ExplorerFolderPreview\\.tsx|fileExplorerClickBehavior\\.ts|fileExplorer\\.viewModes\\.test\\.tsx|explorerFolderPreview\\.test\\.tsx|fileExplorerClickBehavior\\.test\\.ts" || true'`
+
 # 2026-04-26 - Integrated Terminal Shells Now Have VS Code-Style Profiles, Paths, And Args
 
 - The Windows integrated terminal no longer relies on one opaque `settings.terminal.shell` string pretending to be both user config and a launch contract.

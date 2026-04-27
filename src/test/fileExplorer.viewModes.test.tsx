@@ -5527,10 +5527,18 @@ const value = 1;
 
       renderExplorer();
       await screen.findByText("alpha");
+      const selectionSummary = screen.getByTitle("Selected item size summary");
 
       expect(getEntryIconSrc("alpha")).not.toContain("folder_open");
+      expect(selectionSummary).toHaveStyle({ visibility: "hidden" });
 
-      fireEvent.click(screen.getByText("alpha"));
+      const alphaEntry = screen.getByText("alpha");
+      fireEvent.pointerDown(alphaEntry, {
+        button: 0,
+        clientX: 32,
+        clientY: 24,
+        pointerId: 1,
+      });
 
       expect(
         vi
@@ -5542,6 +5550,10 @@ const value = 1;
               (args as { path?: string } | undefined)?.path === alphaPath,
           ),
       ).toBe(true);
+
+      fireEvent.click(alphaEntry);
+
+      expect(selectionSummary).toHaveStyle({ visibility: "hidden" });
       expect(getEntryIconSrc("alpha")).not.toContain("folder_open");
 
       deferredListing.resolve(childEntries);
@@ -5553,8 +5565,9 @@ const value = 1;
   );
 
   it.each(["icons-l", "list"] as const)(
-    "shows the primed open-folder icon and loads folder preview on first click in double-click mode for %s view",
+    "primes the open-folder icon only after a short grace window in double-click mode for %s view",
     async (viewMode) => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
       useSettingsStore.getState().updateExplorer({
         viewMode,
         gridZoom: 0.67,
@@ -5579,9 +5592,73 @@ const value = 1;
                 `${REPO_ROOT}\\alpha`,
           ),
       ).toBe(true);
+      expect(getEntryIconSrc("alpha")).not.toContain("folder_open");
+
+      await vi.advanceTimersByTimeAsync(180);
+
       expect(getEntryIconSrc("alpha")).toContain("folder_open");
+      expect(await screen.findByText("Folder Contents")).toBeInTheDocument();
     },
   );
+
+  it("cancels folder preview priming when a double click opens the directory", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const alphaPath = `${REPO_ROOT}\\alpha`;
+    const childEntries = [
+      {
+        name: "child.txt",
+        path: `${alphaPath}\\child.txt`,
+        is_dir: false,
+        size: 42,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ];
+    const deferredListing = createDeferred<typeof childEntries>();
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return payload?.path === alphaPath ? deferredListing.promise : ENTRIES;
+        }
+        return baseInvokeImplementation(
+          command,
+          args as Parameters<typeof invoke>[1],
+        );
+      },
+    );
+
+    useSettingsStore.getState().updateExplorer({
+      viewMode: "icons-l",
+      gridZoom: 0.67,
+      folderClickMode: "double",
+    });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const alphaEntry = screen.getByText("alpha");
+    fireEvent.click(alphaEntry);
+    expect(getEntryIconSrc("alpha")).not.toContain("folder_open");
+
+    fireEvent.doubleClick(alphaEntry);
+    await vi.advanceTimersByTimeAsync(220);
+
+    expect(screen.queryByText("Folder Contents")).not.toBeInTheDocument();
+
+    deferredListing.resolve(childEntries);
+
+    await waitFor(() => {
+      expect(screen.getByText("child.txt")).toBeInTheDocument();
+    });
+  });
 
   it("keeps managed theme icons ahead of native icon fallback for mapped explorer entries", async () => {
     useSettingsStore.getState().updateAppearance({ useNativeOsIcons: true });
