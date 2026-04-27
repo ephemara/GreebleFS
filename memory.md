@@ -1,3 +1,20 @@
+# 2026-04-27 - Authoring Canvases Need A Fixed Viewport With Bidirectional Scroll, Not A Content-Growth Illusion
+
+- The latest customize-mode polish closed a specific but important regression in the explorer header authoring surface:
+  - horizontal overflow already worked, but vertical overflow still felt fake because the content could grow while the visible panel itself did not behave like a true scroll viewport
+  - dragging near the top edge while resizing or moving controls upward could shove nodes around without actually letting the user pan back upward through the authored canvas
+- Durable `LayoutDynamicsCanvas.tsx` rule:
+  - the root surface is the viewport and must own an explicit height derived from the active band metrics, not from the current content extent
+  - the inner content extent may grow past that viewport in both axes based on band bounds plus dynamic node bounds, but that overflow must stay scrollable inside the root when `authoringActive` is true
+  - if future work makes customize mode feel like “the buttons move but the panel does not,” check the root viewport height/overflow contract before touching solver math or band-resize math
+- Durable scroll/drag rule:
+  - customize mode should support bidirectional reachability; if the user shrinks a band or drags content toward an edge, hidden controls must still be reachable through vertical and horizontal scrolling
+  - `LayoutDynamicsCanvas.tsx` now edge-autoscrolls the root viewport during both placed-control drags and catalog-origin external preview drags, so dragging near the top/left/right/bottom edges pans the authored canvas instead of dead-ending against the current viewport
+  - if vertical authoring scroll disappears again while horizontal still works, check the root `height`, `overflow`, and edge-autoscroll path together
+- Focused validation that passed for this pass:
+  - `bunx vitest run src/test/layoutDynamicsCanvas.test.tsx src/test/layoutDynamicsRuntime.test.ts src/test/ExplorerChromeSurface.test.tsx src/test/ExplorerWorkspace.test.tsx -t "keeps a fixed viewport height while authoring and lets the content scroll inside it|starts aura repulsion before controls overlap|switches adopted explorer surfaces into the layout-dynamics canvas during customize mode even before anchors exist|suppresses live customize control clicks while customize mode is on|renders the status bar through layout dynamics during explorer customize mode|commits the active chrome customize draft when Done closes the actions pane|commits the active chrome customize draft when the live customize toggle exits the mode" --reporter=dot`
+  - filtered no matches on touched files: `bash -lc "bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'LayoutDynamicsCanvas|layoutDynamicsRuntime|ExplorerChromeSurface|ExplorerWorkspace|layoutDynamicsCanvas\\.test\\.tsx' || true'"`
+
 # 2026-04-27 - Explorer Visible-Entry Compute Now Has A Shared Worker Lane, And Bounded Chrome Surfaces Need Localized Compositor Rules
 
 - The broad frontend performance pass established four durable rules that future explorer/shell work should preserve together:

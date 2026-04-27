@@ -112,6 +112,24 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function parseCssPixels(
+  value: CSSProperties["height"] | CSSProperties["minHeight"],
+): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (normalized.endsWith("px")) {
+      const parsed = Number.parseFloat(normalized);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return 0;
+}
+
 function getOverlayTargetFlag(
   target: EventTarget | null,
   attribute: string,
@@ -222,6 +240,77 @@ export function LayoutDynamicsCanvas({
   const visibleItems = useMemo(
     () => items.filter((item) => item.hidden !== true),
     [items],
+  );
+  const resolvedViewportHeightPx = useMemo(
+    () =>
+      Math.max(
+        1,
+        bands.reduce((total, band) => {
+          const styledHeight =
+            parseCssPixels(band.style?.height) ||
+            parseCssPixels(band.style?.minHeight);
+          return total + Math.max(band.minHeightPx, styledHeight);
+        }, 0),
+      ),
+    [bands],
+  );
+
+  const autoScrollViewportForClientPoint = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!authoringActive) {
+        return;
+      }
+      const rootElement = rootRef.current;
+      if (!rootElement) {
+        return;
+      }
+      const rootRect = rootElement.getBoundingClientRect();
+      const edgeThresholdPx = 56;
+      const maxStepPx = 22;
+      const resolveStep = (distanceInsideEdge: number) =>
+        Math.max(
+          0,
+          Math.min(
+            maxStepPx,
+            ((edgeThresholdPx - distanceInsideEdge) / edgeThresholdPx) *
+              maxStepPx,
+          ),
+        );
+
+      let nextScrollLeft = rootElement.scrollLeft;
+      let nextScrollTop = rootElement.scrollTop;
+
+      if (clientX < rootRect.left + edgeThresholdPx) {
+        nextScrollLeft -= resolveStep(clientX - rootRect.left);
+      } else if (clientX > rootRect.right - edgeThresholdPx) {
+        nextScrollLeft += resolveStep(rootRect.right - clientX);
+      }
+
+      if (clientY < rootRect.top + edgeThresholdPx) {
+        nextScrollTop -= resolveStep(clientY - rootRect.top);
+      } else if (clientY > rootRect.bottom - edgeThresholdPx) {
+        nextScrollTop += resolveStep(rootRect.bottom - clientY);
+      }
+
+      const clampedScrollLeft = clamp(
+        Math.round(nextScrollLeft),
+        0,
+        Math.max(0, rootElement.scrollWidth - rootElement.clientWidth),
+      );
+      const clampedScrollTop = clamp(
+        Math.round(nextScrollTop),
+        0,
+        Math.max(0, rootElement.scrollHeight - rootElement.clientHeight),
+      );
+
+      if (clampedScrollLeft !== rootElement.scrollLeft) {
+        rootElement.scrollLeft = clampedScrollLeft;
+      }
+      if (clampedScrollTop !== rootElement.scrollTop) {
+        rootElement.scrollTop = clampedScrollTop;
+      }
+    },
+    [authoringActive],
   );
 
   const measureBandBounds = useCallback((): LayoutDynamicsBandBounds[] => {
@@ -481,6 +570,10 @@ export function LayoutDynamicsCanvas({
       return;
     }
 
+    autoScrollViewportForClientPoint(
+      externalDragPreview.pointerPoint.x,
+      externalDragPreview.pointerPoint.y,
+    );
     const bandBounds = measureBandBounds();
     const fallbackBandId =
       externalDragPreview.bandId ?? bands[0]?.id ?? externalDragPreviewNodeRef.current?.bandId;
@@ -544,6 +637,7 @@ export function LayoutDynamicsCanvas({
     flushNodeTransforms();
     scheduleFrame();
   }, [
+    autoScrollViewportForClientPoint,
     authoringActive,
     axisMode,
     bands,
@@ -776,6 +870,10 @@ export function LayoutDynamicsCanvas({
           return;
         }
 
+        autoScrollViewportForClientPoint(
+          pointerEvent.clientX,
+          pointerEvent.clientY,
+        );
         const bandBounds = measureBandBounds();
         const contentBounds = contentRef.current.getBoundingClientRect();
         const relativePointerX =
@@ -929,8 +1027,11 @@ export function LayoutDynamicsCanvas({
       style={{
         position: "relative",
         width: "100%",
+        height: `${Math.ceil(resolvedViewportHeightPx)}px`,
         minWidth: 0,
         overflow: authoringActive ? "auto" : "hidden",
+        overscrollBehavior: authoringActive ? "contain" : undefined,
+        scrollbarGutter: authoringActive ? "stable both-edges" : undefined,
         ...style,
         ...BOUNDED_CHROME_CONTAINMENT_STYLE,
       }}
