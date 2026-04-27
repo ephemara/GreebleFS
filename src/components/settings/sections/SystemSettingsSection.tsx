@@ -16,6 +16,7 @@ import { formatHotkeyLabel } from '../../../config/hotkeys';
 import {
   SettingsActionStrip,
   SettingsRow,
+  SettingsRowGroup,
   SettingsSectionBlock,
   SettingsSectionHeader,
   ThemeBadge,
@@ -180,51 +181,53 @@ export function SystemSettingsSection({
       />
 
       <div className="space-y-3">
-        <SettingsRow
-          title="Launch At Startup"
-          description="Registers GreebleFS as a login item so the tray and overlay are available after sign-in."
-          control={(
-            <input
-              type="checkbox"
-              checked={launchAtStartup}
-              disabled={startupSyncPending}
-              onChange={event => void onSetLaunchAtStartup(event.target.checked)}
-            />
-          )}
-        />
-        <SettingsRow
-          title="Start Mobile Share On Boot"
-          description="When the main desktop host launches, immediately bring the phone-facing mobile share online using the current Mobile routing mode and the active explorer path fallback."
-          control={(
-            <input
-              type="checkbox"
-              checked={startMobileShareOnBoot}
-              onChange={event => onUpdateSystem({ startMobileShareOnBoot: event.target.checked })}
-            />
-          )}
-        />
-        <SettingsRow
-          title="Hide App In Tray"
-          description={`Keeps a ${platform === 'macos' ? 'menu bar' : 'system tray'} entry available so the overlay can stay resident when the main window is hidden.`}
-          control={(
-            <input
-              type="checkbox"
-              checked={hideAppInTray}
-              onChange={event => onSetHideAppInTray(event.target.checked)}
-            />
-          )}
-        />
-        <SettingsRow
-          title="Show In Taskbar"
-          description={`Shows the main window in the ${platform === 'macos' ? 'Dock' : 'taskbar'} while the shell is running so application mode behaves like a regular desktop app.`}
-          control={(
-            <input
-              type="checkbox"
-              checked={showInTaskbar}
-              onChange={event => onSetShowInTaskbar(event.target.checked)}
-            />
-          )}
-        />
+        <SettingsRowGroup>
+          <SettingsRow
+            title="Launch At Startup"
+            description="Registers GreebleFS as a login item so the tray and overlay are available after sign-in."
+            control={(
+              <input
+                type="checkbox"
+                checked={launchAtStartup}
+                disabled={startupSyncPending}
+                onChange={event => void onSetLaunchAtStartup(event.target.checked)}
+              />
+            )}
+          />
+          <SettingsRow
+            title="Start Mobile Share On Boot"
+            description="When the main desktop host launches, immediately bring the phone-facing mobile share online using the current Mobile routing mode and the active explorer path fallback."
+            control={(
+              <input
+                type="checkbox"
+                checked={startMobileShareOnBoot}
+                onChange={event => onUpdateSystem({ startMobileShareOnBoot: event.target.checked })}
+              />
+            )}
+          />
+          <SettingsRow
+            title="Hide App In Tray"
+            description={`Keeps a ${platform === 'macos' ? 'menu bar' : 'system tray'} entry available so the overlay can stay resident when the main window is hidden.`}
+            control={(
+              <input
+                type="checkbox"
+                checked={hideAppInTray}
+                onChange={event => onSetHideAppInTray(event.target.checked)}
+              />
+            )}
+          />
+          <SettingsRow
+            title="Show In Taskbar"
+            description={`Shows the main window in the ${platform === 'macos' ? 'Dock' : 'taskbar'} while the shell is running so application mode behaves like a regular desktop app.`}
+            control={(
+              <input
+                type="checkbox"
+                checked={showInTaskbar}
+                onChange={event => onSetShowInTaskbar(event.target.checked)}
+              />
+            )}
+          />
+        </SettingsRowGroup>
 
         <SettingsSectionBlock
           title="GPU Runtime"
@@ -345,41 +348,90 @@ export function SystemSettingsSection({
           </div>
 
           {accelerationRuntimeSnapshot.providers.length > 0 ? (
-            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
-              {accelerationRuntimeSnapshot.providers.map(provider => (
-                <div key={provider.providerKind} className="rounded border px-3 py-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">{provider.label}</div>
-                    <span className="opacity-55">{provider.ready ? 'Ready' : provider.available ? 'Detected' : 'Unavailable'}</span>
-                  </div>
-                  <p className="mt-2 text-[11px] leading-4 opacity-70">{provider.detail}</p>
-                  {provider.supportedWorkloadIds.length > 0 ? (
-                    <div className="mt-2 text-[10px] uppercase tracking-[0.12em] opacity-50">
-                      {provider.supportedWorkloadIds.join(' · ')}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
+            <div className="mt-3">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                Detected Providers
+              </div>
+              <SettingsRowGroup>
+                {accelerationRuntimeSnapshot.providers.map(provider => {
+                  const status = provider.ready
+                    ? 'Ready'
+                    : provider.available
+                      ? 'Detected'
+                      : 'Unavailable';
+                  return (
+                    <SettingsRow
+                      key={provider.providerKind}
+                      title={provider.label}
+                      description={(
+                        <>
+                          {provider.detail}
+                          {provider.supportedWorkloadIds.length > 0 ? (
+                            <span className="block opacity-65">
+                              Workloads: {provider.supportedWorkloadIds.join(' · ')}
+                            </span>
+                          ) : null}
+                        </>
+                      )}
+                      control={(
+                        <span
+                          className="inline-flex items-center rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{
+                            borderColor: provider.ready ? `${accent}88` : border,
+                            background: provider.ready ? `${accent}1f` : 'rgba(255,255,255,0.04)',
+                            color: text,
+                            opacity: provider.available ? 1 : 0.55,
+                          }}
+                        >
+                          {status}
+                        </span>
+                      )}
+                    />
+                  );
+                })}
+              </SettingsRowGroup>
             </div>
           ) : null}
 
-          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-            {accelerationWorkloadRoutes.map(route => (
-              <div key={route.definition.id} className="rounded border px-3 py-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">{route.definition.label}</div>
-                  <span className="opacity-55">{route.resolution.provider?.label ?? route.resolution.providerKind}</span>
-                </div>
-                <p className="mt-2 text-[11px] leading-4 opacity-65">{route.definition.description}</p>
-                <div className="mt-2 text-[10px] uppercase tracking-[0.12em] opacity-50">
-                  {route.resolution.ready
-                    ? 'provider ready'
-                    : route.resolution.available
-                      ? 'provider detected'
-                      : 'cpu fallback'}
-                </div>
-              </div>
-            ))}
+          <div className="mt-3">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+              Workload Routing
+            </div>
+            <SettingsRowGroup>
+              {accelerationWorkloadRoutes.map(route => {
+                const status = route.resolution.ready
+                  ? 'provider ready'
+                  : route.resolution.available
+                    ? 'provider detected'
+                    : 'cpu fallback';
+                return (
+                  <SettingsRow
+                    key={route.definition.id}
+                    title={route.definition.label}
+                    description={(
+                      <>
+                        {route.definition.description}
+                        <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] opacity-55">
+                          {status}
+                        </span>
+                      </>
+                    )}
+                    control={(
+                      <span
+                        className="inline-flex items-center rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                        style={{
+                          borderColor: route.resolution.ready ? `${accent}88` : border,
+                          background: route.resolution.ready ? `${accent}1f` : 'rgba(255,255,255,0.04)',
+                          color: text,
+                        }}
+                      >
+                        {route.resolution.provider?.label ?? route.resolution.providerKind}
+                      </span>
+                    )}
+                  />
+                );
+              })}
+            </SettingsRowGroup>
           </div>
 
           {accelerationRuntimeSnapshot.pythonProbe ? (
@@ -410,30 +462,32 @@ export function SystemSettingsSection({
           ) : null}
         </SettingsSectionBlock>
 
-        <SettingsRow
-          title="Developer Mode"
-          description="Enables live watchers and hot reload for plugins, shaders, animations, and explorer metadata. Leave this off for the normal production path and use manual refresh actions instead."
-          control={<input type="checkbox" checked={developerMode} onChange={event => onUpdateSystem({ developerMode: event.target.checked })} />}
-        />
-        <SettingsRow
-          title="Developer Telemetry"
-          description="Records frontend, bridge, native, and plugin/runtime spans into structured session traces for deep debugging in dev and installed builds."
-          control={<input type="checkbox" checked={developerTelemetryEnabled} onChange={event => onUpdateSystem({ developerTelemetryEnabled: event.target.checked })} />}
-        />
-        <SettingsRow
-          title="Source Trace Mode"
-          description={(
-            <>
-              Dev-only extra trace depth with source-aware stacks and callsites. Pressing {formatHotkeyLabel(toggleDeveloperTelemetryHud)} also arms this automatically when the HUD opens.
-            </>
-          )}
-          control={<input type="checkbox" checked={sourceTraceModeEnabled} onChange={event => onUpdateSystem({ sourceTraceModeEnabled: event.target.checked })} />}
-        />
-        <SettingsRow
-          title="Consumer Diagnostics"
-          description="Keeps local diagnostic traces available for support bundles when themes, plugins, or renderers misbehave in production."
-          control={<input type="checkbox" checked={consumerDiagnosticsEnabled} onChange={event => onUpdateSystem({ consumerDiagnosticsEnabled: event.target.checked })} />}
-        />
+        <SettingsRowGroup>
+          <SettingsRow
+            title="Developer Mode"
+            description="Enables live watchers and hot reload for plugins, shaders, animations, and explorer metadata. Leave this off for the normal production path and use manual refresh actions instead."
+            control={<input type="checkbox" checked={developerMode} onChange={event => onUpdateSystem({ developerMode: event.target.checked })} />}
+          />
+          <SettingsRow
+            title="Developer Telemetry"
+            description="Records frontend, bridge, native, and plugin/runtime spans into structured session traces for deep debugging in dev and installed builds."
+            control={<input type="checkbox" checked={developerTelemetryEnabled} onChange={event => onUpdateSystem({ developerTelemetryEnabled: event.target.checked })} />}
+          />
+          <SettingsRow
+            title="Source Trace Mode"
+            description={(
+              <>
+                Dev-only extra trace depth with source-aware stacks and callsites. Pressing {formatHotkeyLabel(toggleDeveloperTelemetryHud)} also arms this automatically when the HUD opens.
+              </>
+            )}
+            control={<input type="checkbox" checked={sourceTraceModeEnabled} onChange={event => onUpdateSystem({ sourceTraceModeEnabled: event.target.checked })} />}
+          />
+          <SettingsRow
+            title="Consumer Diagnostics"
+            description="Keeps local diagnostic traces available for support bundles when themes, plugins, or renderers misbehave in production."
+            control={<input type="checkbox" checked={consumerDiagnosticsEnabled} onChange={event => onUpdateSystem({ consumerDiagnosticsEnabled: event.target.checked })} />}
+          />
+        </SettingsRowGroup>
 
         <div className="grid gap-3 md:grid-cols-2">
           <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
@@ -496,26 +550,23 @@ export function SystemSettingsSection({
           />
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <SettingsRowGroup>
           <SettingsRow
             title="Plugin Runtime Diagnostics"
             description="Include plugin attribution and execution context in consumer bundles."
             control={<input type="checkbox" checked={consumerDiagnosticsIncludePluginRuntime} onChange={event => onUpdateSystem({ consumerDiagnosticsIncludePluginRuntime: event.target.checked })} />}
-            className="h-full"
           />
           <SettingsRow
             title="Renderer Diagnostics"
             description="Include renderer/theme execution context in exported support bundles."
             control={<input type="checkbox" checked={consumerDiagnosticsIncludeRendererRuntime} onChange={event => onUpdateSystem({ consumerDiagnosticsIncludeRendererRuntime: event.target.checked })} />}
-            className="h-full"
           />
           <SettingsRow
             title="Perf Samples In Bundles"
             description="Keep performance timing summaries alongside trace files for support triage."
             control={<input type="checkbox" checked={consumerDiagnosticsIncludePerfSamples} onChange={event => onUpdateSystem({ consumerDiagnosticsIncludePerfSamples: event.target.checked })} />}
-            className="h-full"
           />
-        </div>
+        </SettingsRowGroup>
 
         {platform === 'linux' ? (
           <SettingsRow

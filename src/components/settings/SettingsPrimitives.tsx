@@ -1,14 +1,113 @@
 import {
   cloneElement,
+  createContext,
   isValidElement,
+  useContext,
+  useId,
+  useState,
   type CSSProperties,
   type InputHTMLAttributes,
   type ReactElement,
   type ReactNode,
 } from 'react';
+import { Info } from '../AppIcons';
 import { PremiumSlider } from '../PremiumSlider';
 import { OverlayToggle } from '../OverlayToggle';
 import type { InteractionMotionBinding } from '../../animation/interactionMotion';
+
+// ---------------------------------------------------------------------------
+// Description visibility context
+// ---------------------------------------------------------------------------
+//
+// Settings rows used to render their `description` text inline at all times,
+// which made `rows`-archetype pages feel balloon-y and hard to scan. The
+// macOS-style compaction pass moves descriptions into a hover/focus
+// `InfoBubble` by default. Sections opt back into the verbose layout via a
+// per-section "Show descriptions" toggle wired through this context, so we
+// don't have to prop-drill the flag through every row.
+
+const SettingsRowDescriptionContext = createContext<boolean>(false);
+
+export function SettingsRowDescriptionProvider({
+  showDescriptions,
+  children,
+}: {
+  showDescriptions: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <SettingsRowDescriptionContext.Provider value={showDescriptions}>
+      {children}
+    </SettingsRowDescriptionContext.Provider>
+  );
+}
+
+export function useSettingsRowDescriptionsVisible(): boolean {
+  return useContext(SettingsRowDescriptionContext);
+}
+
+// ---------------------------------------------------------------------------
+// Info bubble
+// ---------------------------------------------------------------------------
+
+export function InfoBubble({
+  description,
+  note,
+  label,
+  className = '',
+}: {
+  description: ReactNode;
+  note?: ReactNode;
+  label?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const tooltipId = useId();
+  const ariaLabel = label ?? 'More info';
+
+  return (
+    <span
+      className={`relative inline-flex items-center ${className}`.trim()}
+      onPointerEnter={() => setOpen(true)}
+      onPointerLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-describedby={tooltipId}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onClick={() => setOpen(prev => !prev)}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full opacity-50 transition-opacity hover:opacity-100 focus:opacity-100 focus:outline-none"
+        style={{
+          color: 'var(--overlay-text-primary)',
+          background: 'transparent',
+        }}
+      >
+        <Info size={11} />
+      </button>
+      <span
+        id={tooltipId}
+        role="tooltip"
+        aria-hidden={!open}
+        className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 rounded border px-2.5 py-1.5 text-[10px] leading-4 transition-opacity"
+        style={{
+          opacity: open ? 1 : 0,
+          minWidth: 200,
+          maxWidth: 280,
+          borderColor: 'var(--overlay-workbench-settings-card-border)',
+          background: 'var(--overlay-workbench-settings-card-bg)',
+          color: 'var(--overlay-text-primary)',
+          boxShadow: '0 6px 18px rgba(0,0,0,0.32)',
+          whiteSpace: 'normal',
+        }}
+      >
+        <span className="block opacity-80">{description}</span>
+        {note ? <span className="mt-1 block opacity-60">{note}</span> : null}
+      </span>
+    </span>
+  );
+}
 
 type SettingsSurfaceTone = 'default' | 'muted' | 'accent';
 
@@ -172,6 +271,37 @@ export function SettingsActionStrip({
   );
 }
 
+// Group context: when SettingsRow renders inside a SettingsRowGroup we drop
+// per-row borders so the group can paint a single bordered shell with
+// hairline dividers between rows (macOS Settings vibe).
+const SettingsRowGroupContext = createContext<boolean>(false);
+
+export function SettingsRowGroup({
+  children,
+  className = '',
+  style,
+}: {
+  children: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <SettingsRowGroupContext.Provider value={true}>
+      <div
+        data-settings-row-group="true"
+        className={`overflow-hidden rounded border ${className}`.trim()}
+        style={{
+          borderColor: 'var(--overlay-workbench-settings-card-border)',
+          background: 'var(--overlay-workbench-settings-card-bg)',
+          ...style,
+        }}
+      >
+        {children}
+      </div>
+    </SettingsRowGroupContext.Provider>
+  );
+}
+
 export function SettingsRow({
   title,
   description,
@@ -180,6 +310,7 @@ export function SettingsRow({
   disabled = false,
   className = '',
   style,
+  descriptionAlwaysVisible = false,
 }: {
   title: string;
   description: ReactNode;
@@ -188,7 +319,15 @@ export function SettingsRow({
   disabled?: boolean;
   className?: string;
   style?: CSSProperties;
+  /** Force the description to render inline even when the section is in
+   * compact / bubble mode. Use sparingly for rows whose description is
+   * actually critical context, not boilerplate. */
+  descriptionAlwaysVisible?: boolean;
 }) {
+  const showAllDescriptions = useSettingsRowDescriptionsVisible();
+  const inGroup = useContext(SettingsRowGroupContext);
+  const showInline = descriptionAlwaysVisible || showAllDescriptions;
+
   const normalizedControl = isNativeCheckboxControl(control)
     ? convertNativeCheckboxToToggle(control)
     : control;
@@ -201,20 +340,45 @@ export function SettingsRow({
     )
     : normalizedControl;
 
+  const containerClass = inGroup
+    ? `flex items-center justify-between gap-4 px-3 py-2.5 text-[11px] [&:not(:first-child)]:border-t ${className}`.trim()
+    : `flex items-center justify-between gap-4 rounded border px-3 ${showInline ? 'py-3' : 'py-2.5'} text-[11px] ${className}`.trim();
+
+  const containerStyle: CSSProperties = inGroup
+    ? {
+      borderColor: 'var(--overlay-workbench-settings-card-border)',
+      opacity: disabled ? 0.6 : 1,
+      ...style,
+    }
+    : {
+      borderColor: 'var(--overlay-workbench-settings-card-border)',
+      opacity: disabled ? 0.6 : 1,
+      ...style,
+    };
+
   return (
     <div
-      className={`flex items-center justify-between gap-4 rounded border px-3 py-3 text-[11px] ${className}`.trim()}
+      className={containerClass}
       data-settings-row={title}
-      style={{
-        borderColor: 'var(--overlay-workbench-settings-card-border)',
-        opacity: disabled ? 0.6 : 1,
-        ...style,
-      }}
+      style={containerStyle}
     >
       <div className="min-w-0 flex-1">
-        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">{title}</div>
-        <div className="mt-1 text-[11px] opacity-40">{description}</div>
-        {note ? <div className="mt-2 text-[10px] opacity-45">{note}</div> : null}
+        <div className="flex items-center gap-1.5">
+          <div className="font-semibold uppercase tracking-[0.12em] opacity-70">{title}</div>
+          {showInline ? null : (
+            <InfoBubble
+              description={description}
+              note={note}
+              label={`About ${title}`}
+            />
+          )}
+        </div>
+        {showInline ? (
+          <>
+            <div className="mt-1 text-[11px] opacity-45">{description}</div>
+            {note ? <div className="mt-2 text-[10px] opacity-50">{note}</div> : null}
+          </>
+        ) : null}
       </div>
       <div className="shrink-0">{labeledControl}</div>
     </div>

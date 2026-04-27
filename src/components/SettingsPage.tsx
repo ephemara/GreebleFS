@@ -236,6 +236,11 @@ import { MobileShareConnectionCards } from "./MobileShareConnectionCards";
 import { MobileShareQrDialog } from "./MobileShareQrDialog";
 import { OverlayActionButton } from "./OverlayActionButton";
 import { SettingsShell } from "./settings/SettingsShell";
+import {
+  InfoBubble,
+  SettingsRowDescriptionProvider,
+  useSettingsRowDescriptionsVisible,
+} from "./settings/SettingsPrimitives";
 import { AppearanceSettingsSection } from "./settings/sections/AppearanceSettingsSection";
 import { IconSettingsSection } from "./settings/sections/IconSettingsSection";
 import { SystemSettingsSection } from "./settings/sections/SystemSettingsSection";
@@ -2345,6 +2350,7 @@ function ShortcutEditorCard({
   resetLabel?: string;
 }) {
   const [draft, setDraft] = useState(value);
+  const showInlineDescriptions = useSettingsRowDescriptionsVisible();
 
   useEffect(() => {
     setDraft(value);
@@ -2365,11 +2371,21 @@ function ShortcutEditorCard({
       }}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-            {label}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-70">
+              {label}
+            </div>
+            {showInlineDescriptions ? null : (
+              <InfoBubble
+                description={description}
+                label={`About ${label}`}
+              />
+            )}
           </div>
-          <p className="mt-1 text-[11px] opacity-40">{description}</p>
+          {showInlineDescriptions ? (
+            <p className="mt-1 text-[11px] opacity-45">{description}</p>
+          ) : null}
         </div>
         <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-80">
           {scopeLabel}
@@ -3337,6 +3353,8 @@ export function SettingsPage({
     setHomePackState,
     setHomePresetSelection,
     resetToDefaults,
+    showAllDescriptionsBySection,
+    setShowAllDescriptions,
   } = useSettingsStore(
     useShallow((state) => ({
       activeSection: state.activeSection,
@@ -3363,8 +3381,12 @@ export function SettingsPage({
       setHomePackState: state.setHomePackState,
       setHomePresetSelection: state.setHomePresetSelection,
       resetToDefaults: state.resetToDefaults,
+      showAllDescriptionsBySection: state.showAllDescriptionsBySection,
+      setShowAllDescriptions: state.setShowAllDescriptions,
     })),
   );
+  const showAllDescriptionsForActiveSection =
+    showAllDescriptionsBySection[activeSection] ?? false;
   const refreshNativeNotificationPermission = useCallback(async () => {
     setNativeNotificationPermissionLoading(true);
     try {
@@ -8832,6 +8854,38 @@ export function SettingsPage({
                   {activeSectionMeta.summary}
                 </span>
                 <button
+                  type="button"
+                  onClick={() =>
+                    setShowAllDescriptions(
+                      activeSection,
+                      !showAllDescriptionsForActiveSection,
+                    )
+                  }
+                  aria-pressed={showAllDescriptionsForActiveSection}
+                  title={
+                    showAllDescriptionsForActiveSection
+                      ? "Hide descriptions (use the (i) bubbles instead)"
+                      : "Show every row description inline for this section"
+                  }
+                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
+                  style={{
+                    border: `1px solid ${
+                      showAllDescriptionsForActiveSection
+                        ? `${accent}88`
+                        : "var(--overlay-workbench-settings-badge-border)"
+                    }`,
+                    color: text,
+                    background: showAllDescriptionsForActiveSection
+                      ? `${accent}1f`
+                      : "var(--overlay-workbench-settings-badge-bg)",
+                  }}
+                >
+                  <SlidersHorizontal size={12} />
+                  {showAllDescriptionsForActiveSection
+                    ? "Hide Descriptions"
+                    : "Show Descriptions"}
+                </button>
+                <button
                   onClick={() => resetToDefaults()}
                   className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
                   style={{
@@ -8849,6 +8903,9 @@ export function SettingsPage({
           </div>
         }
       >
+        <SettingsRowDescriptionProvider
+          showDescriptions={showAllDescriptionsForActiveSection}
+        >
         {activeSection === "overview" && (
           <section
             className="rounded border p-4"
@@ -9110,20 +9167,14 @@ export function SettingsPage({
                     localModelStatusPending ? "Refreshing" : "Ready",
                   ]}
                 >
-                  <div className="space-y-3">
-                    <div
-                      className="rounded border px-3 py-3"
-                      style={{
-                        borderColor: border,
-                        background: "rgba(255,255,255,0.025)",
-                      }}
-                    >
+                  <div className="space-y-2.5">
+                    <div>
                       <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
                         <Database size={11} />
                         <span>Cache Location</span>
                       </div>
                       <div
-                        className="mt-2 break-all text-[11px]"
+                        className="mt-1.5 break-all text-[11px]"
                         style={{
                           color: text,
                           fontFamily: appearance.fonts.mono,
@@ -9134,12 +9185,12 @@ export function SettingsPage({
                           "Initialize the managed Python runtime to resolve the cache root."}
                       </div>
                       {localModelStatus ? (
-                        <div className="mt-2 text-[10px] opacity-45">
+                        <div className="mt-1 text-[10px] opacity-45">
                           Python {localModelStatus.pythonVersion} · registry{" "}
                           {localModelStatus.registryRoot}
                         </div>
                       ) : (
-                        <div className="mt-2 text-[10px] opacity-45">
+                        <div className="mt-1 text-[10px] opacity-45">
                           Model cache metadata appears after the first catalog
                           refresh.
                         </div>
@@ -9196,19 +9247,13 @@ export function SettingsPage({
                       : "cpu fallback",
                   ]}
                 >
-                  <div className="space-y-3">
-                    <div
-                      className="rounded border px-3 py-3"
-                      style={{
-                        borderColor: border,
-                        background: "rgba(255,255,255,0.025)",
-                      }}
-                    >
+                  <div className="space-y-2.5">
+                    <div>
                       <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
                         <Cpu size={11} />
                         <span>CUDA Python Provider</span>
                       </div>
-                      <div className="mt-2 text-[11px]" style={{ color: text }}>
+                      <div className="mt-1.5 text-[11px]" style={{ color: text }}>
                         {cudaProviderStatus?.label ?? "CUDA Python Sidecar"}
                       </div>
                       <p className="mt-1 text-[11px] leading-4 opacity-45">
@@ -9308,19 +9353,13 @@ export function SettingsPage({
                       "Profile pending",
                   ]}
                 >
-                  <div className="space-y-3">
-                    <div
-                      className="rounded border px-3 py-3"
-                      style={{
-                        borderColor: border,
-                        background: "rgba(255,255,255,0.025)",
-                      }}
-                    >
+                  <div className="space-y-2.5">
+                    <div>
                       <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
                         <Bot size={11} />
                         <span>Current Active Model</span>
                       </div>
-                      <div className="mt-2 text-[11px]" style={{ color: text }}>
+                      <div className="mt-1.5 text-[11px]" style={{ color: text }}>
                         {semanticIndexingSelectedModel?.label ??
                           "No semantic model selected"}
                       </div>
@@ -9350,14 +9389,7 @@ export function SettingsPage({
                       </div>
                     </div>
 
-                    <div
-                      className="rounded border px-3 py-2 text-[11px]"
-                      style={{
-                        borderColor: border,
-                        background: "rgba(255,255,255,0.02)",
-                        color: muted,
-                      }}
-                    >
+                    <div className="text-[11px] opacity-55" style={{ color: muted }}>
                       {semanticIndexOverrideEntries.length > 0
                         ? `${semanticIndexOverrideEntries.length} per-root override${semanticIndexOverrideEntries.length === 1 ? "" : "s"} pinned for semantic indexing.`
                         : "No per-root semantic overrides yet; the default semantic binding applies to every local index root."}
@@ -9396,8 +9428,14 @@ export function SettingsPage({
                 subtitle="Model and backend bindings are capability-driven. Semantic indexing is live now; local inference and source separation stay visible so the settings surface does not have to be reinvented when those lanes arrive."
                 badges={["Shared bindings", "Capability-first", "Future-ready"]}
               >
-                <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-                  {localModelCapabilityCatalog.map((capability) => {
+                <div
+                  className="overflow-hidden rounded border"
+                  style={{
+                    borderColor: border,
+                    background: "rgba(255,255,255,0.02)",
+                  }}
+                >
+                  {localModelCapabilityCatalog.map((capability, capabilityIndex) => {
                     const binding = settings.models.capabilityBindings[
                       capability.id
                     ] ?? {
@@ -9411,44 +9449,41 @@ export function SettingsPage({
                       ? (localModelStatusById.get(selectedModel.id) ?? null)
                       : null;
                     const capabilityModels = getCapabilityModels(capability.id);
+                    const isActive = capability.availability === "active";
 
                     return (
                       <div
                         key={capability.id}
-                        className="rounded border p-3"
-                        style={{
-                          borderColor: border,
-                          background: "rgba(255,255,255,0.025)",
-                        }}
+                        className={`px-3 py-3 ${capabilityIndex > 0 ? "border-t" : ""}`}
+                        style={{ borderColor: border }}
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div
-                              className="text-[11px] font-semibold"
-                              style={{ color: text }}
-                            >
-                              {capability.label}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <div
+                                className="text-[11px] font-semibold"
+                                style={{ color: text }}
+                              >
+                                {capability.label}
+                              </div>
+                              <InfoBubble
+                                description={capability.description}
+                                label={`About ${capability.label}`}
+                              />
                             </div>
-                            <p className="mt-1 text-[11px] leading-4 opacity-45">
-                              {capability.description}
-                            </p>
                           </div>
                           <ThemeBadge
-                            label={
-                              capability.availability === "active"
-                                ? "Active"
-                                : "Planned"
-                            }
-                            active={capability.availability === "active"}
+                            label={isActive ? "Active" : "Planned"}
+                            active={isActive}
                           />
                         </div>
 
-                        {capability.availability === "active" ? (
-                          <div className="mt-3 space-y-3">
-                            <label className="block">
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                        {isActive ? (
+                          <div className="mt-2.5 grid grid-cols-1 gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto]">
+                            <label className="flex items-center gap-2">
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60 shrink-0">
                                 Model
-                              </div>
+                              </span>
                               <select
                                 aria-label={`${capability.label} model`}
                                 value={binding.modelId ?? ""}
@@ -9460,7 +9495,7 @@ export function SettingsPage({
                                     },
                                   )
                                 }
-                                className="mt-2 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                                className="min-w-0 flex-1 rounded border bg-transparent px-2 py-1.5 text-[11px] outline-none"
                                 style={settingsSelectStyle}
                               >
                                 {capabilityModels.map((model) => (
@@ -9471,76 +9506,65 @@ export function SettingsPage({
                               </select>
                             </label>
 
-                            <div>
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
                                 Backend
-                              </div>
-                              <div className="mt-2 grid grid-cols-2 gap-2">
-                                {localModelBackendOptions
-                                  .filter((option) =>
-                                    capability.backendOptionIds.includes(
-                                      option.id,
-                                    ),
-                                  )
-                                  .map((option) => {
-                                    const active =
-                                      binding.backendPreference === option.id;
-                                    const disabled =
-                                      option.id === "cuda" &&
-                                      !cudaProviderReady;
-                                    return (
-                                      <button
-                                        key={`${capability.id}-${option.id}`}
-                                        type="button"
-                                        aria-label={`Use ${option.label} backend for ${capability.label}`}
-                                        onClick={() => {
-                                          if (!disabled) {
-                                            handleUpdateModelCapabilityBinding(
-                                              capability.id,
-                                              {
-                                                backendPreference: option.id,
-                                              },
-                                            );
-                                          }
-                                        }}
-                                        disabled={disabled}
-                                        title={
-                                          disabled
-                                            ? "CUDA is unavailable until an NVIDIA-capable sidecar provider is detected."
-                                            : option.description
+                              </span>
+                              {localModelBackendOptions
+                                .filter((option) =>
+                                  capability.backendOptionIds.includes(
+                                    option.id,
+                                  ),
+                                )
+                                .map((option) => {
+                                  const active =
+                                    binding.backendPreference === option.id;
+                                  const disabled =
+                                    option.id === "cuda" &&
+                                    !cudaProviderReady;
+                                  return (
+                                    <button
+                                      key={`${capability.id}-${option.id}`}
+                                      type="button"
+                                      aria-label={`Use ${option.label} backend for ${capability.label}`}
+                                      onClick={() => {
+                                        if (!disabled) {
+                                          handleUpdateModelCapabilityBinding(
+                                            capability.id,
+                                            {
+                                              backendPreference: option.id,
+                                            },
+                                          );
                                         }
-                                        className="rounded px-3 py-2 text-left transition-colors"
-                                        style={{
-                                          border: `1px solid ${active ? accent : border}`,
-                                          background: active
-                                            ? `${accent}16`
-                                            : "rgba(255,255,255,0.03)",
-                                          color: text,
-                                          opacity: disabled ? 0.45 : 1,
-                                          cursor: disabled
-                                            ? "not-allowed"
-                                            : "pointer",
-                                        }}
-                                      >
-                                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
-                                          {option.label}
-                                        </div>
-                                        <div className="mt-1 text-[10px] leading-4 opacity-55">
-                                          {option.description}
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
-                              </div>
+                                      }}
+                                      disabled={disabled}
+                                      title={
+                                        disabled
+                                          ? "CUDA is unavailable until an NVIDIA-capable sidecar provider is detected."
+                                          : option.description
+                                      }
+                                      className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
+                                      style={{
+                                        border: `1px solid ${active ? accent : border}`,
+                                        background: active
+                                          ? `${accent}1f`
+                                          : "rgba(255,255,255,0.03)",
+                                        color: text,
+                                        opacity: disabled ? 0.45 : 1,
+                                        cursor: disabled
+                                          ? "not-allowed"
+                                          : "pointer",
+                                      }}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  );
+                                })}
                             </div>
 
                             <div
-                              className="rounded border px-3 py-2 text-[10px]"
-                              style={{
-                                borderColor: border,
-                                background: "rgba(255,255,255,0.02)",
-                                color: muted,
-                              }}
+                              className="text-[10px] opacity-55 lg:col-span-2"
+                              style={{ color: muted }}
                             >
                               {selectedModel?.label ?? "No model selected"} ·{" "}
                               {selectedModelStatus?.installed
@@ -9553,12 +9577,8 @@ export function SettingsPage({
                           </div>
                         ) : (
                           <div
-                            className="mt-3 rounded border px-3 py-3 text-[11px]"
-                            style={{
-                              borderColor: border,
-                              background: "rgba(255,255,255,0.02)",
-                              color: muted,
-                            }}
+                            className="mt-2 text-[11px] opacity-55"
+                            style={{ color: muted }}
                           >
                             Curated models for this capability have not been
                             published yet. The shared cache and capability
@@ -18386,6 +18406,7 @@ export function SettingsPage({
             </div>
           </section>
         )}
+        </SettingsRowDescriptionProvider>
       </SettingsShell>
       <MobileShareQrDialog
         open={mobileQrDialogOpen}

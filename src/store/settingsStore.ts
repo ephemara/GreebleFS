@@ -1536,6 +1536,11 @@ interface SettingsState {
   isOpen: boolean;
   activeSection: SettingsSectionKey;
   activeContextMenuComposerContext: ExplorerMenuContextKind;
+  /** Per-section preference for whether SettingsRow descriptions render
+   * inline (verbose) or only inside hover-only `InfoBubble` glyphs (compact,
+   * the default). Driven by the section header "Show descriptions" toggle.
+   */
+  showAllDescriptionsBySection: Partial<Record<SettingsSectionKey, boolean>>;
   
   // Actions
   openSettings: () => void;
@@ -1543,6 +1548,10 @@ interface SettingsState {
   setActiveSection: (section: SettingsSectionKey) => void;
   setActiveContextMenuComposerContext: (
     context: ExplorerMenuContextKind,
+  ) => void;
+  setShowAllDescriptions: (
+    section: SettingsSectionKey,
+    visible: boolean,
   ) => void;
   
   // Update settings
@@ -1595,6 +1604,7 @@ export const useSettingsStore = create<SettingsState>()(
       isOpen: false,
       activeSection: 'overview',
       activeContextMenuComposerContext: 'entry',
+      showAllDescriptionsBySection: {},
       
       openSettings: () => set({ isOpen: true }),
       closeSettings: () => set({ isOpen: false }),
@@ -1603,6 +1613,12 @@ export const useSettingsStore = create<SettingsState>()(
         activeContextMenuComposerContext:
           normalizeExplorerMenuComposerContext(context),
       }),
+      setShowAllDescriptions: (section, visible) => set((state) => ({
+        showAllDescriptionsBySection: {
+          ...state.showAllDescriptionsBySection,
+          [normalizeSettingsSectionKey(section)]: visible,
+        },
+      })),
       
       updateEditor: (updates) => set((state) => ({
         settings: {
@@ -1935,6 +1951,15 @@ export const useSettingsStore = create<SettingsState>()(
       storage: createJSONStorage(() => getSettingsStorage()),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<SettingsState> | undefined;
+        const persistedShowAll = persisted?.showAllDescriptionsBySection;
+        const sanitizedShowAll: Partial<Record<SettingsSectionKey, boolean>> = {};
+        if (persistedShowAll && typeof persistedShowAll === 'object') {
+          for (const [key, value] of Object.entries(persistedShowAll)) {
+            if (typeof value === 'boolean') {
+              sanitizedShowAll[normalizeSettingsSectionKey(key)] = value;
+            }
+          }
+        }
         return {
           ...currentState,
           ...persisted,
@@ -1943,6 +1968,7 @@ export const useSettingsStore = create<SettingsState>()(
             persisted?.activeContextMenuComposerContext
               ?? currentState.activeContextMenuComposerContext,
           ),
+          showAllDescriptionsBySection: sanitizedShowAll,
           settings: mergeSettingsWithDefaults(persisted?.settings),
         };
       },
