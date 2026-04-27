@@ -130,6 +130,7 @@ import {
   explorerModeProfiles,
   resolveEffectiveExplorerModeProfile,
   resolveExplorerModeProfileChromeLayoutId,
+  type ExplorerModeProfileId,
   type ExplorerModeProfileDefinition,
 } from "../config/explorerModeProfiles";
 import {
@@ -8129,6 +8130,7 @@ interface FileExplorerProps {
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
+  defaultModeProfileId?: ExplorerModeProfileId | null;
   instanceId?: ExplorerInstanceId;
   workspacePaneCount?: 1 | 2 | 3 | 4;
   chromeControlSurface?: "toolbar" | "topbar";
@@ -8212,6 +8214,7 @@ export function FileExplorer({
   pluginActions = [],
   pluginContextMenuItems = [],
   layoutMode = "full",
+  defaultModeProfileId = null,
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
   workspacePaneCount = 1,
   chromeControlSurface = "toolbar",
@@ -17564,10 +17567,12 @@ export function FileExplorer({
           explorerSettings.modeProfileOverridesByThemeId[
             explorerChromeThemeId
           ] ?? null,
-        themeDefaultModeProfileId: explorerTheme.defaultModeProfileId,
+        themeDefaultModeProfileId:
+          defaultModeProfileId ?? explorerTheme.defaultModeProfileId,
         legacyShellLayoutId: storedShellLayoutId,
       }),
     [
+      defaultModeProfileId,
       explorerChromeThemeId,
       explorerSettings.modeProfileOverridesByThemeId,
       explorerTheme.defaultModeProfileId,

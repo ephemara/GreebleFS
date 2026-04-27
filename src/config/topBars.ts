@@ -8,6 +8,7 @@ export type OverlayTopBarNavigationMode = 'auto' | 'summary';
 export type OverlayTopBarBandId = 'leading' | 'navigation' | 'trailing';
 export type OverlayTopBarControlId =
   | 'layout-cycle'
+  | 'shell-mode'
   | 'window-mode'
   | 'overlay-anchor'
   | 'mobile-share'
@@ -74,6 +75,7 @@ export interface ResolvedOverlayTopBarSelection {
 
 const topBarControlCatalog = new Set<OverlayTopBarControlId>([
   'layout-cycle',
+  'shell-mode',
   'window-mode',
   'overlay-anchor',
   'mobile-share',
@@ -104,6 +106,7 @@ const defaultTopBarControls = {
   ] as OverlayTopBarControlId[],
   trailing: [
     'shortcut-badge',
+    'shell-mode',
     'close-overlay',
   ] as OverlayTopBarControlId[],
 };
@@ -305,7 +308,7 @@ const builtInTopBarDefinitions = [
       topBarStyle: 'minimal',
       leadingControls: ['layout-cycle', 'window-mode', 'overlay-anchor'],
       navigationShortcuts: ['explorer-shortcut'],
-      trailingControls: ['command-palette', 'zen-mode', 'shortcut-badge', 'close-overlay'],
+      trailingControls: ['command-palette', 'zen-mode', 'shortcut-badge', 'shell-mode', 'close-overlay'],
       navigationMode: 'auto',
       tags: ['minimal', 'focus'],
     },
@@ -322,7 +325,7 @@ const builtInTopBarDefinitions = [
       topBarStyle: 'floating',
       leadingControls: ['panel-menu', 'command-palette', 'layout-cycle'],
       navigationShortcuts: ['settings-shortcut', 'explorer-shortcut'],
-      trailingControls: ['window-mode', 'overlay-anchor', 'mobile-share', 'zen-mode', 'shortcut-badge', 'close-overlay'],
+      trailingControls: ['window-mode', 'overlay-anchor', 'mobile-share', 'zen-mode', 'shortcut-badge', 'shell-mode', 'close-overlay'],
       navigationMode: 'summary',
       tags: ['launcher', 'summary'],
     },
@@ -521,6 +524,8 @@ export function getTopBarControlLabel(controlId: OverlayTopBarControlId): string
   switch (controlId) {
     case 'layout-cycle':
       return 'Layout';
+    case 'shell-mode':
+      return 'Shell Mode';
     case 'window-mode':
       return 'Window Mode';
     case 'overlay-anchor':

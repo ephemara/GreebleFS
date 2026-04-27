@@ -11,6 +11,11 @@ import { overlayWindowGeometry } from '../config/overlayWindow';
 import { defaultExplorerThumbnailSettings } from '../config/explorerThumbnails';
 import { semanticIndexingCapabilityId } from '../config/localModels';
 import { DEFAULT_EXPLORER_MENU_PACK_ID } from '../config/menuPacks';
+import {
+  inferIntegratedTerminalProfileFromShell,
+  normalizeIntegratedTerminalProfile,
+  resolveIntegratedTerminalShellCommand,
+} from '../config/platform';
 
 beforeEach(() => {
   useSettingsStore.getState().resetToDefaults();
@@ -300,17 +305,24 @@ describe('useSettingsStore.updateTerminal()', () => {
 
   it('updates integrated shell profile fields and keeps the resolved shell string in sync', () => {
     const store = useSettingsStore.getState();
+    const shellPath = String.raw`C:\Program Files\PowerShell\7\pwsh.exe`;
+    const shellArgs = '-NoLogo -NoProfile';
+    const normalizedProfile = normalizeIntegratedTerminalProfile('pwsh');
     store.updateTerminal({
       shellProfile: 'pwsh',
-      shellPath: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
-      shellArgs: '-NoLogo -NoProfile',
+      shellPath,
+      shellArgs,
     });
 
     const { settings } = useSettingsStore.getState();
-    expect(settings.terminal.shellProfile).toBe('pwsh');
-    expect(settings.terminal.shellPath).toBe('C:\\Program Files\\PowerShell\\7\\pwsh.exe');
-    expect(settings.terminal.shellArgs).toBe('-NoLogo -NoProfile');
-    expect(settings.terminal.shell).toBe('"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoLogo -NoProfile');
+    expect(settings.terminal.shellProfile).toBe(normalizedProfile);
+    expect(settings.terminal.shellPath).toBe(shellPath);
+    expect(settings.terminal.shellArgs).toBe(shellArgs);
+    expect(settings.terminal.shell).toBe(resolveIntegratedTerminalShellCommand({
+      profile: normalizedProfile,
+      shellPath,
+      shellArgs,
+    }));
   });
 
   it('updates cursor settings', () => {
@@ -1027,17 +1039,25 @@ describe('useSettingsStore.importSettings()', () => {
 
   it('migrates a legacy integrated shell string into the new shell profile fields on import', () => {
     const store = useSettingsStore.getState();
+    const legacyShell = '"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoLogo -NoProfile';
+    const inferredProfile = inferIntegratedTerminalProfileFromShell({ shell: legacyShell });
     store.importSettings({
       terminal: {
-        shell: '"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoLogo -NoProfile',
+        shell: legacyShell,
       } as typeof defaultSettings.terminal,
     });
 
     const { terminal } = useSettingsStore.getState().settings;
-    expect(terminal.shellProfile).toBe('pwsh');
-    expect(terminal.shellPath).toBe('C:\\Program Files\\PowerShell\\7\\pwsh.exe');
-    expect(terminal.shellArgs).toBe('-NoLogo -NoProfile');
-    expect(terminal.shell).toBe('"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoLogo -NoProfile');
+    expect(terminal.shellProfile).toBe(
+      normalizeIntegratedTerminalProfile(inferredProfile.shellProfile),
+    );
+    expect(terminal.shellPath).toBe(inferredProfile.shellPath);
+    expect(terminal.shellArgs).toBe(inferredProfile.shellArgs);
+    expect(terminal.shell).toBe(resolveIntegratedTerminalShellCommand({
+      profile: inferredProfile.shellProfile,
+      shellPath: inferredProfile.shellPath,
+      shellArgs: inferredProfile.shellArgs,
+    }));
   });
 });
 

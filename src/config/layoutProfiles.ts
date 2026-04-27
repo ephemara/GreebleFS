@@ -54,6 +54,7 @@ type LooseRecord = Record<string, unknown>;
 const MIN_PINNED_PANEL_SIZE = 220;
 const MAX_PINNED_PANEL_SIZE = 640;
 const DEFAULT_LAYOUT_VERSION = 1;
+export const DEFAULT_IDE_LAYOUT_PROFILE_ID = 'workbench-ide';
 const DEFAULT_LAYOUT_CONFIG_LOCATIONS = [
   { relativeDir: '.greeblefs', basename: 'greeblefs.layouts' },
   { relativeDir: '.greeble', basename: 'greeble.layouts' },
@@ -278,6 +279,40 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
     },
   },
   {
+    id: DEFAULT_IDE_LAYOUT_PROFILE_ID,
+    label: 'IDE Workbench',
+    description: 'Canonical IDE shell with a navigation rail, dock graph panes, and dockable utility regions.',
+    shellBlueprint: 'ide-workbench',
+    chrome: {
+      barPosition: 'top',
+      showSettingsShortcut: true,
+      showPanelMenu: true,
+      showBlurToggle: true,
+      showShortcutBadge: true,
+    },
+    controlDock: {
+      enabled: false,
+      side: 'right',
+      inset: 12,
+    },
+    pinnedPanels: [],
+    behavior: {
+      cycleOrder: 20,
+      defaultActivePanelId: 'explorer',
+      enforcedOpenPanelIds: ['explorer'],
+    },
+    interaction: {
+      primaryAxisOwner: 'active-panel',
+      commandOwner: 'chrome',
+      backBehavior: 'overlay-first',
+      modeExitTarget: 'last-browse-target',
+      progressOwner: 'session',
+      preserveFocusAnchor: true,
+      preserveSelectionAnchor: true,
+      preserveLocationAnchor: true,
+    },
+  },
+  {
     id: 'navigator-bottom',
     label: 'Navigator Bottom',
     description: 'Classic dock workspace with the chrome bar flipped to the bottom edge.',
@@ -296,7 +331,7 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
     },
     pinnedPanels: [],
     behavior: {
-      cycleOrder: 20,
+      cycleOrder: 30,
       defaultActivePanelId: 'explorer',
       enforcedOpenPanelIds: ['explorer'],
     },
@@ -375,6 +410,47 @@ export function getNextLayoutProfileId(
   const currentIndex = manifest.profiles.findIndex(profile => profile.id === activeProfileId);
   const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % manifest.profiles.length;
   return manifest.profiles[nextIndex]?.id ?? manifest.profiles[0].id;
+}
+
+export type WorkbenchShellFamilyId = 'classic' | 'ide';
+
+export function getWorkbenchShellFamilyForBlueprint(
+  shellBlueprint: OverlayShellBlueprintId,
+): WorkbenchShellFamilyId {
+  return shellBlueprint === 'ide-workbench' ? 'ide' : 'classic';
+}
+
+export function getWorkbenchShellFamilyForLayoutProfile(
+  profile: Pick<LayoutProfile, 'shellBlueprint'>,
+): WorkbenchShellFamilyId {
+  return getWorkbenchShellFamilyForBlueprint(profile.shellBlueprint);
+}
+
+export function getLayoutProfilesForShellFamily(
+  manifest: LayoutManifest,
+  shellFamily: WorkbenchShellFamilyId,
+): LayoutProfile[] {
+  return manifest.profiles.filter(
+    profile => getWorkbenchShellFamilyForLayoutProfile(profile) === shellFamily,
+  );
+}
+
+export function getNextLayoutProfileIdInShellFamily(
+  manifest: LayoutManifest,
+  activeProfileId: string | null | undefined,
+): string {
+  const activeProfile = resolveLayoutProfile(manifest, activeProfileId);
+  const familyProfiles = getLayoutProfilesForShellFamily(
+    manifest,
+    getWorkbenchShellFamilyForLayoutProfile(activeProfile),
+  );
+  if (familyProfiles.length === 0) {
+    return getNextLayoutProfileId(manifest, activeProfileId);
+  }
+
+  const currentIndex = familyProfiles.findIndex(profile => profile.id === activeProfile.id);
+  const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % familyProfiles.length;
+  return familyProfiles[nextIndex]?.id ?? familyProfiles[0].id;
 }
 
 export function getPinnedPanelIds(profile: LayoutProfile): string[] {

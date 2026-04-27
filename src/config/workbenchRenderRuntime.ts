@@ -6,6 +6,7 @@ import type { OverlayShellBlueprintId } from './shellBlueprints';
 
 export type WorkbenchRenderRuntimeKind =
   | 'workbench-tabs'
+  | 'ide-dock-graph'
   | 'cross-axis-media'
   | 'channel-launcher'
   | 'desktop-stack';
@@ -18,6 +19,7 @@ export type WorkbenchNavigationSurfaceKind =
 
 export type WorkbenchContentLayoutKind =
   | 'tabbed'
+  | 'dock-graph'
   | 'spotlight'
   | 'desktop-card';
 
@@ -64,6 +66,8 @@ export interface WorkbenchNavigationGroup<TPanel extends WorkbenchNavigationPane
 
 export function getWorkbenchNavigationRailWidth(runtime: Pick<ResolvedWorkbenchRenderRuntime, 'kind'>): number {
   switch (runtime.kind) {
+    case 'ide-dock-graph':
+      return 68;
     case 'channel-launcher':
       return 296;
     case 'desktop-stack':
@@ -149,6 +153,8 @@ function resolveRuntimeKind(
   }
 
   switch (shellBlueprint) {
+    case 'ide-workbench':
+      return 'ide-dock-graph';
     case 'xmb-cross-media':
       return 'cross-axis-media';
     case 'tile-start':
@@ -180,6 +186,26 @@ function buildResolvedWorkbenchRuntime(
   engineBindings: ReturnType<typeof resolveThemeEngineBindings>,
 ): ResolvedWorkbenchRenderRuntime {
   switch (runtimeKind) {
+    case 'ide-dock-graph':
+      return {
+        kind: runtimeKind,
+        label: 'IDE Workbench',
+        description: 'Navigation rail, dock graph panes, floating utility windows, and a bottom panel region.',
+        renderStyleId: engineBindings.renderStyle?.id ?? appearance.workbenchTheme.renderStyleId,
+        renderStyleKind,
+        layoutPrimitiveId: engineBindings.layoutPrimitive?.id ?? appearance.workbenchTheme.layoutPrimitiveId,
+        navigationPatternId: engineBindings.navigationPattern?.id ?? appearance.workbenchTheme.navigationPatternId,
+        shellBlueprint: layoutProfile.shellBlueprint,
+        navigationSurface: 'launcher-list',
+        contentLayout: 'dock-graph',
+        launcherPlacement: 'sidebar',
+        navigationRailWidth: getWorkbenchNavigationRailWidth({ kind: runtimeKind }),
+        showTabStrip: false,
+        showExplorerShortcut: false,
+        showSettingsShortcut: false,
+        preferLargeLauncherTargets: false,
+        useGroupedNavigation: true,
+      };
     case 'cross-axis-media':
       return {
         kind: runtimeKind,

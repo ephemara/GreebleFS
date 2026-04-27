@@ -149,6 +149,8 @@ import {
   DEFAULT_PILOT_UI_FONT_FAMILY,
   getThemeSelectionDefaults,
 } from '../config/pilotThemeContract';
+import type { IdeWorkbenchLayoutState } from '../config/ideWorkbenchLayout';
+import { DEFAULT_IDE_LAYOUT_PROFILE_ID, type WorkbenchShellFamilyId } from '../config/layoutProfiles';
 
 // ============================================================================
 // TYPES
@@ -345,6 +347,9 @@ export interface LayoutSettings {
   activeProfileId: string;
   configPath: string;
   panelStateByProfile: Record<string, LayoutPanelState>;
+  shellStateByProfile: Record<string, IdeWorkbenchLayoutState>;
+  lastProfileIdByShellFamily: Partial<Record<WorkbenchShellFamilyId, string>>;
+  followThemeDefaults: boolean;
   zenFocusMode: boolean;
 }
 
@@ -1312,6 +1317,12 @@ export const defaultSettings: Settings = {
     activeProfileId: DEFAULT_PILOT_LAYOUT_PROFILE_ID,
     configPath: '',
     panelStateByProfile: {},
+    shellStateByProfile: {},
+    lastProfileIdByShellFamily: {
+      classic: DEFAULT_PILOT_LAYOUT_PROFILE_ID,
+      ide: DEFAULT_IDE_LAYOUT_PROFILE_ID,
+    },
+    followThemeDefaults: true,
     zenFocusMode: false,
   },
   audio: {
@@ -1355,6 +1366,44 @@ function normalizePanelStateByProfile(value: unknown): Record<string, LayoutPane
   );
 }
 
+function normalizeShellStateByProfile(value: unknown): Record<string, IdeWorkbenchLayoutState> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([profileId, layoutState]) => (
+        typeof profileId === 'string'
+        && profileId.trim().length > 0
+        && layoutState != null
+        && typeof layoutState === 'object'
+        && !Array.isArray(layoutState)
+      ))
+      .map(([profileId, layoutState]) => [profileId, layoutState as IdeWorkbenchLayoutState]),
+  );
+}
+
+function normalizeLastProfileIdByShellFamily(
+  value: unknown,
+  fallback: Partial<Record<WorkbenchShellFamilyId, string>>,
+): Partial<Record<WorkbenchShellFamilyId, string>> {
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Partial<Record<WorkbenchShellFamilyId, unknown>>
+    : {};
+  const nextClassic = typeof source.classic === 'string' && source.classic.trim().length > 0
+    ? source.classic.trim()
+    : fallback.classic;
+  const nextIde = typeof source.ide === 'string' && source.ide.trim().length > 0
+    ? source.ide.trim()
+    : fallback.ide;
+
+  return {
+    ...(nextClassic ? { classic: nextClassic } : {}),
+    ...(nextIde ? { ide: nextIde } : {}),
+  };
+}
+
 function normalizeLayoutSettings(
   base: LayoutSettings,
   updates?: Partial<LayoutSettings>,
@@ -1362,6 +1411,10 @@ function normalizeLayoutSettings(
   const merged = { ...base, ...updates };
   const hasExplicitPanelStateByProfile = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'panelStateByProfile');
+  const hasExplicitShellStateByProfile = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'shellStateByProfile');
+  const hasExplicitLastProfileIdByShellFamily = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'lastProfileIdByShellFamily');
 
   return {
     activeProfileId: typeof merged.activeProfileId === 'string' && merged.activeProfileId.trim().length > 0
@@ -1371,6 +1424,18 @@ function normalizeLayoutSettings(
     panelStateByProfile: hasExplicitPanelStateByProfile
       ? normalizePanelStateByProfile(updates?.panelStateByProfile)
       : base.panelStateByProfile,
+    shellStateByProfile: hasExplicitShellStateByProfile
+      ? normalizeShellStateByProfile(updates?.shellStateByProfile)
+      : base.shellStateByProfile,
+    lastProfileIdByShellFamily: hasExplicitLastProfileIdByShellFamily
+      ? normalizeLastProfileIdByShellFamily(
+        updates?.lastProfileIdByShellFamily,
+        base.lastProfileIdByShellFamily,
+      )
+      : base.lastProfileIdByShellFamily,
+    followThemeDefaults: typeof merged.followThemeDefaults === 'boolean'
+      ? merged.followThemeDefaults
+      : base.followThemeDefaults,
     zenFocusMode: merged.zenFocusMode === true,
   };
 }
@@ -1750,7 +1815,7 @@ export const useSettingsStore = create<SettingsState>()(
               explorer: themeDefaults?.explorer
                 ? normalizeExplorerSettings(state.settings.explorer, themeDefaults.explorer)
                 : state.settings.explorer,
-              layout: themeDefaults?.layout
+              layout: state.settings.layout.followThemeDefaults && themeDefaults?.layout
                 ? normalizeLayoutSettings(state.settings.layout, themeDefaults.layout)
                 : state.settings.layout,
             },

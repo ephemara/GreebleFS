@@ -14,6 +14,7 @@ import type { LoadedOverlayAnimation } from '../components/animationRuntime';
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayWallpaper } from '../components/wallpaperRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
+import type { ExplorerModeProfileId } from '../config/explorerModeProfiles';
 import type { LoadedExplorerHomePack } from '../config/homePackages';
 import type { LoadedExplorerMenuPack } from '../config/menuPacks';
 import type { LoadedOverlaySoundPack } from '../config/soundPacks';
@@ -30,6 +31,10 @@ import {
   iconThemeSystemConfig,
   type LoadedIconThemePackage,
 } from '../config/iconThemePackages';
+import type {
+  DockStackPlacement,
+  WorkbenchSurfaceDefaultVisibility,
+} from '../config/ideWorkbenchLayout';
 import type { TerminalWindowMode } from '../store/settingsStore';
 import type { SettingsSectionKey } from '../config/settingsNavigation';
 import type { ExplorerPickerRequest } from '../runtime/explorerPicker';
@@ -119,13 +124,70 @@ export interface OverlayPanelDefinition {
     groupOrder?: number;
     itemOrder?: number;
   };
+  dock?: {
+    defaultPlacement: DockStackPlacement;
+    defaultOrder: number;
+    defaultVisibility: WorkbenchSurfaceDefaultVisibility;
+    allowedPresentations?: Array<'stack' | 'floating'>;
+    railShortcut?: boolean;
+  };
   render: () => React.ReactNode;
+}
+
+export interface WorkbenchSurfaceDefinition {
+  id: string;
+  label: string;
+  kind: 'built-in-panel' | 'folder-plugin';
+  icon: React.ReactNode;
+  description: string;
+  keepMounted: boolean;
+  navigation?: OverlayPanelDefinition['navigation'];
+  defaultDockPlacement: DockStackPlacement;
+  defaultOrder: number;
+  defaultVisibility: WorkbenchSurfaceDefaultVisibility;
+  allowedPresentations: Array<'stack' | 'floating'>;
+  railShortcut: boolean;
+  render: () => React.ReactNode;
+}
+
+function createWorkbenchSurfaceDefinition(
+  panel: OverlayPanelDefinition,
+): WorkbenchSurfaceDefinition {
+  return {
+    id: panel.id,
+    label: panel.label,
+    kind: panel.kind,
+    icon: panel.icon,
+    description: panel.description,
+    keepMounted: panel.keepMounted === true,
+    navigation: panel.navigation,
+    defaultDockPlacement: panel.dock?.defaultPlacement ?? 'right-sidebar',
+    defaultOrder: panel.dock?.defaultOrder ?? panel.navigation?.itemOrder ?? 999,
+    defaultVisibility: panel.dock?.defaultVisibility ?? 'hidden',
+    allowedPresentations: panel.dock?.allowedPresentations ?? ['stack', 'floating'],
+    railShortcut: panel.dock?.railShortcut ?? true,
+    render: panel.render,
+  };
+}
+
+export function buildWorkbenchSurfaceDefinitions(
+  panels: OverlayPanelDefinition[],
+): WorkbenchSurfaceDefinition[] {
+  return panels
+    .map(createWorkbenchSurfaceDefinition)
+    .sort((left, right) => {
+      if (left.defaultOrder !== right.defaultOrder) {
+        return left.defaultOrder - right.defaultOrder;
+      }
+      return left.label.localeCompare(right.label);
+    });
 }
 
 export function createBuiltInPanelDefinitions({
   appearance,
   explorerChromeControlSurface,
   explorerLayoutMode,
+  explorerDefaultModeProfileId,
   explorerPicker,
   isOpen,
   hideOverlay,
@@ -255,6 +317,7 @@ export function createBuiltInPanelDefinitions({
   appearance: ResolvedOverlayAppearance;
   explorerChromeControlSurface?: 'toolbar' | 'topbar';
   explorerLayoutMode?: ExplorerLayoutMode;
+  explorerDefaultModeProfileId?: ExplorerModeProfileId | null;
   explorerPicker?: ExplorerPickerRequest | null;
   onExplorerPickerConfirm?: (result: {
     currentDirectory: string;
@@ -409,11 +472,19 @@ export function createBuiltInPanelDefinitions({
         groupOrder: 10,
         itemOrder: 10,
       },
+      dock: {
+        defaultPlacement: 'center',
+        defaultOrder: 10,
+        defaultVisibility: 'visible',
+        allowedPresentations: ['stack', 'floating'],
+        railShortcut: true,
+      },
       render: () => (
         <MemoExplorerWorkspace
           appearance={appearance}
           chromeControlSurface={explorerChromeControlSurface}
           layoutMode={explorerLayoutMode}
+          defaultModeProfileId={explorerDefaultModeProfileId}
           explorerPicker={explorerPicker}
           theme={explorerTheme}
           onOpenInTerminal={onOpenInTerminal}
@@ -445,6 +516,13 @@ export function createBuiltInPanelDefinitions({
         groupOrder: 10,
         itemOrder: 20,
       },
+      dock: {
+        defaultPlacement: 'left-sidebar',
+        defaultOrder: 20,
+        defaultVisibility: 'collapsed',
+        allowedPresentations: ['stack', 'floating'],
+        railShortcut: true,
+      },
       render: () => (
         <DeferredPanel>
           <LazyStoragePanel appearance={appearance} />
@@ -464,6 +542,13 @@ export function createBuiltInPanelDefinitions({
         groupLabel: 'Work',
         groupOrder: 20,
         itemOrder: 10,
+      },
+      dock: {
+        defaultPlacement: 'bottom-panel',
+        defaultOrder: 10,
+        defaultVisibility: 'visible',
+        allowedPresentations: ['stack', 'floating'],
+        railShortcut: true,
       },
       render: () => (
         <MemoTerminalOverlay
@@ -487,6 +572,13 @@ export function createBuiltInPanelDefinitions({
         groupLabel: 'Work',
         groupOrder: 20,
         itemOrder: 20,
+      },
+      dock: {
+        defaultPlacement: 'bottom-panel',
+        defaultOrder: 20,
+        defaultVisibility: 'visible',
+        allowedPresentations: ['stack', 'floating'],
+        railShortcut: true,
       },
       render: () => (
         <DeferredPanel>
@@ -512,6 +604,13 @@ export function createBuiltInPanelDefinitions({
         groupOrder: 20,
         itemOrder: 30,
       },
+      dock: {
+        defaultPlacement: 'right-sidebar',
+        defaultOrder: 30,
+        defaultVisibility: 'hidden',
+        allowedPresentations: ['stack', 'floating'],
+        railShortcut: true,
+      },
       render: () => (
         <DeferredPanel>
           <LazyNotesManager appearance={appearance} />
@@ -531,6 +630,13 @@ export function createBuiltInPanelDefinitions({
         groupOrder: 30,
         itemOrder: 10,
       },
+      dock: {
+        defaultPlacement: 'right-sidebar',
+        defaultOrder: 40,
+        defaultVisibility: 'hidden',
+        allowedPresentations: ['stack', 'floating'],
+        railShortcut: true,
+      },
       render: () => (
         <DeferredPanel>
           <LazyScreenshotsManager appearance={appearance} />
@@ -549,6 +655,13 @@ export function createBuiltInPanelDefinitions({
         groupLabel: 'System',
         groupOrder: 50,
         itemOrder: 10,
+      },
+      dock: {
+        defaultPlacement: 'right-sidebar',
+        defaultOrder: 50,
+        defaultVisibility: 'hidden',
+        allowedPresentations: ['stack', 'floating'],
+        railShortcut: true,
       },
       render: () => (
         <DeferredPanel>
@@ -681,6 +794,13 @@ export function createBuiltInPanelDefinitions({
         groupOrder: 40,
         itemOrder: 10,
       },
+      dock: {
+        defaultPlacement: 'right-sidebar',
+        defaultOrder: 60,
+        defaultVisibility: 'hidden',
+        allowedPresentations: ['stack', 'floating'],
+        railShortcut: true,
+      },
       render: renderPluginsManager,
     },
   ];
@@ -707,6 +827,13 @@ export function createFolderPluginPanelDefinitions({
       groupId: 'extensions',
       groupLabel: 'Extensions',
       groupOrder: 40,
+    },
+    dock: {
+      defaultPlacement: 'right-sidebar',
+      defaultOrder: 200,
+      defaultVisibility: plugin.defaultOpen ? 'collapsed' : 'hidden',
+      allowedPresentations: ['stack', 'floating'],
+      railShortcut: true,
     },
     render: () => (
       <FolderPluginRenderer

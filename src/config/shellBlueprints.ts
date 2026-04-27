@@ -23,6 +23,17 @@ export const OVERLAY_SHELL_BLUEPRINTS: OverlayShellBlueprint[] = [
     supportsDualScreen: false,
   },
   {
+    id: 'ide-workbench',
+    label: 'IDE Workbench',
+    description: 'Canonical dock-graph shell with a navigation rail, sidebar lanes, floating panes, and a panel-style bottom region.',
+    navigationModel: 'tabs',
+    surfaceStyle: 'solid',
+    supportsPinnedPanels: true,
+    supportsViewportDock: true,
+    supportsPanelTabs: true,
+    supportsDualScreen: false,
+  },
+  {
     id: 'xmb-cross-media',
     label: 'XMB',
     description: 'Cross-axis media bar with lateral category navigation and deep vertical stacks.',

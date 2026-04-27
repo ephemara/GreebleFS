@@ -17,6 +17,7 @@ import {
   primaryMonitor,
 } from '@tauri-apps/api/window';
 import {
+  buildWorkbenchSurfaceDefinitions,
   createBuiltInPanelDefinitions,
   createFolderPluginPanelDefinitions,
   type OverlayPanelDefinition,
@@ -152,14 +153,26 @@ import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './conf
 import { createMobileShareThemeSnapshot } from './config/mobileTheme';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
-  getNextLayoutProfileId,
+  getLayoutProfilesForShellFamily,
+  getNextLayoutProfileIdInShellFamily,
   getPanelsBySide,
   getPinnedPanelIds,
   getTabbedOpenPanelIds,
+  getWorkbenchShellFamilyForLayoutProfile,
   loadExternalLayoutManifest,
   resolveLayoutProfile,
   type LayoutPinnedPanel,
 } from './config/layoutProfiles';
+import {
+  areIdeWorkbenchLayoutStatesEqual,
+  collectSurfaceIdsFromDockNode,
+  collectSurfaceIdsFromFloatingNodes,
+  focusDockSurface,
+  hideDockSurface,
+  normalizeIdeWorkbenchLayoutState,
+  resolvePrimaryIdeWorkbenchSurfaceId,
+  type IdeWorkbenchLayoutState,
+} from './config/ideWorkbenchLayout';
 import {
   clampOverlayAnimationDuration,
   clampOverlayAnimationIntensity,
@@ -188,6 +201,7 @@ import {
 import { OverlayShellScene } from './components/OverlayShellScene';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
+import { WorkbenchIdeShell } from './components/WorkbenchIdeShell';
 import { WorkbenchTopBar } from './components/WorkbenchTopBar';
 import { DevPerformanceHud } from './components/DevPerformanceHud';
 import { useGlobalShortcut } from './input/GlobalShortcuts';
@@ -1551,6 +1565,9 @@ function App() {
     [activeLayoutProfile],
   );
   const explorerPanelLayoutMode = windowMode === 'overlay' ? 'dock' : 'full';
+  const explorerDefaultModeProfileId = activeLayoutProfile.shellBlueprint === 'ide-workbench'
+    ? 'inspector'
+    : null;
   const activeThemeRenderer = resolvedAppearance.baseTheme.themeRenderer ?? null;
   const activeThemeRendererSurfaceOwnership = activeThemeRenderer?.surfaceOwnership;
   const renderRuntime = useMemo(
@@ -3996,6 +4013,7 @@ function App() {
         appearance: resolvedAppearance,
         explorerChromeControlSurface: 'toolbar',
         explorerLayoutMode: explorerPanelLayoutMode,
+        explorerDefaultModeProfileId,
         explorerPicker: activeExplorerPickerRequest,
         isOpen: isOverlayVisible,
         hideOverlay,
@@ -4212,6 +4230,7 @@ function App() {
       themeBundleDependencyCatalogs,
       iconThemePackages,
       importWallpaperFiles,
+      explorerDefaultModeProfileId,
       explorerPanelLayoutMode,
       iconThemePackagesError,
       iconThemePackagesLoading,
@@ -4237,6 +4256,42 @@ function App() {
     () => panelDefinitions.map(panel => panel.id),
     [panelDefinitions],
   );
+  const workbenchSurfaceDefinitions = useMemo(
+    () => buildWorkbenchSurfaceDefinitions(panelDefinitions),
+    [panelDefinitions],
+  );
+  const workbenchSurfaceSeeds = useMemo(
+    () => workbenchSurfaceDefinitions.map(surface => ({
+      id: surface.id,
+      defaultDockPlacement: surface.defaultDockPlacement,
+      defaultOrder: surface.defaultOrder,
+      defaultVisibility: surface.defaultVisibility,
+    })),
+    [workbenchSurfaceDefinitions],
+  );
+  const activeShellFamily = useMemo(
+    () => getWorkbenchShellFamilyForLayoutProfile(activeLayoutProfile),
+    [activeLayoutProfile],
+  );
+  const activeShellUsesIdeWorkbench = activeLayoutProfile.shellBlueprint === 'ide-workbench';
+  const resolvedIdeWorkbenchLayoutState = useMemo(
+    () => normalizeIdeWorkbenchLayoutState(
+      layoutSettings.shellStateByProfile[activeLayoutProfile.id],
+      workbenchSurfaceSeeds,
+    ),
+    [activeLayoutProfile.id, layoutSettings.shellStateByProfile, workbenchSurfaceSeeds],
+  );
+  const ideWorkbenchOpenSurfaceIds = useMemo(
+    () => uniquePanelIds([
+      ...collectSurfaceIdsFromDockNode(resolvedIdeWorkbenchLayoutState.rootDockNode),
+      ...collectSurfaceIdsFromFloatingNodes(resolvedIdeWorkbenchLayoutState.floatingNodes),
+    ]),
+    [resolvedIdeWorkbenchLayoutState.floatingNodes, resolvedIdeWorkbenchLayoutState.rootDockNode],
+  );
+  const ideWorkbenchActiveSurfaceId = useMemo(
+    () => resolvePrimaryIdeWorkbenchSurfaceId(resolvedIdeWorkbenchLayoutState),
+    [resolvedIdeWorkbenchLayoutState],
+  );
   const pinnedPanelIds = useMemo(
     () => activePinnedPanelIds,
     [activePinnedPanelIds],
@@ -4257,6 +4312,69 @@ function App() {
     ),
     [activeLayoutProfile.id, availablePanelIds, layoutSettings.panelStateByProfile, pinnedPanelIds],
   );
+  const updateActiveIdeWorkbenchLayoutState = useCallback((nextState: IdeWorkbenchLayoutState) => {
+    const currentSettingsState = useSettingsStore.getState();
+    const currentShellStateByProfile = currentSettingsState.settings.layout.shellStateByProfile;
+    const currentStoredState = normalizeIdeWorkbenchLayoutState(
+      currentShellStateByProfile[activeLayoutProfile.id],
+      workbenchSurfaceSeeds,
+    );
+    if (areIdeWorkbenchLayoutStatesEqual(currentStoredState, nextState)) {
+      return;
+    }
+
+    currentSettingsState.updateLayout({
+      shellStateByProfile: {
+        ...currentShellStateByProfile,
+        [activeLayoutProfile.id]: nextState,
+      },
+    });
+  }, [activeLayoutProfile.id, workbenchSurfaceSeeds]);
+  useEffect(() => {
+    if (!activeShellUsesIdeWorkbench) {
+      return;
+    }
+
+    const currentShellState = layoutSettings.shellStateByProfile[activeLayoutProfile.id];
+    if (currentShellState && areIdeWorkbenchLayoutStatesEqual(
+      normalizeIdeWorkbenchLayoutState(currentShellState, workbenchSurfaceSeeds),
+      resolvedIdeWorkbenchLayoutState,
+    )) {
+      return;
+    }
+
+    updateLayout({
+      shellStateByProfile: {
+        ...layoutSettings.shellStateByProfile,
+        [activeLayoutProfile.id]: resolvedIdeWorkbenchLayoutState,
+      },
+    });
+  }, [
+    activeLayoutProfile.id,
+    activeShellUsesIdeWorkbench,
+    layoutSettings.shellStateByProfile,
+    resolvedIdeWorkbenchLayoutState,
+    updateLayout,
+    workbenchSurfaceSeeds,
+  ]);
+  useEffect(() => {
+    const lastProfileId = layoutSettings.lastProfileIdByShellFamily[activeShellFamily];
+    if (lastProfileId === activeLayoutProfile.id) {
+      return;
+    }
+
+    updateLayout({
+      lastProfileIdByShellFamily: {
+        ...layoutSettings.lastProfileIdByShellFamily,
+        [activeShellFamily]: activeLayoutProfile.id,
+      },
+    });
+  }, [
+    activeLayoutProfile.id,
+    activeShellFamily,
+    layoutSettings.lastProfileIdByShellFamily,
+    updateLayout,
+  ]);
   const openPanelIds = useMemo(
     () => derivePanelOpenState({
       savedOpenIds: savedPanelState.openPanelIds,
@@ -4298,6 +4416,15 @@ function App() {
       .filter((panel): panel is OverlayPanelDefinition => Boolean(panel)),
     [panelLookup, tabbedOpenPanelIds],
   );
+  const activeWorkbenchOpenPanelIds = activeShellUsesIdeWorkbench
+    ? ideWorkbenchOpenSurfaceIds
+    : openPanelIds;
+  const activeWorkbenchActivePanelId = activeShellUsesIdeWorkbench
+    ? ideWorkbenchActiveSurfaceId
+    : activePanelId;
+  const activeWorkbenchPinnedPanelIds = activeShellUsesIdeWorkbench
+    ? []
+    : pinnedPanelIds;
   const leftPinnedPanels = useMemo(
     () => getPanelsBySide(activeLayoutProfile, 'left')
       .map(panel => ({ panel, definition: panelLookup.get(panel.panelId) }))
@@ -4311,8 +4438,8 @@ function App() {
     [activeLayoutProfile, panelLookup],
   );
   frameTelemetryContextRef.current = {
-    activePanelId,
-    openPanelCount: openPanelIds.length,
+    activePanelId: activeWorkbenchActivePanelId,
+    openPanelCount: activeWorkbenchOpenPanelIds.length,
     windowMode: settings.windowMode,
   };
 
@@ -4525,6 +4652,59 @@ function App() {
     });
   }, [panelLookup, pinnedPanelIds, resolveActivePanelIdFromState, updateActiveLayoutPanelState]);
 
+  const handleTopBarSelectPanel = useCallback((panelId: string | null) => {
+    if (!panelId) {
+      return;
+    }
+
+    if (activeShellUsesIdeWorkbench) {
+      updateActiveIdeWorkbenchLayoutState(
+        focusDockSurface(resolvedIdeWorkbenchLayoutState, panelId, workbenchSurfaceSeeds),
+      );
+      return;
+    }
+
+    handleSelectPanel(panelId);
+  }, [
+    activeShellUsesIdeWorkbench,
+    handleSelectPanel,
+    resolvedIdeWorkbenchLayoutState,
+    updateActiveIdeWorkbenchLayoutState,
+    workbenchSurfaceSeeds,
+  ]);
+  const handleTopBarTogglePanel = useCallback((panelId: string) => {
+    if (activeShellUsesIdeWorkbench) {
+      updateActiveIdeWorkbenchLayoutState(
+        activeWorkbenchOpenPanelIds.includes(panelId)
+          ? hideDockSurface(resolvedIdeWorkbenchLayoutState, panelId)
+          : focusDockSurface(resolvedIdeWorkbenchLayoutState, panelId, workbenchSurfaceSeeds),
+      );
+      return;
+    }
+
+    handleTogglePanel(panelId);
+  }, [
+    activeShellUsesIdeWorkbench,
+    activeWorkbenchOpenPanelIds,
+    handleTogglePanel,
+    resolvedIdeWorkbenchLayoutState,
+    updateActiveIdeWorkbenchLayoutState,
+    workbenchSurfaceSeeds,
+  ]);
+  const handleTopBarClosePanel = useCallback((panelId: string) => {
+    if (activeShellUsesIdeWorkbench) {
+      updateActiveIdeWorkbenchLayoutState(hideDockSurface(resolvedIdeWorkbenchLayoutState, panelId));
+      return;
+    }
+
+    handleClosePanel(panelId);
+  }, [
+    activeShellUsesIdeWorkbench,
+    handleClosePanel,
+    resolvedIdeWorkbenchLayoutState,
+    updateActiveIdeWorkbenchLayoutState,
+  ]);
+
   const handleReorderPanels = useCallback((draggedId: string, targetId: string) => {
     updateActiveLayoutPanelState(current => ({
       ...current,
@@ -4534,12 +4714,26 @@ function App() {
 
   const handleOpenSettingsSection = useCallback((section: SettingsSectionKey) => {
     setActiveSection(section);
+    if (activeShellUsesIdeWorkbench) {
+      updateActiveIdeWorkbenchLayoutState(
+        focusDockSurface(resolvedIdeWorkbenchLayoutState, 'settings', workbenchSurfaceSeeds),
+      );
+      return;
+    }
+
     updateActiveLayoutPanelState(current => ({
       openPanelIds: uniquePanelIds([...current.openPanelIds, 'settings']),
       activePanelId: 'settings',
       dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== 'settings'),
     }));
-  }, [setActiveSection, updateActiveLayoutPanelState]);
+  }, [
+    activeShellUsesIdeWorkbench,
+    resolvedIdeWorkbenchLayoutState,
+    setActiveSection,
+    updateActiveIdeWorkbenchLayoutState,
+    updateActiveLayoutPanelState,
+    workbenchSurfaceSeeds,
+  ]);
   openSettingsSectionRef.current = handleOpenSettingsSection;
 
   const handleOpenSettings = useCallback(() => {
@@ -4547,7 +4741,18 @@ function App() {
   }, [handleOpenSettingsSection]);
 
   const handleActivatePanel = useCallback((panelId: string) => {
-    if (!panelLookup.has(panelId) || pinnedPanelIds.includes(panelId)) {
+    if (!panelLookup.has(panelId)) {
+      return;
+    }
+
+    if (activeShellUsesIdeWorkbench) {
+      updateActiveIdeWorkbenchLayoutState(
+        focusDockSurface(resolvedIdeWorkbenchLayoutState, panelId, workbenchSurfaceSeeds),
+      );
+      return;
+    }
+
+    if (pinnedPanelIds.includes(panelId)) {
       return;
     }
 
@@ -4556,7 +4761,15 @@ function App() {
       activePanelId: panelId,
       dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== panelId),
     }));
-  }, [panelLookup, pinnedPanelIds, updateActiveLayoutPanelState]);
+  }, [
+    activeShellUsesIdeWorkbench,
+    panelLookup,
+    pinnedPanelIds,
+    resolvedIdeWorkbenchLayoutState,
+    updateActiveIdeWorkbenchLayoutState,
+    updateActiveLayoutPanelState,
+    workbenchSurfaceSeeds,
+  ]);
   activatePanelRef.current = handleActivatePanel;
 
   const handleOpenTerminalPanel = useCallback(() => {
@@ -4575,11 +4788,38 @@ function App() {
 
   openTerminalPanelRef.current = handleOpenTerminalPanel;
 
-  const handleCycleLayout = useCallback(() => {
+  const handleSelectLayoutProfile = useCallback((profileId: string) => {
+    const targetProfile = resolveLayoutProfile(layoutManifest, profileId);
+    const targetShellFamily = getWorkbenchShellFamilyForLayoutProfile(targetProfile);
     updateLayout({
-      activeProfileId: getNextLayoutProfileId(layoutManifest, activeLayoutProfile.id),
+      activeProfileId: targetProfile.id,
+      followThemeDefaults: false,
+      lastProfileIdByShellFamily: {
+        ...layoutSettings.lastProfileIdByShellFamily,
+        [targetShellFamily]: targetProfile.id,
+      },
     });
-  }, [activeLayoutProfile.id, layoutManifest, updateLayout]);
+  }, [layoutManifest, layoutSettings.lastProfileIdByShellFamily, updateLayout]);
+  const handleToggleShellMode = useCallback(() => {
+    const targetShellFamily = activeShellFamily === 'ide' ? 'classic' : 'ide';
+    const familyProfiles = getLayoutProfilesForShellFamily(layoutManifest, targetShellFamily);
+    if (familyProfiles.length === 0) {
+      return;
+    }
+
+    const requestedProfileId = layoutSettings.lastProfileIdByShellFamily[targetShellFamily];
+    const nextProfile = familyProfiles.find(profile => profile.id === requestedProfileId) ?? familyProfiles[0];
+    handleSelectLayoutProfile(nextProfile.id);
+  }, [
+    activeShellFamily,
+    handleSelectLayoutProfile,
+    layoutManifest,
+    layoutSettings.lastProfileIdByShellFamily,
+  ]);
+  const handleCycleLayout = useCallback(() => {
+    handleSelectLayoutProfile(getNextLayoutProfileIdInShellFamily(layoutManifest, activeLayoutProfile.id));
+  }, [activeLayoutProfile.id, handleSelectLayoutProfile, layoutManifest]);
+  const availableLayoutProfiles = layoutManifest.profiles;
 
   const handleStartMobileShareQuiet = useCallback(async () => {
     try {
@@ -5371,24 +5611,32 @@ function App() {
     pinnedPanelIds,
     renderPanelBody,
   ]);
+  const renderWorkbenchIdeSurfaceBody = useCallback((surfaceId: string, isActive: boolean) => {
+    const panel = panelLookup.get(surfaceId);
+    if (!panel) {
+      return null;
+    }
+
+    return renderPanelBody(panel, isActive);
+  }, [panelLookup, renderPanelBody]);
   const renderPinnedPanelSurface = useCallback((side: 'left' | 'right') => {
     const entries = side === 'left' ? leftPinnedPanels : rightPinnedPanels;
     return entries.map(({ panel, definition }) => (
       <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
     ));
   }, [leftPinnedPanels, rightPinnedPanels]);
-  const defaultNavigationSurface = usesNavigationSidebar ? (
+  const defaultNavigationSurface = !activeShellUsesIdeWorkbench && usesNavigationSidebar ? (
     <WorkbenchNavigationSurface
       appearance={resolvedAppearance}
       runtime={renderRuntime}
       panels={panelDefinitions}
-      pinnedPanelIds={pinnedPanelIds}
-      activePanelId={activePanelId}
-      openPanelIds={openPanelIds}
+      pinnedPanelIds={activeWorkbenchPinnedPanelIds}
+      activePanelId={activeWorkbenchActivePanelId}
+      openPanelIds={activeWorkbenchOpenPanelIds}
       onActivatePanel={handleActivatePanel}
     />
   ) : null;
-  const defaultContentSurface = (
+  const classicContentSurface = (
     <div style={contentShellStyle}>
       {panelDefinitions.map(panel => renderManagedPanelSurface(panel.id))}
 
@@ -5413,25 +5661,41 @@ function App() {
       )}
     </div>
   );
-  const defaultWorkbenchContent = (
+  const classicWorkbenchContent = (
     <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
       {renderPinnedPanelSurface('left')}
 
       <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
         {defaultNavigationSurface}
-        {defaultContentSurface}
+        {classicContentSurface}
       </div>
 
       {renderPinnedPanelSurface('right')}
     </div>
   );
+  const ideWorkbenchContent = (
+    <WorkbenchIdeShell
+      appearance={resolvedAppearance}
+      surfaces={workbenchSurfaceDefinitions}
+      surfaceSeeds={workbenchSurfaceSeeds}
+      layoutState={resolvedIdeWorkbenchLayoutState}
+      onLayoutStateChange={updateActiveIdeWorkbenchLayoutState}
+      renderSurfaceBody={renderWorkbenchIdeSurfaceBody}
+    />
+  );
+  const defaultContentSurface = activeShellUsesIdeWorkbench
+    ? ideWorkbenchContent
+    : classicContentSurface;
+  const defaultWorkbenchContent = activeShellUsesIdeWorkbench
+    ? ideWorkbenchContent
+    : classicWorkbenchContent;
   const themeRendererDefaultWorkbenchContent = (
     <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
       {!activeThemeRendererSurfaceOwnership?.pinnedPanels && renderPinnedPanelSurface('left')}
 
       <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
         {!activeThemeRendererSurfaceOwnership?.launcher && defaultNavigationSurface}
-        {defaultContentSurface}
+        {activeShellUsesIdeWorkbench ? ideWorkbenchContent : classicContentSurface}
       </div>
 
       {!activeThemeRendererSurfaceOwnership?.pinnedPanels && renderPinnedPanelSurface('right')}
@@ -5443,15 +5707,18 @@ function App() {
       renderRuntime={renderRuntime}
       layoutProfile={activeLayoutProfile}
       layoutSourcePath={layoutConfigSource}
+      availableLayoutProfiles={availableLayoutProfiles}
       panels={panelDefinitions}
-      openPanelIds={openPanelIds}
-      pinnedPanelIds={pinnedPanelIds}
-      activePanelId={activePanelId}
-      onPanelSelect={handleSelectPanel}
-      onPanelToggle={handleTogglePanel}
-      onPanelClose={handleClosePanel}
+      openPanelIds={activeWorkbenchOpenPanelIds}
+      pinnedPanelIds={activeWorkbenchPinnedPanelIds}
+      activePanelId={activeWorkbenchActivePanelId}
+      onPanelSelect={handleTopBarSelectPanel}
+      onPanelToggle={handleTopBarTogglePanel}
+      onPanelClose={handleTopBarClosePanel}
       onPanelReorder={handleReorderPanels}
       onOpenSettings={handleOpenSettings}
+      onToggleShellMode={handleToggleShellMode}
+      onSelectLayoutProfile={handleSelectLayoutProfile}
       onCycleLayout={handleCycleLayout}
       onSetWindowMode={(mode) => { void requestWindowModeChange(mode); }}
       onOpenCommandPalette={handleOpenCommandPalette}

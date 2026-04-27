@@ -243,6 +243,7 @@ import { ContextMenusSettingsSection } from "./settings/sections/ContextMenusSet
 import { LayoutDynamicsSettingsSection } from "./settings/sections/LayoutDynamicsSettingsSection";
 import {
   BUILT_IN_LAYOUT_MANIFEST,
+  getWorkbenchShellFamilyForLayoutProfile,
   loadExternalLayoutManifest,
   resolveLayoutProfile,
   type LoadedLayoutManifest,
@@ -13833,11 +13834,20 @@ export function SettingsPage({
                 <div className="mt-3 space-y-2">
                   {layoutManifestState.manifest.profiles.map((profile) => {
                     const active = profile.id === activeLayoutProfile.id;
+                    const shellFamily =
+                      getWorkbenchShellFamilyForLayoutProfile(profile);
                     return (
                       <button
                         key={profile.id}
                         onClick={() =>
-                          updateLayout({ activeProfileId: profile.id })
+                          updateLayout({
+                            activeProfileId: profile.id,
+                            followThemeDefaults: false,
+                            lastProfileIdByShellFamily: {
+                              ...settings.layout.lastProfileIdByShellFamily,
+                              [shellFamily]: profile.id,
+                            },
+                          })
                         }
                         className="w-full rounded border px-3 py-3 text-left transition-colors"
                         style={{

@@ -13,6 +13,7 @@ import {
 
 import {
   Check,
+  ChevronDown,
   LayoutGrid,
   Loader2,
   Search,
@@ -24,7 +25,10 @@ import {
 import type { OverlayPanelDefinition } from '../panels/panelRegistry';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { resolveConditionalBlurFilter } from '../config/chromeEffects';
-import type { LayoutProfile } from '../config/layoutProfiles';
+import {
+  getWorkbenchShellFamilyForLayoutProfile,
+  type LayoutProfile,
+} from '../config/layoutProfiles';
 import type { RuntimePlatform } from '../config/platform';
 import type {
   LoadedOverlayTopBarDefinition,
@@ -61,6 +65,7 @@ interface WorkbenchTopBarProps {
   renderRuntime: ResolvedWorkbenchRenderRuntime;
   layoutProfile: LayoutProfile;
   layoutSourcePath: string | null;
+  availableLayoutProfiles: LayoutProfile[];
   panels: OverlayPanelDefinition[];
   openPanelIds: string[];
   pinnedPanelIds: string[];
@@ -70,6 +75,8 @@ interface WorkbenchTopBarProps {
   onPanelClose: (panelId: string) => void;
   onPanelReorder: (draggedId: string, targetId: string) => void;
   onOpenSettings: () => void;
+  onToggleShellMode: () => void;
+  onSelectLayoutProfile: (profileId: string) => void;
   onCycleLayout: () => void;
   onSetWindowMode: (mode: TerminalWindowMode) => void;
   onOpenCommandPalette: () => void;
@@ -267,6 +274,7 @@ export function WorkbenchTopBar({
   renderRuntime,
   layoutProfile,
   layoutSourcePath,
+  availableLayoutProfiles,
   panels,
   openPanelIds,
   pinnedPanelIds,
@@ -276,6 +284,8 @@ export function WorkbenchTopBar({
   onPanelClose,
   onPanelReorder,
   onOpenSettings,
+  onToggleShellMode,
+  onSelectLayoutProfile,
   onCycleLayout,
   onSetWindowMode,
   onOpenCommandPalette,
@@ -324,10 +334,12 @@ export function WorkbenchTopBar({
   const usesInsetTopBar = usesFloatingTopBar || effectiveTopBarStyle === 'minimal';
   const menuRef = useRef<HTMLDivElement | null>(null);
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
+  const shellModeMenuRef = useRef<HTMLDivElement | null>(null);
   const mobileMenuOpenTimerRef = useRef<number | null>(null);
   const mobileMenuCloseTimerRef = useRef<number | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isShellModeMenuOpen, setIsShellModeMenuOpen] = useState(false);
   const [isMobileQrDialogOpen, setIsMobileQrDialogOpen] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
@@ -397,6 +409,17 @@ export function WorkbenchTopBar({
   const showsTabStrip = runtimeUsesTabbedNavigation && topBarDefinition.navigationMode !== 'summary';
   const isMobileShareBusy = mobileSharePhase === 'starting' || mobileSharePhase === 'stopping';
   const isMobileShareActive = mobileSharePhase === 'running' && mobileShareSession != null;
+  const activeShellFamily = getWorkbenchShellFamilyForLayoutProfile(layoutProfile);
+  const activeShellFamilyLabel = activeShellFamily === 'ide' ? 'IDE' : 'Classic';
+  const alternateShellFamilyLabel = activeShellFamily === 'ide' ? 'Classic' : 'IDE';
+  const availableClassicLayoutProfiles = useMemo(
+    () => availableLayoutProfiles.filter(profile => getWorkbenchShellFamilyForLayoutProfile(profile) === 'classic'),
+    [availableLayoutProfiles],
+  );
+  const availableIdeLayoutProfiles = useMemo(
+    () => availableLayoutProfiles.filter(profile => getWorkbenchShellFamilyForLayoutProfile(profile) === 'ide'),
+    [availableLayoutProfiles],
+  );
 
   const handleStartWindowDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!isWindowedMode || event.button !== 0 || !isTauri()) {
@@ -433,7 +456,7 @@ export function WorkbenchTopBar({
   }, [isWindowedMode]);
 
   useEffect(() => {
-    if (!isMenuOpen && !isMobileMenuOpen) {
+    if (!isMenuOpen && !isMobileMenuOpen && !isShellModeMenuOpen) {
       return;
     }
 
@@ -445,11 +468,14 @@ export function WorkbenchTopBar({
       if (!mobileMenuRef.current?.contains(target)) {
         setIsMobileMenuOpen(false);
       }
+      if (!shellModeMenuRef.current?.contains(target)) {
+        setIsShellModeMenuOpen(false);
+      }
     };
 
     window.addEventListener('pointerdown', handlePointerDown);
     return () => window.removeEventListener('pointerdown', handlePointerDown);
-  }, [isMenuOpen, isMobileMenuOpen]);
+  }, [isMenuOpen, isMobileMenuOpen, isShellModeMenuOpen]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -811,6 +837,293 @@ export function WorkbenchTopBar({
     motionStepIndex = 0,
   ): ReactNode | null => {
     switch (controlId) {
+      case 'shell-mode':
+        return (
+          <div
+            key={controlId}
+            ref={shellModeMenuRef}
+            style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {renderCompactButton(
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    whiteSpace: 'nowrap',
+                    fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+                    fontWeight: 800,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: '999px',
+                      background: accent,
+                      boxShadow: `0 0 0 3px ${accent}1c`,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span>{activeShellFamilyLabel}</span>
+                </span>,
+                {
+                  key: `${controlId}-toggle`,
+                  active: activeShellFamily === 'ide',
+                  title: `Switch to ${alternateShellFamilyLabel} shell`,
+                  motionStepIndex,
+                  onClick: () => {
+                    setIsShellModeMenuOpen(false);
+                    onToggleShellMode();
+                  },
+                  style: {
+                    minWidth: 0,
+                    width: 'auto',
+                    padding: '0 10px',
+                    borderTopRightRadius: 7,
+                    borderBottomRightRadius: 7,
+                  },
+                },
+              )}
+              {renderCompactButton(
+                <ChevronDown size={10} />,
+                {
+                  key: `${controlId}-menu`,
+                  active: isShellModeMenuOpen,
+                  title: 'Choose shell mode and layout profile',
+                  motionStepIndex: motionStepIndex + 1,
+                  onClick: (event) => {
+                    event.stopPropagation();
+                    setIsShellModeMenuOpen(open => !open);
+                  },
+                  style: {
+                    minWidth: 22,
+                    width: 22,
+                    padding: 0,
+                    borderTopLeftRadius: 7,
+                    borderBottomLeftRadius: 7,
+                  },
+                },
+              )}
+            </div>
+            {isShellModeMenuOpen ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: isBottomBar ? 'auto' : 'calc(100% + 8px)',
+                  bottom: isBottomBar ? 'calc(100% + 8px)' : 'auto',
+                  right: 0,
+                  width: Math.min(360, Math.max(280, viewportSize.width - 24)),
+                  maxWidth: 'calc(100vw - 16px)',
+                  maxHeight: Math.max(220, Math.min(440, viewportSize.height - 92)),
+                  background: 'var(--overlay-workbench-chrome-menu-bg)',
+                  border: '1px solid var(--overlay-workbench-chrome-border)',
+                  borderRadius: workbench.metrics.panelRadius,
+                  boxShadow: 'var(--overlay-workbench-shell-shadow)',
+                  padding: 8,
+                  zIndex: 55,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  overflow: 'hidden',
+                  backdropFilter: topBarBackdropFilter,
+                  WebkitBackdropFilter: topBarBackdropFilter,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 10,
+                    padding: '4px 4px 8px',
+                    borderBottom: '1px solid var(--overlay-workbench-chrome-border)',
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        letterSpacing: '0.11em',
+                        textTransform: 'uppercase',
+                        color: muted,
+                      }}
+                    >
+                      Shell Mode
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: text,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {layoutProfile.label}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setIsShellModeMenuOpen(false);
+                      onToggleShellMode();
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 10px',
+                      borderRadius: workbench.metrics.controlRadius,
+                      border: `1px solid ${accent}55`,
+                      background: `${accent}12`,
+                      color: text,
+                      cursor: 'pointer',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <span>Switch To {alternateShellFamilyLabel}</span>
+                  </button>
+                </div>
+                <OverlayScrollArea
+                  style={{ flex: 1, minHeight: 0 }}
+                  viewportStyle={{ paddingRight: 2 }}
+                  contentStyle={{ display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 4 }}
+                >
+                  {[
+                    {
+                      id: 'classic',
+                      label: 'Classic Shell',
+                      helper: 'Current dock-and-panel workflow.',
+                      profiles: availableClassicLayoutProfiles,
+                    },
+                    {
+                      id: 'ide',
+                      label: 'IDE Shell',
+                      helper: 'Dock graph with rail, stacks, and floating panes.',
+                      profiles: availableIdeLayoutProfiles,
+                    },
+                  ].map(group => (
+                    <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <div
+                        style={{
+                          padding: '0 4px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 2,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 9,
+                            color: muted,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.1em',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {group.label}
+                        </span>
+                        <span style={{ fontSize: 10, color: muted, lineHeight: 1.35 }}>
+                          {group.helper}
+                        </span>
+                      </div>
+                      {group.profiles.map(profile => {
+                        const isActiveProfile = profile.id === layoutProfile.id;
+                        const isActiveFamilyProfile =
+                          getWorkbenchShellFamilyForLayoutProfile(profile) === activeShellFamily;
+                        return (
+                          <button
+                            key={profile.id}
+                            onClick={() => {
+                              setIsShellModeMenuOpen(false);
+                              onSelectLayoutProfile(profile.id);
+                            }}
+                            style={{
+                              width: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              padding: '9px 10px',
+                              borderRadius: 10,
+                              border: `1px solid ${isActiveProfile ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                              background: isActiveProfile
+                                ? 'var(--overlay-workbench-chrome-tab-active-bg)'
+                                : isActiveFamilyProfile
+                                  ? 'var(--overlay-workbench-chrome-tab-bg)'
+                                  : 'var(--overlay-workbench-chrome-button-bg)',
+                              color: text,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 14,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: isActiveProfile ? accent : 'transparent',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Check size={12} />
+                            </span>
+                            <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  color: isActiveProfile ? accent : text,
+                                }}
+                              >
+                                {profile.label}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  color: muted,
+                                  lineHeight: 1.35,
+                                }}
+                              >
+                                {profile.description}
+                              </span>
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 9,
+                                letterSpacing: '0.07em',
+                                textTransform: 'uppercase',
+                                color: isActiveProfile ? accent : muted,
+                                padding: '3px 6px',
+                                borderRadius: workbench.metrics.controlRadius,
+                                border: `1px solid ${isActiveProfile ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                                background: isActiveProfile
+                                  ? 'var(--overlay-workbench-chrome-button-active-bg)'
+                                  : 'var(--overlay-workbench-chrome-button-bg)',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {isActiveProfile ? 'Active' : 'Open'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </OverlayScrollArea>
+              </div>
+            ) : null}
+          </div>
+        );
       case 'layout-cycle':
         return renderCompactButton(
           <div
@@ -1162,6 +1475,12 @@ export function WorkbenchTopBar({
   }, [
     accent,
     appearance.theme.palette.danger,
+    availableClassicLayoutProfiles,
+    availableIdeLayoutProfiles,
+    availableLayoutProfiles,
+    activeShellFamily,
+    activeShellFamilyLabel,
+    alternateShellFamilyLabel,
     borderColor,
     clearMobileMenuTimers,
     commandPaletteShortcutLabel,
@@ -1189,8 +1508,10 @@ export function WorkbenchTopBar({
     onClose,
     onCycleLayout,
     onOpenCommandPalette,
+    onSelectLayoutProfile,
     onSetMobileShareRemoteAccessMode,
     onSetWindowMode,
+    onToggleShellMode,
     onToggleMobileShare,
     onToggleOverlayAnchor,
     onToggleZenFocusMode,
@@ -1200,11 +1521,20 @@ export function WorkbenchTopBar({
     scheduleMobileMenuOpen,
     showPrimaryLauncherChrome,
     text,
+    shellModeMenuRef,
     toggleShortcutLabel,
+    topBarBackdropFilter,
     windowMode,
     workbench.metrics.controlRadius,
+    workbench.metrics.panelRadius,
     zenFocusMode,
     zenFocusShortcutLabel,
+    viewportSize.height,
+    viewportSize.width,
+    isShellModeMenuOpen,
+    layoutProfile.description,
+    layoutProfile.id,
+    layoutProfile.label,
   ]);
 
   const renderNavigationShortcutControl = useCallback((
@@ -1555,8 +1885,13 @@ export function WorkbenchTopBar({
   const navigationShortcuts = topBarDefinition.navigationShortcuts
     .map((controlId, index) => renderNavigationShortcutControl(controlId, index))
     .filter((entry): entry is ReactNode => entry != null);
+  const shellModeControls = topBarDefinition.trailingControls
+    .filter(controlId => controlId === 'shell-mode')
+    .map((controlId, index) => renderCompactControl(controlId, 300 + index))
+    .filter((entry): entry is ReactNode => entry != null);
   const trailingControls = topBarDefinition.trailingControls
-    .map((controlId, index) => renderCompactControl(controlId, index))
+    .filter(controlId => controlId !== 'shell-mode')
+    .map((controlId, index) => renderCompactControl(controlId, 320 + index))
     .filter((entry): entry is ReactNode => entry != null);
 
   const centerContent = showsTabStrip ? (
@@ -1800,6 +2135,7 @@ export function WorkbenchTopBar({
       ) : null}
       {topBarUsesLayoutDynamics ? null : renderControlZone(leadingControls, 'leading')}
       {topBarMainSurface}
+      {topBarUsesLayoutDynamics ? null : renderControlZone(shellModeControls, 'trailing')}
 
       {isWindowedMode ? (
         <div

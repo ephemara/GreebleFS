@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "kebab-case")]
 pub enum ShellBlueprintId {
     ClassicDock,
+    IdeWorkbench,
     XmbCrossMedia,
     RetroDesktop,
     TileStart,
@@ -454,6 +455,17 @@ pub fn built_in_shell_blueprints() -> Vec<ShellBlueprint> {
             description: "Single-workspace overlay shell with chrome, tabs, and optional docked panels.",
             navigation_model: ShellNavigationModel::Tabs,
             surface_style: ShellSurfaceStyle::Glass,
+            supports_pinned_panels: true,
+            supports_viewport_dock: true,
+            supports_panel_tabs: true,
+            supports_dual_screen: false,
+        },
+        ShellBlueprint {
+            id: ShellBlueprintId::IdeWorkbench,
+            label: "IDE Workbench",
+            description: "Canonical dock-graph shell with a navigation rail, sidebar lanes, floating panes, and a panel-style bottom region.",
+            navigation_model: ShellNavigationModel::Tabs,
+            surface_style: ShellSurfaceStyle::Solid,
             supports_pinned_panels: true,
             supports_viewport_dock: true,
             supports_panel_tabs: true,

@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
+  getLayoutProfilesForShellFamily,
   getNextLayoutProfileId,
+  getNextLayoutProfileIdInShellFamily,
   getPinnedPanelIds,
   getTabbedOpenPanelIds,
+  getWorkbenchShellFamilyForLayoutProfile,
   normalizeLayoutManifest,
   resolveLayoutProfile,
 } from '../config/layoutProfiles';
@@ -98,9 +101,27 @@ describe('layoutProfiles', () => {
   it('cycles layout ids in manifest order', () => {
     const firstId = BUILT_IN_LAYOUT_MANIFEST.profiles[0]?.id ?? '';
     const secondId = BUILT_IN_LAYOUT_MANIFEST.profiles[1]?.id ?? '';
+    const thirdId = BUILT_IN_LAYOUT_MANIFEST.profiles[2]?.id ?? '';
 
     expect(getNextLayoutProfileId(BUILT_IN_LAYOUT_MANIFEST, firstId)).toBe(secondId);
-    expect(getNextLayoutProfileId(BUILT_IN_LAYOUT_MANIFEST, secondId)).toBe(firstId);
+    expect(getNextLayoutProfileId(BUILT_IN_LAYOUT_MANIFEST, secondId)).toBe(thirdId);
+    expect(getNextLayoutProfileId(BUILT_IN_LAYOUT_MANIFEST, thirdId)).toBe(firstId);
+  });
+
+  it('cycles layout ids within the active shell family when requested', () => {
+    const classicProfiles = getLayoutProfilesForShellFamily(BUILT_IN_LAYOUT_MANIFEST, 'classic');
+    const ideProfiles = getLayoutProfilesForShellFamily(BUILT_IN_LAYOUT_MANIFEST, 'ide');
+
+    expect(classicProfiles.map(profile => profile.id)).toEqual(['overlay-classic', 'navigator-bottom']);
+    expect(ideProfiles.map(profile => profile.id)).toEqual(['workbench-ide']);
+    expect(getNextLayoutProfileIdInShellFamily(BUILT_IN_LAYOUT_MANIFEST, 'overlay-classic'))
+      .toBe('navigator-bottom');
+    expect(getNextLayoutProfileIdInShellFamily(BUILT_IN_LAYOUT_MANIFEST, 'navigator-bottom'))
+      .toBe('overlay-classic');
+    expect(getNextLayoutProfileIdInShellFamily(BUILT_IN_LAYOUT_MANIFEST, 'workbench-ide'))
+      .toBe('workbench-ide');
+    expect(getWorkbenchShellFamilyForLayoutProfile(resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'workbench-ide')))
+      .toBe('ide');
   });
 
   it('keeps navigator-bottom as classic dock with only the bar flipped', () => {

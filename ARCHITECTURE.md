@@ -43,7 +43,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/OverlayShellScene.tsx`
   Leaf shell-animation surface for the overlay/app shell. It owns folder-authored animation progress locally with `requestAnimationFrame`, keeps built-in animation behavior on the existing CSS-transition path, and prevents frame-rate animation progress from forcing the full `App.tsx` tree to reconcile.
 - `src/panels/panelRegistry.tsx`
-  Built-in panel registration and prop wiring.
+  Built-in panel registration, prop wiring, and the shared surface registry used by the IDE workbench shell. `OverlayPanelDefinition.dock` plus `WorkbenchSurfaceDefinition` are now the canonical default-placement/default-visibility contract for built-ins and plugin surfaces in dock-graph mode.
 - `src/components/FileExplorer.tsx`
   Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video/audio/Python editor-workbench paths, the shared preview-header workflow-tab system (`Preview` / `Edit` plus lane-owned wildcard tabs), the adaptive preview-pane context-menu host that merges preview-kind/workflow metadata with lane-registered actions, the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode. It also owns the docked `ExplorerActionsPane` host, the pointer-driven explorer chrome customize/runtime loop, the shared command-execution path for movable top/bottom/status controls, and the shared folder/archive collection-preview mode hotkeys. Shell-level actions such as command-palette global-search results can reopen the active pane at a directory and select a concrete entry without bypassing explorer state.
 - `src/components/ExplorerCollectionPreviewSurface.tsx`
@@ -95,7 +95,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/home/ExplorerHomeSurface.tsx`, `src/components/home/homePackRuntime.tsx`, and `src/config/homePackages.ts`
   Explorer Home surface runtime. This subsystem owns the virtual `greeblefs://home` route, the constrained host data/actions exposed to Home packs, built-in Home packs (`command-center`, `favorites-deck`), and authored pack discovery from `home-packs/`.
 - `src/components/WorkbenchTopBar.tsx`
-  Data-driven shell top bar renderer. It resolves launcher controls, navigation tabs or summary mode, window chrome, theme-shader layering, and now the live top-bar customize mode from the standalone top-bar catalog instead of burying the whole shell header inside `App.tsx`.
+  Data-driven shell top bar renderer. It resolves launcher controls, navigation tabs or summary mode, window chrome, theme-shader layering, the live top-bar customize mode, and the canonical shell-family switcher (`Classic` vs `IDE`) from the standalone top-bar catalog instead of burying the whole shell header inside `App.tsx`.
+- `src/components/WorkbenchIdeShell.tsx`
+  Canonical IDE-shell renderer. It owns the phase-1 dock graph UI: activity rail, left/center/right/bottom regions, stack tabs, collapse/restore, maximize, floating utility windows, and split-handle resizing. Extend this component and `ideWorkbenchLayout.ts` together for IDE-shell behavior instead of reintroducing app-shell dock logic in random panels.
 - `src/config/appearance.ts`
   Core overlay theme model and resolved CSS variables.
 - `src/config/pilotThemeContract.ts`
@@ -125,7 +127,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/workbenchPerformance.ts`
   Runtime-only shell-performance policy for adaptive effects tiers. It resolves `full | reduced | minimal` shell visuals from platform plus overlay frame telemetry, caps blur on reduced tiers, and gates wallpaper/theme-effect/shader/animation-overlay layers before those costs spill across the whole shell.
 - `src/config/layoutProfiles.ts`
-  Built-in and external layout manifest normalization for shell blueprints, pinned panels, control docks, and top/bottom chrome behavior.
+  Built-in and external layout manifest normalization for shell blueprints, shell families, pinned panels, control docks, and top/bottom chrome behavior. `workbench-ide` is now the built-in canonical IDE-shell profile, and layout cycling can stay scoped to the active shell family instead of blindly rotating across incompatible shell models.
+- `src/config/ideWorkbenchLayout.ts`
+  Dock-graph state model and normalization helpers for the IDE shell. It owns the persisted split tree, stack placements, floating nodes, rail state, focus fallback, maximize state, and the explorer-first default-center behavior.
 - `src/config/themePackages.ts`
   Theme-bundle discovery and orchestration from `themes/`. Filesystem themes are now bundle manifests that compose modular child folders and external pack ids back into resolved `OverlayThemeDefinition` objects.
 - `src/config/themeBundlePacks.ts`
@@ -253,7 +257,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/globalSearchStore.ts`
   Palette-scoped global-search state. It owns first-open initialization, status polling, debounced queries, scan lifecycle, and the latest indexed results shown in the shell command palette.
 - `src/store/settingsStore.ts`
-  Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, machine-level developer-mode behavior, the explorer menu authoring contract (`activeMenuPackId` plus per-context `contextMenuLayoutOverridesByContext`), per-theme explorer chrome layout overrides, dynamic explorer `commandBindingsById` hotkey state, the integrated-terminal profile contract (`shellProfile`, `shellPath`, `shellArgs`, plus the derived `shell` preview string), the `settings.home` contract (active Home pack id, usage-telemetry toggle, per-pack state blobs, and active preset selection by pack id), and the `settings.mobile` contract for remote mobile-share delivery (`remoteAccessMode`, `tailscaleLoginServer`, `tailscaleHostname`, boot/autostart behavior, and paired-shell preferences). Shell/mobile configuration should live here rather than inside ad hoc component-local storage.
+  Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, machine-level developer-mode behavior, the explorer menu authoring contract (`activeMenuPackId` plus per-context `contextMenuLayoutOverridesByContext`), per-theme explorer chrome layout overrides, dynamic explorer `commandBindingsById` hotkey state, the integrated-terminal profile contract (`shellProfile`, `shellPath`, `shellArgs`, plus the derived `shell` preview string), the `settings.home` contract (active Home pack id, usage-telemetry toggle, per-pack state blobs, and active preset selection by pack id), and the `settings.mobile` contract for remote mobile-share delivery (`remoteAccessMode`, `tailscaleLoginServer`, `tailscaleHostname`, boot/autostart behavior, and paired-shell preferences). Shell/mobile configuration should live here rather than inside ad hoc component-local storage. IDE-shell persistence now also lives here through `layout.shellStateByProfile`, `layout.lastProfileIdByShellFamily`, and `layout.followThemeDefaults`.
 - `src/store/gpuRuntimeStore.ts`
   Shell-side source of truth for the native GPU runtime snapshot, hydration, event subscription, effective tier, and workload fallback telemetry surfaced in Settings.
 - `src/store/accelerationRuntimeStore.ts`

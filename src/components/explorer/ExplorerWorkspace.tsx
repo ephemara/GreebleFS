@@ -61,6 +61,7 @@ import {
 import {
   resolveEffectiveExplorerModeProfile,
   resolveExplorerModeProfileChromeLayoutId,
+  type ExplorerModeProfileId,
 } from "../../config/explorerModeProfiles";
 import { isExplorerHomePath } from "../../config/explorerVirtualLocations";
 import { resolveExplorerThemeRecipe } from "../../config/explorerTheme";
@@ -137,6 +138,7 @@ interface ExplorerWorkspaceProps {
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
+  defaultModeProfileId?: ExplorerModeProfileId | null;
   chromeControlSurface?: "toolbar" | "topbar";
   explorerPicker?: ExplorerPickerRequest | null;
   onExplorerPickerConfirm?: (result: {
@@ -301,6 +303,7 @@ export function ExplorerWorkspace({
   pluginActions = [],
   pluginContextMenuItems = [],
   layoutMode = "full",
+  defaultModeProfileId = null,
   chromeControlSurface = "toolbar",
   explorerPicker = null,
   onExplorerPickerConfirm = () => undefined,
@@ -580,10 +583,12 @@ export function ExplorerWorkspace({
       resolveEffectiveExplorerModeProfile({
         themeOverrideModeProfileId:
           modeProfileOverridesByThemeId[explorerChromeThemeId] ?? null,
-        themeDefaultModeProfileId: explorerTheme.defaultModeProfileId,
+        themeDefaultModeProfileId:
+          defaultModeProfileId ?? explorerTheme.defaultModeProfileId,
         legacyShellLayoutId,
       }),
     [
+      defaultModeProfileId,
       explorerChromeThemeId,
       explorerTheme.defaultModeProfileId,
       legacyShellLayoutId,
@@ -3073,6 +3078,7 @@ export function ExplorerWorkspace({
             }
             instanceId={paneSnapshot.instanceId}
             layoutMode={layoutMode}
+            defaultModeProfileId={defaultModeProfileId}
             renderDragOverlayHost={false}
             workspacePaneCount={workspacePaneCount}
             onWorkspaceRuntimeSnapshotChange={publishRuntimeSnapshot}
@@ -3107,6 +3113,7 @@ export function ExplorerWorkspace({
       onAddBookmark,
       pendingOpenRequest,
       actions,
+      defaultModeProfileId,
       homePacks,
       onOpenInFilesystemAquarium,
       onOpenInTerminal,
