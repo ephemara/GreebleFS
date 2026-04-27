@@ -1,0 +1,32 @@
+# Universal runtime pipeline mirror of `greeblefs-python-sidecar.json`.
+#
+# This file lets the new `runtime_*` Tauri command surface discover and report
+# the existing Python sidecar through the same registry as Go runtimes. The
+# legacy `python_*` commands and `pythonRuntimeBackend.ts` lane stay
+# authoritative for execution, lifecycle, and IPC; this manifest is purely
+# discovery + ergonomic UX glue while we migrate the Python sidecar onto the
+# polyglot pipeline incrementally.
+#
+# Action and package preset metadata is intentionally NOT duplicated here —
+# the JSON manifest stays the source of truth for that catalog, and the
+# Python sidecar code already loads it.
+
+id = "greeblefs-python-sidecar"
+displayName = "GreebleFS Python Sidecar"
+language = "python"
+kind = "native-sidecar"
+compiler = "python-sidecar"
+moduleDir = "."
+entry = "greeblefs_sidecar"
+
+[sidecar]
+transport = "stdio-json-lines"
+
+[permissions]
+fsRead = true
+fsWrite = true
+network = true
+spawnProcesses = true
+clipboardRead = false
+clipboardWrite = false
+launchIntents = ["python-sidecar-call"]

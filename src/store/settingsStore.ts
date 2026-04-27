@@ -47,6 +47,7 @@ import {
   normalizeExplorerModeProfileId,
   type ExplorerModeProfileId,
 } from '../config/explorerModeProfiles';
+import { EXPLORER_CANONICAL_LAYOUT_ID } from '../config/explorerLayouts';
 import {
   normalizeExplorerCollectionPreviewMode,
   type ExplorerCollectionPreviewMode,
@@ -225,6 +226,8 @@ export interface ExplorerSettings {
   folderIconRules: FolderIconRule[];
   thumbnails: ExplorerThumbnailSettings;
   collectionPreviewMode: ExplorerCollectionPreviewMode;
+  followThemeExplorerLayout: boolean;
+  activeExplorerLayoutId: string | null;
   modeProfileOverridesByThemeId: Record<string, ExplorerModeProfileId>;
   chromeLayoutOverridesByThemeId: Record<string, Record<string, ExplorerChromeOverrideSnapshot>>;
   activeMenuPackId: string | null;
@@ -308,6 +311,7 @@ export interface SystemSettings {
   consumerDiagnosticsIncludeRendererRuntime: boolean;
   consumerDiagnosticsIncludePerfSamples: boolean;
   linuxDisplayBackendPreference: LinuxDisplayBackendPreference;
+  linuxNvidiaWebkitWorkaroundMode: LinuxNvidiaWebkitWorkaroundMode;
 }
 
 export interface ScreenshotSettings {
@@ -328,6 +332,7 @@ export interface MobileSettings {
 export type KeybindingSettings = HotkeyBindingSettings;
 export type DockThemeMode = 'follow-app' | 'override';
 export type LinuxDisplayBackendPreference = 'auto' | 'wayland' | 'x11';
+export type LinuxNvidiaWebkitWorkaroundMode = 'auto' | 'force-on' | 'force-off';
 export type DeveloperTelemetryCaptureMode = 'raw' | 'sampled' | 'perf-only';
 export type DeveloperTelemetryPayloadMode = 'metadata-only' | 'metadata+small-payloads';
 
@@ -436,6 +441,10 @@ export function normalizeLinuxDisplayBackendPreference(value: unknown): LinuxDis
   return value === 'wayland' || value === 'x11' ? value : 'auto';
 }
 
+export function normalizeLinuxNvidiaWebkitWorkaroundMode(value: unknown): LinuxNvidiaWebkitWorkaroundMode {
+  return value === 'force-on' || value === 'force-off' ? value : 'auto';
+}
+
 export function normalizeDeveloperTelemetryCaptureMode(value: unknown): DeveloperTelemetryCaptureMode {
   return value === 'sampled' || value === 'perf-only' ? value : 'raw';
 }
@@ -497,6 +506,10 @@ function normalizeExplorerSettings(
     && Object.prototype.hasOwnProperty.call(updates, 'modeProfileOverridesByThemeId');
   const hasExplicitChromeLayoutOverrides = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'chromeLayoutOverridesByThemeId');
+  const hasExplicitFollowThemeExplorerLayout = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'followThemeExplorerLayout');
+  const hasExplicitActiveExplorerLayoutId = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'activeExplorerLayoutId');
   const hasExplicitActiveMenuPackId = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'activeMenuPackId');
   const hasExplicitContextMenuLayoutOverrides = updates != null
@@ -527,6 +540,12 @@ function normalizeExplorerSettings(
     collectionPreviewMode: normalizeExplorerCollectionPreviewMode(
       updates?.collectionPreviewMode ?? base.collectionPreviewMode,
     ),
+    followThemeExplorerLayout: hasExplicitFollowThemeExplorerLayout
+      ? updates?.followThemeExplorerLayout !== false
+      : base.followThemeExplorerLayout,
+    activeExplorerLayoutId: hasExplicitActiveExplorerLayoutId
+      ? normalizeExplorerLayoutSelectionId(updates?.activeExplorerLayoutId)
+      : base.activeExplorerLayoutId,
     modeProfileOverridesByThemeId: hasExplicitModeProfileOverrides
       ? normalizeExplorerModeProfileOverrideMap(updates?.modeProfileOverridesByThemeId)
       : base.modeProfileOverridesByThemeId,
@@ -543,6 +562,15 @@ function normalizeExplorerSettings(
       ? normalizeExplorerContextMenuItemOverrideMap(updates?.contextMenuItemOverrides)
       : base.contextMenuItemOverrides,
   };
+}
+
+function normalizeExplorerLayoutSelectionId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return value === null ? null : null;
+  }
+
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : null;
 }
 
 function normalizeExplorerMenuPackId(value: unknown): string | null {
@@ -886,6 +914,9 @@ export function normalizeSystemSettings(
     linuxDisplayBackendPreference: normalizeLinuxDisplayBackendPreference(
       merged.linuxDisplayBackendPreference,
     ),
+    linuxNvidiaWebkitWorkaroundMode: normalizeLinuxNvidiaWebkitWorkaroundMode(
+      merged.linuxNvidiaWebkitWorkaroundMode,
+    ),
   };
 
   const hideAppInTrayUpdated = updates != null && Object.prototype.hasOwnProperty.call(updates, 'hideAppInTray');
@@ -1208,6 +1239,8 @@ export const defaultSettings: Settings = {
     folderIconRules: createDefaultFolderIconRules(),
     thumbnails: defaultExplorerThumbnailSettings,
     collectionPreviewMode: 'list',
+    followThemeExplorerLayout: true,
+    activeExplorerLayoutId: null,
     modeProfileOverridesByThemeId: {},
     chromeLayoutOverridesByThemeId: {},
     activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
@@ -1290,6 +1323,7 @@ export const defaultSettings: Settings = {
     consumerDiagnosticsIncludeRendererRuntime: true,
     consumerDiagnosticsIncludePerfSamples: true,
     linuxDisplayBackendPreference: 'auto',
+    linuxNvidiaWebkitWorkaroundMode: 'auto',
   },
   mobile: {
     remoteAccessMode: 'lan',
@@ -1563,6 +1597,9 @@ interface SettingsState {
   updateHome: (updates: Partial<HomeSettings>) => void;
   setHomePackState: (packId: string, state: Record<string, unknown>) => void;
   setHomePresetSelection: (packId: string, presetId: string | null) => void;
+  setFollowThemeExplorerLayout: (followTheme: boolean) => void;
+  setActiveExplorerLayoutId: (layoutId: string | null) => void;
+  restoreCanonicalExplorerLayout: () => void;
   setExplorerModeProfileOverride: (themeId: string, modeProfileId: ExplorerModeProfileId) => void;
   clearExplorerModeProfileOverride: (themeId: string) => void;
   setExplorerChromeLayoutOverride: (
@@ -1699,6 +1736,35 @@ export const useSettingsStore = create<SettingsState>()(
           },
         };
       }),
+
+      setFollowThemeExplorerLayout: (followTheme) => set((state) => ({
+        settings: {
+          ...state.settings,
+          explorer: normalizeExplorerSettings(state.settings.explorer, {
+            followThemeExplorerLayout: followTheme,
+          }),
+        },
+      })),
+
+      setActiveExplorerLayoutId: (layoutId) => set((state) => ({
+        settings: {
+          ...state.settings,
+          explorer: normalizeExplorerSettings(state.settings.explorer, {
+            activeExplorerLayoutId: layoutId,
+            followThemeExplorerLayout: false,
+          }),
+        },
+      })),
+
+      restoreCanonicalExplorerLayout: () => set((state) => ({
+        settings: {
+          ...state.settings,
+          explorer: normalizeExplorerSettings(state.settings.explorer, {
+            followThemeExplorerLayout: false,
+            activeExplorerLayoutId: EXPLORER_CANONICAL_LAYOUT_ID,
+          }),
+        },
+      })),
 
       setExplorerModeProfileOverride: (themeId, modeProfileId) => set((state) => {
         const trimmedThemeId = themeId.trim();

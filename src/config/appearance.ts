@@ -186,6 +186,7 @@ export interface OverlayThemeDefinition {
   name: string;
   description?: string;
   defaultTopBarId?: string;
+  defaultExplorerLayoutId?: string;
   defaultHomePackId?: string;
   defaultMenuPackId?: string;
   defaultSoundPackId?: string;
@@ -1367,6 +1368,9 @@ export function normalizeThemeDefinition(
     defaultTopBarId: typeof theme.defaultTopBarId === 'string'
       ? theme.defaultTopBarId.trim() || undefined
       : fallbackTheme?.defaultTopBarId,
+    defaultExplorerLayoutId: typeof theme.defaultExplorerLayoutId === 'string'
+      ? theme.defaultExplorerLayoutId.trim() || undefined
+      : fallbackTheme?.defaultExplorerLayoutId,
     defaultHomePackId: typeof theme.defaultHomePackId === 'string'
       ? theme.defaultHomePackId.trim() || undefined
       : fallbackTheme?.defaultHomePackId,

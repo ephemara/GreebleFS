@@ -67,6 +67,7 @@ use crate::image_cutout_commands::{
 use crate::lan_share::types::LanShareResult;
 use crate::linux_graphics::{
     LinuxDisplayBackend, LinuxDisplayBackendPreference, LinuxDisplayBackendStatus,
+    LinuxNvidiaWebkitWorkaroundMode,
 };
 use crate::pdf_commands::{
     PdfColorValue, PdfFormFieldDescriptor, PdfFormFieldKind, PdfFormFieldOptionDescriptor,
@@ -86,6 +87,25 @@ use crate::python_sidecar::{
     PythonSidecarPackagePreset, PythonSidecarStartResponse, PythonSidecarStatus,
     PythonSidecarWorkspaceManifest,
 };
+use crate::runtime_pipeline::command_runtime::{
+    ExternalRuntimeCommandRequest, ExternalRuntimeCommandResult,
+};
+use crate::runtime_pipeline::commands::{
+    RuntimeCallRequest, RuntimeDiscoveryRootDto, RuntimeListPackagesRequest,
+    RuntimeListPackagesResponse, RuntimeOpenTuiRequest, RuntimePreparePackageRequest,
+    RuntimePreparePackageResponse, RuntimeStartSidecarRequest, RuntimeStopSidecarRequest,
+};
+use crate::runtime_pipeline::discovery::{DiscoveredRuntimePackage, RuntimePackageOrigin};
+use crate::runtime_pipeline::manifest::{
+    RuntimeActionDescriptor, RuntimeCommandConfig, RuntimeCompiler, RuntimeKind, RuntimeManifest,
+    RuntimePackagePermissions, RuntimePackagePreset, RuntimePanelConfig, RuntimeSidecarConfig,
+    RuntimeTuiConfig,
+};
+use crate::runtime_pipeline::sidecar::{
+    ExternalRuntimeSidecarCallResponse, ExternalRuntimeSidecarStatus,
+};
+use crate::runtime_pipeline::toolchain::{RuntimeToolchainStatus, ToolchainProbe};
+use crate::runtime_pipeline::tui::ExternalRuntimeTuiLaunch;
 use crate::screenshot_commands::{SavedScreenshot, ScreenshotRegion, ScreenshotStage};
 use crate::semantic_search::{
     ExplorerSemanticFindSimilarRequest, ExplorerSemanticIndexBuildMode,
@@ -336,6 +356,14 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::python_sidecar::python_stop_sidecar,
             crate::python_sidecar::python_sidecar_call,
             crate::python_pyo3::python_execute_embedded,
+            crate::runtime_pipeline::commands::runtime_list_packages,
+            crate::runtime_pipeline::commands::runtime_get_toolchain_status,
+            crate::runtime_pipeline::commands::runtime_prepare_package,
+            crate::runtime_pipeline::commands::runtime_start_sidecar,
+            crate::runtime_pipeline::commands::runtime_stop_sidecar,
+            crate::runtime_pipeline::commands::runtime_call,
+            crate::runtime_pipeline::commands::runtime_run_command,
+            crate::runtime_pipeline::commands::runtime_open_tui,
             crate::acceleration_runtime::acceleration_runtime_get_status,
             crate::action_commands::action_execute,
             crate::plugin_commands::plugin_run_backend,
@@ -380,6 +408,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::startup_commands::startup_get_linux_display_backend_status,
             crate::startup_commands::startup_set_launch_at_startup,
             crate::startup_commands::startup_set_linux_display_backend_preference,
+            crate::startup_commands::startup_set_linux_nvidia_webkit_workaround_mode,
             crate::storage_commands::storage_scan_start,
             crate::storage_commands::storage_scan_poll,
             crate::storage_commands::storage_scan_list_directory,
@@ -616,6 +645,34 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<AccelerationRuntimeStatusSnapshot>()
         .typ::<PythonEmbeddedSnippetRequest>()
         .typ::<PythonEmbeddedSnippetResponse>()
+        .typ::<RuntimeKind>()
+        .typ::<RuntimeCompiler>()
+        .typ::<RuntimePackagePermissions>()
+        .typ::<RuntimePackagePreset>()
+        .typ::<RuntimeActionDescriptor>()
+        .typ::<RuntimePanelConfig>()
+        .typ::<RuntimeCommandConfig>()
+        .typ::<RuntimeSidecarConfig>()
+        .typ::<RuntimeTuiConfig>()
+        .typ::<RuntimeManifest>()
+        .typ::<RuntimePackageOrigin>()
+        .typ::<DiscoveredRuntimePackage>()
+        .typ::<RuntimeDiscoveryRootDto>()
+        .typ::<RuntimeListPackagesRequest>()
+        .typ::<RuntimeListPackagesResponse>()
+        .typ::<RuntimePreparePackageRequest>()
+        .typ::<RuntimePreparePackageResponse>()
+        .typ::<RuntimeStartSidecarRequest>()
+        .typ::<RuntimeStopSidecarRequest>()
+        .typ::<RuntimeCallRequest>()
+        .typ::<RuntimeOpenTuiRequest>()
+        .typ::<ToolchainProbe>()
+        .typ::<RuntimeToolchainStatus>()
+        .typ::<ExternalRuntimeSidecarStatus>()
+        .typ::<ExternalRuntimeSidecarCallResponse>()
+        .typ::<ExternalRuntimeCommandRequest>()
+        .typ::<ExternalRuntimeCommandResult>()
+        .typ::<ExternalRuntimeTuiLaunch>()
         .typ::<ExplorerShaderPreviewDocument>()
         .typ::<ExplorerShaderEntryPoint>()
         .typ::<ExplorerShaderDiagnostic>()
@@ -645,6 +702,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<LinuxDisplayBackend>()
         .typ::<LinuxDisplayBackendPreference>()
         .typ::<LinuxDisplayBackendStatus>()
+        .typ::<LinuxNvidiaWebkitWorkaroundMode>()
         .typ::<WaylandDockAnchor>()
         .typ::<WaylandDockHostStatus>()
         .typ::<VstScanPath>()

@@ -760,6 +760,21 @@ describe('useSettingsStore.updateSystem()', () => {
     store.updateSystem({ linuxDisplayBackendPreference: 'invalid' as never });
     expect(useSettingsStore.getState().settings.system.linuxDisplayBackendPreference).toBe('auto');
   });
+
+  it('stores a normalized Linux NVIDIA WebKit workaround mode', () => {
+    const store = useSettingsStore.getState();
+
+    expect(useSettingsStore.getState().settings.system.linuxNvidiaWebkitWorkaroundMode).toBe('auto');
+
+    store.updateSystem({ linuxNvidiaWebkitWorkaroundMode: 'force-off' });
+    expect(useSettingsStore.getState().settings.system.linuxNvidiaWebkitWorkaroundMode).toBe('force-off');
+
+    store.updateSystem({ linuxNvidiaWebkitWorkaroundMode: 'force-on' });
+    expect(useSettingsStore.getState().settings.system.linuxNvidiaWebkitWorkaroundMode).toBe('force-on');
+
+    store.updateSystem({ linuxNvidiaWebkitWorkaroundMode: 'invalid' as never });
+    expect(useSettingsStore.getState().settings.system.linuxNvidiaWebkitWorkaroundMode).toBe('auto');
+  });
 });
 
 describe('useSettingsStore.updateAppearance()', () => {

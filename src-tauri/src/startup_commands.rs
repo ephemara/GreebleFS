@@ -3,7 +3,8 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::linux_graphics::{
     current_linux_display_backend_status, set_linux_display_backend_preference,
-    LinuxDisplayBackendPreference, LinuxDisplayBackendStatus,
+    set_linux_nvidia_webkit_workaround_mode, LinuxDisplayBackendPreference,
+    LinuxDisplayBackendStatus, LinuxNvidiaWebkitWorkaroundMode,
 };
 
 #[tauri::command]
@@ -40,5 +41,14 @@ pub async fn startup_set_linux_display_backend_preference(
     preferred_backend: LinuxDisplayBackendPreference,
 ) -> Result<LinuxDisplayBackendStatus, String> {
     set_linux_display_backend_preference(preferred_backend)?;
+    Ok(current_linux_display_backend_status())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn startup_set_linux_nvidia_webkit_workaround_mode(
+    workaround_mode: LinuxNvidiaWebkitWorkaroundMode,
+) -> Result<LinuxDisplayBackendStatus, String> {
+    set_linux_nvidia_webkit_workaround_mode(workaround_mode)?;
     Ok(current_linux_display_backend_status())
 }

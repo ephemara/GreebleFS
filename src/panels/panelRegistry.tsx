@@ -27,6 +27,7 @@ import type {
   LoadedThemeShellRendererPack,
 } from '../config/themeBundlePacks';
 import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
+import type { LoadedExplorerLayoutDefinition } from '../config/explorerLayouts';
 import {
   iconThemeSystemConfig,
   type LoadedIconThemePackage,
@@ -214,6 +215,7 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesLoading,
   topBarPackagesError,
   topBarPackagesWarnings,
+  explorerLayouts,
   homePacks = [],
   menuPacks = [],
   actionsDirectory = '',
@@ -349,6 +351,11 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesLoading: boolean;
   topBarPackagesError: string | null;
   topBarPackagesWarnings: string[];
+  explorerLayouts: LoadedExplorerLayoutDefinition[];
+  explorerLayoutsDirectory: string;
+  explorerLayoutsLoading: boolean;
+  explorerLayoutsError: string | null;
+  explorerLayoutsWarnings: string[];
   homePacks?: LoadedExplorerHomePack[];
   menuPacks?: LoadedExplorerMenuPack[];
   actionsDirectory?: string;
@@ -499,6 +506,7 @@ export function createBuiltInPanelDefinitions({
           onOpenInTerminal={onOpenInTerminal}
           onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
           onAddBookmark={onAddBookmark}
+          explorerLayouts={explorerLayouts}
           homePacks={homePacks}
           menuPacks={menuPacks}
           actions={actions}

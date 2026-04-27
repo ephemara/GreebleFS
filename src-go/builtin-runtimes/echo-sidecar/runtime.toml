@@ -1,0 +1,31 @@
+id = "echo-sidecar"
+displayName = "Echo Sidecar (Go)"
+language = "go"
+kind = "native-sidecar"
+compiler = "go-native"
+moduleDir = "."
+entry = "."
+
+[sidecar]
+transport = "stdio-json-lines"
+
+[[sidecar.actions]]
+id = "runtime.summary"
+label = "Runtime Summary"
+description = "Returns build metadata about the running Go sidecar."
+
+[[sidecar.actions]]
+id = "echo"
+label = "Echo"
+description = "Returns the supplied JSON payload unchanged."
+
+[[sidecar.actions]]
+id = "now"
+label = "Now"
+description = "Returns the current sidecar wall-clock time in RFC3339 format."
+
+[permissions]
+fsRead = false
+fsWrite = false
+network = false
+spawnProcesses = false

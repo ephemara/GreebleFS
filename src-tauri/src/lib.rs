@@ -25,6 +25,7 @@ pub mod python_commands;
 pub mod python_pyo3;
 pub mod python_sidecar;
 pub mod remote_storage_commands;
+pub mod runtime_pipeline;
 pub mod screenshot_commands;
 pub mod semantic_search;
 pub mod shader_preview_commands;
@@ -219,6 +220,8 @@ pub fn run() {
             app.manage(image_commands::ImageEditorManager::default());
             app.manage(pdf_commands::PdfPreviewManager::default());
             app.manage(python_sidecar::PythonSidecarManager::default());
+            app.manage(runtime_pipeline::RuntimeRegistryState::default());
+            app.manage(runtime_pipeline::sidecar::ExternalSidecarManager::default());
             app.manage(video_engine::VideoEngineManager::default());
             app.manage(vst_host_runtime::VstHostRuntimeManager::default());
             app.manage(TelemetryManager::default());

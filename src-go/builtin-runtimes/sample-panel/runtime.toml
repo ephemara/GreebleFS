@@ -1,0 +1,20 @@
+id = "sample-panel"
+displayName = "Sample Go Panel"
+language = "go"
+kind = "wasm-panel"
+compiler = "go-js-wasm"
+moduleDir = "."
+entry = "."
+
+[panel]
+panelId = "go-sample-panel"
+displayName = "Sample Go Panel"
+preferredWidthPx = 360
+preferredHeightPx = 240
+
+[permissions]
+fsRead = false
+fsWrite = false
+network = false
+clipboardRead = false
+clipboardWrite = false

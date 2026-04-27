@@ -12,6 +12,7 @@ import {
 export type {
   LinuxDisplayBackendPreference,
   LinuxDisplayBackendStatus,
+  LinuxNvidiaWebkitWorkaroundMode,
   SqliteSortDirection,
   SqliteTableQueryRequest,
   SqliteTableQueryResult,

@@ -1,0 +1,15 @@
+// Repo-owned Go workspace for the universal polyglot runtime pipeline.
+//
+// The workspace tracks first-party SDK code plus host-shipped builtin
+// runtimes. Managed-content runtimes (under `runtimes/` in the user's
+// app-local data) intentionally stay outside this workspace and own their
+// own `go.mod` files.
+
+go 1.22
+
+use (
+	./sdk/greeblefs-go
+	./builtin-runtimes/echo-sidecar
+	./builtin-runtimes/echo-command
+	./builtin-runtimes/sample-panel
+)

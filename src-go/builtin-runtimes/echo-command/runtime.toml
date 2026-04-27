@@ -1,0 +1,18 @@
+id = "echo-command"
+displayName = "Echo Command (Go)"
+language = "go"
+kind = "native-command"
+compiler = "go-native"
+moduleDir = "."
+entry = "."
+
+[command]
+label = "Echo command-line arguments"
+argumentDoc = "Any arguments are echoed to stdout, one per line."
+timeoutSecs = 30
+
+[permissions]
+fsRead = false
+fsWrite = false
+network = false
+spawnProcesses = false

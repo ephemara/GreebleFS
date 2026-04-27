@@ -1630,6 +1630,8 @@ describe('SettingsPage behavior', () => {
       value: 'Linux x86_64',
     });
 
+    let workaroundMode: 'auto' | 'force-on' | 'force-off' = 'auto';
+
     invokeMock.mockImplementation(async (command: string, args: unknown) => {
       if (command === 'startup_get_linux_display_backend_status') {
         return {
@@ -1638,6 +1640,8 @@ describe('SettingsPage behavior', () => {
           activeBackend: 'x11',
           preferredBackend,
           autoX11FallbackActive: true,
+          nvidiaGpuDetected: true,
+          nvidiaWebkitWorkaroundMode: workaroundMode,
         };
       }
 
@@ -1649,6 +1653,21 @@ describe('SettingsPage behavior', () => {
           activeBackend: preferredBackend === 'wayland' ? 'wayland' : 'x11',
           preferredBackend,
           autoX11FallbackActive: preferredBackend === 'auto',
+          nvidiaGpuDetected: true,
+          nvidiaWebkitWorkaroundMode: workaroundMode,
+        };
+      }
+
+      if (command === 'startup_set_linux_nvidia_webkit_workaround_mode') {
+        workaroundMode = ((args as { workaroundMode?: typeof workaroundMode } | undefined)?.workaroundMode ?? 'auto');
+        return {
+          availableBackends: ['wayland', 'x11'],
+          sessionBackend: 'wayland',
+          activeBackend: 'x11',
+          preferredBackend,
+          autoX11FallbackActive: preferredBackend === 'auto',
+          nvidiaGpuDetected: true,
+          nvidiaWebkitWorkaroundMode: workaroundMode,
         };
       }
 
@@ -1669,6 +1688,18 @@ describe('SettingsPage behavior', () => {
     });
     expect(invokeMock).toHaveBeenCalledWith('startup_set_linux_display_backend_preference', {
       preferredBackend: 'wayland',
+    });
+
+    const workaroundSelect = await screen.findByLabelText('NVIDIA WebKit Workaround');
+    expect((workaroundSelect as HTMLSelectElement).value).toBe('auto');
+
+    await user.selectOptions(workaroundSelect, 'force-off');
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.system.linuxNvidiaWebkitWorkaroundMode).toBe('force-off');
+    });
+    expect(invokeMock).toHaveBeenCalledWith('startup_set_linux_nvidia_webkit_workaround_mode', {
+      workaroundMode: 'force-off',
     });
   });
 

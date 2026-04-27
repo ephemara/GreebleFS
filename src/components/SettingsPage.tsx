@@ -377,6 +377,7 @@ import {
   unwrapTauriResult,
   type LinuxDisplayBackendPreference,
   type LinuxDisplayBackendStatus,
+  type LinuxNvidiaWebkitWorkaroundMode,
 } from "../runtime/tauriClient";
 import {
   connectTailscale,
@@ -7217,6 +7218,7 @@ export function SettingsPage({
         setLinuxDisplayBackendStatus(status);
         updateSystem({
           linuxDisplayBackendPreference: status.preferredBackend,
+          linuxNvidiaWebkitWorkaroundMode: status.nvidiaWebkitWorkaroundMode,
         });
       })
       .catch((error) => {
@@ -7350,6 +7352,29 @@ export function SettingsPage({
         setLinuxDisplayBackendStatus(nextStatus);
         updateSystem({
           linuxDisplayBackendPreference: nextStatus.preferredBackend,
+          linuxNvidiaWebkitWorkaroundMode: nextStatus.nvidiaWebkitWorkaroundMode,
+        });
+      } catch (error) {
+        setLinuxDisplayBackendSyncError(String(error));
+      } finally {
+        setLinuxDisplayBackendSyncPending(false);
+      }
+    },
+    [updateSystem],
+  );
+
+  const setLinuxNvidiaWebkitWorkaroundMode = useCallback(
+    async (workaroundMode: LinuxNvidiaWebkitWorkaroundMode) => {
+      setLinuxDisplayBackendSyncPending(true);
+      setLinuxDisplayBackendSyncError(null);
+      try {
+        const nextStatus = await commands
+          .startupSetLinuxNvidiaWebkitWorkaroundMode(workaroundMode)
+          .then(unwrapTauriResult);
+        setLinuxDisplayBackendStatus(nextStatus);
+        updateSystem({
+          linuxDisplayBackendPreference: nextStatus.preferredBackend,
+          linuxNvidiaWebkitWorkaroundMode: nextStatus.nvidiaWebkitWorkaroundMode,
         });
       } catch (error) {
         setLinuxDisplayBackendSyncError(String(error));
@@ -13999,6 +14024,9 @@ export function SettingsPage({
             linuxDisplayBackendPreference={
               settings.system.linuxDisplayBackendPreference
             }
+            linuxNvidiaWebkitWorkaroundMode={
+              settings.system.linuxNvidiaWebkitWorkaroundMode
+            }
             availableLinuxDisplayBackends={availableLinuxDisplayBackends}
             linuxDisplayBackendStatus={linuxDisplayBackendStatus}
             linuxDisplayBackendSyncPending={linuxDisplayBackendSyncPending}
@@ -14042,6 +14070,9 @@ export function SettingsPage({
             onQueueAccelerationInstall={handleQueueAccelerationInstall}
             onSetLinuxDisplayBackendPreference={
               setLinuxDisplayBackendPreference
+            }
+            onSetLinuxNvidiaWebkitWorkaroundMode={
+              setLinuxNvidiaWebkitWorkaroundMode
             }
             onRefreshTelemetryStatus={refreshTelemetryStatus}
             onTelemetryExport={handleTelemetryExport}

@@ -5,6 +5,7 @@ import type {
   GpuRuntimeStatusSnapshot,
   LinuxDisplayBackendPreference,
   LinuxDisplayBackendStatus,
+  LinuxNvidiaWebkitWorkaroundMode,
 } from '../../../generated/tauri';
 import type {
   AccelerationProviderResolution,
@@ -59,6 +60,7 @@ export function SystemSettingsSection({
   consumerDiagnosticsIncludePerfSamples,
   toggleDeveloperTelemetryHud,
   linuxDisplayBackendPreference,
+  linuxNvidiaWebkitWorkaroundMode,
   availableLinuxDisplayBackends,
   linuxDisplayBackendStatus,
   linuxDisplayBackendSyncPending,
@@ -99,6 +101,7 @@ export function SystemSettingsSection({
   onProbeAccelerationPipeline,
   onQueueAccelerationInstall,
   onSetLinuxDisplayBackendPreference,
+  onSetLinuxNvidiaWebkitWorkaroundMode,
   onRefreshTelemetryStatus,
   onTelemetryExport,
   onTelemetryClear,
@@ -124,6 +127,7 @@ export function SystemSettingsSection({
   consumerDiagnosticsIncludePerfSamples: boolean;
   toggleDeveloperTelemetryHud: string;
   linuxDisplayBackendPreference: LinuxDisplayBackendPreference;
+  linuxNvidiaWebkitWorkaroundMode: LinuxNvidiaWebkitWorkaroundMode;
   availableLinuxDisplayBackends: string[];
   linuxDisplayBackendStatus: LinuxDisplayBackendStatus | null;
   linuxDisplayBackendSyncPending: boolean;
@@ -168,6 +172,7 @@ export function SystemSettingsSection({
   onProbeAccelerationPipeline: () => Promise<void> | void;
   onQueueAccelerationInstall: () => Promise<void> | void;
   onSetLinuxDisplayBackendPreference: (preference: LinuxDisplayBackendPreference) => Promise<void> | void;
+  onSetLinuxNvidiaWebkitWorkaroundMode: (mode: LinuxNvidiaWebkitWorkaroundMode) => Promise<void> | void;
   onRefreshTelemetryStatus: () => Promise<void> | void;
   onTelemetryExport: () => Promise<void> | void;
   onTelemetryClear: () => Promise<void> | void;
@@ -569,28 +574,59 @@ export function SystemSettingsSection({
         </SettingsRowGroup>
 
         {platform === 'linux' ? (
-          <SettingsRow
-            title="Linux Display Backend"
-            description="Chooses whether GreebleFS launches through Auto selection, X11 fallback, or native Wayland. Auto will switch to X11 on NVIDIA Wayland sessions when XWayland is available."
-            control={(
-              <select
-                aria-label="Linux Display Backend"
-                value={linuxDisplayBackendPreference}
-                disabled={linuxDisplayBackendSyncPending}
-                onChange={event => void onSetLinuxDisplayBackendPreference(event.target.value as LinuxDisplayBackendPreference)}
-                className="min-w-[140px] rounded border bg-transparent px-2 py-1 text-[11px]"
-                style={settingsSelectStyle}
-              >
-                <option value="auto">Auto</option>
-                <option value="x11" disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('x11')}>
-                  X11
-                </option>
-                <option value="wayland" disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('wayland')}>
-                  Wayland
-                </option>
-              </select>
-            )}
-          />
+          <SettingsRowGroup>
+            <SettingsRow
+              title="Linux Display Backend"
+              description="Chooses whether GreebleFS launches through Auto selection, X11 fallback, or native Wayland. Auto will switch to X11 on NVIDIA Wayland sessions when XWayland is available."
+              control={(
+                <select
+                  aria-label="Linux Display Backend"
+                  value={linuxDisplayBackendPreference}
+                  disabled={linuxDisplayBackendSyncPending}
+                  onChange={event => void onSetLinuxDisplayBackendPreference(event.target.value as LinuxDisplayBackendPreference)}
+                  className="min-w-[140px] rounded border bg-transparent px-2 py-1 text-[11px]"
+                  style={settingsSelectStyle}
+                >
+                  <option value="auto">Auto</option>
+                  <option value="x11" disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('x11')}>
+                    X11
+                  </option>
+                  <option value="wayland" disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('wayland')}>
+                    Wayland
+                  </option>
+                </select>
+              )}
+            />
+            <SettingsRow
+              title="NVIDIA WebKit Workaround"
+              description={(
+                <>
+                  Controls the Linux-only WebKit env vars <code>WEBKIT_DISABLE_DMABUF_RENDERER=1</code> and <code>__NV_DISABLE_EXPLICIT_SYNC=1</code>.
+                  Auto only enables them on detected NVIDIA + X11/Wayland sessions. Force off lets modern stacks (driver 555+, KWin/Plasma 6.x) use the explicit-sync compositor path. Force on overrides the NVIDIA-detection gate.
+                  Pre-set environment variables always win. Restart required to take effect.
+                  {linuxDisplayBackendStatus != null ? (
+                    <span className="mt-1 block opacity-65">
+                      NVIDIA GPU detected: {linuxDisplayBackendStatus.nvidiaGpuDetected ? 'yes' : 'no'}
+                    </span>
+                  ) : null}
+                </>
+              )}
+              control={(
+                <select
+                  aria-label="NVIDIA WebKit Workaround"
+                  value={linuxNvidiaWebkitWorkaroundMode}
+                  disabled={linuxDisplayBackendSyncPending}
+                  onChange={event => void onSetLinuxNvidiaWebkitWorkaroundMode(event.target.value as LinuxNvidiaWebkitWorkaroundMode)}
+                  className="min-w-[140px] rounded border bg-transparent px-2 py-1 text-[11px]"
+                  style={settingsSelectStyle}
+                >
+                  <option value="auto">Auto</option>
+                  <option value="force-on">Force On</option>
+                  <option value="force-off">Force Off</option>
+                </select>
+              )}
+            />
+          </SettingsRowGroup>
         ) : null}
 
         <SettingsSectionBlock

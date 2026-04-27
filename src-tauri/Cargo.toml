@@ -89,6 +89,8 @@ once_cell = "1.21"
 shaderc = "0.10.1"
 tantivy = "0.25"
 p256 = "0.13"
+toml = { workspace = true }
+which = { workspace = true }
 greeble-ipc-contracts = { path = "../crates/greeble-ipc-contracts" }
 overlay-contracts = { path = "../crates/overlay-contracts" }
 yazi-specta = { path = "../crates/yazi-specta" }

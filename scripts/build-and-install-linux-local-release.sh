@@ -82,7 +82,7 @@ ln -sfn "$binary_target" "$cli_link_path"
 ln -sfn "$binary_target" "$legacy_cli_link_path"
 ln -sfn "$binary_target" "$legacy_binary_target"
 
-for content_dir in plugins themes shaders animations; do
+for content_dir in plugins themes shaders animations runtimes; do
   source_dir="$repo_root/$content_dir"
   target_dir="$app_local_data_root/$content_dir"
 
@@ -91,6 +91,19 @@ for content_dir in plugins themes shaders animations; do
     cp -a --update=none "$source_dir"/. "$target_dir"/
   fi
 done
+
+# Universal runtime pipeline: copy the Go SDK + builtin runtimes so the
+# release host can compile authored content lazily even when the workspace
+# `src-go/` is not on disk. Toolchain bootstrap stays opt-in via
+# `bun run go:bootstrap` so we never reach for the network during install.
+if [[ -d "$repo_root/src-go" ]]; then
+  mkdir -p "$app_local_data_root/src-go"
+  cp -a --update=none "$repo_root/src-go"/. "$app_local_data_root/src-go"/
+fi
+if [[ -d "$repo_root/toolchains" ]]; then
+  mkdir -p "$app_local_data_root/toolchains"
+  cp -a --update=none "$repo_root/toolchains"/. "$app_local_data_root/toolchains"/
+fi
 
 cat > "$desktop_entry_path" <<EOF
 [Desktop Entry]

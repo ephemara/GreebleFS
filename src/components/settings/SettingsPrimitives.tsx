@@ -3,13 +3,17 @@ import {
   createContext,
   isValidElement,
   useContext,
+  useEffect,
   useId,
+  useLayoutEffect,
+  useRef,
   useState,
   type CSSProperties,
   type InputHTMLAttributes,
   type ReactElement,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Info } from '../AppIcons';
 import { PremiumSlider } from '../PremiumSlider';
 import { OverlayToggle } from '../OverlayToggle';
@@ -50,6 +54,25 @@ export function useSettingsRowDescriptionsVisible(): boolean {
 // Info bubble
 // ---------------------------------------------------------------------------
 
+// Tooltip rendered through a body portal so settings rows near the bottom of
+// the panel, inside scroll containers, or under any ancestor with
+// `overflow: hidden`/`auto` cannot clip it. The tooltip is positioned against
+// the trigger button's viewport rect, with automatic flip-up when there is
+// not enough room below and horizontal clamping inside the viewport so it
+// never spawns off-canvas.
+const INFO_BUBBLE_GAP = 6;
+const INFO_BUBBLE_VIEWPORT_PADDING = 8;
+const INFO_BUBBLE_MAX_WIDTH = 280;
+const INFO_BUBBLE_MIN_WIDTH = 200;
+
+type InfoBubblePlacement = 'top' | 'bottom';
+
+interface InfoBubblePosition {
+  top: number;
+  left: number;
+  placement: InfoBubblePlacement;
+}
+
 export function InfoBubble({
   description,
   note,
@@ -62,8 +85,82 @@ export function InfoBubble({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<InfoBubblePosition | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const tooltipRef = useRef<HTMLSpanElement | null>(null);
   const tooltipId = useId();
   const ariaLabel = label ?? 'More info';
+
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      const tooltip = tooltipRef.current;
+      if (!trigger || !tooltip) {
+        return;
+      }
+
+      const triggerRect = trigger.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      const spaceBelow = viewportHeight - triggerRect.bottom;
+      const spaceAbove = triggerRect.top;
+      const placement: InfoBubblePlacement =
+        spaceBelow >= tooltipRect.height + INFO_BUBBLE_GAP + INFO_BUBBLE_VIEWPORT_PADDING
+          ? 'bottom'
+          : spaceAbove >= tooltipRect.height + INFO_BUBBLE_GAP + INFO_BUBBLE_VIEWPORT_PADDING
+            ? 'top'
+            : spaceBelow >= spaceAbove
+              ? 'bottom'
+              : 'top';
+
+      const top = placement === 'bottom'
+        ? triggerRect.bottom + INFO_BUBBLE_GAP
+        : triggerRect.top - tooltipRect.height - INFO_BUBBLE_GAP;
+      const desiredLeft = triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2;
+      const minLeft = INFO_BUBBLE_VIEWPORT_PADDING;
+      const maxLeft = Math.max(minLeft, viewportWidth - tooltipRect.width - INFO_BUBBLE_VIEWPORT_PADDING);
+      const clampedLeft = Math.min(Math.max(desiredLeft, minLeft), maxLeft);
+      const minTop = INFO_BUBBLE_VIEWPORT_PADDING;
+      const maxTop = Math.max(minTop, viewportHeight - tooltipRect.height - INFO_BUBBLE_VIEWPORT_PADDING);
+      const clampedTop = Math.min(Math.max(top, minTop), maxTop);
+
+      setPosition({ top: clampedTop, left: clampedLeft, placement });
+    };
+
+    updatePosition();
+
+    const scrollOptions: AddEventListenerOptions = { passive: true, capture: true };
+    window.addEventListener('scroll', updatePosition, scrollOptions);
+    window.addEventListener('resize', updatePosition);
+
+    return () => {
+      window.removeEventListener('scroll', updatePosition, scrollOptions);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open]);
+
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
 
   return (
     <span
@@ -72,9 +169,11 @@ export function InfoBubble({
       onPointerLeave={() => setOpen(false)}
     >
       <button
+        ref={triggerRef}
         type="button"
         aria-label={ariaLabel}
-        aria-describedby={tooltipId}
+        aria-describedby={open ? tooltipId : undefined}
+        aria-expanded={open}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onClick={() => setOpen(prev => !prev)}
@@ -86,25 +185,34 @@ export function InfoBubble({
       >
         <Info size={11} />
       </button>
-      <span
-        id={tooltipId}
-        role="tooltip"
-        aria-hidden={!open}
-        className="pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 rounded border px-2.5 py-1.5 text-[10px] leading-4 transition-opacity"
-        style={{
-          opacity: open ? 1 : 0,
-          minWidth: 200,
-          maxWidth: 280,
-          borderColor: 'var(--overlay-workbench-settings-card-border)',
-          background: 'var(--overlay-workbench-settings-card-bg)',
-          color: 'var(--overlay-text-primary)',
-          boxShadow: '0 6px 18px rgba(0,0,0,0.32)',
-          whiteSpace: 'normal',
-        }}
-      >
-        <span className="block opacity-80">{description}</span>
-        {note ? <span className="mt-1 block opacity-60">{note}</span> : null}
-      </span>
+      {portalTarget
+        ? createPortal(
+            <span
+              ref={tooltipRef}
+              id={tooltipId}
+              role="tooltip"
+              aria-hidden={!open}
+              className="pointer-events-none fixed rounded border px-2.5 py-1.5 text-[10px] leading-4 transition-opacity"
+              style={{
+                top: position?.top ?? -9999,
+                left: position?.left ?? -9999,
+                opacity: open && position != null ? 1 : 0,
+                minWidth: INFO_BUBBLE_MIN_WIDTH,
+                maxWidth: INFO_BUBBLE_MAX_WIDTH,
+                zIndex: 2147483600,
+                borderColor: 'var(--overlay-workbench-settings-card-border)',
+                background: 'var(--overlay-workbench-settings-card-bg)',
+                color: 'var(--overlay-text-primary)',
+                boxShadow: '0 6px 18px rgba(0,0,0,0.32)',
+                whiteSpace: 'normal',
+              }}
+            >
+              <span className="block opacity-80">{description}</span>
+              {note ? <span className="mt-1 block opacity-60">{note}</span> : null}
+            </span>,
+            portalTarget,
+          )
+        : null}
     </span>
   );
 }

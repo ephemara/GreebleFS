@@ -84,6 +84,11 @@ import {
   loadTopBarPackagesFromDirectoryEntries,
 } from './topBarPackages';
 import {
+  loadExplorerLayoutPackagesFromDirectoryEntries,
+  normalizeExplorerLayoutDefinition,
+  type LoadedExplorerLayoutDefinition,
+} from './explorerLayouts';
+import {
   commands,
   unwrapTauriResult,
 } from '../runtime/tauriClient';
@@ -120,6 +125,7 @@ export interface OverlayThemeBundleManifest {
   preview?: string;
   appearancePackId?: string;
   topBarId?: string;
+  explorerLayoutId?: string;
   iconThemeId?: string;
   wallpaperId?: string;
   soundPackId?: string;
@@ -187,6 +193,7 @@ export interface ThemeBundleLocalCatalogs {
   wallpapers: LoadedThemeBundleLocalWallpaper[];
   homePacks: LoadedThemeBundleLocalHomePack[];
   menuPacks: LoadedThemeBundleLocalMenuPack[];
+  explorerLayouts: LoadedExplorerLayoutDefinition[];
   shaders: LoadedThemeBundleLocalId[];
   animations: LoadedThemeBundleLocalId[];
 }
@@ -272,6 +279,7 @@ export const themeSystemConfig = {
   childDirectoryNames: {
     appearancePacks: 'appearance-packs',
     topBars: 'top-bars',
+    explorerLayouts: 'explorer-layouts',
     iconThemes: 'icon-themes',
     wallpapers: 'wallpapers',
     shaders: 'shaders',
@@ -300,6 +308,7 @@ function emptyLocalCatalogs(): ThemeBundleLocalCatalogs {
     wallpapers: [],
     homePacks: [],
     menuPacks: [],
+    explorerLayouts: [],
     shaders: [],
     animations: [],
   };
@@ -486,6 +495,7 @@ function hasLegacyThemePackageFields(source: LooseRecord): boolean {
     'renderStyles',
     'themeRenderer',
     'defaultTopBarId',
+    'defaultExplorerLayoutId',
     'defaultHomePackId',
     'defaultShaderId',
     'defaultOpenAnimationId',
@@ -533,6 +543,7 @@ function parseThemeBundleManifestText(text: string, filePath: string): OverlayTh
     preview: asString(source.preview),
     appearancePackId: asString(source.appearancePackId),
     topBarId: asString(source.topBarId),
+    explorerLayoutId: asString(source.explorerLayoutId),
     iconThemeId: asString(source.iconThemeId),
     wallpaperId: asString(source.wallpaperId),
     soundPackId: asString(source.soundPackId),
@@ -691,6 +702,21 @@ function scopeMenuPackToBundle(
   };
 }
 
+function scopeExplorerLayoutToBundle(
+  bundleId: string,
+  bundleName: string,
+  layout: LoadedExplorerLayoutDefinition,
+): LoadedExplorerLayoutDefinition {
+  return normalizeExplorerLayoutDefinition(layout, {
+    fallbackId: layout.localId,
+    readOnly: true,
+    scopeId: bundleId,
+    source: 'theme-package',
+    sourceLabel: bundleName,
+    sourcePackageId: bundleId,
+  });
+}
+
 function createLocalRuntimeId(bundleId: string, fileName: string, type: 'shader' | 'animation'): LoadedThemeBundleLocalId {
   const localId = normalizeIdFragment(fileName.replace(/\.[^.]+$/, ''), type);
   return {
@@ -715,6 +741,7 @@ interface CollectedPackageLocalCatalogs {
   wallpapers: LoadedThemeBundleLocalWallpaper[];
   homePacks: LoadedThemeBundleLocalHomePack[];
   menuPacks: LoadedThemeBundleLocalMenuPack[];
+  explorerLayouts: LoadedExplorerLayoutDefinition[];
   shaders: LoadedThemeBundleLocalId[];
   animations: LoadedThemeBundleLocalId[];
 }
@@ -769,6 +796,7 @@ function collectPackageLocalCatalogs(packages: LoadedOverlayThemePackage[]): Col
     wallpapers: packages.flatMap(pkg => pkg.localCatalogs?.wallpapers ?? []),
     homePacks: packages.flatMap(pkg => pkg.localCatalogs?.homePacks ?? []),
     menuPacks: packages.flatMap(pkg => pkg.localCatalogs?.menuPacks ?? []),
+    explorerLayouts: packages.flatMap(pkg => pkg.localCatalogs?.explorerLayouts ?? []),
     shaders: packages.flatMap(pkg => pkg.localCatalogs?.shaders ?? []),
     animations: packages.flatMap(pkg => pkg.localCatalogs?.animations ?? []),
   };
@@ -964,6 +992,10 @@ export function resolveLoadedThemePackages(
       visuals: appearancePack?.appearance.visuals ?? packageInfo.theme.visuals,
       cssVars: appearancePack?.appearance.cssVars ?? packageInfo.theme.cssVars,
       defaultTopBarId: resolvedDefaultTopBarId,
+      defaultExplorerLayoutId: resolveScopedSelectionId(
+        manifest.explorerLayoutId,
+        packageLocalCatalogs.explorerLayouts,
+      ),
       defaultHomePackId: resolveScopedSelectionId(manifest.homePackId, packageLocalCatalogs.homePacks),
       defaultMenuPackId: resolveScopedSelectionId(manifest.menuPackId, packageLocalCatalogs.menuPacks),
       defaultSoundPackId: resolveScopedSelectionId(manifest.soundPackId, packageLocalCatalogs.soundPacks)
@@ -1113,9 +1145,10 @@ async function buildThemeBundlePackage(
     return loadChildDirectoryEntries(childDirectoryPath);
   };
 
-  const [appearanceEntries, topBarEntries, iconThemeEntries, wallpaperEntries, shaderEntries, animationEntries, interactionMotionEntries, soundPackEntries, shellRendererEntries, themeRecipeEntries, themeEngineEntries, homePackEntries, menuPackEntries] = await Promise.all([
+  const [appearanceEntries, topBarEntries, explorerLayoutEntries, iconThemeEntries, wallpaperEntries, shaderEntries, animationEntries, interactionMotionEntries, soundPackEntries, shellRendererEntries, themeRecipeEntries, themeEngineEntries, homePackEntries, menuPackEntries] = await Promise.all([
     loadEntries(themeSystemConfig.childDirectoryNames.appearancePacks),
     loadEntries(themeSystemConfig.childDirectoryNames.topBars),
+    loadEntries(themeSystemConfig.childDirectoryNames.explorerLayouts),
     loadEntries(themeSystemConfig.childDirectoryNames.iconThemes),
     loadEntries(themeSystemConfig.childDirectoryNames.wallpapers),
     loadEntries(themeSystemConfig.childDirectoryNames.shaders),
@@ -1132,6 +1165,7 @@ async function buildThemeBundlePackage(
   const [
     appearanceResult,
     topBarPackageResult,
+    explorerLayoutPackageResult,
     iconThemePackageResult,
     interactionMotionResult,
     soundPackResult,
@@ -1149,6 +1183,7 @@ async function buildThemeBundlePackage(
       virtualRoot: record.directoryPath,
     }),
     loadTopBarPackagesFromDirectoryEntries(topBarEntries, record.directoryPath),
+    loadExplorerLayoutPackagesFromDirectoryEntries(explorerLayoutEntries, record.directoryPath),
     loadIconThemePackagesFromDirectoryEntries(iconThemeEntries, record.directoryPath),
     loadThemeInteractionMotionPacksFromDirectoryEntries(interactionMotionEntries, {
       scopeId: bundleId,
@@ -1193,6 +1228,11 @@ async function buildThemeBundlePackage(
   localCatalogs.wallpapers.push(...childWallpaperResult);
   localCatalogs.homePacks.push(...homePackResult.packs.map(pack => scopeHomePackToBundle(bundleId, pack)));
   localCatalogs.menuPacks.push(...menuPackResult.packs.map(pack => scopeMenuPackToBundle(bundleId, pack)));
+  localCatalogs.explorerLayouts.push(
+    ...explorerLayoutPackageResult.packages
+      .flatMap(pkg => pkg.layouts)
+      .map(layout => scopeExplorerLayoutToBundle(bundleId, bundleName, layout)),
+  );
   localCatalogs.shaders.push(...childShaderResult.localIds);
   localCatalogs.animations.push(...childAnimationResult.localIds);
 
@@ -1207,6 +1247,7 @@ async function buildThemeBundlePackage(
     ...themeRecipeResult.warnings,
     ...themeEngineResult.warnings,
     ...topBarPackageResult.warnings,
+    ...explorerLayoutPackageResult.warnings,
     ...iconThemePackageResult.warnings,
     ...homePackResult.warnings,
     ...menuPackResult.warnings,
@@ -1611,6 +1652,7 @@ export function createThemeBundleManifestFromThemeDefinition(
     description: theme.description,
     extends: theme.extendsThemeId,
     topBarId: theme.defaultTopBarId,
+    explorerLayoutId: theme.defaultExplorerLayoutId,
     iconThemeId: theme.assets?.iconTheme?.id,
     shaderId: theme.defaultShaderId,
     openAnimationId: theme.defaultOpenAnimationId,

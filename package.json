@@ -33,7 +33,12 @@
     "test:rust": "node scripts/run-cargo-tests.mjs",
     "test:rust:vps": "bash scripts/with-vps-artifacts.sh bun run test:rust",
     "test:all": "vitest run && vitest run --config vitest.browser.config.ts && node scripts/run-cargo-tests.mjs && vitest run --coverage",
-    "heartbeat:pass": "node scripts/run-heartbeat-pass.mjs"
+    "heartbeat:pass": "node scripts/run-heartbeat-pass.mjs",
+    "go:bootstrap": "bash scripts/go/bootstrap.sh",
+    "go:status": "bash scripts/go/status.sh",
+    "go:build": "bash scripts/go/build.sh",
+    "go:test": "bash scripts/go/test.sh",
+    "go:check": "bash scripts/go/check.sh"
   },
   "dependencies": {
     "@babel/parser": "^7.29.2",

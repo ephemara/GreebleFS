@@ -55,6 +55,16 @@ export const managedContentDirectoryCatalog = [
     order: 25,
   },
   {
+    id: 'explorerLayouts',
+    label: 'Explorer Layouts',
+    description: 'Author file-backed explorer layouts, chrome snapshots, and pane presets here.',
+    keywords: ['explorer layout', 'layout preset', 'chrome snapshot', 'workspace header'],
+    releaseDirectoryName: 'explorer-layouts',
+    legacyRelativeDirectoryName: 'explorer-layouts',
+    envVarSuffix: 'EXPLORER_LAYOUTS',
+    order: 26,
+  },
+  {
     id: 'homePacks',
     label: 'Home Packs',
     description: 'Author explorer home dashboards, presets, and runtime modules here.',
@@ -83,6 +93,16 @@ export const managedContentDirectoryCatalog = [
     legacyRelativeDirectoryName: 'actions',
     envVarSuffix: 'ACTIONS',
     order: 29.5,
+  },
+  {
+    id: 'runtimes',
+    label: 'Runtime Packages',
+    description: 'Drop authored polyglot runtime packages (Go, Wasm, Python sidecars) here. Each runtime owns a `runtime.toml` plus its source tree.',
+    keywords: ['runtime', 'sidecar', 'wasm', 'panel', 'go', 'python sidecar', 'native command'],
+    releaseDirectoryName: 'runtimes',
+    legacyRelativeDirectoryName: 'runtimes',
+    envVarSuffix: 'RUNTIMES',
+    order: 29.7,
   },
   {
     id: 'iconThemes',

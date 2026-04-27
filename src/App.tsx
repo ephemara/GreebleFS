@@ -135,6 +135,14 @@ import {
   type LoadedExplorerMenuPack,
 } from './config/menuPacks';
 import {
+  collectExplorerLayoutsFromPackages,
+  collectUniqueExplorerLayouts,
+  loadExplorerLayoutPackages as discoverExplorerLayoutPackages,
+  explorerLayoutSystemConfig,
+  type LoadedExplorerLayoutDefinition,
+  type LoadedExplorerLayoutPackage,
+} from './config/explorerLayouts';
+import {
   createEmptyGlobalThemeBundleCatalogs,
   loadThemePackages as discoverThemePackages,
   resolveLoadedThemePackages,
@@ -685,6 +693,7 @@ function App() {
   const shaderSignatureRef = useRef('');
   const wallpaperSignatureRef = useRef('');
   const topBarPackagesSignatureRef = useRef('');
+  const explorerLayoutPackagesSignatureRef = useRef('');
   const themePackagesSignatureRef = useRef('');
   const iconThemePackagesSignatureRef = useRef('');
   const soundPacksSignatureRef = useRef('');
@@ -699,6 +708,8 @@ function App() {
   const authoredWallpapersRefreshQueuedRef = useRef(false);
   const topBarPackagesRefreshInFlightRef = useRef(false);
   const topBarPackagesRefreshQueuedRef = useRef(false);
+  const explorerLayoutPackagesRefreshInFlightRef = useRef(false);
+  const explorerLayoutPackagesRefreshQueuedRef = useRef(false);
   const themePackagesRefreshInFlightRef = useRef(false);
   const themePackagesRefreshQueuedRef = useRef(false);
   const iconThemePackagesRefreshInFlightRef = useRef(false);
@@ -733,6 +744,10 @@ function App() {
   const [topBarPackagesLoading, setTopBarPackagesLoading] = useState(true);
   const [topBarPackagesError, setTopBarPackagesError] = useState<string | null>(null);
   const [topBarPackagesWarnings, setTopBarPackagesWarnings] = useState<string[]>([]);
+  const [explorerLayoutPackages, setExplorerLayoutPackages] = useState<LoadedExplorerLayoutPackage[]>([]);
+  const [explorerLayoutPackagesLoading, setExplorerLayoutPackagesLoading] = useState(true);
+  const [explorerLayoutPackagesError, setExplorerLayoutPackagesError] = useState<string | null>(null);
+  const [explorerLayoutPackagesWarnings, setExplorerLayoutPackagesWarnings] = useState<string[]>([]);
   const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
   const [themePackagesLoading, setThemePackagesLoading] = useState(true);
   const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
@@ -990,6 +1005,15 @@ function App() {
     }
     return [...packMap.values()].sort((left, right) => left.name.localeCompare(right.name));
   }, [combinedThemePackages, menuPacks]);
+  const combinedExplorerLayouts = useMemo<LoadedExplorerLayoutDefinition[]>(() => {
+    const themedLayouts = combinedThemePackages.flatMap(
+      themePackage => themePackage.localCatalogs?.explorerLayouts ?? [],
+    );
+    return collectUniqueExplorerLayouts(
+      collectExplorerLayoutsFromPackages(explorerLayoutPackages),
+      themedLayouts,
+    );
+  }, [combinedThemePackages, explorerLayoutPackages]);
   const combinedActionPacks = useMemo(() => {
     const packMap = new Map<string, LoadedActionPack>();
     for (const pack of actionPacks) {
@@ -1758,7 +1782,10 @@ function App() {
       .then(unwrapTauriResult)
       .then(status => {
         if (!cancelled) {
-          updateSystem({ linuxDisplayBackendPreference: status.preferredBackend });
+          updateSystem({
+            linuxDisplayBackendPreference: status.preferredBackend,
+            linuxNvidiaWebkitWorkaroundMode: status.nvidiaWebkitWorkaroundMode,
+          });
         }
       })
       .catch(error => {
@@ -3552,6 +3579,66 @@ function App() {
     }
   }, []);
 
+  const refreshExplorerLayoutPackages = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setExplorerLayoutPackages([]);
+      setExplorerLayoutPackagesError(null);
+      setExplorerLayoutPackagesWarnings([]);
+      setExplorerLayoutPackagesLoading(false);
+      return;
+    }
+
+    if (force) {
+      explorerLayoutPackagesRefreshQueuedRef.current = true;
+    }
+    if (explorerLayoutPackagesRefreshInFlightRef.current) {
+      explorerLayoutPackagesRefreshQueuedRef.current = true;
+      return;
+    }
+
+    explorerLayoutPackagesRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || explorerLayoutPackagesRefreshQueuedRef.current;
+        explorerLayoutPackagesRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          explorerLayoutPackagesSignatureRef.current = '';
+        }
+
+        setExplorerLayoutPackagesLoading(prev => prev && !nextForce);
+        try {
+          await ensureDir(explorerLayoutSystemConfig.explorerLayoutsDirectory);
+          const listed = await listExplorerDir(explorerLayoutSystemConfig.explorerLayoutsDirectory, false);
+          const nextSignature = listed
+            .map(entry => `${entry.path}:${entry.modified}`)
+            .sort()
+            .join('|');
+
+          if (!nextForce && nextSignature === explorerLayoutPackagesSignatureRef.current) {
+            setExplorerLayoutPackagesLoading(false);
+            continue;
+          }
+
+          explorerLayoutPackagesSignatureRef.current = nextSignature;
+          const result = await discoverExplorerLayoutPackages();
+          setExplorerLayoutPackages(result.packages);
+          setExplorerLayoutPackagesError(result.sourceError);
+          setExplorerLayoutPackagesWarnings(result.warnings);
+        } catch (error) {
+          setExplorerLayoutPackages([]);
+          setExplorerLayoutPackagesError(String(error));
+          setExplorerLayoutPackagesWarnings([]);
+        } finally {
+          setExplorerLayoutPackagesLoading(false);
+        }
+      } while (explorerLayoutPackagesRefreshQueuedRef.current);
+    } finally {
+      explorerLayoutPackagesRefreshInFlightRef.current = false;
+    }
+  }, []);
+
   const refreshTopBarCatalog = useCallback(async () => {
     await Promise.all([
       refreshTopBarPackages(true),
@@ -4007,6 +4094,22 @@ function App() {
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshTopBarPackages]);
 
+  useEffect(() => {
+    void refreshExplorerLayoutPackages(true);
+  }, [refreshExplorerLayoutPackages]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !explorerLayoutSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshExplorerLayoutPackages();
+    }, explorerLayoutSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshExplorerLayoutPackages]);
+
   const panelDefinitions: OverlayPanelDefinition[] = useMemo(
     () => [
       ...createBuiltInPanelDefinitions({
@@ -4033,6 +4136,11 @@ function App() {
         topBarPackagesLoading,
         topBarPackagesError,
         topBarPackagesWarnings,
+        explorerLayouts: combinedExplorerLayouts,
+        explorerLayoutsDirectory: explorerLayoutSystemConfig.explorerLayoutsDirectory,
+        explorerLayoutsLoading: explorerLayoutPackagesLoading,
+        explorerLayoutsError: explorerLayoutPackagesError,
+        explorerLayoutsWarnings: explorerLayoutPackagesWarnings,
         homePacks: combinedHomePacks,
         menuPacks: combinedMenuPacks,
         actionsDirectory: actionPackSystemConfig.actionsDirectory,
@@ -4187,6 +4295,7 @@ function App() {
       actionPacksLoading,
       actionPacksWarnings,
       combinedActionPacks,
+      combinedExplorerLayouts,
       combinedExplorerActions,
       combinedHomePacks,
       pluginContributedShaders,
@@ -4231,6 +4340,9 @@ function App() {
       iconThemePackages,
       importWallpaperFiles,
       explorerDefaultModeProfileId,
+      explorerLayoutPackagesError,
+      explorerLayoutPackagesLoading,
+      explorerLayoutPackagesWarnings,
       explorerPanelLayoutMode,
       iconThemePackagesError,
       iconThemePackagesLoading,

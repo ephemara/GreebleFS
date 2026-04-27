@@ -38,7 +38,6 @@ import {
 import {
   getExplorerChromeSurfaceDefinition,
   moveExplorerChromeControlInResolvedSurfaces,
-  resolveExplorerChromeSurfaceLayout,
   type ExplorerChromeControlId,
   type ExplorerChromeControlDefinition,
   type ExplorerChromeOverrideEntry,
@@ -53,6 +52,7 @@ import type {
   OverlayPluginExplorerActionContribution,
 } from "../../config/pluginContributions";
 import type { ExplorerLayoutMode } from "../../config/layoutProfiles";
+import type { LoadedExplorerLayoutDefinition } from "../../config/explorerLayouts";
 import type { LoadedExplorerHomePack } from "../../config/homePackages";
 import type { LoadedExplorerMenuPack } from "../../config/menuPacks";
 import {
@@ -90,13 +90,10 @@ import {
 } from "../../runtime/actionBackend";
 import { recordExplorerActionRun } from "../../store/explorerActionRunStore";
 import { openExplorerTaskCenter } from "../../store/explorerTaskStore";
-import {
-  ExplorerChromeSurface,
-  type ExplorerChromeSurfaceLayoutDynamics,
-} from "./ExplorerChromeSurface";
 import { ExplorerDragOverlay } from "./ExplorerDragOverlay";
 import { FileExplorer } from "../FileExplorer";
 import type {
+  ExplorerExternalChromeControlDefinition,
   ExplorerWorkspaceNavigationRequest,
   ExplorerWorkspaceRevealRequest,
   ExplorerWorkspaceRefreshRequest,
@@ -138,6 +135,7 @@ interface ExplorerWorkspaceProps {
   actions?: LoadedExplorerAction[];
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
+  explorerLayouts?: LoadedExplorerLayoutDefinition[];
   layoutMode?: ExplorerLayoutMode;
   defaultModeProfileId?: ExplorerModeProfileId | null;
   chromeControlSurface?: "toolbar" | "topbar";
@@ -335,6 +333,7 @@ export function ExplorerWorkspace({
   actions = [],
   pluginActions = [],
   pluginContextMenuItems = [],
+  explorerLayouts = [],
   layoutMode = "full",
   defaultModeProfileId = null,
   chromeControlSurface = "toolbar",
@@ -1215,89 +1214,6 @@ export function ExplorerWorkspace({
       });
     },
     [chromeEditSession, findRegisteredWorkspaceChromePlacement, updateChromeEditDraft],
-  );
-  const handleWorkspaceChromeDynamicSurfaceCommit = useCallback(
-    (snapshot: {
-      entries: Array<{
-        nodeId: string;
-        bandId: string;
-        x: number;
-        y: number;
-        widthPx?: number;
-        heightPx?: number;
-      }>;
-    }) => {
-      if (!chromeEditSession) {
-        return;
-      }
-
-      const currentSurface =
-        chromeEditSession.registeredSurfaces.workspaceHeader ?? null;
-      const visibleControlIdsOnSurface = new Set(
-        currentSurface?.visibleControlIds ?? [],
-      );
-      const surfaceDefinition =
-        getExplorerChromeSurfaceDefinition("workspaceHeader");
-      const rowDefinitionById = new Map(
-        surfaceDefinition.rows.map((row) => [row.id, row] as const),
-      );
-      const bandOrderCursorById = new Map<string, number>();
-      const nextSurfaceEntries = snapshot.entries.map((entry) => {
-        const controlId = entry.nodeId as ExplorerChromeControlId;
-        const existingEntry =
-          chromeEditSession.draftOverride.entries.find(
-            (draftEntry) => draftEntry.controlId === controlId,
-          ) ?? null;
-        const visiblePlacement = findRegisteredWorkspaceChromePlacement(controlId);
-        const surfaceRow = rowDefinitionById.get(entry.bandId);
-        const fallbackZone =
-          surfaceRow?.zones[0] ??
-          visiblePlacement?.zone ??
-          surfaceDefinition.rows[0]?.zones[0] ??
-          "start";
-        const bandEntryOrder = (bandOrderCursorById.get(entry.bandId) ?? 0) + 1;
-        bandOrderCursorById.set(entry.bandId, bandEntryOrder);
-        const bandRowIndex = Math.max(
-          0,
-          surfaceDefinition.rows.findIndex((row) => row.id === entry.bandId),
-        );
-        return {
-          controlId,
-          surfaceId: "workspaceHeader" as const,
-          zone: fallbackZone,
-          order: bandRowIndex * 1000 + bandEntryOrder * 10,
-          bandId: entry.bandId,
-          anchorX: entry.x,
-          anchorY: entry.y,
-          offsetPx: 0,
-          hidden: false,
-          sizeVariant:
-            existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
-          widthPx:
-            entry.widthPx ??
-            existingEntry?.widthPx ??
-            visiblePlacement?.widthPx,
-          showLabel: existingEntry?.showLabel ?? visiblePlacement?.showLabel,
-          showIcon: existingEntry?.showIcon ?? visiblePlacement?.showIcon,
-        };
-      });
-      const preservedEntries = chromeEditSession.draftOverride.entries.filter(
-        (entry) =>
-          entry.hidden === true ||
-          entry.surfaceId !== "workspaceHeader" ||
-          !visibleControlIdsOnSurface.has(entry.controlId),
-      );
-      updateChromeEditDraft({
-        entries: [...preservedEntries, ...nextSurfaceEntries],
-      });
-      setChromeEditHighlightedDropTarget(null);
-    },
-    [
-      chromeEditSession,
-      findRegisteredWorkspaceChromePlacement,
-      setChromeEditHighlightedDropTarget,
-      updateChromeEditDraft,
-    ],
   );
   const removeWorkspaceChromeControlFromDraft = useCallback(
     (controlId: ExplorerChromeControlId) => {
@@ -2646,6 +2562,23 @@ export function ExplorerWorkspace({
       theme.accent,
     ],
   );
+  const mapWorkspaceChromeSurfacesToUnifiedHeader = useCallback(
+    (
+      surfaces: ExplorerChromeSurfaceId[],
+    ): ExplorerChromeSurfaceId[] => {
+      const nextSurfaces = new Set<ExplorerChromeSurfaceId>();
+      for (const surfaceId of surfaces) {
+        if (surfaceId === "workspaceHeader") {
+          nextSurfaces.add("explorerTopbar");
+          nextSurfaces.add("explorerToolbar");
+          continue;
+        }
+        nextSurfaces.add(surfaceId);
+      }
+      return [...nextSurfaces];
+    },
+    [],
+  );
   const workspaceChromeActionRegistry = useMemo<
     Array<
       ExplorerChromeControlDefinition & {
@@ -2666,12 +2599,19 @@ export function ExplorerWorkspace({
         .map((entry) => ({
           id: entry.controlId,
           label: entry.label,
-          surfaces: entry.surfaces,
-          isVisible: (surfaceId) => entry.surfaces.includes(surfaceId),
+          surfaces: mapWorkspaceChromeSurfacesToUnifiedHeader(entry.surfaces),
+          isVisible: (surfaceId) =>
+            mapWorkspaceChromeSurfacesToUnifiedHeader(entry.surfaces).includes(
+              surfaceId,
+            ),
           render: (placement) =>
             renderWorkspaceActionChromeControl(entry, placement),
         })),
-    [renderWorkspaceActionChromeControl, workspaceCustomizeCatalog],
+    [
+      mapWorkspaceChromeSurfacesToUnifiedHeader,
+      renderWorkspaceActionChromeControl,
+      workspaceCustomizeCatalog,
+    ],
   );
   const workspaceChromeControlRegistry = useMemo<
     Array<
@@ -2687,42 +2627,42 @@ export function ExplorerWorkspace({
       {
         id: "workspaceTabStrip",
         label: "Workspace Tabs",
-        surfaces: ["workspaceHeader"],
+        surfaces: ["explorerTopbar", "explorerToolbar"],
         isVisible: () => true,
         render: renderWorkspaceTabStrip,
       },
       {
         id: "workspacePaneCounts",
         label: "Workspace Layout",
-        surfaces: ["workspaceHeader"],
+        surfaces: ["explorerTopbar", "explorerToolbar"],
         isVisible: () => true,
         render: renderWorkspacePaneCountsControl,
       },
       {
         id: "workspaceTabs",
         label: "Workspace Tabs",
-        surfaces: ["workspaceHeader"],
+        surfaces: ["explorerTopbar", "explorerToolbar"],
         isVisible: () => false,
         render: () => null,
       },
       {
         id: "workspaceNewTab",
         label: "New Tab",
-        surfaces: ["workspaceHeader"],
+        surfaces: ["explorerTopbar", "explorerToolbar"],
         isVisible: () => true,
         render: renderWorkspaceNewTabControl,
       },
       {
         id: "workspacePaneActionsMenu",
         label: "Pane Actions Menu",
-        surfaces: ["workspaceHeader"],
+        surfaces: ["explorerTopbar", "explorerToolbar"],
         isVisible: () => true,
         render: renderWorkspacePaneActionsMenuControl,
       },
       {
         id: "workspaceSplitToggle",
         label: "Workspace Layout",
-        surfaces: ["workspaceHeader"],
+        surfaces: ["explorerTopbar", "explorerToolbar"],
         isVisible: () => false,
         render: () => null,
       },
@@ -2956,6 +2896,18 @@ export function ExplorerWorkspace({
     },
     [activateWorkspaceChromeCommand, workspaceCommandControlIdByCommandId],
   );
+  const externalWorkspaceChromeControls = useMemo<
+    ExplorerExternalChromeControlDefinition[]
+  >(
+    () =>
+      workspaceChromeControlRegistry.map((entry) => ({
+        ...entry,
+        activate: () => {
+          activateWorkspaceChromeCommand(entry.id);
+        },
+      })),
+    [activateWorkspaceChromeCommand, workspaceChromeControlRegistry],
+  );
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const activeElement = document.activeElement;
@@ -3092,12 +3044,16 @@ export function ExplorerWorkspace({
             onExplorerPickerCancel={onExplorerPickerCancel}
             theme={theme}
             onAddBookmark={onAddBookmark}
+            explorerLayouts={explorerLayouts}
             homePacks={homePacks}
             menuPacks={menuPacks}
             onOpenPanel={onOpenPanel}
             onOpenSettingsSection={onOpenSettingsSection}
             onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
             onOpenInTerminal={onOpenInTerminal}
+            externalChromeControls={
+              isActivePane ? externalWorkspaceChromeControls : []
+            }
           />
         </div>
       );
@@ -3113,6 +3069,8 @@ export function ExplorerWorkspace({
       pendingOpenRequest,
       actions,
       defaultModeProfileId,
+      explorerLayouts,
+      externalWorkspaceChromeControls,
       homePacks,
       onOpenInFilesystemAquarium,
       onOpenInTerminal,
@@ -3216,30 +3174,6 @@ export function ExplorerWorkspace({
         gap: 10,
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          minHeight: 36,
-          padding: "6px 10px",
-          borderRadius: 14,
-          border: "1px solid var(--overlay-border)",
-          background:
-            "color-mix(in srgb, var(--overlay-bg-panel) 88%, black 12%)",
-        }}
-      >
-        <ExplorerChromeSurface
-          surface={workspaceHeaderSurface}
-          style={{ width: "100%" }}
-          getRowStyle={() => workspaceHeaderRowStyle}
-          getZoneStyle={getWorkspaceHeaderZoneStyle}
-          renderControl={renderWorkspaceChromeControl}
-          layoutDynamics={workspaceHeaderLayoutDynamics}
-          editMode={workspaceChromeEditMode}
-        />
-      </div>
       {workspaceLayoutMode === "single" ? (
         <div style={{ flex: 1, minHeight: 0 }}>
           {renderPane("pane-1", activeWorkspaceTab?.panes["pane-1"] ?? null)}

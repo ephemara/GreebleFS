@@ -1,1 +1,0 @@
-making a big huge note holy shit why does this thing feel so fucking smooth omg

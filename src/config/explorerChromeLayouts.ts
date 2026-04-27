@@ -1351,7 +1351,11 @@ function getBasePlacement(
   controlId: ExplorerChromeControlId,
   surfaceId: ExplorerChromeSurfaceId,
 ): ExplorerChromeResolvedControlPlacement | null {
-  const placement = layout.placements[controlId]?.[surfaceId];
+  const placement =
+    layout.placements[controlId]?.[surfaceId] ??
+    (surfaceId === "explorerTopbar"
+      ? layout.placements[controlId]?.workspaceHeader
+      : undefined);
   if (!placement) {
     return null;
   }
@@ -1383,7 +1387,11 @@ function getOverridePlacement(
     return null;
   }
 
-  if (overridePlacement.surfaceId !== surfaceId) {
+  const normalizedOverrideSurfaceId =
+    overridePlacement.surfaceId === "workspaceHeader"
+      ? "explorerTopbar"
+      : overridePlacement.surfaceId;
+  if (normalizedOverrideSurfaceId !== surfaceId) {
     return basePlacement?.surfaceId === surfaceId ? null : null;
   }
 

@@ -1,0 +1,45 @@
+{
+  "$schema": "./toolchains.schema.json",
+  "schemaVersion": 1,
+  "description": "Pinned Go toolchain manifest for the GreebleFS universal runtime pipeline. The host probes installed toolchains at runtime; this file declares the versions release builds expect, plus per-platform install hints.",
+  "go": {
+    "minimumVersion": "1.22.0",
+    "preferredVersion": "1.24.0",
+    "linux": {
+      "downloadUrl": "https://go.dev/dl/go1.24.0.linux-amd64.tar.gz",
+      "expectedSha256": null,
+      "installRoot": "/usr/local/go"
+    },
+    "macos": {
+      "downloadUrl": "https://go.dev/dl/go1.24.0.darwin-arm64.tar.gz",
+      "expectedSha256": null,
+      "installRoot": "/usr/local/go"
+    },
+    "windows": {
+      "downloadUrl": "https://go.dev/dl/go1.24.0.windows-amd64.zip",
+      "expectedSha256": null,
+      "installRoot": "C\\\\Go"
+    }
+  },
+  "tinygo": {
+    "minimumVersion": "0.31.0",
+    "preferredVersion": "0.31.2",
+    "linux": {
+      "downloadUrl": "https://github.com/tinygo-org/tinygo/releases/download/v0.31.2/tinygo0.31.2.linux-amd64.tar.gz",
+      "expectedSha256": null
+    },
+    "macos": {
+      "downloadUrl": "https://github.com/tinygo-org/tinygo/releases/download/v0.31.2/tinygo0.31.2.darwin-arm64.tar.gz",
+      "expectedSha256": null
+    },
+    "windows": {
+      "downloadUrl": "https://github.com/tinygo-org/tinygo/releases/download/v0.31.2/tinygo0.31.2.windows-amd64.zip",
+      "expectedSha256": null
+    }
+  },
+  "wasmExec": {
+    "description": "Path to the GOROOT-bundled wasm_exec.js the host copies into public/runtime/wasm_exec.js for the GoPanelHost loader.",
+    "relativeFromGoroot": "misc/wasm/wasm_exec.js",
+    "publicAssetPath": "public/runtime/wasm_exec.js"
+  }
+}

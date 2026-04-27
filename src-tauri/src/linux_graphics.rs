@@ -44,6 +44,29 @@ pub enum LinuxDisplayBackendPreference {
     X11,
 }
 
+/// User intent for the NVIDIA-on-Linux WebKit workaround that sets
+/// `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `__NV_DISABLE_EXPLICIT_SYNC=1` before
+/// `tauri::Builder::default()` boots WebKit.
+///
+/// - `Auto` keeps the historic behavior: enable on NVIDIA + X11/Wayland sessions.
+/// - `ForceOn` always enables the workaround on Linux (useful when older drivers
+///   regress and the auto-detection misses them).
+/// - `ForceOff` skips the workaround entirely so modern NVIDIA + Wayland stacks
+///   (driver 555+, KWin/Plasma 6.x) can use the explicit-sync compositor path.
+///
+/// Pre-set environment variables always win over this preference, so operators
+/// can still override from the shell.
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum LinuxNvidiaWebkitWorkaroundMode {
+    #[default]
+    Auto,
+    ForceOn,
+    ForceOff,
+}
+
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct LinuxDisplayBackendStatus {
@@ -52,6 +75,8 @@ pub struct LinuxDisplayBackendStatus {
     pub active_backend: Option<LinuxDisplayBackend>,
     pub preferred_backend: LinuxDisplayBackendPreference,
     pub auto_x11_fallback_active: bool,
+    pub nvidia_gpu_detected: bool,
+    pub nvidia_webkit_workaround_mode: LinuxNvidiaWebkitWorkaroundMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +119,8 @@ struct LinuxGraphicsEnvironmentSnapshot {
 struct StartupPreferences {
     #[serde(default)]
     linux_display_backend_preference: LinuxDisplayBackendPreference,
+    #[serde(default)]
+    linux_nvidia_webkit_workaround_mode: LinuxNvidiaWebkitWorkaroundMode,
 }
 
 impl LinuxGraphicsEnvironmentSnapshot {
@@ -447,8 +474,21 @@ fn resolve_linux_webkit_nvidia_workaround(
     environment: &LinuxGraphicsEnvironmentSnapshot,
     active_backend: Option<LinuxDisplayBackend>,
     nvidia_gpu_detected: bool,
+    workaround_mode: LinuxNvidiaWebkitWorkaroundMode,
 ) -> Option<LinuxWebkitNvidiaWorkaroundPlan> {
-    if !nvidia_gpu_detected {
+    // ForceOff short-circuits the entire helper. Any pre-set env vars from the
+    // shell are preserved as-is by virtue of `set_var` only being called below
+    // when we actually emit a plan, so users can still force the workaround on
+    // externally if they want.
+    if matches!(workaround_mode, LinuxNvidiaWebkitWorkaroundMode::ForceOff) {
+        return None;
+    }
+
+    // ForceOn ignores the NVIDIA-detection gate but still respects existing
+    // env vars and the active-backend filter. We never set them on a session
+    // we don't recognize as X11 or Wayland.
+    let bypass_nvidia_gate = matches!(workaround_mode, LinuxNvidiaWebkitWorkaroundMode::ForceOn);
+    if !nvidia_gpu_detected && !bypass_nvidia_gate {
         return None;
     }
 
@@ -542,6 +582,8 @@ pub(crate) fn current_linux_display_backend_status() -> LinuxDisplayBackendStatu
         linux_nvidia_gpu_detected(Path::new(SYSFS_DRM_ROOT), Path::new(SYS_MODULE_ROOT));
     let (preferred_backend, selection) =
         resolve_linux_backend_preference_and_selection(&environment, nvidia_gpu_detected);
+    let nvidia_webkit_workaround_mode =
+        current_startup_preferences().linux_nvidia_webkit_workaround_mode;
 
     LinuxDisplayBackendStatus {
         available_backends: collect_available_linux_display_backends(&environment),
@@ -551,15 +593,25 @@ pub(crate) fn current_linux_display_backend_status() -> LinuxDisplayBackendStatu
             .or_else(|| resolve_active_linux_display_backend(&environment)),
         preferred_backend,
         auto_x11_fallback_active: selection.auto_x11_fallback_active,
+        nvidia_gpu_detected,
+        nvidia_webkit_workaround_mode,
     }
 }
 
 pub(crate) fn set_linux_display_backend_preference(
     preferred_backend: LinuxDisplayBackendPreference,
 ) -> Result<(), String> {
-    persist_startup_preferences(&StartupPreferences {
-        linux_display_backend_preference: preferred_backend,
-    })
+    let mut prefs = current_startup_preferences();
+    prefs.linux_display_backend_preference = preferred_backend;
+    persist_startup_preferences(&prefs)
+}
+
+pub(crate) fn set_linux_nvidia_webkit_workaround_mode(
+    workaround_mode: LinuxNvidiaWebkitWorkaroundMode,
+) -> Result<(), String> {
+    let mut prefs = current_startup_preferences();
+    prefs.linux_nvidia_webkit_workaround_mode = workaround_mode;
+    persist_startup_preferences(&prefs)
 }
 
 #[cfg(target_os = "linux")]
@@ -583,23 +635,37 @@ pub(crate) fn apply_linux_graphics_startup_configuration() {
 
     let configured_environment = LinuxGraphicsEnvironmentSnapshot::from_process_environment();
     let active_backend = resolve_active_linux_display_backend(&configured_environment);
+    let workaround_mode = current_startup_preferences().linux_nvidia_webkit_workaround_mode;
+
+    if matches!(workaround_mode, LinuxNvidiaWebkitWorkaroundMode::ForceOff) {
+        eprintln!(
+            "GreebleFS: skipping Linux NVIDIA WebKit workaround (force-off via startup preference)"
+        );
+    }
 
     if let Some(plan) = resolve_linux_webkit_nvidia_workaround(
         &configured_environment,
         active_backend,
         nvidia_gpu_detected,
+        workaround_mode,
     ) {
+        let mode_label = match workaround_mode {
+            LinuxNvidiaWebkitWorkaroundMode::Auto => "auto",
+            LinuxNvidiaWebkitWorkaroundMode::ForceOn => "force-on",
+            LinuxNvidiaWebkitWorkaroundMode::ForceOff => "force-off",
+        };
+
         if plan.disable_dmabuf_renderer {
             env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
             eprintln!(
-                "GreebleFS: applied Linux NVIDIA WebKit workaround: WEBKIT_DISABLE_DMABUF_RENDERER=1"
+                "GreebleFS: applied Linux NVIDIA WebKit workaround ({mode_label}): WEBKIT_DISABLE_DMABUF_RENDERER=1"
             );
         }
 
         if plan.disable_nv_explicit_sync {
             env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
             eprintln!(
-                "GreebleFS: applied Linux NVIDIA WebKit workaround: __NV_DISABLE_EXPLICIT_SYNC=1"
+                "GreebleFS: applied Linux NVIDIA WebKit workaround ({mode_label}): __NV_DISABLE_EXPLICIT_SYNC=1"
             );
         }
     }
@@ -707,6 +773,7 @@ mod tests {
                 &environment,
                 Some(LinuxDisplayBackend::X11),
                 true,
+                LinuxNvidiaWebkitWorkaroundMode::Auto,
             ),
             Some(LinuxWebkitNvidiaWorkaroundPlan {
                 disable_dmabuf_renderer: true,
@@ -732,6 +799,7 @@ mod tests {
                 &environment,
                 Some(LinuxDisplayBackend::Wayland),
                 true,
+                LinuxNvidiaWebkitWorkaroundMode::Auto,
             ),
             Some(LinuxWebkitNvidiaWorkaroundPlan {
                 disable_dmabuf_renderer: true,
@@ -757,9 +825,59 @@ mod tests {
                 &environment,
                 Some(LinuxDisplayBackend::Wayland),
                 true,
+                LinuxNvidiaWebkitWorkaroundMode::Auto,
             ),
             Some(LinuxWebkitNvidiaWorkaroundPlan {
                 disable_dmabuf_renderer: false,
+                disable_nv_explicit_sync: true,
+            })
+        );
+    }
+
+    #[test]
+    fn force_off_short_circuits_workaround_for_nvidia_sessions() {
+        let environment = LinuxGraphicsEnvironmentSnapshot {
+            gdk_backend: Some("wayland".into()),
+            xdg_session_type: Some("wayland".into()),
+            display: Some(":0".into()),
+            wayland_display: Some("wayland-0".into()),
+            webkit_disable_dmabuf_renderer: None,
+            nv_disable_explicit_sync: None,
+            app_display_backend_preference: None,
+        };
+
+        assert_eq!(
+            resolve_linux_webkit_nvidia_workaround(
+                &environment,
+                Some(LinuxDisplayBackend::Wayland),
+                true,
+                LinuxNvidiaWebkitWorkaroundMode::ForceOff,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn force_on_emits_workaround_even_without_nvidia_detection() {
+        let environment = LinuxGraphicsEnvironmentSnapshot {
+            gdk_backend: Some("wayland".into()),
+            xdg_session_type: Some("wayland".into()),
+            display: Some(":0".into()),
+            wayland_display: Some("wayland-0".into()),
+            webkit_disable_dmabuf_renderer: None,
+            nv_disable_explicit_sync: None,
+            app_display_backend_preference: None,
+        };
+
+        assert_eq!(
+            resolve_linux_webkit_nvidia_workaround(
+                &environment,
+                Some(LinuxDisplayBackend::Wayland),
+                false,
+                LinuxNvidiaWebkitWorkaroundMode::ForceOn,
+            ),
+            Some(LinuxWebkitNvidiaWorkaroundPlan {
+                disable_dmabuf_renderer: true,
                 disable_nv_explicit_sync: true,
             })
         );

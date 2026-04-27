@@ -1,3 +1,35 @@
+# 2026-04-27 - Universal Polyglot Runtime Pipeline (Go + Wasm + Migrated Python Sidecar)
+
+- GreebleFS now has a single host-owned subsystem for `native-sidecar`, `native-command`, `native-tui`, `wasm-panel`, and `wasm-worker` runtime packages instead of treating Python sidecars as the only managed runtime lane.
+  - `src-tauri/src/runtime_pipeline/` is the canonical Rust subsystem. It owns `runtime.toml` parsing, runtime discovery (`builtin` + managed `runtimes/`), the content-addressed compile cache, Go/TinyGo/Python toolchain probing, generic stdio JSON-lines sidecars, native-command execution, TUI launch routing, the universal registry, and the Specta-typed command surface.
+  - The 8 new `runtime_*` Tauri commands (`runtime_list_packages`, `runtime_prepare_package`, `runtime_start_sidecar`, `runtime_stop_sidecar`, `runtime_call`, `runtime_run_command`, `runtime_open_tui`, `runtime_get_toolchain_status`) form the `runtime-host-v1` bridge. React surfaces must enter through `src/runtime/externalRuntimeBackend.ts` (generic) or `src/runtime/goRuntimeBackend.ts` (Go-flavored convenience). Direct `invoke()` against runtime commands is a regression.
+- Durable manifest contract:
+  - `runtime.toml` shape: `id`, `displayName`, `language`, `kind`, `compiler`, `moduleDir`, `entry`, `watchGlobs`, `env`, `args`, `workingDirectory`, `permissions`, optional `[panel]`, `[command]`, `[sidecar]`, `[tui]` blocks. v1 `kind` set: `native-sidecar`, `native-command`, `native-tui`, `wasm-panel`, `wasm-worker`. v1 `compiler` set: `go-native`, `go-js-wasm`, `tinygo-wasm`, `python-sidecar`.
+  - Manifest validation rejects unsupported kind/compiler pairings at parse time. Permissions default to locked-down (no fs/network/spawn). New runtime kinds or compilers belong in `manifest.rs` with a paired entry in `validate_kind_compiler_pairing`.
+- Durable cache rule:
+  - Compile cache key is `{runtime_id}-{compiler}-{toolchain_version}-{target}-{mode}-{source_signature}`. Source signature = sorted (relative path, size, mtime, first 4 KiB of content) hashed with SHA-256. Cache lives under app-local `runtime-cache/`. Anything that wants stricter invalidation drops a `.runtime-cache-bust` file or bumps `forceRebuild` on `prepare_package`.
+- Durable Go workspace layout:
+  - `src-go/go.work` tracks the SDK + builtin runtimes. Module names use `greeblefs.dev/sdk/greeblefs-go` and `greeblefs.dev/runtimes/<id>`.
+  - SDK lives under `src-go/sdk/greeblefs-go/`: `ipc/protocol.go` is the wire shape, `runtime/sidecar.go` is the canonical Go author lane for `native-sidecar`, `hostapi/hostapi.go` is the typed host-bridge wrapper for `wasm-panel` runtimes, `panel/panel.go` is the DOM-mount helper.
+  - Reference builtins: `src-go/builtin-runtimes/echo-sidecar` (`runtime.summary` / `echo` / `now`), `src-go/builtin-runtimes/echo-command`, `src-go/builtin-runtimes/sample-panel`. Managed-content Go packages stay outside `go.work` and own their own `go.mod`.
+- Durable host bridge contract for `wasm-panel`:
+  - `src/components/GoPanelHost.tsx` is the canonical mount surface. The host installs a typed bridge entry on `window.__greeblefsRuntimeHostBridge[token]` containing `context` + `bridge`. Bridge: `emitEvent`, `callRuntimeAction`, `readStorageBlob`, `writeStorageBlob`. The Go runtime locates its bridge through the `--bridge-token=<id>` argument.
+  - `wasm_exec.js` is staged into `public/runtime/wasm_exec.js` by `bun run go:bootstrap` so the loader has a stable URL.
+- Durable toolchain rule:
+  - `toolchains/go/toolchains.json` is the pinned manifest. `runtime_get_toolchain_status` is a presence/version probe; it never installs anything. Engineers run `bun run go:bootstrap`, `bun run go:status`, `bun run go:build`, `bun run go:test`, `bun run go:check` for explicit lifecycle.
+- Durable Python migration rule:
+  - `src-python/runtime.toml` is the discovery mirror for the existing Python sidecar. Lifecycle/IPC for Python still lives in the legacy `python_*` Tauri commands and `pythonRuntimeBackend.ts`. The `runtime_*` lane intentionally rejects Python sidecar starts so the two lanes stay decoupled while the migration progresses.
+- Discovery rule:
+  - Builtin discovery roots: `src-go/builtin-runtimes/` and `src-python/`. Managed-content discovery: the new `runtimes/` managed-content root (`src/config/appContentDirectories.ts`). Plugin/action/workbench manifests should reference runtimes by `id` instead of inventing per-feature compile/run logic.
+- Validation:
+  - Rust: `cargo test --manifest-path src-tauri/Cargo.toml --lib runtime_pipeline::` passes (manifest parse, cache key stability, source signature, path sandboxing, discovery).
+  - Vitest: `bun run vitest run src/test/runtimePipelineDirectory.test.ts src/test/goPanelHost.test.tsx src/test/goWorkbenchActions.test.ts` all green (managed-content catalog, GoPanelHost mount/unmount + error fallback, workbench action seam).
+  - Specta bindings regenerated: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`.
+- Honest limitations / next steps:
+  - The Go workbench action seam (`src/runtime/goWorkbenchActions.ts`) is the data-driven catalog used by Run/Test/Build/Fmt/Open Task Console. Wiring those into `FileExplorer.tsx` context-menu and preview-header surfaces is the next step.
+  - Plugin manifest extension for `runtimePanel` and backend runtime references is intentionally additive: optional fields, no forced migration. Hooking those into `useFolderPluginRuntime.ts` and the panel registry remains follow-up work.
+  - TinyGo support compiles through the same `build.sh` lane but is opt-in at the manifest level (`compiler = "tinygo-wasm"`). Standard Go is the safe default for `wasm-panel`.
+
 # 2026-04-27 - Workspace Header Controls Are Now Modular Instead Of Being Welded To The Tab Strip
 
 - The explorer workspace header no longer treats `+`, `...`, and `1-Up` / `2-Up` / `3-Up` / `4-Up` as one hardcoded chunk embedded inside `workspaceTabStrip`.
