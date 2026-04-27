@@ -854,6 +854,7 @@ export function LayoutDynamicsCanvas({
         position: "relative",
         width: "100%",
         minWidth: 0,
+        overflow: "hidden",
         ...style,
       }}
     >
@@ -879,6 +880,7 @@ export function LayoutDynamicsCanvas({
         style={{
           position: "absolute",
           inset: 0,
+          overflow: "hidden",
           pointerEvents: authoringActive ? "auto" : "none",
         }}
       >

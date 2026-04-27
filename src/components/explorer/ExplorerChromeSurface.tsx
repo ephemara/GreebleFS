@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
 import { X } from "@/components/AppIcons";
 import type {
   LayoutDynamicsAuthoringSnapshot,
@@ -35,6 +41,7 @@ interface ExplorerChromeSurfaceProps {
   style?: CSSProperties;
   getRowStyle?: (rowId: string) => CSSProperties | undefined;
   getZoneStyle?: (zoneId: ExplorerChromeZoneId) => CSSProperties | undefined;
+  dynamicCanvasMinHeightPx?: number;
   renderControl: (
     placement: ExplorerChromeResolvedControlPlacement,
   ) => React.ReactNode;
@@ -96,6 +103,7 @@ export function ExplorerChromeSurface({
   style,
   getRowStyle,
   getZoneStyle,
+  dynamicCanvasMinHeightPx,
   renderControl,
   layoutDynamics,
   editMode,
@@ -138,6 +146,79 @@ export function ExplorerChromeSurface({
     [surfaceDefinition.rows],
   );
   const useDynamicSurfaceLayout = layoutDynamics?.enabled === true;
+  const usesFreeformDynamicCanvas =
+    useDynamicSurfaceLayout && layoutDynamics?.axisMode === "free-2d";
+  const freeformDynamicCanvasBandId = `${surface.surfaceId}:freeform-canvas`;
+  const parseDynamicCanvasCssPixels = useCallback(
+    (value: CSSProperties["minHeight"] | CSSProperties["height"]): number => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+      if (typeof value === "string") {
+        const normalized = value.trim();
+        if (normalized.endsWith("px")) {
+          const parsed = Number.parseFloat(normalized);
+          if (Number.isFinite(parsed)) {
+            return parsed;
+          }
+        }
+      }
+      return 0;
+    },
+    [],
+  );
+  const resolvedFreeformDynamicCanvasMinHeightPx = useMemo(() => {
+    if (!usesFreeformDynamicCanvas) {
+      return null;
+    }
+    if (
+      typeof dynamicCanvasMinHeightPx === "number" &&
+      Number.isFinite(dynamicCanvasMinHeightPx)
+    ) {
+      return Math.max(32, dynamicCanvasMinHeightPx);
+    }
+    const summedRowMinHeight = surfaceDefinition.rows.reduce((total, row) => {
+      const rowStyle = getRowStyle?.(row.id);
+      return (
+        total +
+        Math.max(
+          32,
+          parseDynamicCanvasCssPixels(rowStyle?.minHeight) ||
+            parseDynamicCanvasCssPixels(rowStyle?.height),
+        )
+      );
+    }, 0);
+    return Math.max(32, summedRowMinHeight);
+  }, [
+    dynamicCanvasMinHeightPx,
+    getRowStyle,
+    parseDynamicCanvasCssPixels,
+    surfaceDefinition.rows,
+    usesFreeformDynamicCanvas,
+  ]);
+  const freeformRowAnchorYOffsetByLegacyBandId = useMemo(() => {
+    if (!usesFreeformDynamicCanvas) {
+      return new Map<string, number>();
+    }
+    let offsetY = 0;
+    return new Map(
+      surfaceDefinition.rows.map((row) => {
+        const rowStyle = getRowStyle?.(row.id);
+        const entry = [row.id, offsetY] as const;
+        offsetY += Math.max(
+          32,
+          parseDynamicCanvasCssPixels(rowStyle?.minHeight) ||
+            parseDynamicCanvasCssPixels(rowStyle?.height),
+        );
+        return entry;
+      }),
+    );
+  }, [
+    getRowStyle,
+    parseDynamicCanvasCssPixels,
+    surfaceDefinition.rows,
+    usesFreeformDynamicCanvas,
+  ]);
   const dynamicSurfaceItems = useMemo(
     () =>
       surface.rows.flatMap((row) =>
@@ -145,13 +226,19 @@ export function ExplorerChromeSurface({
           zone.controls.map((placement) => {
             const controlIsResizable =
               editMode?.isControlResizable?.(placement) ?? false;
+            const sourceBandId = placement.bandId ?? row.id;
             return {
               id: placement.controlId,
               label: placement.controlId,
-              bandId: placement.bandId ?? row.id,
+              bandId: usesFreeformDynamicCanvas
+                ? freeformDynamicCanvasBandId
+                : sourceBandId,
               order: placement.order,
               anchorX: placement.anchorX,
-              anchorY: placement.anchorY,
+              anchorY: usesFreeformDynamicCanvas
+                ? (placement.anchorY ?? 0) +
+                  (freeformRowAnchorYOffsetByLegacyBandId.get(sourceBandId) ?? 0)
+                : placement.anchorY,
               widthPx: placement.widthPx,
               selected: editMode?.selectedControlId === placement.controlId,
               removable: editMode?.onRemoveControl != null,
@@ -165,24 +252,54 @@ export function ExplorerChromeSurface({
               dataAttributes: {
                 "data-overlay-explorer-control": placement.controlId,
                 "data-overlay-explorer-control-zone": placement.zone,
-                "data-layout-dynamics-band-id": placement.bandId ?? row.id,
+                "data-layout-dynamics-band-id": usesFreeformDynamicCanvas
+                  ? freeformDynamicCanvasBandId
+                  : sourceBandId,
               },
             };
           }),
         ),
       ),
-    [editMode, editModeActive, renderControl, surface.rows],
+    [
+      editMode,
+      editModeActive,
+      freeformDynamicCanvasBandId,
+      freeformRowAnchorYOffsetByLegacyBandId,
+      renderControl,
+      surface.rows,
+      usesFreeformDynamicCanvas,
+    ],
   );
   const dynamicSurfaceBands = useMemo(
-    () =>
-      surfaceDefinition.rows.map((row) => ({
+    () => {
+      if (usesFreeformDynamicCanvas) {
+        return [
+          {
+            id: freeformDynamicCanvasBandId,
+            minHeightPx: resolvedFreeformDynamicCanvasMinHeightPx ?? 32,
+            rowId: "freeform",
+            zoneId: surfaceDefinition.rows[0]?.zones[0] ?? "start",
+            style: {
+              minHeight: resolvedFreeformDynamicCanvasMinHeightPx ?? 32,
+            },
+          },
+        ];
+      }
+      return surfaceDefinition.rows.map((row) => ({
         id: row.id,
         minHeightPx: 32,
         rowId: row.id,
         zoneId: row.zones[0] ?? "start",
         style: getRowStyle?.(row.id),
-      })),
-    [getRowStyle, surfaceDefinition.rows],
+      }));
+    },
+    [
+      freeformDynamicCanvasBandId,
+      getRowStyle,
+      resolvedFreeformDynamicCanvasMinHeightPx,
+      surfaceDefinition.rows,
+      usesFreeformDynamicCanvas,
+    ],
   );
   const dynamicCatalogPreview = useMemo(() => {
     if (
@@ -209,11 +326,12 @@ export function ExplorerChromeSurface({
       return null;
     }
 
-    const bandId =
-      highlightedDropTarget.bandId ??
-      bandIdByZoneId.get(highlightedDropTarget.zoneId) ??
-      surfaceDefinition.rows[0]?.id ??
-      "primary";
+    const bandId = usesFreeformDynamicCanvas
+      ? freeformDynamicCanvasBandId
+      : highlightedDropTarget.bandId ??
+        bandIdByZoneId.get(highlightedDropTarget.zoneId) ??
+        surfaceDefinition.rows[0]?.id ??
+        "primary";
     const previewPlacement: ExplorerChromeResolvedControlPlacement = {
       ...editMode.catalogPreviewPlacement,
       controlId: editMode.catalogPreviewPlacement.controlId,
@@ -251,11 +369,13 @@ export function ExplorerChromeSurface({
     customizePointerSnapshot.sourceKind,
     editMode,
     editModeActive,
+    freeformDynamicCanvasBandId,
     primaryZoneIdByBandId,
     renderControl,
     surface.surfaceId,
     surfaceDefinition.rows,
     useDynamicSurfaceLayout,
+    usesFreeformDynamicCanvas,
   ]);
 
   useEffect(() => {

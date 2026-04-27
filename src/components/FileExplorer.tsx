@@ -1400,8 +1400,8 @@ export type ExplorerExternalChromeControlDefinition =
   ExplorerRenderedChromeControlDefinition;
 
 const EXPLORER_LAYOUT_BAND_HEIGHT_BOUNDS = {
-  unifiedHeaderHeightPx: { min: 32, max: 220 },
-  explorerToolbarHeightPx: { min: 28, max: 160 },
+  unifiedHeaderHeightPx: { min: 32, max: 360 },
+  explorerToolbarHeightPx: { min: 28, max: 280 },
   railHeaderHeightPx: { min: 28, max: 140 },
   previewHeaderHeightPx: { min: 28, max: 140 },
   explorerStatusBarHeightPx: { min: 24, max: 96 },
@@ -8888,7 +8888,6 @@ export function FileExplorer({
   const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showArchiveActionsMenu, setShowArchiveActionsMenu] = useState(false);
-  const [explorerHeaderStackHeight, setExplorerHeaderStackHeight] = useState(0);
   const [rename, setRename] = useState<RenameState>({
     active: false,
     path: "",
@@ -9198,7 +9197,6 @@ export function FileExplorer({
     });
 
   const explorerRootRef = useRef<HTMLDivElement | null>(null);
-  const explorerHeaderStackRef = useRef<HTMLDivElement | null>(null);
   const explorerFileAreaRef = useRef<HTMLDivElement | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const previewContentHostRef = useRef<HTMLDivElement | null>(null);
@@ -20496,6 +20494,14 @@ export function FileExplorer({
     }),
     [usesWorkspaceCompactChrome, usesWorkspaceDenseChrome],
   );
+  const resolvedUnifiedHeaderHeightPx =
+    layoutBandMetricsDraft.unifiedHeaderHeightPx ??
+    resolvedExplorerLayout?.bandMetrics.unifiedHeaderHeightPx ??
+    88;
+  const resolvedExplorerToolbarHeightPx =
+    layoutBandMetricsDraft.explorerToolbarHeightPx ??
+    resolvedExplorerLayout?.bandMetrics.explorerToolbarHeightPx ??
+    48;
   const resolvedUnifiedHeaderSurfaceId: ExplorerChromeSurfaceId =
     showsGlobalChromeControls ? "explorerTopbar" : "explorerToolbar";
   const explorerTopbarRowStyle = useMemo<CSSProperties>(
@@ -20503,13 +20509,11 @@ export function FileExplorer({
       ...toolbarPrimaryRowStyle,
       minHeight:
         resolvedUnifiedHeaderSurfaceId === "explorerTopbar"
-          ? layoutBandMetricsDraft.unifiedHeaderHeightPx ??
-            resolvedExplorerLayout?.bandMetrics.unifiedHeaderHeightPx
+          ? resolvedUnifiedHeaderHeightPx
           : undefined,
     }),
     [
-      layoutBandMetricsDraft.unifiedHeaderHeightPx,
-      resolvedExplorerLayout?.bandMetrics.unifiedHeaderHeightPx,
+      resolvedUnifiedHeaderHeightPx,
       resolvedUnifiedHeaderSurfaceId,
       toolbarPrimaryRowStyle,
     ],
@@ -20519,16 +20523,12 @@ export function FileExplorer({
       ...toolbarPrimaryRowStyle,
       minHeight:
         resolvedUnifiedHeaderSurfaceId === "explorerToolbar"
-          ? layoutBandMetricsDraft.unifiedHeaderHeightPx ??
-            resolvedExplorerLayout?.bandMetrics.unifiedHeaderHeightPx
-          : layoutBandMetricsDraft.explorerToolbarHeightPx ??
-            resolvedExplorerLayout?.bandMetrics.explorerToolbarHeightPx,
+          ? resolvedUnifiedHeaderHeightPx
+          : resolvedExplorerToolbarHeightPx,
     }),
     [
-      layoutBandMetricsDraft.explorerToolbarHeightPx,
-      layoutBandMetricsDraft.unifiedHeaderHeightPx,
-      resolvedExplorerLayout?.bandMetrics.explorerToolbarHeightPx,
-      resolvedExplorerLayout?.bandMetrics.unifiedHeaderHeightPx,
+      resolvedExplorerToolbarHeightPx,
+      resolvedUnifiedHeaderHeightPx,
       resolvedUnifiedHeaderSurfaceId,
       toolbarPrimaryRowStyle,
     ],
@@ -20538,16 +20538,12 @@ export function FileExplorer({
       ...toolbarSecondaryRowStyle,
       minHeight:
         resolvedUnifiedHeaderSurfaceId === "explorerToolbar"
-          ? layoutBandMetricsDraft.unifiedHeaderHeightPx ??
-            resolvedExplorerLayout?.bandMetrics.unifiedHeaderHeightPx
-          : layoutBandMetricsDraft.explorerToolbarHeightPx ??
-            resolvedExplorerLayout?.bandMetrics.explorerToolbarHeightPx,
+          ? resolvedUnifiedHeaderHeightPx
+          : resolvedExplorerToolbarHeightPx,
     }),
     [
-      layoutBandMetricsDraft.explorerToolbarHeightPx,
-      layoutBandMetricsDraft.unifiedHeaderHeightPx,
-      resolvedExplorerLayout?.bandMetrics.explorerToolbarHeightPx,
-      resolvedExplorerLayout?.bandMetrics.unifiedHeaderHeightPx,
+      resolvedExplorerToolbarHeightPx,
+      resolvedUnifiedHeaderHeightPx,
       resolvedUnifiedHeaderSurfaceId,
       toolbarSecondaryRowStyle,
     ],
@@ -24176,41 +24172,6 @@ export function FileExplorer({
       layoutZoomFrameLastAtRef.current = null;
     };
   }, [layoutZoomGestureActive]);
-
-  useLayoutEffect(() => {
-    const headerStack = explorerHeaderStackRef.current;
-    if (!headerStack) {
-      return;
-    }
-
-    const syncHeaderStackHeight = () => {
-      setExplorerHeaderStackHeight(headerStack.getBoundingClientRect().height);
-    };
-
-    syncHeaderStackHeight();
-
-    const resizeObserver =
-      typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(() => {
-            syncHeaderStackHeight();
-          })
-        : null;
-
-    resizeObserver?.observe(headerStack);
-    window.addEventListener("resize", syncHeaderStackHeight);
-
-    return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", syncHeaderStackHeight);
-    };
-  }, [
-    explorerPicker,
-    layoutBandMetricsDraft.explorerToolbarHeightPx,
-    layoutBandMetricsDraft.unifiedHeaderHeightPx,
-    resolvedExplorerLayout?.bandMetrics.explorerToolbarHeightPx,
-    resolvedExplorerLayout?.bandMetrics.unifiedHeaderHeightPx,
-    showsGlobalChromeControls,
-  ]);
 
   useLayoutEffect(() => {
     const viewport = explorerViewportRef.current;
@@ -27927,17 +27888,6 @@ export function FileExplorer({
           minWidth: 0,
         }}
       >
-        {explorerHeaderStackHeight > 0 ? (
-          <div
-            aria-hidden="true"
-            style={{
-              minHeight: explorerHeaderStackHeight,
-              flexShrink: 0,
-              background: "var(--overlay-explorer-sidebar-bg)",
-              borderBottom: "1px solid var(--overlay-explorer-sidebar-border)",
-            }}
-          />
-        ) : null}
         <div style={{ display: "flex", minHeight: 0, minWidth: 0, flex: 1 }}>
           <ResizablePane
             size={sidebarWidth}
@@ -28011,7 +27961,6 @@ export function FileExplorer({
     deleteExplorerSavedSearch,
     drives,
     drivesLoading,
-    explorerHeaderStackHeight,
     explorerDropScopeId,
     effectiveChromeLayoutId,
     effectiveRailPosition,
@@ -28048,6 +27997,7 @@ export function FileExplorer({
               surface={explorerTopbarSurface}
               getRowStyle={getExplorerTopbarRowStyle}
               getZoneStyle={getExplorerChromeZoneStyle}
+              dynamicCanvasMinHeightPx={resolvedUnifiedHeaderHeightPx}
               renderControl={renderExplorerChromeControl}
               layoutDynamics={explorerTopbarLayoutDynamics}
               editMode={explorerChromeEditMode}
@@ -28072,6 +28022,11 @@ export function FileExplorer({
           surface={explorerToolbarSurface}
           getRowStyle={getExplorerToolbarRowStyle}
           getZoneStyle={getExplorerChromeZoneStyle}
+          dynamicCanvasMinHeightPx={
+            showsGlobalChromeControls
+              ? resolvedExplorerToolbarHeightPx * 2
+              : resolvedUnifiedHeaderHeightPx * 2
+          }
           renderControl={renderExplorerChromeControl}
           layoutDynamics={explorerToolbarLayoutDynamics}
           editMode={explorerChromeEditMode}
@@ -28101,6 +28056,8 @@ export function FileExplorer({
       getExplorerTopbarRowStyle,
       getExplorerChromeZoneStyle,
       renderExplorerChromeControl,
+      resolvedExplorerToolbarHeightPx,
+      resolvedUnifiedHeaderHeightPx,
       showsGlobalChromeControls,
       startExplorerLayoutBandResize,
       toolbarContainerStyle,
@@ -28455,7 +28412,7 @@ export function FileExplorer({
 
         {/* ══ MAIN ══ */}
         <div data-overlay-explorer-plane="main" style={mainColumnStyle}>
-          <div ref={explorerHeaderStackRef} style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
             {/* Toolbar */}
             {explorerToolbarPane}
             {explorerPicker && (

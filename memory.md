@@ -1,3 +1,26 @@
+# 2026-04-27 - Explorer Header Freeform Canvas Now Owns Its Bounds; The Rail Must Not Reserve Ghost Space
+
+- The explorer header regression after the unified-header/layout-file pass came from a geometry mismatch:
+  - `LayoutDynamicsCanvas.tsx` was rendering absolute-positioned controls while the explorer still treated the top chrome like stacked legacy rows with fake spacer alignment on the sources rail.
+  - That caused three visible failures:
+    - toolbar/actions controls could visually spill into the file viewport during band resizing
+    - toggling the file tree could open a pointless left-side sliver / ghost spacer
+    - the top customizeable area still felt like two locked rows instead of a real canvas
+- Durable fix rules:
+  - `LayoutDynamicsCanvas.tsx` must clip its absolute children with `overflow: hidden` at the surface root and overlay layer. If controls start visibly floating outside the authored canvas again, check that first.
+  - `src/config/layoutDynamics.ts` now treats `explorerTopbar`, `explorerToolbar`, and `workspaceHeader` as `free-2d` surfaces instead of `horizontal-band`. The explorer header is no longer supposed to feel lane-locked.
+  - `ExplorerChromeSurface.tsx` now has a freeform-canvas mode for `free-2d` explorer chrome:
+    - it synthesizes one freeform band per surface instead of preserving multiple rigid row bands
+    - it migrates legacy row-based `anchorY` values forward by adding the old row offset, so pre-existing second-row toolbar controls do not all teleport to the top-left
+    - if future work adds another freeform explorer surface, preserve that `legacy row offset -> freeform y` migration pattern
+  - `FileExplorer.tsx` must not reserve rail alignment through a measured dummy spacer. The sources rail should open flush without inventing a dead top strip. If the file-tree toggle starts carving out a blank top-left slab again, treat that as a regression.
+  - The explorer top surfaces can still use height metrics, but those metrics now describe a freeform canvas area, not a fixed row grid. Increasing `unifiedHeaderHeightPx` / `explorerToolbarHeightPx` is expected to create more real canvas room for button placement.
+- Focused validation that passed after the freeform/canvas-bound fix:
+  - filtered clean: `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'src/(components/FileExplorer\\\\.tsx|components/explorer/ExplorerChromeSurface\\\\.tsx|components/layoutDynamics/LayoutDynamicsCanvas\\\\.tsx|config/layoutDynamics\\\\.ts)'`
+  - `bunx vitest run src/test/ExplorerChromeSurface.test.tsx --reporter=dot`
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "cycles explorer layout presets directly from the toolbar control face|restores the canonical explorer layout preset from the menu|does not let legacy chrome layout overrides displace the file-backed explorer layouts" --reporter=dot`
+  - `bunx vitest run src/test/explorerLayouts.test.ts -t "ships built-in explorer layout presets alongside the canonical restore target|restores the canonical explorer layout without mutating explorer session geometry" --reporter=dot`
+
 # 2026-04-27 - File-Backed Explorer Layouts Now Ship Real Built-In Presets And The Unified Header/Rail Need Stable Muscle-Memory Geometry
 
 - The new explorer-layout lane is no longer just a loader/save shell around one canonical fallback.
