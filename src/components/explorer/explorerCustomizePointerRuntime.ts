@@ -18,6 +18,8 @@ export interface ExplorerCustomizePointerDropTarget {
   zoneId: ExplorerChromeZoneId;
   targetIndex: number;
   offsetPx: number;
+  bandId?: string;
+  anchorX?: number;
 }
 
 export interface ExplorerCustomizePointerSnapshot {
@@ -48,6 +50,7 @@ interface ExplorerCustomizePointerSession {
         controlId: ExplorerChromeControlId;
         sourceKind: ExplorerCustomizePointerSourceKind;
         target: ExplorerCustomizePointerDropTarget;
+        pointerPoint: ExplorerCustomizePointerPoint;
       }) => void)
     | null;
   onRemove?: ((controlId: ExplorerChromeControlId) => void) | null;
@@ -69,6 +72,7 @@ export interface BeginExplorerCustomizePointerSessionArgs {
         controlId: ExplorerChromeControlId;
         sourceKind: ExplorerCustomizePointerSourceKind;
         target: ExplorerCustomizePointerDropTarget;
+        pointerPoint: ExplorerCustomizePointerPoint;
       }) => void)
     | null;
   onRemove?: ((controlId: ExplorerChromeControlId) => void) | null;
@@ -80,6 +84,8 @@ const EXPLORER_CUSTOMIZE_SURFACE_ATTRIBUTE =
   "data-explorer-customize-surface-id";
 const EXPLORER_CUSTOMIZE_REMOVE_ZONE_SELECTOR =
   '[data-explorer-customize-remove-zone="true"]';
+const EXPLORER_LAYOUT_DYNAMICS_BAND_SELECTOR = "[data-layout-dynamics-band]";
+const EXPLORER_LAYOUT_DYNAMICS_ITEM_SELECTOR = "[data-layout-dynamics-item]";
 
 const snapshotListeners = new Set<() => void>();
 
@@ -112,7 +118,9 @@ function areExplorerCustomizePointerDropTargetsEqual(
     left?.surfaceId === right?.surfaceId &&
     left?.zoneId === right?.zoneId &&
     left?.targetIndex === right?.targetIndex &&
-    left?.offsetPx === right?.offsetPx
+    left?.offsetPx === right?.offsetPx &&
+    left?.bandId === right?.bandId &&
+    left?.anchorX === right?.anchorX
   );
 }
 
@@ -293,8 +301,50 @@ function getImmediateCustomizeControlElements(
   );
 }
 
+function getLayoutDynamicsBandElements(
+  surfaceElement: HTMLElement,
+): HTMLElement[] {
+  return Array.from(
+    surfaceElement.querySelectorAll<HTMLElement>(
+      EXPLORER_LAYOUT_DYNAMICS_BAND_SELECTOR,
+    ),
+  );
+}
+
+function getLayoutDynamicsBandControlElements(input: {
+  surfaceElement: HTMLElement;
+  bandId: string;
+  ignoredControlId?: ExplorerChromeControlId | null;
+}): HTMLElement[] {
+  return Array.from(
+    input.surfaceElement.querySelectorAll<HTMLElement>(
+      EXPLORER_LAYOUT_DYNAMICS_ITEM_SELECTOR,
+    ),
+  )
+    .filter(
+      (element) =>
+        element.dataset.layoutDynamicsBandId === input.bandId &&
+        element.dataset.overlayExplorerControl !== input.ignoredControlId &&
+        element.dataset.layoutDynamicsExternalDragPreview !== "true",
+    )
+    .sort((left, right) => {
+      const leftRect = left.getBoundingClientRect();
+      const rightRect = right.getBoundingClientRect();
+      if (leftRect.left !== rightRect.left) {
+        return leftRect.left - rightRect.left;
+      }
+      return leftRect.top - rightRect.top;
+    });
+}
+
 interface ExplorerCustomizeAmbientZoneTarget {
   zoneElement: HTMLElement;
+  territoryLeft: number;
+  territoryRight: number;
+}
+
+interface ExplorerCustomizeAmbientLayoutDynamicsBandTarget {
+  bandElement: HTMLElement;
   territoryLeft: number;
   territoryRight: number;
 }
@@ -330,6 +380,50 @@ function resolveAmbientRowElementInSurface(
       ? rowElement
       : closestRow;
   }, null);
+}
+
+function resolveAmbientLayoutDynamicsBandTargetInSurface(
+  surfaceElement: HTMLElement,
+  point: ExplorerCustomizePointerPoint,
+): ExplorerCustomizeAmbientLayoutDynamicsBandTarget | null {
+  const bandElements = getLayoutDynamicsBandElements(surfaceElement);
+  if (bandElements.length === 0) {
+    return null;
+  }
+
+  for (const bandElement of bandElements) {
+    const bandRect = bandElement.getBoundingClientRect();
+    if (pointIntersectsRect(point, bandRect)) {
+      return {
+        bandElement,
+        territoryLeft: bandRect.left,
+        territoryRight: bandRect.right,
+      };
+    }
+  }
+
+  return bandElements.reduce<ExplorerCustomizeAmbientLayoutDynamicsBandTarget | null>(
+    (closestBand, bandElement) => {
+      const bandRect = bandElement.getBoundingClientRect();
+      if (!closestBand) {
+        return {
+          bandElement,
+          territoryLeft: bandRect.left,
+          territoryRight: bandRect.right,
+        };
+      }
+      const closestRect = closestBand.bandElement.getBoundingClientRect();
+      return distanceFromPointToRect(point, bandRect) <
+        distanceFromPointToRect(point, closestRect)
+        ? {
+            bandElement,
+            territoryLeft: bandRect.left,
+            territoryRight: bandRect.right,
+          }
+        : closestBand;
+    },
+    null,
+  );
 }
 
 function resolveAmbientZoneTargetInRow(
@@ -459,6 +553,78 @@ function resolveInsertionPositionForZone(input: {
   };
 }
 
+function resolveInsertionPositionForLayoutDynamicsBand(input: {
+  surfaceElement: HTMLElement;
+  bandElement: HTMLElement;
+  territoryLeft: number;
+  territoryRight: number;
+  point: ExplorerCustomizePointerPoint;
+  ignoredControlId?: ExplorerChromeControlId | null;
+}): {
+  targetIndex: number;
+  offsetPx: number;
+  anchorX: number;
+} {
+  const bandId = input.bandElement.dataset.layoutDynamicsBand;
+  const bandRect = input.bandElement.getBoundingClientRect();
+  const clampedPointX = Math.max(
+    input.territoryLeft,
+    Math.min(input.territoryRight, input.point.x),
+  );
+
+  if (!bandId) {
+    return {
+      targetIndex: 0,
+      offsetPx: Math.max(0, Math.round(clampedPointX - input.territoryLeft)),
+      anchorX: Math.max(0, Math.round(clampedPointX - bandRect.left)),
+    };
+  }
+
+  const controlElements = getLayoutDynamicsBandControlElements({
+    surfaceElement: input.surfaceElement,
+    bandId,
+    ignoredControlId: input.ignoredControlId,
+  });
+  if (controlElements.length === 0) {
+    return {
+      targetIndex: 0,
+      offsetPx: Math.max(0, Math.round(clampedPointX - input.territoryLeft)),
+      anchorX: Math.max(0, Math.round(clampedPointX - bandRect.left)),
+    };
+  }
+
+  let targetIndex = controlElements.length;
+  for (let index = 0; index < controlElements.length; index += 1) {
+    const controlRect = controlElements[index].getBoundingClientRect();
+    const controlMidpointX = controlRect.left + controlRect.width / 2;
+    if (clampedPointX < controlMidpointX) {
+      targetIndex = index;
+      break;
+    }
+  }
+
+  const previousControlRect =
+    targetIndex > 0
+      ? controlElements[targetIndex - 1]?.getBoundingClientRect()
+      : null;
+  const nextControlRect =
+    targetIndex < controlElements.length
+      ? controlElements[targetIndex]?.getBoundingClientRect()
+      : null;
+  const slotStart = previousControlRect?.right ?? input.territoryLeft;
+  const slotEnd = nextControlRect?.left ?? input.territoryRight;
+  const clampedSlotPointX = Math.max(
+    slotStart,
+    Math.min(slotEnd, clampedPointX),
+  );
+
+  return {
+    targetIndex,
+    offsetPx: Math.max(0, Math.round(clampedSlotPointX - slotStart)),
+    anchorX: Math.max(0, Math.round(clampedSlotPointX - bandRect.left)),
+  };
+}
+
 function resolveAmbientSurfaceElementFromPoint(
   point: ExplorerCustomizePointerPoint,
 ): HTMLElement | null {
@@ -502,6 +668,51 @@ export function resolveExplorerCustomizeDropTargetFromPoint(
       .explorerCustomizeSurfaceId as
       | ExplorerChromeSurfaceId
       | undefined;
+    const ignoredControlId =
+      activeExplorerCustomizePointerSession?.sourceKind === "placed"
+        ? activeExplorerCustomizePointerSession.controlId
+        : null;
+    const ambientLayoutDynamicsBandTarget =
+      resolveAmbientLayoutDynamicsBandTargetInSurface(
+        ambientSurfaceElement,
+        point,
+      );
+    const layoutDynamicsZoneId =
+      ambientLayoutDynamicsBandTarget?.bandElement.dataset
+        .explorerCustomizeZoneId as ExplorerChromeZoneId | undefined;
+    const layoutDynamicsBandId =
+      ambientLayoutDynamicsBandTarget?.bandElement.dataset.layoutDynamicsBand;
+    const layoutDynamicsInsertionPosition =
+      ambientLayoutDynamicsBandTarget == null
+        ? null
+        : resolveInsertionPositionForLayoutDynamicsBand({
+            surfaceElement: ambientSurfaceElement,
+            bandElement: ambientLayoutDynamicsBandTarget.bandElement,
+            territoryLeft: ambientLayoutDynamicsBandTarget.territoryLeft,
+            territoryRight: ambientLayoutDynamicsBandTarget.territoryRight,
+            point,
+            ignoredControlId,
+          });
+    if (
+      surfaceId &&
+      layoutDynamicsZoneId &&
+      layoutDynamicsBandId &&
+      layoutDynamicsInsertionPosition &&
+      Number.isFinite(layoutDynamicsInsertionPosition.targetIndex) &&
+      Number.isInteger(layoutDynamicsInsertionPosition.targetIndex)
+    ) {
+      return {
+        dropTarget: {
+          surfaceId,
+          zoneId: layoutDynamicsZoneId,
+          targetIndex: layoutDynamicsInsertionPosition.targetIndex,
+          offsetPx: layoutDynamicsInsertionPosition.offsetPx,
+          bandId: layoutDynamicsBandId,
+          anchorX: layoutDynamicsInsertionPosition.anchorX,
+        },
+        removeTargetActive: false,
+      };
+    }
     const ambientRowElement = resolveAmbientRowElementInSurface(
       ambientSurfaceElement,
       point,
@@ -513,10 +724,6 @@ export function resolveExplorerCustomizeDropTargetFromPoint(
     const zoneId = ambientZoneTarget?.zoneElement.dataset.explorerCustomizeZoneId as
       | ExplorerChromeZoneId
       | undefined;
-    const ignoredControlId =
-      activeExplorerCustomizePointerSession?.sourceKind === "placed"
-        ? activeExplorerCustomizePointerSession.controlId
-        : null;
     const insertionPosition =
       ambientZoneTarget == null
         ? null
@@ -638,6 +845,7 @@ function finishExplorerCustomizePointerSession(args: {
   const removeTargetActive = currentSession.removeTargetActive;
   const controlId = currentSession.controlId;
   const sourceKind = currentSession.sourceKind;
+  const latestPoint = currentSession.latestPoint;
   const onTap = currentSession.onTap;
   const onDrop = currentSession.onDrop;
   const onRemove = currentSession.onRemove;
@@ -663,6 +871,7 @@ function finishExplorerCustomizePointerSession(args: {
         controlId,
         sourceKind,
         target: dropTarget,
+        pointerPoint: latestPoint,
       });
     }
   }

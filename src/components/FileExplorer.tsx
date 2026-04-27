@@ -302,6 +302,7 @@ import {
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { useLayoutDynamicsController } from "../animation/layoutDynamics";
+import { isLayoutDynamicsSurfaceId } from "../config/layoutDynamics";
 import {
   ExplorerChromeSurface,
   type ExplorerChromeSurfaceLayoutDynamics,
@@ -1245,6 +1246,7 @@ interface ExplorerChromeEditModeState {
   resizingControlId?: ExplorerChromeControlId | null;
   selectedControlId?: ExplorerChromeControlId | null;
   pendingHotkeyControlId?: ExplorerChromeControlId | null;
+  catalogPreviewPlacement?: ExplorerChromeResolvedControlPlacement | null;
   onRegisterSurface?: (surface: ExplorerChromeResolvedSurface) => void;
   onUnregisterSurface?: (surfaceId: ExplorerChromeSurfaceId) => void;
   onDragStart: (controlId: ExplorerChromeControlId) => void;
@@ -17805,6 +17807,81 @@ export function FileExplorer({
       updateChromeEditDraft,
     ],
   );
+  const commitExplorerChromePointerDrop = useCallback(
+    (args: {
+      controlId: ExplorerChromeControlId;
+      sourceKind: "placed" | "catalog";
+      catalogPreviewPlacement?: ExplorerChromeResolvedControlPlacement | null;
+      target: {
+        surfaceId: ExplorerChromeSurfaceId;
+        zoneId: ExplorerChromeZoneId;
+        targetIndex: number;
+        offsetPx: number;
+        bandId?: string;
+        anchorX?: number;
+      };
+    }) => {
+      if (!activeChromeEditSession) {
+        return;
+      }
+
+      const movedSnapshot = moveExplorerChromeControlInResolvedSurfaces({
+        surfaces: getRegisteredExplorerChromeSurfaces(),
+        controlId: args.controlId,
+        targetSurfaceId: args.target.surfaceId,
+        targetZoneId: args.target.zoneId,
+        targetIndex: args.target.targetIndex,
+        targetOffsetPx: args.target.offsetPx,
+      });
+      const targetUsesLayoutDynamics =
+        args.sourceKind === "catalog" &&
+        isLayoutDynamicsSurfaceId(args.target.surfaceId) &&
+        args.target.bandId != null &&
+        args.target.anchorX != null;
+      const nextEntries = movedSnapshot.entries.map((entry) => {
+        if (entry.controlId !== args.controlId) {
+          return entry;
+        }
+        return {
+          ...entry,
+          sizeVariant:
+            args.catalogPreviewPlacement?.sizeVariant ??
+            entry.sizeVariant,
+          widthPx:
+            args.catalogPreviewPlacement?.widthPx ?? entry.widthPx,
+          showLabel:
+            args.catalogPreviewPlacement?.showLabel ?? entry.showLabel,
+          showIcon: args.catalogPreviewPlacement?.showIcon ?? entry.showIcon,
+          ...(targetUsesLayoutDynamics &&
+          args.target.bandId &&
+          args.target.anchorX != null
+            ? {
+                bandId: args.target.bandId,
+                anchorX: args.target.anchorX,
+                anchorY: undefined,
+                offsetPx: 0,
+                hidden: false,
+              }
+            : null),
+        };
+      });
+      const hiddenEntries = activeChromeEditSession.draftOverride.entries.filter(
+        (entry) => entry.hidden && entry.controlId !== args.controlId,
+      );
+      updateChromeEditDraft({
+        entries: [...nextEntries, ...hiddenEntries],
+      });
+      setChromeEditSelectedControl(args.controlId);
+      setChromeEditHighlightedDropTarget(null);
+    },
+    [
+      activeChromeEditSession,
+      getRegisteredExplorerChromeSurfaces,
+      setChromeEditHighlightedDropTarget,
+      setChromeEditSelectedControl,
+      updateChromeEditDraft,
+    ],
+  );
   const handleExplorerChromeDynamicSurfaceCommit = useCallback(
     (args: {
       surfaceId: ExplorerChromeSurfaceId;
@@ -18021,6 +18098,43 @@ export function FileExplorer({
       selectedExplorerCustomizeControlId,
       selectedExplorerCustomizeEntry,
     ]);
+  const selectedExplorerCustomizePreviewPlacement =
+    useMemo<ExplorerChromeResolvedControlPlacement | null>(() => {
+      if (!selectedExplorerCustomizePlacement) {
+        return null;
+      }
+
+      const visiblePlacement = findRegisteredExplorerChromePlacement(
+        selectedExplorerCustomizePlacement.controlId,
+      );
+      return {
+        controlId: selectedExplorerCustomizePlacement.controlId,
+        surfaceId:
+          visiblePlacement?.surfaceId ?? selectedExplorerCustomizePlacement.surfaceId,
+        zone: visiblePlacement?.zone ?? selectedExplorerCustomizePlacement.zone,
+        order: visiblePlacement?.order ?? selectedExplorerCustomizePlacement.order,
+        bandId:
+          visiblePlacement?.bandId ?? selectedExplorerCustomizePlacement.bandId,
+        anchorX:
+          visiblePlacement?.anchorX ?? selectedExplorerCustomizePlacement.anchorX,
+        anchorY:
+          visiblePlacement?.anchorY ?? selectedExplorerCustomizePlacement.anchorY,
+        offsetPx:
+          visiblePlacement?.offsetPx ?? selectedExplorerCustomizePlacement.offsetPx,
+        grow: visiblePlacement?.grow,
+        shrink: visiblePlacement?.shrink,
+        collapsePriority: visiblePlacement?.collapsePriority,
+        overflowEligible: visiblePlacement?.overflowEligible,
+        hidden: selectedExplorerCustomizePlacement.hidden,
+        sizeVariant: selectedExplorerCustomizePlacement.sizeVariant,
+        widthPx: selectedExplorerCustomizePlacement.widthPx,
+        showLabel: selectedExplorerCustomizePlacement.showLabel,
+        showIcon: selectedExplorerCustomizePlacement.showIcon,
+      };
+    }, [
+      findRegisteredExplorerChromePlacement,
+      selectedExplorerCustomizePlacement,
+    ]);
   const beginPlacedExplorerChromePointerDrag = useCallback(
     (args: {
       controlId: ExplorerChromeControlId;
@@ -18046,13 +18160,12 @@ export function FileExplorer({
         onTap: (controlId) => {
           args.onTap?.(controlId);
         },
-        onDrop: ({ controlId, target }) => {
-          handleExplorerChromeControlMove({
+        onDrop: ({ controlId, sourceKind, target }) => {
+          commitExplorerChromePointerDrop({
             controlId,
-            targetSurfaceId: target.surfaceId,
-            targetZoneId: target.zoneId,
-            targetIndex: target.targetIndex,
-            targetOffsetPx: target.offsetPx,
+            sourceKind,
+            catalogPreviewPlacement: selectedExplorerCustomizePreviewPlacement,
+            target,
           });
         },
         onRemove: (controlId) => {
@@ -18066,7 +18179,7 @@ export function FileExplorer({
     },
     [
       activeChromeEditSession,
-      handleExplorerChromeControlMove,
+      commitExplorerChromePointerDrop,
       removeExplorerChromeControlFromDraft,
       setChromeEditDraggingControl,
       setChromeEditHighlightedDropTarget,
@@ -18198,13 +18311,12 @@ export function FileExplorer({
           setChromeEditSelectedControl(dragControlId);
         },
         onUpdateDropTarget: setChromeEditHighlightedDropTarget,
-        onDrop: ({ controlId: dragControlId, target }) => {
-          handleExplorerChromeControlMove({
+        onDrop: ({ controlId: dragControlId, sourceKind, target }) => {
+          commitExplorerChromePointerDrop({
             controlId: dragControlId,
-            targetSurfaceId: target.surfaceId,
-            targetZoneId: target.zoneId,
-            targetIndex: target.targetIndex,
-            targetOffsetPx: target.offsetPx,
+            sourceKind,
+            catalogPreviewPlacement: selectedExplorerCustomizePreviewPlacement,
+            target,
           });
         },
         onComplete: () => {
@@ -18215,7 +18327,7 @@ export function FileExplorer({
     },
     [
       activeChromeEditSession,
-      handleExplorerChromeControlMove,
+      commitExplorerChromePointerDrop,
       setChromeEditDraggingControl,
       setChromeEditHighlightedDropTarget,
       setChromeEditSelectedControl,
@@ -18236,6 +18348,7 @@ export function FileExplorer({
         chromeHotkeyCaptureControlId ??
         activeChromeEditSession?.pendingHotkeyControlId ??
         null,
+      catalogPreviewPlacement: selectedExplorerCustomizePreviewPlacement,
       onRegisterSurface: activeChromeEditSession
         ? registerChromeEditSurface
         : undefined,
@@ -18278,6 +18391,7 @@ export function FileExplorer({
       chromeHotkeyCaptureControlId,
       explorerCustomizeCatalogByControlId,
       handleExplorerChromeDynamicSurfaceCommit,
+      selectedExplorerCustomizePreviewPlacement,
       handleExplorerChromeControlMove,
       registerChromeEditSurface,
       resizingExplorerChromeControlId,

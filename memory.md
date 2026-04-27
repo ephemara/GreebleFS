@@ -1,3 +1,20 @@
+# 2026-04-26 - Explorer Catalog Drags Now Enter The Layout-Dynamics Canvas Instead Of Falling Back To The Orb Runtime
+
+- The last major customize-mode mismatch on adopted explorer chrome surfaces was catalog-origin drag insertion:
+  - placed controls were already using `src/components/layoutDynamics/LayoutDynamicsCanvas.tsx`
+  - actions dragged out of the customize browser still dropped through the legacy zone/index pointer runtime, which reintroduced the pink insertion orb and slot-rail affordances
+- That seam is now migrated for adopted dynamic explorer surfaces:
+  - `src/components/explorer/explorerCustomizePointerRuntime.ts` now resolves ambient layout-dynamics bands directly from DOM metadata and carries `bandId` plus `anchorX` in the live drop target
+  - `src/components/layoutDynamics/LayoutDynamicsCanvas.tsx` now supports an external drag-preview node, so catalog-origin drags can enter the same solver/RAF/transform hot path as placed controls
+  - `src/components/explorer/ExplorerChromeSurface.tsx` now feeds catalog drags into that external preview node instead of forcing `pointerSourceKind === "catalog"` back onto the old orb path
+  - `src/components/FileExplorer.tsx` and `src/components/explorer/ExplorerWorkspace.tsx` now commit catalog drops onto adopted dynamic surfaces as anchor-based placements (`bandId` + `anchorX`) while still preserving preview sizing/icon/label overrides
+- Durable product rule:
+  - On any adopted layout-dynamics surface, catalog-origin drags and placed-control drags must share the same live interaction language. If the orb/slot insertion UI appears there again, treat it as a regression instead of a tolerated mixed-mode fallback.
+  - Persist authored anchors from the drop target metadata; do not persist the temporary repelled positions from the live preview node.
+- Durable validation:
+  - passed: `bunx vitest run src/test/ExplorerChromeSurface.test.tsx src/test/explorerCustomizePointerRuntime.test.tsx src/test/ExplorerWorkspace.test.tsx --reporter=dot`
+  - passed: `bash -lc "bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'ExplorerChromeSurface|LayoutDynamicsCanvas|explorerCustomizePointerRuntime|ExplorerWorkspace|FileExplorer\\.tsx'"`
+
 # 2026-04-26 - Single-Click Folder Navigation Now Skips Selection Churn And Warms On Pointer-Down
 
 - Direct-open folder clicks should not feel like they are waiting for row selection chrome before navigation:

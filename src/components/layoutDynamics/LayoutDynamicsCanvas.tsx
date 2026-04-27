@@ -25,6 +25,8 @@ export interface LayoutDynamicsCanvasBand {
   id: string;
   label?: string;
   minHeightPx: number;
+  rowId?: string;
+  zoneId?: string;
   style?: CSSProperties;
 }
 
@@ -52,6 +54,19 @@ export interface LayoutDynamicsCanvasResizeRequest {
   startPoint: { x: number; y: number };
 }
 
+export interface LayoutDynamicsCanvasExternalDragPreview {
+  itemId: string;
+  label: string;
+  content: ReactNode;
+  pointerPoint: { x: number; y: number } | null;
+  bandId?: string | null;
+  anchorX?: number | null;
+  widthPx?: number;
+  heightPx?: number;
+  style?: CSSProperties;
+  dataAttributes?: Record<string, string | undefined>;
+}
+
 interface LayoutDynamicsCanvasProps {
   surfaceId: string;
   axisMode: LayoutDynamicsAxisMode;
@@ -67,6 +82,7 @@ interface LayoutDynamicsCanvasProps {
     request: LayoutDynamicsCanvasResizeRequest,
   ) => void;
   onCommitSnapshot?: (snapshot: LayoutDynamicsAuthoringSnapshot) => void;
+  externalDragPreview?: LayoutDynamicsCanvasExternalDragPreview | null;
 }
 
 interface MutableCanvasNode extends LayoutDynamicsSimulationNode {
@@ -131,6 +147,51 @@ function resolveNearestBandId(
   return nearestBand?.id ?? fallbackBandId;
 }
 
+function resolveNodePositionWithinBand(input: {
+  axisMode: LayoutDynamicsAxisMode;
+  bandBounds: LayoutDynamicsBandBounds | null;
+  width: number;
+  height: number;
+  requestedX: number;
+  requestedY: number;
+}): { x: number; y: number } {
+  if (!input.bandBounds) {
+    return {
+      x: input.requestedX,
+      y: input.requestedY,
+    };
+  }
+
+  const clampedX = clamp(
+    input.requestedX,
+    input.bandBounds.x,
+    Math.max(
+      input.bandBounds.x,
+      input.bandBounds.x + input.bandBounds.width - input.width,
+    ),
+  );
+  if (input.axisMode === "free-2d") {
+    return {
+      x: clampedX,
+      y: clamp(
+        input.requestedY,
+        input.bandBounds.y,
+        Math.max(
+          input.bandBounds.y,
+          input.bandBounds.y + input.bandBounds.height - input.height,
+        ),
+      ),
+    };
+  }
+
+  return {
+    x: clampedX,
+    y:
+      input.bandBounds.y +
+      Math.max(0, (input.bandBounds.height - input.height) / 2),
+  };
+}
+
 export function LayoutDynamicsCanvas({
   surfaceId,
   axisMode,
@@ -144,12 +205,15 @@ export function LayoutDynamicsCanvas({
   onRemoveItem,
   onBeginResizeItem,
   onCommitSnapshot,
+  externalDragPreview = null,
 }: LayoutDynamicsCanvasProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number | null>(null);
   const bandElementMapRef = useRef(new Map<string, HTMLDivElement>());
   const itemElementMapRef = useRef(new Map<string, HTMLDivElement>());
+  const externalDragPreviewElementRef = useRef<HTMLDivElement | null>(null);
+  const externalDragPreviewNodeRef = useRef<MutableCanvasNode | null>(null);
   const nodesRef = useRef(new Map<string, MutableCanvasNode>());
   const dragStateRef = useRef<DragState | null>(null);
 
@@ -186,7 +250,8 @@ export function LayoutDynamicsCanvas({
     const selectedItemIds = new Set(
       items.filter((item) => item.selected).map((item) => item.id),
     );
-    const draggingNodeId = dragStateRef.current?.nodeId ?? null;
+    const draggingNodeId =
+      externalDragPreviewNodeRef.current?.id ?? dragStateRef.current?.nodeId ?? null;
     for (const [nodeId, node] of nodesRef.current) {
       const itemElement = itemElementMapRef.current.get(nodeId);
       if (!itemElement) {
@@ -202,6 +267,24 @@ export function LayoutDynamicsCanvas({
       itemElement.style.zIndex =
         draggingNodeId === nodeId ? "4" : selectedItemIds.has(nodeId) ? "3" : "2";
     }
+
+    const externalDragPreviewNode = externalDragPreviewNodeRef.current;
+    const externalDragPreviewElement = externalDragPreviewElementRef.current;
+    if (externalDragPreviewNode && externalDragPreviewElement) {
+      externalDragPreviewElement.style.transform = `translate3d(${Math.round(
+        externalDragPreviewNode.x,
+      )}px, ${Math.round(externalDragPreviewNode.y)}px, 0)`;
+      externalDragPreviewElement.style.width =
+        externalDragPreviewNode.measuredWidth > 0
+          ? `${Math.round(externalDragPreviewNode.measuredWidth)}px`
+          : "";
+      externalDragPreviewElement.style.height =
+        externalDragPreviewNode.measuredHeight > 0
+          ? `${Math.round(externalDragPreviewNode.measuredHeight)}px`
+          : "";
+      externalDragPreviewElement.style.opacity = "0.9";
+      externalDragPreviewElement.style.zIndex = "5";
+    }
   }, [items]);
 
   const scheduleFrame = useCallback(() => {
@@ -214,11 +297,17 @@ export function LayoutDynamicsCanvas({
       const previousTime = lastFrameTimeRef.current ?? time;
       lastFrameTimeRef.current = time;
       const bandBounds = measureBandBounds();
+      const externalDragPreviewNode = externalDragPreviewNodeRef.current;
+      const simulationNodes = externalDragPreviewNode
+        ? [...Array.from(nodesRef.current.values()), externalDragPreviewNode]
+        : Array.from(nodesRef.current.values());
+      const draggedNodeId =
+        externalDragPreviewNode?.id ?? dragStateRef.current?.nodeId ?? null;
 
       stepLayoutDynamicsSimulation({
         state: {
-          nodes: Array.from(nodesRef.current.values()),
-          draggedNodeId: dragStateRef.current?.nodeId ?? null,
+          nodes: simulationNodes,
+          draggedNodeId,
         },
         solver,
         axisMode,
@@ -229,6 +318,7 @@ export function LayoutDynamicsCanvas({
       flushNodeTransforms();
 
       if (
+        externalDragPreviewNodeRef.current ||
         dragStateRef.current ||
         !areLayoutDynamicsNodesSettled(
           Array.from(nodesRef.current.values()),
@@ -314,6 +404,93 @@ export function LayoutDynamicsCanvas({
     flushNodeTransforms();
   }, [axisMode, flushNodeTransforms, measureBandBounds, solver.gapPx, visibleItems]);
 
+  const updateExternalDragPreviewNode = useCallback(() => {
+    if (
+      !authoringActive ||
+      !externalDragPreview ||
+      !externalDragPreview.pointerPoint ||
+      !rootRef.current
+    ) {
+      if (externalDragPreviewNodeRef.current) {
+        externalDragPreviewNodeRef.current = null;
+        flushNodeTransforms();
+        scheduleFrame();
+      }
+      return;
+    }
+
+    const bandBounds = measureBandBounds();
+    const fallbackBandId =
+      externalDragPreview.bandId ?? bands[0]?.id ?? externalDragPreviewNodeRef.current?.bandId;
+    if (!fallbackBandId) {
+      return;
+    }
+
+    const previewElement = externalDragPreviewElementRef.current;
+    const measuredWidth =
+      externalDragPreview.widthPx ??
+      previewElement?.getBoundingClientRect().width ??
+      AUTO_LAYOUT_FALLBACK_WIDTH;
+    const measuredHeight =
+      externalDragPreview.heightPx ??
+      previewElement?.getBoundingClientRect().height ??
+      AUTO_LAYOUT_FALLBACK_HEIGHT;
+    const rootRect = rootRef.current.getBoundingClientRect();
+    const pointerX = externalDragPreview.pointerPoint.x - rootRect.left;
+    const pointerY = externalDragPreview.pointerPoint.y - rootRect.top;
+    const nextBandId =
+      axisMode === "free-2d"
+        ? (externalDragPreview.bandId ?? fallbackBandId)
+        : (externalDragPreview.bandId ??
+          resolveNearestBandId(bandBounds, pointerY, fallbackBandId));
+    const bandBoundsForPreview =
+      bandBounds.find((band) => band.id === nextBandId) ?? null;
+    const requestedX =
+      externalDragPreview.anchorX != null && bandBoundsForPreview
+        ? bandBoundsForPreview.x + externalDragPreview.anchorX
+        : pointerX - measuredWidth / 2;
+    const requestedY =
+      axisMode === "free-2d"
+        ? pointerY - measuredHeight / 2
+        : bandBoundsForPreview?.y ?? 0;
+    const { x, y } = resolveNodePositionWithinBand({
+      axisMode,
+      bandBounds: bandBoundsForPreview,
+      width: measuredWidth,
+      height: measuredHeight,
+      requestedX,
+      requestedY,
+    });
+
+    externalDragPreviewNodeRef.current = {
+      id: externalDragPreview.itemId,
+      bandId: nextBandId,
+      x,
+      y,
+      anchorX: x,
+      anchorY: y,
+      width: measuredWidth,
+      height: measuredHeight,
+      measuredWidth,
+      measuredHeight,
+      velocityX: 0,
+      velocityY: 0,
+      order: Number.MAX_SAFE_INTEGER,
+      hasPersistedAnchor: false,
+      hidden: false,
+    };
+    flushNodeTransforms();
+    scheduleFrame();
+  }, [
+    authoringActive,
+    axisMode,
+    bands,
+    externalDragPreview,
+    flushNodeTransforms,
+    measureBandBounds,
+    scheduleFrame,
+  ]);
+
   const commitSnapshotFromCurrentNodes = useCallback(() => {
     const bandBounds = measureBandBounds();
     const nextEntries: LayoutDynamicsAuthoringSnapshot["entries"] = [];
@@ -397,9 +574,14 @@ export function LayoutDynamicsCanvas({
     syncNodesFromItems();
   }, [syncNodesFromItems]);
 
+  useLayoutEffect(() => {
+    updateExternalDragPreviewNode();
+  }, [updateExternalDragPreviewNode]);
+
   useEffect(() => {
     const handleResize = () => {
       syncNodesFromItems();
+      updateExternalDragPreviewNode();
       scheduleFrame();
     };
 
@@ -408,13 +590,21 @@ export function LayoutDynamicsCanvas({
     return () => {
       window.removeEventListener("resize", handleResize);
     };
-  }, [scheduleFrame, syncNodesFromItems]);
+  }, [scheduleFrame, syncNodesFromItems, updateExternalDragPreviewNode]);
 
   useEffect(() => {
     if (!authoringActive && dragStateRef.current) {
       finishDrag(true);
     }
   }, [authoringActive, finishDrag]);
+
+  useEffect(() => {
+    if (!authoringActive && externalDragPreviewNodeRef.current) {
+      externalDragPreviewNodeRef.current = null;
+      flushNodeTransforms();
+      scheduleFrame();
+    }
+  }, [authoringActive, flushNodeTransforms, scheduleFrame]);
 
   useEffect(
     () => () => {
@@ -673,6 +863,8 @@ export function LayoutDynamicsCanvas({
             key={band.id}
             ref={bindBandElement(band.id)}
             data-layout-dynamics-band={band.id}
+            data-explorer-customize-row-id={band.rowId}
+            data-explorer-customize-zone-id={band.zoneId}
             style={{
               position: "relative",
               minHeight: band.minHeightPx,
@@ -699,6 +891,7 @@ export function LayoutDynamicsCanvas({
               key={item.id}
               ref={bindItemElement(item.id)}
               data-layout-dynamics-item={item.id}
+              data-layout-dynamics-band-id={item.bandId}
               onPointerDown={(event) => beginDrag(event, item)}
               onClick={(event) => {
                 if (!authoringActive) {
@@ -843,6 +1036,35 @@ export function LayoutDynamicsCanvas({
             </div>
           );
         })}
+        {externalDragPreview ? (
+          <div
+            ref={externalDragPreviewElementRef}
+            data-layout-dynamics-item={externalDragPreview.itemId}
+            data-layout-dynamics-band-id={externalDragPreview.bandId ?? undefined}
+            data-layout-dynamics-external-drag-preview="true"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              display: "flex",
+              alignItems: "center",
+              minWidth: 0,
+              pointerEvents: "none",
+              borderRadius: 10,
+              outline:
+                "1px dashed color-mix(in srgb, var(--overlay-accent) 64%, transparent)",
+              outlineOffset: -1,
+              background:
+                "color-mix(in srgb, var(--overlay-accent) 8%, var(--overlay-bg))",
+              boxShadow:
+                "0 10px 28px color-mix(in srgb, black 22%, transparent)",
+              ...externalDragPreview.style,
+            }}
+            {...externalDragPreview.dataAttributes}
+          >
+            {externalDragPreview.content}
+          </div>
+        ) : null}
       </div>
     </div>
   );

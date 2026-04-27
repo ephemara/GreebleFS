@@ -17,6 +17,10 @@ import {
   getExplorerChromeSurfaceDefinition,
 } from "../../config/explorerChromeLayouts";
 import { LayoutDynamicsCanvas } from "../layoutDynamics/LayoutDynamicsCanvas";
+import {
+  useExplorerCustomizePointerSnapshot,
+  type ExplorerCustomizePointerDropTarget,
+} from "./explorerCustomizePointerRuntime";
 
 export interface ExplorerChromeSurfaceLayoutDynamics {
   enabled: boolean;
@@ -39,15 +43,11 @@ interface ExplorerChromeSurfaceProps {
     active: boolean;
     draggingControlId: ExplorerChromeControlId | null;
     pointerSourceKind?: "placed" | "catalog" | null;
-    highlightedDropTarget?: {
-      surfaceId: ExplorerChromeSurfaceId;
-      zoneId: ExplorerChromeZoneId;
-      targetIndex: number;
-      offsetPx: number;
-    } | null;
+    highlightedDropTarget?: ExplorerCustomizePointerDropTarget | null;
     resizingControlId?: ExplorerChromeControlId | null;
     selectedControlId?: ExplorerChromeControlId | null;
     pendingHotkeyControlId?: ExplorerChromeControlId | null;
+    catalogPreviewPlacement?: ExplorerChromeResolvedControlPlacement | null;
     onRegisterSurface?: (surface: ExplorerChromeResolvedSurface) => void;
     onUnregisterSurface?: (surfaceId: ExplorerChromeSurfaceId) => void;
     onDragStart: (controlId: ExplorerChromeControlId) => void;
@@ -120,9 +120,24 @@ export function ExplorerChromeSurface({
     () => getExplorerChromeSurfaceDefinition(surface.surfaceId),
     [surface.surfaceId],
   );
-  const useDynamicSurfaceLayout =
-    layoutDynamics?.enabled === true &&
-    editMode?.pointerSourceKind !== "catalog";
+  const customizePointerSnapshot = useExplorerCustomizePointerSnapshot();
+  const primaryZoneIdByBandId = useMemo(
+    () =>
+      new Map(
+        surfaceDefinition.rows.map((row) => [row.id, row.zones[0] ?? "start"] as const),
+      ),
+    [surfaceDefinition.rows],
+  );
+  const bandIdByZoneId = useMemo(
+    () =>
+      new Map(
+        surfaceDefinition.rows.flatMap((row) =>
+          row.zones.map((zoneId) => [zoneId, row.id] as const),
+        ),
+      ),
+    [surfaceDefinition.rows],
+  );
+  const useDynamicSurfaceLayout = layoutDynamics?.enabled === true;
   const dynamicSurfaceItems = useMemo(
     () =>
       surface.rows.flatMap((row) =>
@@ -150,6 +165,7 @@ export function ExplorerChromeSurface({
               dataAttributes: {
                 "data-overlay-explorer-control": placement.controlId,
                 "data-overlay-explorer-control-zone": placement.zone,
+                "data-layout-dynamics-band-id": placement.bandId ?? row.id,
               },
             };
           }),
@@ -162,10 +178,85 @@ export function ExplorerChromeSurface({
       surfaceDefinition.rows.map((row) => ({
         id: row.id,
         minHeightPx: 32,
+        rowId: row.id,
+        zoneId: row.zones[0] ?? "start",
         style: getRowStyle?.(row.id),
       })),
     [getRowStyle, surfaceDefinition.rows],
   );
+  const dynamicCatalogPreview = useMemo(() => {
+    if (
+      !useDynamicSurfaceLayout ||
+      !editModeActive ||
+      editMode?.catalogPreviewPlacement == null ||
+      customizePointerSnapshot.active !== true ||
+      customizePointerSnapshot.draggingControlId !==
+        editMode.catalogPreviewPlacement.controlId ||
+      customizePointerSnapshot.sourceKind !== "catalog" ||
+      customizePointerSnapshot.pointerPoint == null
+    ) {
+      return null;
+    }
+
+    const highlightedDropTarget =
+      editMode?.highlightedDropTarget?.surfaceId === surface.surfaceId
+        ? editMode.highlightedDropTarget
+        : null;
+    if (
+      highlightedDropTarget == null ||
+      highlightedDropTarget.surfaceId !== surface.surfaceId
+    ) {
+      return null;
+    }
+
+    const bandId =
+      highlightedDropTarget.bandId ??
+      bandIdByZoneId.get(highlightedDropTarget.zoneId) ??
+      surfaceDefinition.rows[0]?.id ??
+      "primary";
+    const previewPlacement: ExplorerChromeResolvedControlPlacement = {
+      ...editMode.catalogPreviewPlacement,
+      controlId: editMode.catalogPreviewPlacement.controlId,
+      surfaceId: surface.surfaceId,
+      zone:
+        highlightedDropTarget.zoneId ??
+        primaryZoneIdByBandId.get(bandId) ??
+        editMode.catalogPreviewPlacement.zone,
+      order: highlightedDropTarget.targetIndex * 10 + 5,
+      bandId,
+      anchorX: highlightedDropTarget.anchorX,
+      anchorY: undefined,
+      offsetPx: 0,
+      hidden: false,
+    };
+    return {
+      itemId: `external-preview:${previewPlacement.controlId}`,
+      label: previewPlacement.controlId,
+      content: renderControl(previewPlacement),
+      pointerPoint: customizePointerSnapshot.pointerPoint,
+      bandId,
+      anchorX: highlightedDropTarget.anchorX,
+      widthPx: previewPlacement.widthPx,
+      dataAttributes: {
+        "data-overlay-explorer-control": previewPlacement.controlId,
+        "data-overlay-explorer-control-zone": previewPlacement.zone,
+        "data-layout-dynamics-band-id": bandId,
+      },
+    };
+  }, [
+    bandIdByZoneId,
+    customizePointerSnapshot.active,
+    customizePointerSnapshot.draggingControlId,
+    customizePointerSnapshot.pointerPoint,
+    customizePointerSnapshot.sourceKind,
+    editMode,
+    editModeActive,
+    primaryZoneIdByBandId,
+    renderControl,
+    surface.surfaceId,
+    surfaceDefinition.rows,
+    useDynamicSurfaceLayout,
+  ]);
 
   useEffect(() => {
     if (!editModeActive || !registerSurface) {
@@ -235,6 +326,7 @@ export function ExplorerChromeSurface({
               : undefined
           }
           onCommitSnapshot={layoutDynamics.onCommitSnapshot}
+          externalDragPreview={dynamicCatalogPreview}
         />
       </div>
     );
