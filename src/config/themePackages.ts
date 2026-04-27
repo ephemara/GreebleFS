@@ -1337,9 +1337,10 @@ function createVsCodeThemePackage(
     ...contribution.localIconThemes.map(iconThemePackage => {
       const localId = normalizeIdFragment(iconThemePackage.id, 'icon-theme');
       const scopedId = createScopedId(bundleId, localId);
-      const sourceKind = iconThemePackage.sourceInfo.source === 'vsix'
-        ? 'vscode-icon-theme-vsix'
-        : 'vscode-icon-theme-directory';
+      const sourceKind: LoadedThemeBundleLocalIconTheme['sourceKind'] =
+        iconThemePackage.sourceInfo.source === 'vsix'
+          ? 'vscode-icon-theme-vsix'
+          : 'vscode-icon-theme-directory';
       return {
         id: scopedId,
         localId,

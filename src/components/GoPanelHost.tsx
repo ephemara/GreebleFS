@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   buildGoRuntimePackage,
   type GoRuntimeMode,
@@ -50,10 +51,17 @@ export interface GoPanelHostBridge {
   /** Allows the running Wasm module to send a typed event upward. */
   emitEvent: (event: GoPanelHostEvent) => void;
   /**
-   * Allows the Wasm module to call a typed runtime action through the
-   * universal pipeline. The runtime id is fixed to the mounted package.
+   * Calls a typed action on a peer runtime through the universal pipeline.
+   *
+   * `wasm-panel` runtimes do not host their own action surface (they handle
+   * UI in-process). When a panel needs to read/mutate host state it targets
+   * a peer `native-sidecar` runtime by id, so the panel and sidecar can
+   * communicate through the same `runtime_call` lane every other consumer
+   * uses. Targeting the panel's own runtime id is intentionally disallowed
+   * by the host because there is nothing on the receiving side.
    */
   callRuntimeAction: <TResult = unknown, TPayload = unknown>(
+    targetRuntimeId: string,
     actionId: string,
     payload?: TPayload,
   ) => Promise<TResult>;
@@ -165,6 +173,11 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
   const [reloadKey, setReloadKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
+  // Tracking the bridge token in state (not a ref) is intentional: the
+  // `data-bridge-token` attribute must be committed to the DOM before the
+  // Go module's `panel.Run` queries `[data-bridge-token="<token>"]`, so
+  // React must re-render once the token is known.
+  const [bridgeToken, setBridgeToken] = useState<string | null>(null);
   const goInstanceRef = useRef<GoWasmInstance | null>(null);
   const bridgeTokenRef = useRef<string | null>(null);
 
@@ -196,10 +209,22 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
 
   const callRuntimeAction = useMemo(
     () =>
-      async <TResult, TPayload>(actionId: string, payload?: TPayload): Promise<TResult> => {
+      async <TResult, TPayload>(
+        targetRuntimeId: string,
+        actionId: string,
+        payload?: TPayload,
+      ): Promise<TResult> => {
+        if (!targetRuntimeId) {
+          throw new Error('callRuntimeAction requires a target runtime id');
+        }
+        if (targetRuntimeId === runtimeId) {
+          throw new Error(
+            'wasm-panel runtimes cannot call their own actions over the host bridge; target a peer sidecar runtime instead',
+          );
+        }
         const { callGoSidecarAction } = await import('../runtime/goRuntimeBackend');
         const response = await callGoSidecarAction<TResult, TPayload>({
-          runtimeId,
+          runtimeId: targetRuntimeId,
           actionId,
           payload,
         });
@@ -233,6 +258,7 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
         const registry = ensureBridgeRegistry();
         const token = makeBridgeToken(runtimeId);
         bridgeTokenRef.current = token;
+        setBridgeToken(token);
         const storageKey = `greeblefs.runtime.${runtimeId}.storage`;
         const bridge: GoPanelHostBridge = {
           emitEvent: event => onEvent?.(event),
@@ -258,9 +284,18 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
         };
         registry[token] = { context, bridge };
 
-        const wasmResponse = await fetch(`file://${prepared.artifactPath}`);
+        // Route the compiled wasm artifact through Tauri's asset protocol
+        // instead of a raw `file://` URL. The asset protocol handles
+        // platform-specific path encoding (Windows drive letters, spaces,
+        // unicode) and respects the configured `assetProtocol.scope` so the
+        // webview origin policy does not reject the load. Tests mock fetch
+        // directly, so this stays portable across CI and packaged builds.
+        const wasmAssetUrl = convertFileSrc(prepared.artifactPath);
+        const wasmResponse = await fetch(wasmAssetUrl);
         if (!wasmResponse.ok) {
-          throw new Error(`Failed to fetch compiled wasm artifact: ${wasmResponse.status}`);
+          throw new Error(
+            `Failed to fetch compiled wasm artifact at ${wasmAssetUrl}: ${wasmResponse.status}`,
+          );
         }
         const wasmBytes = await wasmResponse.arrayBuffer();
         if (cancelled) return;
@@ -301,15 +336,27 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
       goInstanceRef.current = null;
       const token = bridgeTokenRef.current;
       bridgeTokenRef.current = null;
+      setBridgeToken(null);
       if (token && typeof window !== 'undefined' && window[HOST_BRIDGE_GLOBAL]) {
         delete window[HOST_BRIDGE_GLOBAL]![token];
       }
     };
   }, [runtimeId, buildMode, buildTarget, reloadKey, callRuntimeAction, onEvent, context]);
 
+  // Bridge token is what disambiguates two panel mounts of the same runtime
+  // id from each other. The Go SDK reads it back through `data-bridge-token`
+  // so each panel module always lands in *its own* DOM root, even when the
+  // shell mounts multiple instances of the same runtime side by side.
+  const bridgeTokenAttr = bridgeToken ?? undefined;
+
   if (error) {
     return (
-      <div className={className} style={style} data-runtime-id={runtimeId}>
+      <div
+        className={className}
+        style={style}
+        data-runtime-id={runtimeId}
+        data-bridge-token={bridgeTokenAttr}
+      >
         {renderError ? (
           renderError(error, reload)
         ) : (
@@ -330,6 +377,7 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
       className={className}
       style={style}
       data-runtime-id={runtimeId}
+      data-bridge-token={bridgeTokenAttr}
       data-go-panel-ready={isReady ? 'true' : 'false'}
     >
       {!isReady && (renderLoading ? renderLoading() : <div style={{ padding: 12 }}>Loading {runtimeId}…</div>)}

@@ -26,7 +26,66 @@ vi.mock('../components/FileExplorer', () => ({
   FileExplorer: (props: Record<string, unknown>) => {
     const instanceId = typeof props.instanceId === 'string' ? props.instanceId : PRIMARY_EXPLORER_INSTANCE_ID;
     renderedFileExplorerPropsByInstanceId.set(instanceId, props);
-    return <div data-testid={`file-explorer-${instanceId}`} />;
+    const externalChromeControls = Array.isArray(props.externalChromeControls)
+      ? (props.externalChromeControls as Array<{
+          id: string;
+          surfaces: string[];
+          render?: (placement: Record<string, unknown>) => unknown;
+        }>)
+      : [];
+    const chromeControlSurface =
+      typeof props.chromeControlSurface === 'string' ? props.chromeControlSurface : 'toolbar';
+    const activeHeaderSurface =
+      chromeControlSurface === 'topbar' ? 'explorerTopbar' : 'explorerToolbar';
+    const chromeEditActive =
+      Boolean(
+        useExplorerStore.getState().chromeEditSession &&
+          useExplorerStore.getState().chromeEditSession?.layoutId === 'default',
+      );
+    const defaultZoneByControlId: Record<string, 'center' | 'end'> = {
+      workspaceTabStrip: 'center',
+      workspaceTabs: 'center',
+      workspacePaneCounts: 'end',
+      workspaceNewTab: 'end',
+      workspacePaneActionsMenu: 'end',
+      workspaceSplitToggle: 'end',
+    };
+    return (
+      <div
+        data-workspace-pane-shell="true"
+        style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}
+      >
+        {externalChromeControls.length > 0 ? (
+          <div data-layout-dynamics-surface={activeHeaderSurface}>
+            {externalChromeControls
+              .filter((entry) => entry.surfaces.includes(activeHeaderSurface))
+              .map((entry) => {
+                const zone = defaultZoneByControlId[entry.id] ?? 'end';
+                return (
+                  <div
+                    key={entry.id}
+                    data-overlay-explorer-control={entry.id}
+                    data-overlay-explorer-control-zone={zone}
+                  >
+                    {entry.render?.({
+                      controlId: entry.id,
+                      surfaceId: activeHeaderSurface,
+                      zone,
+                      order: 10,
+                      offsetPx: 0,
+                      sizeVariant: 'regular',
+                    })}
+                  </div>
+                );
+              })}
+          </div>
+        ) : null}
+        {chromeEditActive ? (
+          <div data-layout-dynamics-surface={activeHeaderSurface} />
+        ) : null}
+        <div data-testid={`file-explorer-${instanceId}`} />
+      </div>
+    );
   },
 }));
 
@@ -522,7 +581,7 @@ describe('ExplorerWorkspace', () => {
     await waitFor(() => {
       expect(
         container.querySelector(
-          '[data-layout-dynamics-surface="workspaceHeader"]',
+          '[data-layout-dynamics-surface="explorerToolbar"]',
         ),
       ).not.toBeNull();
     });

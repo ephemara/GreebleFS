@@ -15,6 +15,7 @@ import {
 } from '../config/ideWorkbenchLayout';
 import { semanticIndexingCapabilityId } from '../config/localModels';
 import { DEFAULT_EXPLORER_MENU_PACK_ID } from '../config/menuPacks';
+import { EXPLORER_CANONICAL_LAYOUT_ID } from '../config/explorerLayouts';
 import {
   inferIntegratedTerminalProfileFromShell,
   normalizeIntegratedTerminalProfile,
@@ -102,6 +103,8 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.collectionPreviewMode).toBe('list');
     expect(settings.explorer.modeProfileOverridesByThemeId).toEqual({});
     expect(settings.explorer.chromeLayoutOverridesByThemeId).toEqual({});
+    expect(settings.explorer.followThemeExplorerLayout).toBe(true);
+    expect(settings.explorer.activeExplorerLayoutId).toBeNull();
     expect(settings.explorer.activeMenuPackId).toBe(DEFAULT_EXPLORER_MENU_PACK_ID);
     expect(settings.explorer.contextMenuLayoutOverridesByContext).toEqual({});
   });
@@ -584,6 +587,46 @@ describe('useSettingsStore.updateExplorer()', () => {
     expect(useExplorerStore.getState().session.sidebarWidth).toBe(244);
     expect(useExplorerStore.getState().session.previewWidth).toBe(420);
     expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
+  });
+
+  it('pins the active explorer layout independently from legacy chrome overrides', () => {
+    useSettingsStore.getState().setExplorerChromeLayoutOverride('operator', 'default', {
+      entries: [
+        {
+          controlId: 'refresh',
+          surfaceId: 'explorerToolbar',
+          zone: 'primaryStart',
+          order: 5,
+        },
+      ],
+    });
+
+    useSettingsStore.getState().setFollowThemeExplorerLayout(false);
+    useSettingsStore.getState().setActiveExplorerLayoutId('user:focus-wide');
+
+    const { explorer } = useSettingsStore.getState().settings;
+    expect(explorer.followThemeExplorerLayout).toBe(false);
+    expect(explorer.activeExplorerLayoutId).toBe('user:focus-wide');
+    expect(explorer.chromeLayoutOverridesByThemeId.operator?.default?.entries).toHaveLength(1);
+  });
+
+  it('restores the canonical explorer layout without mutating explorer session geometry', () => {
+    useExplorerStore.getState().updateSession({
+      shellLayoutId: 'focus',
+      sidebarWidth: 312,
+      previewWidth: 488,
+    });
+
+    useSettingsStore.getState().setFollowThemeExplorerLayout(false);
+    useSettingsStore.getState().setActiveExplorerLayoutId('user:focus-wide');
+    useSettingsStore.getState().restoreCanonicalExplorerLayout();
+
+    const { explorer } = useSettingsStore.getState().settings;
+    expect(explorer.followThemeExplorerLayout).toBe(false);
+    expect(explorer.activeExplorerLayoutId).toBe(EXPLORER_CANONICAL_LAYOUT_ID);
+    expect(useExplorerStore.getState().session.shellLayoutId).toBe('focus');
+    expect(useExplorerStore.getState().session.sidebarWidth).toBe(312);
+    expect(useExplorerStore.getState().session.previewWidth).toBe(488);
   });
 });
 

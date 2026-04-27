@@ -64,11 +64,16 @@ func (b *Bridge) EmitEvent(kind string, payload map[string]any) {
 	b.value.Call("emitEvent", toJSValue(event))
 }
 
-// CallRuntimeAction calls the typed action surface of the host's runtime
-// pipeline. Returns the host's resolved `result` object as a js.Value; the
-// caller decides how to decode it.
-func (b *Bridge) CallRuntimeAction(actionID string, payload any) (js.Value, error) {
-	promise := b.value.Call("callRuntimeAction", actionID, toJSValue(payload))
+// CallRuntimeAction calls a typed action on a *peer* runtime (typically a
+// `native-sidecar`) through the host's universal pipeline. `wasm-panel`
+// runtimes never call into themselves — they handle UI in-process — so the
+// target runtime id is required. Returns the resolved `result` object as a
+// js.Value; the caller decides how to decode it.
+func (b *Bridge) CallRuntimeAction(targetRuntimeID, actionID string, payload any) (js.Value, error) {
+	if targetRuntimeID == "" {
+		return js.Undefined(), errors.New("greeblefs hostapi: targetRuntimeID is required")
+	}
+	promise := b.value.Call("callRuntimeAction", targetRuntimeID, actionID, toJSValue(payload))
 	return awaitPromise(promise)
 }
 

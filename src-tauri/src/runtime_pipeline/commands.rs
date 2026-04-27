@@ -515,14 +515,9 @@ fn invoke_build_script(
         return Ok(BuildScriptResult::default());
     }
 
-    let script_path = repo_go_build_script_path()
-        .ok_or_else(|| "scripts/go/build.sh is not present in this build".to_string())?;
-    if !script_path.exists() {
-        return Err(format!(
-            "Go build script missing: {}",
-            script_path.to_string_lossy()
-        ));
-    }
+    let script_path = resolve_go_build_script_path().ok_or_else(|| {
+        "scripts/go/build.sh could not be located. Set GREEBLEFS_GO_BUILD_SCRIPT or reinstall the app so app-local data contains scripts/go/build.sh.".to_string()
+    })?;
     let mut command = Command::new("bash");
     command
         .arg(&script_path)
@@ -558,7 +553,164 @@ fn invoke_build_script(
     Ok(BuildScriptResult { stdout, stderr })
 }
 
-fn repo_go_build_script_path() -> Option<PathBuf> {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok()?;
-    Some(PathBuf::from(manifest_dir).join("../scripts/go/build.sh"))
+/// Resolve the Go build script for the running host. Order of precedence:
+///
+///   1. `GREEBLEFS_GO_BUILD_SCRIPT` environment override (lets ops point at a
+///      vendored toolchain, container path, or repo checkout).
+///   2. App-local data root (`<app_local_data>/scripts/go/build.sh`) — what
+///      installer scripts copy on release builds.
+///   3. The dev-only repo path relative to `CARGO_MANIFEST_DIR`.
+///
+/// Returns `None` only when none of the candidates exist on disk; the caller
+/// turns that into a stable error message that points engineers at the env
+/// override or the install path so installed builds with a missing
+/// `scripts/go/` are diagnosable.
+pub(crate) fn resolve_go_build_script_path() -> Option<PathBuf> {
+    for candidate in candidate_go_build_script_paths() {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn candidate_go_build_script_paths() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(override_path) = std::env::var("GREEBLEFS_GO_BUILD_SCRIPT") {
+        if !override_path.is_empty() {
+            candidates.push(PathBuf::from(override_path));
+        }
+    }
+    if let Some(app_local) = app_local_data_dir_for_resolution() {
+        candidates.push(app_local.join("scripts/go/build.sh"));
+    }
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        candidates.push(PathBuf::from(manifest_dir).join("../scripts/go/build.sh"));
+    }
+    candidates
+}
+
+#[cfg(test)]
+mod build_script_resolution_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Env var manipulation in tests must serialize because std::env::set_var
+    // mutates process-global state.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn env_override_wins_when_path_exists() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let fake = temp.path().join("custom-build.sh");
+        std::fs::write(&fake, "#!/bin/sh\nexit 0\n").expect("write");
+
+        let prev = std::env::var("GREEBLEFS_GO_BUILD_SCRIPT").ok();
+        std::env::set_var("GREEBLEFS_GO_BUILD_SCRIPT", &fake);
+        let resolved = resolve_go_build_script_path();
+        if let Some(prev) = prev {
+            std::env::set_var("GREEBLEFS_GO_BUILD_SCRIPT", prev);
+        } else {
+            std::env::remove_var("GREEBLEFS_GO_BUILD_SCRIPT");
+        }
+
+        assert_eq!(resolved.as_deref(), Some(fake.as_path()));
+    }
+
+    #[test]
+    fn missing_env_override_does_not_block_other_candidates() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let nonexistent = temp.path().join("does-not-exist.sh");
+
+        let prev = std::env::var("GREEBLEFS_GO_BUILD_SCRIPT").ok();
+        std::env::set_var("GREEBLEFS_GO_BUILD_SCRIPT", &nonexistent);
+        let resolved = resolve_go_build_script_path();
+        if let Some(prev) = prev {
+            std::env::set_var("GREEBLEFS_GO_BUILD_SCRIPT", prev);
+        } else {
+            std::env::remove_var("GREEBLEFS_GO_BUILD_SCRIPT");
+        }
+
+        // The dev-checkout fallback should still resolve under cargo test.
+        assert!(
+            resolved.is_some(),
+            "build script resolution must fall through to dev fallback"
+        );
+    }
+
+    /// Lazy compilation in installed/release builds: the dev repo is not on
+    /// disk, but the installer has copied `scripts/go/build.sh` under the
+    /// app-local data root. The resolver must pick that up via the
+    /// `GREEBLEFS_APP_LOCAL_DATA_DIR` override without depending on the
+    /// `CARGO_MANIFEST_DIR` fallback. This is the exact path runtime_prepare
+    /// hits when a packaged build needs to compile a Go runtime on first use.
+    #[test]
+    fn app_local_install_layout_resolves_for_lazy_compilation() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let app_local = temp.path().join("install-root");
+        let scripts_dir = app_local.join("scripts/go");
+        std::fs::create_dir_all(&scripts_dir).expect("mkdir");
+        let installed_script = scripts_dir.join("build.sh");
+        std::fs::write(&installed_script, "#!/bin/sh\nexit 0\n").expect("write");
+
+        let prev_override = std::env::var("GREEBLEFS_GO_BUILD_SCRIPT").ok();
+        let prev_app_local = std::env::var("GREEBLEFS_APP_LOCAL_DATA_DIR").ok();
+        std::env::remove_var("GREEBLEFS_GO_BUILD_SCRIPT");
+        std::env::set_var("GREEBLEFS_APP_LOCAL_DATA_DIR", &app_local);
+
+        let resolved = resolve_go_build_script_path();
+
+        if let Some(prev) = prev_override {
+            std::env::set_var("GREEBLEFS_GO_BUILD_SCRIPT", prev);
+        } else {
+            std::env::remove_var("GREEBLEFS_GO_BUILD_SCRIPT");
+        }
+        if let Some(prev) = prev_app_local {
+            std::env::set_var("GREEBLEFS_APP_LOCAL_DATA_DIR", prev);
+        } else {
+            std::env::remove_var("GREEBLEFS_APP_LOCAL_DATA_DIR");
+        }
+
+        assert_eq!(
+            resolved.as_deref(),
+            Some(installed_script.as_path()),
+            "installed app-local layout must resolve the build script for lazy compile"
+        );
+    }
+}
+
+/// Best-effort app-local data resolution that does not require a Tauri
+/// `AppHandle`. We use the well-known XDG-style locations Tauri itself
+/// resolves on each platform; the installer copies `scripts/` under that
+/// root, so this is the right lookup for installed builds.
+fn app_local_data_dir_for_resolution() -> Option<PathBuf> {
+    if let Ok(env_root) = std::env::var("GREEBLEFS_APP_LOCAL_DATA_DIR") {
+        if !env_root.is_empty() {
+            return Some(PathBuf::from(env_root));
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let base = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))?;
+        return Some(base.join("co.greeblefs.app"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var_os("HOME").map(PathBuf::from)?;
+        return Some(home.join("Library/Application Support/co.greeblefs.app"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = std::env::var_os("LOCALAPPDATA")
+            .or_else(|| std::env::var_os("APPDATA"))
+            .map(PathBuf::from)?;
+        return Some(appdata.join("co.greeblefs.app"));
+    }
+    #[allow(unreachable_code)]
+    None
 }

@@ -1,3 +1,18 @@
+# 2026-04-27 - Universal Polyglot Runtime Pipeline P1/P2 Hardening Pass
+
+- Five findings closed in `src-tauri/src/runtime_pipeline/` and `src/components/GoPanelHost.tsx`:
+  - **P1.1 wasm-panel host bridge.** `GoPanelHostBridge.callRuntimeAction(targetRuntimeId, actionId, payload?)` now requires a *peer* runtime id and explicitly rejects targeting the panel's own runtime id. Self-calls used to silently no-op because `wasm-panel` runtimes have no receiving action surface; now they throw with a clear error.
+  - **P1.2 multi-panel DOM disambiguation.** Each `GoPanelHost` mount generates a unique `data-bridge-token` (committed to React state, not a ref, so the DOM attribute is observable before `panel.Run` queries it). Two panels of the same runtime id mount cleanly side by side, and the Go SDK locates *its* DOM root through `[data-bridge-token="<token>"]`.
+  - **P1.3 lazy compilation in installed builds.** New `runtime_pipeline::commands::resolve_go_build_script_path` resolves `scripts/go/build.sh` in candidate order: `GREEBLEFS_GO_BUILD_SCRIPT` env override → `<app_local_data>/scripts/go/build.sh` (installer-copied) → repo-relative dev fallback. The installer (`scripts/build-and-install-linux-local-release.sh`) copies `scripts/go/`, `src-go/`, and `toolchains/` into the app-local data root. `GREEBLEFS_APP_LOCAL_DATA_DIR` overrides the app-local root for tests/ops.
+  - **P2.1 path sandboxing for managed-content runtimes.** `enforce_managed_path_sandbox` in `discovery.rs` rejects any managed-content runtime whose canonical `module_dir` / `entry` / `working_directory` escapes the package directory the manifest lives in. Builtins skip the check (trusted source). Add new host-resolved manifest paths to the sandbox list when extending `RuntimeManifest`.
+  - **P2.2 Wasm artifact loading via Tauri asset protocol.** `GoPanelHost.tsx` now resolves the compiled `.wasm` through `convertFileSrc(prepared.artifactPath)` before fetching, so packaged builds respect `assetProtocol.scope` and platform-specific path encoding. Raw `file://` fetches were brittle on Windows drive letters / unicode and rejected by some webviews.
+- Test coverage added for the gaps in the previous pass:
+  - `src/test/goPanelHost.test.tsx` now covers (a) multi-panel mounting yields two distinct bridge tokens and two registry entries, (b) `callRuntimeAction` self-call rejection, (c) peer-targeted `callRuntimeAction` correctly forwards to `callGoSidecarAction` with payload.
+  - `src-tauri/src/runtime_pipeline/commands.rs::build_script_resolution_tests::app_local_install_layout_resolves_for_lazy_compilation` exercises the installer-style layout: only `<app_local>/scripts/go/build.sh` exists on disk and the resolver picks it up via `GREEBLEFS_APP_LOCAL_DATA_DIR` without falling through to the dev repo path.
+  - All 18 Rust runtime_pipeline tests pass; all 12 Vitest tests across `goPanelHost.test.tsx`, `runtimePipelineDirectory.test.ts`, and `goWorkbenchActions.test.ts` pass.
+- Doc updates:
+  - `ARCHITECTURE.md` Universal Pipeline section grew a "hardening contracts that future runtime work must preserve" sub-list spelling out the five constraints above so future agents do not regress them.
+
 # 2026-04-27 - Universal Polyglot Runtime Pipeline (Go + Wasm + Migrated Python Sidecar)
 
 - GreebleFS now has a single host-owned subsystem for `native-sidecar`, `native-command`, `native-tui`, `wasm-panel`, and `wasm-worker` runtime packages instead of treating Python sidecars as the only managed runtime lane.

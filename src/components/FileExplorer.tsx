@@ -8787,6 +8787,21 @@ export function FileExplorer({
       () => resolvedExplorerLayout?.bandMetrics ?? {},
     );
   const lastAppliedExplorerLayoutIdRef = useRef<string | null>(null);
+  const explorerBandResizeFrameRef = useRef<number | null>(null);
+  const explorerBandResizeCleanupRef = useRef<(() => void) | null>(null);
+  const explorerBandResizePendingValueRef = useRef<number | null>(null);
+  const explorerBandResizeSessionRef = useRef<{
+    pointerId: number;
+    metricKey: keyof ExplorerLayoutBandMetrics;
+    direction: 1 | -1;
+    startClientY: number;
+    startValue: number;
+    restoreValue: number;
+  } | null>(null);
+  const [
+    activeExplorerBandResizeMetric,
+    setActiveExplorerBandResizeMetric,
+  ] = useState<keyof ExplorerLayoutBandMetrics | null>(null);
   const [actionsVisible, setActionsVisible] = useState(
     () => initialSession.actionsVisible,
   );
@@ -8846,6 +8861,7 @@ export function FileExplorer({
   const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showArchiveActionsMenu, setShowArchiveActionsMenu] = useState(false);
+  const [explorerHeaderStackHeight, setExplorerHeaderStackHeight] = useState(0);
   const [rename, setRename] = useState<RenameState>({
     active: false,
     path: "",
@@ -9155,6 +9171,7 @@ export function FileExplorer({
     });
 
   const explorerRootRef = useRef<HTMLDivElement | null>(null);
+  const explorerHeaderStackRef = useRef<HTMLDivElement | null>(null);
   const explorerFileAreaRef = useRef<HTMLDivElement | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const previewContentHostRef = useRef<HTMLDivElement | null>(null);
@@ -13813,6 +13830,147 @@ export function FileExplorer({
     },
     [],
   );
+  const resolveExplorerLayoutBandMetricValue = useCallback(
+    (metricKey: keyof ExplorerLayoutBandMetrics): number => {
+      const currentValue =
+        layoutBandMetricsDraft[metricKey] ??
+        resolvedExplorerLayout?.bandMetrics[metricKey];
+      if (typeof currentValue === "number" && Number.isFinite(currentValue)) {
+        return clampExplorerLayoutBandMetricValue(metricKey, currentValue);
+      }
+      return clampExplorerLayoutBandMetricValue(
+        metricKey,
+        EXPLORER_LAYOUT_BAND_HEIGHT_BOUNDS[metricKey]?.min ?? 32,
+      );
+    },
+    [layoutBandMetricsDraft, resolvedExplorerLayout?.bandMetrics],
+  );
+  const endExplorerLayoutBandResize = useCallback(
+    ({ restore }: { restore: boolean }) => {
+      const activeSession = explorerBandResizeSessionRef.current;
+      if (!activeSession) {
+        return;
+      }
+      explorerBandResizeSessionRef.current = null;
+      explorerBandResizePendingValueRef.current = null;
+      if (explorerBandResizeFrameRef.current != null) {
+        window.cancelAnimationFrame(explorerBandResizeFrameRef.current);
+        explorerBandResizeFrameRef.current = null;
+      }
+      if (explorerBandResizeCleanupRef.current) {
+        explorerBandResizeCleanupRef.current();
+        explorerBandResizeCleanupRef.current = null;
+      }
+      document.body.style.cursor = "";
+      if (restore) {
+        updateExplorerLayoutBandMetric(
+          activeSession.metricKey,
+          activeSession.restoreValue,
+        );
+      }
+      setActiveExplorerBandResizeMetric(null);
+    },
+    [updateExplorerLayoutBandMetric],
+  );
+  const queueExplorerLayoutBandMetricUpdate = useCallback(
+    (metricKey: keyof ExplorerLayoutBandMetrics, nextValue: number) => {
+      const clampedValue = clampExplorerLayoutBandMetricValue(
+        metricKey,
+        nextValue,
+      );
+      if (typeof window.requestAnimationFrame !== "function") {
+        updateExplorerLayoutBandMetric(metricKey, clampedValue);
+        return;
+      }
+      explorerBandResizePendingValueRef.current = clampedValue;
+      if (explorerBandResizeFrameRef.current != null) {
+        return;
+      }
+      explorerBandResizeFrameRef.current = window.requestAnimationFrame(() => {
+        explorerBandResizeFrameRef.current = null;
+        const pendingValue = explorerBandResizePendingValueRef.current;
+        explorerBandResizePendingValueRef.current = null;
+        if (pendingValue == null) {
+          return;
+        }
+        updateExplorerLayoutBandMetric(metricKey, pendingValue);
+      });
+    },
+    [updateExplorerLayoutBandMetric],
+  );
+  const startExplorerLayoutBandResize = useCallback(
+    (
+      event: React.PointerEvent<HTMLDivElement>,
+      metricKey: keyof ExplorerLayoutBandMetrics,
+      direction: 1 | -1,
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      explorerBandResizeCleanupRef.current?.();
+      const startValue = resolveExplorerLayoutBandMetricValue(metricKey);
+      explorerBandResizeSessionRef.current = {
+        pointerId: event.pointerId,
+        metricKey,
+        direction,
+        startClientY: event.clientY,
+        startValue,
+        restoreValue: startValue,
+      };
+      document.body.style.cursor = "ns-resize";
+      setActiveExplorerBandResizeMetric(metricKey);
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        const activeSession = explorerBandResizeSessionRef.current;
+        if (!activeSession || moveEvent.pointerId !== activeSession.pointerId) {
+          return;
+        }
+        const deltaY = moveEvent.clientY - activeSession.startClientY;
+        queueExplorerLayoutBandMetricUpdate(
+          activeSession.metricKey,
+          activeSession.startValue + deltaY * activeSession.direction,
+        );
+      };
+      const handlePointerEnd = (pointerEvent: PointerEvent) => {
+        const activeSession = explorerBandResizeSessionRef.current;
+        if (!activeSession || pointerEvent.pointerId !== activeSession.pointerId) {
+          return;
+        }
+        endExplorerLayoutBandResize({ restore: false });
+      };
+      const handleWindowBlur = () => {
+        endExplorerLayoutBandResize({ restore: true });
+      };
+      const handleKeyDown = (keyboardEvent: KeyboardEvent) => {
+        if (keyboardEvent.key !== "Escape") {
+          return;
+        }
+        keyboardEvent.preventDefault();
+        endExplorerLayoutBandResize({ restore: true });
+      };
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerEnd);
+      window.addEventListener("pointercancel", handlePointerEnd);
+      window.addEventListener("blur", handleWindowBlur);
+      window.addEventListener("keydown", handleKeyDown);
+      explorerBandResizeCleanupRef.current = () => {
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerEnd);
+        window.removeEventListener("pointercancel", handlePointerEnd);
+        window.removeEventListener("blur", handleWindowBlur);
+        window.removeEventListener("keydown", handleKeyDown);
+      };
+    },
+    [
+      endExplorerLayoutBandResize,
+      queueExplorerLayoutBandMetricUpdate,
+      resolveExplorerLayoutBandMetricValue,
+    ],
+  );
+  useEffect(
+    () => () => {
+      endExplorerLayoutBandResize({ restore: true });
+    },
+    [endExplorerLayoutBandResize],
+  );
   const togglePreviewEnabled = useCallback(async () => {
     previewReopenOnSelectionRef.current = false;
     allowPreviewLoadWhileClosedRef.current = false;
@@ -17900,17 +18058,8 @@ export function FileExplorer({
     themeExplorerLayoutId,
   ]);
   const persistedExplorerChromeOverride = useMemo(
-    () =>
-      resolvedExplorerLayout?.chromeSnapshot
-      ?? explorerSettings.chromeLayoutOverridesByThemeId[explorerChromeThemeId]?.[
-        effectiveChromeLayoutId
-      ] ?? null,
-    [
-      effectiveChromeLayoutId,
-      explorerChromeThemeId,
-      explorerSettings.chromeLayoutOverridesByThemeId,
-      resolvedExplorerLayout?.chromeSnapshot,
-    ],
+    () => resolvedExplorerLayout?.chromeSnapshot ?? null,
+    [resolvedExplorerLayout?.chromeSnapshot],
   );
   const activeChromeEditSession = useMemo(
     () =>
@@ -20598,6 +20747,27 @@ export function FileExplorer({
       }
     },
     [],
+  );
+  const getExplorerBandResizeHandleStyle = useCallback(
+    (
+      metricKey: keyof ExplorerLayoutBandMetrics,
+      edge: "top" | "bottom",
+    ): CSSProperties => ({
+      alignSelf: "stretch",
+      height: 6,
+      marginTop: edge === "top" ? -3 : 0,
+      marginBottom: edge === "bottom" ? -3 : 0,
+      cursor: "ns-resize",
+      borderRadius: 999,
+      background:
+        activeExplorerBandResizeMetric === metricKey
+          ? `linear-gradient(180deg, ${accent}88, transparent)`
+          : `linear-gradient(180deg, ${accent}33, transparent)`,
+      opacity: activeChromeEditSession ? 0.95 : 0,
+      pointerEvents: activeChromeEditSession ? "auto" : "none",
+      transition: "opacity 120ms ease, background 120ms ease",
+    }),
+    [accent, activeChromeEditSession, activeExplorerBandResizeMetric],
   );
   const canExecuteExplorerChromeAction = useCallback(
     (
@@ -23968,6 +24138,41 @@ export function FileExplorer({
       layoutZoomFrameLastAtRef.current = null;
     };
   }, [layoutZoomGestureActive]);
+
+  useLayoutEffect(() => {
+    const headerStack = explorerHeaderStackRef.current;
+    if (!headerStack) {
+      return;
+    }
+
+    const syncHeaderStackHeight = () => {
+      setExplorerHeaderStackHeight(headerStack.getBoundingClientRect().height);
+    };
+
+    syncHeaderStackHeight();
+
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            syncHeaderStackHeight();
+          })
+        : null;
+
+    resizeObserver?.observe(headerStack);
+    window.addEventListener("resize", syncHeaderStackHeight);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", syncHeaderStackHeight);
+    };
+  }, [
+    explorerPicker,
+    layoutBandMetricsDraft.explorerToolbarHeightPx,
+    layoutBandMetricsDraft.unifiedHeaderHeightPx,
+    resolvedExplorerLayout?.bandMetrics.explorerToolbarHeightPx,
+    resolvedExplorerLayout?.bandMetrics.unifiedHeaderHeightPx,
+    showsGlobalChromeControls,
+  ]);
 
   useLayoutEffect(() => {
     const viewport = explorerViewportRef.current;
@@ -27677,7 +27882,13 @@ export function FileExplorer({
     return (
       <div
         data-overlay-explorer-plane="rail"
-        style={{ display: "flex", minHeight: 0, minWidth: 0 }}
+        style={{
+          display: "flex",
+          minHeight: 0,
+          minWidth: 0,
+          paddingTop: explorerHeaderStackHeight,
+          boxSizing: "border-box",
+        }}
       >
         <ResizablePane
           size={sidebarWidth}
@@ -27750,6 +27961,7 @@ export function FileExplorer({
     deleteExplorerSavedSearch,
     drives,
     drivesLoading,
+    explorerHeaderStackHeight,
     explorerDropScopeId,
     effectiveChromeLayoutId,
     effectiveRailPosition,
@@ -27781,14 +27993,30 @@ export function FileExplorer({
     () => (
       <div data-overlay-explorer-plane="toolbar" style={toolbarContainerStyle}>
         {showsGlobalChromeControls && (
-          <ExplorerChromeSurface
-            surface={explorerTopbarSurface}
-            getRowStyle={getExplorerTopbarRowStyle}
-            getZoneStyle={getExplorerChromeZoneStyle}
-            renderControl={renderExplorerChromeControl}
-            layoutDynamics={explorerTopbarLayoutDynamics}
-            editMode={explorerChromeEditMode}
-          />
+          <>
+            <ExplorerChromeSurface
+              surface={explorerTopbarSurface}
+              getRowStyle={getExplorerTopbarRowStyle}
+              getZoneStyle={getExplorerChromeZoneStyle}
+              renderControl={renderExplorerChromeControl}
+              layoutDynamics={explorerTopbarLayoutDynamics}
+              editMode={explorerChromeEditMode}
+            />
+            <div
+              data-overlay-explorer-layout-band-resize="unifiedHeaderHeightPx"
+              onPointerDown={(event) =>
+                startExplorerLayoutBandResize(
+                  event,
+                  "unifiedHeaderHeightPx",
+                  1,
+                )
+              }
+              style={getExplorerBandResizeHandleStyle(
+                "unifiedHeaderHeightPx",
+                "bottom",
+              )}
+            />
+          </>
         )}
         <ExplorerChromeSurface
           surface={explorerToolbarSurface}
@@ -27798,6 +28026,18 @@ export function FileExplorer({
           layoutDynamics={explorerToolbarLayoutDynamics}
           editMode={explorerChromeEditMode}
         />
+        {!showsGlobalChromeControls ? (
+          <div
+            data-overlay-explorer-layout-band-resize="unifiedHeaderHeightPx"
+            onPointerDown={(event) =>
+              startExplorerLayoutBandResize(event, "unifiedHeaderHeightPx", 1)
+            }
+            style={getExplorerBandResizeHandleStyle(
+              "unifiedHeaderHeightPx",
+              "bottom",
+            )}
+          />
+        ) : null}
       </div>
     ),
     [
@@ -27806,11 +28046,13 @@ export function FileExplorer({
       explorerToolbarSurface,
       explorerTopbarLayoutDynamics,
       explorerTopbarSurface,
+      getExplorerBandResizeHandleStyle,
       getExplorerToolbarRowStyle,
       getExplorerTopbarRowStyle,
       getExplorerChromeZoneStyle,
       renderExplorerChromeControl,
       showsGlobalChromeControls,
+      startExplorerLayoutBandResize,
       toolbarContainerStyle,
     ],
   );
@@ -28163,143 +28405,145 @@ export function FileExplorer({
 
         {/* ══ MAIN ══ */}
         <div data-overlay-explorer-plane="main" style={mainColumnStyle}>
-          {/* Toolbar */}
-          {explorerToolbarPane}
-          {explorerPicker && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "8px 12px",
-                background: "var(--overlay-explorer-chip-active-bg)",
-                borderBottom:
-                  "1px solid var(--overlay-explorer-toolbar-border)",
-                flexShrink: 0,
-              }}
-            >
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div
+          <div ref={explorerHeaderStackRef} style={{ display: "flex", flexDirection: "column" }}>
+            {/* Toolbar */}
+            {explorerToolbarPane}
+            {explorerPicker && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 12px",
+                  background: "var(--overlay-explorer-chip-active-bg)",
+                  borderBottom:
+                    "1px solid var(--overlay-explorer-toolbar-border)",
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: accent,
+                    }}
+                  >
+                    {explorerPickerHeading}
+                  </div>
+                  <div style={{ marginTop: 3, fontSize: 11, color: EXP.muted }}>
+                    {explorerPickerDescription}
+                    {explorerPickerSelectionSummary
+                      ? ` ${explorerPickerSelectionSummary}`
+                      : ""}
+                  </div>
+                  {explorerPicker.kind === "saveFile" ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginTop: 8,
+                      }}
+                    >
+                      <input
+                        value={pickerSaveFileName}
+                        onChange={(event) =>
+                          setPickerSaveFileName(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            confirmExplorerPickerSelection();
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            cancelExplorerPicker();
+                          }
+                        }}
+                        placeholder={explorerPicker.initialFileName ?? "untitled"}
+                        style={{
+                          flex: 1,
+                          minWidth: 180,
+                          height: 32,
+                          background: "var(--overlay-explorer-input-bg)",
+                          border:
+                            "1px solid var(--overlay-explorer-input-border)",
+                          borderRadius: "var(--overlay-explorer-control-radius)",
+                          color: EXP.text,
+                          fontSize: 12,
+                          padding: "0 10px",
+                          outline: "none",
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  {isExplorerPickerUsingCurrentPath ||
+                  explorerPicker.kind === "saveFile" ? (
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 10,
+                        color: EXP.muted,
+                        fontFamily:
+                          appearance?.fonts.mono ??
+                          'var(--overlay-font-mono, "Cascadia Code", Consolas, monospace)',
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={locationTitle}
+                    >
+                      Current folder: {locationTitle}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={confirmExplorerPickerSelection}
+                  disabled={!canConfirmExplorerPickerSelection}
                   style={{
-                    fontSize: 10,
+                    minHeight: 30,
+                    padding: "0 12px",
+                    borderRadius: "var(--overlay-explorer-control-radius)",
+                    border: `1px solid ${canConfirmExplorerPickerSelection ? accent : EXP.border}`,
+                    background: canConfirmExplorerPickerSelection
+                      ? accent
+                      : "var(--overlay-explorer-chip-bg)",
+                    color: canConfirmExplorerPickerSelection
+                      ? "var(--overlay-accent-contrast)"
+                      : EXP.muted,
+                    cursor: canConfirmExplorerPickerSelection
+                      ? "pointer"
+                      : "default",
+                    fontSize: 11,
                     fontWeight: 700,
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase",
-                    color: accent,
                   }}
                 >
-                  {explorerPickerHeading}
-                </div>
-                <div style={{ marginTop: 3, fontSize: 11, color: EXP.muted }}>
-                  {explorerPickerDescription}
-                  {explorerPickerSelectionSummary
-                    ? ` ${explorerPickerSelectionSummary}`
-                    : ""}
-                </div>
-                {explorerPicker.kind === "saveFile" ? (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginTop: 8,
-                    }}
-                  >
-                    <input
-                      value={pickerSaveFileName}
-                      onChange={(event) =>
-                        setPickerSaveFileName(event.target.value)
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          confirmExplorerPickerSelection();
-                        }
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          cancelExplorerPicker();
-                        }
-                      }}
-                      placeholder={explorerPicker.initialFileName ?? "untitled"}
-                      style={{
-                        flex: 1,
-                        minWidth: 180,
-                        height: 32,
-                        background: "var(--overlay-explorer-input-bg)",
-                        border:
-                          "1px solid var(--overlay-explorer-input-border)",
-                        borderRadius: "var(--overlay-explorer-control-radius)",
-                        color: EXP.text,
-                        fontSize: 12,
-                        padding: "0 10px",
-                        outline: "none",
-                      }}
-                    />
-                  </div>
-                ) : null}
-                {isExplorerPickerUsingCurrentPath ||
-                explorerPicker.kind === "saveFile" ? (
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontSize: 10,
-                      color: EXP.muted,
-                      fontFamily:
-                        appearance?.fonts.mono ??
-                        'var(--overlay-font-mono, "Cascadia Code", Consolas, monospace)',
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                    title={locationTitle}
-                  >
-                    Current folder: {locationTitle}
-                  </div>
-                ) : null}
+                  {explorerPicker.confirmLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelExplorerPicker}
+                  style={{
+                    minHeight: 30,
+                    padding: "0 12px",
+                    borderRadius: "var(--overlay-explorer-control-radius)",
+                    border: "1px solid var(--overlay-explorer-chip-border)",
+                    background: "var(--overlay-explorer-chip-bg)",
+                    color: EXP.text,
+                    cursor: "pointer",
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  Cancel
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={confirmExplorerPickerSelection}
-                disabled={!canConfirmExplorerPickerSelection}
-                style={{
-                  minHeight: 30,
-                  padding: "0 12px",
-                  borderRadius: "var(--overlay-explorer-control-radius)",
-                  border: `1px solid ${canConfirmExplorerPickerSelection ? accent : EXP.border}`,
-                  background: canConfirmExplorerPickerSelection
-                    ? accent
-                    : "var(--overlay-explorer-chip-bg)",
-                  color: canConfirmExplorerPickerSelection
-                    ? "var(--overlay-accent-contrast)"
-                    : EXP.muted,
-                  cursor: canConfirmExplorerPickerSelection
-                    ? "pointer"
-                    : "default",
-                  fontSize: 11,
-                  fontWeight: 700,
-                }}
-              >
-                {explorerPicker.confirmLabel}
-              </button>
-              <button
-                type="button"
-                onClick={cancelExplorerPicker}
-                style={{
-                  minHeight: 30,
-                  padding: "0 12px",
-                  borderRadius: "var(--overlay-explorer-control-radius)",
-                  border: "1px solid var(--overlay-explorer-chip-border)",
-                  background: "var(--overlay-explorer-chip-bg)",
-                  color: EXP.text,
-                  cursor: "pointer",
-                  fontSize: 11,
-                  fontWeight: 600,
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Error bar */}
           {error && (
@@ -29849,6 +30093,20 @@ export function FileExplorer({
       {/* Status bar */}
       {shouldRenderStatusBar && (
         <div data-overlay-explorer-plane="status" style={statusBarStyle}>
+          <div
+            data-overlay-explorer-layout-band-resize="explorerStatusBarHeightPx"
+            onPointerDown={(event) =>
+              startExplorerLayoutBandResize(
+                event,
+                "explorerStatusBarHeightPx",
+                -1,
+              )
+            }
+            style={getExplorerBandResizeHandleStyle(
+              "explorerStatusBarHeightPx",
+              "top",
+            )}
+          />
           <ExplorerChromeSurface
             surface={explorerStatusBarSurface}
             style={{ width: "100%", minWidth: 0 }}

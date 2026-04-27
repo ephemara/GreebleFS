@@ -104,6 +104,15 @@ if [[ -d "$repo_root/toolchains" ]]; then
   mkdir -p "$app_local_data_root/toolchains"
   cp -a --update=none "$repo_root/toolchains"/. "$app_local_data_root/toolchains"/
 fi
+# scripts/go/ contains the host-invoked build/test/check entrypoints. Without
+# this copy, the installed runtime cannot lazily compile managed Go runtimes
+# because `commands.rs::resolve_go_build_script_path` can only find them under
+# the app-local root or the GREEBLEFS_GO_BUILD_SCRIPT env override.
+if [[ -d "$repo_root/scripts/go" ]]; then
+  mkdir -p "$app_local_data_root/scripts/go"
+  cp -a --update=none "$repo_root/scripts/go"/. "$app_local_data_root/scripts/go"/
+  chmod +x "$app_local_data_root/scripts/go"/*.sh 2>/dev/null || true
+fi
 
 cat > "$desktop_entry_path" <<EOF
 [Desktop Entry]

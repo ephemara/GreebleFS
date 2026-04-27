@@ -17,35 +17,19 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import type { ResolvedOverlayAppearance } from "../../config/appearance";
 import type { LoadedExplorerAction } from "../../config/actionPacks";
-import { useLayoutDynamicsController } from "../../animation/layoutDynamics";
-import { isLayoutDynamicsSurfaceId } from "../../config/layoutDynamics";
 import { detectClientPlatform } from "../../config/platform";
 import { matchesKeybinding } from "../../config/hotkeys";
 import {
-  beginExplorerCustomizePointerSession,
-  cancelExplorerCustomizePointerSession,
-} from "./explorerCustomizePointerRuntime";
-import {
-  beginExplorerChromeResizeSession,
-  cancelExplorerChromeResizeSession,
-} from "./explorerChromeResizeRuntime";
-import {
   buildExplorerCustomizeCatalog,
   getExplorerChromeCommandId,
-  isExplorerActionChromeControlId,
   type ExplorerCustomizeCatalogEntry,
 } from "../../config/explorerCustomizeCatalog";
 import {
-  getExplorerChromeSurfaceDefinition,
-  moveExplorerChromeControlInResolvedSurfaces,
   type ExplorerChromeControlId,
   type ExplorerChromeControlDefinition,
-  type ExplorerChromeOverrideEntry,
   type ExplorerChromeResolvedControlPlacement,
-  type ExplorerChromeResolvedSurface,
   type ExplorerChromeSizeVariant,
   type ExplorerChromeSurfaceId,
-  type ExplorerChromeZoneId,
 } from "../../config/explorerChromeLayouts";
 import type {
   OverlayPluginContextMenuContribution,
@@ -345,51 +329,29 @@ export function ExplorerWorkspace({
     sessions,
     workspace,
     chromeEditSession,
-    chromeHotkeyCaptureControlId,
     pendingOpenRequest,
-    closeChromeEditSession,
     createWorkspaceTab,
     duplicateWorkspaceTab,
     closeWorkspaceTab,
     focusWorkspaceTab,
-    registerChromeEditSurface,
-    setChromeEditDraggingControl,
-    setChromeEditHighlightedDropTarget,
-    setChromeEditPendingHotkeyControl,
-    setChromeEditSelectedControl,
-    setChromeHotkeyCaptureControl,
     setWorkspaceColumnSplitRatio,
     setWorkspaceLayoutMode,
     setWorkspaceRowSplitRatio,
     setFocusedPane,
-    unregisterChromeEditSurface,
-    updateChromeEditDraft,
   } = useExplorerStore(
     useShallow((state) => ({
       sessions: state.sessions,
       workspace: state.workspace,
       chromeEditSession: state.chromeEditSession,
-      chromeHotkeyCaptureControlId: state.chromeHotkeyCaptureControlId,
       pendingOpenRequest: state.pendingOpenRequest,
-      closeChromeEditSession: state.closeChromeEditSession,
       createWorkspaceTab: state.createWorkspaceTab,
       duplicateWorkspaceTab: state.duplicateWorkspaceTab,
       closeWorkspaceTab: state.closeWorkspaceTab,
       focusWorkspaceTab: state.focusWorkspaceTab,
-      registerChromeEditSurface: state.registerChromeEditSurface,
-      setChromeEditDraggingControl: state.setChromeEditDraggingControl,
-      setChromeEditHighlightedDropTarget:
-        state.setChromeEditHighlightedDropTarget,
-      setChromeEditPendingHotkeyControl:
-        state.setChromeEditPendingHotkeyControl,
-      setChromeEditSelectedControl: state.setChromeEditSelectedControl,
-      setChromeHotkeyCaptureControl: state.setChromeHotkeyCaptureControl,
       setWorkspaceColumnSplitRatio: state.setWorkspaceColumnSplitRatio,
       setWorkspaceLayoutMode: state.setWorkspaceLayoutMode,
       setWorkspaceRowSplitRatio: state.setWorkspaceRowSplitRatio,
       setFocusedPane: state.setFocusedPane,
-      unregisterChromeEditSurface: state.unregisterChromeEditSurface,
-      updateChromeEditDraft: state.updateChromeEditDraft,
     })),
   );
   const {
@@ -414,8 +376,6 @@ export function ExplorerWorkspace({
   const paneActionsMenuRef = useRef<HTMLDivElement>(null);
   const [linkedNavigationEnabled, setLinkedNavigationEnabled] = useState(false);
   const [paneActionsMenuOpen, setPaneActionsMenuOpen] = useState(false);
-  const [workspaceResizingControlId, setWorkspaceResizingControlId] =
-    useState<ExplorerChromeControlId | null>(null);
   const [runtimeSnapshotsByInstanceId, setRuntimeSnapshotsByInstanceId] =
     useState<Record<string, ExplorerWorkspaceRuntimeSnapshot>>({});
   const [navigationRequestsByInstanceId, setNavigationRequestsByInstanceId] =
@@ -435,7 +395,6 @@ export function ExplorerWorkspace({
     () => appearance?.explorerTheme ?? resolveExplorerThemeRecipe(appearance),
     [appearance],
   );
-  const layoutDynamics = useLayoutDynamicsController(appearance);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const explorerChromeThemeId = useMemo(() => {
     const resolvedAppearanceThemeId = appearance?.baseTheme.id?.trim();
@@ -1032,624 +991,8 @@ export function ExplorerWorkspace({
     setPaneActionsMenuOpen(false);
   }, [activePane, activeWorkspaceTab?.id, activeWorkspaceTab?.layoutMode]);
 
-  const handleWorkspaceChromeControlMove = useCallback(
-    (args: {
-      controlId: ExplorerChromeControlId;
-      targetSurfaceId: ExplorerChromeSurfaceId;
-      targetZoneId: ExplorerChromeZoneId;
-      targetIndex: number;
-      targetOffsetPx?: number;
-    }) => {
-      if (!chromeEditSession) {
-        return;
-      }
-
-      const registeredSurfaces = Object.values(
-        chromeEditSession.registeredSurfaces,
-      ).filter(
-        (surface): surface is NonNullable<typeof surface> => surface != null,
-      );
-      const movedSnapshot = moveExplorerChromeControlInResolvedSurfaces({
-        surfaces: registeredSurfaces,
-        controlId: args.controlId,
-        targetSurfaceId: args.targetSurfaceId,
-        targetZoneId: args.targetZoneId,
-        targetIndex: args.targetIndex,
-        targetOffsetPx: args.targetOffsetPx,
-      });
-      const hiddenEntries = chromeEditSession.draftOverride.entries.filter(
-        (entry) => entry.hidden && entry.controlId !== args.controlId,
-      );
-      updateChromeEditDraft({
-        entries: [...movedSnapshot.entries, ...hiddenEntries],
-      });
-    },
-    [chromeEditSession, updateChromeEditDraft],
-  );
-  const commitWorkspaceChromePointerDrop = useCallback(
-    (args: {
-      controlId: ExplorerChromeControlId;
-      sourceKind: "placed" | "catalog";
-      target: {
-        surfaceId: ExplorerChromeSurfaceId;
-        zoneId: ExplorerChromeZoneId;
-        targetIndex: number;
-        offsetPx: number;
-        bandId?: string;
-        anchorX?: number;
-      };
-      catalogPreviewPlacement?: ExplorerChromeResolvedControlPlacement | null;
-    }) => {
-      if (!chromeEditSession) {
-        return;
-      }
-
-      const registeredSurfaces = Object.values(
-        chromeEditSession.registeredSurfaces,
-      ).filter(
-        (surface): surface is NonNullable<typeof surface> => surface != null,
-      );
-      const movedSnapshot = moveExplorerChromeControlInResolvedSurfaces({
-        surfaces: registeredSurfaces,
-        controlId: args.controlId,
-        targetSurfaceId: args.target.surfaceId,
-        targetZoneId: args.target.zoneId,
-        targetIndex: args.target.targetIndex,
-        targetOffsetPx: args.target.offsetPx,
-      });
-      const targetUsesLayoutDynamics =
-        args.sourceKind === "catalog" &&
-        isLayoutDynamicsSurfaceId(args.target.surfaceId) &&
-        args.target.bandId != null &&
-        args.target.anchorX != null;
-      const nextEntries = movedSnapshot.entries.map((entry) => {
-        if (entry.controlId !== args.controlId) {
-          return entry;
-        }
-        return {
-          ...entry,
-          sizeVariant:
-            args.catalogPreviewPlacement?.sizeVariant ?? entry.sizeVariant,
-          widthPx: args.catalogPreviewPlacement?.widthPx ?? entry.widthPx,
-          showLabel:
-            args.catalogPreviewPlacement?.showLabel ?? entry.showLabel,
-          showIcon: args.catalogPreviewPlacement?.showIcon ?? entry.showIcon,
-          ...(targetUsesLayoutDynamics &&
-          args.target.bandId &&
-          args.target.anchorX != null
-            ? {
-                bandId: args.target.bandId,
-                anchorX: args.target.anchorX,
-                anchorY: undefined,
-                offsetPx: 0,
-                hidden: false,
-              }
-            : null),
-        };
-      });
-      const hiddenEntries = chromeEditSession.draftOverride.entries.filter(
-        (entry) => entry.hidden && entry.controlId !== args.controlId,
-      );
-      updateChromeEditDraft({
-        entries: [...nextEntries, ...hiddenEntries],
-      });
-      setChromeEditSelectedControl(args.controlId);
-      setChromeEditHighlightedDropTarget(null);
-    },
-    [
-      chromeEditSession,
-      setChromeEditHighlightedDropTarget,
-      setChromeEditSelectedControl,
-      updateChromeEditDraft,
-    ],
-  );
-  const findRegisteredWorkspaceChromePlacement = useCallback(
-    (
-      controlId: ExplorerChromeControlId,
-    ): ExplorerChromeResolvedControlPlacement | null => {
-      if (!chromeEditSession) {
-        return null;
-      }
-
-      const registeredSurfaces = Object.values(
-        chromeEditSession.registeredSurfaces,
-      ).filter(
-        (surface): surface is ExplorerChromeResolvedSurface => surface != null,
-      );
-      for (const surface of registeredSurfaces) {
-        for (const row of surface.rows) {
-          for (const zone of row.zones) {
-            const placement = zone.controls.find(
-              (entry) => entry.controlId === controlId,
-            );
-            if (placement) {
-              return placement;
-            }
-          }
-        }
-      }
-
-      return null;
-    },
-    [chromeEditSession],
-  );
-  const updateWorkspaceChromeEditEntry = useCallback(
-    (
-      controlId: ExplorerChromeControlId,
-      updates: Partial<ExplorerChromeOverrideEntry>,
-    ) => {
-      if (!chromeEditSession) {
-        return;
-      }
-
-      const existingEntry = chromeEditSession.draftOverride.entries.find(
-        (entry) => entry.controlId === controlId,
-      );
-      const visiblePlacement = findRegisteredWorkspaceChromePlacement(controlId);
-      const nextEntry: ExplorerChromeOverrideEntry = {
-        controlId,
-        surfaceId:
-          existingEntry?.surfaceId ??
-          visiblePlacement?.surfaceId ??
-          "workspaceHeader",
-        zone: existingEntry?.zone ?? visiblePlacement?.zone ?? "center",
-        order: existingEntry?.order ?? visiblePlacement?.order ?? 9990,
-        offsetPx: existingEntry?.offsetPx ?? visiblePlacement?.offsetPx ?? 0,
-        hidden: existingEntry?.hidden ?? false,
-        sizeVariant:
-          existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
-        widthPx: existingEntry?.widthPx ?? visiblePlacement?.widthPx,
-        showLabel: existingEntry?.showLabel ?? visiblePlacement?.showLabel,
-        showIcon: existingEntry?.showIcon ?? visiblePlacement?.showIcon,
-        ...updates,
-      };
-
-      updateChromeEditDraft({
-        entries: [
-          ...chromeEditSession.draftOverride.entries.filter(
-            (entry) => entry.controlId !== controlId,
-          ),
-          nextEntry,
-        ],
-      });
-    },
-    [chromeEditSession, findRegisteredWorkspaceChromePlacement, updateChromeEditDraft],
-  );
-  const removeWorkspaceChromeControlFromDraft = useCallback(
-    (controlId: ExplorerChromeControlId) => {
-      if (!chromeEditSession) {
-        return;
-      }
-
-      const existingEntry = chromeEditSession.draftOverride.entries.find(
-        (entry) => entry.controlId === controlId,
-      );
-      const visiblePlacement =
-        findRegisteredWorkspaceChromePlacement(controlId);
-      const baseEntry: ExplorerChromeOverrideEntry = {
-        controlId,
-        surfaceId:
-          existingEntry?.surfaceId ??
-          visiblePlacement?.surfaceId ??
-          "workspaceHeader",
-        zone: existingEntry?.zone ?? visiblePlacement?.zone ?? "end",
-        order: existingEntry?.order ?? visiblePlacement?.order ?? 9990,
-        offsetPx: existingEntry?.offsetPx ?? visiblePlacement?.offsetPx ?? 0,
-        hidden: true,
-        sizeVariant: existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
-        widthPx: existingEntry?.widthPx ?? visiblePlacement?.widthPx,
-        showLabel: existingEntry?.showLabel ?? visiblePlacement?.showLabel,
-        showIcon: existingEntry?.showIcon ?? visiblePlacement?.showIcon,
-      };
-
-      updateChromeEditDraft({
-        entries: isExplorerActionChromeControlId(controlId)
-          ? chromeEditSession.draftOverride.entries.filter(
-              (entry) => entry.controlId !== controlId,
-            )
-          : [
-              ...chromeEditSession.draftOverride.entries.filter(
-                (entry) => entry.controlId !== controlId,
-              ),
-              baseEntry,
-            ],
-      });
-      setChromeEditSelectedControl(null);
-      setChromeEditPendingHotkeyControl(null);
-    },
-    [
-      chromeEditSession,
-      findRegisteredWorkspaceChromePlacement,
-      setChromeEditPendingHotkeyControl,
-      setChromeEditSelectedControl,
-      updateChromeEditDraft,
-    ],
-  );
-  const requestWorkspaceChromeHotkeyCapture = useCallback(
-    (controlId: ExplorerChromeControlId) => {
-      setChromeHotkeyCaptureControl(controlId);
-      if (chromeEditSession) {
-        setChromeEditPendingHotkeyControl(controlId);
-      }
-    },
-    [
-      chromeEditSession,
-      setChromeEditPendingHotkeyControl,
-      setChromeHotkeyCaptureControl,
-    ],
-  );
-  const workspaceCatalogPreviewPlacement = useMemo<
-    ExplorerChromeResolvedControlPlacement | null
-  >(() => {
-    const previewControlId =
-      chromeEditSession?.draggingControlId ??
-      chromeEditSession?.selectedControlId ??
-      null;
-    if (!previewControlId) {
-      return null;
-    }
-
-    const catalogEntry =
-      workspaceCustomizeCatalogByControlId.get(previewControlId) ?? null;
-    if (!catalogEntry) {
-      return null;
-    }
-
-    const explicitEntry =
-      chromeEditSession?.draftOverride.entries.find(
-        (entry) => entry.controlId === previewControlId,
-      ) ?? null;
-    const visiblePlacement = findRegisteredWorkspaceChromePlacement(
-      previewControlId,
-    );
-    return {
-      controlId: previewControlId,
-      surfaceId:
-        visiblePlacement?.surfaceId ??
-        explicitEntry?.surfaceId ??
-        "workspaceHeader",
-      zone: visiblePlacement?.zone ?? explicitEntry?.zone ?? "center",
-      order: visiblePlacement?.order ?? explicitEntry?.order ?? 9990,
-      bandId: visiblePlacement?.bandId ?? explicitEntry?.bandId,
-      anchorX: visiblePlacement?.anchorX ?? explicitEntry?.anchorX,
-      anchorY: visiblePlacement?.anchorY ?? explicitEntry?.anchorY,
-      offsetPx: visiblePlacement?.offsetPx ?? explicitEntry?.offsetPx ?? 0,
-      grow: visiblePlacement?.grow,
-      shrink: visiblePlacement?.shrink,
-      collapsePriority: visiblePlacement?.collapsePriority,
-      overflowEligible: visiblePlacement?.overflowEligible,
-      hidden: explicitEntry?.hidden ?? false,
-      sizeVariant: explicitEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
-      widthPx:
-        explicitEntry?.widthPx ??
-        visiblePlacement?.widthPx ??
-        catalogEntry.defaultWidthPx ??
-        undefined,
-      showLabel: explicitEntry?.showLabel ?? visiblePlacement?.showLabel,
-      showIcon: explicitEntry?.showIcon ?? visiblePlacement?.showIcon,
-    };
-  }, [
-    chromeEditSession,
-    findRegisteredWorkspaceChromePlacement,
-    workspaceCustomizeCatalogByControlId,
-  ]);
-  const beginWorkspaceChromePointerDrag = useCallback(
-    (args: {
-      controlId: ExplorerChromeControlId;
-      pointerId: number;
-      sourceKind: "placed";
-      startPoint: { x: number; y: number };
-      onTap?: (controlId: ExplorerChromeControlId) => void;
-    }) => {
-      if (!chromeEditSession) {
-        return;
-      }
-
-      beginExplorerCustomizePointerSession({
-        pointerId: args.pointerId,
-        controlId: args.controlId,
-        sourceKind: args.sourceKind,
-        startPoint: args.startPoint,
-        onActivate: (controlId) => {
-          setChromeEditDraggingControl(controlId);
-          setChromeEditSelectedControl(controlId);
-        },
-        onUpdateDropTarget: setChromeEditHighlightedDropTarget,
-        onTap: (controlId) => {
-          args.onTap?.(controlId);
-        },
-        onDrop: ({ controlId, sourceKind, target }) => {
-          commitWorkspaceChromePointerDrop({
-            controlId,
-            sourceKind,
-            target,
-            catalogPreviewPlacement: workspaceCatalogPreviewPlacement,
-          });
-        },
-        onRemove: (controlId) => {
-          removeWorkspaceChromeControlFromDraft(controlId);
-        },
-        onComplete: () => {
-          setChromeEditDraggingControl(null);
-          setChromeEditHighlightedDropTarget(null);
-        },
-      });
-    },
-    [
-      chromeEditSession,
-      commitWorkspaceChromePointerDrop,
-      removeWorkspaceChromeControlFromDraft,
-      setChromeEditDraggingControl,
-      setChromeEditHighlightedDropTarget,
-      setChromeEditSelectedControl,
-      workspaceCatalogPreviewPlacement,
-    ],
-  );
-  const beginWorkspaceChromePointerResize = useCallback(
-    (args: {
-      controlId: ExplorerChromeControlId;
-      pointerId: number;
-      startPoint: { x: number; y: number };
-    }) => {
-      if (!chromeEditSession) {
-        return;
-      }
-
-      const catalogEntry = workspaceCustomizeCatalogByControlId.get(
-        args.controlId,
-      );
-      if (!catalogEntry) {
-        return;
-      }
-
-      const visiblePlacement = findRegisteredWorkspaceChromePlacement(
-        args.controlId,
-      );
-      const explicitEntry =
-        chromeEditSession.draftOverride.entries.find(
-          (entry) => entry.controlId === args.controlId,
-        ) ?? null;
-
-      if (catalogEntry.supportsWidthPx) {
-        beginExplorerChromeResizeSession({
-          pointerId: args.pointerId,
-          controlId: args.controlId,
-          startPoint: args.startPoint,
-          kind: "width-px",
-          initialWidthPx:
-            explicitEntry?.widthPx ??
-            visiblePlacement?.widthPx ??
-            catalogEntry.defaultWidthPx ??
-            catalogEntry.minWidthPx ??
-            160,
-          minWidthPx: catalogEntry.minWidthPx ?? 96,
-          maxWidthPx: catalogEntry.maxWidthPx ?? 1600,
-          onActivate: () => {
-            setWorkspaceResizingControlId(args.controlId);
-            setChromeEditSelectedControl(args.controlId);
-          },
-          onWidthChange: (widthPx) => {
-            updateWorkspaceChromeEditEntry(args.controlId, {
-              hidden: false,
-              widthPx,
-            });
-          },
-          onComplete: () => {
-            setWorkspaceResizingControlId((current) =>
-              current === args.controlId ? null : current,
-            );
-          },
-        });
-        return;
-      }
-
-      if (!catalogEntry.supportsSizeVariant) {
-        return;
-      }
-
-      beginExplorerChromeResizeSession({
-        pointerId: args.pointerId,
-        controlId: args.controlId,
-        startPoint: args.startPoint,
-        kind: "size-variant",
-        initialSizeVariant:
-          explicitEntry?.sizeVariant ??
-          visiblePlacement?.sizeVariant ??
-          "regular",
-        sizeVariants:
-          catalogEntry.sizeVariants.length > 0
-            ? catalogEntry.sizeVariants
-            : ["compact", "regular", "wide"],
-        onActivate: () => {
-          setWorkspaceResizingControlId(args.controlId);
-          setChromeEditSelectedControl(args.controlId);
-        },
-        onSizeVariantChange: (sizeVariant) => {
-          updateWorkspaceChromeEditEntry(args.controlId, {
-            hidden: false,
-            sizeVariant,
-          });
-        },
-        onComplete: () => {
-          setWorkspaceResizingControlId((current) =>
-            current === args.controlId ? null : current,
-          );
-        },
-      });
-    },
-    [
-      chromeEditSession,
-      findRegisteredWorkspaceChromePlacement,
-      setChromeEditSelectedControl,
-      updateWorkspaceChromeEditEntry,
-      workspaceCustomizeCatalogByControlId,
-    ],
-  );
-  const workspaceChromeEditMode = useMemo(() => {
-    const sessionActive = Boolean(
-      chromeEditSession &&
-      chromeEditSession.themeId === explorerChromeThemeId &&
-      chromeEditSession.layoutId === explorerChromeLayoutId,
-    );
-    return {
-      active: sessionActive,
-      draggingControlId: sessionActive
-        ? (chromeEditSession?.draggingControlId ?? null)
-        : null,
-      highlightedDropTarget: sessionActive
-        ? (chromeEditSession?.highlightedDropTarget ?? null)
-        : null,
-      resizingControlId: sessionActive ? workspaceResizingControlId : null,
-      selectedControlId: sessionActive
-        ? (chromeEditSession?.selectedControlId ?? null)
-        : null,
-      pendingHotkeyControlId:
-        chromeHotkeyCaptureControlId ??
-        (sessionActive
-          ? (chromeEditSession?.pendingHotkeyControlId ?? null)
-          : null),
-      catalogPreviewPlacement: workspaceCatalogPreviewPlacement,
-      onRegisterSurface: sessionActive ? registerChromeEditSurface : undefined,
-      onUnregisterSurface: sessionActive
-        ? unregisterChromeEditSurface
-        : undefined,
-      onDragStart: setChromeEditDraggingControl,
-      onDragEnd: () => {
-        setChromeEditDraggingControl(null);
-        setChromeEditHighlightedDropTarget(null);
-      },
-      onBeginPointerDrag: beginWorkspaceChromePointerDrag,
-      onBeginPointerResize: beginWorkspaceChromePointerResize,
-      onSetHighlightedDropTarget: setChromeEditHighlightedDropTarget,
-      onSetSelectedControl: setChromeEditSelectedControl,
-      onSetPendingHotkeyControl: setChromeEditPendingHotkeyControl,
-      onRequestHotkeyCapture: requestWorkspaceChromeHotkeyCapture,
-      onMoveControl: handleWorkspaceChromeControlMove,
-      isControlResizable: (placement: ExplorerChromeResolvedControlPlacement) =>
-        Boolean(
-          workspaceCustomizeCatalogByControlId.get(placement.controlId)
-            ?.supportsWidthPx ||
-            workspaceCustomizeCatalogByControlId.get(placement.controlId)
-              ?.supportsSizeVariant,
-        ),
-      onRemoveControl: sessionActive
-        ? removeWorkspaceChromeControlFromDraft
-        : undefined,
-    };
-  }, [
-    chromeEditSession,
-    chromeHotkeyCaptureControlId,
-    beginWorkspaceChromePointerDrag,
-    beginWorkspaceChromePointerResize,
-    explorerChromeLayoutId,
-    explorerChromeThemeId,
-    handleWorkspaceChromeControlMove,
-    registerChromeEditSurface,
-    setChromeEditDraggingControl,
-    setChromeEditHighlightedDropTarget,
-    setChromeEditPendingHotkeyControl,
-    setChromeEditSelectedControl,
-    workspaceCatalogPreviewPlacement,
-    workspaceCustomizeCatalogByControlId,
-    workspaceResizingControlId,
-    requestWorkspaceChromeHotkeyCapture,
-    removeWorkspaceChromeControlFromDraft,
-    unregisterChromeEditSurface,
-  ]);
-  const workspaceHeaderLayoutDynamicsSettings =
-    layoutDynamics.resolveSurfaceSettings("workspaceHeader");
-  const workspaceHeaderLayoutDynamics =
-    useMemo<ExplorerChromeSurfaceLayoutDynamics>(
-      () => ({
-        enabled:
-          workspaceHeaderLayoutDynamicsSettings.enabled ||
-          Boolean(workspaceChromeEditMode.active),
-        axisMode: workspaceHeaderLayoutDynamicsSettings.surface.axisMode,
-        solver: workspaceHeaderLayoutDynamicsSettings.preset,
-        intensity: workspaceHeaderLayoutDynamicsSettings.intensity,
-        onCommitSnapshot: workspaceChromeEditMode.active
-          ? handleWorkspaceChromeDynamicSurfaceCommit
-          : undefined,
-      }),
-      [
-        handleWorkspaceChromeDynamicSurfaceCommit,
-        workspaceChromeEditMode.active,
-        workspaceHeaderLayoutDynamicsSettings,
-      ],
-    );
-  useEffect(() => {
-    if (
-      chromeEditSession &&
-      (chromeEditSession.themeId !== explorerChromeThemeId ||
-        chromeEditSession.layoutId !== explorerChromeLayoutId)
-    ) {
-      cancelExplorerCustomizePointerSession();
-      cancelExplorerChromeResizeSession();
-      setWorkspaceResizingControlId(null);
-      closeChromeEditSession();
-    }
-  }, [
-    chromeEditSession,
-    closeChromeEditSession,
-    explorerChromeLayoutId,
-    explorerChromeThemeId,
-  ]);
-  useEffect(
-    () => () => {
-      cancelExplorerCustomizePointerSession();
-      cancelExplorerChromeResizeSession();
-    },
-    [],
-  );
-
   const columnSplitPercent = Math.round(workspaceColumnSplitRatio * 100);
   const rowSplitPercent = Math.round(workspaceRowSplitRatio * 100);
-  const workspaceHeaderRowStyle = useMemo<React.CSSProperties>(
-    () => ({
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 8,
-      minWidth: 0,
-      flexWrap: "wrap",
-    }),
-    [],
-  );
-  const getWorkspaceHeaderZoneStyle = useCallback(
-    (zoneId: ExplorerChromeZoneId): React.CSSProperties => {
-      switch (zoneId) {
-        case "center":
-          return {
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            flex: 1,
-            minWidth: 0,
-            overflowX: "auto",
-          };
-        case "end":
-          return {
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            flexShrink: 0,
-            flexWrap: "wrap",
-            justifyContent: "flex-end",
-            minWidth: 0,
-          };
-        case "start":
-        default:
-          return {
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            minWidth: 0,
-            flexWrap: "wrap",
-          };
-      }
-    },
-    [],
-  );
   const commanderButtonsDisabled =
     !canUseCommanderActions || commanderSelectionCount === 0;
   const renderWorkspaceTabStrip = useCallback(
@@ -2710,37 +2053,6 @@ export function ExplorerWorkspace({
       workspaceRowSplitRatio,
       workspaceTabs,
     ],
-  );
-  const workspaceChromeControlRegistryById = useMemo(
-    () =>
-      new Map(workspaceChromeControlRegistry.map((entry) => [entry.id, entry])),
-    [workspaceChromeControlRegistry],
-  );
-  const workspaceHeaderSurface = useMemo(
-    () =>
-      resolveExplorerChromeSurfaceLayout({
-        layoutId: explorerChromeLayoutId,
-        surfaceId: "workspaceHeader",
-        controlDefinitions: workspaceChromeControlRegistry,
-        override: explorerChromeOverride,
-        isControlVisible: (controlId, surfaceId) =>
-          workspaceChromeControlRegistryById
-            .get(controlId)
-            ?.isVisible(surfaceId) ?? false,
-      }),
-    [
-      explorerChromeLayoutId,
-      explorerChromeOverride,
-      workspaceChromeControlRegistry,
-      workspaceChromeControlRegistryById,
-    ],
-  );
-  const renderWorkspaceChromeControl = useCallback(
-    (placement: ExplorerChromeResolvedControlPlacement) =>
-      workspaceChromeControlRegistryById
-        .get(placement.controlId)
-        ?.render(placement) ?? null,
-    [workspaceChromeControlRegistryById],
   );
   const activateWorkspaceChromeCommand = useCallback(
     (controlId: ExplorerChromeControlId): boolean => {
