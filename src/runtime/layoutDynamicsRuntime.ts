@@ -53,6 +53,30 @@ function resolveDirectionVector(
     : { x: 0, y: 1 };
 }
 
+function snapNodeBackToAnchorWhenSettled(
+  node: LayoutDynamicsSimulationNode,
+  axisMode: LayoutDynamicsAxisMode,
+  solver: LayoutDynamicsSolverProfile,
+): void {
+  const displacementX = Math.abs(node.x - node.anchorX);
+  const displacementY = Math.abs(node.y - node.anchorY);
+  const displacement =
+    axisMode === "free-2d"
+      ? Math.hypot(displacementX, displacementY)
+      : displacementX;
+  const velocity = Math.hypot(node.velocityX, node.velocityY);
+  if (displacement > 0.35 || velocity > solver.settleVelocityPx * 0.6) {
+    return;
+  }
+
+  node.x = node.anchorX;
+  if (axisMode === "free-2d") {
+    node.y = node.anchorY;
+  }
+  node.velocityX = 0;
+  node.velocityY = 0;
+}
+
 function constrainNodeToBounds(
   node: LayoutDynamicsSimulationNode,
   axisMode: LayoutDynamicsAxisMode,
@@ -181,6 +205,9 @@ export function stepLayoutDynamicsSimulation(args: {
       findBandBounds(args.bandBounds, node.bandId),
       args.solver.maxDisplacementPx,
     );
+    if (!draggedNode) {
+      snapNodeBackToAnchorWhenSettled(node, args.axisMode, args.solver);
+    }
   }
 
   return args.state;

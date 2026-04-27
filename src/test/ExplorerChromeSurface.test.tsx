@@ -365,7 +365,7 @@ describe("ExplorerChromeSurface", () => {
     ]);
   });
 
-  it("allows live customize controls to still be clicked while customize mode is on", () => {
+  it("suppresses live customize control clicks while customize mode is on", () => {
     const liveClicks: string[] = [];
 
     const rendered = render(
@@ -395,7 +395,7 @@ describe("ExplorerChromeSurface", () => {
 
     fireEvent.click(rendered.getByText("Customize"));
 
-    expect(liveClicks).toEqual(["customizeModeToggle"]);
+    expect(liveClicks).toEqual([]);
   });
 
   it("renders a single inline insertion ghost instead of dedicated drop-strip rails", () => {

@@ -42,6 +42,7 @@ interface ExplorerChromeSurfaceProps {
   getRowStyle?: (rowId: string) => CSSProperties | undefined;
   getZoneStyle?: (zoneId: ExplorerChromeZoneId) => CSSProperties | undefined;
   dynamicCanvasMinHeightPx?: number;
+  excludedControlIds?: ExplorerChromeControlId[];
   renderControl: (
     placement: ExplorerChromeResolvedControlPlacement,
   ) => React.ReactNode;
@@ -104,12 +105,34 @@ export function ExplorerChromeSurface({
   getRowStyle,
   getZoneStyle,
   dynamicCanvasMinHeightPx,
+  excludedControlIds,
   renderControl,
   layoutDynamics,
   editMode,
 }: ExplorerChromeSurfaceProps) {
+  const excludedControlIdSet = useMemo(
+    () => new Set(excludedControlIds ?? []),
+    [excludedControlIds],
+  );
+  const filteredSurface = useMemo<ExplorerChromeResolvedSurface>(
+    () => ({
+      ...surface,
+      rows: surface.rows
+        .map((row) => ({
+          ...row,
+          zones: row.zones.map((zone) => ({
+            ...zone,
+            controls: zone.controls.filter(
+              (placement) => !excludedControlIdSet.has(placement.controlId),
+            ),
+          })),
+        }))
+        .filter((row) => row.zones.some((zone) => zone.controls.length > 0)),
+    }),
+    [excludedControlIdSet, surface],
+  );
   const editModeActive = editMode?.active === true;
-  const hasControls = surface.rows.some((row) =>
+  const hasControls = filteredSurface.rows.some((row) =>
     row.zones.some((zone) => zone.controls.length > 0),
   );
   const [hoveredControlId, setHoveredControlId] =
@@ -117,11 +140,11 @@ export function ExplorerChromeSurface({
   const registerSurface = editMode?.onRegisterSurface;
   const unregisterSurface = editMode?.onUnregisterSurface;
   const surfaceRegistrationSignature = useMemo(
-    () => getExplorerChromeResolvedSurfaceSignature(surface),
-    [surface],
+    () => getExplorerChromeResolvedSurfaceSignature(filteredSurface),
+    [filteredSurface],
   );
   const stableRegisteredSurface = useMemo(
-    () => surface,
+    () => filteredSurface,
     [surfaceRegistrationSignature],
   );
   const surfaceDefinition = useMemo(
@@ -221,7 +244,7 @@ export function ExplorerChromeSurface({
   ]);
   const dynamicSurfaceItems = useMemo(
     () =>
-      surface.rows.flatMap((row) =>
+      filteredSurface.rows.flatMap((row) =>
         row.zones.flatMap((zone) =>
           zone.controls.map((placement) => {
             const controlIsResizable =
@@ -265,8 +288,8 @@ export function ExplorerChromeSurface({
       editModeActive,
       freeformDynamicCanvasBandId,
       freeformRowAnchorYOffsetByLegacyBandId,
+      filteredSurface.rows,
       renderControl,
-      surface.rows,
       usesFreeformDynamicCanvas,
     ],
   );
@@ -526,7 +549,7 @@ export function ExplorerChromeSurface({
         ...style,
       }}
     >
-      {surface.rows.map((row) => {
+      {filteredSurface.rows.map((row) => {
         const rowHasControls = row.zones.some(
           (zone) => zone.controls.length > 0,
         );
@@ -699,6 +722,11 @@ export function ExplorerChromeSurface({
                             }
 
                             if (targetUsesCustomizeLiveControl(event.target)) {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              editMode.onSetSelectedControl?.(
+                                placement.controlId,
+                              );
                               return;
                             }
 

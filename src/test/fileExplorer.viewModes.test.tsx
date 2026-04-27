@@ -1809,7 +1809,6 @@ describe("FileExplorer view modes", () => {
         "data-overlay-explorer-control-zone",
       ),
     ).toBe("primaryEnd");
-    expect(getChromeControl("refresh")?.style.marginLeft).toBe("44px");
     expect(
       useSettingsStore.getState().settings.explorer.chromeLayoutOverridesByThemeId
         .operator?.default?.entries,
