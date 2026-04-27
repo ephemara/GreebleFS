@@ -32,9 +32,92 @@ vi.mock('../components/SettingsPage', () => ({
   SettingsPage: () => null,
 }));
 
-import { buildBuiltInCatalog, createBuiltInPanelDefinitions } from '../panels/panelRegistry';
+import {
+  buildBuiltInCatalog,
+  buildWorkbenchSurfaceDefinitions,
+  createBuiltInPanelDefinitions,
+  createFolderPluginPanelDefinitions,
+} from '../panels/panelRegistry';
 import { iconThemeSystemConfig } from '../config/iconThemePackages';
 import { topBarSystemConfig } from '../config/topBarPackages';
+
+function createPanelsForTest(
+  overrides: Partial<Parameters<typeof createBuiltInPanelDefinitions>[0]> = {},
+) {
+  return createBuiltInPanelDefinitions({
+    appearance: {
+      theme: {
+        palette: {
+          accent: '#44ff88',
+          appBackground: '#0a0a0a',
+          panelBackground: '#101010',
+          textPrimary: '#f5f5f5',
+          border: '#2a2a2a',
+          textMuted: '#9a9a9a',
+        },
+      },
+    } as never,
+    explorerLayoutMode: 'full',
+    explorerPicker: null,
+    isOpen: true,
+    hideOverlay: () => {},
+    pluginCommands: [],
+    pluginExplorerActions: [],
+    pluginContextMenuItems: [],
+    onOpenInFilesystemAquarium: () => {},
+    onOpenInTerminal: () => {},
+    onAddBookmark: async () => {},
+    onRequestRepositoryImport: () => {},
+    pendingRepositoryImports: [],
+    onPendingRepositoryImportsHandled: () => {},
+    topBarPackages: [],
+    topBarPackagesDirectory: topBarSystemConfig.topBarsDirectory,
+    topBarPackagesLoading: false,
+    topBarPackagesError: null,
+    topBarPackagesWarnings: [],
+    themePackages: [],
+    themePackagesDirectory: 'themes',
+    themePackagesLoading: false,
+    themePackagesError: null,
+    themePackagesWarnings: [],
+    onRefreshThemes: async () => {},
+    onOpenThemesFolder: async () => {},
+    onRefreshTopBars: async () => {},
+    onOpenTopBarsFolder: async () => {},
+    iconThemePackages: [],
+    iconThemePackagesDirectory: iconThemeSystemConfig.iconThemesDirectory,
+    iconThemePackagesLoading: false,
+    iconThemePackagesError: null,
+    iconThemePackagesWarnings: [],
+    onRefreshIconThemes: async () => {},
+    onOpenIconThemesFolder: async () => {},
+    shaders: [],
+    shaderDiagnostics: [],
+    shadersDirectory: 'shaders',
+    shadersLoading: false,
+    shadersError: null,
+    onRefreshShaders: async () => {},
+    onOpenShadersFolder: async () => {},
+    animations: [],
+    animationDiagnostics: [],
+    animationsDirectory: 'animations',
+    animationsLoading: false,
+    animationsError: null,
+    onRefreshAnimations: async () => {},
+    onOpenAnimationsFolder: async () => {},
+    wallpapers: [],
+    wallpaperDiagnostics: [],
+    wallpapersDirectory: 'wallpapers',
+    wallpapersLoading: false,
+    wallpapersError: null,
+    onRefreshWallpapers: async () => {},
+    onOpenWallpapersFolder: async () => {},
+    onImportWallpaperFiles: async () => {},
+    onSetWindowMode: async () => {},
+    renderPluginsManager: () => null,
+    ...overrides,
+  });
+}
 
 describe('createBuiltInPanelDefinitions', () => {
   it('keeps the explorer panel mounted so tab switches do not reset its state', () => {
@@ -320,5 +403,84 @@ describe('createBuiltInPanelDefinitions', () => {
     expect(gitElement.props.pendingRepositoryImports).toEqual(pendingRepositoryImports);
     expect(gitElement.props.onPendingRepositoryImportsHandled).toBe(onPendingRepositoryImportsHandled);
     expect(gitElement.props.onRequestRepositoryImport).toBe(onRequestRepositoryImport);
+  });
+
+  it('biases IDE workbench surface defaults around explorer core and secondary utilities', () => {
+    const surfaces = buildWorkbenchSurfaceDefinitions(createPanelsForTest());
+
+    const explorer = surfaces.find(surface => surface.id === 'explorer');
+    const terminal = surfaces.find(surface => surface.id === 'terminal');
+    const git = surfaces.find(surface => surface.id === 'git');
+    const storage = surfaces.find(surface => surface.id === 'storage');
+    const settings = surfaces.find(surface => surface.id === 'settings');
+
+    expect(explorer).toMatchObject({
+      defaultDockPlacement: 'center',
+      defaultVisibility: 'visible',
+      ideRole: 'explorer-core',
+      ideNavigationTier: 'primary',
+    });
+    expect(terminal).toMatchObject({
+      defaultDockPlacement: 'bottom-panel',
+      defaultVisibility: 'collapsed',
+      ideRole: 'utility',
+      ideNavigationTier: 'primary',
+    });
+    expect(git).toMatchObject({
+      defaultDockPlacement: 'bottom-panel',
+      defaultVisibility: 'collapsed',
+      ideRole: 'utility',
+      ideNavigationTier: 'primary',
+    });
+    expect(storage).toMatchObject({
+      defaultDockPlacement: 'right-sidebar',
+      defaultVisibility: 'hidden',
+      ideRole: 'utility',
+      ideNavigationTier: 'secondary',
+    });
+    expect(settings).toMatchObject({
+      defaultDockPlacement: 'right-sidebar',
+      defaultVisibility: 'hidden',
+      ideRole: 'utility',
+      ideNavigationTier: 'secondary',
+    });
+  });
+
+  it('normalizes folder-plugin surfaces as hidden secondary utilities in IDE mode', () => {
+    const pluginPanels = createFolderPluginPanelDefinitions({
+      appearance: {
+        theme: {
+          palette: {
+            accent: '#44ff88',
+            appBackground: '#0a0a0a',
+            panelBackground: '#101010',
+            textPrimary: '#f5f5f5',
+            border: '#2a2a2a',
+            textMuted: '#9a9a9a',
+          },
+        },
+      } as never,
+      plugins: [
+        {
+          id: 'plugin.catalog',
+          name: 'Plugin Catalog',
+          description: 'Custom extension workspace.',
+          defaultOpen: true,
+          keepMounted: false,
+          filePath: '/tmp/plugin.catalog',
+        } as never,
+      ],
+      createPluginApi: () => ({}) as never,
+    });
+
+    const [surface] = buildWorkbenchSurfaceDefinitions(pluginPanels);
+
+    expect(surface).toMatchObject({
+      id: 'plugin.catalog',
+      defaultDockPlacement: 'right-sidebar',
+      defaultVisibility: 'hidden',
+      ideRole: 'utility',
+      ideNavigationTier: 'secondary',
+    });
   });
 });

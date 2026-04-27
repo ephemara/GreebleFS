@@ -13,7 +13,10 @@
   - `App.tsx` now points top-bar active-panel behavior at `resolvePrimaryIdeWorkbenchSurfaceId(...)` so the shell title/summary follows the center workspace rather than whichever side utility happened to receive focus last.
 - Durable explorer-first IDE rule:
   - IDE shell is not just a different chrome wrapper. It is expected to keep the flagship explorer/editor/preview workspace in the center lane by default.
-  - `createBuiltInPanelDefinitions(...)` now seeds `explorer` into the IDE center stack, keeps `storage` collapsed on the left, keeps `terminal`/`source` in the bottom region, and hides right-utility surfaces until explicitly opened.
+  - `createBuiltInPanelDefinitions(...)` now seeds `explorer` into the IDE center stack, keeps `terminal`/`source` in the bottom region collapsed by default, and hides `storage`, `settings`, plugin panels, and other utility surfaces on the right until explicitly opened.
+  - The IDE activity rail is split into primary explorer/work surfaces vs secondary utility surfaces. If `storage`, `settings`, or plugin buttons start presenting themselves as the primary shell identity again, treat it as a regression.
+  - `IdeWorkbenchLayoutState.version` is part of the migration contract. When the IDE shell topology changes enough that older dock trees would come back cooked, bump the version and let `normalizeIdeWorkbenchLayoutState(...)` reset stale IDE snapshots back to the explorer-first default instead of preserving a broken generic-dock arrangement.
+  - Empty right/bottom utility docks should auto-collapse after the last tab is moved, floated, or hidden. Leaving blank utility chrome beside the explorer workspace is a regression.
   - When the active shell blueprint is `ide-workbench`, the explorer now biases its default mode profile to `inspector` unless a stronger theme/user override already exists. That keeps preview/editor behavior more IDE-like without breaking existing per-theme overrides.
 - Durable settings rule:
   - `src/store/settingsStore.ts` now persists `layout.shellStateByProfile`, `layout.lastProfileIdByShellFamily`, and `layout.followThemeDefaults`.
@@ -22,7 +25,7 @@
   - This is phase 1. The dock graph is real, persisted, resizable, floatable, and region-aware, but it is still a constrained workbench layout with canonical left/center/right/bottom hosts. It is not yet a fully arbitrary VS Code/ZBrush-grade docking authoring system.
   - If future work expands free docking, keep the dock graph as deterministic layout truth and use the layout-dynamics/kinematic system only for drag preview, snap affordances, and settle animation rather than as the persisted source of truth.
 - Validation:
-  - passed: `bunx vitest run src/test/ideWorkbenchLayout.test.ts src/test/layoutProfiles.test.ts src/test/workbenchRenderRuntime.test.ts src/test/topBars.test.ts src/test/workbenchTopBar.test.tsx src/test/settingsStore.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/ideWorkbenchLayout.test.ts src/test/panelRegistry.test.tsx src/test/layoutProfiles.test.ts src/test/workbenchRenderRuntime.test.ts src/test/topBars.test.ts src/test/workbenchTopBar.test.tsx src/test/settingsStore.test.ts --reporter=dot`
   - passed: `bash -lc 'bunx tsc --noEmit 2>&1 | rg "src/(App.tsx|components/WorkbenchIdeShell.tsx|components/explorer/ExplorerWorkspace.tsx|components/FileExplorer.tsx|config/ideWorkbenchLayout.ts|config/layoutProfiles.ts|config/shellBlueprints.ts|config/topBars.ts|config/workbenchRenderRuntime.ts|panels/panelRegistry.tsx|test/ideWorkbenchLayout.test.ts|test/settingsStore.test.ts|test/workbenchTopBar.test.tsx)"'`
 
 # 2026-04-27 - Explorer Layout Presets Now Have A Direct Cycle Button And Canonical Reset

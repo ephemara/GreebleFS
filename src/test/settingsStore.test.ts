@@ -9,6 +9,10 @@ import { useExplorerStore } from '../store/explorerStore';
 import { defaultMobileLayoutSettings } from '../config/mobileLayout';
 import { overlayWindowGeometry } from '../config/overlayWindow';
 import { defaultExplorerThumbnailSettings } from '../config/explorerThumbnails';
+import {
+  createDefaultIdeWorkbenchLayoutState,
+  type WorkbenchSurfaceLayoutSeed,
+} from '../config/ideWorkbenchLayout';
 import { semanticIndexingCapabilityId } from '../config/localModels';
 import { DEFAULT_EXPLORER_MENU_PACK_ID } from '../config/menuPacks';
 import {
@@ -584,6 +588,27 @@ describe('useSettingsStore.updateExplorer()', () => {
 });
 
 describe('useSettingsStore.updateLayout()', () => {
+  const ideWorkbenchSeeds: WorkbenchSurfaceLayoutSeed[] = [
+    {
+      id: 'explorer',
+      defaultDockPlacement: 'center',
+      defaultOrder: 10,
+      defaultVisibility: 'visible',
+    },
+    {
+      id: 'terminal',
+      defaultDockPlacement: 'bottom-panel',
+      defaultOrder: 20,
+      defaultVisibility: 'collapsed',
+    },
+    {
+      id: 'settings',
+      defaultDockPlacement: 'right-sidebar',
+      defaultOrder: 30,
+      defaultVisibility: 'hidden',
+    },
+  ];
+
   it('updates layout settings without mutating unrelated sections', () => {
     const store = useSettingsStore.getState();
     const beforeAppearance = { ...store.settings.appearance };
@@ -638,6 +663,41 @@ describe('useSettingsStore.updateLayout()', () => {
     expect(session.currentPath).toBe(beforeSession.currentPath);
     expect(session.history).toEqual(beforeSession.history);
     expect(session.historyIdx).toBe(beforeSession.historyIdx);
+  });
+
+  it('stores IDE shell state separately from classic panel state and shell-family selection', () => {
+    const store = useSettingsStore.getState();
+    const ideShellState = createDefaultIdeWorkbenchLayoutState(ideWorkbenchSeeds);
+
+    store.updateLayout({
+      panelStateByProfile: {
+        'overlay-classic': {
+          openPanelIds: ['explorer', 'terminal'],
+          activePanelId: 'terminal',
+          dismissedPanelIds: ['settings'],
+        },
+      },
+      shellStateByProfile: {
+        'workbench-ide': ideShellState,
+      },
+      lastProfileIdByShellFamily: {
+        classic: 'overlay-classic',
+        ide: 'workbench-ide',
+      },
+    });
+
+    const { layout } = useSettingsStore.getState().settings;
+
+    expect(layout.panelStateByProfile['overlay-classic']).toEqual({
+      openPanelIds: ['explorer', 'terminal'],
+      activePanelId: 'terminal',
+      dismissedPanelIds: ['settings'],
+    });
+    expect(layout.shellStateByProfile['workbench-ide']).toEqual(ideShellState);
+    expect(layout.lastProfileIdByShellFamily).toEqual({
+      classic: 'overlay-classic',
+      ide: 'workbench-ide',
+    });
   });
 });
 
