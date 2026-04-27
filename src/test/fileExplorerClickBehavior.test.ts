@@ -61,6 +61,7 @@ describe('shouldOpenExplorerEntryOnTrigger', () => {
       isDirectory: true,
       isSelected: true,
       isDropTarget: false,
+      isOpenPrimed: true,
       folderClickMode: 'double',
     })).toBe(true);
 
@@ -68,7 +69,16 @@ describe('shouldOpenExplorerEntryOnTrigger', () => {
       isDirectory: true,
       isSelected: true,
       isDropTarget: false,
+      isOpenPrimed: true,
       folderClickMode: 'single',
+    })).toBe(false);
+
+    expect(shouldShowExplorerFolderOpenIcon({
+      isDirectory: true,
+      isSelected: true,
+      isDropTarget: false,
+      isOpenPrimed: false,
+      folderClickMode: 'double',
     })).toBe(false);
   });
 
@@ -77,6 +87,7 @@ describe('shouldOpenExplorerEntryOnTrigger', () => {
       isDirectory: true,
       isSelected: false,
       isDropTarget: true,
+      isOpenPrimed: false,
       folderClickMode: 'single',
     })).toBe(true);
 
@@ -84,6 +95,7 @@ describe('shouldOpenExplorerEntryOnTrigger', () => {
       isDirectory: false,
       isSelected: false,
       isDropTarget: true,
+      isOpenPrimed: false,
       folderClickMode: 'double',
     })).toBe(false);
   });

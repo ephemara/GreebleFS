@@ -28,11 +28,13 @@ export function shouldShowExplorerFolderOpenIcon({
   isDirectory,
   isSelected,
   isDropTarget,
+  isOpenPrimed,
   folderClickMode,
 }: {
   isDirectory: boolean;
   isSelected: boolean;
   isDropTarget: boolean;
+  isOpenPrimed: boolean;
   folderClickMode: ExplorerFolderClickMode;
 }): boolean {
   if (!isDirectory) {
@@ -43,7 +45,7 @@ export function shouldShowExplorerFolderOpenIcon({
     return true;
   }
 
-  return folderClickMode === 'double' && isSelected;
+  return folderClickMode === 'double' && isSelected && isOpenPrimed;
 }
 
 export function shouldNavigateUpOnEmptyExplorerDoubleClick({

@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { FolderIconRule, FolderIconValue } from "../config/folderIcons";
 import type { OverlayResolvedIconTheme } from "../config/iconTheme";
 import {
-  listExplorerDirUncached,
+  listExplorerLocation,
   type ExplorerFileEntry,
 } from "../runtime/explorerBackend";
 import {
   ExplorerPreviewEntryIconImage,
   resolveExplorerPreviewFolderIconSrc,
 } from "./explorerPreviewEntryIcons";
+import { loadCachedExplorerLocation } from "./explorer/explorerDirectoryCache";
 import { ExplorerCollectionPreviewSurface } from "./ExplorerCollectionPreviewSurface";
 import type { ExplorerPreviewEntryDragRequest } from "./useExplorerPreviewEntryDirectDrag";
 
@@ -53,19 +54,28 @@ export function ExplorerFolderPreview({
   const [entries, setEntries] = useState<ExplorerFileEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastLoadedRefreshRevisionRef = useRef(refreshRevision);
 
   useEffect(() => {
     let active = true;
+    const shouldForceRefresh =
+      refreshRevision !== lastLoadedRefreshRevisionRef.current;
+    lastLoadedRefreshRevisionRef.current = refreshRevision;
     setEntries(null);
     setError(null);
     setLoading(true);
 
-    listExplorerDirUncached(folderPath, showHiddenFiles)
-      .then((nextEntries) => {
+    loadCachedExplorerLocation({
+      path: folderPath,
+      showHidden: showHiddenFiles,
+      listLocation: listExplorerLocation,
+      forceRefresh: shouldForceRefresh,
+    })
+      .then((listing) => {
         if (!active) {
           return;
         }
-        setEntries(nextEntries);
+        setEntries(listing.entries);
         setLoading(false);
       })
       .catch((nextError) => {

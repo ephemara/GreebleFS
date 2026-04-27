@@ -2,16 +2,17 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExplorerFolderPreview } from "../components/ExplorerFolderPreview";
+import { invalidateExplorerDirectoryResultCaches } from "../components/explorer/explorerDirectoryCache";
 import { getFolderIconSrc } from "../config/folderIcons";
 import { getBuiltInIconTheme, resolveFileIconSrc } from "../config/iconTheme";
 import { defaultExplorerThumbnailSettings } from "../config/explorerThumbnails";
-import { listExplorerDirUncached } from "../runtime/explorerBackend";
+import { listExplorerLocation } from "../runtime/explorerBackend";
 import { readExplorerCollectionPreviewOverviewThumbnail } from "../runtime/explorerCollectionPreviewThumbnails";
 import { useSettingsStore } from "../store/settingsStore";
 import { createTestExplorerFileEntry } from "./helpers/explorerEntries";
 
 vi.mock("../runtime/explorerBackend", () => ({
-  listExplorerDirUncached: vi.fn(),
+  listExplorerLocation: vi.fn(),
 }));
 
 vi.mock("../runtime/explorerCollectionPreviewThumbnails", () => ({
@@ -26,7 +27,8 @@ vi.mock("../runtime/explorerCollectionPreviewThumbnails", () => ({
 
 describe("ExplorerFolderPreview", () => {
   beforeEach(() => {
-    vi.mocked(listExplorerDirUncached).mockReset();
+    invalidateExplorerDirectoryResultCaches();
+    vi.mocked(listExplorerLocation).mockReset();
     vi.mocked(readExplorerCollectionPreviewOverviewThumbnail).mockClear();
     useSettingsStore.getState().resetToDefaults();
   });
@@ -35,7 +37,12 @@ describe("ExplorerFolderPreview", () => {
     const folderPath = "C:\\Assets\\alpha";
     const iconTheme = getBuiltInIconTheme();
 
-    vi.mocked(listExplorerDirUncached).mockResolvedValue([
+    vi.mocked(listExplorerLocation).mockResolvedValue({
+      kind: "local",
+      path: folderPath,
+      parentPath: "C:\\Assets",
+      breadcrumbs: [],
+      entries: [
       createTestExplorerFileEntry({
         name: "shots",
         path: `${folderPath}\\shots`,
@@ -56,7 +63,8 @@ describe("ExplorerFolderPreview", () => {
         is_hidden: false,
         is_symlink: false,
       }),
-    ]);
+      ],
+    });
 
     render(
       <ExplorerFolderPreview
@@ -90,7 +98,7 @@ describe("ExplorerFolderPreview", () => {
     expect((fileIcon as HTMLImageElement).getAttribute("src")).toBe(
       resolveFileIconSrc("readme.md", "md", iconTheme),
     );
-    expect(vi.mocked(listExplorerDirUncached)).toHaveBeenCalledWith(
+    expect(vi.mocked(listExplorerLocation)).toHaveBeenCalledWith(
       folderPath,
       false,
     );
@@ -101,7 +109,12 @@ describe("ExplorerFolderPreview", () => {
     const onOpenEntry = vi.fn();
     const onStartDragOutEntry = vi.fn();
 
-    vi.mocked(listExplorerDirUncached).mockResolvedValue([
+    vi.mocked(listExplorerLocation).mockResolvedValue({
+      kind: "local",
+      path: folderPath,
+      parentPath: "C:\\Assets",
+      breadcrumbs: [],
+      entries: [
       createTestExplorerFileEntry({
         name: "notes.txt",
         path: `${folderPath}\\notes.txt`,
@@ -122,7 +135,8 @@ describe("ExplorerFolderPreview", () => {
         is_hidden: false,
         is_symlink: false,
       }),
-    ]);
+      ],
+    });
 
     render(
       <ExplorerFolderPreview
@@ -197,7 +211,12 @@ describe("ExplorerFolderPreview", () => {
       },
     });
 
-    vi.mocked(listExplorerDirUncached).mockResolvedValue([
+    vi.mocked(listExplorerLocation).mockResolvedValue({
+      kind: "local",
+      path: folderPath,
+      parentPath: "C:\\Assets",
+      breadcrumbs: [],
+      entries: [
       createTestExplorerFileEntry({
         name: "notes.txt",
         path: `${folderPath}\\notes.txt`,
@@ -218,7 +237,8 @@ describe("ExplorerFolderPreview", () => {
         is_hidden: false,
         is_symlink: false,
       }),
-    ]);
+      ],
+    });
 
     render(
       <ExplorerFolderPreview

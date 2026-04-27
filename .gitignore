@@ -116,3 +116,4 @@ src/repomix-output.xml
 .telemetry/
 packages/
 src/generated/tauri.ts
+src/generated/tauri.ts
