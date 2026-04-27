@@ -25,6 +25,23 @@
   - passed: `bunx vitest run src/test/ideWorkbenchLayout.test.ts src/test/layoutProfiles.test.ts src/test/workbenchRenderRuntime.test.ts src/test/topBars.test.ts src/test/workbenchTopBar.test.tsx src/test/settingsStore.test.ts --reporter=dot`
   - passed: `bash -lc 'bunx tsc --noEmit 2>&1 | rg "src/(App.tsx|components/WorkbenchIdeShell.tsx|components/explorer/ExplorerWorkspace.tsx|components/FileExplorer.tsx|config/ideWorkbenchLayout.ts|config/layoutProfiles.ts|config/shellBlueprints.ts|config/topBars.ts|config/workbenchRenderRuntime.ts|panels/panelRegistry.tsx|test/ideWorkbenchLayout.test.ts|test/settingsStore.test.ts|test/workbenchTopBar.test.tsx)"'`
 
+# 2026-04-27 - Explorer Layout Presets Now Have A Direct Cycle Button And Canonical Reset
+
+- The explorer mode-profile system (`Balanced`, `Navigator`, `Focus`, `Inspector`) is no longer supposed to be treated like a hidden submenu welded to customize-mode affordances.
+  - `src/components/FileExplorer.tsx` now treats the `shellLayout` chrome control as a split control:
+    - the main face button cycles directly through layout presets
+    - the adjacent chevron opens the dedicated preset menu
+  - The preset menu is now about presets only. It no longer doubles as the place where chrome-customize save/reset/discard actions live.
+- Durable product rule:
+  - Explorer layout presets need a fast “just cycle it” path in the live chrome, not only a popup picker path.
+  - The canonical fallback is `defaultExplorerModeProfileId` (`balanced`). Preserve an explicit way to snap back to that built-in template even if theme defaults or user overrides differ.
+- Implementation rule:
+  - If future work adds more explorer mode profiles, route cycling through `stepExplorerModeProfile(...)` in `src/config/explorerModeProfiles.ts` instead of hand-rolling wraparound logic in components.
+  - Keep `view layout` (icons/list/columns/details) separate from `layout preset` (balanced/navigator/focus/inspector). They are distinct systems with different controls.
+- Durable validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "lets the user switch explorer modes from the toolbar without mutating the live session shell preset or sources visibility|keeps the search focus control anchored in the primary toolbar zone in focus mode|can close the sources rail in inspector mode and reopen it without leaving that mode|cycles explorer layout presets directly from the toolbar control face|restores the canonical explorer layout preset from the menu" --reporter=dot`
+  - passed: `bash -lc "bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'explorerModeProfiles|FileExplorer\\.tsx|fileExplorer\\.viewModes\\.test\\.tsx'"`
+
 # 2026-04-26 - Explorer Catalog Drags Now Enter The Layout-Dynamics Canvas Instead Of Falling Back To The Orb Runtime
 
 - The last major customize-mode mismatch on adopted explorer chrome surfaces was catalog-origin drag insertion:
