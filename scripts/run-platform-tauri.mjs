@@ -230,8 +230,8 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
     ? explicitDevUrl || `http://localhost:${resolvedDevPort}`
     : null;
   const beforeDevCommand = explicitDevPort
-    ? `${runPrefix} dev -- --port ${explicitDevPort}`
-    : `${runPrefix} dev`;
+    ? `${runPrefix} dev:frontend -- --port ${explicitDevPort}`
+    : `${runPrefix} dev:frontend`;
 
   config.build = {
     ...config.build,
@@ -249,6 +249,18 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
   await fs.mkdir(tauriConfigDir, { recursive: true });
   await fs.writeFile(runtimeConfigPath, `${JSON.stringify(config, null, 2)}\n`);
   return runtimeConfigPath;
+}
+
+async function prepareTauriDevBindings(packageManagerCommand, tauriCommand) {
+  if (tauriCommand !== "dev") {
+    return;
+  }
+
+  console.log("Preparing Specta bindings before Tauri dev...");
+  const prepareExitCode = await runCommand(packageManagerCommand, ["run", "bindings:generate"]);
+  if (prepareExitCode !== 0) {
+    process.exit(prepareExitCode);
+  }
 }
 
 function runCommand(command, args, extraEnv = {}) {
@@ -353,6 +365,7 @@ async function main() {
   const packageManagerCommand = getPackageManagerCommand();
   const cliArgs = process.argv.slice(2);
   const tauriCommand = cliArgs.find((arg) => !arg.startsWith("-")) ?? null;
+  await prepareTauriDevBindings(packageManagerCommand, tauriCommand);
   const linuxGraphicsEnvironment = buildLinuxGraphicsEnvironment({ tauriCommand });
   const existingNodePath = process.env.NODE_PATH
     ? `${cacheNodeModules}${path.delimiter}${process.env.NODE_PATH}`

@@ -1,3 +1,39 @@
+# 2026-04-27 - Tauri Dev Must Pre-Generate Bindings And Launch A Cargo-Free Frontend Server
+
+- The `bun run tauri dev` timeout that looked like a broken `http://localhost:1420/` dev URL was actually a launcher-architecture bug, not a frontend/app-model regression.
+- Durable startup rule after this pass:
+  - `scripts/run-platform-tauri.mjs` must not point Tauri `beforeDevCommand` at a frontend script that itself runs Cargo.
+  - The old shape was effectively:
+    - Tauri `DevCommand`: `cargo run --no-default-features --color always --`
+    - Tauri `beforeDevCommand`: `bun run dev`
+    - `bun run dev`: `cargo run --bin export-bindings && vite`
+  - That launched two Cargo jobs at once on every `tauri dev` boot and they fought over the same artifact/package locks, which made Vite arrive late enough for Tauri to print repeated `Waiting for your frontend dev server to start on http://localhost:1420/...` warnings and eventually time out.
+- Durable tooling split now:
+  - `package.json`
+    - `bindings:generate` stays the one-shot Specta export command.
+    - `dev:frontend` is now the Vite-only path through `scripts/run-frontend-dev.mjs`.
+    - `dev` still gives a complete standalone frontend boot, but it now does that as `bindings:generate` first, then `dev:frontend`.
+  - `scripts/run-frontend-dev.mjs`
+    - syncs canonical icons
+    - starts local Vite directly
+    - forwards extra CLI args like `--port`
+    - never invokes Cargo
+  - `scripts/run-platform-tauri.mjs`
+    - now runs `bindings:generate` once up front when the Tauri command is `dev`
+    - writes `beforeDevCommand` as `bun run dev:frontend` (or equivalent package-manager form), not `bun run dev`
+- Practical debugging rule:
+  - If `bun run tauri dev` starts timing out on `localhost:1420` again, first check whether `beforeDevCommand` reintroduced Cargo or whether stale stopped `cargo run --bin export-bindings` / `bun run tauri dev` shells are still hanging around from earlier interrupted sessions.
+  - A healthy boot order now looks like:
+    1. `Preparing Specta bindings before Tauri dev...`
+    2. bindings export finishes
+    3. `Running BeforeDevCommand (\`bun run dev:frontend\`)`
+    4. Vite reports `ready`
+    5. Tauri starts the native `DevCommand`
+- Validation that passed for this pass:
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - `timeout 15 bun run dev:frontend -- --port 1420`
+  - `timeout 45 bun run tauri dev` no longer printed the old repeated `Waiting for your frontend dev server to start on http://localhost:1420/...` loop before Vite came online
+
 # 2026-04-27 - Explorer Navigation Policy Now Starts Behind A Go Sidecar Host Bridge
 
 - GreebleFS now has the first real product-facing consumer of the universal Go runtime pipeline: a long-lived `explorer-policy-service` sidecar that owns part of the explorer application brain while Rust stays the source of truth for filesystem/search/task work.
