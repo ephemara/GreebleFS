@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createLoadedTopBarDefinition,
+  resolveAvailableTopBars,
   resolveActiveTopBarSelection,
 } from '../config/topBars';
 
@@ -64,5 +65,31 @@ describe('top bar selection', () => {
     expect(result.topBar.id).toBe('orbital-glass');
     expect(result.resolvedFrom).toBe('theme-default');
     expect(result.explicitSelectionMissing).toBe(true);
+  });
+
+  it('prefers authored usr top bars when they redefine a shipped built-in id', () => {
+    const authoredOverride = createLoadedTopBarDefinition(
+      {
+        id: 'command-center',
+        name: 'Usr Command Center',
+        topBarStyle: 'glass',
+        navigationMode: 'summary',
+      },
+      {
+        source: 'top-bar-package',
+        sourceLabel: 'usr/top-bars',
+        sourcePackageId: 'greeblefs-core-top-bars',
+      },
+    );
+
+    const availableTopBars = resolveAvailableTopBars([{ topBars: [authoredOverride] }]);
+    const resolvedTopBar = availableTopBars.find((topBar) => topBar.id === 'command-center');
+
+    expect(resolvedTopBar).toMatchObject({
+      id: 'command-center',
+      name: 'Usr Command Center',
+      source: 'top-bar-package',
+      navigationMode: 'summary',
+    });
   });
 });

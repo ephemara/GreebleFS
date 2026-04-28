@@ -8,7 +8,6 @@ import {
   LEGACY_USR_SOURCE_ROOT_ENV_VAR,
   PRIMARY_USR_SOURCE_ROOT_ENV_VAR,
 } from './usrManifest';
-import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 export interface ManagedContentDirectoryDefinition {
   id: string;
@@ -261,6 +260,7 @@ async function resolveNativeManagedContentRoots(): Promise<ManagedContentRootsSn
   }
 
   try {
+    const { commands, unwrapTauriResult } = await import('../runtime/tauriClient');
     const resolvedRoots = await commands.startupResolveManagedContentRoots().then(unwrapTauriResult);
     const bundledUsrRoot = resolvedRoots.bundledUsrRoot?.trim();
     const writableRoot = resolvedRoots.writableRoot?.trim();

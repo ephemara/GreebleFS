@@ -5,6 +5,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { getUsrEntrySourcePath, getUsrManagedContentEntries } from "./usr-manifest.mjs";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
@@ -40,26 +42,37 @@ const tauriCargoTargetDir =
   process.env.OVERLAYTERM_TAURI_CARGO_TARGET_DIR ??
   defaultCargoTargetDir;
 
-const devManagedContentDirectoryEnvKeys = {
-  plugins: { primary: "VITE_GREEBLEFS_PLUGINS_DIR", legacy: "VITE_OVERLAYTERM_PLUGINS_DIR" },
-  themes: { primary: "VITE_GREEBLEFS_THEMES_DIR", legacy: "VITE_OVERLAYTERM_THEMES_DIR" },
-  shaders: { primary: "VITE_GREEBLEFS_SHADERS_DIR", legacy: "VITE_OVERLAYTERM_SHADERS_DIR" },
-  animations: { primary: "VITE_GREEBLEFS_ANIMATIONS_DIR", legacy: "VITE_OVERLAYTERM_ANIMATIONS_DIR" },
-  wallpapers: { primary: "VITE_GREEBLEFS_WALLPAPERS_DIR", legacy: "VITE_OVERLAYTERM_WALLPAPERS_DIR" },
+const usrRootEnvironmentKeys = {
+  frontendPrimary: "VITE_GREEBLEFS_USR_DIR",
+  frontendLegacy: "VITE_OVERLAYTERM_USR_DIR",
+  nativePrimary: "GREEBLEFS_USR_DIR",
+  nativeLegacy: "OVERLAYTERM_USR_DIR",
+};
+
+const managedContentRootEnvironmentKeys = {
+  primary: "GREEBLEFS_MANAGED_CONTENT_ROOT",
+  legacy: "OVERLAYTERM_MANAGED_CONTENT_ROOT",
+};
+
+const devRuntimeStateDirectoryEnvKeys = {
   notes: { primary: "VITE_GREEBLEFS_NOTES_DIR", legacy: "VITE_OVERLAYTERM_NOTES_DIR" },
 };
 
-const devManagedContentDirectoryNames = {
-  plugins: "plugins",
-  themes: "themes",
-  shaders: "shaders",
-  animations: "animations",
-  wallpapers: "wallpapers",
+const devRuntimeStateDirectoryNames = {
   notes: "notes",
 };
 
 function hasExplicitEnvValue(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function setEnvironmentPairIfMissing(targetEnvironment, existingEnv, keys, value) {
+  if (hasExplicitEnvValue(existingEnv[keys.primary]) || hasExplicitEnvValue(existingEnv[keys.legacy])) {
+    return;
+  }
+
+  targetEnvironment[keys.primary] = value;
+  targetEnvironment[keys.legacy] = value;
 }
 
 export function buildLinuxGraphicsEnvironment({
@@ -123,18 +136,45 @@ export function buildManagedContentDirectoryEnvironment({
   }
 
   const managedContentEnvironment = {};
+  const canonicalUsrRoot = path.join(projectRootPath, "usr");
 
-  for (const [directoryId, envKeys] of Object.entries(devManagedContentDirectoryEnvKeys)) {
-    if (hasExplicitEnvValue(existingEnv[envKeys.primary]) || hasExplicitEnvValue(existingEnv[envKeys.legacy])) {
-      continue;
-    }
+  setEnvironmentPairIfMissing(
+    managedContentEnvironment,
+    existingEnv,
+    {
+      primary: usrRootEnvironmentKeys.frontendPrimary,
+      legacy: usrRootEnvironmentKeys.frontendLegacy,
+    },
+    canonicalUsrRoot,
+  );
+  setEnvironmentPairIfMissing(
+    managedContentEnvironment,
+    existingEnv,
+    {
+      primary: usrRootEnvironmentKeys.nativePrimary,
+      legacy: usrRootEnvironmentKeys.nativeLegacy,
+    },
+    canonicalUsrRoot,
+  );
+  setEnvironmentPairIfMissing(
+    managedContentEnvironment,
+    existingEnv,
+    managedContentRootEnvironmentKeys,
+    canonicalUsrRoot,
+  );
 
-    const directoryPath = path.join(
-      projectRootPath,
-      devManagedContentDirectoryNames[directoryId],
-    );
-    managedContentEnvironment[envKeys.primary] = directoryPath;
-    managedContentEnvironment[envKeys.legacy] = directoryPath;
+  for (const entry of getUsrManagedContentEntries()) {
+    const envKeys = {
+      primary: `VITE_GREEBLEFS_${entry.envVarSuffix}_DIR`,
+      legacy: `VITE_OVERLAYTERM_${entry.envVarSuffix}_DIR`,
+    };
+    const directoryPath = getUsrEntrySourcePath(entry, { projectRootPath });
+    setEnvironmentPairIfMissing(managedContentEnvironment, existingEnv, envKeys, directoryPath);
+  }
+
+  for (const [directoryId, envKeys] of Object.entries(devRuntimeStateDirectoryEnvKeys)) {
+    const directoryPath = path.join(projectRootPath, devRuntimeStateDirectoryNames[directoryId]);
+    setEnvironmentPairIfMissing(managedContentEnvironment, existingEnv, envKeys, directoryPath);
   }
 
   return managedContentEnvironment;

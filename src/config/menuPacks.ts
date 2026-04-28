@@ -243,6 +243,7 @@ function createEntry(
             options.group === 'create' ||
             options.group === 'open' ||
             options.group === 'action' ||
+            options.group === 'preview' ||
             options.group === 'system' ||
             options.group === 'clipboard' ||
             options.group === 'organize' ||
@@ -483,12 +484,29 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
   };
 }
 
+function mergeExplorerMenuPacksWithBuiltInFallback(
+  authoredPacks: LoadedExplorerMenuPack[],
+): LoadedExplorerMenuPack[] {
+  const mergedPacks = new Map<string, LoadedExplorerMenuPack>();
+
+  for (const pack of authoredPacks) {
+    mergedPacks.set(pack.id, pack);
+  }
+
+  const builtInPack = createBuiltInExplorerMenuPack();
+  if (!mergedPacks.has(builtInPack.id)) {
+    mergedPacks.set(builtInPack.id, builtInPack);
+  }
+
+  return Array.from(mergedPacks.values()).sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export async function loadExplorerMenuPacksFromDirectoryEntries(
   directoryEntries: FileEntry[],
   directoryLabel = menuPackSystemConfig.menuPacksDirectory,
 ): Promise<ExplorerMenuPackLoadResult> {
   try {
-    const packs: LoadedExplorerMenuPack[] = [createBuiltInExplorerMenuPack()];
+    const authoredPacks: LoadedExplorerMenuPack[] = [];
     const warnings: string[] = [];
 
     for (const entry of [...directoryEntries].sort((left, right) => left.name.localeCompare(right.name))) {
@@ -506,7 +524,7 @@ export async function loadExplorerMenuPacksFromDirectoryEntries(
           continue;
         }
 
-        packs.push({
+        authoredPacks.push({
           id: packId,
           name: packName,
           version: typeof record.manifest.version === 'number' ? record.manifest.version : 1,
@@ -527,25 +545,15 @@ export async function loadExplorerMenuPacksFromDirectoryEntries(
       }
     }
 
-    packs.sort((left, right) => {
-      if (left.sourceKind === 'built-in' && right.sourceKind !== 'built-in') {
-        return -1;
-      }
-      if (right.sourceKind === 'built-in' && left.sourceKind !== 'built-in') {
-        return 1;
-      }
-      return left.name.localeCompare(right.name);
-    });
-
     return {
-      packs,
+      packs: mergeExplorerMenuPacksWithBuiltInFallback(authoredPacks),
       directory: directoryLabel,
       warnings,
       sourceError: null,
     };
   } catch (error) {
     return {
-      packs: [createBuiltInExplorerMenuPack()],
+      packs: mergeExplorerMenuPacksWithBuiltInFallback([]),
       directory: directoryLabel,
       warnings: [],
       sourceError: String(error),
@@ -557,7 +565,7 @@ export async function loadExplorerMenuPacks(): Promise<ExplorerMenuPackLoadResul
   const directory = menuPackSystemConfig.menuPacksDirectory;
   if (!isTauri()) {
     return {
-      packs: [createBuiltInExplorerMenuPack()],
+      packs: mergeExplorerMenuPacksWithBuiltInFallback([]),
       directory,
       warnings: [],
       sourceError: null,
@@ -569,7 +577,7 @@ export async function loadExplorerMenuPacks(): Promise<ExplorerMenuPackLoadResul
     return loadExplorerMenuPacksFromDirectoryEntries(entries, directory);
   } catch (error) {
     return {
-      packs: [createBuiltInExplorerMenuPack()],
+      packs: mergeExplorerMenuPacksWithBuiltInFallback([]),
       directory,
       warnings: [],
       sourceError: String(error),

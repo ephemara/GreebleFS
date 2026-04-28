@@ -137,7 +137,13 @@ fn parse_python_version(output: &str) -> Option<String> {
     // `Python 3.12.4`
     output
         .split_whitespace()
-        .find(|token| token.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+        .find(|token| {
+            token
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+        })
         .map(|token| token.to_string())
 }
 

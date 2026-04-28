@@ -1758,6 +1758,14 @@ async startupGetLinuxDisplayBackendStatus() : Promise<Result<LinuxDisplayBackend
     else return { status: "error", error: e  as any };
 }
 },
+async startupResolveManagedContentRoots() : Promise<Result<ManagedContentRoots, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("startup_resolve_managed_content_roots") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async startupSetLaunchAtStartup(enabled: boolean) : Promise<Result<boolean, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("startup_set_launch_at_startup", { enabled }) };
@@ -2167,6 +2175,7 @@ export type LinuxDisplayBackendStatus = { availableBackends: LinuxDisplayBackend
  * can still override from the shell.
  */
 export type LinuxNvidiaWebkitWorkaroundMode = "auto" | "force-on" | "force-off"
+export type ManagedContentRoots = { bundledUsrRoot: string; writableRoot: string }
 export type MobileFolderIconRuleSnapshot = { id: string; label: string; matchers: string[]; icon: string }
 export type MobileIconThemeSnapshot = { id: string; name: string; file: string; folder: string; folderExpanded: string; iconDefinitions: Partial<{ [key in string]: string }>; fileExtensions: Partial<{ [key in string]: string }>; fileNames: Partial<{ [key in string]: string }>; folderNames: Partial<{ [key in string]: string }>; folderNamesExpanded: Partial<{ [key in string]: string }>; uiIcons: Partial<{ [key in string]: string }> }
 export type MobileLayoutSortBy = "name" | "date" | "size" | "type"

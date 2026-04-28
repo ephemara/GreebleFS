@@ -4,9 +4,37 @@ import {
   buildLinuxGraphicsEnvironment,
   buildManagedContentDirectoryEnvironment,
 } from '../../scripts/run-platform-tauri.mjs';
+import { getUsrManagedContentEntries } from '../../scripts/usr-manifest.mjs';
+
+function buildExpectedDevManagedEnvironment(projectRootPath: string) {
+  const usrRootPath = path.join(projectRootPath, 'usr');
+  const expectedEnvironment: Record<string, string> = {
+    VITE_GREEBLEFS_USR_DIR: usrRootPath,
+    VITE_OVERLAYTERM_USR_DIR: usrRootPath,
+    GREEBLEFS_USR_DIR: usrRootPath,
+    OVERLAYTERM_USR_DIR: usrRootPath,
+    GREEBLEFS_MANAGED_CONTENT_ROOT: usrRootPath,
+    OVERLAYTERM_MANAGED_CONTENT_ROOT: usrRootPath,
+    VITE_GREEBLEFS_NOTES_DIR: path.join(projectRootPath, 'notes'),
+    VITE_OVERLAYTERM_NOTES_DIR: path.join(projectRootPath, 'notes'),
+  };
+
+  for (const entry of getUsrManagedContentEntries()) {
+    expectedEnvironment[`VITE_GREEBLEFS_${entry.envVarSuffix}_DIR`] = path.join(
+      usrRootPath,
+      entry.relativeDirectory,
+    );
+    expectedEnvironment[`VITE_OVERLAYTERM_${entry.envVarSuffix}_DIR`] = path.join(
+      usrRootPath,
+      entry.relativeDirectory,
+    );
+  }
+
+  return expectedEnvironment;
+}
 
 describe('buildManagedContentDirectoryEnvironment', () => {
-  it('pins tauri dev authored content roots to the workspace root', () => {
+  it('pins tauri dev authored content roots to the canonical usr workspace root', () => {
     const projectRootPath = path.join(path.sep, 'tmp', 'greeblefs');
 
     const environment = buildManagedContentDirectoryEnvironment({
@@ -15,20 +43,7 @@ describe('buildManagedContentDirectoryEnvironment', () => {
       existingEnv: {},
     });
 
-    expect(environment).toEqual({
-      VITE_GREEBLEFS_PLUGINS_DIR: path.join(projectRootPath, 'plugins'),
-      VITE_GREEBLEFS_THEMES_DIR: path.join(projectRootPath, 'themes'),
-      VITE_GREEBLEFS_SHADERS_DIR: path.join(projectRootPath, 'shaders'),
-      VITE_GREEBLEFS_ANIMATIONS_DIR: path.join(projectRootPath, 'animations'),
-      VITE_GREEBLEFS_WALLPAPERS_DIR: path.join(projectRootPath, 'wallpapers'),
-      VITE_GREEBLEFS_NOTES_DIR: path.join(projectRootPath, 'notes'),
-      VITE_OVERLAYTERM_PLUGINS_DIR: path.join(projectRootPath, 'plugins'),
-      VITE_OVERLAYTERM_THEMES_DIR: path.join(projectRootPath, 'themes'),
-      VITE_OVERLAYTERM_SHADERS_DIR: path.join(projectRootPath, 'shaders'),
-      VITE_OVERLAYTERM_ANIMATIONS_DIR: path.join(projectRootPath, 'animations'),
-      VITE_OVERLAYTERM_WALLPAPERS_DIR: path.join(projectRootPath, 'wallpapers'),
-      VITE_OVERLAYTERM_NOTES_DIR: path.join(projectRootPath, 'notes'),
-    });
+    expect(environment).toEqual(buildExpectedDevManagedEnvironment(projectRootPath));
   });
 
   it('preserves explicit directory overrides', () => {
@@ -44,8 +59,10 @@ describe('buildManagedContentDirectoryEnvironment', () => {
 
     expect(environment.VITE_GREEBLEFS_THEMES_DIR).toBeUndefined();
     expect(environment.VITE_OVERLAYTERM_THEMES_DIR).toBeUndefined();
-    expect(environment.VITE_GREEBLEFS_PLUGINS_DIR).toBe(path.join(projectRootPath, 'plugins'));
-    expect(environment.VITE_OVERLAYTERM_PLUGINS_DIR).toBe(path.join(projectRootPath, 'plugins'));
+    expect(environment.VITE_GREEBLEFS_PLUGINS_DIR).toBe(path.join(projectRootPath, 'usr', 'plugins'));
+    expect(environment.VITE_OVERLAYTERM_PLUGINS_DIR).toBe(path.join(projectRootPath, 'usr', 'plugins'));
+    expect(environment.VITE_GREEBLEFS_USR_DIR).toBe(path.join(projectRootPath, 'usr'));
+    expect(environment.GREEBLEFS_MANAGED_CONTENT_ROOT).toBe(path.join(projectRootPath, 'usr'));
   });
 
   it('does not inject workspace paths outside tauri dev', () => {

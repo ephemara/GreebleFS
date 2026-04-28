@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "id": "filesystem-aquarium",
-  "name": "Filesystem Aquarium",
-  "description": "Turn a real folder into a living reef of file-creatures, activity currents, and ambient desktop weather.",
-  "entry": "dist/index.tsx",
-  "defaultOpen": false,
-  "keepMounted": true
-}

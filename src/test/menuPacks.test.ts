@@ -82,7 +82,7 @@ describe('menuPacks', () => {
     expect(pack.contexts['preview-pane']?.entries).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: 'group-slot',
-        group: 'system',
+        group: 'preview',
       }),
     ]));
   });
@@ -188,6 +188,46 @@ describe('menuPacks', () => {
     expect(result.warnings).toEqual([
       'Empty Pack: manifest does not define any menu contexts.',
     ]);
+  });
+
+  it('prefers an authored pack when it redefines the shipped default id', async () => {
+    fsReadTextFileMock.mockResolvedValue({
+      status: 'ok',
+      data: JSON.stringify({
+        id: DEFAULT_EXPLORER_MENU_PACK_ID,
+        name: 'Usr Canonical Menu',
+        presentation: {
+          renderer: 'sheet',
+        },
+        contexts: {
+          entry: {
+            entries: [
+              { id: 'entry.open', kind: 'command', commandId: 'built-in.open', order: 10 },
+            ],
+          },
+        },
+      }),
+    });
+
+    const result = await loadExplorerMenuPacksFromDirectoryEntries([
+      {
+        name: 'manifest.json',
+        path: '/packs/manifest.json',
+        is_dir: false,
+        extension: 'json',
+        modified: 0,
+      },
+    ], '/packs');
+
+    expect(result.packs).toHaveLength(1);
+    expect(result.packs[0]).toMatchObject({
+      id: DEFAULT_EXPLORER_MENU_PACK_ID,
+      name: 'Usr Canonical Menu',
+      sourceKind: 'menu-pack-directory',
+      presentation: expect.objectContaining({
+        renderer: 'sheet',
+      }),
+    });
   });
 
   it('falls back to the built-in pack outside the Tauri host', async () => {

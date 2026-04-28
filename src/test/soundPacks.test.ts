@@ -104,4 +104,50 @@ describe('sound packs', () => {
       sourceLabel: 'Vista Glass',
     });
   });
+
+  it('prefers an authored sound pack when it redefines the shipped default id', async () => {
+    vi.mocked(invoke).mockImplementation(async (command: string, args: unknown) => {
+      if (command === 'fs_read_text_file') {
+        const payload = args as { path?: string } | undefined;
+        if (payload?.path === '/workspace/sound-packs/default/sound-pack.json') {
+          return JSON.stringify({
+            id: DEFAULT_SOUND_PACK_ID,
+            name: 'Usr Default Override',
+            masterVolume: 0.5,
+            sounds: {
+              'shell-button-press': {
+                kind: 'synth',
+                tones: [
+                  { frequency: 510, durationMs: 18, gain: 0.12, waveform: 'sine' },
+                ],
+              },
+            },
+          });
+        }
+      }
+
+      throw new Error(`Unexpected invoke: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await loadSoundPacksFromDirectoryEntries(
+      [
+        {
+          name: 'default',
+          path: '/workspace/sound-packs/default',
+          is_dir: true,
+          extension: '',
+          modified: 1710000002,
+        },
+      ],
+      '/workspace/sound-packs',
+    );
+
+    expect(result.packs).toHaveLength(1);
+    expect(result.packs[0]).toMatchObject({
+      id: DEFAULT_SOUND_PACK_ID,
+      name: 'Usr Default Override',
+      masterVolume: 0.5,
+      sourceKind: 'sound-pack-directory',
+    });
+  });
 });

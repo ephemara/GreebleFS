@@ -678,6 +678,27 @@ function createBuiltInSoundPacks(): LoadedOverlaySoundPack[] {
   }];
 }
 
+function mergeSoundPacksWithBuiltInFallback(
+  authoredPacks: LoadedOverlaySoundPack[],
+  includeBuiltIns = true,
+): LoadedOverlaySoundPack[] {
+  const mergedPacks = new Map<string, LoadedOverlaySoundPack>();
+
+  for (const pack of authoredPacks) {
+    mergedPacks.set(pack.id, pack);
+  }
+
+  if (includeBuiltIns) {
+    for (const builtInPack of createBuiltInSoundPacks()) {
+      if (!mergedPacks.has(builtInPack.id)) {
+        mergedPacks.set(builtInPack.id, builtInPack);
+      }
+    }
+  }
+
+  return Array.from(mergedPacks.values()).sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export function resolveLoadedSoundPack(
   packs: readonly LoadedOverlaySoundPack[],
   requestedId: string | null | undefined,
@@ -700,9 +721,7 @@ export async function loadSoundPacksFromDirectoryEntries(
   options?: SoundPackLoadOptions,
 ): Promise<SoundPackLoadResult> {
   try {
-    const packs: LoadedOverlaySoundPack[] = options?.includeBuiltIns === false
-      ? []
-      : createBuiltInSoundPacks();
+    const authoredPacks: LoadedOverlaySoundPack[] = [];
     const warnings: string[] = [];
 
     for (const entry of directoryEntries) {
@@ -728,7 +747,7 @@ export async function loadSoundPacksFromDirectoryEntries(
             .filter((soundEntry): soundEntry is readonly [string, LoadedOverlaySoundCue] => soundEntry != null),
         ) as Partial<Record<OverlaySoundEffectId, LoadedOverlaySoundCue>>;
 
-        packs.push({
+        authoredPacks.push({
           id,
           localId,
           name: deriveSoundPackName(record, localId),
@@ -751,14 +770,14 @@ export async function loadSoundPacksFromDirectoryEntries(
     }
 
     return {
-      packs: packs.sort((left, right) => left.name.localeCompare(right.name)),
+      packs: mergeSoundPacksWithBuiltInFallback(authoredPacks, options?.includeBuiltIns !== false),
       directory: directoryLabel,
       warnings,
       sourceError: null,
     };
   } catch (error) {
     return {
-      packs: options?.includeBuiltIns === false ? [] : createBuiltInSoundPacks(),
+      packs: mergeSoundPacksWithBuiltInFallback([], options?.includeBuiltIns !== false),
       directory: directoryLabel,
       warnings: [],
       sourceError: String(error),
@@ -770,7 +789,7 @@ export async function loadSoundPacks(): Promise<SoundPackLoadResult> {
   const directory = soundPackSystemConfig.soundPacksDirectory;
   if (!isTauri()) {
     return {
-      packs: createBuiltInSoundPacks(),
+      packs: mergeSoundPacksWithBuiltInFallback([]),
       directory,
       warnings: [],
       sourceError: null,
@@ -782,7 +801,7 @@ export async function loadSoundPacks(): Promise<SoundPackLoadResult> {
     return loadSoundPacksFromDirectoryEntries(rootEntries, directory);
   } catch (error) {
     return {
-      packs: createBuiltInSoundPacks(),
+      packs: mergeSoundPacksWithBuiltInFallback([]),
       directory,
       warnings: [],
       sourceError: String(error),

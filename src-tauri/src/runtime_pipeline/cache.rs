@@ -230,11 +230,8 @@ mod tests {
         std::fs::write(dir.path().join("main.go"), "package main\n").expect("write");
         let signature_a = compute_source_signature(dir.path()).expect("sig a");
 
-        std::fs::write(
-            dir.path().join("main.go"),
-            "package main\nfunc main() {}\n",
-        )
-        .expect("write 2");
+        std::fs::write(dir.path().join("main.go"), "package main\nfunc main() {}\n")
+            .expect("write 2");
         let signature_b = compute_source_signature(dir.path()).expect("sig b");
         assert_ne!(signature_a, signature_b);
     }

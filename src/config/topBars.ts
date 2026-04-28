@@ -351,9 +351,7 @@ export function resolveAvailableTopBars(
 
   for (const packageSource of packageSources) {
     for (const topBar of packageSource.topBars ?? []) {
-      if (!loaded.has(topBar.id)) {
-        loaded.set(topBar.id, cloneTopBarDefinition(topBar));
-      }
+      loaded.set(topBar.id, cloneTopBarDefinition(topBar));
     }
   }
 

@@ -80,7 +80,10 @@ impl RuntimeCompiler {
     }
 
     pub fn produces_wasm(&self) -> bool {
-        matches!(self, RuntimeCompiler::GoJsWasm | RuntimeCompiler::TinygoWasm)
+        matches!(
+            self,
+            RuntimeCompiler::GoJsWasm | RuntimeCompiler::TinygoWasm
+        )
     }
 }
 
@@ -310,8 +313,9 @@ impl RuntimeManifest {
             _ => "go".to_string(),
         });
 
-        let source_signature = crate::runtime_pipeline::cache::compute_source_signature(&module_dir)
-            .unwrap_or_else(|_| "unsigned".to_string());
+        let source_signature =
+            crate::runtime_pipeline::cache::compute_source_signature(&module_dir)
+                .unwrap_or_else(|_| "unsigned".to_string());
 
         Ok(Self {
             id: raw.id,
@@ -411,7 +415,10 @@ transport = "stdio-json-lines"
         assert_eq!(manifest.kind, RuntimeKind::NativeSidecar);
         assert_eq!(manifest.compiler, RuntimeCompiler::GoNative);
         assert!(manifest.entry.is_some(), "entry should be resolved");
-        assert!(manifest.sidecar.is_some(), "sidecar block should round-trip");
+        assert!(
+            manifest.sidecar.is_some(),
+            "sidecar block should round-trip"
+        );
     }
 
     #[test]

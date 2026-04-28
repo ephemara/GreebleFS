@@ -23,7 +23,10 @@ struct RegistryState {
 }
 
 impl RuntimeRegistry {
-    pub fn refresh_from_roots(&self, roots: Vec<RuntimeDiscoveryRoot>) -> Vec<DiscoveredRuntimePackage> {
+    pub fn refresh_from_roots(
+        &self,
+        roots: Vec<RuntimeDiscoveryRoot>,
+    ) -> Vec<DiscoveredRuntimePackage> {
         let packages = discover_runtime_packages(&roots);
         let mut by_id = HashMap::with_capacity(packages.len());
         for package in &packages {

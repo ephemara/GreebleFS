@@ -9,9 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::runtime_pipeline::manifest::RuntimeManifest;
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum RuntimePackageOrigin {
     Builtin,
@@ -51,9 +49,7 @@ impl RuntimeDiscoveryRoot {
 /// non-recursive past the first nested directory level on purpose: a runtime
 /// package owns its full subtree, so we never sniff into module sources for
 /// nested manifests.
-pub fn discover_runtime_packages(
-    roots: &[RuntimeDiscoveryRoot],
-) -> Vec<DiscoveredRuntimePackage> {
+pub fn discover_runtime_packages(roots: &[RuntimeDiscoveryRoot]) -> Vec<DiscoveredRuntimePackage> {
     let mut out = Vec::new();
     for root in roots {
         if !root.directory.exists() {
@@ -144,12 +140,18 @@ pub fn ensure_path_inside_root(
     candidate: &Path,
     containing_root: &Path,
 ) -> Result<PathBuf, String> {
-    let canonical_candidate = candidate
-        .canonicalize()
-        .map_err(|error| format!("failed to canonicalize {}: {error}", candidate.to_string_lossy()))?;
-    let canonical_root = containing_root
-        .canonicalize()
-        .map_err(|error| format!("failed to canonicalize root {}: {error}", containing_root.to_string_lossy()))?;
+    let canonical_candidate = candidate.canonicalize().map_err(|error| {
+        format!(
+            "failed to canonicalize {}: {error}",
+            candidate.to_string_lossy()
+        )
+    })?;
+    let canonical_root = containing_root.canonicalize().map_err(|error| {
+        format!(
+            "failed to canonicalize root {}: {error}",
+            containing_root.to_string_lossy()
+        )
+    })?;
     if !canonical_candidate.starts_with(&canonical_root) {
         return Err(format!(
             "path {} is outside the allowed root {}",
@@ -235,11 +237,8 @@ entry = "."
 "#,
             outside.to_string_lossy()
         );
-        std::fs::write(
-            attacker_pkg.join(RuntimeManifest::FILE_NAME),
-            manifest_text,
-        )
-        .expect("write");
+        std::fs::write(attacker_pkg.join(RuntimeManifest::FILE_NAME), manifest_text)
+            .expect("write");
 
         let packages = discover_runtime_packages(&[RuntimeDiscoveryRoot::new(
             "managed",
