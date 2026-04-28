@@ -1,3 +1,19 @@
+# 2026-04-28 - Explorer Huge-Folder Scrolling No Longer Mounts The Whole Directory
+
+- The standard explorer list/grid virtualization path now refuses to render every entry while viewport measurement is still `0`.
+- Durable behavior after this pass:
+  - `src/components/FileExplorer.tsx` uses estimated virtualization dimensions (`1280x720`) until `OverlayScrollArea`/`ResizeObserver` reports real viewport metrics.
+  - list and grid overscan are larger and viewport-scaled, so fast wheel/trackpad jumps keep enough rows mounted ahead of the visible range instead of visibly "loading in."
+  - the explorer viewport now forwards `OverlayScrollArea.onViewportScroll` into the virtual-window state immediately; the older native RAF listener remains a fallback/sizing companion rather than the only scroll update path.
+- Durable performance rule:
+  - do not restore the old `!hasMeasuredExplorerViewportHeight => render all entries` branch. It makes huge folders pay full DOM/render cost before the viewport is measured.
+  - if future huge-folder work moves more policy into Go/Rust, keep TS/React as the row-window renderer only: sorting/filtering/listing truth may move native-side, but React should still receive a bounded visible window for the standard explorer surface.
+- Regression coverage:
+  - `src/test/fileExplorer.viewModes.test.tsx` now asserts a 2000-item folder mounts fewer than 120 entry nodes before measurement and keeps the last item absent until scrolling asks for it.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "huge folder|final item reachable|dedicated explorer viewport" --reporter=dot`
+  - `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'src/components/FileExplorer\\.tsx|src/test/fileExplorer\\.viewModes\\.test\\.tsx' || true`
+
 # 2026-04-28 - Plugin Settings Slots Are Now A First-Class Extension Catalog Lane
 
 - Plugin-owned durable settings no longer need to invent their own persistence contract or hide inside the Plugins page.

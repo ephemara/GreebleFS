@@ -629,8 +629,10 @@ const LazyMonacoEditor = React.lazy(async () => {
 
 const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
-const EXPLORER_LIST_OVERSCAN = 8;
-const EXPLORER_GRID_OVERSCAN_ROWS = 2;
+const EXPLORER_LIST_OVERSCAN = 18;
+const EXPLORER_GRID_OVERSCAN_ROWS = 6;
+const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_WIDTH = 1280;
+const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_HEIGHT = 720;
 const EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY = 1 / 480;
 const EXPLORER_LAYOUT_WHEEL_MAX_DELTA = 0.18;
 const EXPLORER_LAYOUT_WHEEL_LINE_DELTA_PX = 18;
@@ -9286,6 +9288,13 @@ export function FileExplorer({
         return;
       }
       commitExplorerViewportScrollTop(target.scrollTop);
+    },
+    [commitExplorerViewportScrollTop],
+  );
+
+  const handleExplorerViewportScroll = useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      commitExplorerViewportScrollTop(event.currentTarget.scrollTop);
     },
     [commitExplorerViewportScrollTop],
   );
@@ -24746,11 +24755,12 @@ export function FileExplorer({
       previewWarmupStartedRef.current = false;
     };
   }, [explorerPicker]);
-  const virtualizedViewportWidth = explorerViewportMetrics.clientWidth;
+  const virtualizedViewportWidth =
+    explorerViewportMetrics.clientWidth > 0
+      ? explorerViewportMetrics.clientWidth
+      : EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_WIDTH;
   const measuredVirtualizedViewportHeight =
     explorerViewportMetrics.clientHeight;
-  const hasMeasuredExplorerViewportHeight =
-    measuredVirtualizedViewportHeight > 0;
   const minimumVirtualizedViewportHeight =
     effectiveViewModeDefinition.presentation === "grid"
       ? ((isSearchActive
@@ -24760,7 +24770,9 @@ export function FileExplorer({
           ? activeRowMetrics?.searchRowHeight
           : activeRowMetrics?.rowHeight) ?? EXPLORER_LIST_ROW_HEIGHT);
   const virtualizedViewportHeight = Math.max(
-    measuredVirtualizedViewportHeight,
+    measuredVirtualizedViewportHeight > 0
+      ? measuredVirtualizedViewportHeight
+      : EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_HEIGHT,
     minimumVirtualizedViewportHeight,
   );
   const virtualizedScrollTop = Math.max(
@@ -24797,30 +24809,23 @@ export function FileExplorer({
         0,
         contentHeight - virtualizedViewportHeight,
       );
-      if (!hasMeasuredExplorerViewportHeight) {
-        return {
-          kind: "grid" as const,
-          columns,
-          rowHeight,
-          contentHeight,
-          maxScrollTop,
-          startRow: 0,
-          endRow: totalRows,
-          startIndex: 0,
-          endIndex: visibleEntries.length,
-          topSpacer: 0,
-          bottomSpacer: 0,
-        };
-      }
       const clampedScrollTop = Math.min(virtualizedScrollTop, maxScrollTop);
+      const viewportRows = Math.max(
+        1,
+        Math.ceil(virtualizedViewportHeight / rowAdvance),
+      );
+      const overscanRows = Math.max(
+        EXPLORER_GRID_OVERSCAN_ROWS,
+        Math.ceil(viewportRows * 1.25),
+      );
       const startRow = Math.max(
         0,
-        Math.floor(clampedScrollTop / rowAdvance) - EXPLORER_GRID_OVERSCAN_ROWS,
+        Math.floor(clampedScrollTop / rowAdvance) - overscanRows,
       );
       const endRow = Math.min(
         totalRows,
         Math.ceil((clampedScrollTop + virtualizedViewportHeight) / rowAdvance) +
-          EXPLORER_GRID_OVERSCAN_ROWS,
+          overscanRows,
       );
       const safeEndRow = Math.max(startRow, endRow);
       const startIndex = Math.min(visibleEntries.length, startRow * columns);
@@ -24850,29 +24855,23 @@ export function FileExplorer({
     const totalRows = visibleEntries.length;
     const contentHeight = totalRows * rowHeight;
     const maxScrollTop = Math.max(0, contentHeight - virtualizedViewportHeight);
-    if (!hasMeasuredExplorerViewportHeight) {
-      return {
-        kind: "list" as const,
-        rowHeight,
-        contentHeight,
-        maxScrollTop,
-        startRow: 0,
-        endRow: totalRows,
-        startIndex: 0,
-        endIndex: visibleEntries.length,
-        topSpacer: 0,
-        bottomSpacer: 0,
-      };
-    }
     const clampedScrollTop = Math.min(virtualizedScrollTop, maxScrollTop);
+    const viewportRows = Math.max(
+      1,
+      Math.ceil(virtualizedViewportHeight / rowHeight),
+    );
+    const overscanRows = Math.max(
+      EXPLORER_LIST_OVERSCAN,
+      Math.ceil(viewportRows * 1.5),
+    );
     const startRow = Math.max(
       0,
-      Math.floor(clampedScrollTop / rowHeight) - EXPLORER_LIST_OVERSCAN,
+      Math.floor(clampedScrollTop / rowHeight) - overscanRows,
     );
     const endRow = Math.min(
       totalRows,
       Math.ceil((clampedScrollTop + virtualizedViewportHeight) / rowHeight) +
-        EXPLORER_LIST_OVERSCAN,
+        overscanRows,
     );
     const safeEndRow = Math.max(startRow, endRow);
 
@@ -24893,7 +24892,6 @@ export function FileExplorer({
     effectiveViewModeDefinition.presentation,
     activeGridMetrics,
     activeRowMetrics,
-    hasMeasuredExplorerViewportHeight,
     isSearchActive,
     virtualizedScrollTop,
     virtualizedViewportHeight,
@@ -29630,6 +29628,7 @@ export function FileExplorer({
                       : undefined
                   }
                   viewportRef={bindExplorerViewportRef}
+                  onViewportScroll={handleExplorerViewportScroll}
                 >
                   <div
                     ref={mainRef}
