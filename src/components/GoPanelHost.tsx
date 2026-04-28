@@ -71,6 +71,13 @@ export interface GoPanelHostBridge {
     methodId: string,
     payload?: TPayload,
   ) => Promise<string>;
+  /** Subscribe one Go/Wasm panel to the canonical host event bus. */
+  subscribeHostEvents: (
+    request: unknown,
+    onEventJson: (eventJson: string) => void,
+  ) => Promise<string>;
+  /** Cancel one Go/Wasm panel host-event subscription. */
+  unsubscribeHostEvents: (subscriptionId: string) => Promise<string>;
   /**
    * Read/write the host-side persisted state blob the runtime is allowed to
    * mutate. v1 stores blobs in `localStorage` under a runtime-scoped key; the
@@ -186,6 +193,9 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
   const [bridgeToken, setBridgeToken] = useState<string | null>(null);
   const goInstanceRef = useRef<GoWasmInstance | null>(null);
   const bridgeTokenRef = useRef<string | null>(null);
+  const hostEventUnsubscribersRef = useRef<
+    Map<string, () => Promise<void> | void>
+  >(new Map());
 
   const reload = useCallback(() => {
     setError(null);
@@ -291,6 +301,30 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
           emitEvent: event => onEvent?.(event),
           callRuntimeAction: callRuntimeAction as GoPanelHostBridge['callRuntimeAction'],
           callHostMethod: callHostMethod as GoPanelHostBridge['callHostMethod'],
+          subscribeHostEvents: async (request, onEventJson) => {
+            const registration = await hostClient.events.subscribe(
+              (request ?? {}) as Parameters<typeof hostClient.events.subscribe>[0],
+              (event) => {
+                onEventJson(JSON.stringify(event));
+              },
+            );
+            hostEventUnsubscribersRef.current.set(
+              registration.subscription.subscriptionId,
+              registration.unsubscribe,
+            );
+            return JSON.stringify(registration.subscription);
+          },
+          unsubscribeHostEvents: async (subscriptionId) => {
+            const unsubscribe =
+              hostEventUnsubscribersRef.current.get(subscriptionId) ?? null;
+            hostEventUnsubscribersRef.current.delete(subscriptionId);
+            if (unsubscribe) {
+              await unsubscribe();
+            } else {
+              await hostClient.events.unsubscribe(subscriptionId).catch(() => null);
+            }
+            return 'null';
+          },
           readStorageBlob: () => {
             try {
               return window.localStorage.getItem(storageKey);
@@ -356,6 +390,13 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
 
     return () => {
       cancelled = true;
+      const pendingUnsubscribers = [
+        ...hostEventUnsubscribersRef.current.values(),
+      ];
+      hostEventUnsubscribersRef.current.clear();
+      pendingUnsubscribers.forEach((unsubscribe) => {
+        void Promise.resolve(unsubscribe()).catch(() => {});
+      });
       try {
         goInstanceRef.current?.exit?.(0);
       } catch {

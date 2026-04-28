@@ -224,6 +224,9 @@ pub fn run() {
             app.manage(image_commands::ImageEditorManager::default());
             app.manage(pdf_commands::PdfPreviewManager::default());
             app.manage(python_sidecar::PythonSidecarManager::default());
+            app.manage(runtime_pipeline::HostEventBusState::default());
+            app.manage(runtime_pipeline::commands::RuntimeFileWatchManager::default());
+            app.manage(runtime_pipeline::commands::RuntimeTaskProcessManager::default());
             app.manage(runtime_pipeline::RuntimeRegistryState::default());
             app.manage(runtime_pipeline::sidecar::ExternalSidecarManager::default());
             app.manage(video_engine::VideoEngineManager::default());

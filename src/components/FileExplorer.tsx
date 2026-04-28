@@ -225,6 +225,7 @@ import {
 } from "../config/shaders";
 import { requestPluginPanelOpen } from "../runtime/pluginPanelRequests";
 import { buildExplorerExecutionContextSnapshot } from "../runtime/explorerExtensionContext";
+import { callExtensionHostMethod } from "../runtime/extensionHostApi";
 import {
   createPluginPreviewRuntimeBridge,
   type OverlayPluginPreviewHostContext,
@@ -8122,7 +8123,9 @@ interface FileExplorerProps {
   layoutMode?: ExplorerLayoutMode;
   defaultModeProfileId?: ExplorerModeProfileId | null;
   instanceId?: ExplorerInstanceId;
+  workspaceTabId?: string | null;
   workspacePaneCount?: 1 | 2 | 3 | 4;
+  isActiveWorkspacePane?: boolean;
   chromeControlSurface?: "toolbar" | "topbar";
   focusAddressBarSignal?: number;
   onWorkspaceRuntimeSnapshotChange?: (
@@ -8209,7 +8212,9 @@ export function FileExplorer({
   layoutMode = "full",
   defaultModeProfileId = null,
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
+  workspaceTabId = null,
   workspacePaneCount = 1,
+  isActiveWorkspacePane = true,
   chromeControlSurface = "toolbar",
   focusAddressBarSignal = 0,
   onWorkspaceRuntimeSnapshotChange,
@@ -29019,6 +29024,7 @@ export function FileExplorer({
       preview.type !== "none" && isExplorerArchiveVirtualPath(preview.path);
     return buildExplorerExecutionContextSnapshot({
       paneId: instanceId,
+      workspaceTabId,
       activeDirectory: currentPath,
       cwd: currentPath,
       drives,
@@ -29051,7 +29057,17 @@ export function FileExplorer({
     instanceId,
     preview,
     selected,
+    workspaceTabId,
   ]);
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+    void callExtensionHostMethod("context.sync_snapshot", {
+      snapshot: pluginPreviewExecutionContext,
+      isActive: isActiveWorkspacePane,
+    }).catch(() => {});
+  }, [isActiveWorkspacePane, pluginPreviewExecutionContext]);
   const explorerPreviewPane = useMemo(() => {
     if (!previewPanelVisible) {
       return null;

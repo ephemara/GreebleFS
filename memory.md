@@ -80,6 +80,45 @@
 - Durable next step:
   - keep pushing the same pattern outward: installer seeding should copy canonical `usr/` non-destructively, and any remaining explorer/theme/layout preset metadata still trapped in synchronous TS catalogs should migrate behind authored `usr` config seams rather than growing more built-ins
 
+# 2026-04-28 - Host Event Bus, `stdio-json-lines-v2`, And Streamed Task/File-Watch Services Are Now Real
+
+- The old “host-event schema exists but sidecars still cannot receive push events” limitation is no longer true for the modern transport stack.
+- Durable event-platform ownership after this pass:
+  - `src-tauri/src/runtime_pipeline/host_events.rs` is now the Rust-owned event substrate for extensions.
+    - It owns the built-in topic catalog, replay/snapshot generation, extension-scoped `ext.<extensionId>.*` publication, and the ambient explorer-context cache.
+    - It is the only place that should decide whether a topic supports snapshots, replay depth, default scope, or activation hints.
+  - `src-tauri/src/runtime_pipeline/sidecar.rs` now has a real full-duplex `stdio-json-lines-v2` path.
+    - Host-to-runtime packets now include `event` and `snapshot`.
+    - Runtime-to-host packets now include `subscribe`, `unsubscribe`, and `publish`.
+    - Legacy `stdio-json-lines` is still supported, but it stays request/response-only on purpose.
+  - `src/runtime/extensionHostApi.ts`, `src-go/sdk/greeblefs-go/runtime/host_services.go`, and `src-go/sdk/greeblefs-go/hostapi/services.go` are now aligned on the modern host surface.
+    - `events.describeTopics`, `events.subscribe`, `events.unsubscribe`, `events.getSnapshot`, and `events.publish`
+    - `files.watch` / `files.unwatch`
+    - `tasks.start_process` / `tasks.stop_process`
+- Durable explorer-context rule after this pass:
+  - `src/components/FileExplorer.tsx` and `src/components/explorer/ExplorerWorkspace.tsx` now keep the host bus warm through `context.sync_snapshot`.
+  - The synced `ExecutionContextSnapshot` now includes `workspaceTabId`, `activeFileType`, and `revision`; test helpers and preview/plugin mocks must include those fields or they will drift against the real host contract.
+  - `src/test/helpers/createMockOverlayPluginApi.ts` is now the canonical mock host client for preview/plugin tests and includes `context`, `events`, `files.watch`, and streamed-task stubs.
+- Durable event payload rule after this pass:
+  - Streamed task output/progress and file-watch notifications now have canonical Rust-owned payload structs:
+    - `ExtensionHostTaskOutputEvent`
+    - `ExtensionHostTaskProgressEvent`
+    - `ExtensionHostFileWatchEvent`
+  - If a future runtime consumer needs to decode those envelopes, prefer the typed TS/Go host client helpers instead of hand-parsing ad hoc JSON shapes.
+- Durable sample-extension rule after this pass:
+  - `usr/plugins/test-extension-hello/` is now the lightweight smoke-test package for the preview-lane extension path.
+  - It claims `.test` files through `extension.toml` and renders a minimal “Hello World” preview lane, so future extension-host smoke tests should reuse it instead of inventing another one-off scratch plugin.
+- Remaining limitation after this pass:
+  - Push events require `stdio-json-lines-v2` for sidecars. If a runtime manifest still says `stdio-json-lines`, it will keep the old nested host-call-only behavior.
+  - Explorer truth is still partially React-owned today, so `context.sync_snapshot` remains the bridge that feeds the host bus until more explorer ownership moves native-side.
+- Validation that passed for this pass:
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - `cargo test --manifest-path src-tauri/Cargo.toml runtime_pipeline:: -- --nocapture`
+  - `go test ./sdk/greeblefs-go/...`
+  - `bunx vitest run src/test/pluginRuntime.test.ts src/test/goPanelHost.test.tsx src/test/pluginPackages.test.ts src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.fallback.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx --reporter=dot`
+  - filtered TS sweep:
+    - `bash -lc "bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'src/runtime/extensionHostApi\\.ts|src/test/helpers/createMockOverlayPluginApi\\.ts|src/test/pluginRuntime\\.test\\.ts|src/components/GoPanelHost\\.tsx|src/components/FileExplorer\\.tsx|src/runtime/explorerExtensionContext\\.ts' || true"`
+
 # 2026-04-27 - Go-First Extension Host, Ambient Explorer Context, And `.gfsx` Bundle Tooling Now Form The New Plugin Backbone
 
 - The first durable slice of the “GreebleFS as an editable/scriptable engine” direction is now real and it is deliberately not TS-owned.
@@ -114,10 +153,8 @@
   - `c-native` is still intentionally unimplemented and should keep returning the explicit typed unsupported-driver error from `src-tauri/src/runtime_pipeline/driver.rs`.
   - Do not silently fall back from `c-native` to some other compiler family; the explicit unsupported result is the product contract until a real C driver exists.
 - Durable current limitation after this pass:
-  - The host-event schema is ahead of the sidecar transport.
-  - `HostSubscription`, `HostEvent`, and the `host_events` permission are real, and Go/Wasm panel runtimes can already surface host events through `GoPanelHost.tsx`.
-  - The stdio sidecar bridge still only supports nested request/response host calls today; it does **not** yet have a true unsolicited push/subscription bus for long-lived sidecars.
-  - If future work needs live host event streaming into native/Go/Python sidecars, that is the next real platform slice rather than a bug in the current preview/CLI foundation.
+  - Superseded by the 2026-04-28 host-event-bus pass for runtimes that opt into `stdio-json-lines-v2`.
+  - Legacy `stdio-json-lines` sidecars still remain request/response-only until they migrate to the new transport.
 - Durable theme-package note after this pass:
   - Plugin-shipped themes must now be bundle-first too.
   - `usr/plugins/vibe-capsule/themes/vibe-capsule-shell/theme.json` was migrated away from the old monolithic `theme` / `visuals` shape because plugin package discovery intentionally rejects that legacy package model now.

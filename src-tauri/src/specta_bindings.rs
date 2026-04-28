@@ -185,6 +185,21 @@ pub fn bindings_output_path() -> PathBuf {
 
 pub fn app_specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
+        .typ::<crate::runtime_pipeline::extension_host::ExecutionContextSnapshot>()
+        .typ::<crate::runtime_pipeline::extension_host::FileTypeDescriptor>()
+        .typ::<crate::runtime_pipeline::extension_host::HostSubscription>()
+        .typ::<crate::runtime_pipeline::extension_host::ExtensionHostTaskHandle>()
+        .typ::<crate::runtime_pipeline::extension_host::ExtensionHostTaskOutputEvent>()
+        .typ::<crate::runtime_pipeline::extension_host::ExtensionHostTaskProgressEvent>()
+        .typ::<crate::runtime_pipeline::extension_host::ExtensionHostFileWatchHandle>()
+        .typ::<crate::runtime_pipeline::extension_host::ExtensionHostFileWatchEvent>()
+        .typ::<crate::runtime_pipeline::host_events::HostTopicDescriptor>()
+        .typ::<crate::runtime_pipeline::host_events::HostEventFilter>()
+        .typ::<crate::runtime_pipeline::host_events::HostSubscriptionRequest>()
+        .typ::<crate::runtime_pipeline::host_events::HostEventScope>()
+        .typ::<crate::runtime_pipeline::host_events::HostEventEnvelope>()
+        .typ::<crate::runtime_pipeline::host_events::HostContextSyncRequest>()
+        .typ::<crate::runtime_pipeline::host_events::HostPublishEventRequest>()
         .commands(collect_commands![
             crate::ipc_runtime::ipc_register_artifact_path,
             crate::ipc_runtime::ipc_release_artifact,

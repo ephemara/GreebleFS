@@ -6,19 +6,20 @@
 //! versioned host API schema, permission semantics, and install/packaging
 //! rules.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 
+use greeble_ipc_contracts::IpcStreamHandle;
 use serde::{Deserialize, Serialize};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeKind, RuntimePackagePermissions};
 
-pub const EXTENSION_HOST_API_VERSION: &str = "1.0.0";
+pub const EXTENSION_HOST_API_VERSION: &str = "1.1.0";
 pub const EXTENSION_BUNDLE_EXTENSION: &str = "gfsx";
 pub const EXTENSION_MANIFEST_FILE_NAME: &str = "extension.toml";
 pub const EXTENSION_COMPAT_MANIFEST_FILE_NAMES: &[&str] = &[
@@ -49,12 +50,18 @@ pub struct ExtensionHostMethodDescriptor {
 pub fn build_extension_host_api_schema() -> ExtensionHostApiSchema {
     ExtensionHostApiSchema {
         api_version: EXTENSION_HOST_API_VERSION.to_string(),
-        transport: "runtime-host-v2".to_string(),
+        transport: "runtime-host-v3".to_string(),
         methods: vec![
             build_method_descriptor(
                 "host.get_api_schema",
                 "host",
                 "Return the canonical extension-host API schema.",
+                &[],
+            ),
+            build_method_descriptor(
+                "context.sync_snapshot",
+                "context",
+                "Sync one ambient explorer execution-context snapshot into the host event bus.",
                 &[],
             ),
             build_method_descriptor(
@@ -68,6 +75,36 @@ pub fn build_extension_host_api_schema() -> ExtensionHostApiSchema {
                 "preview",
                 "Return the active preview-session slice from the ambient execution context.",
                 &[],
+            ),
+            build_method_descriptor(
+                "events.describe_topics",
+                "events",
+                "Return the built-in host event topic catalog.",
+                &[],
+            ),
+            build_method_descriptor(
+                "events.subscribe",
+                "events",
+                "Subscribe to host event topics and receive browser stream handles or runtime push events.",
+                &["hostEvents"],
+            ),
+            build_method_descriptor(
+                "events.unsubscribe",
+                "events",
+                "Cancel one existing host event subscription.",
+                &["hostEvents"],
+            ),
+            build_method_descriptor(
+                "events.get_snapshot",
+                "events",
+                "Return the current snapshot envelopes for one host event subscription request.",
+                &["hostEvents"],
+            ),
+            build_method_descriptor(
+                "events.publish",
+                "events",
+                "Publish one custom `ext.<extensionId>.*` host event from a trusted runtime or extension.",
+                &["hostEvents"],
             ),
             build_method_descriptor(
                 "files.read_text",
@@ -94,6 +131,18 @@ pub fn build_extension_host_api_schema() -> ExtensionHostApiSchema {
                 &["fsRead"],
             ),
             build_method_descriptor(
+                "files.watch",
+                "files",
+                "Watch one filesystem path and stream changes through the host event bus.",
+                &["fsWatch"],
+            ),
+            build_method_descriptor(
+                "files.unwatch",
+                "files",
+                "Stop one existing host-owned filesystem watch.",
+                &["fsWatch"],
+            ),
+            build_method_descriptor(
                 "explorer.list_location",
                 "explorer",
                 "List one explorer location including breadcrumbs and parent path.",
@@ -115,6 +164,18 @@ pub fn build_extension_host_api_schema() -> ExtensionHostApiSchema {
                 "tasks.run_command",
                 "tasks",
                 "Run one short-lived external command with captured stdout/stderr.",
+                &["taskExecution|spawnProcesses"],
+            ),
+            build_method_descriptor(
+                "tasks.start_process",
+                "tasks",
+                "Start one long-lived task/process and stream output through the host event bus.",
+                &["taskExecution|spawnProcesses"],
+            ),
+            build_method_descriptor(
+                "tasks.stop_process",
+                "tasks",
+                "Stop one running host-owned task/process by id.",
                 &["taskExecution|spawnProcesses"],
             ),
             build_method_descriptor(
@@ -144,7 +205,7 @@ fn build_method_descriptor(
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ExecutionContextSnapshot {
     pub roots: Vec<ExecutionContextRoot>,
@@ -154,10 +215,13 @@ pub struct ExecutionContextSnapshot {
     pub selected_entries: Vec<ExecutionContextEntry>,
     pub preview_session: Option<ExecutionContextPreviewSession>,
     pub pane_id: Option<String>,
+    pub workspace_tab_id: Option<String>,
     pub repo_context: Option<ExecutionContextRepoContext>,
+    pub active_file_type: Option<FileTypeDescriptor>,
+    pub revision: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ExecutionContextRoot {
     pub id: String,
@@ -166,7 +230,7 @@ pub struct ExecutionContextRoot {
     pub kind: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ExecutionContextEntry {
     pub path: String,
@@ -176,7 +240,7 @@ pub struct ExecutionContextEntry {
     pub is_directory: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ExecutionContextPreviewSession {
     pub lane_id: Option<String>,
@@ -187,7 +251,7 @@ pub struct ExecutionContextPreviewSession {
     pub resolved_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ExecutionContextRepoContext {
     pub root_path: String,
@@ -195,7 +259,7 @@ pub struct ExecutionContextRepoContext {
     pub is_dirty: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct FileTypeDescriptor {
     pub id: String,
@@ -209,12 +273,14 @@ pub struct FileTypeDescriptor {
     pub editable: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct HostSubscription {
     pub subscription_id: String,
-    pub event_name: String,
+    pub topics: Vec<String>,
+    pub transport: String,
     pub supported: bool,
+    pub stream_handle: Option<IpcStreamHandle>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
@@ -223,6 +289,84 @@ pub struct HostEvent {
     pub event_name: String,
     pub payload_json: Option<String>,
     pub execution_context: Option<ExecutionContextSnapshot>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExtensionHostTaskStartProcessRequest {
+    pub program: String,
+    pub args: Vec<String>,
+    pub working_directory: Option<String>,
+    pub environment: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExtensionHostTaskStopProcessRequest {
+    pub task_id: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExtensionHostTaskHandle {
+    pub task_id: String,
+    pub program: String,
+    pub working_directory: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExtensionHostTaskOutputEvent {
+    pub task_id: String,
+    pub stream: String,
+    pub chunk: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExtensionHostTaskProgressEvent {
+    pub task_id: String,
+    pub phase: String,
+    pub program: Option<String>,
+    pub working_directory: Option<String>,
+    pub exit_code: Option<i32>,
+    pub stream: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExtensionHostFileWatchRequest {
+    pub path: String,
+    #[serde(default = "default_extension_host_true")]
+    pub recursive: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExtensionHostFileUnwatchRequest {
+    pub watch_id: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExtensionHostFileWatchHandle {
+    pub watch_id: String,
+    pub path: String,
+    pub recursive: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExtensionHostFileWatchEvent {
+    pub watch_id: String,
+    pub kind: String,
+    pub paths: Vec<String>,
+    pub error: Option<String>,
+}
+
+fn default_extension_host_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]

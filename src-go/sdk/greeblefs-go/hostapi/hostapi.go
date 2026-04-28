@@ -18,9 +18,10 @@ import (
 // `window.__greeblefsRuntimeHostBridge`. The boot flag --bridge-token=<id>
 // is parsed from the Go process arguments.
 type Bridge struct {
-	token   string
-	value   js.Value
-	context js.Value
+	token          string
+	value          js.Value
+	context        js.Value
+	eventCallbacks map[string]js.Func
 }
 
 // NewBridge inspects the process arguments installed by the React host and
@@ -44,7 +45,12 @@ func NewBridge() (*Bridge, error) {
 	if bridge.IsUndefined() || bridge.IsNull() {
 		return nil, errors.New("greeblefs hostapi: bridge entry has no bridge value")
 	}
-	return &Bridge{token: token, value: bridge, context: context}, nil
+	return &Bridge{
+		token:          token,
+		value:          bridge,
+		context:        context,
+		eventCallbacks: make(map[string]js.Func),
+	}, nil
 }
 
 // Token returns the bridge token used during boot. Useful for logging.

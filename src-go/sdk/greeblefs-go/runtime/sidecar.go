@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"greeblefs.dev/sdk/greeblefs-go/ipc"
 )
@@ -42,11 +43,19 @@ func (h *HostBridgeClient) Call(methodID string, payload any) (json.RawMessage, 
 
 // Sidecar is the top-level state for an authored GreebleFS Go sidecar.
 type Sidecar struct {
-	actions            map[string]ActionHandler
-	stdin              *bufio.Reader
-	stdout             io.Writer
-	stderr             io.Writer
-	hostRequestCounter uint64
+	actions                     map[string]ActionHandler
+	stdin                       *bufio.Reader
+	stdout                      io.Writer
+	stderr                      io.Writer
+	writeMu                     sync.Mutex
+	requestCounter              uint64
+	requestCounterMu            sync.Mutex
+	pendingResponses            map[string]chan ipc.Packet
+	pendingResponsesMu          sync.Mutex
+	pendingSubscriptionHandlers map[string]HostEventHandler
+	pendingSubscriptionMu       sync.Mutex
+	subscriptionHandlers        map[string]HostEventHandler
+	subscriptionHandlersMu      sync.RWMutex
 }
 
 // NewSidecar wires a sidecar against process stdio. Tests should use
@@ -58,10 +67,13 @@ func NewSidecar() *Sidecar {
 // NewSidecarWithStreams allows redirecting the wire I/O for testing.
 func NewSidecarWithStreams(stdin io.Reader, stdout io.Writer, stderr io.Writer) *Sidecar {
 	return &Sidecar{
-		actions: make(map[string]ActionHandler),
-		stdin:   bufio.NewReaderSize(stdin, 1024*1024),
-		stdout:  stdout,
-		stderr:  stderr,
+		actions:                     make(map[string]ActionHandler),
+		stdin:                       bufio.NewReaderSize(stdin, 1024*1024),
+		stdout:                      stdout,
+		stderr:                      stderr,
+		pendingResponses:            make(map[string]chan ipc.Packet),
+		pendingSubscriptionHandlers: make(map[string]HostEventHandler),
+		subscriptionHandlers:        make(map[string]HostEventHandler),
 	}
 }
 
@@ -70,48 +82,62 @@ func (s *Sidecar) RegisterAction(actionID string, handler ActionHandler) {
 	s.actions[actionID] = handler
 }
 
-// Serve consumes one JSON-line per request until the stream ends or the host
-// sends a shutdown packet. Errors that occur for a single request are
-// reported in-line; only fatal stream errors return from Serve.
+// Serve consumes JSON-line packets until the stream ends or the host sends a
+// shutdown packet. Action calls, host events, and nested host replies all flow
+// through the same reader loop.
 func (s *Sidecar) Serve() error {
 	for {
-		request, err := s.readRequest()
+		packet, err := s.readPacket()
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("sidecar stdin read failed: %w", err)
 		}
-		if request.RequestID == "" {
+		if packet.RequestID == "" && packet.Kind == "" {
 			continue
 		}
-		if request.Kind == ipc.KindShutdown {
+
+		switch packet.Kind {
+		case ipc.KindShutdown:
 			return nil
+		case ipc.KindCall, "":
+			if packet.ActionID == nil {
+				s.writeError(packet.RequestID, fmt.Sprintf("unsupported request kind: %s", packet.Kind))
+				continue
+			}
+			actionID := *packet.ActionID
+			handler, ok := s.actions[actionID]
+			if !ok {
+				s.writeError(packet.RequestID, fmt.Sprintf("unknown action: %s", actionID))
+				continue
+			}
+			go s.handleAction(packet, handler)
+		case ipc.KindEvent, ipc.KindSnapshot:
+			s.dispatchHostEvent(packet)
+		case ipc.KindAck, ipc.KindHostResponse, ipc.KindResponse, ipc.KindReady, ipc.KindError:
+			s.resolvePendingResponse(packet)
+		default:
+			if packet.ActionID != nil {
+				go s.handleAction(packet, s.actions[*packet.ActionID])
+				continue
+			}
+			s.resolvePendingResponse(packet)
 		}
-		if request.Kind != ipc.KindCall {
-			s.writeError(request.RequestID, fmt.Sprintf("unsupported request kind: %s", request.Kind))
-			continue
-		}
-		if request.ActionID == nil {
-			s.writeError(request.RequestID, "request is missing actionId")
-			continue
-		}
-		handler, ok := s.actions[*request.ActionID]
-		if !ok {
-			s.writeError(request.RequestID, fmt.Sprintf("unknown action: %s", *request.ActionID))
-			continue
-		}
-		var payload json.RawMessage
-		if request.PayloadJSON != nil && *request.PayloadJSON != "" {
-			payload = json.RawMessage(*request.PayloadJSON)
-		}
-		result, err := handler(context.Background(), &HostBridgeClient{sidecar: s}, payload)
-		if err != nil {
-			s.writeError(request.RequestID, err.Error())
-			continue
-		}
-		s.writeResult(request.RequestID, result)
 	}
+}
+
+func (s *Sidecar) handleAction(request ipc.Packet, handler ActionHandler) {
+	var payload json.RawMessage
+	if request.PayloadJSON != nil && *request.PayloadJSON != "" {
+		payload = json.RawMessage(*request.PayloadJSON)
+	}
+	result, err := handler(context.Background(), &HostBridgeClient{sidecar: s}, payload)
+	if err != nil {
+		s.writeError(request.RequestID, err.Error())
+		return
+	}
+	s.writeResult(request.RequestID, result)
 }
 
 func (s *Sidecar) writeResult(requestID string, value any) {
@@ -121,13 +147,25 @@ func (s *Sidecar) writeResult(requestID string, value any) {
 		return
 	}
 	resultStr := string(encoded)
-	response := ipc.Response{RequestID: requestID, OK: true, ResultJSON: &resultStr}
+	ok := true
+	response := ipc.Packet{
+		RequestID:  requestID,
+		Kind:       ipc.KindResponse,
+		OK:         &ok,
+		ResultJSON: &resultStr,
+	}
 	s.emit(response)
 }
 
 func (s *Sidecar) writeError(requestID string, message string) {
 	msg := message
-	response := ipc.Response{RequestID: requestID, OK: false, Error: &msg}
+	ok := false
+	response := ipc.Packet{
+		RequestID: requestID,
+		Kind:      ipc.KindResponse,
+		OK:        &ok,
+		Error:     &msg,
+	}
 	s.emit(response)
 }
 
@@ -138,25 +176,27 @@ func (s *Sidecar) emit(packet any) {
 		return
 	}
 	encoded = append(encoded, '\n')
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	if _, err := s.stdout.Write(encoded); err != nil {
 		fmt.Fprintf(s.stderr, "[greeblefs-sdk] failed to write response: %v\n", err)
 	}
 }
 
-func (s *Sidecar) readRequest() (ipc.Request, error) {
-	var request ipc.Request
+func (s *Sidecar) readPacket() (ipc.Packet, error) {
+	var packet ipc.Packet
 	line, err := s.readLine()
 	if err != nil {
-		return request, err
+		return packet, err
 	}
 	if line == "" {
-		return request, nil
+		return packet, nil
 	}
-	if err := json.Unmarshal([]byte(line), &request); err != nil {
+	if err := json.Unmarshal([]byte(line), &packet); err != nil {
 		s.writeError("decode-error", fmt.Sprintf("failed to decode request: %v", err))
-		return ipc.Request{}, nil
+		return ipc.Packet{}, nil
 	}
-	return request, nil
+	return packet, nil
 }
 
 func (s *Sidecar) callHost(methodID string, payload any) (json.RawMessage, error) {
@@ -165,25 +205,20 @@ func (s *Sidecar) callHost(methodID string, payload any) (json.RawMessage, error
 		return nil, fmt.Errorf("host bridge method id is required")
 	}
 
-	s.hostRequestCounter += 1
-	requestID := fmt.Sprintf("host-%d", s.hostRequestCounter)
 	payloadJSON, err := encodeOptionalPayload(payload)
 	if err != nil {
 		return nil, err
 	}
-	request := ipc.Request{
-		RequestID:   requestID,
+	response, err := s.sendPacketAndAwaitResponse(ipc.Packet{
+		RequestID:   s.nextRequestID("host"),
 		Kind:        ipc.KindHostCall,
 		MethodID:    &trimmedMethodID,
 		PayloadJSON: payloadJSON,
-	}
-	s.emit(request)
-
-	response, err := s.readHostResponse(requestID)
+	})
 	if err != nil {
 		return nil, err
 	}
-	if !response.OK {
+	if response.OK != nil && !*response.OK {
 		if response.Error != nil && *response.Error != "" {
 			return nil, fmt.Errorf("%s", *response.Error)
 		}
@@ -195,30 +230,202 @@ func (s *Sidecar) callHost(methodID string, payload any) (json.RawMessage, error
 	return json.RawMessage(*response.ResultJSON), nil
 }
 
-func (s *Sidecar) readHostResponse(expectedRequestID string) (ipc.Response, error) {
-	var response ipc.Response
-	line, err := s.readLine()
+func (s *Sidecar) subscribeHostEvents(
+	request HostSubscriptionRequest,
+	handler HostEventHandler,
+) (HostSubscription, error) {
+	requestID := s.nextRequestID("subscribe")
+	if handler != nil {
+		s.pendingSubscriptionMu.Lock()
+		s.pendingSubscriptionHandlers[requestID] = handler
+		s.pendingSubscriptionMu.Unlock()
+	}
+	response, err := s.sendJSONPacketAndAwaitResponse(requestID, ipc.KindSubscribe, request)
 	if err != nil {
-		return response, err
+		s.clearPendingSubscriptionHandler(requestID)
+		return HostSubscription{}, err
 	}
-	if err := json.Unmarshal([]byte(line), &response); err != nil {
-		return response, fmt.Errorf("failed to decode host response: %w", err)
+	if response.OK != nil && !*response.OK {
+		s.clearPendingSubscriptionHandler(requestID)
+		if response.Error != nil {
+			return HostSubscription{}, fmt.Errorf("%s", *response.Error)
+		}
+		return HostSubscription{}, fmt.Errorf("events.subscribe failed with no message")
 	}
-	if response.Kind != ipc.KindHostResponse {
-		return response, fmt.Errorf(
-			"unexpected host bridge packet kind %q while waiting for %q",
-			response.Kind,
-			ipc.KindHostResponse,
-		)
+	var subscription HostSubscription
+	if response.ResultJSON != nil && *response.ResultJSON != "" {
+		if err := json.Unmarshal([]byte(*response.ResultJSON), &subscription); err != nil {
+			return HostSubscription{}, fmt.Errorf("failed to decode events.subscribe result: %w", err)
+		}
 	}
-	if response.RequestID != expectedRequestID {
-		return response, fmt.Errorf(
-			"host bridge response id mismatch: expected %s, got %s",
-			expectedRequestID,
-			response.RequestID,
-		)
+	return subscription, nil
+}
+
+func (s *Sidecar) unsubscribeHostEvents(subscriptionID string) (*HostSubscription, error) {
+	trimmedSubscriptionID := strings.TrimSpace(subscriptionID)
+	if trimmedSubscriptionID == "" {
+		return nil, fmt.Errorf("events.unsubscribe requires a subscription id")
+	}
+	s.subscriptionHandlersMu.Lock()
+	delete(s.subscriptionHandlers, trimmedSubscriptionID)
+	s.subscriptionHandlersMu.Unlock()
+	response, err := s.sendPacketAndAwaitResponse(ipc.Packet{
+		RequestID:      s.nextRequestID("unsubscribe"),
+		Kind:           ipc.KindUnsubscribe,
+		SubscriptionID: &trimmedSubscriptionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if response.OK != nil && !*response.OK {
+		if response.Error != nil {
+			return nil, fmt.Errorf("%s", *response.Error)
+		}
+		return nil, fmt.Errorf("events.unsubscribe failed with no message")
+	}
+	if response.ResultJSON == nil || *response.ResultJSON == "" || *response.ResultJSON == "null" {
+		return nil, nil
+	}
+	var subscription HostSubscription
+	if err := json.Unmarshal([]byte(*response.ResultJSON), &subscription); err != nil {
+		return nil, fmt.Errorf("failed to decode events.unsubscribe result: %w", err)
+	}
+	return &subscription, nil
+}
+
+func (s *Sidecar) publishHostEvent(request HostPublishEventRequest) (HostEventEnvelope, error) {
+	response, err := s.sendJSONPacketAndAwaitResponse(
+		s.nextRequestID("publish"),
+		ipc.KindPublish,
+		request,
+	)
+	if err != nil {
+		return HostEventEnvelope{}, err
+	}
+	if response.OK != nil && !*response.OK {
+		if response.Error != nil {
+			return HostEventEnvelope{}, fmt.Errorf("%s", *response.Error)
+		}
+		return HostEventEnvelope{}, fmt.Errorf("events.publish failed with no message")
+	}
+	var envelope HostEventEnvelope
+	if response.ResultJSON != nil && *response.ResultJSON != "" {
+		if err := json.Unmarshal([]byte(*response.ResultJSON), &envelope); err != nil {
+			return HostEventEnvelope{}, fmt.Errorf("failed to decode events.publish result: %w", err)
+		}
+	}
+	return envelope, nil
+}
+
+func (s *Sidecar) sendJSONPacketAndAwaitResponse(
+	requestID string,
+	kind string,
+	payload any,
+) (ipc.Packet, error) {
+	payloadJSON, err := encodeOptionalPayload(payload)
+	if err != nil {
+		return ipc.Packet{}, err
+	}
+	return s.sendPacketAndAwaitResponse(ipc.Packet{
+		RequestID:   requestID,
+		Kind:        kind,
+		PayloadJSON: payloadJSON,
+	})
+}
+
+func (s *Sidecar) sendPacketAndAwaitResponse(packet ipc.Packet) (ipc.Packet, error) {
+	responseCh := make(chan ipc.Packet, 1)
+	s.pendingResponsesMu.Lock()
+	s.pendingResponses[packet.RequestID] = responseCh
+	s.pendingResponsesMu.Unlock()
+	s.emit(packet)
+	response, ok := <-responseCh
+	if !ok {
+		return ipc.Packet{}, fmt.Errorf("sidecar request %s closed before a response arrived", packet.RequestID)
 	}
 	return response, nil
+}
+
+func (s *Sidecar) resolvePendingResponse(packet ipc.Packet) {
+	if packet.Kind == ipc.KindAck {
+		s.maybeInstallSubscriptionHandler(packet)
+	}
+	s.pendingResponsesMu.Lock()
+	responseCh, ok := s.pendingResponses[packet.RequestID]
+	if ok {
+		delete(s.pendingResponses, packet.RequestID)
+	}
+	s.pendingResponsesMu.Unlock()
+	if ok {
+		responseCh <- packet
+		close(responseCh)
+	}
+}
+
+func (s *Sidecar) maybeInstallSubscriptionHandler(packet ipc.Packet) {
+	s.pendingSubscriptionMu.Lock()
+	handler, ok := s.pendingSubscriptionHandlers[packet.RequestID]
+	if ok {
+		delete(s.pendingSubscriptionHandlers, packet.RequestID)
+	}
+	s.pendingSubscriptionMu.Unlock()
+	if !ok || handler == nil {
+		return
+	}
+	if packet.OK != nil && !*packet.OK {
+		return
+	}
+	if packet.ResultJSON == nil || *packet.ResultJSON == "" {
+		return
+	}
+	var subscription HostSubscription
+	if err := json.Unmarshal([]byte(*packet.ResultJSON), &subscription); err != nil {
+		fmt.Fprintf(s.stderr, "[greeblefs-sdk] failed to decode subscription ack: %v\n", err)
+		return
+	}
+	s.subscriptionHandlersMu.Lock()
+	s.subscriptionHandlers[subscription.SubscriptionID] = handler
+	s.subscriptionHandlersMu.Unlock()
+}
+
+func (s *Sidecar) clearPendingSubscriptionHandler(requestID string) {
+	s.pendingSubscriptionMu.Lock()
+	delete(s.pendingSubscriptionHandlers, requestID)
+	s.pendingSubscriptionMu.Unlock()
+}
+
+func (s *Sidecar) dispatchHostEvent(packet ipc.Packet) {
+	if packet.PayloadJSON == nil || *packet.PayloadJSON == "" {
+		return
+	}
+	var event HostEventEnvelope
+	if err := json.Unmarshal([]byte(*packet.PayloadJSON), &event); err != nil {
+		fmt.Fprintf(s.stderr, "[greeblefs-sdk] failed to decode host event: %v\n", err)
+		return
+	}
+	subscriptionID := ""
+	if packet.SubscriptionID != nil {
+		subscriptionID = *packet.SubscriptionID
+	} else if event.SubscriptionID != nil {
+		subscriptionID = *event.SubscriptionID
+	}
+	if subscriptionID == "" {
+		return
+	}
+	s.subscriptionHandlersMu.RLock()
+	handler := s.subscriptionHandlers[subscriptionID]
+	s.subscriptionHandlersMu.RUnlock()
+	if handler == nil {
+		return
+	}
+	go handler(event)
+}
+
+func (s *Sidecar) nextRequestID(prefix string) string {
+	s.requestCounterMu.Lock()
+	defer s.requestCounterMu.Unlock()
+	s.requestCounter++
+	return fmt.Sprintf("%s-%d", prefix, s.requestCounter)
 }
 
 func (s *Sidecar) readLine() (string, error) {

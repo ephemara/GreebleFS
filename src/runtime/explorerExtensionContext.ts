@@ -1,5 +1,6 @@
 import type {
   ExecutionContextEntry,
+  FileTypeDescriptor,
   ExecutionContextPreviewSession,
   ExecutionContextRepoContext,
   ExecutionContextRoot,
@@ -30,12 +31,15 @@ export interface ExplorerExecutionContextDriveLike {
 
 export interface BuildExplorerExecutionContextSnapshotInput {
   paneId: string | null;
+  workspaceTabId?: string | null;
   activeDirectory: string | null;
   cwd?: string | null;
   drives: ExplorerExecutionContextDriveLike[];
   entries: ExplorerExecutionContextEntryLike[];
   selectedPaths: string[];
   previewSession?: ExplorerExecutionContextPreviewInput | null;
+  activeFileType?: FileTypeDescriptor | null;
+  revision?: string | null;
   repoContext?: ExecutionContextRepoContext | null;
 }
 
@@ -62,7 +66,25 @@ export function buildExplorerExecutionContextSnapshot(
     selectedEntries,
     previewSession: toExecutionContextPreviewSession(input.previewSession),
     paneId: normalizeOptionalString(input.paneId),
+    workspaceTabId: normalizeOptionalString(input.workspaceTabId),
     repoContext: input.repoContext ?? null,
+    activeFileType:
+      input.activeFileType ??
+      inferExplorerExecutionContextFileType({
+        focusedEntry,
+        previewSession: input.previewSession,
+      }),
+    revision:
+      normalizeOptionalString(input.revision) ??
+      buildExplorerExecutionContextRevision({
+        activeDirectory: input.activeDirectory,
+        cwd: input.cwd ?? input.activeDirectory,
+        paneId: input.paneId,
+        workspaceTabId: input.workspaceTabId ?? null,
+        previewFilePath:
+          input.previewSession?.resolvedPath ?? input.previewSession?.filePath ?? null,
+        selectedPaths: input.selectedPaths,
+      }),
   };
 }
 
@@ -153,4 +175,58 @@ function deriveRootFromPath(path: string | null): ExecutionContextRoot | null {
 function normalizeOptionalString(value: string | null | undefined): string | null {
   const normalized = value?.trim() ?? '';
   return normalized.length > 0 ? normalized : null;
+}
+
+function inferExplorerExecutionContextFileType(input: {
+  focusedEntry: ExecutionContextEntry | null | undefined;
+  previewSession?: ExplorerExecutionContextPreviewInput | null;
+}): FileTypeDescriptor | null {
+  const focusedEntry = input.focusedEntry ?? null;
+  const previewFilePath =
+    input.previewSession?.resolvedPath?.trim() ||
+    input.previewSession?.filePath?.trim() ||
+    focusedEntry?.path?.trim() ||
+    '';
+  if (!previewFilePath) {
+    return null;
+  }
+  const extension =
+    focusedEntry?.extension?.trim().toLowerCase() ||
+    previewFilePath.split('.').pop()?.trim().toLowerCase() ||
+    '';
+  const normalizedExtension = extension.length > 0 ? extension : null;
+  const isDirectory = focusedEntry?.isDirectory === true;
+  return {
+    id: isDirectory
+      ? 'directory'
+      : normalizedExtension
+        ? `extension:${normalizedExtension}`
+        : 'file:unknown',
+    extensions: normalizedExtension ? [normalizedExtension] : [],
+    fileNames: [],
+    languageId: normalizedExtension,
+    iconKey: normalizedExtension,
+    openBehavior: isDirectory ? 'directory' : 'preview',
+    previewOwner: input.previewSession?.laneType ?? null,
+    runtimeAffinity: input.previewSession?.laneId ?? null,
+    editable: false,
+  };
+}
+
+function buildExplorerExecutionContextRevision(input: {
+  activeDirectory: string | null;
+  cwd: string | null | undefined;
+  paneId: string | null;
+  workspaceTabId: string | null | undefined;
+  previewFilePath: string | null;
+  selectedPaths: string[];
+}): string {
+  return [
+    normalizeOptionalString(input.workspaceTabId) ?? '',
+    normalizeOptionalString(input.paneId) ?? '',
+    normalizeOptionalString(input.activeDirectory) ?? '',
+    normalizeOptionalString(input.cwd) ?? '',
+    normalizeOptionalString(input.previewFilePath) ?? '',
+    [...input.selectedPaths].sort().join('|'),
+  ].join('::');
 }

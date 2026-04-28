@@ -2,22 +2,43 @@ import type {
   ExecutionContextPreviewSession,
   ExecutionContextSnapshot,
   ExtensionBuildResult,
+  ExtensionHostFileWatchEvent,
+  ExtensionHostFileWatchHandle,
+  ExtensionHostTaskHandle,
+  ExtensionHostTaskOutputEvent,
+  ExtensionHostTaskProgressEvent,
   ExtensionHostApiSchema,
   ExtensionInspection,
   ExtensionInstallResult,
   ExtensionPackResult,
+  HostContextSyncRequest,
+  HostEventEnvelope,
+  HostPublishEventRequest,
+  HostSubscription,
+  HostSubscriptionRequest,
+  HostTopicDescriptor,
   ExternalTerminalRequest,
 } from '../generated/tauri';
+import { subscribeIpcStream } from './ipc/streams';
 import { commands, unwrapTauriResult } from './tauriClient';
 
 export type {
   ExecutionContextPreviewSession,
   ExecutionContextSnapshot,
   ExtensionBuildResult,
+  ExtensionHostFileWatchEvent,
+  ExtensionHostFileWatchHandle,
+  ExtensionHostTaskHandle,
+  ExtensionHostTaskOutputEvent,
+  ExtensionHostTaskProgressEvent,
   ExtensionHostApiSchema,
   ExtensionInspection,
   ExtensionInstallResult,
   ExtensionPackResult,
+  HostEventEnvelope,
+  HostSubscription,
+  HostSubscriptionRequest,
+  HostTopicDescriptor,
 };
 
 export interface ExtensionHostCallRequest {
@@ -90,6 +111,18 @@ export interface ExtensionHostTaskRunCommandResult {
   stderr: string;
 }
 
+export interface ExtensionHostTaskStartProcessRequest {
+  program: string;
+  args?: string[];
+  workingDirectory?: string | null;
+  environment?: Record<string, string> | null;
+}
+
+export interface ExtensionHostFileWatchRequest {
+  path: string;
+  recursive?: boolean;
+}
+
 export interface ExtensionHostClientOptions {
   callerPluginId?: string | null;
   callerRuntimeId?: string | null;
@@ -105,6 +138,15 @@ function encodePayload(payload: unknown): string | null {
 
 function decodePayload<TResult>(payloadJson: string): TResult {
   return JSON.parse(payloadJson) as TResult;
+}
+
+export function decodeExtensionHostEventPayload<TResult>(
+  event: Pick<HostEventEnvelope, 'payloadJson'>,
+): TResult | null {
+  if (!event.payloadJson) {
+    return null;
+  }
+  return JSON.parse(event.payloadJson) as TResult;
 }
 
 function resolveExecutionContext(
@@ -193,6 +235,9 @@ export interface ExtensionHostClient {
     methodId: string,
     payload?: TPayload,
   ): Promise<TResult>;
+  context: {
+    syncSnapshot: (request: HostContextSyncRequest) => Promise<void>;
+  };
   host: {
     getApiSchema: () => Promise<ExtensionHostApiSchema>;
   };
@@ -202,6 +247,19 @@ export interface ExtensionHostClient {
   preview: {
     getSession: () => Promise<ExecutionContextPreviewSession | null>;
   };
+  events: {
+    describeTopics: () => Promise<HostTopicDescriptor[]>;
+    subscribe: (
+      request: HostSubscriptionRequest,
+      listener: (event: HostEventEnvelope) => void,
+    ) => Promise<{
+      subscription: HostSubscription;
+      unsubscribe: () => Promise<void>;
+    }>;
+    unsubscribe: (subscriptionId: string) => Promise<HostSubscription | null>;
+    getSnapshot: (request: HostSubscriptionRequest) => Promise<HostEventEnvelope[]>;
+    publish: (topic: string, payload?: unknown) => Promise<HostEventEnvelope>;
+  };
   files: {
     readText: (path: string) => Promise<string>;
     writeText: (path: string, content: string) => Promise<void>;
@@ -210,6 +268,10 @@ export interface ExtensionHostClient {
       showHidden?: boolean,
     ) => Promise<ExtensionHostExplorerLocationListing>;
     stat: (path: string) => Promise<ExtensionHostFileStat>;
+    watch: (
+      request: ExtensionHostFileWatchRequest,
+    ) => Promise<ExtensionHostFileWatchHandle>;
+    unwatch: (watchId: string) => Promise<ExtensionHostFileWatchHandle | null>;
   };
   explorer: {
     listLocation: (
@@ -225,6 +287,10 @@ export interface ExtensionHostClient {
     runCommand: (
       request: ExtensionHostTaskRunCommandRequest,
     ) => Promise<ExtensionHostTaskRunCommandResult>;
+    startProcess: (
+      request: ExtensionHostTaskStartProcessRequest,
+    ) => Promise<ExtensionHostTaskHandle>;
+    stopProcess: (taskId: string) => Promise<boolean>;
   };
   terminal: {
     openExternal: (request: ExternalTerminalRequest) => Promise<void>;
@@ -241,6 +307,11 @@ export function createExtensionHostClient(
 
   return {
     call,
+    context: {
+      syncSnapshot: async (request) => {
+        await call<null, HostContextSyncRequest>('context.sync_snapshot', request);
+      },
+    },
     host: {
       getApiSchema: () => call<ExtensionHostApiSchema>('host.get_api_schema'),
     },
@@ -251,6 +322,65 @@ export function createExtensionHostClient(
     preview: {
       getSession: () =>
         call<ExecutionContextPreviewSession | null>('preview.get_session'),
+    },
+    events: {
+      describeTopics: () => call<HostTopicDescriptor[]>('events.describe_topics'),
+      subscribe: async (request, listener) => {
+        const subscription = await call<HostSubscription, HostSubscriptionRequest>(
+          'events.subscribe',
+          request,
+        );
+        const snapshots =
+          request.includeSnapshot === true
+            ? await call<HostEventEnvelope[], HostSubscriptionRequest>(
+                'events.get_snapshot',
+                request,
+              )
+            : [];
+        snapshots.forEach((event) => {
+          listener({
+            ...event,
+            subscriptionId: event.subscriptionId ?? subscription.subscriptionId,
+          });
+        });
+
+        const stopStream = subscription.streamHandle
+          ? await subscribeIpcStream<HostEventEnvelope>(
+              subscription.streamHandle,
+              listener,
+              { releaseOnUnsubscribe: false },
+            )
+          : () => undefined;
+
+        return {
+          subscription,
+          unsubscribe: async () => {
+            stopStream();
+            await call<HostSubscription | null, { subscriptionId: string }>(
+              'events.unsubscribe',
+              { subscriptionId: subscription.subscriptionId },
+            ).catch(() => null);
+            if (subscription.streamHandle) {
+              void commands
+                .ipcReleaseStream(subscription.streamHandle.id)
+                .then(unwrapTauriResult)
+                .catch(() => {});
+            }
+          },
+        };
+      },
+      unsubscribe: (subscriptionId) =>
+        call<HostSubscription | null, { subscriptionId: string }>(
+          'events.unsubscribe',
+          { subscriptionId },
+        ),
+      getSnapshot: (request) =>
+        call<HostEventEnvelope[], HostSubscriptionRequest>('events.get_snapshot', request),
+      publish: (topic, payload) =>
+        call<HostEventEnvelope, HostPublishEventRequest>('events.publish', {
+          topic,
+          payloadJson: encodePayload(payload),
+        }),
     },
     files: {
       readText: (path) => call<string, { path: string }>('files.read_text', { path }),
@@ -269,6 +399,15 @@ export function createExtensionHostClient(
           showHidden,
         }),
       stat: (path) => call<ExtensionHostFileStat, { path: string }>('files.stat', { path }),
+      watch: (request) =>
+        call<ExtensionHostFileWatchHandle, ExtensionHostFileWatchRequest>(
+          'files.watch',
+          request,
+        ),
+      unwatch: (watchId) =>
+        call<ExtensionHostFileWatchHandle | null, { watchId: string }>('files.unwatch', {
+          watchId,
+        }),
     },
     explorer: {
       listLocation: (path, showHidden = false) =>
@@ -296,6 +435,13 @@ export function createExtensionHostClient(
           'tasks.run_command',
           request,
         ),
+      startProcess: (request) =>
+        call<ExtensionHostTaskHandle, ExtensionHostTaskStartProcessRequest>(
+          'tasks.start_process',
+          request,
+        ),
+      stopProcess: (taskId) =>
+        call<boolean, { taskId: string }>('tasks.stop_process', { taskId }),
     },
     terminal: {
       openExternal: async (request) => {

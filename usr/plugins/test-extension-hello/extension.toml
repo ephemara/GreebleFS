@@ -1,0 +1,27 @@
+id = "test-extension-hello"
+version = "1"
+name = "Test Extension Hello"
+description = "Smoke-test extension package that claims .test files through the preview lane registry."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+
+[[contributions.previewLanes]]
+id = "hello-test-preview"
+title = "Hello .test Preview"
+renderer = "preview/helloTestPreview.tsx"
+priority = 950
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = ["test"]
+fileNames = []
+
+[contributions.previewLanes.capabilities]
+editable = false
+save = false
+export = false
+workflowTabs = false
+contextMenu = false
+prefetch = false
+closeGuard = false

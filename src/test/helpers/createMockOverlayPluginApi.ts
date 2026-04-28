@@ -16,7 +16,10 @@ function createEmptyExecutionContextSnapshot(
     selectedEntries: [],
     previewSession: null,
     paneId: null,
+    workspaceTabId: null,
     repoContext: null,
+    activeFileType: null,
+    revision: 'test-revision',
   };
 }
 
@@ -52,7 +55,11 @@ export function createMockOverlayPluginApi(
     fs: {} as never,
     notification: {} as never,
     host: {
-      call: async <TResult = unknown,>() => null as TResult,
+      call: async <TResult = unknown,>(_methodId?: string, _payload?: unknown) =>
+        null as TResult,
+      context: {
+        syncSnapshot: async () => undefined,
+      },
       host: {
         getApiSchema: async () => createMockHostApiSchema(),
       },
@@ -63,6 +70,40 @@ export function createMockOverlayPluginApi(
         getSession: async () =>
           (boundExecutionContext.previewSession ??
             null) as ExecutionContextPreviewSession | null,
+      },
+      events: {
+        describeTopics: async () => [],
+        subscribe: async () => ({
+          subscription: {
+            subscriptionId: 'mock-subscription',
+            topics: [],
+            transport: 'mock',
+            supported: true,
+            streamHandle: null,
+          },
+          unsubscribe: async () => undefined,
+        }),
+        unsubscribe: async () => null,
+        getSnapshot: async () => [],
+        publish: async () => ({
+          eventId: 'mock-event',
+          subscriptionId: null,
+          topic: 'ext.mock.test',
+          sequence: 1,
+          emittedAtMs: 0,
+          delivery: 'realtime',
+          scope: {
+            paneId: null,
+            workspaceTabId: null,
+            path: null,
+            taskId: null,
+            runtimeId: null,
+            extensionId: null,
+          },
+          payloadJson: null,
+          executionContext: boundExecutionContext,
+          snapshot: false,
+        }),
       },
       files: {
         readText: async () => '',
@@ -76,6 +117,12 @@ export function createMockOverlayPluginApi(
           modifiedMs: null,
           extension: null,
         }),
+        watch: async (request) => ({
+          watchId: `watch:${request.path}`,
+          path: request.path,
+          recursive: request.recursive ?? true,
+        }),
+        unwatch: async () => null,
       },
       explorer: {
         listLocation: async (path: string) => createMockExplorerListing(path),
@@ -90,6 +137,16 @@ export function createMockOverlayPluginApi(
           stdout: '',
           stderr: '',
         }),
+        startProcess: async (request) => ({
+          taskId: `task:${request.program}`,
+          program: request.program,
+          workingDirectory:
+            request.workingDirectory ??
+            boundExecutionContext.cwd ??
+            boundExecutionContext.activeDirectory ??
+            '',
+        }),
+        stopProcess: async () => true,
       },
       terminal: {
         openExternal: async () => undefined,
