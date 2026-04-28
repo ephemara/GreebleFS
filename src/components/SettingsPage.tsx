@@ -240,7 +240,9 @@ import { SettingsShell } from "./settings/SettingsShell";
 import {
   InfoBubble,
   SettingsActionButton,
+  SettingsRow,
   SettingsRowDescriptionProvider,
+  SettingsRowGroup,
   SettingsStatusPill,
   useSettingsRowDescriptionsVisible,
 } from "./settings/SettingsPrimitives";
@@ -16594,56 +16596,33 @@ export function SettingsPage({
                 </div>
               </div>
 
-              <div
-                className="rounded border p-3"
-                style={{
-                  borderColor: border,
-                  background: "rgba(255,255,255,0.025)",
-                }}
-              >
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                    Remote Access Mode
-                  </div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    `Local LAN` keeps the current hotspot or same-network path.
-                    `Tailscale` makes the launcher prefer a tailnet URL and
-                    tries to use a Tailscale-issued HTTPS certificate when the
-                    tailnet is configured for it.
-                  </p>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  {mobileRemoteAccessModeDefinitions.map((option) => {
-                    const active =
-                      settings.mobile.remoteAccessMode === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() =>
-                          updateMobile({ remoteAccessMode: option.id })
-                        }
-                        className="rounded px-3 py-3 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${active ? accent : border}`,
-                          background: active
-                            ? `${accent}14`
-                            : "rgba(255,255,255,0.03)",
-                          color: text,
-                        }}
-                      >
-                        <div className="text-[11px] font-semibold">
-                          {option.label}
-                        </div>
-                        <p className="mt-1 text-[11px] opacity-45">
-                          {option.description}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <SettingsRowGroup>
+                <SettingsRow
+                  title="Remote Access Mode"
+                  description="Local LAN keeps the same-network path. Tailscale makes the launcher prefer a tailnet URL and certificate-backed HTTPS when available."
+                  control={(
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      {mobileRemoteAccessModeDefinitions.map((option) => {
+                        const active =
+                          settings.mobile.remoteAccessMode === option.id;
+                        return (
+                          <SettingsActionButton
+                            key={option.id}
+                            active={active}
+                            accent={accent}
+                            title={option.description}
+                            onClick={() =>
+                              updateMobile({ remoteAccessMode: option.id })
+                            }
+                          >
+                            {option.label}
+                          </SettingsActionButton>
+                        );
+                      })}
+                    </div>
+                  )}
+                />
+              </SettingsRowGroup>
 
               <div
                 className="rounded border p-3"
@@ -16686,75 +16665,46 @@ export function SettingsPage({
                   </div>
                 </div>
 
-                <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-                  <div className="space-y-4">
-                    <div
-                      className="rounded border p-3"
-                      style={{
-                        borderColor: border,
-                        background: "rgba(255,255,255,0.02)",
-                      }}
-                    >
-                      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                        <LayoutGrid size={12} />
-                        View Mode
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
-                        {[
-                          { id: "icons-l", label: "Large Icons" },
-                          { id: "icons-m", label: "Medium Icons" },
-                          { id: "icons-s", label: "Compact Icons" },
-                          { id: "list", label: "List" },
-                        ].map((option) => {
-                          const active =
-                            settings.mobile.layout.viewMode === option.id;
-                          return (
-                            <button
-                              key={option.id}
-                              type="button"
-                              onClick={() =>
-                                updateMobile({
-                                  layout: {
-                                    ...settings.mobile.layout,
-                                    viewMode:
-                                      option.id as typeof settings.mobile.layout.viewMode,
-                                  },
-                                })
-                              }
-                              className="rounded px-3 py-3 text-left transition-colors"
-                              style={{
-                                border: `1px solid ${active ? accent : border}`,
-                                background: active
-                                  ? `${accent}14`
-                                  : "rgba(255,255,255,0.03)",
-                                color: text,
-                              }}
-                            >
-                              <div className="text-[11px] font-semibold">
+                <div className="mt-4 space-y-3">
+                  <SettingsRowGroup>
+                    <SettingsRow
+                      title="View Mode"
+                      description="Choose the density model used by the phone file browser."
+                      control={(
+                        <div className="flex flex-wrap justify-end gap-1.5">
+                          {[
+                            { id: "icons-l", label: "Large" },
+                            { id: "icons-m", label: "Medium" },
+                            { id: "icons-s", label: "Compact" },
+                            { id: "list", label: "List" },
+                          ].map((option) => {
+                            const active = settings.mobile.layout.viewMode === option.id;
+                            return (
+                              <SettingsActionButton
+                                key={option.id}
+                                active={active}
+                                accent={accent}
+                                onClick={() =>
+                                  updateMobile({
+                                    layout: {
+                                      ...settings.mobile.layout,
+                                      viewMode: option.id as typeof settings.mobile.layout.viewMode,
+                                    },
+                                  })
+                                }
+                              >
                                 {option.label}
-                              </div>
-                              <div className="mt-1 text-[10px] opacity-45">
-                                {option.id === "list"
-                                  ? "Dense rows for long folders"
-                                  : option.id === "icons-l"
-                                    ? "Artwork-first browsing"
-                                    : option.id === "icons-s"
-                                      ? "More cards per screen"
-                                      : "Balanced card density"}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="mt-4">
-                        <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                          <span>Grid Zoom</span>
-                          <span>
-                            {settings.mobile.layout.gridZoom.toFixed(2)}x
-                          </span>
+                              </SettingsActionButton>
+                            );
+                          })}
                         </div>
-                        <div className="mt-3">
+                      )}
+                    />
+                    <SettingsRow
+                      title="Grid Zoom"
+                      description="Scales icon cards and preview weight without changing the whole phone UI."
+                      control={(
+                        <div className="flex w-[260px] max-w-[34vw] items-center gap-3">
                           <PremiumSlider
                             value={settings.mobile.layout.gridZoom}
                             min={0.7}
@@ -16769,17 +16719,17 @@ export function SettingsPage({
                               })
                             }
                           />
-                        </div>
-                      </div>
-
-                      <div className="mt-4">
-                        <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                          <span>Interface Scale</span>
-                          <span>
-                            {settings.mobile.layout.interfaceScale.toFixed(2)}x
+                          <span className="w-11 text-right text-[10px] font-semibold opacity-60">
+                            {settings.mobile.layout.gridZoom.toFixed(2)}x
                           </span>
                         </div>
-                        <div className="mt-3">
+                      )}
+                    />
+                    <SettingsRow
+                      title="Interface Scale"
+                      description="Scales typography, cards, previews, and row density for the whole iPhone shell."
+                      control={(
+                        <div className="flex w-[260px] max-w-[34vw] items-center gap-3">
                           <PremiumSlider
                             value={settings.mobile.layout.interfaceScale}
                             min={0.85}
@@ -16794,21 +16744,17 @@ export function SettingsPage({
                               })
                             }
                           />
-                        </div>
-                        <div className="mt-2 text-[10px] opacity-45">
-                          Scales typography, cards, previews, and row density
-                          for the whole iPhone shell.
-                        </div>
-                      </div>
-
-                      <div className="mt-4">
-                        <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                          <span>Chrome Scale</span>
-                          <span>
-                            {settings.mobile.layout.chromeScale.toFixed(2)}x
+                          <span className="w-11 text-right text-[10px] font-semibold opacity-60">
+                            {settings.mobile.layout.interfaceScale.toFixed(2)}x
                           </span>
                         </div>
-                        <div className="mt-3">
+                      )}
+                    />
+                    <SettingsRow
+                      title="Chrome Scale"
+                      description="Tunes the top shell, sticky explorer header, action strip, and bottom dock prominence."
+                      control={(
+                        <div className="flex w-[260px] max-w-[34vw] items-center gap-3">
                           <PremiumSlider
                             value={settings.mobile.layout.chromeScale}
                             min={0.85}
@@ -16823,19 +16769,17 @@ export function SettingsPage({
                               })
                             }
                           />
+                          <span className="w-11 text-right text-[10px] font-semibold opacity-60">
+                            {settings.mobile.layout.chromeScale.toFixed(2)}x
+                          </span>
                         </div>
-                        <div className="mt-2 text-[10px] opacity-45">
-                          Tunes the top shell, sticky explorer header, action
-                          strip, and bottom dock prominence.
-                        </div>
-                      </div>
-
-                      <div className="mt-4">
-                        <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                          <span>Page Gutter</span>
-                          <span>{settings.mobile.layout.pagePadding}px</span>
-                        </div>
-                        <div className="mt-3">
+                      )}
+                    />
+                    <SettingsRow
+                      title="Page Gutter"
+                      description="Controls how edge-to-edge the phone surface feels once safe-area padding is applied."
+                      control={(
+                        <div className="flex w-[260px] max-w-[34vw] items-center gap-3">
                           <PremiumSlider
                             value={settings.mobile.layout.pagePadding}
                             min={10}
@@ -16850,26 +16794,20 @@ export function SettingsPage({
                               })
                             }
                           />
+                          <span className="w-11 text-right text-[10px] font-semibold opacity-60">
+                            {settings.mobile.layout.pagePadding}px
+                          </span>
                         </div>
-                        <div className="mt-2 text-[10px] opacity-45">
-                          Controls how edge-to-edge the phone surface feels once
-                          safe-area padding is applied.
-                        </div>
-                      </div>
-                    </div>
+                      )}
+                    />
+                  </SettingsRowGroup>
 
-                    <div
-                      className="rounded border p-3"
-                      style={{
-                        borderColor: border,
-                        background: "rgba(255,255,255,0.02)",
-                      }}
-                    >
-                      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                        <SlidersHorizontal size={12} />
-                        Sorting
-                      </div>
-                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  <SettingsRowGroup>
+                    <SettingsRow
+                      title="Sort Field"
+                      description="Choose the primary ordering for the phone explorer."
+                      control={(
+                        <div className="flex flex-wrap justify-end gap-1.5">
                         {[
                           { id: "name", label: "Name" },
                           { id: "date", label: "Date" },
@@ -16879,9 +16817,10 @@ export function SettingsPage({
                           const active =
                             settings.mobile.layout.sortBy === option.id;
                           return (
-                            <button
+                            <SettingsActionButton
                               key={option.id}
-                              type="button"
+                              active={active}
+                              accent={accent}
                               onClick={() =>
                                 updateMobile({
                                   layout: {
@@ -16891,24 +16830,19 @@ export function SettingsPage({
                                   },
                                 })
                               }
-                              className="rounded px-3 py-3 text-left transition-colors"
-                              style={{
-                                border: `1px solid ${active ? accent : border}`,
-                                background: active
-                                  ? `${accent}14`
-                                  : "rgba(255,255,255,0.03)",
-                                color: text,
-                              }}
                             >
-                              <div className="text-[11px] font-semibold">
-                                {option.label}
-                              </div>
-                            </button>
+                              {option.label}
+                            </SettingsActionButton>
                           );
                         })}
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        </div>
+                      )}
+                    />
+                    <SettingsRow
+                      title="Sort Direction"
+                      description="Flip ascending or descending order without changing the selected sort field."
+                      control={(
+                        <div className="flex flex-wrap justify-end gap-1.5">
                         {[
                           {
                             id: "asc",
@@ -16924,9 +16858,10 @@ export function SettingsPage({
                           const active =
                             settings.mobile.layout.sortOrder === option.id;
                           return (
-                            <button
+                            <SettingsActionButton
                               key={option.id}
-                              type="button"
+                              active={active}
+                              accent={accent}
                               onClick={() =>
                                 updateMobile({
                                   layout: {
@@ -16936,27 +16871,20 @@ export function SettingsPage({
                                   },
                                 })
                               }
-                              className="inline-flex items-center justify-center gap-2 rounded px-3 py-3 text-[11px] font-semibold transition-colors"
-                              style={{
-                                border: `1px solid ${active ? accent : border}`,
-                                background: active
-                                  ? `${accent}14`
-                                  : "rgba(255,255,255,0.03)",
-                                color: text,
-                              }}
                             >
                               {option.icon}
                               {option.label}
-                            </button>
+                            </SettingsActionButton>
                           );
                         })}
-                      </div>
-
-                      <div className="mt-4">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                          Touch Comfort
                         </div>
-                        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                      )}
+                    />
+                    <SettingsRow
+                      title="Touch Comfort"
+                      description="Adjust row density and hit target size for handheld browsing."
+                      control={(
+                        <div className="flex flex-wrap justify-end gap-1.5">
                           {[
                             {
                               id: "compact",
@@ -16980,9 +16908,11 @@ export function SettingsPage({
                             const active =
                               settings.mobile.layout.touchComfort === option.id;
                             return (
-                              <button
+                              <SettingsActionButton
                                 key={option.id}
-                                type="button"
+                                active={active}
+                                accent={accent}
+                                title={option.description}
                                 onClick={() =>
                                   updateMobile({
                                     layout: {
@@ -16992,151 +16922,95 @@ export function SettingsPage({
                                     },
                                   })
                                 }
-                                className="rounded px-3 py-3 text-left transition-colors"
-                                style={{
-                                  border: `1px solid ${active ? accent : border}`,
-                                  background: active
-                                    ? `${accent}14`
-                                    : "rgba(255,255,255,0.03)",
-                                  color: text,
-                                }}
                               >
-                                <div className="text-[11px] font-semibold">
-                                  {option.label}
-                                </div>
-                                <div className="mt-1 text-[10px] opacity-45">
-                                  {option.description}
-                                </div>
-                              </button>
+                                {option.label}
+                              </SettingsActionButton>
                             );
                           })}
                         </div>
-                      </div>
-                    </div>
-                  </div>
+                      )}
+                    />
+                  </SettingsRowGroup>
 
-                  <div className="space-y-4">
-                    {[
-                      {
-                        id: "directoriesFirst",
-                        title: "Directories First",
-                        body: "Keep folder cards ahead of files so traversal feels like a real mobile explorer instead of a flat dump.",
-                        active: settings.mobile.layout.directoriesFirst,
-                      },
-                      {
-                        id: "showHiddenFiles",
-                        title: "Show Hidden Files",
-                        body: "Off by default so the phone opens into visible content instead of a wall of dotfiles and config folders.",
-                        active: settings.mobile.layout.showHiddenFiles,
-                      },
-                      {
-                        id: "showTabLabels",
-                        title: "Show Dock Labels",
-                        body: "Keep text labels under the bottom dock icons. Turn this off if you want a tighter Files-style navigation bar.",
-                        active: settings.mobile.layout.showTabLabels,
-                      },
-                    ].map((toggle) => (
-                      <button
-                        key={toggle.id}
-                        type="button"
-                        onClick={() =>
-                          updateMobile({
-                            layout: {
-                              ...settings.mobile.layout,
-                              [toggle.id]: !toggle.active,
-                            },
-                          })
-                        }
-                        className="w-full rounded border px-3 py-3 text-left transition-colors"
-                        style={{
-                          borderColor: toggle.active ? `${accent}66` : border,
-                          background: toggle.active
-                            ? `${accent}12`
-                            : "rgba(255,255,255,0.02)",
-                          color: text,
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-[11px] font-semibold">
-                              {toggle.title}
-                            </div>
-                            <div className="mt-1 text-[11px] leading-5 opacity-45">
-                              {toggle.body}
-                            </div>
-                          </div>
-                          <span
-                            className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                            style={{
-                              borderColor: toggle.active
-                                ? `${accent}66`
-                                : border,
-                              background: "rgba(255,255,255,0.03)",
-                              color: toggle.active ? accent : muted,
-                            }}
-                          >
-                            {toggle.active ? "On" : "Off"}
-                          </span>
+                  <SettingsRowGroup>
+                    <SettingsRow
+                      title="Directories First"
+                      description="Keep folder cards ahead of files so traversal feels like a real mobile explorer instead of a flat dump."
+                      control={(
+                        <input
+                          type="checkbox"
+                          checked={settings.mobile.layout.directoriesFirst}
+                          onChange={(event) =>
+                            updateMobile({
+                              layout: {
+                                ...settings.mobile.layout,
+                                directoriesFirst: event.target.checked,
+                              },
+                            })
+                          }
+                        />
+                      )}
+                    />
+                    <SettingsRow
+                      title="Show Hidden Files"
+                      description="Off by default so the phone opens into visible content instead of a wall of dotfiles and config folders."
+                      control={(
+                        <input
+                          type="checkbox"
+                          checked={settings.mobile.layout.showHiddenFiles}
+                          onChange={(event) =>
+                            updateMobile({
+                              layout: {
+                                ...settings.mobile.layout,
+                                showHiddenFiles: event.target.checked,
+                              },
+                            })
+                          }
+                        />
+                      )}
+                    />
+                    <SettingsRow
+                      title="Show Dock Labels"
+                      description="Keep text labels under the bottom dock icons. Turn this off if you want a tighter Files-style navigation bar."
+                      control={(
+                        <input
+                          type="checkbox"
+                          checked={settings.mobile.layout.showTabLabels}
+                          onChange={(event) =>
+                            updateMobile({
+                              layout: {
+                                ...settings.mobile.layout,
+                                showTabLabels: event.target.checked,
+                              },
+                            })
+                          }
+                        />
+                      )}
+                    />
+                    <SettingsRow
+                      title="Current Mobile Layout"
+                      description="Dense readout of the effective mobile browse layout."
+                      control={(
+                        <div className="flex flex-wrap justify-end gap-1.5">
+                          <SettingsStatusPill style={{ color: muted }}>
+                            View · {settings.mobile.layout.viewMode}
+                          </SettingsStatusPill>
+                          <SettingsStatusPill style={{ color: muted }}>
+                            Sort · {settings.mobile.layout.sortBy}/{settings.mobile.layout.sortOrder}
+                          </SettingsStatusPill>
+                          <SettingsStatusPill style={{ color: muted }}>
+                            UI · {settings.mobile.layout.interfaceScale.toFixed(2)}x
+                          </SettingsStatusPill>
+                          <SettingsStatusPill style={{ color: muted }}>
+                            Chrome · {settings.mobile.layout.chromeScale.toFixed(2)}x
+                          </SettingsStatusPill>
+                          <SettingsStatusPill style={{ color: muted }}>
+                            Gutter · {settings.mobile.layout.pagePadding}px
+                          </SettingsStatusPill>
                         </div>
-                      </button>
-                    ))}
-
-                    <div
-                      className="rounded border px-3 py-3 text-[11px]"
-                      style={{
-                        borderColor: border,
-                        background: "rgba(255,255,255,0.02)",
-                      }}
-                    >
-                      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                        <Type size={12} />
-                        Current Mobile Layout
-                      </div>
-                      <div className="mt-3 space-y-2 opacity-75">
-                        <div>View: {settings.mobile.layout.viewMode}</div>
-                        <div>
-                          Sort: {settings.mobile.layout.sortBy} ·{" "}
-                          {settings.mobile.layout.sortOrder}
-                        </div>
-                        <div>
-                          Grid Zoom:{" "}
-                          {settings.mobile.layout.gridZoom.toFixed(2)}x
-                        </div>
-                        <div>
-                          Interface Scale:{" "}
-                          {settings.mobile.layout.interfaceScale.toFixed(2)}x
-                        </div>
-                        <div>
-                          Chrome Scale:{" "}
-                          {settings.mobile.layout.chromeScale.toFixed(2)}x
-                        </div>
-                        <div>
-                          Page Gutter: {settings.mobile.layout.pagePadding}px
-                        </div>
-                        <div>
-                          Touch Comfort: {settings.mobile.layout.touchComfort}
-                        </div>
-                        <div>
-                          Folders First:{" "}
-                          {settings.mobile.layout.directoriesFirst
-                            ? "enabled"
-                            : "disabled"}
-                        </div>
-                        <div>
-                          Hidden Files:{" "}
-                          {settings.mobile.layout.showHiddenFiles
-                            ? "visible"
-                            : "hidden"}
-                        </div>
-                        <div>
-                          Dock Labels:{" "}
-                          {settings.mobile.layout.showTabLabels
-                            ? "shown"
-                            : "icon only"}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                      )}
+                    />
+                  </SettingsRowGroup>
                 </div>
               </div>
 
