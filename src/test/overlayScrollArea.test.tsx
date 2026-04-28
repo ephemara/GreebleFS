@@ -1,5 +1,5 @@
-import { render, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { act, render, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OverlayScrollArea } from '../components/OverlayScrollArea';
 
 function getViewport(container: HTMLElement, direction: 'horizontal' | 'vertical'): HTMLDivElement {
@@ -10,7 +10,24 @@ function getViewport(container: HTMLElement, direction: 'horizontal' | 'vertical
   return node;
 }
 
+function makeScrollable(
+  viewport: HTMLDivElement,
+  metrics: { clientHeight?: number; scrollHeight?: number; clientWidth?: number; scrollWidth?: number },
+) {
+  for (const [key, value] of Object.entries(metrics)) {
+    Object.defineProperty(viewport, key, {
+      configurable: true,
+      value,
+    });
+  }
+}
+
 describe('OverlayScrollArea', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
   it('maps vertical wheel delta to horizontal scrolling in horizontal mode', () => {
     const { container } = render(
       <OverlayScrollArea direction="horizontal">
@@ -166,5 +183,70 @@ describe('OverlayScrollArea', () => {
       expect(denseHeight).toBeLessThan(sparseHeight / 2);
       expect(denseHeight).toBeLessThan(24);
     });
+  });
+
+  it('adds opt-in inertial scrolling that continues after a fast wheel event', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { container } = render(
+      <OverlayScrollArea scrollbarStyle="explorer-file-list" inertialScroll>
+        <div style={{ height: 4000 }}>content</div>
+      </OverlayScrollArea>,
+    );
+
+    const viewport = getViewport(container, 'vertical');
+    makeScrollable(viewport, {
+      clientHeight: 200,
+      scrollHeight: 4000,
+    });
+
+    const wheelEvent = new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 120,
+    });
+    viewport.dispatchEvent(wheelEvent);
+
+    expect(wheelEvent.defaultPrevented).toBe(true);
+    expect(viewport.scrollTop).toBe(120);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180);
+    });
+
+    expect(viewport.scrollTop).toBeGreaterThan(180);
+  });
+
+  it('disables inertial scrolling when reduced motion is requested', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    const { container } = render(
+      <OverlayScrollArea scrollbarStyle="explorer-file-list" inertialScroll>
+        <div style={{ height: 4000 }}>content</div>
+      </OverlayScrollArea>,
+    );
+
+    const viewport = getViewport(container, 'vertical');
+    makeScrollable(viewport, {
+      clientHeight: 200,
+      scrollHeight: 4000,
+    });
+
+    const wheelEvent = new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 120,
+    });
+    viewport.dispatchEvent(wheelEvent);
+
+    expect(wheelEvent.defaultPrevented).toBe(false);
+    expect(viewport.scrollTop).toBe(0);
   });
 });

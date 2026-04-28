@@ -1,3 +1,17 @@
+# 2026-04-28 - Explorer 100k Scroll Slice Adds Inertial Scroll And Virtual Surface Isolation
+
+- Standard explorer browsing now opts into `OverlayScrollArea` inertial scrolling, which samples wheel velocity, applies bounded RAF friction, cancels on pointer/scrollbar interaction, and respects reduced motion.
+- The standard grid/list/table virtual DOM now renders through memoized `StandardExplorerVirtualSurface`, keeping repeated row/table/grid spacer structure out of the giant explorer render body and giving tests a stable `data-overlay-explorer-virtual-surface` marker.
+- Durable performance rule:
+  - keep inertial scroll opt-in and Explorer-specific; do not enable it globally on every overlay scroll area.
+  - keep standard explorer rows bounded to the virtual surface. The next deeper performance slice should move virtual-window ownership into an extracted leaf component with stable row-render callbacks, then move high-volume sorted/windowed directory slices to Rust.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/overlayScrollArea.test.tsx --reporter=dot`
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "100000|huge folder|final item reachable|dedicated explorer viewport|deep-grid viewport anchored" --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript sweep returned no diagnostics.
+- Known existing suite drift:
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/overlayScrollArea.test.tsx --reporter=dot --testTimeout=30000` still fails 15 `fileExplorer.viewModes` cases around explorer mode/profile controls, preview/navigation timing, and ctrl-wheel expectations. These are consistent with the earlier recorded full-suite drift and were not reproduced by the focused performance assertions.
+
 # 2026-04-28 - Explorer Virtual Scroll Updates Are Coalesced
 
 - Standard explorer list/grid scrolling now keeps native scroll position exact in `explorerViewportScrollTopRef`, but coalesces React virtual-window state updates through `requestAnimationFrame` and `startTransition`.

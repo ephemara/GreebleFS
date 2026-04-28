@@ -8208,6 +8208,113 @@ export interface ExplorerWorkspaceSelectionTransferResult {
   success: boolean;
 }
 
+interface StandardExplorerVirtualSurfaceProps {
+  shouldRender: boolean;
+  currentPathIsHome: boolean;
+  experimentalViewMode: ExplorerExperimentalViewMode;
+  virtualWindowKind: "grid" | "list";
+  presentation: ExplorerViewPresentation;
+  hasActiveGridMetrics: boolean;
+  columns: number;
+  topSpacer: number;
+  bottomSpacer: number;
+  gridContainerTransition: string;
+  gridEntryElements: React.ReactNode;
+  listEntryElements: React.ReactNode;
+  tableEntryElements: React.ReactNode;
+  tableHeader: React.ReactNode;
+}
+
+const StandardExplorerVirtualSurface = React.memo(
+  function StandardExplorerVirtualSurface({
+    shouldRender,
+    currentPathIsHome,
+    experimentalViewMode,
+    virtualWindowKind,
+    presentation,
+    hasActiveGridMetrics,
+    columns,
+    topSpacer,
+    bottomSpacer,
+    gridContainerTransition,
+    gridEntryElements,
+    listEntryElements,
+    tableEntryElements,
+    tableHeader,
+  }: StandardExplorerVirtualSurfaceProps) {
+    if (
+      !shouldRender ||
+      currentPathIsHome ||
+      experimentalViewMode !== "off"
+    ) {
+      return null;
+    }
+
+    if (virtualWindowKind === "grid" && hasActiveGridMetrics) {
+      return (
+        <div data-overlay-explorer-virtual-surface="grid" style={{ minHeight: 0 }}>
+          <div style={{ height: topSpacer }} />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+              gridAutoRows: "var(--overlay-explorer-grid-row-height)",
+              gap: "var(--overlay-explorer-grid-gap)",
+              padding: "0 var(--overlay-explorer-grid-padding)",
+              alignItems: "stretch",
+              transition: gridContainerTransition,
+            }}
+          >
+            {gridEntryElements}
+          </div>
+          <div style={{ height: bottomSpacer }} />
+        </div>
+      );
+    }
+
+    if (virtualWindowKind !== "list") {
+      return null;
+    }
+
+    if (presentation === "list") {
+      return (
+        <div data-overlay-explorer-virtual-surface="list" style={{ minHeight: 0 }}>
+          <div style={{ height: topSpacer }} />
+          {listEntryElements}
+          <div style={{ height: bottomSpacer }} />
+        </div>
+      );
+    }
+
+    if (presentation === "table") {
+      return (
+        <table
+          data-overlay-explorer-virtual-surface="table"
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            fontSize: 12,
+            tableLayout: "fixed",
+          }}
+        >
+          {tableHeader}
+          <tbody>
+            <tr style={{ height: topSpacer }}>
+              <td colSpan={4} style={{ padding: 0, border: "none" }} />
+            </tr>
+            {tableEntryElements}
+            <tr style={{ height: bottomSpacer }}>
+              <td colSpan={4} style={{ padding: 0, border: "none" }} />
+            </tr>
+          </tbody>
+        </table>
+      );
+    }
+
+    return null;
+  },
+);
+
 export function FileExplorer({
   theme,
   appearance,
@@ -25989,6 +26096,86 @@ export function FileExplorer({
     visibleEntryIndexLookup,
     virtualizedEntries,
   ]);
+  const standardExplorerTableHeader = useMemo(
+    () => (
+      <thead>
+        <tr
+          style={{
+            background: "var(--overlay-explorer-toolbar-bg)",
+            position: "sticky",
+            top: 0,
+            zIndex: 2,
+          }}
+        >
+          {[
+            { key: "name", label: "Name" },
+            { key: "size", label: "Size" },
+            { key: "date", label: "Modified" },
+            { key: "type", label: "Type" },
+          ].map((column) => (
+            <th
+              key={column.key}
+              style={{
+                padding: "6px 12px",
+                textAlign: "left",
+                color: EXP.muted,
+                fontWeight: 600,
+                fontSize: 10,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                borderBottom:
+                  "1px solid var(--overlay-explorer-toolbar-border)",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => toggleSort(column.key as ExplorerSortKey)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  color:
+                    explorerSettings.sortBy === column.key
+                      ? EXP.text
+                      : EXP.muted,
+                  cursor: "pointer",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                }}
+              >
+                <span>{column.label}</span>
+                <span
+                  style={{
+                    color:
+                      explorerSettings.sortBy === column.key
+                        ? accent
+                        : EXP.muted2,
+                  }}
+                >
+                  {explorerSettings.sortBy === column.key
+                    ? explorerSettings.sortOrder === "asc"
+                      ? "↑"
+                      : "↓"
+                    : "·"}
+                </span>
+              </button>
+            </th>
+          ))}
+        </tr>
+      </thead>
+    ),
+    [
+      accent,
+      explorerSettings.sortBy,
+      explorerSettings.sortOrder,
+      toggleSort,
+    ],
+  );
 
   // ── Keyboard ──
   useEffect(() => {
@@ -29805,6 +29992,11 @@ export function FileExplorer({
                 <OverlayScrollArea
                   style={{ flex: 1, minHeight: 0 }}
                   scrollbarStyle="explorer-file-list"
+                  inertialScroll={
+                    effectiveExperimentalViewMode === "off" &&
+                    shouldRenderExplorerContent &&
+                    !currentPathIsHome
+                  }
                   viewportStyle={{
                     padding: 0,
                     ...(usesConstellationCanvas ? { overflow: "hidden" } : {}),
@@ -30200,31 +30392,6 @@ export function FileExplorer({
                     )}
 
                   {effectiveExperimentalViewMode === "off" &&
-                    shouldRenderExplorerContent &&
-                    !currentPathIsHome &&
-                    virtualWindow.kind === "grid" &&
-                    activeGridMetrics && (
-                      <div style={{ minHeight: 0 }}>
-                        <div style={{ height: virtualWindow.topSpacer }} />
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: `repeat(${virtualWindow.columns}, minmax(0, 1fr))`,
-                            gridAutoRows:
-                              "var(--overlay-explorer-grid-row-height)",
-                            gap: "var(--overlay-explorer-grid-gap)",
-                            padding: "0 var(--overlay-explorer-grid-padding)",
-                            alignItems: "stretch",
-                            transition: explorerGridContainerTransition,
-                          }}
-                        >
-                          {gridVirtualizedEntryElements}
-                        </div>
-                        <div style={{ height: virtualWindow.bottomSpacer }} />
-                      </div>
-                    )}
-
-                  {effectiveExperimentalViewMode === "off" &&
                     !currentPathIsHome &&
                     newItem.visible &&
                     virtualWindow.kind === "list" &&
@@ -30302,18 +30469,6 @@ export function FileExplorer({
                             flex: 1,
                           }}
                         />
-                      </div>
-                    )}
-
-                  {effectiveExperimentalViewMode === "off" &&
-                    shouldRenderExplorerContent &&
-                    !currentPathIsHome &&
-                    virtualWindow.kind === "list" &&
-                    effectiveViewModeDefinition.presentation === "list" && (
-                      <div style={{ minHeight: 0 }}>
-                        <div style={{ height: virtualWindow.topSpacer }} />
-                        {listVirtualizedEntryElements}
-                        <div style={{ height: virtualWindow.bottomSpacer }} />
                       </div>
                     )}
 
@@ -30423,108 +30578,22 @@ export function FileExplorer({
                       </table>
                     )}
 
-                  {effectiveExperimentalViewMode === "off" &&
-                    shouldRenderExplorerContent &&
-                    !currentPathIsHome &&
-                    virtualWindow.kind === "list" &&
-                    effectiveViewModeDefinition.presentation === "table" && (
-                      <table
-                        style={{
-                          width: "100%",
-                          borderCollapse: "collapse",
-                          fontSize: 12,
-                          tableLayout: "fixed",
-                        }}
-                      >
-                        <thead>
-                          <tr
-                            style={{
-                              background: "var(--overlay-explorer-toolbar-bg)",
-                              position: "sticky",
-                              top: 0,
-                              zIndex: 2,
-                            }}
-                          >
-                            {[
-                              { key: "name", label: "Name" },
-                              { key: "size", label: "Size" },
-                              { key: "date", label: "Modified" },
-                              { key: "type", label: "Type" },
-                            ].map((column) => (
-                              <th
-                                key={column.key}
-                                style={{
-                                  padding: "6px 12px",
-                                  textAlign: "left",
-                                  color: EXP.muted,
-                                  fontWeight: 600,
-                                  fontSize: 10,
-                                  letterSpacing: "0.06em",
-                                  textTransform: "uppercase",
-                                  borderBottom:
-                                    "1px solid var(--overlay-explorer-toolbar-border)",
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    toggleSort(column.key as ExplorerSortKey)
-                                  }
-                                  style={{
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: 6,
-                                    background: "none",
-                                    border: "none",
-                                    padding: 0,
-                                    color:
-                                      explorerSettings.sortBy === column.key
-                                        ? EXP.text
-                                        : EXP.muted,
-                                    cursor: "pointer",
-                                    fontSize: 10,
-                                    fontWeight: 600,
-                                    letterSpacing: "0.06em",
-                                    textTransform: "uppercase",
-                                  }}
-                                >
-                                  <span>{column.label}</span>
-                                  <span
-                                    style={{
-                                      color:
-                                        explorerSettings.sortBy === column.key
-                                          ? accent
-                                          : EXP.muted2,
-                                    }}
-                                  >
-                                    {explorerSettings.sortBy === column.key
-                                      ? explorerSettings.sortOrder === "asc"
-                                        ? "↑"
-                                        : "↓"
-                                      : "·"}
-                                  </span>
-                                </button>
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr style={{ height: virtualWindow.topSpacer }}>
-                            <td
-                              colSpan={4}
-                              style={{ padding: 0, border: "none" }}
-                            />
-                          </tr>
-                          {tableVirtualizedEntryElements}
-                          <tr style={{ height: virtualWindow.bottomSpacer }}>
-                            <td
-                              colSpan={4}
-                              style={{ padding: 0, border: "none" }}
-                            />
-                          </tr>
-                        </tbody>
-                      </table>
-                    )}
+                  <StandardExplorerVirtualSurface
+                    shouldRender={shouldRenderExplorerContent}
+                    currentPathIsHome={currentPathIsHome}
+                    experimentalViewMode={effectiveExperimentalViewMode}
+                    virtualWindowKind={virtualWindow.kind}
+                    presentation={effectiveViewModeDefinition.presentation}
+                    hasActiveGridMetrics={Boolean(activeGridMetrics)}
+                    columns={virtualWindow.kind === "grid" ? virtualWindow.columns : 1}
+                    topSpacer={virtualWindow.topSpacer}
+                    bottomSpacer={virtualWindow.bottomSpacer}
+                    gridContainerTransition={explorerGridContainerTransition}
+                    gridEntryElements={gridVirtualizedEntryElements}
+                    listEntryElements={listVirtualizedEntryElements}
+                    tableEntryElements={tableVirtualizedEntryElements}
+                    tableHeader={standardExplorerTableHeader}
+                  />
                   </div>
                 </OverlayScrollArea>
               </div>

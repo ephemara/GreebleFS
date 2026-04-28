@@ -7,6 +7,7 @@ interface OverlayScrollAreaProps {
   children: React.ReactNode;
   direction?: OverlayScrollDirection;
   scrollbarStyle?: OverlayScrollbarStyle;
+  inertialScroll?: boolean;
   className?: string;
   viewportClassName?: string;
   contentClassName?: string;
@@ -21,6 +22,7 @@ export function OverlayScrollArea({
   children,
   direction = 'vertical',
   scrollbarStyle = 'hidden',
+  inertialScroll = false,
   className,
   viewportClassName,
   contentClassName,
@@ -38,6 +40,11 @@ export function OverlayScrollArea({
   const horizontalTrackRef = useRef<HTMLDivElement | null>(null);
   const horizontalThumbRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollbarSyncFrameRef = useRef<number | null>(null);
+  const inertialScrollFrameRef = useRef<number | null>(null);
+  const inertialScrollVelocityRef = useRef({ x: 0, y: 0 });
+  const inertialScrollLastFrameAtRef = useRef<number | null>(null);
+  const scheduleScrollbarPresentationSyncRef =
+    useRef<(options?: { sustain?: boolean }) => void>(() => {});
   const scrollbarSettleFramesRemainingRef = useRef(0);
   const stableScrollbarMeasurementFramesRef = useRef(0);
   const lastScrollbarMeasurementRef =
@@ -175,6 +182,144 @@ export function OverlayScrollArea({
       stableScrollbarMeasurementFramesRef.current = 0;
     });
   }, [syncScrollbarPresentation]);
+  scheduleScrollbarPresentationSyncRef.current = scheduleScrollbarPresentationSync;
+
+  const stopInertialScroll = useCallback(() => {
+    if (inertialScrollFrameRef.current != null) {
+      window.cancelAnimationFrame(inertialScrollFrameRef.current);
+      inertialScrollFrameRef.current = null;
+    }
+    inertialScrollVelocityRef.current = { x: 0, y: 0 };
+    inertialScrollLastFrameAtRef.current = null;
+  }, []);
+
+  const applyInertialScrollDelta = useCallback((
+    viewport: HTMLDivElement,
+    deltaX: number,
+    deltaY: number,
+  ): boolean => {
+    const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+    const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    const nextScrollLeft = clampNumber(
+      viewport.scrollLeft + deltaX,
+      0,
+      maxScrollLeft,
+    );
+    const nextScrollTop = clampNumber(
+      viewport.scrollTop + deltaY,
+      0,
+      maxScrollTop,
+    );
+    const didMove =
+      Math.abs(nextScrollLeft - viewport.scrollLeft) > 0.01 ||
+      Math.abs(nextScrollTop - viewport.scrollTop) > 0.01;
+
+    viewport.scrollLeft = nextScrollLeft;
+    viewport.scrollTop = nextScrollTop;
+    return didMove;
+  }, []);
+
+  const stepInertialScroll = useCallback((frameTime: number) => {
+    const viewport = internalViewportRef.current;
+    if (!viewport) {
+      stopInertialScroll();
+      return;
+    }
+
+    const lastFrameAt = inertialScrollLastFrameAtRef.current ?? frameTime;
+    inertialScrollLastFrameAtRef.current = frameTime;
+    const frameScale = clampNumber((frameTime - lastFrameAt) / 16.67, 0.5, 2.4);
+    const velocity = inertialScrollVelocityRef.current;
+    const didMove = applyInertialScrollDelta(
+      viewport,
+      velocity.x * frameScale,
+      velocity.y * frameScale,
+    );
+    const friction = Math.pow(0.86, frameScale);
+    const nextVelocity = {
+      x: velocity.x * friction,
+      y: velocity.y * friction,
+    };
+    const shouldContinue =
+      didMove &&
+      (Math.abs(nextVelocity.x) > 0.35 || Math.abs(nextVelocity.y) > 0.35);
+
+    if (!shouldContinue) {
+      stopInertialScroll();
+      scheduleScrollbarPresentationSyncRef.current();
+      return;
+    }
+
+    inertialScrollVelocityRef.current = nextVelocity;
+    scheduleScrollbarPresentationSyncRef.current();
+    inertialScrollFrameRef.current = window.requestAnimationFrame(stepInertialScroll);
+  }, [applyInertialScrollDelta, stopInertialScroll]);
+
+  const startInertialScroll = useCallback((deltaX: number, deltaY: number) => {
+    const clampedDeltaX = clampNumber(deltaX, -220, 220);
+    const clampedDeltaY = clampNumber(deltaY, -220, 220);
+    const currentVelocity = inertialScrollVelocityRef.current;
+    inertialScrollVelocityRef.current = {
+      x: clampNumber(currentVelocity.x * 0.38 + clampedDeltaX * 0.72, -260, 260),
+      y: clampNumber(currentVelocity.y * 0.38 + clampedDeltaY * 0.72, -260, 260),
+    };
+
+    if (inertialScrollFrameRef.current == null) {
+      inertialScrollLastFrameAtRef.current = null;
+      inertialScrollFrameRef.current = window.requestAnimationFrame(stepInertialScroll);
+    }
+  }, [stepInertialScroll]);
+
+  useEffect(() => {
+    const viewport = internalViewportRef.current;
+    if (!viewport || !inertialScroll) {
+      stopInertialScroll();
+      return;
+    }
+
+    const handleInertialWheel = (event: WheelEvent) => {
+      if (
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        shouldReduceScrollMotion()
+      ) {
+        return;
+      }
+
+      const delta = normalizeWheelDeltaForViewport(event, viewport);
+      const scrollDelta = resolveInertialScrollDelta(direction, delta);
+      if (Math.abs(scrollDelta.x) < 0.01 && Math.abs(scrollDelta.y) < 0.01) {
+        return;
+      }
+
+      event.preventDefault();
+      const didMove = applyInertialScrollDelta(
+        viewport,
+        scrollDelta.x,
+        scrollDelta.y,
+      );
+      if (didMove) {
+        startInertialScroll(scrollDelta.x, scrollDelta.y);
+        scheduleScrollbarPresentationSync();
+      } else {
+        stopInertialScroll();
+      }
+    };
+
+    viewport.addEventListener('wheel', handleInertialWheel, { passive: false });
+    return () => {
+      viewport.removeEventListener('wheel', handleInertialWheel);
+      stopInertialScroll();
+    };
+  }, [
+    applyInertialScrollDelta,
+    direction,
+    inertialScroll,
+    scheduleScrollbarPresentationSync,
+    startInertialScroll,
+    stopInertialScroll,
+  ]);
 
   const handleViewportScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     onViewportScroll?.(event);
@@ -240,6 +385,7 @@ export function OverlayScrollArea({
       return;
     }
 
+    stopInertialScroll();
     args.event.preventDefault();
     args.event.stopPropagation();
 
@@ -264,7 +410,7 @@ export function OverlayScrollArea({
     window.addEventListener('pointerup', handleScrollbarDragPointerEnd);
     window.addEventListener('pointercancel', handleScrollbarDragPointerEnd);
     handleScrollbarDragPointerMove(args.event.nativeEvent);
-  }, [handleScrollbarDragPointerEnd, handleScrollbarDragPointerMove]);
+  }, [handleScrollbarDragPointerEnd, handleScrollbarDragPointerMove, stopInertialScroll]);
 
   useLayoutEffect(() => {
     scheduleScrollbarPresentationSync({ sustain: true });
@@ -336,6 +482,7 @@ export function OverlayScrollArea({
       <div
         ref={mergeRefs(internalViewportRef, viewportRef)}
         onWheel={handleWheel}
+        onPointerDown={stopInertialScroll}
         onScroll={handleViewportScroll}
         className={joinClassNames(
           'overlay-scroll-area__viewport',
@@ -344,6 +491,7 @@ export function OverlayScrollArea({
           viewportClassName,
         )}
         data-overlay-scrollbar-style={scrollbarStyle}
+        data-overlay-inertial-scroll={inertialScroll ? 'true' : 'false'}
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -570,6 +718,45 @@ function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCallba
       (ref as React.MutableRefObject<T | null>).current = value;
     }
   };
+}
+
+function shouldReduceScrollMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function normalizeWheelDeltaForViewport(
+  event: WheelEvent,
+  viewport: HTMLDivElement,
+): { x: number; y: number } {
+  const scale =
+    event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? 18
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? Math.max(1, viewport.clientHeight)
+        : 1;
+  return {
+    x: event.deltaX * scale,
+    y: event.deltaY * scale,
+  };
+}
+
+function resolveInertialScrollDelta(
+  direction: OverlayScrollDirection,
+  delta: { x: number; y: number },
+): { x: number; y: number } {
+  if (direction === 'horizontal') {
+    return {
+      x: Math.abs(delta.y) > Math.abs(delta.x) ? delta.y : delta.x,
+      y: 0,
+    };
+  }
+  if (direction === 'vertical') {
+    return { x: 0, y: delta.y };
+  }
+  return delta;
 }
 
 function clampNumber(value: number, minimum: number, maximum: number): number {

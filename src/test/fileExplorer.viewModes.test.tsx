@@ -5513,6 +5513,47 @@ const value = 1;
     );
   });
 
+  it("keeps a 100000-entry folder bounded to the virtual surface", async () => {
+    const longEntries = Array.from({ length: 100000 }, (_, index) => ({
+      name: `item-${index.toString().padStart(6, "0")}.txt`,
+      path: `${REPO_ROOT}\\\\item-${index.toString().padStart(6, "0")}.txt`,
+      is_dir: false,
+      size: index + 1,
+      modified: index,
+      extension: "txt",
+      is_hidden: false,
+      is_symlink: false,
+    }));
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return longEntries;
+        }
+        return baseInvokeImplementation(
+          command,
+          args as Parameters<typeof invoke>[1],
+        );
+      },
+    );
+    useSettingsStore.getState().updateExplorer({ viewMode: "list" });
+
+    renderExplorer();
+    await screen.findByText("item-000000.txt");
+
+    expect(
+      document.querySelector("[data-overlay-explorer-virtual-surface='list']"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("item-099999.txt")).not.toBeInTheDocument();
+    expect(document.querySelectorAll("[data-entry-path]").length).toBeLessThan(
+      160,
+    );
+  }, 20000);
+
   it("switches between icon and list view from footer toggles", async () => {
     useSettingsStore.getState().updateExplorer({
       viewMode: "details",
