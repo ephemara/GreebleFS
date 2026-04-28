@@ -157,7 +157,12 @@ fn parse_cargo_version(output: &str) -> Option<String> {
     // `cargo 1.88.0 (873a06493 2025-05-10)`
     output
         .split_whitespace()
-        .find(|token| token.chars().next().is_some_and(|character| character.is_ascii_digit()))
+        .find(|token| {
+            token
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_digit())
+        })
         .map(|token| token.to_string())
 }
 

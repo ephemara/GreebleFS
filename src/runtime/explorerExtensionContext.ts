@@ -1,5 +1,4 @@
 import type {
-  DriveInfo,
   ExecutionContextEntry,
   ExecutionContextPreviewSession,
   ExecutionContextRepoContext,
@@ -23,11 +22,17 @@ export interface ExplorerExecutionContextPreviewInput {
   resolvedPath?: string | null;
 }
 
+export interface ExplorerExecutionContextDriveLike {
+  id: string;
+  label: string;
+  path: string;
+}
+
 export interface BuildExplorerExecutionContextSnapshotInput {
   paneId: string | null;
   activeDirectory: string | null;
   cwd?: string | null;
-  drives: DriveInfo[];
+  drives: ExplorerExecutionContextDriveLike[];
   entries: ExplorerExecutionContextEntryLike[];
   selectedPaths: string[];
   previewSession?: ExplorerExecutionContextPreviewInput | null;
@@ -90,7 +95,7 @@ function toExecutionContextPreviewSession(
 }
 
 function buildExecutionContextRoots(
-  drives: DriveInfo[],
+  drives: ExplorerExecutionContextDriveLike[],
   activeDirectory: string | null,
 ): ExecutionContextRoot[] {
   if (drives.length > 0) {

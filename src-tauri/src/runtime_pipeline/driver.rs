@@ -309,12 +309,8 @@ fn invoke_cargo_build(
         ));
     }
 
-    let built_artifact = resolve_cargo_built_artifact_path(
-        &cargo_target_directory,
-        target,
-        mode,
-        &binary_name,
-    );
+    let built_artifact =
+        resolve_cargo_built_artifact_path(&cargo_target_directory, target, mode, &binary_name);
     if let Some(parent) = artifact_path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -384,7 +380,8 @@ fn resolve_cargo_binary_name(
             return Ok(configured_bin);
         }
         if let Some(first_bin) = bins.iter().find_map(|entry| {
-            entry.as_table()
+            entry
+                .as_table()
                 .and_then(|table| table.get("name"))
                 .and_then(|value| value.as_str())
                 .map(|value| value.to_string())
@@ -409,7 +406,11 @@ fn resolve_cargo_built_artifact_path(
     mode: &str,
     binary_name: &str,
 ) -> PathBuf {
-    let profile_directory = if mode == "release" { "release" } else { "debug" };
+    let profile_directory = if mode == "release" {
+        "release"
+    } else {
+        "debug"
+    };
     let mut path = cargo_target_directory.to_path_buf();
     if !target.trim().is_empty() && target != "cargo-host" {
         path.push(target);

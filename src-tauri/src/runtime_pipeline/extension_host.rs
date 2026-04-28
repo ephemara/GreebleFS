@@ -514,9 +514,8 @@ pub fn inspect_extension_source(path: &Path) -> Result<ExtensionInspection, Stri
                         path.display()
                     )
                 })?;
-                let bundle_manifest_directory = entry
-                    .enclosed_name()
-                    .unwrap_or_else(|| PathBuf::from("."));
+                let bundle_manifest_directory =
+                    entry.enclosed_name().unwrap_or_else(|| PathBuf::from("."));
                 manifest = Some(parse_extension_manifest_text(
                     bundle_manifest_directory.as_path(),
                     EXTENSION_MANIFEST_FILE_NAME,
@@ -535,7 +534,8 @@ pub fn inspect_extension_source(path: &Path) -> Result<ExtensionInspection, Stri
         Ok(ExtensionInspection {
             source_kind: "bundle".to_string(),
             root_path: path.to_string_lossy().to_string(),
-            manifest_path: manifest_path.unwrap_or_else(|| EXTENSION_MANIFEST_FILE_NAME.to_string()),
+            manifest_path: manifest_path
+                .unwrap_or_else(|| EXTENSION_MANIFEST_FILE_NAME.to_string()),
             entry_count: archive_entries.len(),
             archive_entries,
             manifest,
@@ -609,7 +609,8 @@ pub fn pack_extension_source(
             .file_name()
             .unwrap_or_else(|| OsStr::new("extension")),
     );
-    let build = build_extension_source(source_directory, &staging_directory, include_debug_sources)?;
+    let build =
+        build_extension_source(source_directory, &staging_directory, include_debug_sources)?;
     if let Some(parent) = output_bundle_path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -743,7 +744,10 @@ pub fn read_extension_manifest_from_directory(
             continue;
         }
         let text = fs::read_to_string(&candidate).map_err(|error| {
-            format!("Failed to read extension manifest {}: {error}", candidate.display())
+            format!(
+                "Failed to read extension manifest {}: {error}",
+                candidate.display()
+            )
         })?;
         let manifest = parse_extension_manifest_text(directory, manifest_name, &text)?;
         return Ok((candidate, manifest));
@@ -818,7 +822,9 @@ fn parse_extension_manifest_text(
     })
 }
 
-fn normalize_extension_manifest(mut manifest: ExtensionManifest) -> Result<ExtensionManifest, String> {
+fn normalize_extension_manifest(
+    mut manifest: ExtensionManifest,
+) -> Result<ExtensionManifest, String> {
     manifest.id = manifest.id.trim().to_string();
     if manifest.id.is_empty() {
         return Err("Extension manifest id is required.".to_string());
@@ -881,7 +887,11 @@ fn version_value_to_string(value: serde_json::Value) -> String {
 }
 
 fn normalize_relative_extension_path(value: &str) -> String {
-    value.trim().replace('\\', "/").trim_start_matches('/').to_string()
+    value
+        .trim()
+        .replace('\\', "/")
+        .trim_start_matches('/')
+        .to_string()
 }
 
 fn list_directory_entries_relative(root: &Path) -> Result<Vec<String>, String> {
@@ -899,8 +909,7 @@ fn collect_directory_entries_relative(
     for entry in fs::read_dir(current)
         .map_err(|error| format!("Failed to read directory {}: {error}", current.display()))?
     {
-        let entry =
-            entry.map_err(|error| format!("Failed to read directory entry: {error}"))?;
+        let entry = entry.map_err(|error| format!("Failed to read directory entry: {error}"))?;
         let path = entry.path();
         let relative = path
             .strip_prefix(root)
@@ -943,10 +952,8 @@ fn copy_directory_recursive_internal(
             "Failed to read directory {}: {error}",
             current_source_root.display()
         )
-    })?
-    {
-        let entry =
-            entry.map_err(|error| format!("Failed to read directory entry: {error}"))?;
+    })? {
+        let entry = entry.map_err(|error| format!("Failed to read directory entry: {error}"))?;
         let source_path = entry.path();
         let relative = source_path
             .strip_prefix(original_source_root)
@@ -962,7 +969,10 @@ fn copy_directory_recursive_internal(
         );
         if source_path.is_dir() {
             fs::create_dir_all(&target_path).map_err(|error| {
-                format!("Failed to create directory {}: {error}", target_path.display())
+                format!(
+                    "Failed to create directory {}: {error}",
+                    target_path.display()
+                )
             })?;
             copy_directory_recursive_internal(
                 original_source_root,
@@ -1007,8 +1017,7 @@ fn write_directory_to_zip(
     for entry in fs::read_dir(current)
         .map_err(|error| format!("Failed to read directory {}: {error}", current.display()))?
     {
-        let entry =
-            entry.map_err(|error| format!("Failed to read directory entry: {error}"))?;
+        let entry = entry.map_err(|error| format!("Failed to read directory entry: {error}"))?;
         let path = entry.path();
         let relative = path
             .strip_prefix(root)
@@ -1089,9 +1098,16 @@ mod tests {
         )
         .expect("write");
         fs::create_dir_all(root.join("dist")).expect("mkdir dist");
-        fs::write(root.join("dist/index.js"), "export default function Demo() {}").expect("write entry");
-        fs::write(root.join("dist/preview.js"), "export default function DemoPreview() {}")
-            .expect("write preview");
+        fs::write(
+            root.join("dist/index.js"),
+            "export default function Demo() {}",
+        )
+        .expect("write entry");
+        fs::write(
+            root.join("dist/preview.js"),
+            "export default function DemoPreview() {}",
+        )
+        .expect("write preview");
     }
 
     #[test]
@@ -1113,7 +1129,9 @@ mod tests {
         write_legacy_plugin_manifest(&source);
         let staging = temp.path().join("staging");
         let build = build_extension_source(&source, &staging, true).expect("build");
-        assert!(Path::new(&build.staging_directory).join(EXTENSION_MANIFEST_FILE_NAME).exists());
+        assert!(Path::new(&build.staging_directory)
+            .join(EXTENSION_MANIFEST_FILE_NAME)
+            .exists());
 
         let bundle_path = temp.path().join("demo.gfsx");
         let packed = pack_extension_source(&source, &bundle_path, true).expect("pack");

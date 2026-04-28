@@ -3,8 +3,8 @@ package runtime
 import "encoding/json"
 
 type ExtensionHostAPISchema struct {
-	APIVersion string                         `json:"apiVersion"`
-	Transport  string                         `json:"transport"`
+	APIVersion string                          `json:"apiVersion"`
+	Transport  string                          `json:"transport"`
 	Methods    []ExtensionHostMethodDescriptor `json:"methods"`
 }
 
@@ -16,14 +16,14 @@ type ExtensionHostMethodDescriptor struct {
 }
 
 type ExecutionContextSnapshot struct {
-	Roots         []ExecutionContextRoot         `json:"roots"`
-	ActiveDirectory *string                      `json:"activeDirectory,omitempty"`
-	CWD           *string                        `json:"cwd,omitempty"`
-	FocusedEntry  *ExecutionContextEntry         `json:"focusedEntry,omitempty"`
-	SelectedEntries []ExecutionContextEntry      `json:"selectedEntries"`
-	PreviewSession *ExecutionContextPreviewSession `json:"previewSession,omitempty"`
-	PaneID        *string                        `json:"paneId,omitempty"`
-	RepoContext   *ExecutionContextRepoContext   `json:"repoContext,omitempty"`
+	Roots           []ExecutionContextRoot          `json:"roots"`
+	ActiveDirectory *string                         `json:"activeDirectory,omitempty"`
+	CWD             *string                         `json:"cwd,omitempty"`
+	FocusedEntry    *ExecutionContextEntry          `json:"focusedEntry,omitempty"`
+	SelectedEntries []ExecutionContextEntry         `json:"selectedEntries"`
+	PreviewSession  *ExecutionContextPreviewSession `json:"previewSession,omitempty"`
+	PaneID          *string                         `json:"paneId,omitempty"`
+	RepoContext     *ExecutionContextRepoContext    `json:"repoContext,omitempty"`
 }
 
 type ExecutionContextRoot struct {
@@ -42,12 +42,12 @@ type ExecutionContextEntry struct {
 }
 
 type ExecutionContextPreviewSession struct {
-	LaneID       *string `json:"laneId,omitempty"`
-	LaneType     string  `json:"laneType"`
-	ViewMode     *string `json:"viewMode,omitempty"`
+	LaneID        *string `json:"laneId,omitempty"`
+	LaneType      string  `json:"laneType"`
+	ViewMode      *string `json:"viewMode,omitempty"`
 	WorkflowTabID *string `json:"workflowTabId,omitempty"`
-	FilePath     *string `json:"filePath,omitempty"`
-	ResolvedPath *string `json:"resolvedPath,omitempty"`
+	FilePath      *string `json:"filePath,omitempty"`
+	ResolvedPath  *string `json:"resolvedPath,omitempty"`
 }
 
 type ExecutionContextRepoContext struct {
@@ -71,19 +71,19 @@ type HostExplorerBreadcrumb struct {
 }
 
 type HostExplorerLocationListing struct {
-	Kind       string                   `json:"kind"`
-	Path       string                   `json:"path"`
-	ParentPath *string                  `json:"parentPath,omitempty"`
+	Kind        string                   `json:"kind"`
+	Path        string                   `json:"path"`
+	ParentPath  *string                  `json:"parentPath,omitempty"`
 	Breadcrumbs []HostExplorerBreadcrumb `json:"breadcrumbs"`
-	Entries     []map[string]any        `json:"entries"`
+	Entries     []map[string]any         `json:"entries"`
 }
 
 type HostTaskRunCommandRequest struct {
-	Program          string             `json:"program"`
-	Args             []string           `json:"args,omitempty"`
-	WorkingDirectory *string            `json:"workingDirectory,omitempty"`
-	Environment      map[string]string  `json:"environment,omitempty"`
-	TimeoutSecs      *uint64            `json:"timeoutSecs,omitempty"`
+	Program          string            `json:"program"`
+	Args             []string          `json:"args,omitempty"`
+	WorkingDirectory *string           `json:"workingDirectory,omitempty"`
+	Environment      map[string]string `json:"environment,omitempty"`
+	TimeoutSecs      *uint64           `json:"timeoutSecs,omitempty"`
 }
 
 type HostTaskRunCommandResult struct {

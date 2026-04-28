@@ -75,9 +75,10 @@ pub fn resolve_bundled_usr_root(app: &tauri::AppHandle) -> Result<PathBuf, Strin
 }
 
 pub fn resolve_managed_content_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    if let Some(explicit_root) =
-        read_first_env_path(&["GREEBLEFS_MANAGED_CONTENT_ROOT", "OVERLAYTERM_MANAGED_CONTENT_ROOT"])
-    {
+    if let Some(explicit_root) = read_first_env_path(&[
+        "GREEBLEFS_MANAGED_CONTENT_ROOT",
+        "OVERLAYTERM_MANAGED_CONTENT_ROOT",
+    ]) {
         return Ok(explicit_root);
     }
 
@@ -98,7 +99,8 @@ fn copy_missing_entries(source: &Path, target: &Path) -> Result<(), String> {
         for child in fs::read_dir(source)
             .map_err(|error| format!("Failed to read {}: {error}", source.display()))?
         {
-            let child = child.map_err(|error| format!("Failed to read directory entry: {error}"))?;
+            let child =
+                child.map_err(|error| format!("Failed to read directory entry: {error}"))?;
             let child_source = child.path();
             let child_target = target.join(child.file_name());
             copy_missing_entries(&child_source, &child_target)?;
@@ -156,7 +158,10 @@ pub fn bootstrap_usr_content(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn resolve_usr_relative_path(app: &tauri::AppHandle, relative_path: &str) -> Result<PathBuf, String> {
+pub fn resolve_usr_relative_path(
+    app: &tauri::AppHandle,
+    relative_path: &str,
+) -> Result<PathBuf, String> {
     let writable_path = resolve_managed_content_root(app)?.join(relative_path);
     if writable_path.exists() {
         return Ok(writable_path);
@@ -174,6 +179,5 @@ pub fn resolve_usr_relative_path(app: &tauri::AppHandle, relative_path: &str) ->
 
 pub fn read_usr_text_file(app: &tauri::AppHandle, relative_path: &str) -> Result<String, String> {
     let path = resolve_usr_relative_path(app, relative_path)?;
-    fs::read_to_string(&path)
-        .map_err(|error| format!("Failed to read {}: {error}", path.display()))
+    fs::read_to_string(&path).map_err(|error| format!("Failed to read {}: {error}", path.display()))
 }

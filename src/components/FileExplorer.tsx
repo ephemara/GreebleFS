@@ -3933,6 +3933,7 @@ function PreviewPanel({
   viewMode,
   onViewModeChange,
   activeWorkflowTabId,
+  pluginPreviewExecutionContext,
   onWorkflowTabChange,
   pythonRuntimeConfig,
   imageCutoutModelBinding,
@@ -4026,6 +4027,9 @@ function PreviewPanel({
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
   activeWorkflowTabId: string | null;
+  pluginPreviewExecutionContext: ReturnType<
+    typeof buildExplorerExecutionContextSnapshot
+  >;
   onWorkflowTabChange: (tabId: string) => void;
   pythonRuntimeConfig: ReturnType<typeof createPythonRuntimeConfig>;
   imageCutoutModelBinding: LocalModelCapabilityBinding;
@@ -4267,44 +4271,6 @@ function PreviewPanel({
       previewPluginHostSize.height,
       previewPluginHostSize.width,
       previewPluginZoom,
-    ],
-  );
-  const pluginPreviewExecutionContext = useMemo(
-    () =>
-      buildExplorerExecutionContextSnapshot({
-        paneId: instanceId,
-        activeDirectory: currentPath,
-        cwd: currentPath,
-        drives,
-        entries,
-        selectedPaths: [...selected],
-        previewSession:
-          preview.type === "none"
-            ? null
-            : {
-                laneId: preview.type === "plugin" ? preview.lane.id : null,
-                laneType:
-                  preview.type === "plugin"
-                    ? `plugin:${preview.lane.pluginId}`
-                    : preview.type,
-                viewMode: previewBackedByArchiveVirtual ? "preview" : viewMode,
-                workflowTabId: activePreviewWorkflowTab.id,
-                filePath: preview.path,
-                resolvedPath: previewResolvedPath,
-              },
-        repoContext: null,
-      }),
-    [
-      activePreviewWorkflowTab.id,
-      currentPath,
-      drives,
-      entries,
-      instanceId,
-      preview,
-      previewBackedByArchiveVirtual,
-      previewResolvedPath,
-      selected,
-      viewMode,
     ],
   );
   const pluginPreviewRuntimeBridge = useMemo(
@@ -29045,6 +29011,45 @@ export function FileExplorer({
       usesWorkspaceDenseChrome,
     ],
   );
+  const pluginPreviewExecutionContext = useMemo(() => {
+    const resolvedPreviewPath = getPreviewStateResolvedPath(preview);
+    const previewUsesArchiveVirtualPath =
+      preview.type !== "none" && isExplorerArchiveVirtualPath(preview.path);
+    return buildExplorerExecutionContextSnapshot({
+      paneId: instanceId,
+      activeDirectory: currentPath,
+      cwd: currentPath,
+      drives,
+      entries,
+      selectedPaths: [...selected],
+      previewSession:
+        preview.type === "none"
+          ? null
+          : {
+              laneId: preview.type === "plugin" ? preview.lane.id : null,
+              laneType:
+                preview.type === "plugin"
+                  ? `plugin:${preview.lane.pluginId}`
+                  : preview.type,
+              viewMode: previewUsesArchiveVirtualPath
+                ? "preview"
+                : documentViewMode,
+              workflowTabId: activePreviewWorkflowTabId,
+              filePath: preview.path,
+              resolvedPath: resolvedPreviewPath,
+            },
+      repoContext: null,
+    });
+  }, [
+    activePreviewWorkflowTabId,
+    currentPath,
+    documentViewMode,
+    drives,
+    entries,
+    instanceId,
+    preview,
+    selected,
+  ]);
   const explorerPreviewPane = useMemo(() => {
     if (!previewPanelVisible) {
       return null;
@@ -29109,6 +29114,7 @@ export function FileExplorer({
         viewMode={documentViewMode}
         onViewModeChange={setDocumentViewMode}
         activeWorkflowTabId={activePreviewWorkflowTabId}
+        pluginPreviewExecutionContext={pluginPreviewExecutionContext}
         onWorkflowTabChange={setActivePreviewWorkflowTabId}
         pythonRuntimeConfig={pythonRuntimeConfig}
         imageCutoutModelBinding={imageCutoutModelBinding}
@@ -29183,6 +29189,7 @@ export function FileExplorer({
     persistPreviewText,
     persistShaderPreviewSource,
     preview,
+    pluginPreviewExecutionContext,
     previewExternalChromeControls,
     previewJumpToFolderEnabled,
     previewLocked,

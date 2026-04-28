@@ -117,17 +117,14 @@ impl ExternalSidecarManager {
     }
 
     pub fn status(&self, runtime_id: &str) -> ExternalRuntimeSidecarStatus {
-        let last_error = self
-            .last_errors_guard()
-            .get(runtime_id)
-            .cloned();
+        let last_error = self.last_errors_guard().get(runtime_id).cloned();
 
         let session_info = self.sessions_guard().get(runtime_id).map(|session| {
-                (
-                    session.pid,
-                    session.manifest_dir.clone(),
-                    session.action_ids.clone(),
-                )
+            (
+                session.pid,
+                session.manifest_dir.clone(),
+                session.action_ids.clone(),
+            )
         });
 
         match session_info {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { discoverOverlayPlugins } from '../config/pluginPackages';
 import { pluginSystemConfig } from '../config/plugins';
+import { createMockOverlayPluginApi } from './helpers/createMockOverlayPluginApi';
 
 describe('plugin package discovery', () => {
   it('keeps loading legacy plugins when one file fails to parse', async () => {
@@ -49,16 +50,7 @@ describe('plugin package discovery', () => {
       throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
     });
 
-    const result = await discoverOverlayPlugins(() => ({
-      invoke: async <T,>() => null as T,
-      event: {} as never,
-      window: {} as never,
-      fs: {} as never,
-      notification: {} as never,
-      refreshPlugins: async () => undefined,
-      openPluginsFolder: async () => undefined,
-      runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
-    }));
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
 
     expect(result.plugins.map(plugin => plugin.name)).toEqual(['Hello Panel']);
     expect(result.warnings).toEqual([
@@ -284,16 +276,7 @@ describe('plugin package discovery', () => {
       throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
     });
 
-    const result = await discoverOverlayPlugins(() => ({
-      invoke: async <T,>() => null as T,
-      event: {} as never,
-      window: {} as never,
-      fs: {} as never,
-      notification: {} as never,
-      refreshPlugins: async () => undefined,
-      openPluginsFolder: async () => undefined,
-      runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
-    }));
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
 
     expect(result.warnings).toEqual([]);
     expect(result.plugins.map(plugin => plugin.name)).toEqual(['Hello Panel', 'Mega Plugin']);
@@ -402,16 +385,7 @@ describe('plugin package discovery', () => {
       throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
     });
 
-    const result = await discoverOverlayPlugins(() => ({
-      invoke: async <T,>() => null as T,
-      event: {} as never,
-      window: {} as never,
-      fs: {} as never,
-      notification: {} as never,
-      refreshPlugins: async () => undefined,
-      openPluginsFolder: async () => undefined,
-      runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
-    }));
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
 
     expect(result.plugins).toHaveLength(0);
     expect(result.themePackages).toHaveLength(0);

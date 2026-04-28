@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { discoverOverlayPlugins } from '../config/pluginPackages';
 import { pluginSystemConfig } from '../config/plugins';
+import { createMockOverlayPluginApi } from './helpers/createMockOverlayPluginApi';
 
 type MockFileEntry = {
   name: string;
@@ -44,7 +45,7 @@ describe('Vibe Capsule package discovery', () => {
       if (command === 'fs_list_dir' && normalizedPath === pluginSystemConfig.pluginsDirectory) {
         return [{
           name: 'vibe-capsule',
-          path: 'plugins/vibe-capsule',
+          path: `${pluginSystemConfig.pluginsDirectory}/vibe-capsule`.replace(/\\/g, '/'),
           is_dir: true,
           extension: '',
           modified: 1,
@@ -62,16 +63,7 @@ describe('Vibe Capsule package discovery', () => {
       throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
     });
 
-    const result = await discoverOverlayPlugins(() => ({
-      invoke: async <T,>() => null as T,
-      event: {} as never,
-      window: {} as never,
-      fs: {} as never,
-      notification: {} as never,
-      refreshPlugins: async () => undefined,
-      openPluginsFolder: async () => undefined,
-      runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
-    }));
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
 
     expect(result.warnings).toEqual([]);
     expect(result.plugins).toHaveLength(1);

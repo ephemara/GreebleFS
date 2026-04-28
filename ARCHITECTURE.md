@@ -224,6 +224,14 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Typed explorer bridge for filesystem/search/task work. In addition to classic name/content search, it now owns the semantic-search command surface (`getSemanticIndexSummary`, `buildSemanticIndex`, `searchSemantic`, `findSemanticSimilar`) so Explorer React code never needs raw invoke strings for AI indexing or similarity work. It is now also the frontend boundary between Rust host truth and the Go explorer policy lane: host-backed reads/writes stay here, while `bootstrapPolicySession`, `navigatePolicySession`, and `resolveEntryOpenWithPolicy` delegate explorer policy/orchestration into the sidecar.
 - `src/runtime/goExplorerPolicyService.ts` and `src-go/builtin-runtimes/explorer-policy-service/`
   First-slice Go explorer policy service. The TypeScript adapter is the only React-facing API for the lane, and the Go sidecar currently owns explorer session bootstrap, navigation/history transitions, and open-entry preview-vs-open-vs-navigate decisions. It is intentionally a policy/orchestration layer, not filesystem truth: listings, file opens, archive inspection, search, and tasks still route through Rust host methods.
+- `src/runtime/extensionHostApi.ts`
+  Typed frontend client for the canonical extension-host API. Preview lanes, Go panel runtimes, and future extension surfaces should reach host services such as `files`, `selection`, `explorer`, `preview`, `commands`, `tasks`, `terminal`, and `repo` through this seam instead of inventing ad hoc invoke wrappers.
+- `src/runtime/explorerExtensionContext.ts`
+  Explorer-owned ambient execution-context builder. It turns the active pane reality into an `ExecutionContextSnapshot` (`roots`, `activeDirectory`, `cwd`, selection, preview session, pane id, and repo context) so preview lanes, commands, and runtime calls do not have to guess cwd or focused-file truth from local component state.
+- `src/runtime/useFolderPluginRuntime.ts`, `src/components/pluginRuntime.tsx`, and `src/components/GoPanelHost.tsx`
+  Shared extension-runtime adapters. `useFolderPluginRuntime.ts` binds discovered plugin packages to the canonical host client plus the current explorer execution context, `pluginRuntime.tsx` is the package-local React/runtime shell that mounted preview lanes consume, and `GoPanelHost.tsx` is the Wasm-panel host bridge that exposes the same host contract to Go UI runtimes.
+- `src-go/sdk/greeblefs-go/runtime/host_services.go` and `src-go/sdk/greeblefs-go/hostapi/services.go`
+  The first-class Go SDK clients for the extension host. Sidecars and Go/Wasm panels now call typed services such as `Files`, `Selection`, `Explorer`, `Preview`, `Tasks`, `Terminal`, and `Repo` through these SDKs instead of raw host method id strings.
 - `src/runtime/explorerThumbnailArtifactRuntime.ts`
   Shared explorer thumbnail runtime above `FileExplorer.tsx`. It resolves backend-owned `IpcArtifactDescriptor` thumbnail outputs into browser-safe local asset URLs and caches results by `entityId + contentRevision + dimensions + hover variant` so folder opens and refreshes can preserve visible thumbnails instead of treating every relist as a cold start.
 - `src/runtime/explorerCollectionPreviewThumbnails.ts`
@@ -248,6 +256,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Data-driven archive registry for the explorer. It is the TS-side source of truth for which local archive suffixes should route through native extraction/opening and how archive folder labels are derived.
 - `src/config/filePreview.ts`
   Data-driven preview metadata helpers for explorer media/text lanes. It centralizes preview MIME mapping, editable-text heuristics, direct-playback allowlists, spreadsheet exclusions, shader format metadata, and the 3D preview source/proxy ceilings. Shell-level preview ownership/matching now routes through `explorerPreviewRegistry.ts` instead of directly branching on these helpers inside `FileExplorer.tsx`.
+- `src-tauri/src/runtime_pipeline/extension_host.rs`, `src-tauri/src/runtime_pipeline/commands.rs`, and `src-tauri/src/bin/greeble.rs`
+  Canonical Rust-owned extension platform surface. `extension_host.rs` defines the versioned host API schema, permission model, ambient execution-context types, canonical extension manifest normalization, and `.gfsx` inspect/build/pack/install helpers. `commands.rs` exports that surface to Tauri/Specta and is the only place new host-call ids should be added. `greeble.rs` is the local CLI for `greeble ext dev|inspect|build|pack|install`.
 - `src/config/spreadsheet.ts`
   Data-driven spreadsheet extension router and file-kind helper shared by the preview shell, save/export path, and search routing.
 - `src/config/explorerThumbnails.ts`
@@ -723,7 +733,13 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `node scripts/run-cargo-tests.mjs`
 - `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
 - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+- `cargo test --manifest-path src-tauri/Cargo.toml runtime_pipeline:: -- --nocapture`
+- `go test ./sdk/greeblefs-go/...`
 - `cargo test --manifest-path src-tauri/Cargo.toml storage_scan_ -- --nocapture`
+- `bunx vitest run src/test/pluginPackages.test.ts src/test/pluginRuntime.test.ts src/test/pluginRuntime.edge.test.ts src/test/vibeCapsule.pluginPackage.test.ts src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.fallback.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/goPanelHost.test.tsx --reporter=dot`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin greeble -- ext inspect <plugin-dir> --json`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin greeble -- ext build <plugin-dir> <staging-dir> --json`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin greeble -- ext pack <plugin-dir> <bundle.gfsx> --json`
 - `bunx vitest run src/test/pythonConfig.test.ts src/test/pythonRuntimeBackend.test.ts src/test/terminalOverlay.test.tsx -t "Python" --reporter=dot`
 - `bunx vitest run src/test/hotkeys.test.ts src/test/explorerStore.test.ts src/test/fileExplorer.searchTelemetry.test.tsx --reporter=dot`
 - `bunx vitest run src/test/explorerImageEditor.test.tsx --reporter=dot`
@@ -773,6 +789,24 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Packaged preview lanes now ride the same plugin package system as actions/context menus instead of a separate extension stack.
   - `src/config/pluginPackages.ts` is the only place that should turn manifest `contributions.previewLanes` into bound React lane components plus runtime ids.
   - `useFolderPluginRuntime.ts`, `App.tsx`, `panelRegistry.tsx`, `ExplorerWorkspace.tsx`, and `FileExplorer.tsx` should only consume the aggregated preview-lane catalog; do not rediscover plugin preview manifests ad hoc in panel code.
+- The extension platform is now Rust-owned, Go-first, and TS-thin by design.
+  - `src-tauri/src/runtime_pipeline/extension_host.rs` owns the canonical schema, permissions, bundle tooling, and `ExecutionContextSnapshot` truth.
+  - `src-go/sdk/greeblefs-go/runtime/host_services.go` and `src-go/sdk/greeblefs-go/hostapi/services.go` are the reference orchestration SDKs.
+  - `src/runtime/extensionHostApi.ts` should stay a thin generated-types-aware wrapper, not a second source of truth.
+- Preview lanes and extension runtimes should consume the ambient execution context instead of inventing their own cwd/path heuristics.
+  - `src/runtime/explorerExtensionContext.ts` is the source for explorer-derived `ExecutionContextSnapshot`.
+  - `useFolderPluginRuntime.ts`, plugin preview props, and runtime host calls already forward that context; if a future lane starts manually reconstructing cwd from local component state, treat it as a regression.
+- Canonical extension manifests can now come from either `extension.toml` or legacy `plugin.json`, but both normalize through the same Rust extension-host model before discovery/build/install.
+  - Keep `src/config/plugins.ts`, `src/config/pluginPackages.ts`, and `src-tauri/src/runtime_pipeline/extension_host.rs` in sync whenever manifest shape changes.
+- `.gfsx` is now the canonical packed extension artifact and `src-tauri/src/bin/greeble.rs` is the local bundling/install CLI.
+  - Source-folder authoring still stays valid under `usr/plugins/**`, but distribution/validation should prefer `greeble ext inspect`, `build`, `pack`, and `install` instead of hand-copying plugin folders around.
+- `cargo-native` is now a real runtime compiler family and `c-native` is still intentionally unsupported.
+  - If an extension needs native Rust behavior today, route it through `cargo-native`. If `c-native` is requested, the current correct behavior is the explicit typed unsupported-driver error from `runtime_pipeline/driver.rs`, not a silent fallback.
+- Host event streaming is only partially landed.
+  - `HostSubscription`, `HostEvent`, and the `host_events` permission now exist in the canonical schema, and Go/Wasm panels can already surface host events through `GoPanelHost.tsx`.
+  - The stdio sidecar bridge still only supports nested request/response host calls today; do not design sidecars assuming unsolicited push events exist yet.
+- Plugin-shipped themes must stay bundle-first even inside extension content.
+  - Legacy monolithic theme package shapes are intentionally rejected now. Theme contributions under plugins should embed or reference modern bundle lanes such as `appearancePackId`, not old top-level `theme` / `visuals` blobs.
 - Explorer context-menu plugin contributions can now open plugin panels through `panel-request` execution. If a plugin needs a folder/file handoff from Explorer, use `src/runtime/pluginPanelRequests.ts` and the `overlayterm-plugin` helpers instead of inventing ad hoc window events or local-storage keys.
 - The dev HUD is internal to this app. It is not a Tauri plugin or external Chrome overlay, and it should be treated as part of the shell runtime.
 - Do not wire the screenshot panel to `explorerTaskStore`. That store is global explorer/Yazi task state; rendering it inside screenshot status chrome leaks unrelated delete/copy jobs into screenshot errors and makes debugging cross-subsystem issues much harder.

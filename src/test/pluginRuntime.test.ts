@@ -10,6 +10,7 @@ import {
   loadPluginFromSource,
 } from '../components/pluginRuntime';
 import { pluginSystemConfig } from '../config/plugins';
+import { createMockOverlayPluginApi } from './helpers/createMockOverlayPluginApi';
 
 describe('pluginRuntime helpers', () => {
   it('recognizes supported frontend plugin files', () => {
@@ -65,16 +66,7 @@ describe('pluginRuntime helpers', () => {
         modified: 42,
         extension: 'tsx',
       },
-      () => ({
-        invoke: async <T,>() => null as T,
-        event: {} as never,
-        window: {} as never,
-        fs: {} as never,
-        notification: {} as never,
-        refreshPlugins: async () => undefined,
-        openPluginsFolder: async () => undefined,
-        runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
-      }),
+      () => createMockOverlayPluginApi(),
     );
 
     expect(loaded.error).toBeNull();
@@ -107,16 +99,7 @@ describe('pluginRuntime helpers', () => {
         modified: 12,
         extension: 'tsx',
       },
-      () => ({
-        invoke: async <T,>() => null as T,
-        event: {} as never,
-        window: {} as never,
-        fs: {} as never,
-        notification: {} as never,
-        refreshPlugins: async () => undefined,
-        openPluginsFolder: async () => undefined,
-        runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
-      }),
+      () => createMockOverlayPluginApi(),
       {
         resolveRelativeModuleSource: async ({ specifier }) => {
           if (specifier !== './panelMessage') {
@@ -156,16 +139,7 @@ describe('pluginRuntime helpers', () => {
         modified: 7,
         extension: 'tsx',
       },
-      () => ({
-        invoke: async <T,>() => null as T,
-        event: {} as never,
-        window: {} as never,
-        fs: {} as never,
-        notification: {} as never,
-        refreshPlugins: async () => undefined,
-        openPluginsFolder: async () => undefined,
-        runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
-      }),
+      () => createMockOverlayPluginApi(),
     );
 
     expect(loaded.error).toBeNull();
@@ -203,16 +177,7 @@ describe('pluginRuntime helpers', () => {
         modified: 99,
         extension: 'tsx',
       },
-      () => ({
-        invoke: async <T,>() => null as T,
-        event: {} as never,
-        window: {} as never,
-        fs: {} as never,
-        notification: {} as never,
-        refreshPlugins: async () => undefined,
-        openPluginsFolder: async () => undefined,
-        runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
-      }),
+      () => createMockOverlayPluginApi(),
     );
 
     expect(loaded.error).toBeNull();
@@ -240,16 +205,7 @@ describe('pluginRuntime helpers', () => {
           modified: 101,
           extension: 'tsx',
         },
-        () => ({
-          invoke: async <T,>() => null as T,
-          event: {} as never,
-          window: {} as never,
-          fs: {} as never,
-          notification: {} as never,
-          refreshPlugins: async () => undefined,
-          openPluginsFolder: async () => undefined,
-          runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
-        }),
+        () => createMockOverlayPluginApi(),
       );
 
       expect(loaded.error).toBeNull();

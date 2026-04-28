@@ -38,9 +38,9 @@ pub mod tailscale_commands;
 pub mod telemetry;
 pub mod terminal;
 pub mod thumbnail_commands;
-pub mod usr;
 #[cfg(target_os = "windows")]
 pub mod url_drop;
+pub mod usr;
 pub mod video_commands;
 pub mod video_engine;
 pub mod volume_inventory;

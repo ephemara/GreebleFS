@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadPluginFromSource } from '../components/pluginRuntime';
+import { createMockOverlayPluginApi } from './helpers/createMockOverlayPluginApi';
 
 const entry = {
   name: 'broken-plugin.tsx',
@@ -9,16 +10,7 @@ const entry = {
   extension: 'tsx',
 };
 
-const hostApiFactory = () => ({
-  invoke: async <T,>() => null as T,
-  event: {} as never,
-  window: {} as never,
-  fs: {} as never,
-  notification: {} as never,
-  refreshPlugins: async () => undefined,
-  openPluginsFolder: async () => undefined,
-  runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
-});
+const hostApiFactory = () => createMockOverlayPluginApi();
 
 describe('pluginRuntime edge cases', () => {
   it('returns a structured error when plugin imports unsupported modules', async () => {

@@ -38,9 +38,9 @@ use crate::runtime_pipeline::driver::{
 use crate::runtime_pipeline::extension_host::{
     build_extension_host_api_schema, build_extension_source, inspect_extension_source,
     install_extension_bundle_into, pack_extension_source, read_extension_manifest_from_directory,
-    resolve_default_bundle_output_path, resolve_extension_install_root, ExecutionContextPreviewSession,
-    ExecutionContextSnapshot, ExtensionBuildResult, ExtensionHostApiSchema, ExtensionInspection,
-    ExtensionInstallResult, ExtensionPackResult,
+    resolve_default_bundle_output_path, resolve_extension_install_root,
+    ExecutionContextPreviewSession, ExecutionContextSnapshot, ExtensionBuildResult,
+    ExtensionHostApiSchema, ExtensionInspection, ExtensionInstallResult, ExtensionPackResult,
 };
 use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeKind, RuntimePackagePermissions};
 use crate::runtime_pipeline::registry::RuntimeRegistry;
@@ -678,7 +678,12 @@ fn ensure_extension_host_launch_intent(
     ensure_extension_host_permission(
         caller_label,
         permissions,
-        |resolved| resolved.launch_intents.iter().any(|intent| intent == launch_intent),
+        |resolved| {
+            resolved
+                .launch_intents
+                .iter()
+                .any(|intent| intent == launch_intent)
+        },
         permission_label.as_str(),
     )
 }
@@ -743,7 +748,9 @@ fn run_extension_host_task_command(
         .or_else(|| execution_context.and_then(|context| context.cwd.clone()))
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "tasks.run_command requires a working directory or execution context cwd.".to_string())?;
+        .ok_or_else(|| {
+            "tasks.run_command requires a working directory or execution context cwd.".to_string()
+        })?;
     let timeout = Duration::from_secs(request.timeout_secs.unwrap_or(120).max(1));
     let mut command = ProcessCommand::new(request.program.trim());
     command
@@ -844,7 +851,9 @@ async fn dispatch_extension_host_call(
     let caller_permissions = caller.as_ref().map(|(_, permissions)| permissions);
 
     match request.method_id.as_str() {
-        "host.get_api_schema" => encode_runtime_host_bridge_result(&build_extension_host_api_schema()),
+        "host.get_api_schema" => {
+            encode_runtime_host_bridge_result(&build_extension_host_api_schema())
+        }
         "selection.get_snapshot" => {
             encode_runtime_host_bridge_result(&request.execution_context.unwrap_or_default())
         }
@@ -938,7 +947,10 @@ async fn dispatch_extension_host_call(
                 })
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
-                .ok_or_else(|| "repo.exec requires a repository path or execution context repo root.".to_string())?;
+                .ok_or_else(|| {
+                    "repo.exec requires a repository path or execution context repo root."
+                        .to_string()
+                })?;
             let requires_write = extension_host_repo_command_requires_write(&payload.args);
             if requires_write {
                 ensure_extension_host_permission(
@@ -967,7 +979,8 @@ async fn dispatch_extension_host_call(
             )?;
             let payload: ExtensionHostTaskRunCommandRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
-            let result = run_extension_host_task_command(payload, request.execution_context.as_ref())?;
+            let result =
+                run_extension_host_task_command(payload, request.execution_context.as_ref())?;
             encode_runtime_host_bridge_result(&result)
         }
         "terminal.open_external" => {
@@ -1430,9 +1443,7 @@ pub async fn extension_build(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn extension_pack(
-    request: ExtensionPackRequest,
-) -> Result<ExtensionPackResult, String> {
+pub async fn extension_pack(request: ExtensionPackRequest) -> Result<ExtensionPackResult, String> {
     let source_directory = PathBuf::from(&request.source_directory);
     let output_path = request
         .output_path

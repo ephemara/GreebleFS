@@ -1,3 +1,54 @@
+# 2026-04-27 - Go-First Extension Host, Ambient Explorer Context, And `.gfsx` Bundle Tooling Now Form The New Plugin Backbone
+
+- The first durable slice of the “GreebleFS as an editable/scriptable engine” direction is now real and it is deliberately not TS-owned.
+- Durable extension-platform ownership split after this pass:
+  - `src-tauri/src/runtime_pipeline/extension_host.rs` is the canonical contract and packaging layer.
+    - It owns `EXTENSION_HOST_API_VERSION`.
+    - It owns the normalized extension manifest model across legacy source folders and canonical packed bundles.
+    - It owns `ExecutionContextSnapshot`, `FileTypeDescriptor`, `HostSubscription`, `HostEvent`, permission sets, and the `.gfsx` inspect/build/pack/install helpers.
+  - `src-go/sdk/greeblefs-go/runtime/host_services.go` and `src-go/sdk/greeblefs-go/hostapi/services.go` are now the reference SDKs for orchestration.
+    - Future Go sidecars or Go/Wasm panels should call typed `Files`, `Selection`, `Explorer`, `Preview`, `Tasks`, `Terminal`, and `Repo` services through those clients instead of hardcoding host method ids.
+  - `src/runtime/extensionHostApi.ts` is now intentionally a thin TS client over the Rust-owned contract.
+    - Keep TS wrappers generated-types-aware and shell-friendly, but do not let them become a second source of truth for extension semantics.
+- Durable explorer-context rule after this pass:
+  - `src/runtime/explorerExtensionContext.ts::buildExplorerExecutionContextSnapshot(...)` is now the canonical way to turn the live explorer pane into extension/runtime context.
+  - `src/components/FileExplorer.tsx` must compute the current preview lane context once and pass it into plugin preview mounts plus runtime bridges.
+  - `src/runtime/useFolderPluginRuntime.ts` must bind that context through `api.bindExecutionContext(...)`, and runtime host calls must forward it so extension code does not invent its own cwd/path/selection heuristics.
+  - If a future preview lane or plugin reconstructs cwd/selection ad hoc from local component state, treat that as a regression against the new host contract.
+- Durable preview-plugin test rule after this pass:
+  - `src/test/helpers/createMockOverlayPluginApi.ts` is now the shared test helper for plugin runtime/preview suites that need the modern `OverlayPluginApi` shape, including `host` and `bindExecutionContext`.
+  - Future package/runtime tests should use that helper instead of hand-rolling stale mock plugin APIs; otherwise they drift the minute the host contract expands again.
+- Durable bundle/CLI rule after this pass:
+  - `src-tauri/src/bin/greeble.rs` is now the real local extension CLI.
+  - Preferred workflows are:
+    - `greeble ext inspect <source-or-bundle>`
+    - `greeble ext build <source-dir> <staging-dir>`
+    - `greeble ext pack <source-dir> <bundle.gfsx>`
+    - `greeble ext install <bundle.gfsx> [managed-content-root]`
+  - Source-folder authoring under `usr/plugins/**` still stays valid, but distribution and install validation should now go through `.gfsx` instead of hand-copying raw plugin source folders around.
+  - `extension.toml` is now a first-class manifest candidate alongside legacy `plugin.json`; both normalize through the same Rust extension-host model before discovery, build, or install.
+- Durable runtime-compiler rule after this pass:
+  - `cargo-native` is now part of the manifest/compiler matrix and is the preferred path for native Rust extension runtimes.
+  - `c-native` is still intentionally unimplemented and should keep returning the explicit typed unsupported-driver error from `src-tauri/src/runtime_pipeline/driver.rs`.
+  - Do not silently fall back from `c-native` to some other compiler family; the explicit unsupported result is the product contract until a real C driver exists.
+- Durable current limitation after this pass:
+  - The host-event schema is ahead of the sidecar transport.
+  - `HostSubscription`, `HostEvent`, and the `host_events` permission are real, and Go/Wasm panel runtimes can already surface host events through `GoPanelHost.tsx`.
+  - The stdio sidecar bridge still only supports nested request/response host calls today; it does **not** yet have a true unsolicited push/subscription bus for long-lived sidecars.
+  - If future work needs live host event streaming into native/Go/Python sidecars, that is the next real platform slice rather than a bug in the current preview/CLI foundation.
+- Durable theme-package note after this pass:
+  - Plugin-shipped themes must now be bundle-first too.
+  - `usr/plugins/vibe-capsule/themes/vibe-capsule-shell/theme.json` was migrated away from the old monolithic `theme` / `visuals` shape because plugin package discovery intentionally rejects that legacy package model now.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/pluginPackages.test.ts src/test/pluginRuntime.test.ts src/test/pluginRuntime.edge.test.ts src/test/vibeCapsule.pluginPackage.test.ts src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.fallback.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/goPanelHost.test.tsx --reporter=dot`
+  - filtered clean: `bash -lc "bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'FileExplorer\\.tsx|pluginPackages\\.test\\.ts|pluginRuntime\\.test\\.ts|pluginRuntime\\.edge\\.test\\.ts|vibeCapsule\\.pluginPackage\\.test\\.ts|createMockOverlayPluginApi|explorerExtensionContext\\.ts' || true'"`
+  - `go test ./sdk/greeblefs-go/...`
+  - `cargo test --manifest-path src-tauri/Cargo.toml runtime_pipeline:: -- --nocapture`
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin greeble -- ext inspect usr/plugins/vibe-capsule --json`
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin greeble -- ext build usr/plugins/vibe-capsule /tmp/greeble-ext-build --json`
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin greeble -- ext pack usr/plugins/vibe-capsule /tmp/vibe-capsule.gfsx --json`
+
 # 2026-04-27 - Runtime Sidecar Host Calls Must Stay Off Tokio Worker Threads, And Tauri Dev Now Reclaims Old Live Frontend Siblings
 
 - The `Cannot start a runtime from within a runtime` panic and the `external runtime sidecar map lock poisoned` explorer failure were both real regressions in the new Go/native-sidecar host bridge lane.

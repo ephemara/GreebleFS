@@ -23,14 +23,14 @@ type ExtensionHostMethodDescriptor struct {
 }
 
 type ExecutionContextSnapshot struct {
-	Roots           []ExecutionContextRoot           `json:"roots"`
-	ActiveDirectory *string                          `json:"activeDirectory,omitempty"`
-	CWD             *string                          `json:"cwd,omitempty"`
-	FocusedEntry    *ExecutionContextEntry           `json:"focusedEntry,omitempty"`
-	SelectedEntries []ExecutionContextEntry          `json:"selectedEntries"`
-	PreviewSession  *ExecutionContextPreviewSession  `json:"previewSession,omitempty"`
-	PaneID          *string                          `json:"paneId,omitempty"`
-	RepoContext     *ExecutionContextRepoContext     `json:"repoContext,omitempty"`
+	Roots           []ExecutionContextRoot          `json:"roots"`
+	ActiveDirectory *string                         `json:"activeDirectory,omitempty"`
+	CWD             *string                         `json:"cwd,omitempty"`
+	FocusedEntry    *ExecutionContextEntry          `json:"focusedEntry,omitempty"`
+	SelectedEntries []ExecutionContextEntry         `json:"selectedEntries"`
+	PreviewSession  *ExecutionContextPreviewSession `json:"previewSession,omitempty"`
+	PaneID          *string                         `json:"paneId,omitempty"`
+	RepoContext     *ExecutionContextRepoContext    `json:"repoContext,omitempty"`
 }
 
 type ExecutionContextRoot struct {
