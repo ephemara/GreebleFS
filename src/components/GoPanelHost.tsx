@@ -254,7 +254,7 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
         if (!methodId.trim()) {
           throw new Error('callHostMethod requires a method id');
         }
-        const response = await hostClient.call<string, TPayload>(methodId, payload);
+        const response = await hostClient.call<unknown, TPayload>(methodId, payload);
         return JSON.stringify(response);
       },
     [hostClient],

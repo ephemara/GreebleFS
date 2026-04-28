@@ -7,7 +7,6 @@ import type {
   ExtensionInstallResult,
   ExtensionPackResult,
   ExternalTerminalRequest,
-  GitExecResult,
 } from '../generated/tauri';
 import { commands, unwrapTauriResult } from './tauriClient';
 
@@ -220,7 +219,7 @@ export interface ExtensionHostClient {
     openPath: (path: string) => Promise<void>;
   };
   repo: {
-    exec: (args: string[], repoPath?: string | null) => Promise<GitExecResult>;
+    exec: (args: string[], repoPath?: string | null) => Promise<string>;
   };
   tasks: {
     runCommand: (
@@ -286,7 +285,7 @@ export function createExtensionHostClient(
     },
     repo: {
       exec: (args, repoPath = null) =>
-        call<GitExecResult, { repoPath?: string | null; args: string[] }>('repo.exec', {
+        call<string, { repoPath?: string | null; args: string[] }>('repo.exec', {
           repoPath,
           args,
         }),
