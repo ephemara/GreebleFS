@@ -5051,6 +5051,15 @@ function App() {
       mobileSettings.remoteAccessMode,
     ]);
 
+  const dispatchExplorerLayoutCommand = useCallback((eventName: string) => {
+    window.dispatchEvent(
+      new CustomEvent(eventName, {
+        bubbles: false,
+        cancelable: true,
+      }),
+    );
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;
@@ -5094,6 +5103,22 @@ function App() {
         return;
       }
 
+      if (matchesKeybinding(event, keybindings.toggleExplorerCustomize)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleActivatePanel('explorer');
+        dispatchExplorerLayoutCommand('greeblefs:toggle-explorer-customize');
+        return;
+      }
+
+      if (matchesKeybinding(event, keybindings.openExplorerLayoutSwitcher)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleActivatePanel('explorer');
+        dispatchExplorerLayoutCommand('greeblefs:open-explorer-layout-switcher');
+        return;
+      }
+
       const developerTelemetryAllowed = Boolean(import.meta.env.DEV) || systemSettings.developerMode;
       if (!developerTelemetryAllowed || !matchesKeybinding(event, keybindings.toggleDeveloperTelemetryHud)) {
         return;
@@ -5115,12 +5140,16 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeydown, { capture: true });
   }, [
     handleOpenCommandPalette,
+    dispatchExplorerLayoutCommand,
+    handleActivatePanel,
     handleToggleMobileShare,
     handleToggleWindowMode,
     handleToggleZenFocusMode,
     keybindings.commandPalette,
     keybindings.mobileShareToggle,
+    keybindings.openExplorerLayoutSwitcher,
     keybindings.toggleDeveloperTelemetryHud,
+    keybindings.toggleExplorerCustomize,
     keybindings.windowModeToggle,
     keybindings.zenFocusModeToggle,
     systemSettings.developerMode,
@@ -5271,6 +5300,54 @@ function App() {
         onSelect: () => {
           handleActivatePanel('explorer');
           void retryFailedExplorerTasks();
+        },
+      },
+      {
+        id: 'explorer-customize-layout-ui',
+        title: 'Explorer: Customize Layout UI',
+        subtitle: 'Open the ZBrush-style explorer chrome authoring mode.',
+        group: 'Explorer',
+        keywords: ['explorer', 'customize', 'layout', 'zbrush', 'chrome', 'buttons'],
+        badge: 'Customize',
+        onSelect: () => {
+          handleActivatePanel('explorer');
+          dispatchExplorerLayoutCommand('greeblefs:open-explorer-customize');
+        },
+      },
+      {
+        id: 'explorer-open-layout-switcher',
+        title: 'Explorer: Open Layout Switcher',
+        subtitle: 'Choose, save, or reset the active explorer layout without a hardcoded top-bar button.',
+        group: 'Explorer',
+        keywords: ['explorer', 'layout', 'switcher', 'canonical', 'reset', 'preset'],
+        badge: 'Layouts',
+        onSelect: () => {
+          handleActivatePanel('explorer');
+          dispatchExplorerLayoutCommand('greeblefs:open-explorer-layout-switcher');
+        },
+      },
+      {
+        id: 'explorer-reset-layout-ui-canonical',
+        title: 'Explorer: Reset Layout UI To Canonical',
+        subtitle: 'Clear layout customization state and restore canonical explorer chrome.',
+        group: 'Explorer',
+        keywords: ['explorer', 'layout', 'reset', 'canonical', 'customize'],
+        badge: 'Reset',
+        onSelect: () => {
+          handleActivatePanel('explorer');
+          dispatchExplorerLayoutCommand('greeblefs:reset-layout-ui-to-canonical');
+        },
+      },
+      {
+        id: 'explorer-save-current-layout',
+        title: 'Explorer: Save Current Layout',
+        subtitle: 'Persist the active explorer layout package and chrome snapshot.',
+        group: 'Explorer',
+        keywords: ['explorer', 'layout', 'save', 'customize', 'chrome'],
+        badge: 'Save',
+        onSelect: () => {
+          handleActivatePanel('explorer');
+          dispatchExplorerLayoutCommand('greeblefs:save-current-explorer-layout');
         },
       },
       {
@@ -5496,6 +5573,7 @@ function App() {
     activeLayoutProfile.label,
     cancelGlobalSearchScan,
     commandPaletteQuery,
+    dispatchExplorerLayoutCommand,
     globalSearchResults,
     globalSearchStatus,
     handleActivatePanel,

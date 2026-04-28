@@ -220,6 +220,40 @@ export function ExplorerChromeSurface({
     surfaceDefinition.rows,
     usesFreeformDynamicCanvas,
   ]);
+  const resolveResponsivePlacement = useCallback(
+    (
+      placement: ExplorerChromeResolvedControlPlacement,
+      rowId?: string,
+    ): ExplorerChromeResolvedControlPlacement => {
+      if (editModeActive) {
+        return placement;
+      }
+
+      const rowStyle = rowId ? getRowStyle?.(rowId) : undefined;
+      const rowHeightPx =
+        parseDynamicCanvasCssPixels(rowStyle?.height) ||
+        parseDynamicCanvasCssPixels(rowStyle?.minHeight) ||
+        parseDynamicCanvasCssPixels(style?.height) ||
+        parseDynamicCanvasCssPixels(style?.minHeight);
+      if (!rowHeightPx || rowHeightPx > 44) {
+        return placement;
+      }
+
+      const compactWidth =
+        typeof placement.widthPx === "number"
+          ? Math.max(72, Math.min(placement.widthPx, rowHeightPx <= 34 ? 112 : 148))
+          : undefined;
+
+      return {
+        ...placement,
+        sizeVariant: "compact",
+        widthPx: compactWidth ?? placement.widthPx,
+        showLabel: false,
+        showIcon: placement.showIcon ?? true,
+      };
+    },
+    [editModeActive, getRowStyle, parseDynamicCanvasCssPixels, style?.height, style?.minHeight],
+  );
   const freeformRowAnchorYOffsetByLegacyBandId = useMemo(() => {
     if (!usesFreeformDynamicCanvas) {
       return new Map<string, number>();
@@ -267,7 +301,7 @@ export function ExplorerChromeSurface({
               selected: editMode?.selectedControlId === placement.controlId,
               removable: editMode?.onRemoveControl != null,
               resizable: controlIsResizable,
-              content: renderControl(placement),
+              content: renderControl(resolveResponsivePlacement(placement, row.id)),
               style: {
                 overflow: placement.overflowEligible ? "hidden" : "visible",
                 paddingRight:
@@ -291,6 +325,7 @@ export function ExplorerChromeSurface({
       freeformRowAnchorYOffsetByLegacyBandId,
       filteredSurface.rows,
       renderControl,
+      resolveResponsivePlacement,
       usesFreeformDynamicCanvas,
     ],
   );
@@ -619,6 +654,10 @@ export function ExplorerChromeSurface({
                   }}
                 >
                   {zone.controls.map((placement, index) => {
+                    const responsivePlacement = resolveResponsivePlacement(
+                      placement,
+                      row.id,
+                    );
                     const isSelected =
                       editMode?.selectedControlId === placement.controlId;
                     const isPendingHotkey =
@@ -627,7 +666,8 @@ export function ExplorerChromeSurface({
                       editMode?.resizingControlId === placement.controlId;
                     const controlIsResizable =
                       editMode?.isControlResizable?.(placement) ?? false;
-                    const hasExplicitWidth = typeof placement.widthPx === "number";
+                    const hasExplicitWidth =
+                      typeof responsivePlacement.widthPx === "number";
                     return (
                       <React.Fragment
                         key={`${placement.surfaceId}:${placement.controlId}`}
@@ -743,11 +783,11 @@ export function ExplorerChromeSurface({
                             alignItems: "center",
                             minWidth: 0,
                             position: "relative",
-                            flexGrow: hasExplicitWidth ? 0 : placement.grow ?? 0,
-                            flexShrink: hasExplicitWidth ? 1 : placement.shrink ?? 0,
-                            flexBasis: hasExplicitWidth ? placement.widthPx : undefined,
-                            width: hasExplicitWidth ? placement.widthPx : undefined,
-                            maxWidth: hasExplicitWidth ? placement.widthPx : undefined,
+                            flexGrow: hasExplicitWidth ? 0 : responsivePlacement.grow ?? 0,
+                            flexShrink: hasExplicitWidth ? 1 : responsivePlacement.shrink ?? 0,
+                            flexBasis: hasExplicitWidth ? responsivePlacement.widthPx : undefined,
+                            width: hasExplicitWidth ? responsivePlacement.widthPx : undefined,
+                            maxWidth: hasExplicitWidth ? responsivePlacement.widthPx : undefined,
                             marginLeft:
                               (placement.offsetPx ?? 0) > 0
                                 ? `${placement.offsetPx}px`
@@ -801,7 +841,7 @@ export function ExplorerChromeSurface({
                                 : {}),
                           }}
                         >
-                          {renderControl(placement)}
+                          {renderControl(responsivePlacement)}
                           {editModeActive &&
                           controlIsResizable &&
                           editMode.onBeginPointerResize ? (

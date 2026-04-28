@@ -349,6 +349,20 @@
       "scope": "local"
     },
     {
+      "key": "toggleExplorerCustomize",
+      "label": "Explorer Customize Layout UI",
+      "description": "Open or save the ZBrush-style explorer layout customization mode.",
+      "defaultValue": "Ctrl+Alt+C",
+      "scope": "local"
+    },
+    {
+      "key": "openExplorerLayoutSwitcher",
+      "label": "Open Explorer Layout Switcher",
+      "description": "Open the explorer layout package switcher and canonical reset command center.",
+      "defaultValue": "Ctrl+Alt+E",
+      "scope": "local"
+    },
+    {
       "key": "cycleConstellationLens",
       "label": "Cycle Constellation Lens",
       "description": "Step through the active Constellation relationship lens while the canvas is focused.",

@@ -228,26 +228,6 @@
             "showLabel": false
           }
         },
-        "customizeModeToggle": {
-          "explorerToolbar": {
-            "zone": "secondaryEnd",
-            "order": 4
-          },
-          "explorerTopbar": {
-            "zone": "end",
-            "order": 12
-          }
-        },
-        "shellLayout": {
-          "explorerToolbar": {
-            "zone": "primaryEnd",
-            "order": 40
-          },
-          "explorerTopbar": {
-            "zone": "end",
-            "order": 20
-          }
-        },
         "viewLayout": {
           "explorerToolbar": {
             "zone": "primaryEnd",
@@ -853,26 +833,6 @@
           "explorerTopbar": {
             "zone": "end",
             "order": 10
-          }
-        },
-        "customizeModeToggle": {
-          "explorerToolbar": {
-            "zone": "secondaryEnd",
-            "order": 4
-          },
-          "explorerTopbar": {
-            "zone": "end",
-            "order": 12
-          }
-        },
-        "shellLayout": {
-          "explorerToolbar": {
-            "zone": "secondaryEnd",
-            "order": 70
-          },
-          "explorerTopbar": {
-            "zone": "end",
-            "order": 20
           }
         },
         "viewLayout": {

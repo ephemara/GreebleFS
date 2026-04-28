@@ -1,5 +1,6 @@
 import {
   useMemo,
+  useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -48,6 +49,9 @@ interface ExplorerActionsPaneProps {
   onBeginCatalogDrag: (
     controlId: ExplorerChromeControlId,
     event: ReactPointerEvent<HTMLElement>,
+    options?: {
+      onTap?: (controlId: ExplorerChromeControlId) => void;
+    },
   ) => void;
   onClose: () => void;
   onInvokeCatalogEntry: (entry: ExplorerCustomizeCatalogEntry) => void;
@@ -99,6 +103,9 @@ export function ExplorerActionsPane({
   runtimeCanExecuteEntry,
 }: ExplorerActionsPaneProps) {
   const [query, setQuery] = useState("");
+  const actionPointerTapControlIdRef = useRef<ExplorerChromeControlId | null>(
+    null,
+  );
   const filteredCatalog = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     const sourceEntries = customizeMode
@@ -217,8 +224,8 @@ export function ExplorerActionsPane({
             }}
           >
             {customizeMode
-              ? "Drag controls out of this pane and drop them into any explorer chrome band. Ctrl+Alt+click any supported control to bind a hotkey."
-              : "Launch authored actions from the current explorer context. Ctrl+Alt+click an action to bind it instantly."}
+            ? "Drag controls out of this pane and drop them into any explorer chrome band. Ctrl+Alt+click any supported control to bind a hotkey."
+              : "Click to run. Drag any authored action into the explorer chrome to place it as a button."}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -461,13 +468,43 @@ export function ExplorerActionsPane({
                         <button
                           key={entry.controlId}
                           type="button"
-                          disabled={!canExecute || !entry.action}
+                          aria-disabled={!canExecute || !entry.action}
+                          onPointerDown={(event) => {
+                            if (
+                              event.button !== 0 ||
+                              event.ctrlKey ||
+                              event.altKey ||
+                              !entry.action
+                            ) {
+                              return;
+                            }
+                            actionPointerTapControlIdRef.current =
+                              entry.controlId;
+                            onBeginCatalogDrag(entry.controlId, event, {
+                              onTap: () => {
+                                onSelectControl(entry.controlId);
+                                if (runtimeCanExecuteEntry(entry)) {
+                                  onInvokeCatalogEntry(entry);
+                                }
+                              },
+                            });
+                          }}
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
+                            if (
+                              actionPointerTapControlIdRef.current ===
+                              entry.controlId
+                            ) {
+                              actionPointerTapControlIdRef.current = null;
+                              return;
+                            }
                             if (event.ctrlKey && event.altKey) {
                               onRequestHotkeyCapture(entry.controlId);
                               onSelectControl(entry.controlId);
+                              return;
+                            }
+                            if (!canExecute || !entry.action) {
                               return;
                             }
                             onSelectControl(entry.controlId);
@@ -480,7 +517,11 @@ export function ExplorerActionsPane({
                             background: "var(--overlay-explorer-chip-bg)",
                             color: canExecute ? text : muted,
                             padding: "8px 10px",
-                            cursor: canExecute ? "pointer" : "default",
+                            cursor: entry.action
+                              ? canExecute
+                                ? "grab"
+                                : "not-allowed"
+                              : "default",
                             opacity: canExecute ? 1 : 0.66,
                             textAlign: "left",
                           }}
@@ -534,6 +575,21 @@ export function ExplorerActionsPane({
                                   }}
                                 >
                                   {entry.description}
+                                </div>
+                                <div
+                                  style={{
+                                    marginTop: 6,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                    color: canExecute ? accent : muted,
+                                    fontSize: 9,
+                                    fontWeight: 800,
+                                    letterSpacing: "0.08em",
+                                    textTransform: "uppercase",
+                                  }}
+                                >
+                                  Drag to place
                                 </div>
                                 {bindingLabel ? (
                                   <div

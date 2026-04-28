@@ -47,6 +47,8 @@ export type HotkeyBindingKey =
   | "pasteSelection"
   | "toggleHiddenFiles"
   | "toggleExplorerLayout"
+  | "toggleExplorerCustomize"
+  | "openExplorerLayoutSwitcher"
   | "cycleConstellationLens"
   | "toggleConstellationRouteMode"
   | "toggleConstellationPinSelection"

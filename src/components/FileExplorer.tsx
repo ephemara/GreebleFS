@@ -317,6 +317,7 @@ import {
 import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
 import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
 import { ExplorerActionsPane } from "./explorer/ExplorerActionsPane";
+import { ExplorerCustomizeDragOverlay } from "./explorer/ExplorerCustomizeDragOverlay";
 import {
   buildExplorerRuntimeMenu,
   resolveMenuInvocationInputModality,
@@ -1519,11 +1520,6 @@ const EXPLORER_LAYOUT_BAND_HEIGHT_BOUNDS = {
 } satisfies Partial<
   Record<keyof ExplorerLayoutBandMetrics, { min: number; max: number }>
 >;
-
-const EXPLORER_FIXED_UTILITY_CONTROL_IDS = [
-  "shellLayout",
-  "customizeModeToggle",
-] as const satisfies ExplorerChromeControlId[];
 
 function clampExplorerLayoutBandMetricValue(
   metricKey: keyof ExplorerLayoutBandMetrics,
@@ -9243,6 +9239,8 @@ export function FileExplorer({
   >({});
   const openWithProgramsRequestIdRef = useRef(0);
   const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
+  const [showExplorerLayoutCommandMenu, setShowExplorerLayoutCommandMenu] =
+    useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showArchiveActionsMenu, setShowArchiveActionsMenu] = useState(false);
   const [rename, setRename] = useState<RenameState>({
@@ -9568,6 +9566,7 @@ export function FileExplorer({
   const explorerViewportPendingVirtualScrollTopRef = useRef<number | null>(null);
   const explorerViewportScrollFrameRef = useRef<number | null>(null);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
+  const explorerLayoutCommandMenuRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const archiveActionsMenuAnchorRef = useRef<HTMLDivElement>(null);
   const previewWarmupStartedRef = useRef(false);
@@ -10291,11 +10290,21 @@ export function FileExplorer({
   }, [preview.path, preview.type]);
 
   useEffect(() => {
-    if (!showModeProfileMenu && !showLayoutMenu && !showArchiveActionsMenu) {
+    if (
+      !showModeProfileMenu &&
+      !showExplorerLayoutCommandMenu &&
+      !showLayoutMenu &&
+      !showArchiveActionsMenu
+    ) {
       return undefined;
     }
 
     const handlePointerDown = (event: MouseEvent) => {
+      if (
+        explorerLayoutCommandMenuRef.current?.contains(event.target as Node)
+      ) {
+        return;
+      }
       if (modeProfileMenuAnchorRef.current?.contains(event.target as Node)) {
         return;
       }
@@ -10305,6 +10314,7 @@ export function FileExplorer({
       if (archiveActionsMenuAnchorRef.current?.contains(event.target as Node)) {
         return;
       }
+      setShowExplorerLayoutCommandMenu(false);
       setShowModeProfileMenu(false);
       setShowLayoutMenu(false);
       setShowArchiveActionsMenu(false);
@@ -10312,7 +10322,12 @@ export function FileExplorer({
 
     window.addEventListener("mousedown", handlePointerDown);
     return () => window.removeEventListener("mousedown", handlePointerDown);
-  }, [showArchiveActionsMenu, showLayoutMenu, showModeProfileMenu]);
+  }, [
+    showArchiveActionsMenu,
+    showExplorerLayoutCommandMenu,
+    showLayoutMenu,
+    showModeProfileMenu,
+  ]);
 
   const flushPendingExplorerMetrics = useCallback(
     (runtimePolicyMetadata: RuntimeCachePolicyTelemetryMetadata) => {
@@ -18885,13 +18900,18 @@ export function FileExplorer({
     persistedExplorerChromeOverride?.entries,
     resolvedExplorerLayout?.tabStripVisible,
   ]);
-  const fixedExplorerUtilityControlIdSet = useMemo(
-    () => new Set<ExplorerChromeControlId>(EXPLORER_FIXED_UTILITY_CONTROL_IDS),
-    [],
-  );
-  const stableFixedExplorerUtilityControlIds = useMemo<ExplorerChromeControlId[]>(
-    () => [...EXPLORER_FIXED_UTILITY_CONTROL_IDS],
-    [],
+  const getLiveExplorerChromeEditSession = useCallback(
+    (): ExplorerChromeEditSession | null => {
+      const storeSession = useExplorerStore.getState().chromeEditSession;
+      if (
+        storeSession?.themeId === explorerChromeThemeId &&
+        storeSession.layoutId === effectiveChromeLayoutId
+      ) {
+        return storeSession;
+      }
+      return activeChromeEditSession;
+    },
+    [activeChromeEditSession, effectiveChromeLayoutId, explorerChromeThemeId],
   );
   const saveCurrentExplorerLayout = useCallback(
     async ({ duplicate }: { duplicate: boolean }) => {
@@ -19005,13 +19025,10 @@ export function FileExplorer({
           explorerChromeOverride?.entries ??
           persistedExplorerChromeOverride?.entries ??
           [],
-      }).filter(
-        (entry) => !fixedExplorerUtilityControlIdSet.has(entry.controlId),
-      ),
+      }),
     [
       actions,
       explorerChromeOverride,
-      fixedExplorerUtilityControlIdSet,
       persistedExplorerChromeOverride,
     ],
   );
@@ -19079,10 +19096,12 @@ export function FileExplorer({
   );
   const getRegisteredExplorerChromeSurfaces = useCallback(
     () =>
-      Object.values(activeChromeEditSession?.registeredSurfaces ?? {}).filter(
+      Object.values(
+        getLiveExplorerChromeEditSession()?.registeredSurfaces ?? {},
+      ).filter(
         (surface): surface is NonNullable<typeof surface> => surface != null,
       ),
-    [activeChromeEditSession],
+    [getLiveExplorerChromeEditSession],
   );
   const findRegisteredExplorerChromePlacement = useCallback(
     (
@@ -19109,11 +19128,12 @@ export function FileExplorer({
       controlId: ExplorerChromeControlId,
       updates: Partial<ExplorerChromeOverrideEntry>,
     ) => {
-      if (!activeChromeEditSession) {
+      const liveChromeEditSession = getLiveExplorerChromeEditSession();
+      if (!liveChromeEditSession) {
         return;
       }
 
-      const existingEntry = activeChromeEditSession.draftOverride.entries.find(
+      const existingEntry = liveChromeEditSession.draftOverride.entries.find(
         (entry) => entry.controlId === controlId,
       );
       const visiblePlacement = findRegisteredExplorerChromePlacement(controlId);
@@ -19137,7 +19157,7 @@ export function FileExplorer({
       };
       updateChromeEditDraft({
         entries: [
-          ...activeChromeEditSession.draftOverride.entries.filter(
+          ...liveChromeEditSession.draftOverride.entries.filter(
             (entry) => entry.controlId !== controlId,
           ),
           nextEntry,
@@ -19145,8 +19165,8 @@ export function FileExplorer({
       });
     },
     [
-      activeChromeEditSession,
       findRegisteredExplorerChromePlacement,
+      getLiveExplorerChromeEditSession,
       updateChromeEditDraft,
     ],
   );
@@ -19158,7 +19178,8 @@ export function FileExplorer({
       targetIndex: number;
       targetOffsetPx?: number;
     }) => {
-      if (!activeChromeEditSession) {
+      const liveChromeEditSession = getLiveExplorerChromeEditSession();
+      if (!liveChromeEditSession) {
         return;
       }
 
@@ -19171,7 +19192,7 @@ export function FileExplorer({
         targetOffsetPx: args.targetOffsetPx,
       });
       const hiddenEntries =
-        activeChromeEditSession.draftOverride.entries.filter(
+        liveChromeEditSession.draftOverride.entries.filter(
           (entry) => entry.hidden && entry.controlId !== args.controlId,
         );
       updateChromeEditDraft({
@@ -19181,7 +19202,7 @@ export function FileExplorer({
       setChromeEditHighlightedDropTarget(null);
     },
     [
-      activeChromeEditSession,
+      getLiveExplorerChromeEditSession,
       getRegisteredExplorerChromeSurfaces,
       setChromeEditHighlightedDropTarget,
       setChromeEditSelectedControl,
@@ -19203,7 +19224,8 @@ export function FileExplorer({
         anchorY?: number;
       };
     }) => {
-      if (!activeChromeEditSession) {
+      const liveChromeEditSession = getLiveExplorerChromeEditSession();
+      if (!liveChromeEditSession) {
         return;
       }
 
@@ -19247,7 +19269,7 @@ export function FileExplorer({
             : null),
         };
       });
-      const hiddenEntries = activeChromeEditSession.draftOverride.entries.filter(
+      const hiddenEntries = liveChromeEditSession.draftOverride.entries.filter(
         (entry) => entry.hidden && entry.controlId !== args.controlId,
       );
       updateChromeEditDraft({
@@ -19257,7 +19279,7 @@ export function FileExplorer({
       setChromeEditHighlightedDropTarget(null);
     },
     [
-      activeChromeEditSession,
+      getLiveExplorerChromeEditSession,
       getRegisteredExplorerChromeSurfaces,
       setChromeEditHighlightedDropTarget,
       setChromeEditSelectedControl,
@@ -19278,7 +19300,8 @@ export function FileExplorer({
         }>;
       };
     }) => {
-      if (!activeChromeEditSession) {
+      const liveChromeEditSession = getLiveExplorerChromeEditSession();
+      if (!liveChromeEditSession) {
         return;
       }
 
@@ -19313,7 +19336,7 @@ export function FileExplorer({
       const nextSurfaceEntries = orderedSnapshotEntries.map((entry, surfaceIndex) => {
         const controlId = entry.nodeId as ExplorerChromeControlId;
         const existingEntry =
-          activeChromeEditSession.draftOverride.entries.find(
+          liveChromeEditSession.draftOverride.entries.find(
             (draftEntry) => draftEntry.controlId === controlId,
           ) ?? null;
         const visiblePlacement = findRegisteredExplorerChromePlacement(controlId);
@@ -19358,7 +19381,7 @@ export function FileExplorer({
             existingEntry?.showIcon ?? visiblePlacement?.showIcon,
         };
       });
-      const preservedEntries = activeChromeEditSession.draftOverride.entries.filter(
+      const preservedEntries = liveChromeEditSession.draftOverride.entries.filter(
         (entry) =>
           entry.hidden === true ||
           entry.surfaceId !== args.surfaceId ||
@@ -19370,8 +19393,8 @@ export function FileExplorer({
       setChromeEditHighlightedDropTarget(null);
     },
     [
-      activeChromeEditSession,
       findRegisteredExplorerChromePlacement,
+      getLiveExplorerChromeEditSession,
       getRegisteredExplorerChromeSurfaces,
       setChromeEditHighlightedDropTarget,
       updateChromeEditDraft,
@@ -19693,13 +19716,27 @@ export function FileExplorer({
     (
       controlId: ExplorerChromeControlId,
       event: React.PointerEvent<HTMLElement>,
+      options?: {
+        onTap?: (controlId: ExplorerChromeControlId) => void;
+      },
     ) => {
-      if (!activeChromeEditSession || event.button !== 0) {
+      if (event.button !== 0) {
         return;
       }
 
       event.preventDefault();
       event.stopPropagation();
+      if (!getLiveExplorerChromeEditSession()) {
+        openChromeEditSession({
+          themeId: explorerChromeThemeId,
+          layoutId: effectiveChromeLayoutId,
+          initialOverride: persistedExplorerChromeOverride,
+        });
+        actionsPaneAutoOpenedForCustomizeRef.current = true;
+        setActionsVisible(true);
+      }
+      setShowExplorerLayoutCommandMenu(false);
+      setShowModeProfileMenu(false);
       setChromeEditSelectedControl(controlId);
       beginExplorerCustomizePointerSession({
         pointerId: event.pointerId,
@@ -19714,6 +19751,7 @@ export function FileExplorer({
           setChromeEditSelectedControl(dragControlId);
         },
         onUpdateDropTarget: setChromeEditHighlightedDropTarget,
+        onTap: options?.onTap ?? null,
         onDrop: ({ controlId: dragControlId, sourceKind, target }) => {
           commitExplorerChromePointerDrop({
             controlId: dragControlId,
@@ -19729,8 +19767,12 @@ export function FileExplorer({
       });
     },
     [
-      activeChromeEditSession,
       commitExplorerChromePointerDrop,
+      effectiveChromeLayoutId,
+      explorerChromeThemeId,
+      getLiveExplorerChromeEditSession,
+      openChromeEditSession,
+      persistedExplorerChromeOverride,
       setChromeEditDraggingControl,
       setChromeEditHighlightedDropTarget,
       setChromeEditSelectedControl,
@@ -19963,6 +20005,7 @@ export function FileExplorer({
     cancelExplorerChromeResizeSession();
     setResizingExplorerChromeControlId(null);
     closeChromeEditSession();
+    setShowExplorerLayoutCommandMenu(false);
     setShowModeProfileMenu(false);
   }, [closeChromeEditSession, setResizingExplorerChromeControlId]);
   const saveExplorerChromeCustomization = useCallback(() => {
@@ -20013,6 +20056,7 @@ export function FileExplorer({
     setChromeEditSelectedControl(null);
     setResizingExplorerChromeControlId(null);
     closeChromeEditSession();
+    setShowExplorerLayoutCommandMenu(false);
     setShowModeProfileMenu(false);
     applyExplorerLayoutDefinitionToLivePane(canonicalExplorerLayout);
     resetLayoutCustomizationToCanonical();
@@ -20030,14 +20074,43 @@ export function FileExplorer({
   ]);
   useEffect(() => {
     const handleOpenExplorerCustomize = (event: Event) => {
+      if (!isActiveWorkspacePane) {
+        return;
+      }
       event.preventDefault();
       beginExplorerChromeCustomization();
     };
+    const handleToggleExplorerCustomize = (event: Event) => {
+      if (!isActiveWorkspacePane) {
+        return;
+      }
+      event.preventDefault();
+      if (getLiveExplorerChromeEditSession()) {
+        saveExplorerChromeCustomization();
+        return;
+      }
+      beginExplorerChromeCustomization();
+    };
+    const handleOpenExplorerLayoutSwitcher = (event: Event) => {
+      if (!isActiveWorkspacePane) {
+        return;
+      }
+      event.preventDefault();
+      setShowLayoutMenu(false);
+      setShowModeProfileMenu(false);
+      setShowExplorerLayoutCommandMenu(true);
+    };
     const handleSaveCurrentExplorerLayout = (event: Event) => {
+      if (!isActiveWorkspacePane) {
+        return;
+      }
       event.preventDefault();
       saveCurrentExplorerLayoutAsUser();
     };
     const handleResetLayoutUiToCanonical = (event: Event) => {
+      if (!isActiveWorkspacePane) {
+        return;
+      }
       event.preventDefault();
       resetExplorerLayoutUiToCanonical();
     };
@@ -20045,6 +20118,14 @@ export function FileExplorer({
     window.addEventListener(
       "greeblefs:open-explorer-customize",
       handleOpenExplorerCustomize,
+    );
+    window.addEventListener(
+      "greeblefs:toggle-explorer-customize",
+      handleToggleExplorerCustomize,
+    );
+    window.addEventListener(
+      "greeblefs:open-explorer-layout-switcher",
+      handleOpenExplorerLayoutSwitcher,
     );
     window.addEventListener(
       "greeblefs:save-current-explorer-layout",
@@ -20060,6 +20141,14 @@ export function FileExplorer({
         handleOpenExplorerCustomize,
       );
       window.removeEventListener(
+        "greeblefs:toggle-explorer-customize",
+        handleToggleExplorerCustomize,
+      );
+      window.removeEventListener(
+        "greeblefs:open-explorer-layout-switcher",
+        handleOpenExplorerLayoutSwitcher,
+      );
+      window.removeEventListener(
         "greeblefs:save-current-explorer-layout",
         handleSaveCurrentExplorerLayout,
       );
@@ -20070,8 +20159,11 @@ export function FileExplorer({
     };
   }, [
     beginExplorerChromeCustomization,
+    getLiveExplorerChromeEditSession,
+    isActiveWorkspacePane,
     resetExplorerLayoutUiToCanonical,
     saveCurrentExplorerLayoutAsUser,
+    saveExplorerChromeCustomization,
   ]);
   const setSelectedExplorerChromeSizeVariant = useCallback(
     (sizeVariant: ExplorerChromeSizeVariant) => {
@@ -24911,64 +25003,273 @@ export function FileExplorer({
         ?.render(placement) ?? null,
     [explorerChromeControlRegistryById],
   );
-  const fixedExplorerUtilityPlacements = useMemo<
-    ExplorerChromeResolvedControlPlacement[]
-  >(
-    () => [
-      {
-        controlId: "shellLayout",
-        surfaceId: resolvedUnifiedHeaderSurfaceId,
-        zone: "primaryEnd",
-        order: -2000,
-        sizeVariant: usesWorkspaceDenseChrome ? "compact" : "regular",
-        hidden: false,
-      },
-      {
-        controlId: "customizeModeToggle",
-        surfaceId: resolvedUnifiedHeaderSurfaceId,
-        zone: "primaryEnd",
-        order: -1990,
-        sizeVariant: usesWorkspaceDenseChrome ? "compact" : "regular",
-        hidden: false,
-      },
-    ],
-    [resolvedUnifiedHeaderSurfaceId, usesWorkspaceDenseChrome],
-  );
-  const explorerFixedUtilityStrip = useMemo(
-    () => (
+  const explorerLayoutCommandMenu = useMemo(() => {
+    if (!showExplorerLayoutCommandMenu) {
+      return null;
+    }
+
+    return (
       <div
-        data-overlay-explorer-plane="fixed-utility-strip"
+        data-overlay-explorer-layout-command-menu="true"
         style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 10030,
           display: "flex",
           alignItems: "flex-start",
-          alignSelf: "flex-end",
-          position: "absolute",
-          right: 0,
-          bottom: 0,
-          zIndex: 24,
-          isolation: "isolate",
-          gap: 6,
-          flexShrink: 0,
-          flexWrap: "wrap",
-          justifyContent: "flex-end",
-          maxWidth: "100%",
+          justifyContent: "center",
+          paddingTop: "min(13vh, 96px)",
+          background:
+            "color-mix(in srgb, var(--overlay-bg) 46%, transparent)",
+          backdropFilter: resolveExplorerInnerBlurFilter(8),
+          WebkitBackdropFilter: resolveExplorerInnerBlurFilter(8),
         }}
       >
-        {fixedExplorerUtilityPlacements.map((placement) => (
+        <div
+          ref={explorerLayoutCommandMenuRef}
+          role="dialog"
+          aria-label="Explorer layout switcher"
+          style={{
+            width: "min(720px, calc(100vw - 32px))",
+            maxHeight: "min(78vh, 720px)",
+            display: "flex",
+            flexDirection: "column",
+            borderRadius: "var(--overlay-explorer-panel-radius)",
+            border: "1px solid var(--overlay-explorer-toolbar-border)",
+            background: "var(--overlay-explorer-toolbar-bg)",
+            boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
+            overflow: "hidden",
+            color: EXP.text,
+          }}
+        >
           <div
-            key={`fixed-utility:${placement.controlId}`}
-            data-overlay-explorer-fixed-control={placement.controlId}
-            data-overlay-explorer-control={placement.controlId}
-            data-overlay-explorer-control-zone={placement.zone}
-            style={{ position: "relative", flexShrink: 0 }}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 16,
+              padding: "16px 18px 14px",
+              borderBottom: "1px solid var(--overlay-explorer-toolbar-border)",
+            }}
           >
-            {renderExplorerChromeControl(placement)}
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 900,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: EXP.muted,
+                }}
+              >
+                Explorer Layout Switcher
+              </div>
+              <div style={{ marginTop: 5, fontSize: 14, fontWeight: 800 }}>
+                {resolvedExplorerLayout?.name ?? effectiveModeProfile.label}
+              </div>
+              <div
+                style={{
+                  marginTop: 5,
+                  color: EXP.muted2,
+                  fontSize: 11,
+                  lineHeight: 1.45,
+                }}
+              >
+                Pick a shipped, theme, or user layout. Customize mode and reset
+                are command-driven now, so these controls never need to be
+                welded into the top bar.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowExplorerLayoutCommandMenu(false)}
+              style={toolbarActionButtonStyle()}
+            >
+              Close
+            </button>
           </div>
-        ))}
+          <OverlayScrollArea style={{ flex: 1, minHeight: 0 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 12,
+                padding: 14,
+              }}
+            >
+              {(
+                [
+                  ["Shipped", explorerLayoutsBySource.shipped],
+                  ["Theme", explorerLayoutsBySource.theme],
+                  ["User", explorerLayoutsBySource.user],
+                ] as const
+              ).flatMap(([groupLabel, groupLayouts]) =>
+                groupLayouts.map((layout) => {
+                  const modeProfile =
+                    explorerModeProfiles.find(
+                      (entry) => entry.id === layout.modeProfileId,
+                    ) ?? effectiveModeProfile;
+                  const paneLayout = getExplorerShellLayoutDefinition(
+                    modeProfile.paneLayoutId,
+                  );
+                  const active = resolvedExplorerLayout?.id === layout.id;
+                  return (
+                    <button
+                      key={layout.id}
+                      type="button"
+                      aria-current={active ? "true" : undefined}
+                      onClick={() => {
+                        selectExplorerLayout(layout);
+                        setShowExplorerLayoutCommandMenu(false);
+                      }}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "24px minmax(0, 1fr)",
+                        gap: 11,
+                        alignItems: "start",
+                        minWidth: 0,
+                        borderRadius: 14,
+                        border: active
+                          ? `1px solid ${accent}88`
+                          : "1px solid var(--overlay-explorer-chip-border)",
+                        background: active
+                          ? "var(--overlay-explorer-chip-active-bg)"
+                          : "var(--overlay-explorer-chip-bg)",
+                        color: EXP.text,
+                        padding: "11px 12px",
+                        textAlign: "left",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <ExplorerShellLayoutGlyph
+                        layout={paneLayout}
+                        accent={accent}
+                        active={active}
+                      />
+                      <span style={{ minWidth: 0 }}>
+                        <span
+                          style={{
+                            display: "flex",
+                            alignItems: "baseline",
+                            gap: 8,
+                            minWidth: 0,
+                          }}
+                        >
+                          <span
+                            style={{
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              fontSize: 12,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {layout.name}
+                          </span>
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              color: active ? accent : EXP.muted2,
+                              fontSize: 9,
+                              fontWeight: 800,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            {active ? "Active" : groupLabel}
+                          </span>
+                        </span>
+                        <span
+                          style={{
+                            display: "block",
+                            marginTop: 4,
+                            color: EXP.muted2,
+                            fontSize: 10,
+                            lineHeight: 1.35,
+                          }}
+                        >
+                          {layout.description ??
+                            modeProfile.description ??
+                            "Explorer layout package"}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                }),
+              )}
+            </div>
+          </OverlayScrollArea>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+              padding: "12px 14px",
+              borderTop: "1px solid var(--overlay-explorer-toolbar-border)",
+            }}
+          >
+            <button
+              type="button"
+              onClick={resetExplorerLayoutUiToCanonical}
+              style={toolbarActionButtonStyle()}
+            >
+              <RotateCcw size={12} />
+              Reset Layout UI To Canonical
+            </button>
+            <button
+              type="button"
+              onClick={toggleThemeExplorerLayoutFollow}
+              style={toolbarActionButtonStyle()}
+            >
+              <Sparkles size={12} />
+              {explorerSettings.followThemeExplorerLayout
+                ? "Pin Current Layout"
+                : "Follow Theme"}
+            </button>
+            <button
+              type="button"
+              onClick={saveCurrentExplorerLayoutAsUser}
+              style={toolbarActionButtonStyle()}
+            >
+              <Save size={12} />
+              Save Current Layout
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                beginExplorerChromeCustomization();
+                setShowExplorerLayoutCommandMenu(false);
+              }}
+              style={toolbarActionButtonStyle()}
+            >
+              <Sliders size={12} />
+              Open Explorer Customize
+            </button>
+          </div>
+        </div>
       </div>
-    ),
-    [fixedExplorerUtilityPlacements, renderExplorerChromeControl],
-  );
+    );
+  }, [
+    EXP.muted,
+    EXP.muted2,
+    EXP.text,
+    accent,
+    beginExplorerChromeCustomization,
+    effectiveModeProfile,
+    explorerLayoutsBySource.shipped,
+    explorerLayoutsBySource.theme,
+    explorerLayoutsBySource.user,
+    explorerSettings.followThemeExplorerLayout,
+    resetExplorerLayoutUiToCanonical,
+    resolvedExplorerLayout?.id,
+    resolvedExplorerLayout?.name,
+    resolveExplorerInnerBlurFilter,
+    saveCurrentExplorerLayoutAsUser,
+    selectExplorerLayout,
+    showExplorerLayoutCommandMenu,
+    toggleThemeExplorerLayoutFollow,
+  ]);
   const shouldRenderStatusBar =
     !usesWorkspaceCompactChrome && explorerTheme.statusBarStyle !== "hidden";
   const statusBarStyle = useMemo<CSSProperties>(
@@ -29753,7 +30054,6 @@ export function FileExplorer({
                   getRowStyle={getExplorerTopbarRowStyle}
                   getZoneStyle={getExplorerChromeZoneStyle}
                   dynamicCanvasMinHeightPx={resolvedUnifiedHeaderHeightPx}
-                  excludedControlIds={stableFixedExplorerUtilityControlIds}
                   renderControl={renderExplorerChromeControl}
                   layoutDynamics={explorerTopbarLayoutDynamics}
                   editMode={explorerChromeEditMode}
@@ -29783,7 +30083,6 @@ export function FileExplorer({
                   ? resolvedExplorerToolbarHeightPx * 2
                   : resolvedUnifiedHeaderHeightPx * 2
               }
-              excludedControlIds={stableFixedExplorerUtilityControlIds}
               renderControl={renderExplorerChromeControl}
               layoutDynamics={explorerToolbarLayoutDynamics}
               editMode={explorerChromeEditMode}
@@ -29801,12 +30100,10 @@ export function FileExplorer({
               />
             ) : null}
           </div>
-          {explorerFixedUtilityStrip}
         </div>
       </div>
     ),
     [
-      explorerFixedUtilityStrip,
       explorerChromeEditMode,
       explorerToolbarLayoutDynamics,
       explorerToolbarSurface,
@@ -29821,7 +30118,6 @@ export function FileExplorer({
       resolvedUnifiedHeaderHeightPx,
       showsGlobalChromeControls,
       startExplorerLayoutBandResize,
-      stableFixedExplorerUtilityControlIds,
       toolbarContainerStyle,
       usesWorkspaceDenseChrome,
     ],
@@ -31385,7 +31681,12 @@ export function FileExplorer({
         </div>
       )}
 
+      {explorerLayoutCommandMenu}
+
       {renderDragOverlayHost ? <ExplorerDragOverlay /> : null}
+      {renderDragOverlayHost || isActiveWorkspacePane ? (
+        <ExplorerCustomizeDragOverlay catalog={explorerCustomizeCatalog} />
+      ) : null}
 
       <style>{`@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }`}</style>
     </div>
