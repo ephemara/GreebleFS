@@ -1,3 +1,16 @@
+# 2026-04-28 - Explorer Virtual Window Now Tracks Native Scroll Immediately
+
+- The standard explorer scroll path now treats viewport scroll events as urgent virtual-window commits. Native scroll still stores the exact offset in `explorerViewportScrollTopRef`, but `FileExplorer.tsx` no longer defers the visible row window behind `startTransition` on real scroll events.
+- Durable performance rule:
+  - do not put real `OverlayScrollArea.onViewportScroll` events back behind RAF/transition coalescing if it creates a blank leading region during fast wheel/trackpad movement.
+  - coalescing is still useful for non-visible/background work, but the visible window must stay in lock-step with the browser viewport.
+- Regression coverage:
+  - the 100k-entry virtual-surface test now waits for the large-list compute path, verifies bounded mounted DOM, simulates a deep list scroll, and asserts the deep visible row appears while the top row unmounts.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "100000|huge folder|final item reachable|dedicated explorer viewport|deep-grid viewport anchored" --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/overlayScrollArea.test.tsx --reporter=dot`
+  - touched-file TypeScript sweep returned no diagnostics.
+
 # 2026-04-28 - Preview Lanes Begin Moving To Extension-Backed Workbenches
 
 - Explorer preview resolution now treats file-backed rich previews as workbench candidates instead of picking a single descriptor immediately.

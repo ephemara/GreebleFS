@@ -5543,7 +5543,9 @@ const value = 1;
     useSettingsStore.getState().updateExplorer({ viewMode: "list" });
 
     renderExplorer();
-    await screen.findByText("item-000000.txt");
+    await screen.findByText("item-000000.txt", undefined, {
+      timeout: 10000,
+    });
 
     expect(
       document.querySelector("[data-overlay-explorer-virtual-surface='list']"),
@@ -5552,6 +5554,18 @@ const value = 1;
     expect(document.querySelectorAll("[data-entry-path]").length).toBeLessThan(
       160,
     );
+
+    const viewport = getExplorerViewport("item-000000.txt");
+    viewport.scrollTop = 10000;
+    fireEvent.scroll(viewport);
+
+    await waitFor(() => {
+      expect(screen.getByText("item-000220.txt")).toBeInTheDocument();
+      expect(screen.queryByText("item-000000.txt")).not.toBeInTheDocument();
+      expect(document.querySelectorAll("[data-entry-path]").length).toBeLessThan(
+        180,
+      );
+    });
   }, 20000);
 
   it("switches between icon and list view from footer toggles", async () => {

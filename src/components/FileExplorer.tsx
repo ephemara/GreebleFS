@@ -9692,13 +9692,11 @@ export function FileExplorer({
   const applyExplorerViewportVirtualScrollTop = useCallback(
     (virtualScrollTop: number) => {
       explorerViewportCommittedVirtualScrollTopRef.current = virtualScrollTop;
-      startTransition(() => {
-        setExplorerViewportMetrics((current) =>
-          current.scrollTop === virtualScrollTop
-            ? current
-            : { ...current, scrollTop: virtualScrollTop },
-        );
-      });
+      setExplorerViewportMetrics((current) =>
+        current.scrollTop === virtualScrollTop
+          ? current
+          : { ...current, scrollTop: virtualScrollTop },
+      );
     },
     [],
   );
@@ -9773,7 +9771,9 @@ export function FileExplorer({
 
   const handleExplorerViewportScroll = useCallback(
     (event: React.UIEvent<HTMLDivElement>) => {
-      commitExplorerViewportScrollTop(event.currentTarget.scrollTop);
+      commitExplorerViewportScrollTop(event.currentTarget.scrollTop, {
+        immediate: true,
+      });
     },
     [commitExplorerViewportScrollTop],
   );
