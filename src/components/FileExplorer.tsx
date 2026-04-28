@@ -87,6 +87,7 @@ import {
   type ExplorerMenuPreviewContext,
   type ExplorerResolvedPluginContextMenuContribution,
 } from "../config/explorerContextMenu";
+import { formatWorkbenchExtensionLabel } from "../config/explorerWorkbenches";
 import type { LoadedExplorerAction } from "../config/actionPacks";
 import {
   buildExplorerArchiveVirtualPath,
@@ -398,8 +399,12 @@ import {
   buildExplorerPreviewErrorFallback,
   buildExplorerPreviewLoadingFallback,
   buildExplorerUnsupportedPreviewFallback,
+  getExplorerPreviewEntryExtension,
   resolveExplorerPreviewDescriptor,
+  resolveExplorerPreviewWorkbenchSelection,
+  type ExplorerResolvedPreviewWorkbenchCandidate,
   type ExplorerResolvedPreviewDescriptor,
+  type ExplorerResolvedPreviewWorkbenchSelection,
 } from "./explorer/explorerPreviewSystem";
 import {
   probeExecutableTextScriptPreview,
@@ -1295,10 +1300,58 @@ type ExplorerPreviewDropTarget = {
   targetPath: string;
   label: string;
 };
+type PreviewWorkbenchSelectionState = ExplorerResolvedPreviewWorkbenchSelection & {
+  path: string;
+};
+type ExplorerPreviewContextMenuWorkflowOverlay = NonNullable<
+  ExplorerPreviewContextMenuRegistration["workflowOverlays"]
+>[number];
 type ExplorerShaderSelectionMemory = {
   selectedStage: ExplorerShaderPreviewStage | null;
   selectedEntryPoint: string | null;
 };
+
+function mergePreviewContextMenuRegistrations(
+  primary: ExplorerPreviewContextMenuRegistration | null,
+  secondary: ExplorerPreviewContextMenuRegistration | null,
+): ExplorerPreviewContextMenuRegistration | null {
+  if (!primary) {
+    return secondary;
+  }
+  if (!secondary) {
+    return primary;
+  }
+
+  const workflowOverlayMap = new Map<
+    string,
+    ExplorerPreviewContextMenuWorkflowOverlay
+  >();
+  for (const overlay of primary.workflowOverlays ?? []) {
+    workflowOverlayMap.set(overlay.workflowTabId, {
+      workflowTabId: overlay.workflowTabId,
+      actions: [...overlay.actions],
+    });
+  }
+  for (const overlay of secondary.workflowOverlays ?? []) {
+    const existingOverlay = workflowOverlayMap.get(overlay.workflowTabId);
+    workflowOverlayMap.set(overlay.workflowTabId, {
+      workflowTabId: overlay.workflowTabId,
+      actions: [
+        ...(existingOverlay?.actions ?? []),
+        ...overlay.actions,
+      ],
+    });
+  }
+
+  return {
+    previewKind: secondary.previewKind || primary.previewKind,
+    baseActions: [...primary.baseActions, ...secondary.baseActions],
+    workflowOverlays:
+      workflowOverlayMap.size > 0
+        ? [...workflowOverlayMap.values()]
+        : undefined,
+  };
+}
 type SpreadsheetWorkbenchStatus = {
   isDirty: boolean;
   isSaving: boolean;
@@ -3919,8 +3972,14 @@ function PreviewPanel({
   previewTerminalNamespace,
   previewTerminalCommandRequest,
   previewTerminalFocusRequestKey,
+  previewWorkbenchCandidates,
+  activePreviewWorkbenchId,
+  previewWorkbenchExtensionLabel,
+  previewWorkbenchResolutionSource,
   onClose,
   onWidthChange,
+  onOpenPreviewWorkbench,
+  onSetPreviewWorkbenchDefault,
   onTextChange,
   onTextSave,
   onShaderSourceChange,
@@ -3996,8 +4055,16 @@ function PreviewPanel({
   previewTerminalNamespace: string;
   previewTerminalCommandRequest: TerminalOverlayCommandRequest | null;
   previewTerminalFocusRequestKey: number;
+  previewWorkbenchCandidates: readonly ExplorerResolvedPreviewWorkbenchCandidate[];
+  activePreviewWorkbenchId: string | null;
+  previewWorkbenchExtensionLabel: string;
+  previewWorkbenchResolutionSource:
+    | ExplorerResolvedPreviewWorkbenchSelection["resolutionSource"]
+    | null;
   onClose: () => void;
   onWidthChange: (width: number) => void;
+  onOpenPreviewWorkbench: (workbenchId: string) => void | Promise<void>;
+  onSetPreviewWorkbenchDefault: (workbenchId: string) => void | Promise<void>;
   onTextChange: (path: string, content: string) => void;
   onTextSave: (path: string) => Promise<boolean>;
   onShaderSourceChange: (path: string, content: string) => void;
@@ -4095,6 +4162,11 @@ function PreviewPanel({
   const [wildcardWorkflowTabs, setWildcardWorkflowTabs] = useState<
     ExplorerPreviewWildcardWorkflowTab[]
   >([]);
+  const [pluginWorkbenchStatus, setPluginWorkbenchStatus] = useState<{
+    label: string;
+    tone: "neutral" | "success" | "warning" | "danger";
+  } | null>(null);
+  const [showWorkbenchChooser, setShowWorkbenchChooser] = useState(false);
   const currentViewModeRef = useRef(viewMode);
   const previewPluginZoom = useSettingsStore(
     (state) => state.settings.appearance.appZoom ?? 1,
@@ -4185,6 +4257,16 @@ function PreviewPanel({
 
   useEffect(() => {
     setTextPreviewCursor({ lineNumber: 1, column: 1 });
+  }, [preview.path, preview.type]);
+
+  useEffect(() => {
+    setShowWorkbenchChooser(false);
+  }, [preview.path, previewWorkbenchCandidates.length]);
+
+  useEffect(() => {
+    if (preview.type !== "plugin") {
+      setPluginWorkbenchStatus(null);
+    }
   }, [preview.path, preview.type]);
 
   useEffect(() => {
@@ -4334,6 +4416,8 @@ function PreviewPanel({
               : pdfWorkbenchChromeState?.isDirty
                 ? "Unsaved"
                 : "Saved"
+          : preview.type === "plugin"
+            ? pluginWorkbenchStatus?.label ?? null
           : isSpreadsheetPreview
             ? spreadsheetWorkbenchStatus
               ? spreadsheetWorkbenchStatus.isSaving
@@ -4347,11 +4431,19 @@ function PreviewPanel({
               : null;
   const previewStateColor =
     preview.type === "text"
-      ? preview.isSaving
-        ? EXP.yellow
-        : preview.isDirty
-          ? EXP.red
-          : EXP.green
+        ? preview.isSaving
+          ? EXP.yellow
+          : preview.isDirty
+            ? EXP.red
+            : EXP.green
+      : preview.type === "plugin"
+        ? pluginWorkbenchStatus?.tone === "warning"
+          ? EXP.yellow
+          : pluginWorkbenchStatus?.tone === "danger"
+            ? EXP.red
+            : pluginWorkbenchStatus?.tone === "neutral"
+              ? EXP.muted
+              : EXP.green
       : preview.type === "shader"
         ? preview.isSaving
           ? EXP.yellow
@@ -4371,6 +4463,13 @@ function PreviewPanel({
                 ? EXP.red
                 : EXP.green
             : EXP.green;
+  const activePreviewWorkbenchCandidate = useMemo(
+    () =>
+      previewWorkbenchCandidates.find(
+        (candidate) => candidate.id === activePreviewWorkbenchId,
+      ) ?? null,
+    [activePreviewWorkbenchId, previewWorkbenchCandidates],
+  );
   const copyPathLabel = copiedPath === preview.path ? "Copied" : "Copy Path";
   const previewSplitToggleTitle =
     presentationMode === "pane"
@@ -4741,7 +4840,8 @@ function PreviewPanel({
         surfaces: ["previewHeader"],
         isVisible: () =>
           previewLocked ||
-          (!isPreviewTerminalMode && Boolean(previewStateLabel)),
+          (!isPreviewTerminalMode &&
+            (Boolean(previewStateLabel) || previewWorkbenchCandidates.length > 1)),
         render: () => (
           <div
             style={{
@@ -4784,6 +4884,172 @@ function PreviewPanel({
               >
                 {previewStateLabel}
               </span>
+            ) : null}
+            {!isPreviewTerminalMode && previewWorkbenchCandidates.length > 1 ? (
+              <div style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  data-testid="preview-workbench-chooser-toggle"
+                  onClick={() =>
+                    setShowWorkbenchChooser((current) => !current)
+                  }
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 9,
+                    fontWeight: 700,
+                    color: EXP.text,
+                    padding: "3px 7px",
+                    borderRadius: 999,
+                    border: "1px solid var(--overlay-explorer-chip-border)",
+                    background: "var(--overlay-explorer-chip-bg)",
+                    cursor: "pointer",
+                  }}
+                >
+                  Workbench
+                  <ChevronDown size={10} />
+                </button>
+                {showWorkbenchChooser ? (
+                  <div
+                    data-testid="preview-workbench-chooser"
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      right: 0,
+                      width: 320,
+                      maxWidth: "min(320px, 72vw)",
+                      display: "grid",
+                      gap: 10,
+                      padding: 12,
+                      borderRadius: 16,
+                      border: "1px solid var(--overlay-explorer-preview-border)",
+                      background: "var(--overlay-explorer-preview-header-bg)",
+                      boxShadow: "0 18px 48px rgba(0,0,0,0.32)",
+                      zIndex: 32,
+                    }}
+                  >
+                    <div style={{ display: "grid", gap: 3 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: EXP.text,
+                        }}
+                      >
+                        Choose a workbench for {previewWorkbenchExtensionLabel}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: EXP.muted,
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        {previewWorkbenchResolutionSource === "user-default"
+                          ? "A saved user default is active."
+                          : previewWorkbenchResolutionSource ===
+                              "discovery-order"
+                            ? "The current workbench won on discovery order."
+                            : "The current workbench won on priority."}
+                      </div>
+                    </div>
+                    {previewWorkbenchCandidates.map((candidate) => {
+                      const isActive =
+                        candidate.id === activePreviewWorkbenchId;
+                      return (
+                        <div
+                          key={candidate.id}
+                          style={{
+                            display: "grid",
+                            gap: 8,
+                            padding: 10,
+                            borderRadius: 14,
+                            border:
+                              "1px solid var(--overlay-explorer-chip-border)",
+                            background: isActive
+                              ? "color-mix(in srgb, var(--overlay-accent) 14%, var(--overlay-explorer-chip-bg))"
+                              : "var(--overlay-explorer-chip-bg)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 10,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: EXP.text,
+                              }}
+                            >
+                              {candidate.title}
+                            </div>
+                            {isActive ? (
+                              <span
+                                style={{
+                                  fontSize: 9,
+                                  fontWeight: 700,
+                                  color: EXP.accent,
+                                  letterSpacing: "0.06em",
+                                  textTransform: "uppercase",
+                                }}
+                              >
+                                Active
+                              </span>
+                            ) : null}
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowWorkbenchChooser(false);
+                                void onOpenPreviewWorkbench(candidate.id);
+                              }}
+                              style={previewChipButtonStyle(isActive)}
+                            >
+                              Use now
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowWorkbenchChooser(false);
+                                void onSetPreviewWorkbenchDefault(candidate.id);
+                              }}
+                              style={previewChipButtonStyle(false)}
+                            >
+                              <Star size={10} />
+                              Make default
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {activePreviewWorkbenchCandidate ? (
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: EXP.muted2,
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        Current: {activePreviewWorkbenchCandidate.title}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ),
@@ -5694,6 +5960,16 @@ function PreviewPanel({
                   handlePreviewContextMenuRegistrationChange
                 }
                 onRegisterCloseGuard={onRegisterCloseGuard}
+                onRegisterWorkbenchStatus={(status) =>
+                  setPluginWorkbenchStatus(
+                    status
+                      ? {
+                          label: status.label,
+                          tone: status.tone ?? "neutral",
+                        }
+                      : null,
+                  )
+                }
                 onRefreshPreviewEntry={onRefreshPreviewEntry}
                 onViewModeChange={onViewModeChange}
               />
@@ -8430,6 +8706,7 @@ export function FileExplorer({
     setCommandKeybinding,
     setHomePackState,
     setHomePresetSelection,
+    setPreferredWorkbenchForExtension,
     updateExplorerSettings,
   } = useSettingsStore(
     useShallow((state) => ({
@@ -8453,6 +8730,8 @@ export function FileExplorer({
       setCommandKeybinding: state.setCommandKeybinding,
       setHomePackState: state.setHomePackState,
       setHomePresetSelection: state.setHomePresetSelection,
+      setPreferredWorkbenchForExtension:
+        state.setPreferredWorkbenchForExtension,
       updateExplorerSettings: state.updateExplorer,
     })),
   );
@@ -8925,6 +9204,17 @@ export function FileExplorer({
     type: "none",
     path: "",
   });
+  const [previewWorkbenchSelection, setPreviewWorkbenchSelection] =
+    useState<PreviewWorkbenchSelectionState | null>(null);
+  const [, setPreviewWorkbenchOverride] = useState<{
+    path: string;
+    workbenchId: string;
+  } | null>(null);
+  const previewWorkbenchOverrideRef = useRef<{
+    path: string;
+    workbenchId: string;
+  } | null>(null);
+  const previewSourceEntryRef = useRef<FileEntry | null>(null);
   const [previewNavigationHistory, setPreviewNavigationHistory] = useState<
     FileEntry[]
   >([]);
@@ -13906,10 +14196,14 @@ export function FileExplorer({
   }, []);
   const clearPreviewSurface = useCallback(() => {
     previewCloseGuardRef.current = null;
+    previewSourceEntryRef.current = null;
     resetPreviewTerminalState();
     pendingPreviewCollectionNavigationTargetPathRef.current = null;
     previewNavigationHistoryRef.current = [];
     setPreviewNavigationHistory([]);
+    setPreviewWorkbenchSelection(null);
+    previewWorkbenchOverrideRef.current = null;
+    setPreviewWorkbenchOverride(null);
     setPreview({ type: "none", path: "" });
     dismissPreviewLoadingIndicator();
     setPdfPreviewChromeState(null);
@@ -13988,12 +14282,16 @@ export function FileExplorer({
         return;
       }
 
-      const resolvedPreview = resolveExplorerPreviewDescriptor(entry, {
+      const resolvedPreview = resolveExplorerPreviewWorkbenchSelection(entry, {
         assetUrlResolver: getPreviewAssetUrl,
         documentPreviewKindResolver: getDocumentPreviewKind,
         pluginPreviewLanes,
-      });
-      if (!isAdjacentPreviewPrefetchKind(resolvedPreview.kind)) {
+        preferredWorkbenchId:
+          explorerSettings.preferredWorkbenchByExtension[
+            getExplorerPreviewEntryExtension(entry)
+          ] ?? null,
+      }).activeWorkbench?.descriptor;
+      if (!resolvedPreview || !isAdjacentPreviewPrefetchKind(resolvedPreview.kind)) {
         return;
       }
 
@@ -14037,6 +14335,7 @@ export function FileExplorer({
     [
       getDocumentPreviewKind,
       getPreviewAssetUrl,
+      explorerSettings.preferredWorkbenchByExtension,
       isCloudExplorerPath,
       pluginPreviewLanes,
       readExplorerFileBase64,
@@ -14381,6 +14680,7 @@ export function FileExplorer({
           return;
         }
       }
+      previewSourceEntryRef.current = entry;
       const previewResolvedPath =
         !entry.is_dir && isExplorerArchiveVirtualPath(entry.path)
           ? await materializeArchiveVirtualEntry(
@@ -14396,7 +14696,30 @@ export function FileExplorer({
         previewResolvedPath !== entry.path
           ? { resolvedPath: previewResolvedPath }
           : {};
-      const resolvedPreview = resolveExplorerPreviewDescriptor(entry, {
+      const previewExtension = getExplorerPreviewEntryExtension(entry);
+      const previewWorkbenchOverride = previewWorkbenchOverrideRef.current;
+      const preferredWorkbenchId =
+        previewWorkbenchOverride?.path === entry.path
+          ? previewWorkbenchOverride.workbenchId
+          : explorerSettings.preferredWorkbenchByExtension[
+              previewExtension
+            ] ?? null;
+      const resolvedWorkbenchSelection =
+        resolveExplorerPreviewWorkbenchSelection(entry, {
+          assetUrlResolver: getPreviewAssetUrl,
+          documentPreviewKindResolver: getDocumentPreviewKind,
+          pluginPreviewLanes,
+          preferredWorkbenchId,
+        });
+      if (isCurrentPreviewRequest()) {
+        setPreviewWorkbenchSelection({
+          path: entry.path,
+          ...resolvedWorkbenchSelection,
+        });
+      }
+      const resolvedPreview =
+        resolvedWorkbenchSelection.activeWorkbench?.descriptor ??
+        resolveExplorerPreviewDescriptor(entry, {
         assetUrlResolver: getPreviewAssetUrl,
         documentPreviewKindResolver: getDocumentPreviewKind,
         pluginPreviewLanes,
@@ -15094,8 +15417,74 @@ export function FileExplorer({
       runtimePlatform,
       setDocumentViewMode,
       previewLocked,
+      explorerSettings.preferredWorkbenchByExtension,
       pluginPreviewLanes,
     ],
+  );
+
+  const activePreviewWorkbenchSelection = useMemo(
+    () =>
+      previewWorkbenchSelection?.path === preview.path
+        ? previewWorkbenchSelection
+        : null,
+    [preview.path, previewWorkbenchSelection],
+  );
+  const activePreviewWorkbenchCandidates = useMemo(
+    () => activePreviewWorkbenchSelection?.candidates ?? [],
+    [activePreviewWorkbenchSelection],
+  );
+  const activePreviewWorkbench = useMemo(
+    () => activePreviewWorkbenchSelection?.activeWorkbench ?? null,
+    [activePreviewWorkbenchSelection],
+  );
+  const previewWorkbenchChooserVisible =
+    activePreviewWorkbenchCandidates.length > 1;
+  const previewWorkbenchExtensionLabel = useMemo(
+    () =>
+      formatWorkbenchExtensionLabel(
+        activePreviewWorkbenchSelection?.extension ?? "",
+      ),
+    [activePreviewWorkbenchSelection?.extension],
+  );
+  const openPreviewWithWorkbench = useCallback(
+    async (workbenchId: string) => {
+      const sourceEntry = previewSourceEntryRef.current;
+      if (!sourceEntry) {
+        return;
+      }
+
+      const nextOverride = {
+        path: sourceEntry.path,
+        workbenchId,
+      };
+      previewWorkbenchOverrideRef.current = nextOverride;
+      setPreviewWorkbenchOverride(nextOverride);
+      await previewEntry(sourceEntry, null, "explicit");
+    },
+    [previewEntry],
+  );
+  const setPreviewWorkbenchDefault = useCallback(
+    async (workbenchId: string) => {
+      const sourceEntry = previewSourceEntryRef.current;
+      if (!sourceEntry) {
+        return;
+      }
+
+      const extension = getExplorerPreviewEntryExtension(sourceEntry);
+      if (!extension) {
+        return;
+      }
+
+      setPreferredWorkbenchForExtension(extension, workbenchId);
+      const nextOverride = {
+        path: sourceEntry.path,
+        workbenchId,
+      };
+      previewWorkbenchOverrideRef.current = nextOverride;
+      setPreviewWorkbenchOverride(nextOverride);
+      await previewEntry(sourceEntry, null, "explicit");
+    },
+    [previewEntry, setPreferredWorkbenchForExtension],
   );
 
   const previewExplorerSelectionTarget = useCallback(
@@ -16389,6 +16778,50 @@ export function FileExplorer({
       isDirectory,
     } satisfies ExplorerMenuInvocationEntry;
   }, [contextMenuEntryLookup, preview, toMenuInvocationEntry]);
+  const previewWorkbenchContextMenuRegistration = useMemo(() => {
+    if (!previewWorkbenchChooserVisible || activePreviewWorkbench == null) {
+      return null;
+    }
+
+    return {
+      previewKind: "workbench",
+      baseActions: activePreviewWorkbenchCandidates.flatMap((candidate) => {
+        const useAction = {
+          id: `preview.workbench.use.${candidate.id}`,
+          title:
+            candidate.id === activePreviewWorkbench.id
+              ? `${candidate.title} (Active)`
+              : `Use ${candidate.title}`,
+          group: "preview" as const,
+          defaultOrder: 840,
+          onSelect: () => void openPreviewWithWorkbench(candidate.id),
+        };
+        const defaultAction = {
+          id: `preview.workbench.default.${candidate.id}`,
+          title: `Set ${candidate.title} as default for ${previewWorkbenchExtensionLabel}`,
+          group: "preview" as const,
+          defaultOrder: 845,
+          onSelect: () => void setPreviewWorkbenchDefault(candidate.id),
+        };
+        return [useAction, defaultAction];
+      }),
+    } satisfies ExplorerPreviewContextMenuRegistration;
+  }, [
+    activePreviewWorkbench,
+    activePreviewWorkbenchCandidates,
+    openPreviewWithWorkbench,
+    previewWorkbenchChooserVisible,
+    previewWorkbenchExtensionLabel,
+    setPreviewWorkbenchDefault,
+  ]);
+  const effectivePreviewContextMenuRegistration = useMemo(
+    () =>
+      mergePreviewContextMenuRegistrations(
+        previewWorkbenchContextMenuRegistration,
+        previewContextMenuRegistration,
+      ),
+    [previewContextMenuRegistration, previewWorkbenchContextMenuRegistration],
+  );
   const buildContextMenuInvocation = useCallback(
     (
       kind: ExplorerMenuInvocationContext["kind"],
@@ -16942,7 +17375,7 @@ export function FileExplorer({
       themeRendererPreference: explorerTheme.menuPresentation.renderer,
       actions,
       pluginContextMenuItems: combinedPluginContextMenuItems,
-      previewContextMenuRegistration,
+      previewContextMenuRegistration: effectivePreviewContextMenuRegistration,
       includeEditMenuCommand: true,
       environment: {
         currentPath,
@@ -17072,7 +17505,7 @@ export function FileExplorer({
     openWithSystemPicker,
     paste,
     propertiesLabel,
-    previewContextMenuRegistration,
+    effectivePreviewContextMenuRegistration,
     queueClipboardEntries,
     refresh,
     requestTransferDestinationEntries,
@@ -29472,7 +29905,15 @@ export function FileExplorer({
         previewTerminalNamespace={previewTerminalNamespace}
         previewTerminalCommandRequest={previewTerminalCommandRequest}
         previewTerminalFocusRequestKey={previewTerminalFocusRequestKey}
+        previewWorkbenchCandidates={activePreviewWorkbenchCandidates}
+        activePreviewWorkbenchId={activePreviewWorkbench?.id ?? null}
+        previewWorkbenchExtensionLabel={previewWorkbenchExtensionLabel}
+        previewWorkbenchResolutionSource={
+          activePreviewWorkbenchSelection?.resolutionSource ?? null
+        }
         onWidthChange={setPreviewWidth}
+        onOpenPreviewWorkbench={openPreviewWithWorkbench}
+        onSetPreviewWorkbenchDefault={setPreviewWorkbenchDefault}
         onTextChange={updatePreviewTextContent}
         onTextSave={persistPreviewText}
         onShaderSourceChange={updateShaderPreviewContent}
@@ -29564,6 +30005,9 @@ export function FileExplorer({
   }, [
     appearance,
     activePreviewWorkflowTabId,
+    activePreviewWorkbench,
+    activePreviewWorkbenchCandidates,
+    activePreviewWorkbenchSelection,
     canNavigatePreviewBack,
     closePreviewPanel,
     copyToSysClipboard,
@@ -29595,6 +30039,7 @@ export function FileExplorer({
     previewTerminalCommandRequest,
     previewTerminalFocusRequestKey,
     previewTerminalNamespace,
+    previewWorkbenchExtensionLabel,
     previewDropBinding,
     previewDropTargetActive,
     previewDropTargetDwell,
@@ -29627,6 +30072,8 @@ export function FileExplorer({
     pythonRuntimeConfig,
     pythonSettings.bootstrapPackages,
     updatePdfPreviewDocument,
+    openPreviewWithWorkbench,
+    setPreviewWorkbenchDefault,
     updatePreviewTextContent,
     updateShaderPreviewCompileResult,
     updateShaderPreviewContent,

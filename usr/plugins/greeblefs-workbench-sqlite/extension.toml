@@ -1,0 +1,27 @@
+id = "greeblefs-workbench-sqlite"
+version = "1"
+name = "GreebleFS SQLite Workbench"
+description = "First-party extension-backed SQLite/database preview workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+
+[[contributions.previewLanes]]
+id = "sqlite"
+title = "SQLite Workbench"
+renderer = "preview/sqliteWorkbench.tsx"
+priority = 720
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = ["sqlite", "sqlite3", "db"]
+fileNames = []
+
+[contributions.previewLanes.capabilities]
+editable = false
+save = false
+export = false
+workflowTabs = false
+contextMenu = false
+prefetch = false
+closeGuard = false

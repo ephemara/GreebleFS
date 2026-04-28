@@ -6884,6 +6884,24 @@ const value = 1;
       "preview",
     );
 
+    const workbenchChooserToggle = await screen.findByTestId(
+      "preview-workbench-chooser-toggle",
+    );
+    fireEvent.click(workbenchChooserToggle);
+    const workbenchChooser = screen.getByTestId("preview-workbench-chooser");
+    expect(
+      within(workbenchChooser).getByText("Mock Plugin: Notes Lane"),
+    ).toBeInTheDocument();
+    expect(
+      within(workbenchChooser).getByText("Text Workbench"),
+    ).toBeInTheDocument();
+    expect(
+      within(workbenchChooser).getByText(
+        "The current workbench won on priority.",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(workbenchChooserToggle);
+
     fireEvent.contextMenu(getPreviewPane());
     await screen.findByText("Plugin Preview Action");
     expect(screen.queryByText("Inspect Extra Action")).not.toBeInTheDocument();

@@ -1,0 +1,27 @@
+id = "greeblefs-workbench-docx"
+version = "1"
+name = "GreebleFS Document Workbench"
+description = "First-party extension-backed word-processing document preview workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+
+[[contributions.previewLanes]]
+id = "docx"
+title = "Document Workbench"
+renderer = "preview/docxWorkbench.tsx"
+priority = 720
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = ["docx", "doc", "rtf", "odt"]
+fileNames = []
+
+[contributions.previewLanes.capabilities]
+editable = false
+save = false
+export = false
+workflowTabs = false
+contextMenu = false
+prefetch = false
+closeGuard = false

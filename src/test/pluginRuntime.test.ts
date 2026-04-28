@@ -361,4 +361,28 @@ describe('pluginRuntime helpers', () => {
       '/workspace/usr/plugins/test-extension-hello/examples',
     );
   });
+
+  it.each([
+    ['sqlite', 'greeblefs-workbench-sqlite/preview/sqliteWorkbench.tsx'],
+    ['docx', 'greeblefs-workbench-docx/preview/docxWorkbench.tsx'],
+    [
+      'spreadsheet',
+      'greeblefs-workbench-spreadsheet/preview/spreadsheetWorkbench.tsx',
+    ],
+    ['audio', 'greeblefs-workbench-audio/preview/audioWorkbench.tsx'],
+    ['video', 'greeblefs-workbench-video/preview/videoWorkbench.tsx'],
+  ])('loads the shipped %s workbench adapter lane', async (_label, relativePath) => {
+    const previewLanePath = resolve(pluginSystemConfig.pluginsDirectory, relativePath);
+    const source = await readFile(previewLanePath, 'utf8');
+
+    const previewLane = await loadPluginPreviewLaneFromSource(source, {
+      name: previewLanePath.split('/').pop() ?? 'workbench.tsx',
+      path: previewLanePath,
+      is_dir: false,
+      modified: 404,
+      extension: 'tsx',
+    });
+
+    expect(typeof previewLane).toBe('function');
+  });
 });

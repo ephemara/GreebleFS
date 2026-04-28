@@ -1,3 +1,24 @@
+# 2026-04-28 - Preview Lanes Begin Moving To Extension-Backed Workbenches
+
+- Explorer preview resolution now treats file-backed rich previews as workbench candidates instead of picking a single descriptor immediately.
+- Durable arbitration contract:
+  - saved `settings.explorer.preferredWorkbenchByExtension[extension]` wins first.
+  - when no saved default matches, highest priority wins.
+  - same-priority conflicts fall back to deterministic discovery order.
+  - unmatched files still return no active workbench so `FileExplorer.tsx` owns fallback UI.
+- `FileExplorer.tsx` now hosts the shared workbench chooser when multiple candidates match. The chooser supports one-shot switching for the current file and setting the chosen provider as the default for that normalized extension. Preview context menus also expose provider switch/default actions.
+- First-party adapter package wave landed under `usr/plugins/` for `greeblefs-workbench-sqlite`, `greeblefs-workbench-docx`, `greeblefs-workbench-spreadsheet`, `greeblefs-workbench-audio`, and `greeblefs-workbench-video`. These packages claim the same extension sets as the built-in lanes with priority `720` and mount the existing React workbenches through the virtual `greeblefs-workbenches` module.
+- Built-in render branches remain as migration scaffolding. Do not delete a built-in branch until the corresponding package has parity for workflow tabs, context menu registration, close guards, save/export callbacks, and focused tests.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/explorerPreviewRegistry.test.ts src/test/settingsStore.test.ts src/test/pluginRuntime.test.ts --reporter=dot`
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "lets plugin preview lanes claim files and register workflow tabs plus preview context actions" --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/explorerPreviewRegistry.test.ts src/test/settingsStore.test.ts src/test/pluginRuntime.test.ts src/test/fileExplorer.viewModes.test.tsx -t "explorerPreviewRegistry|useSettingsStore|pluginRuntime helpers|lets plugin preview lanes claim files" --reporter=dot --testTimeout=30000`
+  - filtered touched-file TypeScript sweep returned no diagnostics.
+- Current validation caveats:
+  - full `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails on pre-existing repo-wide drift in image cutout generated types, drive-info casing, icon/vscode theme typing, Python runtime test fixtures, vendored TipTap tests, and other unrelated files.
+  - `git diff --check` currently reports trailing whitespace in unrelated dirty file `usr/animations/hologram-cube-lattice.tsx`; this pass intentionally left that user/worktree change alone.
+- Recommended next step: extract `shader` with the same adapter-first pattern, then tackle image/cutout only after preserving `Preview / Edit / Cutout`, context actions, export/copy/save, and native cutout session behavior in focused regression tests.
+
 # 2026-04-28 - Explorer 100k Scroll Slice Adds Inertial Scroll And Virtual Surface Isolation
 
 - Standard explorer browsing now opts into `OverlayScrollArea` inertial scrolling, which samples wheel velocity, applies bounded RAF friction, cancels on pointer/scrollbar interaction, and respects reduced motion.

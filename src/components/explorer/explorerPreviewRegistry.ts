@@ -26,6 +26,7 @@ import {
   type ModelPreviewFormat,
   type ShaderPreviewFormat,
 } from "../../config/filePreview";
+import type { ExplorerWorkbenchResolutionSource } from "../../config/explorerWorkbenches";
 import type { OverlayPluginPreviewLaneContribution } from "../../config/pluginContributions";
 import type { ExplorerFileEntry as FileEntry } from "../../runtime/explorerBackend";
 import type { DocumentPreviewKind } from "../documentPreview";
@@ -95,6 +96,7 @@ export interface ExplorerPreviewResolverOptions {
   assetUrlResolver: (path: string) => string;
   documentPreviewKindResolver: (path: string) => DocumentPreviewKind;
   pluginPreviewLanes?: readonly OverlayPluginPreviewLaneContribution[];
+  preferredWorkbenchId?: string | null;
 }
 
 export interface ExplorerPreviewMatchContext {
@@ -105,11 +107,26 @@ export interface ExplorerPreviewMatchContext {
 
 export type ExplorerPreviewLaneDefinition = {
   id: string;
+  title: string;
   priority: number;
   match: (
     context: ExplorerPreviewMatchContext,
   ) => ExplorerResolvedPreviewDescriptor | null;
 };
+
+export interface ExplorerResolvedPreviewWorkbenchCandidate {
+  id: string;
+  title: string;
+  priority: number;
+  descriptor: ExplorerResolvedPreviewDescriptor;
+}
+
+export interface ExplorerResolvedPreviewWorkbenchSelection {
+  extension: string;
+  candidates: ExplorerResolvedPreviewWorkbenchCandidate[];
+  activeWorkbench: ExplorerResolvedPreviewWorkbenchCandidate | null;
+  resolutionSource: ExplorerWorkbenchResolutionSource | null;
+}
 
 export const BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY = 100;
 
@@ -117,11 +134,13 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
   [
     {
       id: "builtin-folder",
+      title: "Folder Preview",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ entry }) => (entry.is_dir ? { kind: "folder" } : null),
     },
     {
       id: "builtin-model3d",
+      title: "3D Model Preview",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ extension }) => {
         const format = getModelPreviewFormat(extension);
@@ -130,6 +149,7 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
     },
     {
       id: "builtin-archive",
+      title: "Archive Preview",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ entry }) => {
         if (!isExplorerArchiveEntry(entry)) {
@@ -142,6 +162,7 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
     },
     {
       id: "builtin-audio",
+      title: "Audio Workbench",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ entry, extension, options }) =>
         isAudioPreviewExtension(extension)
@@ -155,6 +176,7 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
     },
     {
       id: "builtin-video",
+      title: "Video Workbench",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ entry, extension, options }) =>
         isVideoPreviewExtension(extension)
@@ -168,12 +190,14 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
     },
     {
       id: "builtin-image",
+      title: "Image Workbench",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ extension }) =>
         isImagePreviewExtension(extension) ? { kind: "image", extension } : null,
     },
     {
       id: "builtin-font",
+      title: "Font Preview",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ entry, extension, options }) =>
         isFontPreviewExtension(extension)
@@ -186,18 +210,21 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
     },
     {
       id: "builtin-sqlite",
+      title: "SQLite Workbench",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ extension }) =>
         isSqlitePreviewExtension(extension) ? { kind: "sqlite" } : null,
     },
     {
       id: "builtin-pdf",
+      title: "PDF Workbench",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ extension }) =>
         isPdfPreviewExtension(extension) ? { kind: "pdf" } : null,
     },
     {
       id: "builtin-spreadsheet",
+      title: "Spreadsheet Workbench",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ extension }) =>
         isSpreadsheetPreviewExtension(extension)
@@ -210,6 +237,7 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
     },
     {
       id: "builtin-docx",
+      title: "Document Workbench",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ extension }) =>
         isDocxPreviewExtension(extension)
@@ -221,6 +249,7 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
     },
     {
       id: "builtin-shader",
+      title: "Shader Workbench",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ extension }) =>
         isShaderPreviewExtension(extension)
@@ -233,6 +262,7 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
     },
     {
       id: "builtin-script",
+      title: "Script Workbench",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ extension }) => {
         if (!isExecutableScriptExtension(extension)) {
@@ -254,6 +284,7 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
     },
     {
       id: "builtin-text",
+      title: "Text Workbench",
       priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
       match: ({ entry, extension, options }) =>
         isEditableTextExtension(extension, entry.size)
@@ -271,22 +302,79 @@ export function resolveExplorerPreviewDescriptor(
   entry: FileEntry,
   options: ExplorerPreviewResolverOptions,
 ): ExplorerResolvedPreviewDescriptor {
+  return (
+    resolveExplorerPreviewWorkbenchSelection(entry, options).activeWorkbench
+      ?.descriptor ?? {
+      kind: "unsupported",
+      extension: getExplorerPreviewEntryExtension(entry),
+    }
+  );
+}
+
+export function resolveExplorerPreviewWorkbenchSelection(
+  entry: FileEntry,
+  options: ExplorerPreviewResolverOptions,
+): ExplorerResolvedPreviewWorkbenchSelection {
   const extension = getExplorerPreviewEntryExtension(entry);
   const matchContext: ExplorerPreviewMatchContext = {
     entry,
     extension,
     options,
   };
-  for (const definition of buildRegisteredExplorerPreviewLanes(options)) {
-    const match = definition.match(matchContext);
-    if (match) {
-      return match;
+  const candidates = buildRegisteredExplorerPreviewLanes(options)
+    .map((definition) => {
+      const descriptor = definition.match(matchContext);
+      if (!descriptor) {
+        return null;
+      }
+      return {
+        id: definition.id,
+        title: definition.title,
+        priority: definition.priority,
+        descriptor,
+      } satisfies ExplorerResolvedPreviewWorkbenchCandidate;
+    })
+    .filter(
+      (
+        candidate,
+      ): candidate is ExplorerResolvedPreviewWorkbenchCandidate =>
+        candidate != null,
+    );
+
+  if (candidates.length === 0) {
+    return {
+      extension,
+      candidates: [],
+      activeWorkbench: null,
+      resolutionSource: null,
+    };
+  }
+
+  const preferredWorkbenchId = options.preferredWorkbenchId?.trim() ?? "";
+  if (preferredWorkbenchId) {
+    const preferredCandidate = candidates.find(
+      (candidate) => candidate.id === preferredWorkbenchId,
+    );
+    if (preferredCandidate) {
+      return {
+        extension,
+        candidates,
+        activeWorkbench: preferredCandidate,
+        resolutionSource: "user-default",
+      };
     }
   }
 
+  const activeWorkbench = candidates[0];
+  const nextCandidate = candidates[1] ?? null;
   return {
-    kind: "unsupported",
     extension,
+    candidates,
+    activeWorkbench,
+    resolutionSource:
+      nextCandidate && nextCandidate.priority === activeWorkbench.priority
+        ? "discovery-order"
+        : "priority",
   };
 }
 
@@ -340,7 +428,8 @@ function createPluginExplorerPreviewLaneDefinition(
   lane: OverlayPluginPreviewLaneContribution,
 ): ExplorerPreviewLaneDefinition {
   return {
-    id: `plugin:${lane.pluginId}:${lane.id}`,
+    id: lane.id,
+    title: `${lane.pluginName}: ${lane.title}`,
     priority: lane.priority,
     match: ({ entry, extension, options }) => {
       if (!matchesOverlayPluginPreviewLane(entry, extension, lane)) {

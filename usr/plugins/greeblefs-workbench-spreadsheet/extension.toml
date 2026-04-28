@@ -1,0 +1,27 @@
+id = "greeblefs-workbench-spreadsheet"
+version = "1"
+name = "GreebleFS Spreadsheet Workbench"
+description = "First-party extension-backed spreadsheet and tabular data workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+
+[[contributions.previewLanes]]
+id = "spreadsheet"
+title = "Spreadsheet Workbench"
+renderer = "preview/spreadsheetWorkbench.tsx"
+priority = 720
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = ["xlsx", "xlsm", "xlsb", "xls", "ods", "csv", "tsv"]
+fileNames = []
+
+[contributions.previewLanes.capabilities]
+editable = true
+save = true
+export = true
+workflowTabs = false
+contextMenu = false
+prefetch = false
+closeGuard = true

@@ -114,6 +114,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.activeExplorerLayoutId).toBeNull();
     expect(settings.explorer.activeMenuPackId).toBe(DEFAULT_EXPLORER_MENU_PACK_ID);
     expect(settings.explorer.contextMenuLayoutOverridesByContext).toEqual({});
+    expect(settings.explorer.preferredWorkbenchByExtension).toEqual({});
   });
 
   it('has the correct default appearance settings', () => {
@@ -535,6 +536,42 @@ describe('useSettingsStore.updateExplorer()', () => {
 
     store.updateExplorer({ collectionPreviewMode: 'bogus' as never });
     expect(useSettingsStore.getState().settings.explorer.collectionPreviewMode).toBe('list');
+  });
+
+  it('stores preferred workbenches by normalized extension', () => {
+    const store = useSettingsStore.getState();
+
+    store.setPreferredWorkbenchForExtension(' .TXT ', ' mock-plugin.preview-lane.notes ');
+
+    expect(useSettingsStore.getState().settings.explorer.preferredWorkbenchByExtension).toEqual({
+      txt: 'mock-plugin.preview-lane.notes',
+    });
+  });
+
+  it('clears preferred workbenches by normalized extension', () => {
+    const store = useSettingsStore.getState();
+
+    store.setPreferredWorkbenchForExtension('txt', 'mock-plugin.preview-lane.notes');
+    store.clearPreferredWorkbenchForExtension('.TXT');
+
+    expect(useSettingsStore.getState().settings.explorer.preferredWorkbenchByExtension).toEqual({});
+  });
+
+  it('normalizes imported preferred workbench maps and drops invalid entries', () => {
+    const merged = mergeSettingsWithDefaults({
+      explorer: {
+        ...defaultSettings.explorer,
+        preferredWorkbenchByExtension: {
+          ' .MD ': ' markdown-workbench ',
+          '': 'ignored',
+          png: '',
+        },
+      },
+    });
+
+    expect(merged.explorer.preferredWorkbenchByExtension).toEqual({
+      md: 'markdown-workbench',
+    });
   });
 
   it('does not mutate other setting sections', () => {

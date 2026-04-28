@@ -5,6 +5,7 @@ import * as TauriWindow from '@tauri-apps/api/window';
 import * as TauriFs from '@tauri-apps/plugin-fs';
 import * as TauriNotification from '@tauri-apps/plugin-notification';
 import * as LucideReact from '@/components/AppIcons';
+import * as WorkbenchAdapters from './pluginWorkbenchAdapters';
 import type { OverlayThemeDefinition } from '../config/appearance';
 import type { OverlayPluginPreviewLaneDescriptor } from '../config/pluginPreviewLanes';
 import type {
@@ -182,6 +183,17 @@ export interface OverlayPluginPreviewRuntimeBridge {
   openRuntimeTui: (runtimeId: string) => Promise<ExternalRuntimeTuiLaunch>;
 }
 
+export type OverlayPluginPreviewWorkbenchStatusTone =
+  | 'neutral'
+  | 'success'
+  | 'warning'
+  | 'danger';
+
+export interface OverlayPluginPreviewWorkbenchStatus {
+  label: string;
+  tone?: OverlayPluginPreviewWorkbenchStatusTone;
+}
+
 export interface OverlayPluginPreviewLaneProps {
   plugin: OverlayPluginContext;
   api: OverlayPluginApi;
@@ -201,6 +213,9 @@ export interface OverlayPluginPreviewLaneProps {
     registration: ExplorerPreviewContextMenuRegistration | null,
   ) => void;
   onRegisterCloseGuard?: (guard: (() => Promise<boolean>) | null) => void;
+  onRegisterWorkbenchStatus?: (
+    status: OverlayPluginPreviewWorkbenchStatus | null,
+  ) => void;
   onRefreshPreviewEntry?: () => Promise<void> | void;
   onViewModeChange?: (mode: 'preview' | 'edit') => void;
 }
@@ -503,6 +518,7 @@ function executePluginModuleGraph(graph: RuntimeModuleGraph): unknown {
       readPluginPanelOpenRequest,
       requestPluginPanelOpen,
     },
+    'greeblefs-workbenches': WorkbenchAdapters,
   };
 
   return executeRuntimeModuleGraph(graph, allowedModules);

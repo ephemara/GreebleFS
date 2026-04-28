@@ -5,10 +5,13 @@ export {
   getExplorerPreviewEntryExtension,
   isInlineExplorerPreviewDescriptor,
   resolveExplorerPreviewDescriptor,
+  resolveExplorerPreviewWorkbenchSelection,
   type ExplorerPreviewLaneDefinition,
   type ExplorerPreviewMatchContext,
   type ExplorerPreviewResolverOptions,
   type ExplorerResolvedPreviewDescriptor,
+  type ExplorerResolvedPreviewWorkbenchCandidate,
+  type ExplorerResolvedPreviewWorkbenchSelection,
 } from "./explorerPreviewRegistry";
 
 export interface ExplorerPreviewFallbackState {

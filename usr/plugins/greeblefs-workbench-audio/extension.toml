@@ -1,0 +1,27 @@
+id = "greeblefs-workbench-audio"
+version = "1"
+name = "GreebleFS Audio Workbench"
+description = "First-party extension-backed audio preview and edit workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+
+[[contributions.previewLanes]]
+id = "audio"
+title = "Audio Workbench"
+renderer = "preview/audioWorkbench.tsx"
+priority = 720
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = ["aac", "aif", "aiff", "aifc", "alac", "amr", "caf", "flac", "m4a", "m4b", "mid", "midi", "mka", "mp3", "oga", "ogg", "opus", "wav", "wave", "weba", "wma"]
+fileNames = []
+
+[contributions.previewLanes.capabilities]
+editable = true
+save = false
+export = true
+workflowTabs = true
+contextMenu = false
+prefetch = false
+closeGuard = false

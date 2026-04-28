@@ -1,0 +1,27 @@
+id = "greeblefs-workbench-video"
+version = "1"
+name = "GreebleFS Video Workbench"
+description = "First-party extension-backed video preview and trim workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+
+[[contributions.previewLanes]]
+id = "video"
+title = "Video Workbench"
+renderer = "preview/videoWorkbench.tsx"
+priority = 720
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = ["3g2", "3gp", "asf", "avi", "flv", "m2ts", "m2v", "m4v", "mkv", "mov", "mp4", "mpe", "mpeg", "mpg", "mts", "ogv", "qt", "webm", "wmv"]
+fileNames = []
+
+[contributions.previewLanes.capabilities]
+editable = true
+save = false
+export = true
+workflowTabs = false
+contextMenu = false
+prefetch = true
+closeGuard = false

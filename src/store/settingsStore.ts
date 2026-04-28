@@ -58,6 +58,12 @@ import {
   type ExplorerThumbnailSettings,
 } from '../config/explorerThumbnails';
 import {
+  normalizePreferredWorkbenchByExtensionMap,
+  normalizePreferredWorkbenchId,
+  normalizeWorkbenchExtensionKey,
+  type ExplorerPreferredWorkbenchByExtension,
+} from '../config/explorerWorkbenches';
+import {
   EXPLORER_MENU_CONTEXT_KINDS,
   BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
   normalizeExplorerMenuContextLayoutOverrideMap,
@@ -243,6 +249,7 @@ export interface ExplorerSettings {
   activeMenuPackId: string | null;
   contextMenuLayoutOverridesByContext: ExplorerMenuContextLayoutOverrideMap;
   contextMenuItemOverrides: ExplorerContextMenuItemOverrideMap;
+  preferredWorkbenchByExtension: ExplorerPreferredWorkbenchByExtension;
 }
 
 export interface AppearanceSettings {
@@ -539,6 +546,8 @@ function normalizeExplorerSettings(
     && Object.prototype.hasOwnProperty.call(updates, 'contextMenuItemOverrides');
   const hasExplicitThumbnailSettings = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'thumbnails');
+  const hasExplicitPreferredWorkbenchByExtension = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'preferredWorkbenchByExtension');
 
   return {
     ...base,
@@ -585,6 +594,11 @@ function normalizeExplorerSettings(
     contextMenuItemOverrides: hasExplicitContextMenuItemOverrides
       ? normalizeExplorerContextMenuItemOverrideMap(updates?.contextMenuItemOverrides)
       : base.contextMenuItemOverrides,
+    preferredWorkbenchByExtension: hasExplicitPreferredWorkbenchByExtension
+      ? normalizePreferredWorkbenchByExtensionMap(
+          updates?.preferredWorkbenchByExtension,
+        )
+      : base.preferredWorkbenchByExtension,
   };
 }
 
@@ -1281,6 +1295,7 @@ export const defaultSettings: Settings = {
     activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
     contextMenuLayoutOverridesByContext: {},
     contextMenuItemOverrides: {},
+    preferredWorkbenchByExtension: {},
   },
   home: {
     activePackId: null,
@@ -1615,6 +1630,10 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       ) ?? base.explorer.activeMenuPackId,
       contextMenuLayoutOverridesByContext: migratedContextMenuLayouts,
       contextMenuItemOverrides: normalizedLegacyContextMenuItemOverrides,
+      preferredWorkbenchByExtension: normalizePreferredWorkbenchByExtensionMap(
+        imported?.explorer?.preferredWorkbenchByExtension ??
+          base.explorer.preferredWorkbenchByExtension,
+      ),
     },
     home: normalizeHomeSettings(base.home, (imported as Partial<Settings> | undefined)?.home),
     appearance: {
@@ -1679,6 +1698,11 @@ interface SettingsState {
   updatePython: (updates: Partial<PythonSettings>) => void;
   updateModels: (updates: Partial<ModelsSettings>) => void;
   updateExplorer: (updates: Partial<ExplorerSettings>) => void;
+  setPreferredWorkbenchForExtension: (
+    extension: string,
+    workbenchId: string,
+  ) => void;
+  clearPreferredWorkbenchForExtension: (extension: string) => void;
   updateHome: (updates: Partial<HomeSettings>) => void;
   setHomePackState: (packId: string, state: Record<string, unknown>) => void;
   setHomePresetSelection: (packId: string, presetId: string | null) => void;
@@ -1804,6 +1828,50 @@ export const useSettingsStore = create<SettingsState>()(
           explorer: normalizeExplorerSettings(state.settings.explorer, updates),
         },
       })),
+
+      setPreferredWorkbenchForExtension: (extension, workbenchId) =>
+        set((state) => {
+          const normalizedExtension = normalizeWorkbenchExtensionKey(extension);
+          const normalizedWorkbenchId =
+            normalizePreferredWorkbenchId(workbenchId);
+          if (!normalizedExtension || !normalizedWorkbenchId) {
+            return state;
+          }
+
+          return {
+            settings: {
+              ...state.settings,
+              explorer: normalizeExplorerSettings(state.settings.explorer, {
+                preferredWorkbenchByExtension: {
+                  ...state.settings.explorer.preferredWorkbenchByExtension,
+                  [normalizedExtension]: normalizedWorkbenchId,
+                },
+              }),
+            },
+          };
+        }),
+
+      clearPreferredWorkbenchForExtension: (extension) =>
+        set((state) => {
+          const normalizedExtension = normalizeWorkbenchExtensionKey(extension);
+          if (!normalizedExtension) {
+            return state;
+          }
+
+          const nextPreferences = {
+            ...state.settings.explorer.preferredWorkbenchByExtension,
+          };
+          delete nextPreferences[normalizedExtension];
+
+          return {
+            settings: {
+              ...state.settings,
+              explorer: normalizeExplorerSettings(state.settings.explorer, {
+                preferredWorkbenchByExtension: nextPreferences,
+              }),
+            },
+          };
+        }),
 
       updateHome: (updates) => set((state) => ({
         settings: {
