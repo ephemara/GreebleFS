@@ -1,3 +1,34 @@
+# 2026-04-27 - Runtime Sidecar Host Calls Must Stay Off Tokio Worker Threads, And Tauri Dev Now Reclaims Old Live Frontend Siblings
+
+- The `Cannot start a runtime from within a runtime` panic and the `external runtime sidecar map lock poisoned` explorer failure were both real regressions in the new Go/native-sidecar host bridge lane.
+- Durable sidecar rule after this cleanup:
+  - `src-tauri/src/runtime_pipeline/commands.rs::runtime_call(...)` must execute `ExternalSidecarManager::call(...)` inside `tauri::async_runtime::spawn_blocking(...)`, not directly on the async Tauri command thread.
+  - Why: the sidecar stdio loop is synchronous/blocking, and nested host callbacks inside that loop currently route through `dispatch_runtime_sidecar_host_call(...)`, which uses `tauri::async_runtime::block_on(...)` to reach async host methods. Running that whole exchange on a Tokio worker thread causes the exact nested-runtime panic the user saw.
+  - If future work makes the sidecar bridge more async-native, revisit that boundary deliberately. Until then, treat the whole stdio/host-call exchange as blocking host work.
+- Durable sidecar-state rule:
+  - `src-tauri/src/runtime_pipeline/sidecar.rs` now recovers `sessions` / `last_errors` mutexes with `poisoned.into_inner()` instead of permanently hard-failing with `"external runtime sidecar map lock poisoned"`.
+  - `stop(...)` must release the sessions guard before asking for `status(...)` again. Holding the mutex through that call self-deadlocks.
+  - If the UI ever shows the old poisoned-map error string again, treat that as a regression: the manager should recover and preserve the most recent sidecar error, not brick the explorer.
+- Durable dev-launch cleanup rule:
+  - `scripts/cleanup-dev-processes.mjs` is now the repo-owned cleanup lane for stale local dev boot processes.
+  - `scripts/run-platform-tauri.mjs` calls it automatically for `tauri dev` with `includeRunning: true`, but the cleanup is ancestry-aware and must never kill the currently launching `run-platform-tauri.mjs` / parent shell chain.
+  - The matcher now needs to recognize the real live process commands, not just the shell aliases:
+    - `node .../@tauri-apps/cli/tauri.js dev`
+    - `node .../vite/bin/vite.js`
+    - `node scripts/run-frontend-dev.mjs`
+    - `target/debug/export-bindings`
+  - If `bun run tauri dev` fails with `Port 1420 is already in use`, either rerun it so the automatic cleanup reclaims the old siblings or run `bun run dev:cleanup -- --include-running` manually.
+- Validation that passed for this cleanup:
+  - `go test ./sdk/greeblefs-go/... ./builtin-runtimes/echo-sidecar ./builtin-runtimes/explorer-policy-service`
+  - `cargo test --manifest-path src-tauri/Cargo.toml --lib runtime_pipeline::`
+  - `bunx vitest run src/test/goExplorerPolicyService.test.ts src/test/goPanelHost.test.tsx src/test/goWorkbenchActions.test.ts src/test/fileExplorer.searchTelemetry.test.tsx --reporter=dot`
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - `timeout 120 bun run tauri dev` reached:
+    - Specta export
+    - Vite ready on `http://localhost:1420/`
+    - native Tauri `DevCommand` startup
+  - and it did **not** reproduce the Tokio nested-runtime panic or the poisoned sidecar-map error in the console during startup.
+
 # 2026-04-27 - Tauri Dev Must Pre-Generate Bindings And Launch A Cargo-Free Frontend Server
 
 - The `bun run tauri dev` timeout that looked like a broken `http://localhost:1420/` dev URL was actually a launcher-architecture bug, not a frontend/app-model regression.
