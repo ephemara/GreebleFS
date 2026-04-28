@@ -14,6 +14,7 @@
  */
 
 import type {
+  ExecutionContextSnapshot,
   DiscoveredRuntimePackage,
   ExternalRuntimeCommandRequest,
   ExternalRuntimeCommandResult,
@@ -34,6 +35,7 @@ import type {
 import { commands, unwrapTauriResult } from './tauriClient';
 
 export type {
+  ExecutionContextSnapshot,
   DiscoveredRuntimePackage,
   ExternalRuntimeCommandRequest,
   ExternalRuntimeCommandResult,
@@ -58,6 +60,7 @@ export interface RuntimeCallTypedRequest<TPayload = unknown> {
   payload?: TPayload;
   workingDirectory?: string | null;
   environment?: Record<string, string> | null;
+  executionContext?: ExecutionContextSnapshot | null;
   startIfNeeded?: boolean | null;
 }
 
@@ -122,6 +125,7 @@ export async function callRuntimeAction<TResult = unknown, TPayload = unknown>(
       payloadJson: encodeJsonPayload(request.payload),
       workingDirectory: request.workingDirectory ?? null,
       environment: request.environment ?? null,
+      executionContext: request.executionContext ?? null,
       startIfNeeded: request.startIfNeeded ?? true,
     } satisfies RuntimeCallRequest),
   );

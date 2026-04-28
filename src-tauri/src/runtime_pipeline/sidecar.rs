@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
 
@@ -104,21 +104,30 @@ const SIDECAR_KIND_HOST_CALL: &str = "host-call";
 const SIDECAR_KIND_HOST_RESPONSE: &str = "host-response";
 
 impl ExternalSidecarManager {
+    fn sessions_guard(&self) -> MutexGuard<'_, HashMap<String, ExternalSidecarSession>> {
+        self.sessions
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn last_errors_guard(&self) -> MutexGuard<'_, HashMap<String, String>> {
+        self.last_errors
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     pub fn status(&self, runtime_id: &str) -> ExternalRuntimeSidecarStatus {
         let last_error = self
-            .last_errors
-            .lock()
-            .ok()
-            .and_then(|map| map.get(runtime_id).cloned());
+            .last_errors_guard()
+            .get(runtime_id)
+            .cloned();
 
-        let session_info = self.sessions.lock().ok().and_then(|map| {
-            map.get(runtime_id).map(|session| {
+        let session_info = self.sessions_guard().get(runtime_id).map(|session| {
                 (
                     session.pid,
                     session.manifest_dir.clone(),
                     session.action_ids.clone(),
                 )
-            })
         });
 
         match session_info {
@@ -160,7 +169,8 @@ impl ExternalSidecarManager {
             );
         }
 
-        if let Some(map) = self.sessions.lock().ok() {
+        {
+            let map = self.sessions_guard();
             if map.contains_key(&manifest.id) {
                 return Ok(self.status(&manifest.id));
             }
@@ -211,36 +221,30 @@ impl ExternalSidecarManager {
             action_ids,
         };
 
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| "external runtime sidecar map lock poisoned".to_string())?;
+        let mut sessions = self.sessions_guard();
         sessions.insert(manifest.id.clone(), session);
         drop(sessions);
 
-        if let Ok(mut errors) = self.last_errors.lock() {
-            errors.remove(&manifest.id);
-        }
+        self.last_errors_guard().remove(&manifest.id);
 
         Ok(self.status(&manifest.id))
     }
 
     pub fn stop(&self, runtime_id: &str) -> ExternalRuntimeSidecarStatus {
-        if let Ok(mut sessions) = self.sessions.lock() {
-            if let Some(mut session) = sessions.remove(runtime_id) {
-                let _ = session
-                    .send_request("shutdown", None, None, None, None, None, |_, _, _| {
-                        Err("host bridge calls are not allowed during shutdown".to_string())
-                    })
-                    .map_err(|error| {
-                        if let Ok(mut errors) = self.last_errors.lock() {
-                            errors.insert(session.runtime_id.clone(), error);
-                        }
-                    });
-                let _ = session.child.kill();
-                let _ = session.child.wait();
-            }
+        let mut sessions = self.sessions_guard();
+        if let Some(mut session) = sessions.remove(runtime_id) {
+            let _ = session
+                .send_request("shutdown", None, None, None, None, None, |_, _, _| {
+                    Err("host bridge calls are not allowed during shutdown".to_string())
+                })
+                .map_err(|error| {
+                    self.last_errors_guard()
+                        .insert(session.runtime_id.clone(), error);
+                });
+            let _ = session.child.kill();
+            let _ = session.child.wait();
         }
+        drop(sessions);
         self.status(runtime_id)
     }
 
@@ -256,10 +260,7 @@ impl ExternalSidecarManager {
     where
         F: FnMut(&str, &str, Option<String>) -> Result<String, String>,
     {
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| "external runtime sidecar map lock poisoned".to_string())?;
+        let mut sessions = self.sessions_guard();
         let session = sessions
             .get_mut(runtime_id)
             .ok_or_else(|| format!("runtime {} sidecar is not running", runtime_id))?;
@@ -275,9 +276,8 @@ impl ExternalSidecarManager {
                 host_bridge_dispatch,
             )
             .map_err(|error| {
-                if let Ok(mut errors) = self.last_errors.lock() {
-                    errors.insert(runtime_id.to_string(), error.clone());
-                }
+                self.last_errors_guard()
+                    .insert(runtime_id.to_string(), error.clone());
                 error
             })?;
 

@@ -102,7 +102,9 @@ interface PluginPackagePreviewLaneManifest {
   id?: string;
   title?: string;
   renderer?: string;
+  rendererEntry?: string;
   runtimeId?: string;
+  runtimeRef?: string;
   priority?: number;
   match?: {
     appliesTo?: 'any' | 'file' | 'directory';
@@ -121,13 +123,19 @@ interface PluginPackagePreviewLaneManifest {
 }
 
 interface PluginPackageManifest {
-  version?: number;
+  version?: number | string;
   id?: string;
   name?: string;
+  displayName?: string;
   description?: string;
+  apiVersion?: string;
   entry?: string;
   defaultOpen?: boolean;
   keepMounted?: boolean;
+  permissions?: Record<string, unknown>;
+  runtimes?: Array<Record<string, unknown>>;
+  artifacts?: Array<Record<string, unknown>>;
+  debugSources?: string[];
   contributions?: {
     themes?: string[];
     shaders?: string[];
@@ -356,12 +364,12 @@ function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneMan
 
   return value.flatMap(entry => {
     const record = asRecord(entry);
-    const renderer = asString(record?.renderer);
+    const renderer = asString(record?.renderer) || asString(record?.rendererEntry);
     if (!record || !renderer) {
       return [];
     }
 
-    const matchRecord = asRecord(record.match);
+    const matchRecord = asRecord(record.match) ?? asRecord(record.matchRule);
     const capabilitiesRecord = asRecord(record.capabilities);
     const match = normalizeOverlayPluginPreviewLaneMatchRule({
       appliesTo:
@@ -390,7 +398,9 @@ function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneMan
       id: asString(record.id) || deriveIdFromName(title, 'preview-lane'),
       title,
       renderer,
-      runtimeId: asString(record.runtimeId),
+      rendererEntry: asString(record.rendererEntry),
+      runtimeId: asString(record.runtimeId) || asString(record.runtimeRef),
+      runtimeRef: asString(record.runtimeRef),
       priority:
         typeof record.priority === 'number' && Number.isFinite(record.priority)
           ? Math.round(record.priority)
@@ -417,13 +427,26 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
 
   const contributions = asRecord(source.contributions);
   return {
-    version: typeof source.version === 'number' ? source.version : 1,
+    version:
+      typeof source.version === 'number' || typeof source.version === 'string'
+        ? source.version
+        : 1,
     id: asString(source.id),
     name: asString(source.name),
+    displayName: asString(source.displayName),
     description: asString(source.description),
+    apiVersion: asString(source.apiVersion),
     entry: asString(source.entry),
     defaultOpen: asBoolean(source.defaultOpen),
     keepMounted: asBoolean(source.keepMounted),
+    permissions: asRecord(source.permissions) ?? undefined,
+    runtimes: Array.isArray(source.runtimes)
+      ? source.runtimes.filter((entry): entry is Record<string, unknown> => Boolean(asRecord(entry)))
+      : undefined,
+    artifacts: Array.isArray(source.artifacts)
+      ? source.artifacts.filter((entry): entry is Record<string, unknown> => Boolean(asRecord(entry)))
+      : undefined,
+    debugSources: asStringArray(source.debugSources),
     contributions: {
       themes: asStringArray(contributions?.themes),
       shaders: asStringArray(contributions?.shaders),
@@ -565,7 +588,11 @@ function derivePackageId(record: PluginPackageRecord): string {
 }
 
 function derivePackageName(record: PluginPackageRecord): string {
-  return asString(record.manifest.name) || deriveDisplayNameFromFilePath(record.directoryName);
+  return (
+    asString(record.manifest.displayName) ||
+    asString(record.manifest.name) ||
+    deriveDisplayNameFromFilePath(record.directoryName)
+  );
 }
 
 function toAssetUrl(filePath: string): string {
@@ -1046,7 +1073,7 @@ async function loadPluginPackage(
         ) =>
           React.createElement(rendererComponent!, {
             ...props,
-            api: previewLaneApi,
+            api: previewLaneApi.bindExecutionContext(props.executionContext),
             plugin: previewLaneContext,
           });
 

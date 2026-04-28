@@ -33,6 +33,10 @@ import * as explorerBackend from './explorerBackend';
 import type { PluginDirectoryWatchEvent } from '../generated/tauri';
 import { ensureDir, getParentPath } from './overlayRuntimeUtils';
 import { commands, unwrapTauriResult } from './tauriClient';
+import {
+  createExtensionHostClient,
+  type ExecutionContextSnapshot,
+} from './extensionHostApi';
 
 export interface UseFolderPluginRuntimeResult {
   folderPlugins: LoadedOverlayPlugin[];
@@ -113,12 +117,18 @@ export function useFolderPluginRuntime(
       return target;
     };
 
-    return {
+    const createBoundPluginApi = (
+      executionContext: ExecutionContextSnapshot | null,
+    ): OverlayPluginApi => ({
       invoke,
       event: TauriEvent,
       window: TauriWindow,
       fs: TauriFs,
       notification: TauriNotification,
+      host: createExtensionHostClient({
+        callerPluginId: plugin.id,
+        getExecutionContext: () => executionContext,
+      }),
       storage: {
         rootDir: storageRoot,
         ensureDir: ensureStorageDir,
@@ -152,7 +162,11 @@ export function useFolderPluginRuntime(
       runBackend: async (entry, args = []) => commands
         .pluginRunBackend(pluginSystemConfig.pluginsDirectory, plugin.id, entry, args)
         .then(unwrapTauriResult),
-    };
+      bindExecutionContext: (nextExecutionContext) =>
+        createBoundPluginApi(nextExecutionContext),
+    });
+
+    return createBoundPluginApi(null);
   }, [openPluginsFolder, runtimePlatform]);
 
   const refreshFolderPlugins = useCallback(async (force = false) => {

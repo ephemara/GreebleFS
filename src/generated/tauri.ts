@@ -1424,6 +1424,54 @@ async runtimeOpenTui(request: RuntimeOpenTuiRequest) : Promise<Result<ExternalRu
     else return { status: "error", error: e  as any };
 }
 },
+async extensionHostGetApiSchema() : Promise<Result<ExtensionHostApiSchema, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("extension_host_get_api_schema") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async extensionHostCall(request: ExtensionHostCallRequest) : Promise<Result<ExtensionHostCallResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("extension_host_call", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async extensionInspect(request: ExtensionInspectRequest) : Promise<Result<ExtensionInspection, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("extension_inspect", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async extensionBuild(request: ExtensionBuildRequest) : Promise<Result<ExtensionBuildResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("extension_build", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async extensionPack(request: ExtensionPackRequest) : Promise<Result<ExtensionPackResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("extension_pack", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async extensionInstall(request: ExtensionInstallRequest) : Promise<Result<ExtensionInstallResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("extension_install", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async accelerationRuntimeGetStatus(request: AccelerationRuntimeRequest) : Promise<Result<AccelerationRuntimeStatusSnapshot, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("acceleration_runtime_get_status", { request }) };
@@ -1953,8 +2001,8 @@ videoEngineStateEvent: "video-engine-state-event"
 
 /** user-defined constants **/
 
-export const OVERLAY_THEME_MANIFESTS = [{"animationProfiles":[{"durationMs":180,"easing":"ease-in-out","id":"default-motion","intensity":50,"name":"Default Motion"}],"compatibility":{"shellBlueprints":[],"tags":["default","workbench"]},"defaultAnimationProfileId":"default-motion","defaultIconPackId":"system-icons","defaultLayoutPrimitiveId":"operator-stack","defaultNavigationPatternId":"operator-tabs","defaultRenderStyleId":"default-render","designTokens":[{"id":"accent-operator","kind":"color","name":"Accent","value":"#6366f1"},{"id":"panel-spacing","kind":"spacing","name":"Panel Spacing","value":8}],"extends":null,"iconPacks":[{"id":"system-icons","name":"System Icons","style":"system"}],"id":"operator","layoutPrimitives":[{"id":"operator-stack","kind":"stack","name":"Operator Stack","props":{"gap":8}},{"id":"operator-dock","kind":"dock","name":"Operator Dock","props":{"side":"right"}}],"name":"Operator","navigationPatterns":[{"axis":"horizontal","id":"operator-tabs","kind":"tabbed","name":"Operator Tabs","props":{"defaultSurface":"terminal","focusRing":"chrome"}}],"presentation":{"chromeStyle":"floating","cornerRadius":12,"density":"comfortable","iconStyle":"vector","motionStyle":"fluid","panelSpacing":8},"renderStyles":[{"description":"Built-in workbench renderer placeholder","entryModule":"renderers/default.tsx","id":"default-render","kind":"vs-code-workbench","label":"Workbench","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":220,"easing":"ease-out","id":"aqua-sheen","intensity":42,"name":"Aqua Sheen"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["light","aqua","chrome"]},"defaultAnimationProfileId":"aqua-sheen","defaultIconPackId":"aqua-icons","defaultLayoutPrimitiveId":"aqua-shell","defaultNavigationPatternId":"aqua-cascade","defaultRenderStyleId":"aqua-render","designTokens":[{"id":"aqua-accent","kind":"color","name":"Accent","value":"#2a9df4"},{"id":"aqua-radius","kind":"radius","name":"Card Radius","value":12}],"extends":"operator","iconPacks":[{"id":"aqua-icons","name":"Aqua Icons","style":"vector"}],"id":"aqua-light","layoutPrimitives":[{"id":"aqua-shell","kind":"split","name":"Aqua Shell","props":{"primaryRatio":0.62}}],"name":"Aqua Light","navigationPatterns":[{"axis":"both","id":"aqua-cascade","kind":"spatial","name":"Aqua Cascade","props":{"breadcrumb":true}}],"presentation":{"chromeStyle":"floating","cornerRadius":14,"density":"comfortable","iconStyle":"vector","motionStyle":"fluid","panelSpacing":10},"renderStyles":[{"description":"Bright Aqua chrome and translucent panels.","entryModule":"renderers/aqua-light.tsx","id":"aqua-render","kind":"vs-code-workbench","label":"Aqua Glass","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":240,"easing":"ease-out","id":"plasma-surge","intensity":62,"name":"Plasma Surge"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["neon","plasma","cyber"]},"defaultAnimationProfileId":"plasma-surge","defaultIconPackId":"plasma-icons","defaultLayoutPrimitiveId":"plasma-grid","defaultNavigationPatternId":"plasma-trail","defaultRenderStyleId":"plasma-render","designTokens":[{"id":"plasma-accent","kind":"color","name":"Accent","value":"#59e3ff"},{"id":"plasma-motion","kind":"motion","name":"Motion","value":240}],"extends":"operator","iconPacks":[{"id":"plasma-icons","name":"Plasma Icons","style":"vector"}],"id":"plasma-flow","layoutPrimitives":[{"id":"plasma-grid","kind":"grid","name":"Plasma Grid","props":{"cellSize":140}}],"name":"Plasma Flow","navigationPatterns":[{"axis":"horizontal","id":"plasma-trail","kind":"xmb","name":"Plasma Trail","props":{"categoryDepth":2}}],"presentation":{"chromeStyle":"floating","cornerRadius":12,"density":"comfortable","iconStyle":"vector","motionStyle":"dramatic","panelSpacing":10},"renderStyles":[{"description":"Neon dark shell with crisp panels.","entryModule":"renderers/plasma-flow.tsx","id":"plasma-render","kind":"vs-code-workbench","label":"Plasma Lab","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":300,"easing":"ease-in-out","id":"vintage-power-on","intensity":58,"name":"Power On"}],"compatibility":{"shellBlueprints":["retro-desktop"],"tags":["vintage","macintosh","crt"]},"defaultAnimationProfileId":"vintage-power-on","defaultIconPackId":"vintage-icons","defaultLayoutPrimitiveId":"vintage-window","defaultNavigationPatternId":"vintage-desktop","defaultRenderStyleId":"vintage-render","designTokens":[{"id":"vintage-accent","kind":"color","name":"Accent","value":"#506f42"},{"id":"vintage-radius","kind":"radius","name":"Bezel Radius","value":10}],"extends":"operator","iconPacks":[{"id":"vintage-icons","name":"Vintage Icons","style":"skeuomorphic"}],"id":"vintage-macintosh","layoutPrimitives":[{"id":"vintage-window","kind":"freeform","name":"Vintage Window","props":{"bezel":true}}],"name":"Vintage Macintosh","navigationPatterns":[{"axis":"vertical","id":"vintage-desktop","kind":"hierarchy","name":"Vintage Desktop","props":{"menuBar":true}}],"presentation":{"chromeStyle":"ornate","cornerRadius":10,"density":"comfortable","iconStyle":"skeuomorphic","motionStyle":"dramatic","panelSpacing":12},"renderStyles":[{"description":"Desktop chrome tuned for retro Macintosh shells.","entryModule":"renderers/vintage-macintosh.tsx","id":"vintage-render","kind":"desktop-window-manager","label":"Vintage Desktop","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":260,"easing":"ease-out","id":"vista-bloom","intensity":54,"name":"Vista Bloom"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["glass","aero","blue"]},"defaultAnimationProfileId":"vista-bloom","defaultIconPackId":"vista-icons","defaultLayoutPrimitiveId":"vista-glass-shell","defaultNavigationPatternId":"vista-breadcrumbs","defaultRenderStyleId":"vista-render","designTokens":[{"id":"vista-accent","kind":"color","name":"Accent","value":"#7dd3ff"},{"id":"vista-shadow","kind":"shadow","name":"Overlay Shadow","value":"0 20px 64px rgba(0, 0, 0, 0.44)"}],"extends":"github-dark","iconPacks":[{"id":"vista-icons","name":"Vista Icons","style":"skeuomorphic"}],"id":"vista-glass","layoutPrimitives":[{"id":"vista-glass-shell","kind":"dock","name":"Vista Glass Shell","props":{"chrome":"frosted"}}],"name":"Vista Glass","navigationPatterns":[{"axis":"horizontal","id":"vista-breadcrumbs","kind":"palette","name":"Vista Breadcrumbs","props":{"searchFirst":true}}],"presentation":{"chromeStyle":"floating","cornerRadius":16,"density":"comfortable","iconStyle":"skeuomorphic","motionStyle":"fluid","panelSpacing":10},"renderStyles":[{"description":"Glossy Aero-inspired render style for glass shells.","entryModule":"renderers/vista-glass.tsx","id":"vista-render","kind":"vs-code-workbench","label":"Vista Glass","supportsLiveSwap":true}]}] as const;
 export const YAZI_BINDINGS_MANIFEST = {"entries":[{"crateName":"yazi-actor","exportedTypes":[],"notes":["actor command internals"],"status":"internal"},{"crateName":"yazi-adapter","exportedTypes":[],"notes":["adapter and image bridge surface planned"],"status":"planned"},{"crateName":"yazi-binding","exportedTypes":[],"notes":["Lua binding internals"],"status":"internal"},{"crateName":"yazi-boot","exportedTypes":[],"notes":["boot/runtime handshake surface planned"],"status":"planned"},{"crateName":"yazi-build","exportedTypes":[],"notes":["build helper crate"],"status":"internal"},{"crateName":"yazi-cli","exportedTypes":[],"notes":["CLI-only surface"],"status":"internal"},{"crateName":"yazi-codegen","exportedTypes":[],"notes":["codegen helper crate"],"status":"internal"},{"crateName":"yazi-config","exportedTypes":[],"notes":["config/theme bridge surface planned"],"status":"planned"},{"crateName":"yazi-core","exportedTypes":[],"notes":["runtime state internals"],"status":"internal"},{"crateName":"yazi-dds","exportedTypes":[],"notes":["DDS payload bridge surface planned"],"status":"planned"},{"crateName":"yazi-emulator","exportedTypes":[],"notes":["terminal emulator bridge surface planned"],"status":"planned"},{"crateName":"yazi-ffi","exportedTypes":[],"notes":["FFI handle internals"],"status":"internal"},{"crateName":"yazi-fm","exportedTypes":[],"notes":["full TUI app crate"],"status":"internal"},{"crateName":"yazi-fs","exportedTypes":["YaziFsSortBy","YaziFsSortFallback","YaziFsErrorDto","YaziFsFolderStageDto"],"notes":["file explorer sorting and stage contracts exported"],"status":"bridged"},{"crateName":"yazi-macro","exportedTypes":[],"notes":["macro crate"],"status":"internal"},{"crateName":"yazi-packing","exportedTypes":[],"notes":["archive/package bridge surface planned"],"status":"planned"},{"crateName":"yazi-parser","exportedTypes":["YaziParserTaskSummary","YaziParserSortOpt","YaziParserHiddenOpt","YaziParserHiddenOptState"],"notes":["frontend-safe parser option DTOs exported"],"status":"bridged"},{"crateName":"yazi-plugin","exportedTypes":[],"notes":["plugin runtime bridge surface planned"],"status":"planned"},{"crateName":"yazi-proxy","exportedTypes":[],"notes":["proxy bridge surface planned"],"status":"planned"},{"crateName":"yazi-scheduler","exportedTypes":["YaziSchedulerFetchProg","YaziSchedulerFileProgCopy","YaziSchedulerFileProgCut","YaziSchedulerFileProgLink","YaziSchedulerFileProgHardlink","YaziSchedulerFileProgDelete","YaziSchedulerFileProgTrash","YaziSchedulerFileProgDownload","YaziSchedulerFileProgUpload","YaziSchedulerPluginProgEntry","YaziSchedulerPreloadProg","YaziSchedulerProcessProgBlock","YaziSchedulerProcessProgOrphan","YaziSchedulerProcessProgBg","YaziSchedulerSizeProg","YaziSchedulerTaskProg","YaziSchedulerTaskSnap"],"notes":["task progress bridge DTOs exported"],"status":"bridged"},{"crateName":"yazi-sftp","exportedTypes":[],"notes":["SFTP bridge surface planned"],"status":"planned"},{"crateName":"yazi-shared","exportedTypes":[],"notes":["shared URL/data bridge surface planned"],"status":"planned"},{"crateName":"yazi-shim","exportedTypes":[],"notes":["platform shim internals"],"status":"internal"},{"crateName":"yazi-term","exportedTypes":[],"notes":["terminal presentation bridge surface planned"],"status":"planned"},{"crateName":"yazi-tty","exportedTypes":[],"notes":["TTY internals"],"status":"internal"},{"crateName":"yazi-vfs","exportedTypes":[],"notes":["VFS service bridge surface planned"],"status":"planned"},{"crateName":"yazi-watcher","exportedTypes":[],"notes":["watcher event bridge surface planned"],"status":"planned"},{"crateName":"yazi-widgets","exportedTypes":[],"notes":["widget layout bridge surface planned"],"status":"planned"}],"version":"phase-1"} as const;
+export const OVERLAY_THEME_MANIFESTS = [{"animationProfiles":[{"durationMs":180,"easing":"ease-in-out","id":"default-motion","intensity":50,"name":"Default Motion"}],"compatibility":{"shellBlueprints":[],"tags":["default","workbench"]},"defaultAnimationProfileId":"default-motion","defaultIconPackId":"system-icons","defaultLayoutPrimitiveId":"operator-stack","defaultNavigationPatternId":"operator-tabs","defaultRenderStyleId":"default-render","designTokens":[{"id":"accent-operator","kind":"color","name":"Accent","value":"#6366f1"},{"id":"panel-spacing","kind":"spacing","name":"Panel Spacing","value":8}],"extends":null,"iconPacks":[{"id":"system-icons","name":"System Icons","style":"system"}],"id":"operator","layoutPrimitives":[{"id":"operator-stack","kind":"stack","name":"Operator Stack","props":{"gap":8}},{"id":"operator-dock","kind":"dock","name":"Operator Dock","props":{"side":"right"}}],"name":"Operator","navigationPatterns":[{"axis":"horizontal","id":"operator-tabs","kind":"tabbed","name":"Operator Tabs","props":{"defaultSurface":"terminal","focusRing":"chrome"}}],"presentation":{"chromeStyle":"floating","cornerRadius":12,"density":"comfortable","iconStyle":"vector","motionStyle":"fluid","panelSpacing":8},"renderStyles":[{"description":"Built-in workbench renderer placeholder","entryModule":"renderers/default.tsx","id":"default-render","kind":"vs-code-workbench","label":"Workbench","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":220,"easing":"ease-out","id":"aqua-sheen","intensity":42,"name":"Aqua Sheen"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["light","aqua","chrome"]},"defaultAnimationProfileId":"aqua-sheen","defaultIconPackId":"aqua-icons","defaultLayoutPrimitiveId":"aqua-shell","defaultNavigationPatternId":"aqua-cascade","defaultRenderStyleId":"aqua-render","designTokens":[{"id":"aqua-accent","kind":"color","name":"Accent","value":"#2a9df4"},{"id":"aqua-radius","kind":"radius","name":"Card Radius","value":12}],"extends":"operator","iconPacks":[{"id":"aqua-icons","name":"Aqua Icons","style":"vector"}],"id":"aqua-light","layoutPrimitives":[{"id":"aqua-shell","kind":"split","name":"Aqua Shell","props":{"primaryRatio":0.62}}],"name":"Aqua Light","navigationPatterns":[{"axis":"both","id":"aqua-cascade","kind":"spatial","name":"Aqua Cascade","props":{"breadcrumb":true}}],"presentation":{"chromeStyle":"floating","cornerRadius":14,"density":"comfortable","iconStyle":"vector","motionStyle":"fluid","panelSpacing":10},"renderStyles":[{"description":"Bright Aqua chrome and translucent panels.","entryModule":"renderers/aqua-light.tsx","id":"aqua-render","kind":"vs-code-workbench","label":"Aqua Glass","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":240,"easing":"ease-out","id":"plasma-surge","intensity":62,"name":"Plasma Surge"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["neon","plasma","cyber"]},"defaultAnimationProfileId":"plasma-surge","defaultIconPackId":"plasma-icons","defaultLayoutPrimitiveId":"plasma-grid","defaultNavigationPatternId":"plasma-trail","defaultRenderStyleId":"plasma-render","designTokens":[{"id":"plasma-accent","kind":"color","name":"Accent","value":"#59e3ff"},{"id":"plasma-motion","kind":"motion","name":"Motion","value":240}],"extends":"operator","iconPacks":[{"id":"plasma-icons","name":"Plasma Icons","style":"vector"}],"id":"plasma-flow","layoutPrimitives":[{"id":"plasma-grid","kind":"grid","name":"Plasma Grid","props":{"cellSize":140}}],"name":"Plasma Flow","navigationPatterns":[{"axis":"horizontal","id":"plasma-trail","kind":"xmb","name":"Plasma Trail","props":{"categoryDepth":2}}],"presentation":{"chromeStyle":"floating","cornerRadius":12,"density":"comfortable","iconStyle":"vector","motionStyle":"dramatic","panelSpacing":10},"renderStyles":[{"description":"Neon dark shell with crisp panels.","entryModule":"renderers/plasma-flow.tsx","id":"plasma-render","kind":"vs-code-workbench","label":"Plasma Lab","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":300,"easing":"ease-in-out","id":"vintage-power-on","intensity":58,"name":"Power On"}],"compatibility":{"shellBlueprints":["retro-desktop"],"tags":["vintage","macintosh","crt"]},"defaultAnimationProfileId":"vintage-power-on","defaultIconPackId":"vintage-icons","defaultLayoutPrimitiveId":"vintage-window","defaultNavigationPatternId":"vintage-desktop","defaultRenderStyleId":"vintage-render","designTokens":[{"id":"vintage-accent","kind":"color","name":"Accent","value":"#506f42"},{"id":"vintage-radius","kind":"radius","name":"Bezel Radius","value":10}],"extends":"operator","iconPacks":[{"id":"vintage-icons","name":"Vintage Icons","style":"skeuomorphic"}],"id":"vintage-macintosh","layoutPrimitives":[{"id":"vintage-window","kind":"freeform","name":"Vintage Window","props":{"bezel":true}}],"name":"Vintage Macintosh","navigationPatterns":[{"axis":"vertical","id":"vintage-desktop","kind":"hierarchy","name":"Vintage Desktop","props":{"menuBar":true}}],"presentation":{"chromeStyle":"ornate","cornerRadius":10,"density":"comfortable","iconStyle":"skeuomorphic","motionStyle":"dramatic","panelSpacing":12},"renderStyles":[{"description":"Desktop chrome tuned for retro Macintosh shells.","entryModule":"renderers/vintage-macintosh.tsx","id":"vintage-render","kind":"desktop-window-manager","label":"Vintage Desktop","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":260,"easing":"ease-out","id":"vista-bloom","intensity":54,"name":"Vista Bloom"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["glass","aero","blue"]},"defaultAnimationProfileId":"vista-bloom","defaultIconPackId":"vista-icons","defaultLayoutPrimitiveId":"vista-glass-shell","defaultNavigationPatternId":"vista-breadcrumbs","defaultRenderStyleId":"vista-render","designTokens":[{"id":"vista-accent","kind":"color","name":"Accent","value":"#7dd3ff"},{"id":"vista-shadow","kind":"shadow","name":"Overlay Shadow","value":"0 20px 64px rgba(0, 0, 0, 0.44)"}],"extends":"github-dark","iconPacks":[{"id":"vista-icons","name":"Vista Icons","style":"skeuomorphic"}],"id":"vista-glass","layoutPrimitives":[{"id":"vista-glass-shell","kind":"dock","name":"Vista Glass Shell","props":{"chrome":"frosted"}}],"name":"Vista Glass","navigationPatterns":[{"axis":"horizontal","id":"vista-breadcrumbs","kind":"palette","name":"Vista Breadcrumbs","props":{"searchFirst":true}}],"presentation":{"chromeStyle":"floating","cornerRadius":16,"density":"comfortable","iconStyle":"skeuomorphic","motionStyle":"fluid","panelSpacing":10},"renderStyles":[{"description":"Glossy Aero-inspired render style for glass shells.","entryModule":"renderers/vista-glass.tsx","id":"vista-render","kind":"vs-code-workbench","label":"Vista Glass","supportsLiveSwap":true}]}] as const;
 export const OVERLAY_WORKBENCH_PRESETS = [{"description":"Cross-axis shell","id":"xmb-media-deck","inputProfile":{"density":"immersive","directionalNavigation":true,"mode":"controller","pointerGestures":false},"label":"XMB Media Deck","navigationModel":"cross-axis","panelBindings":[{"defaultOpen":true,"order":0,"panelId":"terminal","preferredSize":null,"region":"primary"}],"preferredThemeIds":["operator"],"shellBlueprint":"xmb-cross-media","windowProfile":{"anchor":"center","aspectRatio":"16:9","mode":"fullscreen"}}] as const;
 
 /** user-defined types **/
@@ -2016,6 +2064,11 @@ export type DiscoveredRuntimePackage = { manifest: RuntimeManifest; origin: Runt
 export type DriveClassification = "system" | "home" | "external" | "network" | "optical" | "virtual" | "unknown"
 export type DriveInfo = { id: string; path: string; label: string; totalBytes: number; freeBytes: number; classification: DriveClassification; volumeId: string; fileSystemType: string | null; isRemovable: boolean; isNetwork: boolean; isReadOnly: boolean; supportsScan: boolean }
 export type EntryStorageInfo = { path: string; bytes: number; is_dir: boolean; is_complete: boolean }
+export type ExecutionContextEntry = { path: string; name: string; kind: string; extension: string | null; isDirectory: boolean }
+export type ExecutionContextPreviewSession = { laneId: string | null; laneType: string; viewMode: string | null; workflowTabId: string | null; filePath: string | null; resolvedPath: string | null }
+export type ExecutionContextRepoContext = { rootPath: string; headRef: string | null; isDirty: boolean | null }
+export type ExecutionContextRoot = { id: string; label: string; path: string; kind: string }
+export type ExecutionContextSnapshot = { roots: ExecutionContextRoot[]; activeDirectory: string | null; cwd: string | null; focusedEntry: ExecutionContextEntry | null; selectedEntries: ExecutionContextEntry[]; previewSession: ExecutionContextPreviewSession | null; paneId: string | null; repoContext: ExecutionContextRepoContext | null }
 export type ExplorerDuplicateGroup = { fileSize: number; contentHash: string; entries: FileEntry[] }
 export type ExplorerDuplicateScanStartResponse = { scanId: string }
 export type ExplorerDuplicateScanStatus = { scanId: string; rootPath: string; scannedFileCount: number; candidateFileCount: number; completed: boolean; cancelled: boolean; error: string | null; groups: ExplorerDuplicateGroup[] }
@@ -2062,6 +2115,31 @@ export type ExplorerTrashActionRecord = { id: string; trashedAt: number; entries
 export type ExplorerTrashRestoreResult = { restoredPaths: string[]; missingPaths: string[] }
 export type ExplorerTrashedEntryRecord = { originalPath: string; trashPath: string; isDir: boolean }
 export type ExplorerVideoHoverFrame = { imageDataUrl: string; timestampSeconds: number }
+export type ExtensionArtifactSpec = { id: string; kind: string; path: string; runtimeId: string | null; target: string | null; integrity: string | null; optional: boolean }
+export type ExtensionBuildRequest = { sourceDirectory: string; outputDirectory?: string | null; includeDebugSources?: boolean }
+export type ExtensionBuildResult = { sourceDirectory: string; stagingDirectory: string; manifestPath: string; manifest: ExtensionManifest }
+export type ExtensionCommandContribution = { id: string | null; name: string | null; command: string; description: string | null; runOnSelect: boolean | null }
+export type ExtensionContextMenuBackendContribution = { entry: string | null; args: string[] }
+export type ExtensionContextMenuContribution = { id: string | null; title: string | null; label: string | null; description: string | null; contexts: string[]; appliesTo: string | null; group: string | null; order: number | null; iconName: string | null; command: string | null; runOnSelect: boolean | null; backend: ExtensionContextMenuBackendContribution | null; panelRequest: ExtensionContextMenuPanelRequestContribution | null }
+export type ExtensionContextMenuPanelRequestContribution = { panelId: string | null; payload: Partial<{ [key in string]: string }> }
+export type ExtensionContributions = { themes: string[]; shaders: string[]; fonts: ExtensionFontContribution[]; commands: ExtensionCommandContribution[]; explorerActions: ExtensionExplorerActionContribution[]; contextMenuItems: ExtensionContextMenuContribution[]; previewLanes: ExtensionPreviewLaneContribution[] }
+export type ExtensionExplorerActionContribution = { id: string | null; label: string | null; command: string; description: string | null; appliesTo: string | null; runOnSelect: boolean | null }
+export type ExtensionFontContribution = { id: string | null; name: string | null; family: string | null; faceName: string | null; src: string; format: string | null; style: string | null; weight: string | null }
+export type ExtensionHostApiSchema = { apiVersion: string; transport: string; methods: ExtensionHostMethodDescriptor[] }
+export type ExtensionHostCallRequest = { callerPluginId?: string | null; callerRuntimeId?: string | null; methodId: string; payloadJson?: string | null; executionContext?: ExecutionContextSnapshot | null }
+export type ExtensionHostCallResponse = { methodId: string; resultJson: string }
+export type ExtensionHostMethodDescriptor = { methodId: string; namespace: string; summary: string; requiredPermissions: string[] }
+export type ExtensionInspectRequest = { path: string }
+export type ExtensionInspection = { sourceKind: string; rootPath: string; manifestPath: string; manifest: ExtensionManifest; entryCount: number; archiveEntries: string[] }
+export type ExtensionInstallRequest = { bundlePath: string; replaceExisting?: boolean }
+export type ExtensionInstallResult = { bundlePath: string; installDirectory: string; manifest: ExtensionManifest }
+export type ExtensionManifest = { id: string; version: string | null; name: string | null; displayName: string | null; description: string | null; apiVersion: string | null; entry: string | null; defaultOpen: boolean | null; keepMounted: boolean | null; permissions: RuntimePackagePermissions; contributions: ExtensionContributions; runtimes: ExtensionRuntimeSpec[]; artifacts: ExtensionArtifactSpec[]; debugSources: string[] }
+export type ExtensionPackRequest = { sourceDirectory: string; outputPath?: string | null; includeDebugSources?: boolean }
+export type ExtensionPackResult = { sourceDirectory: string; bundlePath: string; manifest: ExtensionManifest }
+export type ExtensionPreviewLaneCapabilities = { editable: boolean; save: boolean; export: boolean; workflowTabs: boolean; contextMenu: boolean; prefetch: boolean; closeGuard: boolean }
+export type ExtensionPreviewLaneContribution = { id: string; title: string | null; renderer: string | null; rendererEntry: string | null; runtimeId: string | null; runtimeRef: string | null; priority: number | null; match: ExtensionPreviewLaneMatchRule | null; capabilities: ExtensionPreviewLaneCapabilities }
+export type ExtensionPreviewLaneMatchRule = { appliesTo: string; extensions: string[]; fileNames: string[] }
+export type ExtensionRuntimeSpec = { id: string; kind: RuntimeKind; compiler: RuntimeCompiler; entry: string | null; moduleDir: string | null; permissions: RuntimePackagePermissions; targets: string[]; artifactRefs: string[]; sourceFallback: string[] }
 export type ExternalRuntimeCommandRequest = { runtimeId: string; args?: string[]; stdin?: string | null; workingDirectory?: string | null; environment?: Partial<{ [key in string]: string }> | null }
 export type ExternalRuntimeCommandResult = { runtimeId: string; exitStatus: number; stdout: string; stderr: string; durationMs: number; timedOut: boolean }
 export type ExternalRuntimeSidecarCallResponse = { runtimeId: string; requestId: string; actionId: string; resultJson: string }
@@ -2250,7 +2328,7 @@ export type RemoteTrustedHostRecord = { host: string; port: number; algorithm: s
 export type RemoteTrustedHostRemovalRequest = { host: string; port: number }
 export type ResolvedVideoPreviewSource = { sourcePath: string; sourceKind: VideoPreviewSourceKind; mimeType: string | null; generatedFromPath: string | null }
 export type RuntimeActionDescriptor = { id: string; label: string; description?: string; payloadExampleJson?: string }
-export type RuntimeCallRequest = { runtimeId: string; actionId: string; payloadJson?: string | null; workingDirectory?: string | null; environment?: Partial<{ [key in string]: string }> | null; startIfNeeded?: boolean | null }
+export type RuntimeCallRequest = { runtimeId: string; actionId: string; payloadJson?: string | null; workingDirectory?: string | null; environment?: Partial<{ [key in string]: string }> | null; executionContext?: ExecutionContextSnapshot | null; startIfNeeded?: boolean | null }
 export type RuntimeCommandConfig = { 
 /**
  * Description shown in the command palette / actions surface.
@@ -2274,6 +2352,16 @@ export type RuntimeCompiler =
  * when paired with a wasm-* kind.
  */
 "go-native" | 
+/**
+ * Native Rust/Cargo compilation for long-lived sidecars, commands, and TUIs.
+ */
+"cargo-native" | 
+/**
+ * Planned native C toolchain lane. The manifest accepts it so authored
+ * bundles can declare the future target now, but the current host still
+ * returns an explicit unsupported-driver error when asked to build it.
+ */
+"c-native" | 
 /**
  * Explicit `GOOS=js GOARCH=wasm` build using the standard toolchain.
  */
@@ -2341,6 +2429,10 @@ fsRead: boolean;
  */
 fsWrite: boolean; 
 /**
+ * Allow watching filesystem locations for changes.
+ */
+fsWatch: boolean; 
+/**
  * Allow outbound network calls.
  */
 network: boolean; 
@@ -2348,6 +2440,30 @@ network: boolean;
  * Allow spawning child processes from inside the runtime.
  */
 spawnProcesses: boolean; 
+/**
+ * Allow interacting with the terminal subsystem.
+ */
+terminalInteraction: boolean; 
+/**
+ * Allow read-only repository/git operations through the host.
+ */
+repoRead: boolean; 
+/**
+ * Allow repository mutations through the host.
+ */
+repoWrite: boolean; 
+/**
+ * Allow preview-lane save flows that mutate the active document.
+ */
+previewSave: boolean; 
+/**
+ * Allow preview-lane export flows that emit derived outputs.
+ */
+previewExport: boolean; 
+/**
+ * Allow host-owned task execution lanes.
+ */
+taskExecution: boolean; 
 /**
  * Allow listening to host shell events.
  */
@@ -2418,7 +2534,7 @@ packagePresets: RuntimePackagePreset[];
 actions: RuntimeActionDescriptor[] }
 export type RuntimeStartSidecarRequest = { runtimeId: string }
 export type RuntimeStopSidecarRequest = { runtimeId: string }
-export type RuntimeToolchainStatus = { go: ToolchainProbe; tinygo: ToolchainProbe; python: ToolchainProbe; manifestPath: string | null }
+export type RuntimeToolchainStatus = { go: ToolchainProbe; tinygo: ToolchainProbe; cargo: ToolchainProbe; rustc: ToolchainProbe; cc: ToolchainProbe; python: ToolchainProbe; manifestPath: string | null }
 export type RuntimeTuiConfig = { 
 /**
  * Display label shown in the embedded terminal tab.

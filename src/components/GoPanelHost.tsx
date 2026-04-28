@@ -27,6 +27,7 @@ import {
   type GoRuntimeMode,
   type GoRuntimeTarget,
 } from '../runtime/goRuntimeBackend';
+import { createExtensionHostClient } from '../runtime/extensionHostApi';
 
 const HOST_BRIDGE_GLOBAL = '__greeblefsRuntimeHostBridge';
 
@@ -65,6 +66,11 @@ export interface GoPanelHostBridge {
     actionId: string,
     payload?: TPayload,
   ) => Promise<TResult>;
+  /** Call one canonical extension-host method using the panel runtime's identity. */
+  callHostMethod: <TPayload = unknown>(
+    methodId: string,
+    payload?: TPayload,
+  ) => Promise<string>;
   /**
    * Read/write the host-side persisted state blob the runtime is allowed to
    * mutate. v1 stores blobs in `localStorage` under a runtime-scoped key; the
@@ -232,6 +238,27 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
       },
     [runtimeId],
   );
+  const hostClient = useMemo(
+    () =>
+      createExtensionHostClient({
+        callerRuntimeId: runtimeId,
+      }),
+    [runtimeId],
+  );
+  const callHostMethod = useMemo(
+    () =>
+      async <TPayload,>(
+        methodId: string,
+        payload?: TPayload,
+      ): Promise<string> => {
+        if (!methodId.trim()) {
+          throw new Error('callHostMethod requires a method id');
+        }
+        const response = await hostClient.call<string, TPayload>(methodId, payload);
+        return JSON.stringify(response);
+      },
+    [hostClient],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -263,6 +290,7 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
         const bridge: GoPanelHostBridge = {
           emitEvent: event => onEvent?.(event),
           callRuntimeAction: callRuntimeAction as GoPanelHostBridge['callRuntimeAction'],
+          callHostMethod: callHostMethod as GoPanelHostBridge['callHostMethod'],
           readStorageBlob: () => {
             try {
               return window.localStorage.getItem(storageKey);
@@ -341,7 +369,7 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
         delete window[HOST_BRIDGE_GLOBAL]![token];
       }
     };
-  }, [runtimeId, buildMode, buildTarget, reloadKey, callRuntimeAction, onEvent, context]);
+  }, [runtimeId, buildMode, buildTarget, reloadKey, callHostMethod, callRuntimeAction, onEvent, context]);
 
   // Bridge token is what disambiguates two panel mounts of the same runtime
   // id from each other. The Go SDK reads it back through `data-bridge-token`

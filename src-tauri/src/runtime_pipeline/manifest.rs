@@ -24,6 +24,12 @@ pub enum RuntimeKind {
     WasmWorker,
 }
 
+impl Default for RuntimeKind {
+    fn default() -> Self {
+        Self::NativeSidecar
+    }
+}
+
 impl RuntimeKind {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -54,6 +60,12 @@ pub enum RuntimeCompiler {
     /// Standard `go build` for native binaries and `GOOS=js GOARCH=wasm` panels
     /// when paired with a wasm-* kind.
     GoNative,
+    /// Native Rust/Cargo compilation for long-lived sidecars, commands, and TUIs.
+    CargoNative,
+    /// Planned native C toolchain lane. The manifest accepts it so authored
+    /// bundles can declare the future target now, but the current host still
+    /// returns an explicit unsupported-driver error when asked to build it.
+    CNative,
     /// Explicit `GOOS=js GOARCH=wasm` build using the standard toolchain.
     GoJsWasm,
     /// `tinygo build -target wasm` for size-constrained workers/panels.
@@ -62,10 +74,18 @@ pub enum RuntimeCompiler {
     PythonSidecar,
 }
 
+impl Default for RuntimeCompiler {
+    fn default() -> Self {
+        Self::GoNative
+    }
+}
+
 impl RuntimeCompiler {
     pub fn as_str(&self) -> &'static str {
         match self {
             RuntimeCompiler::GoNative => "go-native",
+            RuntimeCompiler::CargoNative => "cargo-native",
+            RuntimeCompiler::CNative => "c-native",
             RuntimeCompiler::GoJsWasm => "go-js-wasm",
             RuntimeCompiler::TinygoWasm => "tinygo-wasm",
             RuntimeCompiler::PythonSidecar => "python-sidecar",
@@ -76,6 +96,16 @@ impl RuntimeCompiler {
         matches!(
             self,
             RuntimeCompiler::GoNative | RuntimeCompiler::GoJsWasm | RuntimeCompiler::TinygoWasm
+        )
+    }
+
+    pub fn is_native_host_compiler(&self) -> bool {
+        matches!(
+            self,
+            RuntimeCompiler::GoNative
+                | RuntimeCompiler::CargoNative
+                | RuntimeCompiler::CNative
+                | RuntimeCompiler::PythonSidecar
         )
     }
 
@@ -97,10 +127,24 @@ pub struct RuntimePackagePermissions {
     pub fs_read: bool,
     /// Allow writes to the host filesystem.
     pub fs_write: bool,
+    /// Allow watching filesystem locations for changes.
+    pub fs_watch: bool,
     /// Allow outbound network calls.
     pub network: bool,
     /// Allow spawning child processes from inside the runtime.
     pub spawn_processes: bool,
+    /// Allow interacting with the terminal subsystem.
+    pub terminal_interaction: bool,
+    /// Allow read-only repository/git operations through the host.
+    pub repo_read: bool,
+    /// Allow repository mutations through the host.
+    pub repo_write: bool,
+    /// Allow preview-lane save flows that mutate the active document.
+    pub preview_save: bool,
+    /// Allow preview-lane export flows that emit derived outputs.
+    pub preview_export: bool,
+    /// Allow host-owned task execution lanes.
+    pub task_execution: bool,
     /// Allow listening to host shell events.
     pub host_events: bool,
     /// Allow reading from the host clipboard.
@@ -310,6 +354,8 @@ impl RuntimeManifest {
         let display_name = raw.display_name.unwrap_or_else(|| raw.id.clone());
         let language = raw.language.unwrap_or_else(|| match raw.compiler {
             RuntimeCompiler::PythonSidecar => "python".to_string(),
+            RuntimeCompiler::CargoNative => "rust".to_string(),
+            RuntimeCompiler::CNative => "c".to_string(),
             _ => "go".to_string(),
         });
 
@@ -361,9 +407,15 @@ fn validate_kind_compiler_pairing(
 ) -> Result<(), String> {
     let ok = match (kind, compiler) {
         (RuntimeKind::NativeSidecar, RuntimeCompiler::GoNative)
+        | (RuntimeKind::NativeSidecar, RuntimeCompiler::CargoNative)
+        | (RuntimeKind::NativeSidecar, RuntimeCompiler::CNative)
         | (RuntimeKind::NativeSidecar, RuntimeCompiler::PythonSidecar)
         | (RuntimeKind::NativeCommand, RuntimeCompiler::GoNative)
+        | (RuntimeKind::NativeCommand, RuntimeCompiler::CargoNative)
+        | (RuntimeKind::NativeCommand, RuntimeCompiler::CNative)
         | (RuntimeKind::NativeTui, RuntimeCompiler::GoNative)
+        | (RuntimeKind::NativeTui, RuntimeCompiler::CargoNative)
+        | (RuntimeKind::NativeTui, RuntimeCompiler::CNative)
         | (RuntimeKind::WasmPanel, RuntimeCompiler::GoJsWasm)
         | (RuntimeKind::WasmPanel, RuntimeCompiler::TinygoWasm)
         | (RuntimeKind::WasmPanel, RuntimeCompiler::GoNative)

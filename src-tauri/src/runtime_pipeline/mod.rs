@@ -19,6 +19,7 @@ pub mod command_runtime;
 pub mod commands;
 pub mod discovery;
 pub mod driver;
+pub mod extension_host;
 pub mod manifest;
 pub mod registry;
 pub mod sidecar;
@@ -28,6 +29,7 @@ pub mod tui;
 pub use cache::{compute_source_signature, CacheKeyParts, CompileCacheEntry, CompileCacheLayout};
 pub use commands::*;
 pub use driver::*;
+pub use extension_host::*;
 pub use manifest::{
     RuntimeCompiler, RuntimeKind, RuntimeManifest, RuntimePackagePermissions, RuntimePanelConfig,
     RuntimeSidecarConfig, RuntimeTuiConfig,

@@ -31,6 +31,7 @@ import {
   prepareRuntimePackage,
   runRuntimeCommand,
   type DiscoveredRuntimePackage,
+  type ExecutionContextSnapshot,
   type ExternalRuntimeCommandRequest,
   type ExternalRuntimeCommandResult,
   type ExternalRuntimeTuiLaunch,
@@ -41,6 +42,7 @@ import {
   type RuntimePreparePackageRequest,
   type RuntimePreparePackageResponse,
 } from '../runtime/externalRuntimeBackend';
+import { type ExtensionHostClient } from '../runtime/extensionHostApi';
 import {
   getPluginPanelOpenRequestEvent,
   readPluginPanelOpenRequest,
@@ -66,11 +68,15 @@ export interface OverlayPluginApi {
   window: typeof TauriWindow;
   fs: typeof TauriFs;
   notification: typeof TauriNotification;
+  host: ExtensionHostClient;
   storage?: OverlayPluginStorageApi;
   assets?: OverlayPluginAssetsApi;
   refreshPlugins: () => Promise<void>;
   openPluginsFolder: () => Promise<void>;
   runBackend: (entry: string, args?: string[]) => Promise<PluginBackendResult>;
+  bindExecutionContext: (
+    executionContext: ExecutionContextSnapshot | null,
+  ) => OverlayPluginApi;
 }
 
 export interface OverlayPluginStorageApi {
@@ -161,6 +167,7 @@ export interface OverlayPluginPreviewLaneProps {
   api: OverlayPluginApi;
   appearance: OverlayPluginProps['appearance'];
   host: OverlayPluginPreviewHostContext;
+  executionContext: ExecutionContextSnapshot | null;
   lane: OverlayPluginPreviewLaneDescriptor;
   file: OverlayPluginPreviewFileContext;
   runtime: OverlayPluginPreviewRuntimeBridge;
@@ -486,6 +493,7 @@ function unwrapModuleExport(exported: unknown): unknown {
 
 export function createPluginPreviewRuntimeBridge(
   runtimeId: string | null,
+  getExecutionContext?: (() => ExecutionContextSnapshot | null) | null,
 ): OverlayPluginPreviewRuntimeBridge {
   return {
     runtimeId,
@@ -493,7 +501,14 @@ export function createPluginPreviewRuntimeBridge(
       runtimeId ? getRuntimePackage(runtimeId) : Promise.resolve(null),
     listRuntimePackages,
     prepareRuntimePackage,
-    callRuntimeAction,
+    callRuntimeAction: (request) =>
+      callRuntimeAction({
+        ...request,
+        executionContext:
+          request.executionContext ??
+          getExecutionContext?.() ??
+          null,
+      }),
     runRuntimeCommand,
     openRuntimeTui,
   };

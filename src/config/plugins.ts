@@ -12,7 +12,7 @@ export const pluginSystemConfig = {
   frontendExtensions: ['tsx', 'ts', 'jsx', 'js'] as const,
   backendDirectoryName: 'backend',
   runtimeModuleName: 'overlayterm-plugin',
-  manifestNames: ['plugin.json', 'plugin.toml', 'manifest.json', 'manifest.toml'] as const,
+  manifestNames: ['extension.toml', 'plugin.json', 'plugin.toml', 'manifest.json', 'manifest.toml'] as const,
   packageEntryCandidates: ['dist/index.js', 'index.tsx', 'index.ts', 'index.jsx', 'index.js'] as const,
   packageThemesDirectoryName: 'themes',
   packageShadersDirectoryName: 'shaders',

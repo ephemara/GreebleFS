@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { cleanupGreeblefsDevProcesses } from "./cleanup-dev-processes.mjs";
 import { getUsrEntrySourcePath, getUsrManagedContentEntries } from "./usr-manifest.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -365,6 +366,12 @@ async function main() {
   const packageManagerCommand = getPackageManagerCommand();
   const cliArgs = process.argv.slice(2);
   const tauriCommand = cliArgs.find((arg) => !arg.startsWith("-")) ?? null;
+  if (tauriCommand === "dev") {
+    cleanupGreeblefsDevProcesses({
+      projectRootPath: projectRoot,
+      includeRunning: true,
+    });
+  }
   await prepareTauriDevBindings(packageManagerCommand, tauriCommand);
   const linuxGraphicsEnvironment = buildLinuxGraphicsEnvironment({ tauriCommand });
   const existingNodePath = process.env.NODE_PATH

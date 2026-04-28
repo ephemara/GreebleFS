@@ -224,6 +224,7 @@ import {
   type ShaderPerformanceMode,
 } from "../config/shaders";
 import { requestPluginPanelOpen } from "../runtime/pluginPanelRequests";
+import { buildExplorerExecutionContextSnapshot } from "../runtime/explorerExtensionContext";
 import {
   createPluginPreviewRuntimeBridge,
   type OverlayPluginPreviewHostContext,
@@ -4268,12 +4269,51 @@ function PreviewPanel({
       previewPluginZoom,
     ],
   );
+  const pluginPreviewExecutionContext = useMemo(
+    () =>
+      buildExplorerExecutionContextSnapshot({
+        paneId: instanceId,
+        activeDirectory: currentPath,
+        cwd: currentPath,
+        drives,
+        entries,
+        selectedPaths: [...selected],
+        previewSession:
+          preview.type === "none"
+            ? null
+            : {
+                laneId: preview.type === "plugin" ? preview.lane.id : null,
+                laneType:
+                  preview.type === "plugin"
+                    ? `plugin:${preview.lane.pluginId}`
+                    : preview.type,
+                viewMode: previewBackedByArchiveVirtual ? "preview" : viewMode,
+                workflowTabId: activePreviewWorkflowTab.id,
+                filePath: preview.path,
+                resolvedPath: previewResolvedPath,
+              },
+        repoContext: null,
+      }),
+    [
+      activePreviewWorkflowTab.id,
+      currentPath,
+      drives,
+      entries,
+      instanceId,
+      preview,
+      previewBackedByArchiveVirtual,
+      previewResolvedPath,
+      selected,
+      viewMode,
+    ],
+  );
   const pluginPreviewRuntimeBridge = useMemo(
     () =>
       createPluginPreviewRuntimeBridge(
         preview.type === "plugin" ? preview.lane.runtimeId : null,
+        () => pluginPreviewExecutionContext,
       ),
-    [preview],
+    [pluginPreviewExecutionContext, preview],
   );
   const ActivePluginPreviewComponent = isPluginPreview
     ? preview.lane.component
@@ -5650,6 +5690,7 @@ function PreviewPanel({
               <ActivePluginPreviewComponent
                 appearance={getPreviewPluginAppearance(appearance)}
                 host={pluginPreviewHostContext}
+                executionContext={pluginPreviewExecutionContext}
                 lane={preview.lane}
                 file={{
                   path: preview.path,

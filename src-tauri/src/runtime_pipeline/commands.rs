@@ -7,6 +7,9 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::{Command as ProcessCommand, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -16,7 +19,10 @@ use crate::cloud_commands::{cloud_list_dir, cloud_open_file, CloudRuntimeState};
 use crate::explorer_identity::{
     build_content_revision, build_virtual_identity, ExplorerIdentityManager,
 };
-use crate::fs_commands::{fs_list_archive_dir, fs_list_dir, fs_open_file, FileEntry};
+use crate::fs_commands::{
+    fs_list_archive_dir, fs_list_dir, fs_open_file, fs_read_text_file, fs_write_file, git_exec,
+    FileEntry, FsWriteFileContent,
+};
 use crate::remote_storage_commands::{remote_list_dir, remote_open_file, RemoteStorageState};
 use crate::runtime_pipeline::cache::{CacheKeyParts, CompileCacheLayout};
 use crate::runtime_pipeline::command_runtime::{
@@ -29,13 +35,22 @@ use crate::runtime_pipeline::driver::{
     artifact_name_for_compiler, default_target_for_compiler, invoke_build_script,
     resolve_toolchain_version,
 };
-use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeKind};
+use crate::runtime_pipeline::extension_host::{
+    build_extension_host_api_schema, build_extension_source, inspect_extension_source,
+    install_extension_bundle_into, pack_extension_source, read_extension_manifest_from_directory,
+    resolve_default_bundle_output_path, resolve_extension_install_root, ExecutionContextPreviewSession,
+    ExecutionContextSnapshot, ExtensionBuildResult, ExtensionHostApiSchema, ExtensionInspection,
+    ExtensionInstallResult, ExtensionPackResult,
+};
+use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeKind, RuntimePackagePermissions};
 use crate::runtime_pipeline::registry::RuntimeRegistry;
 use crate::runtime_pipeline::sidecar::{
     ExternalRuntimeSidecarCallResponse, ExternalRuntimeSidecarStatus, ExternalSidecarManager,
 };
 use crate::runtime_pipeline::toolchain::{probe_runtime_toolchains, RuntimeToolchainStatus};
 use crate::runtime_pipeline::tui::{build_tui_launch, ExternalRuntimeTuiLaunch};
+use crate::terminal::ExternalTerminalRequest;
+use crate::usr::resolve_managed_content_root;
 
 const BUILTIN_RUNTIMES_ROOT_ID: &str = "builtin";
 const MANAGED_RUNTIMES_ROOT_ID: &str = "managed";
@@ -79,6 +94,129 @@ struct RuntimeHostExplorerLocationListing {
 struct RuntimeArchiveVirtualLocation {
     archive_path: String,
     entry_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionHostCallRequest {
+    #[serde(default)]
+    pub caller_plugin_id: Option<String>,
+    #[serde(default)]
+    pub caller_runtime_id: Option<String>,
+    pub method_id: String,
+    #[serde(default)]
+    pub payload_json: Option<String>,
+    #[serde(default)]
+    pub execution_context: Option<ExecutionContextSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionHostCallResponse {
+    pub method_id: String,
+    pub result_json: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionInspectRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionBuildRequest {
+    pub source_directory: String,
+    #[serde(default)]
+    pub output_directory: Option<String>,
+    #[serde(default)]
+    pub include_debug_sources: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionPackRequest {
+    pub source_directory: String,
+    #[serde(default)]
+    pub output_path: Option<String>,
+    #[serde(default)]
+    pub include_debug_sources: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionInstallRequest {
+    pub bundle_path: String,
+    #[serde(default)]
+    pub replace_existing: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostReadTextRequest {
+    path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostWriteTextRequest {
+    path: String,
+    content: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostListDirectoryRequest {
+    path: String,
+    #[serde(default)]
+    show_hidden: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostFileStat {
+    path: String,
+    exists: bool,
+    is_directory: bool,
+    size: u64,
+    modified_ms: Option<u64>,
+    extension: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostFileStatRequest {
+    path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostRepoExecRequest {
+    #[serde(default)]
+    repo_path: Option<String>,
+    args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostTaskRunCommandRequest {
+    program: String,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    working_directory: Option<String>,
+    #[serde(default)]
+    environment: Option<HashMap<String, String>>,
+    #[serde(default)]
+    timeout_secs: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostTaskRunCommandResult {
+    status: i32,
+    stdout: String,
+    stderr: String,
 }
 
 fn is_cloud_explorer_path(path: &str) -> bool {
@@ -477,33 +615,410 @@ async fn runtime_host_open_explorer_path(
     fs_open_file(path).await
 }
 
-fn dispatch_runtime_sidecar_host_call(
+fn resolve_extension_host_caller_permissions(
     app: &AppHandle,
-    runtime_id: &str,
-    method_id: &str,
-    payload_json: Option<String>,
+    registry: &RuntimeRegistry,
+    caller_runtime_id: Option<&str>,
+    caller_plugin_id: Option<&str>,
+) -> Result<Option<(String, RuntimePackagePermissions)>, String> {
+    if let Some(runtime_id) = caller_runtime_id {
+        let package = require_package(registry, app, runtime_id)?;
+        return Ok(Some((
+            format!("runtime {}", runtime_id),
+            package.manifest.permissions.clone(),
+        )));
+    }
+    if let Some(plugin_id) = caller_plugin_id {
+        let managed_root = resolve_managed_content_root(app)?;
+        let plugins_root = resolve_extension_install_root(&managed_root);
+        let plugin_directory = plugins_root.join(plugin_id);
+        let (_, manifest) = read_extension_manifest_from_directory(&plugin_directory)?;
+        return Ok(Some((
+            format!("plugin {}", plugin_id),
+            manifest.permissions,
+        )));
+    }
+    Ok(None)
+}
+
+fn ensure_extension_host_permission(
+    caller_label: Option<&str>,
+    permissions: Option<&RuntimePackagePermissions>,
+    check: impl Fn(&RuntimePackagePermissions) -> bool,
+    permission_label: &str,
+) -> Result<(), String> {
+    let Some(caller_label) = caller_label else {
+        return Err(format!(
+            "Extension host method requires caller identity and permission `{}`.",
+            permission_label
+        ));
+    };
+    let Some(permissions) = permissions else {
+        return Err(format!(
+            "Extension host method caller {} has no resolved permissions for `{}`.",
+            caller_label, permission_label
+        ));
+    };
+    if check(permissions) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Extension host caller {} does not declare required permission `{}`.",
+            caller_label, permission_label
+        ))
+    }
+}
+
+fn ensure_extension_host_launch_intent(
+    caller_label: Option<&str>,
+    permissions: Option<&RuntimePackagePermissions>,
+    launch_intent: &str,
+) -> Result<(), String> {
+    let permission_label = format!("launchIntents:{launch_intent}");
+    ensure_extension_host_permission(
+        caller_label,
+        permissions,
+        |resolved| resolved.launch_intents.iter().any(|intent| intent == launch_intent),
+        permission_label.as_str(),
+    )
+}
+
+fn resolve_extension_context_path(
+    requested_path: Option<&str>,
+    execution_context: Option<&ExecutionContextSnapshot>,
+) -> Option<String> {
+    let requested_path = requested_path
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if requested_path.is_some() {
+        return requested_path;
+    }
+    execution_context
+        .and_then(|context| context.cwd.clone().or(context.active_directory.clone()))
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn extension_host_repo_command_requires_write(args: &[String]) -> bool {
+    let Some(command) = args.first().map(|entry| entry.trim()) else {
+        return false;
+    };
+    if command.is_empty() {
+        return false;
+    }
+    let read_only_commands = [
+        "branch",
+        "cat-file",
+        "check-ignore",
+        "config",
+        "describe",
+        "diff",
+        "grep",
+        "log",
+        "ls-files",
+        "merge-base",
+        "name-rev",
+        "remote",
+        "rev-list",
+        "rev-parse",
+        "show",
+        "show-ref",
+        "status",
+        "symbolic-ref",
+        "tag",
+    ];
+    if command == "branch" {
+        return args.len() > 1 && !args.iter().any(|entry| entry == "--show-current");
+    }
+    !read_only_commands.contains(&command)
+}
+
+fn run_extension_host_task_command(
+    request: ExtensionHostTaskRunCommandRequest,
+    execution_context: Option<&ExecutionContextSnapshot>,
+) -> Result<ExtensionHostTaskRunCommandResult, String> {
+    let working_directory = request
+        .working_directory
+        .clone()
+        .or_else(|| execution_context.and_then(|context| context.cwd.clone()))
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "tasks.run_command requires a working directory or execution context cwd.".to_string())?;
+    let timeout = Duration::from_secs(request.timeout_secs.unwrap_or(120).max(1));
+    let mut command = ProcessCommand::new(request.program.trim());
+    command
+        .args(&request.args)
+        .current_dir(working_directory)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(environment) = request.environment.as_ref() {
+        command.envs(environment);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Failed to spawn task command: {error}"))?;
+    let started_at = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => break,
+            Ok(None) => {
+                if started_at.elapsed() > timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "Task command timed out after {}s.",
+                        timeout.as_secs()
+                    ));
+                }
+                thread::sleep(Duration::from_millis(15));
+            }
+            Err(error) => {
+                return Err(format!("Failed while waiting for task command: {error}"));
+            }
+        }
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("Failed to collect task command output: {error}"))?;
+    Ok(ExtensionHostTaskRunCommandResult {
+        status: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
+}
+
+async fn extension_host_stat_path(path: String) -> Result<ExtensionHostFileStat, String> {
+    let metadata = match std::fs::metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(ExtensionHostFileStat {
+                path: path.clone(),
+                exists: false,
+                is_directory: false,
+                size: 0,
+                modified_ms: None,
+                extension: PathBuf::from(&path)
+                    .extension()
+                    .and_then(|value| value.to_str())
+                    .map(|value| value.to_string()),
+            });
+        }
+        Err(error) => {
+            return Err(format!(
+                "Failed to inspect extension host path {}: {error}",
+                path
+            ));
+        }
+    };
+    let modified_ms = metadata
+        .modified()
+        .ok()
+        .and_then(|timestamp| timestamp.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64);
+    Ok(ExtensionHostFileStat {
+        path: path.clone(),
+        exists: true,
+        is_directory: metadata.is_dir(),
+        size: metadata.len(),
+        modified_ms,
+        extension: PathBuf::from(&path)
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_string()),
+    })
+}
+
+async fn dispatch_extension_host_call(
+    app: AppHandle,
+    registry: &RuntimeRegistry,
+    request: ExtensionHostCallRequest,
 ) -> Result<String, String> {
-    match method_id {
-        "explorer.list_location" => {
-            let request: RuntimeHostExplorerListLocationRequest =
-                decode_runtime_host_bridge_payload(method_id, payload_json)?;
-            let listing = tauri::async_runtime::block_on(runtime_host_list_explorer_location(
+    let caller = resolve_extension_host_caller_permissions(
+        &app,
+        registry,
+        request.caller_runtime_id.as_deref(),
+        request.caller_plugin_id.as_deref(),
+    )?;
+    let caller_label = caller.as_ref().map(|(label, _)| label.as_str());
+    let caller_permissions = caller.as_ref().map(|(_, permissions)| permissions);
+
+    match request.method_id.as_str() {
+        "host.get_api_schema" => encode_runtime_host_bridge_result(&build_extension_host_api_schema()),
+        "selection.get_snapshot" => {
+            encode_runtime_host_bridge_result(&request.execution_context.unwrap_or_default())
+        }
+        "preview.get_session" => {
+            let preview_session: Option<ExecutionContextPreviewSession> = request
+                .execution_context
+                .as_ref()
+                .and_then(|context| context.preview_session.clone());
+            encode_runtime_host_bridge_result(&preview_session)
+        }
+        "files.read_text" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_read,
+                "fsRead",
+            )?;
+            let payload: ExtensionHostReadTextRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let content = fs_read_text_file(payload.path).await?;
+            encode_runtime_host_bridge_result(&content)
+        }
+        "files.write_text" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_write,
+                "fsWrite",
+            )?;
+            let payload: ExtensionHostWriteTextRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            fs_write_file(payload.path, FsWriteFileContent::Text(payload.content)).await?;
+            Ok("null".to_string())
+        }
+        "files.list_directory" | "explorer.list_location" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_read,
+                "fsRead",
+            )?;
+            let payload: ExtensionHostListDirectoryRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let listing = runtime_host_list_explorer_location(
                 app.clone(),
-                request,
-            ))?;
+                RuntimeHostExplorerListLocationRequest {
+                    path: payload.path,
+                    show_hidden: payload.show_hidden,
+                },
+            )
+            .await?;
             encode_runtime_host_bridge_result(&listing)
         }
+        "files.stat" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_read,
+                "fsRead",
+            )?;
+            let payload: ExtensionHostFileStatRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let stat = extension_host_stat_path(payload.path).await?;
+            encode_runtime_host_bridge_result(&stat)
+        }
         "explorer.open_path" => {
-            let request: RuntimeHostExplorerOpenPathRequest =
-                decode_runtime_host_bridge_payload(method_id, payload_json)?;
-            tauri::async_runtime::block_on(runtime_host_open_explorer_path(app.clone(), request))?;
+            ensure_extension_host_launch_intent(caller_label, caller_permissions, "open-explorer")?;
+            let payload: RuntimeHostExplorerOpenPathRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            runtime_host_open_explorer_path(app.clone(), payload).await?;
+            Ok("null".to_string())
+        }
+        "repo.exec" => {
+            let payload: ExtensionHostRepoExecRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let repo_path = payload
+                .repo_path
+                .clone()
+                .or_else(|| {
+                    request
+                        .execution_context
+                        .as_ref()
+                        .and_then(|context| context.repo_context.as_ref())
+                        .map(|context| context.root_path.clone())
+                })
+                .or_else(|| {
+                    request
+                        .execution_context
+                        .as_ref()
+                        .and_then(|context| context.cwd.clone())
+                })
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "repo.exec requires a repository path or execution context repo root.".to_string())?;
+            let requires_write = extension_host_repo_command_requires_write(&payload.args);
+            if requires_write {
+                ensure_extension_host_permission(
+                    caller_label,
+                    caller_permissions,
+                    |permissions| permissions.repo_write,
+                    "repoWrite",
+                )?;
+            } else {
+                ensure_extension_host_permission(
+                    caller_label,
+                    caller_permissions,
+                    |permissions| permissions.repo_read || permissions.repo_write,
+                    "repoRead",
+                )?;
+            }
+            let result = git_exec(repo_path, payload.args).await?;
+            encode_runtime_host_bridge_result(&result)
+        }
+        "tasks.run_command" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.task_execution || permissions.spawn_processes,
+                "taskExecution",
+            )?;
+            let payload: ExtensionHostTaskRunCommandRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let result = run_extension_host_task_command(payload, request.execution_context.as_ref())?;
+            encode_runtime_host_bridge_result(&result)
+        }
+        "terminal.open_external" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.terminal_interaction,
+                "terminalInteraction",
+            )?;
+            ensure_extension_host_launch_intent(caller_label, caller_permissions, "open-terminal")?;
+            let mut payload: ExternalTerminalRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            if payload.working_dir.trim().is_empty() {
+                payload.working_dir = resolve_extension_context_path(
+                    None,
+                    request.execution_context.as_ref(),
+                )
+                .ok_or_else(|| {
+                    "terminal.open_external requires a working directory or execution context cwd."
+                        .to_string()
+                })?;
+            }
+            crate::terminal::terminal_open_external(payload).await?;
             Ok("null".to_string())
         }
         _ => Err(format!(
-            "Runtime sidecar {} requested unknown host method {}.",
-            runtime_id, method_id
+            "Extension host requested unknown method {}.",
+            request.method_id
         )),
     }
+}
+
+fn dispatch_runtime_sidecar_host_call(
+    app: &AppHandle,
+    registry: &RuntimeRegistry,
+    runtime_id: &str,
+    method_id: &str,
+    payload_json: Option<String>,
+    execution_context: Option<ExecutionContextSnapshot>,
+) -> Result<String, String> {
+    tauri::async_runtime::block_on(dispatch_extension_host_call(
+        app.clone(),
+        registry,
+        ExtensionHostCallRequest {
+            caller_plugin_id: None,
+            caller_runtime_id: Some(runtime_id.to_string()),
+            method_id: method_id.to_string(),
+            payload_json,
+            execution_context,
+        },
+    ))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -592,6 +1107,8 @@ pub struct RuntimeCallRequest {
     pub working_directory: Option<String>,
     #[serde(default)]
     pub environment: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub execution_context: Option<ExecutionContextSnapshot>,
     #[serde(default)]
     pub start_if_needed: Option<bool>,
 }
@@ -777,16 +1294,32 @@ pub async fn runtime_call(
         }
     }
 
-    sidecar_state.call(
-        &request.runtime_id,
-        &request.action_id,
-        request.payload_json,
-        request.working_directory,
-        request.environment,
-        |runtime_id, method_id, payload_json| {
-            dispatch_runtime_sidecar_host_call(&app, runtime_id, method_id, payload_json)
-        },
-    )
+    let request_for_sidecar_call = request.clone();
+    let app_for_sidecar_call = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let sidecar_state = app_for_sidecar_call.state::<ExternalSidecarManager>();
+        let runtime_registry = app_for_sidecar_call.state::<RuntimeRegistry>();
+        let sidecar_execution_context = request_for_sidecar_call.execution_context.clone();
+        sidecar_state.call(
+            &request_for_sidecar_call.runtime_id,
+            &request_for_sidecar_call.action_id,
+            request_for_sidecar_call.payload_json,
+            request_for_sidecar_call.working_directory,
+            request_for_sidecar_call.environment,
+            |runtime_id, method_id, payload_json| {
+                dispatch_runtime_sidecar_host_call(
+                    &app_for_sidecar_call,
+                    &runtime_registry,
+                    runtime_id,
+                    method_id,
+                    payload_json,
+                    sidecar_execution_context.clone(),
+                )
+            },
+        )
+    })
+    .await
+    .map_err(|error| format!("Runtime sidecar call task failed to join: {error}"))?
 }
 
 #[tauri::command]
@@ -845,6 +1378,88 @@ pub async fn runtime_open_tui(
     )
     .await?;
     build_tui_launch(&package.manifest, prepared.artifact_path)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn extension_host_get_api_schema() -> Result<ExtensionHostApiSchema, String> {
+    Ok(build_extension_host_api_schema())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn extension_host_call(
+    app: AppHandle,
+    registry: State<'_, RuntimeRegistry>,
+    request: ExtensionHostCallRequest,
+) -> Result<ExtensionHostCallResponse, String> {
+    let method_id = request.method_id.clone();
+    let result_json = dispatch_extension_host_call(app, &registry, request).await?;
+    Ok(ExtensionHostCallResponse {
+        method_id,
+        result_json,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn extension_inspect(
+    request: ExtensionInspectRequest,
+) -> Result<ExtensionInspection, String> {
+    let source_path = PathBuf::from(request.path);
+    inspect_extension_source(source_path.as_path())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn extension_build(
+    request: ExtensionBuildRequest,
+) -> Result<ExtensionBuildResult, String> {
+    let source_directory = PathBuf::from(&request.source_directory);
+    let output_directory = request
+        .output_directory
+        .clone()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| source_directory.join(".greeble-build"));
+    build_extension_source(
+        &source_directory,
+        &output_directory,
+        request.include_debug_sources,
+    )
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn extension_pack(
+    request: ExtensionPackRequest,
+) -> Result<ExtensionPackResult, String> {
+    let source_directory = PathBuf::from(&request.source_directory);
+    let output_path = request
+        .output_path
+        .clone()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| resolve_default_bundle_output_path(&source_directory));
+    pack_extension_source(
+        &source_directory,
+        &output_path,
+        request.include_debug_sources,
+    )
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn extension_install(
+    app: AppHandle,
+    request: ExtensionInstallRequest,
+) -> Result<ExtensionInstallResult, String> {
+    let managed_root = resolve_managed_content_root(&app)?;
+    let install_root = resolve_extension_install_root(&managed_root);
+    let bundle_path = PathBuf::from(&request.bundle_path);
+    install_extension_bundle_into(
+        bundle_path.as_path(),
+        &install_root,
+        request.replace_existing,
+    )
 }
 
 // ---------- helpers ----------

@@ -9,6 +9,7 @@
     "build:mobile": "vite build --config vite.mobile.config.ts",
     "icons:folders": "bun scripts/sync-canonical-icons.mjs",
     "dev": "bun run bindings:generate && bun run dev:frontend",
+    "dev:cleanup": "node scripts/cleanup-dev-processes.mjs",
     "dev:frontend": "node scripts/run-frontend-dev.mjs",
     "dev:vps": "bash scripts/with-vps-artifacts.sh bun run dev",
     "build": "bun scripts/sync-canonical-icons.mjs && cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings && vite build && vite build --config vite.mobile.config.ts",

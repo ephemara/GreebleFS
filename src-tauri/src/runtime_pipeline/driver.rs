@@ -63,6 +63,20 @@ const GO_NATIVE_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
     build_invoker: invoke_go_build_script,
 };
 
+const CARGO_NATIVE_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
+    default_target_resolver: default_cargo_host_target,
+    toolchain_probe_selector: select_cargo_toolchain_probe,
+    artifact_name_builder: build_native_binary_artifact_name,
+    build_invoker: invoke_cargo_build,
+};
+
+const C_NATIVE_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
+    default_target_resolver: default_c_host_target,
+    toolchain_probe_selector: select_c_toolchain_probe,
+    artifact_name_builder: build_native_binary_artifact_name,
+    build_invoker: invoke_unsupported_c_build,
+};
+
 const GO_JS_WASM_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
     default_target_resolver: default_js_wasm_target,
     toolchain_probe_selector: select_go_toolchain_probe,
@@ -113,6 +127,8 @@ pub fn invoke_build_script(
 fn require_runtime_compiler_driver(compiler: RuntimeCompiler) -> &'static RuntimeCompilerDriver {
     match compiler {
         RuntimeCompiler::GoNative => &GO_NATIVE_DRIVER,
+        RuntimeCompiler::CargoNative => &CARGO_NATIVE_DRIVER,
+        RuntimeCompiler::CNative => &C_NATIVE_DRIVER,
         RuntimeCompiler::GoJsWasm => &GO_JS_WASM_DRIVER,
         RuntimeCompiler::TinygoWasm => &TINYGO_WASM_DRIVER,
         RuntimeCompiler::PythonSidecar => &PYTHON_SIDECAR_DRIVER,
@@ -127,6 +143,14 @@ fn default_js_wasm_target() -> String {
     "js-wasm".to_string()
 }
 
+fn default_cargo_host_target() -> String {
+    "cargo-host".to_string()
+}
+
+fn default_c_host_target() -> String {
+    "c-host".to_string()
+}
+
 fn default_tinygo_wasm_target() -> String {
     "tinygo-wasm".to_string()
 }
@@ -137,6 +161,14 @@ fn default_python_host_target() -> String {
 
 fn select_go_toolchain_probe(status: &RuntimeToolchainStatus) -> &ToolchainProbe {
     &status.go
+}
+
+fn select_cargo_toolchain_probe(status: &RuntimeToolchainStatus) -> &ToolchainProbe {
+    &status.cargo
+}
+
+fn select_c_toolchain_probe(status: &RuntimeToolchainStatus) -> &ToolchainProbe {
+    &status.cc
 }
 
 fn select_tinygo_toolchain_probe(status: &RuntimeToolchainStatus) -> &ToolchainProbe {
@@ -232,6 +264,163 @@ fn invoke_go_build_script(
         ));
     }
     Ok(RuntimeCompilerBuildOutput { stdout, stderr })
+}
+
+fn invoke_cargo_build(
+    manifest: &RuntimeManifest,
+    artifact_path: &Path,
+    target: &str,
+    mode: &str,
+) -> Result<RuntimeCompilerBuildOutput, String> {
+    let module_dir = PathBuf::from(&manifest.module_dir);
+    let cargo_manifest_path = resolve_cargo_manifest_path(&module_dir)?;
+    let binary_name = resolve_cargo_binary_name(&cargo_manifest_path, manifest)?;
+    let mut command = Command::new("cargo");
+    command
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(&cargo_manifest_path)
+        .arg("--bin")
+        .arg(&binary_name);
+    if mode == "release" {
+        command.arg("--release");
+    }
+    let cargo_target_directory = module_dir.join("target");
+    command.arg("--target-dir").arg(&cargo_target_directory);
+    if !target.trim().is_empty() && target != "cargo-host" {
+        command.arg("--target").arg(target);
+    }
+    command.current_dir(&module_dir);
+
+    let output = command
+        .output()
+        .map_err(|error| format!("failed to run cargo build: {error}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if !output.status.success() {
+        return Err(format!(
+            "cargo build exited with status {}: {}",
+            output.status,
+            if stderr.is_empty() {
+                stdout.as_str()
+            } else {
+                stderr.as_str()
+            }
+        ));
+    }
+
+    let built_artifact = resolve_cargo_built_artifact_path(
+        &cargo_target_directory,
+        target,
+        mode,
+        &binary_name,
+    );
+    if let Some(parent) = artifact_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create runtime artifact directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    std::fs::copy(&built_artifact, artifact_path).map_err(|error| {
+        format!(
+            "failed to stage cargo artifact {} -> {}: {error}",
+            built_artifact.display(),
+            artifact_path.display()
+        )
+    })?;
+
+    Ok(RuntimeCompilerBuildOutput { stdout, stderr })
+}
+
+fn invoke_unsupported_c_build(
+    _: &RuntimeManifest,
+    _: &Path,
+    _: &str,
+    _: &str,
+) -> Result<RuntimeCompilerBuildOutput, String> {
+    Err(
+        "The `c-native` runtime compiler is not implemented yet. Use `cargo-native`, `go-native`, or a wasm compiler for now."
+            .to_string(),
+    )
+}
+
+fn resolve_cargo_manifest_path(module_dir: &Path) -> Result<PathBuf, String> {
+    let direct = module_dir.join("Cargo.toml");
+    if direct.exists() {
+        return Ok(direct);
+    }
+    Err(format!(
+        "Cargo runtime module {} does not contain Cargo.toml.",
+        module_dir.display()
+    ))
+}
+
+fn resolve_cargo_binary_name(
+    cargo_manifest_path: &Path,
+    manifest: &RuntimeManifest,
+) -> Result<String, String> {
+    let text = std::fs::read_to_string(cargo_manifest_path).map_err(|error| {
+        format!(
+            "Failed to read cargo manifest {}: {error}",
+            cargo_manifest_path.display()
+        )
+    })?;
+    let parsed = text
+        .parse::<toml::Value>()
+        .map_err(|error| format!("Failed to parse {}: {error}", cargo_manifest_path.display()))?;
+    if let Some(bins) = parsed.get("bin").and_then(|value| value.as_array()) {
+        if let Some(configured_bin) = bins.iter().find_map(|entry| {
+            entry.as_table().and_then(|table| {
+                let name = table.get("name")?.as_str()?;
+                if name == manifest.id {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            })
+        }) {
+            return Ok(configured_bin);
+        }
+        if let Some(first_bin) = bins.iter().find_map(|entry| {
+            entry.as_table()
+                .and_then(|table| table.get("name"))
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        }) {
+            return Ok(first_bin);
+        }
+    }
+    if let Some(package_name) = parsed
+        .get("package")
+        .and_then(|value| value.as_table())
+        .and_then(|table| table.get("name"))
+        .and_then(|value| value.as_str())
+    {
+        return Ok(package_name.to_string());
+    }
+    Ok(manifest.id.clone())
+}
+
+fn resolve_cargo_built_artifact_path(
+    cargo_target_directory: &Path,
+    target: &str,
+    mode: &str,
+    binary_name: &str,
+) -> PathBuf {
+    let profile_directory = if mode == "release" { "release" } else { "debug" };
+    let mut path = cargo_target_directory.to_path_buf();
+    if !target.trim().is_empty() && target != "cargo-host" {
+        path.push(target);
+    }
+    path.push(profile_directory);
+    if cfg!(target_os = "windows") {
+        path.push(format!("{binary_name}.exe"));
+    } else {
+        path.push(binary_name);
+    }
+    path
 }
 
 /// Resolve the Go build script for the running host. Order of precedence:

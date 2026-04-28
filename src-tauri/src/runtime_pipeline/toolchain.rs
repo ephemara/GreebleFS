@@ -1,9 +1,9 @@
 //! Host-side toolchain probing for the polyglot runtime pipeline.
 //!
-//! v1 reports presence + version of the standard Go toolchain, TinyGo, and
-//! Python. We never invoke `go install` or auto-bootstrap toolchains here —
-//! that lives in `scripts/go/bootstrap.sh` so the host stays free of network
-//! and write side-effects.
+//! v1 reports presence + version of the standard Go toolchain, TinyGo, Cargo /
+//! Rust, a future C compiler probe, and Python. We never invoke `go install`
+//! or auto-bootstrap toolchains here — that lives in `scripts/go/bootstrap.sh`
+//! so the host stays free of network and write side-effects.
 
 use std::process::Command;
 
@@ -14,6 +14,9 @@ use serde::Serialize;
 pub struct RuntimeToolchainStatus {
     pub go: ToolchainProbe,
     pub tinygo: ToolchainProbe,
+    pub cargo: ToolchainProbe,
+    pub rustc: ToolchainProbe,
+    pub cc: ToolchainProbe,
     pub python: ToolchainProbe,
     pub manifest_path: Option<String>,
 }
@@ -44,6 +47,9 @@ pub fn probe_runtime_toolchains() -> RuntimeToolchainStatus {
     RuntimeToolchainStatus {
         go: probe_simple_command("go", &["version"], parse_go_version),
         tinygo: probe_simple_command("tinygo", &["version"], parse_tinygo_version),
+        cargo: probe_simple_command("cargo", &["--version"], parse_cargo_version),
+        rustc: probe_simple_command("rustc", &["--version"], parse_rustc_version),
+        cc: probe_simple_command("cc", &["--version"], parse_cc_version),
         python: probe_simple_command("python3", &["--version"], parse_python_version),
         manifest_path: locate_pinned_toolchain_manifest(),
     }
@@ -147,6 +153,27 @@ fn parse_python_version(output: &str) -> Option<String> {
         .map(|token| token.to_string())
 }
 
+fn parse_cargo_version(output: &str) -> Option<String> {
+    // `cargo 1.88.0 (873a06493 2025-05-10)`
+    output
+        .split_whitespace()
+        .find(|token| token.chars().next().is_some_and(|character| character.is_ascii_digit()))
+        .map(|token| token.to_string())
+}
+
+fn parse_rustc_version(output: &str) -> Option<String> {
+    // `rustc 1.88.0 (6b00bc388 2025-06-23)`
+    parse_cargo_version(output)
+}
+
+fn parse_cc_version(output: &str) -> Option<String> {
+    output
+        .lines()
+        .next()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +199,22 @@ mod tests {
         assert_eq!(
             parse_python_version("Python 3.12.4"),
             Some("3.12.4".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_cargo_version_string() {
+        assert_eq!(
+            parse_cargo_version("cargo 1.88.0 (873a06493 2025-05-10)"),
+            Some("1.88.0".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_rustc_version_string() {
+        assert_eq!(
+            parse_rustc_version("rustc 1.88.0 (6b00bc388 2025-06-23)"),
+            Some("1.88.0".to_string())
         );
     }
 }
