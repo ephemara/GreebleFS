@@ -29,6 +29,7 @@ const emptyDiscoveryResult: pluginPackages.OverlayPluginDiscoveryResult = {
   explorerActions: [],
   contextMenuItems: [],
   previewLanes: [],
+  settingsSlots: [],
   warnings: [],
 };
 

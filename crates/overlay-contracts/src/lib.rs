@@ -449,8 +449,7 @@ pub struct ShellBlueprint {
 
 const SHIPPED_SHELL_BLUEPRINTS_JSON: &str =
     include_str!("../../../usr/domain/shell-blueprints.json");
-const SHIPPED_THEME_MANIFESTS_JSON: &str =
-    include_str!("../../../usr/domain/theme-manifests.json");
+const SHIPPED_THEME_MANIFESTS_JSON: &str = include_str!("../../../usr/domain/theme-manifests.json");
 const SHIPPED_WORKBENCH_PRESETS_JSON: &str =
     include_str!("../../../usr/domain/workbench-presets.json");
 

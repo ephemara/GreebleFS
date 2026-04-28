@@ -17,7 +17,11 @@ import type {
   HostSubscription,
   HostSubscriptionRequest,
   HostTopicDescriptor,
+  IpcStreamHandle,
   ExternalTerminalRequest,
+  TerminalShellIntegrationRequest,
+  TerminalShellIntegrationState,
+  TerminalWriteRequest,
 } from '../generated/tauri';
 import { subscribeIpcStream } from './ipc/streams';
 import { commands, unwrapTauriResult } from './tauriClient';
@@ -116,6 +120,31 @@ export interface ExtensionHostTaskStartProcessRequest {
   args?: string[];
   workingDirectory?: string | null;
   environment?: Record<string, string> | null;
+}
+
+export interface ExtensionHostTerminalSpawnRequest {
+  id: string;
+  workingDir?: string | null;
+  shell?: string | null;
+  rows?: number | null;
+  cols?: number | null;
+}
+
+export interface ExtensionHostTerminalResizeRequest {
+  id: string;
+  rows: number;
+  cols: number;
+}
+
+export interface ExtensionHostTerminalSyncCwdRequest {
+  id: string;
+  cwd: string;
+}
+
+export interface ExtensionHostTerminalSetPromptStateRequest {
+  id: string;
+  atPrompt: boolean;
+  reportedCwd?: string | null;
 }
 
 export interface ExtensionHostFileWatchRequest {
@@ -293,6 +322,21 @@ export interface ExtensionHostClient {
     stopProcess: (taskId: string) => Promise<boolean>;
   };
   terminal: {
+    spawn: (request: ExtensionHostTerminalSpawnRequest) => Promise<void>;
+    write: (request: TerminalWriteRequest) => Promise<void>;
+    writeMany: (writes: TerminalWriteRequest[]) => Promise<void>;
+    resize: (request: ExtensionHostTerminalResizeRequest) => Promise<void>;
+    kill: (id: string) => Promise<void>;
+    openOutputStream: (id: string) => Promise<IpcStreamHandle>;
+    registerShellIntegration: (
+      request: TerminalShellIntegrationRequest,
+    ) => Promise<TerminalShellIntegrationState>;
+    syncCwd: (
+      request: ExtensionHostTerminalSyncCwdRequest,
+    ) => Promise<TerminalShellIntegrationState>;
+    setPromptState: (
+      request: ExtensionHostTerminalSetPromptStateRequest,
+    ) => Promise<TerminalShellIntegrationState>;
     openExternal: (request: ExternalTerminalRequest) => Promise<void>;
   };
 }
@@ -444,6 +488,38 @@ export function createExtensionHostClient(
         call<boolean, { taskId: string }>('tasks.stop_process', { taskId }),
     },
     terminal: {
+      spawn: async (request) => {
+        await call<null, ExtensionHostTerminalSpawnRequest>('terminal.spawn', request);
+      },
+      write: async (request) => {
+        await call<null, TerminalWriteRequest>('terminal.write', request);
+      },
+      writeMany: async (writes) => {
+        await call<null, TerminalWriteRequest[]>('terminal.write_many', writes);
+      },
+      resize: async (request) => {
+        await call<null, ExtensionHostTerminalResizeRequest>('terminal.resize', request);
+      },
+      kill: async (id) => {
+        await call<null, { id: string }>('terminal.kill', { id });
+      },
+      openOutputStream: (id) =>
+        call<IpcStreamHandle, { id: string }>('terminal.open_output_stream', { id }),
+      registerShellIntegration: (request) =>
+        call<TerminalShellIntegrationState, TerminalShellIntegrationRequest>(
+          'terminal.register_shell_integration',
+          request,
+        ),
+      syncCwd: (request) =>
+        call<TerminalShellIntegrationState, ExtensionHostTerminalSyncCwdRequest>(
+          'terminal.sync_cwd',
+          request,
+        ),
+      setPromptState: (request) =>
+        call<TerminalShellIntegrationState, ExtensionHostTerminalSetPromptStateRequest>(
+          'terminal.set_prompt_state',
+          request,
+        ),
       openExternal: async (request) => {
         await call<null, ExternalTerminalRequest>('terminal.open_external', request);
       },

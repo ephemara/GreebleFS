@@ -94,10 +94,13 @@ import {
   type OverlayPluginCommandContribution,
   type OverlayTerminalCommandInjectionDetail,
 } from '../config/pluginContributions';
-import { useSettingsStore } from '../store/settingsStore';
+import {
+  useSettingsStore,
+  type IntegratedTerminalHost,
+} from '../store/settingsStore';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
-import { subscribeIpcStream } from '../runtime/ipc';
+import { subscribeIpcStream } from '../runtime/ipc/streams';
 import {
   bootstrapManagedPythonRuntime,
   executeManagedPython,
@@ -131,6 +134,12 @@ import {
   type TerminalRendererMode,
 } from './terminal/TerminalViewportFx';
 import { shouldLoadTerminalWebglRenderer } from './terminal/terminalRendererSupport';
+import GoPtyTerminalPane from './terminal/GoPtyTerminalPane';
+import {
+  getTerminalPaneHostEntry,
+  registerTerminalPaneHostEntry,
+  unregisterTerminalPaneHostEntry,
+} from './terminal/terminalHostRegistry';
 
 export type ThemeId = 'operator' | 'dracula' | 'nord' | 'monokai' | 'github-dark' | 'catppuccin';
 
@@ -384,6 +393,7 @@ export interface TerminalOverlayCommandRequest {
 
 interface XTermEntry { xterm: XTerm; fitAddon: FitAddon; unlisten: () => void; }
 const xtermRegistry = new Map<string, XTermEntry>();
+let goPtyTerminalHostDegradedForSession = false;
 
 function getTerminalPaneDomKey(tabId: string, nodeId: string): string {
   return `${tabId}::${nodeId}`;
@@ -426,17 +436,7 @@ function destroyXterm(id: string) {
   e.unlisten(); e.xterm.dispose();
   void commands.terminalKill(id).then(unwrapTauriResult).catch(() => {});
   xtermRegistry.delete(id);
-}
-
-function collectTerminalBufferText(xterm: XTerm): string {
-  const lines: string[] = [];
-  const buffer = xterm.buffer.active;
-  for (let index = 0; index < buffer.length; index += 1) {
-    const line = buffer.getLine(index);
-    if (!line) continue;
-    lines.push(line.translateToString(true));
-  }
-  return lines.join('\n').trimEnd();
+  unregisterTerminalPaneHostEntry(id);
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -721,6 +721,7 @@ const XTermPane = memo(function XTermPane({
       }));
     } catch (e) {
       term.writeln('\r\n\x1b[31mFailed to spawn PTY:\x1b[0m ' + String(e));
+      return;
     }
 
     const flushBufferedOutput = () => {
@@ -792,6 +793,25 @@ const XTermPane = memo(function XTermPane({
         unlisten();
         ro.disconnect();
         focusTarget?.removeEventListener('pointerdown', handlePointerDown);
+      },
+    });
+    registerTerminalPaneHostEntry(id, {
+      hostId: 'xterm',
+      focus: () => {
+        requestAnimationFrame(() => term.focus());
+      },
+      clear: () => {
+        term.clear();
+      },
+      getSelectionText: () => term.getSelection().trim(),
+      appendLocalMessage: (label, body, tone = 'info') => {
+        const tonePrefix = tone === 'error'
+          ? '\x1b[31m'
+          : tone === 'success'
+            ? '\x1b[32m'
+            : '\x1b[36m';
+        const normalized = body.trim().replace(/\r?\n/g, '\r\n');
+        term.write(`\r\n${tonePrefix}[${label}]\x1b[0m\r\n${normalized}\r\n`);
       },
     });
     onResizeRef.current?.(id, term.rows, term.cols);
@@ -1707,9 +1727,16 @@ export function TerminalOverlay({
   const [activePanel, setActivePanel] = useState<SidebarPanel>('dirs');
   const [sidebarWidth, setSidebarWidth] = useState(210);
   const [readyTerminalIds, setReadyTerminalIds] = useState<string[]>([]);
+  const [paneRestartEpochById, setPaneRestartEpochById] = useState<Record<string, number>>({});
+  const [goTerminalHostDegraded, setGoTerminalHostDegraded] = useState(
+    goPtyTerminalHostDegradedForSession,
+  );
   const [terminalActionMessage, setTerminalActionMessage] = useState<string | null>(null);
   const paneTelemetryRef = useRef<Record<string, TerminalPaneTelemetry>>({
     [initialPaneIdRef.current]: createPaneTelemetry(),
+  });
+  const paneOutputBuffersRef = useRef<Record<string, string>>({
+    [initialPaneIdRef.current]: '',
   });
   const actionMessageTimerRef = useRef<number | null>(null);
   const paneCounterRef = useRef(1);
@@ -1791,23 +1818,56 @@ export function TerminalOverlay({
   const activePaneId = activeTab?.activePaneId ?? activeTabPaneIds[0] ?? initialPaneIdRef.current;
   const activePane = paneSessions[activePaneId] ?? null;
   const totalPaneCount = tabs.reduce((sum, tab) => sum + countTerminalPanes(tab.layout), 0);
+  const selectedTerminalHost: IntegratedTerminalHost = settings.integratedHost;
+  const effectiveTerminalHost: IntegratedTerminalHost =
+    selectedTerminalHost === 'go-pty-panel' && !goTerminalHostDegraded
+      ? 'go-pty-panel'
+      : 'xterm';
 
   const findTabForPane = useCallback((paneId: string) => (
     tabs.find(tab => (paneIdsByTab.get(tab.id) ?? []).includes(paneId)) ?? null
   ), [paneIdsByTab, tabs]);
 
   const isPaneReady = useCallback((paneId: string) => (
-    readyTerminalIds.includes(paneId) || xtermRegistry.has(paneId)
+    readyTerminalIds.includes(paneId)
   ), [readyTerminalIds]);
 
   const markTerminalReady = useCallback((id: string) => {
     setReadyTerminalIds(prev => prev.includes(id) ? prev : [...prev, id]);
     paneTelemetryRef.current[id] ??= createPaneTelemetry();
+    paneOutputBuffersRef.current[id] ??= '';
   }, []);
 
   const clearTerminalReady = useCallback((id: string) => {
     setReadyTerminalIds(prev => prev.filter(value => value !== id));
   }, []);
+
+  const resetPaneOutputBuffer = useCallback((paneId: string) => {
+    paneOutputBuffersRef.current[paneId] = '';
+  }, []);
+
+  const appendPaneOutputBuffer = useCallback((paneId: string, payload: string) => {
+    if (!payload) {
+      return;
+    }
+    const previous = paneOutputBuffersRef.current[paneId] ?? '';
+    const next = previous + payload;
+    paneOutputBuffersRef.current[paneId] = next.length > 200_000
+      ? next.slice(next.length - 200_000)
+      : next;
+  }, []);
+
+  const requestGoTerminalFallback = useCallback((reason: string) => {
+    if (goPtyTerminalHostDegradedForSession) {
+      return;
+    }
+    console.error('[terminal-host] Go PTY falling back to xterm', { reason });
+    goPtyTerminalHostDegradedForSession = true;
+    setGoTerminalHostDegraded(true);
+    setTransientActionMessage(
+      `Go PTY terminal fell back to xterm${reason ? `: ${reason}` : ''}`,
+    );
+  }, [setTransientActionMessage]);
 
   const updatePaneTelemetry = useCallback((paneId: string, updater: (current: TerminalPaneTelemetry) => TerminalPaneTelemetry) => {
     paneTelemetryRef.current[paneId] = updater(paneTelemetryRef.current[paneId] ?? createPaneTelemetry());
@@ -1828,9 +1888,9 @@ export function TerminalOverlay({
         : tab
     )));
     markPaneFocused(paneId);
-    const entry = xtermRegistry.get(paneId);
+    const entry = getTerminalPaneHostEntry(paneId);
     if (entry) {
-      requestAnimationFrame(() => entry.xterm.focus());
+      requestAnimationFrame(() => entry.focus());
     }
   }, [markPaneFocused]);
 
@@ -1848,8 +1908,26 @@ export function TerminalOverlay({
       delete next[paneId];
       return next;
     });
+    setPaneRestartEpochById(prev => {
+      if (!(paneId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[paneId];
+      return next;
+    });
     delete paneTelemetryRef.current[paneId];
+    delete paneOutputBuffersRef.current[paneId];
   }, [clearTerminalReady]);
+
+  const restartPaneHost = useCallback((paneId: string) => {
+    clearTerminalReady(paneId);
+    resetPaneOutputBuffer(paneId);
+    setPaneRestartEpochById(prev => ({
+      ...prev,
+      [paneId]: (prev[paneId] ?? 0) + 1,
+    }));
+  }, [clearTerminalReady, resetPaneOutputBuffer]);
 
   const writeToPaneIds = useCallback(async (paneIds: string[], data: string) => {
     if (paneIds.length === 0) {
@@ -1930,21 +2008,17 @@ export function TerminalOverlay({
     body: string,
     tone: 'info' | 'success' | 'error' = 'info',
   ) => {
-    const entry = xtermRegistry.get(paneId);
+    const entry = getTerminalPaneHostEntry(paneId);
     if (!entry) {
       setTransientActionMessage('Terminal is still starting');
       return;
     }
-
-    const tonePrefix = tone === 'error'
-      ? '\x1b[31m'
-      : tone === 'success'
-        ? '\x1b[32m'
-        : '\x1b[36m';
-    const normalized = body.trim().replace(/\r?\n/g, '\r\n');
-
-    entry.xterm.write(`\r\n${tonePrefix}[${label}]\x1b[0m\r\n${normalized}\r\n`);
-    entry.xterm.focus();
+    entry.appendLocalMessage(label, body, tone);
+    entry.focus();
+    appendPaneOutputBuffer(
+      paneId,
+      `\n[${label}]\n${body.trim()}\n`,
+    );
   }, [setTransientActionMessage]);
 
   const emitToActiveTerminal = useCallback((
@@ -1956,6 +2030,7 @@ export function TerminalOverlay({
   }, [activePaneId, emitToPane]);
 
   const handleTerminalOutput = useCallback((paneId: string, payload: string) => {
+    appendPaneOutputBuffer(paneId, payload);
     updatePaneTelemetry(paneId, current => ({
       ...current,
       outputBytes: current.outputBytes + payload.length,
@@ -1963,7 +2038,7 @@ export function TerminalOverlay({
       lastOutputAt: Date.now(),
     }));
     schedulePromptRestore(paneId);
-  }, [schedulePromptRestore, updatePaneTelemetry]);
+  }, [appendPaneOutputBuffer, schedulePromptRestore, updatePaneTelemetry]);
 
   const handlePaneResize = useCallback((paneId: string, rows: number, cols: number) => {
     updatePaneTelemetry(paneId, current => ({
@@ -1974,14 +2049,14 @@ export function TerminalOverlay({
   }, [updatePaneTelemetry]);
 
   const copyPaneOutput = useCallback(async (paneId: string) => {
-    const entry = xtermRegistry.get(paneId);
+    const entry = getTerminalPaneHostEntry(paneId);
     if (!entry) {
       setTransientActionMessage('Terminal is still starting');
       return;
     }
 
-    const selectedText = entry.xterm.getSelection().trim();
-    const output = selectedText || collectTerminalBufferText(entry.xterm);
+    const selectedText = entry.getSelectionText();
+    const output = selectedText || (paneOutputBuffersRef.current[paneId] ?? '').trimEnd();
     if (!output) {
       setTransientActionMessage('No terminal output to copy');
       return;
@@ -1993,19 +2068,18 @@ export function TerminalOverlay({
     } else {
       setTransientActionMessage('Clipboard write failed');
     }
-    entry.xterm.focus();
+    entry.focus();
   }, [setTransientActionMessage]);
 
   const copyPaneSnapshot = useCallback(async (paneId: string) => {
-    const entry = xtermRegistry.get(paneId);
     const tab = findTabForPane(paneId);
     const pane = paneSessions[paneId];
-    if (!entry || !tab || !pane) {
+    if (!tab || !pane) {
       setTransientActionMessage('Terminal is still starting');
       return;
     }
 
-    const output = collectTerminalBufferText(entry.xterm);
+    const output = (paneOutputBuffersRef.current[paneId] ?? '').trimEnd();
     const metrics = paneTelemetryRef.current[paneId] ?? createPaneTelemetry();
     const snapshot = [
       `# ${tab.label} · ${pane.label}`,
@@ -2026,59 +2100,32 @@ export function TerminalOverlay({
   }, [findTabForPane, paneSessions, setTransientActionMessage, settings.shell]);
 
   const clearPane = useCallback((paneId: string) => {
-    const entry = xtermRegistry.get(paneId);
+    const entry = getTerminalPaneHostEntry(paneId);
     if (!entry) {
       setTransientActionMessage('Terminal is still starting');
       return;
     }
-    entry.xterm.clear();
-    entry.xterm.focus();
+    entry.clear();
+    entry.focus();
+    resetPaneOutputBuffer(paneId);
     setTransientActionMessage(`Cleared ${paneSessions[paneId]?.label ?? 'pane'}`);
-  }, [paneSessions, setTransientActionMessage]);
+  }, [paneSessions, resetPaneOutputBuffer, setTransientActionMessage]);
 
   const restartPane = useCallback(async (paneId: string) => {
-    const entry = xtermRegistry.get(paneId);
+    const entry = getTerminalPaneHostEntry(paneId);
     if (!entry) {
       setTransientActionMessage('Terminal is still starting');
       return;
     }
 
-    clearTerminalReady(paneId);
-
-    try {
-      unwrapTauriResult(await commands.terminalKill(paneId));
-      entry.xterm.reset();
-      unwrapTauriResult(await commands.terminalSpawn(
-        paneId,
-        normalizedWorkingDirectory,
-        resolvedSpawnShell,
-        entry.xterm.rows,
-        entry.xterm.cols,
-      ));
-      unwrapTauriResult(await commands.terminalRegisterShellIntegration({
-        id: paneId,
-        shellKind: null,
-        supportsAutoCd: true,
-        atPrompt: true,
-        reportedCwd: null,
-      }));
-      lastObservedWorkingDirectoryRef.current = normalizedWorkingDirectory;
-      markTerminalReady(paneId);
-      setTransientActionMessage(`Restarted ${paneSessions[paneId]?.label ?? 'terminal'}`);
-    } catch (error) {
-      setTransientActionMessage(`Restart failed: ${String(error)}`);
-    }
-
-    requestAnimationFrame(() => {
-      entry.fitAddon.fit();
-      entry.xterm.focus();
-    });
+    entry.focus();
+    restartPaneHost(paneId);
+    lastObservedWorkingDirectoryRef.current = normalizedWorkingDirectory;
+    setTransientActionMessage(`Restarted ${paneSessions[paneId]?.label ?? 'terminal'}`);
   }, [
-    clearTerminalReady,
-    markTerminalReady,
     normalizedWorkingDirectory,
     paneSessions,
-    resolvedSpawnShell,
+    restartPaneHost,
     setTransientActionMessage,
   ]);
   useEffect(() => {
@@ -2087,6 +2134,7 @@ export function TerminalOverlay({
       || !isOpen
       || !pendingTerminalCwdSync?.path
       || !activePaneId
+      || !isPaneReady(activePaneId)
     ) {
       return;
     }
@@ -2113,6 +2161,7 @@ export function TerminalOverlay({
     clearPendingTerminalCwdSync,
     consumeExplorerCwdSync,
     injectCd,
+    isPaneReady,
     isOpen,
     pendingTerminalCwdSync,
   ]);
@@ -2257,6 +2306,7 @@ export function TerminalOverlay({
 
     setPaneSessions(prev => ({ ...prev, [pane.id]: pane }));
     paneTelemetryRef.current[pane.id] = createPaneTelemetry();
+    paneOutputBuffersRef.current[pane.id] = '';
     setTabs(nextTabs);
     setActiveTabId(tabId);
     setTransientActionMessage(`Opened ${nextTabs[nextTabs.length - 1].label}`);
@@ -2281,6 +2331,7 @@ export function TerminalOverlay({
 
     setPaneSessions(prev => ({ ...prev, [pane.id]: pane }));
     paneTelemetryRef.current[pane.id] = createPaneTelemetry();
+    paneOutputBuffersRef.current[pane.id] = '';
     setTabs(prev => prev.map(tab => (
       tab.id === activeTab.id
         ? {
@@ -2329,7 +2380,6 @@ export function TerminalOverlay({
       return;
     }
 
-    destroyXterm(paneId);
     removePaneSession(paneId);
 
     setTabs(prev => prev.map(current => {
@@ -2361,7 +2411,6 @@ export function TerminalOverlay({
 
     const tab = tabs[tabIndex];
     (paneIdsByTab.get(tab.id) ?? []).forEach(paneId => {
-      destroyXterm(paneId);
       removePaneSession(paneId);
     });
 
@@ -2430,13 +2479,13 @@ export function TerminalOverlay({
       return;
     }
 
-    const entry = xtermRegistry.get(activePaneId);
+    const entry = getTerminalPaneHostEntry(activePaneId);
     if (!entry) {
       return;
     }
 
     lastHandledFocusRequestKeyRef.current = focusRequestKey;
-    requestAnimationFrame(() => entry.xterm.focus());
+    requestAnimationFrame(() => entry.focus());
   }, [activePaneId, activeTerminalReady, focusRequestKey]);
   const setPaneSurfaceElement = useCallback((tabId: string, paneId: string, element: HTMLDivElement | null) => {
     const key = getTerminalPaneDomKey(tabId, paneId);
@@ -2666,21 +2715,40 @@ export function TerminalOverlay({
 
           <div className="relative flex-1 min-h-0 min-w-0" onMouseDown={() => focusPane(tabId, paneId)}>
             {hasMountedRef.current && (
-              <XTermPane
-                key={paneId}
-                id={paneId}
-                visible={tabId === activeTabId}
-                active={isActivePane && tabId === activeTabId}
-                bootReady={bootReady}
-                theme={theme}
-                workbenchTheme={appearance.workbenchTheme}
-                workingDirectory={normalizedWorkingDirectory}
-                onReady={markTerminalReady}
-                onFocus={handlePaneFocus}
-                onData={handleTerminalInput}
-                onOutput={handleTerminalOutput}
-                onResize={handlePaneResize}
-              />
+              effectiveTerminalHost === 'go-pty-panel' ? (
+                <GoPtyTerminalPane
+                  key={`${paneId}:go:${paneRestartEpochById[paneId] ?? 0}`}
+                  id={paneId}
+                  visible={tabId === activeTabId}
+                  active={isActivePane && tabId === activeTabId}
+                  bootReady={bootReady}
+                  theme={theme}
+                  workingDirectory={normalizedWorkingDirectory}
+                  shellCommand={resolvedSpawnShell}
+                  onReady={markTerminalReady}
+                  onFocus={handlePaneFocus}
+                  onData={handleTerminalInput}
+                  onOutput={handleTerminalOutput}
+                  onResize={handlePaneResize}
+                  onFallbackRequested={requestGoTerminalFallback}
+                />
+              ) : (
+                <XTermPane
+                  key={`${paneId}:xterm:${paneRestartEpochById[paneId] ?? 0}`}
+                  id={paneId}
+                  visible={tabId === activeTabId}
+                  active={isActivePane && tabId === activeTabId}
+                  bootReady={bootReady}
+                  theme={theme}
+                  workbenchTheme={appearance.workbenchTheme}
+                  workingDirectory={normalizedWorkingDirectory}
+                  onReady={markTerminalReady}
+                  onFocus={handlePaneFocus}
+                  onData={handleTerminalInput}
+                  onOutput={handleTerminalOutput}
+                  onResize={handlePaneResize}
+                />
+              )
             )}
           </div>
         </div>
@@ -2691,6 +2759,7 @@ export function TerminalOverlay({
     activeTab,
     activeTabId,
     bootReady,
+    effectiveTerminalHost,
     appearance.workbenchTheme,
     appearance.theme.palette.success,
     closePane,
@@ -2704,8 +2773,11 @@ export function TerminalOverlay({
     isPaneReady,
     markTerminalReady,
     paneIdsByTab,
+    paneRestartEpochById,
     paneSessions,
     normalizedWorkingDirectory,
+    requestGoTerminalFallback,
+    resolvedSpawnShell,
     restartPane,
     splitActivePane,
     setPaneSurfaceElement,

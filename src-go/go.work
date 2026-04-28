@@ -12,5 +12,6 @@ use (
 	./builtin-runtimes/echo-sidecar
 	./builtin-runtimes/echo-command
 	./builtin-runtimes/explorer-policy-service
+	./builtin-runtimes/go-pty-panel
 	./builtin-runtimes/sample-panel
 )

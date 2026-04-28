@@ -2,6 +2,10 @@
 // Terminal PTY implementation for ULTACODE
 
 use crate::ipc_runtime::IpcRuntimeState;
+use crate::runtime_pipeline::host_events::{
+    HostEventBusState, HostEventScope, HOST_EVENT_TOPIC_TERMINAL_OUTPUT,
+    HOST_EVENT_TOPIC_TERMINAL_SHELL_INTEGRATION_CHANGED,
+};
 use crate::telemetry::{finish_native_span, start_native_span};
 use greeble_ipc_contracts::{IpcStreamHandle, IpcStreamPacketMetadata};
 use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
@@ -282,12 +286,49 @@ fn emit_terminal_shell_integration_state_event(
     state: TerminalShellIntegrationState,
     applied_cwd: Option<String>,
 ) {
+    let payload = TerminalShellIntegrationStateEvent {
+        id: id.clone(),
+        state: state.clone(),
+        applied_cwd: applied_cwd.clone(),
+    };
     let _ = TerminalShellIntegrationStateEvent {
-        id,
+        id: id.clone(),
         state,
         applied_cwd,
     }
     .emit(app);
+    publish_terminal_shell_integration_host_event(app, payload);
+}
+
+fn publish_terminal_output_host_event(app: &AppHandle, payload: &TerminalOutputStreamPacket) {
+    let host_event_bus = app.state::<HostEventBusState>();
+    let _ = host_event_bus.publish_host_topic(
+        HOST_EVENT_TOPIC_TERMINAL_OUTPUT,
+        serde_json::to_string(payload).ok(),
+        None,
+        HostEventScope {
+            path: Some(payload.terminal_id.clone()),
+            ..HostEventScope::default()
+        },
+        false,
+    );
+}
+
+fn publish_terminal_shell_integration_host_event(
+    app: &AppHandle,
+    payload: TerminalShellIntegrationStateEvent,
+) {
+    let host_event_bus = app.state::<HostEventBusState>();
+    let _ = host_event_bus.publish_host_topic(
+        HOST_EVENT_TOPIC_TERMINAL_SHELL_INTEGRATION_CHANGED,
+        serde_json::to_string(&payload).ok(),
+        None,
+        HostEventScope {
+            path: Some(payload.id.clone()),
+            ..HostEventScope::default()
+        },
+        false,
+    );
 }
 
 impl TerminalManager {
@@ -879,14 +920,13 @@ impl TerminalManager {
                                         continue;
                                     }
                                 };
-                                let _ = app.emit(
-                                    &stream_handle.event_name,
-                                    TerminalOutputStreamPacket {
-                                        terminal_id: terminal_id.clone(),
-                                        metadata,
-                                        data,
-                                    },
-                                );
+                                let packet = TerminalOutputStreamPacket {
+                                    terminal_id: terminal_id.clone(),
+                                    metadata,
+                                    data,
+                                };
+                                let _ = app.emit(&stream_handle.event_name, packet.clone());
+                                publish_terminal_output_host_event(&app, &packet);
                             }
 
                             for reported_cwd in parsed_chunk.reported_cwds {

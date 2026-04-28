@@ -264,6 +264,18 @@ async function prepareTauriDevBindings(packageManagerCommand, tauriCommand) {
   }
 }
 
+async function prepareGoRuntimeAssets(packageManagerCommand, tauriCommand) {
+  if (tauriCommand !== "dev" && tauriCommand !== "build") {
+    return;
+  }
+
+  console.log("Preparing Go runtime assets...");
+  const bootstrapExitCode = await runCommand(packageManagerCommand, ["run", "go:bootstrap"]);
+  if (bootstrapExitCode !== 0) {
+    process.exit(bootstrapExitCode);
+  }
+}
+
 function runCommand(command, args, extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
@@ -372,6 +384,7 @@ async function main() {
       includeRunning: true,
     });
   }
+  await prepareGoRuntimeAssets(packageManagerCommand, tauriCommand);
   await prepareTauriDevBindings(packageManagerCommand, tauriCommand);
   const linuxGraphicsEnvironment = buildLinuxGraphicsEnvironment({ tauriCommand });
   const existingNodePath = process.env.NODE_PATH

@@ -5679,6 +5679,7 @@ function App() {
                 explorerActions: 0,
                 contextMenuItems: 0,
                 previewLanes: 0,
+                settingsSlots: 0,
               },
             },
           }}

@@ -134,6 +134,10 @@ import {
 } from '../config/settingsNavigation';
 import { normalizeIconThemePackageSelectionId } from '../config/iconThemePackages';
 import {
+  normalizeOverlayPluginSettingsValueMap,
+  type OverlayPluginSettingsValue,
+} from '../config/pluginSettings';
+import {
   normalizeMobileRemoteAccessMode,
   type MobileRemoteAccessMode,
 } from '../config/mobileAccess';
@@ -179,6 +183,7 @@ export interface TerminalSettings {
   shellProfile: IntegratedTerminalProfile;
   shellPath: string;
   shellArgs: string;
+  integratedHost: IntegratedTerminalHost;
   showSidebar: boolean;
   cursorBlink: boolean;
   cursorStyle: 'bar' | 'block' | 'underline';
@@ -194,6 +199,8 @@ export interface TerminalSettings {
   externalTerminalCommand: string;
   externalTerminalArgs: string;
 }
+
+export type IntegratedTerminalHost = 'go-pty-panel' | 'xterm';
 
 export interface PythonSettings {
   preferredInterpreterPath: string;
@@ -329,6 +336,10 @@ export interface MobileSettings {
   layout: MobileLayoutSettings;
 }
 
+export interface PluginSettingsCatalog {
+  valuesByPluginId: Record<string, Record<string, OverlayPluginSettingsValue>>;
+}
+
 export type KeybindingSettings = HotkeyBindingSettings;
 export type DockThemeMode = 'follow-app' | 'override';
 export type LinuxDisplayBackendPreference = 'auto' | 'wayland' | 'x11';
@@ -393,6 +404,7 @@ export interface Settings {
   polygemini: PolyGeminiSettings;
   layout: LayoutSettings;
   audio: AudioSettings;
+  plugins: PluginSettingsCatalog;
 }
 
 export const SETTINGS_STORAGE_KEY = 'ultacode-settings';
@@ -431,6 +443,10 @@ export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAncho
 
 export function normalizeTerminalWindowMode(value: unknown): TerminalWindowMode {
   return value === 'overlay' ? 'overlay' : 'windowed';
+}
+
+export function normalizeIntegratedTerminalHost(value: unknown): IntegratedTerminalHost {
+  return value === 'xterm' ? 'xterm' : 'go-pty-panel';
 }
 
 export function normalizeDockThemeMode(value: unknown): DockThemeMode {
@@ -781,6 +797,9 @@ function normalizeTerminalSettings(
     shellProfile: normalizedShellProfile,
     shellPath: normalizedShellPath,
     shellArgs: normalizedShellArgs,
+    integratedHost: normalizeIntegratedTerminalHost(
+      merged.integratedHost ?? base.integratedHost,
+    ),
     shell: resolveIntegratedTerminalShellCommand({
       profile: normalizedShellProfile,
       shellPath: normalizedShellPath,
@@ -1197,6 +1216,7 @@ export const defaultSettings: Settings = {
     shellProfile: defaultIntegratedTerminalProfile,
     shellPath: defaultIntegratedTerminalTemplate.shellPath,
     shellArgs: defaultIntegratedTerminalTemplate.shellArgs,
+    integratedHost: 'go-pty-panel',
     showSidebar: true,
     cursorBlink: true,
     cursorStyle: 'bar',
@@ -1372,6 +1392,9 @@ export const defaultSettings: Settings = {
     nativeTaskFailureNotificationsEnabled: true,
     vst3AdditionalFolders: [],
   },
+  plugins: {
+    valuesByPluginId: {},
+  },
 };
 
 function normalizeLayoutPanelState(value: unknown): LayoutPanelState {
@@ -1474,6 +1497,45 @@ function normalizeLayoutSettings(
   };
 }
 
+function normalizePluginSettingsValuesByPluginId(
+  value: unknown,
+): Record<string, Record<string, OverlayPluginSettingsValue>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).flatMap(
+      ([pluginId, pluginValues]) => {
+        const trimmedPluginId = pluginId.trim();
+        if (!trimmedPluginId) {
+          return [];
+        }
+
+        return [[
+          trimmedPluginId,
+          normalizeOverlayPluginSettingsValueMap(pluginValues),
+        ]];
+      },
+    ),
+  );
+}
+
+function normalizePluginSettingsCatalog(
+  base: PluginSettingsCatalog,
+  updates?: Partial<PluginSettingsCatalog>,
+): PluginSettingsCatalog {
+  const hasExplicitValuesByPluginId =
+    updates != null &&
+    Object.prototype.hasOwnProperty.call(updates, 'valuesByPluginId');
+
+  return {
+    valuesByPluginId: hasExplicitValuesByPluginId
+      ? normalizePluginSettingsValuesByPluginId(updates?.valuesByPluginId)
+      : base.valuesByPluginId,
+  };
+}
+
 function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Settings {
   const importedAppearance = imported?.appearance;
   const importedTerminal = imported?.terminal;
@@ -1554,6 +1616,10 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     polygemini: { ...base.polygemini, ...imported?.polygemini },
     layout: normalizeLayoutSettings(base.layout, (imported as Partial<Settings> | undefined)?.layout),
     audio: normalizeAudioSettings(base.audio, (imported as Partial<Settings> | undefined)?.audio),
+    plugins: normalizePluginSettingsCatalog(
+      base.plugins,
+      (imported as Partial<Settings> | undefined)?.plugins,
+    ),
   };
 }
 
@@ -1626,6 +1692,22 @@ interface SettingsState {
   updatePolyGemini: (updates: Partial<PolyGeminiSettings>) => void;
   updateLayout: (updates: Partial<LayoutSettings>) => void;
   updateAudio: (updates: Partial<AudioSettings>) => void;
+  updatePlugins: (updates: Partial<PluginSettingsCatalog>) => void;
+  setPluginSettingsValues: (
+    pluginId: string,
+    values: Record<string, unknown>,
+  ) => void;
+  patchPluginSettings: (
+    pluginId: string,
+    values: Record<string, unknown>,
+  ) => void;
+  setPluginSettingValue: (
+    pluginId: string,
+    settingId: string,
+    value: unknown,
+  ) => void;
+  resetPluginSettings: (pluginId: string, settingIds?: string[]) => void;
+  clearPluginSettings: (pluginId: string) => void;
   setCommandKeybinding: (commandId: string, value: string) => void;
   
   // Bulk operations
@@ -1997,6 +2079,178 @@ export const useSettingsStore = create<SettingsState>()(
           audio: normalizeAudioSettings(state.settings.audio, updates),
         },
       })),
+
+      updatePlugins: (updates) => set((state) => ({
+        settings: {
+          ...state.settings,
+          plugins: normalizePluginSettingsCatalog(state.settings.plugins, updates),
+        },
+      })),
+
+      setPluginSettingsValues: (pluginId, values) => set((state) => {
+        const normalizedPluginId = pluginId.trim();
+        if (!normalizedPluginId) {
+          return state;
+        }
+
+        const normalizedValues =
+          normalizeOverlayPluginSettingsValueMap(values);
+        const nextValuesByPluginId = {
+          ...state.settings.plugins.valuesByPluginId,
+        };
+        if (Object.keys(normalizedValues).length > 0) {
+          nextValuesByPluginId[normalizedPluginId] = normalizedValues;
+        } else {
+          delete nextValuesByPluginId[normalizedPluginId];
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            plugins: normalizePluginSettingsCatalog(state.settings.plugins, {
+              valuesByPluginId: nextValuesByPluginId,
+            }),
+          },
+        };
+      }),
+
+      patchPluginSettings: (pluginId, values) => set((state) => {
+        const normalizedPluginId = pluginId.trim();
+        if (!normalizedPluginId) {
+          return state;
+        }
+
+        const nextPluginValues = {
+          ...(state.settings.plugins.valuesByPluginId[normalizedPluginId] ?? {}),
+          ...normalizeOverlayPluginSettingsValueMap(values),
+        };
+        const nextValuesByPluginId = {
+          ...state.settings.plugins.valuesByPluginId,
+        };
+        if (Object.keys(nextPluginValues).length > 0) {
+          nextValuesByPluginId[normalizedPluginId] = nextPluginValues;
+        } else {
+          delete nextValuesByPluginId[normalizedPluginId];
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            plugins: normalizePluginSettingsCatalog(state.settings.plugins, {
+              valuesByPluginId: nextValuesByPluginId,
+            }),
+          },
+        };
+      }),
+
+      setPluginSettingValue: (pluginId, settingId, value) => set((state) => {
+        const normalizedPluginId = pluginId.trim();
+        const normalizedSettingId = settingId.trim();
+        if (!normalizedPluginId || !normalizedSettingId) {
+          return state;
+        }
+
+        const nextPluginValues = {
+          ...(state.settings.plugins.valuesByPluginId[normalizedPluginId] ?? {}),
+        };
+        const sanitizedValue = normalizeOverlayPluginSettingsValueMap({
+          [normalizedSettingId]: value,
+        })[normalizedSettingId];
+        if (sanitizedValue === undefined) {
+          delete nextPluginValues[normalizedSettingId];
+        } else {
+          nextPluginValues[normalizedSettingId] = sanitizedValue;
+        }
+
+        const nextValuesByPluginId = {
+          ...state.settings.plugins.valuesByPluginId,
+        };
+        if (Object.keys(nextPluginValues).length > 0) {
+          nextValuesByPluginId[normalizedPluginId] = nextPluginValues;
+        } else {
+          delete nextValuesByPluginId[normalizedPluginId];
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            plugins: normalizePluginSettingsCatalog(state.settings.plugins, {
+              valuesByPluginId: nextValuesByPluginId,
+            }),
+          },
+        };
+      }),
+
+      resetPluginSettings: (pluginId, settingIds) => set((state) => {
+        const normalizedPluginId = pluginId.trim();
+        if (!normalizedPluginId) {
+          return state;
+        }
+
+        if (!Array.isArray(settingIds) || settingIds.length === 0) {
+          const nextValuesByPluginId = {
+            ...state.settings.plugins.valuesByPluginId,
+          };
+          delete nextValuesByPluginId[normalizedPluginId];
+          return {
+            settings: {
+              ...state.settings,
+              plugins: normalizePluginSettingsCatalog(state.settings.plugins, {
+                valuesByPluginId: nextValuesByPluginId,
+              }),
+            },
+          };
+        }
+
+        const nextPluginValues = {
+          ...(state.settings.plugins.valuesByPluginId[normalizedPluginId] ?? {}),
+        };
+        settingIds
+          .map((settingId) => settingId.trim())
+          .filter((settingId) => settingId.length > 0)
+          .forEach((settingId) => {
+            delete nextPluginValues[settingId];
+          });
+
+        const nextValuesByPluginId = {
+          ...state.settings.plugins.valuesByPluginId,
+        };
+        if (Object.keys(nextPluginValues).length > 0) {
+          nextValuesByPluginId[normalizedPluginId] = nextPluginValues;
+        } else {
+          delete nextValuesByPluginId[normalizedPluginId];
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            plugins: normalizePluginSettingsCatalog(state.settings.plugins, {
+              valuesByPluginId: nextValuesByPluginId,
+            }),
+          },
+        };
+      }),
+
+      clearPluginSettings: (pluginId) => set((state) => {
+        const normalizedPluginId = pluginId.trim();
+        if (!normalizedPluginId) {
+          return state;
+        }
+
+        const nextValuesByPluginId = {
+          ...state.settings.plugins.valuesByPluginId,
+        };
+        delete nextValuesByPluginId[normalizedPluginId];
+
+        return {
+          settings: {
+            ...state.settings,
+            plugins: normalizePluginSettingsCatalog(state.settings.plugins, {
+              valuesByPluginId: nextValuesByPluginId,
+            }),
+          },
+        };
+      }),
       
       resetToDefaults: () => set(() => ({
         settings: {

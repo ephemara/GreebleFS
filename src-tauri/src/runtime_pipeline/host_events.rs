@@ -183,7 +183,8 @@ impl HostEventBusState {
         request: HostSubscriptionRequest,
     ) -> Result<crate::runtime_pipeline::extension_host::HostSubscription, String> {
         let subscription_id = Uuid::new_v4().to_string();
-        let stream_handle = ipc_runtime.register_stream("host-events", Some(subscription_id.as_str()))?;
+        let stream_handle =
+            ipc_runtime.register_stream("host-events", Some(subscription_id.as_str()))?;
         let app_handle = app.clone();
         let event_name = stream_handle.event_name.clone();
         let sink: HostEventSink = Arc::new(move |event| {
@@ -289,7 +290,9 @@ impl HostEventBusState {
         }
         if let Some(extension_id_hint) = extension_id_hint {
             let expected_prefix = format!("ext.{}.", extension_id_hint.trim());
-            if !extension_id_hint.trim().is_empty() && !trimmed_topic.starts_with(expected_prefix.as_str()) {
+            if !extension_id_hint.trim().is_empty()
+                && !trimmed_topic.starts_with(expected_prefix.as_str())
+            {
                 return Err(format!(
                     "events.publish topic `{trimmed_topic}` must stay within `{expected_prefix}*`."
                 ));
@@ -346,7 +349,8 @@ impl HostEventBusState {
             )?;
         }
 
-        if previous_snapshot.and_then(|snapshot| snapshot.pane_id.clone()) != next_snapshot.pane_id {
+        if previous_snapshot.and_then(|snapshot| snapshot.pane_id.clone()) != next_snapshot.pane_id
+        {
             self.publish_event(
                 HOST_EVENT_TOPIC_EXPLORER_PANE_FOCUSED,
                 encode_optional_payload(&serde_json::json!({
@@ -859,7 +863,9 @@ fn selection_identity(snapshot: &ExecutionContextSnapshot) -> String {
     format!("{focused_path}::{selected_paths}")
 }
 
-fn build_scope_from_context(execution_context: Option<&ExecutionContextSnapshot>) -> HostEventScope {
+fn build_scope_from_context(
+    execution_context: Option<&ExecutionContextSnapshot>,
+) -> HostEventScope {
     let Some(execution_context) = execution_context else {
         return HostEventScope::default();
     };
@@ -882,7 +888,11 @@ fn build_context_location_key(snapshot: &ExecutionContextSnapshot) -> Option<Str
     if pane_id.is_empty() {
         return None;
     }
-    let workspace_tab_id = snapshot.workspace_tab_id.as_deref().unwrap_or("default").trim();
+    let workspace_tab_id = snapshot
+        .workspace_tab_id
+        .as_deref()
+        .unwrap_or("default")
+        .trim();
     Some(format!("{workspace_tab_id}::{pane_id}"))
 }
 
@@ -915,7 +925,12 @@ fn infer_active_file_type_descriptor(
         .preview_session
         .as_ref()
         .and_then(|session| session.file_path.clone())
-        .or_else(|| snapshot.focused_entry.as_ref().map(|entry| entry.path.clone()))?;
+        .or_else(|| {
+            snapshot
+                .focused_entry
+                .as_ref()
+                .map(|entry| entry.path.clone())
+        })?;
     let extension = focused_entry
         .rsplit_once('.')
         .map(|(_, extension)| extension.trim().to_ascii_lowercase())
@@ -943,8 +958,14 @@ fn infer_active_file_type_descriptor(
         } else {
             "preview".to_string()
         },
-        preview_owner: snapshot.preview_session.as_ref().map(|session| session.lane_type.clone()),
-        runtime_affinity: snapshot.preview_session.as_ref().and_then(|session| session.lane_id.clone()),
+        preview_owner: snapshot
+            .preview_session
+            .as_ref()
+            .map(|session| session.lane_type.clone()),
+        runtime_affinity: snapshot
+            .preview_session
+            .as_ref()
+            .and_then(|session| session.lane_id.clone()),
         editable: false,
     })
 }
@@ -1057,7 +1078,11 @@ mod tests {
             ..HostSubscriptionRequest::default()
         });
 
-        assert!(snapshots.iter().any(|event| event.topic.starts_with("selection.")));
-        assert!(snapshots.iter().any(|event| event.topic.starts_with("preview.")));
+        assert!(snapshots
+            .iter()
+            .any(|event| event.topic.starts_with("selection.")));
+        assert!(snapshots
+            .iter()
+            .any(|event| event.topic.starts_with("preview.")));
     }
 }

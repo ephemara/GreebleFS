@@ -7,6 +7,10 @@ import * as TauriNotification from '@tauri-apps/plugin-notification';
 import * as LucideReact from '@/components/AppIcons';
 import type { OverlayThemeDefinition } from '../config/appearance';
 import type { OverlayPluginPreviewLaneDescriptor } from '../config/pluginPreviewLanes';
+import type {
+  OverlayPluginSettingsSlotDescriptor,
+  OverlayPluginSettingsValue,
+} from '../config/pluginSettings';
 import {
   getPluginBackendDirectory,
   getPluginDirectory,
@@ -69,6 +73,7 @@ export interface OverlayPluginApi {
   fs: typeof TauriFs;
   notification: typeof TauriNotification;
   host: ExtensionHostClient;
+  settings?: OverlayPluginSettingsApi;
   storage?: OverlayPluginStorageApi;
   assets?: OverlayPluginAssetsApi;
   refreshPlugins: () => Promise<void>;
@@ -91,6 +96,21 @@ export interface OverlayPluginAssetsApi {
   rootDir: string;
   resolvePath: (relativePath: string) => string;
   resolveUrl: (relativePath: string) => string;
+}
+
+export interface OverlayPluginSettingsApi {
+  pluginId: string;
+  getStoredValues: () => Record<string, OverlayPluginSettingsValue>;
+  getValue: <TValue = OverlayPluginSettingsValue>(
+    settingId: string,
+    fallbackValue?: TValue,
+  ) => TValue | OverlayPluginSettingsValue;
+  setValue: (settingId: string, value: unknown) => void;
+  patchValues: (updates: Record<string, unknown>) => void;
+  resetValues: (settingIds?: string[]) => void;
+  subscribe: (
+    listener: (values: Record<string, OverlayPluginSettingsValue>) => void,
+  ) => () => void;
 }
 
 export interface OverlayPluginHostContext {
@@ -189,6 +209,32 @@ export interface OverlayPluginPreviewLaneDefinition {
   component: React.ComponentType<OverlayPluginPreviewLaneProps>;
 }
 
+export interface OverlayPluginSettingsSlotHost {
+  getValues: () => Record<string, OverlayPluginSettingsValue>;
+  getValue: <TValue = OverlayPluginSettingsValue>(
+    settingId: string,
+    fallbackValue?: TValue,
+  ) => TValue | OverlayPluginSettingsValue;
+  setValue: (settingId: string, value: unknown) => void;
+  patchValues: (updates: Record<string, unknown>) => void;
+  resetValues: (settingIds?: string[]) => void;
+  subscribe: (
+    listener: (values: Record<string, OverlayPluginSettingsValue>) => void,
+  ) => () => void;
+}
+
+export interface OverlayPluginSettingsSlotProps {
+  plugin: OverlayPluginContext;
+  api: OverlayPluginApi;
+  appearance: OverlayPluginProps['appearance'];
+  slot: OverlayPluginSettingsSlotDescriptor;
+  host: OverlayPluginSettingsSlotHost;
+}
+
+export interface OverlayPluginSettingsSlotDefinition {
+  component: React.ComponentType<OverlayPluginSettingsSlotProps>;
+}
+
 export type BoundOverlayPluginPreviewLaneProps = Omit<
   OverlayPluginPreviewLaneProps,
   'plugin' | 'api'
@@ -196,6 +242,14 @@ export type BoundOverlayPluginPreviewLaneProps = Omit<
 
 export type BoundOverlayPluginPreviewLaneComponent =
   React.ComponentType<BoundOverlayPluginPreviewLaneProps>;
+
+export type BoundOverlayPluginSettingsSlotProps = Omit<
+  OverlayPluginSettingsSlotProps,
+  'plugin' | 'api'
+>;
+
+export type BoundOverlayPluginSettingsSlotComponent =
+  React.ComponentType<BoundOverlayPluginSettingsSlotProps>;
 
 export type OverlayPluginSourceKind = 'file-plugin' | 'package-plugin';
 
@@ -209,6 +263,7 @@ export interface OverlayPluginCapabilitySummary {
   explorerActions: number;
   contextMenuItems: number;
   previewLanes: number;
+  settingsSlots: number;
 }
 
 export interface OverlayPluginDiagnostics {
@@ -258,6 +313,19 @@ export function definePreviewLane(
     | OverlayPluginPreviewLaneDefinition
     | React.ComponentType<OverlayPluginPreviewLaneProps>,
 ): OverlayPluginPreviewLaneDefinition {
+  if (typeof definition === 'function') {
+    return {
+      component: definition,
+    };
+  }
+  return definition;
+}
+
+export function defineSettingsSlot(
+  definition:
+    | OverlayPluginSettingsSlotDefinition
+    | React.ComponentType<OverlayPluginSettingsSlotProps>,
+): OverlayPluginSettingsSlotDefinition {
   if (typeof definition === 'function') {
     return {
       component: definition,
@@ -316,6 +384,7 @@ export async function loadPluginFromSource(
       contextMenuItems:
         options?.diagnostics?.capabilities?.contextMenuItems ?? 0,
       previewLanes: options?.diagnostics?.capabilities?.previewLanes ?? 0,
+      settingsSlots: options?.diagnostics?.capabilities?.settingsSlots ?? 0,
     },
   };
 
@@ -388,6 +457,22 @@ export async function loadPluginPreviewLaneFromSource(
   return normalizePreviewLaneExport(exported).component;
 }
 
+export async function loadPluginSettingsSlotFromSource(
+  source: string,
+  entry: PluginFileEntry,
+  options?: {
+    resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
+  },
+): Promise<React.ComponentType<OverlayPluginSettingsSlotProps>> {
+  const transpiledGraph = await transpilePluginGraph(
+    entry.path,
+    source,
+    options?.resolveRelativeModuleSource,
+  );
+  const exported = executePluginModuleGraph(transpiledGraph);
+  return normalizeSettingsSlotExport(exported).component;
+}
+
 async function transpilePluginGraph(
   entryModulePath: string,
   source: string,
@@ -413,6 +498,7 @@ function executePluginModuleGraph(graph: RuntimeModuleGraph): unknown {
     [pluginSystemConfig.runtimeModuleName]: {
       definePlugin,
       definePreviewLane,
+      defineSettingsSlot,
       getPluginPanelOpenRequestEvent,
       readPluginPanelOpenRequest,
       requestPluginPanelOpen,
@@ -484,6 +570,41 @@ function normalizePreviewLaneExport(
 
   throw new Error(
     'Preview lane must export either a React component or definePreviewLane({ component }).',
+  );
+}
+
+function normalizeSettingsSlotExport(
+  exported: unknown,
+): OverlayPluginSettingsSlotDefinition {
+  const candidate = unwrapRuntimeModuleExport(exported, [
+    'pluginSettings',
+    'settingsSlot',
+    'plugin',
+  ]);
+
+  if (typeof candidate === 'function') {
+    return {
+      component:
+        candidate as React.ComponentType<OverlayPluginSettingsSlotProps>,
+    };
+  }
+
+  if (
+    candidate &&
+    typeof candidate === 'object' &&
+    'component' in candidate
+  ) {
+    const definition = candidate as OverlayPluginSettingsSlotDefinition;
+    if (typeof definition.component !== 'function') {
+      throw new Error(
+        'Settings slot export must provide a React component.',
+      );
+    }
+    return definition;
+  }
+
+  throw new Error(
+    'Settings slot must export either a React component or defineSettingsSlot({ component }).',
   );
 }
 

@@ -13,25 +13,35 @@ import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginPreviewLaneContribution,
+  OverlayPluginSettingsSlotContribution,
 } from './pluginContributions';
 import {
   DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY,
   normalizeOverlayPluginPreviewLaneCapabilities,
   normalizeOverlayPluginPreviewLaneMatchRule,
 } from './pluginPreviewLanes';
+import {
+  normalizeOverlayPluginSettingsValueMap,
+  type OverlayPluginSettingsFieldDefinition,
+  type OverlayPluginSettingsFieldKind,
+  type OverlayPluginSettingsOptionDefinition,
+} from './pluginSettings';
 import { joinPlatformPath } from './platform';
 import { pluginSystemConfig } from './plugins';
 import { type LoadedOverlayThemePackage, loadThemePackagesFromDirectoryEntries } from './themePackages';
 import { type LoadedOverlayShader, loadShaderFromSource } from '../components/shaderRuntime';
 import {
   type BoundOverlayPluginPreviewLaneComponent,
+  type BoundOverlayPluginSettingsSlotComponent,
   type LoadedOverlayPlugin,  
   type OverlayPluginApi,
   type OverlayPluginCapabilitySummary,
   type OverlayPluginContext,
   type OverlayPluginPreviewLaneProps,
+  type OverlayPluginSettingsSlotProps,
   type PluginFileEntry,
   loadPluginPreviewLaneFromSource,
+  loadPluginSettingsSlotFromSource,
   loadPluginFromSource,
 } from '../components/pluginRuntime';
 import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
@@ -122,6 +132,19 @@ interface PluginPackagePreviewLaneManifest {
   };
 }
 
+interface PluginPackageSettingsSlotManifest {
+  id?: string;
+  title?: string;
+  description?: string;
+  iconName?: string;
+  keywords?: string[];
+  order?: number;
+  renderer?: string;
+  rendererEntry?: string;
+  defaults?: Record<string, unknown>;
+  fields?: OverlayPluginSettingsFieldDefinition[];
+}
+
 interface PluginPackageManifest {
   version?: number | string;
   id?: string;
@@ -144,6 +167,7 @@ interface PluginPackageManifest {
     explorerActions?: PluginPackageExplorerActionManifest[];
     contextMenuItems?: PluginPackageContextMenuItemManifest[];
     previewLanes?: PluginPackagePreviewLaneManifest[];
+    settingsSlots?: PluginPackageSettingsSlotManifest[];
   };
 }
 
@@ -165,6 +189,7 @@ export interface OverlayPluginDiscoveryResult {
   explorerActions: OverlayPluginExplorerActionContribution[];
   contextMenuItems: OverlayPluginContextMenuContribution[];
   previewLanes: OverlayPluginPreviewLaneContribution[];
+  settingsSlots: OverlayPluginSettingsSlotContribution[];
   warnings: string[];
 }
 
@@ -411,6 +436,143 @@ function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneMan
   });
 }
 
+function asSettingsOptionDefinitionArray(
+  value: unknown,
+): OverlayPluginSettingsOptionDefinition[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (typeof entry === 'string' && entry.trim()) {
+      const normalizedValue = entry.trim();
+      return [{
+        value: normalizedValue,
+        label: normalizedValue,
+      }];
+    }
+
+    const record = asRecord(entry);
+    const optionValue = asString(record?.value);
+    if (!record || !optionValue) {
+      return [];
+    }
+
+    return [{
+      value: optionValue,
+      label: asString(record.label) || optionValue,
+      description: asString(record.description) || undefined,
+    }];
+  });
+}
+
+function normalizePluginSettingsFieldKind(
+  kind: unknown,
+  hasOptions: boolean,
+): OverlayPluginSettingsFieldKind {
+  const normalizedKind = asString(kind);
+  if (
+    normalizedKind === 'boolean' ||
+    normalizedKind === 'text' ||
+    normalizedKind === 'textarea' ||
+    normalizedKind === 'number' ||
+    normalizedKind === 'select' ||
+    normalizedKind === 'json'
+  ) {
+    return normalizedKind;
+  }
+  return hasOptions ? 'select' : 'text';
+}
+
+function asSettingsFieldDefinitionArray(
+  value: unknown,
+): OverlayPluginSettingsFieldDefinition[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry, index) => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+
+    const optionDefinitions = asSettingsOptionDefinitionArray(record.options);
+    const normalizedKind = normalizePluginSettingsFieldKind(
+      record.kind,
+      optionDefinitions.length > 0,
+    );
+    const label = asString(record.label) || `Setting ${index + 1}`;
+    const fieldId =
+      asString(record.id) || deriveIdFromName(label, 'plugin-setting');
+    const defaultValue = normalizeOverlayPluginSettingsValueMap({
+      [fieldId]: record.defaultValue,
+    })[fieldId];
+
+    return [{
+      id: fieldId,
+      label,
+      description: asString(record.description) || undefined,
+      kind: normalizedKind,
+      placeholder: asString(record.placeholder) || undefined,
+      defaultValue,
+      min:
+        typeof record.min === 'number' && Number.isFinite(record.min)
+          ? record.min
+          : undefined,
+      max:
+        typeof record.max === 'number' && Number.isFinite(record.max)
+          ? record.max
+          : undefined,
+      step:
+        typeof record.step === 'number' && Number.isFinite(record.step)
+          ? record.step
+          : undefined,
+      options: optionDefinitions,
+      order:
+        typeof record.order === 'number' && Number.isFinite(record.order)
+          ? Math.round(record.order)
+          : index * 10,
+      keywords: asStringArray(record.keywords),
+    }];
+  });
+}
+
+function asSettingsSlotManifestArray(
+  value: unknown,
+): PluginPackageSettingsSlotManifest[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry, index) => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+
+    const title = asString(record.title) || `Plugin Settings ${index + 1}`;
+    const renderer =
+      asString(record.renderer) || asString(record.rendererEntry);
+
+    return [{
+      id: asString(record.id) || deriveIdFromName(title, 'settings-slot'),
+      title,
+      description: asString(record.description) || undefined,
+      iconName: asString(record.iconName) || undefined,
+      keywords: asStringArray(record.keywords),
+      order:
+        typeof record.order === 'number' && Number.isFinite(record.order)
+          ? Math.round(record.order)
+          : index * 100,
+      renderer: renderer || undefined,
+      rendererEntry: asString(record.rendererEntry) || undefined,
+      defaults: normalizeOverlayPluginSettingsValueMap(record.defaults),
+      fields: asSettingsFieldDefinitionArray(record.fields),
+    }];
+  });
+}
+
 function parsePluginManifestText(text: string, filePath: string): PluginPackageManifest {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -455,6 +617,7 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
       explorerActions: asExplorerActionManifestArray(contributions?.explorerActions),
       contextMenuItems: asContextMenuItemManifestArray(contributions?.contextMenuItems),
       previewLanes: asPreviewLaneManifestArray(contributions?.previewLanes),
+      settingsSlots: asSettingsSlotManifestArray(contributions?.settingsSlots),
     },
   };
 }
@@ -764,6 +927,7 @@ async function loadPluginPackage(
     explorerActions: [],
     contextMenuItems: [],
     previewLanes: [],
+    settingsSlots: [],
     warnings: [],
   };
 
@@ -1109,6 +1273,135 @@ async function loadPluginPackage(
     ),
   );
 
+  const settingsModuleResolver = createPluginRelativeModuleSourceResolver(
+    record.directoryPath,
+  );
+  const settingsRendererCache = new Map<
+    string,
+    React.ComponentType<OverlayPluginSettingsSlotProps>
+  >();
+  const loadedSettingsSlots: Array<
+    OverlayPluginSettingsSlotContribution | null
+  > = await Promise.all(
+    (record.manifest.contributions?.settingsSlots ?? []).map(
+      async (settingsSlot) => {
+        const slotTitle = settingsSlot.title || 'Plugin Settings';
+        const stableId =
+          settingsSlot.id || deriveIdFromName(slotTitle, 'settings-slot');
+        const rendererEntryValue = settingsSlot.renderer?.trim() || null;
+        let normalizedRendererEntry: string | null = null;
+        let boundComponent: BoundOverlayPluginSettingsSlotComponent | null = null;
+
+        if (rendererEntryValue) {
+          if (!isSafeRelativePath(rendererEntryValue)) {
+            packageWarnings.push(
+              `settings slot ${slotTitle}: invalid renderer path`,
+            );
+          } else {
+            normalizedRendererEntry = normalizeRelativePath(rendererEntryValue);
+            let rendererComponent =
+              settingsRendererCache.get(normalizedRendererEntry) ?? null;
+            if (!rendererComponent) {
+              const rendererEntry = await resolveRelativeFileEntry(
+                record.directoryPath,
+                normalizedRendererEntry,
+              );
+              if (
+                !rendererEntry ||
+                !pluginSystemConfig.frontendExtensions.includes(
+                  rendererEntry.extension as never,
+                )
+              ) {
+                packageWarnings.push(
+                  `settings slot ${slotTitle}: renderer ${normalizedRendererEntry} could not be resolved`,
+                );
+                normalizedRendererEntry = null;
+              } else {
+                try {
+                  const source = await commands
+                    .fsReadTextFile(rendererEntry.path)
+                    .then(unwrapTauriResult);
+                  rendererComponent = await loadPluginSettingsSlotFromSource(
+                    source,
+                    rendererEntry as PluginFileEntry,
+                    {
+                      resolveRelativeModuleSource: settingsModuleResolver,
+                    },
+                  );
+                  settingsRendererCache.set(
+                    normalizedRendererEntry,
+                    rendererComponent,
+                  );
+                } catch (error) {
+                  packageWarnings.push(
+                    `settings slot ${slotTitle}: ${String(error)}`,
+                  );
+                  normalizedRendererEntry = null;
+                }
+              }
+            }
+
+            if (rendererComponent && normalizedRendererEntry) {
+              const rendererFilePath = joinPlatformPath(
+                record.directoryPath,
+                normalizedRendererEntry,
+              );
+              const settingsSlotContext: OverlayPluginContext = {
+                ...packagePreviewBaseContext,
+                filePath: rendererFilePath,
+              };
+              const settingsSlotApi = hostApiFactory(settingsSlotContext);
+              boundComponent = (props) =>
+                React.createElement(rendererComponent!, {
+                  ...props,
+                  api: settingsSlotApi,
+                  plugin: settingsSlotContext,
+                });
+            }
+          }
+        }
+
+        if (
+          !boundComponent &&
+          (settingsSlot.fields?.length ?? 0) === 0 &&
+          Object.keys(settingsSlot.defaults ?? {}).length === 0
+        ) {
+          packageWarnings.push(
+            `settings slot ${slotTitle}: no schema/defaults or renderable component were discovered`,
+          );
+          return null;
+        }
+
+        return {
+          id: `${packageId}.settings-slot.${stableId}`,
+          pluginId: packageId,
+          pluginName: packageName,
+          title: slotTitle,
+          description: settingsSlot.description,
+          iconName: settingsSlot.iconName,
+          keywords: settingsSlot.keywords ?? [],
+          order: settingsSlot.order ?? 0,
+          rendererEntry: normalizedRendererEntry,
+          defaults: normalizeOverlayPluginSettingsValueMap(
+            settingsSlot.defaults,
+          ),
+          fields: [...(settingsSlot.fields ?? [])].sort(
+            (left, right) => left.order - right.order,
+          ),
+          component: boundComponent,
+        } satisfies OverlayPluginSettingsSlotContribution;
+      },
+    ),
+  );
+  result.settingsSlots.push(
+    ...loadedSettingsSlots.filter(
+      (
+        contribution,
+      ): contribution is OverlayPluginSettingsSlotContribution =>
+        contribution != null,
+    ),
+  );
+
   if (packagePlugin) {
     const capabilities: OverlayPluginCapabilitySummary = {
       panel: true,
@@ -1120,6 +1413,7 @@ async function loadPluginPackage(
       explorerActions: result.explorerActions.length,
       contextMenuItems: result.contextMenuItems.length,
       previewLanes: result.previewLanes.length,
+      settingsSlots: result.settingsSlots.length,
     };
     result.plugins.push({
       ...packagePlugin,
@@ -1149,6 +1443,7 @@ export async function discoverOverlayPlugins(
     explorerActions: [],
     contextMenuItems: [],
     previewLanes: [],
+    settingsSlots: [],
     warnings: [],
   };
 
@@ -1175,6 +1470,7 @@ export async function discoverOverlayPlugins(
     explorerActions: [],
     contextMenuItems: [],
     previewLanes: [],
+    settingsSlots: [],
     warnings: [],
   };
 
@@ -1217,6 +1513,7 @@ export async function discoverOverlayPlugins(
       aggregate.explorerActions.push(...packageResult.explorerActions);
       aggregate.contextMenuItems.push(...packageResult.contextMenuItems);
       aggregate.previewLanes.push(...packageResult.previewLanes);
+      aggregate.settingsSlots.push(...packageResult.settingsSlots);
       aggregate.warnings.push(...packageResult.warnings);
     } catch (error) {
       aggregate.warnings.push(`${directory.name}: ${String(error)}`);
@@ -1232,6 +1529,10 @@ export async function discoverOverlayPlugins(
   aggregate.actions.sort((left, right) => left.title.localeCompare(right.title));
   aggregate.explorerActions.sort((left, right) => left.label.localeCompare(right.label));
   aggregate.contextMenuItems.sort((left, right) => left.title.localeCompare(right.title));
+  aggregate.settingsSlots.sort(
+    (left, right) =>
+      left.order - right.order || left.title.localeCompare(right.title),
+  );
 
   return aggregate;
 }

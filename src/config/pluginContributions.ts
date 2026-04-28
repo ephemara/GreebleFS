@@ -1,9 +1,13 @@
-import type { BoundOverlayPluginPreviewLaneComponent } from '../components/pluginRuntime';
+import type {
+  BoundOverlayPluginPreviewLaneComponent,
+  BoundOverlayPluginSettingsSlotComponent,
+} from '../components/pluginRuntime';
 import type {
   OverlayPluginPreviewLaneCapabilityFlags,
   OverlayPluginPreviewLaneDescriptor,
   OverlayPluginPreviewLaneMatchRule,
 } from './pluginPreviewLanes';
+import type { OverlayPluginSettingsSlotDescriptor } from './pluginSettings';
 
 export interface OverlayPluginCommandContribution {
   id: string;
@@ -62,6 +66,11 @@ export interface OverlayPluginPreviewLaneContribution
   match: OverlayPluginPreviewLaneMatchRule;
   capabilities: OverlayPluginPreviewLaneCapabilityFlags;
   component: BoundOverlayPluginPreviewLaneComponent;
+}
+
+export interface OverlayPluginSettingsSlotContribution
+  extends OverlayPluginSettingsSlotDescriptor {
+  component: BoundOverlayPluginSettingsSlotComponent | null;
 }
 
 export interface OverlayPluginCommandContext {

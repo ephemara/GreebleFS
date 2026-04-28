@@ -7,6 +7,7 @@ import { commands } from '../runtime/tauriClient';
 import * as pluginPackages from '../config/pluginPackages';
 import * as explorerBackend from '../runtime/explorerBackend';
 import type { ExplorerFileEntry } from '../runtime/explorerBackend';
+import { useSettingsStore } from '../store/settingsStore';
 
 const directoryEntries = [
   {
@@ -29,12 +30,14 @@ const emptyDiscoveryResult: pluginPackages.OverlayPluginDiscoveryResult = {
   explorerActions: [],
   contextMenuItems: [],
   previewLanes: [],
+  settingsSlots: [],
   warnings: [],
 };
 
 describe('useFolderPluginRuntime', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    useSettingsStore.getState().resetToDefaults();
     vi.spyOn(explorerBackend, 'listExplorerDir').mockResolvedValue(directoryEntries);
     vi.spyOn(pluginPackages, 'discoverOverlayPlugins').mockResolvedValue(emptyDiscoveryResult);
     vi.spyOn(commands, 'pluginWatchDirectory').mockResolvedValue({ status: 'ok', data: null });
@@ -296,5 +299,38 @@ describe('useFolderPluginRuntime', () => {
 
     expect(explorerBackend.listExplorerDir).toHaveBeenCalled();
     expect(pluginPackages.discoverOverlayPlugins).not.toHaveBeenCalled();
+  });
+
+  it('binds a plugin-scoped settings controller into the plugin api', async () => {
+    const { result } = renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
+
+    const api = result.current.createPluginApi({
+      id: 'notes-tools',
+      name: 'Notes Tools',
+      filePath: 'plugins/notes-tools/index.tsx',
+      pluginRoot: pluginSystemConfig.pluginsDirectory,
+      pluginDirectory: 'plugins/notes-tools',
+      backendDirectory: 'plugins/notes-tools/backend',
+    });
+
+    act(() => {
+      api.settings?.setValue('density', 'compact');
+      api.settings?.patchValues({
+        autoWrap: true,
+      });
+    });
+
+    expect(api.settings?.pluginId).toBe('notes-tools');
+    expect(api.settings?.getStoredValues()).toEqual({
+      density: 'compact',
+      autoWrap: true,
+    });
+    expect(
+      useSettingsStore.getState().settings.plugins.valuesByPluginId['notes-tools'],
+    ).toEqual({
+      density: 'compact',
+      autoWrap: true,
+    });
   });
 });

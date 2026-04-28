@@ -610,6 +610,9 @@ function getPluginCapabilityLabels(plugin: LoadedOverlayPlugin): string[] {
   if (plugin.diagnostics.capabilities.previewLanes > 0) {
     labels.push(`Preview ${plugin.diagnostics.capabilities.previewLanes}`);
   }
+  if (plugin.diagnostics.capabilities.settingsSlots > 0) {
+    labels.push(`Settings ${plugin.diagnostics.capabilities.settingsSlots}`);
+  }
   return labels;
 }
 

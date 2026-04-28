@@ -179,6 +179,44 @@ describe('plugin package discovery', () => {
                 },
               },
             ],
+            settingsSlots: [
+              {
+                id: 'notes-settings',
+                title: 'Notes Settings',
+                description: 'Tune the markdown preview lane.',
+                iconName: 'SlidersHorizontal',
+                keywords: ['notes', 'preview'],
+                order: 25,
+                renderer: 'settings/notes-settings.js',
+                defaults: {
+                  autoWrap: true,
+                  density: 'cozy',
+                },
+                fields: [
+                  {
+                    id: 'autoWrap',
+                    label: 'Auto Wrap',
+                    kind: 'boolean',
+                    defaultValue: true,
+                  },
+                  {
+                    id: 'density',
+                    label: 'Density',
+                    kind: 'select',
+                    defaultValue: 'compact',
+                    options: ['cozy', 'compact'],
+                  },
+                  {
+                    id: 'tabSize',
+                    label: 'Tab Size',
+                    kind: 'number',
+                    defaultValue: 2,
+                    min: 1,
+                    max: 8,
+                  },
+                ],
+              },
+            ],
           },
         });
       }
@@ -214,6 +252,18 @@ describe('plugin package discovery', () => {
         ];
       }
 
+      if (command === 'fs_list_dir' && normalizedPath === 'plugins/mega-plugin/settings') {
+        return [
+          {
+            name: 'notes-settings.js',
+            path: 'plugins/mega-plugin/settings/notes-settings.js',
+            is_dir: false,
+            extension: 'js',
+            modified: 45,
+          },
+        ];
+      }
+
       if (command === 'fs_read_text_file' && normalizedPath === 'plugins/mega-plugin/dist/index.js') {
         return `
           import React from 'react';
@@ -240,6 +290,19 @@ describe('plugin package discovery', () => {
           export default definePreviewLane({
             component: function NotesPreviewLane({ file }) {
               return React.createElement('div', null, file.name);
+            },
+          });
+        `;
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/mega-plugin/settings/notes-settings.js') {
+        return `
+          import React from 'react';
+          import { defineSettingsSlot } from 'overlayterm-plugin';
+
+          export default defineSettingsSlot({
+            component: function NotesSettingsSlot() {
+              return React.createElement('div', null, 'notes settings');
             },
           });
         `;
@@ -288,6 +351,7 @@ describe('plugin package discovery', () => {
     expect(result.plugins[1]?.diagnostics.capabilities.commands).toBe(1);
     expect(result.plugins[1]?.diagnostics.capabilities.contextMenuItems).toBe(3);
     expect(result.plugins[1]?.diagnostics.capabilities.previewLanes).toBe(1);
+    expect(result.plugins[1]?.diagnostics.capabilities.settingsSlots).toBe(1);
     expect(result.themePackages).toHaveLength(0);
     expect(result.shaders).toHaveLength(1);
     expect(result.shaders[0]?.name).toBe('Plugin Halo');
@@ -342,6 +406,46 @@ describe('plugin package discovery', () => {
       },
     });
     expect(typeof result.previewLanes[0]?.component).toBe('function');
+    expect(result.settingsSlots).toHaveLength(1);
+    expect(result.settingsSlots[0]).toMatchObject({
+      id: 'mega-plugin.settings-slot.notes-settings',
+      pluginId: 'mega-plugin',
+      pluginName: 'Mega Plugin',
+      title: 'Notes Settings',
+      description: 'Tune the markdown preview lane.',
+      iconName: 'SlidersHorizontal',
+      keywords: ['notes', 'preview'],
+      order: 25,
+      rendererEntry: 'settings/notes-settings.js',
+      defaults: {
+        autoWrap: true,
+        density: 'cozy',
+      },
+    });
+    expect(result.settingsSlots[0]?.fields).toEqual([
+      expect.objectContaining({
+        id: 'autoWrap',
+        kind: 'boolean',
+        defaultValue: true,
+      }),
+      expect.objectContaining({
+        id: 'density',
+        kind: 'select',
+        defaultValue: 'compact',
+        options: [
+          { value: 'cozy', label: 'cozy' },
+          { value: 'compact', label: 'compact' },
+        ],
+      }),
+      expect.objectContaining({
+        id: 'tabSize',
+        kind: 'number',
+        defaultValue: 2,
+        min: 1,
+        max: 8,
+      }),
+    ]);
+    expect(typeof result.settingsSlots[0]?.component).toBe('function');
   });
 
   it('rejects unsafe package-relative paths before loading bundled assets', async () => {

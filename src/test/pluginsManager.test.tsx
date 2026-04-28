@@ -88,6 +88,7 @@ describe('PluginsManager', () => {
             explorerActions: 0,
             contextMenuItems: 0,
             previewLanes: 1,
+            settingsSlots: 1,
           },
         },
       },
@@ -120,6 +121,7 @@ describe('PluginsManager', () => {
             explorerActions: 0,
             contextMenuItems: 0,
             previewLanes: 0,
+            settingsSlots: 0,
           },
         },
       },
@@ -144,6 +146,7 @@ describe('PluginsManager', () => {
     expect(screen.getAllByText(/Package plugin/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Themes 1').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Preview 1').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Settings 1').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/1 warning/i).length).toBeGreaterThan(0);
     expect(screen.getByText('shader glow.tsx: bad uniform')).toBeInTheDocument();
 

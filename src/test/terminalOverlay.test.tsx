@@ -46,6 +46,7 @@ vi.mock('@xterm/xterm', () => ({
     loadAddon = vi.fn();
     open = vi.fn();
     scrollToBottom = vi.fn();
+    write = vi.fn();
     writeln = vi.fn();
     onData = vi.fn((handler: (data: string) => void) => {
       this.dataHandler = handler;
@@ -162,6 +163,7 @@ describe('TerminalOverlay', () => {
     vi.mocked(listen).mockReset();
     vi.mocked(listen).mockResolvedValue(() => {});
     useSettingsStore.getState().resetToDefaults();
+    useSettingsStore.getState().updateTerminal({ integratedHost: 'xterm' });
 
     Object.defineProperty(window, 'ResizeObserver', {
       configurable: true,
@@ -187,17 +189,32 @@ describe('TerminalOverlay', () => {
   });
 
   it('copies the active terminal buffer to the clipboard', async () => {
+    const eventHandlers = new Map<string, (event: { payload: unknown }) => void>();
+    vi.mocked(listen).mockImplementation(async (eventName, handler) => {
+      eventHandlers.set(String(eventName), handler as (event: { payload: unknown }) => void);
+      return () => {
+        eventHandlers.delete(String(eventName));
+      };
+    });
+
     render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
 
     expect(screen.queryByTestId('terminal-pane-fx-overlay-0')).not.toBeInTheDocument();
     const copyButton = await screen.findByRole('button', { name: 'Copy Output' });
     await waitFor(() => expect(copyButton).toBeEnabled());
+    await waitFor(() => expect(eventHandlers.has('ipc-stream-terminal-output-overlay-0')).toBe(true));
+
+    const outputHandler = eventHandlers.get('ipc-stream-terminal-output-overlay-0');
+    if (!outputHandler) {
+      throw new Error('Missing output stream handler');
+    }
+    outputHandler({ payload: { data: 'PS M:\\\\OverlayTerm> dir\nsrc  src-tauri  package.json' } });
 
     await userEvent.click(copyButton);
 
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        'PS M:\\OverlayTerm> dir\nsrc  src-tauri  package.json',
+        'PS M:\\\\OverlayTerm> dir\nsrc  src-tauri  package.json',
       );
     });
   }, 20000);
@@ -226,7 +243,10 @@ describe('TerminalOverlay', () => {
     await userEvent.click(restartButton);
 
     expect(mockXtermInstances[0]?.clear).toHaveBeenCalledTimes(1);
-    expect(mockXtermInstances[0]?.reset).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(mockXtermInstances.length).toBeGreaterThanOrEqual(2);
+    });
+    expect(mockXtermInstances[0]?.dispose).toHaveBeenCalledTimes(1);
     expect(invokeMock).toHaveBeenCalledWith('terminal_kill', { id: 'overlay-0' });
     expect(invokeMock).toHaveBeenCalledWith('terminal_spawn', expect.objectContaining({
       id: 'overlay-0',

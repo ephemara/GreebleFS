@@ -68,6 +68,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.terminal.shellArgs).toBe(defaultSettings.terminal.shellArgs);
     expect(settings.terminal.preferredOpenMode).toBe('integrated');
     expect(settings.terminal.externalTerminalProfile).toBe('auto');
+    expect(settings.terminal.integratedHost).toBe('go-pty-panel');
   });
 
   it('has the correct default python settings', () => {
@@ -244,6 +245,11 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.mobile.tailscaleLoginServer).toBe('');
     expect(settings.mobile.tailscaleHostname).toBe('');
     expect(settings.mobile.layout).toEqual(defaultMobileLayoutSettings);
+  });
+
+  it('starts with an empty plugin settings catalog', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.plugins.valuesByPluginId).toEqual({});
   });
 });
 
@@ -1198,6 +1204,62 @@ describe('useSettingsStore.exportSettings()', () => {
   });
 });
 
+describe('useSettingsStore plugin settings actions', () => {
+  it('stores, patches, and resets plugin-owned values in one namespaced slice', () => {
+    const store = useSettingsStore.getState();
+
+    store.setPluginSettingsValues('notes-tools', {
+      autoWrap: true,
+      density: 'cozy',
+      ignoredFn: () => 'nope',
+    });
+    expect(useSettingsStore.getState().settings.plugins.valuesByPluginId).toEqual({
+      'notes-tools': {
+        autoWrap: true,
+        density: 'cozy',
+      },
+    });
+
+    store.patchPluginSettings('notes-tools', {
+      density: 'compact',
+      tabSize: 4,
+    });
+    expect(
+      useSettingsStore.getState().settings.plugins.valuesByPluginId[
+        'notes-tools'
+      ],
+    ).toEqual({
+      autoWrap: true,
+      density: 'compact',
+      tabSize: 4,
+    });
+
+    store.setPluginSettingValue('notes-tools', 'tabSize', Number.NaN);
+    expect(
+      useSettingsStore.getState().settings.plugins.valuesByPluginId[
+        'notes-tools'
+      ],
+    ).toEqual({
+      autoWrap: true,
+      density: 'compact',
+    });
+
+    store.resetPluginSettings('notes-tools', ['density']);
+    expect(
+      useSettingsStore.getState().settings.plugins.valuesByPluginId[
+        'notes-tools'
+      ],
+    ).toEqual({
+      autoWrap: true,
+    });
+
+    store.clearPluginSettings('notes-tools');
+    expect(useSettingsStore.getState().settings.plugins.valuesByPluginId).toEqual(
+      {},
+    );
+  });
+});
+
 describe('mergeSettingsWithDefaults()', () => {
   it('fills in newly added sections for older persisted settings', () => {
     const merged = mergeSettingsWithDefaults({
@@ -1445,5 +1507,35 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.terminal.windowMode).toBe(defaultSettings.terminal.windowMode);
     expect(merged.terminal.windowedWidth).toBeGreaterThanOrEqual(720);
     expect(merged.terminal.windowedHeight).toBeGreaterThanOrEqual(480);
+  });
+
+  it('sanitizes imported plugin settings into stable JSON-safe values', () => {
+    const merged = mergeSettingsWithDefaults({
+      plugins: {
+        valuesByPluginId: {
+          ' notes-tools ': {
+            autoWrap: true,
+            density: 'compact',
+            invalidNumber: Number.NaN,
+            nested: {
+              showMinimap: false,
+            },
+          },
+          '': {
+            broken: true,
+          },
+        },
+      },
+    } as unknown as Parameters<typeof mergeSettingsWithDefaults>[0]);
+
+    expect(merged.plugins.valuesByPluginId).toEqual({
+      'notes-tools': {
+        autoWrap: true,
+        density: 'compact',
+        nested: {
+          showMinimap: false,
+        },
+      },
+    });
   });
 });

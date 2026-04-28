@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "id": "chronorift",
-  "name": "Chrono Rift",
-  "description": "Experimental timer cockpit with layered rituals, desktop alerts, rich toast notifications, and persistent timing state.",
-  "entry": "dist/index.tsx",
-  "defaultOpen": false,
-  "keepMounted": true
-}

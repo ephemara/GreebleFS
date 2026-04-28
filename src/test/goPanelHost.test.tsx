@@ -22,6 +22,10 @@ const { buildGoRuntimePackageMock, callGoSidecarActionMock } = vi.hoisted(() => 
   })),
 }));
 
+vi.mock('@tauri-apps/plugin-fs', () => ({
+  readFile: vi.fn(async () => new Uint8Array(8)),
+}));
+
 vi.mock('../runtime/goRuntimeBackend', () => ({
   buildGoRuntimePackage: buildGoRuntimePackageMock,
   callGoSidecarAction: callGoSidecarActionMock,
@@ -42,7 +46,6 @@ function makeContext(): GoPanelHostContext {
 }
 
 const originalGo = (window as Window & { Go?: unknown }).Go;
-const originalFetch = window.fetch;
 const originalWebAssembly = (globalThis as { WebAssembly?: unknown }).WebAssembly;
 
 class FakeGoInstance {
@@ -69,11 +72,6 @@ beforeEach(() => {
     delete (window as Window & { __greeblefsRuntimeHostBridge?: unknown }).__greeblefsRuntimeHostBridge;
   }
   (window as unknown as { Go?: unknown }).Go = FakeGoInstance;
-  window.fetch = vi.fn(async () => ({
-    ok: true,
-    status: 200,
-    arrayBuffer: async () => new ArrayBuffer(8),
-  })) as unknown as typeof fetch;
   (globalThis as { WebAssembly: unknown }).WebAssembly = {
     instantiate: vi.fn(async () => ({ instance: { exports: {} } })),
   };
@@ -81,7 +79,6 @@ beforeEach(() => {
 
 afterEach(() => {
   (window as Window & { Go?: unknown }).Go = originalGo;
-  window.fetch = originalFetch;
   (globalThis as { WebAssembly?: unknown }).WebAssembly = originalWebAssembly;
 });
 

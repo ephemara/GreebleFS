@@ -24,6 +24,7 @@ import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginPreviewLaneContribution,
+  OverlayPluginSettingsSlotContribution,
 } from '../config/pluginContributions';
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
@@ -37,6 +38,7 @@ import {
   createExtensionHostClient,
   type ExecutionContextSnapshot,
 } from './extensionHostApi';
+import { createOverlayPluginRuntimeSettingsController } from './pluginSettingsRuntime';
 
 export interface UseFolderPluginRuntimeResult {
   folderPlugins: LoadedOverlayPlugin[];
@@ -49,6 +51,7 @@ export interface UseFolderPluginRuntimeResult {
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   pluginPreviewLanes: OverlayPluginPreviewLaneContribution[];
+  pluginSettingsSlots: OverlayPluginSettingsSlotContribution[];
   folderPluginsError: string | null;
   folderPluginsLoading: boolean;
   openPluginsFolder: () => Promise<void>;
@@ -75,6 +78,7 @@ export function useFolderPluginRuntime(
   const [pluginExplorerActions, setPluginExplorerActions] = useState<OverlayPluginExplorerActionContribution[]>([]);
   const [pluginContextMenuItems, setPluginContextMenuItems] = useState<OverlayPluginContextMenuContribution[]>([]);
   const [pluginPreviewLanes, setPluginPreviewLanes] = useState<OverlayPluginPreviewLaneContribution[]>([]);
+  const [pluginSettingsSlots, setPluginSettingsSlots] = useState<OverlayPluginSettingsSlotContribution[]>([]);
   const [folderPluginsError, setFolderPluginsError] = useState<string | null>(null);
   const [folderPluginsLoading, setFolderPluginsLoading] = useState(true);
 
@@ -116,6 +120,8 @@ export function useFolderPluginRuntime(
       await TauriFs.mkdir(target, { baseDir: appLocalData, recursive: true });
       return target;
     };
+    const settingsController =
+      createOverlayPluginRuntimeSettingsController(plugin.id);
 
     const createBoundPluginApi = (
       executionContext: ExecutionContextSnapshot | null,
@@ -129,6 +135,15 @@ export function useFolderPluginRuntime(
         callerPluginId: plugin.id,
         getExecutionContext: () => executionContext,
       }),
+      settings: {
+        pluginId: plugin.id,
+        getStoredValues: settingsController.getStoredValues,
+        getValue: settingsController.getValue,
+        setValue: settingsController.setValue,
+        patchValues: settingsController.patchValues,
+        resetValues: settingsController.resetValues,
+        subscribe: settingsController.subscribe,
+      },
       storage: {
         rootDir: storageRoot,
         ensureDir: ensureStorageDir,
@@ -181,6 +196,7 @@ export function useFolderPluginRuntime(
       setPluginExplorerActions([]);
       setPluginContextMenuItems([]);
       setPluginPreviewLanes([]);
+      setPluginSettingsSlots([]);
       setFolderPluginsError(null);
       setFolderPluginsLoading(false);
       return;
@@ -232,6 +248,7 @@ export function useFolderPluginRuntime(
           setPluginExplorerActions(discovered.explorerActions);
           setPluginContextMenuItems(discovered.contextMenuItems);
           setPluginPreviewLanes(discovered.previewLanes);
+          setPluginSettingsSlots(discovered.settingsSlots);
           setFolderPluginsError(discovered.warnings.length > 0 ? discovered.warnings.join('\n') : null);
         } catch (error) {
           setFolderPlugins([]);
@@ -244,6 +261,7 @@ export function useFolderPluginRuntime(
           setPluginExplorerActions([]);
           setPluginContextMenuItems([]);
           setPluginPreviewLanes([]);
+          setPluginSettingsSlots([]);
           setFolderPluginsError(String(error));
         } finally {
           setFolderPluginsLoading(false);
@@ -411,6 +429,7 @@ export function useFolderPluginRuntime(
     pluginExplorerActions,
     pluginContextMenuItems,
     pluginPreviewLanes,
+    pluginSettingsSlots,
     folderPluginsError,
     folderPluginsLoading,
     openPluginsFolder,

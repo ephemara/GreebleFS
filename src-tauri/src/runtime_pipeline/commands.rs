@@ -27,6 +27,7 @@ use crate::fs_commands::{
     fs_list_archive_dir, fs_list_dir, fs_open_file, fs_read_text_file, fs_write_file, git_exec,
     FileEntry, FsWriteFileContent,
 };
+use crate::ipc_runtime::IpcRuntimeState;
 use crate::remote_storage_commands::{remote_list_dir, remote_open_file, RemoteStorageState};
 use crate::runtime_pipeline::cache::{CacheKeyParts, CompileCacheLayout};
 use crate::runtime_pipeline::command_runtime::{
@@ -47,12 +48,12 @@ use crate::runtime_pipeline::extension_host::{
     ExtensionHostApiSchema, ExtensionHostFileUnwatchRequest, ExtensionHostFileWatchEvent,
     ExtensionHostFileWatchHandle, ExtensionHostFileWatchRequest, ExtensionHostTaskHandle,
     ExtensionHostTaskOutputEvent, ExtensionHostTaskProgressEvent,
-    ExtensionHostTaskStartProcessRequest, ExtensionHostTaskStopProcessRequest,
-    ExtensionInspection, ExtensionInstallResult, ExtensionPackResult,
+    ExtensionHostTaskStartProcessRequest, ExtensionHostTaskStopProcessRequest, ExtensionInspection,
+    ExtensionInstallResult, ExtensionPackResult,
 };
 use crate::runtime_pipeline::host_events::{
-    builtin_host_topic_catalog, HostContextSyncRequest, HostEventBusState,
-    HostEventScope, HostPublishEventRequest, HostSubscriptionRequest,
+    builtin_host_topic_catalog, HostContextSyncRequest, HostEventBusState, HostEventScope,
+    HostPublishEventRequest, HostSubscriptionRequest,
 };
 use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeKind, RuntimePackagePermissions};
 use crate::runtime_pipeline::registry::RuntimeRegistry;
@@ -61,9 +62,10 @@ use crate::runtime_pipeline::sidecar::{
 };
 use crate::runtime_pipeline::toolchain::{probe_runtime_toolchains, RuntimeToolchainStatus};
 use crate::runtime_pipeline::tui::{build_tui_launch, ExternalRuntimeTuiLaunch};
-use crate::terminal::ExternalTerminalRequest;
+use crate::terminal::{
+    ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalWriteRequest,
+};
 use crate::usr::resolve_managed_content_root;
-use crate::ipc_runtime::IpcRuntimeState;
 
 const BUILTIN_RUNTIMES_ROOT_ID: &str = "builtin";
 const MANAGED_RUNTIMES_ROOT_ID: &str = "managed";
@@ -84,6 +86,56 @@ struct RuntimeHostExplorerListLocationRequest {
 #[serde(rename_all = "camelCase")]
 struct RuntimeHostExplorerOpenPathRequest {
     path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeHostTerminalSpawnRequest {
+    id: String,
+    #[serde(default)]
+    working_dir: Option<String>,
+    #[serde(default)]
+    shell: Option<String>,
+    #[serde(default)]
+    rows: Option<u16>,
+    #[serde(default)]
+    cols: Option<u16>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeHostTerminalOpenOutputStreamRequest {
+    id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeHostTerminalResizeRequest {
+    id: String,
+    rows: u16,
+    cols: u16,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeHostTerminalKillRequest {
+    id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeHostTerminalSyncCwdRequest {
+    id: String,
+    cwd: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeHostTerminalSetPromptStateRequest {
+    id: String,
+    at_prompt: bool,
+    #[serde(default)]
+    reported_cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -813,8 +865,10 @@ fn run_extension_host_task_command(
     request: ExtensionHostTaskRunCommandRequest,
     execution_context: Option<&ExecutionContextSnapshot>,
 ) -> Result<ExtensionHostTaskRunCommandResult, String> {
-    let working_directory =
-        resolve_extension_host_working_directory(request.working_directory.clone(), execution_context)?;
+    let working_directory = resolve_extension_host_working_directory(
+        request.working_directory.clone(),
+        execution_context,
+    )?;
     let timeout = Duration::from_secs(request.timeout_secs.unwrap_or(120).max(1));
     let mut command = ProcessCommand::new(request.program.trim());
     command
@@ -881,13 +935,8 @@ fn publish_host_bus_event(
     snapshot: bool,
 ) {
     let host_event_bus = app.state::<HostEventBusState>();
-    let _ = host_event_bus.publish_host_topic(
-        topic,
-        payload_json,
-        execution_context,
-        scope,
-        snapshot,
-    );
+    let _ =
+        host_event_bus.publish_host_topic(topic, payload_json, execution_context, scope, snapshot);
 }
 
 fn spawn_streamed_task_process(
@@ -1111,51 +1160,53 @@ fn start_host_file_watch(
     let watched_path = path.clone();
     let recursive = request.recursive;
     let execution_context_for_events = execution_context.clone();
-    let mut watcher = notify::recommended_watcher(move |result: Result<notify::Event, notify::Error>| match result {
-        Ok(event) => {
-            let change_kind = classify_file_watch_event_kind(&event.kind);
-            publish_host_bus_event(
-                &app_for_watch,
-                "files.watch",
-                serde_json::to_string(&ExtensionHostFileWatchEvent {
-                    watch_id: watch_id_for_events.clone(),
-                    kind: change_kind.to_string(),
-                    paths: event
-                        .paths
-                        .iter()
-                        .map(|value: &PathBuf| value.to_string_lossy().to_string())
-                        .collect::<Vec<_>>(),
-                    error: None,
-                })
-                .ok(),
-                execution_context_for_events.clone(),
-                HostEventScope {
-                    path: Some(watched_path.clone()),
-                    ..HostEventScope::default()
-                },
-                false,
-            );
-        }
-        Err(error) => {
-            publish_host_bus_event(
-                &app_for_watch,
-                "files.watch",
-                serde_json::to_string(&ExtensionHostFileWatchEvent {
-                    watch_id: watch_id_for_events.clone(),
-                    kind: "error".to_string(),
-                    paths: Vec::new(),
-                    error: Some(error.to_string()),
-                })
-                .ok(),
-                execution_context_for_events.clone(),
-                HostEventScope {
-                    path: Some(watched_path.clone()),
-                    ..HostEventScope::default()
-                },
-                false,
-            );
-        }
-    })
+    let mut watcher = notify::recommended_watcher(
+        move |result: Result<notify::Event, notify::Error>| match result {
+            Ok(event) => {
+                let change_kind = classify_file_watch_event_kind(&event.kind);
+                publish_host_bus_event(
+                    &app_for_watch,
+                    "files.watch",
+                    serde_json::to_string(&ExtensionHostFileWatchEvent {
+                        watch_id: watch_id_for_events.clone(),
+                        kind: change_kind.to_string(),
+                        paths: event
+                            .paths
+                            .iter()
+                            .map(|value: &PathBuf| value.to_string_lossy().to_string())
+                            .collect::<Vec<_>>(),
+                        error: None,
+                    })
+                    .ok(),
+                    execution_context_for_events.clone(),
+                    HostEventScope {
+                        path: Some(watched_path.clone()),
+                        ..HostEventScope::default()
+                    },
+                    false,
+                );
+            }
+            Err(error) => {
+                publish_host_bus_event(
+                    &app_for_watch,
+                    "files.watch",
+                    serde_json::to_string(&ExtensionHostFileWatchEvent {
+                        watch_id: watch_id_for_events.clone(),
+                        kind: "error".to_string(),
+                        paths: Vec::new(),
+                        error: Some(error.to_string()),
+                    })
+                    .ok(),
+                    execution_context_for_events.clone(),
+                    HostEventScope {
+                        path: Some(watched_path.clone()),
+                        ..HostEventScope::default()
+                    },
+                    false,
+                );
+            }
+        },
+    )
     .map_err(|error| format!("Failed to create filesystem watcher: {error}"))?;
     watcher
         .watch(
@@ -1283,7 +1334,9 @@ async fn dispatch_extension_host_call(
                 });
             encode_runtime_host_bridge_result(&preview_session)
         }
-        "events.describe_topics" => encode_runtime_host_bridge_result(&builtin_host_topic_catalog()),
+        "events.describe_topics" => {
+            encode_runtime_host_bridge_result(&builtin_host_topic_catalog())
+        }
         "events.subscribe" => {
             let payload: HostSubscriptionRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
@@ -1392,24 +1445,21 @@ async fn dispatch_extension_host_call(
         "files.watch" => {
             let payload: ExtensionHostFileWatchRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
-            let handle = start_host_file_watch(
-                app.clone(),
-                payload,
-                request.execution_context.clone(),
-            )?;
+            let handle =
+                start_host_file_watch(app.clone(), payload, request.execution_context.clone())?;
             encode_runtime_host_bridge_result(&handle)
         }
         "files.unwatch" => {
             let payload: ExtensionHostFileUnwatchRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
             let watch_manager = app.state::<RuntimeFileWatchManager>();
-            let removed = watch_manager.remove(payload.watch_id.as_str()).map(|record| {
-                ExtensionHostFileWatchHandle {
+            let removed = watch_manager
+                .remove(payload.watch_id.as_str())
+                .map(|record| ExtensionHostFileWatchHandle {
                     watch_id: payload.watch_id.clone(),
                     path: record.path,
                     recursive: record.recursive,
-                }
-            });
+                });
             encode_runtime_host_bridge_result(&removed)
         }
         "explorer.open_path" => {
@@ -1479,8 +1529,11 @@ async fn dispatch_extension_host_call(
         "tasks.start_process" => {
             let payload: ExtensionHostTaskStartProcessRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
-            let handle =
-                spawn_streamed_task_process(app.clone(), payload, request.execution_context.clone())?;
+            let handle = spawn_streamed_task_process(
+                app.clone(),
+                payload,
+                request.execution_context.clone(),
+            )?;
             encode_runtime_host_bridge_result(&handle)
         }
         "tasks.stop_process" => {
@@ -1512,6 +1565,175 @@ async fn dispatch_extension_host_call(
                 );
             }
             encode_runtime_host_bridge_result(&stopped)
+        }
+        "terminal.spawn" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.terminal_interaction,
+                "terminalInteraction",
+            )?;
+            let mut payload: RuntimeHostTerminalSpawnRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            if payload
+                .working_dir
+                .as_ref()
+                .map(|value| value.trim().is_empty())
+                != Some(false)
+            {
+                payload.working_dir =
+                    resolve_extension_context_path(None, request.execution_context.as_ref());
+            }
+            crate::terminal::terminal_spawn(
+                app.state::<crate::terminal::TerminalManager>(),
+                app.clone(),
+                payload.id,
+                payload.working_dir,
+                payload.shell,
+                payload.rows,
+                payload.cols,
+            )
+            .await?;
+            Ok("null".to_string())
+        }
+        "terminal.write" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.terminal_interaction,
+                "terminalInteraction",
+            )?;
+            let payload: TerminalWriteRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            crate::terminal::terminal_write(
+                app.state::<crate::terminal::TerminalManager>(),
+                payload.id,
+                payload.data,
+            )
+            .await?;
+            Ok("null".to_string())
+        }
+        "terminal.write_many" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.terminal_interaction,
+                "terminalInteraction",
+            )?;
+            let payload: Vec<TerminalWriteRequest> =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            crate::terminal::terminal_write_many(
+                app.state::<crate::terminal::TerminalManager>(),
+                payload,
+            )
+            .await?;
+            Ok("null".to_string())
+        }
+        "terminal.resize" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.terminal_interaction,
+                "terminalInteraction",
+            )?;
+            let payload: RuntimeHostTerminalResizeRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            crate::terminal::terminal_resize(
+                app.state::<crate::terminal::TerminalManager>(),
+                payload.id,
+                payload.rows,
+                payload.cols,
+            )
+            .await?;
+            Ok("null".to_string())
+        }
+        "terminal.kill" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.terminal_interaction,
+                "terminalInteraction",
+            )?;
+            let payload: RuntimeHostTerminalKillRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            crate::terminal::terminal_kill(
+                app.state::<crate::terminal::TerminalManager>(),
+                app.state::<IpcRuntimeState>(),
+                payload.id,
+            )
+            .await?;
+            Ok("null".to_string())
+        }
+        "terminal.open_output_stream" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.terminal_interaction,
+                "terminalInteraction",
+            )?;
+            let payload: RuntimeHostTerminalOpenOutputStreamRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let stream = crate::terminal::terminal_open_output_stream(
+                app.state::<crate::terminal::TerminalManager>(),
+                app.state::<IpcRuntimeState>(),
+                payload.id,
+            )
+            .await?;
+            encode_runtime_host_bridge_result(&stream)
+        }
+        "terminal.register_shell_integration" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.terminal_interaction,
+                "terminalInteraction",
+            )?;
+            let payload: TerminalShellIntegrationRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let state = crate::terminal::terminal_register_shell_integration(
+                app.clone(),
+                app.state::<crate::terminal::TerminalManager>(),
+                payload,
+            )
+            .await?;
+            encode_runtime_host_bridge_result(&state)
+        }
+        "terminal.sync_cwd" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.terminal_interaction,
+                "terminalInteraction",
+            )?;
+            let payload: RuntimeHostTerminalSyncCwdRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let state = crate::terminal::terminal_sync_cwd(
+                app.clone(),
+                app.state::<crate::terminal::TerminalManager>(),
+                payload.id,
+                payload.cwd,
+            )
+            .await?;
+            encode_runtime_host_bridge_result(&state)
+        }
+        "terminal.set_prompt_state" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.terminal_interaction,
+                "terminalInteraction",
+            )?;
+            let payload: RuntimeHostTerminalSetPromptStateRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let state = crate::terminal::terminal_set_prompt_state(
+                app.clone(),
+                app.state::<crate::terminal::TerminalManager>(),
+                payload.id,
+                payload.at_prompt,
+                payload.reported_cwd,
+            )
+            .await?;
+            encode_runtime_host_bridge_result(&state)
         }
         "terminal.open_external" => {
             ensure_extension_host_permission(

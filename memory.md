@@ -1,3 +1,83 @@
+# 2026-04-28 - Plugin Settings Slots Are Now A First-Class Extension Catalog Lane
+
+- Plugin-owned durable settings no longer need to invent their own persistence contract or hide inside the Plugins page.
+- Durable ownership after this pass:
+  - `src/config/pluginSettings.ts` is the canonical shared contract for plugin settings fields, defaults, value coercion, and resolved slot values.
+  - `src/components/pluginRuntime.tsx` now exposes `defineSettingsSlot(...)` plus a plugin-scoped `api.settings` bridge alongside the existing preview/runtime helpers.
+  - `src/config/pluginPackages.ts` normalizes `contributions.settingsSlots`, loads optional custom settings renderers, and aggregates settings-slot capability counts into plugin diagnostics.
+  - `src/runtime/useFolderPluginRuntime.ts` is the binding seam that turns discovered settings-slot manifests into runtime-ready `pluginSettingsSlots` plus a plugin-scoped settings controller on `OverlayPluginApi`.
+  - `src/store/settingsStore.ts` now owns the durable persisted values under `settings.plugins.valuesByPluginId`; plugin settings should not create parallel localStorage keys or feature-local persistence.
+- Durable settings-slot rule after this pass:
+  - plugin durable settings are now catalog-driven, not ad hoc UI state.
+  - a plugin can contribute schema-only settings, renderer-only settings, or a hybrid slot with both declared fields and a custom renderer.
+  - slot defaults and imported/stored values are sanitized through `normalizeOverlayPluginSettingsValueMap(...)` and `resolveOverlayPluginSettingsSlotValues(...)` before a UI renders them.
+  - empty plugin settings payloads should collapse away cleanly; the store removes plugin ids whose settings map becomes empty.
+- Durable frontend wiring rule after this pass:
+  - the official Settings surface should consume discovered `settingsSlots` and the shared `settings.plugins.valuesByPluginId` lane instead of inventing another plugin-settings registry inside `SettingsPage.tsx`.
+  - the Plugins panel can show capability counts and jump-to-settings affordances, but durable plugin configuration belongs in the official Settings system.
+- Current limitation after this pass:
+  - plugin settings truth still lives in the shell settings store today, not in the Rust extension host.
+  - TypeScript/React plugin runtimes can already use `api.settings`, but there is not yet a canonical Rust/Go `settings.*` host namespace for sidecars or Go panels.
+  - if a future extension needs native-side durable settings access, build that as an explicit host-service slice instead of bypassing the shared `settings.plugins` lane.
+- Validation that passed for this pass:
+  - filtered touched-file sweep:
+    - `bash -lc "node_modules/.bin/tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'src/(config/pluginSettings|config/pluginPackages|config/pluginContributions|components/pluginRuntime|runtime/pluginSettingsRuntime|runtime/useFolderPluginRuntime|store/settingsStore|test/pluginPackages|test/settingsStore|test/useFolderPluginRuntime|test/pluginsManager|App.tsx|components/PluginsManager.tsx)' || true"`
+  - focused tests:
+    - `bunx vitest run src/test/pluginPackages.test.ts src/test/settingsStore.test.ts src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.fallback.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/pluginsManager.test.tsx --reporter=dot`
+
+# 2026-04-28 - Integrated Terminal Hosts Now Split Between Go PTY `wasm-panel` And xterm
+
+- The integrated terminal is no longer hard-wired to xterm in the shell layer.
+- Durable ownership after this pass:
+  - `src/components/TerminalOverlay.tsx` now owns a host-agnostic pane/tab/workspace model above concrete renderers.
+  - `src/components/terminal/terminalHostRegistry.ts` is the imperative seam `TerminalOverlay` uses for focus, clear, selection-copy, and local host messages across either renderer.
+  - `src/components/terminal/GoPtyTerminalPane.tsx` is the React wrapper for the Go PTY terminal host.
+  - `src-go/builtin-runtimes/go-pty-panel/` is the new builtin Go `wasm-panel` runtime for fast-path integrated shells.
+  - `src-tauri/src/terminal.rs` remains the PTY source of truth and now also mirrors terminal output plus shell-integration updates onto the host event bus.
+- Durable settings rule after this pass:
+  - `settings.terminal.integratedHost` is the persisted integrated-host selector.
+  - Default is now `'go-pty-panel'`.
+  - `terminalRenderer` still only means xterm DOM vs xterm WebGL; it is not the global host selector.
+- Durable bridge rule after this pass:
+  - embedded runtimes can now call terminal host methods through the canonical extension-host surface:
+    - `terminal.spawn`
+    - `terminal.write`
+    - `terminal.write_many`
+    - `terminal.resize`
+    - `terminal.kill`
+    - `terminal.open_output_stream`
+    - `terminal.register_shell_integration`
+    - `terminal.sync_cwd`
+    - `terminal.set_prompt_state`
+  - Those methods are declared in `src-tauri/src/runtime_pipeline/extension_host.rs`, dispatched in `src-tauri/src/runtime_pipeline/commands.rs`, wrapped in `src/runtime/extensionHostApi.ts`, and mirrored in the Go SDK under `src-go/sdk/greeblefs-go/{hostapi,runtime}/`.
+- Durable fallback rule after this pass:
+  - the Go host is intentionally a fast-path terminal surface, not a full emulator.
+  - `go-pty-panel/main.go` handles common shell text flow, basic ANSI cleanup, keyboard/paste/resize, and scrollback.
+  - it should only hard-fallback on true alternate-screen style flows (`?47` / `?1047` / `?1049`) or malformed escape streams, not on ordinary shell bootstrap CSI traffic.
+  - a parser that falls back on generic cursor/erase/style CSI sequences makes the Go host appear permanently disabled because normal shells emit those during startup.
+  - `GoPanelHost.tsx` reads compiled wasm bytes through `@tauri-apps/plugin-fs`, so the native app must register `tauri_plugin_fs::init()` and include the `tauri-plugin-fs` Rust dependency. Without that plugin, Go panel boot can fail immediately and the integrated terminal will always degrade to xterm even if the PTY logic is otherwise correct.
+  - `TerminalOverlay.tsx` treats that as a session degradation event and flips integrated panes to xterm for the rest of the app session instead of repeatedly failing per pane.
+- Durable readiness rule after this cleanup:
+  - `TerminalOverlay.tsx` must only treat a pane as PTY-ready after `markTerminalReady(...)` runs from the host `terminal-ready` signal.
+  - A mounted entry in `terminalHostRegistry.ts` is not enough for command injection or cwd sync, because the Go pane registers its imperative host entry before the runtime finishes `terminal.spawn`.
+  - If `inject cmd failed` starts throwing `Terminal <id> not found` again, inspect `isPaneReady(...)` and any code path that equates registry presence with PTY lifecycle readiness.
+  - The explorer-queued cwd sync effect must also gate on `isPaneReady(activePaneId)`. That path used to skip the readiness check and could trigger `terminalSyncCwd(...)` plus fallback `injectCd(...)` before the backend had created the pane session.
+  - The xterm boot path must not call `onReady(...)` after a failed `terminalSpawn(...)`; otherwise the shell can treat a dead pane as live and immediately send writes into a nonexistent backend terminal.
+- Durable output/copy rule after this pass:
+  - `TerminalOverlay.tsx` now keeps pane output buffers in shell state and uses those buffers for copy/snapshot behavior.
+  - future copy/snapshot work should not depend on xterm internals if the behavior must work for both hosts.
+- Durable test rule after this pass:
+  - `src/test/terminalOverlay.test.tsx` is intentionally pinned to `integratedHost: 'xterm'` in setup because those assertions inspect xterm-specific behavior and mocks.
+  - `src/test/settingsStore.test.ts` now asserts the new default host is `go-pty-panel`.
+  - `src/test/helpers/createMockOverlayPluginApi.ts` must stay aligned with the expanded terminal host surface or preview/plugin tests will drift.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/settingsStore.test.ts src/test/terminalOverlay.test.tsx --reporter=dot`
+  - `GOOS=js GOARCH=wasm go build ./builtin-runtimes/go-pty-panel`
+  - `go test ./sdk/greeblefs-go/...`
+  - `cargo check --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+- Current limitation after this pass:
+  - the Go host is not a full terminal emulator yet; alt-screen TUIs and richer cursor-addressing flows should fall back to xterm rather than rendering incorrectly.
+
 # 2026-04-28 - Explorer Chrome, Mode, Experimental Layout, Layout-Dynamics, And Hotkey Catalogs Now Ship From `usr/`
 
 - The `usr/` backbone now owns the rest of the high-value explorer customization stack that was still annoyingly trapped in TypeScript catalogs.

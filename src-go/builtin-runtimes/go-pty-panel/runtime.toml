@@ -1,0 +1,20 @@
+id = "go-pty-panel"
+displayName = "Go PTY Panel"
+language = "go"
+kind = "wasm-panel"
+compiler = "go-js-wasm"
+moduleDir = "."
+entry = "."
+
+[panel]
+panelId = "go-pty-panel"
+displayName = "Go PTY Panel"
+preferredWidthPx = 960
+preferredHeightPx = 680
+
+[permissions]
+hostEvents = true
+terminalInteraction = true
+clipboardRead = true
+clipboardWrite = true
+launchIntents = ["open-terminal"]

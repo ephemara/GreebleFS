@@ -21,7 +21,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { readFile } from '@tauri-apps/plugin-fs';
 import {
   buildGoRuntimePackage,
   type GoRuntimeMode,
@@ -111,6 +111,7 @@ export interface GoPanelHostProps {
   renderError?: (error: string, retry: () => void) => React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
+  hostElementRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 interface RuntimeBootBridgeRegistry {
@@ -133,7 +134,12 @@ interface GoWasmInstance {
   exit?: (code: number) => void;
 }
 
-const WASM_EXEC_SRC = '/runtime/wasm_exec.js';
+function resolveWasmExecSrc(): string {
+  if (typeof document === 'undefined') {
+    return 'runtime/wasm_exec.js';
+  }
+  return new URL('runtime/wasm_exec.js', document.baseURI).toString();
+}
 
 async function ensureWasmExecLoaded(): Promise<void> {
   if (typeof window === 'undefined') {
@@ -144,10 +150,11 @@ async function ensureWasmExecLoaded(): Promise<void> {
   }
   await new Promise<void>((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = WASM_EXEC_SRC;
+    const wasmExecSrc = resolveWasmExecSrc();
+    script.src = wasmExecSrc;
     script.async = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load ${WASM_EXEC_SRC}`));
+    script.onerror = () => reject(new Error(`Failed to load ${wasmExecSrc}`));
     document.head.appendChild(script);
   });
 }
@@ -181,6 +188,7 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
     renderError,
     className,
     style,
+    hostElementRef,
   } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -346,20 +354,14 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
         };
         registry[token] = { context, bridge };
 
-        // Route the compiled wasm artifact through Tauri's asset protocol
-        // instead of a raw `file://` URL. The asset protocol handles
-        // platform-specific path encoding (Windows drive letters, spaces,
-        // unicode) and respects the configured `assetProtocol.scope` so the
-        // webview origin policy does not reject the load. Tests mock fetch
-        // directly, so this stays portable across CI and packaged builds.
-        const wasmAssetUrl = convertFileSrc(prepared.artifactPath);
-        const wasmResponse = await fetch(wasmAssetUrl);
-        if (!wasmResponse.ok) {
-          throw new Error(
-            `Failed to fetch compiled wasm artifact at ${wasmAssetUrl}: ${wasmResponse.status}`,
-          );
-        }
-        const wasmBytes = await wasmResponse.arrayBuffer();
+        // Read the compiled wasm bytes through the Tauri FS plugin instead of
+        // the asset protocol. This keeps Go panel boot independent from
+        // asset-protocol scope quirks for app-local runtime-cache artifacts.
+        const wasmFileBytes = await readFile(prepared.artifactPath);
+        const wasmBytes = wasmFileBytes.buffer.slice(
+          wasmFileBytes.byteOffset,
+          wasmFileBytes.byteOffset + wasmFileBytes.byteLength,
+        );
         if (cancelled) return;
 
         // Surface the bridge token through the Go process arguments so the
@@ -381,6 +383,7 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : String(err);
+        console.error(`[GoPanelHost:${runtimeId}]`, message, err);
         setError(message);
         onEvent?.({ kind: 'error', message });
       }
@@ -442,7 +445,12 @@ export const GoPanelHost = forwardRef<GoPanelHostHandle, GoPanelHostProps>(funct
 
   return (
     <div
-      ref={containerRef}
+      ref={(element) => {
+        containerRef.current = element;
+        if (hostElementRef) {
+          hostElementRef.current = element;
+        }
+      }}
       className={className}
       style={style}
       data-runtime-id={runtimeId}

@@ -38,7 +38,7 @@ fi
 
 greeblefs_go::log "tidying workspace modules"
 pushd "${GREEBLEFS_GO_WORKSPACE}" >/dev/null
-for module_dir in sdk/greeblefs-go builtin-runtimes/echo-sidecar builtin-runtimes/echo-command builtin-runtimes/sample-panel; do
+for module_dir in sdk/greeblefs-go builtin-runtimes/echo-sidecar builtin-runtimes/echo-command builtin-runtimes/sample-panel builtin-runtimes/go-pty-panel; do
   if [[ -d "${module_dir}" ]]; then
     pushd "${module_dir}" >/dev/null
     GOWORK=off go mod tidy >/dev/null 2>&1 || greeblefs_go::log "go mod tidy failed for ${module_dir}; continuing"

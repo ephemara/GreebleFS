@@ -229,6 +229,66 @@ type HostExternalTerminalRequest struct {
 	Shell      *string  `json:"shell,omitempty"`
 }
 
+type HostTerminalSpawnRequest struct {
+	ID         string  `json:"id"`
+	WorkingDir *string `json:"workingDir,omitempty"`
+	Shell      *string `json:"shell,omitempty"`
+	Rows       *uint16 `json:"rows,omitempty"`
+	Cols       *uint16 `json:"cols,omitempty"`
+}
+
+type HostTerminalWriteRequest struct {
+	ID   string `json:"id"`
+	Data string `json:"data"`
+}
+
+type HostTerminalResizeRequest struct {
+	ID   string `json:"id"`
+	Rows uint16 `json:"rows"`
+	Cols uint16 `json:"cols"`
+}
+
+type HostTerminalKillRequest struct {
+	ID string `json:"id"`
+}
+
+type HostTerminalOpenOutputStreamRequest struct {
+	ID string `json:"id"`
+}
+
+type HostTerminalSyncCwdRequest struct {
+	ID  string `json:"id"`
+	CWD string `json:"cwd"`
+}
+
+type HostTerminalSetPromptStateRequest struct {
+	ID          string  `json:"id"`
+	AtPrompt    bool    `json:"atPrompt"`
+	ReportedCWD *string `json:"reportedCwd,omitempty"`
+}
+
+type HostTerminalShellIntegrationRequest struct {
+	ID             string  `json:"id"`
+	ShellKind      *string `json:"shellKind,omitempty"`
+	SupportsAutoCD *bool   `json:"supportsAutoCd,omitempty"`
+	AtPrompt       *bool   `json:"atPrompt,omitempty"`
+	ReportedCWD    *string `json:"reportedCwd,omitempty"`
+}
+
+type HostTerminalShellIntegrationState struct {
+	ShellKind      string  `json:"shellKind"`
+	SupportsAutoCD bool    `json:"supportsAutoCd"`
+	AtPrompt       bool    `json:"atPrompt"`
+	ReportedCWD    *string `json:"reportedCwd,omitempty"`
+	PendingCWD     *string `json:"pendingCwd,omitempty"`
+	LastSyncedCWD  *string `json:"lastSyncedCwd,omitempty"`
+}
+
+type HostIpcStreamHandle struct {
+	ID        string `json:"id"`
+	EventName string `json:"eventName"`
+}
+
 type HostServiceClients struct {
 	Context   *ContextServiceClient
 	Host      *HostServiceClient
@@ -395,6 +455,65 @@ func (c *TasksServiceClient) StopProcess(taskID string) (bool, error) {
 func (c *TerminalServiceClient) OpenExternal(request HostExternalTerminalRequest) error {
 	_, err := decodeHostCall[any](c.bridge, "terminal.open_external", request)
 	return err
+}
+
+func (c *TerminalServiceClient) Spawn(request HostTerminalSpawnRequest) error {
+	_, err := decodeHostCall[any](c.bridge, "terminal.spawn", request)
+	return err
+}
+
+func (c *TerminalServiceClient) Write(request HostTerminalWriteRequest) error {
+	_, err := decodeHostCall[any](c.bridge, "terminal.write", request)
+	return err
+}
+
+func (c *TerminalServiceClient) WriteMany(requests []HostTerminalWriteRequest) error {
+	_, err := decodeHostCall[any](c.bridge, "terminal.write_many", requests)
+	return err
+}
+
+func (c *TerminalServiceClient) Resize(request HostTerminalResizeRequest) error {
+	_, err := decodeHostCall[any](c.bridge, "terminal.resize", request)
+	return err
+}
+
+func (c *TerminalServiceClient) Kill(id string) error {
+	_, err := decodeHostCall[any](c.bridge, "terminal.kill", HostTerminalKillRequest{ID: id})
+	return err
+}
+
+func (c *TerminalServiceClient) OpenOutputStream(id string) (HostIpcStreamHandle, error) {
+	return decodeHostCall[HostIpcStreamHandle](
+		c.bridge,
+		"terminal.open_output_stream",
+		HostTerminalOpenOutputStreamRequest{ID: id},
+	)
+}
+
+func (c *TerminalServiceClient) RegisterShellIntegration(
+	request HostTerminalShellIntegrationRequest,
+) (HostTerminalShellIntegrationState, error) {
+	return decodeHostCall[HostTerminalShellIntegrationState](
+		c.bridge,
+		"terminal.register_shell_integration",
+		request,
+	)
+}
+
+func (c *TerminalServiceClient) SyncCWD(
+	request HostTerminalSyncCwdRequest,
+) (HostTerminalShellIntegrationState, error) {
+	return decodeHostCall[HostTerminalShellIntegrationState](c.bridge, "terminal.sync_cwd", request)
+}
+
+func (c *TerminalServiceClient) SetPromptState(
+	request HostTerminalSetPromptStateRequest,
+) (HostTerminalShellIntegrationState, error) {
+	return decodeHostCall[HostTerminalShellIntegrationState](
+		c.bridge,
+		"terminal.set_prompt_state",
+		request,
+	)
 }
 
 func decodeHostCall[T any](bridge *HostBridgeClient, methodID string, payload any) (T, error) {

@@ -223,12 +223,7 @@ impl ExternalSidecarManager {
         let current_execution_context = Arc::new(Mutex::new(None));
         let owned_subscription_ids = Arc::new(Mutex::new(Vec::new()));
 
-        spawn_sidecar_writer_thread(
-            manifest.id.clone(),
-            transport.clone(),
-            stdin,
-            outbound_rx,
-        );
+        spawn_sidecar_writer_thread(manifest.id.clone(), transport.clone(), stdin, outbound_rx);
         spawn_sidecar_reader_thread(
             app.clone(),
             manifest.id.clone(),
@@ -357,9 +352,7 @@ impl ExternalSidecarManager {
             runtime_id: runtime_id.to_string(),
             request_id,
             action_id: action_id.to_string(),
-            result_json: response
-                .result_json
-                .unwrap_or_else(|| "null".to_string()),
+            result_json: response.result_json.unwrap_or_else(|| "null".to_string()),
         })
     }
 }
@@ -490,12 +483,7 @@ fn spawn_sidecar_reader_thread(
                     );
                 }
                 SIDECAR_KIND_PUBLISH => {
-                    handle_runtime_sidecar_publish_packet(
-                        &app,
-                        &runtime_id,
-                        packet,
-                        &outbound_tx,
-                    );
+                    handle_runtime_sidecar_publish_packet(&app, &runtime_id, packet, &outbound_tx);
                 }
                 SIDECAR_KIND_ACK
                 | SIDECAR_KIND_HOST_RESPONSE
@@ -533,7 +521,10 @@ fn resolve_pending_sidecar_failures(
     let mut pending = pending_responses
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let senders = pending.drain().map(|(_, sender)| sender).collect::<Vec<_>>();
+    let senders = pending
+        .drain()
+        .map(|(_, sender)| sender)
+        .collect::<Vec<_>>();
     drop(pending);
     for sender in senders {
         let _ = sender.send(ExternalSidecarPacket {
@@ -559,9 +550,7 @@ fn handle_runtime_sidecar_subscription_packet(
             request_id: packet.request_id,
             kind: SIDECAR_KIND_ACK.to_string(),
             ok: Some(false),
-            error: Some(
-                "Host subscriptions require `stdio-json-lines-v2` transport.".to_string(),
-            ),
+            error: Some("Host subscriptions require `stdio-json-lines-v2` transport.".to_string()),
             ..ExternalSidecarPacket::default()
         });
         return;
@@ -756,10 +745,7 @@ fn cleanup_sidecar_subscriptions(app: &AppHandle, session: &ExternalSidecarSessi
     }
 }
 
-fn write_packet_line(
-    stdin: &mut ChildStdin,
-    packet: &ExternalSidecarPacket,
-) -> Result<(), String> {
+fn write_packet_line(stdin: &mut ChildStdin, packet: &ExternalSidecarPacket) -> Result<(), String> {
     let serialized = serde_json::to_string(packet)
         .map_err(|error| format!("failed to encode sidecar packet: {error}"))?;
     stdin
