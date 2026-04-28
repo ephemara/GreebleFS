@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
+import { detectClientPlatform } from '../config/platform';
+
 type OverlayScrollDirection = 'vertical' | 'horizontal' | 'both';
 type OverlayScrollbarStyle = 'hidden' | 'themed' | 'explorer-file-list';
 
@@ -17,6 +19,14 @@ interface OverlayScrollAreaProps {
   viewportRef?: React.Ref<HTMLDivElement>;
   onViewportScroll?: React.UIEventHandler<HTMLDivElement>;
 }
+
+const INERTIAL_SCROLL_IMMEDIATE_DELTA_FACTOR = 0.38;
+const INERTIAL_SCROLL_DELTA_CLAMP_PX = 180;
+const INERTIAL_SCROLL_VELOCITY_BLEND_FACTOR = 0.28;
+const INERTIAL_SCROLL_VELOCITY_CARRY_FACTOR = 0.32;
+const INERTIAL_SCROLL_VELOCITY_CLAMP_PX = 180;
+const INERTIAL_SCROLL_FRICTION_PER_FRAME = 0.84;
+const INERTIAL_SCROLL_MIN_VELOCITY_PX = 0.28;
 
 export function OverlayScrollArea({
   children,
@@ -50,6 +60,7 @@ export function OverlayScrollArea({
   const lastScrollbarMeasurementRef =
     useRef<OverlayScrollbarMeasurementSnapshot | null>(null);
   const scrollbarDragStateRef = useRef<OverlayScrollbarDragState | null>(null);
+  const runtimePlatformRef = useRef(detectClientPlatform());
 
   const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     if (direction !== 'horizontal') {
@@ -235,14 +246,17 @@ export function OverlayScrollArea({
       velocity.x * frameScale,
       velocity.y * frameScale,
     );
-    const friction = Math.pow(0.86, frameScale);
+    const friction = Math.pow(INERTIAL_SCROLL_FRICTION_PER_FRAME, frameScale);
     const nextVelocity = {
       x: velocity.x * friction,
       y: velocity.y * friction,
     };
     const shouldContinue =
       didMove &&
-      (Math.abs(nextVelocity.x) > 0.35 || Math.abs(nextVelocity.y) > 0.35);
+      (
+        Math.abs(nextVelocity.x) > INERTIAL_SCROLL_MIN_VELOCITY_PX ||
+        Math.abs(nextVelocity.y) > INERTIAL_SCROLL_MIN_VELOCITY_PX
+      );
 
     if (!shouldContinue) {
       stopInertialScroll();
@@ -256,12 +270,30 @@ export function OverlayScrollArea({
   }, [applyInertialScrollDelta, stopInertialScroll]);
 
   const startInertialScroll = useCallback((deltaX: number, deltaY: number) => {
-    const clampedDeltaX = clampNumber(deltaX, -220, 220);
-    const clampedDeltaY = clampNumber(deltaY, -220, 220);
+    const clampedDeltaX = clampNumber(
+      deltaX,
+      -INERTIAL_SCROLL_DELTA_CLAMP_PX,
+      INERTIAL_SCROLL_DELTA_CLAMP_PX,
+    );
+    const clampedDeltaY = clampNumber(
+      deltaY,
+      -INERTIAL_SCROLL_DELTA_CLAMP_PX,
+      INERTIAL_SCROLL_DELTA_CLAMP_PX,
+    );
     const currentVelocity = inertialScrollVelocityRef.current;
     inertialScrollVelocityRef.current = {
-      x: clampNumber(currentVelocity.x * 0.38 + clampedDeltaX * 0.72, -260, 260),
-      y: clampNumber(currentVelocity.y * 0.38 + clampedDeltaY * 0.72, -260, 260),
+      x: clampNumber(
+        currentVelocity.x * INERTIAL_SCROLL_VELOCITY_CARRY_FACTOR +
+          clampedDeltaX * INERTIAL_SCROLL_VELOCITY_BLEND_FACTOR,
+        -INERTIAL_SCROLL_VELOCITY_CLAMP_PX,
+        INERTIAL_SCROLL_VELOCITY_CLAMP_PX,
+      ),
+      y: clampNumber(
+        currentVelocity.y * INERTIAL_SCROLL_VELOCITY_CARRY_FACTOR +
+          clampedDeltaY * INERTIAL_SCROLL_VELOCITY_BLEND_FACTOR,
+        -INERTIAL_SCROLL_VELOCITY_CLAMP_PX,
+        INERTIAL_SCROLL_VELOCITY_CLAMP_PX,
+      ),
     };
 
     if (inertialScrollFrameRef.current == null) {
@@ -284,6 +316,7 @@ export function OverlayScrollArea({
         event.altKey ||
         shouldReduceScrollMotion()
       ) {
+        stopInertialScroll();
         return;
       }
 
@@ -293,14 +326,31 @@ export function OverlayScrollArea({
         return;
       }
 
+      if (shouldUseNativePixelScroll(event, runtimePlatformRef.current)) {
+        stopInertialScroll();
+        return;
+      }
+
+      const immediateScrollDelta = {
+        x: scrollDelta.x * INERTIAL_SCROLL_IMMEDIATE_DELTA_FACTOR,
+        y: scrollDelta.y * INERTIAL_SCROLL_IMMEDIATE_DELTA_FACTOR,
+      };
+      const carriedMomentumDelta = {
+        x: scrollDelta.x - immediateScrollDelta.x,
+        y: scrollDelta.y - immediateScrollDelta.y,
+      };
+
       event.preventDefault();
       const didMove = applyInertialScrollDelta(
         viewport,
-        scrollDelta.x,
-        scrollDelta.y,
+        immediateScrollDelta.x,
+        immediateScrollDelta.y,
       );
       if (didMove) {
-        startInertialScroll(scrollDelta.x, scrollDelta.y);
+        startInertialScroll(
+          carriedMomentumDelta.x,
+          carriedMomentumDelta.y,
+        );
         scheduleScrollbarPresentationSync();
       } else {
         stopInertialScroll();
@@ -725,6 +775,19 @@ function shouldReduceScrollMotion(): boolean {
     return false;
   }
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function shouldUseNativePixelScroll(
+  event: WheelEvent,
+  runtimePlatform: ReturnType<typeof detectClientPlatform>,
+): boolean {
+  // WebView2 already delivers high-resolution pixel wheel deltas for precision
+  // devices on Windows. Replaying those through our synthetic inertia made the
+  // explorer feel chunked, so let native scrolling own that lane.
+  return (
+    runtimePlatform === 'windows' &&
+    event.deltaMode === WheelEvent.DOM_DELTA_PIXEL
+  );
 }
 
 function normalizeWheelDeltaForViewport(

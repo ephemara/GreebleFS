@@ -1,3 +1,19 @@
+# 2026-04-28 - Explorer Scroll Host Stops Hijacking Windows Precision Wheel Input
+
+- Swapping from Linux back to Windows exposed that Explorer's synthetic inertial scroll lane was force-handling high-resolution `DOM_DELTA_PIXEL` wheel input from WebView2, which made precision-device scrolling feel chunked and "stop motion" instead of native/fluid.
+- Durable ownership after this pass:
+  - `src/components/OverlayScrollArea.tsx` now treats Windows pixel-wheel streams as native scroll, while still applying explorer-owned weighted momentum to coarse wheel gestures.
+  - `src/components/FileExplorer.tsx` now relies on `OverlayScrollArea.onViewportScroll` as the single live virtual-window scroll lane and no longer keeps a second passive DOM `scroll` listener just to mirror the same scrollTop state.
+  - `src/test/overlayScrollArea.test.tsx` now covers both halves of the contract: coarse wheel gestures still get momentum assistance, while Windows pixel-wheel input stays native even when inertial scrolling is enabled.
+- Durable behavior after this pass:
+  - if Windows explorer scrolling feels chunked again, inspect `shouldUseNativePixelScroll(...)` in `OverlayScrollArea.tsx` before touching virtualization math.
+  - synthetic inertia is now intentionally lighter: only a fraction of each coarse wheel delta applies immediately, with the remainder carried by the momentum lane so wheel notches feel weighted instead of jumping in large steps.
+  - Explorer virtual-window ownership should stay on `onViewportScroll`; do not reintroduce a second passive viewport `scroll` listener in `FileExplorer.tsx` without proving the extra bookkeeping is needed.
+- Validation that passed for this pass:
+  - `node_modules\.bin\vitest.exe run src/test/overlayScrollArea.test.tsx --reporter=dot`
+  - `node_modules\.bin\vitest.exe run src/test/fileExplorer.viewModes.test.tsx -t "uses the dedicated explorer viewport class for visible file-list scrollbars|keeps a 100000-entry folder bounded to the virtual surface" --reporter=verbose --testTimeout=30000`
+  - touched-file TypeScript sweep returned no diagnostics for `OverlayScrollArea.tsx`, `FileExplorer.tsx`, and `overlayScrollArea.test.tsx`.
+
 # 2026-04-28 - Explorer Policy Snapshots Are Normalized Before React Session State
 
 - A random `FileExplorer.tsx` runtime crash (`Cannot read properties of null (reading 'slice')`) traced back to explorer policy/session snapshots crossing into React with malformed `history` payloads.

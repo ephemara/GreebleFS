@@ -202,7 +202,10 @@ import {
   resolveExplorerLayoutZoomStateAtValue,
   resolveEffectiveExplorerViewMode,
   stepExplorerViewMode,
+  type ExplorerGridMode,
   type ExplorerLayoutZoomState,
+  type ExplorerResolvedLayoutZoomState,
+  type ExplorerViewMode,
   type ExplorerViewModeDefinition,
   type ExplorerViewPresentation,
 } from "../config/explorerViewModes";
@@ -869,10 +872,27 @@ function setExplorerLayoutCssVariable(
   element.style.setProperty(name, value);
 }
 
+function resolveExplorerGridIconModeForCommittedViewMode(
+  committedViewMode: ExplorerViewMode,
+  resolvedState: ExplorerResolvedLayoutZoomState,
+): ExplorerGridMode | null {
+  if (isExplorerGridMode(committedViewMode)) {
+    return committedViewMode;
+  }
+  if (
+    resolvedState.family === "grid" &&
+    isExplorerGridMode(resolvedState.viewMode)
+  ) {
+    return resolvedState.viewMode;
+  }
+  return null;
+}
+
 function applyExplorerLayoutZoomCssVariables(
   element: HTMLElement | null,
   layoutZoomState: ExplorerLayoutZoomState,
   explorerTheme: ResolvedExplorerThemeRecipe,
+  committedViewMode: ExplorerViewMode,
 ) {
   if (!element) {
     return;
@@ -882,12 +902,20 @@ function applyExplorerLayoutZoomCssVariables(
   element.dataset.overlayExplorerLiveZoomFamily = resolvedState.family;
 
   if (resolvedState.family === "grid") {
+    const iconMode = resolveExplorerGridIconModeForCommittedViewMode(
+      committedViewMode,
+      resolvedState,
+    );
     const metrics = applyExplorerThemeToGridMetrics(
-      getExplorerGridMetricsForZoom(resolvedState.gridZoom),
+      getExplorerGridMetricsForZoom(
+        resolvedState.gridZoom,
+        iconMode ? { iconMode } : undefined,
+      ),
       explorerTheme,
     );
     const itemPadding = metrics.iconSize <= 46 ? "8px 6px 6px" : "10px 8px 8px";
     const thumbnailRadius = Math.max(10, Math.round(metrics.tileRadius * 0.72));
+    element.dataset.overlayExplorerLiveGridIconBand = iconMode ?? "";
 
     setExplorerLayoutCssVariable(
       element,
@@ -931,6 +959,8 @@ function applyExplorerLayoutZoomCssVariables(
     );
     return;
   }
+
+  delete element.dataset.overlayExplorerLiveGridIconBand;
 
   const rowMetrics = applyExplorerThemeToRowMetrics(
     getExplorerViewModeDefinition("list").rows,
@@ -9982,6 +10012,7 @@ export function FileExplorer({
         mainRef.current,
         nextRenderedState,
         explorerTheme,
+        themedViewMode,
       );
 
       setLiveLayoutZoomState((current) => {
@@ -10006,7 +10037,7 @@ export function FileExplorer({
     });
 
     return unsubscribe;
-  }, [explorerTheme, layoutZoomSpring]);
+  }, [explorerTheme, layoutZoomSpring, themedViewMode]);
 
   useEffect(() => {
     let disposed = false;
@@ -20300,8 +20331,9 @@ export function FileExplorer({
       mainRef.current,
       liveLayoutZoomState,
       explorerTheme,
+      themedViewMode,
     );
-  }, [explorerTheme, liveLayoutZoomState]);
+  }, [explorerTheme, liveLayoutZoomState, themedViewMode]);
   const liveWheelViewMode =
     layoutZoomGestureActive && themedExperimentalViewMode === "off"
       ? resolvedLiveLayoutZoom.viewMode
@@ -20369,11 +20401,22 @@ export function FileExplorer({
         : effectiveViewModeDefinition.label,
     [effectiveExperimentalViewMode, effectiveViewModeDefinition.label],
   );
+  const activeGridIconMode = useMemo(
+    () =>
+      resolveExplorerGridIconModeForCommittedViewMode(
+        themedViewMode,
+        resolvedLiveLayoutZoom,
+      ),
+    [resolvedLiveLayoutZoom, themedViewMode],
+  );
   const activeGridMetrics = useMemo(
     () =>
       effectiveViewModeDefinition.presentation === "grid"
         ? applyExplorerThemeToGridMetrics(
-            getExplorerGridMetricsForZoom(liveWheelGridZoom),
+            getExplorerGridMetricsForZoom(
+              liveWheelGridZoom,
+              activeGridIconMode ? { iconMode: activeGridIconMode } : undefined,
+            ),
             explorerTheme,
           )
         : effectiveViewModeDefinition.grid
@@ -20382,7 +20425,12 @@ export function FileExplorer({
               explorerTheme,
             )
           : effectiveViewModeDefinition.grid,
-    [effectiveViewModeDefinition, explorerTheme, liveWheelGridZoom],
+    [
+      activeGridIconMode,
+      effectiveViewModeDefinition,
+      explorerTheme,
+      liveWheelGridZoom,
+    ],
   );
   const activeRowMetrics = useMemo(
     () =>
@@ -25409,19 +25457,6 @@ export function FileExplorer({
       return;
     }
 
-    let rafId = 0;
-    const updateScrollTop = () => {
-      rafId = 0;
-      syncExplorerViewportScrollTop(viewport);
-    };
-
-    const scheduleScrollUpdate = () => {
-      if (rafId !== 0) {
-        return;
-      }
-      rafId = window.requestAnimationFrame(updateScrollTop);
-    };
-
     const resizeObserver =
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(() => {
@@ -25430,18 +25465,11 @@ export function FileExplorer({
         : null;
 
     resizeObserver?.observe(viewport);
-    viewport.addEventListener("scroll", scheduleScrollUpdate, {
-      passive: true,
-    });
     syncExplorerViewportSize(viewport);
     syncExplorerViewportScrollTop(viewport);
 
     return () => {
-      viewport.removeEventListener("scroll", scheduleScrollUpdate);
       resizeObserver?.disconnect();
-      if (rafId !== 0) {
-        window.cancelAnimationFrame(rafId);
-      }
     };
   }, [
     explorerViewportNode,

@@ -9,6 +9,8 @@ import type {
   ExplorerExperimentalViewMode,
 } from './explorerExperimentalModes';
 import type {
+  ExplorerGridIconMetrics,
+  ExplorerGridLayoutMetrics,
   ExplorerGridMetrics,
   ExplorerRowMetrics,
   ExplorerViewMode,
@@ -1107,13 +1109,12 @@ export function resolveExplorerThemeRecipe(
   };
 }
 
-export function applyExplorerThemeToGridMetrics(
-  metrics: ExplorerGridMetrics,
+export function applyExplorerThemeToGridLayoutMetrics(
+  metrics: ExplorerGridLayoutMetrics,
   explorerTheme: ResolvedExplorerThemeRecipe,
-): ExplorerGridMetrics {
+): ExplorerGridLayoutMetrics {
   const spacingScale = explorerTheme.metrics.spacingScale;
   const gridScale = explorerTheme.metrics.gridScale;
-  const iconScale = explorerTheme.metrics.iconScale;
 
   return {
     minWidth: Math.max(72, Math.round(metrics.minWidth * gridScale)),
@@ -1122,10 +1123,30 @@ export function applyExplorerThemeToGridMetrics(
     rowHeight: Math.max(84, Math.round(metrics.rowHeight * gridScale)),
     searchRowHeight: Math.max(104, Math.round(metrics.searchRowHeight * gridScale)),
     newItemHeight: Math.max(84, Math.round(metrics.newItemHeight * gridScale)),
-    iconSize: Math.max(16, Math.round(metrics.iconSize * iconScale)),
-    iconStageSize: Math.max(20, Math.round(metrics.iconStageSize * iconScale)),
     tileRadius: Math.max(8, Math.round(metrics.tileRadius * explorerTheme.metrics.spacingScale)),
     nameLines: metrics.nameLines,
+  };
+}
+
+export function applyExplorerThemeToGridIconMetrics(
+  metrics: ExplorerGridIconMetrics,
+  explorerTheme: ResolvedExplorerThemeRecipe,
+): ExplorerGridIconMetrics {
+  const iconScale = explorerTheme.metrics.iconScale;
+
+  return {
+    iconSize: Math.max(16, Math.round(metrics.iconSize * iconScale)),
+    iconStageSize: Math.max(20, Math.round(metrics.iconStageSize * iconScale)),
+  };
+}
+
+export function applyExplorerThemeToGridMetrics(
+  metrics: ExplorerGridMetrics,
+  explorerTheme: ResolvedExplorerThemeRecipe,
+): ExplorerGridMetrics {
+  return {
+    ...applyExplorerThemeToGridLayoutMetrics(metrics, explorerTheme),
+    ...applyExplorerThemeToGridIconMetrics(metrics, explorerTheme),
   };
 }
 

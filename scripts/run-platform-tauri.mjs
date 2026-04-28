@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -42,6 +43,21 @@ const tauriCargoTargetDir =
   process.env.GREEBLEFS_TAURI_CARGO_TARGET_DIR ??
   process.env.OVERLAYTERM_TAURI_CARGO_TARGET_DIR ??
   defaultCargoTargetDir;
+const spectaBindingsGeneratedRelativePath = path.join("src", "generated", "tauri.ts");
+const spectaBindingsGeneratedPath = path.join(projectRoot, spectaBindingsGeneratedRelativePath);
+const spectaBindingsCacheDirectory = path.join(tauriCargoTargetDir, "dev-cache");
+const spectaBindingsCachePath = path.join(spectaBindingsCacheDirectory, "specta-bindings-state.json");
+const spectaBindingsCacheVersion = 1;
+const spectaBindingsFingerprintTargets = [
+  { kind: "file", relativePath: "Cargo.toml" },
+  { kind: "file", relativePath: "Cargo.lock" },
+  { kind: "file", relativePath: path.join("src-tauri", "Cargo.toml") },
+  { kind: "file", relativePath: path.join("src-tauri", "build.rs") },
+  { kind: "directory", relativePath: path.join("src-tauri", "src"), extension: ".rs" },
+  { kind: "directory", relativePath: path.join("crates", "overlay-contracts"), extension: ".rs" },
+  { kind: "directory", relativePath: path.join("crates", "yazi-specta"), extension: ".rs" },
+  { kind: "directory", relativePath: path.join("crates", "greeble-ipc-contracts"), extension: ".rs" },
+];
 
 const usrRootEnvironmentKeys = {
   frontendPrimary: "VITE_GREEBLEFS_USR_DIR",
@@ -65,6 +81,10 @@ const devRuntimeStateDirectoryNames = {
 
 function hasExplicitEnvValue(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function normalizePathForLogs(value) {
+  return value.replace(/\\/g, "/");
 }
 
 function setEnvironmentPairIfMissing(targetEnvironment, existingEnv, keys, value) {
@@ -217,6 +237,170 @@ async function pathExists(targetPath) {
   }
 }
 
+async function collectDirectoryFilesRecursively(rootPath, extension, matchingFiles = []) {
+  const entries = await fs.readdir(rootPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const entryPath = path.join(rootPath, entry.name);
+    if (entry.isDirectory()) {
+      await collectDirectoryFilesRecursively(entryPath, extension, matchingFiles);
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    if (!extension || entry.name.endsWith(extension)) {
+      matchingFiles.push(entryPath);
+    }
+  }
+
+  return matchingFiles;
+}
+
+async function resolveSpectaBindingsFingerprintFiles() {
+  const resolvedFiles = new Set();
+
+  for (const target of spectaBindingsFingerprintTargets) {
+    const absolutePath = path.join(projectRoot, target.relativePath);
+    if (!(await pathExists(absolutePath))) {
+      continue;
+    }
+
+    if (target.kind === "file") {
+      resolvedFiles.add(absolutePath);
+      continue;
+    }
+
+    const directoryFiles = await collectDirectoryFilesRecursively(absolutePath, target.extension);
+    for (const filePath of directoryFiles) {
+      resolvedFiles.add(filePath);
+    }
+  }
+
+  return [...resolvedFiles].sort((left, right) => left.localeCompare(right));
+}
+
+async function computeSpectaBindingsFingerprint() {
+  const inputFiles = await resolveSpectaBindingsFingerprintFiles();
+  const hash = createHash("sha256");
+
+  for (const absolutePath of inputFiles) {
+    const relativePath = normalizePathForLogs(path.relative(projectRoot, absolutePath));
+    const contents = await fs.readFile(absolutePath);
+    hash.update(relativePath);
+    hash.update("\0");
+    hash.update(contents);
+    hash.update("\0");
+  }
+
+  return {
+    fingerprint: hash.digest("hex"),
+    inputFiles,
+  };
+}
+
+async function readSpectaBindingsCacheState() {
+  if (!(await pathExists(spectaBindingsCachePath))) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(await fs.readFile(spectaBindingsCachePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+async function writeSpectaBindingsCacheState({ fingerprint, inputFiles }) {
+  await fs.mkdir(spectaBindingsCacheDirectory, { recursive: true });
+  await fs.writeFile(
+    spectaBindingsCachePath,
+    `${JSON.stringify({
+      version: spectaBindingsCacheVersion,
+      fingerprint,
+      generatedBindingsPath: normalizePathForLogs(spectaBindingsGeneratedRelativePath),
+      inputFileCount: inputFiles.length,
+      updatedAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
+}
+
+async function shouldPrepareSpectaBindings() {
+  const generatedBindingsExist = await pathExists(spectaBindingsGeneratedPath);
+  const { fingerprint, inputFiles } = await computeSpectaBindingsFingerprint();
+  const cachedState = await readSpectaBindingsCacheState();
+  const cacheIsCurrent =
+    generatedBindingsExist
+    && cachedState?.version === spectaBindingsCacheVersion
+    && cachedState?.fingerprint === fingerprint;
+
+  return {
+    fingerprint,
+    inputFiles,
+    shouldPrepare: !cacheIsCurrent,
+  };
+}
+
+function appendCommandFlags(existingValue, nextFlags) {
+  const mergedFlags = hasExplicitEnvValue(existingValue) ? existingValue.trim().split(/\s+/) : [];
+
+  for (const flag of nextFlags) {
+    if (!mergedFlags.includes(flag)) {
+      mergedFlags.push(flag);
+    }
+  }
+
+  return mergedFlags.join(" ");
+}
+
+function buildWindowsRustAccelerationEnvironment({
+  existingEnv = process.env,
+  platform = process.platform,
+} = {}) {
+  if (platform !== "win32") {
+    return {};
+  }
+
+  const windowsRustEnvironment = {};
+  const hasSccache = commandExists("sccache");
+  const hasClangCl = commandExists("clang-cl");
+  const hasLldLink = commandExists("lld-link");
+  const canUseLlvmFastLink = hasClangCl && hasLldLink;
+
+  if (hasSccache && !hasExplicitEnvValue(existingEnv.RUSTC_WRAPPER)) {
+    windowsRustEnvironment.RUSTC_WRAPPER = "sccache";
+  }
+
+  if (!canUseLlvmFastLink) {
+    return windowsRustEnvironment;
+  }
+
+  if (!hasExplicitEnvValue(existingEnv.CC)) {
+    windowsRustEnvironment.CC = "clang-cl";
+  }
+
+  if (!hasExplicitEnvValue(existingEnv.CXX)) {
+    windowsRustEnvironment.CXX = "clang-cl";
+  }
+
+  if (!hasExplicitEnvValue(existingEnv.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER)) {
+    windowsRustEnvironment.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = "clang-cl";
+  }
+
+  const nextTargetRustFlags = appendCommandFlags(
+    existingEnv.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS,
+    ["-Clink-arg=/fuse-ld=lld"],
+  );
+
+  if (nextTargetRustFlags !== (existingEnv.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS ?? "")) {
+    windowsRustEnvironment.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = nextTargetRustFlags;
+  }
+
+  return windowsRustEnvironment;
+}
+
 async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
   const tauriConfigPath = path.join(projectRoot, "src-tauri", "tauri.conf.json");
   const rawConfig = await fs.readFile(tauriConfigPath, "utf8");
@@ -252,16 +436,28 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
   return runtimeConfigPath;
 }
 
-async function prepareTauriDevBindings(packageManagerCommand, tauriCommand) {
+async function prepareTauriDevBindings(packageManagerCommand, tauriCommand, extraEnv = {}) {
   if (tauriCommand !== "dev") {
     return;
   }
 
+  const preparationState = await shouldPrepareSpectaBindings();
+  if (!preparationState.shouldPrepare) {
+    console.log("Specta bindings up to date, skipping.");
+    return;
+  }
+
   console.log("Preparing Specta bindings before Tauri dev...");
-  const prepareExitCode = await runCommand(packageManagerCommand, ["run", "bindings:generate"]);
+  const prepareExitCode = await runCommand(
+    packageManagerCommand,
+    ["run", "bindings:generate"],
+    extraEnv,
+  );
   if (prepareExitCode !== 0) {
     process.exit(prepareExitCode);
   }
+
+  await writeSpectaBindingsCacheState(preparationState);
 }
 
 async function prepareGoRuntimeAssets(packageManagerCommand, tauriCommand) {
@@ -378,6 +574,7 @@ async function main() {
   const packageManagerCommand = getPackageManagerCommand();
   const cliArgs = process.argv.slice(2);
   const tauriCommand = cliArgs.find((arg) => !arg.startsWith("-")) ?? null;
+  const windowsRustAccelerationEnvironment = buildWindowsRustAccelerationEnvironment();
   if (tauriCommand === "dev") {
     cleanupGreeblefsDevProcesses({
       projectRootPath: projectRoot,
@@ -385,7 +582,11 @@ async function main() {
     });
   }
   await prepareGoRuntimeAssets(packageManagerCommand, tauriCommand);
-  await prepareTauriDevBindings(packageManagerCommand, tauriCommand);
+  await prepareTauriDevBindings(
+    packageManagerCommand,
+    tauriCommand,
+    windowsRustAccelerationEnvironment,
+  );
   const linuxGraphicsEnvironment = buildLinuxGraphicsEnvironment({ tauriCommand });
   const existingNodePath = process.env.NODE_PATH
     ? `${cacheNodeModules}${path.delimiter}${process.env.NODE_PATH}`
@@ -408,6 +609,7 @@ async function main() {
       GREEBLEFS_VITE_OUT_DIR: frontendDist,
       OVERLAYTERM_VITE_OUT_DIR: frontendDist,
       ...linuxGraphicsEnvironment,
+      ...windowsRustAccelerationEnvironment,
       ...buildManagedContentDirectoryEnvironment({ tauriCommand }),
     }
   );

@@ -10,19 +10,25 @@ export type ExplorerViewMode =
 export type ExplorerViewPresentation = 'grid' | 'table' | 'list';
 export type ExplorerViewWheelDirection = 'larger' | 'smaller';
 export type ExplorerLayoutZoomFamily = 'grid' | 'table' | 'list';
+export type ExplorerGridMode = 'icons-xl' | 'icons-l' | 'icons-m' | 'icons-s';
 
-export interface ExplorerGridMetrics {
+export interface ExplorerGridLayoutMetrics {
   minWidth: number;
   gap: number;
   padding: number;
   rowHeight: number;
   searchRowHeight: number;
   newItemHeight: number;
-  iconSize: number;
-  iconStageSize: number;
   tileRadius: number;
   nameLines: number;
 }
+
+export interface ExplorerGridIconMetrics {
+  iconSize: number;
+  iconStageSize: number;
+}
+
+export interface ExplorerGridMetrics extends ExplorerGridLayoutMetrics, ExplorerGridIconMetrics {}
 
 export interface ExplorerRowMetrics {
   rowHeight: number;
@@ -220,7 +226,7 @@ export function getExplorerViewModeDefinition(mode: ExplorerViewMode): ExplorerV
   return explorerViewModeMap.get(mode) ?? explorerViewModeMap.get(defaultExplorerViewMode)!;
 }
 
-export function isExplorerGridMode(mode: ExplorerViewMode): mode is 'icons-xl' | 'icons-l' | 'icons-m' | 'icons-s' {
+export function isExplorerGridMode(mode: ExplorerViewMode): mode is ExplorerGridMode {
   return mode === 'icons-xl' || mode === 'icons-l' || mode === 'icons-m' || mode === 'icons-s';
 }
 
@@ -264,6 +270,14 @@ export function getNearestExplorerGridMode(gridZoom: number): 'icons-xl' | 'icon
   return closest.id;
 }
 
+export function getExplorerGridIconMetricsForMode(mode: ExplorerGridMode): ExplorerGridIconMetrics {
+  const metrics = getExplorerViewModeDefinition(mode).grid!;
+  return {
+    iconSize: metrics.iconSize,
+    iconStageSize: metrics.iconStageSize,
+  };
+}
+
 export function getAdjacentExplorerGridMode(
   currentMode: ExplorerViewMode,
   direction: ExplorerViewWheelDirection,
@@ -284,10 +298,10 @@ export function getAdjacentExplorerGridMode(
   return explorerGridModeAnchors[Math.max(0, currentIndex - 1)]!.id;
 }
 
-export function getExplorerGridMetricsForZoom(gridZoom: number): ExplorerGridMetrics {
+export function getExplorerGridLayoutMetricsForZoom(gridZoom: number): ExplorerGridLayoutMetrics {
   const zoom = normalizeExplorerGridZoom(gridZoom);
   if (zoom > EXPLORER_GRID_ZOOM_MAX) {
-    return getExplorerOversizedGridMetrics(zoom);
+    return getExplorerOversizedGridLayoutMetrics(zoom);
   }
 
   let lowerIndex = 0;
@@ -311,10 +325,28 @@ export function getExplorerGridMetricsForZoom(gridZoom: number): ExplorerGridMet
     rowHeight: lerp(lowerMetrics.rowHeight, upperMetrics.rowHeight, t),
     searchRowHeight: lerp(lowerMetrics.searchRowHeight, upperMetrics.searchRowHeight, t),
     newItemHeight: lerp(lowerMetrics.newItemHeight, upperMetrics.newItemHeight, t),
-    iconSize: lerp(lowerMetrics.iconSize, upperMetrics.iconSize, t),
-    iconStageSize: lerp(lowerMetrics.iconStageSize, upperMetrics.iconStageSize, t),
     tileRadius: lerp(lowerMetrics.tileRadius, upperMetrics.tileRadius, t),
     nameLines: Math.round(lerp(lowerMetrics.nameLines, upperMetrics.nameLines, t)),
+  };
+}
+
+export function getExplorerGridMetricsForZoom(
+  gridZoom: number,
+  options?: {
+    iconMode?: ExplorerGridMode;
+  },
+): ExplorerGridMetrics {
+  const layoutMetrics = getExplorerGridLayoutMetricsForZoom(gridZoom);
+  const iconMode =
+    options?.iconMode ??
+    (normalizeExplorerGridZoom(gridZoom) > EXPLORER_GRID_ZOOM_MAX
+      ? 'icons-xl'
+      : getNearestExplorerGridMode(gridZoom));
+  const iconMetrics = getExplorerGridIconMetricsForMode(iconMode);
+
+  return {
+    ...layoutMetrics,
+    ...iconMetrics,
   };
 }
 
@@ -498,7 +530,7 @@ function easeOutCubic(t: number): number {
   return 1 - (1 - t) ** 3;
 }
 
-function getExplorerOversizedGridMetrics(gridZoom: number): ExplorerGridMetrics {
+function getExplorerOversizedGridLayoutMetrics(gridZoom: number): ExplorerGridLayoutMetrics {
   const baseMetrics = getExplorerViewModeDefinition('icons-xl').grid!;
   const oversizeProgress = clamp(
     (gridZoom - EXPLORER_GRID_ZOOM_MAX) /
@@ -509,8 +541,6 @@ function getExplorerOversizedGridMetrics(gridZoom: number): ExplorerGridMetrics 
   const easedProgress = easeOutCubic(oversizeProgress);
   const tileScale = lerp(1, 3.2, easedProgress);
   const rowScale = lerp(1, 2.7, easedProgress);
-  const iconScale = lerp(1, 2.45, easedProgress);
-  const stageScale = lerp(1, 2.95, easedProgress);
   const spacingScale = lerp(1, 2.05, easedProgress);
 
   return {
@@ -520,8 +550,6 @@ function getExplorerOversizedGridMetrics(gridZoom: number): ExplorerGridMetrics 
     rowHeight: baseMetrics.rowHeight * rowScale,
     searchRowHeight: baseMetrics.searchRowHeight * lerp(1, 2.78, easedProgress),
     newItemHeight: baseMetrics.newItemHeight * rowScale,
-    iconSize: baseMetrics.iconSize * iconScale,
-    iconStageSize: baseMetrics.iconStageSize * stageScale,
     tileRadius: baseMetrics.tileRadius * lerp(1, 1.6, easedProgress),
     nameLines: Math.max(baseMetrics.nameLines, Math.round(lerp(2, 4, easedProgress))),
   };

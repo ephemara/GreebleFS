@@ -158,13 +158,9 @@ pub(crate) fn get_tailscale_share_target() -> Result<TailscaleShareTarget, Strin
     }
 
     let cert_domain = status.cert_domains.first().cloned();
-    let preferred_host = cert_domain
-        .clone()
-        .or_else(|| status.dns_name.clone())
-        .or_else(|| status.tailscale_ipv4.clone())
-        .ok_or_else(|| {
-            "Tailscale is connected, but no reachable tailnet hostname or IP was found.".to_string()
-        })?;
+    let preferred_host = get_tailscale_preferred_host(&status).ok_or_else(|| {
+        "Tailscale is connected, but no reachable tailnet hostname or IP was found.".to_string()
+    })?;
 
     Ok(TailscaleShareTarget {
         preferred_host,
@@ -308,7 +304,7 @@ pub(crate) fn get_tailscale_status_snapshot() -> TailscaleStatusSnapshot {
                 .pointer("/CurrentTailnet/MagicDNSEnabled")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            snapshot.health_messages = get_string_array_field(&parsed, "Health");
+            let raw_health_messages = get_string_array_field(&parsed, "Health");
 
             let peer_map = parsed.get("Peer").and_then(Value::as_object);
             snapshot.peer_count = peer_map.map(|peers| peers.len()).unwrap_or(0);
@@ -342,6 +338,13 @@ pub(crate) fn get_tailscale_status_snapshot() -> TailscaleStatusSnapshot {
                     || snapshot.tailscale_ipv6.is_some()
                     || snapshot.dns_name.is_some());
 
+            let (health_messages, non_blocking_note) =
+                suppress_non_blocking_windows_dns_health_messages(raw_health_messages, &snapshot);
+            snapshot.health_messages = health_messages;
+            if snapshot.diagnostic_message.is_none() {
+                snapshot.diagnostic_message = non_blocking_note;
+            }
+
             if !snapshot.connected && snapshot.diagnostic_message.is_none() {
                 if let Some(auth_url) = snapshot.auth_url.clone() {
                     snapshot.diagnostic_message = Some(format!(
@@ -360,6 +363,68 @@ pub(crate) fn get_tailscale_status_snapshot() -> TailscaleStatusSnapshot {
     }
 
     snapshot
+}
+
+fn get_tailscale_preferred_host(status: &TailscaleStatusSnapshot) -> Option<String> {
+    status
+        .cert_domains
+        .first()
+        .cloned()
+        .or_else(|| status.dns_name.clone())
+        .or_else(|| status.tailscale_ipv4.clone())
+}
+
+fn suppress_non_blocking_windows_dns_health_messages(
+    messages: Vec<String>,
+    status: &TailscaleStatusSnapshot,
+) -> (Vec<String>, Option<String>) {
+    let preferred_host = match status.connected {
+        true => get_tailscale_preferred_host(status),
+        false => None,
+    };
+    let Some(preferred_host) = preferred_host else {
+        return (messages, None);
+    };
+
+    let has_windows_dns_access_denied_warning = messages
+        .iter()
+        .any(|message| is_windows_tailscale_dns_access_denied_message(message));
+    if !has_windows_dns_access_denied_warning {
+        return (messages, None);
+    }
+
+    let mut suppressed_any_message = false;
+    let filtered_messages: Vec<String> = messages
+        .into_iter()
+        .filter(|message| {
+            let should_suppress =
+                is_windows_tailscale_dns_access_denied_message(message)
+                    || (has_windows_dns_access_denied_warning
+                        && is_generic_windows_access_denied_message(message));
+            suppressed_any_message |= should_suppress;
+            !should_suppress
+        })
+        .collect();
+
+    let diagnostic_note = if suppressed_any_message && filtered_messages.is_empty() {
+        Some(format!(
+            "Windows blocked Tailscale from overriding local DNS, but mobile share can still use the active tailnet route at {preferred_host}."
+        ))
+    } else {
+        None
+    };
+
+    (filtered_messages, diagnostic_note)
+}
+
+fn is_windows_tailscale_dns_access_denied_message(message: &str) -> bool {
+    let normalized = message.trim().to_ascii_lowercase();
+    normalized.contains("failed to set the dns configuration of your device")
+        && normalized.contains("access is denied")
+}
+
+fn is_generic_windows_access_denied_message(message: &str) -> bool {
+    message.trim().eq_ignore_ascii_case("access is denied.")
 }
 
 fn normalize_cli_string(value: Option<String>) -> Option<String> {
@@ -464,4 +529,66 @@ fn extract_auth_url_from_text(value: &str) -> Option<String> {
         })
         .find(|token| token.starts_with("https://"))
         .map(ToOwned::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn connected_tailscale_status_snapshot() -> TailscaleStatusSnapshot {
+        TailscaleStatusSnapshot {
+            cli_available: true,
+            version: Some("1.96.3".to_string()),
+            backend_state: Some("Running".to_string()),
+            connected: true,
+            running: true,
+            auth_url: None,
+            hostname: Some("TAYK47".to_string()),
+            dns_name: Some("tayk47.tail04e752.ts.net".to_string()),
+            tailscale_ipv4: Some("100.79.119.3".to_string()),
+            tailscale_ipv6: Some("fd7a:115c:a1e0::7901:7703".to_string()),
+            tailnet_name: Some("taylorofkipp@gmail.com".to_string()),
+            tailnet_domain: Some("tail04e752.ts.net".to_string()),
+            magic_dns_enabled: true,
+            cert_domains: vec!["tayk47.tail04e752.ts.net".to_string()],
+            cert_https_ready: true,
+            peer_count: 7,
+            online_peer_count: 1,
+            user_login_name: Some("taylorofkipp@gmail.com".to_string()),
+            user_display_name: Some("Taylor K".to_string()),
+            health_messages: Vec::new(),
+            diagnostic_message: None,
+        }
+    }
+
+    #[test]
+    fn suppresses_non_blocking_windows_dns_access_denied_health_messages() {
+        let status = connected_tailscale_status_snapshot();
+        let (health_messages, diagnostic_note) = suppress_non_blocking_windows_dns_health_messages(
+            vec![
+                "Tailscale failed to set the DNS configuration of your device: Access is denied."
+                    .to_string(),
+                "Access is denied.".to_string(),
+            ],
+            &status,
+        );
+
+        assert!(health_messages.is_empty());
+        let diagnostic_note =
+            diagnostic_note.expect("connected mobile share should emit a non-blocking note");
+        assert!(diagnostic_note.contains("Windows blocked Tailscale from overriding local DNS"));
+        assert!(diagnostic_note.contains("tayk47.tail04e752.ts.net"));
+    }
+
+    #[test]
+    fn keeps_generic_access_denied_health_without_dns_specific_companion_message() {
+        let status = connected_tailscale_status_snapshot();
+        let health_messages = vec!["Access is denied.".to_string()];
+
+        let (filtered_health_messages, diagnostic_note) =
+            suppress_non_blocking_windows_dns_health_messages(health_messages.clone(), &status);
+
+        assert_eq!(filtered_health_messages, health_messages);
+        assert!(diagnostic_note.is_none());
+    }
 }

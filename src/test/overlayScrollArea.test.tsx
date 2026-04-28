@@ -2,6 +2,8 @@ import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OverlayScrollArea } from '../components/OverlayScrollArea';
 
+const ORIGINAL_NAVIGATOR_PLATFORM = window.navigator.platform;
+
 function getViewport(container: HTMLElement, direction: 'horizontal' | 'vertical'): HTMLDivElement {
   const node = container.querySelector(`.overlay-scroll-area__viewport--${direction}`);
   if (!node || !(node instanceof HTMLDivElement)) {
@@ -22,8 +24,16 @@ function makeScrollable(
   }
 }
 
+function setNavigatorPlatform(platform: string) {
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  });
+}
+
 describe('OverlayScrollArea', () => {
   afterEach(() => {
+    setNavigatorPlatform(ORIGINAL_NAVIGATOR_PLATFORM);
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -185,7 +195,7 @@ describe('OverlayScrollArea', () => {
     });
   });
 
-  it('adds opt-in inertial scrolling that continues after a fast wheel event', async () => {
+  it('adds momentum-assisted scrolling for coarse wheel gestures', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { container } = render(
       <OverlayScrollArea scrollbarStyle="explorer-file-list" inertialScroll>
@@ -202,18 +212,45 @@ describe('OverlayScrollArea', () => {
     const wheelEvent = new WheelEvent('wheel', {
       bubbles: true,
       cancelable: true,
-      deltaY: 120,
+      deltaMode: WheelEvent.DOM_DELTA_LINE,
+      deltaY: 3,
     });
     viewport.dispatchEvent(wheelEvent);
 
     expect(wheelEvent.defaultPrevented).toBe(true);
-    expect(viewport.scrollTop).toBe(120);
+    expect(viewport.scrollTop).toBeGreaterThan(18);
+    expect(viewport.scrollTop).toBeLessThan(24);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(180);
     });
 
-    expect(viewport.scrollTop).toBeGreaterThan(180);
+    expect(viewport.scrollTop).toBeGreaterThan(45);
+  });
+
+  it('keeps Windows pixel-wheel scrolling native even when inertial scrolling is enabled', () => {
+    setNavigatorPlatform('Win32');
+    const { container } = render(
+      <OverlayScrollArea scrollbarStyle="explorer-file-list" inertialScroll>
+        <div style={{ height: 4000 }}>content</div>
+      </OverlayScrollArea>,
+    );
+
+    const viewport = getViewport(container, 'vertical');
+    makeScrollable(viewport, {
+      clientHeight: 200,
+      scrollHeight: 4000,
+    });
+
+    const wheelEvent = new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 24,
+    });
+    viewport.dispatchEvent(wheelEvent);
+
+    expect(wheelEvent.defaultPrevented).toBe(false);
+    expect(viewport.scrollTop).toBe(0);
   });
 
   it('disables inertial scrolling when reduced motion is requested', () => {

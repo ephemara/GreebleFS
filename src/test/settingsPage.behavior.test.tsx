@@ -864,6 +864,58 @@ describe('SettingsPage behavior', () => {
       .toHaveAttribute('data-interaction-motion-surface', 'actionButton');
   }, 30000);
 
+  it('shows a non-blocking Tailscale DNS note when Windows denies local DNS changes', async () => {
+    const invokeMock = vi.mocked(invoke);
+    const tailscaleStatus = {
+      cliAvailable: true,
+      version: '1.96.3',
+      backendState: 'Running',
+      connected: true,
+      running: true,
+      authUrl: null,
+      hostname: 'TAYK47',
+      dnsName: 'tayk47.tail04e752.ts.net',
+      tailscaleIpv4: '100.79.119.3',
+      tailscaleIpv6: 'fd7a:115c:a1e0::7901:7703',
+      tailnetName: 'taylorofkipp@gmail.com',
+      tailnetDomain: 'tail04e752.ts.net',
+      magicDnsEnabled: true,
+      certDomains: ['tayk47.tail04e752.ts.net'],
+      certHttpsReady: true,
+      peerCount: 7,
+      onlinePeerCount: 1,
+      userLoginName: 'taylorofkipp@gmail.com',
+      userDisplayName: 'Taylor K',
+      healthMessages: [],
+      diagnosticMessage:
+        'Windows blocked Tailscale from overriding local DNS, but mobile share can still use the active tailnet route at tayk47.tail04e752.ts.net.',
+    };
+
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'tailscale_get_status') {
+        return tailscaleStatus;
+      }
+
+      return null;
+    });
+
+    useSettingsStore.getState().setActiveSection('mobile');
+    useMobileShareStore.setState({
+      phase: 'idle',
+      session: null,
+      lastNotice: null,
+      lastError: null,
+      tailscaleStatus,
+    });
+
+    renderSettingsPage();
+
+    expect(await screen.findByText(/Windows blocked Tailscale from overriding local DNS/i))
+      .toBeInTheDocument();
+    expect(screen.getByText(/Health:/i)).toHaveTextContent('Health: no active warnings');
+    expect(screen.queryByText(/Access is denied\./i)).not.toBeInTheDocument();
+  });
+
   it('updates explorer click mode, restores folder rules, and seeds bookmarks without duplicates', async () => {
     const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);
