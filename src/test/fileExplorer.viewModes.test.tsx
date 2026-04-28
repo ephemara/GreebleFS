@@ -1118,6 +1118,19 @@ function getExplorerContentViewport() {
   return viewport;
 }
 
+function getExplorerContentViewportCssNumber(name: string): number {
+  const value = getExplorerContentViewport().style.getPropertyValue(name).trim();
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Explorer content viewport CSS variable ${name} was not numeric: ${value}`);
+  }
+  return parsed;
+}
+
+function getExplorerContentViewportGridIconBand(): string | undefined {
+  return getExplorerContentViewport().dataset.overlayExplorerLiveGridIconBand;
+}
+
 function queryExplorerActionsPane() {
   return document.querySelector(
     '[data-overlay-explorer-plane="actions"]',
@@ -5608,6 +5621,47 @@ const value = 1;
     );
   });
 
+  it("keeps grid icon stages pinned while ctrl-wheel live-zooms the layout", async () => {
+    vi.useRealTimers();
+    useSettingsStore
+      .getState()
+      .updateExplorer({ viewMode: "icons-m", gridZoom: 0.34 });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const initialStageSize = getExplorerContentViewportCssNumber(
+      "--overlay-explorer-grid-icon-stage-size",
+    );
+
+    dispatchLayoutWheel("alpha", -120);
+    dispatchLayoutWheel("alpha", -120);
+    dispatchLayoutWheel("alpha", -120);
+    dispatchLayoutWheel("alpha", -120);
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 90));
+    });
+
+    expect(getExplorerContentViewportGridIconBand()).toBe("icons-m");
+    expect(
+      getExplorerContentViewportCssNumber(
+        "--overlay-explorer-grid-icon-stage-size",
+      ),
+    ).toBe(initialStageSize);
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+        "icons-l",
+      );
+    });
+    expect(getExplorerContentViewportGridIconBand()).toBe("icons-l");
+    expect(
+      getExplorerContentViewportCssNumber(
+        "--overlay-explorer-grid-icon-stage-size",
+      ),
+    ).toBeGreaterThan(initialStageSize);
+  });
+
   it("settles one explorer-settings commit for a ctrl-wheel gesture burst", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     useSettingsStore
@@ -5765,6 +5819,47 @@ const value = 1;
               `${REPO_ROOT}\\preview.png`,
         ),
     ).toBe(false);
+  });
+
+  it("keeps oversize icon stages clamped while oversize layout keeps growing", async () => {
+    vi.useRealTimers();
+    useSettingsStore
+      .getState()
+      .updateExplorer({ viewMode: "icons-xl", gridZoom: 1 });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const initialStageSize = getExplorerContentViewportCssNumber(
+      "--overlay-explorer-grid-icon-stage-size",
+    );
+
+    dispatchLayoutWheel("alpha", -120);
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 90));
+    });
+
+    expect(getExplorerContentViewportGridIconBand()).toBe("icons-xl");
+    expect(
+      getExplorerContentViewportCssNumber(
+        "--overlay-explorer-grid-icon-stage-size",
+      ),
+    ).toBe(initialStageSize);
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+        "icons-xl",
+      );
+      expect(
+        useSettingsStore.getState().settings.explorer.gridZoom,
+      ).toBeGreaterThan(1);
+    });
+    expect(getExplorerContentViewportGridIconBand()).toBe("icons-xl");
+    expect(
+      getExplorerContentViewportCssNumber(
+        "--overlay-explorer-grid-icon-stage-size",
+      ),
+    ).toBe(initialStageSize);
   });
 
   it("uses the dedicated explorer viewport class for visible file-list scrollbars", async () => {

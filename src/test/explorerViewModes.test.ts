@@ -4,6 +4,8 @@ import {
   commitExplorerLayoutZoomState,
   createExplorerLayoutZoomState,
   getAdjacentExplorerGridMode,
+  getExplorerGridIconMetricsForMode,
+  getExplorerGridLayoutMetricsForZoom,
   getExplorerGridMetricsForZoom,
   getNearestExplorerGridMode,
   getExplorerViewModeDefinition,
@@ -37,19 +39,24 @@ describe('explorerViewModes', () => {
     expect(getNearestExplorerGridMode(0.1)).toBe('icons-s');
     expect(getNearestExplorerGridMode(0.5)).toBe('icons-m');
 
+    const layoutMetrics = getExplorerGridLayoutMetricsForZoom(0.25);
     const metrics = getExplorerGridMetricsForZoom(0.25);
-    expect(metrics.iconSize).toBeGreaterThan(28);
-    expect(metrics.iconSize).toBeLessThan(42);
-    expect(metrics.minWidth).toBeGreaterThan(94);
-    expect(metrics.minWidth).toBeLessThan(122);
+    expect(layoutMetrics.minWidth).toBeGreaterThan(94);
+    expect(layoutMetrics.minWidth).toBeLessThan(122);
+    expect(metrics.iconSize).toBe(
+      getExplorerGridIconMetricsForMode('icons-m').iconSize,
+    );
   });
 
   it('extends the live zoom continuum past icons-xl for oversized browsing without changing the durable anchors', () => {
     const oversizedMetrics = getExplorerGridMetricsForZoom(2.8);
+    const oversizedLayoutMetrics = getExplorerGridLayoutMetricsForZoom(2.8);
 
-    expect(oversizedMetrics.minWidth).toBeGreaterThan(560);
-    expect(oversizedMetrics.iconStageSize).toBeGreaterThan(300);
-    expect(oversizedMetrics.nameLines).toBe(4);
+    expect(oversizedLayoutMetrics.minWidth).toBeGreaterThan(560);
+    expect(oversizedMetrics.iconStageSize).toBe(
+      getExplorerGridIconMetricsForMode('icons-xl').iconStageSize,
+    );
+    expect(oversizedLayoutMetrics.nameLines).toBe(4);
     expect(commitExplorerLayoutZoomState({
       family: 'grid',
       layoutZoom: 2.8,
@@ -86,20 +93,22 @@ describe('explorerViewModes', () => {
       storedGridZoom: 0.34,
     });
     expect(createExplorerLayoutZoomState('details', 0.67)).toMatchObject({
-      family: 'list',
+      family: 'table',
       storedGridZoom: 0.67,
     });
   });
 
-  it('crosses from the grid continuum into list mode at the compact boundary', () => {
+  it('crosses from the compact grid boundary into the table family before list mode', () => {
     const compactGrid = createExplorerLayoutZoomState('icons-s', 0);
-    const listState = adjustExplorerLayoutZoomState(compactGrid, -0.12);
-    expect(listState.family).toBe('list');
-    expect(resolveExplorerLayoutZoomState(listState)).toMatchObject({
-      family: 'list',
-      viewMode: 'list',
+    const tableState = adjustExplorerLayoutZoomState(compactGrid, -0.12);
+    expect(tableState.family).toBe('table');
+    expect(resolveExplorerLayoutZoomState(tableState)).toMatchObject({
+      family: 'table',
+      viewMode: 'columns',
       zoomPercent: null,
     });
+    const listState = adjustExplorerLayoutZoomState(tableState, -0.12);
+    expect(listState.family).toBe('list');
     expect(commitExplorerLayoutZoomState(listState)).toEqual({ viewMode: 'list' });
   });
 

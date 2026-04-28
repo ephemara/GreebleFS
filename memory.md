@@ -1,3 +1,19 @@
+# 2026-04-28 - Ctrl-Wheel Explorer Zoom Now Keeps Icons Stepped While Layout Zooms Continuously
+
+- Explorer `Ctrl/Cmd + wheel` felt laggy because the live zoom continuum was resizing tile layout and icon/thumbnail stages together on every wheel tick.
+- Durable ownership after this pass:
+  - `src/config/explorerViewModes.ts` now splits continuous grid layout metrics from stepped icon metrics. Live `gridZoom` still drives tile width, spacing, padding, row height, and oversize layout growth, but icon metrics now resolve from named grid anchors only.
+  - `src/config/explorerTheme.ts` now has separate grid layout and grid icon theme-application helpers. `gridScale` / `spacingScale` stay on layout metrics, while `iconScale` stays on the stepped icon band.
+  - `src/components/FileExplorer.tsx` now resolves a live grid icon band from the committed explorer view mode. Grid-to-grid gestures keep the current committed icon band pinned until the idle commit lands, while table/list-to-grid transitions can adopt the newly entered grid band immediately.
+- Durable behavior after this pass:
+  - standard explorer zoom should feel like the layout is breathing while the icon art stays steady.
+  - oversize zoom above `icons-xl` intentionally keeps the `icons-xl` icon stage and fallback icon size; only layout metrics keep growing there.
+  - if future tests or debugging need the live icon-band signal, `FileExplorer.tsx` now stamps `data-overlay-explorer-live-grid-icon-band` on the content viewport and keeps the live grid icon-stage CSS variable on `--overlay-explorer-grid-icon-stage-size`.
+- Validation that passed for this pass:
+  - `node_modules\.bin\vitest.exe run src/test/fileExplorer.viewModes.test.tsx -t "scales the explorer grid with ctrl-wheel without changing app zoom and only commits after idle|keeps grid icon stages pinned while ctrl-wheel live-zooms the layout|settles one explorer-settings commit for a ctrl-wheel gesture burst|scales the explorer grid when ctrl-wheel happens on the file area shell|keeps a deep-grid viewport anchored instead of jumping back to the top while zooming|does not refetch an already-visible generated thumbnail during a zoom gesture|keeps oversize icon stages clamped while oversize layout keeps growing" --reporter=dot --testTimeout=30000`
+  - `node_modules\.bin\vitest.exe run src/test/explorerViewModes.test.ts --reporter=dot`
+  - touched-file TypeScript sweep returned no matching diagnostics for `FileExplorer.tsx`, `explorerViewModes.ts`, `explorerTheme.ts`, and the focused regression tests.
+
 # 2026-04-28 - Explorer Scroll Host Stops Hijacking Windows Precision Wheel Input
 
 - Swapping from Linux back to Windows exposed that Explorer's synthetic inertial scroll lane was force-handling high-resolution `DOM_DELTA_PIXEL` wheel input from WebView2, which made precision-device scrolling feel chunked and "stop motion" instead of native/fluid.
