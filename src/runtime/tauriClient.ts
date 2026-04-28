@@ -23,6 +23,11 @@ export interface WaylandDockHostStatus {
   windowLabel: string | null;
 }
 
+export interface ManagedContentRootsSnapshot {
+  bundledUsrRoot: string;
+  writableRoot: string;
+}
+
 export type WaylandDockAnchor = "top" | "bottom";
 
 const TELEMETRY_COMMANDS = new Set([
@@ -159,6 +164,8 @@ const baseCommands = {
       "global_search_query_under_path",
       { rootPath, query, options },
     ),
+  startupResolveManagedContentRoots: () =>
+    invoke<Result<ManagedContentRootsSnapshot, string>>("startup_resolve_managed_content_roots"),
 };
 
 export const commands = Object.fromEntries(

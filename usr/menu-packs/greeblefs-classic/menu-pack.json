@@ -1,0 +1,614 @@
+{
+  "version": 1,
+  "id": "greeblefs-default-explorer-menu",
+  "name": "GreebleFS Classic Explorer Menu",
+  "description": "Default submenu-aware classic explorer menu for file, background, multi-select, search, and preview contexts.",
+  "tags": [
+    "classic",
+    "submenu",
+    "explorer"
+  ],
+  "presentation": {
+    "renderer": "classic",
+    "fallbackRenderer": "classic",
+    "shapeLanguage": "rectangular",
+    "motionStyle": "minimal",
+    "materialStyle": "glass",
+    "density": "balanced",
+    "submenuBehavior": "sidecar",
+    "focusStyle": "line",
+    "backdropStyle": "none",
+    "capabilityRules": [
+      {
+        "when": "mouse",
+        "renderer": "classic"
+      },
+      {
+        "when": "touch",
+        "renderer": "sheet"
+      },
+      {
+        "when": "keyboard",
+        "renderer": "classic"
+      },
+      {
+        "when": "reduced-motion",
+        "renderer": "classic"
+      }
+    ]
+  },
+  "contexts": {
+    "entry": {
+      "renderer": "classic",
+      "entries": [
+        {
+          "id": "entry.open",
+          "kind": "command",
+          "commandId": "built-in.open",
+          "parentEntryId": null,
+          "order": 10,
+          "enabled": true,
+          "quickSlot": "primary",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.open-with",
+          "kind": "command",
+          "commandId": "built-in.open-with",
+          "parentEntryId": null,
+          "order": 20,
+          "enabled": true,
+          "quickSlot": "secondary",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.send-to-mobile",
+          "kind": "command",
+          "commandId": "built-in.send-to-mobile-download",
+          "parentEntryId": null,
+          "order": 30,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.reveal",
+          "kind": "command",
+          "commandId": "built-in.reveal",
+          "parentEntryId": null,
+          "order": 40,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.properties",
+          "kind": "command",
+          "commandId": "built-in.properties",
+          "parentEntryId": null,
+          "order": 50,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.separator.primary",
+          "kind": "separator",
+          "parentEntryId": null,
+          "order": 60,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.clipboard",
+          "kind": "submenu",
+          "title": "Clipboard",
+          "iconName": "Clipboard",
+          "parentEntryId": null,
+          "order": 70,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.clipboard.slot",
+          "kind": "group-slot",
+          "group": "clipboard",
+          "sourceFilter": "any",
+          "parentEntryId": "entry.clipboard",
+          "order": 10,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.organize",
+          "kind": "submenu",
+          "title": "Organize",
+          "iconName": "Edit3",
+          "parentEntryId": null,
+          "order": 80,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.organize.slot",
+          "kind": "group-slot",
+          "group": "organize",
+          "sourceFilter": "any",
+          "parentEntryId": "entry.organize",
+          "order": 10,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.library",
+          "kind": "submenu",
+          "title": "Library",
+          "iconName": "Star",
+          "parentEntryId": null,
+          "order": 90,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.library.slot",
+          "kind": "group-slot",
+          "group": "library",
+          "sourceFilter": "any",
+          "parentEntryId": "entry.library",
+          "order": 10,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.actions",
+          "kind": "submenu",
+          "title": "Actions",
+          "iconName": "Sparkles",
+          "parentEntryId": null,
+          "order": 95,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.actions.slot",
+          "kind": "group-slot",
+          "group": "action",
+          "sourceFilter": "action",
+          "parentEntryId": "entry.actions",
+          "order": 10,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.plugins",
+          "kind": "submenu",
+          "title": "Plugins",
+          "iconName": "Puzzle",
+          "parentEntryId": null,
+          "order": 100,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.plugins.slot",
+          "kind": "group-slot",
+          "group": "plugin",
+          "sourceFilter": "plugin",
+          "parentEntryId": "entry.plugins",
+          "order": 10,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.separator.danger",
+          "kind": "separator",
+          "parentEntryId": null,
+          "order": 110,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "entry.danger.slot",
+          "kind": "group-slot",
+          "group": "danger",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 120,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        }
+      ]
+    },
+    "background": {
+      "renderer": "classic",
+      "entries": [
+        {
+          "id": "background.create.slot",
+          "kind": "group-slot",
+          "group": "create",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 10,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "background.clipboard.slot",
+          "kind": "group-slot",
+          "group": "clipboard",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 20,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "background.separator.system",
+          "kind": "separator",
+          "parentEntryId": null,
+          "order": 30,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "background.open-with",
+          "kind": "command",
+          "commandId": "built-in.open-with",
+          "parentEntryId": null,
+          "order": 40,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "background.system.slot",
+          "kind": "group-slot",
+          "group": "system",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 50,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "background.actions.slot",
+          "kind": "group-slot",
+          "group": "action",
+          "sourceFilter": "action",
+          "parentEntryId": null,
+          "order": 55,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "background.plugins.slot",
+          "kind": "group-slot",
+          "group": "plugin",
+          "sourceFilter": "plugin",
+          "parentEntryId": null,
+          "order": 60,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        }
+      ]
+    },
+    "multi-select": {
+      "renderer": "classic",
+      "entries": [
+        {
+          "id": "multi.copy-path",
+          "kind": "command",
+          "commandId": "built-in.copy-path",
+          "parentEntryId": null,
+          "order": 10,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "multi.properties",
+          "kind": "command",
+          "commandId": "built-in.properties",
+          "parentEntryId": null,
+          "order": 20,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "multi.separator.primary",
+          "kind": "separator",
+          "parentEntryId": null,
+          "order": 30,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "multi.clipboard.slot",
+          "kind": "group-slot",
+          "group": "clipboard",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 40,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "multi.organize.slot",
+          "kind": "group-slot",
+          "group": "organize",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 50,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "multi.library.slot",
+          "kind": "group-slot",
+          "group": "library",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 60,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "multi.actions.slot",
+          "kind": "group-slot",
+          "group": "action",
+          "sourceFilter": "action",
+          "parentEntryId": null,
+          "order": 65,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "multi.plugins.slot",
+          "kind": "group-slot",
+          "group": "plugin",
+          "sourceFilter": "plugin",
+          "parentEntryId": null,
+          "order": 70,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "multi.danger.slot",
+          "kind": "group-slot",
+          "group": "danger",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 80,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        }
+      ]
+    },
+    "search-result": {
+      "renderer": "classic",
+      "entries": [
+        {
+          "id": "search.open",
+          "kind": "command",
+          "commandId": "built-in.open",
+          "parentEntryId": null,
+          "order": 10,
+          "enabled": true,
+          "quickSlot": "primary",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "search.open-with",
+          "kind": "command",
+          "commandId": "built-in.open-with",
+          "parentEntryId": null,
+          "order": 20,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "search.send-to-mobile",
+          "kind": "command",
+          "commandId": "built-in.send-to-mobile-download",
+          "parentEntryId": null,
+          "order": 30,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "search.system.slot",
+          "kind": "group-slot",
+          "group": "system",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 40,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "search.clipboard.slot",
+          "kind": "group-slot",
+          "group": "clipboard",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 50,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "search.organize.slot",
+          "kind": "group-slot",
+          "group": "organize",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 60,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "search.library.slot",
+          "kind": "group-slot",
+          "group": "library",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 70,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "search.actions.slot",
+          "kind": "group-slot",
+          "group": "action",
+          "sourceFilter": "action",
+          "parentEntryId": null,
+          "order": 75,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "search.plugins.slot",
+          "kind": "group-slot",
+          "group": "plugin",
+          "sourceFilter": "plugin",
+          "parentEntryId": null,
+          "order": 80,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "search.danger.slot",
+          "kind": "group-slot",
+          "group": "danger",
+          "sourceFilter": "any",
+          "parentEntryId": null,
+          "order": 90,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        }
+      ]
+    },
+    "preview-pane": {
+      "renderer": "classic",
+      "density": "compact",
+      "showDescriptions": false,
+      "entries": [
+        {
+          "id": "preview.open",
+          "kind": "command",
+          "commandId": "built-in.open",
+          "parentEntryId": null,
+          "order": 10,
+          "enabled": true,
+          "quickSlot": "primary",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "preview.open-with",
+          "kind": "command",
+          "commandId": "built-in.open-with",
+          "parentEntryId": null,
+          "order": 20,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "preview.separator.preview",
+          "kind": "separator",
+          "parentEntryId": null,
+          "order": 30,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "preview.preview.slot",
+          "kind": "group-slot",
+          "group": "preview",
+          "sourceFilter": "preview",
+          "parentEntryId": null,
+          "order": 40,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "preview.separator.file",
+          "kind": "separator",
+          "parentEntryId": null,
+          "order": 50,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "preview.reveal",
+          "kind": "command",
+          "commandId": "built-in.reveal",
+          "parentEntryId": null,
+          "order": 60,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "preview.copy-path",
+          "kind": "command",
+          "commandId": "built-in.copy-path",
+          "parentEntryId": null,
+          "order": 70,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "preview.actions.slot",
+          "kind": "group-slot",
+          "group": "action",
+          "sourceFilter": "action",
+          "parentEntryId": null,
+          "order": 80,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        }
+      ]
+    }
+  }
+}

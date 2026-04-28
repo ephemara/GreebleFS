@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "id": "windows-95-classic",
+  "name": "Windows 95 Classic",
+  "description": "Blocky desktop chrome with gray shells, teal desktop energy, and old-school program-manager vibes.",
+  "author": "Codex",
+  "tags": ["windows", "retro", "desktop", "classic"],
+  "extends": "github-dark",
+  "fonts": {
+    "ui": "\"IBM Plex Sans\", \"Segoe UI\", sans-serif",
+    "mono": "\"IBM Plex Mono\", \"Cascadia Code\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "system",
+    "density": "comfortable",
+    "iconStyle": "system",
+    "motionStyle": "instant",
+    "cornerRadius": 4,
+    "panelSpacing": 6
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#0b7f7a",
+      "appBackgroundAlt": "#0f8c86",
+      "shellBackground": "rgba(196, 198, 199, 0.92)",
+      "shellBackgroundSolid": "rgba(196, 198, 199, 0.98)",
+      "topBarBackground": "#c3c7cb",
+      "topBarMenuBackground": "#d9dcdf",
+      "sidebarBackground": "#c3c7cb",
+      "panelBackground": "#d4d0c8",
+      "panelAltBackground": "#ece9d8",
+      "cardBackground": "#e6e4dc",
+      "cardHoverBackground": "#f3f0e8",
+      "contextMenuBackground": "#ece9d8",
+      "inputBackground": "#ffffff",
+      "terminalBackground": "#071f66",
+      "selectionBackground": "rgba(8, 36, 112, 0.2)",
+      "textPrimary": "#111111",
+      "textSecondary": "#1d1d1d",
+      "textMuted": "rgba(17, 17, 17, 0.7)",
+      "textDim": "rgba(17, 17, 17, 0.42)",
+      "textInverse": "#ffffff",
+      "border": "rgba(72, 72, 72, 0.42)",
+      "borderStrong": "rgba(32, 32, 32, 0.7)",
+      "accent": "#083d91",
+      "accentSoft": "rgba(8, 61, 145, 0.14)",
+      "accentContrast": "#ffffff"
+    },
+    "effects": {
+      "backgroundImage": "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0) 35%)",
+      "shadow": "0 10px 28px rgba(0, 0, 0, 0.22)",
+      "overlayShadow": "0 -3px 0 0 #ffffff, 0 -16px 40px rgba(0, 0, 0, 0.42)"
+    },
+    "workbench": {
+      "brandLabel": "Program Manager",
+      "topBarStyle": "solid",
+      "commandPaletteStyle": "solid",
+      "terminalStyle": "solid",
+      "settingsStyle": "solid",
+      "tabStyle": "segment",
+      "metrics": {
+        "chromeHeight": 34,
+        "controlRadius": 3,
+        "panelRadius": 3,
+        "shellInset": 6,
+        "pagePadding": 10,
+        "panelGap": 6
+      }
+    },
+    "explorer": {
+      "railBrandLabel": "Explorer",
+      "toolbarStyle": "solid",
+      "breadcrumbStyle": "plain",
+      "selectionStyle": "outline",
+      "hoverStyle": "fill",
+      "previewStyle": "attached",
+      "statusBarStyle": "solid",
+      "preferredViewMode": "details",
+      "metrics": {
+        "railWidth": 240,
+        "previewWidth": 420,
+        "panelRadius": 3,
+        "rowHeightScale": 0.96,
+        "iconScale": 0.94
+      }
+    }
+  },
+  "layoutPrimitives": [
+    {
+      "id": "win95-desktop",
+      "name": "Win95 Desktop",
+      "kind": "freeform",
+      "props": {
+        "bezel": true
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "win95-tree",
+      "name": "Win95 Tree",
+      "kind": "hierarchy",
+      "axis": "vertical",
+      "props": {
+        "menuBar": true
+      }
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "win95-render",
+      "label": "Windows 95 Desktop",
+      "description": "Desktop-window-manager chrome for retro Windows shells.",
+      "kind": "desktop-window-manager",
+      "entryModule": "renderers/windows-95.tsx",
+      "supportsLiveSwap": true
+    }
+  ],
+  "defaultLayoutPrimitiveId": "win95-desktop",
+  "defaultNavigationPatternId": "win95-tree",
+  "defaultRenderStyleId": "win95-render",
+  "visuals": [
+    {
+      "id": "win95-bevel-shine",
+      "backgroundImage": "linear-gradient(180deg, rgba(255,255,255,0.18), transparent 30%)",
+      "opacity": 0.9,
+      "blendMode": "screen"
+    }
+  ]
+}

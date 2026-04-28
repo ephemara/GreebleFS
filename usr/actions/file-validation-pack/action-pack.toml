@@ -1,0 +1,6 @@
+version = 1
+id = "file-validation-actions"
+name = "File Validation Pack"
+description = "Edge case testing actions for file operations - validates large files, special characters, permissions, and symlinks."
+author = "Codex"
+tags = ["validation", "edge-cases", "diagnostics"]

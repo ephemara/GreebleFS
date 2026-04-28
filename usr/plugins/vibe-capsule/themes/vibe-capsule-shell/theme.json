@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "id": "vibe-capsule-shell",
+  "name": "Vibe Capsule Shell",
+  "description": "An opaline dream-shell with cinematic atmosphere, soft coral accents, and deep midnight surfaces.",
+  "extends": "operator",
+  "theme": {
+    "palette": {
+      "appBackground": "#060912",
+      "appBackgroundAlt": "#0d1322",
+      "panelBackground": "rgba(9, 14, 26, 0.88)",
+      "panelAltBackground": "#11192c",
+      "cardBackground": "rgba(18, 26, 44, 0.9)",
+      "cardHoverBackground": "#182440",
+      "textPrimary": "#f4ecff",
+      "textSecondary": "#e1d5f7",
+      "textMuted": "rgba(225, 213, 247, 0.62)",
+      "border": "rgba(255, 191, 153, 0.18)",
+      "borderStrong": "rgba(121, 218, 255, 0.28)",
+      "accent": "#ffbf99",
+      "accentSoft": "rgba(255, 191, 153, 0.16)",
+      "accentContrast": "#101523",
+      "success": "#97f3c8",
+      "warning": "#ffd479",
+      "danger": "#ff97b3",
+      "info": "#79daff"
+    },
+    "fonts": {
+      "ui": "\"Space Grotesk\", Inter, sans-serif",
+      "mono": "\"JetBrains Mono\", \"Cascadia Code\", monospace"
+    }
+  },
+  "visuals": [
+    {
+      "id": "vibe-capsule-atmosphere",
+      "backgroundImage": "radial-gradient(circle at 18% 18%, rgba(255,191,153,0.22), transparent 26%), radial-gradient(circle at 78% 16%, rgba(121,218,255,0.2), transparent 24%), radial-gradient(circle at 52% 78%, rgba(208,157,255,0.16), transparent 22%)",
+      "opacity": 0.95,
+      "blendMode": "screen"
+    }
+  ]
+}

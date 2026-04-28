@@ -38,6 +38,7 @@ pub mod tailscale_commands;
 pub mod telemetry;
 pub mod terminal;
 pub mod thumbnail_commands;
+pub mod usr;
 #[cfg(target_os = "windows")]
 pub mod url_drop;
 pub mod video_commands;
@@ -205,6 +206,9 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(move |app| {
             builder.mount_events(app);
+            if let Err(error) = usr::bootstrap_usr_content(&app.handle()) {
+                eprintln!("GreebleFS: failed to bootstrap bundled usr content: {error}");
+            }
             initialize_fs_command_events(app.handle().clone());
             initialize_explorer_identity_store(app.handle())?;
             let gpu_runtime = gpu_runtime::GpuRuntimeManager::new(app.handle().clone());

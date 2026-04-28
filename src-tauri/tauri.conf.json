@@ -43,6 +43,7 @@
     ],
     "resources": {
       "../dist-mobile/": "mobile-dist/",
+      "../usr/": "usr/",
       "icons/tray.ico": "icons/tray.ico",
       "icons/icon.ico": "icons/icon.ico"
     }

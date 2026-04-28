@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "plugins",
+      "relativeDirectory": "plugins",
+      "envVarSuffix": "PLUGINS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "themes",
+      "relativeDirectory": "themes",
+      "envVarSuffix": "THEMES",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "appearancePacks",
+      "relativeDirectory": "appearance-packs",
+      "envVarSuffix": "APPEARANCE_PACKS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "topBars",
+      "relativeDirectory": "top-bars",
+      "envVarSuffix": "TOP_BARS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "explorerLayouts",
+      "relativeDirectory": "explorer-layouts",
+      "envVarSuffix": "EXPLORER_LAYOUTS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "homePacks",
+      "relativeDirectory": "home-packs",
+      "envVarSuffix": "HOME_PACKS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "menuPacks",
+      "relativeDirectory": "menu-packs",
+      "envVarSuffix": "MENU_PACKS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "actions",
+      "relativeDirectory": "actions",
+      "envVarSuffix": "ACTIONS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "runtimes",
+      "relativeDirectory": "runtimes",
+      "envVarSuffix": "RUNTIMES",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "iconThemes",
+      "relativeDirectory": "icon-themes",
+      "envVarSuffix": "ICON_THEMES",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "interactionMotionPacks",
+      "relativeDirectory": "interaction-motion",
+      "envVarSuffix": "INTERACTION_MOTION",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "soundPacks",
+      "relativeDirectory": "sound-packs",
+      "envVarSuffix": "SOUND_PACKS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "shaders",
+      "relativeDirectory": "shaders",
+      "envVarSuffix": "SHADERS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "animations",
+      "relativeDirectory": "animations",
+      "envVarSuffix": "ANIMATIONS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "wallpapers",
+      "relativeDirectory": "wallpapers",
+      "envVarSuffix": "WALLPAPERS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "shellRenderers",
+      "relativeDirectory": "shell-renderers",
+      "envVarSuffix": "SHELL_RENDERERS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "themeRecipes",
+      "relativeDirectory": "theme-recipes",
+      "envVarSuffix": "THEME_RECIPES",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "themeEngines",
+      "relativeDirectory": "theme-engines",
+      "envVarSuffix": "THEME_ENGINES",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "domain",
+      "relativeDirectory": "domain",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    }
+  ]
+}

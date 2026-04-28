@@ -1,0 +1,6 @@
+version = 1
+id = "batch-operations-pack"
+name = "Batch Operations Pack"
+description = "Edge case testing for batch file operations including dry-run rename, extension grouping, duplicate detection, and stress testing."
+author = "Codex"
+tags = ["batch", "operations", "edge-cases", "testing"]

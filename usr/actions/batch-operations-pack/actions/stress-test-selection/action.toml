@@ -1,0 +1,20 @@
+version = 1
+id = "stress-test-selection"
+name = "Stress Test Selection"
+description = "Tests handling of very large selections by reporting statistics. Validates performance."
+icon = "Activity"
+tags = ["batch", "stress-test", "performance", "edge-cases"]
+contexts = ["multi-select"]
+appliesTo = "any"
+
+[selection]
+minCount = 10
+allowFiles = true
+allowDirectories = true
+
+[execution]
+runner = "interpreter"
+entry = "python/stress_test_selection.py"
+
+[presentation]
+outputTarget = "task-center"

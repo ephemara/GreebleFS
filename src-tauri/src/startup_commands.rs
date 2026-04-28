@@ -6,6 +6,7 @@ use crate::linux_graphics::{
     set_linux_nvidia_webkit_workaround_mode, LinuxDisplayBackendPreference,
     LinuxDisplayBackendStatus, LinuxNvidiaWebkitWorkaroundMode,
 };
+use crate::usr::ManagedContentRoots;
 
 #[tauri::command]
 #[specta::specta]
@@ -26,6 +27,21 @@ pub async fn startup_set_launch_at_startup(app: AppHandle, enabled: bool) -> Res
     }
 
     manager.is_enabled().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn startup_resolve_managed_content_roots(
+    app: AppHandle,
+) -> Result<ManagedContentRoots, String> {
+    Ok(ManagedContentRoots {
+        bundled_usr_root: crate::usr::resolve_bundled_usr_root(&app)?
+            .to_string_lossy()
+            .into_owned(),
+        writable_root: crate::usr::resolve_managed_content_root(&app)?
+            .to_string_lossy()
+            .into_owned(),
+    })
 }
 
 #[tauri::command]

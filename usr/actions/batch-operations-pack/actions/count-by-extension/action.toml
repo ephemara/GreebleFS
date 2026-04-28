@@ -1,0 +1,19 @@
+version = 1
+id = "count-by-extension"
+name = "Count by Extension"
+description = "Groups selected files by extension and displays counts. Analyze file type distribution."
+icon = "FileType"
+tags = ["batch", "analysis", "extensions", "operations"]
+contexts = ["multi-select"]
+appliesTo = "any"
+
+[selection]
+allowFiles = true
+allowDirectories = true
+
+[execution]
+runner = "interpreter"
+entry = "python/count_by_extension.py"
+
+[presentation]
+outputTarget = "task-center"

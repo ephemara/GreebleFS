@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "id": "wii-channel-home",
+  "name": "Wii Channel Home",
+  "description": "Bright channel-grid shell with rounded tiles, airy spacing, and soft glass panels aimed at lightweight browsing.",
+  "author": "OverlayTerm Labs",
+  "tags": ["wii", "channels", "bright", "home"],
+  "extends": "aqua-light",
+  "theme": {
+    "workbench": {
+      "preset": "channel-grid",
+      "brandLabel": "Channels",
+      "topBarStyle": "minimal",
+      "commandPaletteStyle": "floating",
+      "settingsStyle": "floating",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 40,
+        "panelRadius": 30,
+        "controlRadius": 18,
+        "shellInset": 10,
+        "commandPaletteWidth": 780
+      },
+      "cssVars": {
+        "--overlay-workbench-brand": "channels"
+      }
+    },
+    "palette": {
+      "accent": "#35b9ff",
+      "accentSoft": "rgba(53, 185, 255, 0.14)",
+      "panelBackground": "rgba(250, 252, 255, 0.92)",
+      "sidebarBackground": "rgba(243, 248, 255, 0.9)",
+      "cardBackground": "rgba(255, 255, 255, 0.9)",
+      "cardHoverBackground": "rgba(244, 250, 255, 0.96)",
+      "border": "rgba(53, 124, 174, 0.14)",
+      "borderStrong": "rgba(53, 124, 174, 0.24)"
+    },
+    "explorer": {
+      "preset": "channel-grid",
+      "railBrandLabel": "Channels",
+      "toolbarStyle": "minimal",
+      "breadcrumbStyle": "segmented",
+      "selectionStyle": "outline",
+      "hoverStyle": "lift",
+      "previewStyle": "floating",
+      "statusBarStyle": "hidden",
+      "preferredViewMode": "icons-xl",
+      "metrics": {
+        "railWidth": 252,
+        "previewWidth": 430,
+        "gridScale": 1.3,
+        "iconScale": 1.3,
+        "panelRadius": 30
+      },
+      "cssVars": {
+        "--overlay-explorer-brand": "channels"
+      }
+    }
+  },
+  "themeRenderer": {
+    "entryModule": "renderers/wii-channel-home.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "channel-launcher",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
+  "visuals": [
+    {
+      "id": "channel-bloom",
+      "backgroundImage": "radial-gradient(circle at 18% 16%, rgba(53,185,255,0.12), transparent 28%), radial-gradient(circle at 82% 10%, rgba(255,255,255,0.5), transparent 18%)",
+      "opacity": 1,
+      "blendMode": "screen"
+    }
+  ]
+}

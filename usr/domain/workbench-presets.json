@@ -1,0 +1,32 @@
+[
+  {
+    "description": "Cross-axis shell",
+    "id": "xmb-media-deck",
+    "inputProfile": {
+      "density": "immersive",
+      "directionalNavigation": true,
+      "mode": "controller",
+      "pointerGestures": false
+    },
+    "label": "XMB Media Deck",
+    "navigationModel": "cross-axis",
+    "panelBindings": [
+      {
+        "defaultOpen": true,
+        "order": 0,
+        "panelId": "terminal",
+        "preferredSize": null,
+        "region": "primary"
+      }
+    ],
+    "preferredThemeIds": [
+      "operator"
+    ],
+    "shellBlueprint": "xmb-cross-media",
+    "windowProfile": {
+      "anchor": "center",
+      "aspectRatio": "16:9",
+      "mode": "fullscreen"
+    }
+  }
+]

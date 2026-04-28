@@ -1,0 +1,223 @@
+{
+  "version": 1,
+  "id": "greeblefs-default-shell-sounds",
+  "name": "GreebleFS Default",
+  "description": "A tight synth-forward shell pack with soft explorer ticks and warm success cues.",
+  "tags": [
+    "built-in",
+    "synth",
+    "shell"
+  ],
+  "masterVolume": 0.92,
+  "sounds": {
+    "shell-button-press": {
+      "kind": "synth",
+      "volume": 0.68,
+      "cooldownMs": 28,
+      "tones": [
+        {
+          "frequency": 720,
+          "durationMs": 22,
+          "gain": 0.26,
+          "waveform": "square"
+        },
+        {
+          "frequency": 1180,
+          "durationMs": 52,
+          "offsetMs": 8,
+          "gain": 0.12,
+          "waveform": "triangle"
+        }
+      ],
+      "noiseLayers": [
+        {
+          "durationMs": 10,
+          "gain": 0.055,
+          "highpassHz": 2400
+        }
+      ]
+    },
+    "explorer-selection-step": {
+      "kind": "synth",
+      "volume": 0.52,
+      "cooldownMs": 30,
+      "tones": [
+        {
+          "frequency": 460,
+          "durationMs": 18,
+          "gain": 0.12,
+          "waveform": "triangle"
+        },
+        {
+          "frequency": 700,
+          "durationMs": 36,
+          "offsetMs": 4,
+          "gain": 0.08,
+          "waveform": "sine"
+        }
+      ]
+    },
+    "explorer-open-entry": {
+      "kind": "synth",
+      "volume": 0.64,
+      "cooldownMs": 48,
+      "tones": [
+        {
+          "frequency": 520,
+          "durationMs": 24,
+          "gain": 0.18,
+          "waveform": "triangle"
+        },
+        {
+          "frequency": 780,
+          "durationMs": 68,
+          "offsetMs": 10,
+          "gain": 0.15,
+          "waveform": "sine"
+        }
+      ]
+    },
+    "task-start": {
+      "kind": "synth",
+      "volume": 0.58,
+      "cooldownMs": 40,
+      "tones": [
+        {
+          "frequency": 440,
+          "durationMs": 16,
+          "gain": 0.16,
+          "waveform": "square"
+        },
+        {
+          "frequency": 660,
+          "durationMs": 26,
+          "offsetMs": 14,
+          "gain": 0.11,
+          "waveform": "triangle"
+        }
+      ]
+    },
+    "task-success": {
+      "kind": "synth",
+      "volume": 0.74,
+      "cooldownMs": 80,
+      "tones": [
+        {
+          "frequency": 523.25,
+          "durationMs": 36,
+          "gain": 0.16,
+          "waveform": "triangle"
+        },
+        {
+          "frequency": 659.25,
+          "durationMs": 48,
+          "offsetMs": 18,
+          "gain": 0.14,
+          "waveform": "triangle"
+        },
+        {
+          "frequency": 783.99,
+          "durationMs": 96,
+          "offsetMs": 44,
+          "gain": 0.18,
+          "waveform": "sine"
+        }
+      ]
+    },
+    "task-failure": {
+      "kind": "synth",
+      "volume": 0.72,
+      "cooldownMs": 90,
+      "tones": [
+        {
+          "frequency": 330,
+          "durationMs": 42,
+          "gain": 0.17,
+          "waveform": "sawtooth"
+        },
+        {
+          "frequency": 220,
+          "durationMs": 120,
+          "offsetMs": 22,
+          "gain": 0.18,
+          "waveform": "triangle"
+        }
+      ],
+      "noiseLayers": [
+        {
+          "durationMs": 22,
+          "offsetMs": 18,
+          "gain": 0.05,
+          "lowpassHz": 1800
+        }
+      ]
+    },
+    "notification-info": {
+      "kind": "synth",
+      "volume": 0.62,
+      "cooldownMs": 60,
+      "tones": [
+        {
+          "frequency": 600,
+          "durationMs": 24,
+          "gain": 0.14,
+          "waveform": "triangle"
+        },
+        {
+          "frequency": 900,
+          "durationMs": 64,
+          "offsetMs": 8,
+          "gain": 0.12,
+          "waveform": "sine"
+        }
+      ]
+    },
+    "notification-success": {
+      "kind": "synth",
+      "volume": 0.7,
+      "cooldownMs": 70,
+      "tones": [
+        {
+          "frequency": 660,
+          "durationMs": 24,
+          "gain": 0.13,
+          "waveform": "triangle"
+        },
+        {
+          "frequency": 990,
+          "durationMs": 60,
+          "offsetMs": 14,
+          "gain": 0.14,
+          "waveform": "sine"
+        },
+        {
+          "frequency": 1320,
+          "durationMs": 92,
+          "offsetMs": 34,
+          "gain": 0.1,
+          "waveform": "sine"
+        }
+      ]
+    },
+    "notification-error": {
+      "kind": "synth",
+      "volume": 0.7,
+      "cooldownMs": 90,
+      "tones": [
+        {
+          "frequency": 360,
+          "durationMs": 26,
+          "gain": 0.16,
+          "waveform": "square"
+        },
+        {
+          "frequency": 288,
+          "durationMs": 92,
+          "offsetMs": 18,
+          "gain": 0.16,
+          "waveform": "triangle"
+        }
+      ]
+    }
+  }
+}

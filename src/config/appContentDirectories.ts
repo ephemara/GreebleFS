@@ -2,221 +2,205 @@ import { isTauri } from '@tauri-apps/api/core';
 import { appLocalDataDir, homeDir, join } from '@tauri-apps/api/path';
 import { exists, mkdir, rename } from '@tauri-apps/plugin-fs';
 
+import {
+  getGreebleUsrManifestEntry,
+  greebleUsrManagedContentEntries,
+  LEGACY_USR_SOURCE_ROOT_ENV_VAR,
+  PRIMARY_USR_SOURCE_ROOT_ENV_VAR,
+} from './usrManifest';
+import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+
 export interface ManagedContentDirectoryDefinition {
   id: string;
   label: string;
   description: string;
   keywords: readonly string[];
-  releaseDirectoryName: string;
+  relativeDirectoryName: string;
   legacyRelativeDirectoryName: string;
-  envVarSuffix: string;
+  envVarSuffix?: string;
+  order: number;
+  shippingMode: 'shipped' | 'runtime-state';
+}
+
+interface ManagedContentDirectoryMetadata {
+  label: string;
+  description: string;
+  keywords: readonly string[];
   order: number;
 }
 
-export const managedContentDirectoryCatalog = [
-  {
-    id: 'plugins',
+interface ManagedContentRootsSnapshot {
+  bundledUsrRoot: string;
+  writableRoot: string;
+}
+
+const shippedManagedDirectoryMetadata = {
+  plugins: {
     label: 'Plugins',
     description: 'Drop TSX panels and runtime modules here.',
     keywords: ['plugin', 'panel', 'runtime module', 'command'],
-    releaseDirectoryName: 'plugins',
-    legacyRelativeDirectoryName: 'plugins',
-    envVarSuffix: 'PLUGINS',
     order: 10,
   },
-  {
-    id: 'themes',
+  themes: {
     label: 'Themes',
     description: 'Drop native theme bundles plus VS Code color-theme extension folders or .vsix archives here.',
     keywords: ['theme', 'theme bundle', 'appearance', 'catalog'],
-    releaseDirectoryName: 'themes',
-    legacyRelativeDirectoryName: 'themes',
-    envVarSuffix: 'THEMES',
     order: 20,
   },
-  {
-    id: 'appearancePacks',
+  appearancePacks: {
     label: 'Appearance Packs',
     description: 'Author reusable color, typography, and chrome look packs here.',
     keywords: ['appearance', 'theme look', 'palette', 'visual identity'],
-    releaseDirectoryName: 'appearance-packs',
-    legacyRelativeDirectoryName: 'appearance-packs',
-    envVarSuffix: 'APPEARANCE_PACKS',
     order: 22,
   },
-  {
-    id: 'topBars',
+  topBars: {
     label: 'Top Bars',
     description: 'Author standalone shell chrome workflows here.',
     keywords: ['top bar', 'chrome', 'header', 'shell chrome'],
-    releaseDirectoryName: 'top-bars',
-    legacyRelativeDirectoryName: 'top-bars',
-    envVarSuffix: 'TOP_BARS',
     order: 25,
   },
-  {
-    id: 'explorerLayouts',
+  explorerLayouts: {
     label: 'Explorer Layouts',
     description: 'Author file-backed explorer layouts, chrome snapshots, and pane presets here.',
     keywords: ['explorer layout', 'layout preset', 'chrome snapshot', 'workspace header'],
-    releaseDirectoryName: 'explorer-layouts',
-    legacyRelativeDirectoryName: 'explorer-layouts',
-    envVarSuffix: 'EXPLORER_LAYOUTS',
     order: 26,
   },
-  {
-    id: 'homePacks',
+  homePacks: {
     label: 'Home Packs',
     description: 'Author explorer home dashboards, presets, and runtime modules here.',
     keywords: ['home', 'home pack', 'dashboard', 'start page'],
-    releaseDirectoryName: 'home-packs',
-    legacyRelativeDirectoryName: 'home-packs',
-    envVarSuffix: 'HOME_PACKS',
     order: 28,
   },
-  {
-    id: 'menuPacks',
+  menuPacks: {
     label: 'Menu Packs',
     description: 'Author explorer menu layouts, submenus, and presentation-ready packs here.',
     keywords: ['menu', 'context menu', 'submenu', 'explorer menu'],
-    releaseDirectoryName: 'menu-packs',
-    legacyRelativeDirectoryName: 'menu-packs',
-    envVarSuffix: 'MENU_PACKS',
     order: 29,
   },
-  {
-    id: 'actions',
+  actions: {
     label: 'Actions',
     description: 'Author runnable explorer actions, script packs, and custom pipeline commands here.',
     keywords: ['actions', 'scripts', 'pipelines', 'context menu actions', 'automation'],
-    releaseDirectoryName: 'actions',
-    legacyRelativeDirectoryName: 'actions',
-    envVarSuffix: 'ACTIONS',
     order: 29.5,
   },
-  {
-    id: 'runtimes',
+  runtimes: {
     label: 'Runtime Packages',
     description: 'Drop authored polyglot runtime packages (Go, Wasm, Python sidecars) here. Each runtime owns a `runtime.toml` plus its source tree.',
     keywords: ['runtime', 'sidecar', 'wasm', 'panel', 'go', 'python sidecar', 'native command'],
-    releaseDirectoryName: 'runtimes',
-    legacyRelativeDirectoryName: 'runtimes',
-    envVarSuffix: 'RUNTIMES',
     order: 29.7,
   },
-  {
-    id: 'iconThemes',
+  iconThemes: {
     label: 'Icon Themes',
     description: 'Drop native icon-theme packs plus VS Code icon-theme extension folders or .vsix archives here.',
     keywords: ['icons', 'icon theme', 'folder icons', 'ui icons'],
-    releaseDirectoryName: 'icon-themes',
-    legacyRelativeDirectoryName: 'icon-themes',
-    envVarSuffix: 'ICON_THEMES',
     order: 30,
   },
-  {
-    id: 'interactionMotionPacks',
+  interactionMotionPacks: {
     label: 'Interaction Motion',
     description: 'Author theme-selectable interaction motion defaults here.',
     keywords: ['interaction motion', 'motion', 'hover', 'press'],
-    releaseDirectoryName: 'interaction-motion',
-    legacyRelativeDirectoryName: 'interaction-motion',
-    envVarSuffix: 'INTERACTION_MOTION',
     order: 35,
   },
-  {
-    id: 'soundPacks',
+  soundPacks: {
     label: 'Sound Packs',
     description: 'Author theme-selectable shell sound packs and notification cues here.',
     keywords: ['sound', 'sound pack', 'audio cue', 'notification sound', 'ui sound'],
-    releaseDirectoryName: 'sound-packs',
-    legacyRelativeDirectoryName: 'sound-packs',
-    envVarSuffix: 'SOUND_PACKS',
     order: 36,
   },
-  {
-    id: 'shaders',
+  shaders: {
     label: 'Shaders',
     description: 'Author shell shader profiles with surface-level controls.',
     keywords: ['shader', 'render', 'visuals'],
-    releaseDirectoryName: 'shaders',
-    legacyRelativeDirectoryName: 'shaders',
-    envVarSuffix: 'SHADERS',
     order: 40,
   },
-  {
-    id: 'animations',
+  animations: {
     label: 'Animations',
     description: 'Author open and close motion modules here.',
     keywords: ['animation', 'motion', 'transition'],
-    releaseDirectoryName: 'animations',
-    legacyRelativeDirectoryName: 'animations',
-    envVarSuffix: 'ANIMATIONS',
     order: 50,
   },
-  {
-    id: 'wallpapers',
+  wallpapers: {
     label: 'Wallpapers',
     description: 'Import images, videos, and live wallpaper modules here.',
     keywords: ['wallpaper', 'background', 'video wallpaper', 'live wallpaper'],
-    releaseDirectoryName: 'wallpapers',
-    legacyRelativeDirectoryName: 'wallpapers',
-    envVarSuffix: 'WALLPAPERS',
     order: 60,
   },
-  {
-    id: 'shellRenderers',
+  shellRenderers: {
     label: 'Shell Renderers',
     description: 'Author standalone theme renderer manifests and entry modules here.',
     keywords: ['renderer', 'shell renderer', 'workbench runtime', 'theme renderer'],
-    releaseDirectoryName: 'shell-renderers',
-    legacyRelativeDirectoryName: 'shell-renderers',
-    envVarSuffix: 'SHELL_RENDERERS',
     order: 62,
   },
-  {
-    id: 'themeRecipes',
+  themeRecipes: {
     label: 'Theme Recipes',
     description: 'Author reusable workbench, explorer, and dock recipe packs here.',
     keywords: ['theme recipe', 'workbench', 'explorer', 'dock'],
-    releaseDirectoryName: 'theme-recipes',
-    legacyRelativeDirectoryName: 'theme-recipes',
-    envVarSuffix: 'THEME_RECIPES',
     order: 64,
   },
-  {
-    id: 'themeEngines',
+  themeEngines: {
     label: 'Theme Engines',
     description: 'Author reusable theme engine manifests and design-token packs here.',
     keywords: ['theme engine', 'design token', 'layout primitive', 'render style'],
-    releaseDirectoryName: 'theme-engines',
-    legacyRelativeDirectoryName: 'theme-engines',
-    envVarSuffix: 'THEME_ENGINES',
     order: 66,
   },
+} as const satisfies Record<string, ManagedContentDirectoryMetadata>;
+
+type ShippedManagedContentDirectoryId = keyof typeof shippedManagedDirectoryMetadata;
+export type ManagedContentDirectoryId =
+  | ShippedManagedContentDirectoryId
+  | 'notes'
+  | 'screenshots';
+
+const runtimeStateDirectoryDefinitions = [
   {
     id: 'notes',
     label: 'Notes',
     description: 'Managed notes live here in development and release builds.',
     keywords: ['notes', 'scratchpad', 'documents'],
-    releaseDirectoryName: 'notes',
+    relativeDirectoryName: 'notes',
     legacyRelativeDirectoryName: 'notes',
     envVarSuffix: 'NOTES',
     order: 70,
+    shippingMode: 'runtime-state',
   },
   {
     id: 'screenshots',
     label: 'Screenshots',
     description: 'Saved captures and annotated proof land here.',
     keywords: ['screenshot', 'capture', 'proof'],
-    releaseDirectoryName: 'screenshots',
+    relativeDirectoryName: 'screenshots',
     legacyRelativeDirectoryName: 'Screenshots',
     envVarSuffix: 'SCREENSHOTS',
     order: 80,
+    shippingMode: 'runtime-state',
   },
 ] as const satisfies readonly ManagedContentDirectoryDefinition[];
 
-export type ManagedContentDirectoryId = typeof managedContentDirectoryCatalog[number]['id'];
+function createShippedManagedDirectoryDefinitions(): ManagedContentDirectoryDefinition[] {
+  return greebleUsrManagedContentEntries.map((entry) => {
+    const metadata = shippedManagedDirectoryMetadata[entry.id as ShippedManagedContentDirectoryId];
+    if (!metadata) {
+      throw new Error(`usr/manifest.json contains an unknown managed content lane: ${entry.id}`);
+    }
+
+    return {
+      id: entry.id,
+      label: metadata.label,
+      description: metadata.description,
+      keywords: metadata.keywords,
+      relativeDirectoryName: entry.relativeDirectory,
+      legacyRelativeDirectoryName: entry.relativeDirectory,
+      envVarSuffix: entry.envVarSuffix,
+      order: metadata.order,
+      shippingMode: 'shipped',
+    };
+  });
+}
+
+export const managedContentDirectoryCatalog = [
+  ...createShippedManagedDirectoryDefinitions(),
+  ...runtimeStateDirectoryDefinitions,
+] as const satisfies readonly ManagedContentDirectoryDefinition[];
 
 const managedContentDirectoryLookup = new Map(
   managedContentDirectoryCatalog.map(entry => [entry.id, entry] as const),
@@ -231,20 +215,33 @@ let initializationPromise: Promise<void> | null = null;
 let resolvedManagedDirectories: Partial<Record<ManagedContentDirectoryId, string>> = {};
 let resolvedLegacyHomeDirectories: Partial<Record<ManagedContentDirectoryId, string>> = {};
 let resolvedLegacyReleaseDirectories: Partial<Record<ManagedContentDirectoryId, string>> = {};
+let resolvedManagedContentRoots: ManagedContentRootsSnapshot | null = null;
 
 function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
   const env = import.meta.env as Record<string, string | undefined>;
 
   const directoryDefinition = managedContentDirectoryLookup.get(id);
-  if (!directoryDefinition) {
+  if (!directoryDefinition?.envVarSuffix) {
     return null;
   }
 
   const rawValue = env[`VITE_GREEBLEFS_${directoryDefinition.envVarSuffix}_DIR`]
     ?? env[`VITE_OVERLAYTERM_${directoryDefinition.envVarSuffix}_DIR`];
-
   const normalizedValue = typeof rawValue === 'string' ? rawValue.trim() : '';
   return normalizedValue.length > 0 ? normalizedValue : null;
+}
+
+function readUsrSourceRootOverride(): string | null {
+  const env = import.meta.env as Record<string, string | undefined>;
+  const rawValue = env[PRIMARY_USR_SOURCE_ROOT_ENV_VAR] ?? env[LEGACY_USR_SOURCE_ROOT_ENV_VAR];
+  const normalizedValue = typeof rawValue === 'string' ? rawValue.trim() : '';
+  return normalizedValue.length > 0 ? normalizedValue : null;
+}
+
+function appendRelativePath(basePath: string, relativeDirectory: string): string {
+  const normalizedBasePath = basePath.replace(/[\\/]+$/, '');
+  const separator = normalizedBasePath.includes('\\') && !normalizedBasePath.includes('/') ? '\\' : '/';
+  return `${normalizedBasePath}${separator}${relativeDirectory}`;
 }
 
 function normalizePathForComparison(path: string): string {
@@ -258,20 +255,62 @@ function shouldUseReleaseManagedDirectories(): boolean {
   return isTauri() && !import.meta.env.DEV;
 }
 
+async function resolveNativeManagedContentRoots(): Promise<ManagedContentRootsSnapshot | null> {
+  if (!isTauri()) {
+    return null;
+  }
+
+  try {
+    const resolvedRoots = await commands.startupResolveManagedContentRoots().then(unwrapTauriResult);
+    const bundledUsrRoot = resolvedRoots.bundledUsrRoot?.trim();
+    const writableRoot = resolvedRoots.writableRoot?.trim();
+
+    if (!bundledUsrRoot || !writableRoot) {
+      return null;
+    }
+
+    return {
+      bundledUsrRoot,
+      writableRoot,
+    };
+  } catch (error) {
+    console.warn('GreebleFS: failed to resolve native managed content roots', error);
+    return null;
+  }
+}
+
 async function buildReleaseManagedDirectoryMap(): Promise<Record<ManagedContentDirectoryId, string>> {
-  const root = (await appLocalDataDir()).replace(/[\\/]+$/, '');
-  return Object.fromEntries(
-    await Promise.all(
-      managedContentDirectoryCatalog.map(async entry => [entry.id as ManagedContentDirectoryId, await join(root, entry.releaseDirectoryName)] as const),
-    ),
-  ) as Record<ManagedContentDirectoryId, string>;
+  const appLocalDataRoot = (await appLocalDataDir()).replace(/[\\/]+$/, '');
+  const managedContentRoots = await resolveNativeManagedContentRoots();
+  resolvedManagedContentRoots = managedContentRoots;
+
+  const writableManagedRoot = managedContentRoots?.writableRoot
+    ? managedContentRoots.writableRoot.replace(/[\\/]+$/, '')
+    : await join(appLocalDataRoot, 'usr');
+
+  const resolvedEntries = await Promise.all(
+    managedContentDirectoryCatalog.map(async (entry) => {
+      const targetRoot = entry.shippingMode === 'shipped'
+        ? writableManagedRoot
+        : appLocalDataRoot;
+      return [
+        entry.id as ManagedContentDirectoryId,
+        await join(targetRoot, entry.relativeDirectoryName),
+      ] as const;
+    }),
+  );
+
+  return Object.fromEntries(resolvedEntries) as Record<ManagedContentDirectoryId, string>;
 }
 
 async function buildLegacyHomeDirectoryMap(): Promise<Record<ManagedContentDirectoryId, string>> {
   const root = (await homeDir()).replace(/[\\/]+$/, '');
   return Object.fromEntries(
     await Promise.all(
-      managedContentDirectoryCatalog.map(async entry => [entry.id as ManagedContentDirectoryId, await join(root, entry.legacyRelativeDirectoryName)] as const),
+      managedContentDirectoryCatalog.map(async entry => [
+        entry.id as ManagedContentDirectoryId,
+        await join(root, entry.legacyRelativeDirectoryName),
+      ] as const),
     ),
   ) as Record<ManagedContentDirectoryId, string>;
 }
@@ -287,7 +326,7 @@ function replaceTrailingDirectoryName(path: string, fromName: string, toName: st
 }
 
 async function buildLegacyReleaseDirectoryMap(): Promise<Partial<Record<ManagedContentDirectoryId, string>>> {
-  const releaseRoot = (await appLocalDataDir()).replace(/[\\\\/]+$/, '');
+  const releaseRoot = (await appLocalDataDir()).replace(/[\\/]+$/, '');
   const legacyRoot = replaceTrailingDirectoryName(
     releaseRoot,
     CURRENT_RELEASE_APP_IDENTIFIER,
@@ -300,7 +339,10 @@ async function buildLegacyReleaseDirectoryMap(): Promise<Partial<Record<ManagedC
 
   return Object.fromEntries(
     await Promise.all(
-      managedContentDirectoryCatalog.map(async entry => [entry.id as ManagedContentDirectoryId, await join(legacyRoot, entry.releaseDirectoryName)] as const),
+      managedContentDirectoryCatalog.map(async entry => [
+        entry.id as ManagedContentDirectoryId,
+        await join(legacyRoot, entry.legacyRelativeDirectoryName),
+      ] as const),
     ),
   ) as Partial<Record<ManagedContentDirectoryId, string>>;
 }
@@ -344,6 +386,7 @@ export async function initializeManagedContentDirectories(): Promise<void> {
       resolvedManagedDirectories = {};
       resolvedLegacyHomeDirectories = {};
       resolvedLegacyReleaseDirectories = {};
+      resolvedManagedContentRoots = null;
 
       if (!shouldUseReleaseManagedDirectories()) {
         initializedManagedDirectories = true;
@@ -401,6 +444,14 @@ export function getManagedContentDirectory(id: ManagedContentDirectoryId): strin
   const resolvedDirectory = resolvedManagedDirectories[id];
   if (typeof resolvedDirectory === 'string' && resolvedDirectory.length > 0) {
     return resolvedDirectory;
+  }
+
+  if (directoryDefinition.shippingMode === 'shipped') {
+    const manifestEntry = getGreebleUsrManifestEntry(id);
+    if (manifestEntry) {
+      const usrRootOverride = readUsrSourceRootOverride();
+      return appendRelativePath(usrRootOverride ?? 'usr', manifestEntry.relativeDirectory);
+    }
   }
 
   return directoryDefinition.legacyRelativeDirectoryName;

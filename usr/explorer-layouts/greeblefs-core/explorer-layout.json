@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-explorer-layouts",
+  "name": "GreebleFS Core Explorer Layouts",
+  "description": "Canonical shipped explorer layout presets that replace the old built-in layout seed set.",
+  "tags": [
+    "canonical",
+    "shipped",
+    "explorer-layouts"
+  ],
+  "layouts": [
+    {
+      "id": "canonical",
+      "name": "Canonical",
+      "description": "Balanced explorer layout with the unified header strip as the canonical restore target.",
+      "tags": [
+        "canonical",
+        "default"
+      ],
+      "modeProfileId": "balanced",
+      "workspaceLayoutMode": "single",
+      "tabStripVisible": true,
+      "tabStripSurfaceId": "explorerTopbar",
+      "paneMetrics": {
+        "sourcesVisible": true,
+        "previewEnabled": true,
+        "previewSplitMode": "inline"
+      },
+      "bandMetrics": {
+        "unifiedHeaderHeightPx": 88,
+        "explorerToolbarHeightPx": 48,
+        "railHeaderHeightPx": 40,
+        "previewHeaderHeightPx": 40,
+        "explorerStatusBarHeightPx": 32
+      }
+    },
+    {
+      "id": "navigator",
+      "name": "Navigator",
+      "description": "Rail-first browsing with a stronger emphasis on source navigation.",
+      "tags": [
+        "preset",
+        "navigator"
+      ],
+      "modeProfileId": "navigator",
+      "workspaceLayoutMode": "single",
+      "tabStripVisible": true,
+      "tabStripSurfaceId": "explorerTopbar",
+      "paneMetrics": {
+        "sidebarWidthPx": 260,
+        "previewWidthPx": 310,
+        "actionsWidthPx": 344,
+        "sourcesVisible": true,
+        "previewEnabled": true,
+        "previewSplitMode": "inline"
+      },
+      "bandMetrics": {
+        "unifiedHeaderHeightPx": 88,
+        "explorerToolbarHeightPx": 48,
+        "railHeaderHeightPx": 40,
+        "previewHeaderHeightPx": 40,
+        "explorerStatusBarHeightPx": 32
+      },
+      "basedOnLayoutId": "canonical"
+    },
+    {
+      "id": "focus",
+      "name": "Focus",
+      "description": "Minimal browsing chrome with search-forward emphasis.",
+      "tags": [
+        "preset",
+        "focus"
+      ],
+      "modeProfileId": "focus",
+      "workspaceLayoutMode": "single",
+      "tabStripVisible": true,
+      "tabStripSurfaceId": "explorerTopbar",
+      "paneMetrics": {
+        "sidebarWidthPx": 185,
+        "previewWidthPx": 324,
+        "actionsWidthPx": 344,
+        "sourcesVisible": false,
+        "previewEnabled": true,
+        "previewSplitMode": "inline"
+      },
+      "bandMetrics": {
+        "unifiedHeaderHeightPx": 88,
+        "explorerToolbarHeightPx": 48,
+        "railHeaderHeightPx": 40,
+        "previewHeaderHeightPx": 40,
+        "explorerStatusBarHeightPx": 32
+      },
+      "basedOnLayoutId": "canonical"
+    },
+    {
+      "id": "inspector",
+      "name": "Inspector",
+      "description": "Preview-heavy browsing tuned for inspection and triage.",
+      "tags": [
+        "preset",
+        "inspector"
+      ],
+      "modeProfileId": "inspector",
+      "workspaceLayoutMode": "single",
+      "tabStripVisible": true,
+      "tabStripSurfaceId": "explorerTopbar",
+      "paneMetrics": {
+        "sidebarWidthPx": 202,
+        "previewWidthPx": 461,
+        "actionsWidthPx": 344,
+        "sourcesVisible": true,
+        "previewEnabled": true,
+        "previewSplitMode": "inline"
+      },
+      "bandMetrics": {
+        "unifiedHeaderHeightPx": 88,
+        "explorerToolbarHeightPx": 48,
+        "railHeaderHeightPx": 40,
+        "previewHeaderHeightPx": 40,
+        "explorerStatusBarHeightPx": 32
+      },
+      "basedOnLayoutId": "canonical"
+    }
+  ]
+}

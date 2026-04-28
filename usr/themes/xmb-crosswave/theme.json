@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "id": "xmb-crosswave",
+  "name": "XMB Crosswave",
+  "description": "Console-inspired explorer chrome with capsule controls, large focus states, and a motion-forward media shelf feel.",
+  "author": "OverlayTerm Labs",
+  "tags": ["xmb", "console", "media", "cinematic"],
+  "extends": "plasma-flow",
+  "theme": {
+    "workbench": {
+      "preset": "xmb",
+      "brandLabel": "Cross Media",
+      "topBarStyle": "floating",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 40,
+        "panelRadius": 24,
+        "controlRadius": 999,
+        "shellInset": 12,
+        "commandPaletteWidth": 840
+      },
+      "cssVars": {
+        "--overlay-workbench-brand": "cross-media"
+      }
+    },
+    "palette": {
+      "accent": "#5ddfff",
+      "accentSoft": "rgba(93, 223, 255, 0.16)",
+      "panelBackground": "rgba(14, 22, 38, 0.7)",
+      "sidebarBackground": "rgba(8, 14, 28, 0.68)",
+      "cardBackground": "rgba(18, 29, 50, 0.7)",
+      "cardHoverBackground": "rgba(30, 48, 74, 0.78)"
+    },
+    "explorer": {
+      "preset": "xmb",
+      "railBrandLabel": "Cross Media",
+      "toolbarStyle": "floating",
+      "breadcrumbStyle": "capsule",
+      "selectionStyle": "glow",
+      "hoverStyle": "glow",
+      "previewStyle": "glass",
+      "statusBarStyle": "floating",
+      "preferredViewMode": "icons-xl",
+      "preferredExperimentalViewMode": "adaptive-semantic-grid",
+      "metrics": {
+        "railWidth": 236,
+        "previewWidth": 480,
+        "gridScale": 1.22,
+        "iconScale": 1.38,
+        "hoverLiftPx": 4
+      },
+      "cssVars": {
+        "--overlay-explorer-brand": "cross-media"
+      }
+    }
+  },
+  "themeRenderer": {
+    "entryModule": "renderers/xmb-crosswave.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "cross-axis-media",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
+  "visuals": [
+    {
+      "id": "crosswave-sheen",
+      "backgroundImage": "radial-gradient(circle at 16% 18%, rgba(93,223,255,0.16), transparent 24%), radial-gradient(circle at 72% 14%, rgba(255,255,255,0.07), transparent 18%), linear-gradient(180deg, rgba(255,255,255,0.04), transparent 38%)",
+      "opacity": 0.92,
+      "blendMode": "screen"
+    }
+  ]
+}

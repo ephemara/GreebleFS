@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "id": "engine-core",
+  "name": "Andromeda Engine",
+  "description": "Conceptual presentation metadata for the Andromeda observatory shell.",
+  "author": "Codex",
+  "tags": [
+    "reference",
+    "space",
+    "minimal"
+  ],
+  "presentation": {
+    "chromeStyle": "floating",
+    "density": "comfortable",
+    "iconStyle": "vector",
+    "motionStyle": "fluid",
+    "cornerRadius": 28,
+    "panelSpacing": 12
+  },
+  "compatibility": {
+    "shellBlueprints": [
+      "classic-dock",
+      "xmb-cross-media"
+    ],
+    "tags": [
+      "andromeda",
+      "space",
+      "minimal",
+      "reference"
+    ]
+  },
+  "designTokens": [
+    {
+      "id": "space-accent",
+      "name": "Space Accent",
+      "kind": "color",
+      "value": "#8fe7ff"
+    },
+    {
+      "id": "shell-radius",
+      "name": "Shell Radius",
+      "kind": "radius",
+      "value": 28
+    },
+    {
+      "id": "observatory-gap",
+      "name": "Observatory Gap",
+      "kind": "spacing",
+      "value": 12
+    },
+    {
+      "id": "atmosphere-motion",
+      "name": "Atmosphere Motion",
+      "kind": "motion",
+      "value": "fluid"
+    }
+  ],
+  "layoutPrimitives": [
+    {
+      "id": "andromeda-orbit",
+      "name": "Andromeda Orbit",
+      "kind": "dock",
+      "props": {
+        "gap": 12,
+        "padding": 14,
+        "cornerRadius": 28,
+        "pinned": true,
+        "sidebarBias": 0.28
+      }
+    },
+    {
+      "id": "andromeda-split",
+      "name": "Andromeda Split",
+      "kind": "split",
+      "props": {
+        "primaryRatio": 0.68,
+        "gap": 12
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "andromeda-tabs",
+      "name": "Andromeda Tabs",
+      "kind": "tabbed",
+      "axis": "horizontal",
+      "props": {
+        "directionalNavigation": true,
+        "wrap": true,
+        "breadcrumb": true,
+        "focusRing": "accent"
+      }
+    },
+    {
+      "id": "andromeda-palette",
+      "name": "Andromeda Palette",
+      "kind": "palette",
+      "axis": "horizontal",
+      "props": {
+        "searchFirst": true,
+        "previewBias": "right"
+      }
+    }
+  ],
+  "animationProfiles": [
+    {
+      "id": "andromeda-drift",
+      "name": "Andromeda Drift",
+      "durationMs": 260,
+      "easing": "cubic-bezier(0.22, 1, 0.36, 1)",
+      "intensity": 42
+    }
+  ],
+  "iconPacks": [
+    {
+      "id": "andromeda-icons",
+      "name": "Andromeda Icons",
+      "style": "custom"
+    }
+  ],
+  "defaultLayoutPrimitiveId": "andromeda-orbit",
+  "defaultNavigationPatternId": "andromeda-tabs",
+  "defaultAnimationProfileId": "andromeda-drift",
+  "defaultIconPackId": "andromeda-icons"
+}

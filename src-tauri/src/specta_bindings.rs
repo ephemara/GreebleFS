@@ -406,6 +406,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::video_engine::video_engine_set_loop_region,
             crate::startup_commands::startup_get_launch_at_startup,
             crate::startup_commands::startup_get_linux_display_backend_status,
+            crate::startup_commands::startup_resolve_managed_content_roots,
             crate::startup_commands::startup_set_launch_at_startup,
             crate::startup_commands::startup_set_linux_display_backend_preference,
             crate::startup_commands::startup_set_linux_nvidia_webkit_workaround_mode,
