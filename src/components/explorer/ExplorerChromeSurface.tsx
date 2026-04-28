@@ -168,7 +168,8 @@ export function ExplorerChromeSurface({
       ),
     [surfaceDefinition.rows],
   );
-  const useDynamicSurfaceLayout = layoutDynamics?.enabled === true;
+  const useDynamicSurfaceLayout =
+    layoutDynamics?.enabled === true && editModeActive;
   const usesFreeformDynamicCanvas =
     useDynamicSurfaceLayout && layoutDynamics?.axisMode === "free-2d";
   const freeformDynamicCanvasBandId = `${surface.surfaceId}:freeform-canvas`;

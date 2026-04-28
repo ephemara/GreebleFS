@@ -215,8 +215,10 @@ import {
   type ManagedContentDirectoryId,
 } from "../config/appContentDirectories";
 import {
+  settingsRailPathCatalog,
   settingsSectionCategoryCatalog,
   settingsSectionCatalog,
+  type SettingsRailPathKey,
   type SettingsPageArchetype,
   type SettingsSectionKey,
   type SettingsSectionShellHints,
@@ -251,6 +253,10 @@ import { IconSettingsSection } from "./settings/sections/IconSettingsSection";
 import { SystemSettingsSection } from "./settings/sections/SystemSettingsSection";
 import { ContextMenusSettingsSection } from "./settings/sections/ContextMenusSettingsSection";
 import { LayoutDynamicsSettingsSection } from "./settings/sections/LayoutDynamicsSettingsSection";
+import {
+  EmptyPluginSettingsState,
+  PluginSettingsSection,
+} from "./settings/sections/PluginSettingsSection";
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   getWorkbenchShellFamilyForLayoutProfile,
@@ -354,6 +360,7 @@ import {
 } from "../config/screenshots";
 import {
   dispatchTerminalCommand,
+  type OverlayPluginSettingsSlotContribution,
   type OverlayPluginContextMenuContribution,
   type OverlayPluginExplorerActionContribution,
 } from "../config/pluginContributions";
@@ -2851,9 +2858,9 @@ function getSettingsSectionContent(
       };
     case "layout-dynamics":
       return {
-        summary: `${context.layoutDynamicsProfileLabel} · ${context.layoutDynamicsEnabled ? "Live" : "Disabled"} · ${context.layoutDynamicsSurfaceCount} surfaces`,
+        summary: `${context.layoutDynamicsProfileLabel} · ${context.layoutDynamicsEnabled ? "Customize ready" : "Physics disabled"} · ${context.layoutDynamicsSurfaceCount} surfaces`,
         detail:
-          "Control the shell-wide layout-authoring physics runtime, including shared presets, surface overrides, and the live layout-dynamics lab harness.",
+          "Move explorer buttons directly, save the current layout, or reset all layout UI state back to canonical defaults; advanced solver controls stay collapsed by default.",
       };
     case "theme-json":
       return {
@@ -3203,6 +3210,11 @@ export function SettingsPage({
   onOpenWallpapersFolder,
   onImportWallpaperFiles,
   onSetWindowMode,
+  pluginSettingsSlots = [],
+  pluginsLoading = false,
+  pluginsError = null,
+  onRefreshPlugins = async () => {},
+  onOpenPluginsFolder = async () => {},
   pluginContextMenuItems = [],
   pluginExplorerActions = [],
 }: {
@@ -3315,6 +3327,11 @@ export function SettingsPage({
   onOpenWallpapersFolder: () => Promise<void>;
   onImportWallpaperFiles: (files: File[]) => Promise<void>;
   onSetWindowMode?: (mode: TerminalWindowMode) => Promise<void> | void;
+  pluginSettingsSlots?: OverlayPluginSettingsSlotContribution[];
+  pluginsLoading?: boolean;
+  pluginsError?: string | null;
+  onRefreshPlugins?: () => Promise<void>;
+  onOpenPluginsFolder?: () => Promise<void>;
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginExplorerActions?: OverlayPluginExplorerActionContribution[];
 }) {
@@ -3337,9 +3354,13 @@ export function SettingsPage({
     string | null
   >(null);
   const {
+    activeRailPath,
     activeSection,
+    activePluginSettingsSlotId,
     activeContextMenuComposerContext,
+    setActiveRailPath,
     setActiveSection,
+    setActivePluginSettingsSlotId,
     setActiveContextMenuComposerContext,
     settings,
     updateTerminal,
@@ -3359,14 +3380,19 @@ export function SettingsPage({
     updateAudio,
     setHomePackState,
     setHomePresetSelection,
+    resetLayoutCustomizationToCanonical,
     resetToDefaults,
     showAllDescriptionsBySection,
     setShowAllDescriptions,
   } = useSettingsStore(
     useShallow((state) => ({
+      activeRailPath: state.activeRailPath,
       activeSection: state.activeSection,
+      activePluginSettingsSlotId: state.activePluginSettingsSlotId,
       activeContextMenuComposerContext: state.activeContextMenuComposerContext,
+      setActiveRailPath: state.setActiveRailPath,
       setActiveSection: state.setActiveSection,
+      setActivePluginSettingsSlotId: state.setActivePluginSettingsSlotId,
       setActiveContextMenuComposerContext:
         state.setActiveContextMenuComposerContext,
       settings: state.settings,
@@ -3387,6 +3413,8 @@ export function SettingsPage({
       updateAudio: state.updateAudio,
       setHomePackState: state.setHomePackState,
       setHomePresetSelection: state.setHomePresetSelection,
+      resetLayoutCustomizationToCanonical:
+        state.resetLayoutCustomizationToCanonical,
       resetToDefaults: state.resetToDefaults,
       showAllDescriptionsBySection: state.showAllDescriptionsBySection,
       setShowAllDescriptions: state.setShowAllDescriptions,
@@ -12921,11 +12949,19 @@ export function SettingsPage({
             topBarLayoutSnapshotsById={
               settings.appearance.topBarLayoutSnapshotsById
             }
+            explorerChromeOverrideCount={Object.values(
+              settings.explorer.chromeLayoutOverridesByThemeId,
+            ).reduce(
+              (total, layoutOverrides) =>
+                total + Object.keys(layoutOverrides).length,
+              0,
+            )}
             border={border}
             accent={accent}
             text={text}
             muted={muted}
             onUpdateAppearance={updateAppearance}
+            onResetLayoutCustomization={resetLayoutCustomizationToCanonical}
           />
         )}
 

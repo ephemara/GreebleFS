@@ -1,5 +1,12 @@
-import { useMemo } from "react";
-import { LayoutGrid, RotateCcw, Sparkles } from "@/components/AppIcons";
+import { useMemo, useState } from "react";
+import {
+  LayoutGrid,
+  MoveRight,
+  RotateCcw,
+  Save,
+  Settings2,
+  Sparkles,
+} from "@/components/AppIcons";
 import type { ResolvedOverlayAppearance } from "../../../config/appearance";
 import {
   clampLayoutDynamicsIntensity,
@@ -33,11 +40,13 @@ interface LayoutDynamicsSettingsSectionProps {
   layoutDynamicsIntensity: number;
   layoutDynamicsSurfaceOverrides: LayoutDynamicsSurfaceOverrideMap;
   topBarLayoutSnapshotsById: Record<string, LayoutDynamicsAuthoringSnapshot>;
+  explorerChromeOverrideCount: number;
   border: string;
   accent: string;
   text: string;
   muted: string;
   onUpdateAppearance: (patch: Partial<AppearanceSettings>) => void;
+  onResetLayoutCustomization: () => void;
 }
 
 function isSurfaceOverrideObject(
@@ -66,6 +75,13 @@ function pruneSurfaceOverride(
   return Object.keys(nextOverride).length > 0 ? nextOverride : null;
 }
 
+function dispatchLayoutCustomizationCommand(commandName: string): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return !window.dispatchEvent(new CustomEvent(commandName, { cancelable: true }));
+}
+
 export function LayoutDynamicsSettingsSection({
   appearance,
   layoutDynamicsEnabled,
@@ -73,12 +89,17 @@ export function LayoutDynamicsSettingsSection({
   layoutDynamicsIntensity,
   layoutDynamicsSurfaceOverrides,
   topBarLayoutSnapshotsById,
+  explorerChromeOverrideCount,
   border,
   accent,
   text,
   muted,
   onUpdateAppearance,
+  onResetLayoutCustomization,
 }: LayoutDynamicsSettingsSectionProps) {
+  const [lastCommandStatus, setLastCommandStatus] = useState(
+    "Layout customization is ready. Open Explorer Customize to move buttons directly on the canvas.",
+  );
   const layoutDynamics = useLayoutDynamicsController(appearance);
   const themeDefaultPresetId =
     appearance.baseTheme.layoutDynamics?.defaultPresetId ?? null;
@@ -90,6 +111,11 @@ export function LayoutDynamicsSettingsSection({
   const pinnedSharedPresetId = normalizeLayoutDynamicsPresetId(
     layoutDynamicsPresetId,
   );
+  const topBarSnapshotCount = Object.keys(topBarLayoutSnapshotsById).length;
+  const surfaceOverrideCount = Object.keys(layoutDynamicsSurfaceOverrides).length;
+  const customLayoutStateCount =
+    topBarSnapshotCount + surfaceOverrideCount + explorerChromeOverrideCount;
+  const hasCustomLayoutState = customLayoutStateCount > 0;
   const resolvedSurfaceStates = useMemo(
     () =>
       layoutDynamicsSurfaceCatalog.map((surface) =>
@@ -153,22 +179,181 @@ export function LayoutDynamicsSettingsSection({
     setSurfaceOverride(surfaceId, nextOverride);
   };
 
+  const runOpenCustomize = () => {
+    dispatchLayoutCustomizationCommand("greeblefs:open-explorer-customize");
+    setLastCommandStatus(
+      "Explorer Customize requested. If the explorer is open, buttons can now be dragged directly on the layout canvas.",
+    );
+  };
+
+  const runSaveCurrentLayout = () => {
+    dispatchLayoutCustomizationCommand("greeblefs:save-current-explorer-layout");
+    setLastCommandStatus(
+      "Save Current Layout requested. The active explorer layout will be written as a user layout when the explorer surface handles the command.",
+    );
+  };
+
+  const runCanonicalReset = () => {
+    const handledByExplorer = dispatchLayoutCustomizationCommand(
+      "greeblefs:reset-layout-ui-to-canonical",
+    );
+    if (!handledByExplorer) {
+      onResetLayoutCustomization();
+    }
+    setLastCommandStatus(
+      "Layout UI reset to canonical defaults. Theme, icon pack, wallpaper, and top-bar package selection were left alone.",
+    );
+  };
+
   return (
     <section className="space-y-4" data-settings-section="layout-dynamics">
       <SettingsSectionHeader
         icon={<LayoutGrid size={12} />}
-        title="Layout Dynamics"
-        subtitle="Repo-wide layout-authoring physics for explorer chrome, the shell top bar, and future widget-style surfaces."
+        title="Layout Customization"
+        subtitle="ZBrush-style layout authoring for moving buttons around the explorer and shell surfaces."
         badges={[
-          layoutDynamicsEnabled ? "Enabled" : "Disabled",
+          hasCustomLayoutState ? "Custom State Saved" : "Canonical State",
           layoutDynamics.prefersReducedMotion
             ? "Reduced Motion Softened"
-            : "Full Response",
+            : "Direct Manipulation",
         ]}
       />
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <SettingsSectionBlock
+        title="Layout Command Center"
+        subtitle="Use these first. The physics knobs are tucked below because the normal job is just move, save, or reset."
+        accent={accent}
+        tone="muted"
+      >
         <div className="space-y-4">
+          <SettingsActionStrip>
+            <button
+              type="button"
+              onClick={runOpenCustomize}
+              className="inline-flex items-center gap-1.5 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
+              style={{
+                border: `1px solid ${accent}66`,
+                background: `${accent}18`,
+                color: accent,
+              }}
+            >
+              <MoveRight size={10} />
+              Open Explorer Customize
+            </button>
+            <button
+              type="button"
+              onClick={runCanonicalReset}
+              className="inline-flex items-center gap-1.5 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
+              style={{
+                border: `1px solid ${accent}66`,
+                background: hasCustomLayoutState ? `${accent}18` : "transparent",
+                color: accent,
+              }}
+            >
+              <RotateCcw size={10} />
+              Reset Layout UI To Canonical
+            </button>
+            <button
+              type="button"
+              onClick={runSaveCurrentLayout}
+              className="inline-flex items-center gap-1.5 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
+              style={{
+                border: `1px solid ${border}`,
+                background: "rgba(255,255,255,0.04)",
+                color: text,
+              }}
+            >
+              <Save size={10} />
+              Save Current Layout
+            </button>
+          </SettingsActionStrip>
+
+          <div
+            className="rounded border px-3 py-3 text-[11px] leading-4"
+            role="status"
+            style={{
+              borderColor: hasCustomLayoutState ? `${accent}55` : border,
+              background: hasCustomLayoutState
+                ? `${accent}10`
+                : "rgba(255,255,255,0.025)",
+              color: hasCustomLayoutState ? text : muted,
+            }}
+          >
+            {lastCommandStatus}
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            <ThemeBadge
+              label={`${explorerChromeOverrideCount} explorer chrome override${explorerChromeOverrideCount === 1 ? "" : "s"}`}
+              active={explorerChromeOverrideCount > 0}
+            />
+            <ThemeBadge
+              label={`${topBarSnapshotCount} top-bar snapshot${topBarSnapshotCount === 1 ? "" : "s"}`}
+              active={topBarSnapshotCount > 0}
+            />
+            <ThemeBadge
+              label={`${surfaceOverrideCount} advanced physics override${surfaceOverrideCount === 1 ? "" : "s"}`}
+              active={surfaceOverrideCount > 0}
+            />
+          </div>
+        </div>
+      </SettingsSectionBlock>
+
+      <SettingsSectionBlock
+        title="Movable Surfaces"
+        subtitle="These are the layout canvases that can participate in the same customization model."
+        tone="muted"
+      >
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {[
+            ["Top Bar", "The app-level strip for global explorer controls."],
+            ["Toolbar", "Navigation, address, search, and action buttons."],
+            ["Workspace Header", "Pane tabs, split controls, and workspace commands."],
+            ["Preview Header", "Preview mode, lock, split, path, and close controls."],
+            ["Rail Header", "Source rail identity and management controls."],
+            ["Status Bar", "Counts, mode badges, task state, and compact toggles."],
+          ].map(([title, description]) => (
+            <div
+              key={title}
+              className="rounded border p-3"
+              style={{
+                borderColor: border,
+                background: "rgba(255,255,255,0.025)",
+              }}
+            >
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: text }}>
+                {title}
+              </div>
+              <p className="mt-1 text-[11px] leading-4" style={{ color: muted }}>
+                {description}
+              </p>
+            </div>
+          ))}
+        </div>
+      </SettingsSectionBlock>
+
+      <details
+        className="rounded border"
+        data-layout-customization-advanced
+        style={{
+          borderColor: border,
+          background: "rgba(255,255,255,0.018)",
+        }}
+      >
+        <summary
+          className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3"
+          style={{ color: text }}
+        >
+          <span className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em]">
+            <Settings2 size={12} style={{ color: accent }} />
+            Advanced Physics
+          </span>
+          <span className="text-[10px] uppercase tracking-[0.12em]" style={{ color: muted }}>
+            Solver presets, intensity, surface overrides, and lab
+          </span>
+        </summary>
+
+        <div className="space-y-4 border-t p-4" style={{ borderColor: border }}>
           <SettingsSectionBlock
             title="Shared Runtime"
             subtitle="One shell-level solver family drives every adopted surface. Surface overrides can still opt out or pin a different preset."
@@ -375,7 +560,13 @@ export function LayoutDynamicsSettingsSection({
                         }
                       />
 
-                      <label className="block rounded border p-3" style={{ borderColor: border, background: "rgba(255,255,255,0.025)" }}>
+                      <label
+                        className="block rounded border p-3"
+                        style={{
+                          borderColor: border,
+                          background: "rgba(255,255,255,0.025)",
+                        }}
+                      >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
@@ -455,61 +646,10 @@ export function LayoutDynamicsSettingsSection({
               })}
             </div>
           </SettingsSectionBlock>
-        </div>
-
-        <div className="space-y-4">
-          <SettingsSectionBlock
-            title="Authoring State"
-            subtitle="Persisted anchors stay separate from the live repelled positions. Reset only the top-bar authoring snapshots from here."
-            accent={accent}
-            tone="muted"
-          >
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-1.5">
-                <ThemeBadge
-                  label={`${Object.keys(topBarLayoutSnapshotsById).length} saved top-bar snapshot${Object.keys(topBarLayoutSnapshotsById).length === 1 ? "" : "s"}`}
-                  active={Object.keys(topBarLayoutSnapshotsById).length > 0}
-                />
-                <ThemeBadge label={resolvedSharedPreset.label} />
-              </div>
-
-              <div
-                className="rounded border px-3 py-3 text-[11px] leading-4"
-                style={{
-                  borderColor: border,
-                  background: "rgba(255,255,255,0.025)",
-                  color: muted,
-                }}
-              >
-                Explorer chrome adoption rides the same runtime, but top-bar
-                snapshots are the only layout-dynamics authoring state currently
-                persisted through Settings in this pass.
-              </div>
-
-              <SettingsActionStrip>
-                <button
-                  type="button"
-                  aria-label="Reset top bar layout dynamics snapshots"
-                  onClick={() =>
-                    onUpdateAppearance({ topBarLayoutSnapshotsById: {} })
-                  }
-                  className="inline-flex items-center gap-1.5 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
-                  style={{
-                    border: `1px solid ${accent}66`,
-                    background: `${accent}16`,
-                    color: accent,
-                  }}
-                >
-                  <RotateCcw size={10} />
-                  Reset Top Bar Snapshots
-                </button>
-              </SettingsActionStrip>
-            </div>
-          </SettingsSectionBlock>
 
           <SettingsSectionBlock
             title="Runtime Notes"
-            subtitle="The live solver is generic and surface-driven, so future shell strips can adopt it without inventing another drag system."
+            subtitle="The solver is generic and surface-driven, but normal browsing never needs to think about it."
             tone="muted"
           >
             <div className="space-y-3 text-[11px] leading-4 opacity-55">
@@ -523,31 +663,31 @@ export function LayoutDynamicsSettingsSection({
               <div className="flex items-start gap-2">
                 <LayoutGrid size={12} style={{ marginTop: 2, color: accent }} />
                 <span>
-                  Persisted snapshots only store authored anchors, widths, and
-                  band ids. Repelled positions never become durable layout truth.
+                  Persisted snapshots store authored anchors, widths, and band
+                  ids. Repelled positions never become durable layout truth.
                 </span>
               </div>
               <div className="flex items-start gap-2">
                 <RotateCcw size={12} style={{ marginTop: 2, color: accent }} />
                 <span>
-                  Physics only runs during authoring sessions in v1, so normal
-                  browsing never pays the extra RAF cost.
+                  Canonical reset clears customization state without changing
+                  theme, icon pack, wallpaper, or selected top-bar package.
                 </span>
               </div>
             </div>
           </SettingsSectionBlock>
-        </div>
-      </div>
 
-      <LayoutDynamicsLab
-        solver={resolvedSharedPreset}
-        intensity={layoutDynamicsIntensity}
-        accent={accent}
-        border={border}
-        text={text}
-        muted={muted}
-        reducedMotion={layoutDynamics.prefersReducedMotion}
-      />
+          <LayoutDynamicsLab
+            solver={resolvedSharedPreset}
+            intensity={layoutDynamicsIntensity}
+            accent={accent}
+            border={border}
+            text={text}
+            muted={muted}
+            reducedMotion={layoutDynamics.prefersReducedMotion}
+          />
+        </div>
+      </details>
     </section>
   );
 }

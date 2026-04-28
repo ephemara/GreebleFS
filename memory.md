@@ -1,3 +1,28 @@
+# 2026-04-28 - Layout Customization Reset Now Uses One Explorer Chrome Truth Lane
+
+- The ZBrush-style explorer layout customization stack now has one primary persisted customization lane: `settings.explorer.chromeLayoutOverridesByThemeId`.
+- Durable reset contract after this pass:
+  - `settingsStore.resetLayoutCustomizationToCanonical()` selects the canonical explorer layout, disables follow-theme layout selection, clears explorer chrome overrides, clears top-bar layout snapshots, resets layout-dynamics preset/intensity/surface overrides to defaults, and increments `settings.explorer.layoutUiResetRevision`.
+  - The reset intentionally does not change active theme, icon pack, wallpaper, or the chosen top-bar package.
+  - `FileExplorer.tsx` includes `layoutUiResetRevision` in the live layout apply key so canonical pane/header metrics reapply even when the canonical layout was already selected before reset.
+- Durable explorer chrome persistence rule:
+  - `settings.explorer.chromeLayoutOverridesByThemeId[themeId][chromeLayoutId]` takes precedence over saved `resolvedExplorerLayout.chromeSnapshot`.
+  - `chromeSnapshot` should be treated as a saved-layout baseline/fallback, not the live authoring truth once the user customizes chrome.
+  - Customize save paths should write through the same settings override lane that `FileExplorer` and `ExplorerWorkspace` read.
+- Durable shipped-layout rule:
+  - Canonical shipped chrome placements in `usr/explorer-chrome-layouts/**/explorer-chrome-layout.json` may carry explicit `bandId`, `anchorX`, `anchorY`, `widthPx`, `showLabel`, and `showIcon`.
+  - Normalization in `src/config/explorerChromeLayouts.ts` must preserve those freeform placement fields; do not collapse them back into legacy zone/order-only slots.
+- Important UX guardrail:
+  - `ExplorerChromeSurface.tsx` only routes through `LayoutDynamicsCanvas` while edit/customize mode is active. Normal explorer mode should render normal chrome, never an oversized empty authoring slab.
+  - The Settings route key remains `layout-dynamics`, but the user-facing section is now “Layout Customization.” ZBrush-style commands belong first; solver presets, per-surface physics, and the lab belong under collapsed Advanced Physics.
+- Validation signal for this pass:
+  - Passed: `bunx vitest run src/test/settingsStore.test.ts src/test/ExplorerChromeSurface.test.tsx --reporter=dot`
+  - Passed: `bunx vitest run src/test/layoutDynamicsCanvas.test.tsx --reporter=dot`
+  - Passed focused settings assertion: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "Layout Customization|ZBrush-style|advanced physics|layout customization" --reporter=dot`
+  - Filtered touched-file TypeScript sweep returned no diagnostics.
+- Current residual risk:
+  - The full requested explorer sweep still has pre-existing/drifted `src/test/fileExplorer.viewModes.test.tsx` failures around old mode-profile radio expectations, fixed utility-strip positioning, and several preview/navigation timeouts. Those failures are separate from the new canonical-reset lane but should be reconciled before treating the whole explorer suite as green.
+
 # 2026-04-28 - Explorer Huge-Folder Scrolling No Longer Mounts The Whole Directory
 
 - The standard explorer list/grid virtualization path now refuses to render every entry while viewport measurement is still `0`.

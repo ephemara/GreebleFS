@@ -1744,10 +1744,20 @@ describe("FileExplorer view modes", () => {
     });
   });
 
-  it("restores the canonical explorer layout preset from the menu", async () => {
+  it("resets layout customization to canonical from the menu", async () => {
     useSettingsStore
       .getState()
       .setActiveExplorerLayoutId("focus");
+    useSettingsStore.getState().setExplorerChromeLayoutOverride("operator", "default", {
+      entries: [
+        {
+          controlId: "refresh",
+          surfaceId: "explorerToolbar",
+          zone: "primaryStart",
+          order: 5,
+        },
+      ],
+    });
 
     renderExplorer();
     await screen.findByText("alpha");
@@ -1756,7 +1766,7 @@ describe("FileExplorer view modes", () => {
       screen.getByRole("button", { name: /open explorer layout preset menu/i }),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: /restore canonical/i }),
+      screen.getByRole("button", { name: /reset layout ui to canonical/i }),
     );
 
     await waitFor(() => {
@@ -1766,6 +1776,9 @@ describe("FileExplorer view modes", () => {
       expect(
         useSettingsStore.getState().settings.explorer.followThemeExplorerLayout,
       ).toBe(false);
+      expect(
+        useSettingsStore.getState().settings.explorer.chromeLayoutOverridesByThemeId,
+      ).toEqual({});
       expect(
         screen.queryByRole("menu", {
           name: /explorer layout menu/i,
@@ -1837,7 +1850,7 @@ describe("FileExplorer view modes", () => {
     ).toBeNull();
   });
 
-  it("does not let legacy chrome layout overrides displace the file-backed explorer layouts", async () => {
+  it("reads customize saves from the same chrome override lane the explorer writes", async () => {
     useExplorerStore.getState().updateSession({
       shellLayoutId: "focus",
       sourcesVisible: false,
@@ -1862,7 +1875,7 @@ describe("FileExplorer view modes", () => {
       getChromeControl("refresh")?.getAttribute(
         "data-overlay-explorer-control-zone",
       ),
-    ).toBe("primaryEnd");
+    ).toBe("primaryStart");
     expect(useExplorerStore.getState().session.shellLayoutId).toBe("focus");
     expect(
       useSettingsStore.getState().settings.explorer.activeExplorerLayoutId,

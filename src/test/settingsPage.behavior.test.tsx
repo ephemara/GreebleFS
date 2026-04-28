@@ -1038,10 +1038,15 @@ describe('SettingsPage behavior', () => {
     expect(motionLabEntry).toHaveAttribute('data-interaction-motion-surface', 'explorerEntry');
   }, 30000);
 
-  it('updates layout dynamics settings and exposes layout-physics lab surfaces', async () => {
+  it('shows ZBrush-style layout customization actions before collapsed advanced physics', async () => {
     const user = userEvent.setup();
 
     useSettingsStore.getState().updateAppearance({
+      layoutDynamicsPresetId: 'heavy-orbit',
+      layoutDynamicsIntensity: 1.5,
+      layoutDynamicsSurfaceOverrides: {
+        workbenchTopBar: { enabled: false },
+      },
       topBarLayoutSnapshotsById: {
         default: {
           entries: [
@@ -1058,7 +1063,29 @@ describe('SettingsPage behavior', () => {
 
     renderSettingsPage();
 
-    await user.click(findSectionButton('Layout Dynamics'));
+    await user.click(findSectionButton('Layout Customization'));
+
+    expect(
+      screen.getByRole('button', { name: /open explorer customize/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /reset layout ui to canonical/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /save current layout/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/movable surfaces/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^Top Bar$/i).length).toBeGreaterThan(0);
+
+    const advancedPhysics = document.querySelector(
+      '[data-layout-customization-advanced]',
+    ) as HTMLDetailsElement | null;
+    expect(advancedPhysics).not.toBeNull();
+    expect(advancedPhysics).not.toHaveAttribute('open');
+
+    await user.click(
+      advancedPhysics?.querySelector('summary') as HTMLElement,
+    );
 
     const enabledToggle = screen.getByRole('checkbox', {
       name: /enable layout dynamics/i,
@@ -1069,15 +1096,6 @@ describe('SettingsPage behavior', () => {
 
     expect(enabledToggle).toBeChecked();
     expect(explorerTopBarToggle).toBeChecked();
-
-    await user.click(
-      screen.getByRole('button', {
-        name: /heavy orbit/i,
-      }),
-    );
-    expect(
-      useSettingsStore.getState().settings.appearance.layoutDynamicsPresetId,
-    ).toBe('heavy-orbit');
 
     const sharedIntensitySlider = screen.getByRole('slider', {
       name: /shared intensity/i,
@@ -1098,12 +1116,13 @@ describe('SettingsPage behavior', () => {
 
     await user.click(
       screen.getByRole('button', {
-        name: /reset top bar layout dynamics snapshots/i,
+        name: /reset layout ui to canonical/i,
       }),
     );
-    expect(
-      useSettingsStore.getState().settings.appearance.topBarLayoutSnapshotsById,
-    ).toEqual({});
+    const resetSettings = useSettingsStore.getState().settings;
+    expect(resetSettings.appearance.topBarLayoutSnapshotsById).toEqual({});
+    expect(resetSettings.appearance.layoutDynamicsSurfaceOverrides).toEqual({});
+    expect(resetSettings.appearance.layoutDynamicsPresetId).toBeNull();
 
     expect(
       document.querySelector(

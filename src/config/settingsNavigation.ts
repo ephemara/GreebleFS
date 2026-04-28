@@ -289,10 +289,10 @@ export const settingsSectionCatalog = [
   },
   {
     key: 'layout-dynamics',
-    label: 'Layout Dynamics',
-    subtitle: 'Repo-wide chrome-authoring physics, anchor persistence, and live layout labs.',
-    keywords: ['layout dynamics', 'layout physics', 'kinematic repulsion', 'authoring', 'widget canvas', 'top bar'],
-    overviewSummary: 'Shared shell layout-authoring physics for explorer chrome, top bars, and future widget-style surfaces.',
+    label: 'Layout Customization',
+    subtitle: 'ZBrush-style move, save, and canonical reset controls for shell and explorer chrome.',
+    keywords: ['layout customization', 'layout dynamics', 'layout physics', 'zbrush', 'authoring', 'widget canvas', 'top bar', 'reset layout'],
+    overviewSummary: 'Direct layout customization commands with advanced physics tucked behind an expert section.',
     featuredInOverview: false,
     archetype: 'hybrid',
     shell: { preferredContentDensity: 'comfortable' },
@@ -312,6 +312,30 @@ export const settingsSectionCatalog = [
 ] as const satisfies readonly SettingsSectionCatalogEntry[];
 
 export type SettingsSectionKey = typeof settingsSectionCatalog[number]['key'];
+
+export type SettingsRailPathKey = 'settings' | 'plugins';
+
+export interface SettingsRailPathEntry {
+  key: SettingsRailPathKey;
+  label: string;
+  description: string;
+  order: number;
+}
+
+export const settingsRailPathCatalog = [
+  {
+    key: 'settings',
+    label: 'Settings',
+    description: 'Workbench, shell, explorer, and machine-level controls.',
+    order: 10,
+  },
+  {
+    key: 'plugins',
+    label: 'Plugins',
+    description: 'Extension-owned durable settings slots and tweak lanes.',
+    order: 20,
+  },
+] as const satisfies readonly SettingsRailPathEntry[];
 
 export type SettingsSectionCategoryKey =
   | 'start'
@@ -407,6 +431,10 @@ export function normalizeSettingsSectionKey(value: unknown): SettingsSectionKey 
   const trimmedValue = value.trim();
   const normalizedValue = trimmedValue as SettingsSectionKey;
   return SETTINGS_SECTION_LOOKUP.has(normalizedValue) ? normalizedValue : 'overview';
+}
+
+export function normalizeSettingsRailPathKey(value: unknown): SettingsRailPathKey {
+  return value === 'plugins' ? 'plugins' : 'settings';
 }
 
 export const featuredSettingsSectionKeys = settingsSectionCatalog

@@ -126,10 +126,18 @@ export interface ExplorerChromeControlDefinition {
 export interface ExplorerChromeSlotDefinition {
   zone: ExplorerChromeZoneId;
   order: number;
+  bandId?: string;
+  anchorX?: number;
+  anchorY?: number;
+  offsetPx?: number;
   grow?: number;
   shrink?: number;
   collapsePriority?: number;
   overflowEligible?: boolean;
+  sizeVariant?: ExplorerChromeSizeVariant;
+  widthPx?: number;
+  showLabel?: boolean;
+  showIcon?: boolean;
 }
 
 export interface ExplorerChromeLayoutDefinition {

@@ -634,6 +634,69 @@ describe('useSettingsStore.updateExplorer()', () => {
     expect(useExplorerStore.getState().session.sidebarWidth).toBe(312);
     expect(useExplorerStore.getState().session.previewWidth).toBe(488);
   });
+
+  it('resets layout customization to canonical without changing theme identity', () => {
+    const store = useSettingsStore.getState();
+    store.updateAppearance({
+      activeThemeId: 'operator-dark',
+      activeIconThemeId: 'lucide-stroke',
+      activeWallpaperId: 'wallpaper:studio',
+      activeTopBarId: 'classic-topbar',
+      layoutDynamicsEnabled: false,
+      layoutDynamicsPresetId: 'heavy-orbit',
+      layoutDynamicsIntensity: 1.75,
+      layoutDynamicsSurfaceOverrides: {
+        explorerTopbar: {
+          enabled: false,
+          presetId: 'soft-snap',
+          intensityMultiplier: 0.5,
+        },
+      },
+      topBarLayoutSnapshotsById: {
+        'classic-topbar': {
+          entries: [
+            {
+              nodeId: 'search',
+              bandId: 'primary',
+              x: 42,
+              y: 8,
+            },
+          ],
+        },
+      },
+    });
+    store.setExplorerChromeLayoutOverride('operator-dark', 'default', {
+      entries: [
+        {
+          controlId: 'refresh',
+          surfaceId: 'explorerToolbar',
+          zone: 'primaryStart',
+          order: 5,
+        },
+      ],
+    });
+    store.setFollowThemeExplorerLayout(false);
+    store.setActiveExplorerLayoutId(EXPLORER_CANONICAL_LAYOUT_ID);
+
+    const beforeRevision =
+      useSettingsStore.getState().settings.explorer.layoutUiResetRevision;
+    useSettingsStore.getState().resetLayoutCustomizationToCanonical();
+
+    const { appearance, explorer } = useSettingsStore.getState().settings;
+    expect(explorer.followThemeExplorerLayout).toBe(false);
+    expect(explorer.activeExplorerLayoutId).toBe(EXPLORER_CANONICAL_LAYOUT_ID);
+    expect(explorer.chromeLayoutOverridesByThemeId).toEqual({});
+    expect(explorer.layoutUiResetRevision).toBe(beforeRevision + 1);
+    expect(appearance.topBarLayoutSnapshotsById).toEqual({});
+    expect(appearance.layoutDynamicsEnabled).toBe(true);
+    expect(appearance.layoutDynamicsPresetId).toBeNull();
+    expect(appearance.layoutDynamicsIntensity).toBe(1);
+    expect(appearance.layoutDynamicsSurfaceOverrides).toEqual({});
+    expect(appearance.activeThemeId).toBe('operator-dark');
+    expect(appearance.activeIconThemeId).toBe('lucide_stroke');
+    expect(appearance.activeWallpaperId).toBe('wallpaper:studio');
+    expect(appearance.activeTopBarId).toBe('classic-topbar');
+  });
 });
 
 describe('useSettingsStore.updateLayout()', () => {

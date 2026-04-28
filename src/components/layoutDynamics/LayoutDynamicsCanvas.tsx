@@ -690,6 +690,8 @@ export function LayoutDynamicsCanvas({
           bandId: node.bandId,
           x: Math.round(node.x - (band?.x ?? 0)),
           y: Math.round(node.y - (band?.y ?? 0)),
+          widthPx: Math.round(node.width),
+          heightPx: Math.round(node.height),
         };
         nextEntries.push(entry);
         node.anchorX = (band?.x ?? 0) + entry.x;

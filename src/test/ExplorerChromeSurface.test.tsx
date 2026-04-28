@@ -2,7 +2,11 @@ import { fireEvent, render, waitFor } from "@testing-library/react";
 import { useCallback, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { ExplorerChromeSurface } from "../components/explorer/ExplorerChromeSurface";
-import type { ExplorerChromeResolvedSurface } from "../config/explorerChromeLayouts";
+import {
+  resolveExplorerChromeSurfaceLayout,
+  type ExplorerChromeControlDefinition,
+  type ExplorerChromeResolvedSurface,
+} from "../config/explorerChromeLayouts";
 
 const toolbarSurface: ExplorerChromeResolvedSurface = {
   surfaceId: "explorerToolbar",
@@ -51,6 +55,80 @@ const customizeSurface: ExplorerChromeResolvedSurface = {
 };
 
 describe("ExplorerChromeSurface", () => {
+  it("renders shipped freeform anchors from canonical chrome placements", async () => {
+    const controlDefinitions: ExplorerChromeControlDefinition[] = [
+      {
+        id: "focusAddressBar",
+        label: "Focus Address Bar",
+        surfaces: ["explorerTopbar"],
+      },
+    ];
+    const resolvedSurface = resolveExplorerChromeSurfaceLayout({
+      layoutId: "default",
+      surfaceId: "explorerTopbar",
+      controlDefinitions,
+    });
+    const focusAddressBarPlacement =
+      resolvedSurface.rows[0]?.zones
+        .flatMap((zone) => zone.controls)
+        .find((control) => control.controlId === "focusAddressBar") ?? null;
+
+    expect(focusAddressBarPlacement).toMatchObject({
+      bandId: "primary",
+      anchorX: 44,
+      anchorY: 0,
+      widthPx: 520,
+      showLabel: true,
+      showIcon: true,
+    });
+
+    const rendered = render(
+      <ExplorerChromeSurface
+        surface={resolvedSurface}
+        renderControl={() => <button type="button">Address</button>}
+        dynamicCanvasMinHeightPx={64}
+        layoutDynamics={{
+          enabled: true,
+          axisMode: "free-2d",
+          solver: {
+            id: "test-solver",
+            label: "Test Solver",
+            description: "Test",
+            groupId: "system",
+            auraRadiusPx: 140,
+            auraStrength: 900,
+            collisionStrength: 30,
+            springStiffness: 15,
+            damping: 8,
+            maxDisplacementPx: 240,
+            maxVelocityPx: 1800,
+            settleVelocityPx: 12,
+            gapPx: 12,
+          },
+          intensity: 1,
+        }}
+        editMode={{
+          active: true,
+          draggingControlId: null,
+          onDragStart: () => undefined,
+          onDragEnd: () => undefined,
+          onMoveControl: () => undefined,
+        }}
+      />,
+    );
+
+    const control = rendered.container.querySelector(
+      "[data-overlay-explorer-control='focusAddressBar']",
+    ) as HTMLElement | null;
+    expect(control).not.toBeNull();
+    expect(control?.style.width).toBe("520px");
+    expect(
+      rendered.container.querySelector(
+        '[data-layout-dynamics-surface="explorerTopbar"]',
+      ),
+    ).not.toBeNull();
+  });
+
   it("registers a customize surface once when parent rerenders recreate the edit-mode object", async () => {
     const registerCalls: string[] = [];
     const unregisterCalls: string[] = [];

@@ -633,6 +633,7 @@ const EXPLORER_LIST_OVERSCAN = 18;
 const EXPLORER_GRID_OVERSCAN_ROWS = 6;
 const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_WIDTH = 1280;
 const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_HEIGHT = 720;
+const EXPLORER_VIRTUAL_SCROLL_STATE_GRANULARITY_PX = 48;
 const EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY = 1 / 480;
 const EXPLORER_LAYOUT_WHEEL_MAX_DELTA = 0.18;
 const EXPLORER_LAYOUT_WHEEL_LINE_DELTA_PX = 18;
@@ -1054,10 +1055,21 @@ export function invalidateExplorerResultCaches(pathPrefix?: string): void {
 
 function readViewportMetrics(viewport: HTMLDivElement): ViewportMetrics {
   return {
-    scrollTop: viewport.scrollTop,
+    scrollTop: quantizeExplorerVirtualScrollTop(viewport.scrollTop),
     clientHeight: viewport.clientHeight,
     clientWidth: viewport.clientWidth,
   };
+}
+
+function quantizeExplorerVirtualScrollTop(scrollTop: number): number {
+  if (!Number.isFinite(scrollTop) || scrollTop <= 0) {
+    return 0;
+  }
+
+  return (
+    Math.floor(scrollTop / EXPLORER_VIRTUAL_SCROLL_STATE_GRANULARITY_PX) *
+    EXPLORER_VIRTUAL_SCROLL_STATE_GRANULARITY_PX
+  );
 }
 
 function getExplorerPerformanceNow(): number {
@@ -8302,6 +8314,7 @@ export function FileExplorer({
     editorSettings,
     keybindings,
     clearExplorerChromeLayoutOverride,
+    resetLayoutCustomizationToCanonical,
     restoreCanonicalExplorerLayout,
     setActiveExplorerLayoutId,
     setExplorerChromeLayoutOverride,
@@ -8323,6 +8336,8 @@ export function FileExplorer({
       keybindings: state.settings.keybindings,
       clearExplorerChromeLayoutOverride:
         state.clearExplorerChromeLayoutOverride,
+      resetLayoutCustomizationToCanonical:
+        state.resetLayoutCustomizationToCanonical,
       restoreCanonicalExplorerLayout: state.restoreCanonicalExplorerLayout,
       setActiveExplorerLayoutId: state.setActiveExplorerLayoutId,
       setExplorerChromeLayoutOverride: state.setExplorerChromeLayoutOverride,
@@ -8757,7 +8772,7 @@ export function FileExplorer({
     useState<ExplorerLayoutBandMetrics>(
       () => resolvedExplorerLayout?.bandMetrics ?? {},
     );
-  const lastAppliedExplorerLayoutIdRef = useRef<string | null>(null);
+  const lastAppliedExplorerLayoutKeyRef = useRef<string | null>(null);
   const explorerBandResizeFrameRef = useRef<number | null>(null);
   const explorerBandResizeCleanupRef = useRef<(() => void) | null>(null);
   const explorerBandResizePendingValueRef = useRef<number | null>(null);
@@ -9276,8 +9291,11 @@ export function FileExplorer({
 
   const commitExplorerViewportScrollTop = useCallback((scrollTop: number) => {
     explorerViewportScrollTopRef.current = scrollTop;
+    const virtualScrollTop = quantizeExplorerVirtualScrollTop(scrollTop);
     setExplorerViewportMetrics((current) =>
-      current.scrollTop === scrollTop ? current : { ...current, scrollTop },
+      current.scrollTop === virtualScrollTop
+        ? current
+        : { ...current, scrollTop: virtualScrollTop },
     );
   }, []);
 
@@ -9651,62 +9669,74 @@ export function FileExplorer({
     setPreviewSplitMode(storedPreviewSplitMode);
   }, [storedPreviewSplitMode]);
 
+  const applyExplorerLayoutDefinitionToLivePane = useCallback(
+    (layout: typeof resolvedExplorerLayout | null | undefined) => {
+      const nextPaneMetrics = layout?.paneMetrics ?? {};
+      const nextBandMetrics = layout?.bandMetrics ?? {};
+      setSidebarWidth((current) => {
+        const nextWidth =
+          typeof nextPaneMetrics.sidebarWidthPx === "number"
+            ? nextPaneMetrics.sidebarWidthPx
+            : current;
+        return Math.max(
+          sidebarBounds.minWidth,
+          Math.min(sidebarBounds.maxWidth, nextWidth),
+        );
+      });
+      setPreviewWidth((current) => {
+        const nextWidth =
+          typeof nextPaneMetrics.previewWidthPx === "number"
+            ? nextPaneMetrics.previewWidthPx
+            : current;
+        return Math.max(
+          EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+          Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, nextWidth),
+        );
+      });
+      setActionsWidth((current) => {
+        const nextWidth =
+          typeof nextPaneMetrics.actionsWidthPx === "number"
+            ? nextPaneMetrics.actionsWidthPx
+            : current;
+        return Math.max(
+          EXPLORER_ACTIONS_WIDTH_BOUNDS.min,
+          Math.min(EXPLORER_ACTIONS_WIDTH_BOUNDS.max, nextWidth),
+        );
+      });
+      if (typeof nextPaneMetrics.previewEnabled === "boolean") {
+        setPreviewEnabled(nextPaneMetrics.previewEnabled);
+      }
+      if (typeof nextPaneMetrics.sourcesVisible === "boolean") {
+        setSourcesVisible(nextPaneMetrics.sourcesVisible);
+      }
+      if (nextPaneMetrics.previewSplitMode) {
+        setPreviewSplitMode(nextPaneMetrics.previewSplitMode);
+      }
+      setLayoutBandMetricsDraft(nextBandMetrics);
+    },
+    [sidebarBounds.maxWidth, sidebarBounds.minWidth],
+  );
+
   useEffect(() => {
     const nextLayoutId =
       resolvedExplorerLayout?.id ?? EXPLORER_CANONICAL_LAYOUT_ID;
-    if (lastAppliedExplorerLayoutIdRef.current === nextLayoutId) {
+    const nextLayoutKey = `${nextLayoutId}:${
+      explorerSettings.layoutUiResetRevision ?? 0
+    }`;
+    if (lastAppliedExplorerLayoutKeyRef.current === nextLayoutKey) {
       return;
     }
 
-    const nextPaneMetrics = resolvedExplorerLayout?.paneMetrics ?? {};
-    const nextBandMetrics = resolvedExplorerLayout?.bandMetrics ?? {};
-    setSidebarWidth((current) => {
-      const nextWidth =
-        typeof nextPaneMetrics.sidebarWidthPx === "number"
-          ? nextPaneMetrics.sidebarWidthPx
-          : current;
-      return Math.max(
-        sidebarBounds.minWidth,
-        Math.min(sidebarBounds.maxWidth, nextWidth),
-      );
-    });
-    setPreviewWidth((current) => {
-      const nextWidth =
-        typeof nextPaneMetrics.previewWidthPx === "number"
-          ? nextPaneMetrics.previewWidthPx
-          : current;
-      return Math.max(
-        EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
-        Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, nextWidth),
-      );
-    });
-    setActionsWidth((current) => {
-      const nextWidth =
-        typeof nextPaneMetrics.actionsWidthPx === "number"
-          ? nextPaneMetrics.actionsWidthPx
-          : current;
-      return Math.max(
-        EXPLORER_ACTIONS_WIDTH_BOUNDS.min,
-        Math.min(EXPLORER_ACTIONS_WIDTH_BOUNDS.max, nextWidth),
-      );
-    });
-    if (typeof nextPaneMetrics.previewEnabled === "boolean") {
-      setPreviewEnabled(nextPaneMetrics.previewEnabled);
-    }
-    if (typeof nextPaneMetrics.sourcesVisible === "boolean") {
-      setSourcesVisible(nextPaneMetrics.sourcesVisible);
-    }
-    if (nextPaneMetrics.previewSplitMode) {
-      setPreviewSplitMode(nextPaneMetrics.previewSplitMode);
-    }
-    setLayoutBandMetricsDraft(nextBandMetrics);
-    lastAppliedExplorerLayoutIdRef.current = nextLayoutId;
+    applyExplorerLayoutDefinitionToLivePane(
+      resolvedExplorerLayout ?? canonicalExplorerLayout,
+    );
+    lastAppliedExplorerLayoutKeyRef.current = nextLayoutKey;
   }, [
-    resolvedExplorerLayout?.bandMetrics,
+    applyExplorerLayoutDefinitionToLivePane,
+    canonicalExplorerLayout,
+    explorerSettings.layoutUiResetRevision,
     resolvedExplorerLayout?.id,
-    resolvedExplorerLayout?.paneMetrics,
-    sidebarBounds.maxWidth,
-    sidebarBounds.minWidth,
+    resolvedExplorerLayout,
   ]);
 
   useEffect(() => {
@@ -18186,9 +18216,24 @@ export function FileExplorer({
     setFollowThemeExplorerLayout,
     themeExplorerLayoutId,
   ]);
-  const persistedExplorerChromeOverride = useMemo(
+  const settingsExplorerChromeOverride = useMemo(
+    () =>
+      explorerSettings.chromeLayoutOverridesByThemeId[explorerChromeThemeId]?.[
+        effectiveChromeLayoutId
+      ] ?? null,
+    [
+      effectiveChromeLayoutId,
+      explorerChromeThemeId,
+      explorerSettings.chromeLayoutOverridesByThemeId,
+    ],
+  );
+  const savedExplorerLayoutChromeSnapshot = useMemo(
     () => resolvedExplorerLayout?.chromeSnapshot ?? null,
     [resolvedExplorerLayout?.chromeSnapshot],
+  );
+  const persistedExplorerChromeOverride = useMemo(
+    () => settingsExplorerChromeOverride ?? savedExplorerLayoutChromeSnapshot,
+    [savedExplorerLayoutChromeSnapshot, settingsExplorerChromeOverride],
   );
   const activeChromeEditSession = useMemo(
     () =>
@@ -19342,6 +19387,76 @@ export function FileExplorer({
   const cancelExplorerChromeCustomization = useCallback(() => {
     closeExplorerChromeCustomizationSession();
   }, [closeExplorerChromeCustomizationSession]);
+  const resetExplorerLayoutUiToCanonical = useCallback(() => {
+    cancelExplorerCustomizePointerSession();
+    cancelExplorerChromeResizeSession();
+    setChromeEditDraggingControl(null);
+    setChromeEditHighlightedDropTarget(null);
+    setChromeEditPendingHotkeyControl(null);
+    setChromeHotkeyCaptureControl(null);
+    setChromeEditSelectedControl(null);
+    setResizingExplorerChromeControlId(null);
+    closeChromeEditSession();
+    setShowModeProfileMenu(false);
+    applyExplorerLayoutDefinitionToLivePane(canonicalExplorerLayout);
+    resetLayoutCustomizationToCanonical();
+  }, [
+    applyExplorerLayoutDefinitionToLivePane,
+    canonicalExplorerLayout,
+    closeChromeEditSession,
+    resetLayoutCustomizationToCanonical,
+    setChromeEditDraggingControl,
+    setChromeEditHighlightedDropTarget,
+    setChromeEditPendingHotkeyControl,
+    setChromeEditSelectedControl,
+    setChromeHotkeyCaptureControl,
+    setResizingExplorerChromeControlId,
+  ]);
+  useEffect(() => {
+    const handleOpenExplorerCustomize = (event: Event) => {
+      event.preventDefault();
+      beginExplorerChromeCustomization();
+    };
+    const handleSaveCurrentExplorerLayout = (event: Event) => {
+      event.preventDefault();
+      saveCurrentExplorerLayoutAsUser();
+    };
+    const handleResetLayoutUiToCanonical = (event: Event) => {
+      event.preventDefault();
+      resetExplorerLayoutUiToCanonical();
+    };
+
+    window.addEventListener(
+      "greeblefs:open-explorer-customize",
+      handleOpenExplorerCustomize,
+    );
+    window.addEventListener(
+      "greeblefs:save-current-explorer-layout",
+      handleSaveCurrentExplorerLayout,
+    );
+    window.addEventListener(
+      "greeblefs:reset-layout-ui-to-canonical",
+      handleResetLayoutUiToCanonical,
+    );
+    return () => {
+      window.removeEventListener(
+        "greeblefs:open-explorer-customize",
+        handleOpenExplorerCustomize,
+      );
+      window.removeEventListener(
+        "greeblefs:save-current-explorer-layout",
+        handleSaveCurrentExplorerLayout,
+      );
+      window.removeEventListener(
+        "greeblefs:reset-layout-ui-to-canonical",
+        handleResetLayoutUiToCanonical,
+      );
+    };
+  }, [
+    beginExplorerChromeCustomization,
+    resetExplorerLayoutUiToCanonical,
+    saveCurrentExplorerLayoutAsUser,
+  ]);
   const setSelectedExplorerChromeSizeVariant = useCallback(
     (sizeVariant: ExplorerChromeSizeVariant) => {
       if (!activeChromeEditSession?.selectedControlId) {
@@ -22588,8 +22703,8 @@ export function FileExplorer({
                             <button
                               key={layout.id}
                               type="button"
-                              role="menuitemradio"
-                              aria-checked={active}
+                              role="menuitem"
+                              aria-current={active ? "true" : undefined}
                               onClick={() => selectExplorerLayout(layout)}
                               style={{
                                 display: "grid",
@@ -22703,13 +22818,12 @@ export function FileExplorer({
                     <button
                       type="button"
                       onClick={() => {
-                        restoreCanonicalExplorerLayout();
-                        setShowModeProfileMenu(false);
+                        resetExplorerLayoutUiToCanonical();
                       }}
                       style={toolbarActionButtonStyle()}
                     >
                       <RotateCcw size={12} />
-                      Restore Canonical
+                      Reset Layout UI To Canonical
                     </button>
                     <button
                       type="button"

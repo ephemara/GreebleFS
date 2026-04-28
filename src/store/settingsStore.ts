@@ -129,7 +129,9 @@ import {
 } from '../config/screenshots';
 import { isLegacyScreenshotDirectory } from '../config/appContentDirectories';
 import {
+  normalizeSettingsRailPathKey,
   normalizeSettingsSectionKey,
+  type SettingsRailPathKey,
   type SettingsSectionKey,
 } from '../config/settingsNavigation';
 import { normalizeIconThemePackageSelectionId } from '../config/iconThemePackages';
@@ -235,6 +237,7 @@ export interface ExplorerSettings {
   collectionPreviewMode: ExplorerCollectionPreviewMode;
   followThemeExplorerLayout: boolean;
   activeExplorerLayoutId: string | null;
+  layoutUiResetRevision: number;
   modeProfileOverridesByThemeId: Record<string, ExplorerModeProfileId>;
   chromeLayoutOverridesByThemeId: Record<string, Record<string, ExplorerChromeOverrideSnapshot>>;
   activeMenuPackId: string | null;
@@ -526,6 +529,8 @@ function normalizeExplorerSettings(
     && Object.prototype.hasOwnProperty.call(updates, 'followThemeExplorerLayout');
   const hasExplicitActiveExplorerLayoutId = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'activeExplorerLayoutId');
+  const hasExplicitLayoutUiResetRevision = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'layoutUiResetRevision');
   const hasExplicitActiveMenuPackId = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'activeMenuPackId');
   const hasExplicitContextMenuLayoutOverrides = updates != null
@@ -562,6 +567,9 @@ function normalizeExplorerSettings(
     activeExplorerLayoutId: hasExplicitActiveExplorerLayoutId
       ? normalizeExplorerLayoutSelectionId(updates?.activeExplorerLayoutId)
       : base.activeExplorerLayoutId,
+    layoutUiResetRevision: hasExplicitLayoutUiResetRevision
+      ? normalizeSettingsRevision(updates?.layoutUiResetRevision)
+      : normalizeSettingsRevision(base.layoutUiResetRevision),
     modeProfileOverridesByThemeId: hasExplicitModeProfileOverrides
       ? normalizeExplorerModeProfileOverrideMap(updates?.modeProfileOverridesByThemeId)
       : base.modeProfileOverridesByThemeId,
@@ -578,6 +586,12 @@ function normalizeExplorerSettings(
       ? normalizeExplorerContextMenuItemOverrideMap(updates?.contextMenuItemOverrides)
       : base.contextMenuItemOverrides,
   };
+}
+
+function normalizeSettingsRevision(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : 0;
 }
 
 function normalizeExplorerLayoutSelectionId(value: unknown): string | null {
@@ -979,6 +993,8 @@ function normalizeAppearanceSettings(
   updates?: Partial<AppearanceSettings>,
 ): AppearanceSettings {
   const merged = { ...base, ...updates };
+  const hasExplicitLayoutDynamicsPresetId = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'layoutDynamicsPresetId');
   return {
     ...merged,
     customThemes: (merged.customThemes ?? base.customThemes).map(theme => normalizeThemeDefinition(theme)),
@@ -1070,11 +1086,9 @@ function normalizeAppearanceSettings(
       merged.interactionMotionSurfaceOverrides ?? base.interactionMotionSurfaceOverrides,
     ),
     layoutDynamicsEnabled: merged.layoutDynamicsEnabled !== false,
-    layoutDynamicsPresetId: normalizeLayoutDynamicsPresetId(
-      merged.layoutDynamicsPresetId,
-    )
-      ?? normalizeLayoutDynamicsPresetId(base.layoutDynamicsPresetId)
-      ?? null,
+    layoutDynamicsPresetId: hasExplicitLayoutDynamicsPresetId
+      ? normalizeLayoutDynamicsPresetId(updates?.layoutDynamicsPresetId)
+      : (normalizeLayoutDynamicsPresetId(base.layoutDynamicsPresetId) ?? null),
     layoutDynamicsIntensity: clampLayoutDynamicsIntensity(
       merged.layoutDynamicsIntensity,
     ),
@@ -1261,6 +1275,7 @@ export const defaultSettings: Settings = {
     collectionPreviewMode: 'list',
     followThemeExplorerLayout: true,
     activeExplorerLayoutId: null,
+    layoutUiResetRevision: 0,
     modeProfileOverridesByThemeId: {},
     chromeLayoutOverridesByThemeId: {},
     activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
@@ -1634,7 +1649,9 @@ export function mergeSettingsWithDefaults(imported?: LegacyImportedSettings): Se
 interface SettingsState {
   settings: Settings;
   isOpen: boolean;
+  activeRailPath: SettingsRailPathKey;
   activeSection: SettingsSectionKey;
+  activePluginSettingsSlotId: string | null;
   activeContextMenuComposerContext: ExplorerMenuContextKind;
   /** Per-section preference for whether SettingsRow descriptions render
    * inline (verbose) or only inside hover-only `InfoBubble` glyphs (compact,
@@ -1645,7 +1662,9 @@ interface SettingsState {
   // Actions
   openSettings: () => void;
   closeSettings: () => void;
+  setActiveRailPath: (path: SettingsRailPathKey) => void;
   setActiveSection: (section: SettingsSectionKey) => void;
+  setActivePluginSettingsSlotId: (slotId: string | null) => void;
   setActiveContextMenuComposerContext: (
     context: ExplorerMenuContextKind,
   ) => void;
@@ -1666,6 +1685,7 @@ interface SettingsState {
   setFollowThemeExplorerLayout: (followTheme: boolean) => void;
   setActiveExplorerLayoutId: (layoutId: string | null) => void;
   restoreCanonicalExplorerLayout: () => void;
+  resetLayoutCustomizationToCanonical: () => void;
   setExplorerModeProfileOverride: (themeId: string, modeProfileId: ExplorerModeProfileId) => void;
   clearExplorerModeProfileOverride: (themeId: string) => void;
   setExplorerChromeLayoutOverride: (
@@ -1721,13 +1741,24 @@ export const useSettingsStore = create<SettingsState>()(
     (set, get) => ({
       settings: defaultSettings,
       isOpen: false,
+      activeRailPath: 'settings',
       activeSection: 'overview',
+      activePluginSettingsSlotId: null,
       activeContextMenuComposerContext: 'entry',
       showAllDescriptionsBySection: {},
       
       openSettings: () => set({ isOpen: true }),
       closeSettings: () => set({ isOpen: false }),
+      setActiveRailPath: (path) => set({
+        activeRailPath: normalizeSettingsRailPathKey(path),
+      }),
       setActiveSection: (section) => set({ activeSection: normalizeSettingsSectionKey(section) }),
+      setActivePluginSettingsSlotId: (slotId) => set({
+        activePluginSettingsSlotId:
+          typeof slotId === 'string' && slotId.trim().length > 0
+            ? slotId.trim()
+            : null,
+      }),
       setActiveContextMenuComposerContext: (context) => set({
         activeContextMenuComposerContext:
           normalizeExplorerMenuComposerContext(context),
@@ -1847,6 +1878,31 @@ export const useSettingsStore = create<SettingsState>()(
           }),
         },
       })),
+
+      resetLayoutCustomizationToCanonical: () => set((state) => {
+        const defaultLayoutDynamics = createDefaultLayoutDynamicsSettings();
+        return {
+          settings: {
+            ...state.settings,
+            explorer: normalizeExplorerSettings(state.settings.explorer, {
+              followThemeExplorerLayout: false,
+              activeExplorerLayoutId: EXPLORER_CANONICAL_LAYOUT_ID,
+              chromeLayoutOverridesByThemeId: {},
+              layoutUiResetRevision:
+                normalizeSettingsRevision(state.settings.explorer.layoutUiResetRevision) + 1,
+            }),
+            appearance: normalizeAppearanceSettings(state.settings.appearance, {
+              layoutDynamicsEnabled: defaultLayoutDynamics.enabled,
+              layoutDynamicsPresetId: defaultLayoutDynamics.presetId,
+              layoutDynamicsIntensity: defaultLayoutDynamics.intensity,
+              layoutDynamicsSurfaceOverrides:
+                defaultLayoutDynamics.surfaceOverrides,
+              topBarLayoutSnapshotsById:
+                defaultLayoutDynamics.topBarLayoutsById,
+            }),
+          },
+        };
+      }),
 
       setExplorerModeProfileOverride: (themeId, modeProfileId) => set((state) => {
         const trimmedThemeId = themeId.trim();
@@ -2257,6 +2313,8 @@ export const useSettingsStore = create<SettingsState>()(
           ...defaultSettings,
           system: normalizeSystemSettings(defaultSettings.system),
         },
+        activeRailPath: 'settings',
+        activePluginSettingsSlotId: null,
         activeContextMenuComposerContext: 'entry',
       })),
       
@@ -2283,7 +2341,15 @@ export const useSettingsStore = create<SettingsState>()(
         return {
           ...currentState,
           ...persisted,
+          activeRailPath: normalizeSettingsRailPathKey(
+            persisted?.activeRailPath ?? currentState.activeRailPath,
+          ),
           activeSection: normalizeSettingsSectionKey(persisted?.activeSection ?? currentState.activeSection),
+          activePluginSettingsSlotId:
+            typeof persisted?.activePluginSettingsSlotId === 'string'
+            && persisted.activePluginSettingsSlotId.trim().length > 0
+              ? persisted.activePluginSettingsSlotId.trim()
+              : currentState.activePluginSettingsSlotId,
           activeContextMenuComposerContext: normalizeExplorerMenuComposerContext(
             persisted?.activeContextMenuComposerContext
               ?? currentState.activeContextMenuComposerContext,

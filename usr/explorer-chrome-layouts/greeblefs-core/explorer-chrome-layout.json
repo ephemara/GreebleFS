@@ -12,25 +12,46 @@
         "navigateBack": {
           "explorerToolbar": {
             "zone": "primaryStart",
-            "order": 10
+            "order": 10,
+            "bandId": "primary",
+            "anchorX": 0,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           }
         },
         "navigateForward": {
           "explorerToolbar": {
             "zone": "primaryStart",
-            "order": 20
+            "order": 20,
+            "bandId": "primary",
+            "anchorX": 38,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           }
         },
         "navigateUp": {
           "explorerToolbar": {
             "zone": "primaryStart",
-            "order": 30
+            "order": 30,
+            "bandId": "primary",
+            "anchorX": 76,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           }
         },
         "addressBar": {
           "explorerToolbar": {
             "zone": "primaryCenter",
             "order": 10,
+            "bandId": "primary",
+            "anchorX": 116,
+            "anchorY": 0,
+            "widthPx": 720,
+            "showIcon": false,
+            "showLabel": true,
             "grow": 1,
             "shrink": 1
           }
@@ -39,6 +60,9 @@
           "explorerToolbar": {
             "zone": "secondaryStart",
             "order": 10,
+            "bandId": "secondary",
+            "anchorX": 0,
+            "anchorY": 0,
             "shrink": 1,
             "collapsePriority": 20,
             "overflowEligible": true
@@ -48,6 +72,9 @@
           "explorerToolbar": {
             "zone": "secondaryStart",
             "order": 20,
+            "bandId": "secondary",
+            "anchorX": 160,
+            "anchorY": 0,
             "shrink": 1,
             "collapsePriority": 20,
             "overflowEligible": true
@@ -143,31 +170,62 @@
         "toggleSources": {
           "explorerToolbar": {
             "zone": "primaryStart",
-            "order": 5
+            "order": 5,
+            "bandId": "primary",
+            "anchorX": 0,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           },
           "explorerTopbar": {
             "zone": "start",
-            "order": 5
+            "order": 5,
+            "bandId": "primary",
+            "anchorX": 0,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           }
         },
         "focusAddressBar": {
           "explorerToolbar": {
             "zone": "primaryEnd",
-            "order": 20
+            "order": 20,
+            "bandId": "primary",
+            "anchorX": 840,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           },
           "explorerTopbar": {
             "zone": "start",
-            "order": 20
+            "order": 20,
+            "bandId": "primary",
+            "anchorX": 44,
+            "anchorY": 0,
+            "widthPx": 520,
+            "showIcon": true,
+            "showLabel": true
           }
         },
         "experimentalModes": {
           "explorerToolbar": {
             "zone": "primaryEnd",
-            "order": 30
+            "order": 30,
+            "bandId": "primary",
+            "anchorX": 882,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           },
           "explorerTopbar": {
             "zone": "end",
-            "order": 10
+            "order": 10,
+            "bandId": "primary",
+            "anchorX": 760,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           }
         },
         "customizeModeToggle": {
@@ -197,7 +255,12 @@
           },
           "explorerTopbar": {
             "zone": "end",
-            "order": 30
+            "order": 30,
+            "bandId": "primary",
+            "anchorX": 840,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           }
         },
         "togglePreview": {
@@ -207,7 +270,12 @@
           },
           "explorerTopbar": {
             "zone": "end",
-            "order": 40
+            "order": 40,
+            "bandId": "primary",
+            "anchorX": 884,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           }
         },
         "actionsPaneToggle": {
@@ -217,7 +285,12 @@
           },
           "explorerTopbar": {
             "zone": "end",
-            "order": 42
+            "order": 42,
+            "bandId": "primary",
+            "anchorX": 928,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           }
         },
         "selectionModeToggle": {
@@ -227,7 +300,12 @@
           },
           "explorerTopbar": {
             "zone": "end",
-            "order": 45
+            "order": 45,
+            "bandId": "primary",
+            "anchorX": 972,
+            "anchorY": 0,
+            "showIcon": true,
+            "showLabel": false
           }
         },
         "toggleHiddenFiles": {
