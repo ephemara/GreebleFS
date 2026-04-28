@@ -1,3 +1,17 @@
+# 2026-04-28 - Explorer Policy Snapshots Are Normalized Before React Session State
+
+- A random `FileExplorer.tsx` runtime crash (`Cannot read properties of null (reading 'slice')`) traced back to explorer policy/session snapshots crossing into React with malformed `history` payloads.
+- Durable ownership after this fix:
+  - `src/runtime/goExplorerPolicyService.ts` now exports `normalizeExplorerPolicySessionSnapshot(...)` and applies it to bootstrap, navigate, and open-entry policy responses before returning them to callers.
+  - `src/components/FileExplorer.tsx` now normalizes the initial persisted explorer session before seeding local state and normalizes every policy navigation snapshot before it touches `historyRef`, `setHistory(...)`, or `setHistoryIdx(...)`.
+- Durable contract after this pass:
+  - explorer policy `history` must be treated as untrusted cross-runtime data even if the TypeScript type says `string[]`.
+  - when `history` is missing/null but `currentPath` is present, the normalization fallback seeds history with the current path so back/forward state and recent-location UI stay coherent instead of crashing.
+  - preserve locally computed pending navigation history when it already exists; normalization is for safety, not for wiping valid in-flight navigation state.
+- Validation that passed for this pass:
+  - `.\node_modules\.bin\vitest.exe run src/test/goExplorerPolicyService.test.ts src/test/fileExplorer.viewModes.test.tsx -t "normalizes malformed|preview terminal reports a new working directory" --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript sweep returned no diagnostics for `FileExplorer`, `goExplorerPolicyService`, and their regression tests.
+
 # 2026-04-28 - Windows Go Runtime Setup Now Handles Verbatim Paths, New `wasm_exec.js` Layouts, And Wasm Module Validation
 
 - Swapping from Linux back to Windows exposed three durable Go-pipeline faults that are now fixed end-to-end:

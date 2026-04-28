@@ -9,6 +9,42 @@ export interface ExplorerPolicySessionSnapshot {
   historyIdx: number;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+export function normalizeExplorerPolicySessionSnapshot(
+  value: unknown,
+): ExplorerPolicySessionSnapshot {
+  const source = asRecord(value);
+  const currentPath =
+    typeof source?.currentPath === 'string' ? source.currentPath : '';
+  const rawHistory = Array.isArray(source?.history)
+    ? source.history.filter(
+        (entry): entry is string =>
+          typeof entry === 'string' && entry.length > 0,
+      )
+    : [];
+  const history =
+    rawHistory.length > 0
+      ? rawHistory
+      : currentPath.length > 0
+        ? [currentPath]
+        : [];
+  const historyIdxValue =
+    typeof source?.historyIdx === 'number' && Number.isFinite(source.historyIdx)
+      ? Math.trunc(source.historyIdx)
+      : history.length - 1;
+
+  return {
+    currentPath,
+    history: [...history],
+    historyIdx: Math.max(-1, Math.min(history.length - 1, historyIdxValue)),
+  };
+}
+
 export interface ExplorerPolicyBreadcrumb {
   label: string;
   path: string;
@@ -90,17 +126,34 @@ const runExplorerPolicyResolveOpenEntry = createGoSidecarActionRunner<
 export async function bootstrapExplorerPolicySession(
   request: ExplorerPolicyBootstrapRequest,
 ): Promise<ExplorerPolicyBootstrapResult> {
-  return (await runExplorerPolicyBootstrap(request)).result;
+  const response = await runExplorerPolicyBootstrap({
+    ...request,
+    session: normalizeExplorerPolicySessionSnapshot(request.session),
+  });
+  return {
+    snapshot: normalizeExplorerPolicySessionSnapshot(response.result.snapshot),
+  };
 }
 
 export async function navigateExplorerPolicySession(
   request: ExplorerPolicyNavigateRequest,
 ): Promise<ExplorerPolicyNavigationResult> {
-  return (await runExplorerPolicyNavigate(request)).result;
+  const response = await runExplorerPolicyNavigate(request);
+  return {
+    ...response.result,
+    snapshot: normalizeExplorerPolicySessionSnapshot(response.result.snapshot),
+  };
 }
 
 export async function resolveExplorerEntryOpenWithPolicy(
   request: ExplorerPolicyResolveOpenEntryRequest,
 ): Promise<ExplorerPolicyResolveOpenEntryResult> {
-  return (await runExplorerPolicyResolveOpenEntry(request)).result;
+  const response = await runExplorerPolicyResolveOpenEntry(request);
+  const result = response.result;
+  return result.snapshot
+    ? {
+        ...result,
+        snapshot: normalizeExplorerPolicySessionSnapshot(result.snapshot),
+      }
+    : result;
 }

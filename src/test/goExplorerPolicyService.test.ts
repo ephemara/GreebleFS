@@ -1,35 +1,42 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { createGoSidecarActionRunnerMock, runnerCalls } = vi.hoisted(() => ({
-  runnerCalls: [] as Array<{
-    runtimeId: string;
-    actionId: string;
-    payload: unknown;
-  }>,
-  createGoSidecarActionRunnerMock: vi.fn((runtimeId: string, actionId: string) => {
-    return async (payload?: unknown) => {
-      runnerCalls.push({
-        runtimeId,
-        actionId,
-        payload: payload ?? null,
-      });
-      return {
-        runtimeId,
-        actionId,
-        resultJson: JSON.stringify({
-          runtimeId,
-          actionId,
-          payload: payload ?? null,
-        }),
-        result: {
-          runtimeId,
-          actionId,
-          payload: payload ?? null,
-        },
-      };
-    };
-  }),
-}));
+const { createGoSidecarActionRunnerMock, runnerCalls, runnerResultOverrides } =
+  vi.hoisted(() => ({
+    runnerCalls: [] as Array<{
+      runtimeId: string;
+      actionId: string;
+      payload: unknown;
+    }>,
+    runnerResultOverrides: new Map<string, unknown>(),
+    createGoSidecarActionRunnerMock: vi.fn(
+      (runtimeId: string, actionId: string) => {
+        return async (payload?: unknown) => {
+          runnerCalls.push({
+            runtimeId,
+            actionId,
+            payload: payload ?? null,
+          });
+          const hasOverride = runnerResultOverrides.has(actionId);
+          const result = hasOverride
+            ? runnerResultOverrides.get(actionId)
+            : {
+                runtimeId,
+                actionId,
+                payload: payload ?? null,
+              };
+          if (hasOverride) {
+            runnerResultOverrides.delete(actionId);
+          }
+          return {
+            runtimeId,
+            actionId,
+            resultJson: JSON.stringify(result),
+            result,
+          };
+        };
+      },
+    ),
+  }));
 
 vi.mock('../runtime/goRuntimeBackend', () => ({
   createGoSidecarActionRunner: createGoSidecarActionRunnerMock,
@@ -45,6 +52,7 @@ import {
 describe('goExplorerPolicyService', () => {
   beforeEach(() => {
     runnerCalls.length = 0;
+    runnerResultOverrides.clear();
   });
 
   it('binds all explorer policy actions to the dedicated runtime id', () => {
@@ -109,6 +117,32 @@ describe('goExplorerPolicyService', () => {
         historyIndex: 2,
         showHidden: true,
       },
+    });
+  });
+
+  it('normalizes malformed sidecar session snapshots before returning them', async () => {
+    runnerResultOverrides.set('explorer.session.navigate', {
+      snapshot: {
+        currentPath: '/repo/src',
+        history: null,
+        historyIdx: 99,
+      },
+      listing: null,
+      isHome: false,
+      clearSelection: true,
+    });
+
+    const result = await navigateExplorerPolicySession({
+      sessionId: 'pane-1',
+      path: '/repo/src',
+      pushHistory: true,
+      showHidden: false,
+    });
+
+    expect(result.snapshot).toEqual({
+      currentPath: '/repo/src',
+      history: ['/repo/src'],
+      historyIdx: 0,
     });
   });
 

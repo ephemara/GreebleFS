@@ -57,6 +57,7 @@ const {
         historyIdx: number;
       }
     >(),
+    returnNullHistoryOnNextNavigate: false,
   },
 }));
 
@@ -111,8 +112,15 @@ vi.mock("../runtime/explorerBackend", async () => {
         );
         explorerPolicyMockState.sessions.set(request.sessionId, snapshot);
         const isHome = request.path === "greeblefs://home";
+        const returnedSnapshot = explorerPolicyMockState.returnNullHistoryOnNextNavigate
+          ? ({
+              ...snapshot,
+              history: null,
+            } as unknown as typeof snapshot)
+          : snapshot;
+        explorerPolicyMockState.returnNullHistoryOnNextNavigate = false;
         return {
-          snapshot,
+          snapshot: returnedSnapshot,
           listing: isHome
             ? null
             : await actual.explorerBackendContract.listLocation(
@@ -1335,6 +1343,7 @@ describe("FileExplorer view modes", () => {
     spreadsheetWorkbenchMockState.lastMode = "preview";
     shaderWorkbenchMockState.lastSelectionLabel = "";
     explorerPolicyMockState.sessions.clear();
+    explorerPolicyMockState.returnNullHistoryOnNextNavigate = false;
     vi.mocked(currentWindow.onDragDropEvent).mockClear();
     vi.mocked(currentWindow.scaleFactor).mockClear();
     resetOverlayTermStorage(window.localStorage);
@@ -3041,6 +3050,62 @@ describe("FileExplorer view modes", () => {
       expect(previewTerminalMockState.lastProps?.workingDirectory).toBe(
         `${REPO_ROOT}\\alpha`,
       );
+    });
+  });
+
+  it("normalizes malformed navigation snapshots before storing explorer history", async () => {
+    const alphaEntries = [
+      {
+        name: "inside-alpha.txt",
+        path: `${REPO_ROOT}\\alpha\\inside-alpha.txt`,
+        is_dir: false,
+        size: 64,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ];
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (
+          (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
+          payload?.path === `${REPO_ROOT}\\alpha`
+        ) {
+          return alphaEntries;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    explorerPolicyMockState.returnNullHistoryOnNextNavigate = true;
+
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(screen.getByText("notes.txt"));
+    await screen.findByRole("button", { name: /copy path/i });
+    fireEvent.click(getPreviewTerminalToggleButton());
+
+    await screen.findByTestId("mock-preview-terminal");
+    fireEvent.click(screen.getByRole("button", { name: "Report Alpha Cwd" }));
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.currentPath).toBe(
+        `${REPO_ROOT}\\alpha`,
+      );
+      expect(useExplorerStore.getState().session.history).toEqual(
+        expect.arrayContaining([`${REPO_ROOT}\\alpha`]),
+      );
+      const history = useExplorerStore.getState().session.history;
+      expect(history[history.length - 1]).toBe(`${REPO_ROOT}\\alpha`);
+      expect(screen.getByText("inside-alpha.txt")).toBeInTheDocument();
     });
   });
 

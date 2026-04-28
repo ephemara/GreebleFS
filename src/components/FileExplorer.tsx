@@ -425,6 +425,7 @@ import { ResizablePane } from "./ResizablePane";
 import {
   PRIMARY_EXPLORER_INSTANCE_ID,
   defaultExplorerSession,
+  normalizeExplorerSessionSnapshot,
   useExplorerStore,
   type ExplorerChromeEditSession,
   type ExplorerDocumentViewMode,
@@ -545,6 +546,7 @@ import type {
   ExplorerPolicyLocationListing,
   ExplorerPolicySessionSnapshot,
 } from "../runtime/goExplorerPolicyService";
+import { normalizeExplorerPolicySessionSnapshot } from "../runtime/goExplorerPolicyService";
 import { runExplorerAudioBatchProcess } from "../runtime/audioWorkbenchBackend";
 import {
   openExplorerPicker,
@@ -8995,7 +8997,10 @@ export function FileExplorer({
   // Session is only used to seed the explorer's local state. Avoid subscribing to it
   // so high-frequency local changes (typing, resizing) don't force extra store-driven renders.
   const initialSession = useMemo(
-    () => useExplorerStore.getState().getSession(instanceId),
+    () =>
+      normalizeExplorerSessionSnapshot(
+        useExplorerStore.getState().getSession(instanceId),
+      ),
     [instanceId],
   );
   const initialSessionPathRef = useRef(initialSession.currentPath.trim());
@@ -9033,7 +9038,7 @@ export function FileExplorer({
     [currentPath, modelsSettings.capabilityBindings],
   );
   const [history, setHistory] = useState<string[]>(
-    () => initialSession.history,
+    () => [...initialSession.history],
   );
   const [historyIdx, setHistoryIdx] = useState(() => initialSession.historyIdx);
   const historyRef = useRef(history);
@@ -10506,13 +10511,10 @@ export function FileExplorer({
 
   const syncExplorerPolicySession = useCallback(
     async (snapshot: ExplorerPolicySessionSnapshot) => {
+      const normalizedSnapshot = normalizeExplorerPolicySessionSnapshot(snapshot);
       await bootstrapExplorerPolicySession({
         sessionId: instanceId,
-        session: {
-          currentPath: snapshot.currentPath,
-          history: [...snapshot.history],
-          historyIdx: snapshot.historyIdx,
-        },
+        session: normalizedSnapshot,
       });
     },
     [bootstrapExplorerPolicySession, instanceId],
@@ -10525,14 +10527,16 @@ export function FileExplorer({
       isHome: boolean;
       startedAt: number;
     }) => {
-      const { snapshot, listing, isHome, startedAt } = args;
+      const { listing, isHome, startedAt } = args;
+      const snapshot = normalizeExplorerPolicySessionSnapshot(args.snapshot);
+      const nextHistory = [...snapshot.history];
       pendingNavigationPathRef.current = null;
       pendingNavigationHistoryRef.current = null;
       pendingNavigationHistoryIdxRef.current = null;
-      historyRef.current = snapshot.history;
+      historyRef.current = nextHistory;
       historyIdxRef.current = snapshot.historyIdx;
       setCurrentPath(snapshot.currentPath);
-      setHistory(snapshot.history);
+      setHistory(nextHistory);
       setHistoryIdx(snapshot.historyIdx);
       setSelected(new Set());
       setSelectionModeActive(false);
