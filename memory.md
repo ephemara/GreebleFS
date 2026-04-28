@@ -12,6 +12,31 @@
 - Known existing suite drift:
   - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/overlayScrollArea.test.tsx --reporter=dot --testTimeout=30000` still fails 15 `fileExplorer.viewModes` cases around explorer mode/profile controls, preview/navigation timing, and ctrl-wheel expectations. These are consistent with the earlier recorded full-suite drift and were not reproduced by the focused performance assertions.
 
+# 2026-04-28 - Official Settings Now Has A Dedicated `Plugins` Path With Shared Slot Rendering
+
+- Plugin-authored settings no longer stop at backend discovery. The official Settings surface now has a first-class top-level split between built-in `Settings` and plugin-owned `Plugins`.
+- Durable shell ownership after this pass:
+  - `src/config/settingsNavigation.ts` now declares a rail-path catalog in addition to the section catalog.
+  - `src/store/settingsStore.ts` persists `activeRailPath` and `activePluginSettingsSlotId` alongside `activeSection`.
+  - `src/components/SettingsPage.tsx` is now responsible for routing between the built-in section rail and the plugin settings-slot rail while keeping the same shared Settings shell/header grammar.
+  - `src/components/settings/sections/PluginSettingsSection.tsx` is the official shared renderer for plugin settings slots, including generated fields, long-form JSON/textarea controls, plugin metadata, and custom slot renderers.
+  - `src/panels/panelRegistry.tsx` and `src/App.tsx` now pass discovered `pluginSettingsSlots` plus plugin refresh/open-folder affordances into the Settings panel instead of hiding plugin configuration in the Plugins manager.
+- Durable UX rule after this pass:
+  - plugin durable settings belong under `Settings > Plugins`, not as a second settings system inside the Plugins manager.
+  - the Plugins manager may stay compact and operational, but official durable configuration should flow through the shared Settings shell and primitives.
+  - plugin slots should inherit the same rail/header/label grammar as built-in settings instead of inventing custom one-off panes.
+- Durable runtime rule after this pass:
+  - `src/runtime/pluginSettingsRuntime.ts` must return stable empty snapshots for plugins with no stored settings yet. Returning a fresh `{}` on every read will cause `useSyncExternalStore` loops.
+  - resolved plugin slot values in React should be derived from the stable stored snapshot (`useMemo`) instead of being used directly as an external-store snapshot when they allocate a new object each read.
+- Small adjacent bug fixed during validation:
+  - `src/components/OverlayScrollArea.tsx` now routes inertial scrollbar sync through a ref-backed callback bridge so the shared scroll shell does not trip callback-initialization issues in Settings tests.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "splits the settings rail into settings and plugins paths|persists generated plugin settings through the shared settings store lane" --reporter=dot`
+  - `bunx vitest run src/test/settingsStore.test.ts src/test/panelRegistry.test.tsx --reporter=dot`
+  - filtered touched-file TypeScript sweep covering `SettingsPage`, `PluginSettingsSection`, `settingsNavigation`, `settingsStore`, `panelRegistry`, `App`, `OverlayScrollArea`, and `pluginSettingsRuntime`
+- Current residual validation caveat:
+  - the full `src/test/settingsPage.behavior.test.tsx` file still exceeds the host tool time ceiling on this machine when run as one giant batch, so the proof here is the focused plugin-path assertions plus the surrounding store/panel suites rather than a complete file-wide green run.
+
 # 2026-04-28 - Explorer Virtual Scroll Updates Are Coalesced
 
 - Standard explorer list/grid scrolling now keeps native scroll position exact in `explorerViewportScrollTopRef`, but coalesces React virtual-window state updates through `requestAnimationFrame` and `startTransition`.

@@ -336,15 +336,14 @@ export function PluginSettingsSection({
     () => createOverlayPluginRuntimeSettingsController(slot.pluginId),
     [slot.pluginId],
   );
-  const resolvedValues = useSyncExternalStore(
-    (onStoreChange) => controller.subscribe(() => onStoreChange()),
-    () => controller.getResolvedValues(slot),
-    () => controller.getResolvedValues(slot),
-  );
   const storedValues = useSyncExternalStore(
     (onStoreChange) => controller.subscribe(() => onStoreChange()),
     controller.getStoredValues,
     controller.getStoredValues,
+  );
+  const resolvedValues = useMemo(
+    () => controller.getResolvedValues(slot),
+    [controller, slot, storedValues],
   );
 
   const settingsHost = useMemo(

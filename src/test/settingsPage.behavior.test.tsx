@@ -1017,11 +1017,11 @@ describe('SettingsPage behavior', () => {
       pluginSettingsSlots: [TEST_PLUGIN_SETTINGS_SLOT],
     });
 
-    expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /plugins/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Settings Path' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Plugins Path' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /main slot/i })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /plugins/i }));
+    await user.click(screen.getByRole('button', { name: 'Plugins Path' }));
 
     expect(screen.getByRole('button', { name: /main slot/i })).toBeInTheDocument();
     const pluginCategory = Array.from(
@@ -1041,7 +1041,7 @@ describe('SettingsPage behavior', () => {
       pluginSettingsSlots: [TEST_PLUGIN_SETTINGS_SLOT],
     });
 
-    await user.click(screen.getByRole('button', { name: /plugins/i }));
+    await user.click(screen.getByRole('button', { name: 'Plugins Path' }));
 
     const enabledToggle = screen.getByRole('checkbox', { name: /enabled/i });
     const labelInput = screen.getByRole('textbox', { name: /label/i });

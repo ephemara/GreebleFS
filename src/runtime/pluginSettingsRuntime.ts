@@ -7,6 +7,8 @@ import {
 } from '../config/pluginSettings';
 import { useSettingsStore } from '../store/settingsStore';
 
+const EMPTY_PLUGIN_SETTINGS_VALUE_MAP: Record<string, OverlayPluginSettingsValue> = {};
+
 export interface OverlayPluginRuntimeSettingsController {
   getStoredValues: () => Record<string, OverlayPluginSettingsValue>;
   getResolvedValues: (
@@ -28,7 +30,8 @@ function readPluginStoredSettings(
   pluginId: string,
 ): Record<string, OverlayPluginSettingsValue> {
   return (
-    useSettingsStore.getState().settings.plugins.valuesByPluginId[pluginId] ?? {}
+    useSettingsStore.getState().settings.plugins.valuesByPluginId[pluginId]
+    ?? EMPTY_PLUGIN_SETTINGS_VALUE_MAP
   );
 }
 
@@ -73,11 +76,16 @@ export function createOverlayPluginRuntimeSettingsController(
       useSettingsStore.subscribe((state, previousState) => {
         const nextValues = state.settings.plugins.valuesByPluginId[pluginId] ?? {};
         const previousValues =
-          previousState.settings.plugins.valuesByPluginId[pluginId] ?? {};
-        if (nextValues === previousValues) {
+          previousState.settings.plugins.valuesByPluginId[pluginId]
+          ?? EMPTY_PLUGIN_SETTINGS_VALUE_MAP;
+        const normalizedNextValues =
+          nextValues === previousState.settings.plugins.valuesByPluginId[pluginId]
+            ? previousValues
+            : (nextValues ?? EMPTY_PLUGIN_SETTINGS_VALUE_MAP);
+        if (normalizedNextValues === previousValues) {
           return;
         }
-        listener(nextValues);
+        listener(normalizedNextValues);
       }),
   };
 }
