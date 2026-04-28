@@ -50,6 +50,12 @@ describe('resolveSystemPresentationState()', () => {
 });
 
 describe('useSettingsStore — initial state', () => {
+  it('defaults to the built-in settings rail path', () => {
+    const storeState = useSettingsStore.getState();
+    expect(storeState.activeRailPath).toBe('settings');
+    expect(storeState.activePluginSettingsSlotId).toBeNull();
+  });
+
   it('has the correct default terminal settings', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.terminal.showSidebar).toBe(true);

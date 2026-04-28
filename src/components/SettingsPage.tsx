@@ -3421,7 +3421,9 @@ export function SettingsPage({
     })),
   );
   const showAllDescriptionsForActiveSection =
-    showAllDescriptionsBySection[activeSection] ?? false;
+    activeRailPath === 'settings'
+      ? (showAllDescriptionsBySection[activeSection] ?? false)
+      : false;
   const refreshNativeNotificationPermission = useCallback(async () => {
     setNativeNotificationPermissionLoading(true);
     try {
@@ -7707,6 +7709,67 @@ export function SettingsPage({
         .filter((category) => category.sections.length > 0),
     [settingsSectionsByKey],
   );
+  const pluginSettingsSlotGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        description: string;
+        slots: Array<{
+          key: string;
+          label: string;
+          subtitle: string;
+          summary: string;
+          slot: OverlayPluginSettingsSlotContribution;
+        }>;
+      }
+    >();
+
+    pluginSettingsSlots.forEach((slot) => {
+      const groupKey = slot.pluginId;
+      const existingGroup = groups.get(groupKey) ?? {
+        key: groupKey,
+        label: slot.pluginName,
+        description: `Settings slots contributed by ${slot.pluginName}.`,
+        slots: [],
+      };
+      existingGroup.slots.push({
+        key: slot.id,
+        label: slot.title,
+        subtitle:
+          slot.description
+          ?? `${slot.pluginName} plugin settings slot.`,
+        summary: [
+          slot.component ? 'Custom UI' : 'Generated UI',
+          `${slot.fields.length} field${slot.fields.length === 1 ? '' : 's'}`,
+        ].join(' · '),
+        slot,
+      });
+      groups.set(groupKey, existingGroup);
+    });
+
+    return [...groups.values()]
+      .sort((left, right) => left.label.localeCompare(right.label))
+      .map((group) => ({
+        ...group,
+        slots: group.slots
+          .slice()
+          .sort((left, right) => {
+            if (left.slot.order !== right.slot.order) {
+              return left.slot.order - right.slot.order;
+            }
+            return left.label.localeCompare(right.label);
+          }),
+      }));
+  }, [pluginSettingsSlots]);
+  const pluginSettingsSlotsById = useMemo(
+    () =>
+      new Map(
+        pluginSettingsSlots.map((slot) => [slot.id, slot] as const),
+      ),
+    [pluginSettingsSlots],
+  );
   const activeSectionMeta =
     settingsSections.find((section) => section.key === activeSection) ??
     settingsSections[0];
@@ -7715,6 +7778,60 @@ export function SettingsPage({
   );
   const activeSectionShellHints =
     activeSectionMeta.shell as SettingsSectionShellHints | undefined;
+  const activePluginSettingsSlot =
+    (activePluginSettingsSlotId
+      ? pluginSettingsSlotsById.get(activePluginSettingsSlotId) ?? null
+      : null) ?? pluginSettingsSlots[0] ?? null;
+  const activePluginSettingsGroup = pluginSettingsSlotGroups.find((group) =>
+    group.slots.some((entry) => entry.slot.id === activePluginSettingsSlot?.id),
+  );
+  const activeRailPathDescriptor =
+    settingsRailPathCatalog.find((path) => path.key === activeRailPath) ??
+    settingsRailPathCatalog[0];
+  const pluginPathSummary = `${pluginSettingsSlots.length} slot${pluginSettingsSlots.length === 1 ? '' : 's'}`;
+  const settingsPathSummary = `${settingsSections.length} section${settingsSections.length === 1 ? '' : 's'}`;
+  const activePluginSummary = activePluginSettingsSlot
+    ? [
+        activePluginSettingsSlot.component ? 'Custom UI' : 'Generated UI',
+        `${activePluginSettingsSlot.fields.length} field${activePluginSettingsSlot.fields.length === 1 ? '' : 's'}`,
+      ].join(' · ')
+    : pluginPathSummary;
+  const activePluginDetail =
+    activePluginSettingsSlot?.description
+    ?? (
+      activePluginSettingsSlot
+        ? `Adjust durable settings contributed by ${activePluginSettingsSlot.pluginName}.`
+        : 'Discovered plugin settings slots live here so extension tweaks stop polluting the core settings rail.'
+    );
+  const activePluginKeywords =
+    activePluginSettingsSlot?.keywords.slice(0, 3) ?? [];
+  const isPluginRailActive = activeRailPath === 'plugins';
+
+  useEffect(() => {
+    if (activeRailPath !== 'plugins') {
+      return;
+    }
+
+    if (pluginSettingsSlots.length === 0) {
+      if (activePluginSettingsSlotId != null) {
+        setActivePluginSettingsSlotId(null);
+      }
+      return;
+    }
+
+    if (
+      activePluginSettingsSlotId == null
+      || !pluginSettingsSlotsById.has(activePluginSettingsSlotId)
+    ) {
+      setActivePluginSettingsSlotId(pluginSettingsSlots[0]?.id ?? null);
+    }
+  }, [
+    activePluginSettingsSlotId,
+    activeRailPath,
+    pluginSettingsSlots,
+    pluginSettingsSlotsById,
+    setActivePluginSettingsSlotId,
+  ]);
   const ActiveHomePackSettingsComponent =
     activeHomePack?.runtime.settingsComponent ?? null;
   const selectedContextMenuCommand =
@@ -8826,6 +8943,55 @@ export function SettingsPage({
               >
                 Settings
               </h1>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {settingsRailPathCatalog
+                  .slice()
+                  .sort((left, right) => left.order - right.order)
+                  .map((path) => {
+                    const pathIsActive = activeRailPath === path.key;
+                    const pathSummary =
+                      path.key === 'plugins'
+                        ? pluginPathSummary
+                        : settingsPathSummary;
+                    return (
+                      <button
+                        key={path.key}
+                        type="button"
+                        aria-label={`${path.label} Path`}
+                        onClick={() => {
+                          setActiveRailPath(path.key as SettingsRailPathKey);
+                          if (
+                            path.key === 'plugins'
+                            && activePluginSettingsSlot == null
+                          ) {
+                            setActivePluginSettingsSlotId(
+                              pluginSettingsSlots[0]?.id ?? null,
+                            );
+                          }
+                        }}
+                        className="rounded border px-2 py-2 text-left transition-colors"
+                        data-settings-rail-path={path.label}
+                        style={{
+                          borderColor: pathIsActive ? `${accent}88` : border,
+                          background: pathIsActive
+                            ? "var(--overlay-workbench-chrome-button-active-bg)"
+                            : "rgba(255,255,255,0.03)",
+                          color: text,
+                          boxShadow: pathIsActive
+                            ? `inset 0 0 0 1px ${accent}22`
+                            : "none",
+                        }}
+                      >
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                          {path.label}
+                        </div>
+                        <div className="mt-1 text-[10px] leading-4 opacity-60">
+                          {pathSummary}
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
             </div>
 
             <OverlayScrollArea
@@ -8833,38 +8999,90 @@ export function SettingsPage({
               viewportStyle={{ padding: "7px 8px 10px 8px" }}
             >
               <div className="space-y-3">
-                {settingsSectionGroups.map((category) => (
-                  <div key={category.key} data-settings-rail-category={category.label}>
-                    <div
-                      className="mb-1.5 flex items-center justify-between gap-2 px-1 text-[9px] font-semibold uppercase tracking-[0.16em]"
-                      title={category.description}
-                      style={{ color: muted }}
-                    >
-                      <span className="truncate">{category.label}</span>
-                      <span className="opacity-45">{category.sections.length}</span>
+                {isPluginRailActive
+                  ? pluginSettingsSlotGroups.map((category) => (
+                    <div key={category.key} data-settings-rail-category={category.label}>
+                      <div
+                        className="mb-1.5 flex items-center justify-between gap-2 px-1 text-[9px] font-semibold uppercase tracking-[0.16em]"
+                        title={category.description}
+                        style={{ color: muted }}
+                      >
+                        <span className="truncate">{category.label}</span>
+                        <span className="opacity-45">{category.slots.length}</span>
+                      </div>
+                      <div className="space-y-1">
+                        {category.slots.map((slotEntry) => (
+                          <SettingsRailButton
+                            key={slotEntry.key}
+                            active={activePluginSettingsSlot?.id === slotEntry.slot.id}
+                            icon={<Puzzle size={12} />}
+                            label={slotEntry.label}
+                            subtitle={slotEntry.subtitle}
+                            summary={slotEntry.summary}
+                            accent={accent}
+                            border={border}
+                            text={text}
+                            muted={muted}
+                            onClick={() => {
+                              setActiveRailPath('plugins');
+                              setActivePluginSettingsSlotId(slotEntry.slot.id);
+                            }}
+                            motionBinding={bindSettingsCardMotion(
+                              activePluginSettingsSlot?.id === slotEntry.slot.id,
+                            )}
+                          />
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      {category.sections.map((section) => (
-                        <SettingsRailButton
-                          key={section.key}
-                          active={activeSection === section.key}
-                          icon={section.icon}
-                          label={section.label}
-                          subtitle={section.subtitle}
-                          summary={section.summary}
-                          accent={accent}
-                          border={border}
-                          text={text}
-                          muted={muted}
-                          onClick={() => setActiveSection(section.key)}
-                          motionBinding={bindSettingsCardMotion(
-                            activeSection === section.key,
-                          )}
-                        />
-                      ))}
+                  ))
+                  : settingsSectionGroups.map((category) => (
+                    <div key={category.key} data-settings-rail-category={category.label}>
+                      <div
+                        className="mb-1.5 flex items-center justify-between gap-2 px-1 text-[9px] font-semibold uppercase tracking-[0.16em]"
+                        title={category.description}
+                        style={{ color: muted }}
+                      >
+                        <span className="truncate">{category.label}</span>
+                        <span className="opacity-45">{category.sections.length}</span>
+                      </div>
+                      <div className="space-y-1">
+                        {category.sections.map((section) => (
+                          <SettingsRailButton
+                            key={section.key}
+                            active={activeSection === section.key}
+                            icon={section.icon}
+                            label={section.label}
+                            subtitle={section.subtitle}
+                            summary={section.summary}
+                            accent={accent}
+                            border={border}
+                            text={text}
+                            muted={muted}
+                            onClick={() => {
+                              setActiveRailPath('settings');
+                              setActiveSection(section.key);
+                            }}
+                            motionBinding={bindSettingsCardMotion(
+                              activeSection === section.key,
+                            )}
+                          />
+                        ))}
+                      </div>
                     </div>
+                  ))}
+                {isPluginRailActive && pluginSettingsSlotGroups.length === 0 ? (
+                  <div
+                    className="rounded border px-3 py-3 text-[11px] leading-5"
+                    style={{
+                      borderColor: border,
+                      background: "rgba(255,255,255,0.03)",
+                      color: muted,
+                    }}
+                  >
+                    No plugin settings slots are loaded yet. Extensions that
+                    contribute <code>settingsSlots</code> will appear here.
                   </div>
-                ))}
+                ) : null}
               </div>
             </OverlayScrollArea>
           </>
@@ -8889,50 +9107,71 @@ export function SettingsPage({
                   className="min-w-[240px] flex-1 text-[11px] leading-4"
                   style={{ color: muted }}
                 >
-                  {activeSectionMeta.detail}
+                  {isPluginRailActive ? activePluginDetail : activeSectionMeta.detail}
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                 <SettingsStatusPill style={{ color: muted }}>
-                  Group · {activeSectionCategory?.label ?? "General"}
+                  Path · {activeRailPathDescriptor.label}
                 </SettingsStatusPill>
-                <SettingsStatusPill style={{ color: muted }}>
-                  Theme · {effectiveTheme.name}
-                </SettingsStatusPill>
-                <SettingsStatusPill style={{ color: muted }}>
-                  Layout · {activeLayoutProfile.label}
-                </SettingsStatusPill>
-                <SettingsStatusPill style={{ color: muted }}>
-                  Startup ·{" "}
-                  {settings.system.launchAtStartup ? "Enabled" : "Disabled"}
-                </SettingsStatusPill>
-                <SettingsStatusPill style={{ color: muted }}>
-                  Archetype · {activeSectionMeta.archetype}
-                </SettingsStatusPill>
-                <SettingsStatusPill className="hidden xl:inline-flex" style={{ color: muted }}>
-                  {activeSectionMeta.summary}
-                </SettingsStatusPill>
-                <SettingsActionButton
-                  onClick={() =>
-                    setShowAllDescriptions(
-                      activeSection,
-                      !showAllDescriptionsForActiveSection,
-                    )
-                  }
-                  aria-pressed={showAllDescriptionsForActiveSection}
-                  title={
-                    showAllDescriptionsForActiveSection
-                      ? "Hide descriptions (use the (i) bubbles instead)"
-                      : "Show every row description inline for this section"
-                  }
-                  active={showAllDescriptionsForActiveSection}
-                  accent={accent}
-                >
-                  <SlidersHorizontal size={12} />
-                  {showAllDescriptionsForActiveSection
-                    ? "Hide Descriptions"
-                    : "Show Descriptions"}
-                </SettingsActionButton>
+                {isPluginRailActive ? (
+                  <>
+                    <SettingsStatusPill style={{ color: muted }}>
+                      Plugin · {activePluginSettingsGroup?.label ?? "Extensions"}
+                    </SettingsStatusPill>
+                    <SettingsStatusPill style={{ color: muted }}>
+                      Slot · {activePluginSummary}
+                    </SettingsStatusPill>
+                    {activePluginKeywords.map((keyword) => (
+                      <SettingsStatusPill key={keyword} style={{ color: muted }}>
+                        {keyword}
+                      </SettingsStatusPill>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <SettingsStatusPill style={{ color: muted }}>
+                      Group · {activeSectionCategory?.label ?? "General"}
+                    </SettingsStatusPill>
+                    <SettingsStatusPill style={{ color: muted }}>
+                      Theme · {effectiveTheme.name}
+                    </SettingsStatusPill>
+                    <SettingsStatusPill style={{ color: muted }}>
+                      Layout · {activeLayoutProfile.label}
+                    </SettingsStatusPill>
+                    <SettingsStatusPill style={{ color: muted }}>
+                      Startup ·{" "}
+                      {settings.system.launchAtStartup ? "Enabled" : "Disabled"}
+                    </SettingsStatusPill>
+                    <SettingsStatusPill style={{ color: muted }}>
+                      Archetype · {activeSectionMeta.archetype}
+                    </SettingsStatusPill>
+                    <SettingsStatusPill className="hidden xl:inline-flex" style={{ color: muted }}>
+                      {activeSectionMeta.summary}
+                    </SettingsStatusPill>
+                    <SettingsActionButton
+                      onClick={() =>
+                        setShowAllDescriptions(
+                          activeSection,
+                          !showAllDescriptionsForActiveSection,
+                        )
+                      }
+                      aria-pressed={showAllDescriptionsForActiveSection}
+                      title={
+                        showAllDescriptionsForActiveSection
+                          ? "Hide descriptions (use the (i) bubbles instead)"
+                          : "Show every row description inline for this section"
+                      }
+                      active={showAllDescriptionsForActiveSection}
+                      accent={accent}
+                    >
+                      <SlidersHorizontal size={12} />
+                      {showAllDescriptionsForActiveSection
+                        ? "Hide Descriptions"
+                        : "Show Descriptions"}
+                    </SettingsActionButton>
+                  </>
+                )}
                 <SettingsActionButton
                   onClick={() => resetToDefaults()}
                 >
@@ -8947,6 +9186,8 @@ export function SettingsPage({
         <SettingsRowDescriptionProvider
           showDescriptions={showAllDescriptionsForActiveSection}
         >
+        {activeRailPath === "settings" ? (
+          <>
         {activeSection === "overview" && (
           <section
             className="rounded border p-4"
@@ -18355,6 +18596,30 @@ export function SettingsPage({
               </div>
             </div>
           </section>
+        )}
+          </>
+        ) : activePluginSettingsSlot ? (
+          <PluginSettingsSection
+            appearance={{
+              theme: effectiveTheme,
+              fonts: appearance.fonts,
+              cssVars: appearance.cssVars,
+            }}
+            slot={activePluginSettingsSlot}
+            accent={accent}
+            onRefreshPlugins={onRefreshPlugins}
+            onOpenPluginsFolder={onOpenPluginsFolder}
+            pluginsLoading={pluginsLoading}
+            pluginsError={pluginsError}
+          />
+        ) : (
+          <EmptyPluginSettingsState
+            accent={accent}
+            onRefreshPlugins={onRefreshPlugins}
+            onOpenPluginsFolder={onOpenPluginsFolder}
+            pluginsLoading={pluginsLoading}
+            pluginsError={pluginsError}
+          />
         )}
         </SettingsRowDescriptionProvider>
       </SettingsShell>

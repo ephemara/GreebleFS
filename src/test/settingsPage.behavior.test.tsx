@@ -33,7 +33,12 @@ import { useExplorerStore } from '../store/explorerStore';
 import { resetMobileShareState, useMobileShareStore } from '../store/mobileShareStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
-import type { OverlayPluginContextMenuContribution, OverlayPluginExplorerActionContribution } from '../config/pluginContributions';
+import type {
+  OverlayPluginContextMenuContribution,
+  OverlayPluginExplorerActionContribution,
+  OverlayPluginSettingsSlotContribution,
+} from '../config/pluginContributions';
+import type { OverlayPluginSettingsFieldDefinition } from '../config/pluginSettings';
 
 const { qrCodeToDataUrlMock } = vi.hoisted(() => ({
   qrCodeToDataUrlMock: vi.fn(async (url: string) => `data:image/png;base64,${Buffer.from(url).toString('base64')}`),
@@ -113,6 +118,7 @@ function renderSettingsPage(options?: {
   onOpenTopBarsFolder?: () => Promise<void>;
   onRefreshHomePacks?: () => Promise<void>;
   onOpenHomePacksFolder?: () => Promise<void>;
+  pluginSettingsSlots?: OverlayPluginSettingsSlotContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginExplorerActions?: OverlayPluginExplorerActionContribution[];
 }) {
@@ -209,11 +215,57 @@ function renderSettingsPage(options?: {
       onRefreshWallpapers={async () => {}}
       onOpenWallpapersFolder={async () => {}}
       onImportWallpaperFiles={async () => {}}
+      pluginSettingsSlots={options?.pluginSettingsSlots}
+      pluginsLoading={false}
+      pluginsError={null}
+      onRefreshPlugins={async () => {}}
+      onOpenPluginsFolder={async () => {}}
       pluginContextMenuItems={options?.pluginContextMenuItems}
       pluginExplorerActions={options?.pluginExplorerActions}
     />,
   );
 }
+
+const TEST_PLUGIN_SETTINGS_FIELDS: OverlayPluginSettingsFieldDefinition[] = [
+  {
+    id: 'enabled',
+    label: 'Enabled',
+    description: 'Turn the plugin lane on or off.',
+    kind: 'boolean',
+    options: [],
+    order: 10,
+    keywords: ['toggle'],
+    defaultValue: false,
+  },
+  {
+    id: 'label',
+    label: 'Label',
+    description: 'Small visible label stored in the shared plugin settings lane.',
+    kind: 'text',
+    options: [],
+    order: 20,
+    keywords: ['text'],
+    defaultValue: 'hello',
+  },
+];
+
+const TEST_PLUGIN_SETTINGS_SLOT: OverlayPluginSettingsSlotContribution = {
+  id: 'test.plugin.settings.main',
+  pluginId: 'test-plugin',
+  pluginName: 'Test Plugin',
+  title: 'Main Slot',
+  description: 'Primary plugin-owned settings surface.',
+  iconName: 'puzzle',
+  keywords: ['plugin', 'settings'],
+  order: 10,
+  rendererEntry: null,
+  defaults: {
+    enabled: false,
+    label: 'hello',
+  },
+  fields: TEST_PLUGIN_SETTINGS_FIELDS,
+  component: null,
+};
 
 describe('SettingsPage behavior', () => {
   beforeEach(() => {
@@ -957,6 +1009,57 @@ describe('SettingsPage behavior', () => {
           & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     }
+  });
+
+  it('splits the settings rail into settings and plugins paths', async () => {
+    const user = userEvent.setup();
+    renderSettingsPage({
+      pluginSettingsSlots: [TEST_PLUGIN_SETTINGS_SLOT],
+    });
+
+    expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /plugins/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /main slot/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /plugins/i }));
+
+    expect(screen.getByRole('button', { name: /main slot/i })).toBeInTheDocument();
+    const pluginCategory = Array.from(
+      document.querySelectorAll('[data-settings-rail-category]'),
+    ).find(
+      (node) => node.getAttribute('data-settings-rail-category') === 'Test Plugin',
+    );
+    expect(pluginCategory).not.toBeNull();
+    expect(pluginCategory).toContainElement(
+      screen.getByRole('button', { name: /main slot/i }),
+    );
+  });
+
+  it('persists generated plugin settings through the shared settings store lane', async () => {
+    const user = userEvent.setup();
+    renderSettingsPage({
+      pluginSettingsSlots: [TEST_PLUGIN_SETTINGS_SLOT],
+    });
+
+    await user.click(screen.getByRole('button', { name: /plugins/i }));
+
+    const enabledToggle = screen.getByRole('checkbox', { name: /enabled/i });
+    const labelInput = screen.getByRole('textbox', { name: /label/i });
+
+    expect(
+      useSettingsStore.getState().settings.plugins.valuesByPluginId['test-plugin'],
+    ).toBeUndefined();
+
+    await user.click(enabledToggle);
+    await user.clear(labelInput);
+    await user.type(labelInput, 'smoke-lane');
+
+    expect(
+      useSettingsStore.getState().settings.plugins.valuesByPluginId['test-plugin'],
+    ).toMatchObject({
+      enabled: true,
+      label: 'smoke-lane',
+    });
   });
 
   it('updates interaction motion settings and exposes motion-lab preview surfaces', async () => {

@@ -7,6 +7,7 @@ import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginPreviewLaneContribution,
+  OverlayPluginSettingsSlotContribution,
 } from '../config/pluginContributions';
 import TerminalOverlay from '../components/TerminalOverlay';
 import { ExplorerWorkspace } from '../components/explorer/ExplorerWorkspace';
@@ -211,6 +212,11 @@ export function createBuiltInPanelDefinitions({
   pluginExplorerActions,
   pluginContextMenuItems,
   pluginPreviewLanes = [],
+  pluginSettingsSlots = [],
+  pluginsLoading = false,
+  pluginsError = null,
+  onRefreshPlugins = async () => {},
+  onOpenPluginsFolder = async () => {},
   onOpenInTerminal,
   onOpenInFilesystemAquarium,
   onAddBookmark,
@@ -348,6 +354,11 @@ export function createBuiltInPanelDefinitions({
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
+  pluginSettingsSlots?: OverlayPluginSettingsSlotContribution[];
+  pluginsLoading?: boolean;
+  pluginsError?: string | null;
+  onRefreshPlugins?: () => Promise<void>;
+  onOpenPluginsFolder?: () => Promise<void>;
   onOpenInTerminal: (path: string) => void;
   onOpenInFilesystemAquarium: (path: string) => void;
   onAddBookmark: (name: string, path: string) => Promise<void>;
@@ -842,6 +853,11 @@ export function createBuiltInPanelDefinitions({
             onOpenWallpapersFolder={onOpenWallpapersFolder}
             onImportWallpaperFiles={onImportWallpaperFiles}
             onSetWindowMode={onSetWindowMode}
+            pluginSettingsSlots={pluginSettingsSlots}
+            pluginsLoading={pluginsLoading}
+            pluginsError={pluginsError}
+            onRefreshPlugins={onRefreshPlugins}
+            onOpenPluginsFolder={onOpenPluginsFolder}
             pluginContextMenuItems={pluginContextMenuItems}
             pluginExplorerActions={pluginExplorerActions}
           />
