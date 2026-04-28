@@ -1,3 +1,24 @@
+# 2026-04-27 - Freeform Explorer Header Layouts Must Persist Real Y Coordinates, And The Fixed Utility Strip Must Not Steal Canvas Width
+
+- The latest explorer-layout persistence fix closed a subtle but very visible regression in the new freeform header authoring lane:
+  - the live `LayoutDynamicsCanvas.tsx` session already preserved true `x/y` positions, but file-backed explorer layout saves could still partially collapse header placements back into the legacy row model on reload
+  - catalog-origin drops onto adopted freeform surfaces also only carried `anchorX`, so newly inserted controls could re-enter the save path without a durable freeform `anchorY`
+  - the fixed `layout/customize` utility strip was still consuming header width as a flex sibling, which made the right side of the unified header feel like dead, non-authorable space
+- Durable persistence rules after the fix:
+  - `src/components/explorer/explorerCustomizePointerRuntime.ts` drop-target metadata for layout-dynamics surfaces now carries `bandId + anchorX + anchorY`. If a future freeform drop path only persists `anchorX`, treat that as a regression.
+  - `src/components/explorer/ExplorerChromeSurface.tsx` must pass freeform `anchorY` through both the external catalog-preview node and the committed preview placement. Otherwise catalog drops will look freeform live but save back into row-like positions.
+  - `src/components/FileExplorer.tsx` must preserve `anchorY` when a catalog-origin drop lands on a layout-dynamics surface, and `handleExplorerChromeDynamicSurfaceCommit(...)` must treat `free-2d` surfaces differently from row bands:
+    - sort committed snapshot entries by `y`, then `x`, then `nodeId` for stable order
+    - keep the committed `bandId`/`anchorX`/`anchorY`
+    - do not derive durable meaning from legacy row ids when the surface profile is `free-2d`
+  - `src/config/explorerLayouts.ts` must not silently rewrite `workspaceHeader` entries into `explorerTopbar` during layout-file normalization anymore. That compatibility shim now destroys unified-header/freeform truth and is a regression against the file-backed layout system.
+- Durable geometry rule:
+  - the fixed utility strip for `shellLayout` + `customizeModeToggle` should stay pinned and always visible, but it must not shrink the authorable header canvas out of the flex layout.
+  - `FileExplorer.tsx` now absolutely positions that strip over the header host instead of letting it consume width as a flex sibling. If the right side of the header becomes a dead zone again, check the utility-strip positioning before touching layout-dynamics math.
+- Focused validation that passed for this pass:
+  - `bunx vitest run src/test/explorerLayouts.test.ts src/test/ExplorerChromeSurface.test.tsx src/test/layoutDynamicsCanvas.test.tsx --reporter=dot`
+  - filtered clean: `bash -lc 'bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "FileExplorer\\.tsx|explorerLayouts\\.ts|ExplorerChromeSurface\\.tsx|LayoutDynamicsCanvas\\.tsx|explorerCustomizePointerRuntime\\.ts|explorerStore\\.ts|explorerLayouts\\.test\\.ts" || true'`
+
 # 2026-04-27 - Authoring Canvases Need A Fixed Viewport With Bidirectional Scroll, Not A Content-Growth Illusion
 
 - The latest customize-mode polish closed a specific but important regression in the explorer header authoring surface:

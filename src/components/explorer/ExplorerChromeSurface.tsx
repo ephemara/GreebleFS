@@ -366,7 +366,7 @@ export function ExplorerChromeSurface({
       order: highlightedDropTarget.targetIndex * 10 + 5,
       bandId,
       anchorX: highlightedDropTarget.anchorX,
-      anchorY: undefined,
+      anchorY: highlightedDropTarget.anchorY,
       offsetPx: 0,
       hidden: false,
     };
@@ -377,6 +377,7 @@ export function ExplorerChromeSurface({
       pointerPoint: customizePointerSnapshot.pointerPoint,
       bandId,
       anchorX: highlightedDropTarget.anchorX,
+      anchorY: highlightedDropTarget.anchorY,
       widthPx: previewPlacement.widthPx,
       dataAttributes: {
         "data-overlay-explorer-control": previewPlacement.controlId,

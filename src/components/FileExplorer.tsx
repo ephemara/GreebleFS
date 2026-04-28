@@ -317,7 +317,10 @@ import {
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { useLayoutDynamicsController } from "../animation/layoutDynamics";
-import { isLayoutDynamicsSurfaceId } from "../config/layoutDynamics";
+import {
+  getLayoutDynamicsSurfaceProfile,
+  isLayoutDynamicsSurfaceId,
+} from "../config/layoutDynamics";
 import {
   ExplorerChromeSurface,
   type ExplorerChromeSurfaceLayoutDynamics,
@@ -1341,6 +1344,9 @@ interface ExplorerChromeEditModeState {
     zoneId: ExplorerChromeZoneId;
     targetIndex: number;
     offsetPx: number;
+    bandId?: string;
+    anchorX?: number;
+    anchorY?: number;
   } | null;
   resizingControlId?: ExplorerChromeControlId | null;
   selectedControlId?: ExplorerChromeControlId | null;
@@ -1368,6 +1374,9 @@ interface ExplorerChromeEditModeState {
       zoneId: ExplorerChromeZoneId;
       targetIndex: number;
       offsetPx: number;
+      bandId?: string;
+      anchorX?: number;
+      anchorY?: number;
     } | null,
   ) => void;
   onSetSelectedControl?: (controlId: ExplorerChromeControlId | null) => void;
@@ -18170,6 +18179,7 @@ export function FileExplorer({
         offsetPx: number;
         bandId?: string;
         anchorX?: number;
+        anchorY?: number;
       };
     }) => {
       if (!activeChromeEditSession) {
@@ -18209,7 +18219,7 @@ export function FileExplorer({
             ? {
                 bandId: args.target.bandId,
                 anchorX: args.target.anchorX,
-                anchorY: undefined,
+                anchorY: args.target.anchorY,
                 offsetPx: 0,
                 hidden: false,
               }
@@ -18265,7 +18275,21 @@ export function FileExplorer({
         surfaceDefinition.rows.map((row) => [row.id, row] as const),
       );
       const bandOrderCursorById = new Map<string, number>();
-      const nextSurfaceEntries = args.snapshot.entries.map((entry) => {
+      const surfaceUsesFreeformLayoutDynamics =
+        isLayoutDynamicsSurfaceId(args.surfaceId) &&
+        getLayoutDynamicsSurfaceProfile(args.surfaceId).axisMode === "free-2d";
+      const orderedSnapshotEntries = surfaceUsesFreeformLayoutDynamics
+        ? [...args.snapshot.entries].sort((left, right) => {
+            if (left.y !== right.y) {
+              return left.y - right.y;
+            }
+            if (left.x !== right.x) {
+              return left.x - right.x;
+            }
+            return left.nodeId.localeCompare(right.nodeId);
+          })
+        : args.snapshot.entries;
+      const nextSurfaceEntries = orderedSnapshotEntries.map((entry, surfaceIndex) => {
         const controlId = entry.nodeId as ExplorerChromeControlId;
         const existingEntry =
           activeChromeEditSession.draftOverride.entries.find(
@@ -18274,12 +18298,17 @@ export function FileExplorer({
         const visiblePlacement = findRegisteredExplorerChromePlacement(controlId);
         const surfaceRow = rowDefinitionById.get(entry.bandId);
         const fallbackZone =
-          surfaceRow?.zones[0] ??
+          (surfaceUsesFreeformLayoutDynamics
+            ? visiblePlacement?.zone
+            : surfaceRow?.zones[0]) ??
           visiblePlacement?.zone ??
           surfaceDefinition.rows[0]?.zones[0] ??
           "start";
-        const bandEntryOrder = (bandOrderCursorById.get(entry.bandId) ?? 0) + 1;
-        bandOrderCursorById.set(entry.bandId, bandEntryOrder);
+        const bandOrderKey = surfaceUsesFreeformLayoutDynamics
+          ? "__freeform__"
+          : entry.bandId;
+        const bandEntryOrder = (bandOrderCursorById.get(bandOrderKey) ?? 0) + 1;
+        bandOrderCursorById.set(bandOrderKey, bandEntryOrder);
         const bandRowIndex = Math.max(
           0,
           surfaceDefinition.rows.findIndex((row) => row.id === entry.bandId),
@@ -18288,7 +18317,9 @@ export function FileExplorer({
           controlId,
           surfaceId: args.surfaceId,
           zone: fallbackZone,
-          order: bandRowIndex * 1000 + bandEntryOrder * 10,
+          order: surfaceUsesFreeformLayoutDynamics
+            ? (surfaceIndex + 1) * 10
+            : bandRowIndex * 1000 + bandEntryOrder * 10,
           bandId: entry.bandId,
           anchorX: entry.x,
           anchorY: entry.y,
@@ -23821,7 +23852,9 @@ export function FileExplorer({
           display: "flex",
           alignItems: "flex-start",
           alignSelf: "flex-end",
-          position: "relative",
+          position: "absolute",
+          right: 0,
+          bottom: 0,
           zIndex: 24,
           isolation: "isolate",
           gap: 6,
@@ -28543,6 +28576,7 @@ export function FileExplorer({
             alignItems: "flex-start",
             gap: usesWorkspaceDenseChrome ? 6 : 8,
             minWidth: 0,
+            position: "relative",
           }}
         >
           <div

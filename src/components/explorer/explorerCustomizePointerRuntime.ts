@@ -20,6 +20,7 @@ export interface ExplorerCustomizePointerDropTarget {
   offsetPx: number;
   bandId?: string;
   anchorX?: number;
+  anchorY?: number;
 }
 
 export interface ExplorerCustomizePointerSnapshot {
@@ -120,7 +121,8 @@ function areExplorerCustomizePointerDropTargetsEqual(
     left?.targetIndex === right?.targetIndex &&
     left?.offsetPx === right?.offsetPx &&
     left?.bandId === right?.bandId &&
-    left?.anchorX === right?.anchorX
+    left?.anchorX === right?.anchorX &&
+    left?.anchorY === right?.anchorY
   );
 }
 
@@ -564,6 +566,7 @@ function resolveInsertionPositionForLayoutDynamicsBand(input: {
   targetIndex: number;
   offsetPx: number;
   anchorX: number;
+  anchorY: number;
 } {
   const bandId = input.bandElement.dataset.layoutDynamicsBand;
   const bandRect = input.bandElement.getBoundingClientRect();
@@ -571,12 +574,17 @@ function resolveInsertionPositionForLayoutDynamicsBand(input: {
     input.territoryLeft,
     Math.min(input.territoryRight, input.point.x),
   );
+  const clampedPointY = Math.max(
+    bandRect.top,
+    Math.min(bandRect.bottom, input.point.y),
+  );
 
   if (!bandId) {
     return {
       targetIndex: 0,
       offsetPx: Math.max(0, Math.round(clampedPointX - input.territoryLeft)),
       anchorX: Math.max(0, Math.round(clampedPointX - bandRect.left)),
+      anchorY: Math.max(0, Math.round(clampedPointY - bandRect.top)),
     };
   }
 
@@ -590,6 +598,7 @@ function resolveInsertionPositionForLayoutDynamicsBand(input: {
       targetIndex: 0,
       offsetPx: Math.max(0, Math.round(clampedPointX - input.territoryLeft)),
       anchorX: Math.max(0, Math.round(clampedPointX - bandRect.left)),
+      anchorY: Math.max(0, Math.round(clampedPointY - bandRect.top)),
     };
   }
 
@@ -622,6 +631,7 @@ function resolveInsertionPositionForLayoutDynamicsBand(input: {
     targetIndex,
     offsetPx: Math.max(0, Math.round(clampedSlotPointX - slotStart)),
     anchorX: Math.max(0, Math.round(clampedSlotPointX - bandRect.left)),
+    anchorY: Math.max(0, Math.round(clampedPointY - bandRect.top)),
   };
 }
 
@@ -709,6 +719,7 @@ export function resolveExplorerCustomizeDropTargetFromPoint(
           offsetPx: layoutDynamicsInsertionPosition.offsetPx,
           bandId: layoutDynamicsBandId,
           anchorX: layoutDynamicsInsertionPosition.anchorX,
+          anchorY: layoutDynamicsInsertionPosition.anchorY,
         },
         removeTargetActive: false,
       };

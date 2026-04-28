@@ -18,7 +18,7 @@ describe('explorerLayouts', () => {
     ]);
   });
 
-  it('normalizes unified-header snapshots away from the legacy workspaceHeader surface', () => {
+  it('preserves freeform unified-header snapshots without flattening them into explorerTopbar', () => {
     const normalized = normalizeExplorerLayoutDefinition(
       {
         id: 'custom-layout',
@@ -30,6 +30,9 @@ describe('explorerLayouts', () => {
               surfaceId: 'workspaceHeader',
               zone: 'center',
               order: 10,
+              bandId: 'workspaceHeader:freeform-canvas',
+              anchorX: 320,
+              anchorY: 148,
             },
           ],
         },
@@ -44,9 +47,12 @@ describe('explorerLayouts', () => {
     expect(normalized.chromeSnapshot?.entries).toEqual([
       expect.objectContaining({
         controlId: 'workspaceTabStrip',
-        surfaceId: 'explorerTopbar',
+        surfaceId: 'workspaceHeader',
         zone: 'center',
         order: 10,
+        bandId: 'workspaceHeader:freeform-canvas',
+        anchorX: 320,
+        anchorY: 148,
       }),
     ]);
     expect(normalized.workspaceLayoutMode).toBe('single');

@@ -62,6 +62,7 @@ export interface LayoutDynamicsCanvasExternalDragPreview {
   pointerPoint: { x: number; y: number } | null;
   bandId?: string | null;
   anchorX?: number | null;
+  anchorY?: number | null;
   widthPx?: number;
   heightPx?: number;
   style?: CSSProperties;
@@ -606,7 +607,9 @@ export function LayoutDynamicsCanvas({
         : pointerX - measuredWidth / 2;
     const requestedY =
       axisMode === "free-2d"
-        ? pointerY - measuredHeight / 2
+        ? externalDragPreview.anchorY != null && bandBoundsForPreview
+          ? bandBoundsForPreview.y + externalDragPreview.anchorY
+          : pointerY - measuredHeight / 2
         : bandBoundsForPreview?.y ?? 0;
     const { x, y } = resolveNodePositionWithinBand({
       axisMode,

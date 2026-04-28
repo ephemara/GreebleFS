@@ -181,6 +181,9 @@ export interface ExplorerChromeEditSession {
     zoneId: ExplorerChromeZoneId;
     targetIndex: number;
     offsetPx: number;
+    bandId?: string;
+    anchorX?: number;
+    anchorY?: number;
   } | null;
   selectedControlId: ExplorerChromeControlId | null;
   pendingHotkeyControlId: ExplorerChromeControlId | null;
@@ -413,6 +416,9 @@ interface ExplorerStoreState {
       zoneId: ExplorerChromeZoneId;
       targetIndex: number;
       offsetPx: number;
+      bandId?: string;
+      anchorX?: number;
+      anchorY?: number;
     } | null,
   ) => void;
   setChromeEditSelectedControl: (

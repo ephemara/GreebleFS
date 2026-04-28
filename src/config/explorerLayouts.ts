@@ -329,12 +329,7 @@ export function normalizeExplorerLayoutChromeSnapshot(
     return undefined;
   }
 
-  return {
-    entries: normalized.entries.map((entry) => ({
-      ...entry,
-      surfaceId: entry.surfaceId === 'workspaceHeader' ? 'explorerTopbar' : entry.surfaceId,
-    })),
-  };
+  return normalized;
 }
 
 export function normalizeExplorerLayoutDefinition(
