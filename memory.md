@@ -119,6 +119,25 @@
   - filtered TS sweep:
     - `bash -lc "bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'src/runtime/extensionHostApi\\.ts|src/test/helpers/createMockOverlayPluginApi\\.ts|src/test/pluginRuntime\\.test\\.ts|src/components/GoPanelHost\\.tsx|src/components/FileExplorer\\.tsx|src/runtime/explorerExtensionContext\\.ts' || true"`
 
+# 2026-04-28 - `sample-panel` Is Now The Canonical Interactive Go/Wasm Smoke Test
+
+- Durable sample-panel rule after this pass:
+  - `src-go/builtin-runtimes/sample-panel/` is no longer just a ticking wall-clock proof of life.
+  - It is now the canonical reference runtime for the `wasm-panel` lane:
+    - persisted local UI state through `readStorageBlob` / `writeStorageBlob`
+    - typed host snapshot reads through `Selection.GetSnapshot()`
+    - live pushed host events through `Events.Subscribe(...)`
+    - runtime-to-shell smoke events through `Bridge.EmitEvent("host-event", ...)`
+- Durable shell wiring after this pass:
+  - `src/components/GoRuntimeSmokePanel.tsx` is the host-side wrapper that mounts the runtime in a real shell panel.
+  - `src/panels/panelRegistry.tsx` now exposes that wrapper as the built-in `go-sample-panel` surface, so future manual smoke tests should open that panel instead of wiring another temporary host tab.
+- Why this matters:
+  - it gives future runtime work one stable place to verify the full Go/Wasm panel path end-to-end without inventing ad hoc test harnesses
+  - it also gives agents a tiny reference implementation for “interactive Go panel that listens to host events” without needing to reverse-engineer `GoPanelHost` from scratch
+- Validation that passed for this pass:
+  - `GOOS=js GOARCH=wasm go build .` in `src-go/builtin-runtimes/sample-panel`
+  - `bunx vitest run src/test/panelRegistry.test.tsx src/test/goPanelHost.test.tsx --reporter=dot`
+
 # 2026-04-27 - Go-First Extension Host, Ambient Explorer Context, And `.gfsx` Bundle Tooling Now Form The New Plugin Backbone
 
 - The first durable slice of the “GreebleFS as an editable/scriptable engine” direction is now real and it is deliberately not TS-owned.

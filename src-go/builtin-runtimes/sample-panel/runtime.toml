@@ -1,5 +1,5 @@
 id = "sample-panel"
-displayName = "Sample Go Panel"
+displayName = "Go Wasm Smoke Panel"
 language = "go"
 kind = "wasm-panel"
 compiler = "go-js-wasm"
@@ -8,13 +8,14 @@ entry = "."
 
 [panel]
 panelId = "go-sample-panel"
-displayName = "Sample Go Panel"
+displayName = "Go Wasm Smoke Panel"
 preferredWidthPx = 360
 preferredHeightPx = 240
 
 [permissions]
 fsRead = false
 fsWrite = false
+hostEvents = true
 network = false
 clipboardRead = false
 clipboardWrite = false

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, HardDrive, Settings2, ThemedPanelIcon } from '@/components/AppIcons';
+import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, HardDrive, Settings2, Cpu, ThemedPanelIcon } from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import type { LoadedActionPack, LoadedExplorerAction } from '../config/actionPacks';
 import type {
@@ -70,6 +70,11 @@ const LazySettingsPage = React.lazy(async () => {
 const LazyStoragePanel = React.lazy(async () => {
   const module = await import('../components/StoragePanel');
   return { default: module.StoragePanel };
+});
+
+const LazyGoRuntimeSmokePanel = React.lazy(async () => {
+  const module = await import('../components/GoRuntimeSmokePanel');
+  return { default: module.GoRuntimeSmokePanel };
 });
 
 function DeferredPanel({
@@ -675,6 +680,35 @@ export function createBuiltInPanelDefinitions({
       ),
     },
     {
+      id: 'go-sample-panel',
+      label: 'Go Wasm',
+      kind: 'built-in-panel',
+      icon: <ThemedPanelIcon panelId="go-sample-panel" fallbackSlotId="cpu" fallbackIcon={Cpu} size={12} />,
+      description: 'Interactive smoke test for the Go/Wasm panel runtime and host event bus.',
+      defaultOpen: false,
+      keepMounted: true,
+      navigation: {
+        groupId: 'labs',
+        groupLabel: 'Labs',
+        groupOrder: 45,
+        itemOrder: 10,
+      },
+      dock: {
+        defaultPlacement: 'right-sidebar',
+        defaultOrder: 45,
+        defaultVisibility: 'hidden',
+        allowedPresentations: ['stack', 'floating'],
+        railShortcut: true,
+        ideRole: 'utility',
+        ideNavigationTier: 'secondary',
+      },
+      render: () => (
+        <DeferredPanel>
+          <LazyGoRuntimeSmokePanel appearance={appearance} />
+        </DeferredPanel>
+      ),
+    },
+    {
       id: 'settings',
       label: 'Settings',
       kind: 'built-in-panel',
@@ -920,6 +954,13 @@ export function buildBuiltInCatalog(): PanelCatalogEntry[] {
       id: 'screenshots',
       label: 'Screenshots',
       description: 'Built-in example plugin showing capture, clipboard, and file IO.',
+      kind: 'built-in-panel',
+      example: true,
+    },
+    {
+      id: 'go-sample-panel',
+      label: 'Go Wasm',
+      description: 'Interactive Go/Wasm smoke test panel for the universal runtime host.',
       kind: 'built-in-panel',
       example: true,
     },
