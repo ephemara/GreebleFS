@@ -8445,23 +8445,17 @@ export function FileExplorer({
     LoadedExplorerLayoutDefinition[]
   >([]);
   const availableExplorerLayouts = useMemo(() => {
-    const builtInLayoutOrder = [
-      EXPLORER_CANONICAL_LAYOUT_ID,
-      "navigator",
-      "focus",
-      "inspector",
-    ];
-    const getLayoutSortRank = (layout: LoadedExplorerLayoutDefinition) => {
-      if (layout.source === "built-in") {
-        const builtInIndex = builtInLayoutOrder.indexOf(layout.id);
-        return builtInIndex >= 0
-          ? builtInIndex
-          : builtInLayoutOrder.length + 20;
+    const getLayoutSourceRank = (layout: LoadedExplorerLayoutDefinition) => {
+      if (
+        layout.source === "built-in" ||
+        layout.source === "usr-shipped-package"
+      ) {
+        return 0;
       }
       if (layout.source === "theme-package") {
         return 100;
       }
-      if (layout.source === "explorer-layout-package") {
+      if (layout.source === "usr-user-package") {
         return 200;
       }
       return 300;
@@ -8475,9 +8469,15 @@ export function FileExplorer({
     }
     return [...layoutMap.values()].sort((left, right) => {
       const rankDifference =
-        getLayoutSortRank(left) - getLayoutSortRank(right);
+        getLayoutSourceRank(left) - getLayoutSourceRank(right);
       if (rankDifference !== 0) {
         return rankDifference;
+      }
+      const sortOrderDifference =
+        (left.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+        (right.sortOrder ?? Number.MAX_SAFE_INTEGER);
+      if (sortOrderDifference !== 0) {
+        return sortOrderDifference;
       }
       return left.name.localeCompare(right.name);
     });
@@ -18089,14 +18089,16 @@ export function FileExplorer({
   );
   const explorerLayoutsBySource = useMemo(
     () => ({
-      builtIn: availableExplorerLayouts.filter(
-        (layout) => layout.source === "built-in",
+      shipped: availableExplorerLayouts.filter(
+        (layout) =>
+          layout.source === "built-in" ||
+          layout.source === "usr-shipped-package",
       ),
       theme: availableExplorerLayouts.filter(
         (layout) => layout.source === "theme-package",
       ),
       user: availableExplorerLayouts.filter(
-        (layout) => layout.source === "explorer-layout-package",
+        (layout) => layout.source === "usr-user-package",
       ),
     }),
     [availableExplorerLayouts],
@@ -22533,7 +22535,7 @@ export function FileExplorer({
               >
                 {(
                   [
-                    ["Built-In", explorerLayoutsBySource.builtIn],
+                    ["Shipped", explorerLayoutsBySource.shipped],
                     ["Theme", explorerLayoutsBySource.theme],
                     ["User", explorerLayoutsBySource.user],
                   ] as const

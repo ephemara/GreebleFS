@@ -786,6 +786,10 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<yazi_specta::YaziSchedulerTaskSnap>()
         .constant("YAZI_BINDINGS_MANIFEST", yazi_specta::binding_manifest())
         .constant(
+            "OVERLAY_SHELL_BLUEPRINTS",
+            overlay_contracts::built_in_shell_blueprints(),
+        )
+        .constant(
             "OVERLAY_THEME_MANIFESTS",
             overlay_contracts::built_in_theme_manifests(),
         )

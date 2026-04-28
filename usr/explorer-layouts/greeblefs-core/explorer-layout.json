@@ -3,6 +3,7 @@
   "id": "greeblefs-core-explorer-layouts",
   "name": "GreebleFS Core Explorer Layouts",
   "description": "Canonical shipped explorer layout presets that replace the old built-in layout seed set.",
+  "ownership": "shipped",
   "tags": [
     "canonical",
     "shipped",
@@ -13,6 +14,7 @@
       "id": "canonical",
       "name": "Canonical",
       "description": "Balanced explorer layout with the unified header strip as the canonical restore target.",
+      "sortOrder": 0,
       "tags": [
         "canonical",
         "default"
@@ -38,6 +40,7 @@
       "id": "navigator",
       "name": "Navigator",
       "description": "Rail-first browsing with a stronger emphasis on source navigation.",
+      "sortOrder": 10,
       "tags": [
         "preset",
         "navigator"
@@ -67,6 +70,7 @@
       "id": "focus",
       "name": "Focus",
       "description": "Minimal browsing chrome with search-forward emphasis.",
+      "sortOrder": 20,
       "tags": [
         "preset",
         "focus"
@@ -96,6 +100,7 @@
       "id": "inspector",
       "name": "Inspector",
       "description": "Preview-heavy browsing tuned for inspection and triage.",
+      "sortOrder": 30,
       "tags": [
         "preset",
         "inspector"

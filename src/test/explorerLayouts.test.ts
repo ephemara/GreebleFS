@@ -23,6 +23,7 @@ describe('explorerLayouts', () => {
       {
         id: 'custom-layout',
         name: 'Custom Layout',
+        sortOrder: 42,
         chromeSnapshot: {
           entries: [
             {
@@ -38,7 +39,7 @@ describe('explorerLayouts', () => {
         },
       },
       {
-        source: 'explorer-layout-package',
+        source: 'usr-user-package',
         sourceLabel: 'Explorer Layouts',
         readOnly: false,
       },
@@ -57,10 +58,10 @@ describe('explorerLayouts', () => {
     ]);
     expect(normalized.workspaceLayoutMode).toBe('single');
     expect(normalized.tabStripVisible).toBe(true);
+    expect(normalized.sortOrder).toBe(42);
   });
 
-  it('keeps the canonical built-in layout as the final fallback when authored layouts collide', () => {
-    const canonical = getBuiltInExplorerLayouts();
+  it('lets usr-authored layouts override the shipped fallback when ids collide', () => {
     const authoredVariant = normalizeExplorerLayoutDefinition(
       {
         id: EXPLORER_CANONICAL_LAYOUT_ID,
@@ -70,20 +71,38 @@ describe('explorerLayouts', () => {
         },
       },
       {
-        source: 'explorer-layout-package',
+        source: 'usr-user-package',
         sourceLabel: 'User Layouts',
         readOnly: false,
       },
     );
 
-    const mergedLayouts = collectUniqueExplorerLayouts([authoredVariant], canonical);
+    const mergedLayouts = collectUniqueExplorerLayouts([authoredVariant], []);
     const resolvedCanonical = findExplorerLayoutById(
       mergedLayouts,
       EXPLORER_CANONICAL_LAYOUT_ID,
     );
 
-    expect(resolvedCanonical?.readOnly).toBe(true);
-    expect(resolvedCanonical?.name).toBe('Canonical');
+    expect(resolvedCanonical?.readOnly).toBe(false);
+    expect(resolvedCanonical?.name).toBe('User Canonical Override');
     expect(mergedLayouts.some((layout) => layout.id === 'navigator')).toBe(true);
+  });
+
+  it('supports explicit shipped usr layout metadata without collapsing it into the user bucket', () => {
+    const normalized = normalizeExplorerLayoutDefinition(
+      {
+        id: 'shipped-focus',
+        name: 'Shipped Focus',
+        sortOrder: 20,
+      },
+      {
+        source: 'usr-shipped-package',
+        sourceLabel: 'GreebleFS Core Explorer Layouts',
+        readOnly: false,
+      },
+    );
+
+    expect(normalized.source).toBe('usr-shipped-package');
+    expect(normalized.sortOrder).toBe(20);
   });
 });

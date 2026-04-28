@@ -27,6 +27,13 @@ interface FileEntry {
 
 type LooseRecord = Record<string, unknown>;
 
+export type ExplorerLayoutPackageOwnership = 'shipped' | 'user';
+export type ExplorerLayoutSource =
+  | 'built-in'
+  | 'usr-shipped-package'
+  | 'usr-user-package'
+  | 'theme-package';
+
 export interface ExplorerLayoutPaneMetrics {
   sidebarWidthPx?: number;
   previewWidthPx?: number;
@@ -49,6 +56,7 @@ export interface ExplorerLayoutDefinition {
   name?: string;
   description?: string;
   tags?: string[];
+  sortOrder?: number;
   modeProfileId?: ExplorerModeProfileId;
   workspaceLayoutMode?: ExplorerWorkspaceLayoutMode;
   tabStripVisible?: boolean;
@@ -66,6 +74,7 @@ export interface ExplorerLayoutPackageManifest {
   description?: string;
   author?: string;
   homepage?: string;
+  ownership?: ExplorerLayoutPackageOwnership;
   tags?: string[];
   layout?: ExplorerLayoutDefinition;
   layouts?: ExplorerLayoutDefinition[];
@@ -84,6 +93,7 @@ export interface LoadedExplorerLayoutDefinition extends ExplorerLayoutDefinition
   name: string;
   description?: string;
   tags: string[];
+  sortOrder?: number;
   modeProfileId: ExplorerModeProfileId;
   workspaceLayoutMode: ExplorerWorkspaceLayoutMode;
   tabStripVisible: boolean;
@@ -93,7 +103,7 @@ export interface LoadedExplorerLayoutDefinition extends ExplorerLayoutDefinition
   chromeSnapshot?: ExplorerChromeOverrideSnapshot;
   basedOnLayoutId?: string;
   readOnly: boolean;
-  source: 'built-in' | 'explorer-layout-package' | 'theme-package';
+  source: ExplorerLayoutSource;
   sourceLabel: string;
   sourcePackageId?: string;
 }
@@ -105,6 +115,7 @@ export interface LoadedExplorerLayoutPackage {
   directoryPath: string;
   manifestPath: string;
   sourceKind: 'explorer-layout-directory';
+  ownership: ExplorerLayoutPackageOwnership;
   description?: string;
   author?: string;
   homepage?: string;
@@ -141,6 +152,7 @@ const explorerLayoutBuiltInCanonicalDefinition: LoadedExplorerLayoutDefinition =
   name: 'Canonical',
   description: 'Balanced explorer layout with the unified header strip as the canonical restore target.',
   tags: ['built-in', 'canonical'],
+  sortOrder: 0,
   modeProfileId: defaultExplorerModeProfileId,
   workspaceLayoutMode: 'single',
   tabStripVisible: true,
@@ -161,7 +173,7 @@ const explorerLayoutBuiltInCanonicalDefinition: LoadedExplorerLayoutDefinition =
   basedOnLayoutId: undefined,
   readOnly: true,
   source: 'built-in',
-  sourceLabel: 'Built-in canonical explorer layout',
+  sourceLabel: 'Shipped fallback explorer layout',
 };
 
 const builtInExplorerLayoutBaselineWidths = {
@@ -177,6 +189,7 @@ function createBuiltInExplorerModePresetLayout(input: {
   id: string;
   name: string;
   description: string;
+  sortOrder: number;
   modeProfileId: ExplorerModeProfileId;
   sourcesVisible: boolean;
 }): LoadedExplorerLayoutDefinition {
@@ -196,6 +209,7 @@ function createBuiltInExplorerModePresetLayout(input: {
     name: input.name,
     description: input.description,
     tags: ['built-in', 'preset'],
+    sortOrder: input.sortOrder,
     modeProfileId: input.modeProfileId,
     workspaceLayoutMode: 'single',
     tabStripVisible: true,
@@ -215,7 +229,7 @@ function createBuiltInExplorerModePresetLayout(input: {
     basedOnLayoutId: EXPLORER_CANONICAL_LAYOUT_ID,
     readOnly: true,
     source: 'built-in',
-    sourceLabel: 'Built-in explorer layout preset',
+    sourceLabel: 'Shipped fallback explorer layout preset',
   };
 }
 
@@ -224,6 +238,7 @@ const builtInExplorerModePresetLayouts: LoadedExplorerLayoutDefinition[] = [
     id: 'navigator',
     name: 'Navigator',
     description: 'Rail-first browsing with a stronger emphasis on source navigation.',
+    sortOrder: 10,
     modeProfileId: 'navigator',
     sourcesVisible: true,
   }),
@@ -231,6 +246,7 @@ const builtInExplorerModePresetLayouts: LoadedExplorerLayoutDefinition[] = [
     id: 'focus',
     name: 'Focus',
     description: 'Minimal browsing chrome with search-forward emphasis.',
+    sortOrder: 20,
     modeProfileId: 'focus',
     sourcesVisible: false,
   }),
@@ -238,6 +254,7 @@ const builtInExplorerModePresetLayouts: LoadedExplorerLayoutDefinition[] = [
     id: 'inspector',
     name: 'Inspector',
     description: 'Preview-heavy browsing tuned for inspection and triage.',
+    sortOrder: 30,
     modeProfileId: 'inspector',
     sourcesVisible: true,
   }),
@@ -280,6 +297,24 @@ function normalizeOptionalPositiveNumber(value: unknown): number | undefined {
   }
 
   return Math.max(0, Math.round(value));
+}
+
+function normalizeExplorerLayoutSortOrder(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.round(value));
+}
+
+function normalizeExplorerLayoutPackageOwnership(value: unknown): ExplorerLayoutPackageOwnership {
+  return value === 'shipped' ? 'shipped' : 'user';
+}
+
+function getExplorerLayoutSourceForOwnership(
+  ownership: ExplorerLayoutPackageOwnership,
+): Extract<ExplorerLayoutSource, 'usr-shipped-package' | 'usr-user-package'> {
+  return ownership === 'shipped' ? 'usr-shipped-package' : 'usr-user-package';
 }
 
 function normalizeWorkspaceLayoutMode(value: unknown): ExplorerWorkspaceLayoutMode {
@@ -337,7 +372,7 @@ export function normalizeExplorerLayoutDefinition(
   options?: {
     fallbackId?: string;
     readOnly?: boolean;
-    source?: LoadedExplorerLayoutDefinition['source'];
+    source?: ExplorerLayoutSource;
     sourceLabel?: string;
     sourcePackageId?: string;
     scopeId?: string | null;
@@ -356,6 +391,7 @@ export function normalizeExplorerLayoutDefinition(
     name,
     description: asString(definition.description) || undefined,
     tags: asStringArray(definition.tags),
+    sortOrder: normalizeExplorerLayoutSortOrder(definition.sortOrder),
     modeProfileId: normalizeExplorerModeProfileId(definition.modeProfileId),
     workspaceLayoutMode: normalizeWorkspaceLayoutMode(definition.workspaceLayoutMode),
     tabStripVisible: definition.tabStripVisible !== false,
@@ -365,7 +401,7 @@ export function normalizeExplorerLayoutDefinition(
     chromeSnapshot: normalizeExplorerLayoutChromeSnapshot(definition.chromeSnapshot ?? undefined),
     basedOnLayoutId: asString(definition.basedOnLayoutId) || undefined,
     readOnly: options?.readOnly ?? false,
-    source: options?.source ?? 'explorer-layout-package',
+    source: options?.source ?? 'usr-user-package',
     sourceLabel: options?.sourceLabel ?? 'Explorer layout package',
     sourcePackageId: options?.sourcePackageId,
   };
@@ -377,6 +413,7 @@ function parseLooseExplorerLayoutDefinition(source: LooseRecord): ExplorerLayout
     name: asString(source.name) || undefined,
     description: asString(source.description) || undefined,
     tags: asStringArray(source.tags),
+    sortOrder: normalizeExplorerLayoutSortOrder(source.sortOrder),
     modeProfileId: normalizeExplorerModeProfileId(source.modeProfileId),
     workspaceLayoutMode: normalizeWorkspaceLayoutMode(source.workspaceLayoutMode),
     tabStripVisible: typeof source.tabStripVisible === 'boolean' ? source.tabStripVisible : undefined,
@@ -396,6 +433,7 @@ function hasExplorerLayoutDefinitionFields(source: LooseRecord): boolean {
     'name',
     'description',
     'tags',
+    'sortOrder',
     'modeProfileId',
     'workspaceLayoutMode',
     'tabStripVisible',
@@ -448,6 +486,7 @@ function parseExplorerLayoutManifestText(
     description: asString(source.description),
     author: asString(source.author),
     homepage: asString(source.homepage),
+    ownership: normalizeExplorerLayoutPackageOwnership(source.ownership),
     tags: asStringArray(source.tags),
     layout: nestedLayout ? parseLooseExplorerLayoutDefinition(nestedLayout) : undefined,
     layouts,
@@ -520,12 +559,13 @@ function buildPackageExplorerLayouts(
 ): { layouts: LoadedExplorerLayoutDefinition[]; warnings: string[] } {
   const dedupedLayouts = new Map<string, LoadedExplorerLayoutDefinition>();
   const warnings: string[] = [];
+  const packageOwnership = normalizeExplorerLayoutPackageOwnership(record.manifest.ownership);
 
   for (const definition of record.manifest.layouts ?? []) {
     const loadedLayout = normalizeExplorerLayoutDefinition(definition, {
       fallbackId: `${packageId}-layout`,
       readOnly: false,
-      source: 'explorer-layout-package',
+      source: getExplorerLayoutSourceForOwnership(packageOwnership),
       sourceLabel: packageName,
       sourcePackageId: packageId,
     });
@@ -575,6 +615,7 @@ export async function loadExplorerLayoutPackagesFromDirectoryEntries(
           directoryPath: record.directoryPath,
           manifestPath: record.manifestPath,
           sourceKind: 'explorer-layout-directory',
+          ownership: normalizeExplorerLayoutPackageOwnership(record.manifest.ownership),
           description: asString(record.manifest.description) || undefined,
           author: asString(record.manifest.author) || undefined,
           homepage: asString(record.manifest.homepage) || undefined,
@@ -684,7 +725,7 @@ export async function saveUserExplorerLayout(
     {
       fallbackId: 'user-layout',
       readOnly: false,
-      source: 'explorer-layout-package',
+      source: 'usr-user-package',
       sourceLabel: 'User explorer layout',
     },
   );
@@ -702,12 +743,14 @@ export async function saveUserExplorerLayout(
         id: loadedLayout.localId,
         name: loadedLayout.name,
         description: loadedLayout.description,
+        ownership: 'user',
         tags: loadedLayout.tags,
         layout: {
           id: loadedLayout.localId,
           name: loadedLayout.name,
           description: loadedLayout.description,
           tags: loadedLayout.tags,
+          sortOrder: loadedLayout.sortOrder,
           modeProfileId: loadedLayout.modeProfileId,
           workspaceLayoutMode: loadedLayout.workspaceLayoutMode,
           tabStripVisible: loadedLayout.tabStripVisible,

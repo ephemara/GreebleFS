@@ -4,80 +4,15 @@ import type {
   ShellNavigationModel as GeneratedShellNavigationModel,
   ShellSurfaceStyle as GeneratedShellSurfaceStyle,
 } from '../generated/tauri';
+import { OVERLAY_SHELL_BLUEPRINTS as GENERATED_OVERLAY_SHELL_BLUEPRINTS } from '../generated/tauri';
 
 export type OverlayShellBlueprintId = GeneratedShellBlueprintId;
 export type OverlayShellNavigationModel = GeneratedShellNavigationModel;
 export type OverlayShellSurfaceStyle = GeneratedShellSurfaceStyle;
 export type OverlayShellBlueprint = GeneratedShellBlueprint;
 
-export const OVERLAY_SHELL_BLUEPRINTS: OverlayShellBlueprint[] = [
-  {
-    id: 'classic-dock',
-    label: 'Classic Dock',
-    description: 'Single-workspace overlay shell with chrome, tabs, and optional docked panels.',
-    navigationModel: 'tabs',
-    surfaceStyle: 'glass',
-    supportsPinnedPanels: true,
-    supportsViewportDock: true,
-    supportsPanelTabs: true,
-    supportsDualScreen: false,
-  },
-  {
-    id: 'ide-workbench',
-    label: 'IDE Workbench',
-    description: 'Canonical dock-graph shell with a navigation rail, sidebar lanes, floating panes, and a panel-style bottom region.',
-    navigationModel: 'tabs',
-    surfaceStyle: 'solid',
-    supportsPinnedPanels: true,
-    supportsViewportDock: true,
-    supportsPanelTabs: true,
-    supportsDualScreen: false,
-  },
-  {
-    id: 'xmb-cross-media',
-    label: 'XMB',
-    description: 'Cross-axis media bar with lateral category navigation and deep vertical stacks.',
-    navigationModel: 'cross-axis',
-    surfaceStyle: 'glass',
-    supportsPinnedPanels: false,
-    supportsViewportDock: false,
-    supportsPanelTabs: false,
-    supportsDualScreen: false,
-  },
-  {
-    id: 'retro-desktop',
-    label: 'Retro Desktop',
-    description: 'Windowed desktop metaphor for classic Macintosh and Hackintosh-inspired shells.',
-    navigationModel: 'desktop',
-    surfaceStyle: 'skeuomorphic',
-    supportsPinnedPanels: true,
-    supportsViewportDock: false,
-    supportsPanelTabs: false,
-    supportsDualScreen: false,
-  },
-  {
-    id: 'tile-start',
-    label: 'Tile Start',
-    description: 'Grid-first shell optimized for touch-friendly launchers and dashboard surfaces.',
-    navigationModel: 'tiles',
-    surfaceStyle: 'flat',
-    supportsPinnedPanels: false,
-    supportsViewportDock: true,
-    supportsPanelTabs: false,
-    supportsDualScreen: false,
-  },
-  {
-    id: 'handheld-dual-screen',
-    label: 'Handheld Dual Screen',
-    description: 'Primary workspace paired with a persistent secondary surface for controls or navigation.',
-    navigationModel: 'stacked-dual-pane',
-    surfaceStyle: 'pixel',
-    supportsPinnedPanels: true,
-    supportsViewportDock: false,
-    supportsPanelTabs: false,
-    supportsDualScreen: true,
-  },
-];
+export const OVERLAY_SHELL_BLUEPRINTS: OverlayShellBlueprint[] =
+  GENERATED_OVERLAY_SHELL_BLUEPRINTS.map(blueprint => ({ ...blueprint }));
 
 const shellBlueprintMap = new Map(
   OVERLAY_SHELL_BLUEPRINTS.map(blueprint => [blueprint.id, blueprint] as const),

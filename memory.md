@@ -1,3 +1,32 @@
+# 2026-04-28 - `usr/` Is Now The Canonical Backbone For Shipped Explorer Layouts And Domain Catalogs
+
+- The `usr/` migration is now materially real for two more high-traffic configurable lanes:
+  - explorer layout presets
+  - Rust/TS shell/theme/workbench domain catalogs
+- Durable `usr` rule after this pass:
+  - repo `usr/` is the canonical shipped authoring root
+  - bundled `usr/` inside the app is immutable install payload
+  - writable managed `usr/` under app-local data is the live runtime source after bootstrap
+  - if a new configurable system is meant to ship with GreebleFS, it belongs under `usr/` first and code should only provide schema/loader/bootstrap/validation behavior around it
+- Durable explorer-layout rule after this pass:
+  - `usr/explorer-layouts/**/explorer-layout.json` now owns not just the layout cards themselves, but also their explicit picker ownership and ordering metadata through `ownership: "shipped" | "user"` and per-layout `sortOrder`
+  - `src/config/explorerLayouts.ts` now distinguishes `usr-shipped-package` vs `usr-user-package` instead of collapsing both into the old generic package source
+  - `src/components/FileExplorer.tsx` now groups the picker as `Shipped`, `Theme`, and `User`; first-party shipped layouts should never appear under `User`
+  - `saveUserExplorerLayout(...)` now writes `ownership: "user"` into the saved manifest so runtime-authored layouts stay correctly classified on reload
+  - if a shipped layout appears under `User`, check the writable managed `usr/` copy first; that usually means an older manifest without `ownership: "shipped"` is still winning
+- Durable domain-catalog rule after this pass:
+  - `usr/domain/shell-blueprints.json`, `usr/domain/theme-manifests.json`, and `usr/domain/workbench-presets.json` are now the authored source of truth for the Rust domain catalogs
+  - `crates/overlay-contracts/src/lib.rs` no longer hardcodes those catalogs inline; it validates the bundled `usr/domain/*.json` with `include_str!` + `serde_json`
+  - `src-tauri/src/domain_commands.rs` now prefers runtime-editable `usr/domain/*.json` from the writable managed root and only falls back to the bundled copies when read/parse fails
+  - `src-tauri/src/specta_bindings.rs` now exports `OVERLAY_SHELL_BLUEPRINTS`, and `src/config/shellBlueprints.ts` consumes that generated constant instead of maintaining a second hardcoded TS array
+- Durable validation evidence for this pass:
+  - `bunx vitest run src/test/explorerLayouts.test.ts src/test/runPlatformTauri.test.ts src/test/menuPacks.test.ts src/test/topBars.test.ts src/test/soundPacks.test.ts`
+  - `bunx vitest run src/test/explorerLayouts.test.ts src/test/workbenchPresets.test.ts src/test/layoutProfiles.test.ts`
+  - `cargo test -p overlay-contracts`
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+- Durable next step:
+  - keep pushing the same pattern outward: installer seeding should copy canonical `usr/` non-destructively, and any remaining explorer/theme/layout preset metadata still trapped in synchronous TS catalogs should migrate behind authored `usr` config seams rather than growing more built-ins
+
 # 2026-04-27 - Go-First Extension Host, Ambient Explorer Context, And `.gfsx` Bundle Tooling Now Form The New Plugin Backbone
 
 - The first durable slice of the “GreebleFS as an editable/scriptable engine” direction is now real and it is deliberately not TS-owned.
