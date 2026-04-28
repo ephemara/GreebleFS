@@ -10,14 +10,14 @@ if ! greeblefs_go::require_command go; then exit 1; fi
 
 failures=0
 pushd "${GREEBLEFS_GO_WORKSPACE}" >/dev/null
-for module_dir in sdk/greeblefs-go builtin-runtimes/echo-sidecar builtin-runtimes/echo-command builtin-runtimes/sample-panel; do
+while IFS= read -r module_dir; do
   if [[ -d "${module_dir}" ]]; then
     pushd "${module_dir}" >/dev/null
     greeblefs_go::log "go vet ./... in ${module_dir}"
-    if ! GOWORK=off go vet ./...; then
+    if ! greeblefs_go::run_go_command_for_module . go vet ./...; then
       failures=$((failures + 1))
     fi
-    unformatted="$(gofmt -l . || true)"
+    unformatted="$(greeblefs_go::list_unformatted_go_files . || true)"
     if [[ -n "${unformatted}" ]]; then
       greeblefs_go::log "gofmt found unformatted files in ${module_dir}:"
       printf '%s\n' "${unformatted}"
@@ -25,7 +25,7 @@ for module_dir in sdk/greeblefs-go builtin-runtimes/echo-sidecar builtin-runtime
     fi
     popd >/dev/null
   fi
-done
+done < <(greeblefs_go::workspace_modules)
 popd >/dev/null
 
 if [[ ${failures} -gt 0 ]]; then

@@ -10,12 +10,12 @@ source "${SCRIPT_DIR}/_common.sh"
 if ! greeblefs_go::require_command go; then exit 1; fi
 
 pushd "${GREEBLEFS_GO_WORKSPACE}" >/dev/null
-for module_dir in sdk/greeblefs-go builtin-runtimes/echo-sidecar builtin-runtimes/echo-command builtin-runtimes/sample-panel; do
+while IFS= read -r module_dir; do
   if [[ -d "${module_dir}" ]]; then
     pushd "${module_dir}" >/dev/null
     greeblefs_go::log "go test ./... in ${module_dir}"
-    GOWORK=off go test ./... || exit $?
+    greeblefs_go::run_go_command_for_module . go test ./... || exit $?
     popd >/dev/null
   fi
-done
+done < <(greeblefs_go::workspace_modules)
 popd >/dev/null

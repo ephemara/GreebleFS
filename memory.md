@@ -1,3 +1,24 @@
+# 2026-04-28 - Windows Go Runtime Setup Now Handles Verbatim Paths, New `wasm_exec.js` Layouts, And Wasm Module Validation
+
+- Swapping from Linux back to Windows exposed three durable Go-pipeline faults that are now fixed end-to-end:
+  - Rust runtime manifests were serializing canonicalized Windows paths with the `\\?\` verbatim prefix, which broke `bash scripts/go/build.sh` when the runtime host tried to build `explorer-policy-service`.
+  - `scripts/go/bootstrap.sh` only looked for `GOROOT/misc/wasm/wasm_exec.js`, but Go `1.25.5` on Windows ships the file under `GOROOT/lib/wasm/wasm_exec.js`.
+  - `scripts/go/test.sh` / `check.sh` were half-manual and half-host-biased: they drifted from `src-go/go.work`, treated `go-js-wasm` panels like native host packages, and false-failed formatting checks on CRLF Windows checkouts.
+- Durable ownership after this pass:
+  - `src-tauri/src/runtime_pipeline/manifest.rs` now strips Windows verbatim prefixes (`\\?\` and `\\?\UNC\...`) before resolved manifest/module/entry paths are serialized outward to the rest of the runtime pipeline.
+  - `scripts/go/_common.sh` now owns the Windows bash normalization helpers, `go.work` module discovery, wasm-target command routing for `go test` / `go vet`, and CRLF-safe `gofmt` comparison.
+  - `scripts/go/bootstrap.sh` now resolves `GOROOT` into a shell-usable path and probes both `lib/wasm/wasm_exec.js` and legacy `misc/wasm/wasm_exec.js` before staging `public/runtime/wasm_exec.js`.
+  - `scripts/go/{bootstrap,test,check}.sh` now derive the first-party module list from `src-go/go.work` instead of carrying separate hardcoded lists, so future builtin runtimes only need to be added once.
+- Durable validation signal on this Windows machine:
+  - passed: `bash scripts/go/bootstrap.sh`
+  - passed: `bash scripts/go/build.sh --runtime-id go-pty-panel --module-dir C:\Dev\GreebleFS\src-go\builtin-runtimes\go-pty-panel --entry . --compiler go-js-wasm --target js-wasm --mode debug --output C:\Dev\GreebleFS\tmp\go-pty-panel.wasm`
+  - passed: `bash scripts/go/test.sh`
+  - passed: `bash scripts/go/check.sh`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - blocked but understood: a targeted `cargo test` for the new manifest regression test compiled, but the Windows lib-test binary aborted at startup with `0xc0000139 (STATUS_ENTRYPOINT_NOT_FOUND)` on this host, so `cargo check` is the reliable Rust-side proof for this specific machine right now.
+- Recommended next step:
+  - if more first-party Go runtimes land, keep `src-go/go.work` as the only registry for workspace membership and keep Windows-specific path logic centralized in `_common.sh` / `runtime_pipeline::manifest` instead of scattering one-off fixes through individual build/test scripts.
+
 # 2026-04-28 - Explorer Virtual Window Now Tracks Native Scroll Immediately
 
 - The standard explorer scroll path now treats viewport scroll events as urgent virtual-window commits. Native scroll still stores the exact offset in `explorerViewportScrollTopRef`, but `FileExplorer.tsx` no longer defers the visible row window behind `startTransition` on real scroll events.

@@ -68,27 +68,27 @@ type explorerPolicyNavigateRequest struct {
 }
 
 type explorerPolicyNavigateResult struct {
-	Snapshot       explorerPolicySessionSnapshot      `json:"snapshot"`
-	Listing        *explorerPolicyLocationListing     `json:"listing,omitempty"`
-	IsHome         bool                               `json:"isHome"`
-	ClearSelection bool                               `json:"clearSelection"`
+	Snapshot       explorerPolicySessionSnapshot  `json:"snapshot"`
+	Listing        *explorerPolicyLocationListing `json:"listing,omitempty"`
+	IsHome         bool                           `json:"isHome"`
+	ClearSelection bool                           `json:"clearSelection"`
 }
 
 type explorerPolicyResolveOpenEntryRequest struct {
-	SessionID     string                  `json:"sessionId"`
-	Entry         explorerPolicyFileEntry `json:"entry"`
-	PreviewEnabled bool                   `json:"previewEnabled"`
-	CompactDock   bool                    `json:"compactDock"`
-	ShowHidden    bool                    `json:"showHidden"`
+	SessionID      string                  `json:"sessionId"`
+	Entry          explorerPolicyFileEntry `json:"entry"`
+	PreviewEnabled bool                    `json:"previewEnabled"`
+	CompactDock    bool                    `json:"compactDock"`
+	ShowHidden     bool                    `json:"showHidden"`
 }
 
 type explorerPolicyResolveOpenEntryResult struct {
-	Effect                       string                         `json:"effect"`
-	Snapshot                     *explorerPolicySessionSnapshot `json:"snapshot,omitempty"`
-	Listing                      *explorerPolicyLocationListing `json:"listing,omitempty"`
-	TargetPath                   string                         `json:"targetPath,omitempty"`
-	RequiresArchiveMaterialize   bool                           `json:"requiresArchiveMaterialize,omitempty"`
-	ClearSelection               bool                           `json:"clearSelection,omitempty"`
+	Effect                     string                         `json:"effect"`
+	Snapshot                   *explorerPolicySessionSnapshot `json:"snapshot,omitempty"`
+	Listing                    *explorerPolicyLocationListing `json:"listing,omitempty"`
+	TargetPath                 string                         `json:"targetPath,omitempty"`
+	RequiresArchiveMaterialize bool                           `json:"requiresArchiveMaterialize,omitempty"`
+	ClearSelection             bool                           `json:"clearSelection,omitempty"`
 }
 
 type explorerPolicyBreadcrumb struct {

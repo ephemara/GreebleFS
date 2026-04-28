@@ -45,6 +45,10 @@ for required in RUNTIME_ID MODULE_DIR COMPILER OUTPUT; do
   fi
 done
 
+MODULE_DIR="$(greeblefs_go::to_shell_path "${MODULE_DIR}")"
+OUTPUT="$(greeblefs_go::to_shell_path "${OUTPUT}")"
+ENTRY="$(greeblefs_go::to_shell_path "${ENTRY}")"
+
 mkdir -p "$(dirname "${OUTPUT}")"
 
 case "${COMPILER}" in

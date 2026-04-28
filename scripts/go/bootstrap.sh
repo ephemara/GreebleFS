@@ -22,9 +22,20 @@ if [[ -z "${GOROOT}" ]]; then
   exit 1
 fi
 
-WASM_EXEC_SRC="${GOROOT}/misc/wasm/wasm_exec.js"
-if [[ ! -f "${WASM_EXEC_SRC}" ]]; then
-  greeblefs_go::log "wasm_exec.js not found at ${WASM_EXEC_SRC}; cannot install for GoPanelHost"
+GOROOT_SHELL_PATH="$(greeblefs_go::to_shell_path "${GOROOT}")"
+WASM_EXEC_SRC=""
+for candidate in \
+  "${GOROOT_SHELL_PATH}/lib/wasm/wasm_exec.js" \
+  "${GOROOT_SHELL_PATH}/misc/wasm/wasm_exec.js"
+do
+  if [[ -f "${candidate}" ]]; then
+    WASM_EXEC_SRC="${candidate}"
+    break
+  fi
+done
+
+if [[ -z "${WASM_EXEC_SRC}" ]]; then
+  greeblefs_go::log "wasm_exec.js not found under ${GOROOT} (checked lib/wasm and misc/wasm); cannot install for GoPanelHost"
 else
   WASM_EXEC_DEST="${GREEBLEFS_REPO_ROOT}/public/runtime/wasm_exec.js"
   mkdir -p "$(dirname "${WASM_EXEC_DEST}")"
@@ -38,13 +49,13 @@ fi
 
 greeblefs_go::log "tidying workspace modules"
 pushd "${GREEBLEFS_GO_WORKSPACE}" >/dev/null
-for module_dir in sdk/greeblefs-go builtin-runtimes/echo-sidecar builtin-runtimes/echo-command builtin-runtimes/sample-panel builtin-runtimes/go-pty-panel; do
+while IFS= read -r module_dir; do
   if [[ -d "${module_dir}" ]]; then
     pushd "${module_dir}" >/dev/null
     GOWORK=off go mod tidy >/dev/null 2>&1 || greeblefs_go::log "go mod tidy failed for ${module_dir}; continuing"
     popd >/dev/null
   fi
-done
+done < <(greeblefs_go::workspace_modules)
 popd >/dev/null
 
 greeblefs_go::log "bootstrap complete"

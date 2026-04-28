@@ -396,7 +396,11 @@ fn resolve_within(base: &Path, relative: &str) -> PathBuf {
 }
 
 fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().to_string()
+    let raw = path.to_string_lossy().to_string();
+    if let Some(stripped_unc) = raw.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{}", stripped_unc);
+    }
+    raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_string()
 }
 
 /// Reject combinations the host cannot service so runtime authors find errors
@@ -504,6 +508,18 @@ entry = "main.go"
 
         let manifest = RuntimeManifest::from_dir(dir.path()).expect("parse");
         assert_eq!(manifest.module_dir, manifest.manifest_dir);
+    }
+
+    #[test]
+    fn strips_windows_verbatim_prefixes_from_serialized_paths() {
+        assert_eq!(
+            path_to_string(Path::new(r"\\?\C:\Dev\GreebleFS\src-go")),
+            r"C:\Dev\GreebleFS\src-go"
+        );
+        assert_eq!(
+            path_to_string(Path::new(r"\\?\UNC\server\share\greeblefs")),
+            r"\\server\share\greeblefs"
+        );
     }
 
     #[test]
