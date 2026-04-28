@@ -19,6 +19,24 @@
   - `bunx vitest run src/test/explorerLayouts.test.ts src/test/ExplorerChromeSurface.test.tsx src/test/layoutDynamicsCanvas.test.tsx --reporter=dot`
   - filtered clean: `bash -lc 'bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "FileExplorer\\.tsx|explorerLayouts\\.ts|ExplorerChromeSurface\\.tsx|LayoutDynamicsCanvas\\.tsx|explorerCustomizePointerRuntime\\.ts|explorerStore\\.ts|explorerLayouts\\.test\\.ts" || true'`
 
+# 2026-04-27 - Explorer Scrollbars Need Adaptive Thumb Floors And A Short Settling Loop During Zoom-Time Layout Motion
+
+- The shared overlay scrollbar lane was making dense explorer folders feel worse than they were:
+  - `src/components/OverlayScrollArea.tsx` used a hard minimum thumb size (`32px` vertical / `36px` horizontal), so once content got large enough the thumb stopped communicating the real folder scale
+  - live explorer layout zoom also drives CSS variables through a spring on `mainRef`, which can change scroll extents for a short burst without React rerendering the whole explorer tree each frame
+- Durable scrollbar rules after the fix:
+  - custom overlay scrollbars must use an adaptive minimum thumb size based on `scrollSize / viewportSize`, not one large fixed floor
+  - dense folders should be allowed to produce visibly smaller thumbs so the scrollbar keeps reflecting content magnitude during zoom changes and giant directories
+  - `OverlayScrollArea` now runs a short post-sync settling loop (RAF-based) after content/viewport/resize-driven sync requests so spring-authored layout motion can finish updating `scrollHeight` / `scrollWidth` before the thumb freezes
+  - if scrollbars feel like they only update at the start of zoom and then lag behind the content, inspect the settling loop in `OverlayScrollArea.tsx` before changing explorer virtualization math
+- Durable styling rule:
+  - the CSS fallback minimums in `src/App.css` are now intentionally small; the runtime sets axis-specific inline `minHeight` / `minWidth` per measurement pass
+  - do not reintroduce a large fixed CSS thumb minimum unless the runtime contract is updated in lockstep, or giant folders will regress back to the same “always fat thumb” feel
+- Focused validation that passed for this pass:
+  - `bunx vitest run src/test/overlayScrollArea.test.tsx src/test/fileExplorer.viewModes.test.tsx -t "OverlayScrollArea|uses the dedicated explorer viewport class for visible file-list scrollbars" --reporter=dot`
+- Validation note:
+  - full `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails in unrelated pre-existing areas (`ExplorerImageCutoutSurface`, `StoragePanel`, `ExplorerSideRail`, `panelRegistry` tests, vendored Tiptap packages, and other worktree drift); treat those as repo-baseline issues, not regressions from the scrollbar patch
+
 # 2026-04-27 - Authoring Canvases Need A Fixed Viewport With Bidirectional Scroll, Not A Content-Growth Illusion
 
 - The latest customize-mode polish closed a specific but important regression in the explorer header authoring surface:

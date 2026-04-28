@@ -119,4 +119,52 @@ describe('OverlayScrollArea', () => {
       expect(Number.parseFloat(verticalThumb.style.height)).toBeGreaterThan(0);
     });
   });
+
+  it('shrinks the thumb as the content range grows denser', async () => {
+    const { container } = render(
+      <OverlayScrollArea scrollbarStyle="themed">
+        <div>content</div>
+      </OverlayScrollArea>,
+    );
+
+    const viewport = getViewport(container, 'vertical');
+    const verticalTrack = container.querySelector('.overlay-scroll-area__scrollbar--vertical');
+    const verticalThumb = container.querySelector('.overlay-scroll-area__scrollbar-thumb--vertical');
+    if (!(verticalTrack instanceof HTMLDivElement) || !(verticalThumb instanceof HTMLDivElement)) {
+      throw new Error('Missing custom vertical scrollbar chrome.');
+    }
+
+    Object.defineProperty(viewport, 'clientHeight', {
+      configurable: true,
+      value: 120,
+    });
+    Object.defineProperty(verticalTrack, 'clientHeight', {
+      configurable: true,
+      value: 120,
+    });
+
+    Object.defineProperty(viewport, 'scrollHeight', {
+      configurable: true,
+      value: 240,
+    });
+    viewport.dispatchEvent(new Event('scroll'));
+
+    let sparseHeight = 0;
+    await waitFor(() => {
+      sparseHeight = Number.parseFloat(verticalThumb.style.height);
+      expect(sparseHeight).toBeGreaterThan(50);
+    });
+
+    Object.defineProperty(viewport, 'scrollHeight', {
+      configurable: true,
+      value: 7200,
+    });
+    viewport.dispatchEvent(new Event('scroll'));
+
+    await waitFor(() => {
+      const denseHeight = Number.parseFloat(verticalThumb.style.height);
+      expect(denseHeight).toBeLessThan(sparseHeight / 2);
+      expect(denseHeight).toBeLessThan(24);
+    });
+  });
 });

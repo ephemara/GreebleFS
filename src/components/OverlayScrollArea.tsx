@@ -38,6 +38,10 @@ export function OverlayScrollArea({
   const horizontalTrackRef = useRef<HTMLDivElement | null>(null);
   const horizontalThumbRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollbarSyncFrameRef = useRef<number | null>(null);
+  const scrollbarSettleFramesRemainingRef = useRef(0);
+  const stableScrollbarMeasurementFramesRef = useRef(0);
+  const lastScrollbarMeasurementRef =
+    useRef<OverlayScrollbarMeasurementSnapshot | null>(null);
   const scrollbarDragStateRef = useRef<OverlayScrollbarDragState | null>(null);
 
   const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -58,19 +62,21 @@ export function OverlayScrollArea({
     viewport.scrollLeft += event.deltaY;
   }, [direction]);
 
-  const syncScrollbarPresentation = useCallback(() => {
+  const syncScrollbarPresentation =
+    useCallback((): OverlayScrollbarMeasurementSnapshot | null => {
     const root = rootRef.current;
     const viewport = internalViewportRef.current;
     if (!root || !viewport) {
-      return;
+      return null;
     }
 
+    const measurement = readScrollbarMeasurementSnapshot(viewport);
     if (scrollbarStyle === 'hidden') {
       root.dataset.overlayVerticalScrollbarVisible = 'false';
       root.dataset.overlayHorizontalScrollbarVisible = 'false';
       root.style.setProperty('--overlay-scroll-area-vertical-reserve', '0px');
       root.style.setProperty('--overlay-scroll-area-horizontal-reserve', '0px');
-      return;
+      return measurement;
     }
 
     const computedStyle = window.getComputedStyle(root);
@@ -116,16 +122,57 @@ export function OverlayScrollArea({
       visible: horizontalScrollbarVisible,
       viewport,
     });
+    return measurement;
   }, [direction, scrollbarStyle]);
 
-  const scheduleScrollbarPresentationSync = useCallback(() => {
+  const scheduleScrollbarPresentationSync = useCallback((options?: {
+    sustain?: boolean;
+  }) => {
+    if (options?.sustain) {
+      scrollbarSettleFramesRemainingRef.current = Math.max(
+        scrollbarSettleFramesRemainingRef.current,
+        18,
+      );
+      stableScrollbarMeasurementFramesRef.current = 0;
+    }
     if (pendingScrollbarSyncFrameRef.current != null) {
       return;
     }
 
     pendingScrollbarSyncFrameRef.current = window.requestAnimationFrame(() => {
       pendingScrollbarSyncFrameRef.current = null;
-      syncScrollbarPresentation();
+      const measurement = syncScrollbarPresentation();
+      const shouldKeepSettling =
+        scrollbarSettleFramesRemainingRef.current > 0 && measurement != null;
+      if (!shouldKeepSettling) {
+        lastScrollbarMeasurementRef.current = measurement;
+        stableScrollbarMeasurementFramesRef.current = 0;
+        return;
+      }
+
+      const previousMeasurement = lastScrollbarMeasurementRef.current;
+      const isStable =
+        previousMeasurement != null &&
+        areScrollbarMeasurementsEqual(previousMeasurement, measurement);
+      stableScrollbarMeasurementFramesRef.current = isStable
+        ? stableScrollbarMeasurementFramesRef.current + 1
+        : 0;
+      lastScrollbarMeasurementRef.current = measurement;
+      scrollbarSettleFramesRemainingRef.current = Math.max(
+        0,
+        scrollbarSettleFramesRemainingRef.current - 1,
+      );
+
+      if (
+        stableScrollbarMeasurementFramesRef.current < 2 &&
+        scrollbarSettleFramesRemainingRef.current > 0
+      ) {
+        scheduleScrollbarPresentationSync();
+        return;
+      }
+
+      scrollbarSettleFramesRemainingRef.current = 0;
+      stableScrollbarMeasurementFramesRef.current = 0;
     });
   }, [syncScrollbarPresentation]);
 
@@ -220,7 +267,7 @@ export function OverlayScrollArea({
   }, [handleScrollbarDragPointerEnd, handleScrollbarDragPointerMove]);
 
   useLayoutEffect(() => {
-    scheduleScrollbarPresentationSync();
+    scheduleScrollbarPresentationSync({ sustain: true });
   }, [children, contentClassName, contentStyle, direction, scheduleScrollbarPresentationSync, scrollbarStyle, viewportClassName, viewportStyle]);
 
   useEffect(() => {
@@ -230,10 +277,10 @@ export function OverlayScrollArea({
       return;
     }
 
-    scheduleScrollbarPresentationSync();
+    scheduleScrollbarPresentationSync({ sustain: true });
 
     const handleWindowResize = () => {
-      scheduleScrollbarPresentationSync();
+      scheduleScrollbarPresentationSync({ sustain: true });
     };
 
     window.addEventListener('resize', handleWindowResize);
@@ -250,7 +297,7 @@ export function OverlayScrollArea({
     }
 
     const resizeObserver = new ResizeObserver(() => {
-      scheduleScrollbarPresentationSync();
+      scheduleScrollbarPresentationSync({ sustain: true });
     });
     resizeObserver.observe(viewport);
     if (content) {
@@ -399,7 +446,12 @@ function syncAxisScrollbarPresentation(args: {
   const scrollSize = axis === 'vertical' ? viewport.scrollHeight : viewport.scrollWidth;
   const scrollOffset = axis === 'vertical' ? viewport.scrollTop : viewport.scrollLeft;
   const maxScrollOffset = Math.max(0, scrollSize - viewportSize);
-  const minimumThumbSize = axis === 'vertical' ? 32 : 36;
+  const minimumThumbSize = resolveMinimumThumbSize({
+    axis,
+    scrollSize,
+    trackSize,
+    viewportSize,
+  });
   const thumbSize = clampNumber(
     (viewportSize / scrollSize) * trackSize,
     minimumThumbSize,
@@ -411,12 +463,80 @@ function syncAxisScrollbarPresentation(args: {
     : 0;
 
   if (axis === 'vertical') {
+    thumb.style.minHeight = `${minimumThumbSize}px`;
     thumb.style.height = `${thumbSize}px`;
     thumb.style.transform = `translate3d(0, ${thumbOffset}px, 0)`;
   } else {
+    thumb.style.minWidth = `${minimumThumbSize}px`;
     thumb.style.width = `${thumbSize}px`;
     thumb.style.transform = `translate3d(${thumbOffset}px, 0, 0)`;
   }
+}
+
+interface OverlayScrollbarMeasurementSnapshot {
+  clientHeight: number;
+  clientWidth: number;
+  scrollHeight: number;
+  scrollLeft: number;
+  scrollTop: number;
+  scrollWidth: number;
+}
+
+function readScrollbarMeasurementSnapshot(
+  viewport: HTMLDivElement,
+): OverlayScrollbarMeasurementSnapshot {
+  return {
+    clientHeight: viewport.clientHeight,
+    clientWidth: viewport.clientWidth,
+    scrollHeight: viewport.scrollHeight,
+    scrollLeft: viewport.scrollLeft,
+    scrollTop: viewport.scrollTop,
+    scrollWidth: viewport.scrollWidth,
+  };
+}
+
+function areScrollbarMeasurementsEqual(
+  first: OverlayScrollbarMeasurementSnapshot,
+  second: OverlayScrollbarMeasurementSnapshot,
+): boolean {
+  return first.clientHeight === second.clientHeight
+    && first.clientWidth === second.clientWidth
+    && first.scrollHeight === second.scrollHeight
+    && first.scrollLeft === second.scrollLeft
+    && first.scrollTop === second.scrollTop
+    && first.scrollWidth === second.scrollWidth;
+}
+
+function resolveMinimumThumbSize(args: {
+  axis: OverlayScrollbarAxis;
+  scrollSize: number;
+  trackSize: number;
+  viewportSize: number;
+}): number {
+  const { axis, scrollSize, trackSize, viewportSize } = args;
+  const compactMinimum = axis === 'vertical' ? 12 : 16;
+  const comfortableMinimum = axis === 'vertical' ? 28 : 32;
+  if (
+    !Number.isFinite(scrollSize) ||
+    !Number.isFinite(trackSize) ||
+    !Number.isFinite(viewportSize) ||
+    scrollSize <= 0 ||
+    trackSize <= 0 ||
+    viewportSize <= 0
+  ) {
+    return compactMinimum;
+  }
+
+  const overflowRatio = Math.max(1, scrollSize / viewportSize);
+  const compressionProgress = clampNumber(Math.log10(overflowRatio) / 3, 0, 1);
+  const adaptiveMinimum =
+    comfortableMinimum -
+    (comfortableMinimum - compactMinimum) * compressionProgress;
+  return clampNumber(
+    adaptiveMinimum,
+    compactMinimum,
+    Math.max(compactMinimum, trackSize * 0.45),
+  );
 }
 
 function joinClassNames(...parts: Array<string | undefined>): string {
