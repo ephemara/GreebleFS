@@ -1,14 +1,11 @@
+import shippedExplorerCustomizeControlManifestJson from "../../usr/explorer-customize-controls/greeblefs-core/explorer-customize-control.json";
+
 import type { LoadedExplorerAction } from "./actionPacks";
 import type {
-  BuiltInExplorerChromeControlId,
   ExplorerChromeControlId,
+  ExplorerChromeOverrideEntry,
   ExplorerChromeSizeVariant,
   ExplorerChromeSurfaceId,
-  ExplorerChromeOverrideEntry,
-} from "./explorerChromeLayouts";
-import {
-  getSupportedExplorerChromeSurfaces,
-  listBuiltInExplorerChromeControlIds,
 } from "./explorerChromeLayouts";
 
 export type ExplorerCustomizeCatalogCategory =
@@ -45,6 +42,18 @@ export interface ExplorerCustomizeCatalogEntry {
   action?: LoadedExplorerAction;
 }
 
+interface ShippedExplorerCustomizeControlManifest {
+  controls?: ExplorerCustomizeCatalogEntry[];
+}
+
+const shippedExplorerCustomizeControlManifest =
+  shippedExplorerCustomizeControlManifestJson as ShippedExplorerCustomizeControlManifest;
+const builtInExplorerCustomizeCatalogEntries = Array.isArray(
+  shippedExplorerCustomizeControlManifest.controls,
+)
+  ? shippedExplorerCustomizeControlManifest.controls
+  : [];
+
 const defaultActionChromeSurfaces: ExplorerChromeSurfaceId[] = [
   "explorerTopbar",
   "explorerToolbar",
@@ -60,6 +69,16 @@ function titleCaseWords(value: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function cloneExplorerCustomizeCatalogEntry(
+  entry: ExplorerCustomizeCatalogEntry,
+): ExplorerCustomizeCatalogEntry {
+  return {
+    ...entry,
+    surfaces: [...entry.surfaces],
+    sizeVariants: [...entry.sizeVariants],
+  };
 }
 
 export function toExplorerActionChromeControlId(
@@ -104,296 +123,10 @@ export function humanizeExplorerChromeControlId(
   return titleCaseWords(controlId);
 }
 
-function categorizeBuiltInExplorerChromeControl(
-  controlId: BuiltInExplorerChromeControlId,
-): ExplorerCustomizeCatalogCategory {
-  if (
-    controlId.startsWith("navigate") ||
-    controlId === "addressBar" ||
-    controlId.includes("Location")
-  ) {
-    return "navigation";
-  }
-  if (
-    controlId.includes("Search") ||
-    controlId.includes("search") ||
-    controlId === "focusAddressBar"
-  ) {
-    return "search";
-  }
-  if (
-    controlId.includes("Selection") ||
-    controlId === "tagSelection" ||
-    controlId === "selectionModeToggle"
-  ) {
-    return "selection";
-  }
-  if (
-    controlId === "newFolder" ||
-    controlId === "newFile" ||
-    controlId === "pasteClipboard"
-  ) {
-    return "creation";
-  }
-  if (controlId.includes("workspace") || controlId.includes("Workspace")) {
-    return "workspace";
-  }
-  if (controlId.startsWith("rail")) {
-    return "rail";
-  }
-  if (controlId.startsWith("preview")) {
-    return "preview";
-  }
-  if (controlId.startsWith("status") || controlId === "terminalDrawerToggle") {
-    return "status";
-  }
-  if (
-    controlId === "shellLayout" ||
-    controlId === "viewLayout" ||
-    controlId === "togglePreview" ||
-    controlId === "toggleSources" ||
-    controlId === "toggleHiddenFiles" ||
-    controlId === "customizeModeToggle" ||
-    controlId === "refresh" ||
-    controlId === "experimentalModes"
-  ) {
-    return "layout";
-  }
-  if (controlId === "actionsPaneToggle") {
-    return "actions";
-  }
-  if (
-    controlId === "folderSizeSummary" ||
-    controlId === "selectionSizeSummary" ||
-    controlId === "duplicateScan" ||
-    controlId === "undoTrash"
-  ) {
-    return "tasks";
-  }
-  return "other";
-}
-
-const unsupportedBuiltInExplorerCustomizeControlIds =
-  new Set<BuiltInExplorerChromeControlId>([
-    "workspaceMode",
-    "workspaceCommanderSummary",
-    "workspaceLayoutHint",
-    "workspaceTabs",
-    "workspaceDuplicateTab",
-    "workspaceFocusLeft",
-    "workspaceFocusRight",
-    "workspaceMoveTab",
-    "workspaceSyncPath",
-    "workspaceLinkNavigation",
-    "workspaceCopyToPane",
-    "workspaceMoveToPane",
-    "workspaceSwapPane",
-    "workspaceSplitToggle",
-    "workspaceCloseTab",
-    "workspaceSplitSummary",
-    "workspaceSplitNudgeLeft",
-    "workspaceSplitReset",
-    "workspaceSplitNudgeRight",
-  ]);
-
-interface BuiltInExplorerCustomizeCapability {
-  supportsSizeVariant?: boolean;
-  supportsWidthPx?: boolean;
-  supportsLabelVisibility?: boolean;
-  supportsIconVisibility?: boolean;
-  sizeVariants?: ExplorerChromeSizeVariant[];
-  defaultWidthPx?: number | null;
-  minWidthPx?: number | null;
-  maxWidthPx?: number | null;
-}
-
-const builtInExplorerCustomizeCapabilities: Partial<
-  Record<BuiltInExplorerChromeControlId, BuiltInExplorerCustomizeCapability>
-> = {
-  navigateBack: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  navigateForward: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  navigateUp: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  addressBar: {
-    supportsSizeVariant: true,
-    supportsWidthPx: true,
-    sizeVariants: ["compact", "regular", "wide"],
-    defaultWidthPx: 760,
-    minWidthPx: 280,
-    maxWidthPx: 1480,
-  },
-  recentLocations: {
-    supportsWidthPx: true,
-    defaultWidthPx: 260,
-    minWidthPx: 150,
-    maxWidthPx: 420,
-  },
-  pinnedLocations: {
-    supportsWidthPx: true,
-    defaultWidthPx: 260,
-    minWidthPx: 150,
-    maxWidthPx: 420,
-  },
-  archiveActions: {
-    supportsSizeVariant: true,
-    supportsWidthPx: true,
-    sizeVariants: ["compact", "regular", "wide"],
-    defaultWidthPx: 220,
-    minWidthPx: 150,
-    maxWidthPx: 420,
-  },
-  workspaceTabStrip: {
-    supportsSizeVariant: true,
-    supportsWidthPx: true,
-    sizeVariants: ["compact", "regular", "wide"],
-    defaultWidthPx: 760,
-    minWidthPx: 320,
-    maxWidthPx: 1600,
-  },
-  workspacePaneCounts: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  workspaceNewTab: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  workspacePaneActionsMenu: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  toggleSources: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  focusAddressBar: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  statusItemCount: {
-    supportsWidthPx: true,
-    defaultWidthPx: 180,
-    minWidthPx: 120,
-    maxWidthPx: 320,
-  },
-  statusModeProfile: {
-    supportsWidthPx: true,
-    defaultWidthPx: 180,
-    minWidthPx: 120,
-    maxWidthPx: 320,
-  },
-  statusViewSummary: {
-    supportsWidthPx: true,
-    defaultWidthPx: 200,
-    minWidthPx: 140,
-    maxWidthPx: 360,
-  },
-  statusPreviewSummary: {
-    supportsWidthPx: true,
-    defaultWidthPx: 260,
-    minWidthPx: 160,
-    maxWidthPx: 520,
-  },
-  statusSearchSummary: {
-    supportsWidthPx: true,
-    defaultWidthPx: 300,
-    minWidthPx: 180,
-    maxWidthPx: 620,
-  },
-  statusClipboardQueue: {
-    supportsWidthPx: true,
-    defaultWidthPx: 240,
-    minWidthPx: 160,
-    maxWidthPx: 480,
-  },
-  statusTaskBadge: {
-    supportsSizeVariant: true,
-    supportsWidthPx: true,
-    sizeVariants: ["compact", "regular", "wide"],
-    defaultWidthPx: 180,
-    minWidthPx: 120,
-    maxWidthPx: 320,
-  },
-  statusViewToggles: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  terminalDrawerToggle: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  actionsPaneToggle: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  selectionModeToggle: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  togglePreview: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  toggleHiddenFiles: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  refresh: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  customizeModeToggle: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  newFolder: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  newFile: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-  pasteClipboard: {
-    supportsSizeVariant: true,
-    sizeVariants: ["compact", "regular", "wide"],
-  },
-};
-
 function createBuiltInExplorerCustomizeCatalogEntries(): ExplorerCustomizeCatalogEntry[] {
-  return listBuiltInExplorerChromeControlIds()
-    .filter(
-      (controlId) =>
-        !unsupportedBuiltInExplorerCustomizeControlIds.has(controlId),
-    )
-    .map((controlId) => {
-      const capabilities = builtInExplorerCustomizeCapabilities[controlId];
-      return {
-        controlId,
-        commandId: getExplorerChromeCommandId(controlId),
-        label: humanizeExplorerChromeControlId(controlId),
-        description: `${humanizeExplorerChromeControlId(controlId)} control`,
-        category: categorizeBuiltInExplorerChromeControl(controlId),
-        surfaces: getSupportedExplorerChromeSurfaces(controlId),
-        source: "built-in",
-        supportsSizeVariant: capabilities?.supportsSizeVariant ?? false,
-        supportsWidthPx: capabilities?.supportsWidthPx ?? false,
-        supportsLabelVisibility: capabilities?.supportsLabelVisibility ?? false,
-        supportsIconVisibility: capabilities?.supportsIconVisibility ?? false,
-        sizeVariants: capabilities?.sizeVariants ?? ["regular"],
-        defaultWidthPx: capabilities?.defaultWidthPx ?? null,
-        minWidthPx: capabilities?.minWidthPx ?? null,
-        maxWidthPx: capabilities?.maxWidthPx ?? null,
-      };
-    });
+  return builtInExplorerCustomizeCatalogEntries.map(
+    cloneExplorerCustomizeCatalogEntry,
+  );
 }
 
 function createActionExplorerCustomizeCatalogEntry(

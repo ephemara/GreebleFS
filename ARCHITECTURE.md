@@ -105,19 +105,21 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/workbenchTheme.ts`
   App-wide workbench recipe resolution and workbench-scoped CSS variable contract.
 - `src/config/topBars.ts`
-  Standalone top-bar catalog and resolver. It owns built-in top-bar variants, theme-package top-bar contribution loading, legacy `theme.workbench.topBarStyle` fallback mapping, and the active selection resolution path used by `App.tsx` and Settings.
+  Standalone top-bar catalog and resolver. The shipped first-party top-bar catalog now lives in `usr/top-bars/**/top-bar.json`; this module should stay a loader/resolver over that authored data plus theme-package top-bar contribution loading, legacy `theme.workbench.topBarStyle` fallback mapping, and the active selection path used by `App.tsx` and Settings.
 - `src/config/layoutDynamics.ts`, `src/runtime/layoutDynamicsRuntime.ts`, `src/components/layoutDynamics/LayoutDynamicsCanvas.tsx`, and `src/animation/layoutDynamics.tsx`
-  Shared layout-authoring physics subsystem. This lane owns the solver presets, adopted-surface catalog, theme/settings normalization, per-frame repulsion/spring math, the reusable authoring canvas, and the runtime controller that resolves the effective surface settings for explorer chrome and the shell top bar.
+  Shared layout-authoring physics subsystem. The shipped solver presets and adopted-surface catalog now live in `usr/layout-dynamics/**/layout-dynamics.json`; code owns normalization, per-frame repulsion/spring math, the reusable authoring canvas, and the runtime controller that resolves the effective surface settings for explorer chrome and the shell top bar.
 - `src/config/explorerTheme.ts`
   Explorer-specific theme recipe resolution, metrics scaling, and explorer-scoped CSS variable contract.
 - `src/config/explorerModeProfiles.ts`
-  Explorer mode-profile registry that maps user-facing explorer modes onto pane-layout ids, chrome-layout ids, and view-bias defaults.
+  Explorer mode-profile registry/loader. The shipped user-facing explorer modes now live in `usr/explorer-mode-profiles/**/explorer-mode-profile.json`, and this module maps them onto pane-layout ids, chrome-layout ids, and view-bias defaults.
 - `src/config/explorerShellLayouts.ts`
-  Pane-layout presets that still own rail visibility, preview placement, and live pane sizing behavior. These remain the pane-composition layer even after mode profiles and chrome layouts were split out.
+  Pane-layout preset loader for `usr/explorer-shell-layouts/**/explorer-shell-layout.json`. These manifests own rail visibility, preview placement, and live pane sizing behavior, and remain the pane-composition layer even after mode profiles and chrome layouts were split out.
 - `src/config/explorerChromeLayouts.ts`
-  Explorer chrome layout registry/resolver for adaptive topbar, toolbar, workspace header, rail header, preview header, and status-strip control placement plus zone-based layout override snapshots. This is the persistence layer for moveable explorer chrome; `widthPx`, `sizeVariant`, `showLabel`, and `showIcon` overrides should survive moves between supported surfaces, and v1 layout-dynamics adoption can now also persist authored `bandId` / `anchorX` / `anchorY` metadata alongside the legacy slot data.
+  Explorer chrome layout registry/resolver over `usr/explorer-chrome-layouts/**/explorer-chrome-layout.json`. This is the persistence layer for moveable explorer chrome; `widthPx`, `sizeVariant`, `showLabel`, and `showIcon` overrides should survive moves between supported surfaces, and v1 layout-dynamics adoption can now also persist authored `bandId` / `anchorX` / `anchorY` metadata alongside the legacy slot data.
 - `src/config/explorerCustomizeCatalog.ts`
-  Unified placeable explorer-control catalog for built-ins and authored actions. It is the source of truth for shared command ids, supported surfaces, resize/size capabilities, default width hints, and customize-browser grouping. New explorer chrome should register here instead of being wired as JSX-only hardcoded buttons.
+  Unified placeable explorer-control catalog loader over `usr/explorer-customize-controls/**/explorer-customize-control.json`. It is the source of truth for shared command ids, supported surfaces, resize/size capabilities, default width hints, and customize-browser grouping. New explorer chrome should register here instead of being wired as JSX-only hardcoded buttons.
+- `src/config/hotkeys.ts`
+  Shipped hotkey-catalog loader over `usr/hotkeys/**/hotkeys.json`. The default binding map is now authored data; TypeScript should stay the normalization/matching layer instead of the place where new built-in shortcut rows are authored.
 - `src/config/explorerContextMenu.ts` and `src/config/menuPacks.ts`
   Typed explorer-menu command graph plus declarative `menu-packs/` loader. The registry owns action metadata, preview-pane invocation metadata (`previewKind`, `workflowTabId`, `workflowBaseMode`), preview-owned command sources, context-authored density/description visibility, and legacy migration helpers; menu packs own per-context placement, submenu/group-slot structure, the dedicated `preview` slot used by adaptive preview menus, quick-slot/fallback hints, and the built-in classic authored pack. The default `preview-pane` layout is intentionally much smaller than the main explorer entry menu even though both ride the same system.
 - `src/config/themeEngineBindings.ts`
@@ -299,7 +301,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/store/settingsStore.ts` now persists `settings.audio.activeSoundPackId`; `null` means "follow the active theme path", matching the other bundle-pack lanes
   - `SettingsPage.tsx` owns the authored sound-pack selector, cue-category toggles, native-notification controls, and VST path management in one audio section
 - Top bars are now a first-class shell subsystem instead of an implicit side effect of `theme.workbench.topBarStyle`:
-  - `src/config/topBars.ts` defines the built-in catalog, the control-zone schema (`leadingControls`, `navigationShortcuts`, `trailingControls`), and the active resolution order: explicit user pin, `theme.defaultTopBarId`, legacy `theme.workbench.topBarStyle`, then built-in fallback
+  - `usr/top-bars/**/top-bar.json` is the canonical shipped top-bar catalog, and `src/config/topBars.ts` should stay the control-zone schema (`leadingControls`, `navigationShortcuts`, `trailingControls`) plus resolver path: explicit user pin, `theme.defaultTopBarId`, legacy `theme.workbench.topBarStyle`, then shipped fallback
   - `src/config/topBarPackages.ts` owns the standalone `top-bars/` loader, so authored top bars no longer need to hide inside theme bundles just to exist on disk
   - `src/components/WorkbenchTopBar.tsx` renders the active top bar from that data-driven definition instead of hardcoding one shell-header workflow in `App.tsx`
   - `src/store/settingsStore.ts` now persists `settings.appearance.activeTopBarId`; `null` means "follow the active theme path"
@@ -322,7 +324,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/components/SettingsPage.tsx` exposes this lane inside `Animations` as `Interaction Motion`, including global enablement, preset selection, intensity scaling, per-surface toggles, and a compact `Motion Lab` preview harness that exercises the same resolver as the live shell
   - folder-authored modules under `animations/` and `src/components/animationRuntime.tsx` remain the shell-transition / authored-overlay lane; they are not the default engine for explorer rows, rail chips, tabs, or other hot-path shell controls
 - Layout dynamics is now a first-class appearance lane separate from interaction motion:
-  - `src/config/layoutDynamics.ts` defines the built-in solver preset catalog (`precision-flow`, `liquid-repulse`, `heavy-orbit`), the adopted surface catalog (`explorerTopbar`, `explorerToolbar`, `workbenchTopBar`), the theme recipe contract, and the authoring snapshot types used for persisted anchor truth
+  - `usr/layout-dynamics/**/layout-dynamics.json` is the canonical shipped solver/surface catalog, and `src/config/layoutDynamics.ts` should stay the theme recipe contract plus authoring snapshot/normalization layer over that data
   - `src/runtime/layoutDynamicsRuntime.ts` owns the solver math and the band/free-2d stepping rules, while `src/components/layoutDynamics/LayoutDynamicsCanvas.tsx` is the only supported hot-path integration path for live repulsion, collision recovery, and anchor-return authoring UI
   - `src/store/settingsStore.ts` persists `settings.appearance.layoutDynamicsEnabled`, `layoutDynamicsPresetId`, `layoutDynamicsIntensity`, `layoutDynamicsSurfaceOverrides`, and `topBarLayoutSnapshotsById`; those top-bar snapshots store authored anchors only, never the transient repelled positions
   - `src/components/explorer/ExplorerChromeSurface.tsx` and `src/components/WorkbenchTopBar.tsx` are the first adopters. Explorer adoption is intentionally mixed-mode in v1: surfaces that already carry authored `bandId` / `anchorX` / `anchorY` metadata switch into the layout-dynamics canvas, while untouched legacy slot drafts stay on the old zone/order/offset path until they are explicitly adopted
@@ -439,9 +441,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - explorer view mode
   - preview toggle
 - Explorer chrome composition is now a distinct layer from explorer pane composition:
-  - `src/config/explorerShellLayouts.ts` still owns pane structure like rail visibility, preview side, and live session sizing behavior
-  - `src/config/explorerModeProfiles.ts` owns the curated user-facing explorer modes (`balanced`, `navigator`, `focus`, `inspector`) and maps them onto pane-layout ids plus chrome-layout ids
-  - `src/config/explorerChromeLayouts.ts` owns topbar/toolbar/workspace-header/rail-header/preview-header/status-strip control zones, order, and per-layout adaptive placement
+  - `usr/explorer-shell-layouts/**/explorer-shell-layout.json` owns pane structure like rail visibility, preview side, and live session sizing behavior
+  - `usr/explorer-mode-profiles/**/explorer-mode-profile.json` owns the curated user-facing explorer modes (`balanced`, `navigator`, `focus`, `inspector`) and maps them onto pane-layout ids plus chrome-layout ids
+  - `usr/explorer-chrome-layouts/**/explorer-chrome-layout.json` owns topbar/toolbar/workspace-header/rail-header/preview-header/status-strip control zones, order, and per-layout adaptive placement
+  - `usr/explorer-customize-controls/**/explorer-customize-control.json` owns the built-in movable-control catalog for the ZBrush-style explorer customize/browser flow
+  - `usr/explorer-workspace-layouts/**/explorer-workspace-layout.json` owns multi-pane workspace topology presets, and `usr/explorer-experimental-modes/**/explorer-experimental-mode.json` owns the shipped experimental explorer-mode catalog
   - `settingsStore.ts` persists per-theme `modeProfileOverridesByThemeId`, keyed by theme id, so users can retune a theme's default explorer mode without mutating live explorer session state
   - `settingsStore.ts` persists per-theme `chromeLayoutOverridesByThemeId`, keyed by theme id and `chromeLayoutId`
   - `FileExplorer.tsx`, `ExplorerWorkspace.tsx`, `ExplorerSideRail.tsx`, and the preview panel should render resolved chrome surfaces instead of hardcoded button sequences

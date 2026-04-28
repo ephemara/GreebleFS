@@ -1,3 +1,4 @@
+import shippedLayoutDynamicsManifestJson from "../../usr/layout-dynamics/greeblefs-core/layout-dynamics.json";
 export type LayoutDynamicsAxisMode = "horizontal-band" | "free-2d";
 export type LayoutDynamicsBoundsMode = "band" | "surface";
 
@@ -86,130 +87,45 @@ export interface LayoutDynamicsSettings {
   topBarLayoutsById: Record<string, LayoutDynamicsAuthoringSnapshot>;
 }
 
-const LAYOUT_DYNAMICS_DEFAULT_PRESET_ID = "liquid-repulse";
-const LAYOUT_DYNAMICS_INTENSITY_MIN = 0.25;
-const LAYOUT_DYNAMICS_INTENSITY_MAX = 2;
+interface ShippedLayoutDynamicsManifest {
+  defaultPresetId?: string;
+  intensityBounds?: {
+    min?: number;
+    max?: number;
+  };
+  presets?: LayoutDynamicsSolverProfile[];
+  surfaces?: LayoutDynamicsSurfaceProfile[];
+}
 
-const builtInLayoutDynamicsProfiles = [
-  {
-    id: "precision-flow",
-    label: "Precision Flow",
-    description:
-      "A tighter response that stays close to authored anchors while still clearing space before contact.",
-    groupId: "system",
-    auraRadiusPx: 118,
-    auraStrength: 760,
-    collisionStrength: 24,
-    springStiffness: 18,
-    damping: 9.25,
-    maxDisplacementPx: 196,
-    maxVelocityPx: 1580,
-    settleVelocityPx: 10,
-    gapPx: 10,
-  },
-  {
-    id: "liquid-repulse",
-    label: "Liquid Repulse",
-    description:
-      "The default authoring feel: broad aura pressure, fast collision recovery, and a damped return without chatter.",
-    groupId: "system",
-    auraRadiusPx: 152,
-    auraStrength: 1120,
-    collisionStrength: 32,
-    springStiffness: 15,
-    damping: 8.4,
-    maxDisplacementPx: 240,
-    maxVelocityPx: 1860,
-    settleVelocityPx: 12,
-    gapPx: 12,
-  },
-  {
-    id: "heavy-orbit",
-    label: "Heavy Orbit",
-    description:
-      "A slower, heavier push for chrome that should feel weighty without collapsing into a slot grid.",
-    groupId: "system",
-    auraRadiusPx: 176,
-    auraStrength: 1480,
-    collisionStrength: 38,
-    springStiffness: 12.5,
-    damping: 7.5,
-    maxDisplacementPx: 272,
-    maxVelocityPx: 1720,
-    settleVelocityPx: 12,
-    gapPx: 14,
-  },
-] as const satisfies readonly LayoutDynamicsSolverProfile[];
+const shippedLayoutDynamicsManifest =
+  shippedLayoutDynamicsManifestJson as ShippedLayoutDynamicsManifest;
+const LAYOUT_DYNAMICS_DEFAULT_PRESET_ID =
+  typeof shippedLayoutDynamicsManifest.defaultPresetId === "string" &&
+  shippedLayoutDynamicsManifest.defaultPresetId.trim().length > 0
+    ? shippedLayoutDynamicsManifest.defaultPresetId.trim()
+    : "liquid-repulse";
+const LAYOUT_DYNAMICS_INTENSITY_MIN =
+  typeof shippedLayoutDynamicsManifest.intensityBounds?.min === "number" &&
+  Number.isFinite(shippedLayoutDynamicsManifest.intensityBounds.min)
+    ? shippedLayoutDynamicsManifest.intensityBounds.min
+    : 0.25;
+const LAYOUT_DYNAMICS_INTENSITY_MAX =
+  typeof shippedLayoutDynamicsManifest.intensityBounds?.max === "number" &&
+  Number.isFinite(shippedLayoutDynamicsManifest.intensityBounds.max)
+    ? shippedLayoutDynamicsManifest.intensityBounds.max
+    : 2;
 
-export const layoutDynamicsPresetCatalog = builtInLayoutDynamicsProfiles.map(
-  (profile) => ({ ...profile }),
-);
+export const layoutDynamicsPresetCatalog = Array.isArray(
+  shippedLayoutDynamicsManifest.presets,
+)
+  ? shippedLayoutDynamicsManifest.presets.map((profile) => ({ ...profile }))
+  : [];
 
-export const layoutDynamicsSurfaceCatalog = [
-  {
-    id: "explorerTopbar",
-    label: "Explorer Top Bar",
-    supportsAuthoring: true,
-    axisMode: "free-2d",
-    boundsMode: "band",
-    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
-    controlCatalog: "explorerChrome",
-  },
-  {
-    id: "explorerToolbar",
-    label: "Explorer Toolbar",
-    supportsAuthoring: true,
-    axisMode: "free-2d",
-    boundsMode: "band",
-    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
-    controlCatalog: "explorerChrome",
-  },
-  {
-    id: "workspaceHeader",
-    label: "Explorer Workspace Header",
-    supportsAuthoring: true,
-    axisMode: "free-2d",
-    boundsMode: "band",
-    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
-    controlCatalog: "explorerChrome",
-  },
-  {
-    id: "railHeader",
-    label: "Explorer Sources Rail Header",
-    supportsAuthoring: true,
-    axisMode: "horizontal-band",
-    boundsMode: "band",
-    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
-    controlCatalog: "explorerChrome",
-  },
-  {
-    id: "previewHeader",
-    label: "Explorer Preview Header",
-    supportsAuthoring: true,
-    axisMode: "horizontal-band",
-    boundsMode: "band",
-    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
-    controlCatalog: "explorerChrome",
-  },
-  {
-    id: "explorerStatusBar",
-    label: "Explorer Status Bar",
-    supportsAuthoring: true,
-    axisMode: "horizontal-band",
-    boundsMode: "band",
-    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
-    controlCatalog: "explorerChrome",
-  },
-  {
-    id: "workbenchTopBar",
-    label: "Workbench Top Bar",
-    supportsAuthoring: true,
-    axisMode: "horizontal-band",
-    boundsMode: "band",
-    defaultPresetId: LAYOUT_DYNAMICS_DEFAULT_PRESET_ID,
-    controlCatalog: "topBarChrome",
-  },
-] as const satisfies readonly LayoutDynamicsSurfaceProfile[];
+export const layoutDynamicsSurfaceCatalog = Array.isArray(
+  shippedLayoutDynamicsManifest.surfaces,
+)
+  ? shippedLayoutDynamicsManifest.surfaces.map((surface) => ({ ...surface }))
+  : [];
 
 const layoutDynamicsPresetById = new Map<string, LayoutDynamicsSolverProfile>(
   layoutDynamicsPresetCatalog.map((profile) => [profile.id, profile] as const),
@@ -404,9 +320,7 @@ export function normalizeLayoutDynamicsTopBarLayoutMap(
         ] as const;
       })
       .filter(
-        (
-          entry,
-        ): entry is readonly [string, LayoutDynamicsAuthoringSnapshot] =>
+        (entry): entry is readonly [string, LayoutDynamicsAuthoringSnapshot] =>
           entry != null,
       ),
   );
@@ -452,8 +366,7 @@ export function getLayoutDynamicsSurfaceProfile(
   surfaceId: LayoutDynamicsSurfaceId,
 ): LayoutDynamicsSurfaceProfile {
   return (
-    layoutDynamicsSurfaceById.get(surfaceId) ??
-    layoutDynamicsSurfaceCatalog[0]
+    layoutDynamicsSurfaceById.get(surfaceId) ?? layoutDynamicsSurfaceCatalog[0]
   );
 }
 
@@ -462,7 +375,9 @@ export function resolveLayoutDynamicsPresetId(args: {
   themeDefaultPresetId?: string | null;
   surfaceId?: LayoutDynamicsSurfaceId;
 }): string {
-  const requestedPresetId = normalizeLayoutDynamicsPresetId(args.requestedPresetId);
+  const requestedPresetId = normalizeLayoutDynamicsPresetId(
+    args.requestedPresetId,
+  );
   if (requestedPresetId) {
     return requestedPresetId;
   }

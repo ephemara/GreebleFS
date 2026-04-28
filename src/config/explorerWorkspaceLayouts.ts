@@ -1,5 +1,11 @@
-export type ExplorerPaneId = 'pane-1' | 'pane-2' | 'pane-3' | 'pane-4';
-export type ExplorerWorkspaceLayoutMode = 'single' | 'split' | 'triple' | 'quad';
+import shippedExplorerWorkspaceLayoutManifestJson from "../../usr/explorer-workspace-layouts/greeblefs-core/explorer-workspace-layout.json";
+
+export type ExplorerPaneId = "pane-1" | "pane-2" | "pane-3" | "pane-4";
+export type ExplorerWorkspaceLayoutMode =
+  | "single"
+  | "split"
+  | "triple"
+  | "quad";
 
 export interface ExplorerWorkspaceLayoutDefinition {
   id: ExplorerWorkspaceLayoutMode;
@@ -11,53 +17,50 @@ export interface ExplorerWorkspaceLayoutDefinition {
   supportsRowSplit: boolean;
 }
 
+interface ShippedExplorerWorkspaceLayoutManifest {
+  workspaceLayouts?: ExplorerWorkspaceLayoutDefinition[];
+}
+
+const shippedExplorerWorkspaceLayoutManifest =
+  shippedExplorerWorkspaceLayoutManifestJson as ShippedExplorerWorkspaceLayoutManifest;
+const builtInExplorerWorkspaceLayoutOrder = [
+  "single",
+  "split",
+  "triple",
+  "quad",
+] as const satisfies readonly ExplorerWorkspaceLayoutMode[];
+
 export const explorerPaneIds: ExplorerPaneId[] = [
-  'pane-1',
-  'pane-2',
-  'pane-3',
-  'pane-4',
+  "pane-1",
+  "pane-2",
+  "pane-3",
+  "pane-4",
 ];
 
-const builtInExplorerWorkspaceLayouts: Record<ExplorerWorkspaceLayoutMode, ExplorerWorkspaceLayoutDefinition> = {
-  single: {
-    id: 'single',
-    label: 'Single',
-    shortLabel: '1-Up',
-    description: 'One focused explorer pane.',
-    visiblePaneIds: ['pane-1'],
-    supportsColumnSplit: false,
-    supportsRowSplit: false,
-  },
-  split: {
-    id: 'split',
-    label: 'Split',
-    shortLabel: '2-Up',
-    description: 'Two-pane side-by-side explorer workspace.',
-    visiblePaneIds: ['pane-1', 'pane-2'],
-    supportsColumnSplit: true,
-    supportsRowSplit: false,
-  },
-  triple: {
-    id: 'triple',
-    label: 'Triple',
-    shortLabel: '3-Up',
-    description: 'One full-width top pane with two panes below.',
-    visiblePaneIds: ['pane-1', 'pane-2', 'pane-3'],
-    supportsColumnSplit: true,
-    supportsRowSplit: true,
-  },
-  quad: {
-    id: 'quad',
-    label: 'Quad',
-    shortLabel: '4-Up',
-    description: 'Four-pane grid explorer workspace.',
-    visiblePaneIds: ['pane-1', 'pane-2', 'pane-3', 'pane-4'],
-    supportsColumnSplit: true,
-    supportsRowSplit: true,
-  },
-};
+const shippedExplorerWorkspaceLayouts = Array.isArray(
+  shippedExplorerWorkspaceLayoutManifest.workspaceLayouts,
+)
+  ? shippedExplorerWorkspaceLayoutManifest.workspaceLayouts
+  : [];
+const shippedExplorerWorkspaceLayoutById = new Map(
+  shippedExplorerWorkspaceLayouts.map((layout) => [layout.id, layout] as const),
+);
 
-export const defaultExplorerWorkspaceLayoutMode: ExplorerWorkspaceLayoutMode = 'single';
+const builtInExplorerWorkspaceLayouts = Object.fromEntries(
+  builtInExplorerWorkspaceLayoutOrder.map((layoutId) => {
+    const layout = shippedExplorerWorkspaceLayoutById.get(layoutId);
+    if (!layout) {
+      throw new Error(`Missing shipped explorer workspace layout: ${layoutId}`);
+    }
+    return [
+      layoutId,
+      { ...layout, visiblePaneIds: [...layout.visiblePaneIds] },
+    ] as const;
+  }),
+) as Record<ExplorerWorkspaceLayoutMode, ExplorerWorkspaceLayoutDefinition>;
+
+export const defaultExplorerWorkspaceLayoutMode: ExplorerWorkspaceLayoutMode =
+  "single";
 export const defaultExplorerWorkspaceAxisRatio = 0.5;
 export const EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS = {
   min: 0.18,
@@ -67,14 +70,14 @@ export const EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS = {
 export function normalizeExplorerWorkspaceLayoutMode(
   value: unknown,
 ): ExplorerWorkspaceLayoutMode {
-  if (value === 'split' || value === 'dual') {
-    return 'split';
+  if (value === "split" || value === "dual") {
+    return "split";
   }
-  if (value === 'triple' || value === 'triad') {
-    return 'triple';
+  if (value === "triple" || value === "triad") {
+    return "triple";
   }
-  if (value === 'quad') {
-    return 'quad';
+  if (value === "quad") {
+    return "quad";
   }
   return defaultExplorerWorkspaceLayoutMode;
 }
@@ -95,17 +98,17 @@ export function getExplorerWorkspaceVisiblePaneIds(
 
 export function normalizeExplorerPaneId(value: unknown): ExplorerPaneId {
   switch (value) {
-    case 'pane-2':
-    case 'right':
-      return 'pane-2';
-    case 'pane-3':
-      return 'pane-3';
-    case 'pane-4':
-      return 'pane-4';
-    case 'pane-1':
-    case 'left':
+    case "pane-2":
+    case "right":
+      return "pane-2";
+    case "pane-3":
+      return "pane-3";
+    case "pane-4":
+      return "pane-4";
+    case "pane-1":
+    case "left":
     default:
-      return 'pane-1';
+      return "pane-1";
   }
 }
 
@@ -126,7 +129,7 @@ export function createEmptyExplorerPaneRecord<T>(
 }
 
 export function clampExplorerWorkspaceAxisRatio(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     return defaultExplorerWorkspaceAxisRatio;
   }
   return Math.max(

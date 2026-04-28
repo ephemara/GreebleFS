@@ -1,18 +1,20 @@
+import shippedExplorerExperimentalModeManifestJson from "../../usr/explorer-experimental-modes/greeblefs-core/explorer-experimental-mode.json";
+
 export type ExplorerExperimentalViewMode =
-  | 'off'
-  | 'adaptive-semantic-grid'
-  | 'constellation'
-  | 'timeline-surface';
+  | "off"
+  | "adaptive-semantic-grid"
+  | "constellation"
+  | "timeline-surface";
 
 export type AdaptiveSemanticDensityStopId =
-  | 'small-icons'
-  | 'medium-icons'
-  | 'large-icons'
-  | 'rich-cards'
-  | 'columns'
-  | 'details';
+  | "small-icons"
+  | "medium-icons"
+  | "large-icons"
+  | "rich-cards"
+  | "columns"
+  | "details";
 
-export type AdaptiveSemanticPresentation = 'grid' | 'cards' | 'table';
+export type AdaptiveSemanticPresentation = "grid" | "cards" | "table";
 
 export interface AdaptiveSemanticGridMetrics {
   minWidth: number;
@@ -42,7 +44,7 @@ export interface AdaptiveSemanticDensityStopDefinition {
 }
 
 export interface ExplorerExperimentalModeDefinition {
-  id: Exclude<ExplorerExperimentalViewMode, 'off'>;
+  id: Exclude<ExplorerExperimentalViewMode, "off">;
   label: string;
   shortLabel: string;
   description: string;
@@ -56,227 +58,91 @@ export interface ExplorerExperimentalDensityDescriptor {
   description: string;
 }
 
-export const ADAPTIVE_SEMANTIC_DENSITY_STEP = 0.16;
-export const DEFAULT_ADAPTIVE_SEMANTIC_DENSITY = 0.4;
+interface ShippedExplorerExperimentalModeManifest {
+  adaptiveSemanticDensityStep?: number;
+  defaultAdaptiveSemanticDensity?: number;
+  adaptiveSemanticDensityStops?: AdaptiveSemanticDensityStopDefinition[];
+  modes?: ExplorerExperimentalModeDefinition[];
+  densityDescriptors?: {
+    constellation?: ExplorerExperimentalDensityDescriptor[];
+    timeline?: ExplorerExperimentalDensityDescriptor[];
+  };
+}
 
-export const adaptiveSemanticDensityStops: readonly AdaptiveSemanticDensityStopDefinition[] = [
-  {
-    id: 'small-icons',
-    label: 'Small Icons',
-    shortLabel: 'Small',
-    description: 'Dense semantic tiles for scanning a lot of content quickly.',
-    density: 0,
-    presentation: 'grid',
-    grid: {
-      minWidth: 96,
-      gap: 10,
-      padding: 10,
-      minHeight: 104,
-      iconSize: 26,
-      iconStageSize: 34,
-      titleLines: 2,
-    },
-  },
-  {
-    id: 'medium-icons',
-    label: 'Medium Icons',
-    shortLabel: 'Medium',
-    description: 'Balanced semantic tiles with light metadata.',
-    density: 0.2,
-    presentation: 'grid',
-    grid: {
-      minWidth: 126,
-      gap: 12,
-      padding: 12,
-      minHeight: 126,
-      iconSize: 34,
-      iconStageSize: 46,
-      titleLines: 2,
-    },
-  },
-  {
-    id: 'large-icons',
-    label: 'Large Icons',
-    shortLabel: 'Large',
-    description: 'Larger semantic tiles that favor browsing and recognition.',
-    density: 0.4,
-    presentation: 'grid',
-    grid: {
-      minWidth: 156,
-      gap: 14,
-      padding: 14,
-      minHeight: 150,
-      iconSize: 46,
-      iconStageSize: 60,
-      titleLines: 2,
-    },
-  },
-  {
-    id: 'rich-cards',
-    label: 'Rich Cards',
-    shortLabel: 'Cards',
-    description: 'Context-rich cards with stronger metadata and grouping presence.',
-    density: 0.6,
-    presentation: 'cards',
-    grid: {
-      minWidth: 238,
-      gap: 16,
-      padding: 16,
-      minHeight: 164,
-      iconSize: 50,
-      iconStageSize: 64,
-      titleLines: 2,
-    },
-  },
-  {
-    id: 'columns',
-    label: 'Columns',
-    shortLabel: 'Cols',
-    description: 'Grouped semantic rows with compact column scanning.',
-    density: 0.8,
-    presentation: 'table',
-    table: {
-      rowHeight: 42,
-      iconSize: 18,
-      showRichMeta: false,
-    },
-  },
-  {
-    id: 'details',
-    label: 'Details',
-    shortLabel: 'Details',
-    description: 'Grouped semantic rows with richer metadata and context.',
-    density: 1,
-    presentation: 'table',
-    table: {
-      rowHeight: 58,
-      iconSize: 18,
-      showRichMeta: true,
-    },
-  },
-] as const;
+const shippedExplorerExperimentalModeManifest =
+  shippedExplorerExperimentalModeManifestJson as ShippedExplorerExperimentalModeManifest;
 
-export const explorerExperimentalModes: readonly ExplorerExperimentalModeDefinition[] = [
-  {
-    id: 'adaptive-semantic-grid',
-    label: 'Adaptive Semantic Grid',
-    shortLabel: 'Adaptive',
-    description: 'A density-driven semantic explorer with grouped context and modern transitions.',
-    densityAxisLabel: 'Density',
-    available: true,
-  },
-  {
-    id: 'constellation',
-    label: 'Constellation View',
-    shortLabel: 'Constellation',
-    description: 'Clusters files by relationship and reveals stronger links as you zoom.',
-    densityAxisLabel: 'Link Density',
-    available: true,
-  },
-  {
-    id: 'timeline-surface',
-    label: 'Timeline Surface',
-    shortLabel: 'Timeline',
-    description: 'Maps files across temporal bands so you browse eras, days, hours, and moments.',
-    densityAxisLabel: 'Granularity',
-    available: true,
-  },
-] as const;
+export const ADAPTIVE_SEMANTIC_DENSITY_STEP =
+  typeof shippedExplorerExperimentalModeManifest.adaptiveSemanticDensityStep ===
+  "number"
+    ? shippedExplorerExperimentalModeManifest.adaptiveSemanticDensityStep
+    : 0.16;
+export const DEFAULT_ADAPTIVE_SEMANTIC_DENSITY =
+  typeof shippedExplorerExperimentalModeManifest.defaultAdaptiveSemanticDensity ===
+  "number"
+    ? shippedExplorerExperimentalModeManifest.defaultAdaptiveSemanticDensity
+    : 0.4;
 
-const constellationDensityDescriptors: readonly ExplorerExperimentalDensityDescriptor[] = [
-  {
-    label: 'Core',
-    shortLabel: 'Core',
-    description: 'Only the strongest hubs and nearest neighbors stay in view.',
-  },
-  {
-    label: 'Orbit',
-    shortLabel: 'Orbit',
-    description: 'Balanced anchors and satellites with clear breathing room.',
-  },
-  {
-    label: 'Scatter',
-    shortLabel: 'Scatter',
-    description: 'Broader orbital spacing exposes more nearby relationships.',
-  },
-  {
-    label: 'Mesh',
-    shortLabel: 'Mesh',
-    description: 'A denser star field that reveals wider neighborhood structure.',
-  },
-  {
-    label: 'Web',
-    shortLabel: 'Web',
-    description: 'Compact links and more visible nodes create a connected map.',
-  },
-  {
-    label: 'Full Map',
-    shortLabel: 'Map',
-    description: 'Maximum surface detail with the richest visible network context.',
-  },
-] as const;
+export const adaptiveSemanticDensityStops = Array.isArray(
+  shippedExplorerExperimentalModeManifest.adaptiveSemanticDensityStops,
+)
+  ? shippedExplorerExperimentalModeManifest.adaptiveSemanticDensityStops
+  : [];
 
-const timelineDensityDescriptors: readonly ExplorerExperimentalDensityDescriptor[] = [
-  {
-    label: 'Eras',
-    shortLabel: 'Eras',
-    description: 'Large time blocks keep the timeline broad and cinematic.',
-  },
-  {
-    label: 'Years',
-    shortLabel: 'Years',
-    description: 'Coarse time slices reveal long-term project drift.',
-  },
-  {
-    label: 'Seasons',
-    shortLabel: 'Seasons',
-    description: 'Quarter-like bands balance history with readable structure.',
-  },
-  {
-    label: 'Months',
-    shortLabel: 'Months',
-    description: 'Monthly buckets foreground medium-term activity clusters.',
-  },
-  {
-    label: 'Weeks',
-    shortLabel: 'Weeks',
-    description: 'Weekly lanes make active stretches of work easy to scan.',
-  },
-  {
-    label: 'Hours',
-    shortLabel: 'Hours',
-    description: 'Hourly buckets expose bursts inside the current day.',
-  },
-] as const;
+export const explorerExperimentalModes = Array.isArray(
+  shippedExplorerExperimentalModeManifest.modes,
+)
+  ? shippedExplorerExperimentalModeManifest.modes
+  : [];
+
+const constellationDensityDescriptors = Array.isArray(
+  shippedExplorerExperimentalModeManifest.densityDescriptors?.constellation,
+)
+  ? shippedExplorerExperimentalModeManifest.densityDescriptors.constellation
+  : [];
+
+const timelineDensityDescriptors = Array.isArray(
+  shippedExplorerExperimentalModeManifest.densityDescriptors?.timeline,
+)
+  ? shippedExplorerExperimentalModeManifest.densityDescriptors.timeline
+  : [];
 
 const explorerExperimentalModeMap = new Map(
-  explorerExperimentalModes.map((mode) => [mode.id, mode]),
+  explorerExperimentalModes.map((mode) => [mode.id, mode] as const),
 );
 
 const adaptiveDensityStopMap = new Map(
-  adaptiveSemanticDensityStops.map((stop) => [stop.id, stop]),
+  adaptiveSemanticDensityStops.map((stop) => [stop.id, stop] as const),
 );
 
-export function normalizeExplorerExperimentalViewMode(value: unknown): ExplorerExperimentalViewMode {
-  if (value === 'off') {
-    return 'off';
+export function normalizeExplorerExperimentalViewMode(
+  value: unknown,
+): ExplorerExperimentalViewMode {
+  if (value === "off") {
+    return "off";
   }
-  return typeof value === 'string' && explorerExperimentalModeMap.has(value as Exclude<ExplorerExperimentalViewMode, 'off'>)
-    ? value as ExplorerExperimentalViewMode
-    : 'off';
+  return typeof value === "string" &&
+    explorerExperimentalModeMap.has(
+      value as Exclude<ExplorerExperimentalViewMode, "off">,
+    )
+    ? (value as ExplorerExperimentalViewMode)
+    : "off";
 }
 
 export function normalizeAdaptiveSemanticDensity(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return clamp(value, 0, 1);
   }
   return DEFAULT_ADAPTIVE_SEMANTIC_DENSITY;
 }
 
 export function getExplorerExperimentalModeDefinition(
-  mode: Exclude<ExplorerExperimentalViewMode, 'off'>,
+  mode: Exclude<ExplorerExperimentalViewMode, "off">,
 ): ExplorerExperimentalModeDefinition {
-  return explorerExperimentalModeMap.get(mode) ?? explorerExperimentalModeMap.get('adaptive-semantic-grid')!;
+  return (
+    explorerExperimentalModeMap.get(mode) ??
+    explorerExperimentalModeMap.get("adaptive-semantic-grid")!
+  );
 }
 
 export function getAdaptiveSemanticDensityStopId(
@@ -300,7 +166,10 @@ export function getAdaptiveSemanticDensityStopId(
 export function getAdaptiveSemanticDensityStop(
   density: number,
 ): AdaptiveSemanticDensityStopDefinition {
-  return adaptiveDensityStopMap.get(getAdaptiveSemanticDensityStopId(density)) ?? adaptiveSemanticDensityStops[2]!;
+  return (
+    adaptiveDensityStopMap.get(getAdaptiveSemanticDensityStopId(density)) ??
+    adaptiveSemanticDensityStops[2]!
+  );
 }
 
 export function getAdaptiveSemanticDensityPercent(density: number): number {
@@ -308,35 +177,41 @@ export function getAdaptiveSemanticDensityPercent(density: number): number {
 }
 
 export function getExplorerExperimentalDensityDescriptor(
-  mode: Exclude<ExplorerExperimentalViewMode, 'off'>,
+  mode: Exclude<ExplorerExperimentalViewMode, "off">,
   density: number,
 ): ExplorerExperimentalDensityDescriptor {
-  if (mode === 'adaptive-semantic-grid') {
+  if (mode === "adaptive-semantic-grid") {
     return getAdaptiveSemanticDensityStop(density);
   }
 
   const stopId = getAdaptiveSemanticDensityStopId(density);
-  const stopIndex = adaptiveSemanticDensityStops.findIndex((stop) => stop.id === stopId);
+  const stopIndex = adaptiveSemanticDensityStops.findIndex(
+    (stop) => stop.id === stopId,
+  );
   const descriptorIndex = stopIndex < 0 ? 2 : stopIndex;
-  const descriptorSet = mode === 'constellation'
-    ? constellationDensityDescriptors
-    : timelineDensityDescriptors;
+  const descriptorSet =
+    mode === "constellation"
+      ? constellationDensityDescriptors
+      : timelineDensityDescriptors;
   return descriptorSet[descriptorIndex] ?? descriptorSet[2]!;
 }
 
 export function stepAdaptiveSemanticDensity(
   currentDensity: number,
-  direction: 'larger' | 'smaller',
+  direction: "larger" | "smaller",
 ): number {
   const currentStopId = getAdaptiveSemanticDensityStopId(currentDensity);
-  const currentIndex = adaptiveSemanticDensityStops.findIndex((stop) => stop.id === currentStopId);
+  const currentIndex = adaptiveSemanticDensityStops.findIndex(
+    (stop) => stop.id === currentStopId,
+  );
   if (currentIndex < 0) {
     return DEFAULT_ADAPTIVE_SEMANTIC_DENSITY;
   }
 
-  const nextIndex = direction === 'larger'
-    ? Math.min(adaptiveSemanticDensityStops.length - 1, currentIndex + 1)
-    : Math.max(0, currentIndex - 1);
+  const nextIndex =
+    direction === "larger"
+      ? Math.min(adaptiveSemanticDensityStops.length - 1, currentIndex + 1)
+      : Math.max(0, currentIndex - 1);
   return adaptiveSemanticDensityStops[nextIndex]!.density;
 }
 

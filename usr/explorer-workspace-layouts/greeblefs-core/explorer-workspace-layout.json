@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-explorer-workspace-layouts",
+  "name": "GreebleFS Core Explorer Workspace Layouts",
+  "description": "Canonical shipped multi-pane explorer workspace presets.",
+  "tags": ["canonical", "shipped", "explorer-workspace-layouts"],
+  "workspaceLayouts": [
+    {
+      "id": "single",
+      "label": "Single",
+      "shortLabel": "1-Up",
+      "description": "One focused explorer pane.",
+      "visiblePaneIds": ["pane-1"],
+      "supportsColumnSplit": false,
+      "supportsRowSplit": false
+    },
+    {
+      "id": "split",
+      "label": "Split",
+      "shortLabel": "2-Up",
+      "description": "Two-pane side-by-side explorer workspace.",
+      "visiblePaneIds": ["pane-1", "pane-2"],
+      "supportsColumnSplit": true,
+      "supportsRowSplit": false
+    },
+    {
+      "id": "triple",
+      "label": "Triple",
+      "shortLabel": "3-Up",
+      "description": "One full-width top pane with two panes below.",
+      "visiblePaneIds": ["pane-1", "pane-2", "pane-3"],
+      "supportsColumnSplit": true,
+      "supportsRowSplit": true
+    },
+    {
+      "id": "quad",
+      "label": "Quad",
+      "shortLabel": "4-Up",
+      "description": "Four-pane grid explorer workspace.",
+      "visiblePaneIds": ["pane-1", "pane-2", "pane-3", "pane-4"],
+      "supportsColumnSplit": true,
+      "supportsRowSplit": true
+    }
+  ]
+}

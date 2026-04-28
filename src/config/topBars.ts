@@ -1,26 +1,30 @@
+import shippedBuiltInTopBarManifestJson from "../../usr/top-bars/greeblefs-core/top-bar.json";
 import type {
   OverlayWorkbenchChromeStyle,
   OverlayWorkbenchTabStyle,
-} from './workbenchTheme';
+} from "./workbenchTheme";
 
-export type OverlayTopBarSource = 'built-in' | 'theme-package' | 'top-bar-package';
-export type OverlayTopBarNavigationMode = 'auto' | 'summary';
-export type OverlayTopBarBandId = 'leading' | 'navigation' | 'trailing';
+export type OverlayTopBarSource =
+  | "built-in"
+  | "theme-package"
+  | "top-bar-package";
+export type OverlayTopBarNavigationMode = "auto" | "summary";
+export type OverlayTopBarBandId = "leading" | "navigation" | "trailing";
 export type OverlayTopBarControlId =
-  | 'layout-cycle'
-  | 'shell-mode'
-  | 'window-mode'
-  | 'overlay-anchor'
-  | 'mobile-share'
-  | 'blur-toggle'
-  | 'zen-mode'
-  | 'panel-menu'
-  | 'command-palette'
-  | 'settings-shortcut'
-  | 'explorer-shortcut'
-  | 'customize-top-bar'
-  | 'shortcut-badge'
-  | 'close-overlay';
+  | "layout-cycle"
+  | "shell-mode"
+  | "window-mode"
+  | "overlay-anchor"
+  | "mobile-share"
+  | "blur-toggle"
+  | "zen-mode"
+  | "panel-menu"
+  | "command-palette"
+  | "settings-shortcut"
+  | "explorer-shortcut"
+  | "customize-top-bar"
+  | "shortcut-badge"
+  | "close-overlay";
 
 export interface OverlayTopBarDefinition {
   id?: string;
@@ -68,55 +72,67 @@ export interface OverlayTopBarPackageSourceLike {
 export interface ResolvedOverlayTopBarSelection {
   availableTopBars: LoadedOverlayTopBarDefinition[];
   topBar: LoadedOverlayTopBarDefinition;
-  resolvedFrom: 'explicit' | 'theme-default' | 'theme-legacy-style' | 'fallback';
+  resolvedFrom:
+    | "explicit"
+    | "theme-default"
+    | "theme-legacy-style"
+    | "fallback";
   requestedTopBarId: string | null;
   explicitSelectionMissing: boolean;
 }
 
+interface ShippedBuiltInTopBarManifest {
+  topBars?: OverlayTopBarDefinition[];
+}
+
+const shippedBuiltInTopBarManifest =
+  shippedBuiltInTopBarManifestJson as ShippedBuiltInTopBarManifest;
+
 const topBarControlCatalog = new Set<OverlayTopBarControlId>([
-  'layout-cycle',
-  'shell-mode',
-  'window-mode',
-  'overlay-anchor',
-  'mobile-share',
-  'blur-toggle',
-  'zen-mode',
-  'panel-menu',
-  'command-palette',
-  'settings-shortcut',
-  'explorer-shortcut',
-  'customize-top-bar',
-  'shortcut-badge',
-  'close-overlay',
+  "layout-cycle",
+  "shell-mode",
+  "window-mode",
+  "overlay-anchor",
+  "mobile-share",
+  "blur-toggle",
+  "zen-mode",
+  "panel-menu",
+  "command-palette",
+  "settings-shortcut",
+  "explorer-shortcut",
+  "customize-top-bar",
+  "shortcut-badge",
+  "close-overlay",
 ]);
 
 const defaultTopBarControls = {
   leading: [
-    'layout-cycle',
-    'window-mode',
-    'overlay-anchor',
-    'mobile-share',
-    'zen-mode',
-    'panel-menu',
-    'command-palette',
+    "layout-cycle",
+    "window-mode",
+    "overlay-anchor",
+    "mobile-share",
+    "zen-mode",
+    "panel-menu",
+    "command-palette",
   ] as OverlayTopBarControlId[],
   navigationShortcuts: [
-    'settings-shortcut',
-    'explorer-shortcut',
+    "settings-shortcut",
+    "explorer-shortcut",
   ] as OverlayTopBarControlId[],
   trailing: [
-    'shortcut-badge',
-    'shell-mode',
-    'close-overlay',
+    "shortcut-badge",
+    "shell-mode",
+    "close-overlay",
   ] as OverlayTopBarControlId[],
 };
 
-const legacyThemeTopBarIdsByStyle: Record<OverlayWorkbenchChromeStyle, string> = {
-  solid: 'command-center',
-  glass: 'orbital-glass',
-  floating: 'floating-deck',
-  minimal: 'focus-strip',
-};
+const legacyThemeTopBarIdsByStyle: Record<OverlayWorkbenchChromeStyle, string> =
+  {
+    solid: "command-center",
+    glass: "orbital-glass",
+    floating: "floating-deck",
+    minimal: "focus-strip",
+  };
 
 function cloneTopBarDefinition(
   topBar: LoadedOverlayTopBarDefinition,
@@ -130,35 +146,50 @@ function cloneTopBarDefinition(
   };
 }
 
-function normalizeTopBarIdFragment(value: string | undefined, fallback: string): string {
+function normalizeTopBarIdFragment(
+  value: string | undefined,
+  fallback: string,
+): string {
   const normalized = (value ?? fallback)
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 
   return normalized || fallback;
 }
 
-function normalizeTopBarLabel(value: string | undefined, fallback: string): string {
+function normalizeTopBarLabel(
+  value: string | undefined,
+  fallback: string,
+): string {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : fallback;
 }
 
-function normalizeTopBarStyle(value: unknown): OverlayWorkbenchChromeStyle | undefined {
-  return value === 'solid' || value === 'glass' || value === 'floating' || value === 'minimal'
+function normalizeTopBarStyle(
+  value: unknown,
+): OverlayWorkbenchChromeStyle | undefined {
+  return value === "solid" ||
+    value === "glass" ||
+    value === "floating" ||
+    value === "minimal"
     ? value
     : undefined;
 }
 
-function normalizeTopBarTabStyle(value: unknown): OverlayWorkbenchTabStyle | undefined {
-  return value === 'underline' || value === 'capsule' || value === 'segment'
+function normalizeTopBarTabStyle(
+  value: unknown,
+): OverlayWorkbenchTabStyle | undefined {
+  return value === "underline" || value === "capsule" || value === "segment"
     ? value
     : undefined;
 }
 
-function normalizeTopBarNavigationMode(value: unknown): OverlayTopBarNavigationMode {
-  return value === 'summary' ? 'summary' : 'auto';
+function normalizeTopBarNavigationMode(
+  value: unknown,
+): OverlayTopBarNavigationMode {
+  return value === "summary" ? "summary" : "auto";
 }
 
 function normalizeTopBarTags(value: unknown): string[] {
@@ -166,12 +197,14 @@ function normalizeTopBarTags(value: unknown): string[] {
     return [];
   }
 
-  return Array.from(new Set(
-    value
-      .filter((entry): entry is string => typeof entry === 'string')
-      .map(entry => entry.trim())
-      .filter(Boolean),
-  ));
+  return Array.from(
+    new Set(
+      value
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 function normalizeTopBarControlList(
@@ -184,25 +217,29 @@ function normalizeTopBarControlList(
 
   const normalized = value
     .map((entry) => {
-      if (entry === 'blur-toggle') {
-        return 'mobile-share';
+      if (entry === "blur-toggle") {
+        return "mobile-share";
       }
       return entry;
     })
-    .filter((entry): entry is OverlayTopBarControlId => (
-      typeof entry === 'string' && topBarControlCatalog.has(entry as OverlayTopBarControlId)
-    ));
+    .filter(
+      (entry): entry is OverlayTopBarControlId =>
+        typeof entry === "string" &&
+        topBarControlCatalog.has(entry as OverlayTopBarControlId),
+    );
 
   return Array.from(new Set(normalized));
 }
 
 export function normalizeTopBarSelectionId(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
 }
 
 export function createScopedTopBarId(scopeId: string, localId: string): string {
-  const normalizedScope = normalizeTopBarIdFragment(scopeId, 'theme-package');
-  const normalizedLocalId = normalizeTopBarIdFragment(localId, 'top-bar');
+  const normalizedScope = normalizeTopBarIdFragment(scopeId, "theme-package");
+  const normalizedLocalId = normalizeTopBarIdFragment(localId, "top-bar");
   return `${normalizedScope}:${normalizedLocalId}`;
 }
 
@@ -216,12 +253,19 @@ export function createLoadedTopBarDefinition(
     sourcePackageId?: string;
   },
 ): LoadedOverlayTopBarDefinition {
-  const localId = normalizeTopBarIdFragment(definition.id ?? definition.name, 'top-bar');
+  const localId = normalizeTopBarIdFragment(
+    definition.id ?? definition.name,
+    "top-bar",
+  );
   const normalizedScopeId = normalizeTopBarSelectionId(options.scopeId);
   const id = normalizedScopeId
     ? createScopedTopBarId(normalizedScopeId, localId)
     : localId;
-  const fallbackName = definition.name?.trim() || localId.replace(/-/g, ' ').replace(/\b\w/g, character => character.toUpperCase());
+  const fallbackName =
+    definition.name?.trim() ||
+    localId
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (character) => character.toUpperCase());
 
   return {
     id,
@@ -229,9 +273,9 @@ export function createLoadedTopBarDefinition(
     name: normalizeTopBarLabel(definition.name, fallbackName),
     description: normalizeTopBarLabel(
       definition.description,
-      options.source === 'theme-package'
+      options.source === "theme-package"
         ? `Top bar contributed by ${options.sourceLabel}.`
-        : 'Built-in shell top bar profile.',
+        : "Built-in shell top bar profile.",
     ),
     source: options.source,
     sourceLabel: options.sourceLabel,
@@ -256,85 +300,16 @@ export function createLoadedTopBarDefinition(
   };
 }
 
-const builtInTopBarDefinitions = [
-  createLoadedTopBarDefinition(
-    {
-      id: 'command-center',
-      name: 'Command Center',
-      description: 'The default shell workflow with launcher, tabs, and global utilities all in one chrome pass.',
-      topBarStyle: 'solid',
-      navigationMode: 'auto',
-      tags: ['default', 'balanced'],
-    },
-    {
-      source: 'built-in',
-      sourceLabel: 'Built In',
-    },
-  ),
-  createLoadedTopBarDefinition(
-    {
-      id: 'floating-deck',
-      name: 'Floating Deck',
-      description: 'The classic shell workflow with a floating command deck silhouette.',
-      topBarStyle: 'floating',
-      navigationMode: 'auto',
-      tags: ['floating', 'shell'],
-    },
-    {
-      source: 'built-in',
-      sourceLabel: 'Built In',
-    },
-  ),
-  createLoadedTopBarDefinition(
-    {
-      id: 'orbital-glass',
-      name: 'Orbital Glass',
-      description: 'Glass-heavy chrome that keeps the full launcher workflow but leans into a softer capsule tab strip.',
-      topBarStyle: 'glass',
-      tabStyle: 'capsule',
-      navigationMode: 'auto',
-      tags: ['glass', 'capsule'],
-    },
-    {
-      source: 'built-in',
-      sourceLabel: 'Built In',
-    },
-  ),
-  createLoadedTopBarDefinition(
-    {
-      id: 'focus-strip',
-      name: 'Focus Strip',
-      description: 'A tighter, quieter top bar that keeps the explorer and command palette close without hauling every chrome control forward.',
-      topBarStyle: 'minimal',
-      leadingControls: ['layout-cycle', 'window-mode', 'overlay-anchor'],
-      navigationShortcuts: ['explorer-shortcut'],
-      trailingControls: ['command-palette', 'zen-mode', 'shortcut-badge', 'shell-mode', 'close-overlay'],
-      navigationMode: 'auto',
-      tags: ['minimal', 'focus'],
-    },
-    {
-      source: 'built-in',
-      sourceLabel: 'Built In',
-    },
-  ),
-  createLoadedTopBarDefinition(
-    {
-      id: 'launcher-rack',
-      name: 'Launcher Rack',
-      description: 'A launcher-first strip that turns the middle lane into a status surface instead of a tab strip.',
-      topBarStyle: 'floating',
-      leadingControls: ['panel-menu', 'command-palette', 'layout-cycle'],
-      navigationShortcuts: ['settings-shortcut', 'explorer-shortcut'],
-      trailingControls: ['window-mode', 'overlay-anchor', 'mobile-share', 'zen-mode', 'shortcut-badge', 'shell-mode', 'close-overlay'],
-      navigationMode: 'summary',
-      tags: ['launcher', 'summary'],
-    },
-    {
-      source: 'built-in',
-      sourceLabel: 'Built In',
-    },
-  ),
-] as const satisfies readonly LoadedOverlayTopBarDefinition[];
+const builtInTopBarDefinitions = (
+  Array.isArray(shippedBuiltInTopBarManifest.topBars)
+    ? shippedBuiltInTopBarManifest.topBars
+    : []
+).map((definition) =>
+  createLoadedTopBarDefinition(definition, {
+    source: "built-in",
+    sourceLabel: "Shipped usr",
+  }),
+) as readonly LoadedOverlayTopBarDefinition[];
 
 export function getBuiltInTopBars(): LoadedOverlayTopBarDefinition[] {
   return builtInTopBarDefinitions.map(cloneTopBarDefinition);
@@ -371,25 +346,32 @@ export function resolveLegacyThemeTopBarId(
 export function qualifyThemeTopBarSelectionId(
   selectionId: string | undefined,
   ownerThemeId: string,
-  availableTopBars: Pick<LoadedOverlayTopBarDefinition, 'id' | 'localId'>[],
+  availableTopBars: Pick<LoadedOverlayTopBarDefinition, "id" | "localId">[],
 ): string | undefined {
   const normalizedSelectionId = normalizeTopBarSelectionId(selectionId);
   if (!normalizedSelectionId) {
     return undefined;
   }
 
-  if (normalizedSelectionId.includes(':')) {
+  if (normalizedSelectionId.includes(":")) {
     return normalizedSelectionId;
   }
 
-  const normalizedLocalId = normalizeTopBarIdFragment(normalizedSelectionId, normalizedSelectionId);
-  const matchedLocalTopBar = availableTopBars.find(topBar => topBar.localId === normalizedLocalId);
+  const normalizedLocalId = normalizeTopBarIdFragment(
+    normalizedSelectionId,
+    normalizedSelectionId,
+  );
+  const matchedLocalTopBar = availableTopBars.find(
+    (topBar) => topBar.localId === normalizedLocalId,
+  );
   if (matchedLocalTopBar) {
     return matchedLocalTopBar.id;
   }
 
   const scopedId = createScopedTopBarId(ownerThemeId, normalizedSelectionId);
-  return availableTopBars.some(topBar => topBar.id === scopedId) ? scopedId : normalizedSelectionId;
+  return availableTopBars.some((topBar) => topBar.id === scopedId)
+    ? scopedId
+    : normalizedSelectionId;
 }
 
 export function resolveActiveTopBarSelection(args: {
@@ -398,7 +380,9 @@ export function resolveActiveTopBarSelection(args: {
   packageSources?: OverlayTopBarPackageSourceLike[];
 }): ResolvedOverlayTopBarSelection {
   const availableTopBars = resolveAvailableTopBars(args.packageSources);
-  const topBarById = new Map(availableTopBars.map(topBar => [topBar.id, topBar] as const));
+  const topBarById = new Map(
+    availableTopBars.map((topBar) => [topBar.id, topBar] as const),
+  );
   const requestedTopBarId = normalizeTopBarSelectionId(args.requestedTopBarId);
 
   if (requestedTopBarId) {
@@ -407,82 +391,93 @@ export function resolveActiveTopBarSelection(args: {
       return {
         availableTopBars,
         topBar: cloneTopBarDefinition(requestedTopBar),
-        resolvedFrom: 'explicit',
+        resolvedFrom: "explicit",
         requestedTopBarId,
         explicitSelectionMissing: false,
       };
     }
   }
 
-  const themeDefaultTopBarId = normalizeTopBarSelectionId(args.theme?.defaultTopBarId);
+  const themeDefaultTopBarId = normalizeTopBarSelectionId(
+    args.theme?.defaultTopBarId,
+  );
   if (themeDefaultTopBarId) {
     const themedTopBar = topBarById.get(themeDefaultTopBarId);
     if (themedTopBar) {
       return {
         availableTopBars,
         topBar: cloneTopBarDefinition(themedTopBar),
-        resolvedFrom: 'theme-default',
+        resolvedFrom: "theme-default",
         requestedTopBarId,
         explicitSelectionMissing: requestedTopBarId != null,
       };
     }
   }
 
-  const legacyThemeTopBarId = resolveLegacyThemeTopBarId(args.theme?.workbench?.topBarStyle);
+  const legacyThemeTopBarId = resolveLegacyThemeTopBarId(
+    args.theme?.workbench?.topBarStyle,
+  );
   if (legacyThemeTopBarId) {
     const legacyThemeTopBar = topBarById.get(legacyThemeTopBarId);
     if (legacyThemeTopBar) {
       return {
         availableTopBars,
         topBar: cloneTopBarDefinition(legacyThemeTopBar),
-        resolvedFrom: 'theme-legacy-style',
+        resolvedFrom: "theme-legacy-style",
         requestedTopBarId,
         explicitSelectionMissing: requestedTopBarId != null,
       };
     }
   }
 
-  const fallbackTopBar = topBarById.get('command-center') ?? availableTopBars[0];
+  const fallbackTopBar =
+    topBarById.get("command-center") ?? availableTopBars[0];
   if (!fallbackTopBar) {
-    throw new Error('Top bar catalog resolved empty. Built-in top bars are required.');
+    throw new Error(
+      "Top bar catalog resolved empty. Built-in top bars are required.",
+    );
   }
 
   return {
     availableTopBars,
     topBar: cloneTopBarDefinition(fallbackTopBar),
-    resolvedFrom: 'fallback',
+    resolvedFrom: "fallback",
     requestedTopBarId,
     explicitSelectionMissing: requestedTopBarId != null,
   };
 }
 
-export function getTopBarStyleLabel(style: OverlayWorkbenchChromeStyle | undefined): string {
+export function getTopBarStyleLabel(
+  style: OverlayWorkbenchChromeStyle | undefined,
+): string {
   switch (style) {
-    case 'glass':
-      return 'Glass';
-    case 'floating':
-      return 'Floating';
-    case 'minimal':
-      return 'Minimal';
+    case "glass":
+      return "Glass";
+    case "floating":
+      return "Floating";
+    case "minimal":
+      return "Minimal";
     default:
-      return 'Solid';
+      return "Solid";
   }
 }
 
-export function getTopBarNavigationModeLabel(mode: OverlayTopBarNavigationMode): string {
-  return mode === 'summary' ? 'Summary' : 'Tabs';
+export function getTopBarNavigationModeLabel(
+  mode: OverlayTopBarNavigationMode,
+): string {
+  return mode === "summary" ? "Summary" : "Tabs";
 }
 
 export function getTopBarSourceLabel(source: OverlayTopBarSource): string {
-  if (source === 'theme-package') {
-    return 'Theme Package';
+  if (source === "theme-package") {
+    return "Theme Package";
   }
 
-  if (source === 'top-bar-package') {
-    return 'Top Bar Package';
+  if (source === "top-bar-package") {
+    return "Top Bar Package";
   }
 
-  return 'Built In';
+  return "Built In";
 }
 
 export function getTopBarControlCatalog(): OverlayTopBarControlId[] {
@@ -492,7 +487,7 @@ export function getTopBarControlCatalog(): OverlayTopBarControlId[] {
 export function flattenTopBarDefinitionControls(
   topBar: Pick<
     LoadedOverlayTopBarDefinition,
-    'leadingControls' | 'navigationShortcuts' | 'trailingControls'
+    "leadingControls" | "navigationShortcuts" | "trailingControls"
   >,
 ): Array<{
   controlId: OverlayTopBarControlId;
@@ -502,52 +497,54 @@ export function flattenTopBarDefinitionControls(
   return [
     ...topBar.leadingControls.map((controlId, index) => ({
       controlId,
-      bandId: 'leading' as const,
+      bandId: "leading" as const,
       order: index,
     })),
     ...topBar.navigationShortcuts.map((controlId, index) => ({
       controlId,
-      bandId: 'navigation' as const,
+      bandId: "navigation" as const,
       order: index,
     })),
     ...topBar.trailingControls.map((controlId, index) => ({
       controlId,
-      bandId: 'trailing' as const,
+      bandId: "trailing" as const,
       order: index,
     })),
   ];
 }
 
-export function getTopBarControlLabel(controlId: OverlayTopBarControlId): string {
+export function getTopBarControlLabel(
+  controlId: OverlayTopBarControlId,
+): string {
   switch (controlId) {
-    case 'layout-cycle':
-      return 'Layout';
-    case 'shell-mode':
-      return 'Shell Mode';
-    case 'window-mode':
-      return 'Window Mode';
-    case 'overlay-anchor':
-      return 'Dock Edge';
-    case 'mobile-share':
-      return 'Mobile';
-    case 'blur-toggle':
-      return 'Mobile';
-    case 'zen-mode':
-      return 'Zen';
-    case 'panel-menu':
-      return 'Panels';
-    case 'command-palette':
-      return 'Palette';
-    case 'settings-shortcut':
-      return 'Settings';
-    case 'explorer-shortcut':
-      return 'Explorer';
-    case 'customize-top-bar':
-      return 'Customize';
-    case 'shortcut-badge':
-      return 'Shortcut';
-    case 'close-overlay':
-      return 'Close';
+    case "layout-cycle":
+      return "Layout";
+    case "shell-mode":
+      return "Shell Mode";
+    case "window-mode":
+      return "Window Mode";
+    case "overlay-anchor":
+      return "Dock Edge";
+    case "mobile-share":
+      return "Mobile";
+    case "blur-toggle":
+      return "Mobile";
+    case "zen-mode":
+      return "Zen";
+    case "panel-menu":
+      return "Panels";
+    case "command-palette":
+      return "Palette";
+    case "settings-shortcut":
+      return "Settings";
+    case "explorer-shortcut":
+      return "Explorer";
+    case "customize-top-bar":
+      return "Customize";
+    case "shortcut-badge":
+      return "Shortcut";
+    case "close-overlay":
+      return "Close";
     default:
       return controlId;
   }

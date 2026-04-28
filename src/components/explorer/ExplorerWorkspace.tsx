@@ -2343,10 +2343,12 @@ export function ExplorerWorkspace({
               null
             }
             instanceId={paneSnapshot.instanceId}
+            workspaceTabId={activeWorkspaceTab?.id ?? null}
             layoutMode={layoutMode}
             defaultModeProfileId={defaultModeProfileId}
             renderDragOverlayHost={false}
             workspacePaneCount={workspacePaneCount}
+            isActiveWorkspacePane={isActivePane}
             onWorkspaceRuntimeSnapshotChange={publishRuntimeSnapshot}
             onWorkspaceSelectionTransferComplete={
               handleWorkspaceSelectionTransferComplete

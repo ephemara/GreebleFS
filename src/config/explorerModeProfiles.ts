@@ -1,18 +1,29 @@
+import shippedExplorerModeProfileManifestJson from "../../usr/explorer-mode-profiles/greeblefs-core/explorer-mode-profile.json";
 import {
   getExplorerShellLayoutDefinition,
   type ExplorerShellLayoutId,
-} from './explorerShellLayouts';
+} from "./explorerShellLayouts";
 import {
   defaultExplorerChromeLayoutId,
   normalizeExplorerChromeLayoutId,
   type ExplorerChromeLayoutId,
-} from './explorerChromeLayouts';
-import type { ExplorerExperimentalViewMode } from './explorerExperimentalModes';
-import type { ExplorerViewMode } from './explorerViewModes';
+} from "./explorerChromeLayouts";
+import type { ExplorerExperimentalViewMode } from "./explorerExperimentalModes";
+import type { ExplorerViewMode } from "./explorerViewModes";
 
-export type BuiltInExplorerModeProfileId = 'balanced' | 'navigator' | 'focus' | 'inspector';
-export type ExplorerModeProfileId = BuiltInExplorerModeProfileId | (string & {});
-export type ExplorerModeViewBias = 'balanced' | 'browsing' | 'content-focus' | 'preview-heavy';
+export type BuiltInExplorerModeProfileId =
+  | "balanced"
+  | "navigator"
+  | "focus"
+  | "inspector";
+export type ExplorerModeProfileId =
+  | BuiltInExplorerModeProfileId
+  | (string & {});
+export type ExplorerModeViewBias =
+  | "balanced"
+  | "browsing"
+  | "content-focus"
+  | "preview-heavy";
 
 export interface ExplorerModeProfileDefinition {
   id: ExplorerModeProfileId;
@@ -26,53 +37,50 @@ export interface ExplorerModeProfileDefinition {
   preferredExperimentalViewMode?: ExplorerExperimentalViewMode;
 }
 
-const builtInExplorerModeProfiles: Record<BuiltInExplorerModeProfileId, ExplorerModeProfileDefinition> = {
-  balanced: {
-    id: 'balanced',
-    label: 'Balanced',
-    shortLabel: 'Balanced',
-    description: 'Balanced browsing with the rail and preview both available.',
-    paneLayoutId: 'balanced',
-    chromeLayoutId: 'default',
-    viewBias: 'balanced',
-  },
-  navigator: {
-    id: 'navigator',
-    label: 'Navigator',
-    shortLabel: 'Navigator',
-    description: 'Rail-first browsing with a stronger emphasis on source navigation.',
-    paneLayoutId: 'navigator',
-    chromeLayoutId: 'default',
-    viewBias: 'browsing',
-  },
-  focus: {
-    id: 'focus',
-    label: 'Focus',
-    shortLabel: 'Focus',
-    description: 'Minimal browsing chrome with search-forward emphasis.',
-    paneLayoutId: 'focus',
-    chromeLayoutId: 'focused-search',
-    viewBias: 'content-focus',
-  },
-  inspector: {
-    id: 'inspector',
-    label: 'Inspector',
-    shortLabel: 'Inspector',
-    description: 'Preview-heavy browsing tuned for inspection and triage.',
-    paneLayoutId: 'inspector',
-    chromeLayoutId: 'default',
-    viewBias: 'preview-heavy',
-  },
-};
+interface ShippedExplorerModeProfileManifest {
+  modeProfiles?: ExplorerModeProfileDefinition[];
+}
 
-export const defaultExplorerModeProfileId: BuiltInExplorerModeProfileId = 'balanced';
-export const explorerModeProfiles = Object.values(builtInExplorerModeProfiles);
+const shippedExplorerModeProfileManifest =
+  shippedExplorerModeProfileManifestJson as ShippedExplorerModeProfileManifest;
+const builtInExplorerModeProfileOrder = [
+  "balanced",
+  "navigator",
+  "focus",
+  "inspector",
+] as const satisfies readonly BuiltInExplorerModeProfileId[];
+const shippedExplorerModeProfiles = Array.isArray(
+  shippedExplorerModeProfileManifest.modeProfiles,
+)
+  ? shippedExplorerModeProfileManifest.modeProfiles
+  : [];
+const shippedExplorerModeProfileById = new Map(
+  shippedExplorerModeProfiles.map((profile) => [profile.id, profile] as const),
+);
+
+const builtInExplorerModeProfiles = Object.fromEntries(
+  builtInExplorerModeProfileOrder.map((modeProfileId) => {
+    const modeProfile = shippedExplorerModeProfileById.get(modeProfileId);
+    if (!modeProfile) {
+      throw new Error(
+        `Missing shipped explorer mode profile: ${modeProfileId}`,
+      );
+    }
+    return [modeProfileId, { ...modeProfile }] as const;
+  }),
+) as Record<BuiltInExplorerModeProfileId, ExplorerModeProfileDefinition>;
+
+export const defaultExplorerModeProfileId: BuiltInExplorerModeProfileId =
+  "balanced";
+export const explorerModeProfiles = builtInExplorerModeProfileOrder.map(
+  (modeProfileId) => builtInExplorerModeProfiles[modeProfileId],
+);
 
 export function stepExplorerModeProfile(input: {
   currentModeProfileId?: ExplorerModeProfileId | null;
-  direction?: 'next' | 'previous';
+  direction?: "next" | "previous";
 }): ExplorerModeProfileDefinition {
-  const direction = input.direction ?? 'next';
+  const direction = input.direction ?? "next";
   const currentModeProfileId = normalizeExplorerModeProfileId(
     input.currentModeProfileId,
   );
@@ -80,7 +88,7 @@ export function stepExplorerModeProfile(input: {
     (modeProfile) => modeProfile.id === currentModeProfileId,
   );
   const safeCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
-  const offset = direction === 'previous' ? -1 : 1;
+  const offset = direction === "previous" ? -1 : 1;
   const nextIndex =
     (safeCurrentIndex + offset + explorerModeProfiles.length) %
     explorerModeProfiles.length;
@@ -88,21 +96,29 @@ export function stepExplorerModeProfile(input: {
 }
 
 function asTrimmedString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0
+  return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : null;
 }
 
-export function normalizeExplorerModeProfileId(value: unknown): ExplorerModeProfileId {
-  return (asTrimmedString(value) as ExplorerModeProfileId | null) ?? defaultExplorerModeProfileId;
+export function normalizeExplorerModeProfileId(
+  value: unknown,
+): ExplorerModeProfileId {
+  return (
+    (asTrimmedString(value) as ExplorerModeProfileId | null) ??
+    defaultExplorerModeProfileId
+  );
 }
 
 export function getExplorerModeProfileDefinition(
   modeProfileId?: ExplorerModeProfileId | null,
 ): ExplorerModeProfileDefinition {
   const normalizedModeProfileId = normalizeExplorerModeProfileId(modeProfileId);
-  return builtInExplorerModeProfiles[normalizedModeProfileId as BuiltInExplorerModeProfileId]
-    ?? builtInExplorerModeProfiles[defaultExplorerModeProfileId];
+  return (
+    builtInExplorerModeProfiles[
+      normalizedModeProfileId as BuiltInExplorerModeProfileId
+    ] ?? builtInExplorerModeProfiles[defaultExplorerModeProfileId]
+  );
 }
 
 export function mapLegacyShellLayoutIdToExplorerModeProfileId(
@@ -123,7 +139,9 @@ export function resolveEffectiveExplorerModeProfileId(input: {
     return normalizeExplorerModeProfileId(input.themeDefaultModeProfileId);
   }
   if (input.legacyShellLayoutId) {
-    return mapLegacyShellLayoutIdToExplorerModeProfileId(input.legacyShellLayoutId);
+    return mapLegacyShellLayoutIdToExplorerModeProfileId(
+      input.legacyShellLayoutId,
+    );
   }
   return defaultExplorerModeProfileId;
 }
@@ -133,16 +151,18 @@ export function resolveEffectiveExplorerModeProfile(input: {
   themeDefaultModeProfileId?: ExplorerModeProfileId | null;
   legacyShellLayoutId?: ExplorerShellLayoutId | null;
 }): ExplorerModeProfileDefinition {
-  return getExplorerModeProfileDefinition(resolveEffectiveExplorerModeProfileId(input));
+  return getExplorerModeProfileDefinition(
+    resolveEffectiveExplorerModeProfileId(input),
+  );
 }
 
 export function resolveExplorerModeProfileChromeLayoutId(input: {
-  modeProfile?: Pick<ExplorerModeProfileDefinition, 'chromeLayoutId'> | null;
+  modeProfile?: Pick<ExplorerModeProfileDefinition, "chromeLayoutId"> | null;
   themeChromeLayoutId?: ExplorerChromeLayoutId | null;
 }): ExplorerChromeLayoutId {
   return normalizeExplorerChromeLayoutId(
-    input.modeProfile?.chromeLayoutId
-      ?? input.themeChromeLayoutId
-      ?? defaultExplorerChromeLayoutId,
+    input.modeProfile?.chromeLayoutId ??
+      input.themeChromeLayoutId ??
+      defaultExplorerChromeLayoutId,
   );
 }

@@ -1,3 +1,56 @@
+# 2026-04-28 - Explorer Chrome, Mode, Experimental Layout, Layout-Dynamics, And Hotkey Catalogs Now Ship From `usr/`
+
+- The `usr/` backbone now owns the rest of the high-value explorer customization stack that was still annoyingly trapped in TypeScript catalogs.
+- New canonical shipped lanes after this pass:
+  - `usr/explorer-mode-profiles/greeblefs-core/explorer-mode-profile.json`
+  - `usr/explorer-shell-layouts/greeblefs-core/explorer-shell-layout.json`
+  - `usr/explorer-workspace-layouts/greeblefs-core/explorer-workspace-layout.json`
+  - `usr/explorer-chrome-layouts/greeblefs-core/explorer-chrome-layout.json`
+  - `usr/explorer-customize-controls/greeblefs-core/explorer-customize-control.json`
+  - `usr/explorer-experimental-modes/greeblefs-core/explorer-experimental-mode.json`
+  - `usr/layout-dynamics/greeblefs-core/layout-dynamics.json`
+  - `usr/hotkeys/greeblefs-core/hotkeys.json`
+- `usr/manifest.json` now registers those lanes, and `src/config/appContentDirectories.ts` now treats them as first-class managed content directories.
+- Durable loader rule after this pass:
+  - `src/config/explorerModeProfiles.ts`
+  - `src/config/explorerShellLayouts.ts`
+  - `src/config/explorerWorkspaceLayouts.ts`
+  - `src/config/explorerChromeLayouts.ts`
+  - `src/config/explorerCustomizeCatalog.ts`
+  - `src/config/explorerExperimentalModes.ts`
+  - `src/config/layoutDynamics.ts`
+  - `src/config/hotkeys.ts`
+  - `src/config/topBars.ts`
+  should now stay loader/normalizer/resolver code over authored `usr/` data, not regrow giant inline first-party catalogs.
+- Durable explorer-customize rule after this pass:
+  - the ZBrush-style movable explorer chrome system is now file-backed across both its placement layer and its built-in control catalog
+  - built-in explorer buttons, topbar/toolbar/workspace/preview/status placements, shell-bias mode cards, workspace topologies, and experimental explorer-mode metadata belong in `usr/` first
+  - if a future control is only added in JSX or inline TS arrays and not reflected in the matching `usr` manifest, treat that as a regression against the new ownership model
+- Durable hotkey rule after this pass:
+  - the shipped binding registry now lives in `usr/hotkeys/**/hotkeys.json`
+  - `src/config/hotkeys.ts` should stay the matching/normalization layer plus settings defaults bridge
+  - new built-in feature hotkeys should be authored in the shipped `usr` manifest, not added as another hardcoded row in TypeScript
+- Small but important regression fixed during validation:
+  - `src/components/explorer/ExplorerWorkspace.tsx` had started passing `workspaceTabId` down to `FileExplorer`, but used a nonexistent `activeWorkspaceTabId` local instead of `activeWorkspaceTab?.id`
+  - if `ExplorerWorkspace` starts throwing `ReferenceError: activeWorkspaceTabId is not defined` again, that is the exact seam to inspect first
+- Validation that passed for this pass:
+  - filtered compile check:
+    - `bash -lc "node_modules/.bin/tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg 'src/config/(appContentDirectories|topBars|layoutDynamics|hotkeys|explorerChromeLayouts|explorerModeProfiles|explorerShellLayouts|explorerWorkspaceLayouts|explorerExperimentalModes|explorerCustomizeCatalog)' || true"`
+  - focused config/runtime sweep:
+    - `node_modules/.bin/vitest run src/test/explorerChromeLayouts.test.ts src/test/explorerCustomizeCatalog.test.ts src/test/explorerExperimentalModes.test.ts src/test/topBars.test.ts src/test/hotkeys.test.ts src/test/layoutDynamicsRuntime.test.ts src/test/layoutDynamicsCanvas.test.tsx src/test/ExplorerChromeSurface.test.tsx --reporter=dot`
+  - higher-level explorer/settings sweep:
+    - `node_modules/.bin/vitest run src/test/ExplorerWorkspace.test.tsx src/test/fileExplorer.viewModes.test.tsx src/test/settingsStore.test.ts src/test/settingsPage.behavior.test.tsx -t "uses the layout-dynamics canvas for the workspace header during customize mode|does not let legacy chrome layout overrides displace the file-backed explorer layouts|commits the active chrome customize draft when the live customize toggle exits the mode|renders the status bar through layout dynamics during explorer customize mode|changes adaptive density with ctrl-wheel without leaving the experimental mode|updates layout dynamics settings and exposes layout-physics lab surfaces|syncs startup registration, desktop visibility toggles, and commits hotkey edits|lets users pin a standalone top bar from the dedicated settings section|stores chrome layout overrides independently from explorer session state|has the correct default hotkey settings" --reporter=dot`
+- Remaining high-value hardcoded-config audit after this pass:
+  - `src/config/appearance.ts` still owns first-party theme/font preset truth in code
+  - `src/config/interactionMotion.ts` still owns the built-in interaction-motion catalog in code
+  - `src/config/explorerContextMenu.ts` and the built-in structure inside `src/config/menuPacks.ts` still own large first-party menu/command truth in code
+  - `src/config/homePackages.ts`, `src/config/iconThemePackages.ts`, `src/config/soundPacks.ts`, and `src/config/layoutProfiles.ts` still carry meaningful first-party shipped defaults in code
+  - `src/config/ideWorkbenchLayout.ts` still owns canonical IDE shell topology in code
+  - `src/config/explorerViewModes.ts` still owns the standard list/icon/details flow in code; per the current product direction that is acceptable for the default flow, but any new experimental/authored layout families should not be added there
+- Durable next move:
+  - if the goal is “TypeScript as dumb wrapper, explorer as engine,” the next biggest yoink targets are `appearance`, `interactionMotion`, `explorerContextMenu`/`menuPacks`, `layoutProfiles`, and the IDE shell topology contracts
+  - new shipped configurable systems should start life as `usr/<lane>/greeblefs-core/*.json` plus a thin loader, not as a temporary code-owned built-in that gets migrated later
+
 # 2026-04-28 - `usr/` Is Now The Canonical Backbone For Shipped Explorer Layouts And Domain Catalogs
 
 - The `usr/` migration is now materially real for two more high-traffic configurable lanes:

@@ -37,6 +37,48 @@
       "bootstrapToManagedRoot": true
     },
     {
+      "id": "explorerChromeLayouts",
+      "relativeDirectory": "explorer-chrome-layouts",
+      "envVarSuffix": "EXPLORER_CHROME_LAYOUTS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "explorerCustomizeControls",
+      "relativeDirectory": "explorer-customize-controls",
+      "envVarSuffix": "EXPLORER_CUSTOMIZE_CONTROLS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "explorerModeProfiles",
+      "relativeDirectory": "explorer-mode-profiles",
+      "envVarSuffix": "EXPLORER_MODE_PROFILES",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "explorerShellLayouts",
+      "relativeDirectory": "explorer-shell-layouts",
+      "envVarSuffix": "EXPLORER_SHELL_LAYOUTS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "explorerWorkspaceLayouts",
+      "relativeDirectory": "explorer-workspace-layouts",
+      "envVarSuffix": "EXPLORER_WORKSPACE_LAYOUTS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "explorerExperimentalModes",
+      "relativeDirectory": "explorer-experimental-modes",
+      "envVarSuffix": "EXPLORER_EXPERIMENTAL_MODES",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
       "id": "homePacks",
       "relativeDirectory": "home-packs",
       "envVarSuffix": "HOME_PACKS",
@@ -75,6 +117,20 @@
       "id": "interactionMotionPacks",
       "relativeDirectory": "interaction-motion",
       "envVarSuffix": "INTERACTION_MOTION",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "layoutDynamics",
+      "relativeDirectory": "layout-dynamics",
+      "envVarSuffix": "LAYOUT_DYNAMICS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
+      "id": "hotkeys",
+      "relativeDirectory": "hotkeys",
+      "envVarSuffix": "HOTKEYS",
       "bundled": true,
       "bootstrapToManagedRoot": true
     },

@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-explorer-mode-profiles",
+  "name": "GreebleFS Core Explorer Mode Profiles",
+  "description": "Canonical shipped explorer mode profiles that map the user-facing layout/mode cards onto shell and chrome definitions.",
+  "tags": ["canonical", "shipped", "explorer-mode-profiles"],
+  "modeProfiles": [
+    {
+      "id": "balanced",
+      "label": "Balanced",
+      "shortLabel": "Balanced",
+      "description": "Balanced browsing with the rail and preview both available.",
+      "paneLayoutId": "balanced",
+      "chromeLayoutId": "default",
+      "viewBias": "balanced"
+    },
+    {
+      "id": "navigator",
+      "label": "Navigator",
+      "shortLabel": "Navigator",
+      "description": "Rail-first browsing with a stronger emphasis on source navigation.",
+      "paneLayoutId": "navigator",
+      "chromeLayoutId": "default",
+      "viewBias": "browsing"
+    },
+    {
+      "id": "focus",
+      "label": "Focus",
+      "shortLabel": "Focus",
+      "description": "Minimal browsing chrome with search-forward emphasis.",
+      "paneLayoutId": "focus",
+      "chromeLayoutId": "focused-search",
+      "viewBias": "content-focus"
+    },
+    {
+      "id": "inspector",
+      "label": "Inspector",
+      "shortLabel": "Inspector",
+      "description": "Preview-heavy browsing tuned for inspection and triage.",
+      "paneLayoutId": "inspector",
+      "chromeLayoutId": "default",
+      "viewBias": "preview-heavy"
+    }
+  ]
+}

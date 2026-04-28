@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-explorer-experimental-modes",
+  "name": "GreebleFS Core Explorer Experimental Modes",
+  "description": "Canonical shipped experimental explorer view-mode catalog, density stops, and density-descriptor labels.",
+  "tags": ["canonical", "shipped", "explorer-experimental-modes"],
+  "adaptiveSemanticDensityStep": 0.16,
+  "defaultAdaptiveSemanticDensity": 0.4,
+  "adaptiveSemanticDensityStops": [
+    {
+      "id": "small-icons",
+      "label": "Small Icons",
+      "shortLabel": "Small",
+      "description": "Dense semantic tiles for scanning a lot of content quickly.",
+      "density": 0,
+      "presentation": "grid",
+      "grid": {
+        "minWidth": 96,
+        "gap": 10,
+        "padding": 10,
+        "minHeight": 104,
+        "iconSize": 26,
+        "iconStageSize": 34,
+        "titleLines": 2
+      }
+    },
+    {
+      "id": "medium-icons",
+      "label": "Medium Icons",
+      "shortLabel": "Medium",
+      "description": "Balanced semantic tiles with light metadata.",
+      "density": 0.2,
+      "presentation": "grid",
+      "grid": {
+        "minWidth": 126,
+        "gap": 12,
+        "padding": 12,
+        "minHeight": 126,
+        "iconSize": 34,
+        "iconStageSize": 46,
+        "titleLines": 2
+      }
+    },
+    {
+      "id": "large-icons",
+      "label": "Large Icons",
+      "shortLabel": "Large",
+      "description": "Larger semantic tiles that favor browsing and recognition.",
+      "density": 0.4,
+      "presentation": "grid",
+      "grid": {
+        "minWidth": 156,
+        "gap": 14,
+        "padding": 14,
+        "minHeight": 150,
+        "iconSize": 46,
+        "iconStageSize": 60,
+        "titleLines": 2
+      }
+    },
+    {
+      "id": "rich-cards",
+      "label": "Rich Cards",
+      "shortLabel": "Cards",
+      "description": "Context-rich cards with stronger metadata and grouping presence.",
+      "density": 0.6,
+      "presentation": "cards",
+      "grid": {
+        "minWidth": 238,
+        "gap": 16,
+        "padding": 16,
+        "minHeight": 164,
+        "iconSize": 50,
+        "iconStageSize": 64,
+        "titleLines": 2
+      }
+    },
+    {
+      "id": "columns",
+      "label": "Columns",
+      "shortLabel": "Cols",
+      "description": "Grouped semantic rows with compact column scanning.",
+      "density": 0.8,
+      "presentation": "table",
+      "table": {
+        "rowHeight": 42,
+        "iconSize": 18,
+        "showRichMeta": false
+      }
+    },
+    {
+      "id": "details",
+      "label": "Details",
+      "shortLabel": "Details",
+      "description": "Grouped semantic rows with richer metadata and context.",
+      "density": 1,
+      "presentation": "table",
+      "table": {
+        "rowHeight": 58,
+        "iconSize": 18,
+        "showRichMeta": true
+      }
+    }
+  ],
+  "modes": [
+    {
+      "id": "adaptive-semantic-grid",
+      "label": "Adaptive Semantic Grid",
+      "shortLabel": "Adaptive",
+      "description": "A density-driven semantic explorer with grouped context and modern transitions.",
+      "densityAxisLabel": "Density",
+      "available": true
+    },
+    {
+      "id": "constellation",
+      "label": "Constellation View",
+      "shortLabel": "Constellation",
+      "description": "Clusters files by relationship and reveals stronger links as you zoom.",
+      "densityAxisLabel": "Link Density",
+      "available": true
+    },
+    {
+      "id": "timeline-surface",
+      "label": "Timeline Surface",
+      "shortLabel": "Timeline",
+      "description": "Maps files across temporal bands so you browse eras, days, hours, and moments.",
+      "densityAxisLabel": "Granularity",
+      "available": true
+    }
+  ],
+  "densityDescriptors": {
+    "constellation": [
+      {
+        "label": "Core",
+        "shortLabel": "Core",
+        "description": "Only the strongest hubs and nearest neighbors stay in view."
+      },
+      {
+        "label": "Orbit",
+        "shortLabel": "Orbit",
+        "description": "Balanced anchors and satellites with clear breathing room."
+      },
+      {
+        "label": "Scatter",
+        "shortLabel": "Scatter",
+        "description": "Broader orbital spacing exposes more nearby relationships."
+      },
+      {
+        "label": "Mesh",
+        "shortLabel": "Mesh",
+        "description": "A denser star field that reveals wider neighborhood structure."
+      },
+      {
+        "label": "Web",
+        "shortLabel": "Web",
+        "description": "Compact links and more visible nodes create a connected map."
+      },
+      {
+        "label": "Full Map",
+        "shortLabel": "Map",
+        "description": "Maximum surface detail with the richest visible network context."
+      }
+    ],
+    "timeline": [
+      {
+        "label": "Eras",
+        "shortLabel": "Eras",
+        "description": "Large time blocks keep the timeline broad and cinematic."
+      },
+      {
+        "label": "Years",
+        "shortLabel": "Years",
+        "description": "Coarse time slices reveal long-term project drift."
+      },
+      {
+        "label": "Seasons",
+        "shortLabel": "Seasons",
+        "description": "Quarter-like bands balance history with readable structure."
+      },
+      {
+        "label": "Months",
+        "shortLabel": "Months",
+        "description": "Monthly buckets foreground medium-term activity clusters."
+      },
+      {
+        "label": "Weeks",
+        "shortLabel": "Weeks",
+        "description": "Weekly lanes make active stretches of work easy to scan."
+      },
+      {
+        "label": "Hours",
+        "shortLabel": "Hours",
+        "description": "Hourly buckets expose bursts inside the current day."
+      }
+    ]
+  }
+}

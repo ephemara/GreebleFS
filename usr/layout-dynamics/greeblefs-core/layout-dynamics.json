@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-layout-dynamics",
+  "name": "GreebleFS Core Layout Dynamics",
+  "description": "Canonical shipped layout-dynamics presets and surface profiles for movable explorer and top-bar chrome.",
+  "tags": ["canonical", "shipped", "layout-dynamics"],
+  "defaultPresetId": "liquid-repulse",
+  "intensityBounds": {
+    "min": 0.25,
+    "max": 2
+  },
+  "presets": [
+    {
+      "id": "precision-flow",
+      "label": "Precision Flow",
+      "description": "A tighter response that stays close to authored anchors while still clearing space before contact.",
+      "groupId": "system",
+      "auraRadiusPx": 118,
+      "auraStrength": 760,
+      "collisionStrength": 24,
+      "springStiffness": 18,
+      "damping": 9.25,
+      "maxDisplacementPx": 196,
+      "maxVelocityPx": 1580,
+      "settleVelocityPx": 10,
+      "gapPx": 10
+    },
+    {
+      "id": "liquid-repulse",
+      "label": "Liquid Repulse",
+      "description": "The default authoring feel: broad aura pressure, fast collision recovery, and a damped return without chatter.",
+      "groupId": "system",
+      "auraRadiusPx": 152,
+      "auraStrength": 1120,
+      "collisionStrength": 32,
+      "springStiffness": 15,
+      "damping": 8.4,
+      "maxDisplacementPx": 240,
+      "maxVelocityPx": 1860,
+      "settleVelocityPx": 12,
+      "gapPx": 12
+    },
+    {
+      "id": "heavy-orbit",
+      "label": "Heavy Orbit",
+      "description": "A slower, heavier push for chrome that should feel weighty without collapsing into a slot grid.",
+      "groupId": "system",
+      "auraRadiusPx": 176,
+      "auraStrength": 1480,
+      "collisionStrength": 38,
+      "springStiffness": 12.5,
+      "damping": 7.5,
+      "maxDisplacementPx": 272,
+      "maxVelocityPx": 1720,
+      "settleVelocityPx": 12,
+      "gapPx": 14
+    }
+  ],
+  "surfaces": [
+    {
+      "id": "explorerTopbar",
+      "label": "Explorer Top Bar",
+      "supportsAuthoring": true,
+      "axisMode": "free-2d",
+      "boundsMode": "band",
+      "defaultPresetId": "liquid-repulse",
+      "controlCatalog": "explorerChrome"
+    },
+    {
+      "id": "explorerToolbar",
+      "label": "Explorer Toolbar",
+      "supportsAuthoring": true,
+      "axisMode": "free-2d",
+      "boundsMode": "band",
+      "defaultPresetId": "liquid-repulse",
+      "controlCatalog": "explorerChrome"
+    },
+    {
+      "id": "workspaceHeader",
+      "label": "Explorer Workspace Header",
+      "supportsAuthoring": true,
+      "axisMode": "free-2d",
+      "boundsMode": "band",
+      "defaultPresetId": "liquid-repulse",
+      "controlCatalog": "explorerChrome"
+    },
+    {
+      "id": "railHeader",
+      "label": "Explorer Sources Rail Header",
+      "supportsAuthoring": true,
+      "axisMode": "horizontal-band",
+      "boundsMode": "band",
+      "defaultPresetId": "liquid-repulse",
+      "controlCatalog": "explorerChrome"
+    },
+    {
+      "id": "previewHeader",
+      "label": "Explorer Preview Header",
+      "supportsAuthoring": true,
+      "axisMode": "horizontal-band",
+      "boundsMode": "band",
+      "defaultPresetId": "liquid-repulse",
+      "controlCatalog": "explorerChrome"
+    },
+    {
+      "id": "explorerStatusBar",
+      "label": "Explorer Status Bar",
+      "supportsAuthoring": true,
+      "axisMode": "horizontal-band",
+      "boundsMode": "band",
+      "defaultPresetId": "liquid-repulse",
+      "controlCatalog": "explorerChrome"
+    },
+    {
+      "id": "workbenchTopBar",
+      "label": "Workbench Top Bar",
+      "supportsAuthoring": true,
+      "axisMode": "horizontal-band",
+      "boundsMode": "band",
+      "defaultPresetId": "liquid-repulse",
+      "controlCatalog": "topBarChrome"
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+import shippedExplorerShellLayoutManifestJson from "../../usr/explorer-shell-layouts/greeblefs-core/explorer-shell-layout.json";
+
 export type ExplorerShellLayoutId =
   | "balanced"
   | "navigator"
@@ -31,6 +33,19 @@ export interface ExplorerShellLayoutWidthInputs {
   previewMaxWidth: number;
 }
 
+interface ShippedExplorerShellLayoutManifest {
+  shellLayouts?: ExplorerShellLayoutDefinition[];
+}
+
+const shippedExplorerShellLayoutManifest =
+  shippedExplorerShellLayoutManifestJson as ShippedExplorerShellLayoutManifest;
+const builtInExplorerShellLayoutOrder = [
+  "balanced",
+  "navigator",
+  "focus",
+  "inspector",
+] as const satisfies readonly ExplorerShellLayoutId[];
+
 export const EXPLORER_PREVIEW_WIDTH_BOUNDS = {
   min: 220,
   max: 1280,
@@ -42,48 +57,23 @@ export const EXPLORER_ACTIONS_WIDTH_BOUNDS = {
   default: 344,
 } as const;
 
-export const explorerShellLayouts: readonly ExplorerShellLayoutDefinition[] = [
-  {
-    id: "balanced",
-    label: "Balanced",
-    shortLabel: "Balanced",
-    description: "Keep navigation, content, and preview in an even split.",
-    defaultSourcesVisible: true,
-    previewPlacement: "trailing",
-    railWidthMultiplier: 1,
-    previewWidthMultiplier: 1,
-  },
-  {
-    id: "navigator",
-    label: "Navigator",
-    shortLabel: "Navigator",
-    description: "Give the rail more weight and keep the preview compact.",
-    defaultSourcesVisible: true,
-    previewPlacement: "trailing",
-    railWidthMultiplier: 1.18,
-    previewWidthMultiplier: 0.86,
-  },
-  {
-    id: "focus",
-    label: "Focus",
-    shortLabel: "Focus",
-    description: "Hide the rail for a content-first browser view.",
-    defaultSourcesVisible: false,
-    previewPlacement: "trailing",
-    railWidthMultiplier: 0.84,
-    previewWidthMultiplier: 0.9,
-  },
-  {
-    id: "inspector",
-    label: "Inspector",
-    shortLabel: "Inspector",
-    description: "Pull the preview pane forward and make it much larger.",
-    defaultSourcesVisible: true,
-    previewPlacement: "leading",
-    railWidthMultiplier: 0.92,
-    previewWidthMultiplier: 1.28,
-  },
-] as const;
+const shippedExplorerShellLayouts = Array.isArray(
+  shippedExplorerShellLayoutManifest.shellLayouts,
+)
+  ? shippedExplorerShellLayoutManifest.shellLayouts
+  : [];
+const shippedExplorerShellLayoutById = new Map(
+  shippedExplorerShellLayouts.map((layout) => [layout.id, layout] as const),
+);
+
+export const explorerShellLayouts: readonly ExplorerShellLayoutDefinition[] =
+  builtInExplorerShellLayoutOrder.map((layoutId) => {
+    const layout = shippedExplorerShellLayoutById.get(layoutId);
+    if (!layout) {
+      throw new Error(`Missing shipped explorer shell layout: ${layoutId}`);
+    }
+    return { ...layout };
+  });
 
 const explorerShellLayoutMap = new Map(
   explorerShellLayouts.map((layout) => [layout.id, layout] as const),
