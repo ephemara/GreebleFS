@@ -5,18 +5,32 @@ import {
   getExplorerArchiveContainerPath,
   getExplorerArchiveVirtualParentPath,
   getExplorerArchiveVirtualRootLabel,
+  isExplorerArchiveEntry,
   isExplorerArchiveVirtualPath,
   normalizeExplorerArchiveEntryPath,
   parseExplorerArchiveVirtualPath,
 } from "../config/explorerArchives";
-import { isExplorerVirtualPath } from "../config/explorerVirtualLocations";
+import {
+  EXPLORER_HOME_PATH,
+  isExplorerVirtualPath,
+} from "../config/explorerVirtualLocations";
+import { isExecutableBinaryExtension } from "../config/filePreview";
+import { detectClientPlatform, type RuntimePlatform } from "../config/platform";
 import { commands, events, unwrapTauriResult } from "./tauriClient";
 import { readIpcBinaryBytes } from "./ipc";
 import { useExplorerStore } from "../store/explorerStore";
 import {
-  bootstrapExplorerPolicySession,
-  navigateExplorerPolicySession,
-  resolveExplorerEntryOpenWithPolicy,
+  bootstrapExplorerPolicySession as bootstrapGoExplorerPolicySession,
+  navigateExplorerPolicySession as navigateGoExplorerPolicySession,
+  normalizeExplorerPolicySessionSnapshot,
+  resolveExplorerEntryOpenWithPolicy as resolveGoExplorerEntryOpenWithPolicy,
+  type ExplorerPolicyBootstrapRequest,
+  type ExplorerPolicyBootstrapResult,
+  type ExplorerPolicyNavigateRequest,
+  type ExplorerPolicyNavigationResult,
+  type ExplorerPolicyResolveOpenEntryRequest,
+  type ExplorerPolicyResolveOpenEntryResult,
+  type ExplorerPolicySessionSnapshot,
 } from "./goExplorerPolicyService";
 import {
   type CloudAccountStatus,
@@ -196,6 +210,8 @@ export type ExplorerLocationListing = {
   breadcrumbs: ExplorerLocationBreadcrumb[];
   entries: ExplorerFileEntry[];
 };
+
+export type ExplorerPolicyRuntimeMode = "go-sidecar" | "local";
 
 export type ExplorerLocalDriveInfo = DriveInfo & {
   kind: "local";
@@ -855,6 +871,220 @@ export async function listExplorerLocationUncached(
     breadcrumbs: buildLocalBreadcrumbs(normalizedPath),
     entries,
   };
+}
+
+const EXPLORER_POLICY_RUNTIME_MODE_ENV_VAR =
+  "VITE_GREEBLEFS_EXPLORER_POLICY_RUNTIME";
+const LEGACY_EXPLORER_POLICY_RUNTIME_MODE_ENV_VAR =
+  "VITE_OVERLAYTERM_EXPLORER_POLICY_RUNTIME";
+const localExplorerPolicySessions = new Map<string, ExplorerPolicySessionSnapshot>();
+
+function normalizeExplorerPolicySessionId(sessionId: string): string {
+  return sessionId.trim() || "primary";
+}
+
+function cloneExplorerPolicySessionSnapshot(
+  snapshot: ExplorerPolicySessionSnapshot,
+): ExplorerPolicySessionSnapshot {
+  return {
+    currentPath: snapshot.currentPath,
+    history: [...snapshot.history],
+    historyIdx: snapshot.historyIdx,
+  };
+}
+
+function resolveExplorerPolicyRuntimeModeOverride(
+  value: string | undefined,
+): ExplorerPolicyRuntimeMode | "auto" | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized === "auto") {
+    return "auto";
+  }
+  if (
+    normalized === "go" ||
+    normalized === "sidecar" ||
+    normalized === "go-sidecar"
+  ) {
+    return "go-sidecar";
+  }
+  if (
+    normalized === "local" ||
+    normalized === "direct" ||
+    normalized === "rust" ||
+    normalized === "host"
+  ) {
+    return "local";
+  }
+  return null;
+}
+
+export function resolveExplorerPolicyRuntimeMode(args?: {
+  platform?: RuntimePlatform;
+  env?: Record<string, string | undefined>;
+}): ExplorerPolicyRuntimeMode {
+  const env = args?.env ?? (import.meta.env as Record<string, string | undefined>);
+  const explicitMode = resolveExplorerPolicyRuntimeModeOverride(
+    env[EXPLORER_POLICY_RUNTIME_MODE_ENV_VAR] ??
+      env[LEGACY_EXPLORER_POLICY_RUNTIME_MODE_ENV_VAR],
+  );
+  if (explicitMode && explicitMode !== "auto") {
+    return explicitMode;
+  }
+
+  const platform = args?.platform ?? detectClientPlatform();
+  return platform === "windows" ? "local" : "go-sidecar";
+}
+
+function applyLocalExplorerPolicyNavigationHistory(
+  session: ExplorerPolicySessionSnapshot,
+  nextPath: string,
+  pushHistory: boolean,
+  historyIndex: number | null | undefined,
+): ExplorerPolicySessionSnapshot {
+  if (!pushHistory) {
+    const history = [...session.history];
+    const requestedHistoryIndex =
+      typeof historyIndex === "number" && Number.isFinite(historyIndex)
+        ? Math.trunc(historyIndex)
+        : session.historyIdx;
+    return normalizeExplorerPolicySessionSnapshot({
+      currentPath: nextPath,
+      history,
+      historyIdx: requestedHistoryIndex,
+    });
+  }
+
+  const retainedHistory =
+    session.historyIdx >= 0 && session.historyIdx < session.history.length - 1
+      ? session.history.slice(0, session.historyIdx + 1)
+      : [...session.history];
+  retainedHistory.push(nextPath);
+  return normalizeExplorerPolicySessionSnapshot({
+    currentPath: nextPath,
+    history: retainedHistory,
+    historyIdx: retainedHistory.length - 1,
+  });
+}
+
+async function bootstrapLocalExplorerPolicySession(
+  request: ExplorerPolicyBootstrapRequest,
+): Promise<ExplorerPolicyBootstrapResult> {
+  const sessionId = normalizeExplorerPolicySessionId(request.sessionId);
+  const snapshot = normalizeExplorerPolicySessionSnapshot(request.session);
+  localExplorerPolicySessions.set(sessionId, cloneExplorerPolicySessionSnapshot(snapshot));
+  return { snapshot: cloneExplorerPolicySessionSnapshot(snapshot) };
+}
+
+async function navigateLocalExplorerPolicySession(
+  request: ExplorerPolicyNavigateRequest,
+): Promise<ExplorerPolicyNavigationResult> {
+  const sessionId = normalizeExplorerPolicySessionId(request.sessionId);
+  const nextPath = request.path.trim();
+  if (!nextPath) {
+    throw new Error("navigate requires a target path");
+  }
+
+  const previousSnapshot = normalizeExplorerPolicySessionSnapshot(
+    localExplorerPolicySessions.get(sessionId) ?? {
+      currentPath: "",
+      history: [],
+      historyIdx: -1,
+    },
+  );
+  const snapshot = applyLocalExplorerPolicyNavigationHistory(
+    previousSnapshot,
+    nextPath,
+    request.pushHistory,
+    request.historyIndex,
+  );
+  localExplorerPolicySessions.set(sessionId, cloneExplorerPolicySessionSnapshot(snapshot));
+
+  if (nextPath === EXPLORER_HOME_PATH) {
+    return {
+      snapshot: cloneExplorerPolicySessionSnapshot(snapshot),
+      listing: null,
+      isHome: true,
+      clearSelection: true,
+    };
+  }
+
+  return {
+    snapshot: cloneExplorerPolicySessionSnapshot(snapshot),
+    listing: await listExplorerLocation(nextPath, request.showHidden),
+    isHome: false,
+    clearSelection: true,
+  };
+}
+
+async function resolveLocalExplorerEntryOpenWithPolicy(
+  request: ExplorerPolicyResolveOpenEntryRequest,
+): Promise<ExplorerPolicyResolveOpenEntryResult> {
+  const entry = request.entry;
+  const entryPath = entry.path.trim();
+  if (!entryPath) {
+    throw new Error("resolve_open requires an entry path");
+  }
+
+  if (entry.is_dir) {
+    return {
+      effect: "navigate",
+      targetPath: entryPath,
+    };
+  }
+
+  if (isExplorerArchiveEntry(entry)) {
+    return {
+      effect: "navigate",
+      targetPath: buildExplorerArchiveVirtualPath({
+        archivePath: entryPath,
+        entryPath: "",
+      }),
+    };
+  }
+
+  if (
+    request.previewEnabled &&
+    !request.compactDock &&
+    !isExecutableBinaryExtension(entry.extension)
+  ) {
+    return {
+      effect: "preview",
+      targetPath: entryPath,
+    };
+  }
+
+  return {
+    effect: "openPath",
+    targetPath: entryPath,
+    requiresArchiveMaterialize: isExplorerArchiveVirtualPath(entryPath),
+  };
+}
+
+export async function bootstrapExplorerPolicySession(
+  request: ExplorerPolicyBootstrapRequest,
+): Promise<ExplorerPolicyBootstrapResult> {
+  return resolveExplorerPolicyRuntimeMode() === "go-sidecar"
+    ? bootstrapGoExplorerPolicySession(request)
+    : bootstrapLocalExplorerPolicySession(request);
+}
+
+export async function navigateExplorerPolicySession(
+  request: ExplorerPolicyNavigateRequest,
+): Promise<ExplorerPolicyNavigationResult> {
+  return resolveExplorerPolicyRuntimeMode() === "go-sidecar"
+    ? navigateGoExplorerPolicySession(request)
+    : navigateLocalExplorerPolicySession(request);
+}
+
+export async function resolveExplorerEntryOpenWithPolicy(
+  request: ExplorerPolicyResolveOpenEntryRequest,
+): Promise<ExplorerPolicyResolveOpenEntryResult> {
+  return resolveExplorerPolicyRuntimeMode() === "go-sidecar"
+    ? resolveGoExplorerEntryOpenWithPolicy(request)
+    : resolveLocalExplorerEntryOpenWithPolicy(request);
 }
 
 export async function listExplorerDir(

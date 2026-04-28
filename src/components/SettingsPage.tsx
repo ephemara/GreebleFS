@@ -13775,11 +13775,11 @@ export function SettingsPage({
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
                   style={settingsSelectStyle}
                 >
-                  <option value="go-pty-panel">Go PTY Panel (default)</option>
+                  <option value="go-pty-panel">Go PTY Panel</option>
                   <option value="xterm">Xterm</option>
                 </select>
                 <p className="text-[11px] opacity-40">
-                  Go PTY Panel is the faster integrated path and falls back to xterm automatically if the Go runtime cannot boot or hits an unsupported terminal path. Xterm remains the compatibility host and still honors the workbench renderer setting.
+                  Windows defaults to xterm for startup stability; Go PTY Panel remains available and still falls back to xterm automatically if the runtime cannot boot.
                 </p>
               </div>
 

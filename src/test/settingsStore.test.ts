@@ -74,7 +74,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.terminal.shellArgs).toBe(defaultSettings.terminal.shellArgs);
     expect(settings.terminal.preferredOpenMode).toBe('integrated');
     expect(settings.terminal.externalTerminalProfile).toBe('auto');
-    expect(settings.terminal.integratedHost).toBe('go-pty-panel');
+    expect(settings.terminal.integratedHost).toBe(defaultSettings.terminal.integratedHost);
   });
 
   it('has the correct default python settings', () => {

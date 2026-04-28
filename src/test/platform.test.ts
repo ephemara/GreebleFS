@@ -3,6 +3,7 @@ import {
   createDefaultCommandBookmarks,
   createDefaultDirectoryBookmarks,
   detectClientPlatform,
+  getDefaultIntegratedTerminalHost,
   getDefaultIntegratedShell,
   getDefaultIntegratedTerminalProfile,
   getExternalTerminalProfileOptions,
@@ -32,6 +33,8 @@ describe('platform config', () => {
 
   it('returns terminal defaults for each platform', () => {
     expect(getDefaultIntegratedTerminalProfile('windows')).toBe('auto');
+    expect(getDefaultIntegratedTerminalHost('windows')).toBe('xterm');
+    expect(getDefaultIntegratedTerminalHost('linux')).toBe('go-pty-panel');
     expect(getDefaultIntegratedShell('windows')).toBe('pwsh.exe -NoLogo');
     expect(getDefaultIntegratedShell('macos')).toBe('/bin/zsh -l');
     expect(getDefaultIntegratedShell('linux')).toBe('/bin/bash -l');

@@ -1,3 +1,17 @@
+# 2026-04-28 - Windows Explorer Policy And Terminal Hosts Stop Defaulting To Go Runtime Paths
+
+- Windows performance collapsed after the Go explorer-policy and Go PTY terminal paths became default startup/navigation surfaces. The expensive shape was especially bad on WebView2: Explorer navigation could round-trip TS -> Rust -> Go sidecar -> Rust host for normal folder listing, while fresh terminal sessions tried the Go/Wasm pane before xterm.
+- Durable ownership after this pass:
+  - `src/runtime/explorerBackend.ts` now owns a platform-aware explorer policy adapter. Windows defaults to an in-process local policy implementation that keeps session history/open-entry decisions in TypeScript and lists through the existing Rust filesystem bridge directly. Linux/macOS still default to `go-sidecar`.
+  - `VITE_GREEBLEFS_EXPLORER_POLICY_RUNTIME=go-sidecar` or legacy `VITE_OVERLAYTERM_EXPLORER_POLICY_RUNTIME=go-sidecar` force the Go policy sidecar for diagnostics/parity work; `local`, `direct`, `rust`, or `host` force the local path.
+  - `src/config/platform.ts` now owns `getDefaultIntegratedTerminalHost(...)`; Windows returns `xterm`, while Linux/macOS return `go-pty-panel`. `settingsStore` consumes that default and keeps invalid persisted values falling back to the platform default.
+- Durable performance rule:
+  - Do not make Windows depend on Go sidecars for first-frame Explorer navigation or first terminal mount unless a WebView2 latency pass proves the sidecar path is faster than direct Rust/listing plus xterm.
+- Validation that passed for this pass:
+  - `node_modules\.bin\vitest.exe run src/test/platform.test.ts src/test/settingsStore.test.ts src/test/explorerBackendPolicy.test.ts --reporter=dot`
+  - `node_modules\.bin\vitest.exe run src/test/overlayScrollArea.test.tsx src/test/fileExplorer.viewModes.test.tsx -t "100000|huge folder|dedicated explorer viewport|deep-grid viewport anchored|Windows pixel-wheel" --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript sweep returned no matching diagnostics for `explorerBackend`, `platform`, `settingsStore`, `SettingsPage`, or the updated tests.
+
 # 2026-04-28 - Ctrl-Wheel Explorer Zoom Now Keeps Icons Stepped While Layout Zooms Continuously
 
 - Explorer `Ctrl/Cmd + wheel` felt laggy because the live zoom continuum was resizing tile layout and icon/thumbnail stages together on every wheel tick.

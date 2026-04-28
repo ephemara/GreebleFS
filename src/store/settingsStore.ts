@@ -14,6 +14,7 @@ import {
   type FolderIconValue,
 } from '../config/folderIcons';
 import {
+  getDefaultIntegratedTerminalHost,
   getDefaultIntegratedTerminalProfile,
   getDefaultIntegratedShell,
   getIntegratedTerminalProfileTemplate,
@@ -446,6 +447,7 @@ const defaultIntegratedTerminalProfile = getDefaultIntegratedTerminalProfile();
 const defaultIntegratedTerminalTemplate = getIntegratedTerminalProfileTemplate(
   defaultIntegratedTerminalProfile,
 );
+const defaultIntegratedTerminalHost = getDefaultIntegratedTerminalHost();
 
 export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAnchor {
   return value === 'top' ? 'top' : 'bottom';
@@ -455,8 +457,14 @@ export function normalizeTerminalWindowMode(value: unknown): TerminalWindowMode 
   return value === 'overlay' ? 'overlay' : 'windowed';
 }
 
-export function normalizeIntegratedTerminalHost(value: unknown): IntegratedTerminalHost {
-  return value === 'xterm' ? 'xterm' : 'go-pty-panel';
+export function normalizeIntegratedTerminalHost(
+  value: unknown,
+  fallback: IntegratedTerminalHost = defaultIntegratedTerminalHost,
+): IntegratedTerminalHost {
+  if (value === 'go-pty-panel' || value === 'xterm') {
+    return value;
+  }
+  return fallback;
 }
 
 export function normalizeDockThemeMode(value: unknown): DockThemeMode {
@@ -1244,7 +1252,7 @@ export const defaultSettings: Settings = {
     shellProfile: defaultIntegratedTerminalProfile,
     shellPath: defaultIntegratedTerminalTemplate.shellPath,
     shellArgs: defaultIntegratedTerminalTemplate.shellArgs,
-    integratedHost: 'go-pty-panel',
+    integratedHost: defaultIntegratedTerminalHost,
     showSidebar: true,
     cursorBlink: true,
     cursorStyle: 'bar',
