@@ -1,6 +1,0 @@
-version = 1
-id = "smoke-test-actions"
-name = "GreebleFS Smoke Test Actions"
-description = "Safe read-only actions for validating the explorer action runtime and menu authoring flow."
-author = "Codex"
-tags = ["smoke", "test", "debug"]
