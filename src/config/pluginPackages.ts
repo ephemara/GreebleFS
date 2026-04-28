@@ -1,5 +1,6 @@
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
+import React from 'react';
 
 import type { OverlayRegisteredFontContribution } from './appearance';
 import {
@@ -11,17 +12,26 @@ import type {
   OverlayPluginCommandContribution,
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
+  OverlayPluginPreviewLaneContribution,
 } from './pluginContributions';
+import {
+  DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY,
+  normalizeOverlayPluginPreviewLaneCapabilities,
+  normalizeOverlayPluginPreviewLaneMatchRule,
+} from './pluginPreviewLanes';
 import { joinPlatformPath } from './platform';
 import { pluginSystemConfig } from './plugins';
 import { type LoadedOverlayThemePackage, loadThemePackagesFromDirectoryEntries } from './themePackages';
 import { type LoadedOverlayShader, loadShaderFromSource } from '../components/shaderRuntime';
 import {
+  type BoundOverlayPluginPreviewLaneComponent,
   type LoadedOverlayPlugin,  
   type OverlayPluginApi,
   type OverlayPluginCapabilitySummary,
   type OverlayPluginContext,
+  type OverlayPluginPreviewLaneProps,
   type PluginFileEntry,
+  loadPluginPreviewLaneFromSource,
   loadPluginFromSource,
 } from '../components/pluginRuntime';
 import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
@@ -88,6 +98,28 @@ interface PluginPackageContextMenuItemManifest {
   };
 }
 
+interface PluginPackagePreviewLaneManifest {
+  id?: string;
+  title?: string;
+  renderer?: string;
+  runtimeId?: string;
+  priority?: number;
+  match?: {
+    appliesTo?: 'any' | 'file' | 'directory';
+    extensions?: string[];
+    fileNames?: string[];
+  };
+  capabilities?: {
+    editable?: boolean;
+    save?: boolean;
+    export?: boolean;
+    workflowTabs?: boolean;
+    contextMenu?: boolean;
+    prefetch?: boolean;
+    closeGuard?: boolean;
+  };
+}
+
 interface PluginPackageManifest {
   version?: number;
   id?: string;
@@ -103,6 +135,7 @@ interface PluginPackageManifest {
     commands?: PluginPackageCommandManifest[];
     explorerActions?: PluginPackageExplorerActionManifest[];
     contextMenuItems?: PluginPackageContextMenuItemManifest[];
+    previewLanes?: PluginPackagePreviewLaneManifest[];
   };
 }
 
@@ -123,6 +156,7 @@ export interface OverlayPluginDiscoveryResult {
   actions: LoadedExplorerAction[];
   explorerActions: OverlayPluginExplorerActionContribution[];
   contextMenuItems: OverlayPluginContextMenuContribution[];
+  previewLanes: OverlayPluginPreviewLaneContribution[];
   warnings: string[];
 }
 
@@ -315,6 +349,58 @@ function asContextMenuItemManifestArray(value: unknown): PluginPackageContextMen
   });
 }
 
+function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneManifest[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap(entry => {
+    const record = asRecord(entry);
+    const renderer = asString(record?.renderer);
+    if (!record || !renderer) {
+      return [];
+    }
+
+    const matchRecord = asRecord(record.match);
+    const capabilitiesRecord = asRecord(record.capabilities);
+    const match = normalizeOverlayPluginPreviewLaneMatchRule({
+      appliesTo:
+        asString(matchRecord?.appliesTo) === 'any' ||
+        asString(matchRecord?.appliesTo) === 'directory' ||
+        asString(matchRecord?.appliesTo) === 'file'
+          ? (asString(matchRecord?.appliesTo) as 'any' | 'file' | 'directory')
+          : undefined,
+      extensions: asStringArray(matchRecord?.extensions),
+      fileNames: asStringArray(matchRecord?.fileNames),
+    });
+    const capabilities = normalizeOverlayPluginPreviewLaneCapabilities({
+      editable: asBoolean(capabilitiesRecord?.editable),
+      save: asBoolean(capabilitiesRecord?.save),
+      export: asBoolean(capabilitiesRecord?.export),
+      workflowTabs: asBoolean(capabilitiesRecord?.workflowTabs),
+      contextMenu: asBoolean(capabilitiesRecord?.contextMenu),
+      prefetch: asBoolean(capabilitiesRecord?.prefetch),
+      closeGuard: asBoolean(capabilitiesRecord?.closeGuard),
+    });
+    const title =
+      asString(record.title) ||
+      deriveDisplayNameFromFilePath(renderer);
+
+    return [{
+      id: asString(record.id) || deriveIdFromName(title, 'preview-lane'),
+      title,
+      renderer,
+      runtimeId: asString(record.runtimeId),
+      priority:
+        typeof record.priority === 'number' && Number.isFinite(record.priority)
+          ? Math.round(record.priority)
+          : DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY,
+      match,
+      capabilities,
+    }];
+  });
+}
+
 function parsePluginManifestText(text: string, filePath: string): PluginPackageManifest {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -345,6 +431,7 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
       commands: asCommandManifestArray(contributions?.commands),
       explorerActions: asExplorerActionManifestArray(contributions?.explorerActions),
       contextMenuItems: asContextMenuItemManifestArray(contributions?.contextMenuItems),
+      previewLanes: asPreviewLaneManifestArray(contributions?.previewLanes),
     },
   };
 }
@@ -649,12 +736,25 @@ async function loadPluginPackage(
     actions: [],
     explorerActions: [],
     contextMenuItems: [],
+    previewLanes: [],
     warnings: [],
   };
 
   const packageId = derivePackageId(record);
   const packageName = derivePackageName(record);
   const packageWarnings: string[] = [];
+  const packageBackendDirectory = joinPlatformPath(
+    record.directoryPath,
+    pluginSystemConfig.backendDirectoryName,
+  );
+  const packagePreviewBaseContext: OverlayPluginContext = {
+    id: packageId,
+    name: packageName,
+    filePath: record.manifestPath,
+    pluginRoot: pluginSystemConfig.pluginsDirectory,
+    pluginDirectory: record.directoryPath,
+    backendDirectory: packageBackendDirectory,
+  };
 
   const panelEntry = await resolvePackagePanelEntry(record);
   let packagePlugin: LoadedOverlayPlugin | null = null;
@@ -668,7 +768,7 @@ async function loadPluginPackage(
           filePath: panelEntry.path,
           pluginRoot: pluginSystemConfig.pluginsDirectory,
           pluginDirectory: record.directoryPath,
-          backendDirectory: joinPlatformPath(record.directoryPath, pluginSystemConfig.backendDirectoryName),
+          backendDirectory: packageBackendDirectory,
         },
         defaults: {
           id: packageId,
@@ -866,6 +966,122 @@ async function loadPluginPackage(
     })),
   );
 
+  const previewModuleResolver = createPluginRelativeModuleSourceResolver(
+    record.directoryPath,
+  );
+  const previewRendererCache = new Map<
+    string,
+    React.ComponentType<OverlayPluginPreviewLaneProps>
+  >();
+  const loadedPreviewLanes: Array<
+    OverlayPluginPreviewLaneContribution | null
+  > = await Promise.all(
+    (record.manifest.contributions?.previewLanes ?? []).map(
+      async (previewLane) => {
+        const laneTitle =
+          previewLane.title ||
+          deriveDisplayNameFromFilePath(previewLane.renderer || 'preview-lane');
+        const stableId =
+          previewLane.id || deriveIdFromName(laneTitle, 'preview-lane');
+        if (!previewLane.renderer || !isSafeRelativePath(previewLane.renderer)) {
+          packageWarnings.push(
+            `preview lane ${laneTitle}: invalid renderer path`,
+          );
+          return null;
+        }
+
+        const normalizedRendererEntry = normalizeRelativePath(
+          previewLane.renderer,
+        );
+        let rendererComponent =
+          previewRendererCache.get(normalizedRendererEntry) ?? null;
+        if (!rendererComponent) {
+          const rendererEntry = await resolveRelativeFileEntry(
+            record.directoryPath,
+            normalizedRendererEntry,
+          );
+          if (
+            !rendererEntry ||
+            !pluginSystemConfig.frontendExtensions.includes(
+              rendererEntry.extension as never,
+            )
+          ) {
+            packageWarnings.push(
+              `preview lane ${laneTitle}: renderer ${normalizedRendererEntry} could not be resolved`,
+            );
+            return null;
+          }
+
+          try {
+            const source = await commands
+              .fsReadTextFile(rendererEntry.path)
+              .then(unwrapTauriResult);
+            rendererComponent = await loadPluginPreviewLaneFromSource(
+              source,
+              rendererEntry as PluginFileEntry,
+              {
+                resolveRelativeModuleSource: previewModuleResolver,
+              },
+            );
+            previewRendererCache.set(normalizedRendererEntry, rendererComponent);
+          } catch (error) {
+            packageWarnings.push(
+              `preview lane ${laneTitle}: ${String(error)}`,
+            );
+            return null;
+          }
+        }
+
+        const rendererFilePath = joinPlatformPath(
+          record.directoryPath,
+          normalizedRendererEntry,
+        );
+        const previewLaneContext: OverlayPluginContext = {
+          ...packagePreviewBaseContext,
+          filePath: rendererFilePath,
+        };
+        const previewLaneApi = hostApiFactory(previewLaneContext);
+        const boundComponent: BoundOverlayPluginPreviewLaneComponent = (
+          props,
+        ) =>
+          React.createElement(rendererComponent!, {
+            ...props,
+            api: previewLaneApi,
+            plugin: previewLaneContext,
+          });
+
+        return {
+          id: `${packageId}.preview-lane.${stableId}`,
+          pluginId: packageId,
+          pluginName: packageName,
+          title: laneTitle,
+          priority:
+            previewLane.priority ??
+            DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY,
+          rendererEntry: normalizedRendererEntry,
+          runtimeId: previewLane.runtimeId?.trim() || null,
+          match: previewLane.match
+            ? normalizeOverlayPluginPreviewLaneMatchRule(previewLane.match)
+            : normalizeOverlayPluginPreviewLaneMatchRule(undefined),
+          capabilities: previewLane.capabilities
+            ? normalizeOverlayPluginPreviewLaneCapabilities(
+                previewLane.capabilities,
+              )
+            : normalizeOverlayPluginPreviewLaneCapabilities(undefined),
+          component: boundComponent,
+        } satisfies OverlayPluginPreviewLaneContribution;
+      },
+    ),
+  );
+  result.previewLanes.push(
+    ...loadedPreviewLanes.filter(
+      (
+        contribution,
+      ): contribution is OverlayPluginPreviewLaneContribution =>
+        contribution != null,
+    ),
+  );
+
   if (packagePlugin) {
     const capabilities: OverlayPluginCapabilitySummary = {
       panel: true,
@@ -876,6 +1092,7 @@ async function loadPluginPackage(
       actions: result.actions.length,
       explorerActions: result.explorerActions.length,
       contextMenuItems: result.contextMenuItems.length,
+      previewLanes: result.previewLanes.length,
     };
     result.plugins.push({
       ...packagePlugin,
@@ -904,6 +1121,7 @@ export async function discoverOverlayPlugins(
     actions: [],
     explorerActions: [],
     contextMenuItems: [],
+    previewLanes: [],
     warnings: [],
   };
 
@@ -929,6 +1147,7 @@ export async function discoverOverlayPlugins(
     actions: [],
     explorerActions: [],
     contextMenuItems: [],
+    previewLanes: [],
     warnings: [],
   };
 
@@ -970,6 +1189,7 @@ export async function discoverOverlayPlugins(
       aggregate.actions.push(...packageResult.actions);
       aggregate.explorerActions.push(...packageResult.explorerActions);
       aggregate.contextMenuItems.push(...packageResult.contextMenuItems);
+      aggregate.previewLanes.push(...packageResult.previewLanes);
       aggregate.warnings.push(...packageResult.warnings);
     } catch (error) {
       aggregate.warnings.push(`${directory.name}: ${String(error)}`);

@@ -607,6 +607,9 @@ function getPluginCapabilityLabels(plugin: LoadedOverlayPlugin): string[] {
   if (plugin.diagnostics.capabilities.explorerActions > 0) {
     labels.push(`Explorer ${plugin.diagnostics.capabilities.explorerActions}`);
   }
+  if (plugin.diagnostics.capabilities.previewLanes > 0) {
+    labels.push(`Preview ${plugin.diagnostics.capabilities.previewLanes}`);
+  }
   return labels;
 }
 

@@ -448,6 +448,7 @@ import {
   FileExplorer,
   invalidateExplorerResultCaches,
 } from "../components/FileExplorer";
+import type { OverlayPluginPreviewLaneContribution } from "../config/pluginContributions";
 import { EXPLORER_CANONICAL_LAYOUT_ID } from "../config/explorerLayouts";
 import { invalidateExplorerThumbnailArtifactRuntimeCache } from "../runtime/explorerThumbnailArtifactRuntime";
 import { EXPLORER_PREVIEW_WIDTH_BOUNDS } from "../config/explorerShellLayouts";
@@ -765,6 +766,7 @@ function renderExplorer(
     appearance?: ReturnType<typeof resolveOverlayAppearance>;
     chromeControlSurface?: "toolbar" | "topbar";
     layoutMode?: "full" | "dock";
+    pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
     workspacePaneCount?: 1 | 2 | 3 | 4;
   } = {},
 ) {
@@ -786,6 +788,7 @@ function renderExplorer(
         appearance={appearance}
         chromeControlSurface={options.chromeControlSurface}
         layoutMode={options.layoutMode}
+        pluginPreviewLanes={options.pluginPreviewLanes}
         workspacePaneCount={options.workspacePaneCount}
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
@@ -6536,6 +6539,137 @@ const value = 1;
     await screen.findByText("Image Cutout Menu Action");
     expect(screen.getByText("Cutout Menu Action")).toBeInTheDocument();
     expect(screen.getByText("Show Tool Rail")).toBeInTheDocument();
+  });
+
+  it("lets plugin preview lanes claim files and register workflow tabs plus preview context actions", async () => {
+    const mockPluginPreviewLane: OverlayPluginPreviewLaneContribution = {
+      id: "mock-plugin.preview-lane.notes",
+      pluginId: "mock-plugin",
+      pluginName: "Mock Plugin",
+      title: "Notes Lane",
+      priority: 900,
+      rendererEntry: "preview/notes.tsx",
+      runtimeId: null,
+      match: {
+        appliesTo: "file",
+        extensions: ["txt"],
+        fileNames: [],
+      },
+      capabilities: {
+        editable: true,
+        save: false,
+        export: false,
+        workflowTabs: true,
+        contextMenu: true,
+        prefetch: false,
+        closeGuard: false,
+      },
+      component: function MockPluginPreviewLane({
+        file,
+        viewMode,
+        workflowTabId,
+        onRegisterWorkflowTabs,
+        onRegisterContextMenuRegistration,
+      }) {
+        React.useEffect(() => {
+          onRegisterWorkflowTabs?.([
+            {
+              id: "inspect",
+              label: "Inspect",
+              baseMode: "edit",
+            },
+          ]);
+          return () => onRegisterWorkflowTabs?.(null);
+        }, [onRegisterWorkflowTabs]);
+
+        React.useEffect(() => {
+          onRegisterContextMenuRegistration?.({
+            previewKind: "plugin",
+            baseActions: [
+              {
+                id: "mock.plugin.base",
+                title: "Plugin Preview Action",
+                onSelect: () => {},
+              },
+            ],
+            workflowOverlays: [
+              {
+                workflowTabId: "inspect",
+                actions: [
+                  {
+                    id: "mock.plugin.base",
+                    title: "Plugin Inspect Action",
+                  },
+                  {
+                    id: "mock.plugin.inspect.extra",
+                    title: "Inspect Extra Action",
+                    onSelect: () => {},
+                  },
+                ],
+              },
+            ],
+          });
+          return () => onRegisterContextMenuRegistration?.(null);
+        }, [onRegisterContextMenuRegistration]);
+
+        return (
+          <div
+            data-testid="mock-plugin-preview-lane"
+            data-plugin-file={file.name}
+            data-plugin-view-mode={viewMode}
+            data-plugin-workflow-tab={workflowTabId}
+          >
+            {`${file.name}:${workflowTabId}:${viewMode}`}
+          </div>
+        );
+      },
+    };
+
+    renderExplorer({
+      pluginPreviewLanes: [mockPluginPreviewLane],
+    });
+    fireEvent.click(
+      await screen.findByText("notes.txt", undefined, {
+        timeout: 5000,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-plugin-preview-lane")).toHaveAttribute(
+        "data-plugin-file",
+        "notes.txt",
+      );
+    });
+    expect(screen.getByTestId("mock-plugin-preview-lane")).toHaveAttribute(
+      "data-plugin-workflow-tab",
+      "preview",
+    );
+
+    fireEvent.contextMenu(getPreviewPane());
+    await screen.findByText("Plugin Preview Action");
+    expect(screen.queryByText("Inspect Extra Action")).not.toBeInTheDocument();
+
+    const previewModeToggle = getChromeControl("previewModeToggle");
+    fireEvent.click(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Inspect",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-plugin-preview-lane")).toHaveAttribute(
+        "data-plugin-workflow-tab",
+        "inspect",
+      );
+      expect(screen.getByTestId("mock-plugin-preview-lane")).toHaveAttribute(
+        "data-plugin-view-mode",
+        "edit",
+      );
+    });
+
+    fireEvent.contextMenu(getPreviewPane());
+    await screen.findByText("Plugin Inspect Action");
+    expect(screen.getByText("Inspect Extra Action")).toBeInTheDocument();
   });
 
   it("lets child preview surfaces suppress the shared preview-pane context menu", async () => {

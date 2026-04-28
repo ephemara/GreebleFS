@@ -34,6 +34,7 @@ import {
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
+  OverlayPluginPreviewLaneContribution,
 } from "../../config/pluginContributions";
 import type { ExplorerLayoutMode } from "../../config/layoutProfiles";
 import type { LoadedExplorerLayoutDefinition } from "../../config/explorerLayouts";
@@ -119,6 +120,7 @@ interface ExplorerWorkspaceProps {
   actions?: LoadedExplorerAction[];
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
+  pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   explorerLayouts?: LoadedExplorerLayoutDefinition[];
   layoutMode?: ExplorerLayoutMode;
   defaultModeProfileId?: ExplorerModeProfileId | null;
@@ -317,6 +319,7 @@ export function ExplorerWorkspace({
   actions = [],
   pluginActions = [],
   pluginContextMenuItems = [],
+  pluginPreviewLanes = [],
   explorerLayouts = [],
   layoutMode = "full",
   defaultModeProfileId = null,
@@ -2351,6 +2354,7 @@ export function ExplorerWorkspace({
             actions={actions}
             pluginActions={pluginActions}
             pluginContextMenuItems={pluginContextMenuItems}
+            pluginPreviewLanes={pluginPreviewLanes}
             explorerPicker={isActivePane ? explorerPicker : null}
             onExplorerPickerConfirm={onExplorerPickerConfirm}
             onExplorerPickerCancel={onExplorerPickerCancel}
@@ -2392,6 +2396,7 @@ export function ExplorerWorkspace({
       onExplorerPickerConfirm,
       pluginActions,
       pluginContextMenuItems,
+      pluginPreviewLanes,
       publishRuntimeSnapshot,
       refreshRequestsByInstanceId,
       revealRequestsByInstanceId,

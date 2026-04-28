@@ -23,6 +23,7 @@ import type {
   OverlayPluginCommandContribution,
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
+  OverlayPluginPreviewLaneContribution,
 } from '../config/pluginContributions';
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
@@ -43,6 +44,7 @@ export interface UseFolderPluginRuntimeResult {
   pluginActions: LoadedExplorerAction[];
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
+  pluginPreviewLanes: OverlayPluginPreviewLaneContribution[];
   folderPluginsError: string | null;
   folderPluginsLoading: boolean;
   openPluginsFolder: () => Promise<void>;
@@ -68,6 +70,7 @@ export function useFolderPluginRuntime(
   const [pluginActions, setPluginActions] = useState<LoadedExplorerAction[]>([]);
   const [pluginExplorerActions, setPluginExplorerActions] = useState<OverlayPluginExplorerActionContribution[]>([]);
   const [pluginContextMenuItems, setPluginContextMenuItems] = useState<OverlayPluginContextMenuContribution[]>([]);
+  const [pluginPreviewLanes, setPluginPreviewLanes] = useState<OverlayPluginPreviewLaneContribution[]>([]);
   const [folderPluginsError, setFolderPluginsError] = useState<string | null>(null);
   const [folderPluginsLoading, setFolderPluginsLoading] = useState(true);
 
@@ -163,6 +166,7 @@ export function useFolderPluginRuntime(
       setPluginActions([]);
       setPluginExplorerActions([]);
       setPluginContextMenuItems([]);
+      setPluginPreviewLanes([]);
       setFolderPluginsError(null);
       setFolderPluginsLoading(false);
       return;
@@ -213,6 +217,7 @@ export function useFolderPluginRuntime(
           setPluginActions(discovered.actions);
           setPluginExplorerActions(discovered.explorerActions);
           setPluginContextMenuItems(discovered.contextMenuItems);
+          setPluginPreviewLanes(discovered.previewLanes);
           setFolderPluginsError(discovered.warnings.length > 0 ? discovered.warnings.join('\n') : null);
         } catch (error) {
           setFolderPlugins([]);
@@ -224,6 +229,7 @@ export function useFolderPluginRuntime(
           setPluginActions([]);
           setPluginExplorerActions([]);
           setPluginContextMenuItems([]);
+          setPluginPreviewLanes([]);
           setFolderPluginsError(String(error));
         } finally {
           setFolderPluginsLoading(false);
@@ -390,6 +396,7 @@ export function useFolderPluginRuntime(
     pluginActions,
     pluginExplorerActions,
     pluginContextMenuItems,
+    pluginPreviewLanes,
     folderPluginsError,
     folderPluginsLoading,
     openPluginsFolder,

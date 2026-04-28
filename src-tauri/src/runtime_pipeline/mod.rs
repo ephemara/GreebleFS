@@ -15,9 +15,10 @@
 //! - `commands`   — Tauri/Specta surface (`runtime_*`).
 
 pub mod cache;
-pub mod commands;
 pub mod command_runtime;
+pub mod commands;
 pub mod discovery;
+pub mod driver;
 pub mod manifest;
 pub mod registry;
 pub mod sidecar;
@@ -26,6 +27,7 @@ pub mod tui;
 
 pub use cache::{compute_source_signature, CacheKeyParts, CompileCacheEntry, CompileCacheLayout};
 pub use commands::*;
+pub use driver::*;
 pub use manifest::{
     RuntimeCompiler, RuntimeKind, RuntimeManifest, RuntimePackagePermissions, RuntimePanelConfig,
     RuntimeSidecarConfig, RuntimeTuiConfig,

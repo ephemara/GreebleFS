@@ -6,6 +6,7 @@ import type {
   OverlayPluginCommandContribution,
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
+  OverlayPluginPreviewLaneContribution,
 } from '../config/pluginContributions';
 import TerminalOverlay from '../components/TerminalOverlay';
 import { ExplorerWorkspace } from '../components/explorer/ExplorerWorkspace';
@@ -204,6 +205,7 @@ export function createBuiltInPanelDefinitions({
   actions = [],
   pluginExplorerActions,
   pluginContextMenuItems,
+  pluginPreviewLanes = [],
   onOpenInTerminal,
   onOpenInFilesystemAquarium,
   onAddBookmark,
@@ -340,6 +342,7 @@ export function createBuiltInPanelDefinitions({
   actions?: LoadedExplorerAction[];
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
+  pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   onOpenInTerminal: (path: string) => void;
   onOpenInFilesystemAquarium: (path: string) => void;
   onAddBookmark: (name: string, path: string) => Promise<void>;
@@ -516,6 +519,7 @@ export function createBuiltInPanelDefinitions({
           onExplorerPickerCancel={onExplorerPickerCancel}
           pluginActions={pluginExplorerActions}
           pluginContextMenuItems={pluginContextMenuItems}
+          pluginPreviewLanes={pluginPreviewLanes}
         />
       ),
     },

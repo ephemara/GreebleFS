@@ -110,7 +110,6 @@ describe('plugin package discovery', () => {
           name: 'Mega Plugin',
           entry: 'dist/index.js',
           contributions: {
-            themes: ['themes/cobalt'],
             shaders: ['shaders/halo.tsx'],
             fonts: [
               {
@@ -169,6 +168,25 @@ describe('plugin package discovery', () => {
                 },
               },
             ],
+            previewLanes: [
+              {
+                id: 'notes-preview',
+                title: 'Notes Preview',
+                renderer: 'preview/notes-preview.js',
+                runtimeId: 'notes-runtime',
+                priority: 820,
+                match: {
+                  appliesTo: 'file',
+                  extensions: ['md'],
+                  fileNames: ['readme.md'],
+                },
+                capabilities: {
+                  editable: true,
+                  workflowTabs: true,
+                  contextMenu: true,
+                },
+              },
+            ],
           },
         });
       }
@@ -192,6 +210,18 @@ describe('plugin package discovery', () => {
         ];
       }
 
+      if (command === 'fs_list_dir' && normalizedPath === 'plugins/mega-plugin/preview') {
+        return [
+          {
+            name: 'notes-preview.js',
+            path: 'plugins/mega-plugin/preview/notes-preview.js',
+            is_dir: false,
+            extension: 'js',
+            modified: 44,
+          },
+        ];
+      }
+
       if (command === 'fs_read_text_file' && normalizedPath === 'plugins/mega-plugin/dist/index.js') {
         return `
           import React from 'react';
@@ -210,17 +240,17 @@ describe('plugin package discovery', () => {
         return `export const panelMessage = 'mega';`;
       }
 
-      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/mega-plugin/themes/cobalt/theme.json') {
-        return JSON.stringify({
-          id: 'cobalt-plugin-theme',
-          name: 'Cobalt Plugin Theme',
-          extends: 'operator',
-          theme: {
-            palette: {
-              accent: '#44c2ff',
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/mega-plugin/preview/notes-preview.js') {
+        return `
+          import React from 'react';
+          import { definePreviewLane } from 'overlayterm-plugin';
+
+          export default definePreviewLane({
+            component: function NotesPreviewLane({ file }) {
+              return React.createElement('div', null, file.name);
             },
-          },
-        });
+          });
+        `;
       }
 
       if (command === 'fs_list_dir' && normalizedPath === 'plugins/mega-plugin/shaders') {
@@ -270,14 +300,12 @@ describe('plugin package discovery', () => {
     expect(result.plugins[0]?.diagnostics.sourceKind).toBe('file-plugin');
     expect(result.plugins[1]?.diagnostics.sourceKind).toBe('package-plugin');
     expect(result.plugins[1]?.diagnostics.manifestPath?.replace(/\\/g, '/')).toBe('plugins/mega-plugin/plugin.json');
-    expect(result.plugins[1]?.diagnostics.capabilities.themes).toBe(1);
+    expect(result.plugins[1]?.diagnostics.capabilities.themes).toBe(0);
     expect(result.plugins[1]?.diagnostics.capabilities.shaders).toBe(1);
     expect(result.plugins[1]?.diagnostics.capabilities.commands).toBe(1);
     expect(result.plugins[1]?.diagnostics.capabilities.contextMenuItems).toBe(3);
-    expect(result.themePackages).toHaveLength(1);
-    expect(result.themePackages[0]?.theme.id).toBe('cobalt-plugin-theme');
-    expect(result.themePackages[0]?.sourceKind).toBe('plugin-package');
-    expect(result.themePackages[0]?.sourceLabel).toBe('Mega Plugin');
+    expect(result.plugins[1]?.diagnostics.capabilities.previewLanes).toBe(1);
+    expect(result.themePackages).toHaveLength(0);
     expect(result.shaders).toHaveLength(1);
     expect(result.shaders[0]?.name).toBe('Plugin Halo');
     expect(result.fonts).toHaveLength(1);
@@ -306,6 +334,31 @@ describe('plugin package discovery', () => {
       command: 'aquarium {path}',
       runOnSelect: true,
     });
+    expect(result.previewLanes).toHaveLength(1);
+    expect(result.previewLanes[0]).toMatchObject({
+      id: 'mega-plugin.preview-lane.notes-preview',
+      pluginId: 'mega-plugin',
+      pluginName: 'Mega Plugin',
+      title: 'Notes Preview',
+      runtimeId: 'notes-runtime',
+      priority: 820,
+      rendererEntry: 'preview/notes-preview.js',
+      match: {
+        appliesTo: 'file',
+        extensions: ['md'],
+        fileNames: ['readme.md'],
+      },
+      capabilities: {
+        editable: true,
+        save: false,
+        export: false,
+        workflowTabs: true,
+        contextMenu: true,
+        prefetch: false,
+        closeGuard: false,
+      },
+    });
+    expect(typeof result.previewLanes[0]?.component).toBe('function');
   });
 
   it('rejects unsafe package-relative paths before loading bundled assets', async () => {

@@ -6,12 +6,18 @@
 //! ergonomics on top.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
+use url::Url;
 
+use crate::cloud_commands::{cloud_list_dir, cloud_open_file, CloudRuntimeState};
+use crate::explorer_identity::{
+    build_content_revision, build_virtual_identity, ExplorerIdentityManager,
+};
+use crate::fs_commands::{fs_list_archive_dir, fs_list_dir, fs_open_file, FileEntry};
+use crate::remote_storage_commands::{remote_list_dir, remote_open_file, RemoteStorageState};
 use crate::runtime_pipeline::cache::{CacheKeyParts, CompileCacheLayout};
 use crate::runtime_pipeline::command_runtime::{
     run_native_command, ExternalRuntimeCommandRequest, ExternalRuntimeCommandResult,
@@ -19,9 +25,11 @@ use crate::runtime_pipeline::command_runtime::{
 use crate::runtime_pipeline::discovery::{
     DiscoveredRuntimePackage, RuntimeDiscoveryRoot, RuntimePackageOrigin,
 };
-use crate::runtime_pipeline::manifest::{
-    RuntimeCompiler, RuntimeKind, RuntimeManifest,
+use crate::runtime_pipeline::driver::{
+    artifact_name_for_compiler, default_target_for_compiler, invoke_build_script,
+    resolve_toolchain_version,
 };
+use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeKind};
 use crate::runtime_pipeline::registry::RuntimeRegistry;
 use crate::runtime_pipeline::sidecar::{
     ExternalRuntimeSidecarCallResponse, ExternalRuntimeSidecarStatus, ExternalSidecarManager,
@@ -33,6 +41,470 @@ const BUILTIN_RUNTIMES_ROOT_ID: &str = "builtin";
 const MANAGED_RUNTIMES_ROOT_ID: &str = "managed";
 const RUNTIMES_MANAGED_DIR_NAME: &str = "runtimes";
 const BUILTIN_RUNTIMES_REPO_RELATIVE: &str = "../src-go/builtin-runtimes";
+const EXPLORER_ARCHIVE_VIRTUAL_SCHEME: &str = "greeblefs://archive";
+const REMOTE_PROTOCOL_PREFIX: &str = "remote://sftp/";
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeHostExplorerListLocationRequest {
+    path: String,
+    #[serde(default)]
+    show_hidden: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeHostExplorerOpenPathRequest {
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeHostExplorerBreadcrumb {
+    label: String,
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeHostExplorerLocationListing {
+    kind: String,
+    path: String,
+    parent_path: Option<String>,
+    breadcrumbs: Vec<RuntimeHostExplorerBreadcrumb>,
+    entries: Vec<FileEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeArchiveVirtualLocation {
+    archive_path: String,
+    entry_path: String,
+}
+
+fn is_cloud_explorer_path(path: &str) -> bool {
+    path.trim().starts_with("cloud://")
+}
+
+fn is_remote_explorer_path(path: &str) -> bool {
+    path.trim().starts_with(REMOTE_PROTOCOL_PREFIX)
+}
+
+fn normalize_runtime_archive_entry_path(value: &str) -> String {
+    value
+        .trim()
+        .replace('\\', "/")
+        .trim_matches('/')
+        .to_string()
+}
+
+fn parse_runtime_archive_virtual_path(path: &str) -> Option<RuntimeArchiveVirtualLocation> {
+    let parsed = Url::parse(path.trim()).ok()?;
+    let normalized_base = format!(
+        "{}//{}",
+        parsed.scheme(),
+        parsed.host_str().unwrap_or_default()
+    )
+    .to_lowercase();
+    if normalized_base != EXPLORER_ARCHIVE_VIRTUAL_SCHEME {
+        return None;
+    }
+    let archive_path = parsed.query_pairs().find_map(|(key, value)| {
+        if key == "archive" {
+            Some(value.trim().to_string())
+        } else {
+            None
+        }
+    })?;
+    if archive_path.is_empty() {
+        return None;
+    }
+    let entry_path = parsed
+        .query_pairs()
+        .find_map(|(key, value)| {
+            if key == "entry" {
+                Some(value.to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+    Some(RuntimeArchiveVirtualLocation {
+        archive_path,
+        entry_path: normalize_runtime_archive_entry_path(&entry_path),
+    })
+}
+
+fn build_runtime_archive_virtual_path(archive_path: &str, entry_path: &str) -> String {
+    let mut url = Url::parse(EXPLORER_ARCHIVE_VIRTUAL_SCHEME)
+        .expect("archive virtual scheme should always be valid");
+    url.query_pairs_mut()
+        .append_pair("archive", archive_path.trim());
+    let normalized_entry_path = normalize_runtime_archive_entry_path(entry_path);
+    if !normalized_entry_path.is_empty() {
+        url.query_pairs_mut()
+            .append_pair("entry", normalized_entry_path.as_str());
+    }
+    url.to_string()
+}
+
+fn build_runtime_local_breadcrumbs(path: &str) -> Vec<RuntimeHostExplorerBreadcrumb> {
+    let normalized_path = path.trim();
+    if normalized_path.is_empty() {
+        return Vec::new();
+    }
+
+    if normalized_path.len() >= 2
+        && normalized_path.as_bytes()[1] == b':'
+        && normalized_path
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_alphabetic())
+        && normalized_path.trim_end_matches('\\').len() == 2
+    {
+        let drive_path = if normalized_path.ends_with('\\') {
+            normalized_path.to_string()
+        } else {
+            format!("{normalized_path}\\")
+        };
+        return vec![RuntimeHostExplorerBreadcrumb {
+            label: drive_path.clone(),
+            path: drive_path,
+        }];
+    }
+
+    let is_windows_path = normalized_path.len() >= 3
+        && normalized_path.as_bytes()[1] == b':'
+        && (normalized_path.as_bytes()[2] == b'\\' || normalized_path.as_bytes()[2] == b'/');
+    if is_windows_path {
+        let drive_root = format!("{}\\", &normalized_path[..2]);
+        let parts: Vec<&str> = normalized_path
+            .trim_end_matches(['\\', '/'])
+            .split(['\\', '/'])
+            .filter(|segment| !segment.is_empty())
+            .collect();
+        let mut breadcrumbs = vec![RuntimeHostExplorerBreadcrumb {
+            label: drive_root.clone(),
+            path: drive_root,
+        }];
+        for index in 1..parts.len() {
+            breadcrumbs.push(RuntimeHostExplorerBreadcrumb {
+                label: parts[index].to_string(),
+                path: parts[..=index].join("\\"),
+            });
+        }
+        return breadcrumbs;
+    }
+
+    if normalized_path.starts_with('/') {
+        let parts: Vec<&str> = normalized_path
+            .trim_end_matches('/')
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect();
+        let mut breadcrumbs = vec![RuntimeHostExplorerBreadcrumb {
+            label: "/".to_string(),
+            path: "/".to_string(),
+        }];
+        for index in 0..parts.len() {
+            breadcrumbs.push(RuntimeHostExplorerBreadcrumb {
+                label: parts[index].to_string(),
+                path: format!("/{}", parts[..=index].join("/")),
+            });
+        }
+        return breadcrumbs;
+    }
+
+    let parts: Vec<&str> = normalized_path
+        .trim_end_matches(['\\', '/'])
+        .split(['\\', '/'])
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    parts
+        .iter()
+        .enumerate()
+        .map(|(index, label)| RuntimeHostExplorerBreadcrumb {
+            label: (*label).to_string(),
+            path: parts[..=index].join("/"),
+        })
+        .collect()
+}
+
+fn get_runtime_local_parent_path(path: &str) -> Option<String> {
+    let normalized = path.trim();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    if (normalized.len() >= 2
+        && normalized.as_bytes()[1] == b':'
+        && normalized
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_alphabetic())
+        && normalized.trim_end_matches('\\').len() == 2)
+        || normalized == "/"
+    {
+        return None;
+    }
+
+    let trimmed = normalized.trim_end_matches(['\\', '/']);
+    let parts: Vec<&str> = trimmed.split(['\\', '/']).collect();
+    if parts.len() <= 1 {
+        return None;
+    }
+
+    if parts
+        .first()
+        .is_some_and(|segment| segment.len() == 2 && segment.ends_with(':'))
+    {
+        return if parts.len() == 2 {
+            Some(format!("{}\\", parts[0]))
+        } else {
+            Some(format!("{}\\", parts[..parts.len() - 1].join("\\")))
+        };
+    }
+
+    if trimmed.starts_with('/') {
+        let joined = parts[..parts.len() - 1]
+            .iter()
+            .filter(|segment| !segment.is_empty())
+            .copied()
+            .collect::<Vec<_>>()
+            .join("/");
+        return Some(if joined.is_empty() {
+            "/".to_string()
+        } else {
+            format!("/{joined}")
+        });
+    }
+
+    Some(parts[..parts.len() - 1].join("/"))
+}
+
+fn build_runtime_archive_breadcrumbs(
+    archive_path: &str,
+    entry_path: &str,
+) -> Vec<RuntimeHostExplorerBreadcrumb> {
+    let mut breadcrumbs = Vec::new();
+    if let Some(container_path) = get_runtime_local_parent_path(archive_path) {
+        breadcrumbs.extend(build_runtime_local_breadcrumbs(&container_path));
+    }
+    let archive_root_path = build_runtime_archive_virtual_path(archive_path, "");
+    let archive_root_label = archive_path
+        .trim()
+        .trim_end_matches(['\\', '/'])
+        .split(['\\', '/'])
+        .filter(|segment| !segment.is_empty())
+        .last()
+        .unwrap_or(archive_path)
+        .to_string();
+    breadcrumbs.push(RuntimeHostExplorerBreadcrumb {
+        label: archive_root_label,
+        path: archive_root_path,
+    });
+
+    let entry_segments: Vec<&str> = entry_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    for index in 0..entry_segments.len() {
+        breadcrumbs.push(RuntimeHostExplorerBreadcrumb {
+            label: entry_segments[index].to_string(),
+            path: build_runtime_archive_virtual_path(
+                archive_path,
+                &entry_segments[..=index].join("/"),
+            ),
+        });
+    }
+    breadcrumbs
+}
+
+fn to_runtime_archive_virtual_entry(
+    archive_path: &str,
+    entry: crate::archive_ops::FsArchiveEntryListingEntry,
+) -> FileEntry {
+    let normalized_relative_path = normalize_runtime_archive_entry_path(&entry.relative_path);
+    let content_revision = build_content_revision(entry.size, entry.modified, entry.is_dir, false);
+    let identity = build_virtual_identity(
+        "archive-entry",
+        format!("{archive_path}::{normalized_relative_path}").as_str(),
+        &content_revision,
+    );
+    FileEntry {
+        name: entry.name,
+        path: build_runtime_archive_virtual_path(archive_path, &normalized_relative_path),
+        is_dir: entry.is_dir,
+        size: entry.size,
+        modified: entry.modified,
+        extension: entry.extension,
+        is_hidden: false,
+        is_symlink: false,
+        entity_id: identity.entity_id,
+        identity_kind: identity.identity_kind,
+        content_revision: identity.content_revision,
+    }
+}
+
+fn decode_runtime_host_bridge_payload<T: for<'de> Deserialize<'de>>(
+    method_id: &str,
+    payload_json: Option<String>,
+) -> Result<T, String> {
+    let payload_json = payload_json.unwrap_or_else(|| "null".to_string());
+    serde_json::from_str(payload_json.as_str())
+        .map_err(|error| format!("Invalid payload for {method_id}: {error}"))
+}
+
+fn encode_runtime_host_bridge_result<T: Serialize>(value: &T) -> Result<String, String> {
+    serde_json::to_string(value)
+        .map_err(|error| format!("Failed to encode runtime host bridge result: {error}"))
+}
+
+async fn runtime_host_list_explorer_location(
+    app: AppHandle,
+    request: RuntimeHostExplorerListLocationRequest,
+) -> Result<RuntimeHostExplorerLocationListing, String> {
+    let path = request.path.trim().to_string();
+    if path.is_empty() {
+        return Err("Explorer host bridge path is required.".to_string());
+    }
+
+    if let Some(archive_location) = parse_runtime_archive_virtual_path(path.as_str()) {
+        let entries = fs_list_archive_dir(
+            archive_location.archive_path.clone(),
+            archive_location.entry_path.clone(),
+        )
+        .await?
+        .into_iter()
+        .map(|entry| to_runtime_archive_virtual_entry(&archive_location.archive_path, entry))
+        .collect();
+        let parent_path = if archive_location.entry_path.is_empty() {
+            get_runtime_local_parent_path(&archive_location.archive_path)
+        } else {
+            let mut segments: Vec<&str> = archive_location
+                .entry_path
+                .split('/')
+                .filter(|segment| !segment.is_empty())
+                .collect();
+            segments.pop();
+            Some(build_runtime_archive_virtual_path(
+                &archive_location.archive_path,
+                &segments.join("/"),
+            ))
+        };
+        return Ok(RuntimeHostExplorerLocationListing {
+            kind: "archive".to_string(),
+            path,
+            parent_path,
+            breadcrumbs: build_runtime_archive_breadcrumbs(
+                &archive_location.archive_path,
+                &archive_location.entry_path,
+            ),
+            entries,
+        });
+    }
+
+    if is_cloud_explorer_path(path.as_str()) {
+        let state = app.state::<CloudRuntimeState>();
+        let listing = cloud_list_dir(app.clone(), state, path.clone()).await?;
+        return Ok(RuntimeHostExplorerLocationListing {
+            kind: "cloud".to_string(),
+            path: listing.path,
+            parent_path: listing.parent_path,
+            breadcrumbs: listing
+                .breadcrumbs
+                .into_iter()
+                .map(|breadcrumb| RuntimeHostExplorerBreadcrumb {
+                    label: breadcrumb.label,
+                    path: breadcrumb.path,
+                })
+                .collect(),
+            entries: listing.entries,
+        });
+    }
+
+    if is_remote_explorer_path(path.as_str()) {
+        let state = app.state::<RemoteStorageState>();
+        let listing = remote_list_dir(app.clone(), state, path.clone()).await?;
+        return Ok(RuntimeHostExplorerLocationListing {
+            kind: "remote".to_string(),
+            path: listing.path,
+            parent_path: listing.parent_path,
+            breadcrumbs: listing
+                .breadcrumbs
+                .into_iter()
+                .map(|breadcrumb| RuntimeHostExplorerBreadcrumb {
+                    label: breadcrumb.label,
+                    path: breadcrumb.path,
+                })
+                .collect(),
+            entries: listing.entries,
+        });
+    }
+
+    let identity_manager = app.state::<ExplorerIdentityManager>();
+    let entries = fs_list_dir(
+        app.clone(),
+        identity_manager,
+        path.clone(),
+        request.show_hidden,
+    )
+    .await?;
+    Ok(RuntimeHostExplorerLocationListing {
+        kind: "local".to_string(),
+        path: path.clone(),
+        parent_path: get_runtime_local_parent_path(path.as_str()),
+        breadcrumbs: build_runtime_local_breadcrumbs(path.as_str()),
+        entries,
+    })
+}
+
+async fn runtime_host_open_explorer_path(
+    app: AppHandle,
+    request: RuntimeHostExplorerOpenPathRequest,
+) -> Result<(), String> {
+    let path = request.path.trim().to_string();
+    if path.is_empty() {
+        return Err("Explorer open-path payload requires a path.".to_string());
+    }
+    if is_cloud_explorer_path(path.as_str()) {
+        let state = app.state::<CloudRuntimeState>();
+        return cloud_open_file(app.clone(), state, path).await;
+    }
+    if is_remote_explorer_path(path.as_str()) {
+        let state = app.state::<RemoteStorageState>();
+        return remote_open_file(app.clone(), state, path).await;
+    }
+    fs_open_file(path).await
+}
+
+fn dispatch_runtime_sidecar_host_call(
+    app: &AppHandle,
+    runtime_id: &str,
+    method_id: &str,
+    payload_json: Option<String>,
+) -> Result<String, String> {
+    match method_id {
+        "explorer.list_location" => {
+            let request: RuntimeHostExplorerListLocationRequest =
+                decode_runtime_host_bridge_payload(method_id, payload_json)?;
+            let listing = tauri::async_runtime::block_on(runtime_host_list_explorer_location(
+                app.clone(),
+                request,
+            ))?;
+            encode_runtime_host_bridge_result(&listing)
+        }
+        "explorer.open_path" => {
+            let request: RuntimeHostExplorerOpenPathRequest =
+                decode_runtime_host_bridge_payload(method_id, payload_json)?;
+            tauri::async_runtime::block_on(runtime_host_open_explorer_path(app.clone(), request))?;
+            Ok("null".to_string())
+        }
+        _ => Err(format!(
+            "Runtime sidecar {} requested unknown host method {}.",
+            runtime_id, method_id
+        )),
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -311,6 +783,9 @@ pub async fn runtime_call(
         request.payload_json,
         request.working_directory,
         request.environment,
+        |runtime_id, method_id, payload_json| {
+            dispatch_runtime_sidecar_host_call(&app, runtime_id, method_id, payload_json)
+        },
     )
 }
 
@@ -446,271 +921,4 @@ fn managed_runtimes_root(app: &AppHandle) -> Option<PathBuf> {
     }
     let local = app.path().app_local_data_dir().ok()?;
     Some(local.join(RUNTIMES_MANAGED_DIR_NAME))
-}
-
-fn default_target_for_compiler(compiler: RuntimeCompiler) -> String {
-    match compiler {
-        RuntimeCompiler::GoNative => host_target_triple(),
-        RuntimeCompiler::GoJsWasm => "js-wasm".to_string(),
-        RuntimeCompiler::TinygoWasm => "tinygo-wasm".to_string(),
-        RuntimeCompiler::PythonSidecar => "python-host".to_string(),
-    }
-}
-
-fn host_target_triple() -> String {
-    format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
-}
-
-fn resolve_toolchain_version(compiler: RuntimeCompiler) -> Result<String, String> {
-    let probe = probe_runtime_toolchains();
-    let probe_for_compiler = match compiler {
-        RuntimeCompiler::GoNative | RuntimeCompiler::GoJsWasm => &probe.go,
-        RuntimeCompiler::TinygoWasm => &probe.tinygo,
-        RuntimeCompiler::PythonSidecar => &probe.python,
-    };
-    if !probe_for_compiler.installed {
-        return Err(format!(
-            "toolchain {} is not installed: {}",
-            probe_for_compiler.id,
-            probe_for_compiler
-                .error
-                .clone()
-                .unwrap_or_else(|| "missing".to_string())
-        ));
-    }
-    Ok(probe_for_compiler
-        .version
-        .clone()
-        .unwrap_or_else(|| "unknown".to_string()))
-}
-
-fn artifact_name_for_compiler(compiler: RuntimeCompiler, runtime_id: &str) -> String {
-    match compiler {
-        RuntimeCompiler::GoNative => {
-            if cfg!(target_os = "windows") {
-                format!("{runtime_id}.exe")
-            } else {
-                runtime_id.to_string()
-            }
-        }
-        RuntimeCompiler::GoJsWasm | RuntimeCompiler::TinygoWasm => format!("{runtime_id}.wasm"),
-        RuntimeCompiler::PythonSidecar => "python-sidecar.entry".to_string(),
-    }
-}
-
-#[derive(Debug, Default)]
-struct BuildScriptResult {
-    stdout: String,
-    stderr: String,
-}
-
-fn invoke_build_script(
-    manifest: &RuntimeManifest,
-    artifact_path: &Path,
-    target: &str,
-    mode: &str,
-) -> Result<BuildScriptResult, String> {
-    if matches!(manifest.compiler, RuntimeCompiler::PythonSidecar) {
-        // Python sidecars have no host-side compilation step.
-        return Ok(BuildScriptResult::default());
-    }
-
-    let script_path = resolve_go_build_script_path().ok_or_else(|| {
-        "scripts/go/build.sh could not be located. Set GREEBLEFS_GO_BUILD_SCRIPT or reinstall the app so app-local data contains scripts/go/build.sh.".to_string()
-    })?;
-    let mut command = Command::new("bash");
-    command
-        .arg(&script_path)
-        .arg("--runtime-id")
-        .arg(&manifest.id)
-        .arg("--module-dir")
-        .arg(&manifest.module_dir)
-        .arg("--entry")
-        .arg(manifest.entry.as_deref().unwrap_or("."))
-        .arg("--compiler")
-        .arg(manifest.compiler.as_str())
-        .arg("--target")
-        .arg(target)
-        .arg("--mode")
-        .arg(mode)
-        .arg("--output")
-        .arg(artifact_path);
-
-    let output = command
-        .output()
-        .map_err(|error| format!("failed to run go build script: {error}"))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if !output.status.success() {
-        return Err(format!(
-            "go build script exited with status {}: {}",
-            output.status,
-            if stderr.is_empty() { stdout.as_str() } else { stderr.as_str() }
-        ));
-    }
-    Ok(BuildScriptResult { stdout, stderr })
-}
-
-/// Resolve the Go build script for the running host. Order of precedence:
-///
-///   1. `GREEBLEFS_GO_BUILD_SCRIPT` environment override (lets ops point at a
-///      vendored toolchain, container path, or repo checkout).
-///   2. App-local data root (`<app_local_data>/scripts/go/build.sh`) — what
-///      installer scripts copy on release builds.
-///   3. The dev-only repo path relative to `CARGO_MANIFEST_DIR`.
-///
-/// Returns `None` only when none of the candidates exist on disk; the caller
-/// turns that into a stable error message that points engineers at the env
-/// override or the install path so installed builds with a missing
-/// `scripts/go/` are diagnosable.
-pub(crate) fn resolve_go_build_script_path() -> Option<PathBuf> {
-    for candidate in candidate_go_build_script_paths() {
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn candidate_go_build_script_paths() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(override_path) = std::env::var("GREEBLEFS_GO_BUILD_SCRIPT") {
-        if !override_path.is_empty() {
-            candidates.push(PathBuf::from(override_path));
-        }
-    }
-    if let Some(app_local) = app_local_data_dir_for_resolution() {
-        candidates.push(app_local.join("scripts/go/build.sh"));
-    }
-    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        candidates.push(PathBuf::from(manifest_dir).join("../scripts/go/build.sh"));
-    }
-    candidates
-}
-
-#[cfg(test)]
-mod build_script_resolution_tests {
-    use super::*;
-    use std::sync::Mutex;
-
-    // Env var manipulation in tests must serialize because std::env::set_var
-    // mutates process-global state.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    #[test]
-    fn env_override_wins_when_path_exists() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let temp = tempfile::tempdir().expect("tempdir");
-        let fake = temp.path().join("custom-build.sh");
-        std::fs::write(&fake, "#!/bin/sh\nexit 0\n").expect("write");
-
-        let prev = std::env::var("GREEBLEFS_GO_BUILD_SCRIPT").ok();
-        std::env::set_var("GREEBLEFS_GO_BUILD_SCRIPT", &fake);
-        let resolved = resolve_go_build_script_path();
-        if let Some(prev) = prev {
-            std::env::set_var("GREEBLEFS_GO_BUILD_SCRIPT", prev);
-        } else {
-            std::env::remove_var("GREEBLEFS_GO_BUILD_SCRIPT");
-        }
-
-        assert_eq!(resolved.as_deref(), Some(fake.as_path()));
-    }
-
-    #[test]
-    fn missing_env_override_does_not_block_other_candidates() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let temp = tempfile::tempdir().expect("tempdir");
-        let nonexistent = temp.path().join("does-not-exist.sh");
-
-        let prev = std::env::var("GREEBLEFS_GO_BUILD_SCRIPT").ok();
-        std::env::set_var("GREEBLEFS_GO_BUILD_SCRIPT", &nonexistent);
-        let resolved = resolve_go_build_script_path();
-        if let Some(prev) = prev {
-            std::env::set_var("GREEBLEFS_GO_BUILD_SCRIPT", prev);
-        } else {
-            std::env::remove_var("GREEBLEFS_GO_BUILD_SCRIPT");
-        }
-
-        // The dev-checkout fallback should still resolve under cargo test.
-        assert!(
-            resolved.is_some(),
-            "build script resolution must fall through to dev fallback"
-        );
-    }
-
-    /// Lazy compilation in installed/release builds: the dev repo is not on
-    /// disk, but the installer has copied `scripts/go/build.sh` under the
-    /// app-local data root. The resolver must pick that up via the
-    /// `GREEBLEFS_APP_LOCAL_DATA_DIR` override without depending on the
-    /// `CARGO_MANIFEST_DIR` fallback. This is the exact path runtime_prepare
-    /// hits when a packaged build needs to compile a Go runtime on first use.
-    #[test]
-    fn app_local_install_layout_resolves_for_lazy_compilation() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let temp = tempfile::tempdir().expect("tempdir");
-        let app_local = temp.path().join("install-root");
-        let scripts_dir = app_local.join("scripts/go");
-        std::fs::create_dir_all(&scripts_dir).expect("mkdir");
-        let installed_script = scripts_dir.join("build.sh");
-        std::fs::write(&installed_script, "#!/bin/sh\nexit 0\n").expect("write");
-
-        let prev_override = std::env::var("GREEBLEFS_GO_BUILD_SCRIPT").ok();
-        let prev_app_local = std::env::var("GREEBLEFS_APP_LOCAL_DATA_DIR").ok();
-        std::env::remove_var("GREEBLEFS_GO_BUILD_SCRIPT");
-        std::env::set_var("GREEBLEFS_APP_LOCAL_DATA_DIR", &app_local);
-
-        let resolved = resolve_go_build_script_path();
-
-        if let Some(prev) = prev_override {
-            std::env::set_var("GREEBLEFS_GO_BUILD_SCRIPT", prev);
-        } else {
-            std::env::remove_var("GREEBLEFS_GO_BUILD_SCRIPT");
-        }
-        if let Some(prev) = prev_app_local {
-            std::env::set_var("GREEBLEFS_APP_LOCAL_DATA_DIR", prev);
-        } else {
-            std::env::remove_var("GREEBLEFS_APP_LOCAL_DATA_DIR");
-        }
-
-        assert_eq!(
-            resolved.as_deref(),
-            Some(installed_script.as_path()),
-            "installed app-local layout must resolve the build script for lazy compile"
-        );
-    }
-}
-
-/// Best-effort app-local data resolution that does not require a Tauri
-/// `AppHandle`. We use the well-known XDG-style locations Tauri itself
-/// resolves on each platform; the installer copies `scripts/` under that
-/// root, so this is the right lookup for installed builds.
-fn app_local_data_dir_for_resolution() -> Option<PathBuf> {
-    if let Ok(env_root) = std::env::var("GREEBLEFS_APP_LOCAL_DATA_DIR") {
-        if !env_root.is_empty() {
-            return Some(PathBuf::from(env_root));
-        }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let base = std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))?;
-        return Some(base.join("co.greeblefs.app"));
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var_os("HOME").map(PathBuf::from)?;
-        return Some(home.join("Library/Application Support/co.greeblefs.app"));
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let appdata = std::env::var_os("LOCALAPPDATA")
-            .or_else(|| std::env::var_os("APPDATA"))
-            .map(PathBuf::from)?;
-        return Some(appdata.join("co.greeblefs.app"));
-    }
-    #[allow(unreachable_code)]
-    None
 }

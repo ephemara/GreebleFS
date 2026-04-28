@@ -1,3 +1,39 @@
+# 2026-04-27 - Explorer Preview Routing Is Now A Real Lane Registry, And Runtime Compiler Metadata Lives Behind Drivers
+
+- The preview/editor extensibility pass landed the first host-owned slice of the “plugin-driven preview engine” goal without turning the whole shell into plugin soup.
+- Durable preview-system rules after the migration:
+  - `src/components/explorer/explorerPreviewRegistry.ts` is now the canonical registry for explorer preview ownership.
+    - Built-in preview lanes are registered there as first-party adapters (`folder`, `model3d`, `archive`, `audio`, `video`, `image`, `font`, `sqlite`, `pdf`, `spreadsheet`, `docx`, `shader`, `script`, `text`).
+    - Plugin-contributed preview lanes are resolved there too, sorted by priority, and may override built-ins when they intentionally claim the same file types.
+    - If future preview work adds a lane or changes match rules, change the registry instead of adding another per-extension branch in `FileExplorer.tsx`.
+  - `src/components/explorer/explorerPreviewSystem.ts` is no longer the matcher; it is now the shared fallback/copy layer plus compatibility export surface. Treat the registry and fallback system as separate responsibilities.
+  - `src/config/filePreview.ts` still owns preview metadata and editable-text heuristics, but shell-level preview ownership no longer lives there. Keep MIME/format/exclusion data there; keep lane matching in the registry.
+  - `src/config/pluginPreviewLanes.ts`, `src/config/pluginContributions.ts`, `src/config/pluginPackages.ts`, and `src/components/pluginRuntime.tsx` now define one real preview-lane contribution contract:
+    - package manifests may declare `contributions.previewLanes`
+    - frontend plugins register lane renderers with `definePreviewLane(...)`
+    - lane descriptors carry `match`, `priority`, optional `runtimeId`, and capability flags such as `editable`, `workflowTabs`, `contextMenu`, `prefetch`, and `closeGuard`
+    - `useFolderPluginRuntime.ts` aggregates discovered preview lanes and `App.tsx` / `panelRegistry.tsx` / `ExplorerWorkspace.tsx` / `FileExplorer.tsx` only consume that aggregated catalog
+  - `FileExplorer.tsx` now has a real plugin preview session path (`preview.type === "plugin"`). The shell still owns pane chrome, loading/fallback state, workflow/context-menu plumbing, and close guards, but the mounted plugin lane now owns its own preview surface, wildcard tabs, and preview-pane context-menu overlays through the same host seams the first-party image/audio/Python lanes already use.
+- Durable runtime-pipeline rule after the migration:
+  - `src-tauri/src/runtime_pipeline/driver.rs` is now the compiler-driver seam for runtime packages.
+    - default target resolution
+    - toolchain version routing
+    - artifact naming
+    - build invocation / no-build handling
+  - `src-tauri/src/runtime_pipeline/commands.rs` should stay focused on the Tauri/Specta transport. If a future compiler family such as Cargo/Rust or C gets added, add a new driver entry first instead of copying another compiler switch into commands.
+  - Installed lazy compilation still depends on `runtime_pipeline::driver::resolve_go_build_script_path(...)`, not a repo-only path. Preserve the env override → app-local install copy → repo fallback order.
+- Durable testing rule:
+  - preview-lane package discovery and registry matching now have focused test coverage in:
+    - `src/test/pluginPackages.test.ts`
+    - `src/test/useFolderPluginRuntime*.test.tsx`
+    - `src/test/pluginsManager.test.tsx`
+    - `src/test/explorerPreviewRegistry.test.ts`
+    - Rust driver tests in `src-tauri/src/runtime_pipeline/driver.rs`
+  - The big `src/test/fileExplorer.viewModes.test.tsx` suite remains timing-sensitive in isolated runs on this host. The plugin-lane integration path is still worth keeping there, but treat isolated failures before the file list hydrates as test-harness flake unless the smaller registry/package tests also regress.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/explorerPreviewRegistry.test.ts src/test/pluginPackages.test.ts src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.fallback.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/pluginsManager.test.tsx --reporter=dot`
+  - `cargo test --manifest-path src-tauri/Cargo.toml runtime_pipeline::driver::tests`
+
 # 2026-04-27 - Freeform Explorer Header Layouts Must Persist Real Y Coordinates, And The Fixed Utility Strip Must Not Steal Canvas Width
 
 - The latest explorer-layout persistence fix closed a subtle but very visible regression in the new freeform header authoring lane:

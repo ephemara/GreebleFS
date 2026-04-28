@@ -1,3 +1,10 @@
+import type { BoundOverlayPluginPreviewLaneComponent } from '../components/pluginRuntime';
+import type {
+  OverlayPluginPreviewLaneCapabilityFlags,
+  OverlayPluginPreviewLaneDescriptor,
+  OverlayPluginPreviewLaneMatchRule,
+} from './pluginPreviewLanes';
+
 export interface OverlayPluginCommandContribution {
   id: string;
   pluginId: string;
@@ -48,6 +55,13 @@ export interface OverlayPluginContextMenuContribution {
   defaultOrder?: number;
   iconName?: string;
   execution: OverlayPluginContextMenuContributionExecution;
+}
+
+export interface OverlayPluginPreviewLaneContribution
+  extends OverlayPluginPreviewLaneDescriptor {
+  match: OverlayPluginPreviewLaneMatchRule;
+  capabilities: OverlayPluginPreviewLaneCapabilityFlags;
+  component: BoundOverlayPluginPreviewLaneComponent;
 }
 
 export interface OverlayPluginCommandContext {

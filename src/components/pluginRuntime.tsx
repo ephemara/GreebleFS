@@ -5,12 +5,13 @@ import * as TauriWindow from '@tauri-apps/api/window';
 import * as TauriFs from '@tauri-apps/plugin-fs';
 import * as TauriNotification from '@tauri-apps/plugin-notification';
 import * as LucideReact from '@/components/AppIcons';
+import type { OverlayThemeDefinition } from '../config/appearance';
+import type { OverlayPluginPreviewLaneDescriptor } from '../config/pluginPreviewLanes';
 import {
   getPluginBackendDirectory,
   getPluginDirectory,
   pluginSystemConfig,
 } from '../config/plugins';
-import type { OverlayThemeDefinition } from '../config/appearance';
 import {
   deriveRuntimeModuleId,
   deriveRuntimeModuleName,
@@ -23,10 +24,30 @@ import {
   unwrapRuntimeModuleExport,
 } from '../runtime/moduleRuntime';
 import {
+  callRuntimeAction,
+  getRuntimePackage,
+  listRuntimePackages,
+  openRuntimeTui,
+  prepareRuntimePackage,
+  runRuntimeCommand,
+  type DiscoveredRuntimePackage,
+  type ExternalRuntimeCommandRequest,
+  type ExternalRuntimeCommandResult,
+  type ExternalRuntimeTuiLaunch,
+  type RuntimeCallTypedRequest,
+  type RuntimeCallTypedResponse,
+  type RuntimeListPackagesRequest,
+  type RuntimeListPackagesResponse,
+  type RuntimePreparePackageRequest,
+  type RuntimePreparePackageResponse,
+} from '../runtime/externalRuntimeBackend';
+import {
   getPluginPanelOpenRequestEvent,
   readPluginPanelOpenRequest,
   requestPluginPanelOpen,
 } from '../runtime/pluginPanelRequests';
+import type { ExplorerPreviewContextMenuRegistration } from './explorer/explorerPreviewContextMenu';
+import type { ExplorerPreviewWildcardWorkflowTab } from './explorer/explorerPreviewWorkflowTabs';
 
 export interface PluginFileEntry extends RuntimeFileEntry {}
 
@@ -98,6 +119,77 @@ export interface OverlayPluginDefinition {
   component: React.ComponentType<OverlayPluginProps>;
 }
 
+export interface OverlayPluginPreviewHostContext {
+  mode: 'preview-pane';
+  width: number;
+  height: number;
+  zoom: number;
+  compact: boolean;
+  density: 'compact' | 'regular';
+}
+
+export interface OverlayPluginPreviewFileContext {
+  path: string;
+  resolvedPath: string;
+  name: string;
+  extension: string;
+  size: number;
+  assetUrl: string;
+  isDirectory: boolean;
+}
+
+export interface OverlayPluginPreviewRuntimeBridge {
+  runtimeId: string | null;
+  getRuntimePackage: () => Promise<DiscoveredRuntimePackage | null>;
+  listRuntimePackages: (
+    request?: RuntimeListPackagesRequest | null,
+  ) => Promise<RuntimeListPackagesResponse>;
+  prepareRuntimePackage: (
+    request: RuntimePreparePackageRequest,
+  ) => Promise<RuntimePreparePackageResponse>;
+  callRuntimeAction: <TResult = unknown, TPayload = unknown>(
+    request: RuntimeCallTypedRequest<TPayload>,
+  ) => Promise<RuntimeCallTypedResponse<TResult>>;
+  runRuntimeCommand: (
+    request: ExternalRuntimeCommandRequest,
+  ) => Promise<ExternalRuntimeCommandResult>;
+  openRuntimeTui: (runtimeId: string) => Promise<ExternalRuntimeTuiLaunch>;
+}
+
+export interface OverlayPluginPreviewLaneProps {
+  plugin: OverlayPluginContext;
+  api: OverlayPluginApi;
+  appearance: OverlayPluginProps['appearance'];
+  host: OverlayPluginPreviewHostContext;
+  lane: OverlayPluginPreviewLaneDescriptor;
+  file: OverlayPluginPreviewFileContext;
+  runtime: OverlayPluginPreviewRuntimeBridge;
+  viewMode: 'preview' | 'edit';
+  workflowTabId: string;
+  previewBackedByArchiveVirtual: boolean;
+  onRegisterWorkflowTabs?: (
+    tabs: ExplorerPreviewWildcardWorkflowTab[] | null,
+  ) => void;
+  onRegisterContextMenuRegistration?: (
+    registration: ExplorerPreviewContextMenuRegistration | null,
+  ) => void;
+  onRegisterCloseGuard?: (guard: (() => Promise<boolean>) | null) => void;
+  onRefreshPreviewEntry?: () => Promise<void> | void;
+  onViewModeChange?: (mode: 'preview' | 'edit') => void;
+}
+
+export interface OverlayPluginPreviewLaneDefinition {
+  component: React.ComponentType<OverlayPluginPreviewLaneProps>;
+}
+
+export type BoundOverlayPluginPreviewLaneProps = Omit<
+  OverlayPluginPreviewLaneProps,
+  'plugin' | 'api'
+>;
+
+export type BoundOverlayPluginPreviewLaneComponent =
+  React.ComponentType<BoundOverlayPluginPreviewLaneProps>;
+
 export type OverlayPluginSourceKind = 'file-plugin' | 'package-plugin';
 
 export interface OverlayPluginCapabilitySummary {
@@ -109,6 +201,7 @@ export interface OverlayPluginCapabilitySummary {
   actions: number;
   explorerActions: number;
   contextMenuItems: number;
+  previewLanes: number;
 }
 
 export interface OverlayPluginDiagnostics {
@@ -137,17 +230,40 @@ export interface PluginBackendResult {
 
 export interface LoadPluginFromSourceOptions {
   context?: Partial<OverlayPluginContext>;
-  defaults?: Partial<Pick<OverlayPluginDefinition, 'id' | 'name' | 'description' | 'defaultOpen' | 'keepMounted'>>;
+  defaults?: Partial<
+    Pick<
+      OverlayPluginDefinition,
+      'id' | 'name' | 'description' | 'defaultOpen' | 'keepMounted'
+    >
+  >;
   diagnostics?: Partial<OverlayPluginDiagnostics>;
   resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
 }
 
-export function definePlugin(definition: OverlayPluginDefinition): OverlayPluginDefinition {
+export function definePlugin(
+  definition: OverlayPluginDefinition,
+): OverlayPluginDefinition {
+  return definition;
+}
+
+export function definePreviewLane(
+  definition:
+    | OverlayPluginPreviewLaneDefinition
+    | React.ComponentType<OverlayPluginPreviewLaneProps>,
+): OverlayPluginPreviewLaneDefinition {
+  if (typeof definition === 'function') {
+    return {
+      component: definition,
+    };
+  }
   return definition;
 }
 
 export function isFrontendPluginFile(entry: PluginFileEntry): boolean {
-  return isSupportedRuntimeFile(entry, pluginSystemConfig.frontendExtensions);
+  return isSupportedRuntimeFile(
+    entry,
+    pluginSystemConfig.frontendExtensions,
+  );
 }
 
 export function derivePluginId(name: string): string {
@@ -169,9 +285,12 @@ export async function loadPluginFromSource(
     id: options?.context?.id ?? fileId,
     name: options?.context?.name ?? derivePluginName(entry.name),
     filePath: options?.context?.filePath ?? entry.path,
-    pluginRoot: options?.context?.pluginRoot ?? pluginSystemConfig.pluginsDirectory,
-    pluginDirectory: options?.context?.pluginDirectory ?? getPluginDirectory(fileId),
-    backendDirectory: options?.context?.backendDirectory ?? getPluginBackendDirectory(fileId),
+    pluginRoot:
+      options?.context?.pluginRoot ?? pluginSystemConfig.pluginsDirectory,
+    pluginDirectory:
+      options?.context?.pluginDirectory ?? getPluginDirectory(fileId),
+    backendDirectory:
+      options?.context?.backendDirectory ?? getPluginBackendDirectory(fileId),
   };
   const diagnostics: OverlayPluginDiagnostics = {
     sourceKind: options?.diagnostics?.sourceKind ?? 'file-plugin',
@@ -185,13 +304,20 @@ export async function loadPluginFromSource(
       fonts: options?.diagnostics?.capabilities?.fonts ?? 0,
       commands: options?.diagnostics?.capabilities?.commands ?? 0,
       actions: options?.diagnostics?.capabilities?.actions ?? 0,
-      explorerActions: options?.diagnostics?.capabilities?.explorerActions ?? 0,
-      contextMenuItems: options?.diagnostics?.capabilities?.contextMenuItems ?? 0,
+      explorerActions:
+        options?.diagnostics?.capabilities?.explorerActions ?? 0,
+      contextMenuItems:
+        options?.diagnostics?.capabilities?.contextMenuItems ?? 0,
+      previewLanes: options?.diagnostics?.capabilities?.previewLanes ?? 0,
     },
   };
 
   try {
-    const transpiledGraph = await transpilePluginGraph(context.filePath, source, options?.resolveRelativeModuleSource);
+    const transpiledGraph = await transpilePluginGraph(
+      context.filePath,
+      source,
+      options?.resolveRelativeModuleSource,
+    );
     const exported = executePluginModuleGraph(transpiledGraph);
     const normalized = normalizePluginExport(exported, context);
 
@@ -199,10 +325,17 @@ export async function loadPluginFromSource(
       ...context,
       id: normalized.id ?? options?.defaults?.id ?? context.id,
       name: normalized.name ?? options?.defaults?.name ?? context.name,
-      description: normalized.description ?? options?.defaults?.description,
+      description:
+        normalized.description ?? options?.defaults?.description,
       modified: entry.modified,
-      defaultOpen: normalized.defaultOpen ?? options?.defaults?.defaultOpen ?? pluginSystemConfig.folderPanelsOpenByDefault,
-      keepMounted: normalized.keepMounted ?? options?.defaults?.keepMounted ?? pluginSystemConfig.folderPanelsKeepMounted,
+      defaultOpen:
+        normalized.defaultOpen ??
+        options?.defaults?.defaultOpen ??
+        pluginSystemConfig.folderPanelsOpenByDefault,
+      keepMounted:
+        normalized.keepMounted ??
+        options?.defaults?.keepMounted ??
+        pluginSystemConfig.folderPanelsKeepMounted,
       component: normalized.component,
       error: null,
       diagnostics,
@@ -211,7 +344,12 @@ export async function loadPluginFromSource(
     const runtimeApi = hostApiFactory(plugin);
     return {
       ...plugin,
-      component: props => React.createElement(plugin.component!, { ...props, api: runtimeApi, plugin }),
+      component: (props) =>
+        React.createElement(plugin.component!, {
+          ...props,
+          api: runtimeApi,
+          plugin,
+        }),
     };
   } catch (error) {
     return {
@@ -225,6 +363,22 @@ export async function loadPluginFromSource(
       diagnostics,
     };
   }
+}
+
+export async function loadPluginPreviewLaneFromSource(
+  source: string,
+  entry: PluginFileEntry,
+  options?: {
+    resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
+  },
+): Promise<React.ComponentType<OverlayPluginPreviewLaneProps>> {
+  const transpiledGraph = await transpilePluginGraph(
+    entry.path,
+    source,
+    options?.resolveRelativeModuleSource,
+  );
+  const exported = executePluginModuleGraph(transpiledGraph);
+  return normalizePreviewLaneExport(exported).component;
 }
 
 async function transpilePluginGraph(
@@ -251,6 +405,7 @@ function executePluginModuleGraph(graph: RuntimeModuleGraph): unknown {
     '@tauri-apps/plugin-notification': TauriNotification,
     [pluginSystemConfig.runtimeModuleName]: {
       definePlugin,
+      definePreviewLane,
       getPluginPanelOpenRequestEvent,
       readPluginPanelOpenRequest,
       requestPluginPanelOpen,
@@ -273,7 +428,11 @@ function normalizePluginExport(
     };
   }
 
-  if (candidate && typeof candidate === 'object' && 'component' in candidate) {
+  if (
+    candidate &&
+    typeof candidate === 'object' &&
+    'component' in candidate
+  ) {
     const definition = candidate as OverlayPluginDefinition;
     if (typeof definition.component !== 'function') {
       throw new Error('Plugin export must provide a React component.');
@@ -281,9 +440,61 @@ function normalizePluginExport(
     return definition;
   }
 
-  throw new Error('Plugin must export either a React component or definePlugin({ component }).');
+  throw new Error(
+    'Plugin must export either a React component or definePlugin({ component }).',
+  );
+}
+
+function normalizePreviewLaneExport(
+  exported: unknown,
+): OverlayPluginPreviewLaneDefinition {
+  const candidate = unwrapRuntimeModuleExport(exported, [
+    'pluginPreviewLane',
+    'previewLane',
+    'plugin',
+  ]);
+
+  if (typeof candidate === 'function') {
+    return {
+      component:
+        candidate as React.ComponentType<OverlayPluginPreviewLaneProps>,
+    };
+  }
+
+  if (
+    candidate &&
+    typeof candidate === 'object' &&
+    'component' in candidate
+  ) {
+    const definition = candidate as OverlayPluginPreviewLaneDefinition;
+    if (typeof definition.component !== 'function') {
+      throw new Error(
+        'Preview lane export must provide a React component.',
+      );
+    }
+    return definition;
+  }
+
+  throw new Error(
+    'Preview lane must export either a React component or definePreviewLane({ component }).',
+  );
 }
 
 function unwrapModuleExport(exported: unknown): unknown {
   return unwrapRuntimeModuleExport(exported, ['plugin']);
+}
+
+export function createPluginPreviewRuntimeBridge(
+  runtimeId: string | null,
+): OverlayPluginPreviewRuntimeBridge {
+  return {
+    runtimeId,
+    getRuntimePackage: () =>
+      runtimeId ? getRuntimePackage(runtimeId) : Promise.resolve(null),
+    listRuntimePackages,
+    prepareRuntimePackage,
+    callRuntimeAction,
+    runRuntimeCommand,
+    openRuntimeTui,
+  };
 }

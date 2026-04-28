@@ -84,8 +84,10 @@ describe('PluginsManager', () => {
             shaders: 1,
             fonts: 0,
             commands: 1,
+            actions: 0,
             explorerActions: 0,
             contextMenuItems: 0,
+            previewLanes: 1,
           },
         },
       },
@@ -114,8 +116,10 @@ describe('PluginsManager', () => {
             shaders: 0,
             fonts: 0,
             commands: 0,
+            actions: 0,
             explorerActions: 0,
             contextMenuItems: 0,
+            previewLanes: 0,
           },
         },
       },
@@ -139,6 +143,7 @@ describe('PluginsManager', () => {
     expect(screen.getByText('runtime warning')).toBeInTheDocument();
     expect(screen.getAllByText(/Package plugin/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Themes 1').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Preview 1').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/1 warning/i).length).toBeGreaterThan(0);
     expect(screen.getByText('shader glow.tsx: bad uniform')).toBeInTheDocument();
 

@@ -103,6 +103,7 @@ import { stepExplorerCollectionPreviewMode } from "../config/explorerCollectionP
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
+  OverlayPluginPreviewLaneContribution,
 } from "../config/pluginContributions";
 import type { LoadedExplorerMenuPack } from "../config/menuPacks";
 import {
@@ -223,6 +224,10 @@ import {
   type ShaderPerformanceMode,
 } from "../config/shaders";
 import { requestPluginPanelOpen } from "../runtime/pluginPanelRequests";
+import {
+  createPluginPreviewRuntimeBridge,
+  type OverlayPluginPreviewHostContext,
+} from "./pluginRuntime";
 import {
   listenToFileOperationsTransferCompleted,
   openFileOperationsWindow,
@@ -456,7 +461,6 @@ import type { DocumentPreviewKind } from "./documentPreview";
 import {
   isAudioPreviewExtension,
   isEditableImagePreviewExtension,
-  isExecutableBinaryExtension,
   isPythonPreviewExtension,
   getModelPreviewFormat,
   isVideoPreviewExtension,
@@ -529,6 +533,10 @@ import {
   normalizeExplorerActionOutputTarget,
   type ExplorerActionExecutionInput,
 } from "../runtime/actionBackend";
+import type {
+  ExplorerPolicyLocationListing,
+  ExplorerPolicySessionSnapshot,
+} from "../runtime/goExplorerPolicyService";
 import { runExplorerAudioBatchProcess } from "../runtime/audioWorkbenchBackend";
 import {
   openExplorerPicker,
@@ -1244,6 +1252,16 @@ type PreviewState =
       name: string;
       extension: string;
       size: number;
+    } & PreviewResolvedPathState)
+  | ({
+      type: "plugin";
+      path: string;
+      name: string;
+      extension: string;
+      size: number;
+      assetUrl: string;
+      isDirectory: boolean;
+      lane: OverlayPluginPreviewLaneContribution;
     } & PreviewResolvedPathState)
   | ({
       type: "fallback";
@@ -3750,6 +3768,117 @@ function EditorFallback({ label }: { label: string }) {
   );
 }
 
+const PREVIEW_PLUGIN_HOST_COMPACT_WIDTH = 1040;
+const PREVIEW_PLUGIN_HOST_DENSE_WIDTH = 820;
+
+function getPreviewPluginAppearance(appearance?: ResolvedOverlayAppearance) {
+  return {
+    theme:
+      appearance?.theme ??
+      ({
+        id: "operator",
+        name: "Operator",
+        palette: {} as never,
+        effects: {} as never,
+        xterm: {} as never,
+      } satisfies ResolvedOverlayAppearance["theme"]),
+    fonts: appearance?.fonts ?? {
+      ui: "var(--overlay-font-ui)",
+      mono: "var(--overlay-font-mono)",
+    },
+    cssVars: appearance?.cssVars ?? {},
+  };
+}
+
+function buildPreviewPluginHostContext(
+  width: number,
+  height: number,
+  zoom: number,
+): OverlayPluginPreviewHostContext {
+  const compact = width > 0 && width <= PREVIEW_PLUGIN_HOST_COMPACT_WIDTH;
+  return {
+    mode: "preview-pane",
+    width,
+    height,
+    zoom,
+    compact,
+    density:
+      width > 0 && width <= PREVIEW_PLUGIN_HOST_DENSE_WIDTH
+        ? "compact"
+        : "regular",
+  };
+}
+
+class PreviewPluginErrorBoundary extends React.Component<
+  { children: React.ReactNode; laneTitle: string },
+  { error: string | null }
+> {
+  constructor(props: { children: React.ReactNode; laneTitle: string }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error: String(error) };
+  }
+
+  override componentDidUpdate(prevProps: { laneTitle: string }) {
+    if (prevProps.laneTitle !== this.props.laneTitle && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  override render() {
+    if (!this.state.error) {
+      return this.props.children;
+    }
+
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "grid",
+          placeItems: "center",
+          padding: 24,
+          background: "var(--overlay-explorer-preview-bg)",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 520,
+            borderRadius: 18,
+            border:
+              "1px solid color-mix(in srgb, var(--overlay-danger) 38%, transparent)",
+            background:
+              "color-mix(in srgb, var(--overlay-danger) 16%, transparent)",
+            padding: 18,
+            color: "var(--overlay-text-primary)",
+          }}
+        >
+          <div style={{ fontSize: 15, fontWeight: 700 }}>
+            {this.props.laneTitle} threw while rendering
+          </div>
+          <pre
+            style={{
+              marginTop: 12,
+              padding: 12,
+              borderRadius: 12,
+              background: "var(--overlay-bg-card-hover)",
+              color: "var(--overlay-danger)",
+              whiteSpace: "pre-wrap",
+              fontSize: 12,
+              lineHeight: 1.5,
+            }}
+          >
+            {this.state.error}
+          </pre>
+        </div>
+      </div>
+    );
+  }
+}
+
 // ─── Resizable Preview Panel ──────────────────────────────────────────────────
 
 function PreviewPanel({
@@ -3946,6 +4075,13 @@ function PreviewPanel({
     ExplorerPreviewWildcardWorkflowTab[]
   >([]);
   const currentViewModeRef = useRef(viewMode);
+  const previewPluginZoom = useSettingsStore(
+    (state) => state.settings.appearance.appZoom ?? 1,
+  );
+  const [previewPluginHostSize, setPreviewPluginHostSize] = useState({
+    width: 0,
+    height: 0,
+  });
   const [pdfPageInputValue, setPdfPageInputValue] = useState("1");
   const [textPreviewCursor, setTextPreviewCursor] =
     useState<EditorCursorPosition>({
@@ -3992,6 +4128,39 @@ function PreviewPanel({
   useEffect(() => {
     setCopiedPath(null);
   }, [preview.path]);
+
+  useEffect(() => {
+    const hostElement = previewContentHostRef.current;
+    if (!hostElement) {
+      return;
+    }
+
+    const syncHostSize = () => {
+      const nextWidth = Math.max(Math.round(hostElement.clientWidth), 0);
+      const nextHeight = Math.max(Math.round(hostElement.clientHeight), 0);
+      setPreviewPluginHostSize((current) => {
+        if (
+          current.width === nextWidth &&
+          current.height === nextHeight
+        ) {
+          return current;
+        }
+        return {
+          width: nextWidth,
+          height: nextHeight,
+        };
+      });
+    };
+
+    syncHostSize();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(syncHostSize);
+    observer.observe(hostElement);
+    return () => observer.disconnect();
+  }, [previewContentHostRef]);
 
   useEffect(() => {
     setTextPreviewCursor({ lineNumber: 1, column: 1 });
@@ -4082,9 +4251,33 @@ function PreviewPanel({
   const isSpreadsheetPreview = preview.type === "spreadsheet";
   const isVideoPreview = preview.type === "video";
   const isAudioPreview = preview.type === "audio";
+  const isPluginPreview = preview.type === "plugin";
   const isEditableImagePreview =
     preview.type === "image" &&
     isEditableImagePreviewExtension(preview.extension);
+  const pluginPreviewHostContext = useMemo(
+    () =>
+      buildPreviewPluginHostContext(
+        previewPluginHostSize.width,
+        previewPluginHostSize.height,
+        previewPluginZoom,
+      ),
+    [
+      previewPluginHostSize.height,
+      previewPluginHostSize.width,
+      previewPluginZoom,
+    ],
+  );
+  const pluginPreviewRuntimeBridge = useMemo(
+    () =>
+      createPluginPreviewRuntimeBridge(
+        preview.type === "plugin" ? preview.lane.runtimeId : null,
+      ),
+    [preview],
+  );
+  const ActivePluginPreviewComponent = isPluginPreview
+    ? preview.lane.component
+    : null;
   const pdfPageCount = isPdfPreview
     ? (pdfWorkbenchChromeState?.pageCount ?? preview.document.pageCount)
     : 0;
@@ -4198,11 +4391,14 @@ function PreviewPanel({
     isShaderPreview ||
     isSpreadsheetPreview ||
     isEditableImagePreview ||
+    (isPluginPreview && preview.lane.capabilities.editable) ||
     effectiveWildcardWorkflowTabs.length > 0;
   const previewSupportsEditableWorkflowTabs =
-    !previewBackedByArchiveVirtual ||
-    preview.type === "text" ||
-    preview.type === "shader";
+    isPluginPreview
+      ? preview.lane.capabilities.editable && !previewBackedByArchiveVirtual
+      : !previewBackedByArchiveVirtual ||
+        preview.type === "text" ||
+        preview.type === "shader";
   const previewWorkflowTabs = useMemo(
     () =>
       buildExplorerPreviewWorkflowTabs({
@@ -5446,6 +5642,39 @@ function PreviewPanel({
               extension={preview.extension}
               onRefreshPreviewEntry={onRefreshPreviewEntry}
             />
+          )}
+          {preview.type === "plugin" && ActivePluginPreviewComponent && (
+            <PreviewPluginErrorBoundary
+              laneTitle={`${preview.lane.pluginName}: ${preview.lane.title}`}
+            >
+              <ActivePluginPreviewComponent
+                appearance={getPreviewPluginAppearance(appearance)}
+                host={pluginPreviewHostContext}
+                lane={preview.lane}
+                file={{
+                  path: preview.path,
+                  resolvedPath: previewResolvedPath,
+                  name: preview.name,
+                  extension: preview.extension,
+                  size: preview.size,
+                  assetUrl: preview.assetUrl,
+                  isDirectory: preview.isDirectory,
+                }}
+                runtime={pluginPreviewRuntimeBridge}
+                viewMode={
+                  previewBackedByArchiveVirtual ? "preview" : viewMode
+                }
+                workflowTabId={activePreviewWorkflowTab.id}
+                previewBackedByArchiveVirtual={previewBackedByArchiveVirtual}
+                onRegisterWorkflowTabs={handleWildcardWorkflowTabsChange}
+                onRegisterContextMenuRegistration={
+                  handlePreviewContextMenuRegistrationChange
+                }
+                onRegisterCloseGuard={onRegisterCloseGuard}
+                onRefreshPreviewEntry={onRefreshPreviewEntry}
+                onViewModeChange={onViewModeChange}
+              />
+            </PreviewPluginErrorBoundary>
           )}
           {preview.type === "shader" && (
             <ExplorerShaderWorkbench
@@ -7882,6 +8111,7 @@ interface FileExplorerProps {
   actions?: LoadedExplorerAction[];
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
+  pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   layoutMode?: ExplorerLayoutMode;
   defaultModeProfileId?: ExplorerModeProfileId | null;
   instanceId?: ExplorerInstanceId;
@@ -7968,6 +8198,7 @@ export function FileExplorer({
   actions = [],
   pluginActions = [],
   pluginContextMenuItems = [],
+  pluginPreviewLanes = [],
   layoutMode = "full",
   defaultModeProfileId = null,
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
@@ -8006,6 +8237,8 @@ export function FileExplorer({
     isCloudPath: isCloudExplorerPath,
     listLocation: listExplorerLocation,
     listLocationUncached: listExplorerLocationUncached,
+    bootstrapPolicySession: bootstrapExplorerPolicySession,
+    navigatePolicySession: navigateExplorerPolicySession,
     measureEntrySizes: measureExplorerEntrySizes,
     openArchive: openExplorerArchive,
     openPath: openExplorerPath,
@@ -8015,6 +8248,7 @@ export function FileExplorer({
     readFileBase64: readExplorerFileBase64,
     readTextFile: readExplorerTextFile,
     renamePath: renameExplorerPath,
+    resolveEntryOpenWithPolicy: resolveExplorerEntryOpenWithPolicy,
     revealPath: revealExplorerPath,
     restoreRecentTrashAction: restoreExplorerTrashAction,
     showPathProperties: showExplorerPathProperties,
@@ -8353,6 +8587,11 @@ export function FileExplorer({
     [instanceId],
   );
   const initialSessionPathRef = useRef(initialSession.currentPath.trim());
+  const initialExplorerPolicySessionRef = useRef<ExplorerPolicySessionSnapshot>({
+    currentPath: initialSession.currentPath,
+    history: [...initialSession.history],
+    historyIdx: initialSession.historyIdx,
+  });
   const actionsPaneAutoOpenedForCustomizeRef = useRef(false);
   const [currentPath, setCurrentPath] = useState(
     () => initialSession.currentPath,
@@ -9726,9 +9965,139 @@ export function FileExplorer({
     );
   }, []);
 
+  const syncExplorerPolicySession = useCallback(
+    async (snapshot: ExplorerPolicySessionSnapshot) => {
+      await bootstrapExplorerPolicySession({
+        sessionId: instanceId,
+        session: {
+          currentPath: snapshot.currentPath,
+          history: [...snapshot.history],
+          historyIdx: snapshot.historyIdx,
+        },
+      });
+    },
+    [bootstrapExplorerPolicySession, instanceId],
+  );
+
+  const commitExplorerPolicyNavigationResult = useCallback(
+    (args: {
+      snapshot: ExplorerPolicySessionSnapshot;
+      listing: ExplorerPolicyLocationListing | null;
+      isHome: boolean;
+      startedAt: number;
+    }) => {
+      const { snapshot, listing, isHome, startedAt } = args;
+      pendingNavigationPathRef.current = null;
+      pendingNavigationHistoryRef.current = null;
+      pendingNavigationHistoryIdxRef.current = null;
+      historyRef.current = snapshot.history;
+      historyIdxRef.current = snapshot.historyIdx;
+      setCurrentPath(snapshot.currentPath);
+      setHistory(snapshot.history);
+      setHistoryIdx(snapshot.historyIdx);
+      setSelected(new Set());
+      setSelectionModeActive(false);
+      setSearch("");
+      setSearchResults([]);
+      setSemanticSearchSourcePath(null);
+      setSemanticSearchDiagnostics(null);
+      setSearchLoading(false);
+
+      if (isHome) {
+        setEntries([]);
+        setEntrySizeLoadingPaths(new Set());
+        setLocationBreadcrumbs([{ label: "Home", path: EXPLORER_HOME_PATH }]);
+        setLocationParentPath(null);
+        resetExplorerViewport();
+        recordExplorerMetric({
+          metricId: "explorer_navigation",
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            entryCount: 0,
+            pathDepth: 1,
+            showHidden,
+            success: true,
+          },
+        });
+        void listExplorerHomeUsage()
+          .then((snapshot) => {
+            if (isExplorerMountedRef.current) {
+              setHomeUsageSnapshot(snapshot);
+            }
+          })
+          .catch(() => {});
+        return;
+      }
+
+      if (!listing) {
+        setEntries([]);
+        setLocationBreadcrumbs([]);
+        setLocationParentPath(null);
+        recordExplorerMetric({
+          metricId: "explorer_navigation",
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            entryCount: 0,
+            pathDepth: snapshot.currentPath
+              .split(/[\\/]/)
+              .filter(Boolean).length,
+            showHidden,
+            success: false,
+          },
+        });
+        setError("Explorer policy navigation returned no listing payload.");
+        return;
+      }
+
+      storeExplorerCachedLocation({
+        path: listing.path,
+        showHidden,
+        listing,
+      });
+      const seededThumbnailMap = buildSeededExplorerThumbnailMap(listing.entries);
+      setEntries(listing.entries);
+      setEntryThumbnailMap(seededThumbnailMap);
+      setEntrySizeLoadingPaths(new Set());
+      setEntryThumbnailLoadingPaths(new Set());
+      setVideoHoverThumbnailLoadingPaths(new Set());
+      setHoveredVideoThumbnailPath(null);
+      setLocationBreadcrumbs(listing.breadcrumbs);
+      setLocationParentPath(listing.parentPath);
+      resetExplorerViewport();
+      if (
+        homeSettings.usageTrackingEnabled &&
+        isExplorerTrackableFolderPath(snapshot.currentPath)
+      ) {
+        void recordExplorerHomeUsage(snapshot.currentPath)
+          .then((snapshot) => {
+            if (isExplorerMountedRef.current) {
+              setHomeUsageSnapshot(snapshot);
+            }
+          })
+          .catch(() => {});
+      }
+      recordExplorerMetric({
+        metricId: "explorer_navigation",
+        durationMs: getExplorerPerformanceNow() - startedAt,
+        metadata: {
+          entryCount: listing.entries.length,
+          pathDepth: listing.breadcrumbs.length,
+          showHidden,
+          success: true,
+        },
+      });
+    },
+    [
+      homeSettings.usageTrackingEnabled,
+      recordExplorerMetric,
+      resetExplorerViewport,
+      showHidden,
+    ],
+  );
+
   // ── Navigate ──
   const navigate = useCallback(
-    async (path: string, push = true) => {
+    async (path: string, push = true, historyIndex: number | null = null) => {
       if (!isExplorerMountedRef.current) {
         return;
       }
@@ -9749,7 +10118,7 @@ export function FileExplorer({
         : historyRef.current;
       const nextHistoryIdx = push
         ? historyIdxRef.current + 1
-        : historyIdxRef.current;
+        : historyIndex ?? historyIdxRef.current;
 
       pendingNavigationPathRef.current = normalizedPath;
       pendingNavigationHistoryRef.current = nextHistory;
@@ -9759,104 +10128,22 @@ export function FileExplorer({
       setAddressDraft("");
       setError(null);
       setLoading(true);
-      if (isExplorerHomePath(normalizedPath)) {
-        pendingNavigationPathRef.current = null;
-        pendingNavigationHistoryRef.current = null;
-        pendingNavigationHistoryIdxRef.current = null;
-        historyRef.current = nextHistory;
-        historyIdxRef.current = nextHistoryIdx;
-        setCurrentPath(EXPLORER_HOME_PATH);
-        setHistory(nextHistory);
-        setHistoryIdx(nextHistoryIdx);
-        setSelected(new Set());
-        setSelectionModeActive(false);
-        setSearch("");
-        setSearchResults([]);
-        setSemanticSearchSourcePath(null);
-        setSemanticSearchDiagnostics(null);
-        setSearchLoading(false);
-        setEntries([]);
-        setEntrySizeLoadingPaths(new Set());
-        setLocationBreadcrumbs([{ label: "Home", path: EXPLORER_HOME_PATH }]);
-        setLocationParentPath(null);
-        resetExplorerViewport();
-        setLoading(false);
-        recordExplorerMetric({
-          metricId: "explorer_navigation",
-          durationMs: getExplorerPerformanceNow() - startedAt,
-          metadata: {
-            entryCount: 0,
-            pathDepth: 1,
-            showHidden,
-            success: true,
-          },
-        });
-        void listExplorerHomeUsage()
-          .then((snapshot) => {
-            if (isExplorerMountedRef.current) {
-              setHomeUsageSnapshot(snapshot);
-            }
-          })
-          .catch(() => {});
-        return;
-      }
       try {
-        const nextListing = await loadCachedExplorerLocation({
+        const navigationResult = await navigateExplorerPolicySession({
+          sessionId: instanceId,
           path: normalizedPath,
+          pushHistory: push,
+          historyIndex,
           showHidden,
-          listLocation: listExplorerLocation,
         });
-        const seededThumbnailMap = buildSeededExplorerThumbnailMap(
-          nextListing.entries,
-        );
         if (!isActiveDirectoryLoadRequest()) {
           return;
         }
-        pendingNavigationPathRef.current = null;
-        pendingNavigationHistoryRef.current = null;
-        pendingNavigationHistoryIdxRef.current = null;
-        historyRef.current = nextHistory;
-        historyIdxRef.current = nextHistoryIdx;
-        setCurrentPath(normalizedPath);
-        setHistory(nextHistory);
-        setHistoryIdx(nextHistoryIdx);
-        setSelected(new Set());
-        setSelectionModeActive(false);
-        setSearch("");
-        setSearchResults([]);
-        setSemanticSearchSourcePath(null);
-        setSemanticSearchDiagnostics(null);
-        setSearchLoading(false);
-        setEntries(nextListing.entries);
-        setEntryThumbnailMap(seededThumbnailMap);
-        setEntrySizeLoadingPaths(new Set());
-        setEntryThumbnailLoadingPaths(new Set());
-        setVideoHoverThumbnailLoadingPaths(new Set());
-        setHoveredVideoThumbnailPath(null);
-        setLocationBreadcrumbs(nextListing.breadcrumbs);
-        setLocationParentPath(nextListing.parentPath);
-        resetExplorerViewport();
-        if (
-          homeSettings.usageTrackingEnabled &&
-          isExplorerTrackableFolderPath(normalizedPath)
-        ) {
-          void recordExplorerHomeUsage(normalizedPath)
-            .then((snapshot) => {
-              if (isExplorerMountedRef.current) {
-                setHomeUsageSnapshot(snapshot);
-              }
-            })
-            .catch(() => {});
-        }
-        recordExplorerMetric({
-          metricId: "explorer_navigation",
-          durationMs: getExplorerPerformanceNow() - startedAt,
-          metadata: {
-            entryCount: nextListing.entries.length,
-            pathDepth: nextListing.breadcrumbs.length,
-            showHidden,
-            success: true,
-          },
+        commitExplorerPolicyNavigationResult({
+          snapshot: navigationResult.snapshot,
+          listing: navigationResult.listing ?? null,
+          isHome: navigationResult.isHome,
+          startedAt,
         });
       } catch (e) {
         if (!isActiveDirectoryLoadRequest()) {
@@ -9883,14 +10170,20 @@ export function FileExplorer({
       }
     },
     [
+      commitExplorerPolicyNavigationResult,
       clearPendingFolderActivationPrime,
-      homeSettings.usageTrackingEnabled,
-      listExplorerLocation,
+      instanceId,
+      navigateExplorerPolicySession,
       recordExplorerMetric,
-      resetExplorerViewport,
       showHidden,
     ],
   );
+
+  useEffect(() => {
+    void syncExplorerPolicySession(initialExplorerPolicySessionRef.current).catch(
+      () => {},
+    );
+  }, [syncExplorerPolicySession]);
 
   useEffect(() => {
     historyRef.current = history;
@@ -9981,6 +10274,11 @@ export function FileExplorer({
       setCurrentPath("");
       setHistory([]);
       setHistoryIdx(-1);
+      void syncExplorerPolicySession({
+        currentPath: "",
+        history: [],
+        historyIdx: -1,
+      }).catch(() => {});
       updateExplorerSessionForInstance(instanceId, {
         currentPath: "",
         history: [],
@@ -10630,14 +10928,12 @@ export function FileExplorer({
 
   const goBack = useCallback(() => {
     if (historyIdx > 0) {
-      setHistoryIdx((i) => i - 1);
-      navigate(history[historyIdx - 1], false);
+      void navigate(history[historyIdx - 1], false, historyIdx - 1);
     }
   }, [history, historyIdx, navigate]);
   const goForward = useCallback(() => {
     if (historyIdx < history.length - 1) {
-      setHistoryIdx((i) => i + 1);
-      navigate(history[historyIdx + 1], false);
+      void navigate(history[historyIdx + 1], false, historyIdx + 1);
     }
   }, [history, historyIdx, navigate]);
   const goUp = () => {
@@ -13461,6 +13757,7 @@ export function FileExplorer({
       const resolvedPreview = resolveExplorerPreviewDescriptor(entry, {
         assetUrlResolver: getPreviewAssetUrl,
         documentPreviewKindResolver: getDocumentPreviewKind,
+        pluginPreviewLanes,
       });
       if (!isAdjacentPreviewPrefetchKind(resolvedPreview.kind)) {
         return;
@@ -13503,7 +13800,14 @@ export function FileExplorer({
         previewPrefetchInFlightRef.current.delete(previewCacheKey);
       }
     },
-    [isCloudExplorerPath, readExplorerFileBase64, readExplorerTextFile],
+    [
+      getDocumentPreviewKind,
+      getPreviewAssetUrl,
+      isCloudExplorerPath,
+      pluginPreviewLanes,
+      readExplorerFileBase64,
+      readExplorerTextFile,
+    ],
   );
 
   useEffect(() => {
@@ -13861,6 +14165,7 @@ export function FileExplorer({
       const resolvedPreview = resolveExplorerPreviewDescriptor(entry, {
         assetUrlResolver: getPreviewAssetUrl,
         documentPreviewKindResolver: getDocumentPreviewKind,
+        pluginPreviewLanes,
       });
       if (isFastSwitchPreviewKind(resolvedPreview.kind)) {
         beginDelayedPreviewLoadingIndicator(requestId);
@@ -14502,6 +14807,23 @@ export function FileExplorer({
           }
           return;
         }
+        case "plugin":
+          setDocumentViewMode("preview");
+          if (isCurrentPreviewRequest()) {
+            setPreview({
+              type: "plugin",
+              path: entry.path,
+              ...previewResolvedPathProps,
+              name: entry.name,
+              extension: resolvedPreview.extension,
+              size: entry.size,
+              assetUrl: resolvedPreview.assetUrl,
+              isDirectory: entry.is_dir,
+              lane: resolvedPreview.lane,
+            });
+            dismissPreviewLoadingIndicator();
+          }
+          return;
         case "unsupported": {
           if (isCurrentPreviewRequest()) {
             const fallback = buildExplorerUnsupportedPreviewFallback();
@@ -14538,6 +14860,7 @@ export function FileExplorer({
       runtimePlatform,
       setDocumentViewMode,
       previewLocked,
+      pluginPreviewLanes,
     ],
   );
 
@@ -14780,48 +15103,60 @@ export function FileExplorer({
       clearPendingFolderActivationPrime();
       void playSoundEffect("explorer-open-entry");
 
-      if (entry.is_dir) {
-        navigate(entry.path);
-        return;
-      }
+      try {
+        const openIntent = await resolveExplorerEntryOpenWithPolicy({
+          sessionId: instanceId,
+          entry,
+          previewEnabled,
+          compactDock: isCompactDock,
+          showHidden,
+        });
+        const focusTarget = getSearchFocusTarget(entry);
 
-      if (isExplorerArchiveEntry(entry)) {
-        const archiveNavigationPath =
-          await resolveExplorerArchiveNavigationPath(entry);
-        if (archiveNavigationPath) {
-          await navigate(archiveNavigationPath);
+        if (openIntent.effect === "navigate") {
+          const targetPath = openIntent.targetPath?.trim();
+          if (targetPath) {
+            await navigate(targetPath);
+            return;
+          }
+          if (entry.is_dir) {
+            await navigate(entry.path);
+            return;
+          }
+          if (isExplorerArchiveEntry(entry)) {
+            const archiveNavigationPath =
+              await resolveExplorerArchiveNavigationPath(entry);
+            if (archiveNavigationPath) {
+              await navigate(archiveNavigationPath);
+            }
+          }
+          return;
         }
-        return;
-      }
 
-      const focusTarget = getSearchFocusTarget(entry);
-      const canInlinePreview = previewEnabled && !isCompactDock;
-      const entryExtension = getEntryExtension(entry);
-      const resolvedOpenPath = isExplorerArchiveVirtualPath(entry.path)
-        ? await materializeArchiveVirtualEntry(
-            entry.path,
-            false,
-            "stageTemporary",
-          )
-        : entry.path;
+        if (openIntent.effect === "preview") {
+          await previewEntry(entry, focusTarget, "explicit");
+          return;
+        }
 
-      if (canInlinePreview && !isExecutableBinaryExtension(entryExtension)) {
-        await previewEntry(entry, focusTarget, "explicit");
-        return;
-      }
-
-      if (isExecutableBinaryExtension(entryExtension)) {
+        const targetPath = openIntent.targetPath?.trim() || entry.path;
+        const resolvedOpenPath =
+          openIntent.requiresArchiveMaterialize ||
+          isExplorerArchiveVirtualPath(targetPath)
+            ? await materializeArchiveVirtualEntry(
+                targetPath,
+                false,
+                "stageTemporary",
+              )
+            : targetPath;
         await openExplorerPath(resolvedOpenPath).catch((e) =>
           setError(String(e)),
         );
-        return;
+      } catch (e) {
+        setError(String(e));
       }
-
-      await openExplorerPath(resolvedOpenPath).catch((e) =>
-        setError(String(e)),
-      );
     },
     [
+      instanceId,
       clearPendingFolderActivationPrime,
       getSearchFocusTarget,
       isCompactDock,
@@ -14830,7 +15165,9 @@ export function FileExplorer({
       openExplorerPath,
       previewEnabled,
       previewEntry,
+      resolveExplorerEntryOpenWithPolicy,
       resolveExplorerArchiveNavigationPath,
+      showHidden,
     ],
   );
 
