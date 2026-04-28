@@ -559,8 +559,10 @@ import {
   FileExplorer,
   invalidateExplorerResultCaches,
 } from "../components/FileExplorer";
+import type { LoadedExplorerAction } from "../config/actionPacks";
 import type { OverlayPluginPreviewLaneContribution } from "../config/pluginContributions";
 import { EXPLORER_CANONICAL_LAYOUT_ID } from "../config/explorerLayouts";
+import { toExplorerActionChromeControlId } from "../config/explorerCustomizeCatalog";
 import { invalidateExplorerThumbnailArtifactRuntimeCache } from "../runtime/explorerThumbnailArtifactRuntime";
 import { EXPLORER_PREVIEW_WIDTH_BOUNDS } from "../config/explorerShellLayouts";
 import {
@@ -712,6 +714,40 @@ const ENTRIES = [
     is_symlink: false,
   },
 ] as const;
+
+const sampleExplorerAction: LoadedExplorerAction = {
+  id: "workspace.sample-action",
+  actionId: "sample-action",
+  packId: "workspace-pack",
+  packName: "Workspace Pack",
+  version: 1,
+  title: "Sample Workspace Action",
+  description: "A sample action for customize drag tests.",
+  tags: [],
+  directoryPath: "/actions/workspace-pack/sample-action",
+  manifestPath: "/actions/workspace-pack/sample-action/action.json",
+  sourceKind: "action-pack-directory",
+  sourceLabel: "Actions",
+  sourceBadgeLabel: "ACTION",
+  contexts: ["background", "entry", "multi-select"],
+  appliesTo: "any",
+  selection: {
+    minCount: 0,
+    allowFiles: true,
+    allowDirectories: true,
+    extensions: [],
+  },
+  execution: {
+    runner: "shell",
+    entry: "echo",
+    args: ["hello"],
+    env: {},
+  },
+  presentation: {
+    outputTarget: "silent",
+  },
+  warnings: [],
+};
 
 function cloneMockExplorerPolicySessionSnapshot(snapshot: {
   currentPath: string;
@@ -909,6 +945,7 @@ function resetOverlayTermStorage(storage: Storage) {
 
 function renderExplorer(
   options: {
+    actions?: LoadedExplorerAction[];
     appearance?: ReturnType<typeof resolveOverlayAppearance>;
     chromeControlSurface?: "toolbar" | "topbar";
     layoutMode?: "full" | "dock";
@@ -932,6 +969,7 @@ function renderExplorer(
           textMuted: appearance.theme.palette.textMuted,
         }}
         appearance={appearance}
+        actions={options.actions}
         chromeControlSurface={options.chromeControlSurface}
         layoutMode={options.layoutMode}
         pluginPreviewLanes={options.pluginPreviewLanes}
@@ -984,20 +1022,6 @@ function expectChromeControlButtonOrder(
     ).toBeGreaterThan(previousIndex);
     previousIndex = nextIndex;
   }
-}
-
-function getChromeControlLiveButton(controlId: string) {
-  const control = getChromeControl(controlId);
-  if (!control) {
-    throw new Error(`${controlId} control not found`);
-  }
-  const button = control.querySelector(
-    '[data-explorer-customize-live-control="true"], button[title]',
-  ) as HTMLButtonElement | null;
-  if (!button) {
-    throw new Error(`${controlId} live button not found`);
-  }
-  return button;
 }
 
 function getExplorerViewport(anchorText: string) {
@@ -1098,6 +1122,51 @@ function getExplorerActionsPane() {
     throw new Error("Explorer actions pane not found");
   }
   return pane;
+}
+
+async function openExplorerLayoutSwitcherCommand() {
+  act(() => {
+    window.dispatchEvent(
+      new CustomEvent("greeblefs:open-explorer-layout-switcher"),
+    );
+  });
+  return screen.findByRole("dialog", { name: /explorer layout switcher/i });
+}
+
+async function openExplorerCustomizeCommand() {
+  act(() => {
+    window.dispatchEvent(
+      new CustomEvent("greeblefs:open-explorer-customize"),
+    );
+  });
+  await waitFor(() => {
+    expect(useExplorerStore.getState().chromeEditSession).not.toBeNull();
+    expect(queryExplorerActionsPane()).not.toBeNull();
+  });
+}
+
+function mockElementRect(
+  element: Element | null | undefined,
+  rect: Pick<DOMRect, "left" | "top" | "width" | "height">,
+) {
+  if (!(element instanceof HTMLElement)) {
+    throw new Error("Expected element for rect mock");
+  }
+  const resolvedRect = {
+    x: rect.left,
+    y: rect.top,
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+    right: rect.left + rect.width,
+    bottom: rect.top + rect.height,
+    toJSON: () => ({}),
+  } as DOMRect;
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => resolvedRect,
+  });
 }
 
 function getPreviewCloseButton() {
@@ -1271,6 +1340,8 @@ describe("FileExplorer view modes", () => {
     resetOverlayTermStorage(window.localStorage);
     useSettingsStore.getState().resetToDefaults();
     useSettingsStore.getState().updateExplorer({ defaultPath: REPO_ROOT });
+    useExplorerStore.getState().closeChromeEditSession();
+    useExplorerStore.getState().setChromeHotkeyCaptureControl(null);
     useExplorerStore.getState().resetSession();
     useExplorerStore.getState().setPropertiesPanel(null);
     useExplorerStore
@@ -1586,6 +1657,21 @@ describe("FileExplorer view modes", () => {
                 stderr: "",
               },
             };
+          case "action_execute":
+            return {
+              packId: "workspace-pack",
+              actionId: "sample-action",
+              actionTitle: "Sample Workspace Action",
+              success: true,
+              exitCode: 0,
+              timedOut: false,
+              runtimeUsed: "shell",
+              commandDisplay: "echo hello",
+              workingDirectory: REPO_ROOT,
+              stdout: "",
+              stderr: "",
+              launchedInNativeTerminal: false,
+            };
           default:
             throw new Error(`Unexpected invoke command: ${command}`);
         }
@@ -1605,33 +1691,60 @@ describe("FileExplorer view modes", () => {
     );
   });
 
-  it("lets the user switch explorer modes from the toolbar without mutating the live session shell preset or sources visibility", async () => {
+  it("does not hardcode customize and layout controls into default explorer chrome", async () => {
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    expect(getChromeControl("customizeModeToggle")).toBeNull();
+    expect(getChromeControl("shellLayout")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /cycle explorer layouts/i }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: /open explorer layout preset menu/i,
+      }),
+    ).toBeNull();
+  });
+
+  it("opens customize mode and the layout switcher from command entry points", async () => {
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const layoutSwitcher = await openExplorerLayoutSwitcherCommand();
+    expect(layoutSwitcher).toHaveTextContent("Explorer Layout Switcher");
+
+    await openExplorerCustomizeCommand();
+
+    expect(
+      screen.queryByRole("dialog", { name: /explorer layout switcher/i }),
+    ).toBeNull();
+    expect(getExplorerActionsPane()).toHaveTextContent("Explorer Customize");
+    fireEvent.click(
+      within(getExplorerActionsPane()).getByRole("button", { name: "Done" }),
+    );
+  });
+
+  it("lets the user switch explorer layouts from the command switcher", async () => {
     renderExplorer();
     await screen.findByText("alpha");
 
     expect(screen.getByRole("button", { name: /manage/i })).toBeTruthy();
 
+    const layoutSwitcher = await openExplorerLayoutSwitcherCommand();
     fireEvent.click(
-      screen.getByRole("button", { name: /open explorer layout preset menu/i }),
+      within(layoutSwitcher).getByRole("button", { name: /Focus/i }),
     );
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /focus/i }));
 
     await waitFor(() => {
       expect(
-        useSettingsStore.getState().settings.explorer
-          .modeProfileOverridesByThemeId.operator,
+        useSettingsStore.getState().settings.explorer.activeExplorerLayoutId,
       ).toBe("focus");
       expect(useExplorerStore.getState().session.shellLayoutId).toBe(
         "balanced",
       );
-      expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
-      expect(
-        screen.getByRole("button", { name: /manage/i }),
-      ).toBeInTheDocument();
-      expect(getChromeControl("railClose")).not.toBeNull();
-      expect(
-        screen.queryByRole("button", { name: /open sources panel/i }),
-      ).toBeNull();
+      expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
+      expect(screen.queryByRole("button", { name: /manage/i })).toBeNull();
     });
   });
 
@@ -1639,10 +1752,10 @@ describe("FileExplorer view modes", () => {
     renderExplorer();
     await screen.findByText("alpha");
 
+    const layoutSwitcher = await openExplorerLayoutSwitcherCommand();
     fireEvent.click(
-      screen.getByRole("button", { name: /open explorer layout preset menu/i }),
+      within(layoutSwitcher).getByRole("button", { name: /Focus/i }),
     );
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /focus/i }));
 
     await waitFor(() => {
       expect(
@@ -1672,15 +1785,14 @@ describe("FileExplorer view modes", () => {
     renderExplorer();
     await screen.findByText("alpha");
 
+    const layoutSwitcher = await openExplorerLayoutSwitcherCommand();
     fireEvent.click(
-      screen.getByRole("button", { name: /open explorer layout preset menu/i }),
+      within(layoutSwitcher).getByRole("button", { name: /Inspector/i }),
     );
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /inspector/i }));
 
     await waitFor(() => {
       expect(
-        useSettingsStore.getState().settings.explorer
-          .modeProfileOverridesByThemeId.operator,
+        useSettingsStore.getState().settings.explorer.activeExplorerLayoutId,
       ).toBe("inspector");
       expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
       expect(
@@ -1694,8 +1806,7 @@ describe("FileExplorer view modes", () => {
 
     await waitFor(() => {
       expect(
-        useSettingsStore.getState().settings.explorer
-          .modeProfileOverridesByThemeId.operator,
+        useSettingsStore.getState().settings.explorer.activeExplorerLayoutId,
       ).toBe("inspector");
       expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
       expect(screen.queryByRole("button", { name: /manage/i })).toBeNull();
@@ -1710,8 +1821,7 @@ describe("FileExplorer view modes", () => {
 
     await waitFor(() => {
       expect(
-        useSettingsStore.getState().settings.explorer
-          .modeProfileOverridesByThemeId.operator,
+        useSettingsStore.getState().settings.explorer.activeExplorerLayoutId,
       ).toBe("inspector");
       expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
       expect(
@@ -1723,25 +1833,20 @@ describe("FileExplorer view modes", () => {
     });
   });
 
-  it("cycles explorer layout presets directly from the toolbar control face", async () => {
+  it("keeps shell layout as an optional catalog control instead of default chrome", async () => {
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /cycle explorer layouts/i }),
-    );
+    await openExplorerCustomizeCommand();
 
-    await waitFor(() => {
-      expect(
-        useSettingsStore.getState().settings.explorer.activeExplorerLayoutId,
-      ).toBe("navigator");
-      expect(
-        useSettingsStore.getState().settings.explorer.followThemeExplorerLayout,
-      ).toBe(false);
-      expect(
-        screen.getByRole("button", { name: /cycle explorer layouts/i }),
-      ).toHaveAccessibleName(/current: navigator/i);
-    });
+    expect(
+      within(getExplorerActionsPane()).getByRole("button", {
+        name: /shell layout/i,
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(getExplorerActionsPane()).getByRole("button", { name: "Done" }),
+    );
   });
 
   it("resets layout customization to canonical from the menu", async () => {
@@ -1762,9 +1867,7 @@ describe("FileExplorer view modes", () => {
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /open explorer layout preset menu/i }),
-    );
+    await openExplorerLayoutSwitcherCommand();
     fireEvent.click(
       screen.getByRole("button", { name: /reset layout ui to canonical/i }),
     );
@@ -1780,33 +1883,162 @@ describe("FileExplorer view modes", () => {
         useSettingsStore.getState().settings.explorer.chromeLayoutOverridesByThemeId,
       ).toEqual({});
       expect(
-        screen.queryByRole("menu", {
-          name: /explorer layout menu/i,
+        screen.queryByRole("dialog", {
+          name: /explorer layout switcher/i,
         }),
       ).toBeNull();
     });
   });
 
-  it("keeps the fixed explorer layout preset menu above the preview stack", async () => {
+  it("opens the explorer layout switcher as a popup instead of a fixed utility strip", async () => {
     renderExplorer();
     await screen.findByText("alpha");
 
-    const menuButton = screen.getByRole("button", {
-      name: /open explorer layout preset menu/i,
-    });
-    fireEvent.click(menuButton);
+    const layoutSwitcher = await openExplorerLayoutSwitcherCommand();
 
-    const fixedUtilityStrip = menuButton.closest(
-      "[data-overlay-explorer-plane='fixed-utility-strip']",
+    const switcherOverlay = document.querySelector(
+      "[data-overlay-explorer-layout-command-menu='true']",
     ) as HTMLDivElement | null;
-    const menu = screen.getByRole("menu", {
-      name: /explorer layout menu/i,
-    }) as HTMLDivElement;
 
-    expect(fixedUtilityStrip).not.toBeNull();
-    expect(fixedUtilityStrip?.style.position).toBe("relative");
-    expect(fixedUtilityStrip?.style.zIndex).toBe("24");
-    expect(menu.style.zIndex).toBe("60");
+    expect(layoutSwitcher).toBeInTheDocument();
+    expect(
+      document.querySelector("[data-overlay-explorer-plane='fixed-utility-strip']"),
+    ).toBeNull();
+    expect(switcherOverlay?.style.position).toBe("fixed");
+    expect(switcherOverlay?.style.zIndex).toBe("10030");
+    fireEvent.click(within(layoutSwitcher).getByRole("button", { name: "Close" }));
+  });
+
+  it("shows a portal drag overlay when an authored action is dragged before hovering a target", async () => {
+    renderExplorer({ actions: [sampleExplorerAction] });
+    await screen.findByText("alpha");
+
+    fireEvent.click(
+      within(getChromeControl("actionsPaneToggle") as HTMLElement).getByRole(
+        "button",
+      ),
+    );
+
+    const actionButton = await within(getExplorerActionsPane()).findByRole(
+      "button",
+      { name: /sample workspace action/i },
+    );
+    fireEvent.pointerDown(actionButton, {
+      button: 0,
+      pointerId: 81,
+      clientX: 24,
+      clientY: 24,
+    });
+
+    const overlay = await screen.findByTestId(
+      "explorer-customize-drag-overlay",
+    );
+    expect(overlay).toHaveTextContent("Sample Workspace Action");
+    expect(overlay).toHaveTextContent("Choose a surface");
+
+    finishExplorerPointerDrag({ pointerId: 81, endX: 24, endY: 24 });
+    fireEvent.click(
+      within(getExplorerActionsPane()).getByRole("button", { name: "Done" }),
+    );
+  });
+
+  it("drags authored actions into chrome and persists through chromeLayoutOverridesByThemeId", async () => {
+    renderExplorer({ actions: [sampleExplorerAction] });
+    await screen.findByText("alpha");
+
+    fireEvent.click(
+      within(getChromeControl("actionsPaneToggle") as HTMLElement).getByRole(
+        "button",
+      ),
+    );
+
+    const actionButton = await within(getExplorerActionsPane()).findByRole(
+      "button",
+      { name: /sample workspace action/i },
+    );
+    const toolbarSurface = document.querySelector(
+      "[data-explorer-customize-surface-id='explorerToolbar']",
+    );
+    const toolbarRow = toolbarSurface?.querySelector(
+      "[data-explorer-customize-row-id]",
+    );
+    const toolbarZone = toolbarSurface?.querySelector(
+      "[data-explorer-customize-zone-id='primaryStart']",
+    );
+    mockElementRect(toolbarSurface, {
+      left: 0,
+      top: 0,
+      width: 760,
+      height: 64,
+    });
+    mockElementRect(toolbarRow, {
+      left: 0,
+      top: 0,
+      width: 760,
+      height: 64,
+    });
+    mockElementRect(toolbarZone, {
+      left: 280,
+      top: 0,
+      width: 460,
+      height: 64,
+    });
+
+    const originalElementFromPoint = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => toolbarSurface),
+    });
+
+    try {
+      const dragGesture = startExplorerPointerDrag(actionButton, {
+        pointerId: 82,
+        startX: 24,
+        startY: 24,
+        endX: 420,
+        endY: 28,
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId("explorer-customize-drag-overlay")).toHaveTextContent(
+          "Drop on Toolbar",
+        );
+      });
+      finishExplorerPointerDrag(dragGesture);
+    } finally {
+      if (originalElementFromPoint) {
+        Object.defineProperty(document, "elementFromPoint", {
+          configurable: true,
+          value: originalElementFromPoint,
+        });
+      } else {
+        Reflect.deleteProperty(document, "elementFromPoint");
+      }
+    }
+
+    const actionControlId = toExplorerActionChromeControlId(
+      sampleExplorerAction.id,
+    );
+    await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer
+          .chromeLayoutOverridesByThemeId.operator?.default?.entries,
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            controlId: actionControlId,
+            surfaceId: "explorerToolbar",
+            zone: "primaryStart",
+            hidden: false,
+          }),
+        ]),
+      );
+    });
+    expect(
+      vi.mocked(invoke).mock.calls.some(([command]) => command === "action_execute"),
+    ).toBe(false);
+    fireEvent.click(
+      within(getExplorerActionsPane()).getByRole("button", { name: "Done" }),
+    );
   });
 
   it("moves toolbar controls when the active theme changes the default mode profile", async () => {
@@ -1906,7 +2138,11 @@ describe("FileExplorer view modes", () => {
       "primaryEnd",
     );
 
-    fireEvent.click(getChromeControlLiveButton("customizeModeToggle"));
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("greeblefs:toggle-explorer-customize"),
+      );
+    });
 
     await waitFor(() => {
       expect(useExplorerStore.getState().chromeEditSession).toBeNull();

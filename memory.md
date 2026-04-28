@@ -3,6 +3,17 @@
 - The standard explorer scroll path now treats viewport scroll events as urgent virtual-window commits. Native scroll still stores the exact offset in `explorerViewportScrollTopRef`, but `FileExplorer.tsx` no longer defers the visible row window behind `startTransition` on real scroll events.
 - Durable performance rule:
   - do not put real `OverlayScrollArea.onViewportScroll` events back behind RAF/transition coalescing if it creates a blank leading region during fast wheel/trackpad movement.
+
+# 2026-04-28 - ZBrush-Style Explorer Customize Pipeline Polish
+
+- The explorer customize lane is now command-driven rather than relying on permanent default chrome controls. The Customize/Layout controls remain catalog-placeable, but tests assert they are not welded into the shipped default surface.
+- Chrome move/drop commits now persist immediately through `settings.explorer.chromeLayoutOverridesByThemeId` using the same override snapshot lane as explicit save/reset flows. Keep future placement, move, remove, and resize commits on this settings-backed lane instead of inventing local component state.
+- Normal-mode toolbar rows no longer inherit the large canonical unified-header authoring height. The 88px unified canvas is only used when the toolbar is acting as the active customize surface; normal explorer chrome falls back to the toolbar band metric so the header does not become an oversized empty slab.
+- Command entry points covered by tests: `greeblefs:open-explorer-customize`, `greeblefs:toggle-explorer-customize`, and `greeblefs:open-explorer-layout-switcher`. The actions pane drag path covers visible portal feedback before hovering a target and authored action placement into chrome.
+- Current validation signal:
+  - passed: focused customize pipeline tests in `src/test/fileExplorer.viewModes.test.tsx`
+  - passed: filtered TypeScript check for touched files returned no diagnostics
+  - blocked: the full requested `fileExplorer.viewModes` validation set still has unrelated existing failures around preview-terminal mounting, multi-pane source rail expectations, ctrl-wheel view-mode stepping, and deep-scrolled icon-grid navigation. Re-check those lanes separately before treating the full explorer suite as green.
   - coalescing is still useful for non-visible/background work, but the visible window must stay in lock-step with the browser viewport.
 - Regression coverage:
   - the 100k-entry virtual-surface test now waits for the large-list compute path, verifies bounded mounted DOM, simulates a deep list scroll, and asserts the deep visible row appears while the top row unmounts.

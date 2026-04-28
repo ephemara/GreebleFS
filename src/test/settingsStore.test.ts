@@ -186,6 +186,8 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.explorerMoveSelectionLeft).toBe('ArrowLeft');
     expect(settings.keybindings.explorerMoveSelectionRight).toBe('ArrowRight');
     expect(settings.keybindings.toggleExplorerSources).toBe('Ctrl+B');
+    expect(settings.keybindings.toggleExplorerCustomize).toBe('Ctrl+Alt+C');
+    expect(settings.keybindings.openExplorerLayoutSwitcher).toBe('Ctrl+Alt+E');
     expect(settings.keybindings.cycleCollectionPreviewMode).toBe('Ctrl+Alt+V');
     expect(settings.keybindings.cycleCollectionPreviewModeReverse).toBe('Ctrl+Alt+Shift+V');
     expect(settings.keybindings.copySelection).toBe('Ctrl+C');

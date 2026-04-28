@@ -19123,6 +19123,20 @@ export function FileExplorer({
     },
     [getRegisteredExplorerChromeSurfaces],
   );
+  const persistExplorerChromeOverrideSnapshot = useCallback(
+    (
+      themeId: string,
+      layoutId: ExplorerChromeLayoutId,
+      override: ExplorerChromeOverrideSnapshot,
+    ) => {
+      if (override.entries.length > 0) {
+        setExplorerChromeLayoutOverride(themeId, layoutId, override);
+        return;
+      }
+      clearExplorerChromeLayoutOverride(themeId, layoutId);
+    },
+    [clearExplorerChromeLayoutOverride, setExplorerChromeLayoutOverride],
+  );
   const updateExplorerChromeEditEntry = useCallback(
     (
       controlId: ExplorerChromeControlId,
@@ -19195,15 +19209,22 @@ export function FileExplorer({
         liveChromeEditSession.draftOverride.entries.filter(
           (entry) => entry.hidden && entry.controlId !== args.controlId,
         );
-      updateChromeEditDraft({
+      const nextOverride = {
         entries: [...movedSnapshot.entries, ...hiddenEntries],
-      });
+      };
+      updateChromeEditDraft(nextOverride);
+      persistExplorerChromeOverrideSnapshot(
+        liveChromeEditSession.themeId,
+        liveChromeEditSession.layoutId,
+        nextOverride,
+      );
       setChromeEditSelectedControl(args.controlId);
       setChromeEditHighlightedDropTarget(null);
     },
     [
       getLiveExplorerChromeEditSession,
       getRegisteredExplorerChromeSurfaces,
+      persistExplorerChromeOverrideSnapshot,
       setChromeEditHighlightedDropTarget,
       setChromeEditSelectedControl,
       updateChromeEditDraft,
@@ -19272,15 +19293,22 @@ export function FileExplorer({
       const hiddenEntries = liveChromeEditSession.draftOverride.entries.filter(
         (entry) => entry.hidden && entry.controlId !== args.controlId,
       );
-      updateChromeEditDraft({
+      const nextOverride = {
         entries: [...nextEntries, ...hiddenEntries],
-      });
+      };
+      updateChromeEditDraft(nextOverride);
+      persistExplorerChromeOverrideSnapshot(
+        liveChromeEditSession.themeId,
+        liveChromeEditSession.layoutId,
+        nextOverride,
+      );
       setChromeEditSelectedControl(args.controlId);
       setChromeEditHighlightedDropTarget(null);
     },
     [
       getLiveExplorerChromeEditSession,
       getRegisteredExplorerChromeSurfaces,
+      persistExplorerChromeOverrideSnapshot,
       setChromeEditHighlightedDropTarget,
       setChromeEditSelectedControl,
       updateChromeEditDraft,
@@ -19975,6 +20003,8 @@ export function FileExplorer({
       ],
     );
   const beginExplorerChromeCustomization = useCallback(() => {
+    setShowExplorerLayoutCommandMenu(false);
+    setShowModeProfileMenu(false);
     openChromeEditSession({
       themeId: explorerChromeThemeId,
       layoutId: effectiveChromeLayoutId,
@@ -21451,11 +21481,13 @@ export function FileExplorer({
     () => ({
       ...toolbarPrimaryRowStyle,
       minHeight:
+        activeChromeEditSession &&
         resolvedUnifiedHeaderSurfaceId === "explorerToolbar"
           ? resolvedUnifiedHeaderHeightPx
           : resolvedExplorerToolbarHeightPx,
     }),
     [
+      activeChromeEditSession,
       resolvedExplorerToolbarHeightPx,
       resolvedUnifiedHeaderHeightPx,
       resolvedUnifiedHeaderSurfaceId,
@@ -21466,11 +21498,13 @@ export function FileExplorer({
     () => ({
       ...toolbarSecondaryRowStyle,
       minHeight:
+        activeChromeEditSession &&
         resolvedUnifiedHeaderSurfaceId === "explorerToolbar"
           ? resolvedUnifiedHeaderHeightPx
           : resolvedExplorerToolbarHeightPx,
     }),
     [
+      activeChromeEditSession,
       resolvedExplorerToolbarHeightPx,
       resolvedUnifiedHeaderHeightPx,
       resolvedUnifiedHeaderSurfaceId,
