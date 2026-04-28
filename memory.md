@@ -1,3 +1,15 @@
+# 2026-04-28 - Explorer Virtual Scroll Updates Are Coalesced
+
+- Standard explorer list/grid scrolling now keeps native scroll position exact in `explorerViewportScrollTopRef`, but coalesces React virtual-window state updates through `requestAnimationFrame` and `startTransition`.
+- Big scroll jumps, viewport resyncs, and programmatic anchor restores still commit immediately so zoom anchoring and deep scrollbar jumps do not wait behind the frame throttle.
+- Overscan is intentionally larger and viewport-scaled (`3x` viewport rows, with minimums of 32 list rows and 14 grid rows) to hide the "loading in" feeling during fast trackpad/wheel movement while keeping mounted DOM bounded.
+- Durable performance rule:
+  - do not route raw per-pixel scroll directly into parent `FileExplorer` state again. The exact value belongs in refs/native scroll; React state should represent the bounded virtual row window only.
+  - if scrolling still feels heavy, the next architectural step is extracting the standard list/grid virtual surface into a memoized child so scroll-window changes no longer reconcile the entire explorer shell.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "huge folder|final item reachable|dedicated explorer viewport|deep-grid viewport anchored" --reporter=dot --testTimeout=20000`
+  - touched-file TypeScript sweep returned no diagnostics.
+
 # 2026-04-28 - Layout Customization Reset Now Uses One Explorer Chrome Truth Lane
 
 - The ZBrush-style explorer layout customization stack now has one primary persisted customization lane: `settings.explorer.chromeLayoutOverridesByThemeId`.

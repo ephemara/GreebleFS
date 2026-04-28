@@ -629,11 +629,12 @@ const LazyMonacoEditor = React.lazy(async () => {
 
 const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
-const EXPLORER_LIST_OVERSCAN = 18;
-const EXPLORER_GRID_OVERSCAN_ROWS = 6;
+const EXPLORER_LIST_OVERSCAN = 32;
+const EXPLORER_GRID_OVERSCAN_ROWS = 14;
 const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_WIDTH = 1280;
 const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_HEIGHT = 720;
 const EXPLORER_VIRTUAL_SCROLL_STATE_GRANULARITY_PX = 48;
+const EXPLORER_VIRTUAL_SCROLL_IMMEDIATE_JUMP_PX = 720;
 const EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY = 1 / 480;
 const EXPLORER_LAYOUT_WHEEL_MAX_DELTA = 0.18;
 const EXPLORER_LAYOUT_WHEEL_LINE_DELTA_PX = 18;
@@ -9166,6 +9167,9 @@ export function FileExplorer({
   const [explorerViewportNode, setExplorerViewportNode] =
     useState<HTMLDivElement | null>(null);
   const explorerViewportScrollTopRef = useRef(0);
+  const explorerViewportCommittedVirtualScrollTopRef = useRef(0);
+  const explorerViewportPendingVirtualScrollTopRef = useRef<number | null>(null);
+  const explorerViewportScrollFrameRef = useRef<number | null>(null);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const archiveActionsMenuAnchorRef = useRef<HTMLDivElement>(null);
@@ -9289,15 +9293,76 @@ export function FileExplorer({
     [],
   );
 
-  const commitExplorerViewportScrollTop = useCallback((scrollTop: number) => {
-    explorerViewportScrollTopRef.current = scrollTop;
-    const virtualScrollTop = quantizeExplorerVirtualScrollTop(scrollTop);
-    setExplorerViewportMetrics((current) =>
-      current.scrollTop === virtualScrollTop
-        ? current
-        : { ...current, scrollTop: virtualScrollTop },
-    );
-  }, []);
+  const applyExplorerViewportVirtualScrollTop = useCallback(
+    (virtualScrollTop: number) => {
+      explorerViewportCommittedVirtualScrollTopRef.current = virtualScrollTop;
+      startTransition(() => {
+        setExplorerViewportMetrics((current) =>
+          current.scrollTop === virtualScrollTop
+            ? current
+            : { ...current, scrollTop: virtualScrollTop },
+        );
+      });
+    },
+    [],
+  );
+
+  const flushExplorerViewportVirtualScrollTop = useCallback(() => {
+    explorerViewportScrollFrameRef.current = null;
+    const pendingVirtualScrollTop =
+      explorerViewportPendingVirtualScrollTopRef.current;
+    explorerViewportPendingVirtualScrollTopRef.current = null;
+    if (pendingVirtualScrollTop == null) {
+      return;
+    }
+    applyExplorerViewportVirtualScrollTop(pendingVirtualScrollTop);
+  }, [applyExplorerViewportVirtualScrollTop]);
+
+  const commitExplorerViewportScrollTop = useCallback(
+    (scrollTop: number, options?: { immediate?: boolean }) => {
+      explorerViewportScrollTopRef.current = scrollTop;
+
+      const virtualScrollTop = quantizeExplorerVirtualScrollTop(scrollTop);
+      const committedVirtualScrollTop =
+        explorerViewportCommittedVirtualScrollTopRef.current;
+      if (
+        virtualScrollTop === committedVirtualScrollTop &&
+        explorerViewportPendingVirtualScrollTopRef.current == null
+      ) {
+        return;
+      }
+
+      const viewportJumpThreshold = Math.max(
+        explorerViewportRef.current?.clientHeight ?? 0,
+        EXPLORER_VIRTUAL_SCROLL_IMMEDIATE_JUMP_PX,
+      );
+      const shouldCommitImmediately =
+        options?.immediate === true ||
+        Math.abs(virtualScrollTop - committedVirtualScrollTop) >=
+          viewportJumpThreshold ||
+        typeof window.requestAnimationFrame !== "function";
+
+      explorerViewportPendingVirtualScrollTopRef.current = virtualScrollTop;
+      if (shouldCommitImmediately) {
+        if (explorerViewportScrollFrameRef.current != null) {
+          window.cancelAnimationFrame(explorerViewportScrollFrameRef.current);
+          explorerViewportScrollFrameRef.current = null;
+        }
+        flushExplorerViewportVirtualScrollTop();
+        return;
+      }
+
+      if (explorerViewportScrollFrameRef.current == null) {
+        explorerViewportScrollFrameRef.current = window.requestAnimationFrame(
+          flushExplorerViewportVirtualScrollTop,
+        );
+      }
+    },
+    [
+      applyExplorerViewportVirtualScrollTop,
+      flushExplorerViewportVirtualScrollTop,
+    ],
+  );
 
   const syncExplorerViewportScrollTop = useCallback(
     (viewport?: HTMLDivElement | null) => {
@@ -9305,7 +9370,7 @@ export function FileExplorer({
       if (!target) {
         return;
       }
-      commitExplorerViewportScrollTop(target.scrollTop);
+      commitExplorerViewportScrollTop(target.scrollTop, { immediate: true });
     },
     [commitExplorerViewportScrollTop],
   );
@@ -9323,9 +9388,20 @@ export function FileExplorer({
       if (viewport && Math.abs(viewport.scrollTop - scrollTop) > 0.5) {
         viewport.scrollTop = scrollTop;
       }
-      commitExplorerViewportScrollTop(scrollTop);
+      commitExplorerViewportScrollTop(scrollTop, { immediate: true });
     },
     [commitExplorerViewportScrollTop],
+  );
+
+  useEffect(
+    () => () => {
+      if (explorerViewportScrollFrameRef.current != null) {
+        window.cancelAnimationFrame(explorerViewportScrollFrameRef.current);
+        explorerViewportScrollFrameRef.current = null;
+      }
+      explorerViewportPendingVirtualScrollTopRef.current = null;
+    },
+    [],
   );
 
   const clearExplorerInternalDragAutoScroll = useCallback(() => {
@@ -24930,7 +25006,7 @@ export function FileExplorer({
       );
       const overscanRows = Math.max(
         EXPLORER_GRID_OVERSCAN_ROWS,
-        Math.ceil(viewportRows * 1.25),
+        Math.ceil(viewportRows * 3),
       );
       const startRow = Math.max(
         0,
@@ -24976,7 +25052,7 @@ export function FileExplorer({
     );
     const overscanRows = Math.max(
       EXPLORER_LIST_OVERSCAN,
-      Math.ceil(viewportRows * 1.5),
+      Math.ceil(viewportRows * 3),
     );
     const startRow = Math.max(
       0,
