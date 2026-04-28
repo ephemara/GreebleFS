@@ -313,6 +313,84 @@ export const settingsSectionCatalog = [
 
 export type SettingsSectionKey = typeof settingsSectionCatalog[number]['key'];
 
+export type SettingsSectionCategoryKey =
+  | 'start'
+  | 'core-features'
+  | 'pipelines'
+  | 'connectivity'
+  | 'appearance'
+  | 'motion-rendering'
+  | 'authoring';
+
+export interface SettingsSectionCategoryEntry {
+  key: SettingsSectionCategoryKey;
+  label: string;
+  description: string;
+  order: number;
+  sectionKeys: readonly SettingsSectionKey[];
+}
+
+export const settingsSectionCategoryCatalog = [
+  {
+    key: 'start',
+    label: 'Start',
+    description: 'Orientation, startup behavior, and global controls.',
+    order: 10,
+    sectionKeys: ['overview', 'system', 'hotkeys'],
+  },
+  {
+    key: 'core-features',
+    label: 'Core Features',
+    description: 'Main workbench, explorer, terminal, and menu workflows.',
+    order: 20,
+    sectionKeys: ['terminal', 'explorer', 'context-menus', 'home', 'layouts'],
+  },
+  {
+    key: 'pipelines',
+    label: 'Pipelines',
+    description: 'Model, audio, capture, and runtime feature pipelines.',
+    order: 30,
+    sectionKeys: ['models', 'audio', 'screenshots'],
+  },
+  {
+    key: 'connectivity',
+    label: 'Connectivity',
+    description: 'Cloud and mobile delivery surfaces.',
+    order: 40,
+    sectionKeys: ['cloud', 'mobile'],
+  },
+  {
+    key: 'appearance',
+    label: 'Appearance',
+    description: 'Theme, visual identity, shell chrome, icons, and wallpaper.',
+    order: 50,
+    sectionKeys: [
+      'appearance',
+      'appearance-packs',
+      'theme-recipes',
+      'theme-engines',
+      'shell-renderers',
+      'top-bars',
+      'icons',
+      'wallpapers',
+    ],
+  },
+  {
+    key: 'motion-rendering',
+    label: 'Motion & Rendering',
+    description: 'Shaders, animation, interaction motion, and layout physics.',
+    order: 60,
+    sectionKeys: ['shaders', 'animations', 'interaction-motion', 'layout-dynamics'],
+  },
+  {
+    key: 'authoring',
+    label: 'Authoring',
+    description: 'Raw theme and package editing surfaces.',
+    order: 70,
+    sectionKeys: ['theme-json'],
+  },
+] as const satisfies readonly SettingsSectionCategoryEntry[];
+
 const SETTINGS_SECTION_LOOKUP = new Map(
   settingsSectionCatalog.map(entry => [entry.key, entry] as const),
 );

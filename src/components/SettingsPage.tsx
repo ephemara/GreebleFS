@@ -215,6 +215,7 @@ import {
   type ManagedContentDirectoryId,
 } from "../config/appContentDirectories";
 import {
+  settingsSectionCategoryCatalog,
   settingsSectionCatalog,
   type SettingsPageArchetype,
   type SettingsSectionKey,
@@ -238,7 +239,9 @@ import { OverlayActionButton } from "./OverlayActionButton";
 import { SettingsShell } from "./settings/SettingsShell";
 import {
   InfoBubble,
+  SettingsActionButton,
   SettingsRowDescriptionProvider,
+  SettingsStatusPill,
   useSettingsRowDescriptionsVisible,
 } from "./settings/SettingsPrimitives";
 import { AppearanceSettingsSection } from "./settings/sections/AppearanceSettingsSection";
@@ -355,6 +358,7 @@ import {
 import {
   useSettingsStore,
   resolveSystemPresentationState,
+  type IntegratedTerminalHost,
   type TerminalWindowMode,
 } from "../store/settingsStore";
 import { useExplorerStore } from "../store/explorerStore";
@@ -2519,7 +2523,7 @@ function SettingsRailButton({
       type="button"
       onClick={onClick}
       title={subtitle}
-      className="w-full rounded px-2 py-2 text-left transition-colors"
+      className="group w-full rounded px-2 py-1.5 text-left transition-colors"
       {...motionBinding?.motionDataAttributes}
       onPointerEnter={motionBinding?.onPointerEnter}
       onPointerLeave={motionBinding?.onPointerLeave}
@@ -2532,13 +2536,13 @@ function SettingsRailButton({
           ? "var(--overlay-workbench-chrome-button-active-bg)"
           : "var(--overlay-workbench-settings-rail-bg)",
         color: text,
-        boxShadow: active ? `inset 0 0 0 1px ${accent}22` : "none",
+        boxShadow: active ? `inset 2px 0 0 ${accent}, inset 0 0 0 1px ${accent}22` : "none",
         ...motionBinding?.motionStyle,
       }}
     >
       <div className="flex items-center gap-2">
         <div
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded"
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
           style={{
             background: active
               ? "var(--overlay-workbench-chrome-button-active-bg)"
@@ -2550,11 +2554,11 @@ function SettingsRailButton({
           {icon}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.08em]">
+          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.08em]">
             {label}
           </div>
           <div
-            className="mt-0.5 text-[10px] leading-4"
+            className="truncate text-[9px] leading-3"
             style={{ color: active ? accent : muted }}
           >
             {summary}
@@ -7653,9 +7657,32 @@ export function SettingsPage({
       }),
     [settingsSectionContext],
   );
+  const settingsSectionsByKey = useMemo(
+    () => new Map(settingsSections.map((section) => [section.key, section] as const)),
+    [settingsSections],
+  );
+  const settingsSectionGroups = useMemo(
+    () =>
+      settingsSectionCategoryCatalog
+        .slice()
+        .sort((left, right) => left.order - right.order)
+        .map((category) => ({
+          key: category.key,
+          label: category.label,
+          description: category.description,
+          sections: category.sectionKeys
+            .map((sectionKey) => settingsSectionsByKey.get(sectionKey))
+            .filter((section): section is NonNullable<typeof section> => section != null),
+        }))
+        .filter((category) => category.sections.length > 0),
+    [settingsSectionsByKey],
+  );
   const activeSectionMeta =
     settingsSections.find((section) => section.key === activeSection) ??
     settingsSections[0];
+  const activeSectionCategory = settingsSectionGroups.find((category) =>
+    category.sections.some((section) => section.key === activeSectionMeta.key),
+  );
   const activeSectionShellHints =
     activeSectionMeta.shell as SettingsSectionShellHints | undefined;
   const ActiveHomePackSettingsComponent =
@@ -8755,16 +8782,16 @@ export function SettingsPage({
         }
         rail={
           <>
-            <div className="border-b px-4 py-3" style={{ borderColor: border }}>
+            <div className="border-b px-3 py-2.5" style={{ borderColor: border }}>
               <div
-                className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]"
+                className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.18em]"
                 style={{ color: muted }}
               >
                 <SlidersHorizontal size={12} />
                 <span>Workbench Settings</span>
               </div>
               <h1
-                className="mt-1.5 text-[16px] font-semibold leading-none"
+                className="mt-1 text-[14px] font-semibold leading-none"
                 style={{ color: text }}
               >
                 Settings
@@ -8773,26 +8800,40 @@ export function SettingsPage({
 
             <OverlayScrollArea
               style={{ flex: 1, minHeight: 0 }}
-              viewportStyle={{ padding: "8px 10px 10px 10px" }}
+              viewportStyle={{ padding: "7px 8px 10px 8px" }}
             >
-              <div className="space-y-2">
-                {settingsSections.map((section) => (
-                  <SettingsRailButton
-                    key={section.key}
-                    active={activeSection === section.key}
-                    icon={section.icon}
-                    label={section.label}
-                    subtitle={section.subtitle}
-                    summary={section.summary}
-                    accent={accent}
-                    border={border}
-                    text={text}
-                    muted={muted}
-                    onClick={() => setActiveSection(section.key)}
-                    motionBinding={bindSettingsCardMotion(
-                      activeSection === section.key,
-                    )}
-                  />
+              <div className="space-y-3">
+                {settingsSectionGroups.map((category) => (
+                  <div key={category.key} data-settings-rail-category={category.label}>
+                    <div
+                      className="mb-1.5 flex items-center justify-between gap-2 px-1 text-[9px] font-semibold uppercase tracking-[0.16em]"
+                      title={category.description}
+                      style={{ color: muted }}
+                    >
+                      <span className="truncate">{category.label}</span>
+                      <span className="opacity-45">{category.sections.length}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {category.sections.map((section) => (
+                        <SettingsRailButton
+                          key={section.key}
+                          active={activeSection === section.key}
+                          icon={section.icon}
+                          label={section.label}
+                          subtitle={section.subtitle}
+                          summary={section.summary}
+                          accent={accent}
+                          border={border}
+                          text={text}
+                          muted={muted}
+                          onClick={() => setActiveSection(section.key)}
+                          motionBinding={bindSettingsCardMotion(
+                            activeSection === section.key,
+                          )}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </OverlayScrollArea>
@@ -8822,64 +8863,26 @@ export function SettingsPage({
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                <span
-                  className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                  style={{
-                    border:
-                      "1px solid var(--overlay-workbench-settings-badge-border)",
-                    color: muted,
-                    background: "var(--overlay-workbench-settings-badge-bg)",
-                  }}
-                >
+                <SettingsStatusPill style={{ color: muted }}>
+                  Group · {activeSectionCategory?.label ?? "General"}
+                </SettingsStatusPill>
+                <SettingsStatusPill style={{ color: muted }}>
                   Theme · {effectiveTheme.name}
-                </span>
-                <span
-                  className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                  style={{
-                    border:
-                      "1px solid var(--overlay-workbench-settings-badge-border)",
-                    color: muted,
-                    background: "var(--overlay-workbench-settings-badge-bg)",
-                  }}
-                >
+                </SettingsStatusPill>
+                <SettingsStatusPill style={{ color: muted }}>
                   Layout · {activeLayoutProfile.label}
-                </span>
-                <span
-                  className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                  style={{
-                    border:
-                      "1px solid var(--overlay-workbench-settings-badge-border)",
-                    color: muted,
-                    background: "var(--overlay-workbench-settings-badge-bg)",
-                  }}
-                >
+                </SettingsStatusPill>
+                <SettingsStatusPill style={{ color: muted }}>
                   Startup ·{" "}
                   {settings.system.launchAtStartup ? "Enabled" : "Disabled"}
-                </span>
-                <span
-                  className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                  style={{
-                    border:
-                      "1px solid var(--overlay-workbench-settings-badge-border)",
-                    color: muted,
-                    background: "var(--overlay-workbench-settings-badge-bg)",
-                  }}
-                >
+                </SettingsStatusPill>
+                <SettingsStatusPill style={{ color: muted }}>
                   Archetype · {activeSectionMeta.archetype}
-                </span>
-                <span
-                  className="hidden rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] xl:inline-flex"
-                  style={{
-                    border:
-                      "1px solid var(--overlay-workbench-settings-badge-border)",
-                    color: muted,
-                    background: "var(--overlay-workbench-settings-badge-bg)",
-                  }}
-                >
+                </SettingsStatusPill>
+                <SettingsStatusPill className="hidden xl:inline-flex" style={{ color: muted }}>
                   {activeSectionMeta.summary}
-                </span>
-                <button
-                  type="button"
+                </SettingsStatusPill>
+                <SettingsActionButton
                   onClick={() =>
                     setShowAllDescriptions(
                       activeSection,
@@ -8892,37 +8895,20 @@ export function SettingsPage({
                       ? "Hide descriptions (use the (i) bubbles instead)"
                       : "Show every row description inline for this section"
                   }
-                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
-                  style={{
-                    border: `1px solid ${
-                      showAllDescriptionsForActiveSection
-                        ? `${accent}88`
-                        : "var(--overlay-workbench-settings-badge-border)"
-                    }`,
-                    color: text,
-                    background: showAllDescriptionsForActiveSection
-                      ? `${accent}1f`
-                      : "var(--overlay-workbench-settings-badge-bg)",
-                  }}
+                  active={showAllDescriptionsForActiveSection}
+                  accent={accent}
                 >
                   <SlidersHorizontal size={12} />
                   {showAllDescriptionsForActiveSection
                     ? "Hide Descriptions"
                     : "Show Descriptions"}
-                </button>
-                <button
+                </SettingsActionButton>
+                <SettingsActionButton
                   onClick={() => resetToDefaults()}
-                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
-                  style={{
-                    border:
-                      "1px solid var(--overlay-workbench-settings-badge-border)",
-                    color: text,
-                    background: "var(--overlay-workbench-settings-badge-bg)",
-                  }}
                 >
                   <RotateCcw size={12} />
                   Reset Defaults
-                </button>
+                </SettingsActionButton>
               </div>
             </div>
           </div>
@@ -13493,6 +13479,29 @@ export function SettingsPage({
                     }
                   />
                 </label>
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                  Integrated Terminal Host
+                </label>
+                <select
+                  aria-label="Integrated Terminal Host"
+                  value={settings.terminal.integratedHost}
+                  onChange={(event) =>
+                    updateTerminal({
+                      integratedHost: event.target.value as IntegratedTerminalHost,
+                    })
+                  }
+                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsSelectStyle}
+                >
+                  <option value="go-pty-panel">Go PTY Panel (default)</option>
+                  <option value="xterm">Xterm</option>
+                </select>
+                <p className="text-[11px] opacity-40">
+                  Go PTY Panel is the faster integrated path and falls back to xterm automatically if the Go runtime cannot boot or hits an unsupported terminal path. Xterm remains the compatibility host and still honors the workbench renderer setting.
+                </p>
               </div>
 
               <div className="space-y-1.5 md:col-span-2">

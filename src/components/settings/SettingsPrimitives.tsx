@@ -8,6 +8,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ButtonHTMLAttributes,
   type CSSProperties,
   type InputHTMLAttributes,
   type ReactElement,
@@ -376,6 +377,62 @@ export function SettingsActionStrip({
     >
       {children}
     </div>
+  );
+}
+
+export function SettingsStatusPill({
+  children,
+  active = false,
+  className = '',
+  style,
+}: {
+  children: ReactNode;
+  active?: boolean;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] ${className}`.trim()}
+      style={{
+        border: `1px solid ${active ? 'currentColor' : 'var(--overlay-workbench-settings-badge-border)'}`,
+        background: active ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-settings-badge-bg)',
+        ...style,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+export function SettingsActionButton({
+  children,
+  active = false,
+  accent,
+  className = '',
+  style,
+  ...buttonProps
+}: {
+  children: ReactNode;
+  active?: boolean;
+  accent?: string;
+  className?: string;
+  style?: CSSProperties;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'style' | 'children'>) {
+  return (
+    <button
+      type="button"
+      className={`inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors disabled:opacity-50 ${className}`.trim()}
+      style={{
+        border: `1px solid ${active && accent ? `${accent}88` : 'var(--overlay-workbench-settings-badge-border)'}`,
+        background: active && accent ? `${accent}1f` : 'var(--overlay-workbench-settings-badge-bg)',
+        color: 'var(--overlay-text-primary)',
+        ...style,
+      }}
+      {...buttonProps}
+    >
+      {children}
+    </button>
   );
 }
 

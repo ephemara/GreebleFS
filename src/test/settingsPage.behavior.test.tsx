@@ -901,36 +901,55 @@ describe('SettingsPage behavior', () => {
     expect(useSettingsStore.getState().settings.explorer.doubleClickEmptyToGoBack).toBe(false);
   });
 
-  it('prioritizes core settings ahead of appearance sections in the rail', () => {
+  it('organizes the settings rail into compact preference groups', () => {
     renderSettingsPage();
 
-    const orderedLabels = [
-      'Overview',
-      'System',
-      'Models',
-      'Terminal',
-      'Explorer',
-      'Home',
-      'Layouts',
-      'Hotkeys',
-      'Cloud',
-      'Screenshots',
-      'Audio',
+    const orderedCategories = [
+      'Start',
+      'Core Features',
+      'Pipelines',
+      'Connectivity',
       'Appearance',
-      'Appearance Packs',
-      'Theme Recipes',
-      'Theme Engines',
-      'Shell Renderers',
-      'Top Bars',
-      'Icons',
-      'Wallpapers',
-      'Shaders',
-      'Animations',
-      'Interaction Motion',
-      'Layout Dynamics',
-      'Theme JSON',
+      'Motion & Rendering',
+      'Authoring',
     ];
-    const orderedButtons = orderedLabels.map(findSectionButton);
+    const allCategoryNodes = Array.from(document.querySelectorAll('[data-settings-rail-category]')) as HTMLElement[];
+    const orderedCategoryNodes = orderedCategories.map(label => (
+      allCategoryNodes.find(node => node.getAttribute('data-settings-rail-category') === label) ?? null
+    ));
+
+    orderedCategoryNodes.forEach(node => expect(node).not.toBeNull());
+
+    for (let index = 0; index < orderedCategoryNodes.length - 1; index += 1) {
+      const currentCategoryNode = orderedCategoryNodes[index];
+      const nextCategoryNode = orderedCategoryNodes[index + 1];
+      expect(currentCategoryNode).not.toBeNull();
+      expect(nextCategoryNode).not.toBeNull();
+      expect(
+        (currentCategoryNode as HTMLElement).compareDocumentPosition(nextCategoryNode as Node)
+          & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+
+    const appearanceCategory = allCategoryNodes.find(node => node.getAttribute('data-settings-rail-category') === 'Appearance') ?? null;
+    expect(appearanceCategory).not.toBeNull();
+    expect(appearanceCategory).toContainElement(findSectionButton('Appearance'));
+    expect(appearanceCategory).toContainElement(findSectionButton('Top Bars'));
+    expect(appearanceCategory).toContainElement(findSectionButton('Icons'));
+
+    const pipelineCategory = allCategoryNodes.find(node => node.getAttribute('data-settings-rail-category') === 'Pipelines') ?? null;
+    expect(pipelineCategory).not.toBeNull();
+    expect(pipelineCategory).toContainElement(findSectionButton('Models'));
+    expect(pipelineCategory).toContainElement(findSectionButton('Audio'));
+
+    const orderedButtons = [
+      findSectionButton('System'),
+      findSectionButton('Terminal'),
+      findSectionButton('Explorer'),
+      findSectionButton('Appearance'),
+      findSectionButton('Shaders'),
+      findSectionButton('Theme JSON'),
+    ];
 
     for (let index = 0; index < orderedButtons.length - 1; index += 1) {
       expect(
