@@ -11,5 +11,6 @@ use (
 	./sdk/greeblefs-go
 	./builtin-runtimes/echo-sidecar
 	./builtin-runtimes/echo-command
+	./builtin-runtimes/explorer-policy-service
 	./builtin-runtimes/sample-panel
 )

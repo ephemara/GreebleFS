@@ -4,6 +4,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 
 const REPO_USR_MANIFEST_TEXT: &str = include_str!("../../usr/manifest.json");
 

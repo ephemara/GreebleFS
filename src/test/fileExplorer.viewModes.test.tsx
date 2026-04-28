@@ -19,6 +19,7 @@ const {
   previewTerminalMockState,
   spreadsheetWorkbenchMockState,
   shaderWorkbenchMockState,
+  explorerPolicyMockState,
 } = vi.hoisted(() => ({
   pdfPreviewMockState: {
     closeGuardResult: true,
@@ -47,11 +48,121 @@ const {
   shaderWorkbenchMockState: {
     lastSelectionLabel: "",
   },
+  explorerPolicyMockState: {
+    sessions: new Map<
+      string,
+      {
+        currentPath: string;
+        history: string[];
+        historyIdx: number;
+      }
+    >(),
+  },
 }));
 
 vi.mock("@/components/AppIcons", async () =>
   vi.importActual<typeof import("lucide-react")>("lucide-react"),
 );
+
+vi.mock("../runtime/explorerBackend", async () => {
+  const actual = await vi.importActual<typeof import("../runtime/explorerBackend")>(
+    "../runtime/explorerBackend",
+  );
+
+  return {
+    ...actual,
+    explorerBackendContract: {
+      ...actual.explorerBackendContract,
+      bootstrapPolicySession: async (request: {
+        sessionId: string;
+        session: {
+          currentPath: string;
+          history: string[];
+          historyIdx: number;
+        };
+      }) => {
+        const snapshot = cloneMockExplorerPolicySessionSnapshot(request.session);
+        explorerPolicyMockState.sessions.set(request.sessionId, snapshot);
+        return { snapshot };
+      },
+      navigatePolicySession: async (request: {
+        sessionId: string;
+        path: string;
+        pushHistory: boolean;
+        historyIndex?: number | null;
+        showHidden: boolean;
+      }) => {
+        const previous =
+          explorerPolicyMockState.sessions.get(request.sessionId) ??
+          createMockExplorerPolicySessionSnapshot(REPO_ROOT);
+        const nextHistory = request.pushHistory
+          ? [
+              ...previous.history.slice(0, previous.historyIdx + 1),
+              request.path,
+            ]
+          : [...previous.history];
+        const nextHistoryIdx = request.pushHistory
+          ? nextHistory.length - 1
+          : request.historyIndex ?? previous.historyIdx;
+        const snapshot = createMockExplorerPolicySessionSnapshot(
+          request.path,
+          nextHistory,
+          nextHistoryIdx,
+        );
+        explorerPolicyMockState.sessions.set(request.sessionId, snapshot);
+        const isHome = request.path === "greeblefs://home";
+        return {
+          snapshot,
+          listing: isHome
+            ? null
+            : await actual.explorerBackendContract.listLocation(
+                request.path,
+                request.showHidden,
+              ),
+          isHome,
+          clearSelection: true,
+        };
+      },
+      resolveEntryOpenWithPolicy: async (request: {
+        entry: {
+          path: string;
+          is_dir: boolean;
+          extension?: string;
+        };
+        previewEnabled: boolean;
+      }) => {
+        if (
+          request.entry.is_dir ||
+          isMockExplorerPolicyArchivePath(request.entry.path)
+        ) {
+          return {
+            effect: "navigate" as const,
+            targetPath: request.entry.path,
+            clearSelection: true,
+          };
+        }
+
+        if (
+          request.previewEnabled &&
+          shouldMockExplorerPolicyPreviewEntry(request.entry.extension)
+        ) {
+          return {
+            effect: "preview" as const,
+            targetPath: request.entry.path,
+            clearSelection: false,
+          };
+        }
+
+        return {
+          effect: "openPath" as const,
+          targetPath: request.entry.path,
+          requiresArchiveMaterialize: false,
+          clearSelection: false,
+        };
+      },
+    },
+  };
+});
 
 vi.mock("../components/ExplorerImageEditor", () => ({
   ExplorerImageEditor: ({
@@ -602,6 +713,41 @@ const ENTRIES = [
   },
 ] as const;
 
+function cloneMockExplorerPolicySessionSnapshot(snapshot: {
+  currentPath: string;
+  history: string[];
+  historyIdx: number;
+}) {
+  return {
+    currentPath: snapshot.currentPath,
+    history: [...snapshot.history],
+    historyIdx: snapshot.historyIdx,
+  };
+}
+
+function createMockExplorerPolicySessionSnapshot(
+  currentPath: string,
+  history: string[] = [currentPath],
+  historyIdx: number = Math.max(history.length - 1, 0),
+) {
+  return cloneMockExplorerPolicySessionSnapshot({
+    currentPath,
+    history,
+    historyIdx,
+  });
+}
+
+function isMockExplorerPolicyArchivePath(path: string) {
+  return /\.(zip|rar|7z|tar|gz|tgz|bz2|xz)$/i.test(path);
+}
+
+function shouldMockExplorerPolicyPreviewEntry(extension: string | undefined) {
+  if (!extension) {
+    return false;
+  }
+  return !/^(exe|bat|cmd|ps1|sh|appimage)$/i.test(extension);
+}
+
 function getMockEntryThumbnailKind(
   path: string | undefined,
 ): "image" | "code" | "shader" | "audio" | "video" {
@@ -1119,6 +1265,7 @@ describe("FileExplorer view modes", () => {
     previewTerminalMockState.lastProps = null;
     spreadsheetWorkbenchMockState.lastMode = "preview";
     shaderWorkbenchMockState.lastSelectionLabel = "";
+    explorerPolicyMockState.sessions.clear();
     vi.mocked(currentWindow.onDragDropEvent).mockClear();
     vi.mocked(currentWindow.scaleFactor).mockClear();
     resetOverlayTermStorage(window.localStorage);

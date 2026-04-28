@@ -14,6 +14,11 @@ import { commands, events, unwrapTauriResult } from "./tauriClient";
 import { readIpcBinaryBytes } from "./ipc";
 import { useExplorerStore } from "../store/explorerStore";
 import {
+  bootstrapExplorerPolicySession,
+  navigateExplorerPolicySession,
+  resolveExplorerEntryOpenWithPolicy,
+} from "./goExplorerPolicyService";
+import {
   type CloudAccountStatus,
   type CloudAccountSummary,
   type CloudAccountsSnapshot,
@@ -604,6 +609,9 @@ export type ExplorerBackendContract = {
   listArchiveDir: typeof listExplorerArchiveDir;
   listLocation: typeof listExplorerLocation;
   listLocationUncached: typeof listExplorerLocationUncached;
+  bootstrapPolicySession: typeof bootstrapExplorerPolicySession;
+  navigatePolicySession: typeof navigateExplorerPolicySession;
+  resolveEntryOpenWithPolicy: typeof resolveExplorerEntryOpenWithPolicy;
   getDrives: typeof getExplorerDrives;
   measureEntrySizes: typeof measureExplorerEntrySizes;
   calculateRecursiveSizes: typeof calculateExplorerRecursiveSizes;
@@ -1750,6 +1758,9 @@ export const explorerBackendContract: ExplorerBackendContract = {
   listArchiveDir: listExplorerArchiveDir,
   listLocation: listExplorerLocation,
   listLocationUncached: listExplorerLocationUncached,
+  bootstrapPolicySession: bootstrapExplorerPolicySession,
+  navigatePolicySession: navigateExplorerPolicySession,
+  resolveEntryOpenWithPolicy: resolveExplorerEntryOpenWithPolicy,
   getDrives: getExplorerDrives,
   measureEntrySizes: measureExplorerEntrySizes,
   calculateRecursiveSizes: calculateExplorerRecursiveSizes,

@@ -1,3 +1,34 @@
+# 2026-04-27 - Explorer Navigation Policy Now Starts Behind A Go Sidecar Host Bridge
+
+- GreebleFS now has the first real product-facing consumer of the universal Go runtime pipeline: a long-lived `explorer-policy-service` sidecar that owns part of the explorer application brain while Rust stays the source of truth for filesystem/search/task work.
+- Durable host-bridge rules after this pass:
+  - `src-go/sdk/greeblefs-go/ipc/protocol.go` and `src-go/sdk/greeblefs-go/runtime/sidecar.go` now speak nested `host-call` / `host-response` packets, not just one request / one response per action.
+  - `src-tauri/src/runtime_pipeline/sidecar.rs` must keep looping until it sees the final sidecar action result, because a sidecar may synchronously call back into the host one or more times mid-action.
+  - New host-call ids belong in `src-tauri/src/runtime_pipeline/commands.rs::dispatch_runtime_sidecar_host_call(...)`. Do not route permanent sidecar policy reads back through ad hoc React brokers.
+- Durable explorer-policy rules after this pass:
+  - `src-go/builtin-runtimes/explorer-policy-service/` is now the first-slice explorer policy lane. It owns:
+    - explorer session bootstrap/hydration
+    - navigation + history transitions
+    - open-entry preview-vs-open-vs-navigate decisions
+  - It does **not** own filesystem/search/task truth, layout dynamics, drag physics, resize hot loops, or pane/menu geometry. Those stay in Rust host seams or TS UI-local state.
+  - `src/runtime/goExplorerPolicyService.ts` is the only React-facing adapter for this lane. Future explorer policy work should extend that adapter instead of letting `FileExplorer.tsx` call `runtime_call` or raw sidecar runners directly.
+  - `src/runtime/explorerBackend.ts` is now the seam that composes host truth with Go policy. Keep truth-y commands there; keep policy actions behind the sidecar exports.
+- Durable `FileExplorer.tsx` migration rule:
+  - The current first slice moved `navigate(...)`, back/forward history stepping, initial policy bootstrap, and `openEntry(...)` policy resolution onto the Go service.
+  - React still renders listings, previews, selection visuals, and hot interaction state, but it should no longer be the long-term owner of navigation/open policy branches that the sidecar now resolves.
+  - If future work extends the policy lane, prefer moving another bounded intent/snapshot seam behind the service rather than mixing new orchestration back into the old local TS branches.
+- Durable test-harness rule:
+  - Node/JSDOM explorer suites that mount the real `FileExplorer` now need a deterministic policy boundary.
+  - `src/test/fileExplorer.viewModes.test.tsx` and `src/test/fileExplorer.searchTelemetry.test.tsx` now override only the three new `explorerBackendContract` policy methods while preserving the real backend adapter for everything else. That is the right test shape for future explorer UI suites.
+  - Keep the policy mock delegating listing hydration through the real `actual.explorerBackendContract.listLocation(...)` path when a test depends on deferred or mocked directory-load semantics; a canned listing breaks those timing-sensitive cases.
+- Validation that passed for this pass:
+  - `go test ./sdk/greeblefs-go/... ./builtin-runtimes/echo-sidecar ./builtin-runtimes/explorer-policy-service`
+  - `cargo test --manifest-path src-tauri/Cargo.toml --lib runtime_pipeline::`
+  - `bunx vitest run src/test/goExplorerPolicyService.test.ts src/test/goPanelHost.test.tsx src/test/goWorkbenchActions.test.ts src/test/fileExplorer.searchTelemetry.test.tsx --reporter=dot`
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "keeps folder icons closed during single-click navigation in icons-l view|keeps folder icons closed during single-click navigation in list view|restores the canonical explorer layout preset from the menu|commits the active chrome customize draft when the live customize toggle exits the mode" --reporter=dot`
+- Validation note:
+  - The giant `src/test/fileExplorer.viewModes.test.tsx` suite still carries unrelated current-branch expectation drift around older layout-preset state assertions. Treat that as separate explorer-layout fallout unless a failure points directly at the new Go policy seam.
+
 # 2026-04-27 - Explorer Preview Routing Is Now A Real Lane Registry, And Runtime Compiler Metadata Lives Behind Drivers
 
 - The preview/editor extensibility pass landed the first host-owned slice of the “plugin-driven preview engine” goal without turning the whole shell into plugin soup.

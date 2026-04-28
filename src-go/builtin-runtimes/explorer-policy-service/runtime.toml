@@ -1,0 +1,29 @@
+id = "explorer-policy-service"
+displayName = "Explorer Policy Service (Go)"
+language = "go"
+kind = "native-sidecar"
+compiler = "go-native"
+moduleDir = "."
+entry = "."
+
+[sidecar]
+transport = "stdio-json-lines"
+
+[[sidecar.actions]]
+id = "explorer.session.bootstrap"
+label = "Bootstrap Explorer Session"
+description = "Seeds or replaces one explorer session snapshot inside the Go explorer policy service."
+
+[[sidecar.actions]]
+id = "explorer.session.navigate"
+label = "Navigate Explorer Session"
+description = "Navigates one explorer session and returns the next snapshot plus resolved listing."
+
+[[sidecar.actions]]
+id = "explorer.entry.resolve_open"
+label = "Resolve Explorer Open"
+description = "Resolves whether an explorer entry should navigate, preview inline, or open through the host."
+
+[permissions]
+fsRead = true
+launchIntents = ["open-explorer"]

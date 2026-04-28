@@ -22,7 +22,8 @@ const runtimeID = "echo-sidecar"
 func main() {
 	server := greeblefsRuntime.NewSidecar()
 
-	server.RegisterAction("runtime.summary", func(ctx context.Context, payload json.RawMessage) (any, error) {
+	server.RegisterAction("runtime.summary", func(ctx context.Context, host *greeblefsRuntime.HostBridgeClient, payload json.RawMessage) (any, error) {
+		_ = host
 		return map[string]any{
 			"runtimeId":   runtimeID,
 			"language":    "go",
@@ -33,7 +34,8 @@ func main() {
 		}, nil
 	})
 
-	server.RegisterAction("echo", func(ctx context.Context, payload json.RawMessage) (any, error) {
+	server.RegisterAction("echo", func(ctx context.Context, host *greeblefsRuntime.HostBridgeClient, payload json.RawMessage) (any, error) {
+		_ = host
 		var anyPayload any
 		if len(payload) > 0 {
 			if err := json.Unmarshal(payload, &anyPayload); err != nil {
@@ -43,7 +45,8 @@ func main() {
 		return map[string]any{"echo": anyPayload}, nil
 	})
 
-	server.RegisterAction("now", func(ctx context.Context, payload json.RawMessage) (any, error) {
+	server.RegisterAction("now", func(ctx context.Context, host *greeblefsRuntime.HostBridgeClient, payload json.RawMessage) (any, error) {
+		_ = host
 		return map[string]any{"wallClock": time.Now().UTC().Format(time.RFC3339Nano)}, nil
 	})
 
