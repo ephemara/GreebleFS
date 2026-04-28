@@ -5723,3 +5723,18 @@
 - Validation:
   - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx src/test/settingsPage.shaders.test.tsx --reporter=dot`
   - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "SettingsPage.tsx|src/components/settings/|src/test/settingsPage.behavior.test.tsx|settingsNavigation.ts"` returned no matching errors
+
+## 2026-04-28 - Windows Tailscale DNS Access-Denied Health Noise No Longer Masquerades As A Mobile Share Failure
+
+- Windows Tailscale nodes can report `Health` entries like `Tailscale failed to set the DNS configuration of your device: Access is denied.` and a follow-up `Access is denied.` even while the node is connected, exposes a usable MagicDNS/cert domain, and can still mint the HTTPS certificate the mobile share needs.
+- Durable implementation shape:
+  - `src-tauri/src/tailscale_commands.rs` now centralizes preferred-host resolution for the mobile share (`certDomains -> dnsName -> tailscaleIpv4`) and reuses that same host selection for both share-target resolution and status classification.
+  - The same native file now suppresses the specific Windows DNS access-denied warning pair when the node is already connected and a usable tailnet route exists. Instead of surfacing that pair as the first-class `healthMessages` blocker, the status snapshot emits a non-blocking `diagnosticMessage` explaining that Windows blocked the local DNS override but the active tailnet route is still usable for mobile share.
+  - `src/test/settingsPage.behavior.test.tsx` now protects the operator-facing Settings surface so the Mobile section shows the explanatory note and `Health: no active warnings` instead of regressing back to the scary raw `Access is denied.` text.
+- Durable product notes:
+  - Treat this Windows DNS warning as local machine noise unless the node is actually disconnected or has no shareable tailnet host. It should not block or visually disqualify the Tailscale mobile-share path by itself.
+  - If a future agent needs to revisit Tailscale readiness, use the share-target reality first: connected backend plus a resolvable cert domain / DNS name / Tailscale IPv4. Do not promote raw `tailscale status --json` health strings to blocking product state without checking whether the actual share route still works.
+- Validation:
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
+  - note: `cargo test --manifest-path src-tauri/Cargo.toml tailscale_commands::tests -- --nocapture` compiled the crate and test binary but the test executable failed to launch in this workspace with Windows `STATUS_ENTRYPOINT_NOT_FOUND` before Rust tests could run.
+  - note: repo-wide TypeScript validation still has broad unrelated branch errors (`ExplorerSideRail`, `ExplorerImageCutoutSurface`, vendored `tiptap`, and other existing drift), so targeted Settings/Vitest verification could not be proven cleanly from the current workspace baseline even though the new settings regression case is present in `src/test/settingsPage.behavior.test.tsx`.
