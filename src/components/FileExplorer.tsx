@@ -301,7 +301,6 @@ import {
   type ExplorerPdfWorkbenchChromeState,
   type ExplorerPdfWorkbenchController,
 } from "./ExplorerPdfWorkbench";
-import { ExplorerSqlitePreview } from "./ExplorerSqlitePreview";
 import {
   type ExplorerBatchRenameMode,
   type ExplorerBatchRenamePreviewRow,
@@ -1232,12 +1231,6 @@ type PreviewState =
       name: string;
       source: string;
       extension: string;
-      size: number;
-    } & PreviewResolvedPathState)
-  | ({
-      type: "sqlite";
-      path: string;
-      name: string;
       size: number;
     } & PreviewResolvedPathState)
   | ({
@@ -5945,12 +5938,6 @@ function PreviewPanel({
               onRefreshPreviewEntry={onRefreshPreviewEntry}
               onRegisterCloseGuard={onRegisterCloseGuard}
               onStatusChange={setSpreadsheetWorkbenchStatus}
-            />
-          )}
-          {preview.type === "sqlite" && (
-            <ExplorerSqlitePreview
-              dbPath={previewResolvedPath}
-              dbName={preview.name}
             />
           )}
           {preview.type === "docx" && (
@@ -15054,18 +15041,6 @@ export function FileExplorer({
               name: entry.name,
               source: resolvedPreview.source,
               extension: resolvedPreview.extension,
-              size: entry.size,
-            });
-            dismissPreviewLoadingIndicator();
-          }
-          return;
-        case "sqlite":
-          if (isCurrentPreviewRequest()) {
-            setPreview({
-              type: "sqlite",
-              path: entry.path,
-              ...previewResolvedPathProps,
-              name: entry.name,
               size: entry.size,
             });
             dismissPreviewLoadingIndicator();

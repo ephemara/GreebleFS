@@ -49,7 +49,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/explorer/explorerPreviewRegistry.ts` and `src/config/explorerWorkbenches.ts`
   Preview/workbench arbitration lives here. The registry now collects every matching built-in and plugin candidate, then selects the active workbench by saved user default for the normalized extension, priority, and deterministic discovery order. `FileExplorer.tsx` hosts the chooser UI and fallback behavior; do not reintroduce one-off "first match wins" preview picking in feature components.
 - `src/components/pluginWorkbenchAdapters.tsx` and `usr/plugins/greeblefs-workbench-*`
-  First-party rich preview workbenches are moving into extension packages one workbench at a time. The initial shipped packages for SQLite, document, spreadsheet, audio, and video mount existing React workbenches through `greeblefs-workbenches` adapter exports, while built-in branches remain temporary migration scaffolding until parity is proven and removed.
+  First-party rich preview workbenches are moving into extension packages one workbench at a time. SQLite is now fully extension-owned through `usr/plugins/greeblefs-workbench-sqlite`, while the current document, spreadsheet, audio, and video packages still mount existing React workbenches through `greeblefs-workbenches` adapter exports and keep temporary built-in fallback branches until parity is proven and removed.
 - `src/components/ExplorerCollectionPreviewSurface.tsx`
   Shared folder/archive preview-pane collection surface. It owns the compact icon-only mode strip, pane-optimized collection layouts (`list`, forced-thumbnail `overview`, `strata`, `timeline`, `orbit`), and must keep row/tile interactions routed through `useExplorerPreviewEntryDirectDrag.ts` so selection and drag-out behavior stays identical across modes.
 - `src/components/OverlayScrollArea.tsx`
@@ -137,9 +137,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/ideWorkbenchLayout.ts`
   Dock-graph state model and normalization helpers for the IDE shell. It owns the persisted split tree, stack placements, floating nodes, rail state, focus fallback, maximize state, and the explorer-first default-center behavior.
 - `src/config/themePackages.ts`
-  Theme-bundle discovery and orchestration from `themes/`. Filesystem themes are now bundle manifests that compose modular child folders and external pack ids back into resolved `OverlayThemeDefinition` objects.
+  Theme-bundle discovery and orchestration from `themes/`. Filesystem themes are now bundle manifests that compose external `/usr` pack ids back into resolved `OverlayThemeDefinition` objects; v1 keeps Settings simple by persisting only the active theme engine id.
 - `src/config/themeBundlePacks.ts`
-  Standalone modular pack loaders for `appearance-packs/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, and `theme-engines/`. Theme bundles and global managed roots both use these same authored pack formats.
+  Standalone modular pack loaders for `appearance-packs/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, and `theme-engines/`. Appearance and motion packs load per-category `tokens/*.json` files; recipe packs load `presentation.json`, `layout.json`, `navigation.json`, `render.json`, `workbench.json`, `explorer.json`, and `mobile.json`; theme engines are thin composition manifests.
+- `src/config/uiTokenContract.ts`
+  Shared UI-token contract for `color | typography | spacing | radius | border | shadow | opacity | blur | geometry | layer | motion | interaction`. It normalizes category files, emits shared `--gfs-ui-*` CSS variables, and flattens tokens into the Rust/TS theme engine snapshot.
 - `src/config/topBarPackages.ts`
   Standalone top-bar package discovery and manifest loading from `top-bars/`.
 - `src/config/iconTheme.ts` and `src/config/iconThemePackages.ts`
@@ -285,11 +287,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/globalSearchStore.ts`
   Palette-scoped global-search state. It owns first-open initialization, status polling, debounced queries, scan lifecycle, and the latest indexed results shown in the shell command palette.
 - `src/store/settingsStore.ts`
-  Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, machine-level developer-mode behavior, the explorer menu authoring contract (`activeMenuPackId` plus per-context `contextMenuLayoutOverridesByContext`), per-theme explorer chrome layout overrides, dynamic explorer `commandBindingsById` hotkey state, the integrated-terminal profile contract (`shellProfile`, `shellPath`, `shellArgs`, plus the derived `shell` preview string), the `settings.home` contract (active Home pack id, usage-telemetry toggle, per-pack state blobs, and active preset selection by pack id), the plugin-authored settings catalog under `settings.plugins.valuesByPluginId`, the Settings shell path state (`activeRailPath`, `activePluginSettingsSlotId`), and the `settings.mobile` contract for remote mobile-share delivery (`remoteAccessMode`, `tailscaleLoginServer`, `tailscaleHostname`, boot/autostart behavior, and paired-shell preferences). Shell/mobile/plugin configuration should live here rather than inside ad hoc component-local storage. IDE-shell persistence now also lives here through `layout.shellStateByProfile`, `layout.lastProfileIdByShellFamily`, and `layout.followThemeDefaults`.
+  Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, machine-level developer-mode behavior, the System `developerTestSettingsEnabled` proof toggle, the explorer menu authoring contract (`activeMenuPackId` plus per-context `contextMenuLayoutOverridesByContext`), per-theme explorer chrome layout overrides, dynamic explorer `commandBindingsById` hotkey state, the integrated-terminal profile contract (`shellProfile`, `shellPath`, `shellArgs`, plus the derived `shell` preview string), the `settings.home` contract (active Home pack id, usage-telemetry toggle, per-pack state blobs, and active preset selection by pack id), the plugin-authored settings catalog under `settings.plugins.valuesByPluginId`, the Settings shell path state (`activeRailPath`, `activePluginSettingsSlotId`), and the `settings.mobile` contract for remote mobile-share delivery (`remoteAccessMode`, `tailscaleLoginServer`, `tailscaleHostname`, boot/autostart behavior, and paired-shell preferences). Shell/mobile/plugin configuration should live here rather than inside ad hoc component-local storage. IDE-shell persistence now also lives here through `layout.shellStateByProfile`, `layout.lastProfileIdByShellFamily`, and `layout.followThemeDefaults`.
 - `src/store/gpuRuntimeStore.ts`
-  Shell-side source of truth for the native GPU runtime snapshot, hydration, event subscription, effective tier, and workload fallback telemetry surfaced in Settings.
+  Shell-side source of truth for the native GPU runtime snapshot, hydration, event subscription, effective tier, and workload fallback telemetry surfaced in Settings. The System `Developer Test Proofs` block reuses this snapshot rather than inventing a second GPU diagnostics lane.
 - `src/store/accelerationRuntimeStore.ts`
-  Shell-side source of truth for the cross-provider acceleration snapshot, hydration state, and routing-mode-aware provider availability surfaced in Settings. Future CUDA/AI/media-search surfaces should hydrate this store instead of inventing their own provider probe loop.
+  Shell-side source of truth for the cross-provider acceleration snapshot, hydration state, and routing-mode-aware provider availability surfaced in Settings. Future CUDA/AI/media-search surfaces should hydrate this store instead of inventing their own provider probe loop, and the System proof surface should keep reusing its provider/backend diagnostics instead of adding ad hoc CUDA state.
 - `src/store/videoEngineStore.ts`
   Shell-side source of truth for the native video engine snapshot, hydration, event subscription, and transport helper wrappers used by `ExplorerVideoEditor.tsx`.
 
@@ -298,7 +300,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Overlay themes still resolve as the downstream shell identity, but authored filesystem themes are now bundle-first orchestration manifests instead of monolithic packages.
 - Theme bundles now orchestrate modular authored lanes:
   - `themes/<bundle>/theme.json` or `theme.toml` points at lanes such as `appearancePackId`, `topBarId`, `iconThemeId`, `wallpaperId`, `shaderId`, `openAnimationId`, `closeAnimationId`, `soundPackId`, `interactionMotionPackId`, `rendererId`, `themeRecipeId`, `themeEngineId`, `homePackId`, and `menuPackId`
-  - bundle-local child folders can live in-place under `appearance-packs/`, `top-bars/`, `icon-themes/`, `wallpapers/`, `shaders/`, `animations/`, `sound-packs/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, `theme-engines/`, `home-packs/`, and `menu-packs/`
+  - visual and interaction values should live in top-level `/usr` packs, not bundle-local inline copies: `usr/appearance-packs/<pack>/tokens/{color,typography,spacing,radius,border,shadow,opacity,blur,geometry,layer}.json`, `usr/interaction-motion/<pack>/tokens/{motion,interaction}.json`, and `usr/theme-recipes/<recipe>/{presentation,layout,navigation,render,workbench,explorer,mobile}.json`
+  - bundle-local child folders can still package non-token assets and legacy-compatible packs, but canonical first-party theme values should be authored once in the top-level lanes
   - local child ids are scoped as `<themeBundleId>:<localId>` so bundle-local authored packs do not collide with standalone managed roots
   - `src/components/SettingsPage.tsx` `Theme JSON` now edits/imports bundle manifests and persists them in `settings.appearance.customThemeBundles`; legacy monolithic theme JSON is intentionally rejected
   - `themes/andromeda/` is the first full repo-local example that exercises the required core lanes plus local top bar, icon theme, wallpaper, shader, and animation without needing runtime code changes
@@ -508,6 +511,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
     - **Lazy compilation must keep working in installed builds.** `runtime_pipeline::driver::resolve_go_build_script_path` resolves `scripts/go/build.sh` in this order: `GREEBLEFS_GO_BUILD_SCRIPT` env override → `<app_local_data>/scripts/go/build.sh` (what the installer copies) → repo-relative dev fallback. `scripts/build-and-install-linux-local-release.sh` is the source of truth for the install copy step; if you add a new Go pipeline script, copy it there too. `GREEBLEFS_APP_LOCAL_DATA_DIR` overrides the app-local root for tests and ops scenarios.
 - Managed content roots now split by runtime mode around a canonical `usr/` backbone:
   - repo `usr/` is the only canonical shipped-content authoring root for configurable systems such as themes, top bars, explorer layouts, menu packs, sound packs, home packs, icon themes, actions, runtimes, wallpapers, shaders, animations, interaction motion, shell renderers, theme recipes, theme engines, and the Rust domain catalogs
+  - UI visual and interaction tokens are authored under the top-level pack lanes. `usr/domain/theme-manifests.json` is derived/cache metadata for the Rust domain catalog and must not become an authored UI value store.
   - `usr/manifest.json` plus `src/config/usrManifest.ts` are the source of truth for shipped lanes, bundled lanes, and env-var suffixes; do not add new configurable shipped folders without registering them there
   - `bun run tauri dev` injects `VITE_GREEBLEFS_USR_DIR` / `GREEBLEFS_USR_DIR`, `GREEBLEFS_MANAGED_CONTENT_ROOT`, and the legacy `OVERLAYTERM_*` aliases from the manifest so every shipped configurable lane resolves out of `usr/<lane>` in dev by default
   - installed/release builds bundle `usr/` once as a Tauri resource, then bootstrap missing files into the writable managed-content root under Tauri `AppLocalData/usr`; runtime reads the writable root, not the immutable bundled copy
@@ -684,7 +688,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Theme bundles discovered at runtime. Each bundle is an orchestration manifest that can package local child folders and/or reference standalone managed packs.
   `themes/andromeda/` is the canonical bundle-first reference theme and shows the preferred authored layout for future theme work.
 - `appearance-packs/`
-  Standalone appearance packs discovered at runtime.
+  Standalone appearance packs discovered at runtime. First-party packs should use `manifest.json` plus per-category `tokens/color.json`, `typography.json`, `spacing.json`, `radius.json`, `border.json`, `shadow.json`, `opacity.json`, `blur.json`, `geometry.json`, and `layer.json`.
 - `top-bars/`
   Standalone top-bar packages discovered at runtime.
 - `sound-packs/`
@@ -694,13 +698,13 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `menu-packs/`
   Authored explorer menu packs discovered at runtime. These control menu structure per explorer context independently from theme presentation.
 - `interaction-motion/`
-  Standalone shell interaction-motion packs discovered at runtime.
+  Standalone shell interaction-motion packs discovered at runtime. First-party packs should use `manifest.json` plus `tokens/motion.json` and `tokens/interaction.json`.
 - `shell-renderers/`
   Standalone shell renderer packs discovered at runtime.
 - `theme-recipes/`
-  Standalone recipe packs for workbench/explorer/dock presentation discovered at runtime.
+  Standalone recipe packs for workbench, explorer, mobile, and dock presentation discovered at runtime. First-party packs should split data across `presentation.json`, `layout.json`, `navigation.json`, `render.json`, `workbench.json`, `explorer.json`, and `mobile.json`.
 - `theme-engines/`
-  Standalone engine-manifest packs for presentation, compatibility, render styles, and authored defaults discovered at runtime.
+  Thin composition manifests discovered at runtime. Engine files should point at `appearancePackId`, `interactionMotionPackId`, and `themeRecipeId`; compiled snapshots are produced by the loader instead of authored as inline token payloads.
 - `animations/`
   Authored animation modules.
 - `wallpapers/`
@@ -829,6 +833,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - Legacy `stdio-json-lines` sidecars still remain request/response only. If a runtime needs push subscriptions, opt it into the v2 transport instead of assuming the old bridge will magically receive host events.
 - Plugin-shipped themes must stay bundle-first even inside extension content.
   - Legacy monolithic theme package shapes are intentionally rejected now. Theme contributions under plugins should embed or reference modern bundle lanes such as `appearancePackId`, not old top-level `theme` / `visuals` blobs.
+- UI presentational literals are guarded by `scripts/audit-ui-literals.mjs`.
+  - New raw `px`, color, blur, shadow, z-index, duration, or easing literals in `src/**` and `src-mobile/**` should fail the audit unless they are approved non-presentational math with an inline `ui-literal-audit: allow` note.
+  - Prefer adding values to `/usr` appearance, interaction-motion, or theme-recipe packs and consuming emitted CSS variables or typed token lookups in UI source.
 - Explorer context-menu plugin contributions can now open plugin panels through `panel-request` execution. If a plugin needs a folder/file handoff from Explorer, use `src/runtime/pluginPanelRequests.ts` and the `overlayterm-plugin` helpers instead of inventing ad hoc window events or local-storage keys.
 - The dev HUD is internal to this app. It is not a Tauri plugin or external Chrome overlay, and it should be treated as part of the shell runtime.
 - Do not wire the screenshot panel to `explorerTaskStore`. That store is global explorer/Yazi task state; rendering it inside screenshot status chrome leaks unrelated delete/copy jobs into screenshot errors and makes debugging cross-subsystem issues much harder.

@@ -1,3 +1,27 @@
+# 2026-04-29 - UI Tokenization Moves Theme Values Into Top-Level `/usr`
+
+- UI theme authorship now treats top-level `/usr` as the canonical value store for visual and interaction tokens. First-party appearance values live under `usr/appearance-packs/<pack>/tokens/{color,typography,spacing,radius,border,shadow,opacity,blur,geometry,layer}.json`, interaction values under `usr/interaction-motion/<pack>/tokens/{motion,interaction}.json`, and semantic recipe values under `usr/theme-recipes/<recipe>/{presentation,layout,navigation,render,workbench,explorer,mobile}.json`.
+- Theme engines are now thin composition manifests. `usr/theme-engines/andromeda-engine/theme-engine.json` points at `andromeda-appearance`, `andromeda-motion`, and `andromeda-observatory`; the loader compiles those packs into one engine snapshot with expanded token kinds (`color`, `typography`, `spacing`, `radius`, `border`, `shadow`, `opacity`, `blur`, `geometry`, `layer`, `motion`, `interaction`).
+- `themes/andromeda/theme.json` now orchestrates the top-level packs and no longer stores duplicate local appearance/motion/recipe/engine payloads. Keep future first-party theme value changes in the top-level pack lanes so a single token edit can affect desktop and mobile output without source changes.
+- `scripts/audit-ui-literals.mjs` plus `scripts/ui-literal-audit.baseline.json` guard the current legacy UI-literal state. New raw `px`, color, blur, shadow, z-layer, duration, or easing literals in `src/**` and `src-mobile/**` fail `node scripts/audit-ui-literals.mjs`; use `/usr` tokens/recipes or an explicit `ui-literal-audit: allow` only for approved non-presentational math.
+- Validation that passed for this pass:
+  - `bun run bindings:generate`
+  - `node scripts/audit-ui-literals.mjs`
+  - `bun run vitest run src/test/themePackages.test.ts src/test/themeEngineBackend.test.ts src/test/mobileTheme.test.ts src/test/uiLiteralAudit.test.ts --reporter=dot`
+
+# 2026-04-28 - SQLite Preview Ownership Moved Fully Into The Shipped Workbench Extension
+
+- The explorer no longer hardcodes SQLite preview ownership in `src/components/FileExplorer.tsx` or `src/components/explorer/explorerPreviewRegistry.ts`.
+- Durable preview-lane ownership after this pass:
+  - `usr/plugins/greeblefs-workbench-sqlite/extension.toml` is now the only shipped matcher for `.sqlite`, `.sqlite3`, and `.db` explorer workbenches.
+  - `usr/plugins/greeblefs-workbench-sqlite/preview/sqliteWorkbench.tsx` still mounts the existing `ExplorerSqlitePreview` through the `greeblefs-workbenches` adapter bridge, so the UI implementation remains shared while lane ownership lives in managed content.
+  - If SQLite preview stops appearing, debug plugin discovery/runtime first; do not re-add a built-in `sqlite` branch to `FileExplorer.tsx` as a shortcut.
+- Durable migration rule:
+  - A built-in preview lane is ready to be deleted only when the shipped extension package already proves parity for the required shell hooks. SQLite qualified because it is read-only and does not depend on workflow tabs, close guards, save/export callbacks, or preview-specific context-menu overlays.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/explorerPreviewRegistry.test.ts src/test/pluginRuntime.test.ts --reporter=dot`
+  - filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "explorerPreviewRegistry|FileExplorer|pluginRuntime|ExplorerSqlitePreview"`
+
 # 2026-04-28 - Adaptive Effects No Longer Drop The Base Wallpaper Layer
 
 - A second wallpaper regression came from the adaptive shell-effects policy rather than the asset loader: under startup/frame pressure the shell could downgrade to the `minimal` effects tier and set `showWallpaperBackdrop` to `false`, which made valid theme wallpapers appear briefly on first paint and then disappear.
@@ -167,7 +191,7 @@
   - unmatched files still return no active workbench so `FileExplorer.tsx` owns fallback UI.
 - `FileExplorer.tsx` now hosts the shared workbench chooser when multiple candidates match. The chooser supports one-shot switching for the current file and setting the chosen provider as the default for that normalized extension. Preview context menus also expose provider switch/default actions.
 - First-party adapter package wave landed under `usr/plugins/` for `greeblefs-workbench-sqlite`, `greeblefs-workbench-docx`, `greeblefs-workbench-spreadsheet`, `greeblefs-workbench-audio`, and `greeblefs-workbench-video`. These packages claim the same extension sets as the built-in lanes with priority `720` and mount the existing React workbenches through the virtual `greeblefs-workbenches` module.
-- Built-in render branches remain as migration scaffolding. Do not delete a built-in branch until the corresponding package has parity for workflow tabs, context menu registration, close guards, save/export callbacks, and focused tests.
+- SQLite has now crossed that parity threshold and no longer has a built-in registry/render branch. The remaining built-in render branches stay as migration scaffolding until their corresponding packages have parity for workflow tabs, context menu registration, close guards, save/export callbacks, and focused tests.
 - Validation that passed for this pass:
   - `bunx vitest run src/test/explorerPreviewRegistry.test.ts src/test/settingsStore.test.ts src/test/pluginRuntime.test.ts --reporter=dot`
   - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "lets plugin preview lanes claim files and register workflow tabs plus preview context actions" --reporter=dot --testTimeout=30000`
@@ -642,7 +666,8 @@
 - The preview/editor extensibility pass landed the first host-owned slice of the “plugin-driven preview engine” goal without turning the whole shell into plugin soup.
 - Durable preview-system rules after the migration:
   - `src/components/explorer/explorerPreviewRegistry.ts` is now the canonical registry for explorer preview ownership.
-    - Built-in preview lanes are registered there as first-party adapters (`folder`, `model3d`, `archive`, `audio`, `video`, `image`, `font`, `sqlite`, `pdf`, `spreadsheet`, `docx`, `shader`, `script`, `text`).
+    - Built-in preview lanes are registered there as first-party adapters (`folder`, `model3d`, `archive`, `audio`, `video`, `image`, `font`, `pdf`, `spreadsheet`, `docx`, `shader`, `script`, `text`).
+    - SQLite is the first shipped workbench that has fully crossed into plugin ownership, so its matcher now lives only in `usr/plugins/greeblefs-workbench-sqlite`.
     - Plugin-contributed preview lanes are resolved there too, sorted by priority, and may override built-ins when they intentionally claim the same file types.
     - If future preview work adds a lane or changes match rules, change the registry instead of adding another per-extension branch in `FileExplorer.tsx`.
   - `src/components/explorer/explorerPreviewSystem.ts` is no longer the matcher; it is now the shared fallback/copy layer plus compatibility export surface. Treat the registry and fallback system as separate responsibilities.

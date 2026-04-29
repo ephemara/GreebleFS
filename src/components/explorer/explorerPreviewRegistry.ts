@@ -19,7 +19,6 @@ import {
   isImagePreviewExtension,
   isPdfPreviewExtension,
   isShaderPreviewExtension,
-  isSqlitePreviewExtension,
   isSpreadsheetPreviewExtension,
   isVideoPreviewExtension,
   type ExplorerExecutableScriptRunner,
@@ -53,7 +52,6 @@ export type ExplorerResolvedPreviewDescriptor =
       extension: string;
     }
   | { kind: "image"; extension: string }
-  | { kind: "sqlite" }
   | { kind: "pdf" }
   | {
       kind: "spreadsheet";
@@ -207,13 +205,6 @@ const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] 
               extension,
             }
           : null,
-    },
-    {
-      id: "builtin-sqlite",
-      title: "SQLite Workbench",
-      priority: BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY,
-      match: ({ extension }) =>
-        isSqlitePreviewExtension(extension) ? { kind: "sqlite" } : null,
     },
     {
       id: "builtin-pdf",

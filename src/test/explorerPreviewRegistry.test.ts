@@ -138,6 +138,102 @@ describe("explorerPreviewRegistry", () => {
     expect(descriptor.lane.id).toBe("notes-lane");
   });
 
+  it("does not register a built-in sqlite workbench once SQLite is extension-owned", () => {
+    const selection = resolveExplorerPreviewWorkbenchSelection(
+      createEntry({
+        name: "cache.sqlite",
+        path: "/tmp/cache.sqlite",
+        extension: "sqlite",
+      }),
+      PREVIEW_OPTIONS,
+    );
+
+    expect(selection.activeWorkbench?.id).toBe("builtin-text");
+    expect(selection.candidates.map((candidate) => candidate.id)).toEqual([
+      "builtin-text",
+    ]);
+    expect(selection.resolutionSource).toBe("priority");
+    expect(
+      resolveExplorerPreviewDescriptor(
+        createEntry({
+          name: "cache.sqlite",
+          path: "/tmp/cache.sqlite",
+          extension: "sqlite",
+        }),
+        PREVIEW_OPTIONS,
+      ),
+    ).toEqual({
+      kind: "text",
+      extension: "sqlite",
+      language: "plaintext",
+      renderKind: "none",
+    });
+  });
+
+  it("routes sqlite files through contributed plugin workbenches", () => {
+    const sqlitePluginLane = createPluginLane({
+      id: "greeblefs-workbench-sqlite.preview.sqlite",
+      pluginId: "greeblefs-workbench-sqlite",
+      pluginName: "GreebleFS SQLite Workbench",
+      title: "SQLite Workbench",
+      priority: 720,
+      rendererEntry: "preview/sqliteWorkbench.tsx",
+      match: {
+        appliesTo: "file",
+        extensions: ["sqlite", "sqlite3", "db"],
+        fileNames: [],
+      },
+      capabilities: {
+        editable: false,
+        save: false,
+        export: false,
+        workflowTabs: false,
+        contextMenu: false,
+        prefetch: false,
+        closeGuard: false,
+      },
+    });
+
+    const selection = resolveExplorerPreviewWorkbenchSelection(
+      createEntry({
+        name: "cache.sqlite",
+        path: "/tmp/cache.sqlite",
+        extension: "sqlite",
+      }),
+      {
+        ...PREVIEW_OPTIONS,
+        pluginPreviewLanes: [sqlitePluginLane],
+      },
+    );
+
+    expect(selection.activeWorkbench?.id).toBe(sqlitePluginLane.id);
+    expect(selection.candidates.map((candidate) => candidate.id)).toEqual([
+      sqlitePluginLane.id,
+      "builtin-text",
+    ]);
+    expect(selection.resolutionSource).toBe("priority");
+
+    const descriptor = resolveExplorerPreviewDescriptor(
+      createEntry({
+        name: "cache.sqlite",
+        path: "/tmp/cache.sqlite",
+        extension: "sqlite",
+      }),
+      {
+        ...PREVIEW_OPTIONS,
+        pluginPreviewLanes: [sqlitePluginLane],
+      },
+    );
+
+    expect(descriptor.kind).toBe("plugin");
+    if (descriptor.kind !== "plugin") {
+      throw new Error("Expected SQLite to resolve through the plugin workbench.");
+    }
+    expect(descriptor.extension).toBe("sqlite");
+    expect(descriptor.assetUrl).toBe("asset:///tmp/cache.sqlite");
+    expect(descriptor.lane.id).toBe(sqlitePluginLane.id);
+  });
+
   it("lets a saved user default win over a higher priority candidate", () => {
     const lowerPriorityDefault = createPluginLane({
       id: "lower-priority-default",
