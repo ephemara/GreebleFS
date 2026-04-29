@@ -214,10 +214,52 @@ describe('OverlayScrollArea', () => {
     });
   });
 
-  it('adds momentum-assisted scrolling for coarse wheel gestures', async () => {
+  it('keeps explorer file-list scroll ticks on the cached thumb-transform path', async () => {
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame');
+    const { container } = render(
+      <OverlayScrollArea scrollbarStyle="explorer-file-list">
+        <div style={{ height: 4000 }}>content</div>
+      </OverlayScrollArea>,
+    );
+
+    const viewport = getViewport(container, 'vertical');
+    const verticalTrack = container.querySelector('.overlay-scroll-area__scrollbar--vertical');
+    const verticalThumb = container.querySelector('.overlay-scroll-area__scrollbar-thumb--vertical');
+    if (!(verticalTrack instanceof HTMLDivElement) || !(verticalThumb instanceof HTMLDivElement)) {
+      throw new Error('Missing custom vertical scrollbar chrome.');
+    }
+
+    makeScrollable(viewport, {
+      clientHeight: 120,
+      scrollHeight: 720,
+    });
+    Object.defineProperty(verticalTrack, 'clientHeight', {
+      configurable: true,
+      value: 120,
+    });
+
+    viewport.dispatchEvent(new Event('scroll'));
+
+    await waitFor(() => {
+      expect(verticalTrack.dataset.visible).toBe('true');
+      expect(Number.parseFloat(verticalThumb.style.height)).toBeGreaterThan(0);
+    });
+
+    rafSpy.mockClear();
+    viewport.scrollTop = 240;
+    viewport.dispatchEvent(new Event('scroll'));
+
+    expect(rafSpy).not.toHaveBeenCalled();
+    expect(verticalThumb.style.transform).toMatch(
+      /^translate3d\(0, (?!0(?:px)?[,)]).+px, 0\)$/,
+    );
+    rafSpy.mockRestore();
+  });
+
+  it('adds momentum-assisted scrolling for coarse wheel gestures on non-file-list surfaces', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { container } = render(
-      <OverlayScrollArea scrollbarStyle="explorer-file-list" inertialScroll>
+      <OverlayScrollArea scrollbarStyle="themed" inertialScroll>
         <div style={{ height: 4000 }}>content</div>
       </OverlayScrollArea>,
     );

@@ -1,9 +1,11 @@
 use naga::valid::{Capabilities, ValidationFlags, Validator};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use shaderc::{CompileOptions, Compiler, IncludeType, ResolvedInclude, ShaderKind, SourceLanguage};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+#[cfg(feature = "native-shaderc")]
+use shaderc::{CompileOptions, Compiler, IncludeType, ResolvedInclude, ShaderKind, SourceLanguage};
 
 const GREEBLEFS_SHADER_PREVIEW_ABI_V1: &str = concat!(
     "GreebleFS Shader Preview ABI v1\n",
@@ -604,6 +606,16 @@ fn compile_hlsl_to_spirv(
     stage: ExplorerShaderStage,
     entry_point: &str,
 ) -> Result<Vec<u32>, String> {
+    compile_hlsl_to_spirv_with_native_shaderc(input_path, source, stage, entry_point)
+}
+
+#[cfg(feature = "native-shaderc")]
+fn compile_hlsl_to_spirv_with_native_shaderc(
+    input_path: &Path,
+    source: &str,
+    stage: ExplorerShaderStage,
+    entry_point: &str,
+) -> Result<Vec<u32>, String> {
     let compiler =
         Compiler::new().map_err(|error| format!("Failed to initialize shaderc: {error}"))?;
     let mut options = CompileOptions::new()
@@ -638,6 +650,21 @@ fn compile_hlsl_to_spirv(
     Ok(artifact.as_binary().to_vec())
 }
 
+#[cfg(not(feature = "native-shaderc"))]
+fn compile_hlsl_to_spirv_with_native_shaderc(
+    _input_path: &Path,
+    _source: &str,
+    _stage: ExplorerShaderStage,
+    _entry_point: &str,
+) -> Result<Vec<u32>, String> {
+    Err(
+        "HLSL-to-SPIR-V compilation requires the native-shaderc Cargo feature. \
+         WGSL and SPIR-V inspection remain available in the default test-safe build."
+            .to_string(),
+    )
+}
+
+#[cfg(feature = "native-shaderc")]
 fn resolve_shader_include(
     include_root: &Path,
     requested_source: &str,
@@ -768,6 +795,7 @@ fn map_naga_stage(stage: naga::ShaderStage) -> Option<ExplorerShaderStage> {
     }
 }
 
+#[cfg(feature = "native-shaderc")]
 fn map_shaderc_stage(stage: ExplorerShaderStage) -> ShaderKind {
     match stage {
         ExplorerShaderStage::Vertex => ShaderKind::Vertex,
@@ -834,6 +862,7 @@ float4 fragment_main() : SV_Target0 {
             .any(|entry| entry.name == "fragment_main"));
     }
 
+    #[cfg(feature = "native-shaderc")]
     #[test]
     fn compile_hlsl_normalizes_to_wgsl() {
         let workspace = tempdir().expect("tempdir");
@@ -851,6 +880,7 @@ float4 fragment_main() : SV_Target0 {
         assert!(payload.diagnostics.is_empty(), "{:?}", payload.diagnostics);
     }
 
+    #[cfg(feature = "native-shaderc")]
     #[test]
     fn inspect_spirv_translates_to_wgsl() {
         let workspace = tempdir().expect("tempdir");
@@ -887,6 +917,7 @@ float4 fragment_main() : SV_Target0 {
         assert!(payload.supports_live_preview);
     }
 
+    #[cfg(feature = "native-shaderc")]
     #[test]
     fn hlsl_include_resolution_uses_source_directory() {
         let workspace = tempdir().expect("tempdir");
@@ -916,5 +947,30 @@ float4 fragment_main() : SV_Target0 {
         )
         .expect("inspect hlsl");
         assert!(payload.normalized_wgsl.is_some());
+    }
+
+    #[cfg(not(feature = "native-shaderc"))]
+    #[test]
+    fn hlsl_compile_reports_feature_requirement_without_native_shaderc() {
+        let workspace = tempdir().expect("tempdir");
+        let source_path = workspace.path().join("preview.hlsl");
+        fs::write(&source_path, SIMPLE_HLSL).expect("write hlsl");
+        let payload = inspect_hlsl_shader_source(
+            &source_path,
+            SIMPLE_HLSL,
+            Some(ExplorerShaderStage::Vertex),
+            Some("vertex_main"),
+            true,
+        )
+        .expect("hlsl inspect");
+        assert!(payload.normalized_wgsl.is_none());
+        assert!(
+            payload
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("native-shaderc")),
+            "{:?}",
+            payload.diagnostics
+        );
     }
 }

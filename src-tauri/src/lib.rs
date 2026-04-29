@@ -53,22 +53,34 @@ pub mod vst_host_runtime;
 pub mod wayland_dock;
 pub mod window_commands;
 
+#[cfg(not(test))]
 use audio_engine::AudioEngineManager;
+#[cfg(not(test))]
 use cloud_commands::CloudRuntimeState;
+#[cfg(not(test))]
 use entry_size_cache::{initialize_entry_size_cache, EntrySizeWatcherState};
+#[cfg(not(test))]
 use explorer_identity::{initialize_explorer_identity_store, ExplorerIdentityManager};
+#[cfg(not(test))]
 use fs_commands::initialize_fs_command_events;
+#[cfg(not(test))]
 use plugin_commands::PluginWatcherState;
+#[cfg(not(test))]
 use remote_storage_commands::RemoteStorageState;
+#[cfg(not(test))]
 use tauri::{
     menu::{MenuBuilder, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
+#[cfg(not(test))]
 use telemetry::{finish_native_span, start_native_span, TelemetryManager};
+#[cfg(not(test))]
 use terminal::TerminalManager;
+#[cfg(not(test))]
 use window_commands::{MAIN_TRAY_ICON_ID, MAIN_WINDOW_LABEL};
 
+#[cfg(not(test))]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PreviewBytesInvokeArgs {
@@ -76,6 +88,7 @@ struct PreviewBytesInvokeArgs {
     max_bytes: Option<u64>,
 }
 
+#[cfg(not(test))]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GlobalSearchQueryUnderPathInvokeArgs {
@@ -84,12 +97,14 @@ struct GlobalSearchQueryUnderPathInvokeArgs {
     options: crate::global_search::GlobalSearchQueryOptions,
 }
 
+#[cfg(not(test))]
 fn parse_json_invoke_args<T: for<'de> serde::Deserialize<'de>>(
     message: &tauri::ipc::InvokeMessage<tauri::Wry>,
 ) -> Result<T, String> {
     ipc_runtime::binary::parse_json_invoke_args(message)
 }
 
+#[cfg(not(test))]
 fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
     let command = invoke.message.command().to_string();
 
@@ -175,12 +190,14 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
     }
 }
 
+#[cfg(not(test))]
 fn toggle_overlay(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = win.emit("overlay://toggle-request", ());
     }
 }
 
+#[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     linux_graphics::apply_linux_graphics_startup_configuration();

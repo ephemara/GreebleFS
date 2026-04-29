@@ -1,3 +1,16 @@
+# 2026-04-29 - Explorer File-List Scrollbar Uses Cached Thumb Geometry On Scroll
+
+- Explorer stop-motion scrolling traced to `OverlayScrollArea` doing full scrollbar measurement work on every native file-list scroll event while `FileExplorer` virtualization was also shifting mounted rows.
+- Durable ownership after this pass:
+  - `src/components/OverlayScrollArea.tsx` now caches per-axis scrollbar geometry from normal measurement passes and, for `scrollbarStyle="explorer-file-list"`, scroll events only update the thumb `translate3d(...)` from that cached geometry.
+  - Full scrollbar size/visibility measurement still runs on mount/style/ResizeObserver/content geometry changes and as fallback when no cached presentation exists.
+  - `areScrollbarMeasurementsEqual(...)` intentionally ignores `scrollTop` / `scrollLeft`; scroll offset is transform-only state, not a reason to keep the sustained measurement RAF loop alive.
+- Durable regression rule: do not put explorer file-list scroll ticks back on a path that reads `scrollHeight`, `clientHeight`, track dimensions, or recomputes thumb size every wheel/scroll event. Geometry belongs to resize/content-settle; scroll belongs to cached transform updates plus native browser/WebView scrolling.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/overlayScrollArea.test.tsx src/test/overlayScrollbarStyles.test.ts --reporter=dot`
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "uses the dedicated explorer viewport class|does not mount an entire huge folder|keeps a 100000-entry folder bounded" --reporter=dot --testTimeout=30000`
+  - Filtered TypeScript sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS` for `OverlayScrollArea` / `overlayScrollArea`.
+
 # 2026-04-29 - Screenshots Suite Disabled From The Visible Shell
 
 - The screenshot manager code is intentionally retained, but the active product no longer surfaces it as a built-in panel, Settings section, Explorer Home launchpad item, managed-content catalog card, or icon-theme panel slot.

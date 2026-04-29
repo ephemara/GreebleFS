@@ -59,6 +59,10 @@ export function OverlayScrollArea({
   const stableScrollbarMeasurementFramesRef = useRef(0);
   const lastScrollbarMeasurementRef =
     useRef<OverlayScrollbarMeasurementSnapshot | null>(null);
+  const scrollbarAxisPresentationRef = useRef<OverlayScrollbarAxisPresentationMap>({
+    horizontal: null,
+    vertical: null,
+  });
   const scrollbarDragStateRef = useRef<OverlayScrollbarDragState | null>(null);
   const runtimePlatformRef = useRef(detectClientPlatform());
   const shouldRunInertialScroll =
@@ -99,6 +103,8 @@ export function OverlayScrollArea({
       root.dataset.overlayHorizontalScrollbarVisible = 'false';
       root.style.setProperty('--overlay-scroll-area-vertical-reserve', '0px');
       root.style.setProperty('--overlay-scroll-area-horizontal-reserve', '0px');
+      scrollbarAxisPresentationRef.current.vertical = null;
+      scrollbarAxisPresentationRef.current.horizontal = null;
       return measurement;
     }
 
@@ -131,14 +137,14 @@ export function OverlayScrollArea({
       horizontalScrollbarVisible ? `${scrollbarSizePx}px` : '0px',
     );
 
-    syncAxisScrollbarPresentation({
+    scrollbarAxisPresentationRef.current.vertical = syncAxisScrollbarPresentation({
       axis: 'vertical',
       thumb: verticalThumbRef.current,
       track: verticalTrackRef.current,
       visible: verticalScrollbarVisible,
       viewport,
     });
-    syncAxisScrollbarPresentation({
+    scrollbarAxisPresentationRef.current.horizontal = syncAxisScrollbarPresentation({
       axis: 'horizontal',
       thumb: horizontalThumbRef.current,
       track: horizontalTrackRef.current,
@@ -376,10 +382,58 @@ export function OverlayScrollArea({
     stopInertialScroll,
   ]);
 
+  const syncCachedScrollbarScrollOffset = useCallback((axis: OverlayScrollbarAxis) => {
+    const viewport = internalViewportRef.current;
+    const thumb =
+      axis === 'vertical' ? verticalThumbRef.current : horizontalThumbRef.current;
+    const presentation = scrollbarAxisPresentationRef.current[axis];
+    if (!viewport || !thumb || !presentation) {
+      return false;
+    }
+
+    const scrollOffset = axis === 'vertical' ? viewport.scrollTop : viewport.scrollLeft;
+    const thumbOffset = presentation.maxScrollOffset > 0
+      ? (scrollOffset / presentation.maxScrollOffset) * presentation.maxThumbTravel
+      : 0;
+    if (Math.abs(presentation.lastThumbOffset - thumbOffset) < 0.1) {
+      return true;
+    }
+
+    presentation.lastThumbOffset = thumbOffset;
+    thumb.style.transform = axis === 'vertical'
+      ? `translate3d(0, ${thumbOffset}px, 0)`
+      : `translate3d(${thumbOffset}px, 0, 0)`;
+    return true;
+  }, []);
+
+  const syncCachedScrollbarScrollOffsets = useCallback(() => {
+    let usedCachedPresentation = false;
+    if (direction !== 'horizontal') {
+      usedCachedPresentation =
+        syncCachedScrollbarScrollOffset('vertical') || usedCachedPresentation;
+    }
+    if (direction !== 'vertical') {
+      usedCachedPresentation =
+        syncCachedScrollbarScrollOffset('horizontal') || usedCachedPresentation;
+    }
+    return usedCachedPresentation;
+  }, [direction, syncCachedScrollbarScrollOffset]);
+
   const handleViewportScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     onViewportScroll?.(event);
+    if (scrollbarStyle === 'explorer-file-list') {
+      if (!syncCachedScrollbarScrollOffsets()) {
+        scheduleScrollbarPresentationSync();
+      }
+      return;
+    }
     scheduleScrollbarPresentationSync();
-  }, [onViewportScroll, scheduleScrollbarPresentationSync]);
+  }, [
+    onViewportScroll,
+    scheduleScrollbarPresentationSync,
+    scrollbarStyle,
+    syncCachedScrollbarScrollOffsets,
+  ]);
 
   const handleScrollbarDragPointerMove = useCallback((event: PointerEvent) => {
     const dragState = scrollbarDragStateRef.current;
@@ -619,16 +673,27 @@ interface OverlayScrollbarDragState {
   trackStart: number;
 }
 
+interface OverlayScrollbarAxisPresentation {
+  lastThumbOffset: number;
+  maxScrollOffset: number;
+  maxThumbTravel: number;
+}
+
+type OverlayScrollbarAxisPresentationMap = Record<
+  OverlayScrollbarAxis,
+  OverlayScrollbarAxisPresentation | null
+>;
+
 function syncAxisScrollbarPresentation(args: {
   axis: OverlayScrollbarAxis;
   thumb: HTMLDivElement | null;
   track: HTMLDivElement | null;
   visible: boolean;
   viewport: HTMLDivElement;
-}) {
+}): OverlayScrollbarAxisPresentation | null {
   const { axis, thumb, track, visible, viewport } = args;
   if (!thumb || !track) {
-    return;
+    return null;
   }
 
   track.dataset.visible = visible ? 'true' : 'false';
@@ -641,7 +706,7 @@ function syncAxisScrollbarPresentation(args: {
     } else {
       thumb.style.width = '0px';
     }
-    return;
+    return null;
   }
 
   const trackSize = axis === 'vertical' ? track.clientHeight : track.clientWidth;
@@ -674,6 +739,11 @@ function syncAxisScrollbarPresentation(args: {
     thumb.style.width = `${thumbSize}px`;
     thumb.style.transform = `translate3d(${thumbOffset}px, 0, 0)`;
   }
+  return {
+    lastThumbOffset: thumbOffset,
+    maxScrollOffset,
+    maxThumbTravel,
+  };
 }
 
 interface OverlayScrollbarMeasurementSnapshot {
@@ -705,8 +775,6 @@ function areScrollbarMeasurementsEqual(
   return first.clientHeight === second.clientHeight
     && first.clientWidth === second.clientWidth
     && first.scrollHeight === second.scrollHeight
-    && first.scrollLeft === second.scrollLeft
-    && first.scrollTop === second.scrollTop
     && first.scrollWidth === second.scrollWidth;
 }
 
