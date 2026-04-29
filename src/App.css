@@ -193,6 +193,9 @@ html, body, #root {
   -ms-overflow-style: none;
   scrollbar-width: none;
   overscroll-behavior: contain;
+  will-change: scroll-position;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 .overlay-scroll-area__viewport--scrollbar-hidden {
@@ -236,8 +239,6 @@ html, body, #root {
   scrollbar-color: var(--overlay-scrollbar-thumb) var(--overlay-scrollbar-track);
   scrollbar-gutter: stable;
   overflow-anchor: none;
-  will-change: scroll-position;
-  backface-visibility: hidden;
 }
 
 .overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar {
@@ -336,6 +337,7 @@ html, body, #root {
     inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
     0 8px 18px rgba(0,0,0,0.22);
   will-change: transform;
+  transform: translateZ(0);
 }
 
 .overlay-scroll-area__scrollbar--vertical:hover .overlay-scroll-area__scrollbar-thumb,

@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { detectClientPlatform } from '../config/platform';
-
 type OverlayScrollDirection = 'vertical' | 'horizontal' | 'both';
 type OverlayScrollbarStyle = 'hidden' | 'themed' | 'explorer-file-list';
 
@@ -9,7 +7,6 @@ interface OverlayScrollAreaProps {
   children: React.ReactNode;
   direction?: OverlayScrollDirection;
   scrollbarStyle?: OverlayScrollbarStyle;
-  inertialScroll?: boolean;
   className?: string;
   viewportClassName?: string;
   contentClassName?: string;
@@ -20,19 +17,10 @@ interface OverlayScrollAreaProps {
   onViewportScroll?: React.UIEventHandler<HTMLDivElement>;
 }
 
-const INERTIAL_SCROLL_IMMEDIATE_DELTA_FACTOR = 0.38;
-const INERTIAL_SCROLL_DELTA_CLAMP_PX = 180;
-const INERTIAL_SCROLL_VELOCITY_BLEND_FACTOR = 0.28;
-const INERTIAL_SCROLL_VELOCITY_CARRY_FACTOR = 0.32;
-const INERTIAL_SCROLL_VELOCITY_CLAMP_PX = 180;
-const INERTIAL_SCROLL_FRICTION_PER_FRAME = 0.84;
-const INERTIAL_SCROLL_MIN_VELOCITY_PX = 0.28;
-
 export function OverlayScrollArea({
   children,
   direction = 'vertical',
   scrollbarStyle = 'hidden',
-  inertialScroll = false,
   className,
   viewportClassName,
   contentClassName,
@@ -50,41 +38,27 @@ export function OverlayScrollArea({
   const horizontalTrackRef = useRef<HTMLDivElement | null>(null);
   const horizontalThumbRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollbarSyncFrameRef = useRef<number | null>(null);
-  const inertialScrollFrameRef = useRef<number | null>(null);
-  const inertialScrollVelocityRef = useRef({ x: 0, y: 0 });
-  const inertialScrollLastFrameAtRef = useRef<number | null>(null);
-  const scheduleScrollbarPresentationSyncRef =
-    useRef<(options?: { sustain?: boolean }) => void>(() => {});
   const scrollbarSettleFramesRemainingRef = useRef(0);
   const stableScrollbarMeasurementFramesRef = useRef(0);
   const lastScrollbarMeasurementRef =
     useRef<OverlayScrollbarMeasurementSnapshot | null>(null);
   const scrollbarDragStateRef = useRef<OverlayScrollbarDragState | null>(null);
-  const runtimePlatformRef = useRef(detectClientPlatform());
+  const scrollbarSizePxRef = useRef(11);
   const usesAppOwnedScrollbarChrome = scrollbarStyle === 'themed';
-  const usesNativeScrollbarChrome = scrollbarStyle === 'explorer-file-list';
-  const shouldRunInertialScroll = inertialScroll && !usesNativeScrollbarChrome;
 
-  const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    if (event.ctrlKey || event.metaKey || event.altKey) {
-      return;
-    }
-    if (direction !== 'horizontal') {
+  const refreshScrollbarSizeFromStyle = useCallback(() => {
+    const root = rootRef.current;
+    if (!root) {
       return;
     }
 
-    const viewport = internalViewportRef.current;
-    if (!viewport) {
-      return;
-    }
-
-    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
-      return;
-    }
-
-    event.preventDefault();
-    viewport.scrollLeft += event.deltaY;
-  }, [direction]);
+    const resolvedScrollbarSize = Number.parseFloat(
+      window.getComputedStyle(root).getPropertyValue('--overlay-scrollbar-size'),
+    );
+    scrollbarSizePxRef.current = Number.isFinite(resolvedScrollbarSize)
+      ? resolvedScrollbarSize
+      : 11;
+  }, []);
 
   const syncScrollbarPresentation =
     useCallback((): OverlayScrollbarMeasurementSnapshot | null => {
@@ -96,20 +70,14 @@ export function OverlayScrollArea({
 
     const measurement = readScrollbarMeasurementSnapshot(viewport);
     if (!usesAppOwnedScrollbarChrome) {
-      root.dataset.overlayVerticalScrollbarVisible = 'false';
-      root.dataset.overlayHorizontalScrollbarVisible = 'false';
-      root.style.setProperty('--overlay-scroll-area-vertical-reserve', '0px');
-      root.style.setProperty('--overlay-scroll-area-horizontal-reserve', '0px');
+      setDatasetValueIfChanged(root, 'overlayVerticalScrollbarVisible', 'false');
+      setDatasetValueIfChanged(root, 'overlayHorizontalScrollbarVisible', 'false');
+      setStylePropertyIfChanged(root, '--overlay-scroll-area-vertical-reserve', '0px');
+      setStylePropertyIfChanged(root, '--overlay-scroll-area-horizontal-reserve', '0px');
       return measurement;
     }
 
-    const computedStyle = window.getComputedStyle(root);
-    const resolvedScrollbarSize = Number.parseFloat(
-      computedStyle.getPropertyValue('--overlay-scrollbar-size'),
-    );
-    const scrollbarSizePx = Number.isFinite(resolvedScrollbarSize)
-      ? resolvedScrollbarSize
-      : 11;
+    const scrollbarSizePx = scrollbarSizePxRef.current;
     const verticalScrollbarVisible =
       direction !== 'horizontal'
       && viewport.scrollHeight > viewport.clientHeight + 1;
@@ -117,17 +85,23 @@ export function OverlayScrollArea({
       direction !== 'vertical'
       && viewport.scrollWidth > viewport.clientWidth + 1;
 
-    root.dataset.overlayVerticalScrollbarVisible = verticalScrollbarVisible
-      ? 'true'
-      : 'false';
-    root.dataset.overlayHorizontalScrollbarVisible = horizontalScrollbarVisible
-      ? 'true'
-      : 'false';
-    root.style.setProperty(
+    setDatasetValueIfChanged(
+      root,
+      'overlayVerticalScrollbarVisible',
+      verticalScrollbarVisible ? 'true' : 'false',
+    );
+    setDatasetValueIfChanged(
+      root,
+      'overlayHorizontalScrollbarVisible',
+      horizontalScrollbarVisible ? 'true' : 'false',
+    );
+    setStylePropertyIfChanged(
+      root,
       '--overlay-scroll-area-vertical-reserve',
       verticalScrollbarVisible ? `${scrollbarSizePx}px` : '0px',
     );
-    root.style.setProperty(
+    setStylePropertyIfChanged(
+      root,
       '--overlay-scroll-area-horizontal-reserve',
       horizontalScrollbarVisible ? `${scrollbarSizePx}px` : '0px',
     );
@@ -199,184 +173,6 @@ export function OverlayScrollArea({
       stableScrollbarMeasurementFramesRef.current = 0;
     });
   }, [syncScrollbarPresentation]);
-  scheduleScrollbarPresentationSyncRef.current = scheduleScrollbarPresentationSync;
-
-  const stopInertialScroll = useCallback(() => {
-    if (inertialScrollFrameRef.current != null) {
-      window.cancelAnimationFrame(inertialScrollFrameRef.current);
-      inertialScrollFrameRef.current = null;
-    }
-    inertialScrollVelocityRef.current = { x: 0, y: 0 };
-    inertialScrollLastFrameAtRef.current = null;
-  }, []);
-
-  const applyInertialScrollDelta = useCallback((
-    viewport: HTMLDivElement,
-    deltaX: number,
-    deltaY: number,
-  ): boolean => {
-    const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
-    const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-    const nextScrollLeft = clampNumber(
-      viewport.scrollLeft + deltaX,
-      0,
-      maxScrollLeft,
-    );
-    const nextScrollTop = clampNumber(
-      viewport.scrollTop + deltaY,
-      0,
-      maxScrollTop,
-    );
-    const didMove =
-      Math.abs(nextScrollLeft - viewport.scrollLeft) > 0.01 ||
-      Math.abs(nextScrollTop - viewport.scrollTop) > 0.01;
-
-    viewport.scrollLeft = nextScrollLeft;
-    viewport.scrollTop = nextScrollTop;
-    return didMove;
-  }, []);
-
-  const stepInertialScroll = useCallback((frameTime: number) => {
-    const viewport = internalViewportRef.current;
-    if (!viewport) {
-      stopInertialScroll();
-      return;
-    }
-
-    const lastFrameAt = inertialScrollLastFrameAtRef.current ?? frameTime;
-    inertialScrollLastFrameAtRef.current = frameTime;
-    const frameScale = clampNumber((frameTime - lastFrameAt) / 16.67, 0.5, 2.4);
-    const velocity = inertialScrollVelocityRef.current;
-    const didMove = applyInertialScrollDelta(
-      viewport,
-      velocity.x * frameScale,
-      velocity.y * frameScale,
-    );
-    const friction = Math.pow(INERTIAL_SCROLL_FRICTION_PER_FRAME, frameScale);
-    const nextVelocity = {
-      x: velocity.x * friction,
-      y: velocity.y * friction,
-    };
-    const shouldContinue =
-      didMove &&
-      (
-        Math.abs(nextVelocity.x) > INERTIAL_SCROLL_MIN_VELOCITY_PX ||
-        Math.abs(nextVelocity.y) > INERTIAL_SCROLL_MIN_VELOCITY_PX
-      );
-
-    if (!shouldContinue) {
-      stopInertialScroll();
-      scheduleScrollbarPresentationSyncRef.current();
-      return;
-    }
-
-    inertialScrollVelocityRef.current = nextVelocity;
-    scheduleScrollbarPresentationSyncRef.current();
-    inertialScrollFrameRef.current = window.requestAnimationFrame(stepInertialScroll);
-  }, [applyInertialScrollDelta, stopInertialScroll]);
-
-  const startInertialScroll = useCallback((deltaX: number, deltaY: number) => {
-    const clampedDeltaX = clampNumber(
-      deltaX,
-      -INERTIAL_SCROLL_DELTA_CLAMP_PX,
-      INERTIAL_SCROLL_DELTA_CLAMP_PX,
-    );
-    const clampedDeltaY = clampNumber(
-      deltaY,
-      -INERTIAL_SCROLL_DELTA_CLAMP_PX,
-      INERTIAL_SCROLL_DELTA_CLAMP_PX,
-    );
-    const currentVelocity = inertialScrollVelocityRef.current;
-    inertialScrollVelocityRef.current = {
-      x: clampNumber(
-        currentVelocity.x * INERTIAL_SCROLL_VELOCITY_CARRY_FACTOR +
-          clampedDeltaX * INERTIAL_SCROLL_VELOCITY_BLEND_FACTOR,
-        -INERTIAL_SCROLL_VELOCITY_CLAMP_PX,
-        INERTIAL_SCROLL_VELOCITY_CLAMP_PX,
-      ),
-      y: clampNumber(
-        currentVelocity.y * INERTIAL_SCROLL_VELOCITY_CARRY_FACTOR +
-          clampedDeltaY * INERTIAL_SCROLL_VELOCITY_BLEND_FACTOR,
-        -INERTIAL_SCROLL_VELOCITY_CLAMP_PX,
-        INERTIAL_SCROLL_VELOCITY_CLAMP_PX,
-      ),
-    };
-
-    if (inertialScrollFrameRef.current == null) {
-      inertialScrollLastFrameAtRef.current = null;
-      inertialScrollFrameRef.current = window.requestAnimationFrame(stepInertialScroll);
-    }
-  }, [stepInertialScroll]);
-
-  useEffect(() => {
-    const viewport = internalViewportRef.current;
-    if (!viewport || !shouldRunInertialScroll) {
-      stopInertialScroll();
-      return;
-    }
-
-    const handleInertialWheel = (event: WheelEvent) => {
-      if (
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        shouldReduceScrollMotion()
-      ) {
-        stopInertialScroll();
-        return;
-      }
-
-      const delta = normalizeWheelDeltaForViewport(event, viewport);
-      const scrollDelta = resolveInertialScrollDelta(direction, delta);
-      if (Math.abs(scrollDelta.x) < 0.01 && Math.abs(scrollDelta.y) < 0.01) {
-        return;
-      }
-
-      if (shouldUseNativePixelScroll(event, runtimePlatformRef.current)) {
-        stopInertialScroll();
-        return;
-      }
-
-      const immediateScrollDelta = {
-        x: scrollDelta.x * INERTIAL_SCROLL_IMMEDIATE_DELTA_FACTOR,
-        y: scrollDelta.y * INERTIAL_SCROLL_IMMEDIATE_DELTA_FACTOR,
-      };
-      const carriedMomentumDelta = {
-        x: scrollDelta.x - immediateScrollDelta.x,
-        y: scrollDelta.y - immediateScrollDelta.y,
-      };
-
-      event.preventDefault();
-      const didMove = applyInertialScrollDelta(
-        viewport,
-        immediateScrollDelta.x,
-        immediateScrollDelta.y,
-      );
-      if (didMove) {
-        startInertialScroll(
-          carriedMomentumDelta.x,
-          carriedMomentumDelta.y,
-        );
-        scheduleScrollbarPresentationSync();
-      } else {
-        stopInertialScroll();
-      }
-    };
-
-    viewport.addEventListener('wheel', handleInertialWheel, { passive: false });
-    return () => {
-      viewport.removeEventListener('wheel', handleInertialWheel);
-      stopInertialScroll();
-    };
-  }, [
-    applyInertialScrollDelta,
-    direction,
-    scheduleScrollbarPresentationSync,
-    shouldRunInertialScroll,
-    startInertialScroll,
-    stopInertialScroll,
-  ]);
-
   const handleViewportScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     onViewportScroll?.(event);
     if (usesAppOwnedScrollbarChrome) {
@@ -447,7 +243,6 @@ export function OverlayScrollArea({
       return;
     }
 
-    stopInertialScroll();
     args.event.preventDefault();
     args.event.stopPropagation();
 
@@ -472,17 +267,19 @@ export function OverlayScrollArea({
     window.addEventListener('pointerup', handleScrollbarDragPointerEnd);
     window.addEventListener('pointercancel', handleScrollbarDragPointerEnd);
     handleScrollbarDragPointerMove(args.event.nativeEvent);
-  }, [handleScrollbarDragPointerEnd, handleScrollbarDragPointerMove, stopInertialScroll]);
+  }, [handleScrollbarDragPointerEnd, handleScrollbarDragPointerMove]);
 
   useLayoutEffect(() => {
     if (!usesAppOwnedScrollbarChrome) {
       return;
     }
+    refreshScrollbarSizeFromStyle();
     scheduleScrollbarPresentationSync({ sustain: true });
   }, [
     contentClassName,
     contentStyle,
     direction,
+    refreshScrollbarSizeFromStyle,
     scheduleScrollbarPresentationSync,
     usesAppOwnedScrollbarChrome,
     viewportClassName,
@@ -505,9 +302,11 @@ export function OverlayScrollArea({
       return;
     }
 
+    refreshScrollbarSizeFromStyle();
     scheduleScrollbarPresentationSync({ sustain: true });
 
     const handleWindowResize = () => {
+      refreshScrollbarSizeFromStyle();
       scheduleScrollbarPresentationSync({ sustain: true });
     };
 
@@ -525,6 +324,7 @@ export function OverlayScrollArea({
     }
 
     const resizeObserver = new ResizeObserver(() => {
+      refreshScrollbarSizeFromStyle();
       scheduleScrollbarPresentationSync({ sustain: true });
     });
     resizeObserver.observe(viewport);
@@ -543,6 +343,7 @@ export function OverlayScrollArea({
     };
   }, [
     handleScrollbarDragPointerEnd,
+    refreshScrollbarSizeFromStyle,
     scheduleScrollbarPresentationSync,
     usesAppOwnedScrollbarChrome,
   ]);
@@ -567,8 +368,6 @@ export function OverlayScrollArea({
     >
       <div
         ref={mergeRefs(internalViewportRef, viewportRef)}
-        onWheel={handleWheel}
-        onPointerDown={stopInertialScroll}
         onScroll={handleViewportScroll}
         className={joinClassNames(
           'overlay-scroll-area__viewport',
@@ -577,7 +376,6 @@ export function OverlayScrollArea({
           viewportClassName,
         )}
         data-overlay-scrollbar-style={scrollbarStyle}
-        data-overlay-inertial-scroll={inertialScroll ? 'true' : 'false'}
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -662,15 +460,13 @@ function syncAxisScrollbarPresentation(args: {
     return;
   }
 
-  track.dataset.visible = visible ? 'true' : 'false';
+  setDatasetValueIfChanged(track, 'visible', visible ? 'true' : 'false');
   if (!visible) {
-    thumb.style.transform = axis === 'vertical'
-      ? 'translate3d(0, 0, 0)'
-      : 'translate3d(0, 0, 0)';
+    setStylePropertyIfChanged(thumb, 'transform', 'translate3d(0, 0, 0)');
     if (axis === 'vertical') {
-      thumb.style.height = '0px';
+      setStylePropertyIfChanged(thumb, 'height', '0px');
     } else {
-      thumb.style.width = '0px';
+      setStylePropertyIfChanged(thumb, 'width', '0px');
     }
     return;
   }
@@ -697,13 +493,13 @@ function syncAxisScrollbarPresentation(args: {
     : 0;
 
   if (axis === 'vertical') {
-    thumb.style.minHeight = `${minimumThumbSize}px`;
-    thumb.style.height = `${thumbSize}px`;
-    thumb.style.transform = `translate3d(0, ${thumbOffset}px, 0)`;
+    setStylePropertyIfChanged(thumb, 'min-height', `${minimumThumbSize}px`);
+    setStylePropertyIfChanged(thumb, 'height', `${thumbSize}px`);
+    setStylePropertyIfChanged(thumb, 'transform', `translate3d(0, ${thumbOffset}px, 0)`);
   } else {
-    thumb.style.minWidth = `${minimumThumbSize}px`;
-    thumb.style.width = `${thumbSize}px`;
-    thumb.style.transform = `translate3d(${thumbOffset}px, 0, 0)`;
+    setStylePropertyIfChanged(thumb, 'min-width', `${minimumThumbSize}px`);
+    setStylePropertyIfChanged(thumb, 'width', `${thumbSize}px`);
+    setStylePropertyIfChanged(thumb, 'transform', `translate3d(${thumbOffset}px, 0, 0)`);
   }
 }
 
@@ -804,56 +600,26 @@ function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCallba
   };
 }
 
-function shouldReduceScrollMotion(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
+function setDatasetValueIfChanged(
+  element: HTMLElement,
+  key: string,
+  value: string,
+) {
+  if (element.dataset[key] === value) {
+    return;
   }
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  element.dataset[key] = value;
 }
 
-function shouldUseNativePixelScroll(
-  event: WheelEvent,
-  runtimePlatform: ReturnType<typeof detectClientPlatform>,
-): boolean {
-  // WebView2 already delivers high-resolution pixel wheel deltas for precision
-  // devices on Windows. Replaying those through our synthetic inertia made the
-  // explorer feel chunked, so let native scrolling own that lane.
-  return (
-    runtimePlatform === 'windows' &&
-    event.deltaMode === WheelEvent.DOM_DELTA_PIXEL
-  );
-}
-
-function normalizeWheelDeltaForViewport(
-  event: WheelEvent,
-  viewport: HTMLDivElement,
-): { x: number; y: number } {
-  const scale =
-    event.deltaMode === WheelEvent.DOM_DELTA_LINE
-      ? 18
-      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-        ? Math.max(1, viewport.clientHeight)
-        : 1;
-  return {
-    x: event.deltaX * scale,
-    y: event.deltaY * scale,
-  };
-}
-
-function resolveInertialScrollDelta(
-  direction: OverlayScrollDirection,
-  delta: { x: number; y: number },
-): { x: number; y: number } {
-  if (direction === 'horizontal') {
-    return {
-      x: Math.abs(delta.y) > Math.abs(delta.x) ? delta.y : delta.x,
-      y: 0,
-    };
+function setStylePropertyIfChanged(
+  element: HTMLElement,
+  propertyName: string,
+  value: string,
+) {
+  if (element.style.getPropertyValue(propertyName) === value) {
+    return;
   }
-  if (direction === 'vertical') {
-    return { x: 0, y: delta.y };
-  }
-  return delta;
+  element.style.setProperty(propertyName, value);
 }
 
 function clampNumber(value: number, minimum: number, maximum: number): number {

@@ -157,7 +157,12 @@ import {
   describeGlobalSearchPaletteStatus,
   globalSearchPaletteConfig,
 } from './config/globalSearch';
-import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './config/hotkeys';
+import {
+  formatHotkeyLabel,
+  matchesKeybinding,
+  matchesWheelHotkey,
+  shouldArmNonPassiveWheelHotkeyListener,
+} from './config/hotkeys';
 import { createMobileShareThemeSnapshot } from './config/mobileTheme';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
@@ -2962,6 +2967,25 @@ function App() {
       return;
     }
 
+    const visualControlWheelBindings = [
+      keybindings.zoomAdjust,
+      keybindings.opacityAdjust,
+    ];
+    const activeWheelModifierState = {
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+    };
+    const wheelListenerOptions: AddEventListenerOptions = {
+      passive: false,
+      capture: true,
+    };
+    const keyboardListenerOptions: AddEventListenerOptions = {
+      capture: true,
+    };
+    let isWheelListenerAttached = false;
+
     const handleWheelZoom = (event: WheelEvent) => {
       if (
         shouldExplorerZoomScopeOwnWheelGesture({
@@ -3008,8 +3032,62 @@ function App() {
       });
     };
 
-    window.addEventListener('wheel', handleWheelZoom, { passive: false, capture: true });
-    return () => window.removeEventListener('wheel', handleWheelZoom, { capture: true });
+    const syncWheelModifierState = (
+      event: Pick<KeyboardEvent, 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>,
+    ) => {
+      activeWheelModifierState.ctrlKey = event.ctrlKey;
+      activeWheelModifierState.metaKey = event.metaKey;
+      activeWheelModifierState.altKey = event.altKey;
+      activeWheelModifierState.shiftKey = event.shiftKey;
+    };
+    const attachWheelListener = () => {
+      if (isWheelListenerAttached) {
+        return;
+      }
+      window.addEventListener('wheel', handleWheelZoom, wheelListenerOptions);
+      isWheelListenerAttached = true;
+    };
+    const detachWheelListener = () => {
+      if (!isWheelListenerAttached) {
+        return;
+      }
+      window.removeEventListener('wheel', handleWheelZoom, wheelListenerOptions);
+      isWheelListenerAttached = false;
+    };
+    const syncWheelListenerAttachment = () => {
+      if (shouldArmNonPassiveWheelHotkeyListener(
+        activeWheelModifierState,
+        visualControlWheelBindings,
+      )) {
+        attachWheelListener();
+        return;
+      }
+      detachWheelListener();
+    };
+    const handleWheelShortcutKeyChange = (event: KeyboardEvent) => {
+      syncWheelModifierState(event);
+      syncWheelListenerAttachment();
+    };
+    const handleWheelShortcutBlur = () => {
+      activeWheelModifierState.ctrlKey = false;
+      activeWheelModifierState.metaKey = false;
+      activeWheelModifierState.altKey = false;
+      activeWheelModifierState.shiftKey = false;
+      detachWheelListener();
+    };
+
+    // A permanent non-passive wheel listener forces WebView scrolling through JS.
+    // Keep it armed only while a real visual-control wheel shortcut can fire.
+    window.addEventListener('keydown', handleWheelShortcutKeyChange, keyboardListenerOptions);
+    window.addEventListener('keyup', handleWheelShortcutKeyChange, keyboardListenerOptions);
+    window.addEventListener('blur', handleWheelShortcutBlur);
+    syncWheelListenerAttachment();
+    return () => {
+      detachWheelListener();
+      window.removeEventListener('keydown', handleWheelShortcutKeyChange, keyboardListenerOptions);
+      window.removeEventListener('keyup', handleWheelShortcutKeyChange, keyboardListenerOptions);
+      window.removeEventListener('blur', handleWheelShortcutBlur);
+    };
   }, [isOverlayVisible, keybindings.opacityAdjust, keybindings.zoomAdjust]);
 
   // ── Persist resize ──

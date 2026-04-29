@@ -5,6 +5,7 @@ import {
   matchesWheelHotkey,
   normalizeKeybindingSettings,
   normalizeKeybindingValue,
+  shouldArmNonPassiveWheelHotkeyListener,
 } from '../config/hotkeys';
 import {
   isEventInsideExplorerZoomScope,
@@ -153,6 +154,23 @@ describe('hotkey config helpers', () => {
       { ctrlKey: false, metaKey: false, altKey: true, shiftKey: false },
       'Alt+Scroll',
     )).toBe(true);
+  });
+
+  it('arms non-passive wheel shortcut listeners only for active modifier gestures', () => {
+    expect(shouldArmNonPassiveWheelHotkeyListener(
+      { ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+      ['Ctrl+Scroll', 'Alt+Scroll'],
+    )).toBe(false);
+
+    expect(shouldArmNonPassiveWheelHotkeyListener(
+      { ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+      ['Ctrl+Scroll', 'Alt+Scroll'],
+    )).toBe(true);
+
+    expect(shouldArmNonPassiveWheelHotkeyListener(
+      { ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+      ['Scroll'],
+    )).toBe(false);
   });
 
   it('marks ctrl-wheel targets inside the explorer zoom scope so app zoom can back off', () => {

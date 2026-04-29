@@ -30975,11 +30975,6 @@ export function FileExplorer({
                 <OverlayScrollArea
                   style={{ flex: 1, minHeight: 0 }}
                   scrollbarStyle="explorer-file-list"
-                  inertialScroll={
-                    effectiveExperimentalViewMode === "off" &&
-                    shouldRenderExplorerContent &&
-                    !currentPathIsHome
-                  }
                   viewportStyle={{
                     padding: 0,
                     ...(usesConstellationCanvas ? { overflow: "hidden" } : {}),

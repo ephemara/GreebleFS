@@ -319,9 +319,7 @@ export function matchesWheelHotkey(
   event: Pick<WheelEvent, "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
   binding: string,
 ): boolean {
-  const tokens = normalizeKeybindingValue(binding, "Ctrl+Scroll")
-    .split("+")
-    .map(normalizeGestureToken);
+  const tokens = getNormalizedWheelHotkeyTokens(binding);
 
   if (!tokens.includes("scroll")) {
     return false;
@@ -348,5 +346,37 @@ export function matchesWheelHotkey(
     metaMatches &&
     event.altKey === needsAlt &&
     event.shiftKey === needsShift
+  );
+}
+
+export function shouldArmNonPassiveWheelHotkeyListener(
+  event: Pick<WheelEvent, "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+  bindings: readonly string[],
+): boolean {
+  return bindings.some((binding) => {
+    const tokens = getNormalizedWheelHotkeyTokens(binding);
+    return (
+      tokens.includes("scroll") &&
+      tokens.some(isWheelHotkeyModifierToken) &&
+      matchesWheelHotkey(event, binding)
+    );
+  });
+}
+
+function getNormalizedWheelHotkeyTokens(binding: string): string[] {
+  return normalizeKeybindingValue(binding, "Ctrl+Scroll")
+    .split("+")
+    .map(normalizeGestureToken);
+}
+
+function isWheelHotkeyModifierToken(token: string): boolean {
+  return (
+    token === "ctrl" ||
+    token === "meta" ||
+    token === "cmd" ||
+    token === "command" ||
+    token === "commandorcontrol" ||
+    token === "alt" ||
+    token === "shift"
   );
 }

@@ -41,6 +41,15 @@ describe("overlay scrollbar style contract", () => {
     );
   });
 
+  it("keeps scroll viewports and overlay thumbs compositor friendly", () => {
+    expect(overlayScrollbarStylesSource).toMatch(
+      /\.overlay-scroll-area__viewport\s*{[^}]*will-change:\s*scroll-position;[^}]*transform:\s*translateZ\(0\);[^}]*backface-visibility:\s*hidden;/s,
+    );
+    expect(overlayScrollbarStylesSource).toMatch(
+      /\.overlay-scroll-area__scrollbar-thumb\s*{[^}]*will-change:\s*transform;[^}]*transform:\s*translateZ\(0\);/s,
+    );
+  });
+
   it("defines app-owned overlay scrollbar chrome for shared scroll areas", () => {
     expect(overlayScrollbarStylesSource).toContain(
       ".overlay-scroll-area__scrollbar-thumb",

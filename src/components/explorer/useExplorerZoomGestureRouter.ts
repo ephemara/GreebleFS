@@ -1,6 +1,9 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
 
-import { matchesWheelHotkey } from "../../config/hotkeys";
+import {
+  matchesWheelHotkey,
+  shouldArmNonPassiveWheelHotkeyListener,
+} from "../../config/hotkeys";
 import { getNormalizedExplorerZoomWheelPixels } from "../../config/explorerZoomBehavior";
 
 export const EXPLORER_ZOOM_SCOPE_ATTRIBUTE = "data-explorer-zoom-scope";
@@ -80,9 +83,23 @@ export function useExplorerZoomGestureRouter(
 
   useLayoutEffect(() => {
     const scopeNode = args.scopeNode;
-    if (!scopeNode) {
+    if (!scopeNode || typeof window === "undefined") {
       return;
     }
+    const activeWheelModifierState = {
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+    };
+    const wheelListenerOptions: AddEventListenerOptions = {
+      passive: false,
+      capture: true,
+    };
+    const keyboardListenerOptions: AddEventListenerOptions = {
+      capture: true,
+    };
+    let isWheelListenerAttached = false;
 
     const handleWheel = (event: WheelEvent) => {
       if (!matchesWheelHotkey(event, args.hotkeyBinding)) {
@@ -129,13 +146,59 @@ export function useExplorerZoomGestureRouter(
       event.stopPropagation();
     };
 
-    const options: AddEventListenerOptions = {
-      passive: false,
-      capture: true,
+    const syncWheelModifierState = (
+      event: Pick<KeyboardEvent, "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+    ) => {
+      activeWheelModifierState.ctrlKey = event.ctrlKey;
+      activeWheelModifierState.metaKey = event.metaKey;
+      activeWheelModifierState.altKey = event.altKey;
+      activeWheelModifierState.shiftKey = event.shiftKey;
     };
-    scopeNode.addEventListener("wheel", handleWheel, options);
+    const attachWheelListener = () => {
+      if (isWheelListenerAttached) {
+        return;
+      }
+      scopeNode.addEventListener("wheel", handleWheel, wheelListenerOptions);
+      isWheelListenerAttached = true;
+    };
+    const detachWheelListener = () => {
+      if (!isWheelListenerAttached) {
+        return;
+      }
+      scopeNode.removeEventListener("wheel", handleWheel, wheelListenerOptions);
+      isWheelListenerAttached = false;
+    };
+    const syncWheelListenerAttachment = () => {
+      if (shouldArmNonPassiveWheelHotkeyListener(
+        activeWheelModifierState,
+        [args.hotkeyBinding],
+      )) {
+        attachWheelListener();
+        return;
+      }
+      detachWheelListener();
+    };
+    const handleWheelShortcutKeyChange = (event: KeyboardEvent) => {
+      syncWheelModifierState(event);
+      syncWheelListenerAttachment();
+    };
+    const handleWheelShortcutBlur = () => {
+      activeWheelModifierState.ctrlKey = false;
+      activeWheelModifierState.metaKey = false;
+      activeWheelModifierState.altKey = false;
+      activeWheelModifierState.shiftKey = false;
+      detachWheelListener();
+    };
+
+    window.addEventListener("keydown", handleWheelShortcutKeyChange, keyboardListenerOptions);
+    window.addEventListener("keyup", handleWheelShortcutKeyChange, keyboardListenerOptions);
+    window.addEventListener("blur", handleWheelShortcutBlur);
+    syncWheelListenerAttachment();
     return () => {
-      scopeNode.removeEventListener("wheel", handleWheel, options);
+      detachWheelListener();
+      window.removeEventListener("keydown", handleWheelShortcutKeyChange, keyboardListenerOptions);
+      window.removeEventListener("keyup", handleWheelShortcutKeyChange, keyboardListenerOptions);
+      window.removeEventListener("blur", handleWheelShortcutBlur);
     };
   }, [args.getViewportHeight, args.hotkeyBinding, args.scopeNode]);
 
