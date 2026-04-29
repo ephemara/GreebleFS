@@ -44,7 +44,9 @@ export function resolveOverlayShellEffectsPolicy(args: {
     tier,
     blurEnabled,
     blurStrength,
-    showWallpaperBackdrop: tier !== 'minimal',
+    // Keep the selected/theme wallpaper as the durable base layer even when
+    // adaptive effects shed blur, shaders, and decorative theme overlays.
+    showWallpaperBackdrop: true,
     showThemeEffectBackdrop: tier === 'full',
     showThemeVisuals: tier === 'full',
     showBackgroundShader: tier === 'full',

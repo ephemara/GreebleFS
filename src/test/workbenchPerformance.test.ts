@@ -37,7 +37,11 @@ describe('workbenchPerformance', () => {
     expect(policy.tier).toBe('minimal');
     expect(policy.blurEnabled).toBe(false);
     expect(policy.blurStrength).toBe(0);
-    expect(policy.showWallpaperBackdrop).toBe(false);
+    expect(policy.showWallpaperBackdrop).toBe(true);
+    expect(policy.showThemeEffectBackdrop).toBe(false);
+    expect(policy.showThemeVisuals).toBe(false);
+    expect(policy.showBackgroundShader).toBe(false);
+    expect(policy.showBorderShader).toBe(false);
     expect(policy.showAnimationOverlay).toBe(false);
   });
 });

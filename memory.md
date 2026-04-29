@@ -1,3 +1,14 @@
+# 2026-04-28 - Adaptive Effects No Longer Drop The Base Wallpaper Layer
+
+- A second wallpaper regression came from the adaptive shell-effects policy rather than the asset loader: under startup/frame pressure the shell could downgrade to the `minimal` effects tier and set `showWallpaperBackdrop` to `false`, which made valid theme wallpapers appear briefly on first paint and then disappear.
+- Durable ownership after this pass:
+  - `src/config/workbenchPerformance.ts` still owns adaptive shedding for blur, theme effect backdrops, visuals, shaders, and animation overlays, but the base wallpaper backdrop now remains enabled across all tiers.
+  - The performance system should treat the wallpaper as the shell’s durable base scene and shed more expensive layers above it first.
+- Durable regression rule:
+  - if a theme wallpaper flashes on startup and then vanishes, verify the resolved shell-effects policy before assuming the theme bundle, wallpaper loader, or shell scene layering is broken.
+- Validation that passed for this pass:
+  - `node_modules\\.bin\\vitest.exe run src/test/workbenchPerformance.test.ts src/test/wallpaperRuntime.test.ts src/test/andromedaThemeBundle.test.ts --reporter=dot`
+
 # 2026-04-28 - Managed SVG Wallpapers Now Inline Before The Shell Backdrop Layer
 
 - Wallpaper rendering failures on this Windows/WebView2 setup traced back to filesystem-backed SVG wallpaper URLs, not to the shell backdrop stack. Theme-selected SVG wallpapers and imported custom SVG wallpapers could both intermittently miss the backdrop layer even though `App.tsx` was still rendering the wallpaper scene underneath panels.
