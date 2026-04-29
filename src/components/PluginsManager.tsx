@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   Blocks,
+  ChevronDown,
+  ChevronRight,
   Eye,
   File,
   FolderOpen,
@@ -91,7 +93,8 @@ export function PluginsManager({
   const accent = appearance?.theme.palette.accent ?? 'var(--overlay-accent)';
   const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null);
   const [selectedSurface, setSelectedSurface] = useState<PluginManagerSurface>('workbench-preview');
-  const [sidebarWidth, setSidebarWidth] = usePersistentPanelSize('overlayterm-plugins-sidebar-width', 270, 210, 340);
+  const [sidebarWidth, setSidebarWidth] = usePersistentPanelSize('overlayterm-plugins-sidebar-width', 236, 190, 320);
+  const [collapsedCategoryIds, setCollapsedCategoryIds] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
     setSelectedPluginId(current => {
@@ -129,6 +132,33 @@ export function PluginsManager({
     plugins.forEach(plugin => getPluginTags(plugin).forEach(tag => tags.add(tag)));
     return tags.size;
   }, [plugins]);
+  useEffect(() => {
+    setCollapsedCategoryIds(current => {
+      const availableCategoryIds = new Set(groupedPlugins.map(group => group.category));
+      let changed = false;
+      const next = new Set<string>();
+      current.forEach(category => {
+        if (availableCategoryIds.has(category)) {
+          next.add(category);
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [groupedPlugins]);
+
+  const toggleCategoryCollapsed = (category: string) => {
+    setCollapsedCategoryIds(current => {
+      const next = new Set(current);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
 
   return (
     <div
@@ -146,8 +176,8 @@ export function PluginsManager({
     >
       <ResizablePane
         size={sidebarWidth}
-        minSize={210}
-        maxSize={340}
+        minSize={190}
+        maxSize={320}
         onSizeChange={setSidebarWidth}
         borderColor={`${accent}55`}
         style={{
@@ -160,20 +190,20 @@ export function PluginsManager({
           overflow: 'hidden',
         }}
       >
-        <div style={{ padding: 12, borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ padding: '10px 12px', borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={iconTileStyle(accent)}>
-              <Puzzle size={14} style={{ color: accent }} />
+              <Puzzle size={12} style={{ color: accent }} />
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>Plugins</div>
-              <div style={{ marginTop: 2, fontSize: 10, color: MUTED }}>
+              <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1, color: TEXT }}>Plugins</div>
+              <div style={{ marginTop: 4, fontSize: 10, lineHeight: 1.2, color: MUTED }}>
                 {plugins.length} packages • {totalPreviewLaneCount} previews • {totalTags} tags
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 9 }}>
             <button onClick={() => void onRefreshPlugins()} style={toolbarButton(accent, false)}>
               <RefreshCw size={13} />
               Refresh
@@ -185,7 +215,7 @@ export function PluginsManager({
           </div>
         </div>
 
-        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 8 }} scrollbarStyle="themed">
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: '7px 8px 10px 8px' }} scrollbarStyle="themed">
           {plugins.length === 0 && !isLoading ? (
             <div
               style={{
@@ -202,23 +232,15 @@ export function PluginsManager({
             </div>
           ) : (
             groupedPlugins.map(group => (
-              <div key={group.category} style={{ marginBottom: 10 }}>
-                <div style={railGroupHeaderStyle}>
-                  <span>{group.category}</span>
-                  <span>{group.plugins.length}</span>
-                </div>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  {group.plugins.map(plugin => (
-                    <PluginRailItem
-                      key={`${plugin.id}-${plugin.modified}`}
-                      plugin={plugin}
-                      accent={accent}
-                      selected={plugin.id === selectedPluginId}
-                      onSelect={() => setSelectedPluginId(plugin.id)}
-                    />
-                  ))}
-                </div>
-              </div>
+              <PluginRailGroup
+                key={group.category}
+                group={group}
+                accent={accent}
+                collapsed={collapsedCategoryIds.has(group.category)}
+                selectedPluginId={selectedPluginId}
+                onToggleCollapsed={() => toggleCategoryCollapsed(group.category)}
+                onSelectPlugin={setSelectedPluginId}
+              />
             ))
           )}
         </OverlayScrollArea>
@@ -281,7 +303,7 @@ export function PluginsManager({
         </div>
 
         {error ? (
-          <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--overlay-danger)', borderBottom: `1px solid ${BORDER}`, background: 'color-mix(in srgb, var(--overlay-danger) 18%, transparent)' }}>
+          <div style={{ padding: '6px 10px', fontSize: 10, color: 'var(--overlay-danger)', borderBottom: `1px solid ${BORDER}`, background: 'color-mix(in srgb, var(--overlay-danger) 18%, transparent)' }}>
             {error}
           </div>
         ) : null}
@@ -295,7 +317,7 @@ export function PluginsManager({
             <EmptyPluginsState accent={accent} onOpenFolder={onOpenPluginsFolder} />
           </OverlayScrollArea>
         ) : (
-          <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 0 }}>
+          <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 286px', gap: 0 }}>
             <section style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               <div style={surfaceToolbarStyle}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -343,6 +365,56 @@ export function PluginsManager({
   );
 }
 
+function PluginRailGroup({
+  group,
+  accent,
+  collapsed,
+  selectedPluginId,
+  onToggleCollapsed,
+  onSelectPlugin,
+}: {
+  group: ReturnType<typeof groupPluginsByCategory>[number];
+  accent: string;
+  collapsed: boolean;
+  selectedPluginId: string | null;
+  onToggleCollapsed: () => void;
+  onSelectPlugin: (pluginId: string) => void;
+}) {
+  const ChevronIcon = collapsed ? ChevronRight : ChevronDown;
+  return (
+    <section data-plugin-rail-category={group.category} style={{ marginBottom: 9 }}>
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        aria-label={`${group.category} ${group.plugins.length} plugin${group.plugins.length === 1 ? '' : 's'}`}
+        onClick={onToggleCollapsed}
+        style={railGroupButtonStyle}
+      >
+        <span style={{ display: 'inline-flex', minWidth: 0, alignItems: 'center', gap: 5 }}>
+          <ChevronIcon size={11} style={{ flexShrink: 0, color: MUTED }} />
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {group.category}
+          </span>
+        </span>
+        <span style={{ opacity: 0.5 }}>{group.plugins.length}</span>
+      </button>
+      {!collapsed ? (
+        <div style={{ display: 'grid', gap: 4 }}>
+          {group.plugins.map(plugin => (
+            <PluginRailItem
+              key={`${plugin.id}-${plugin.modified}`}
+              plugin={plugin}
+              accent={accent}
+              selected={plugin.id === selectedPluginId}
+              onSelect={() => onSelectPlugin(plugin.id)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function PluginRailItem({
   plugin,
   accent,
@@ -354,8 +426,16 @@ function PluginRailItem({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const capabilityLabels = getPluginCapabilityLabels(plugin).slice(0, 2);
-  const tags = getPluginTags(plugin).slice(0, 3);
+  const capabilityLabels = getPluginCapabilityLabels(plugin);
+  const tags = getPluginTags(plugin);
+  const summaryParts = [
+    getPluginSourceSummary(plugin),
+    ...capabilityLabels.slice(0, 2),
+    ...tags.slice(0, 2),
+  ];
+  if (plugin.diagnostics.warnings.length > 0) {
+    summaryParts.push(`${plugin.diagnostics.warnings.length} warning${plugin.diagnostics.warnings.length === 1 ? '' : 's'}`);
+  }
   return (
     <button
       type="button"
@@ -364,37 +444,44 @@ function PluginRailItem({
       style={{
         width: '100%',
         textAlign: 'left',
-        padding: '9px 10px',
-        borderRadius: 8,
+        padding: '6px 7px',
+        borderRadius: 7,
         border: `1px solid ${selected ? `${accent}88` : BORDER}`,
-        background: selected ? `${accent}17` : 'rgba(255,255,255,0.02)',
+        background: selected ? 'var(--overlay-workbench-chrome-button-active-bg)' : PANEL_ALT,
         color: TEXT,
         cursor: 'pointer',
-        boxShadow: selected ? `inset 0 0 0 1px ${accent}22` : 'none',
+        boxShadow: selected ? `inset 2px 0 0 ${accent}, inset 0 0 0 1px ${accent}22` : 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ minWidth: 0, fontSize: 11, fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {plugin.name}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <div
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 5,
+            border: `1px solid ${selected ? `${accent}55` : 'var(--overlay-workbench-settings-badge-border)'}`,
+            background: selected ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-settings-badge-bg)',
+            color: selected ? accent : MUTED,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <Puzzle size={11} />
         </div>
-        {plugin.error ? <TriangleAlert size={12} style={{ color: 'var(--overlay-warning)' }} /> : null}
-      </div>
-      <div style={{ marginTop: 4, fontSize: 10, color: MUTED }}>
-        {getPluginSourceSummary(plugin)}
-      </div>
-      {(capabilityLabels.length > 0 || tags.length > 0 || plugin.diagnostics.warnings.length > 0) ? (
-        <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-          {capabilityLabels.map(label => (
-            <PluginBadge key={`${plugin.id}-${label}`} label={label} accent={accent} />
-          ))}
-          {tags.map(tag => (
-            <PluginBadge key={`${plugin.id}-${tag}`} label={tag} accent="var(--overlay-text-muted)" />
-          ))}
-          {plugin.diagnostics.warnings.length > 0 ? (
-            <PluginBadge label={`${plugin.diagnostics.warnings.length} warning${plugin.diagnostics.warnings.length === 1 ? '' : 's'}`} accent="var(--overlay-warning)" />
-          ) : null}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ minWidth: 0, flex: 1, fontSize: 10, fontWeight: 750, letterSpacing: '0.08em', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {plugin.name}
+            </div>
+            {plugin.error ? <TriangleAlert size={12} style={{ color: 'var(--overlay-warning)', flexShrink: 0 }} /> : null}
+          </div>
+          <div style={{ marginTop: 1, fontSize: 9, lineHeight: 1.35, color: selected ? accent : MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {summaryParts.join(' • ')}
+          </div>
         </div>
-      ) : null}
+      </div>
     </button>
   );
 }
@@ -537,6 +624,19 @@ function PluginInspector({
   previewLanes: OverlayPluginPreviewLaneContribution[];
   accent: string;
 }) {
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleSectionCollapsed = (sectionId: string) => {
+    setCollapsedSectionIds(current => {
+      const next = new Set(current);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  };
+
   return (
     <aside
       style={{
@@ -548,8 +648,14 @@ function PluginInspector({
         flexDirection: 'column',
       }}
     >
-      <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 12 }} scrollbarStyle="themed">
-        <InspectorBlock title="Organization" icon={<Tags size={13} />}>
+      <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 10 }} scrollbarStyle="themed">
+        <InspectorBlock
+          id="organization"
+          title="Organization"
+          icon={<Tags size={12} />}
+          collapsed={collapsedSectionIds.has('organization')}
+          onToggleCollapsed={toggleSectionCollapsed}
+        >
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             <PluginBadge label={getPluginCategory(plugin)} accent={accent} />
             {getPluginTags(plugin).map(tag => (
@@ -558,11 +664,17 @@ function PluginInspector({
           </div>
         </InspectorBlock>
 
-        <InspectorBlock title="Preview Lanes" icon={<Eye size={13} />}>
+        <InspectorBlock
+          id="preview-lanes"
+          title="Preview Lanes"
+          icon={<Eye size={12} />}
+          collapsed={collapsedSectionIds.has('preview-lanes')}
+          onToggleCollapsed={toggleSectionCollapsed}
+        >
           {previewLanes.length === 0 ? (
             <div style={inspectorMutedTextStyle}>This plugin does not contribute a workbench preview lane.</div>
           ) : (
-            <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ display: 'grid', gap: 6 }}>
               {previewLanes.map(lane => (
                 <div key={lane.id} style={inspectorRowStyle}>
                   <div style={{ fontWeight: 700 }}>{lane.title}</div>
@@ -575,11 +687,17 @@ function PluginInspector({
           )}
         </InspectorBlock>
 
-        <InspectorBlock title="Test Files" icon={<File size={13} />}>
+        <InspectorBlock
+          id="test-files"
+          title="Test Files"
+          icon={<File size={12} />}
+          collapsed={collapsedSectionIds.has('test-files')}
+          onToggleCollapsed={toggleSectionCollapsed}
+        >
           {getPluginTestFiles(plugin).length === 0 ? (
             <div style={inspectorMutedTextStyle}>No package fixtures declared.</div>
           ) : (
-            <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ display: 'grid', gap: 6 }}>
               {getPluginTestFiles(plugin).map(testFile => (
                 <div key={testFile.id} style={inspectorRowStyle}>
                   <div style={{ fontWeight: 700 }}>{testFile.label}</div>
@@ -590,10 +708,16 @@ function PluginInspector({
           )}
         </InspectorBlock>
 
-        <InspectorBlock title="Diagnostics" icon={<Puzzle size={13} />}>
+        <InspectorBlock
+          id="diagnostics"
+          title="Diagnostics"
+          icon={<Puzzle size={12} />}
+          collapsed={collapsedSectionIds.has('diagnostics')}
+          onToggleCollapsed={toggleSectionCollapsed}
+        >
           <div style={inspectorMutedTextStyle}>Manifest: {plugin.diagnostics.manifestPath ?? 'none'}</div>
           {plugin.diagnostics.warnings.length > 0 ? (
-            <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+            <div style={{ marginTop: 6, display: 'grid', gap: 6 }}>
               {plugin.diagnostics.warnings.map(warning => (
                 <div key={`${plugin.id}-${warning}`} style={{ ...inspectorRowStyle, color: 'var(--overlay-warning)' }}>
                   {warning}
@@ -841,14 +965,45 @@ function PluginErrorPanel({ plugin }: { plugin: LoadedOverlayPlugin }) {
   );
 }
 
-function InspectorBlock({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function InspectorBlock({
+  id,
+  title,
+  icon,
+  collapsed,
+  onToggleCollapsed,
+  children,
+}: {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+  collapsed: boolean;
+  onToggleCollapsed: (id: string) => void;
+  children: React.ReactNode;
+}) {
+  const ChevronIcon = collapsed ? ChevronRight : ChevronDown;
   return (
-    <section style={{ marginBottom: 10, border: `1px solid ${BORDER}`, borderRadius: 8, background: 'rgba(255,255,255,0.025)', padding: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8, color: TEXT, fontSize: 10, fontWeight: 750, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-        {icon}
-        {title}
-      </div>
-      {children}
+    <section style={{ marginBottom: 8, border: `1px solid ${BORDER}`, borderRadius: 8, background: 'rgba(255,255,255,0.025)', overflow: 'hidden' }}>
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        aria-label={`${title} section`}
+        onClick={() => onToggleCollapsed(id)}
+        style={{
+          ...inspectorHeaderButtonStyle,
+          borderBottom: collapsed ? 'none' : `1px solid ${BORDER}`,
+        }}
+      >
+        <span style={{ display: 'inline-flex', minWidth: 0, alignItems: 'center', gap: 6 }}>
+          <ChevronIcon size={11} style={{ color: MUTED, flexShrink: 0 }} />
+          <span style={{ color: 'var(--overlay-text-secondary)' }}>{icon}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+        </span>
+      </button>
+      {!collapsed ? (
+        <div style={{ padding: '8px 10px 10px' }}>
+          {children}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -859,13 +1014,13 @@ function toolbarButton(accent: string, primary: boolean): React.CSSProperties {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    borderRadius: 8,
-    padding: '7px 9px',
+    borderRadius: 7,
+    padding: '6px 8px',
     border: `1px solid ${primary ? accent : BORDER}`,
     background: primary ? `${accent}22` : 'var(--overlay-workbench-settings-badge-bg)',
     color: primary ? 'var(--overlay-accent-contrast)' : 'var(--overlay-text-secondary)',
     cursor: 'pointer',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 750,
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
@@ -879,11 +1034,11 @@ function segmentButtonStyle(accent: string, active: boolean): React.CSSPropertie
     gap: 5,
     border: 0,
     borderRadius: 6,
-    padding: '5px 8px',
+    padding: '4px 7px',
     background: active ? `${accent}22` : 'transparent',
     color: active ? TEXT : MUTED,
     cursor: 'pointer',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 750,
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
@@ -926,22 +1081,27 @@ function getPluginCapabilityLabels(plugin: LoadedOverlayPlugin): string[] {
 function PluginBadge({ label, accent }: { label: string; accent: string }) {
   return (
     <span
+      title={label}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
+        minWidth: 0,
+        maxWidth: '100%',
         borderRadius: 5,
         border: `1px solid color-mix(in srgb, ${accent} 34%, transparent)`,
         background: `color-mix(in srgb, ${accent} 12%, transparent)`,
         color: TEXT,
-        padding: '3px 6px',
-        fontSize: 9,
+        padding: '2px 5px',
+        fontSize: 8,
         fontWeight: 750,
         letterSpacing: '0.08em',
         textTransform: 'uppercase',
         lineHeight: 1,
       }}
     >
-      {label}
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {label}
+      </span>
     </span>
   );
 }
@@ -1048,15 +1208,20 @@ function toFileAssetUrl(filePath: string): string {
   }
 }
 
-const railGroupHeaderStyle: React.CSSProperties = {
+const railGroupButtonStyle: React.CSSProperties = {
   display: 'flex',
+  width: '100%',
+  alignItems: 'center',
   justifyContent: 'space-between',
   gap: 8,
-  padding: '4px 4px 6px',
+  padding: '2px 1px 5px',
+  border: 0,
+  background: 'transparent',
   fontSize: 9,
   color: MUTED,
   textTransform: 'uppercase',
-  letterSpacing: '0.12em',
+  letterSpacing: '0.16em',
+  cursor: 'pointer',
 };
 
 const headerPathStyle: React.CSSProperties = {
@@ -1069,7 +1234,7 @@ const headerPathStyle: React.CSSProperties = {
 };
 
 const surfaceToolbarStyle: React.CSSProperties = {
-  padding: '8px 10px',
+  padding: '6px 10px',
   borderBottom: `1px solid ${BORDER}`,
   background: 'rgba(255,255,255,0.02)',
   display: 'flex',
@@ -1079,8 +1244,8 @@ const surfaceToolbarStyle: React.CSSProperties = {
 };
 
 const iconTileStyle = (accent: string): React.CSSProperties => ({
-  width: 26,
-  height: 26,
+  width: 24,
+  height: 24,
   borderRadius: 7,
   background: `${accent}1f`,
   border: `1px solid ${accent}66`,
@@ -1091,7 +1256,7 @@ const iconTileStyle = (accent: string): React.CSSProperties => ({
 });
 
 const inspectorMutedTextStyle: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 9,
   color: MUTED,
   lineHeight: 1.45,
   overflowWrap: 'anywhere',
@@ -1100,10 +1265,28 @@ const inspectorMutedTextStyle: React.CSSProperties = {
 const inspectorRowStyle: React.CSSProperties = {
   border: `1px solid ${BORDER}`,
   borderRadius: 7,
-  padding: 8,
+  padding: '6px 7px',
   background: 'rgba(255,255,255,0.025)',
-  fontSize: 10,
+  fontSize: 9,
   color: TEXT,
+};
+
+const inspectorHeaderButtonStyle: React.CSSProperties = {
+  display: 'flex',
+  width: '100%',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 8,
+  border: 0,
+  borderBottom: `1px solid ${BORDER}`,
+  background: 'transparent',
+  color: TEXT,
+  padding: '7px 8px',
+  cursor: 'pointer',
+  fontSize: 9,
+  fontWeight: 750,
+  textTransform: 'uppercase',
+  letterSpacing: '0.12em',
 };
 
 const emptyPreviewStyle: React.CSSProperties = {

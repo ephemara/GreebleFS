@@ -157,4 +157,83 @@ describe('PluginsManager', () => {
       expect(screen.getByText('broken export')).toBeInTheDocument();
     });
   });
+
+  it('collapses plugin rail categories and inspector sections', async () => {
+    const PluginView = ({ plugin }: { plugin: { name: string } }) => <div>workspace:{plugin.name}</div>;
+    const plugins = [
+      {
+        id: 'alpha',
+        name: 'Alpha',
+        filePath: resolve(pluginSystemConfig.pluginsDirectory, 'alpha.tsx'),
+        pluginRoot: pluginSystemConfig.pluginsDirectory,
+        pluginDirectory: joinPlatformPath(pluginSystemConfig.pluginsDirectory, 'alpha'),
+        backendDirectory: joinPlatformPath(
+          joinPlatformPath(pluginSystemConfig.pluginsDirectory, 'alpha'),
+          pluginSystemConfig.backendDirectoryName,
+        ),
+        modified: 1,
+        defaultOpen: true,
+        keepMounted: false,
+        component: PluginView,
+        error: null,
+        diagnostics: {
+          sourceKind: 'package-plugin',
+          sourceLabel: 'Alpha Suite',
+          manifestPath: 'plugins/alpha/plugin.json',
+          category: 'First-party Workbenches',
+          tags: ['workbench', 'preview'],
+          testFiles: [],
+          warnings: ['keep this fixture small'],
+          capabilities: {
+            panel: true,
+            themes: 0,
+            shaders: 0,
+            fonts: 0,
+            commands: 0,
+            actions: 0,
+            explorerActions: 0,
+            contextMenuItems: 0,
+            previewLanes: 0,
+            settingsSlots: 0,
+          },
+        },
+      },
+    ] as never;
+
+    render(
+      <PluginsManager
+        appearance={makeAppearance()}
+        plugins={plugins}
+        isLoading={false}
+        error={null}
+        onRefreshPlugins={() => undefined}
+        onOpenPluginsFolder={() => Promise.resolve()}
+        createPluginApi={() => ({}) as never}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('workspace:Alpha')).toBeInTheDocument();
+    });
+
+    const categoryToggle = screen.getByRole('button', { name: /First-party Workbenches 1 plugin/i });
+    expect(categoryToggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: /Alpha Package plugin/i })).toBeInTheDocument();
+
+    fireEvent.click(categoryToggle);
+
+    expect(categoryToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /Alpha Package plugin/i })).not.toBeInTheDocument();
+
+    fireEvent.click(categoryToggle);
+
+    expect(screen.getByRole('button', { name: /Alpha Package plugin/i })).toBeInTheDocument();
+    expect(screen.getByText('keep this fixture small')).toBeInTheDocument();
+
+    const diagnosticsToggle = screen.getByRole('button', { name: /Diagnostics section/i });
+    fireEvent.click(diagnosticsToggle);
+
+    expect(diagnosticsToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('keep this fixture small')).not.toBeInTheDocument();
+  });
 });
