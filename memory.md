@@ -5969,3 +5969,13 @@
 - Durable product notes:
   - Treat standard folder entry as Rust host truth plus local policy unless a feature genuinely needs the Go sidecar's lifecycle or isolation. Do not put ordinary navigation back through `runtime_call` without a measured reason.
   - For Explorer scroll performance, inspect `OverlayScrollArea` child/effect dependencies before blaming virtualization. A virtual list can be bounded and still feel awful if each row-window update restarts unrelated measurement loops.
+
+## 2026-04-29 - Top-Bar Panel Menu Became Surface Controls
+
+- The misleading top-bar `panel-menu` / "Toggle Panels" button no longer opens a panel launcher. It now migrates to the new `surface-controls` control, which opens a compact shell surface popover for `Window Zoom`, `Panel Transparency`, and `Window Opacity`.
+- Durable implementation shape:
+  - `src/config/topBars.ts` includes `surface-controls` in the top-bar control catalog and normalizes legacy authored `panel-menu` entries to `surface-controls`. Legacy `blur-toggle` still normalizes to `mobile-share`.
+  - `usr/top-bars/greeblefs-core/top-bar.json` now declares `surface-controls` directly for the shipped `launcher-rack` profile instead of `panel-menu`.
+  - `src/components/WorkbenchTopBar.tsx` receives clamped appearance values plus `onUpdateAppearanceVisuals` from `App.tsx`, so the popover writes to the same settings-backed appearance lane as Settings and the existing wheel gestures. The popover intentionally omits blur controls while blur is being stripped back.
+- Durable product note:
+  - Do not reintroduce a generic panel launcher under the old "Toggle Panels" label. If panel launching comes back to the top bar, give it a distinct authored control id and label. `surface-controls` should stay focused on zoom/transparency/opacity and should continue to use `overlayVisualControls` for ranges, clamps, and formatting.

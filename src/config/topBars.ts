@@ -16,6 +16,7 @@ export type OverlayTopBarControlId =
   | "window-mode"
   | "overlay-anchor"
   | "mobile-share"
+  | "surface-controls"
   | "blur-toggle"
   | "zen-mode"
   | "panel-menu"
@@ -94,6 +95,7 @@ const topBarControlCatalog = new Set<OverlayTopBarControlId>([
   "window-mode",
   "overlay-anchor",
   "mobile-share",
+  "surface-controls",
   "blur-toggle",
   "zen-mode",
   "panel-menu",
@@ -112,7 +114,7 @@ const defaultTopBarControls = {
     "overlay-anchor",
     "mobile-share",
     "zen-mode",
-    "panel-menu",
+    "surface-controls",
     "command-palette",
   ] as OverlayTopBarControlId[],
   navigationShortcuts: [
@@ -219,6 +221,9 @@ function normalizeTopBarControlList(
     .map((entry) => {
       if (entry === "blur-toggle") {
         return "mobile-share";
+      }
+      if (entry === "panel-menu") {
+        return "surface-controls";
       }
       return entry;
     })
@@ -529,10 +534,12 @@ export function getTopBarControlLabel(
       return "Mobile";
     case "blur-toggle":
       return "Mobile";
+    case "surface-controls":
+      return "Surface";
     case "zen-mode":
       return "Zen";
     case "panel-menu":
-      return "Panels";
+      return "Surface";
     case "command-palette":
       return "Palette";
     case "settings-shortcut":

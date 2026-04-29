@@ -5951,6 +5951,10 @@ function App() {
       blur={effectiveShellBlurEnabled}
       blurStrength={effectiveShellBlurStrength}
       blurPlatform={runtimePlatform}
+      appOpacity={clampedAppOpacity}
+      panelTransparency={clampedPanelTransparency}
+      appZoom={clampedAppZoom}
+      onUpdateAppearanceVisuals={updateAppearance}
       windowMode={windowMode}
       overlayAnchor={overlayAnchor}
       surfaceOwnership={activeThemeRendererSurfaceOwnership}

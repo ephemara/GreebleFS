@@ -75,7 +75,7 @@
       "description": "A launcher-first strip that turns the middle lane into a status surface instead of a tab strip.",
       "topBarStyle": "floating",
       "leadingControls": [
-        "panel-menu",
+        "surface-controls",
         "command-palette",
         "layout-cycle"
       ],

@@ -113,6 +113,10 @@ describe('WorkbenchTopBar', () => {
         blur={false}
         blurStrength={0}
         blurPlatform="linux"
+        appOpacity={1}
+        panelTransparency={0}
+        appZoom={1}
+        onUpdateAppearanceVisuals={vi.fn()}
         windowMode="overlay"
         overlayAnchor="top"
         commandPaletteShortcutLabel="Ctrl+K"
@@ -231,6 +235,10 @@ describe('WorkbenchTopBar', () => {
         blur={false}
         blurStrength={0}
         blurPlatform="linux"
+        appOpacity={1}
+        panelTransparency={0}
+        appZoom={1}
+        onUpdateAppearanceVisuals={vi.fn()}
         windowMode="overlay"
         overlayAnchor="top"
         commandPaletteShortcutLabel="Ctrl+K"
@@ -315,5 +323,82 @@ describe('WorkbenchTopBar', () => {
     expect(screen.getByRole('button', { name: /mobile settings/i }))
       .toHaveAttribute('data-interaction-motion-surface', 'actionButton');
     expect(onStartMobileShare).toHaveBeenCalledTimes(0);
+  });
+
+  it('opens surface controls from the top bar and writes zoom/transparency values', () => {
+    const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
+    const layoutProfile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'overlay-classic');
+    const onUpdateAppearanceVisuals = vi.fn();
+
+    render(
+      <WorkbenchTopBar
+        appearance={appearance}
+        renderRuntime={renderRuntime}
+        layoutProfile={layoutProfile}
+        layoutSourcePath={null}
+        availableLayoutProfiles={BUILT_IN_LAYOUT_MANIFEST.profiles}
+        panels={[]}
+        openPanelIds={[]}
+        pinnedPanelIds={[]}
+        activePanelId={null}
+        onPanelSelect={vi.fn()}
+        onPanelToggle={vi.fn()}
+        onPanelClose={vi.fn()}
+        onPanelReorder={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onToggleShellMode={vi.fn()}
+        onSelectLayoutProfile={vi.fn()}
+        onCycleLayout={vi.fn()}
+        onSetWindowMode={vi.fn()}
+        onOpenCommandPalette={vi.fn()}
+        onToggleOverlayAnchor={vi.fn()}
+        onClose={vi.fn()}
+        accent={appearance.theme.palette.accent}
+        blur={false}
+        blurStrength={0}
+        blurPlatform="linux"
+        appOpacity={1}
+        panelTransparency={0}
+        appZoom={1}
+        onUpdateAppearanceVisuals={onUpdateAppearanceVisuals}
+        windowMode="overlay"
+        overlayAnchor="top"
+        commandPaletteShortcutLabel="Ctrl+K"
+        mobileShareShortcutLabel="Ctrl+Alt+Shift+M"
+        toggleShortcutLabel="Ctrl+Space"
+        mobileShareRemoteAccessMode="lan"
+        mobileSharePhase="idle"
+        mobileShareSession={null}
+        mobileShareError={null}
+        mobileShareNotice={null}
+        onToggleMobileShare={vi.fn()}
+        onStartMobileShare={vi.fn()}
+        onStopMobileShare={vi.fn()}
+        onSetMobileShareRemoteAccessMode={vi.fn()}
+        onOpenMobileSettings={vi.fn()}
+        zenFocusMode={false}
+        zenFocusShortcutLabel="Ctrl+."
+        onToggleZenFocusMode={vi.fn()}
+        topBarDefinition={{
+          ...topBarDefinition,
+          leadingControls: ['surface-controls'],
+          navigationShortcuts: [],
+          trailingControls: [],
+        }}
+        topBarCustomizeActive={false}
+        onToggleTopBarCustomize={vi.fn()}
+        onCommitTopBarLayoutSnapshot={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /surface controls/i }));
+    expect(screen.getByText('Surface Controls')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/blur strength/i)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/window zoom/i), { target: { value: '1.2' } });
+    fireEvent.change(screen.getByLabelText(/panel transparency/i), { target: { value: '0.34' } });
+
+    expect(onUpdateAppearanceVisuals).toHaveBeenCalledWith({ appZoom: 1.2 });
+    expect(onUpdateAppearanceVisuals).toHaveBeenCalledWith({ panelTransparency: 0.34 });
   });
 });

@@ -92,4 +92,23 @@ describe('top bar selection', () => {
       navigationMode: 'summary',
     });
   });
+
+  it('migrates legacy panel-menu controls to the surface controls popover', () => {
+    const legacyTopBar = createLoadedTopBarDefinition(
+      {
+        id: 'legacy-panel-menu',
+        name: 'Legacy Panel Menu',
+        leadingControls: ['panel-menu'],
+        navigationShortcuts: [],
+        trailingControls: ['blur-toggle'],
+      },
+      {
+        source: 'top-bar-package',
+        sourceLabel: 'usr/top-bars',
+      },
+    );
+
+    expect(legacyTopBar.leadingControls).toEqual(['surface-controls']);
+    expect(legacyTopBar.trailingControls).toEqual(['mobile-share']);
+  });
 });

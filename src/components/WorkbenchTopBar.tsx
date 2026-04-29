@@ -37,6 +37,11 @@ import type {
   LoadedOverlayTopBarDefinition,
   OverlayTopBarControlId,
 } from '../config/topBars';
+import {
+  clampOverlayVisualControlValue,
+  formatOverlayVisualControlValue,
+  overlayVisualControls,
+} from '../config/overlayWindow';
 import { mobileShareMenuHoverDelayMs, type MobileRemoteAccessMode } from '../config/mobileAccess';
 import type { ResolvedWorkbenchRenderRuntime } from '../config/workbenchRenderRuntime';
 import type {
@@ -89,6 +94,14 @@ interface WorkbenchTopBarProps {
   blur: boolean;
   blurStrength: number;
   blurPlatform: RuntimePlatform;
+  appOpacity: number;
+  panelTransparency: number;
+  appZoom: number;
+  onUpdateAppearanceVisuals: (updates: {
+    appOpacity?: number;
+    panelTransparency?: number;
+    appZoom?: number;
+  }) => void;
   windowMode: TerminalWindowMode;
   overlayAnchor: OverlayWindowAnchor;
   surfaceOwnership?: OverlayThemeRendererSurfaceOwnership | null;
@@ -280,10 +293,8 @@ export function WorkbenchTopBar({
   availableLayoutProfiles,
   panels,
   openPanelIds,
-  pinnedPanelIds,
   activePanelId,
   onPanelSelect,
-  onPanelToggle,
   onPanelClose,
   onPanelReorder,
   onOpenSettings,
@@ -298,6 +309,10 @@ export function WorkbenchTopBar({
   blur,
   blurStrength,
   blurPlatform,
+  appOpacity,
+  panelTransparency,
+  appZoom,
+  onUpdateAppearanceVisuals,
   windowMode,
   overlayAnchor,
   surfaceOwnership,
@@ -340,7 +355,7 @@ export function WorkbenchTopBar({
   const shellModeMenuRef = useRef<HTMLDivElement | null>(null);
   const mobileMenuOpenTimerRef = useRef<number | null>(null);
   const mobileMenuCloseTimerRef = useRef<number | null>(null);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSurfaceControlsOpen, setIsSurfaceControlsOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isShellModeMenuOpen, setIsShellModeMenuOpen] = useState(false);
   const [isMobileQrDialogOpen, setIsMobileQrDialogOpen] = useState(false);
@@ -379,27 +394,7 @@ export function WorkbenchTopBar({
     () => openPanels.filter(panel => panel.id !== 'explorer' && panel.id !== 'settings'),
     [openPanels],
   );
-  const panelGroups = useMemo(() => {
-    const builtInPanels = panels.filter(panel => panel.kind === 'built-in-panel');
-    const pluginPanels = panels.filter(panel => panel.kind === 'folder-plugin');
-
-    return [
-      builtInPanels.length > 0 ? { id: 'core', label: 'Core Panels', panels: builtInPanels } : null,
-      pluginPanels.length > 0 ? { id: 'plugins', label: 'Plugin Panels', panels: pluginPanels } : null,
-    ].filter((group): group is { id: string; label: string; panels: OverlayPanelDefinition[] } => Boolean(group));
-  }, [panels]);
-  const panelMenuWidth = Math.max(236, Math.min(292, viewportSize.width - 24));
-  const panelMenuMaxHeight = Math.max(190, Math.min(440, viewportSize.height - 92));
-  const compactPanelMenu = panelMenuWidth < 264 || viewportSize.height < 640;
-  const panelMenuRowHeight = compactPanelMenu ? 42 : 52;
-  const panelMenuHeight = Math.max(
-    190,
-    Math.min(
-      panelMenuMaxHeight,
-      52 + panelGroups.length * 26 + panels.length * panelMenuRowHeight,
-    ),
-  );
-  const showPanelDescriptions = !compactPanelMenu && panelMenuHeight > 290;
+  const surfaceControlsMenuWidth = Math.max(254, Math.min(320, viewportSize.width - 24));
   const nextOverlayAnchor = overlayAnchor === 'top' ? 'bottom' : 'top';
   const layoutButtonTitle = isWindowedMode
     ? (layoutSourcePath
@@ -460,14 +455,14 @@ export function WorkbenchTopBar({
   }, [isWindowedMode]);
 
   useEffect(() => {
-    if (!isMenuOpen && !isMobileMenuOpen && !isShellModeMenuOpen) {
+    if (!isSurfaceControlsOpen && !isMobileMenuOpen && !isShellModeMenuOpen) {
       return;
     }
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
       if (!menuRef.current?.contains(target)) {
-        setIsMenuOpen(false);
+        setIsSurfaceControlsOpen(false);
       }
       if (!mobileMenuRef.current?.contains(target)) {
         setIsMobileMenuOpen(false);
@@ -479,7 +474,7 @@ export function WorkbenchTopBar({
 
     window.addEventListener('pointerdown', handlePointerDown);
     return () => window.removeEventListener('pointerdown', handlePointerDown);
-  }, [isMenuOpen, isMobileMenuOpen, isShellModeMenuOpen]);
+  }, [isSurfaceControlsOpen, isMobileMenuOpen, isShellModeMenuOpen]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -612,33 +607,72 @@ export function WorkbenchTopBar({
     };
   }, [isWindowedMode]);
 
-  const panelMenu = (
+  const surfaceControlRows = [
+    {
+      id: 'appZoom',
+      label: 'Window Zoom',
+      value: clampOverlayVisualControlValue('zoom', appZoom),
+      valueLabel: formatOverlayVisualControlValue('zoom', appZoom),
+      min: overlayVisualControls.zoom.min,
+      max: overlayVisualControls.zoom.max,
+      step: overlayVisualControls.zoom.step,
+      onChange: (value: number) => onUpdateAppearanceVisuals({
+        appZoom: clampOverlayVisualControlValue('zoom', value),
+      }),
+    },
+    {
+      id: 'panelTransparency',
+      label: 'Panel Transparency',
+      value: clampOverlayVisualControlValue('panelTransparency', panelTransparency),
+      valueLabel: formatOverlayVisualControlValue('panelTransparency', panelTransparency),
+      min: overlayVisualControls.panelTransparency.min,
+      max: overlayVisualControls.panelTransparency.max,
+      step: overlayVisualControls.panelTransparency.step,
+      onChange: (value: number) => onUpdateAppearanceVisuals({
+        panelTransparency: clampOverlayVisualControlValue('panelTransparency', value),
+      }),
+    },
+    {
+      id: 'appOpacity',
+      label: 'Window Opacity',
+      value: clampOverlayVisualControlValue('opacity', appOpacity),
+      valueLabel: formatOverlayVisualControlValue('opacity', appOpacity),
+      min: overlayVisualControls.opacity.min,
+      max: overlayVisualControls.opacity.max,
+      step: overlayVisualControls.opacity.step,
+      onChange: (value: number) => onUpdateAppearanceVisuals({
+        appOpacity: clampOverlayVisualControlValue('opacity', value),
+      }),
+    },
+  ] as const;
+
+  const surfaceControlsMenu = (
     <div
       style={{
         position: 'absolute',
         top: isBottomBar ? 'auto' : 'calc(100% + 8px)',
         bottom: isBottomBar ? 'calc(100% + 8px)' : 'auto',
         right: 0,
-        width: panelMenuWidth,
+        width: surfaceControlsMenuWidth,
         maxWidth: 'calc(100vw - 16px)',
-        height: panelMenuHeight,
-        maxHeight: panelMenuMaxHeight,
         background: 'var(--overlay-workbench-chrome-menu-bg)',
         border: '1px solid var(--overlay-workbench-chrome-border)',
         borderRadius: workbench.metrics.panelRadius,
         boxShadow: 'var(--overlay-workbench-shell-shadow)',
-        padding: 6,
+        padding: 8,
         zIndex: 50,
         display: 'flex',
         flexDirection: 'column',
-        overflow: 'hidden',
+        gap: 10,
+        overflow: 'visible',
         backdropFilter: topBarBackdropFilter,
         WebkitBackdropFilter: topBarBackdropFilter,
       }}
+      data-overlay-surface-controls-menu
     >
       <div
         style={{
-          padding: '8px 10px 10px',
+          padding: '4px 4px 8px',
           fontSize: 10,
           color: muted,
           textTransform: 'uppercase',
@@ -647,7 +681,7 @@ export function WorkbenchTopBar({
           borderBottom: '1px solid var(--overlay-workbench-chrome-border)',
         }}
       >
-        <div>Panels</div>
+        <div>Surface Controls</div>
         <div
           style={{
             marginTop: 4,
@@ -657,125 +691,79 @@ export function WorkbenchTopBar({
             fontWeight: 500,
           }}
         >
-          {openPanels.length} open
-          {panelGroups.some(group => group.id === 'plugins')
-            ? ` • ${panelGroups.find(group => group.id === 'plugins')?.panels.length ?? 0} plugins`
-            : ''}
+          Zoom and transparency without native blur.
         </div>
       </div>
 
-      <OverlayScrollArea
-        style={{ flex: 1, minHeight: 0 }}
-        viewportStyle={{ paddingRight: 2, paddingTop: 6 }}
-        contentStyle={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 4 }}
-      >
-        {panelGroups.map(group => (
-          <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {surfaceControlRows.map(control => (
+          <label key={control.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ color: text, fontSize: 11, fontWeight: 700 }}>{control.label}</span>
+              <span style={{ color: muted, fontSize: 10, fontFamily: monoFont }}>{control.valueLabel}</span>
+            </span>
+            <input
+              aria-label={control.label}
+              type="range"
+              min={control.min}
+              max={control.max}
+              step={control.step}
+              value={control.value}
+              onChange={event => control.onChange(Number(event.currentTarget.value))}
               style={{
-                padding: '0 6px',
-                fontSize: 9,
-                color: muted,
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                fontWeight: 700,
+                width: '100%',
+                accentColor: accent,
               }}
-            >
-              {group.label}
-            </div>
-
-            {group.panels.map(panel => {
-              const isOpen = openPanelIds.includes(panel.id);
-              const isActive = panel.id === activePanelId;
-              const isPinned = pinnedPanelIds.includes(panel.id);
-              const helperLabel = isPinned ? `Docked by ${layoutProfile.label}` : panel.description;
-              const statusLabel = isPinned ? 'Docked' : isOpen ? 'Open' : panel.kind === 'folder-plugin' ? 'Plugin' : 'Closed';
-
-              return (
-                <button
-                  key={panel.id}
-                  onClick={() => {
-                    if (!isPinned) {
-                      if (isOpen) {
-                        onPanelSelect(panel.id);
-                      } else {
-                        onPanelToggle(panel.id);
-                      }
-                    }
-                    setIsMenuOpen(false);
-                  }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: compactPanelMenu ? 8 : 10,
-                    padding: compactPanelMenu ? '8px 10px' : '9px 10px',
-                    border: `1px solid ${isActive ? 'var(--overlay-workbench-chrome-button-active-border)' : 'transparent'}`,
-                    borderRadius: 9,
-                    background: isActive
-                      ? 'var(--overlay-workbench-chrome-tab-active-bg)'
-                      : isOpen
-                        ? 'var(--overlay-workbench-chrome-tab-bg)'
-                        : 'var(--overlay-workbench-chrome-button-bg)',
-                    color: text,
-                    cursor: isPinned ? 'default' : 'pointer',
-                    textAlign: 'left',
-                    minHeight: compactPanelMenu ? 40 : 48,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 14,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: isOpen || isPinned ? accent : 'transparent',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Check size={12} />
-                  </span>
-                  <span style={{ display: 'flex', color: isActive ? accent : muted, flexShrink: 0 }}>{panel.icon}</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: compactPanelMenu ? 11 : 12, fontWeight: 700, color: text }}>{panel.label}</span>
-                      {isActive ? <span style={{ width: 5, height: 5, borderRadius: '50%', background: accent, flexShrink: 0 }} /> : null}
-                    </span>
-                    {showPanelDescriptions ? (
-                      <span
-                        style={{
-                          display: 'block',
-                          marginTop: 2,
-                          fontSize: 10,
-                          color: muted,
-                          lineHeight: 1.35,
-                        }}
-                      >
-                        {helperLabel}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 9,
-                      letterSpacing: '0.06em',
-                      textTransform: 'uppercase',
-                      color: isPinned || isOpen ? accent : muted,
-                      padding: '3px 6px',
-                      borderRadius: workbench.metrics.controlRadius,
-                      border: `1px solid ${isPinned || isOpen ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
-                      background: isPinned || isOpen ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-chrome-button-bg)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {statusLabel}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+            />
+          </label>
         ))}
-      </OverlayScrollArea>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => onUpdateAppearanceVisuals({
+            appOpacity: overlayVisualControls.opacity.defaultValue,
+            panelTransparency: overlayVisualControls.panelTransparency.defaultValue,
+            appZoom: overlayVisualControls.zoom.defaultValue,
+          })}
+          style={{
+            height: 24,
+            padding: '0 9px',
+            borderRadius: workbench.metrics.controlRadius,
+            border: '1px solid var(--overlay-workbench-chrome-border)',
+            background: 'var(--overlay-workbench-chrome-button-bg)',
+            color: muted,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: 'var(--overlay-workbench-label-spacing)',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}
+        >
+          Reset
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsSurfaceControlsOpen(false)}
+          style={{
+            height: 24,
+            padding: '0 9px',
+            borderRadius: workbench.metrics.controlRadius,
+            border: '1px solid var(--overlay-workbench-chrome-button-active-border)',
+            background: 'var(--overlay-workbench-chrome-button-active-bg)',
+            color: text,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: 'var(--overlay-workbench-label-spacing)',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            marginLeft: 'auto',
+          }}
+        >
+          Done
+        </button>
+      </div>
     </div>
   );
 
@@ -1171,7 +1159,7 @@ export function WorkbenchTopBar({
           <button
             key={controlId}
             onClick={() => {
-              setIsMenuOpen(false);
+              setIsSurfaceControlsOpen(false);
               onSetWindowMode(windowMode === 'windowed' ? 'overlay' : 'windowed');
             }}
             title={windowMode === 'windowed' ? 'Switch to Dock Mode' : 'Switch to Application Mode'}
@@ -1351,6 +1339,7 @@ export function WorkbenchTopBar({
             <span>Zen</span>
           </button>
         );
+      case 'surface-controls':
       case 'panel-menu':
         if (!showPrimaryLauncherChrome || !layoutProfile.chrome.showPanelMenu) {
           return null;
@@ -1359,16 +1348,17 @@ export function WorkbenchTopBar({
         return (
           <div key={controlId} ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
             {renderCompactButton(
-              <LayoutGrid size={11} style={{ color: isMenuOpen ? accent : muted }} />,
+              <Settings2 size={11} style={{ color: isSurfaceControlsOpen ? accent : muted }} />,
               {
                 key: `${controlId}-button`,
-                active: isMenuOpen,
+                active: isSurfaceControlsOpen,
                 motionStepIndex,
-                title: 'Toggle Panels',
-                onClick: () => setIsMenuOpen(open => !open),
+                title: 'Surface Controls',
+                ariaLabel: 'Surface Controls',
+                onClick: () => setIsSurfaceControlsOpen(open => !open),
               },
             )}
-            {isMenuOpen ? panelMenu : null}
+            {isSurfaceControlsOpen ? surfaceControlsMenu : null}
           </div>
         );
       case 'command-palette':
@@ -1495,7 +1485,7 @@ export function WorkbenchTopBar({
     isMobileMenuOpen,
     isMobileShareActive,
     isMobileShareBusy,
-    isMenuOpen,
+    isSurfaceControlsOpen,
     isWindowedMode,
     keepMobileMenuOpen,
     layoutButtonTitle,
@@ -1520,13 +1510,13 @@ export function WorkbenchTopBar({
     onToggleOverlayAnchor,
     onToggleZenFocusMode,
     overlayAnchor,
-    panelMenu,
     scheduleMobileMenuClose,
     scheduleMobileMenuOpen,
     showPrimaryLauncherChrome,
     text,
     shellModeMenuRef,
     toggleShortcutLabel,
+    surfaceControlsMenu,
     topBarBackdropFilter,
     windowMode,
     workbench.metrics.controlRadius,
