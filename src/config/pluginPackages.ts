@@ -27,7 +27,11 @@ import {
   type OverlayPluginSettingsOptionDefinition,
 } from './pluginSettings';
 import { joinPlatformPath } from './platform';
-import { pluginSystemConfig } from './plugins';
+import {
+  getPluginBackendDirectory,
+  getPluginDirectory,
+  pluginSystemConfig,
+} from './plugins';
 import { type LoadedOverlayThemePackage, loadThemePackagesFromDirectoryEntries } from './themePackages';
 import { type LoadedOverlayShader, loadShaderFromSource } from '../components/shaderRuntime';
 import {
@@ -187,6 +191,11 @@ interface PluginPackageRecord {
   directoryPath: string;
   manifestPath: string;
   manifest: PluginPackageManifest;
+  modified: number;
+}
+
+export interface OverlayPluginDiscoveryOptions {
+  disabledPluginIds?: Iterable<string> | Record<string, boolean> | null;
 }
 
 export interface OverlayPluginDiscoveryResult {
@@ -584,6 +593,39 @@ function asSettingsSlotManifestArray(
   });
 }
 
+function normalizeDisabledPluginIdSet(
+  disabledPluginIds: OverlayPluginDiscoveryOptions['disabledPluginIds'],
+): ReadonlySet<string> {
+  if (!disabledPluginIds) {
+    return new Set();
+  }
+
+  if (
+    typeof disabledPluginIds !== 'string' &&
+    Symbol.iterator in Object(disabledPluginIds)
+  ) {
+    return new Set(
+      [...(disabledPluginIds as Iterable<string>)]
+        .map(pluginId => pluginId.trim())
+        .filter(Boolean),
+    );
+  }
+
+  return new Set(
+    Object.entries(disabledPluginIds)
+      .filter(([, enabled]) => enabled === false)
+      .map(([pluginId]) => pluginId.trim())
+      .filter(Boolean),
+  );
+}
+
+function isPluginDisabled(
+  disabledPluginIds: ReadonlySet<string>,
+  pluginId: string,
+): boolean {
+  return disabledPluginIds.has(pluginId.trim());
+}
+
 function asTestFileManifestArray(value: unknown): PluginPackageTestFileManifest[] {
   if (!Array.isArray(value)) {
     return [];
@@ -802,6 +844,101 @@ function derivePackageName(record: PluginPackageRecord): string {
   );
 }
 
+function estimatePackageManifestCapabilities(
+  record: PluginPackageRecord,
+): OverlayPluginCapabilitySummary {
+  const contributions = record.manifest.contributions;
+  return {
+    panel: Boolean(record.manifest.entry),
+    themes: contributions?.themes?.length ?? 0,
+    shaders: contributions?.shaders?.length ?? 0,
+    fonts: contributions?.fonts?.length ?? 0,
+    commands: contributions?.commands?.length ?? 0,
+    actions: 0,
+    explorerActions: contributions?.explorerActions?.length ?? 0,
+    contextMenuItems: contributions?.contextMenuItems?.length ?? 0,
+    previewLanes: contributions?.previewLanes?.length ?? 0,
+    settingsSlots: contributions?.settingsSlots?.length ?? 0,
+  };
+}
+
+function createDisabledLegacyPlugin(entry: FileEntry): LoadedOverlayPlugin {
+  const pluginId = deriveIdFromName(entry.name, 'plugin');
+  return {
+    id: pluginId,
+    name: deriveDisplayNameFromFilePath(entry.name),
+    filePath: entry.path,
+    pluginRoot: pluginSystemConfig.pluginsDirectory,
+    pluginDirectory: getPluginDirectory(pluginId),
+    backendDirectory: getPluginBackendDirectory(pluginId),
+    enablementKey: pluginId,
+    modified: entry.modified,
+    enabled: false,
+    description: undefined,
+    defaultOpen: false,
+    keepMounted: false,
+    component: null,
+    error: null,
+    diagnostics: {
+      sourceKind: 'file-plugin',
+      sourceLabel: entry.path,
+      category: 'General',
+      tags: [],
+      testFiles: [],
+      warnings: [],
+      capabilities: {
+        panel: true,
+        themes: 0,
+        shaders: 0,
+        fonts: 0,
+        commands: 0,
+        actions: 0,
+        explorerActions: 0,
+        contextMenuItems: 0,
+        previewLanes: 0,
+        settingsSlots: 0,
+      },
+    },
+  };
+}
+
+function createDisabledPackagePlugin(
+  record: PluginPackageRecord,
+): LoadedOverlayPlugin {
+  const packageId = derivePackageId(record);
+  const packageName = derivePackageName(record);
+  const packageBackendDirectory = joinPlatformPath(
+    record.directoryPath,
+    pluginSystemConfig.backendDirectoryName,
+  );
+  return {
+    id: packageId,
+    name: packageName,
+    description: record.manifest.description,
+    filePath: record.manifestPath,
+    pluginRoot: pluginSystemConfig.pluginsDirectory,
+    pluginDirectory: record.directoryPath,
+    backendDirectory: packageBackendDirectory,
+    enablementKey: packageId,
+    modified: record.modified,
+    enabled: false,
+    defaultOpen: false,
+    keepMounted: false,
+    component: null,
+    error: null,
+    diagnostics: {
+      sourceKind: 'package-plugin',
+      sourceLabel: packageName,
+      manifestPath: record.manifestPath,
+      category: record.manifest.category || 'General',
+      tags: record.manifest.tags ?? [],
+      testFiles: resolvePackageTestFiles(record),
+      warnings: [],
+      capabilities: estimatePackageManifestCapabilities(record),
+    },
+  };
+}
+
 function resolvePackageTestFiles(record: PluginPackageRecord): OverlayPluginTestFile[] {
   return (record.manifest.testFiles ?? []).flatMap((testFile) => {
     if (!isSafeRelativePath(testFile.path)) {
@@ -977,6 +1114,7 @@ async function resolveShaderEntries(record: PluginPackageRecord): Promise<FileEn
 async function loadPluginPackage(
   record: PluginPackageRecord,
   hostApiFactory: (context: OverlayPluginContext) => OverlayPluginApi,
+  disabledPluginIds: ReadonlySet<string>,
 ): Promise<OverlayPluginDiscoveryResult> {
   const result: OverlayPluginDiscoveryResult = {
     plugins: [],
@@ -999,6 +1137,11 @@ async function loadPluginPackage(
   const packageTags = record.manifest.tags ?? [];
   const packageTestFiles = resolvePackageTestFiles(record);
   const packageWarnings: string[] = [];
+  if (isPluginDisabled(disabledPluginIds, packageId)) {
+    result.plugins.push(createDisabledPackagePlugin(record));
+    return result;
+  }
+
   const packageBackendDirectory = joinPlatformPath(
     record.directoryPath,
     pluginSystemConfig.backendDirectoryName,
@@ -1010,6 +1153,7 @@ async function loadPluginPackage(
     pluginRoot: pluginSystemConfig.pluginsDirectory,
     pluginDirectory: record.directoryPath,
     backendDirectory: packageBackendDirectory,
+    enablementKey: packageId,
   };
 
   const panelEntry = await resolvePackagePanelEntry(record);
@@ -1025,6 +1169,7 @@ async function loadPluginPackage(
           pluginRoot: pluginSystemConfig.pluginsDirectory,
           pluginDirectory: record.directoryPath,
           backendDirectory: packageBackendDirectory,
+          enablementKey: packageId,
         },
         defaults: {
           id: packageId,
@@ -1499,6 +1644,7 @@ async function loadPluginPackage(
 
 export async function discoverOverlayPlugins(
   hostApiFactory: (context: OverlayPluginContext) => OverlayPluginApi,
+  options: OverlayPluginDiscoveryOptions = {},
 ): Promise<OverlayPluginDiscoveryResult> {
   const emptyResult: OverlayPluginDiscoveryResult = {
     plugins: [],
@@ -1519,6 +1665,7 @@ export async function discoverOverlayPlugins(
     return emptyResult;
   }
 
+  const disabledPluginIds = normalizeDisabledPluginIdSet(options.disabledPluginIds);
   const rootEntries = await listDirectory(pluginSystemConfig.pluginsDirectory);
   const legacyFiles = rootEntries
     .filter(entry => !entry.is_dir && pluginSystemConfig.frontendExtensions.includes(entry.extension as never))
@@ -1543,8 +1690,17 @@ export async function discoverOverlayPlugins(
   };
 
   const legacyPluginResults = await Promise.allSettled(legacyFiles.map(async entry => {
+    const enablementKey = deriveIdFromName(entry.name, 'plugin');
+    if (isPluginDisabled(disabledPluginIds, enablementKey)) {
+      return createDisabledLegacyPlugin(entry);
+    }
+
     const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
-    return loadPluginFromSource(source, entry as PluginFileEntry, hostApiFactory);
+    return loadPluginFromSource(source, entry as PluginFileEntry, hostApiFactory, {
+      context: {
+        enablementKey,
+      },
+    });
   }));
 
   legacyPluginResults.forEach((result, index) => {
@@ -1570,7 +1726,8 @@ export async function discoverOverlayPlugins(
         directoryPath: directory.path,
         manifestPath: manifest.manifestPath,
         manifest: manifest.manifest,
-      }, hostApiFactory);
+        modified: directory.modified,
+      }, hostApiFactory, disabledPluginIds);
       aggregate.plugins.push(...packageResult.plugins);
       aggregate.themePackages.push(...packageResult.themePackages);
       aggregate.shaders.push(...packageResult.shaders);

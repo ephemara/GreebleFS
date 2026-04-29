@@ -66,6 +66,7 @@ export interface OverlayPluginContext {
   pluginRoot: string;
   pluginDirectory: string;
   backendDirectory: string;
+  enablementKey?: string;
 }
 
 export interface OverlayPluginApi {
@@ -305,6 +306,7 @@ export interface OverlayPluginTestFile {
 export interface LoadedOverlayPlugin extends OverlayPluginContext {
   description?: string;
   modified: number;
+  enabled: boolean;
   defaultOpen: boolean;
   keepMounted: boolean;
   component: React.ComponentType<OverlayPluginProps> | null;
@@ -392,8 +394,9 @@ export async function loadPluginFromSource(
       options?.context?.pluginRoot ?? pluginSystemConfig.pluginsDirectory,
     pluginDirectory:
       options?.context?.pluginDirectory ?? getPluginDirectory(fileId),
-    backendDirectory:
-      options?.context?.backendDirectory ?? getPluginBackendDirectory(fileId),
+      backendDirectory:
+        options?.context?.backendDirectory ?? getPluginBackendDirectory(fileId),
+      enablementKey: options?.context?.enablementKey ?? fileId,
   };
   const diagnostics: OverlayPluginDiagnostics = {
     sourceKind: options?.diagnostics?.sourceKind ?? 'file-plugin',
@@ -435,6 +438,7 @@ export async function loadPluginFromSource(
       description:
         normalized.description ?? options?.defaults?.description,
       modified: entry.modified,
+      enabled: true,
       defaultOpen:
         normalized.defaultOpen ??
         options?.defaults?.defaultOpen ??
@@ -462,6 +466,7 @@ export async function loadPluginFromSource(
     return {
       ...context,
       modified: entry.modified,
+      enabled: true,
       description: undefined,
       defaultOpen: pluginSystemConfig.folderPanelsOpenByDefault,
       keepMounted: pluginSystemConfig.folderPanelsKeepMounted,

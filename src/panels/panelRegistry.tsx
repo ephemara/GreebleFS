@@ -867,7 +867,9 @@ export function createFolderPluginPanelDefinitions({
   plugins: LoadedOverlayPlugin[];
   createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
 }): OverlayPanelDefinition[] {
-  return plugins.map(plugin => ({
+  return plugins
+    .filter(plugin => plugin.enabled !== false && (plugin.component != null || plugin.error))
+    .map(plugin => ({
     id: plugin.id,
     label: plugin.name,
     kind: 'folder-plugin',

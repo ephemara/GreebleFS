@@ -40,6 +40,7 @@ describe('PluginsManager', () => {
         error={null}
         onRefreshPlugins={() => undefined}
         onOpenPluginsFolder={onOpenPluginsFolder}
+        onSetPluginEnabled={() => undefined}
         createPluginApi={() => ({}) as never}
       />,
     );
@@ -127,6 +128,8 @@ describe('PluginsManager', () => {
       },
     ] as never;
 
+    const onSetPluginEnabled = vi.fn();
+
     render(
       <PluginsManager
         appearance={makeAppearance()}
@@ -135,6 +138,7 @@ describe('PluginsManager', () => {
         error="runtime warning"
         onRefreshPlugins={() => undefined}
         onOpenPluginsFolder={() => Promise.resolve()}
+        onSetPluginEnabled={onSetPluginEnabled}
         createPluginApi={() => ({}) as never}
       />,
     );
@@ -149,8 +153,10 @@ describe('PluginsManager', () => {
     expect(screen.getAllByText('Settings 1').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/1 warning/i).length).toBeGreaterThan(0);
     expect(screen.getByText('shader glow.tsx: bad uniform')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('switch', { name: /Disable Alpha/i })[0]);
+    expect(onSetPluginEnabled).toHaveBeenCalledWith(plugins[0], false);
 
-    fireEvent.click(screen.getByRole('button', { name: /Beta Load error/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Beta Enabled Load error/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/Beta failed to load/i)).toBeInTheDocument();
@@ -200,6 +206,8 @@ describe('PluginsManager', () => {
       },
     ] as never;
 
+    const onSetPluginEnabled = vi.fn();
+
     render(
       <PluginsManager
         appearance={makeAppearance()}
@@ -208,6 +216,7 @@ describe('PluginsManager', () => {
         error={null}
         onRefreshPlugins={() => undefined}
         onOpenPluginsFolder={() => Promise.resolve()}
+        onSetPluginEnabled={onSetPluginEnabled}
         createPluginApi={() => ({}) as never}
       />,
     );
@@ -218,16 +227,16 @@ describe('PluginsManager', () => {
 
     const categoryToggle = screen.getByRole('button', { name: /First-party Workbenches 1 plugin/i });
     expect(categoryToggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('button', { name: /Alpha Package plugin/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Alpha Enabled Package plugin/i })).toBeInTheDocument();
 
     fireEvent.click(categoryToggle);
 
     expect(categoryToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByRole('button', { name: /Alpha Package plugin/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Alpha Enabled Package plugin/i })).not.toBeInTheDocument();
 
     fireEvent.click(categoryToggle);
 
-    expect(screen.getByRole('button', { name: /Alpha Package plugin/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Alpha Enabled Package plugin/i })).toBeInTheDocument();
     expect(screen.getByText('keep this fixture small')).toBeInTheDocument();
 
     const diagnosticsToggle = screen.getByRole('button', { name: /Diagnostics section/i });

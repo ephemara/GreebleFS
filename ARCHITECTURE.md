@@ -167,7 +167,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/pluginRuntime.tsx`
   Packaged frontend plugin runtime loader. It owns the allowlisted module graph for frontend plugins, including package-local relative imports, `definePreviewLane(...)` preview-lane registration, `defineSettingsSlot(...)` plugin-settings registration, the host-provided `overlayterm-plugin` bridge helpers/runtime bridge, and the typed `api.index` surface exposed to packaged React plugins.
 - `src/config/pluginPackages.ts` and `src/runtime/useFolderPluginRuntime.ts`
-  Packaged plugin discovery/aggregation lane. These files normalize package manifests, bind plugin preview-lane renderers plus plugin-authored settings-slot renderers into the host runtime, inject the shared index API into every frontend plugin, aggregate diagnostics/capability counts, and surface the discovered `previewLanes` and `settingsSlots` catalogs upward to `App.tsx`, the panel registry, Explorer, and Settings.
+  Packaged plugin discovery/aggregation lane. These files normalize package manifests, bind plugin preview-lane renderers plus plugin-authored settings-slot renderers into the host runtime, inject the shared index API into every frontend plugin, aggregate diagnostics/capability counts, and surface the discovered `previewLanes` and `settingsSlots` catalogs upward to `App.tsx`, the panel registry, Explorer, and Settings. Settings-backed enablement also enters here: `settings.plugins.enablementByPluginId` stores explicit disabled overrides, `folderPlugins` remains the full manager catalog, and `enabledFolderPlugins` is the shell-mountable subset used for panel/runtime registration.
 - `src/components/animationRuntime.tsx`
   Authored shell-motion runtime loader. It normalizes built-in and folder-authored animation modules, renders shell overlay layers with failure isolation, and now exposes the sanitized `src/animation/` MoGraph toolkit through the `overlayterm-animation` runtime import so authored shell motion can reuse host-owned cloners, fields, particle/fluid helpers, subtle motion wrappers, and timeline utilities without importing app internals directly.
 - `src/config/interactionMotion.ts`
@@ -831,6 +831,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Packaged preview lanes now ride the same plugin package system as actions/context menus instead of a separate extension stack.
   - `src/config/pluginPackages.ts` is the only place that should turn manifest `contributions.previewLanes` into bound React lane components plus runtime ids.
   - `useFolderPluginRuntime.ts`, `App.tsx`, `panelRegistry.tsx`, `ExplorerWorkspace.tsx`, and `FileExplorer.tsx` should only consume the aggregated preview-lane catalog; do not rediscover plugin preview manifests ad hoc in panel code.
+- Plugin enable/disable is a lifecycle gate, not only a UI filter.
+  - `src/store/settingsStore.ts` owns persisted enablement at `settings.plugins.enablementByPluginId`; `false` disables a plugin, missing/`true` means enabled.
+  - `src/config/pluginPackages.ts` may read disabled plugin manifests for catalog metadata, but it must not read or execute disabled legacy source files or disabled package runtime entries.
+  - `src/runtime/useFolderPluginRuntime.ts` keeps `folderPlugins` for the Plugins Manager and `enabledFolderPlugins` for shell panel/runtime mounting.
+  - Use `LoadedOverlayPlugin.enablementKey` for persistence because legacy plugin files can export custom runtime ids that differ from the file-derived lifecycle id.
 - The extension platform is now Rust-owned, Go-first, and TS-thin by design.
   - `src-tauri/src/runtime_pipeline/extension_host.rs` owns the canonical schema, permissions, bundle tooling, and `ExecutionContextSnapshot` truth.
   - `src-go/sdk/greeblefs-go/runtime/host_services.go` and `src-go/sdk/greeblefs-go/hostapi/services.go` are the reference orchestration SDKs.

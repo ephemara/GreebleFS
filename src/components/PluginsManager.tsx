@@ -9,6 +9,8 @@ import {
   FolderOpen,
   LoaderCircle,
   MonitorPlay,
+  Power,
+  PowerOff,
   Puzzle,
   RefreshCw,
   Tags,
@@ -69,6 +71,7 @@ export interface PluginsManagerProps {
   error: string | null;
   onRefreshPlugins: () => Promise<void> | void;
   onOpenPluginsFolder: () => Promise<void>;
+  onSetPluginEnabled: (plugin: LoadedOverlayPlugin, enabled: boolean) => void;
   createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
 }
 
@@ -88,6 +91,7 @@ export function PluginsManager({
   error,
   onRefreshPlugins,
   onOpenPluginsFolder,
+  onSetPluginEnabled,
   createPluginApi,
 }: PluginsManagerProps) {
   const accent = appearance?.theme.palette.accent ?? 'var(--overlay-accent)';
@@ -240,6 +244,7 @@ export function PluginsManager({
                 selectedPluginId={selectedPluginId}
                 onToggleCollapsed={() => toggleCategoryCollapsed(group.category)}
                 onSelectPlugin={setSelectedPluginId}
+                onSetPluginEnabled={onSetPluginEnabled}
               />
             ))
           )}
@@ -292,12 +297,19 @@ export function PluginsManager({
               </div>
             ) : null}
             {selectedPlugin ? (
-              <SurfaceSegmentedControl
-                accent={accent}
-                surface={effectiveSurface}
-                previewEnabled={selectedPluginPreviewLanes.length > 0}
-                onSurfaceChange={setSelectedSurface}
-              />
+              <>
+                <PluginEnablementSwitch
+                  plugin={selectedPlugin}
+                  accent={accent}
+                  onSetPluginEnabled={onSetPluginEnabled}
+                />
+                <SurfaceSegmentedControl
+                  accent={accent}
+                  surface={effectiveSurface}
+                  previewEnabled={selectedPluginPreviewLanes.length > 0}
+                  onSurfaceChange={setSelectedSurface}
+                />
+              </>
             ) : null}
           </div>
         </div>
@@ -321,7 +333,24 @@ export function PluginsManager({
             <section style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               <div style={surfaceToolbarStyle}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <PluginBadge label={selectedPlugin.error ? 'Load error' : 'Panel ready'} accent={selectedPlugin.error ? 'var(--overlay-warning)' : accent} />
+                  <PluginBadge
+                    label={
+                      selectedPlugin.enabled === false
+                        ? 'Disabled'
+                        : selectedPlugin.error
+                          ? 'Load error'
+                          : selectedPlugin.component
+                            ? 'Panel ready'
+                            : 'Metadata only'
+                    }
+                    accent={
+                      selectedPlugin.enabled === false
+                        ? MUTED
+                        : selectedPlugin.error
+                          ? 'var(--overlay-warning)'
+                          : accent
+                    }
+                  />
                   {selectedPluginCapabilityLabels.map(label => (
                     <PluginBadge key={`${selectedPlugin.id}-${label}`} label={label} accent={accent} />
                   ))}
@@ -357,6 +386,7 @@ export function PluginsManager({
               plugin={selectedPlugin}
               previewLanes={selectedPluginPreviewLanes}
               accent={accent}
+              onSetPluginEnabled={onSetPluginEnabled}
             />
           </div>
         )}
@@ -372,6 +402,7 @@ function PluginRailGroup({
   selectedPluginId,
   onToggleCollapsed,
   onSelectPlugin,
+  onSetPluginEnabled,
 }: {
   group: ReturnType<typeof groupPluginsByCategory>[number];
   accent: string;
@@ -379,6 +410,7 @@ function PluginRailGroup({
   selectedPluginId: string | null;
   onToggleCollapsed: () => void;
   onSelectPlugin: (pluginId: string) => void;
+  onSetPluginEnabled: (plugin: LoadedOverlayPlugin, enabled: boolean) => void;
 }) {
   const ChevronIcon = collapsed ? ChevronRight : ChevronDown;
   return (
@@ -407,6 +439,7 @@ function PluginRailGroup({
               accent={accent}
               selected={plugin.id === selectedPluginId}
               onSelect={() => onSelectPlugin(plugin.id)}
+              onSetPluginEnabled={onSetPluginEnabled}
             />
           ))}
         </div>
@@ -420,15 +453,19 @@ function PluginRailItem({
   accent,
   selected,
   onSelect,
+  onSetPluginEnabled,
 }: {
   plugin: LoadedOverlayPlugin;
   accent: string;
   selected: boolean;
   onSelect: () => void;
+  onSetPluginEnabled: (plugin: LoadedOverlayPlugin, enabled: boolean) => void;
 }) {
+  const enabled = plugin.enabled !== false;
   const capabilityLabels = getPluginCapabilityLabels(plugin);
   const tags = getPluginTags(plugin);
   const summaryParts = [
+    enabled ? 'Enabled' : 'Disabled',
     getPluginSourceSummary(plugin),
     ...capabilityLabels.slice(0, 2),
     ...tags.slice(0, 2),
@@ -437,23 +474,39 @@ function PluginRailItem({
     summaryParts.push(`${plugin.diagnostics.warnings.length} warning${plugin.diagnostics.warnings.length === 1 ? '' : 's'}`);
   }
   return (
-    <button
-      type="button"
-      aria-label={`${plugin.name} ${plugin.error ? 'Load error' : getPluginSourceSummary(plugin)}`}
-      onClick={onSelect}
+    <div
       style={{
         width: '100%',
-        textAlign: 'left',
-        padding: '6px 7px',
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr) 28px',
+        alignItems: 'stretch',
+        gap: 5,
+        padding: 3,
         borderRadius: 7,
         border: `1px solid ${selected ? `${accent}88` : BORDER}`,
-        background: selected ? 'var(--overlay-workbench-chrome-button-active-bg)' : PANEL_ALT,
+        background: selected
+          ? 'var(--overlay-workbench-chrome-button-active-bg)'
+          : PANEL_ALT,
         color: TEXT,
-        cursor: 'pointer',
         boxShadow: selected ? `inset 2px 0 0 ${accent}, inset 0 0 0 1px ${accent}22` : 'none',
+        opacity: enabled ? 1 : 0.68,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+      <button
+        type="button"
+        aria-label={`${plugin.name} ${enabled ? 'Enabled' : 'Disabled'} ${plugin.error ? 'Load error' : getPluginSourceSummary(plugin)}`}
+        onClick={onSelect}
+        style={{
+          minWidth: 0,
+          border: 'none',
+          background: 'transparent',
+          color: 'inherit',
+          padding: '3px 2px 3px 3px',
+          textAlign: 'left',
+          cursor: 'pointer',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
         <div
           style={{
             width: 20,
@@ -481,7 +534,48 @@ function PluginRailItem({
             {summaryParts.join(' • ')}
           </div>
         </div>
-      </div>
+        </div>
+      </button>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={`${enabled ? 'Disable' : 'Enable'} ${plugin.name}`}
+        title={`${enabled ? 'Disable' : 'Enable'} ${plugin.name}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSetPluginEnabled(plugin, !enabled);
+        }}
+        style={pluginEnablementIconButtonStyle(accent, enabled)}
+      >
+        {enabled ? <Power size={12} /> : <PowerOff size={12} />}
+      </button>
+    </div>
+  );
+}
+
+function PluginEnablementSwitch({
+  plugin,
+  accent,
+  onSetPluginEnabled,
+}: {
+  plugin: LoadedOverlayPlugin;
+  accent: string;
+  onSetPluginEnabled: (plugin: LoadedOverlayPlugin, enabled: boolean) => void;
+}) {
+  const enabled = plugin.enabled !== false;
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={`${enabled ? 'Disable' : 'Enable'} ${plugin.name}`}
+      title={`${enabled ? 'Disable' : 'Enable'} ${plugin.name}`}
+      onClick={() => onSetPluginEnabled(plugin, !enabled)}
+      style={pluginEnablementSwitchStyle(accent, enabled)}
+    >
+      {enabled ? <Power size={13} /> : <PowerOff size={13} />}
+      {enabled ? 'Enabled' : 'Disabled'}
     </button>
   );
 }
@@ -619,10 +713,12 @@ function PluginInspector({
   plugin,
   previewLanes,
   accent,
+  onSetPluginEnabled,
 }: {
   plugin: LoadedOverlayPlugin;
   previewLanes: OverlayPluginPreviewLaneContribution[];
   accent: string;
+  onSetPluginEnabled: (plugin: LoadedOverlayPlugin, enabled: boolean) => void;
 }) {
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<ReadonlySet<string>>(() => new Set());
   const toggleSectionCollapsed = (sectionId: string) => {
@@ -649,6 +745,25 @@ function PluginInspector({
       }}
     >
       <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 10 }} scrollbarStyle="themed">
+        <InspectorBlock
+          id="lifecycle"
+          title="Lifecycle"
+          icon={<Power size={12} />}
+          collapsed={collapsedSectionIds.has('lifecycle')}
+          onToggleCollapsed={toggleSectionCollapsed}
+        >
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div style={inspectorMutedTextStyle}>
+              Disabled plugins stay visible here, but their panels, commands, preview lanes, themes, settings slots, and package assets are not mounted into the shell.
+            </div>
+            <PluginEnablementSwitch
+              plugin={plugin}
+              accent={accent}
+              onSetPluginEnabled={onSetPluginEnabled}
+            />
+          </div>
+        </InspectorBlock>
+
         <InspectorBlock
           id="organization"
           title="Organization"
@@ -739,8 +854,13 @@ export function FolderPluginRenderer({
   isActive = true,
 }: FolderPluginRendererProps) {
   const PluginComponent = plugin.component;
+  if (plugin.enabled === false) {
+    return <PluginDisabledPanel plugin={plugin} />;
+  }
   if (plugin.error || !PluginComponent) {
-    return <PluginErrorPanel plugin={plugin} />;
+    return plugin.error
+      ? <PluginErrorPanel plugin={plugin} />
+      : <PluginMetadataOnlyPanel plugin={plugin} />;
   }
 
   return (
@@ -941,6 +1061,52 @@ function EmptyPluginsState({ accent, onOpenFolder }: { accent: string; onOpenFol
   );
 }
 
+function PluginDisabledPanel({ plugin }: { plugin: LoadedOverlayPlugin }) {
+  return (
+    <div
+      style={{
+        margin: 12,
+        borderRadius: 8,
+        border: `1px solid ${BORDER}`,
+        background: PANEL_ALT,
+        padding: 14,
+        color: TEXT,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700 }}>
+        <PowerOff size={15} style={{ color: MUTED }} />
+        {plugin.name} is disabled
+      </div>
+      <div style={{ marginTop: 8, fontSize: 11, lineHeight: 1.5, color: MUTED }}>
+        This package is present on disk but its runtime contributions are not loaded. Enable it from the plugin manager header or Lifecycle inspector when you want it back in the shell.
+      </div>
+    </div>
+  );
+}
+
+function PluginMetadataOnlyPanel({ plugin }: { plugin: LoadedOverlayPlugin }) {
+  return (
+    <div
+      style={{
+        margin: 12,
+        borderRadius: 8,
+        border: `1px solid ${BORDER}`,
+        background: PANEL_ALT,
+        padding: 14,
+        color: TEXT,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700 }}>
+        <Puzzle size={15} style={{ color: MUTED }} />
+        {plugin.name} has no panel entry
+      </div>
+      <div style={{ marginTop: 8, fontSize: 11, lineHeight: 1.5, color: MUTED }}>
+        The package can still contribute non-panel capabilities such as preview lanes, commands, settings slots, or visual assets when enabled.
+      </div>
+    </div>
+  );
+}
+
 function PluginErrorPanel({ plugin }: { plugin: LoadedOverlayPlugin }) {
   return (
     <div
@@ -1043,6 +1209,48 @@ function segmentButtonStyle(accent: string, active: boolean): React.CSSPropertie
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
     opacity: active ? 1 : 0.8,
+  };
+}
+
+function pluginEnablementSwitchStyle(
+  accent: string,
+  enabled: boolean,
+): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 27,
+    borderRadius: 7,
+    padding: '4px 8px',
+    border: `1px solid ${enabled ? `${accent}88` : BORDER}`,
+    background: enabled ? `${accent}22` : 'var(--overlay-workbench-settings-badge-bg)',
+    color: enabled ? TEXT : MUTED,
+    cursor: 'pointer',
+    fontSize: 9,
+    fontWeight: 800,
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+  };
+}
+
+function pluginEnablementIconButtonStyle(
+  accent: string,
+  enabled: boolean,
+): React.CSSProperties {
+  return {
+    width: 28,
+    minWidth: 28,
+    minHeight: 28,
+    borderRadius: 6,
+    border: `1px solid ${enabled ? `${accent}77` : BORDER}`,
+    background: enabled ? `${accent}1f` : 'var(--overlay-workbench-settings-badge-bg)',
+    color: enabled ? accent : MUTED,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
   };
 }
 

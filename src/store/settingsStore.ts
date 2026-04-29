@@ -350,6 +350,7 @@ export interface MobileSettings {
 
 export interface PluginSettingsCatalog {
   valuesByPluginId: Record<string, Record<string, OverlayPluginSettingsValue>>;
+  enablementByPluginId: Record<string, boolean>;
 }
 
 export type KeybindingSettings = HotkeyBindingSettings;
@@ -1435,6 +1436,7 @@ export const defaultSettings: Settings = {
   },
   plugins: {
     valuesByPluginId: {},
+    enablementByPluginId: {},
   },
 };
 
@@ -1562,6 +1564,27 @@ function normalizePluginSettingsValuesByPluginId(
   );
 }
 
+function normalizePluginEnablementByPluginId(
+  value: unknown,
+): Record<string, boolean> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).flatMap(
+      ([pluginId, enabled]) => {
+        const trimmedPluginId = pluginId.trim();
+        if (!trimmedPluginId || typeof enabled !== 'boolean') {
+          return [];
+        }
+
+        return [[trimmedPluginId, enabled]];
+      },
+    ),
+  );
+}
+
 function normalizePluginSettingsCatalog(
   base: PluginSettingsCatalog,
   updates?: Partial<PluginSettingsCatalog>,
@@ -1569,11 +1592,17 @@ function normalizePluginSettingsCatalog(
   const hasExplicitValuesByPluginId =
     updates != null &&
     Object.prototype.hasOwnProperty.call(updates, 'valuesByPluginId');
+  const hasExplicitEnablementByPluginId =
+    updates != null &&
+    Object.prototype.hasOwnProperty.call(updates, 'enablementByPluginId');
 
   return {
     valuesByPluginId: hasExplicitValuesByPluginId
       ? normalizePluginSettingsValuesByPluginId(updates?.valuesByPluginId)
       : base.valuesByPluginId,
+    enablementByPluginId: hasExplicitEnablementByPluginId
+      ? normalizePluginEnablementByPluginId(updates?.enablementByPluginId)
+      : base.enablementByPluginId,
   };
 }
 
@@ -1748,6 +1777,8 @@ interface SettingsState {
   updateLayout: (updates: Partial<LayoutSettings>) => void;
   updateAudio: (updates: Partial<AudioSettings>) => void;
   updatePlugins: (updates: Partial<PluginSettingsCatalog>) => void;
+  setPluginEnabled: (pluginId: string, enabled: boolean) => void;
+  togglePluginEnabled: (pluginId: string) => void;
   setPluginSettingsValues: (
     pluginId: string,
     values: Record<string, unknown>,
@@ -2221,6 +2252,58 @@ export const useSettingsStore = create<SettingsState>()(
           plugins: normalizePluginSettingsCatalog(state.settings.plugins, updates),
         },
       })),
+
+      setPluginEnabled: (pluginId, enabled) => set((state) => {
+        const normalizedPluginId = pluginId.trim();
+        if (!normalizedPluginId) {
+          return state;
+        }
+
+        const nextEnablementByPluginId = {
+          ...state.settings.plugins.enablementByPluginId,
+        };
+        if (enabled) {
+          delete nextEnablementByPluginId[normalizedPluginId];
+        } else {
+          nextEnablementByPluginId[normalizedPluginId] = false;
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            plugins: normalizePluginSettingsCatalog(state.settings.plugins, {
+              enablementByPluginId: nextEnablementByPluginId,
+            }),
+          },
+        };
+      }),
+
+      togglePluginEnabled: (pluginId) => set((state) => {
+        const normalizedPluginId = pluginId.trim();
+        if (!normalizedPluginId) {
+          return state;
+        }
+
+        const currentlyEnabled =
+          state.settings.plugins.enablementByPluginId[normalizedPluginId] !== false;
+        const nextEnablementByPluginId = {
+          ...state.settings.plugins.enablementByPluginId,
+        };
+        if (currentlyEnabled) {
+          nextEnablementByPluginId[normalizedPluginId] = false;
+        } else {
+          delete nextEnablementByPluginId[normalizedPluginId];
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            plugins: normalizePluginSettingsCatalog(state.settings.plugins, {
+              enablementByPluginId: nextEnablementByPluginId,
+            }),
+          },
+        };
+      }),
 
       setPluginSettingsValues: (pluginId, values) => set((state) => {
         const normalizedPluginId = pluginId.trim();

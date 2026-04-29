@@ -919,6 +919,7 @@ function App() {
   })));
   const {
     folderPlugins,
+    enabledFolderPlugins,
     pluginContributedShaders,
     pluginThemePackages,
     pluginFonts,
@@ -933,6 +934,7 @@ function App() {
     folderPluginsLoading,
     openPluginsFolder,
     refreshFolderPlugins,
+    setPluginEnabled,
     createPluginApi,
   } = useFolderPluginRuntime(runtimePlatform, { liveReloadEnabled: systemSettings.developerMode });
   const liveReloadEnabled = systemSettings.developerMode;
@@ -4269,18 +4271,22 @@ function App() {
             error={folderPluginsError}
             onRefreshPlugins={() => refreshFolderPlugins(true)}
             onOpenPluginsFolder={openPluginsFolder}
+            onSetPluginEnabled={(plugin, enabled) => {
+              setPluginEnabled(plugin.enablementKey ?? plugin.id, enabled);
+            }}
             createPluginApi={createPluginApi}
           />
         ),
       }),
       ...createFolderPluginPanelDefinitions({
         appearance: resolvedAppearance,
-        plugins: folderPlugins,
+        plugins: enabledFolderPlugins,
         createPluginApi,
       }),
     ],
     [
       createPluginApi,
+      enabledFolderPlugins,
       folderPlugins,
       folderPluginsError,
       folderPluginsLoading,
@@ -4350,6 +4356,7 @@ function App() {
       refreshFolderPlugins,
       requestWindowModeChange,
       resolvedAppearance,
+      setPluginEnabled,
       combinedThemePackages,
       combinedMenuPacks,
       themeBundleDependencyCatalogs,
@@ -5744,14 +5751,16 @@ function App() {
     if (panel.kind === 'folder-plugin') {
       return (
         <FolderPluginRenderer
-          plugin={folderPlugins.find(candidate => candidate.id === panel.id) ?? {
+          plugin={enabledFolderPlugins.find(candidate => candidate.id === panel.id) ?? {
             id: panel.id,
             name: panel.label,
             filePath: '',
             pluginRoot: '',
             pluginDirectory: '',
             backendDirectory: '',
+            enablementKey: panel.id,
             modified: 0,
+            enabled: true,
             defaultOpen: panel.defaultOpen ?? false,
             keepMounted: panel.keepMounted ?? false,
             component: null,
@@ -5786,7 +5795,7 @@ function App() {
     }
 
     return panel.render();
-  }, [createPluginApi, folderPlugins, resolvedAppearance]);
+  }, [createPluginApi, enabledFolderPlugins, resolvedAppearance]);
   const renderManagedPanelSurface = useCallback((
     panelId: string,
     options?: {

@@ -260,6 +260,7 @@ describe('useSettingsStore — initial state', () => {
   it('starts with an empty plugin settings catalog', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.plugins.valuesByPluginId).toEqual({});
+    expect(settings.plugins.enablementByPluginId).toEqual({});
   });
 });
 
@@ -1379,6 +1380,34 @@ describe('useSettingsStore plugin settings actions', () => {
       {},
     );
   });
+
+  it('stores plugin enablement separately from plugin-owned values', () => {
+    const store = useSettingsStore.getState();
+
+    store.setPluginSettingsValues('notes-tools', {
+      density: 'compact',
+    });
+    store.setPluginEnabled('notes-tools', false);
+
+    expect(useSettingsStore.getState().settings.plugins).toEqual({
+      valuesByPluginId: {
+        'notes-tools': {
+          density: 'compact',
+        },
+      },
+      enablementByPluginId: {
+        'notes-tools': false,
+      },
+    });
+
+    store.togglePluginEnabled('notes-tools');
+    expect(useSettingsStore.getState().settings.plugins.enablementByPluginId).toEqual({});
+    expect(useSettingsStore.getState().settings.plugins.valuesByPluginId).toEqual({
+      'notes-tools': {
+        density: 'compact',
+      },
+    });
+  });
 });
 
 describe('mergeSettingsWithDefaults()', () => {
@@ -1646,6 +1675,12 @@ describe('mergeSettingsWithDefaults()', () => {
             broken: true,
           },
         },
+        enablementByPluginId: {
+          ' notes-tools ': false,
+          'gallery': true,
+          'broken': 'off',
+          '': false,
+        },
       },
     } as unknown as Parameters<typeof mergeSettingsWithDefaults>[0]);
 
@@ -1657,6 +1692,10 @@ describe('mergeSettingsWithDefaults()', () => {
           showMinimap: false,
         },
       },
+    });
+    expect(merged.plugins.enablementByPluginId).toEqual({
+      'notes-tools': false,
+      gallery: true,
     });
   });
 });

@@ -34,6 +34,47 @@ const emptyDiscoveryResult: pluginPackages.OverlayPluginDiscoveryResult = {
   warnings: [],
 };
 
+function createLoadedPluginFixture(
+  id: string,
+  enabled = true,
+): pluginPackages.OverlayPluginDiscoveryResult['plugins'][number] {
+  return {
+    id,
+    name: id.replace(/-/g, ' '),
+    filePath: `plugins/${id}/index.tsx`,
+    pluginRoot: pluginSystemConfig.pluginsDirectory,
+    pluginDirectory: `plugins/${id}`,
+    backendDirectory: `plugins/${id}/backend`,
+    enablementKey: id,
+    modified: 1,
+    enabled,
+    defaultOpen: false,
+    keepMounted: false,
+    component: enabled ? () => null : null,
+    error: null,
+    diagnostics: {
+      sourceKind: 'package-plugin',
+      sourceLabel: id,
+      category: 'General',
+      tags: [],
+      testFiles: [],
+      warnings: [],
+      capabilities: {
+        panel: true,
+        themes: 0,
+        shaders: 0,
+        fonts: 0,
+        commands: 0,
+        actions: 0,
+        explorerActions: 0,
+        contextMenuItems: 0,
+        previewLanes: 0,
+        settingsSlots: 0,
+      },
+    },
+  };
+}
+
 describe('useFolderPluginRuntime', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -65,6 +106,163 @@ describe('useFolderPluginRuntime', () => {
 
     expect(listen).not.toHaveBeenCalled();
     expect(commands.pluginWatchDirectory).not.toHaveBeenCalled();
+  });
+
+  it('passes disabled plugin ids into discovery and keeps enabled panel plugins separate', async () => {
+    useSettingsStore.getState().setPluginEnabled('disabled-tools', false);
+    vi.mocked(pluginPackages.discoverOverlayPlugins).mockResolvedValueOnce({
+      ...emptyDiscoveryResult,
+      plugins: [
+        {
+          id: 'enabled-tools',
+          name: 'Enabled Tools',
+          filePath: 'plugins/enabled-tools/index.tsx',
+          pluginRoot: pluginSystemConfig.pluginsDirectory,
+          pluginDirectory: 'plugins/enabled-tools',
+          backendDirectory: 'plugins/enabled-tools/backend',
+          enablementKey: 'enabled-tools',
+          modified: 1,
+          enabled: true,
+          defaultOpen: true,
+          keepMounted: false,
+          component: () => null,
+          error: null,
+          diagnostics: {
+            sourceKind: 'package-plugin',
+            sourceLabel: 'Enabled Tools',
+            category: 'General',
+            tags: [],
+            testFiles: [],
+            warnings: [],
+            capabilities: {
+              panel: true,
+              themes: 0,
+              shaders: 0,
+              fonts: 0,
+              commands: 0,
+              actions: 0,
+              explorerActions: 0,
+              contextMenuItems: 0,
+              previewLanes: 0,
+              settingsSlots: 0,
+            },
+          },
+        },
+        {
+          id: 'disabled-tools',
+          name: 'Disabled Tools',
+          filePath: 'plugins/disabled-tools/index.tsx',
+          pluginRoot: pluginSystemConfig.pluginsDirectory,
+          pluginDirectory: 'plugins/disabled-tools',
+          backendDirectory: 'plugins/disabled-tools/backend',
+          enablementKey: 'disabled-tools',
+          modified: 1,
+          enabled: false,
+          defaultOpen: false,
+          keepMounted: false,
+          component: null,
+          error: null,
+          diagnostics: {
+            sourceKind: 'package-plugin',
+            sourceLabel: 'Disabled Tools',
+            category: 'General',
+            tags: [],
+            testFiles: [],
+            warnings: [],
+            capabilities: {
+              panel: true,
+              themes: 0,
+              shaders: 0,
+              fonts: 0,
+              commands: 0,
+              actions: 0,
+              explorerActions: 0,
+              contextMenuItems: 0,
+              previewLanes: 0,
+              settingsSlots: 0,
+            },
+          },
+        },
+      ],
+    } as pluginPackages.OverlayPluginDiscoveryResult);
+
+    const { result } = renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+    });
+
+    const discoveryOptions = vi.mocked(pluginPackages.discoverOverlayPlugins).mock
+      .calls[0]?.[1] as pluginPackages.OverlayPluginDiscoveryOptions;
+    expect([...(discoveryOptions.disabledPluginIds as Set<string>)]).toEqual([
+      'disabled-tools',
+    ]);
+    expect(result.current.folderPlugins.map(plugin => plugin.id)).toEqual([
+      'enabled-tools',
+      'disabled-tools',
+    ]);
+    expect(result.current.enabledFolderPlugins.map(plugin => plugin.id)).toEqual([
+      'enabled-tools',
+    ]);
+
+    act(() => {
+      result.current.setPluginEnabled('disabled-tools', true);
+    });
+    expect(useSettingsStore.getState().settings.plugins.enablementByPluginId).toEqual({});
+  });
+
+  it('drops stale discovery results when enablement changes mid-refresh', async () => {
+    let resolveFirstDiscovery:
+      | ((result: pluginPackages.OverlayPluginDiscoveryResult) => void)
+      | undefined;
+    let secondDiscoveryOptions: pluginPackages.OverlayPluginDiscoveryOptions | undefined;
+
+    vi.mocked(pluginPackages.discoverOverlayPlugins)
+      .mockImplementationOnce(
+        () => new Promise<pluginPackages.OverlayPluginDiscoveryResult>(resolve => {
+          resolveFirstDiscovery = resolve;
+        }),
+      )
+      .mockImplementationOnce(async (_hostApiFactory, options) => {
+        secondDiscoveryOptions = options;
+        return {
+          ...emptyDiscoveryResult,
+          plugins: [createLoadedPluginFixture('mid-flight-disabled', false)],
+        };
+      });
+
+    const { result } = renderHook(() => useFolderPluginRuntime('windows'));
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      result.current.setPluginEnabled('mid-flight-disabled', false);
+    });
+
+    await act(async () => {
+      resolveFirstDiscovery?.({
+        ...emptyDiscoveryResult,
+        plugins: [createLoadedPluginFixture('stale-enabled-plugin')],
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(result.current.folderPlugins.map(plugin => plugin.id)).toEqual([
+        'mid-flight-disabled',
+      ]);
+    });
+
+    expect([
+      ...(secondDiscoveryOptions?.disabledPluginIds as Set<string>),
+    ]).toEqual(['mid-flight-disabled']);
+    expect(result.current.enabledFolderPlugins).toEqual([]);
   });
 
   it('registers the watcher and ignores debounced refreshes for ignored paths', async () => {

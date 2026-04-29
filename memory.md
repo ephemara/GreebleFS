@@ -1,3 +1,19 @@
+# 2026-04-29 - Plugin Enablement Is Settings-Backed And Runtime-Safe
+
+- Plugins now have a UE-style enable/disable lifecycle in the desktop plugin manager. The persisted source of truth is `settings.plugins.enablementByPluginId` in `src/store/settingsStore.ts`; disabled plugins are stored as explicit `false` overrides, while enabled/default plugins do not need an entry.
+- Durable ownership after this pass:
+  - `src/components/pluginRuntime.tsx` exposes `enablementKey` and `enabled` on loaded plugin records so legacy file plugins can be disabled by stable file-derived id even when their runtime exports a custom `id`.
+  - `src/config/pluginPackages.ts` accepts `disabledPluginIds` during discovery. Disabled legacy plugins and package plugins remain visible as catalog placeholders, but their frontend source, package entry, commands, actions, preview lanes, settings slots, themes, shaders, fonts, and panel components are not loaded or contributed.
+  - `src/runtime/useFolderPluginRuntime.ts` splits `folderPlugins` (all catalog entries for the manager) from `enabledFolderPlugins` (shell-mountable plugins for panel registration and runtime rendering), and it guards in-flight refreshes against stale enablement state.
+  - `src/components/PluginsManager.tsx` owns the visible switches in the rail, header, and Lifecycle inspector. `src/App.tsx` passes `setPluginEnabled(plugin.enablementKey ?? plugin.id, enabled)` down from the settings store.
+- Durable regression rules:
+  - Do not hide disabled plugins from the manager catalog; users need a place to turn them back on.
+  - Do not execute disabled plugin source or bind disabled package contributions. A disabled package can read manifest metadata, but runtime files must stay cold.
+  - Use `enablementKey` for persisted lifecycle state. `plugin.id` alone is not stable enough for legacy plugin files that can override their exported id.
+- Validation for this pass:
+  - `bunx vitest run src/test/pluginPackages.test.ts src/test/pluginsManager.test.tsx src/test/useFolderPluginRuntime.test.tsx src/test/settingsStore.test.ts src/test/panelRegistry.test.tsx --reporter=dot`
+  - Broad `bunx tsc --noEmit --pretty false` still reports existing unrelated workspace diagnostics; use a touched-file filter for plugin enablement files when checking this lane.
+
 # 2026-04-29 - Explorer File-List Scrollbars Are Native Compositor-Owned
 
 - The prior cached-thumb pass still left the primary explorer file list on app-owned scrollbar chrome, and small folders could still feel like 10 FPS because the fake track/thumb path remained in the scroll surface.
@@ -110,6 +126,18 @@
   - `node_modules\.bin\vitest.exe run src/test/settingsPage.behavior.test.tsx -t "organizes the settings rail" --reporter=dot --testTimeout=30000`
   - filtered touched-file TypeScript sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`
   - visible-shell search returned no `screenshots` matches across panel registry, Settings content/navigation, Explorer Home, settings icon preview, and `usr/` packs.
+
+# 2026-04-29 - Explorer Customize Stays Representative Instead Of Opening The Physics Canvas
+
+- Opening Explorer Customize no longer forces the explorer chrome into `LayoutDynamicsCanvas`. `src/components/FileExplorer.tsx` now passes `authoringCanvasEnabled: false` for topbar, toolbar, rail header, preview header, and status bar layout-dynamics descriptors, and `src/components/explorer/ExplorerChromeSurface.tsx` only uses the physics authoring canvas when that explicit flag is true.
+- The toolbar row height also stopped growing just because customize mode is active. `explorerToolbarPrimaryRowStyle` and `explorerToolbarSecondaryRowStyle` now keep `explorerToolbarHeightPx`, so the authored surface matches the closed runtime surface instead of zooming into the old oversized authoring slab.
+- Durable rule: default Explorer Customize must edit representative chrome. Selection outlines, drag handles, insertion ghosts, and hidden horizontal overflow are allowed; swapping the whole header/status bar into a larger physics canvas is not.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/ExplorerChromeSurface.test.tsx src/test/ExplorerWorkspace.test.tsx --reporter=dot`
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "customize|layout switcher|chrome customize|workspace header|representative" --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/explorerCustomizePointerRuntime.test.tsx src/test/ExplorerChromeSurface.test.tsx src/test/ExplorerWorkspace.test.tsx --reporter=dot`
+  - `bunx vitest run src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx -t "customize|layout switcher|chrome customize|workspace header|representative" --reporter=dot --testTimeout=30000`
+  - Filtered touched-file TypeScript sweep returned no matching touched-file errors for `FileExplorer`, `ExplorerChromeSurface`, `ExplorerWorkspace`, or `LayoutDynamicsCanvas`.
 
 # 2026-04-29 - Explorer Chrome Bands Scroll Horizontally Without Moving Placed Controls
 

@@ -5,7 +5,7 @@ import * as TauriFs from '@tauri-apps/plugin-fs';
 import * as TauriNotification from '@tauri-apps/plugin-notification';
 import * as TauriWindow from '@tauri-apps/api/window';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import type { LoadedActionPack, LoadedExplorerAction } from '../config/actionPacks';
 import {
   getPluginStorageDirectory,
@@ -40,9 +40,11 @@ import {
 } from './extensionHostApi';
 import { createPluginIndexApi } from './pluginIndexApi';
 import { createOverlayPluginRuntimeSettingsController } from './pluginSettingsRuntime';
+import { useSettingsStore } from '../store/settingsStore';
 
 export interface UseFolderPluginRuntimeResult {
   folderPlugins: LoadedOverlayPlugin[];
+  enabledFolderPlugins: LoadedOverlayPlugin[];
   pluginContributedShaders: LoadedOverlayShader[];
   pluginThemePackages: LoadedOverlayThemePackage[];
   pluginFonts: OverlayRegisteredFontContribution[];
@@ -57,11 +59,18 @@ export interface UseFolderPluginRuntimeResult {
   folderPluginsLoading: boolean;
   openPluginsFolder: () => Promise<void>;
   refreshFolderPlugins: (force?: boolean) => Promise<void>;
+  setPluginEnabled: (pluginId: string, enabled: boolean) => void;
   createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
 }
 
 export interface UseFolderPluginRuntimeOptions {
   liveReloadEnabled?: boolean;
+}
+
+function createPluginEnablementSignature(
+  disabledPluginIds: ReadonlySet<string>,
+): string {
+  return [...disabledPluginIds].sort().join('|');
 }
 
 export function useFolderPluginRuntime(
@@ -70,6 +79,7 @@ export function useFolderPluginRuntime(
 ): UseFolderPluginRuntimeResult {
   const liveReloadEnabled = options.liveReloadEnabled === true;
   const [folderPlugins, setFolderPlugins] = useState<LoadedOverlayPlugin[]>([]);
+  const [enabledFolderPlugins, setEnabledFolderPlugins] = useState<LoadedOverlayPlugin[]>([]);
   const [pluginContributedShaders, setPluginContributedShaders] = useState<LoadedOverlayShader[]>([]);
   const [pluginThemePackages, setPluginThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
   const [pluginFonts, setPluginFonts] = useState<OverlayRegisteredFontContribution[]>([]);
@@ -88,6 +98,24 @@ export function useFolderPluginRuntime(
   const pluginRefreshInFlightRef = useRef(false);
   const pluginRefreshQueuedForceRef = useRef(false);
   const pluginSignatureRef = useRef('');
+  const pluginEnablementByPluginId = useSettingsStore(
+    state => state.settings.plugins.enablementByPluginId,
+  );
+  const setPluginEnabled = useSettingsStore(state => state.setPluginEnabled);
+  const disabledPluginIds = useMemo(
+    () => new Set(
+      Object.entries(pluginEnablementByPluginId)
+        .filter(([, enabled]) => enabled === false)
+        .map(([pluginId]) => pluginId),
+    ),
+    [pluginEnablementByPluginId],
+  );
+  const pluginEnablementSignature = useMemo(
+    () => createPluginEnablementSignature(disabledPluginIds),
+    [disabledPluginIds],
+  );
+  const disabledPluginIdsRef = useRef<ReadonlySet<string>>(disabledPluginIds);
+  disabledPluginIdsRef.current = disabledPluginIds;
 
   const openPluginsFolder = useCallback(async () => {
     await ensureDir(pluginSystemConfig.pluginsDirectory);
@@ -190,6 +218,7 @@ export function useFolderPluginRuntime(
   const refreshFolderPlugins = useCallback(async (force = false) => {
     if (!isTauri()) {
       setFolderPlugins([]);
+      setEnabledFolderPlugins([]);
       setPluginContributedShaders([]);
       setPluginThemePackages([]);
       setPluginFonts([]);
@@ -240,8 +269,24 @@ export function useFolderPluginRuntime(
           }
 
           pluginSignatureRef.current = nextSignature;
-          const discovered = await pluginPackages.discoverOverlayPlugins(createPluginApi);
+          const discoveryDisabledPluginIds = disabledPluginIdsRef.current;
+          const discoveryEnablementSignature =
+            createPluginEnablementSignature(discoveryDisabledPluginIds);
+          const discovered = await pluginPackages.discoverOverlayPlugins(createPluginApi, {
+            disabledPluginIds: discoveryDisabledPluginIds,
+          });
+          if (
+            discoveryEnablementSignature !==
+            createPluginEnablementSignature(disabledPluginIdsRef.current)
+          ) {
+            pluginRefreshQueuedForceRef.current = true;
+            continue;
+          }
+
           setFolderPlugins(discovered.plugins);
+          setEnabledFolderPlugins(
+            discovered.plugins.filter(plugin => plugin.enabled !== false),
+          );
           setPluginContributedShaders(discovered.shaders);
           setPluginThemePackages(discovered.themePackages);
           setPluginFonts(discovered.fonts);
@@ -255,6 +300,7 @@ export function useFolderPluginRuntime(
           setFolderPluginsError(discovered.warnings.length > 0 ? discovered.warnings.join('\n') : null);
         } catch (error) {
           setFolderPlugins([]);
+          setEnabledFolderPlugins([]);
           setPluginContributedShaders([]);
           setPluginThemePackages([]);
           setPluginFonts([]);
@@ -292,7 +338,7 @@ export function useFolderPluginRuntime(
 
   useEffect(() => {
     void refreshFolderPlugins(true);
-  }, [refreshFolderPlugins]);
+  }, [pluginEnablementSignature, refreshFolderPlugins]);
 
   useEffect(() => {
     if (!liveReloadEnabled) {
@@ -423,6 +469,7 @@ export function useFolderPluginRuntime(
 
   return {
     folderPlugins,
+    enabledFolderPlugins,
     pluginContributedShaders,
     pluginThemePackages,
     pluginFonts,
@@ -437,6 +484,7 @@ export function useFolderPluginRuntime(
     folderPluginsLoading,
     openPluginsFolder,
     refreshFolderPlugins,
+    setPluginEnabled,
     createPluginApi,
   };
 }

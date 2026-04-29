@@ -303,6 +303,8 @@ describe('createBuiltInPanelDefinitions', () => {
           description: 'Custom extension workspace.',
           defaultOpen: true,
           keepMounted: false,
+          enabled: true,
+          component: () => null,
           filePath: '/tmp/plugin.catalog',
         } as never,
       ],

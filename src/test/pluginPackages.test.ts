@@ -58,6 +58,103 @@ describe('plugin package discovery', () => {
     ]);
   });
 
+  it('keeps disabled plugins in the catalog without loading their runtime contributions', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginSystemConfig.pluginsDirectory) {
+        return [
+          {
+            name: 'hello-panel.tsx',
+            path: 'plugins/hello-panel.tsx',
+            is_dir: false,
+            extension: 'tsx',
+            modified: 10,
+          },
+          {
+            name: 'mega-plugin',
+            path: 'plugins/mega-plugin',
+            is_dir: true,
+            extension: '',
+            modified: 20,
+          },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/mega-plugin/plugin.json') {
+        return JSON.stringify({
+          id: 'mega-plugin',
+          name: 'Mega Plugin',
+          entry: 'dist/index.js',
+          category: 'First-party Workbenches',
+          contributions: {
+            commands: [
+              {
+                id: 'build-project',
+                name: 'Build Project',
+                command: 'npm run build',
+              },
+            ],
+            previewLanes: [
+              {
+                id: 'notes-preview',
+                title: 'Notes Preview',
+                renderer: 'preview/notes-preview.js',
+              },
+            ],
+          },
+        });
+      }
+
+      if (
+        command === 'fs_read_text_file' &&
+        (
+          normalizedPath === 'plugins/hello-panel.tsx' ||
+          normalizedPath === 'plugins/mega-plugin/dist/index.js' ||
+          normalizedPath === 'plugins/mega-plugin/preview/notes-preview.js'
+        )
+      ) {
+        throw new Error(`disabled runtime source should not load: ${normalizedPath}`);
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(
+      () => createMockOverlayPluginApi(),
+      {
+        disabledPluginIds: new Set(['hello-panel', 'mega-plugin']),
+      },
+    );
+
+    expect(result.plugins.map(plugin => ({
+      id: plugin.id,
+      name: plugin.name,
+      enabled: plugin.enabled,
+      enablementKey: plugin.enablementKey,
+    }))).toEqual([
+      {
+        id: 'hello-panel',
+        name: 'Hello Panel',
+        enabled: false,
+        enablementKey: 'hello-panel',
+      },
+      {
+        id: 'mega-plugin',
+        name: 'Mega Plugin',
+        enabled: false,
+        enablementKey: 'mega-plugin',
+      },
+    ]);
+    expect(result.commands).toEqual([]);
+    expect(result.previewLanes).toEqual([]);
+    expect(result.themePackages).toEqual([]);
+    expect(result.shaders).toEqual([]);
+    expect(result.fonts).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+
   it('loads legacy plugins and manifest-based packages with contributions', async () => {
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       const params = args as { path?: string; showHidden?: boolean } | undefined;
