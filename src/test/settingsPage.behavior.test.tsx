@@ -1088,6 +1088,57 @@ describe('SettingsPage behavior', () => {
     }
   });
 
+  it('lets settings and plugin rail categories collapse through the shared disclosure group', async () => {
+    const user = userEvent.setup();
+    renderSettingsPage({
+      pluginSettingsSlots: [TEST_PLUGIN_SETTINGS_SLOT],
+    });
+
+    const appearanceCategory = Array.from(
+      document.querySelectorAll('[data-settings-rail-category]'),
+    ).find(
+      (node) => node.getAttribute('data-settings-rail-category') === 'Appearance',
+    ) as HTMLElement | undefined;
+
+    expect(appearanceCategory).toBeDefined();
+    const appearanceToggle = within(appearanceCategory as HTMLElement).getByRole('button', {
+      name: /appearance \d+ sections?/i,
+    });
+    expect(appearanceToggle).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(appearanceToggle);
+
+    expect(appearanceToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      within(appearanceCategory as HTMLElement).queryByRole('button', {
+        name: /^Top Bars$/i,
+      }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Plugins Path' }));
+
+    const pluginCategory = Array.from(
+      document.querySelectorAll('[data-settings-rail-category]'),
+    ).find(
+      (node) => node.getAttribute('data-settings-rail-category') === 'Test Plugin',
+    ) as HTMLElement | undefined;
+
+    expect(pluginCategory).toBeDefined();
+    const pluginToggle = within(pluginCategory as HTMLElement).getByRole('button', {
+      name: /test plugin 1 slot/i,
+    });
+    expect(pluginToggle).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(pluginToggle);
+
+    expect(pluginToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      within(pluginCategory as HTMLElement).queryByRole('button', {
+        name: /main slot/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
   it('keeps the disabled screenshot suite out of the visible settings UI', () => {
     renderSettingsPage();
 

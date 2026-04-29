@@ -46,6 +46,7 @@ import {
 } from '../../DraggablePanelList';
 import { OverlayActionButton } from '../../OverlayActionButton';
 import { OverlayScrollArea } from '../../OverlayScrollArea';
+import { WorkbenchDisclosureGroup } from '../../WorkbenchDisclosureGroup';
 import type { ResolvedOverlayAppearance } from '../../../config/appearance';
 import type { LoadedActionPack, LoadedExplorerAction } from '../../../config/actionPacks';
 import {
@@ -2114,126 +2115,107 @@ export function ContextMenusSettingsSection({
                     </div>
                   ) : (
                     contextMenuLibrarySections.map((section) => (
-                      <section
+                      <WorkbenchDisclosureGroup
                         key={section.key}
-                        className="overflow-hidden rounded-[14px] border"
-                        style={{
-                          borderColor: `${border}9a`,
-                          background: 'rgba(255,255,255,0.014)',
-                        }}
+                        label={section.label}
+                        count={<ThemeBadge label={`${section.items.length}`} />}
+                        ariaLabel={`${section.label} library section`}
+                        collapsed={Boolean(
+                          !forceExpandLibrarySections
+                          && collapsedLibrarySectionsByKey[section.key],
+                        )}
+                        onToggleCollapsed={() =>
+                          setCollapsedLibrarySectionsByKey((current) => ({
+                            ...current,
+                            [section.key]: !current[section.key],
+                          }))
+                        }
+                        variant="panel"
+                        textColor={text}
+                        mutedColor={muted}
+                        borderColor={`${border}9a`}
+                        background="rgba(255,255,255,0.014)"
+                        forceExpanded={forceExpandLibrarySections}
                       >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setCollapsedLibrarySectionsByKey((current) => ({
-                              ...current,
-                              [section.key]: !current[section.key],
-                            }))
-                          }
-                          className="flex w-full items-center justify-between px-2.5 py-2 text-left"
-                          style={{
-                            borderBottom:
-                              forceExpandLibrarySections ||
-                              !collapsedLibrarySectionsByKey[section.key]
-                                ? `1px solid ${border}72`
-                                : 'none',
-                            color: text,
-                          }}
-                        >
-                          <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
-                            <span style={{ color: muted }}>
-                              {forceExpandLibrarySections
-                                ? '▾'
-                                : collapsedLibrarySectionsByKey[section.key]
-                                  ? '▸'
-                                  : '▾'}
-                            </span>
-                            <span>{section.label}</span>
-                          </span>
-                          <ThemeBadge label={`${section.items.length}`} />
-                        </button>
-                        {forceExpandLibrarySections ||
-                        !collapsedLibrarySectionsByKey[section.key] ? (
-                          <div>
-                            {section.items.map((item, index) => (
-                              <div
-                                key={item.id}
-                                className="px-2.5 py-2"
-                                style={{
-                                  borderTop:
-                                    index === 0 ? 'none' : `1px solid ${border}55`,
-                                }}
-                              >
-                                <div className="flex items-start gap-2">
-                                  <button
-                                    type="button"
-                                    aria-label={`Drag ${item.label} into menu`}
-                                    onPointerDown={(event) =>
-                                      beginContextMenuLibraryDrag(item, event)
-                                    }
-                                    className="mt-0.5 shrink-0 select-none rounded border px-1.5 py-1 text-[8px] font-semibold tracking-[0.2em]"
-                                    style={{
-                                      borderColor: `${border}aa`,
-                                      background: 'rgba(255,255,255,0.018)',
-                                      color: muted,
-                                      touchAction: 'none',
-                                      cursor: 'grab',
-                                    }}
-                                  >
-                                    ⋮⋮
-                                  </button>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <span
-                                        aria-hidden
-                                        className="h-2 w-2 shrink-0 rounded-full"
-                                        style={{
-                                          background:
-                                            section.key === 'actions'
-                                              ? accent
-                                              : section.key === 'extensions'
-                                                ? 'var(--overlay-info, #7fd1ff)'
-                                                : section.key === 'commands'
-                                                  ? `${text}b8`
-                                                  : `${accent}88`,
-                                        }}
-                                      />
-                                      <span className="opacity-75">
-                                        {item.kind === 'command' ? (
-                                          renderSettingsContextMenuIcon(
-                                            item.command.iconName,
-                                          )
-                                        ) : item.kind === 'structure-submenu' ? (
-                                          <FolderTree size={13} />
-                                        ) : item.kind === 'structure-group-slot' ? (
-                                          <Sparkles size={13} />
-                                        ) : (
-                                          <Puzzle size={13} />
-                                        )}
-                                      </span>
-                                      <span className="truncate text-[11px] font-semibold">
-                                        {item.label}
-                                      </span>
-                                    </div>
-                                    <div className="mt-0.5 text-[10px] leading-4 opacity-45">
-                                      {item.description}
-                                    </div>
+                        <div>
+                          {section.items.map((item, index) => (
+                            <div
+                              key={item.id}
+                              className="px-2.5 py-2"
+                              style={{
+                                borderTop:
+                                  index === 0 ? 'none' : `1px solid ${border}55`,
+                              }}
+                            >
+                              <div className="flex items-start gap-2">
+                                <button
+                                  type="button"
+                                  aria-label={`Drag ${item.label} into menu`}
+                                  onPointerDown={(event) =>
+                                    beginContextMenuLibraryDrag(item, event)
+                                  }
+                                  className="mt-0.5 shrink-0 select-none rounded border px-1.5 py-1 text-[8px] font-semibold tracking-[0.2em]"
+                                  style={{
+                                    borderColor: `${border}aa`,
+                                    background: 'rgba(255,255,255,0.018)',
+                                    color: muted,
+                                    touchAction: 'none',
+                                    cursor: 'grab',
+                                  }}
+                                >
+                                  ⋮⋮
+                                </button>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      aria-hidden
+                                      className="h-2 w-2 shrink-0 rounded-full"
+                                      style={{
+                                        background:
+                                          section.key === 'actions'
+                                            ? accent
+                                            : section.key === 'extensions'
+                                              ? 'var(--overlay-info, #7fd1ff)'
+                                              : section.key === 'commands'
+                                                ? `${text}b8`
+                                                : `${accent}88`,
+                                      }}
+                                    />
+                                    <span className="opacity-75">
+                                      {item.kind === 'command' ? (
+                                        renderSettingsContextMenuIcon(
+                                          item.command.iconName,
+                                        )
+                                      ) : item.kind === 'structure-submenu' ? (
+                                        <FolderTree size={13} />
+                                      ) : item.kind === 'structure-group-slot' ? (
+                                        <Sparkles size={13} />
+                                      ) : (
+                                        <Puzzle size={13} />
+                                      )}
+                                    </span>
+                                    <span className="truncate text-[11px] font-semibold">
+                                      {item.label}
+                                    </span>
                                   </div>
-                                  <OverlayActionButton
-                                    appearance={appearance}
-                                    size="compact"
-                                    tone="quiet"
-                                    onClick={() => runContextMenuLibraryQuickAdd(item)}
-                                    className="shrink-0"
-                                  >
-                                    Add
-                                  </OverlayActionButton>
+                                  <div className="mt-0.5 text-[10px] leading-4 opacity-45">
+                                    {item.description}
+                                  </div>
                                 </div>
+                                <OverlayActionButton
+                                  appearance={appearance}
+                                  size="compact"
+                                  tone="quiet"
+                                  onClick={() => runContextMenuLibraryQuickAdd(item)}
+                                  className="shrink-0"
+                                >
+                                  Add
+                                </OverlayActionButton>
                               </div>
-                            ))}
-                          </div>
-                        ) : null}
-                      </section>
+                            </div>
+                          ))}
+                        </div>
+                      </WorkbenchDisclosureGroup>
                     ))
                   )}
                 </div>

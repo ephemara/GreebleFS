@@ -61,6 +61,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useShallow } from "zustand/react/shallow";
 import { PremiumSlider } from "./PremiumSlider";
+import { WorkbenchDisclosureGroup } from "./WorkbenchDisclosureGroup";
 import type { LoadedOverlayAnimation } from "./animationRuntime";
 import {
   getOverlayWallpaperKindLabel,
@@ -3578,6 +3579,10 @@ export function SettingsPage({
     190,
     320,
   );
+  const [collapsedSettingsCategoryKeys, setCollapsedSettingsCategoryKeys] =
+    useState<ReadonlySet<string>>(() => new Set());
+  const [collapsedPluginCategoryKeys, setCollapsedPluginCategoryKeys] =
+    useState<ReadonlySet<string>>(() => new Set());
   const availableLinuxDisplayBackends =
     linuxDisplayBackendStatus?.availableBackends ?? [];
   const linuxDisplayBackendStatusSummary = useMemo(() => {
@@ -7810,6 +7815,72 @@ export function SettingsPage({
   const isPluginRailActive = activeRailPath === 'plugins';
 
   useEffect(() => {
+    setCollapsedSettingsCategoryKeys((current) => {
+      const availableKeys = new Set<string>(
+        settingsSectionGroups.map((group) => group.key),
+      );
+      let changed = false;
+      const next = new Set<string>();
+      current.forEach((groupKey) => {
+        if (availableKeys.has(groupKey)) {
+          next.add(groupKey);
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [settingsSectionGroups]);
+
+  useEffect(() => {
+    setCollapsedPluginCategoryKeys((current) => {
+      const availableKeys = new Set<string>(
+        pluginSettingsSlotGroups.map((group) => group.key),
+      );
+      let changed = false;
+      const next = new Set<string>();
+      current.forEach((groupKey) => {
+        if (availableKeys.has(groupKey)) {
+          next.add(groupKey);
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [pluginSettingsSlotGroups]);
+
+  const toggleSettingsRailCategoryCollapsed = useCallback(
+    (categoryKey: string) => {
+      setCollapsedSettingsCategoryKeys((current) => {
+        const next = new Set(current);
+        if (next.has(categoryKey)) {
+          next.delete(categoryKey);
+        } else {
+          next.add(categoryKey);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const togglePluginRailCategoryCollapsed = useCallback(
+    (categoryKey: string) => {
+      setCollapsedPluginCategoryKeys((current) => {
+        const next = new Set(current);
+        if (next.has(categoryKey)) {
+          next.delete(categoryKey);
+        } else {
+          next.add(categoryKey);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  useEffect(() => {
     if (activeRailPath !== 'plugins') {
       return;
     }
@@ -9001,77 +9072,87 @@ export function SettingsPage({
               viewportStyle={{ padding: "7px 8px 10px 8px" }}
             >
               <div className="space-y-3">
-                {isPluginRailActive
-                  ? pluginSettingsSlotGroups.map((category) => (
-                    <div key={category.key} data-settings-rail-category={category.label}>
-                      <div
-                        className="mb-1.5 flex items-center justify-between gap-2 px-1 text-[9px] font-semibold uppercase tracking-[0.16em]"
-                        title={category.description}
-                        style={{ color: muted }}
-                      >
-                        <span className="truncate">{category.label}</span>
-                        <span className="opacity-45">{category.slots.length}</span>
+                  {isPluginRailActive
+                    ? pluginSettingsSlotGroups.map((category) => (
+                      <div key={category.key} data-settings-rail-category={category.label}>
+                        <WorkbenchDisclosureGroup
+                          label={category.label}
+                          count={category.slots.length}
+                          ariaLabel={`${category.label} ${category.slots.length} slot${category.slots.length === 1 ? "" : "s"}`}
+                          collapsed={collapsedPluginCategoryKeys.has(category.key)}
+                          onToggleCollapsed={() =>
+                            togglePluginRailCategoryCollapsed(category.key)
+                          }
+                          variant="rail"
+                          mutedColor={muted}
+                          buttonStyle={{ marginBottom: 6 }}
+                        >
+                          <div title={category.description} className="space-y-1">
+                            {category.slots.map((slotEntry) => (
+                              <SettingsRailButton
+                                key={slotEntry.key}
+                                active={activePluginSettingsSlot?.id === slotEntry.slot.id}
+                                icon={<Puzzle size={12} />}
+                                label={slotEntry.label}
+                                subtitle={slotEntry.subtitle}
+                                summary={slotEntry.summary}
+                                accent={accent}
+                                border={border}
+                                text={text}
+                                muted={muted}
+                                onClick={() => {
+                                  setActiveRailPath('plugins');
+                                  setActivePluginSettingsSlotId(slotEntry.slot.id);
+                                }}
+                                motionBinding={bindSettingsCardMotion(
+                                  activePluginSettingsSlot?.id === slotEntry.slot.id,
+                                )}
+                              />
+                            ))}
+                          </div>
+                        </WorkbenchDisclosureGroup>
                       </div>
-                      <div className="space-y-1">
-                        {category.slots.map((slotEntry) => (
-                          <SettingsRailButton
-                            key={slotEntry.key}
-                            active={activePluginSettingsSlot?.id === slotEntry.slot.id}
-                            icon={<Puzzle size={12} />}
-                            label={slotEntry.label}
-                            subtitle={slotEntry.subtitle}
-                            summary={slotEntry.summary}
-                            accent={accent}
-                            border={border}
-                            text={text}
-                            muted={muted}
-                            onClick={() => {
-                              setActiveRailPath('plugins');
-                              setActivePluginSettingsSlotId(slotEntry.slot.id);
-                            }}
-                            motionBinding={bindSettingsCardMotion(
-                              activePluginSettingsSlot?.id === slotEntry.slot.id,
-                            )}
-                          />
-                        ))}
+                    ))
+                    : settingsSectionGroups.map((category) => (
+                      <div key={category.key} data-settings-rail-category={category.label}>
+                        <WorkbenchDisclosureGroup
+                          label={category.label}
+                          count={category.sections.length}
+                          ariaLabel={`${category.label} ${category.sections.length} section${category.sections.length === 1 ? "" : "s"}`}
+                          collapsed={collapsedSettingsCategoryKeys.has(category.key)}
+                          onToggleCollapsed={() =>
+                            toggleSettingsRailCategoryCollapsed(category.key)
+                          }
+                          variant="rail"
+                          mutedColor={muted}
+                          buttonStyle={{ marginBottom: 6 }}
+                        >
+                          <div title={category.description} className="space-y-1">
+                            {category.sections.map((section) => (
+                              <SettingsRailButton
+                                key={section.key}
+                                active={activeSection === section.key}
+                                icon={section.icon}
+                                label={section.label}
+                                subtitle={section.subtitle}
+                                summary={section.summary}
+                                accent={accent}
+                                border={border}
+                                text={text}
+                                muted={muted}
+                                onClick={() => {
+                                  setActiveRailPath('settings');
+                                  setActiveSection(section.key);
+                                }}
+                                motionBinding={bindSettingsCardMotion(
+                                  activeSection === section.key,
+                                )}
+                              />
+                            ))}
+                          </div>
+                        </WorkbenchDisclosureGroup>
                       </div>
-                    </div>
-                  ))
-                  : settingsSectionGroups.map((category) => (
-                    <div key={category.key} data-settings-rail-category={category.label}>
-                      <div
-                        className="mb-1.5 flex items-center justify-between gap-2 px-1 text-[9px] font-semibold uppercase tracking-[0.16em]"
-                        title={category.description}
-                        style={{ color: muted }}
-                      >
-                        <span className="truncate">{category.label}</span>
-                        <span className="opacity-45">{category.sections.length}</span>
-                      </div>
-                      <div className="space-y-1">
-                        {category.sections.map((section) => (
-                          <SettingsRailButton
-                            key={section.key}
-                            active={activeSection === section.key}
-                            icon={section.icon}
-                            label={section.label}
-                            subtitle={section.subtitle}
-                            summary={section.summary}
-                            accent={accent}
-                            border={border}
-                            text={text}
-                            muted={muted}
-                            onClick={() => {
-                              setActiveRailPath('settings');
-                              setActiveSection(section.key);
-                            }}
-                            motionBinding={bindSettingsCardMotion(
-                              activeSection === section.key,
-                            )}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                    ))}
                 {isPluginRailActive && pluginSettingsSlotGroups.length === 0 ? (
                   <div
                     className="rounded border px-3 py-3 text-[11px] leading-5"
