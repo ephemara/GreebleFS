@@ -7,7 +7,6 @@ import {
   RefreshCw,
   Search,
   Settings2,
-  Sparkles,
   StickyNote,
   Terminal,
   Zap,
@@ -46,7 +45,6 @@ const LAUNCHPAD_ICONS = {
   settings: Settings2,
   plugins: Puzzle,
   notes: StickyNote,
-  screenshots: Sparkles,
   storage: HardDrive,
 };
 

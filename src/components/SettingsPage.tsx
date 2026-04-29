@@ -11,7 +11,6 @@ import {
   ArrowDown,
   ArrowUp,
   Bot,
-  Camera,
   Clipboard,
   Copy,
   CopyPlus,
@@ -354,11 +353,6 @@ import {
   resolveExplorerChromeCommandLabel,
   type ExplorerCustomizeCatalogEntry,
 } from "../config/explorerCustomizeCatalog";
-import {
-  screenshotFeatureConfig,
-  type ScreenshotCaptureModeId,
-  type ScreenshotOutputActionId,
-} from "../config/screenshots";
 import {
   dispatchTerminalCommand,
   type OverlayPluginSettingsSlotContribution,
@@ -2603,8 +2597,6 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <HardDrive size={14} />;
     case "mobile":
       return <ShieldCheck size={14} />;
-    case "screenshots":
-      return <Camera size={14} />;
     case "audio":
       return <Music size={14} />;
     case "appearance":
@@ -2665,9 +2657,6 @@ interface SettingsSectionContentContext {
   connectedCloudAccountCount: number;
   configuredCloudProviderCount: number;
   mobileRemoteAccessSummary: string;
-  screenshotDefaultCaptureMode: ScreenshotCaptureModeId;
-  screenshotDefaultOutputAction: ScreenshotOutputActionId;
-  screenshotShowGrid: boolean;
   audioFolderCount: number;
   soundPackSelectionSummary: string;
   availableSoundPacksCount: number;
@@ -2782,12 +2771,6 @@ function getSettingsSectionContent(
         detail:
           "Choose whether the mobile PWA launches over the local network or a tailnet URL, then manage Tailscale status and phone-facing remote access from one place.",
       };
-    case "screenshots":
-      return {
-        summary: `${context.screenshotDefaultCaptureMode === "monitor" ? "Full monitor default" : "Area snip default"} · ${formatScreenshotOutputActionLabel(context.screenshotDefaultOutputAction)} · ${context.screenshotShowGrid ? "Grid on" : "Grid off"}`,
-        detail:
-          "Set the default screenshot landing path and decide how the built-in capture tool behaves before and after a proof action.",
-      };
     case "audio":
       return {
         summary: `${context.soundPackSelectionSummary} · ${context.soundEffectsEnabled ? "FX on" : "FX muted"} · ${context.nativeNotificationsEnabled ? "Native notices on" : "Native notices off"} · ${context.audioFolderCount} VST folder${context.audioFolderCount === 1 ? "" : "s"}`,
@@ -2875,16 +2858,6 @@ function getSettingsSectionContent(
     summary: String(sectionKey),
     detail: "Configure this settings slice.",
   };
-}
-
-function formatScreenshotOutputActionLabel(
-  action: ScreenshotOutputActionId,
-): string {
-  if (action === "save-copy") {
-    return "Save + Copy";
-  }
-
-  return action === "save" ? "Save" : "Copy";
 }
 
 function formatNativeNotificationPermissionLabel(
@@ -3374,7 +3347,6 @@ export function SettingsPage({
     updateLayout,
     updateKeybindings,
     setCommandKeybinding,
-    updateScreenshots,
     updateSystem,
     updateMobile,
     updateModels,
@@ -3407,7 +3379,6 @@ export function SettingsPage({
       updateLayout: state.updateLayout,
       updateKeybindings: state.updateKeybindings,
       setCommandKeybinding: state.setCommandKeybinding,
-      updateScreenshots: state.updateScreenshots,
       updateSystem: state.updateSystem,
       updateMobile: state.updateMobile,
       updateModels: state.updateModels,
@@ -7176,15 +7147,6 @@ export function SettingsPage({
         actionLabel: "Appearance Settings",
         action: () => setActiveSection("appearance"),
       },
-      {
-        id: "capture-proof",
-        icon: <Camera size={13} />,
-        title: "Screenshots + Proof",
-        description:
-          "Capture the current desktop, annotate details, and save or copy release proof from the built-in screenshot workflow.",
-        actionLabel: "Screenshot Settings",
-        action: () => setActiveSection("screenshots"),
-      },
     ],
     [setActiveSection],
   );
@@ -7562,9 +7524,6 @@ export function SettingsPage({
           : "Same-network delivery",
         settings.mobile.tailscaleHostname ? "custom hostname" : "auto hostname",
       ].join(" · "),
-      screenshotDefaultCaptureMode: settings.screenshots.defaultCaptureMode,
-      screenshotDefaultOutputAction: settings.screenshots.defaultOutputAction,
-      screenshotShowGrid: settings.screenshots.showGrid,
       audioFolderCount: settings.audio.vst3AdditionalFolders.length,
       soundPackSelectionSummary,
       availableSoundPacksCount: availableSoundPackEntries.length,
@@ -7653,9 +7612,6 @@ export function SettingsPage({
       settings.layout.zenFocusMode,
       settings.mobile.remoteAccessMode,
       settings.mobile.tailscaleHostname,
-      settings.screenshots.defaultCaptureMode,
-      settings.screenshots.defaultOutputAction,
-      settings.screenshots.showGrid,
       settings.system.launchAtStartup,
       shaderFailures.length,
       shaderPerformanceProfile.label,
@@ -9277,8 +9233,7 @@ export function SettingsPage({
                     >
                       GreebleFS is a desktop workbench with a live terminal,
                       file explorer, source-control rail, plugin host, theme and
-                      motion authoring, and screenshot proof capture in one
-                      surface.
+                      motion authoring in one surface.
                     </p>
                   </div>
                   <div className="grid min-w-[220px] flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
@@ -9312,7 +9267,7 @@ export function SettingsPage({
               <OverviewCard
                 title="Core Workflows"
                 subtitle="These are the panel handoffs operators need to understand on first contact."
-                badges={["Explorer", "Source", "Plugins", "Screenshots"]}
+                badges={["Explorer", "Source", "Plugins"]}
               >
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   {overviewWorkflows.map((workflow) => (
@@ -18288,291 +18243,6 @@ export function SettingsPage({
               </div>
             </OverviewCard>
           </div>
-        )}
-
-        {activeSection === "screenshots" && (
-          <section
-            className="rounded border p-4"
-            style={{
-              borderColor: border,
-              background: "rgba(255,255,255,0.03)",
-            }}
-          >
-            <SectionTitle
-              icon={<Camera size={12} />}
-              title="Screenshots"
-              subtitle="Default capture behavior, save path, and proof-session polish for the built-in screenshot workflow."
-            />
-
-            <div className="mt-4 space-y-4">
-              <div
-                className="rounded border p-3"
-                style={{
-                  borderColor: `${accent}44`,
-                  background: `${accent}0d`,
-                }}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="max-w-[720px]">
-                    <div
-                      className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-                      style={{ color: muted }}
-                    >
-                      Proof Capture Defaults
-                    </div>
-                    <p
-                      className="mt-1 text-[11px] leading-5"
-                      style={{ color: muted }}
-                    >
-                      The Screenshots panel now follows these defaults directly.
-                      Pick whether a fresh capture opens as an area snip or a
-                      full-screen proof pass, choose the primary output action,
-                      and decide whether the tool clears back to the library
-                      after a save.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
-                    <span
-                      className="rounded border px-2 py-1"
-                      style={{
-                        borderColor: border,
-                        background: "rgba(255,255,255,0.04)",
-                        color: text,
-                      }}
-                    >
-                      {settings.screenshots.defaultCaptureMode === "monitor"
-                        ? "Full Monitor Default"
-                        : "Area Snip Default"}
-                    </span>
-                    <span
-                      className="rounded border px-2 py-1"
-                      style={{
-                        borderColor: border,
-                        background: "rgba(255,255,255,0.04)",
-                        color: text,
-                      }}
-                    >
-                      {formatScreenshotOutputActionLabel(
-                        settings.screenshots.defaultOutputAction,
-                      )}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className="rounded border p-3"
-                style={{
-                  borderColor: border,
-                  background: "rgba(255,255,255,0.025)",
-                }}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                      Save Directory
-                    </div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Every saved or annotated capture lands here. The Settings
-                      overview and the Screenshots panel both read from this
-                      same path.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void openWorkspaceDirectory(
-                          "Screenshots",
-                          settings.screenshots.saveDirectory ||
-                            screenshotFeatureConfig.defaultSaveDirectory,
-                        )
-                      }
-                      className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                      style={{
-                        border: `1px solid ${accent}55`,
-                        background: `${accent}16`,
-                        color: text,
-                      }}
-                    >
-                      Open Save Folder
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateScreenshots({
-                          saveDirectory:
-                            screenshotFeatureConfig.defaultSaveDirectory,
-                        })
-                      }
-                      className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                      style={{
-                        border: `1px solid ${border}`,
-                        background: "rgba(255,255,255,0.04)",
-                        color: text,
-                      }}
-                    >
-                      Reset Directory
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3 space-y-1.5">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
-                    Folder Path
-                  </label>
-                  <input
-                    value={settings.screenshots.saveDirectory}
-                    onChange={(event) =>
-                      updateScreenshots({ saveDirectory: event.target.value })
-                    }
-                    className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                    style={{
-                      borderColor: border,
-                      background: "rgba(255,255,255,0.04)",
-                      color: text,
-                      fontFamily: appearance.fonts.mono,
-                    }}
-                  />
-                  <p className="text-[11px] opacity-40">
-                    OverlayTerm creates the folder on demand before the first
-                    saved capture.
-                  </p>
-                </div>
-              </div>
-
-              <div
-                className="rounded border p-3"
-                style={{
-                  borderColor: border,
-                  background: "rgba(255,255,255,0.025)",
-                }}
-              >
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                    Default Capture Mode
-                  </div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    This sets how a fresh monitor preview behaves before the
-                    operator does anything else in the screenshot tool.
-                  </p>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  {screenshotFeatureConfig.captureModes.map((mode) => {
-                    const active =
-                      settings.screenshots.defaultCaptureMode === mode.id;
-                    return (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        onClick={() =>
-                          updateScreenshots({ defaultCaptureMode: mode.id })
-                        }
-                        className="rounded px-3 py-3 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${active ? accent : border}`,
-                          background: active
-                            ? `${accent}14`
-                            : "rgba(255,255,255,0.03)",
-                          color: text,
-                        }}
-                      >
-                        <div className="text-[11px] font-semibold">
-                          {mode.label}
-                        </div>
-                        <p className="mt-1 text-[11px] opacity-45">
-                          {mode.description}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div
-                className="rounded border p-3"
-                style={{
-                  borderColor: border,
-                  background: "rgba(255,255,255,0.025)",
-                }}
-              >
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                    Default Output Action
-                  </div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    The screenshot toolbar promotes this action first for both
-                    region captures and full-monitor proof runs.
-                  </p>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
-                  {screenshotFeatureConfig.outputActions.map((action) => {
-                    const active =
-                      settings.screenshots.defaultOutputAction === action.id;
-                    return (
-                      <button
-                        key={action.id}
-                        type="button"
-                        onClick={() =>
-                          updateScreenshots({ defaultOutputAction: action.id })
-                        }
-                        className="rounded px-3 py-3 text-left transition-colors"
-                        style={{
-                          border: `1px solid ${active ? accent : border}`,
-                          background: active
-                            ? `${accent}14`
-                            : "rgba(255,255,255,0.03)",
-                          color: text,
-                        }}
-                      >
-                        <div className="text-[11px] font-semibold">
-                          {formatScreenshotOutputActionLabel(action.id)}
-                        </div>
-                        <p className="mt-1 text-[11px] opacity-45">
-                          {action.description}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2">
-                <label
-                  className="flex items-center justify-between rounded border px-3 py-2 text-[11px]"
-                  style={{ borderColor: border }}
-                >
-                  <span>Show composition grid over the capture preview</span>
-                  <input
-                    type="checkbox"
-                    aria-label="Show composition grid"
-                    checked={settings.screenshots.showGrid}
-                    onChange={(event) =>
-                      updateScreenshots({ showGrid: event.target.checked })
-                    }
-                  />
-                </label>
-                <label
-                  className="flex items-center justify-between rounded border px-3 py-2 text-[11px]"
-                  style={{ borderColor: border }}
-                >
-                  <span>Jump back to the library after save actions</span>
-                  <input
-                    type="checkbox"
-                    aria-label="Jump back to the library after save actions"
-                    checked={settings.screenshots.closeEditorAfterAction}
-                    onChange={(event) =>
-                      updateScreenshots({
-                        closeEditorAfterAction: event.target.checked,
-                      })
-                    }
-                  />
-                </label>
-              </div>
-            </div>
-          </section>
         )}
 
         {activeSection === "theme-json" && (

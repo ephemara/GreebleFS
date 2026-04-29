@@ -2,7 +2,7 @@
 
 ## Purpose
 
-GreebleFS is a Tauri desktop workbench centered on a highly themeable file explorer, terminal overlay, plugins, shaders, animations, screenshots, and settings-driven shell customization.
+GreebleFS is a Tauri desktop workbench centered on a highly themeable file explorer, terminal overlay, plugins, shaders, animations, and settings-driven shell customization.
 
 ## Release Identity
 
@@ -161,7 +161,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/terminal/terminalRendererSupport.ts`
   Small runtime probe for terminal WebGL support. It first tries a strict `webgl2` context, then retries without the major-performance-caveat gate if needed, and still rejects software renderers so `auto` mode does not opt into a slow or fallback-backed GPU path.
 - `src/components/ScreenshotsManager.tsx`
-  Screenshot capture/editor/library surface. It owns monitor preview orchestration, selection editing, annotation authoring, and gallery actions, but annotated export is now delegated to Rust instead of being rasterized in the browser.
+  Dormant screenshot capture/editor/library surface. The code is retained for a possible future revival, but the active shell must not register it as a built-in panel, home launchpad item, settings section, managed-content catalog entry, or authored icon-theme panel slot while the screenshot suite is disabled.
 - `src/components/GitManager.tsx`
   Source-control panel surface. It owns the repo rail, working-tree staging/diff actions, ship controls, and the top-level `Changes | History` split, while delegating reusable Git history/branch loading to the runtime seam instead of growing more inline git-command parsing in the component.
 - `src/components/pluginRuntime.tsx`
@@ -348,7 +348,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/config/iconThemePackages.ts` discovers dedicated `icon-themes/` packages whose `icon-theme.json` / `manifest.json` files can override explorer file/folder ids plus shell UI icon slots
   - Top-bar and nav-tab panel icons now resolve through reserved `uiIcons.panel_<normalized-panel-id>` slots first, then fall back to generic UI slots like `folder_tree`, `hard_drive`, `sticky_note`, `camera`, `puzzle`, or `shell`
   - `icon-themes/Zen/` is the first full repo-local example pack; use it as the reference shape for authored icon themes
-    - Zen now demonstrates both built-in panel slots like `panel_storage` / `panel_notes` / `panel_screenshots` and folder-plugin panel slots like `panel_drawable_canvas` / `panel_chronorift` / `panel_sketchfab`
+    - Zen now demonstrates both built-in panel slots like `panel_storage` / `panel_notes` and folder-plugin panel slots like `panel_drawable_canvas` / `panel_chronorift` / `panel_sketchfab`
     - `icon-themes/Zen/ui/` is the app-chrome coverage layer for the package; it now includes explicit SVGs for every `AppIcons.tsx` slot plus dedicated panel extras like `panel_storage`, `panel_drawable_canvas`, and `panel_sketchfab`
     - `packages/UI/scripts/generate_greeblefs_zen_ui_icons.py` is the reproducible coverage generator. Add new `AppIcons.tsx` slots there, rerun the script, and commit the generated `Zen/ui/*.svg` plus manifest updates so future packs see the exact SVG surface they need to implement
     - The Zen manifest is intentionally one-to-one for app chrome slots now. Avoid aliasing UI slots back onto older generic ids if the goal is to keep the pack as the gold example for complete tweakability
@@ -510,7 +510,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
     - **Each panel mount carries a unique `data-bridge-token`.** The Go SDK locates its DOM root through `[data-bridge-token="<token>"]`, so multiple panels of the same runtime id mount cleanly side by side. The token is committed to React state (not a ref) so the DOM attribute is observable before the Go module's `panel.Run` queries it.
     - **Lazy compilation must keep working in installed builds.** `runtime_pipeline::driver::resolve_go_build_script_path` resolves `scripts/go/build.sh` in this order: `GREEBLEFS_GO_BUILD_SCRIPT` env override → `<app_local_data>/scripts/go/build.sh` (what the installer copies) → repo-relative dev fallback. `scripts/build-and-install-linux-local-release.sh` is the source of truth for the install copy step; if you add a new Go pipeline script, copy it there too. `GREEBLEFS_APP_LOCAL_DATA_DIR` overrides the app-local root for tests and ops scenarios.
 - Managed content roots now split by runtime mode around a canonical `usr/` backbone:
-  - repo `usr/` is the only canonical shipped-content authoring root for configurable systems such as themes, top bars, explorer layouts, menu packs, sound packs, home packs, icon themes, actions, runtimes, wallpapers, shaders, animations, interaction motion, shell renderers, theme recipes, theme engines, and the Rust domain catalogs
+  - repo `usr/` is the only canonical shipped-content authoring root for configurable systems such as themes, top bars, explorer layouts, explorer performance tuning, menu packs, sound packs, home packs, icon themes, actions, runtimes, wallpapers, shaders, animations, interaction motion, shell renderers, theme recipes, theme engines, and the Rust domain catalogs
   - UI visual and interaction tokens are authored under the top-level pack lanes. `usr/domain/theme-manifests.json` is derived/cache metadata for the Rust domain catalog and must not become an authored UI value store.
   - `usr/manifest.json` plus `src/config/usrManifest.ts` are the source of truth for shipped lanes, bundled lanes, and env-var suffixes; do not add new configurable shipped folders without registering them there
   - `bun run tauri dev` injects `VITE_GREEBLEFS_USR_DIR` / `GREEBLEFS_USR_DIR`, `GREEBLEFS_MANAGED_CONTENT_ROOT`, and the legacy `OVERLAYTERM_*` aliases from the manifest so every shipped configurable lane resolves out of `usr/<lane>` in dev by default
@@ -572,7 +572,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `FileExplorer.tsx` keeps small folders mounted under a bounded entry limit so ordinary home/project folders do not churn a virtual row window while the user fling-scrolls. Huge folders still use the bounded virtual window and must not render the entire listing.
 - `FileExplorer.tsx` owns both file-centric actions and explorer-local shell controls, so the shared top bar stays panel-agnostic while the explorer keeps its mode/source/preview controls adjacent to the path/search field.
 - Previewable media is now split into three host-owned explorer lanes instead of one generic browser fallback:
-  - image editing stays in `ExplorerImageEditor.tsx` through the shared CropperJS-based editor used by both explorer preview and screenshots
+  - image editing stays in `ExplorerImageEditor.tsx` through the shared CropperJS-based editor used by explorer preview and retained dormant screenshot code
   - audio playback/editing now lives in `ExplorerAudioWorkbench.tsx`, with a preview-first player surface, an explicit edit-mode workbench, and a wildcard `VST` workflow tab; transport truth still lives in `src-tauri/src/audio_engine.rs` and flows through `src/store/audioEngineStore.ts`
   - the browser `<audio>` lane and preview-proxy workaround are no longer the explorer playback path; the preview pane now talks to a CPAL + Symphonia native engine and only uses SoX for offline mutation
   - video playback/editing now lives in `ExplorerVideoEditor.tsx`, but transport truth lives in `src-tauri/src/video_engine.rs` and flows through `src/store/videoEngineStore.ts`
@@ -741,7 +741,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   `src-tauri/src/semantic_search.rs` is the explorer semantic-search orchestrator. It validates local-only roots/files, owns the app-local SQLite index contract plus manual task lifecycle, routes embedding/query/similarity work through the Python sidecar, and exposes the typed `build/query/find-similar/status` command surface through Specta.
   `src-tauri/src/python_pyo3.rs` owns the embedded `pyo3` seam for lightweight in-process Python helpers that do not need the long-lived sidecar, including decoded JSON helper functions for backend callers.
   `src-tauri/src/storage_commands.rs` is the storage-tab truth layer for native drive scans. It walks the filesystem on a background thread, tracks progress/cancellation, records logical vs allocated size, aggregates file-type buckets, caches direct child listings for the matrix view, builds a condensed tree plus largest-entry summaries, and prunes completed scan snapshots when newer scans start.
-  `src-tauri/src/screenshot_commands.rs` is the screenshot file-processing truth layer. Capture discovery and raw monitor capture now come from `tauri-plugin-screenshots` on the frontend guest side, while Rust owns stage-file preparation, region crop materialization, final save/copy, and staged-file cleanup.
+  `src-tauri/src/screenshot_commands.rs` is the retained dormant screenshot file-processing truth layer. It should remain disconnected from visible shell routes unless the screenshot suite is intentionally revived.
 
 ## Validation Commands
 
@@ -842,12 +842,13 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - Prefer adding values to `/usr` appearance, interaction-motion, or theme-recipe packs and consuming emitted CSS variables or typed token lookups in UI source.
 - Explorer context-menu plugin contributions can now open plugin panels through `panel-request` execution. If a plugin needs a folder/file handoff from Explorer, use `src/runtime/pluginPanelRequests.ts` and the `overlayterm-plugin` helpers instead of inventing ad hoc window events or local-storage keys.
 - The dev HUD is internal to this app. It is not a Tauri plugin or external Chrome overlay, and it should be treated as part of the shell runtime.
-- Do not wire the screenshot panel to `explorerTaskStore`. That store is global explorer/Yazi task state; rendering it inside screenshot status chrome leaks unrelated delete/copy jobs into screenshot errors and makes debugging cross-subsystem issues much harder.
-- Screenshot capture is now plugin-backed and file-first:
+- The screenshot suite is currently disabled from the visible product. `ScreenshotsManager.tsx`, `screenshotBackend.ts`, and `src-tauri/src/screenshot_commands.rs` remain in-tree, but future agents must not surface screenshot UI through `panelRegistry.tsx`, `ExplorerHomeSurface.tsx`, Settings navigation/content, managed-content catalog cards, or icon-theme panel slots without an explicit product decision to revive it.
+- If the screenshot suite is revived, do not wire the screenshot panel to `explorerTaskStore`. That store is global explorer/Yazi task state; rendering it inside screenshot status chrome leaks unrelated delete/copy jobs into screenshot errors and makes debugging cross-subsystem issues much harder.
+- The retained screenshot capture path is plugin-backed and file-first:
   - `src/runtime/screenshotBackend.ts` bridges `tauri-plugin-screenshots-api` guest calls with the typed Rust stage/finalize helpers.
   - `src/components/ScreenshotsManager.tsx` should capture monitors lazily, not all at once, and should keep raw plugin capture files immutable for the lifetime of a capture session.
   - If a user wants to edit a region, crop into a staged working file first. Do not mutate the raw plugin capture in place or you lose the full-monitor source for recrop/re-edit.
-- Screenshot editing is now shared with the preview pane:
+- Retained screenshot editing shares the preview-pane editor:
   - `src/components/ExplorerImageEditor.tsx` is the shared image editor surface for both explorer preview editing and screenshot editing.
   - Do not split explorer images and screenshots onto different editors again, and do not reintroduce the old screenshot-only annotation canvas inside `ScreenshotsManager.tsx`; both paths should stay on the same CropperJS-based editor surface.
 - Preview wildcard tabs must be registered by the mounted lane surface, not guessed only from `FileExplorer.tsx`.
@@ -893,6 +894,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Explorer `Ctrl/Cmd + wheel` density changes should be attached to the stable file-area interaction plane, not a remount-prone scroll viewport node. Otherwise icon/grid zoom appears to \"randomly\" stop responding after layout or DOM remounts even when the settings logic is correct.
 - Explorer live layout zoom now splits durable anchors from live presentation. `src/config/explorerViewModes.ts` owns the continuous live grid metrics that render on screen, while `resolveExplorerGridIconModeForCommittedViewMode(...)` in `FileExplorer.tsx` still tracks the committed/durable band for menus, HUD, and persistence. Thumbnail fetch identity stays decoupled from live stage size, so the visible stage and fallback icon can scale continuously without refetch churn.
 - Zoom presentation tuning belongs in `usr/explorer-zoom-behaviors/**/explorer-zoom-behavior.json`. `src/config/explorerZoomBehavior.ts` now normalizes grid item padding, thumbnail radius, and row thumbnail-stage sizing from that manifest. If Explorer zoom geometry feels off, tune the `/usr` manifest first instead of re-hardcoding pixel thresholds in `FileExplorer.tsx`.
+- Folder-activation performance tuning belongs in `usr/explorer-performance/**/explorer-performance.json` through `src/config/explorerPerformance.ts`. Normal directory double-click navigation must use the direct `navigate(path)` hot path instead of open-entry policy; first-click preview priming stays delayed and cancellable.
 - If the Linux/native overlay appears on the wrong display, inspect the monitor-resolution path in `App.tsx` before touching Rust window flags. The frontend now owns monitor selection and overlay geometry; `windowApplyMode` should only apply the chosen presentation atomically.
 - If Linux dock mode starts floating in the middle of the screen again, check the post-show re-dock path in `App.tsx` and confirm overlay move/resize listeners are not re-persisting raw X/Y coordinates into `runtimeOverlayBoundsRef`.
 - On Linux, do not let `window_apply_mode` abort geometry just because a WM rejects `set_shadow`, `set_skip_taskbar`, or another presentation-only flag. The TS call sites should unwrap the returned Tauri `Result`, and the Rust command should log best-effort flag failures while still applying size/position.

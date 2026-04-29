@@ -1,6 +1,5 @@
 import type { CSSProperties } from 'react';
 import {
-  Camera,
   FolderOpen,
   GitBranch,
   HardDrive,
@@ -263,7 +262,6 @@ export function IconSettingsSection({
                     { id: 'refresh', label: 'Refresh', icon: <RefreshCw size={15} /> },
                     { id: 'layout', label: 'Layouts', icon: <LayoutGrid size={15} /> },
                     { id: 'git', label: 'Git', icon: <GitBranch size={15} /> },
-                    { id: 'capture', label: 'Capture', icon: <Camera size={15} /> },
                     { id: 'plugins', label: 'Plugins', icon: <Puzzle size={15} /> },
                     { id: 'wallpaper', label: 'Wallpapers', icon: <MonitorPlay size={15} /> },
                   ].map(preview => (
@@ -299,12 +297,6 @@ export function IconSettingsSection({
                       label: 'Notes',
                       slotId: getPanelIconSlotId('notes'),
                       icon: <ThemedPanelIcon panelId="notes" fallbackSlotId="sticky_note" fallbackIcon={StickyNote} size={15} />,
-                    },
-                    {
-                      id: 'screenshots',
-                      label: 'Screenshots',
-                      slotId: getPanelIconSlotId('screenshots'),
-                      icon: <ThemedPanelIcon panelId="screenshots" fallbackSlotId="camera" fallbackIcon={Camera} size={15} />,
                     },
                     {
                       id: 'plugins',

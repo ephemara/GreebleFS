@@ -41,7 +41,6 @@ const PANEL_ICONS = {
   settings: Settings2,
   plugins: LayoutGrid,
   notes: Sparkles,
-  screenshots: Sparkles,
   storage: HardDrive,
 };
 

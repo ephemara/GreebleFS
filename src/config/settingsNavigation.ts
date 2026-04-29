@@ -145,17 +145,6 @@ export const settingsSectionCatalog = [
     order: 75,
   },
   {
-    key: 'screenshots',
-    label: 'Screenshots',
-    subtitle: 'Capture defaults, save path, and proof-focused editor behavior.',
-    keywords: ['screenshot', 'capture', 'proof', 'snip'],
-    overviewSummary: 'Capture defaults, output actions, and proof workflow.',
-    featuredInOverview: false,
-    archetype: 'rows',
-    shell: { preferredContentDensity: 'comfortable' },
-    order: 80,
-  },
-  {
     key: 'audio',
     label: 'Audio',
     subtitle: 'Theme-driven shell sound packs, native notifications, and VST3 integration.',
@@ -372,9 +361,9 @@ export const settingsSectionCategoryCatalog = [
   {
     key: 'pipelines',
     label: 'Pipelines',
-    description: 'Model, audio, capture, and runtime feature pipelines.',
+    description: 'Model, audio, and runtime feature pipelines.',
     order: 30,
-    sectionKeys: ['models', 'audio', 'screenshots'],
+    sectionKeys: ['models', 'audio'],
   },
   {
     key: 'connectivity',

@@ -13,7 +13,6 @@ import { createBuiltInExplorerMenuPack, menuPackSystemConfig, type LoadedExplore
 import { recordExplorerPerformanceSample, resetExplorerPerformanceSnapshot } from '../config/performanceTelemetry';
 import { resolveThemeCatalogPackageMetadata } from '../config/themeCatalogCuration';
 import { pluginSystemConfig } from '../config/plugins';
-import { screenshotFeatureConfig } from '../config/screenshots';
 import { topBarSystemConfig, type LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import {
   themeAppearancePackSystemConfig,
@@ -780,6 +779,7 @@ describe('SettingsPage behavior', () => {
           description: 'Neutral engine defaults.',
           tags: ['engine'],
           warnings: [],
+          composition: {},
           engineManifest,
           compiledEngineManifest: compileThemeEngineManifest(engineManifest),
         },
@@ -1086,6 +1086,17 @@ describe('SettingsPage behavior', () => {
           & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     }
+  });
+
+  it('keeps the disabled screenshot suite out of the visible settings UI', () => {
+    renderSettingsPage();
+
+    const settingsShellText = document.body.textContent ?? '';
+
+    expect(screen.queryByRole('button', { name: /screenshots/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Screenshots \+ Proof/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/screenshot proof/i)).not.toBeInTheDocument();
+    expect(settingsShellText).not.toMatch(/screenshots/i);
   });
 
   it('splits the settings rail into settings and plugins paths', async () => {
@@ -2016,40 +2027,6 @@ describe('SettingsPage behavior', () => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('overlay');
     });
     expect(useSettingsStore.getState().settings.terminal.showSidebar).toBe(false);
-  }, 30000);
-
-  it('surfaces screenshot defaults in settings and opens the configured save folder', async () => {
-    const user = userEvent.setup();
-    const invokeMock = vi.mocked(invoke);
-    const screenshotDir = 'D:\\Proofs\\OverlayTerm';
-
-    invokeMock.mockImplementation(async () => []);
-
-    renderSettingsPage();
-
-    await user.click(findSectionButton('Screenshots'));
-
-    expect(screen.getByText('Proof Capture Defaults')).toBeInTheDocument();
-
-    const saveDirectoryInput = screen.getByDisplayValue(screenshotFeatureConfig.defaultSaveDirectory);
-    fireEvent.change(saveDirectoryInput, { target: { value: screenshotDir } });
-
-    await user.click(screen.getByRole('button', { name: /Full Monitor/i }));
-    await user.click(screen.getByRole('button', { name: /^Copy\s/i }));
-    await user.click(screen.getByRole('checkbox', { name: 'Show composition grid' }));
-    await user.click(screen.getByRole('checkbox', { name: 'Jump back to the library after save actions' }));
-
-    expect(useSettingsStore.getState().settings.screenshots.saveDirectory).toBe(screenshotDir);
-    expect(useSettingsStore.getState().settings.screenshots.defaultCaptureMode).toBe('monitor');
-    expect(useSettingsStore.getState().settings.screenshots.defaultOutputAction).toBe('copy');
-    expect(useSettingsStore.getState().settings.screenshots.showGrid).toBe(false);
-    expect(useSettingsStore.getState().settings.screenshots.closeEditorAfterAction).toBe(false);
-
-    await user.click(screen.getByRole('button', { name: 'Open Save Folder' }));
-
-    await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('fs_open_file', { path: screenshotDir });
-    });
   }, 30000);
 
   it('routes VST scan folder selection through the explorer picker window', async () => {

@@ -1,9 +1,52 @@
+# 2026-04-29 - Screenshots Suite Disabled From The Visible Shell
+
+- The screenshot manager code is intentionally retained, but the active product no longer surfaces it as a built-in panel, Settings section, Explorer Home launchpad item, managed-content catalog card, or icon-theme panel slot.
+- Durable ownership after this pass:
+  - `src/panels/panelRegistry.tsx` is the main gate. Do not add the `screenshots` panel back to `buildBuiltInPanels` or `buildBuiltInCatalog` unless the suite is intentionally revived.
+  - `src/components/SettingsPage.tsx` and `src/config/settingsNavigation.ts` no longer expose the screenshot settings lane; screenshot settings can remain in the store/config as dormant state for now.
+  - `src/config/appContentDirectories.ts` keeps the screenshot runtime directory definition only in an internal disabled lookup so retained screenshot code can still resolve its folder, while visible managed-content catalogs omit it.
+  - `src/components/home/ExplorerHomeSurface.tsx`, bundled home packs, and `usr/icon-themes/Zen/icon-theme.json` no longer advertise screenshot launchers or panel icon slots.
+- Durable regression rule: a search for `screenshots` in visible shell routes should only find retained/dormant implementation, backend, tests, or memory/docs. If it appears in panel registration, Settings navigation/content, Explorer Home launchpads, managed-content catalog output, or shipped icon-theme panel mappings, the suite has leaked back into the UI.
+- Validation that passed for this pass:
+  - `node_modules\.bin\vitest.exe run src/test/panelRegistry.test.tsx --reporter=dot --testTimeout=30000`
+  - `node_modules\.bin\vitest.exe run src/test/settingsPage.behavior.test.tsx -t "disabled screenshot suite" --reporter=dot --testTimeout=30000`
+  - `node_modules\.bin\vitest.exe run src/test/settingsPage.behavior.test.tsx -t "organizes the settings rail" --reporter=dot --testTimeout=30000`
+  - filtered touched-file TypeScript sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`
+  - visible-shell search returned no `screenshots` matches across panel registry, Settings content/navigation, Explorer Home, settings icon preview, and `usr/` packs.
+
+# 2026-04-29 - Explorer Chrome Bands Scroll Horizontally Without Moving Placed Controls
+
+- The shared explorer chrome renderer now treats normal row/zone surfaces as rigid horizontal bands instead of wrapping. `src/components/explorer/ExplorerChromeSurface.tsx` forces row and zone `flexWrap: "nowrap"`, keeps placed controls at `flexShrink: 0`, and lets rows scroll horizontally when authored controls exceed the available width.
+- Normal chrome rows use the app's hidden-scrollbar contract (`overlay-scrollbars-none` plus `src/App.css` rules for `.explorer-chrome-surface__row`), so packed top/toolbar/header/status chrome can scroll without visible native scrollbar chrome when customize mode is off.
+- Vertical wheel movement over an overflowing chrome row is translated into horizontal row scrolling only while the row can move in that direction. At the row edges, the event is left alone so surrounding vertical scroll behavior stays natural.
+- Durable customize rule: do not reintroduce wrapping or explicit-width shrinkage for placed explorer chrome controls. Adding one button should create hidden horizontal overflow, not reflow every existing button.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/ExplorerChromeSurface.test.tsx --reporter=dot`
+  - `bunx vitest run src/test/explorerCustomizePointerRuntime.test.tsx src/test/ExplorerChromeSurface.test.tsx src/test/ExplorerWorkspace.test.tsx --reporter=dot`
+  - `bunx vitest run src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx -t "customize|layout switcher|chrome customize|workspace header" --reporter=dot --testTimeout=30000`
+  - Filtered touched-file TypeScript sweep returned no matching touched-file errors for `ExplorerChromeSurface`, `ExplorerWorkspace`, or `App.css`.
+
 # 2026-04-29 - Appearance Settings Theme Catalog Compaction
 
 - The Appearance settings pane now uses a compact theme-catalog density instead of the older tall metadata-heavy card layout. `src/components/settings/ThemeCatalog.tsx` owns the reusable `density` prop so future settings surfaces can choose `comfortable` or `compact` without forking the catalog renderer.
 - Overflow hardening for this pass lives in shared settings primitives: `ThemeBadge` now truncates long labels, `SettingsCatalogCard` truncates long titles and wraps descriptions, and `RangeField` accepts a compact slider density while keeping text and sliders inside `min-w-0` containers.
 - The Appearance section itself now delays its two-column catalog/inspector split until wider workspaces and marks the lane with `data-appearance-layout="compact-theme-catalog"`. This is the regression hook covered by `src/test/settingsPage.behavior.test.tsx`.
 - Validation: focused Settings behavior tests passed for the Appearance shell/catalog path. Browser smoke against plain Vite was blocked by existing non-Tauri startup errors (`metadata` / `invoke` undefined) before Settings mounted.
+
+# 2026-04-29 - Double-Click Folder Navigation Uses The Direct Explorer Hot Path
+
+- Double-click folder mode was laggy because the second click only canceled the pending folder-preview prime and then waited for the browser `dblclick` event before routing through open-entry policy. Normal directory navigation now has a direct hot path in `src/components/FileExplorer.tsx`: folder activation clears pending preview priming/selection, plays the open cue, and calls `navigate(entry.path)` without `resolveExplorerEntryOpenWithPolicy(...)`.
+- Durable tuning ownership after this pass:
+  - `usr/explorer-performance/greeblefs-core/explorer-performance.json` owns folder-activation speed knobs and the `1ms` second-click dispatch budget.
+  - `src/config/explorerPerformance.ts` normalizes those knobs and exports the constants consumed by Explorer.
+  - `usr/manifest.json` and `src/config/appContentDirectories.ts` register the new `explorerPerformance` managed-content lane.
+- Durable behavior rule:
+  - First click in double-click folder mode may still select, warm the directory cache, and show the folder preview/open icon after the configured grace window.
+  - The second click or `dblclick` fallback for a normal folder must bypass open-entry policy and start `navigate(path)` immediately. Files, picker mode, modified clicks, and selection mode stay outside this shortcut.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/fileExplorerClickBehavior.test.ts src/test/explorerPerformance.test.ts --reporter=dot`
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "keeps folder icons closed during single-click navigation|primes the open-folder icon only after a short grace window|cancels folder preview priming when a double click opens the directory" --reporter=dot --testTimeout=30000`
+  - Filtered touched-file TypeScript sweep returned no matching touched-file errors. Full `tsc --noEmit` still fails on existing unrelated plugin diagnostics, drive-info casing, cutout contract drift, and vendored TipTap type issues.
 
 # 2026-04-29 - Plugins Panel Now Previews First-Party Workbench Fixtures
 

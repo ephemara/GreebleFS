@@ -20,10 +20,6 @@ vi.mock('../components/NotesManager', () => ({
   NotesManager: () => null,
 }));
 
-vi.mock('../components/ScreenshotsManager', () => ({
-  ScreenshotsManager: () => null,
-}));
-
 vi.mock('../components/GoRuntimeSmokePanel', () => ({
   GoRuntimeSmokePanel: () => null,
 }));
@@ -163,6 +159,14 @@ describe('createBuiltInPanelDefinitions', () => {
       label: 'Storage',
       kind: 'built-in-panel',
     });
+  });
+
+  it('keeps the disabled screenshot manager out of the visible panel suite', () => {
+    const panels = createPanelsForTest();
+    const catalog = buildBuiltInCatalog();
+
+    expect(panels.some(panel => panel.id === 'screenshots')).toBe(false);
+    expect(catalog.some(entry => entry.id === 'screenshots')).toBe(false);
   });
 
   it('registers the Go/Wasm smoke panel in both the shell definitions and panel catalog', () => {

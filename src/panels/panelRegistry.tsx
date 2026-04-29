@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, HardDrive, Settings2, Cpu, ThemedPanelIcon } from '@/components/AppIcons';
+import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Puzzle, HardDrive, Settings2, Cpu, ThemedPanelIcon } from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import type { LoadedActionPack, LoadedExplorerAction } from '../config/actionPacks';
 import type {
@@ -56,11 +56,6 @@ const LazyGitManager = React.lazy(async () => {
 const LazyNotesManager = React.lazy(async () => {
   const module = await import('../components/NotesManager');
   return { default: module.NotesManager };
-});
-
-const LazyScreenshotsManager = React.lazy(async () => {
-  const module = await import('../components/ScreenshotsManager');
-  return { default: module.ScreenshotsManager };
 });
 
 const LazySettingsPage = React.lazy(async () => {
@@ -663,34 +658,6 @@ export function createBuiltInPanelDefinitions({
       ),
     },
     {
-      id: 'screenshots',
-      label: 'Screenshots',
-      kind: 'built-in-panel',
-      icon: <ThemedPanelIcon panelId="screenshots" fallbackSlotId="camera" fallbackIcon={Camera} size={12} />,
-      description: 'Built-in example plugin for capture and clipboard workflows.',
-      defaultOpen: true,
-      navigation: {
-        groupId: 'capture',
-        groupLabel: 'Capture',
-        groupOrder: 30,
-        itemOrder: 10,
-      },
-      dock: {
-        defaultPlacement: 'right-sidebar',
-        defaultOrder: 40,
-        defaultVisibility: 'hidden',
-        allowedPresentations: ['stack', 'floating'],
-        railShortcut: true,
-        ideRole: 'utility',
-        ideNavigationTier: 'secondary',
-      },
-      render: () => (
-        <DeferredPanel>
-          <LazyScreenshotsManager appearance={appearance} />
-        </DeferredPanel>
-      ),
-    },
-    {
       id: 'go-sample-panel',
       label: 'Go Wasm',
       kind: 'built-in-panel',
@@ -965,13 +932,6 @@ export function buildBuiltInCatalog(): PanelCatalogEntry[] {
       label: 'Notes',
       description: 'Built-in panel plugin for note taking.',
       kind: 'built-in-panel',
-    },
-    {
-      id: 'screenshots',
-      label: 'Screenshots',
-      description: 'Built-in example plugin showing capture, clipboard, and file IO.',
-      kind: 'built-in-panel',
-      example: true,
     },
     {
       id: 'go-sample-panel',

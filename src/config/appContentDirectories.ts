@@ -322,6 +322,9 @@ const runtimeStateDirectoryDefinitions = [
     order: 70,
     shippingMode: "runtime-state",
   },
+] as const satisfies readonly ManagedContentDirectoryDefinition[];
+
+const disabledRuntimeStateDirectoryDefinitions = [
   {
     id: "screenshots",
     label: "Screenshots",
@@ -361,13 +364,18 @@ function createShippedManagedDirectoryDefinitions(): ManagedContentDirectoryDefi
   });
 }
 
-export const managedContentDirectoryCatalog = [
+const allManagedContentDirectoryDefinitions = [
   ...createShippedManagedDirectoryDefinitions(),
   ...runtimeStateDirectoryDefinitions,
 ] as const satisfies readonly ManagedContentDirectoryDefinition[];
 
+export const managedContentDirectoryCatalog = allManagedContentDirectoryDefinitions;
+
 const managedContentDirectoryLookup = new Map(
-  managedContentDirectoryCatalog.map((entry) => [entry.id, entry] as const),
+  [
+    ...allManagedContentDirectoryDefinitions,
+    ...disabledRuntimeStateDirectoryDefinitions,
+  ].map((entry) => [entry.id, entry] as const),
 );
 
 const LEGACY_SCREENSHOT_DEFAULT_DIRECTORY = "M:\\Assets\\Showcase\\TermOverlay";

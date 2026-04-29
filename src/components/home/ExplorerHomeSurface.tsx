@@ -154,12 +154,6 @@ export function createExplorerHomeLaunchpadItems(): ExplorerHomeLaunchpadItem[] 
       panelId: 'notes',
     },
     {
-      id: 'launchpad-screenshots',
-      label: 'Screenshots',
-      description: 'Capture and annotate proof without leaving the shell.',
-      panelId: 'screenshots',
-    },
-    {
       id: 'launchpad-storage',
       label: 'Storage',
       description: 'Inspect storage surfaces and roots.',
