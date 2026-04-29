@@ -1,3 +1,10 @@
+# 2026-04-29 - Appearance Settings Theme Catalog Compaction
+
+- The Appearance settings pane now uses a compact theme-catalog density instead of the older tall metadata-heavy card layout. `src/components/settings/ThemeCatalog.tsx` owns the reusable `density` prop so future settings surfaces can choose `comfortable` or `compact` without forking the catalog renderer.
+- Overflow hardening for this pass lives in shared settings primitives: `ThemeBadge` now truncates long labels, `SettingsCatalogCard` truncates long titles and wraps descriptions, and `RangeField` accepts a compact slider density while keeping text and sliders inside `min-w-0` containers.
+- The Appearance section itself now delays its two-column catalog/inspector split until wider workspaces and marks the lane with `data-appearance-layout="compact-theme-catalog"`. This is the regression hook covered by `src/test/settingsPage.behavior.test.tsx`.
+- Validation: focused Settings behavior tests passed for the Appearance shell/catalog path. Browser smoke against plain Vite was blocked by existing non-Tauri startup errors (`metadata` / `invoke` undefined) before Settings mounted.
+
 # 2026-04-29 - Plugins Panel Now Previews First-Party Workbench Fixtures
 
 - The Plugins panel now separates plugin panel entrypoints from workbench preview lanes. `src/components/PluginsManager.tsx` renders a compact Settings-like catalog rail, an inspector lane, a `Preview | Panel` surface switch, and a preview-test host for the selected plugin's first preview lane.
