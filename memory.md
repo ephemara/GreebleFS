@@ -1,3 +1,16 @@
+# 2026-04-29 - Window Chrome Dragging And Native Size Constraints
+
+- GreebleFS now combines the useful reference patterns from `reference/xplorer-next` and `reference/spacedrive-main`: the React top bar behaves like a guarded drag region, while Rust owns native min/max size constraints through a typed `WindowApplyModeRequest`.
+- `src/config/overlayWindow.ts` is the durable geometry source for both overlay/dock windows and application-mode panel windows. App mode uses `panelWindowGeometry` (`800x560` minimum, monitor work-area maximum with the shared logical padding) so the custom top bar and window controls cannot be resized out of reach. Dock/overlay mode keeps its smaller overlay geometry and sends matching constraints when `windowApplyMode` runs.
+- `src/components/WorkbenchTopBar.tsx` no longer relies on a narrow 72px drag strip. Empty chrome starts native `startDragging()`, double-clicking non-interactive chrome toggles maximize in app mode, and buttons/menus/sliders/customize mode are excluded by `WINDOW_CHROME_INTERACTIVE_SELECTOR`. `WindowControls` marks its wrappers/buttons with `data-gfs-window-drag-exclusion="true"` and stops pointer-down propagation.
+- `src-tauri/src/window_commands.rs::window_apply_mode(...)` now accepts the generated `WindowApplyModeRequest` object because Specta cannot export the old long positional argument list after adding constraint fields. Add future window presentation flags to that request object instead of growing positional IPC args.
+- Validation for this pass:
+  - `bun run bindings:generate`
+  - `bunx vitest run src/test/overlayWindow.test.ts src/test/WindowControls.test.tsx src/test/workbenchTopBar.test.tsx --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/app.dockMode.test.tsx -t "keeps application mode out|preserves the taskbar preference" --reporter=dot --testTimeout=30000`
+  - `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - touched-file TypeScript diagnostic sweep returned no matching touched-file errors. Full `bunx tsc --noEmit --pretty false` still exits on unrelated baseline diagnostics in mobile, explorer side rail/storage, image cutout, icon/theme compatibility, Python runtime tests, vendored Tiptap, and other pre-existing areas.
+
 # 2026-04-29 - Shader And Python Workbenches Joined The First-Party Plugin Pipeline
 
 - The first-party extracted workbench catalog now also includes `usr/plugins/greeblefs-workbench-shader` and `usr/plugins/greeblefs-workbench-python`. Python is a specialized package over the existing text/runtime lane for `.py` / `.pyw`, while shader is a true delegated workbench lane for `.wgsl`, `.hlsl`, and `.spv`.
