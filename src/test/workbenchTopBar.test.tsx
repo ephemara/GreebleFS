@@ -401,4 +401,227 @@ describe('WorkbenchTopBar', () => {
     expect(onUpdateAppearanceVisuals).toHaveBeenCalledWith({ appZoom: 1.2 });
     expect(onUpdateAppearanceVisuals).toHaveBeenCalledWith({ panelTransparency: 0.34 });
   });
+
+  it('spawns, focuses, and closes panels from the top-bar surface controls menu', () => {
+    const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
+    const layoutProfile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'overlay-classic');
+    const onPanelSelect = vi.fn();
+    const onPanelToggle = vi.fn();
+    const onPanelClose = vi.fn();
+    const panels = [
+      {
+        id: 'explorer',
+        label: 'Explorer',
+        description: 'Explorer panel',
+        kind: 'built-in-panel' as const,
+        icon: <span>E</span>,
+        defaultOpen: true,
+        render: () => null,
+        navigation: { groupId: 'core', groupLabel: 'Core', groupOrder: 10, itemOrder: 10 },
+      },
+      {
+        id: 'notes',
+        label: 'Notes',
+        description: 'Notes panel',
+        kind: 'built-in-panel' as const,
+        icon: <span>N</span>,
+        defaultOpen: false,
+        render: () => null,
+        navigation: { groupId: 'core', groupLabel: 'Core', groupOrder: 10, itemOrder: 20 },
+      },
+      {
+        id: 'plugin.gallery',
+        label: 'Plugin Gallery',
+        description: 'Folder plugin gallery panel',
+        kind: 'folder-plugin' as const,
+        icon: <span>P</span>,
+        defaultOpen: false,
+        render: () => null,
+        navigation: { groupId: 'plugins', groupLabel: 'Plugin Panels', groupOrder: 30, itemOrder: 10 },
+      },
+    ];
+
+    render(
+      <WorkbenchTopBar
+        appearance={appearance}
+        renderRuntime={renderRuntime}
+        layoutProfile={layoutProfile}
+        layoutSourcePath={null}
+        availableLayoutProfiles={BUILT_IN_LAYOUT_MANIFEST.profiles}
+        panels={panels}
+        openPanelIds={['explorer', 'notes']}
+        pinnedPanelIds={[]}
+        activePanelId="notes"
+        onPanelSelect={onPanelSelect}
+        onPanelToggle={onPanelToggle}
+        onPanelClose={onPanelClose}
+        onPanelReorder={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onToggleShellMode={vi.fn()}
+        onSelectLayoutProfile={vi.fn()}
+        onCycleLayout={vi.fn()}
+        onSetWindowMode={vi.fn()}
+        onOpenCommandPalette={vi.fn()}
+        onToggleOverlayAnchor={vi.fn()}
+        onClose={vi.fn()}
+        accent={appearance.theme.palette.accent}
+        blur={false}
+        blurStrength={0}
+        blurPlatform="linux"
+        appOpacity={1}
+        panelTransparency={0}
+        appZoom={1}
+        onUpdateAppearanceVisuals={vi.fn()}
+        windowMode="overlay"
+        overlayAnchor="top"
+        commandPaletteShortcutLabel="Ctrl+K"
+        mobileShareShortcutLabel="Ctrl+Alt+Shift+M"
+        toggleShortcutLabel="Ctrl+Space"
+        mobileShareRemoteAccessMode="lan"
+        mobileSharePhase="idle"
+        mobileShareSession={null}
+        mobileShareError={null}
+        mobileShareNotice={null}
+        onToggleMobileShare={vi.fn()}
+        onStartMobileShare={vi.fn()}
+        onStopMobileShare={vi.fn()}
+        onSetMobileShareRemoteAccessMode={vi.fn()}
+        onOpenMobileSettings={vi.fn()}
+        zenFocusMode={false}
+        zenFocusShortcutLabel="Ctrl+."
+        onToggleZenFocusMode={vi.fn()}
+        topBarDefinition={{
+          ...topBarDefinition,
+          leadingControls: ['surface-controls'],
+          navigationShortcuts: [],
+          trailingControls: [],
+        }}
+        topBarCustomizeActive={false}
+        onToggleTopBarCustomize={vi.fn()}
+        onCommitTopBarLayoutSnapshot={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /surface controls/i }));
+
+    expect(screen.getByText('Spawn Panels')).toBeInTheDocument();
+    expect(screen.getByText('Plugin Panels')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /open plugin gallery panel/i }));
+    expect(onPanelToggle).toHaveBeenCalledWith('plugin.gallery');
+
+    fireEvent.click(screen.getByRole('button', { name: /focus notes panel/i }));
+    expect(onPanelSelect).toHaveBeenCalledWith('notes');
+
+    fireEvent.click(screen.getByRole('button', { name: /close notes panel/i }));
+    expect(onPanelClose).toHaveBeenCalledWith('notes');
+  });
+
+  it('reorders draggable top-bar tabs through the shared panel reorder callback', () => {
+    const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
+    const layoutProfile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'overlay-classic');
+    const onPanelReorder = vi.fn();
+    const panels = [
+      {
+        id: 'explorer',
+        label: 'Explorer',
+        description: 'Explorer panel',
+        kind: 'built-in-panel' as const,
+        icon: <span>E</span>,
+        defaultOpen: true,
+        render: () => null,
+      },
+      {
+        id: 'terminal',
+        label: 'Terminal',
+        description: 'Terminal panel',
+        kind: 'built-in-panel' as const,
+        icon: <span>T</span>,
+        defaultOpen: false,
+        render: () => null,
+      },
+      {
+        id: 'notes',
+        label: 'Notes',
+        description: 'Notes panel',
+        kind: 'built-in-panel' as const,
+        icon: <span>N</span>,
+        defaultOpen: false,
+        render: () => null,
+      },
+    ];
+    const transferValues = new Map<string, string>();
+    const dataTransfer = {
+      effectAllowed: 'move',
+      dropEffect: 'move',
+      setData: vi.fn((type: string, value: string) => transferValues.set(type, value)),
+      getData: vi.fn((type: string) => transferValues.get(type) ?? ''),
+    };
+
+    render(
+      <WorkbenchTopBar
+        appearance={appearance}
+        renderRuntime={renderRuntime}
+        layoutProfile={layoutProfile}
+        layoutSourcePath={null}
+        availableLayoutProfiles={BUILT_IN_LAYOUT_MANIFEST.profiles}
+        panels={panels}
+        openPanelIds={['explorer', 'terminal', 'notes']}
+        pinnedPanelIds={[]}
+        activePanelId="notes"
+        onPanelSelect={vi.fn()}
+        onPanelToggle={vi.fn()}
+        onPanelClose={vi.fn()}
+        onPanelReorder={onPanelReorder}
+        onOpenSettings={vi.fn()}
+        onToggleShellMode={vi.fn()}
+        onSelectLayoutProfile={vi.fn()}
+        onCycleLayout={vi.fn()}
+        onSetWindowMode={vi.fn()}
+        onOpenCommandPalette={vi.fn()}
+        onToggleOverlayAnchor={vi.fn()}
+        onClose={vi.fn()}
+        accent={appearance.theme.palette.accent}
+        blur={false}
+        blurStrength={0}
+        blurPlatform="linux"
+        appOpacity={1}
+        panelTransparency={0}
+        appZoom={1}
+        onUpdateAppearanceVisuals={vi.fn()}
+        windowMode="overlay"
+        overlayAnchor="top"
+        commandPaletteShortcutLabel="Ctrl+K"
+        mobileShareShortcutLabel="Ctrl+Alt+Shift+M"
+        toggleShortcutLabel="Ctrl+Space"
+        mobileShareRemoteAccessMode="lan"
+        mobileSharePhase="idle"
+        mobileShareSession={null}
+        mobileShareError={null}
+        mobileShareNotice={null}
+        onToggleMobileShare={vi.fn()}
+        onStartMobileShare={vi.fn()}
+        onStopMobileShare={vi.fn()}
+        onSetMobileShareRemoteAccessMode={vi.fn()}
+        onOpenMobileSettings={vi.fn()}
+        zenFocusMode={false}
+        zenFocusShortcutLabel="Ctrl+."
+        onToggleZenFocusMode={vi.fn()}
+        topBarDefinition={topBarDefinition}
+        topBarCustomizeActive={false}
+        onToggleTopBarCustomize={vi.fn()}
+        onCommitTopBarLayoutSnapshot={vi.fn()}
+      />,
+    );
+
+    const notesTab = screen.getByRole('button', { name: /notes/i });
+    const terminalTab = screen.getByRole('button', { name: /terminal/i });
+
+    fireEvent.dragStart(notesTab, { dataTransfer });
+    fireEvent.dragOver(terminalTab, { dataTransfer });
+    fireEvent.drop(terminalTab, { dataTransfer });
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'notes');
+    expect(onPanelReorder).toHaveBeenCalledWith('notes', 'terminal');
+  });
 });
