@@ -76,6 +76,7 @@ import {
 import { recordExplorerActionRun } from "../../store/explorerActionRunStore";
 import { openExplorerTaskCenter } from "../../store/explorerTaskStore";
 import { ExplorerDragOverlay } from "./ExplorerDragOverlay";
+import { ExplorerFloatingSurface } from "./ExplorerFloatingSurface";
 import { FileExplorer } from "../FileExplorer";
 import type {
   ExplorerExternalChromeControlDefinition,
@@ -979,7 +980,17 @@ export function ExplorerWorkspace({
     }
 
     const handlePointerDown = (event: MouseEvent) => {
-      if (paneActionsMenuRef.current?.contains(event.target as Node)) {
+      const targetNode = event.target as Node;
+      const targetElement =
+        event.target instanceof Element ? event.target : null;
+      if (paneActionsMenuRef.current?.contains(targetNode)) {
+        return;
+      }
+      if (
+        targetElement?.closest(
+          '[data-overlay-explorer-floating-surface-group="explorer-workspace-menu"]',
+        )
+      ) {
         return;
       }
       setPaneActionsMenuOpen(false);
@@ -1269,12 +1280,14 @@ export function ExplorerWorkspace({
           >
             <MoreHorizontal size={sizing.iconSize} />
           </button>
-          {paneActionsMenuOpen ? (
-            <div
-              role="menu"
-              aria-label="Workspace pane actions"
-              style={workspaceOverflowMenuStyle}
-            >
+          <ExplorerFloatingSurface
+            anchorRef={paneActionsMenuRef}
+            open={paneActionsMenuOpen}
+            surfaceGroup="explorer-workspace-menu"
+            role="menu"
+            aria-label="Workspace pane actions"
+            style={workspaceOverflowMenuStyle}
+          >
               <button
                 type="button"
                 role="menuitem"
@@ -1505,8 +1518,7 @@ export function ExplorerWorkspace({
                   ) : null}
                 </>
               ) : null}
-            </div>
-          ) : null}
+          </ExplorerFloatingSurface>
         </div>
       );
     },
@@ -2799,10 +2811,6 @@ function paneActionButtonStyle(
 }
 
 const workspaceOverflowMenuStyle: React.CSSProperties = {
-  position: "absolute",
-  top: "calc(100% + 8px)",
-  right: 0,
-  zIndex: 40,
   display: "flex",
   flexDirection: "column",
   gap: 4,

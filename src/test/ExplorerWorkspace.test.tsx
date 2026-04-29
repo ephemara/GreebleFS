@@ -363,6 +363,9 @@ describe('ExplorerWorkspace', () => {
 
     fireEvent.click(getWorkspacePaneActionsButton());
     const paneActionsMenu = await screen.findByRole('menu', { name: 'Workspace pane actions' });
+    expect(
+      getWorkspacePaneActionsButton().parentElement?.contains(paneActionsMenu),
+    ).toBe(false);
     expect(within(paneActionsMenu).getByText('1 selected -> P2 · destination')).toBeInTheDocument();
 
     fireEvent.click(within(paneActionsMenu).getByRole('menuitem', { name: /sync target pane/i }));

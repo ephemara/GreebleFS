@@ -139,6 +139,19 @@ const shippedManagedDirectoryMetadata = {
     ],
     order: 27.2,
   },
+  explorerZoomBehaviors: {
+    label: "Explorer Zoom Behaviors",
+    description:
+      "Author Explorer ctrl/cmd-wheel routing, detent thresholds, oversize scaling, and gesture-tuning tokens here.",
+    keywords: [
+      "explorer zoom",
+      "ctrl wheel",
+      "layout zoom",
+      "gesture tuning",
+      "zoom tokens",
+    ],
+    order: 27.4,
+  },
   homePacks: {
     label: "Home Packs",
     description:

@@ -1,3 +1,8 @@
+import {
+  explorerGridZoomAnchors,
+  explorerZoomBehavior,
+} from './explorerZoomBehavior';
+
 export type ExplorerViewMode =
   | 'icons-xl'
   | 'icons-l'
@@ -62,20 +67,24 @@ export interface ExplorerResolvedLayoutZoomState {
   zoomPercent: number | null;
 }
 
-export const EXPLORER_GRID_ZOOM_MIN = 0;
-export const EXPLORER_GRID_ZOOM_MAX = 1;
+export const EXPLORER_GRID_ZOOM_MIN = explorerZoomBehavior.gridAnchors['icons-s'];
+export const EXPLORER_GRID_ZOOM_MAX = explorerZoomBehavior.gridAnchors['icons-xl'];
 export const EXPLORER_GRID_ZOOM_STEP = 0.08;
-export const EXPLORER_LAYOUT_ZOOM_MIN = -0.18;
-export const EXPLORER_LIVE_GRID_ZOOM_MAX = 2.8;
+export const EXPLORER_LAYOUT_ZOOM_MIN =
+  explorerZoomBehavior.layoutDomain.minimumRowZoom;
+export const EXPLORER_LIVE_GRID_ZOOM_MAX =
+  explorerZoomBehavior.layoutDomain.liveGridMaxZoom;
 export const EXPLORER_LAYOUT_ZOOM_MAX = EXPLORER_LIVE_GRID_ZOOM_MAX;
-export const EXPLORER_LAYOUT_ZOOM_TABLE_ENTER = -0.04;
-export const EXPLORER_LAYOUT_ZOOM_TABLE_EXIT = 0.02;
-export const EXPLORER_LAYOUT_ZOOM_LIST_ENTER = -0.12;
-export const EXPLORER_LAYOUT_ZOOM_LIST_EXIT = -0.06;
-// Bisection point between columns and details inside the table family.
-// Single source of truth used by commit, live-resolve, anchor, and HUD code.
+export const EXPLORER_LAYOUT_ZOOM_TABLE_ENTER =
+  explorerZoomBehavior.layoutDomain.gridToTableEnterZoom;
+export const EXPLORER_LAYOUT_ZOOM_TABLE_EXIT =
+  explorerZoomBehavior.layoutDomain.tableToGridExitZoom;
+export const EXPLORER_LAYOUT_ZOOM_LIST_ENTER =
+  explorerZoomBehavior.layoutDomain.tableToListEnterZoom;
+export const EXPLORER_LAYOUT_ZOOM_LIST_EXIT =
+  explorerZoomBehavior.layoutDomain.listToTableExitZoom;
 export const EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT =
-  (EXPLORER_LAYOUT_ZOOM_LIST_ENTER + EXPLORER_LAYOUT_ZOOM_TABLE_EXIT) / 2;
+  explorerZoomBehavior.layoutDomain.columnsDetailsMidpointZoom;
 
 export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
   {
@@ -204,12 +213,7 @@ export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
 
 const explorerViewModeMap = new Map(explorerViewModes.map((mode) => [mode.id, mode]));
 const defaultExplorerViewMode: ExplorerViewMode = 'details';
-const explorerGridModeAnchors = [
-  { id: 'icons-s' as const, zoom: EXPLORER_GRID_ZOOM_MIN },
-  { id: 'icons-m' as const, zoom: 0.34 },
-  { id: 'icons-l' as const, zoom: 0.67 },
-  { id: 'icons-xl' as const, zoom: EXPLORER_GRID_ZOOM_MAX },
-] as const;
+const explorerGridModeAnchors = explorerGridZoomAnchors;
 
 export function isExplorerViewMode(value: unknown): value is ExplorerViewMode {
   return typeof value === 'string' && explorerViewModeMap.has(value as ExplorerViewMode);
@@ -278,6 +282,34 @@ export function getExplorerGridIconMetricsForMode(mode: ExplorerGridMode): Explo
   };
 }
 
+export function getExplorerGridVisualMetricsForZoom(
+  gridZoom: number,
+): ExplorerGridIconMetrics {
+  const zoom = normalizeExplorerGridZoom(gridZoom);
+  if (zoom > EXPLORER_GRID_ZOOM_MAX) {
+    return getExplorerOversizedGridVisualMetrics(zoom);
+  }
+
+  let lowerIndex = 0;
+  for (let index = 0; index < explorerGridModeAnchors.length; index += 1) {
+    if (explorerGridModeAnchors[index]!.zoom <= zoom) {
+      lowerIndex = index;
+    }
+  }
+  const upperIndex = Math.min(explorerGridModeAnchors.length - 1, lowerIndex + 1);
+  const lowerAnchor = explorerGridModeAnchors[lowerIndex]!;
+  const upperAnchor = explorerGridModeAnchors[upperIndex]!;
+  const lowerMetrics = getExplorerViewModeDefinition(lowerAnchor.id).grid!;
+  const upperMetrics = getExplorerViewModeDefinition(upperAnchor.id).grid!;
+  const range = upperAnchor.zoom - lowerAnchor.zoom;
+  const t = range <= 0 ? 0 : (zoom - lowerAnchor.zoom) / range;
+
+  return {
+    iconSize: lerp(lowerMetrics.iconSize, upperMetrics.iconSize, t),
+    iconStageSize: lerp(lowerMetrics.iconStageSize, upperMetrics.iconStageSize, t),
+  };
+}
+
 export function getAdjacentExplorerGridMode(
   currentMode: ExplorerViewMode,
   direction: ExplorerViewWheelDirection,
@@ -332,17 +364,9 @@ export function getExplorerGridLayoutMetricsForZoom(gridZoom: number): ExplorerG
 
 export function getExplorerGridMetricsForZoom(
   gridZoom: number,
-  options?: {
-    iconMode?: ExplorerGridMode;
-  },
 ): ExplorerGridMetrics {
   const layoutMetrics = getExplorerGridLayoutMetricsForZoom(gridZoom);
-  const iconMode =
-    options?.iconMode ??
-    (normalizeExplorerGridZoom(gridZoom) > EXPLORER_GRID_ZOOM_MAX
-      ? 'icons-xl'
-      : getNearestExplorerGridMode(gridZoom));
-  const iconMetrics = getExplorerGridIconMetricsForMode(iconMode);
+  const iconMetrics = getExplorerGridVisualMetricsForZoom(gridZoom);
 
   return {
     ...layoutMetrics,
@@ -364,8 +388,6 @@ export function createExplorerLayoutZoomState(
   }
 
   if (viewMode === 'columns' || viewMode === 'details') {
-    // Park columns in the lower half of the table range and details in the upper
-    // half so the family resolver and commit logic agree on the active view mode.
     const columnsAnchor =
       (EXPLORER_LAYOUT_ZOOM_LIST_ENTER + EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT) /
       2;
@@ -381,7 +403,8 @@ export function createExplorerLayoutZoomState(
 
   return {
     family: 'list',
-    layoutZoom: EXPLORER_LAYOUT_ZOOM_MIN,
+    layoutZoom:
+      (EXPLORER_LAYOUT_ZOOM_MIN + EXPLORER_LAYOUT_ZOOM_LIST_EXIT) / 2,
     storedGridZoom: normalizedGridZoom,
   };
 }
@@ -539,19 +562,75 @@ function getExplorerOversizedGridLayoutMetrics(gridZoom: number): ExplorerGridLa
     1,
   );
   const easedProgress = easeOutCubic(oversizeProgress);
-  const tileScale = lerp(1, 3.2, easedProgress);
-  const rowScale = lerp(1, 2.7, easedProgress);
-  const spacingScale = lerp(1, 2.05, easedProgress);
+  const tileScale = lerp(
+    1,
+    explorerZoomBehavior.oversize.tileScaleMax,
+    easedProgress,
+  );
+  const rowScale = lerp(
+    1,
+    explorerZoomBehavior.oversize.rowScaleMax,
+    easedProgress,
+  );
+  const spacingScale = lerp(
+    1,
+    explorerZoomBehavior.oversize.spacingScaleMax,
+    easedProgress,
+  );
 
   return {
     minWidth: baseMetrics.minWidth * tileScale,
     gap: baseMetrics.gap * spacingScale,
-    padding: baseMetrics.padding * lerp(1, 1.8, easedProgress),
+    padding: baseMetrics.padding * lerp(
+      1,
+      explorerZoomBehavior.oversize.paddingScaleMax,
+      easedProgress,
+    ),
     rowHeight: baseMetrics.rowHeight * rowScale,
-    searchRowHeight: baseMetrics.searchRowHeight * lerp(1, 2.78, easedProgress),
+    searchRowHeight: baseMetrics.searchRowHeight * lerp(
+      1,
+      explorerZoomBehavior.oversize.rowScaleMax + 0.08,
+      easedProgress,
+    ),
     newItemHeight: baseMetrics.newItemHeight * rowScale,
-    tileRadius: baseMetrics.tileRadius * lerp(1, 1.6, easedProgress),
-    nameLines: Math.max(baseMetrics.nameLines, Math.round(lerp(2, 4, easedProgress))),
+    tileRadius: baseMetrics.tileRadius * lerp(
+      1,
+      explorerZoomBehavior.oversize.tileRadiusScaleMax,
+      easedProgress,
+    ),
+    nameLines: Math.max(
+      baseMetrics.nameLines,
+      Math.round(
+        lerp(
+          baseMetrics.nameLines,
+          explorerZoomBehavior.oversize.nameLinesMax,
+          easedProgress,
+        ),
+      ),
+    ),
+  };
+}
+
+function getExplorerOversizedGridVisualMetrics(
+  gridZoom: number,
+): ExplorerGridIconMetrics {
+  const baseMetrics = getExplorerViewModeDefinition('icons-xl').grid!;
+  const oversizeProgress = clamp(
+    (gridZoom - EXPLORER_GRID_ZOOM_MAX) /
+      (EXPLORER_LIVE_GRID_ZOOM_MAX - EXPLORER_GRID_ZOOM_MAX),
+    0,
+    1,
+  );
+  const easedProgress = easeOutCubic(oversizeProgress);
+  const iconScale = lerp(
+    1,
+    explorerZoomBehavior.oversize.rowScaleMax,
+    easedProgress,
+  );
+
+  return {
+    iconSize: baseMetrics.iconSize * iconScale,
+    iconStageSize: baseMetrics.iconStageSize * iconScale,
   };
 }
 

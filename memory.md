@@ -1,3 +1,21 @@
+# 2026-04-28 - Explorer Menus And Choosers Now Portal To A Shared Top Layer
+
+- Explorer popup layering regressions around toolbar menus and the preview workbench chooser were not caused by the menu contents themselves. The real fault was ownership: several explorer menus still rendered as absolutely positioned children inside explorer chrome rows and preview headers, so they could end up clipped or visually buried behind sibling pane/UI stacking contexts even with local `z-index` values.
+- Durable ownership after this pass:
+  - `src/components/explorer/ExplorerFloatingSurface.tsx` is the shared anchored portal for explorer popup surfaces that should stay attached to a button but render at the document layer.
+  - `src/components/FileExplorer.tsx` now routes the preview workbench chooser plus the archive actions, layout preset, and view-layout menus through that shared floating surface instead of keeping them inline in toolbar DOM.
+  - `src/components/explorer/ExplorerWorkspace.tsx` now routes the workspace pane-actions menu through the same document-level popup lane.
+  - `src/components/explorer/ExplorerContextMenu.tsx` now portals the full context-menu root to `document.body` and uses the dedicated explorer context floating layer token instead of relying on the explorer subtree stacking context.
+  - `src/config/explorerTheme.ts` now exposes `--overlay-explorer-floating-menu-layer` and `--overlay-explorer-floating-context-layer` as the canonical z-layer vars for explorer popup surfaces.
+- Durable regression rule:
+  - If an explorer menu, chooser, or context-menu-like surface can appear behind preview panes, rail chrome, or other explorer UI, do not fix it with a bigger inline `z-index` first. Move it onto the shared floating portal lane so it escapes overflow clipping and local stacking contexts entirely.
+  - Keep click-outside handling aware of portaled surfaces by checking the floating-surface group markers, not only the original anchor DOM subtree.
+- Validation that passed for this pass:
+  - `bun x vitest run src/test/ExplorerWorkspace.test.tsx --reporter=dot`
+  - `bun x vitest run src/test/fileExplorer.viewModes.test.tsx -t "lets the user pick columns from the explorer layout menu|lets plugin preview lanes claim files and register workflow tabs plus preview context actions|opens the explorer layout switcher as a popup instead of a fixed utility strip" --reporter=dot --testTimeout=30000`
+  - `node scripts/audit-ui-literals.mjs`
+  - touched-file TypeScript sweep was clean for the new popup-layer work; the filtered `tsc` output only reported pre-existing unused `EXPLORER_LAYOUT_ZOOM_*` constants in `src/components/FileExplorer.tsx`.
+
 # 2026-04-29 - Runtime Validation Proofs Now Have A Shipped Settings Surface And A Cross-Stack Quick Runner
 
 - The System settings lane now has a persisted `settings.system.developerTestSettingsEnabled` toggle. When enabled, `src/components/settings/sections/SystemSettingsSection.tsx` surfaces a `Developer Test Proofs` block that reuses existing host/runtime truth instead of inventing parallel diagnostics state:
@@ -23,6 +41,16 @@
   - `bun run go:check`
   - `python -m unittest tests_python.test_acceleration_actions tests_python.test_cutout_runtime tests_python.test_reference_scrub`
   - hardware proof on this machine: `nvidia-smi` reports `Quadro RTX 3000`, Go wasm host resolved from `C:\Program Files\Go\lib\wasm\wasm_exec.js`, TinyGo remains optional/not installed.
+
+# 2026-04-28 - Explorer Customize Skill Added
+
+- Added `~/.codex/skills/greeblefs-explorer-customize` as the durable agent guide for the ZBrush-style explorer chrome authoring pipeline.
+- The skill routes agents to the real owners: shipped control metadata in `usr/explorer-customize-controls/**`, shipped placements in `usr/explorer-chrome-layouts/**`, orchestration in `src/components/FileExplorer.tsx`, drag targeting in `src/components/explorer/explorerCustomizePointerRuntime.ts`, surface rendering in `src/components/explorer/ExplorerChromeSurface.tsx`, customize browsing/inspection in `src/components/explorer/ExplorerActionsPane.tsx`, and durable persistence in `settings.explorer.chromeLayoutOverridesByThemeId`.
+- Durable rules captured there:
+  - customize remains command-driven through `greeblefs:open-explorer-customize`, `greeblefs:toggle-explorer-customize`, and `greeblefs:open-explorer-layout-switcher`
+  - successful move/drop/remove commits should persist immediately through the settings override lane
+  - `resolvedExplorerLayout.chromeSnapshot` is baseline/fallback once a user-authored override exists
+  - layout-dynamics canvas is authoring-only; normal explorer chrome should render the regular non-canvas surface outside customize mode
 
 # 2026-04-29 - UI Tokenization Moves Theme Values Into Top-Level `/usr`
 

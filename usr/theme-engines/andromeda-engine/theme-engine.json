@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "andromeda-engine",
+  "name": "Andromeda Engine",
+  "description": "Thin composition manifest for the Andromeda observatory shell.",
+  "author": "Codex",
+  "tags": [
+    "reference",
+    "space",
+    "minimal"
+  ],
+  "appearancePackId": "andromeda-appearance",
+  "interactionMotionPackId": "andromeda-motion",
+  "themeRecipeId": "andromeda-observatory"
+}

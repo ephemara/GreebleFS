@@ -47,8 +47,8 @@ function LayoutZoomProofPage() {
       >
         <strong data-testid="proof-title">Explorer layout zoom browser proof</strong>
         <span data-testid="proof-instructions">
-          Use Ctrl/Cmd + wheel inside Explorer and watch the zoom settle plus the
-          Dev HUD frame telemetry.
+          Use Ctrl/Cmd + wheel inside Explorer and verify that tiles, thumbnails,
+          and fallback icons scale live while the saved mode settles after idle.
         </span>
       </div>
       <div style={{ height: "calc(100vh - 58px)" }}>

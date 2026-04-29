@@ -207,6 +207,7 @@ import {
   isExplorerVirtualPath,
 } from './config/explorerVirtualLocations';
 import { OverlayShellScene } from './components/OverlayShellScene';
+import { shouldExplorerZoomScopeOwnWheelGesture } from './components/explorer/useExplorerZoomGestureRouter';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
 import { WorkbenchIdeShell } from './components/WorkbenchIdeShell';
@@ -2960,8 +2961,13 @@ function App() {
     }
 
     const handleWheelZoom = (event: WheelEvent) => {
-      const eventTarget = event.target instanceof HTMLElement ? event.target : null;
-      if (eventTarget?.closest('[data-overlay-explorer]') && (event.ctrlKey || event.metaKey)) {
+      if (
+        shouldExplorerZoomScopeOwnWheelGesture({
+          event,
+          binding: keybindings.zoomAdjust,
+          target: event.target,
+        })
+      ) {
         return;
       }
 

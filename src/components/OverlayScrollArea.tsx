@@ -63,6 +63,9 @@ export function OverlayScrollArea({
   const runtimePlatformRef = useRef(detectClientPlatform());
 
   const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      return;
+    }
     if (direction !== 'horizontal') {
       return;
     }

@@ -35,6 +35,18 @@ export interface MobileShareThemeMetricsSnapshot {
   panelRadius: number;
   pagePadding: number;
   panelGap: number;
+  touchTarget?: number;
+  bottomNavHeight?: number;
+  actionStripHeight?: number;
+  entryIconSize?: number;
+  gridMinWidth?: number;
+}
+
+export interface OverlayMobileThemeRecipe {
+  palette?: Partial<MobileShareThemePaletteSnapshot>;
+  metrics?: Partial<MobileShareThemeMetricsSnapshot>;
+  shadow?: string;
+  cssVars?: Record<string, string>;
 }
 
 export interface MobileShareIconThemeSnapshot {
@@ -68,6 +80,7 @@ export interface MobileShareThemeSnapshot {
   palette: MobileShareThemePaletteSnapshot;
   metrics: MobileShareThemeMetricsSnapshot;
   shadow: string;
+  cssVars: Record<string, string>;
   iconTheme: MobileShareIconThemeSnapshot;
   folderIconRules: MobileShareFolderIconRuleSnapshot[];
   defaultFolderIcon: string;
@@ -115,6 +128,7 @@ export function createMobileShareThemeSnapshot(
 ): MobileShareThemeSnapshot {
   const palette = appearance.theme.palette;
   const metrics = appearance.workbenchTheme.metrics;
+  const mobileRecipe = appearance.theme.mobile;
   const resolvedIconTheme =
     appearance.theme.assets?.iconTheme ?? getBuiltInIconTheme();
 
@@ -137,14 +151,17 @@ export function createMobileShareThemeSnapshot(
       accent: palette.accent,
       accentStrong: palette.info,
       accentSoft: palette.accentSoft,
+      ...(mobileRecipe?.palette ?? {}),
     },
     metrics: {
       controlRadius: metrics.controlRadius,
       panelRadius: metrics.panelRadius,
       pagePadding: metrics.pagePadding,
       panelGap: metrics.panelGap,
+      ...(mobileRecipe?.metrics ?? {}),
     },
-    shadow: appearance.theme.effects.shadow,
+    shadow: mobileRecipe?.shadow ?? appearance.theme.effects.shadow,
+    cssVars: mobileRecipe?.cssVars ?? {},
     iconTheme: cloneIconThemeSnapshot(resolvedIconTheme),
     folderIconRules: cloneFolderIconRules(options.folderIconRules),
     defaultFolderIcon:

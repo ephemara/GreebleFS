@@ -5607,7 +5607,6 @@ const value = 1;
     expect(useSettingsStore.getState().settings.appearance.appZoom).toBe(
       appearanceZoomBefore,
     );
-
     await advanceLayoutZoomCommit();
 
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
@@ -5621,7 +5620,7 @@ const value = 1;
     );
   });
 
-  it("keeps grid icon stages pinned while ctrl-wheel live-zooms the layout", async () => {
+  it("keeps the committed icon band stable while the live grid stage grows continuously", async () => {
     vi.useRealTimers();
     useSettingsStore
       .getState()
@@ -5647,7 +5646,7 @@ const value = 1;
       getExplorerContentViewportCssNumber(
         "--overlay-explorer-grid-icon-stage-size",
       ),
-    ).toBe(initialStageSize);
+    ).toBeGreaterThan(initialStageSize);
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
@@ -5821,7 +5820,7 @@ const value = 1;
     ).toBe(false);
   });
 
-  it("keeps oversize icon stages clamped while oversize layout keeps growing", async () => {
+  it("keeps the durable oversize icon band clamped while the live stage keeps growing", async () => {
     vi.useRealTimers();
     useSettingsStore
       .getState()
@@ -5844,7 +5843,7 @@ const value = 1;
       getExplorerContentViewportCssNumber(
         "--overlay-explorer-grid-icon-stage-size",
       ),
-    ).toBe(initialStageSize);
+    ).toBeGreaterThan(initialStageSize);
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
@@ -6582,7 +6581,7 @@ const value = 1;
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
-        "icons-l",
+        "icons-s",
       );
       expect(
         useSettingsStore.getState().settings.explorer.gridZoom,
@@ -6647,7 +6646,7 @@ const value = 1;
     });
   });
 
-  it("keeps ctrl-wheel density stepping alive inside the constellation field", async () => {
+  it("routes ctrl-wheel inside the constellation field to camera zoom without touching app zoom or density", async () => {
     useSettingsStore.getState().updateExplorer({
       experimentalViewMode: "constellation",
       experimentalDensity: 0.32,
@@ -6660,16 +6659,24 @@ const value = 1;
     const field = screen.getByRole("group", {
       name: /constellation field/i,
     });
+    const initialZoom = Number(
+      field.getAttribute("data-overlay-constellation-zoom"),
+    );
+    const appZoomBefore =
+      useSettingsStore.getState().settings.appearance.appZoom;
 
     dispatchConstellationWheel(-120, { ctrlKey: true });
 
     await waitFor(() => {
       expect(
-        useSettingsStore.getState().settings.explorer.experimentalDensity,
-      ).toBeGreaterThan(0.32);
+        Number(field.getAttribute("data-overlay-constellation-zoom")),
+      ).toBeGreaterThan(initialZoom);
       expect(
-        field.getAttribute("data-overlay-constellation-zoom"),
-      ).not.toBeNull();
+        useSettingsStore.getState().settings.explorer.experimentalDensity,
+      ).toBe(0.32);
+      expect(useSettingsStore.getState().settings.appearance.appZoom).toBe(
+        appZoomBefore,
+      );
     });
   });
 
@@ -7299,6 +7306,9 @@ const value = 1;
     );
     fireEvent.click(workbenchChooserToggle);
     const workbenchChooser = screen.getByTestId("preview-workbench-chooser");
+    expect(
+      workbenchChooserToggle.parentElement?.contains(workbenchChooser),
+    ).toBe(false);
     expect(
       within(workbenchChooser).getByText("Mock Plugin: Notes Lane"),
     ).toBeInTheDocument();

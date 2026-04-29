@@ -1,0 +1,15 @@
+{
+  "fonts": {
+    "ui": "\"Space Grotesk\", Inter, system-ui, sans-serif",
+    "mono": "\"JetBrains Mono\", \"Cascadia Code\", monospace"
+  },
+  "tokens": {
+    "chromeLabelSize": 10,
+    "chromeMetaSize": 8,
+    "tabLabelSize": 11,
+    "pageTitleSize": 17,
+    "pageBodySize": 11,
+    "badgeSize": 9,
+    "labelLetterSpacing": "0.12em"
+  }
+}

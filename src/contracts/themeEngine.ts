@@ -7,8 +7,14 @@ export interface ThemeDesignTokens {
   typography: ThemeTokenScale;
   spacing: ThemeTokenScale;
   radius: ThemeTokenScale;
+  border: ThemeTokenScale;
   shadow: ThemeTokenScale;
+  opacity: ThemeTokenScale;
+  blur: ThemeTokenScale;
+  geometry: ThemeTokenScale;
+  layer: ThemeTokenScale;
   motion: ThemeTokenScale;
+  interaction: ThemeTokenScale;
 }
 
 export type ThemeLayoutPrimitiveKind = 'stack' | 'grid' | 'split' | 'dock' | 'freeform';
@@ -148,8 +154,14 @@ function normalizeDesignTokens(value: unknown): ThemeDesignTokens {
     typography: asTokenScale(source?.typography),
     spacing: asTokenScale(source?.spacing),
     radius: asTokenScale(source?.radius),
+    border: asTokenScale(source?.border),
     shadow: asTokenScale(source?.shadow),
+    opacity: asTokenScale(source?.opacity),
+    blur: asTokenScale(source?.blur),
+    geometry: asTokenScale(source?.geometry),
+    layer: asTokenScale(source?.layer),
     motion: asTokenScale(source?.motion),
+    interaction: asTokenScale(source?.interaction),
   };
 }
 

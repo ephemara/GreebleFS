@@ -1,0 +1,37 @@
+{
+  "interactionMotion": {
+    "defaultPresetId": "subtle",
+    "intensityMultiplier": 1.05,
+    "surfaceOverrides": {
+      "explorerEntry": {
+        "intensityMultiplier": 1.12
+      },
+      "explorerEntryIcon": {
+        "intensityMultiplier": 1.18
+      },
+      "previewWorkflowTab": {
+        "intensityMultiplier": 0.92
+      },
+      "panelTab": {
+        "intensityMultiplier": 0.94
+      },
+      "topBarButton": {
+        "intensityMultiplier": 0.86
+      },
+      "actionButton": {
+        "intensityMultiplier": 0.9
+      },
+      "settingsCard": {
+        "intensityMultiplier": 0.88
+      }
+    }
+  },
+  "tokens": {
+    "defaultPresetId": "subtle",
+    "surfaceLift": 1.12,
+    "iconLift": 1.18,
+    "topBarButtonIntensity": 0.86,
+    "touchTarget": 52,
+    "hoverLiftPx": 4
+  }
+}

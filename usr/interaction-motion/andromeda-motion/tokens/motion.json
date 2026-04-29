@@ -1,0 +1,8 @@
+{
+  "defaultDurationMs": 260,
+  "fastDurationMs": 160,
+  "slowDurationMs": 420,
+  "easing": "cubic-bezier(0.22, 1, 0.36, 1)",
+  "motionStyle": "fluid",
+  "atmosphereMotion": "fluid"
+}

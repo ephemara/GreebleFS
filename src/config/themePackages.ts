@@ -93,6 +93,15 @@ import {
   unwrapTauriResult,
 } from '../runtime/tauriClient';
 import {
+  compileThemeEngineManifest,
+  normalizeThemeManifestDraft,
+} from '../runtime/themeEngineBackend';
+import {
+  createUiTokenCssVars,
+  flattenUiTokenCollectionToDesignTokens,
+  mergeUiTokenCollections,
+} from './uiTokenContract';
+import {
   compareThemeCatalogPackages,
   resolveThemeCatalogPackageMetadata,
   type ThemeCatalogPackageMetadata,
@@ -896,8 +905,21 @@ export function resolveLoadedThemePackages(
       }
     }
 
+    const themeEnginePack = resolveReferencedCatalogValue(
+      manifest.themeEngineId,
+      packageLocalCatalogs.themeEnginePacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
+      themeEngineEntries,
+    );
+    if (manifest.themeEngineId && !themeEnginePack) {
+      resolutionWarnings.push(`Theme engine "${manifest.themeEngineId}" was not found.`);
+    }
+
+    const effectiveAppearancePackId = themeEnginePack?.composition.appearancePackId ?? manifest.appearancePackId;
+    const effectiveThemeRecipeId = themeEnginePack?.composition.themeRecipeId ?? manifest.themeRecipeId;
+    const effectiveInteractionMotionPackId = themeEnginePack?.composition.interactionMotionPackId ?? manifest.interactionMotionPackId;
+
     const appearancePack = resolveReferencedCatalogValue(
-      manifest.appearancePackId,
+      effectiveAppearancePackId,
       packageLocalCatalogs.appearancePacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
       appearanceEntries,
     );
@@ -906,35 +928,26 @@ export function resolveLoadedThemePackages(
       ? (overlayThemePresets.find(theme => theme.id === appearanceFallbackThemeId) ?? fallbackTheme)
       : fallbackTheme;
 
-    if (manifest.appearancePackId && !appearancePack) {
-      resolutionWarnings.push(`Appearance pack "${manifest.appearancePackId}" was not found.`);
+    if (effectiveAppearancePackId && !appearancePack) {
+      resolutionWarnings.push(`Appearance pack "${effectiveAppearancePackId}" was not found.`);
     }
 
     const themeRecipePack = resolveReferencedCatalogValue(
-      manifest.themeRecipeId,
+      effectiveThemeRecipeId,
       packageLocalCatalogs.themeRecipePacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
       themeRecipeEntries,
     );
-    if (manifest.themeRecipeId && !themeRecipePack) {
-      resolutionWarnings.push(`Theme recipe "${manifest.themeRecipeId}" was not found.`);
+    if (effectiveThemeRecipeId && !themeRecipePack) {
+      resolutionWarnings.push(`Theme recipe "${effectiveThemeRecipeId}" was not found.`);
     }
 
     const interactionMotionPack = resolveReferencedCatalogValue(
-      manifest.interactionMotionPackId,
+      effectiveInteractionMotionPackId,
       packageLocalCatalogs.interactionMotionPacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
       interactionMotionEntries,
     );
-    if (manifest.interactionMotionPackId && !interactionMotionPack) {
-      resolutionWarnings.push(`Interaction motion pack "${manifest.interactionMotionPackId}" was not found.`);
-    }
-
-    const themeEnginePack = resolveReferencedCatalogValue(
-      manifest.themeEngineId,
-      packageLocalCatalogs.themeEnginePacks.map(pack => buildLocalCatalogEntry(pack, pack.localId)),
-      themeEngineEntries,
-    );
-    if (manifest.themeEngineId && !themeEnginePack) {
-      resolutionWarnings.push(`Theme engine "${manifest.themeEngineId}" was not found.`);
+    if (effectiveInteractionMotionPackId && !interactionMotionPack) {
+      resolutionWarnings.push(`Interaction motion pack "${effectiveInteractionMotionPackId}" was not found.`);
     }
 
     const shellRendererPack = resolveReferencedCatalogValue(
@@ -978,6 +991,50 @@ export function resolveLoadedThemePackages(
       packageInfo.id,
       packageInfo.topBars ?? [],
     ) ?? (manifest.topBarId || fallbackTheme.defaultTopBarId);
+    const resolvedUiTokens = mergeUiTokenCollections(
+      appearancePack?.tokens,
+      interactionMotionPack?.tokens,
+    );
+    const tokenCssVars = createUiTokenCssVars(resolvedUiTokens);
+    const composedEngineManifest = themeEnginePack
+      ? normalizeThemeManifestDraft({
+          ...themeEnginePack.engineManifest,
+          id: themeEnginePack.engineManifest.id,
+          name: themeEnginePack.engineManifest.name,
+          presentation: themeRecipePack?.recipe.presentation ?? themeEnginePack.engineManifest.presentation,
+          compatibility: {
+            shellBlueprints: themeRecipePack?.recipe.compatibility?.shellBlueprints
+              ?? themeEnginePack.engineManifest.compatibility.shellBlueprints,
+            tags: themeRecipePack?.recipe.compatibility?.tags
+              ?? themeEnginePack.engineManifest.compatibility.tags,
+          },
+          designTokens: [
+            ...themeEnginePack.engineManifest.designTokens,
+            ...flattenUiTokenCollectionToDesignTokens(resolvedUiTokens, {
+              idPrefix: themeEnginePack.localId,
+              namePrefix: themeEnginePack.name,
+            }),
+          ],
+          layoutPrimitives: themeRecipePack?.recipe.layoutPrimitives ?? themeEnginePack.engineManifest.layoutPrimitives,
+          navigationPatterns: themeRecipePack?.recipe.navigationPatterns ?? themeEnginePack.engineManifest.navigationPatterns,
+          animationProfiles: themeRecipePack?.recipe.animationProfiles ?? themeEnginePack.engineManifest.animationProfiles,
+          iconPacks: themeRecipePack?.recipe.iconPacks ?? themeEnginePack.engineManifest.iconPacks,
+          renderStyles: themeRecipePack?.recipe.renderStyles ?? themeEnginePack.engineManifest.renderStyles,
+          defaultLayoutPrimitiveId: themeRecipePack?.recipe.defaultLayoutPrimitiveId
+            ?? themeEnginePack.engineManifest.defaultLayoutPrimitiveId,
+          defaultNavigationPatternId: themeRecipePack?.recipe.defaultNavigationPatternId
+            ?? themeEnginePack.engineManifest.defaultNavigationPatternId,
+          defaultAnimationProfileId: themeRecipePack?.recipe.defaultAnimationProfileId
+            ?? themeEnginePack.engineManifest.defaultAnimationProfileId,
+          defaultIconPackId: themeRecipePack?.recipe.defaultIconPackId
+            ?? themeEnginePack.engineManifest.defaultIconPackId,
+          defaultRenderStyleId: themeRecipePack?.recipe.defaultRenderStyleId
+            ?? themeEnginePack.engineManifest.defaultRenderStyleId,
+        })
+      : packageInfo.theme.engineManifest;
+    const composedCompiledEngineManifest = composedEngineManifest
+      ? compileThemeEngineManifest(composedEngineManifest)
+      : packageInfo.theme.compiledEngineManifest;
 
     const themePatch = {
       id: packageInfo.id,
@@ -990,7 +1047,11 @@ export function resolveLoadedThemePackages(
       xterm: appearancePack?.appearance.xterm ?? packageInfo.theme.xterm,
       fonts: appearancePack?.appearance.fonts ?? packageInfo.theme.fonts,
       visuals: appearancePack?.appearance.visuals ?? packageInfo.theme.visuals,
-      cssVars: appearancePack?.appearance.cssVars ?? packageInfo.theme.cssVars,
+      cssVars: {
+        ...(packageInfo.theme.cssVars ?? {}),
+        ...tokenCssVars,
+        ...(appearancePack?.appearance.cssVars ?? {}),
+      },
       defaultTopBarId: resolvedDefaultTopBarId,
       defaultExplorerLayoutId: resolveScopedSelectionId(
         manifest.explorerLayoutId,
@@ -1006,11 +1067,12 @@ export function resolveLoadedThemePackages(
       interactionMotion: interactionMotionPack?.interactionMotion ?? packageInfo.theme.interactionMotion,
       workbench: themeRecipePack?.recipe.workbench ?? packageInfo.theme.workbench,
       explorer: themeRecipePack?.recipe.explorer ?? packageInfo.theme.explorer,
+      mobile: themeRecipePack?.recipe.mobile ?? packageInfo.theme.mobile,
       dock: themeRecipePack?.recipe.dock ?? packageInfo.theme.dock,
-      presentation: themeEnginePack?.engineManifest.presentation ?? packageInfo.theme.presentation,
-      compatibility: themeEnginePack?.engineManifest.compatibility ?? packageInfo.theme.compatibility,
-      engineManifest: themeEnginePack?.engineManifest ?? packageInfo.theme.engineManifest,
-      compiledEngineManifest: themeEnginePack?.compiledEngineManifest ?? packageInfo.theme.compiledEngineManifest,
+      presentation: composedEngineManifest?.presentation ?? packageInfo.theme.presentation,
+      compatibility: composedEngineManifest?.compatibility ?? packageInfo.theme.compatibility,
+      engineManifest: composedEngineManifest,
+      compiledEngineManifest: composedCompiledEngineManifest,
       themeRenderer: shellRendererPack?.renderer ?? packageInfo.theme.themeRenderer,
     } as Partial<OverlayThemeDefinition>;
 

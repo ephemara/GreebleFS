@@ -93,8 +93,14 @@ pub enum ThemeTokenKind {
     Typography,
     Spacing,
     Radius,
+    Border,
     Shadow,
+    Opacity,
+    Blur,
+    Geometry,
+    Layer,
     Motion,
+    Interaction,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

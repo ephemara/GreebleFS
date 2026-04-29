@@ -39,6 +39,7 @@ import {
   normalizeLayoutDynamicsThemeRecipe,
   type LayoutDynamicsThemeRecipe,
 } from './layoutDynamics';
+import type { OverlayMobileThemeRecipe } from './mobileTheme';
 import { DEFAULT_SOUND_PACK_ID } from './soundPacks';
 import { clampOverlayVisualControlValue } from './overlayWindow';
 import {
@@ -208,6 +209,7 @@ export interface OverlayThemeDefinition {
   compatibility?: OverlayThemeCompatibility;
   workbench?: OverlayWorkbenchThemeRecipe;
   explorer?: OverlayExplorerThemeRecipe;
+  mobile?: OverlayMobileThemeRecipe;
   dock?: {
     workbench?: OverlayWorkbenchThemeRecipe;
     explorer?: OverlayExplorerThemeRecipe;

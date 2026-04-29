@@ -344,18 +344,6 @@ async function shouldPrepareSpectaBindings() {
   };
 }
 
-function appendCommandFlags(existingValue, nextFlags) {
-  const mergedFlags = hasExplicitEnvValue(existingValue) ? existingValue.trim().split(/\s+/) : [];
-
-  for (const flag of nextFlags) {
-    if (!mergedFlags.includes(flag)) {
-      mergedFlags.push(flag);
-    }
-  }
-
-  return mergedFlags.join(" ");
-}
-
 function buildWindowsRustAccelerationEnvironment({
   existingEnv = process.env,
   platform = process.platform,
@@ -387,16 +375,7 @@ function buildWindowsRustAccelerationEnvironment({
   }
 
   if (!hasExplicitEnvValue(existingEnv.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER)) {
-    windowsRustEnvironment.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = "clang-cl";
-  }
-
-  const nextTargetRustFlags = appendCommandFlags(
-    existingEnv.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS,
-    ["-Clink-arg=/fuse-ld=lld"],
-  );
-
-  if (nextTargetRustFlags !== (existingEnv.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS ?? "")) {
-    windowsRustEnvironment.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = nextTargetRustFlags;
+    windowsRustEnvironment.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER = "lld-link";
   }
 
   return windowsRustEnvironment;
@@ -590,6 +569,10 @@ async function main() {
   const cliArgs = process.argv.slice(2);
   const tauriCommand = cliArgs.find((arg) => !arg.startsWith("-")) ?? null;
   const windowsRustAccelerationEnvironment = buildWindowsRustAccelerationEnvironment();
+  const sharedRustBuildEnvironment = {
+    CARGO_TARGET_DIR: tauriCargoTargetDir,
+    ...windowsRustAccelerationEnvironment,
+  };
   if (tauriCommand === "dev") {
     cleanupGreeblefsDevProcesses({
       projectRootPath: projectRoot,
@@ -601,7 +584,7 @@ async function main() {
   await prepareTauriDevBindings(
     packageManagerCommand,
     tauriCommand,
-    windowsRustAccelerationEnvironment,
+    sharedRustBuildEnvironment,
   );
   const linuxGraphicsEnvironment = buildLinuxGraphicsEnvironment({ tauriCommand });
   const existingNodePath = process.env.NODE_PATH
@@ -621,11 +604,10 @@ async function main() {
     {
       NODE_PATH: existingNodePath,
       npm_config_optional: "true",
-      CARGO_TARGET_DIR: tauriCargoTargetDir,
       GREEBLEFS_VITE_OUT_DIR: frontendDist,
       OVERLAYTERM_VITE_OUT_DIR: frontendDist,
       ...linuxGraphicsEnvironment,
-      ...windowsRustAccelerationEnvironment,
+      ...sharedRustBuildEnvironment,
       ...buildManagedContentDirectoryEnvironment({ tauriCommand }),
     }
   );

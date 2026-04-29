@@ -1,0 +1,26 @@
+{
+  "layoutPrimitives": [
+    {
+      "id": "andromeda-orbit",
+      "name": "Andromeda Orbit",
+      "kind": "dock",
+      "props": {
+        "gap": 12,
+        "padding": 14,
+        "cornerRadius": 28,
+        "pinned": true,
+        "sidebarBias": 0.28
+      }
+    },
+    {
+      "id": "andromeda-split",
+      "name": "Andromeda Split",
+      "kind": "split",
+      "props": {
+        "primaryRatio": 0.68,
+        "gap": 12
+      }
+    }
+  ],
+  "defaultLayoutPrimitiveId": "andromeda-orbit"
+}

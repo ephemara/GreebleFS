@@ -248,6 +248,12 @@ function buildMobileThemeCssVars(
     "--mobile-panel-radius": `${snapshot.metrics.panelRadius}px`,
     "--mobile-page-padding": `${snapshot.metrics.pagePadding}px`,
     "--mobile-panel-gap": `${snapshot.metrics.panelGap}px`,
+    ...(snapshot.metrics.touchTarget !== undefined ? { "--mobile-touch-target": `${snapshot.metrics.touchTarget}px` } : {}),
+    ...(snapshot.metrics.bottomNavHeight !== undefined ? { "--mobile-bottom-nav-height": `${snapshot.metrics.bottomNavHeight}px` } : {}),
+    ...(snapshot.metrics.actionStripHeight !== undefined ? { "--mobile-action-strip-height": `${snapshot.metrics.actionStripHeight}px` } : {}),
+    ...(snapshot.metrics.entryIconSize !== undefined ? { "--mobile-entry-icon-size": `${snapshot.metrics.entryIconSize}px` } : {}),
+    ...(snapshot.metrics.gridMinWidth !== undefined ? { "--mobile-grid-min-width": `${snapshot.metrics.gridMinWidth}px` } : {}),
+    ...snapshot.cssVars,
   };
 }
 

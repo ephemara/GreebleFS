@@ -28,8 +28,17 @@ import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 import type { OverlayInteractionMotionThemeRecipe } from './interactionMotion';
 import type { OverlayExplorerThemeRecipe } from './explorerTheme';
 import type { OverlayWorkbenchThemeRecipe } from './workbenchTheme';
+import type { OverlayMobileThemeRecipe } from './mobileTheme';
 import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
 import type { WorkbenchRenderRuntimeKind } from './workbenchRenderRuntime';
+import {
+  UI_TOKEN_CATEGORIES,
+  mergeUiTokenCollections,
+  normalizeUiTokenCategoryMap,
+  normalizeUiTokenCollection,
+  type UiTokenCategory,
+  type UiTokenCollection,
+} from './uiTokenContract';
 
 interface FileEntry {
   name: string;
@@ -70,11 +79,13 @@ export interface ThemeAppearancePackManifest {
   fonts?: OverlayThemeFonts;
   visuals?: OverlayThemeVisualLayer[];
   cssVars?: Record<string, string>;
+  tokens?: UiTokenCollection;
   preview?: string;
 }
 
 export interface LoadedThemeAppearancePack extends ThemeBundlePackMetadata {
   appearance: ThemeAppearancePackManifest;
+  tokens?: UiTokenCollection;
   previewUrl?: string;
 }
 
@@ -87,10 +98,12 @@ export interface ThemeInteractionMotionPackManifest {
   homepage?: string;
   tags?: string[];
   interactionMotion?: OverlayInteractionMotionThemeRecipe;
+  tokens?: UiTokenCollection;
 }
 
 export interface LoadedThemeInteractionMotionPack extends ThemeBundlePackMetadata {
   interactionMotion?: OverlayInteractionMotionThemeRecipe;
+  tokens?: UiTokenCollection;
 }
 
 export interface ThemeRecipePackManifest {
@@ -101,8 +114,21 @@ export interface ThemeRecipePackManifest {
   author?: string;
   homepage?: string;
   tags?: string[];
+  presentation?: OverlayThemePresentation;
+  compatibility?: OverlayThemeCompatibility;
+  layoutPrimitives?: ExplorerThemeManifest['layoutPrimitives'];
+  navigationPatterns?: ExplorerThemeManifest['navigationPatterns'];
+  animationProfiles?: ExplorerThemeManifest['animationProfiles'];
+  iconPacks?: ExplorerThemeManifest['iconPacks'];
+  renderStyles?: ExplorerThemeManifest['renderStyles'];
+  defaultLayoutPrimitiveId?: string;
+  defaultNavigationPatternId?: string;
+  defaultAnimationProfileId?: string;
+  defaultIconPackId?: string;
+  defaultRenderStyleId?: string;
   workbench?: OverlayWorkbenchThemeRecipe;
   explorer?: OverlayExplorerThemeRecipe;
+  mobile?: OverlayMobileThemeRecipe;
   dock?: {
     workbench?: OverlayWorkbenchThemeRecipe;
     explorer?: OverlayExplorerThemeRecipe;
@@ -110,7 +136,25 @@ export interface ThemeRecipePackManifest {
 }
 
 export interface LoadedThemeRecipePack extends ThemeBundlePackMetadata {
-  recipe: Pick<ThemeRecipePackManifest, 'workbench' | 'explorer' | 'dock'>;
+  recipe: Pick<
+    ThemeRecipePackManifest,
+    | 'presentation'
+    | 'compatibility'
+    | 'layoutPrimitives'
+    | 'navigationPatterns'
+    | 'animationProfiles'
+    | 'iconPacks'
+    | 'renderStyles'
+    | 'defaultLayoutPrimitiveId'
+    | 'defaultNavigationPatternId'
+    | 'defaultAnimationProfileId'
+    | 'defaultIconPackId'
+    | 'defaultRenderStyleId'
+    | 'workbench'
+    | 'explorer'
+    | 'mobile'
+    | 'dock'
+  >;
 }
 
 export interface ThemeEnginePackManifest {
@@ -122,6 +166,9 @@ export interface ThemeEnginePackManifest {
   homepage?: string;
   tags?: string[];
   extends?: string;
+  appearancePackId?: string;
+  interactionMotionPackId?: string;
+  themeRecipeId?: string;
   presentation?: OverlayThemePresentation;
   compatibility?: OverlayThemeCompatibility;
   designTokens?: ExplorerThemeManifest['designTokens'];
@@ -138,6 +185,11 @@ export interface ThemeEnginePackManifest {
 }
 
 export interface LoadedThemeEnginePack extends ThemeBundlePackMetadata {
+  composition: {
+    appearancePackId?: string;
+    interactionMotionPackId?: string;
+    themeRecipeId?: string;
+  };
   engineManifest: ExplorerThemeManifest;
   compiledEngineManifest: CompiledThemeEngineManifest;
 }
@@ -304,6 +356,19 @@ function parseManifestText(text: string, filePath: string): LooseRecord {
   return source;
 }
 
+async function readOptionalLooseRecord(filePath: string): Promise<LooseRecord | null> {
+  try {
+    const text = await commands.fsReadTextFile(filePath).then(unwrapTauriResult);
+    return parseManifestText(text, filePath);
+  } catch (error) {
+    const message = String(error).toLowerCase();
+    if (message.includes('enoent') || message.includes('not found') || message.includes('no such file')) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 function getParentDirectoryPath(path: string): string {
   const normalized = path.replace(/\\/g, '/');
   const lastSlash = normalized.lastIndexOf('/');
@@ -357,6 +422,64 @@ async function readManifestEntries(
   return loaded;
 }
 
+function mergeStringRecords(
+  ...records: Array<Record<string, string> | undefined>
+): Record<string, string> | undefined {
+  const merged = Object.assign({}, ...records.filter(Boolean));
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function pickRecord<T>(value: unknown): T | undefined {
+  return asRecord(value) as T | undefined;
+}
+
+async function readTokenCategoryFiles(
+  directoryPath: string,
+  categories: readonly UiTokenCategory[],
+): Promise<Partial<Record<UiTokenCategory, LooseRecord>>> {
+  const entries = await Promise.all(categories.map(async category => [
+    category,
+    await readOptionalLooseRecord(joinPlatformPath(joinPlatformPath(directoryPath, 'tokens'), `${category}.json`)),
+  ] as const));
+
+  return Object.fromEntries(entries.filter(([, record]) => Boolean(record))) as Partial<Record<UiTokenCategory, LooseRecord>>;
+}
+
+function normalizeTokenFilePayload(category: UiTokenCategory, source: LooseRecord | undefined): UiTokenCollection {
+  if (!source) {
+    return {};
+  }
+
+  const explicitTokens = normalizeUiTokenCategoryMap(source.tokens ?? source[category]);
+  const fallbackTokens = Object.keys(explicitTokens).length > 0
+    ? explicitTokens
+    : normalizeUiTokenCategoryMap(Object.fromEntries(
+        Object.entries(source).filter(([key]) => ![
+          'palette',
+          'effects',
+          'xterm',
+          'fonts',
+          'visuals',
+          'cssVars',
+          'preview',
+          'interactionMotion',
+          'recipe',
+        ].includes(key)),
+      ));
+
+  return Object.keys(fallbackTokens).length > 0
+    ? { [category]: fallbackTokens }
+    : {};
+}
+
+function normalizeTokenFiles(
+  tokenFiles: Partial<Record<UiTokenCategory, LooseRecord>>,
+): UiTokenCollection {
+  return mergeUiTokenCollections(
+    ...UI_TOKEN_CATEGORIES.map(category => normalizeTokenFilePayload(category, tokenFiles[category])),
+  );
+}
+
 function parseThemeAppearancePackManifest(source: LooseRecord): ThemeAppearancePackManifest {
   return {
     version: typeof source.version === 'number' ? source.version : 1,
@@ -373,6 +496,7 @@ function parseThemeAppearancePackManifest(source: LooseRecord): ThemeAppearanceP
     fonts: asRecord(source.fonts) as OverlayThemeFonts | undefined,
     visuals: Array.isArray(source.visuals) ? source.visuals as OverlayThemeVisualLayer[] : undefined,
     cssVars: asStringRecord(source.cssVars),
+    tokens: normalizeUiTokenCollection(source.tokens),
     preview: asString(source.preview ?? asRecord(source.assets)?.preview),
   };
 }
@@ -387,6 +511,7 @@ function parseInteractionMotionPackManifest(source: LooseRecord): ThemeInteracti
     homepage: asString(source.homepage),
     tags: asStringArray(source.tags),
     interactionMotion: asRecord(source.interactionMotion ?? source.recipe) as OverlayInteractionMotionThemeRecipe | undefined,
+    tokens: normalizeUiTokenCollection(source.tokens),
   };
 }
 
@@ -399,13 +524,27 @@ function parseThemeRecipePackManifest(source: LooseRecord): ThemeRecipePackManif
     author: asString(source.author),
     homepage: asString(source.homepage),
     tags: asStringArray(source.tags),
+    presentation: asRecord(source.presentation) as OverlayThemePresentation | undefined,
+    compatibility: asRecord(source.compatibility) as OverlayThemeCompatibility | undefined,
+    layoutPrimitives: Array.isArray(source.layoutPrimitives) ? source.layoutPrimitives as ExplorerThemeManifest['layoutPrimitives'] : undefined,
+    navigationPatterns: Array.isArray(source.navigationPatterns) ? source.navigationPatterns as ExplorerThemeManifest['navigationPatterns'] : undefined,
+    animationProfiles: Array.isArray(source.animationProfiles) ? source.animationProfiles as ExplorerThemeManifest['animationProfiles'] : undefined,
+    iconPacks: Array.isArray(source.iconPacks) ? source.iconPacks as ExplorerThemeManifest['iconPacks'] : undefined,
+    renderStyles: Array.isArray(source.renderStyles) ? source.renderStyles as ExplorerThemeManifest['renderStyles'] : undefined,
+    defaultLayoutPrimitiveId: asString(source.defaultLayoutPrimitiveId) || undefined,
+    defaultNavigationPatternId: asString(source.defaultNavigationPatternId) || undefined,
+    defaultAnimationProfileId: asString(source.defaultAnimationProfileId) || undefined,
+    defaultIconPackId: asString(source.defaultIconPackId) || undefined,
+    defaultRenderStyleId: asString(source.defaultRenderStyleId) || undefined,
     workbench: asRecord(source.workbench) as OverlayWorkbenchThemeRecipe | undefined,
     explorer: asRecord(source.explorer) as OverlayExplorerThemeRecipe | undefined,
+    mobile: asRecord(source.mobile) as OverlayMobileThemeRecipe | undefined,
     dock: asRecord(source.dock) as ThemeRecipePackManifest['dock'] | undefined,
   };
 }
 
 function parseThemeEnginePackManifest(source: LooseRecord): ThemeEnginePackManifest {
+  const composition = asRecord(source.composition);
   return {
     version: typeof source.version === 'number' ? source.version : 1,
     id: asString(source.id),
@@ -415,6 +554,9 @@ function parseThemeEnginePackManifest(source: LooseRecord): ThemeEnginePackManif
     homepage: asString(source.homepage),
     tags: asStringArray(source.tags),
     extends: asString(source.extends),
+    appearancePackId: asString(source.appearancePackId ?? composition?.appearancePackId) || undefined,
+    interactionMotionPackId: asString(source.interactionMotionPackId ?? composition?.interactionMotionPackId) || undefined,
+    themeRecipeId: asString(source.themeRecipeId ?? composition?.themeRecipeId) || undefined,
     presentation: asRecord(source.presentation) as OverlayThemePresentation | undefined,
     compatibility: asRecord(source.compatibility) as OverlayThemeCompatibility | undefined,
     designTokens: Array.isArray(source.designTokens) ? source.designTokens as ExplorerThemeManifest['designTokens'] : undefined,
@@ -467,10 +609,54 @@ async function loadThemeAppearancePacksFromRecords(
   options?: ThemeBundlePackOptions,
 ): Promise<ThemeBundlePackLoadResult<LoadedThemeAppearancePack>> {
   const packs = await Promise.all(records.map(async record => {
+    const tokenFiles = await readTokenCategoryFiles(record.directoryPath, [
+      'color',
+      'typography',
+      'spacing',
+      'radius',
+      'border',
+      'shadow',
+      'opacity',
+      'blur',
+      'geometry',
+      'layer',
+    ]);
+    const colorTokens = tokenFiles.color;
+    const typographyTokens = tokenFiles.typography;
+    const shadowTokens = tokenFiles.shadow;
+    const geometryTokens = tokenFiles.geometry;
+    const cssVars = mergeStringRecords(
+      record.manifest.cssVars,
+      asStringRecord(colorTokens?.cssVars),
+      asStringRecord(typographyTokens?.cssVars),
+      asStringRecord(shadowTokens?.cssVars),
+      asStringRecord(geometryTokens?.cssVars),
+    );
+    const tokens = mergeUiTokenCollections(
+      record.manifest.tokens,
+      normalizeTokenFiles(tokenFiles),
+    );
+    const appearance: ThemeAppearancePackManifest = {
+      ...record.manifest,
+      palette: pickRecord<Partial<OverlayThemePalette>>(colorTokens?.palette) ?? record.manifest.palette,
+      effects: {
+        ...(record.manifest.effects ?? {}),
+        ...(pickRecord<Partial<OverlayThemeEffects>>(colorTokens?.effects) ?? {}),
+        ...(pickRecord<Partial<OverlayThemeEffects>>(shadowTokens?.effects) ?? {}),
+      },
+      xterm: pickRecord<Partial<OverlayXTermTheme>>(colorTokens?.xterm) ?? record.manifest.xterm,
+      fonts: pickRecord<OverlayThemeFonts>(typographyTokens?.fonts) ?? record.manifest.fonts,
+      visuals: Array.isArray(geometryTokens?.visuals)
+        ? geometryTokens.visuals as OverlayThemeVisualLayer[]
+        : record.manifest.visuals,
+      cssVars,
+      tokens,
+    };
     const metadata = buildPackMetadata(record.manifest, record.manifestPath, record.directoryPath, options);
     return {
       ...metadata,
-      appearance: record.manifest,
+      appearance,
+      tokens,
       previewUrl: await resolvePreviewUrl(record.directoryPath, record.manifest.preview),
     } satisfies LoadedThemeAppearancePack;
   }));
@@ -482,30 +668,85 @@ async function loadInteractionMotionPacksFromRecords(
   records: Array<{ directoryPath: string; manifestPath: string; manifest: ThemeInteractionMotionPackManifest }>,
   options?: ThemeBundlePackOptions,
 ): Promise<ThemeBundlePackLoadResult<LoadedThemeInteractionMotionPack>> {
-  return {
-    packs: records.map(record => ({
+  const packs = await Promise.all(records.map(async record => {
+    const tokenFiles = await readTokenCategoryFiles(record.directoryPath, ['motion', 'interaction']);
+    const tokens = mergeUiTokenCollections(
+      record.manifest.tokens,
+      normalizeTokenFiles(tokenFiles),
+    );
+    const interactionTokens = tokenFiles.interaction;
+    return {
       ...buildPackMetadata(record.manifest, record.manifestPath, record.directoryPath, options),
-      interactionMotion: record.manifest.interactionMotion,
-    })),
-    warnings: [],
-  };
+      interactionMotion: pickRecord<OverlayInteractionMotionThemeRecipe>(
+        interactionTokens?.interactionMotion ?? interactionTokens?.recipe,
+      ) ?? record.manifest.interactionMotion,
+      tokens,
+    } satisfies LoadedThemeInteractionMotionPack;
+  }));
+
+  return { packs, warnings: [] };
 }
 
 async function loadThemeRecipePacksFromRecords(
   records: Array<{ directoryPath: string; manifestPath: string; manifest: ThemeRecipePackManifest }>,
   options?: ThemeBundlePackOptions,
 ): Promise<ThemeBundlePackLoadResult<LoadedThemeRecipePack>> {
-  return {
-    packs: records.map(record => ({
+  const packs = await Promise.all(records.map(async record => {
+    const [
+      presentationFile,
+      layoutFile,
+      navigationFile,
+      renderFile,
+      workbenchFile,
+      explorerFile,
+      mobileFile,
+    ] = await Promise.all([
+      readOptionalLooseRecord(joinPlatformPath(record.directoryPath, 'presentation.json')),
+      readOptionalLooseRecord(joinPlatformPath(record.directoryPath, 'layout.json')),
+      readOptionalLooseRecord(joinPlatformPath(record.directoryPath, 'navigation.json')),
+      readOptionalLooseRecord(joinPlatformPath(record.directoryPath, 'render.json')),
+      readOptionalLooseRecord(joinPlatformPath(record.directoryPath, 'workbench.json')),
+      readOptionalLooseRecord(joinPlatformPath(record.directoryPath, 'explorer.json')),
+      readOptionalLooseRecord(joinPlatformPath(record.directoryPath, 'mobile.json')),
+    ]);
+
+    const renderDefaults = asRecord(renderFile?.defaults);
+    const recipe: LoadedThemeRecipePack['recipe'] = {
+      presentation: pickRecord<OverlayThemePresentation>(presentationFile?.presentation ?? presentationFile) ?? record.manifest.presentation,
+      compatibility: pickRecord<OverlayThemeCompatibility>(renderFile?.compatibility ?? presentationFile?.compatibility) ?? record.manifest.compatibility,
+      layoutPrimitives: Array.isArray(layoutFile?.layoutPrimitives)
+        ? layoutFile.layoutPrimitives as ExplorerThemeManifest['layoutPrimitives']
+        : record.manifest.layoutPrimitives,
+      navigationPatterns: Array.isArray(navigationFile?.navigationPatterns)
+        ? navigationFile.navigationPatterns as ExplorerThemeManifest['navigationPatterns']
+        : record.manifest.navigationPatterns,
+      animationProfiles: Array.isArray(renderFile?.animationProfiles)
+        ? renderFile.animationProfiles as ExplorerThemeManifest['animationProfiles']
+        : record.manifest.animationProfiles,
+      iconPacks: Array.isArray(renderFile?.iconPacks)
+        ? renderFile.iconPacks as ExplorerThemeManifest['iconPacks']
+        : record.manifest.iconPacks,
+      renderStyles: Array.isArray(renderFile?.renderStyles)
+        ? renderFile.renderStyles as ExplorerThemeManifest['renderStyles']
+        : record.manifest.renderStyles,
+      defaultLayoutPrimitiveId: asString(layoutFile?.defaultLayoutPrimitiveId ?? layoutFile?.defaultId) || record.manifest.defaultLayoutPrimitiveId,
+      defaultNavigationPatternId: asString(navigationFile?.defaultNavigationPatternId ?? navigationFile?.defaultId) || record.manifest.defaultNavigationPatternId,
+      defaultAnimationProfileId: asString(renderFile?.defaultAnimationProfileId ?? renderDefaults?.animationProfileId) || record.manifest.defaultAnimationProfileId,
+      defaultIconPackId: asString(renderFile?.defaultIconPackId ?? renderDefaults?.iconPackId) || record.manifest.defaultIconPackId,
+      defaultRenderStyleId: asString(renderFile?.defaultRenderStyleId ?? renderDefaults?.renderStyleId) || record.manifest.defaultRenderStyleId,
+      workbench: pickRecord<OverlayWorkbenchThemeRecipe>(workbenchFile?.workbench ?? workbenchFile) ?? record.manifest.workbench,
+      explorer: pickRecord<OverlayExplorerThemeRecipe>(explorerFile?.explorer ?? explorerFile) ?? record.manifest.explorer,
+      mobile: pickRecord<OverlayMobileThemeRecipe>(mobileFile?.mobile ?? mobileFile) ?? record.manifest.mobile,
+      dock: record.manifest.dock,
+    };
+
+    return {
       ...buildPackMetadata(record.manifest, record.manifestPath, record.directoryPath, options),
-      recipe: {
-        workbench: record.manifest.workbench,
-        explorer: record.manifest.explorer,
-        dock: record.manifest.dock,
-      },
-    })),
-    warnings: [],
-  };
+      recipe,
+    } satisfies LoadedThemeRecipePack;
+  }));
+
+  return { packs, warnings: [] };
 }
 
 async function loadThemeEnginePacksFromRecords(
@@ -539,6 +780,11 @@ async function loadThemeEnginePacksFromRecords(
 
       return {
         ...metadata,
+        composition: {
+          appearancePackId: record.manifest.appearancePackId,
+          interactionMotionPackId: record.manifest.interactionMotionPackId,
+          themeRecipeId: record.manifest.themeRecipeId,
+        },
         engineManifest,
         compiledEngineManifest: compileThemeEngineManifest(engineManifest),
       } satisfies LoadedThemeEnginePack;
@@ -764,6 +1010,7 @@ export function createInlineThemeAppearancePack(
   return {
     ...metadata,
     appearance: manifest,
+    tokens: manifest.tokens,
   };
 }
 
@@ -779,6 +1026,7 @@ export function createInlineThemeInteractionMotionPack(
       { scopeId: options.bundleId, virtualRoot: options.directoryPath ?? `settings:${options.bundleId}` },
     ),
     interactionMotion: manifest.interactionMotion,
+    tokens: manifest.tokens,
   };
 }
 
@@ -794,8 +1042,21 @@ export function createInlineThemeRecipePack(
       { scopeId: options.bundleId, virtualRoot: options.directoryPath ?? `settings:${options.bundleId}` },
     ),
     recipe: {
+      presentation: manifest.presentation,
+      compatibility: manifest.compatibility,
+      layoutPrimitives: manifest.layoutPrimitives,
+      navigationPatterns: manifest.navigationPatterns,
+      animationProfiles: manifest.animationProfiles,
+      iconPacks: manifest.iconPacks,
+      renderStyles: manifest.renderStyles,
+      defaultLayoutPrimitiveId: manifest.defaultLayoutPrimitiveId,
+      defaultNavigationPatternId: manifest.defaultNavigationPatternId,
+      defaultAnimationProfileId: manifest.defaultAnimationProfileId,
+      defaultIconPackId: manifest.defaultIconPackId,
+      defaultRenderStyleId: manifest.defaultRenderStyleId,
       workbench: manifest.workbench,
       explorer: manifest.explorer,
+      mobile: manifest.mobile,
       dock: manifest.dock,
     },
   };
@@ -834,6 +1095,11 @@ export function createInlineThemeEnginePack(
   });
   return {
     ...metadata,
+    composition: {
+      appearancePackId: manifest.appearancePackId,
+      interactionMotionPackId: manifest.interactionMotionPackId,
+      themeRecipeId: manifest.themeRecipeId,
+    },
     engineManifest,
     compiledEngineManifest: compileThemeEngineManifest(engineManifest),
   };

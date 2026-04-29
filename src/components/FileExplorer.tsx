@@ -23,7 +23,6 @@ import React, {
 } from "react";
 import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useMotionValue, useSpring } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import type { EditorProps as MonacoEditorProps } from "@monaco-editor/react";
 import {
@@ -140,6 +139,14 @@ import {
   resolveExplorerThemeRecipe,
   type ResolvedExplorerThemeRecipe,
 } from "../config/explorerTheme";
+import {
+  EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS,
+  getExplorerLayoutZoomHudProgress,
+  resolveExplorerGridItemPadding,
+  resolveExplorerGridThumbnailRadius,
+  resolveExplorerLayoutZoomWheelDelta,
+  resolveExplorerRowThumbnailStageSize,
+} from "../config/explorerZoomBehavior";
 import {
   explorerModeProfiles,
   resolveEffectiveExplorerModeProfile,
@@ -320,6 +327,7 @@ import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
 import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
 import { ExplorerActionsPane } from "./explorer/ExplorerActionsPane";
 import { ExplorerCustomizeDragOverlay } from "./explorer/ExplorerCustomizeDragOverlay";
+import { ExplorerFloatingSurface } from "./explorer/ExplorerFloatingSurface";
 import {
   buildExplorerRuntimeMenu,
   resolveMenuInvocationInputModality,
@@ -376,6 +384,11 @@ import {
   type ConstellationViewportMetrics,
 } from "./explorer/constellationCamera";
 import { ExplorerTaskStatusBadge } from "./explorer/ExplorerTaskStatusBadge";
+import {
+  useExplorerZoomGestureRouter,
+  type ExplorerZoomController,
+  type ExplorerZoomGesture,
+} from "./explorer/useExplorerZoomGestureRouter";
 import TerminalOverlay, {
   type TerminalOverlayCommandRequest,
 } from "./TerminalOverlay";
@@ -646,11 +659,6 @@ const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_WIDTH = 1280;
 const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_HEIGHT = 720;
 const EXPLORER_VIRTUAL_SCROLL_STATE_GRANULARITY_PX = 48;
 const EXPLORER_VIRTUAL_SCROLL_IMMEDIATE_JUMP_PX = 720;
-const EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY = 1 / 480;
-const EXPLORER_LAYOUT_WHEEL_MAX_DELTA = 0.18;
-const EXPLORER_LAYOUT_WHEEL_LINE_DELTA_PX = 18;
-const EXPLORER_LAYOUT_WHEEL_PAGE_DELTA_FALLBACK_PX = 320;
-const EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS = 160;
 const EXPLORER_THUMBNAIL_TYPE_BADGE_MIN_STAGE_PX = 36;
 const EXPLORER_THUMBNAIL_TYPE_BADGE_KINDS = new Set<
   ExplorerEntryThumbnailData["kind"]
@@ -710,158 +718,72 @@ type ExplorerLayoutZoomPointerAnchor = {
   itemOffsetY: number;
 };
 
-function getNormalizedExplorerLayoutWheelDelta(
-  event: WheelEvent,
-  viewportHeight: number,
-): number {
-  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-    return event.deltaY * EXPLORER_LAYOUT_WHEEL_LINE_DELTA_PX;
-  }
+const EXPLORER_PRIMARY_ZOOM_SURFACE_SELECTOR =
+  '[data-overlay-explorer-plane="file-area"], [data-overlay-explorer-plane="content-viewport"], .overlay-scroll-area__viewport, .overlay-scroll-area__content';
+const EXPLORER_PREVIEW_ZOOM_SURFACE_SELECTOR =
+  '[data-overlay-explorer-plane="preview"]';
+const EXPLORER_CONSTELLATION_ZOOM_SURFACE_SELECTOR =
+  '[data-overlay-constellation-viewport="true"]';
+const EXPLORER_CONSTELLATION_UI_SELECTOR =
+  '[data-overlay-constellation-ui="true"]';
 
-  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
-    return (
-      event.deltaY *
-      Math.max(viewportHeight, EXPLORER_LAYOUT_WHEEL_PAGE_DELTA_FALLBACK_PX)
-    );
-  }
-
-  return event.deltaY;
+function getExplorerZoomGestureTargetElement(
+  target: EventTarget | null,
+): HTMLElement | null {
+  return target instanceof HTMLElement ? target : null;
 }
 
-// Per-event sensitivity multipliers per band. The negative range (list / columns /
-// details) is tiny — each band is only 0.06–0.07 wide on a [-0.18, 2.8] axis, so it
-// must be traversed slowly enough that the spring + HUD have time to read as a
-// deliberate transition rather than an instant snap. Grid bands are wide and can
-// move faster.
-const EXPLORER_NEGATIVE_RANGE_SENSITIVITY = 0.13;
-// Hard cap on absolute layout-zoom delta per wheel event while inside the
-// negative range. Each negative band is at least 0.06 wide, so capping at 0.022
-// guarantees no single event crosses a full band — every family change requires
-// at least three wheel events.
-const EXPLORER_NEGATIVE_RANGE_PER_EVENT_CAP = 0.022;
-
-function adjustExplorerLayoutWheelDeltaForRange(
-  currentLayoutZoom: number,
-  delta: number,
-): number {
-  const direction = Math.sign(delta);
-  const magnitude = Math.abs(delta);
-  if (magnitude === 0) {
-    return 0;
-  }
-
-  // Negative range covers list (≤ LIST_ENTER), columns (LIST_ENTER..MIDPOINT),
-  // and details (MIDPOINT..TABLE_EXIT). All three are damped uniformly and
-  // explicitly capped per event to keep family transitions deliberate.
-  const inNegativeRange =
-    direction > 0
-      ? currentLayoutZoom < EXPLORER_LAYOUT_ZOOM_TABLE_EXIT
-      : currentLayoutZoom <= EXPLORER_LAYOUT_ZOOM_TABLE_EXIT;
-  if (inNegativeRange) {
-    const damped = Math.min(
-      magnitude * EXPLORER_NEGATIVE_RANGE_SENSITIVITY,
-      EXPLORER_NEGATIVE_RANGE_PER_EVENT_CAP,
-    );
-    return direction > 0 ? damped : -damped;
-  }
-
-  if (direction > 0) {
-    // Zooming out across the grid range. Wide bands → larger multipliers.
-    if (currentLayoutZoom < 0.34) {
-      return magnitude * 0.62;
-    }
-    if (currentLayoutZoom < 0.67) {
-      return magnitude * 0.55;
-    }
-    if (currentLayoutZoom < 1) {
-      return magnitude * 0.48;
-    }
-    if (currentLayoutZoom < 1.8) {
-      return magnitude * 0.4;
-    }
-    return magnitude * 0.3;
-  }
-
-  // Zooming in across the grid range.
-  if (currentLayoutZoom <= 0.34) {
-    return -magnitude * 0.6;
-  }
-  if (currentLayoutZoom <= 0.67) {
-    return -magnitude * 0.52;
-  }
-  if (currentLayoutZoom <= 1) {
-    return -magnitude * 0.46;
-  }
-  if (currentLayoutZoom <= 1.8) {
-    return -magnitude * 0.38;
-  }
-  return -magnitude * 0.28;
+function isExplorerZoomGestureVerticalDominant(
+  gesture: Pick<ExplorerZoomGesture, "normalizedDeltaX" | "normalizedDeltaY">,
+): boolean {
+  return Math.abs(gesture.normalizedDeltaY) > Math.abs(gesture.normalizedDeltaX);
 }
 
-// HUD band-segment percentages. Sum must equal 100. Each band gets visual width
-// roughly proportional to its perceptual importance, not its raw zoom width — the
-// grid range dominates because that's where the user spends most time.
-const EXPLORER_HUD_LIST_SEGMENT = 12;
-const EXPLORER_HUD_COLUMNS_SEGMENT = 8;
-const EXPLORER_HUD_DETAILS_SEGMENT = 8;
-const EXPLORER_HUD_GRID_SEGMENT = 52;
-const EXPLORER_HUD_OVERSIZE_SEGMENT = 20;
+function isExplorerZoomGestureMeaningful(
+  gesture: Pick<ExplorerZoomGesture, "normalizedDeltaY">,
+  minimumAbsoluteDeltaPx = 6,
+): boolean {
+  return Math.abs(gesture.normalizedDeltaY) >= minimumAbsoluteDeltaPx;
+}
 
-function getExplorerLayoutZoomHudProgress(layoutZoom: number): number {
-  // Each band fills its own segment proportionally and stacks onto the cumulative
-  // start. All thresholds come from the shared family/midpoint constants so the
-  // HUD, the family resolver, and the wheel-delta logic stay in lockstep.
-  let cumulative = 0;
-
-  if (layoutZoom < EXPLORER_LAYOUT_ZOOM_LIST_ENTER) {
-    const span = EXPLORER_LAYOUT_ZOOM_LIST_ENTER - EXPLORER_LAYOUT_ZOOM_MIN;
-    const t = clamp01(
-      span <= 0 ? 0 : (layoutZoom - EXPLORER_LAYOUT_ZOOM_MIN) / span,
-    );
-    return cumulative + t * EXPLORER_HUD_LIST_SEGMENT;
-  }
-  cumulative += EXPLORER_HUD_LIST_SEGMENT;
-
-  if (layoutZoom < EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT) {
-    const span =
-      EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT - EXPLORER_LAYOUT_ZOOM_LIST_ENTER;
-    const t = clamp01(
-      span <= 0 ? 0 : (layoutZoom - EXPLORER_LAYOUT_ZOOM_LIST_ENTER) / span,
-    );
-    return cumulative + t * EXPLORER_HUD_COLUMNS_SEGMENT;
-  }
-  cumulative += EXPLORER_HUD_COLUMNS_SEGMENT;
-
-  if (layoutZoom < EXPLORER_LAYOUT_ZOOM_TABLE_EXIT) {
-    const span =
-      EXPLORER_LAYOUT_ZOOM_TABLE_EXIT - EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT;
-    const t = clamp01(
-      span <= 0 ? 0 : (layoutZoom - EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT) / span,
-    );
-    return cumulative + t * EXPLORER_HUD_DETAILS_SEGMENT;
-  }
-  cumulative += EXPLORER_HUD_DETAILS_SEGMENT;
-
-  if (layoutZoom <= 1) {
-    const span = 1 - EXPLORER_LAYOUT_ZOOM_TABLE_EXIT;
-    const t = clamp01(
-      span <= 0 ? 0 : (layoutZoom - EXPLORER_LAYOUT_ZOOM_TABLE_EXIT) / span,
-    );
-    return cumulative + t * EXPLORER_HUD_GRID_SEGMENT;
-  }
-  cumulative += EXPLORER_HUD_GRID_SEGMENT;
-
-  const oversizeSpan = EXPLORER_LAYOUT_ZOOM_MAX - 1;
-  const oversizeT = clamp01(
-    oversizeSpan <= 0 ? 0 : (layoutZoom - 1) / oversizeSpan,
+function isExplorerZoomGestureOnPrimarySurface(
+  target: EventTarget | null,
+): boolean {
+  return (
+    getExplorerZoomGestureTargetElement(target)?.closest(
+      EXPLORER_PRIMARY_ZOOM_SURFACE_SELECTOR,
+    ) != null
   );
-  return cumulative + oversizeT * EXPLORER_HUD_OVERSIZE_SEGMENT;
 }
 
-function clamp01(value: number): number {
-  if (value < 0) return 0;
-  if (value > 1) return 1;
-  return value;
+function isExplorerZoomGestureInsidePreviewSurface(
+  target: EventTarget | null,
+): boolean {
+  return (
+    getExplorerZoomGestureTargetElement(target)?.closest(
+      EXPLORER_PREVIEW_ZOOM_SURFACE_SELECTOR,
+    ) != null
+  );
+}
+
+function isExplorerZoomGestureInsideConstellationSurface(
+  target: EventTarget | null,
+): boolean {
+  return (
+    getExplorerZoomGestureTargetElement(target)?.closest(
+      EXPLORER_CONSTELLATION_ZOOM_SURFACE_SELECTOR,
+    ) != null
+  );
+}
+
+function isExplorerZoomGestureInsideConstellationUi(
+  target: EventTarget | null,
+): boolean {
+  return (
+    getExplorerZoomGestureTargetElement(target)?.closest(
+      EXPLORER_CONSTELLATION_UI_SELECTOR,
+    ) != null
+  );
 }
 
 function setExplorerLayoutCssVariable(
@@ -870,6 +792,14 @@ function setExplorerLayoutCssVariable(
   value: string,
 ) {
   element.style.setProperty(name, value);
+}
+
+function formatExplorerVerticalPaddingCss(padding: {
+  top: number;
+  horizontal: number;
+  bottom: number;
+}) {
+  return `${padding.top}px ${padding.horizontal}px ${padding.bottom}px`;
 }
 
 function resolveExplorerGridIconModeForCommittedViewMode(
@@ -907,14 +837,15 @@ function applyExplorerLayoutZoomCssVariables(
       resolvedState,
     );
     const metrics = applyExplorerThemeToGridMetrics(
-      getExplorerGridMetricsForZoom(
-        resolvedState.gridZoom,
-        iconMode ? { iconMode } : undefined,
-      ),
+      getExplorerGridMetricsForZoom(resolvedState.gridZoom),
       explorerTheme,
     );
-    const itemPadding = metrics.iconSize <= 46 ? "8px 6px 6px" : "10px 8px 8px";
-    const thumbnailRadius = Math.max(10, Math.round(metrics.tileRadius * 0.72));
+    const itemPadding = formatExplorerVerticalPaddingCss(
+      resolveExplorerGridItemPadding(metrics.iconStageSize),
+    );
+    const thumbnailRadius = resolveExplorerGridThumbnailRadius(
+      metrics.tileRadius,
+    );
     element.dataset.overlayExplorerLiveGridIconBand = iconMode ?? "";
 
     setExplorerLayoutCssVariable(
@@ -968,7 +899,9 @@ function applyExplorerLayoutZoomCssVariables(
   );
   const rowHeight = rowMetrics?.rowHeight ?? EXPLORER_LIST_ROW_HEIGHT;
   const newItemHeight = rowMetrics?.newItemHeight ?? 42;
-  const thumbnailStageSize = Math.max((rowMetrics?.iconSize ?? 16) + 12, 28);
+  const thumbnailStageSize = resolveExplorerRowThumbnailStageSize(
+    rowMetrics?.iconSize ?? 16,
+  );
 
   setExplorerLayoutCssVariable(
     element,
@@ -4190,6 +4123,7 @@ function PreviewPanel({
     tone: "neutral" | "success" | "warning" | "danger";
   } | null>(null);
   const [showWorkbenchChooser, setShowWorkbenchChooser] = useState(false);
+  const workbenchChooserAnchorRef = useRef<HTMLDivElement>(null);
   const currentViewModeRef = useRef(viewMode);
   const previewPluginZoom = useSettingsStore(
     (state) => state.settings.appearance.appZoom ?? 1,
@@ -4285,6 +4219,34 @@ function PreviewPanel({
   useEffect(() => {
     setShowWorkbenchChooser(false);
   }, [preview.path, previewWorkbenchCandidates.length]);
+
+  useEffect(() => {
+    if (!showWorkbenchChooser) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const targetNode = event.target as Node;
+      const targetElement =
+        event.target instanceof Element ? event.target : null;
+      if (workbenchChooserAnchorRef.current?.contains(targetNode)) {
+        return;
+      }
+      if (
+        targetElement?.closest(
+          '[data-overlay-explorer-floating-surface-group="explorer-menu"]',
+        )
+      ) {
+        return;
+      }
+      setShowWorkbenchChooser(false);
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [showWorkbenchChooser]);
 
   useEffect(() => {
     if (preview.type !== "plugin") {
@@ -4909,7 +4871,10 @@ function PreviewPanel({
               </span>
             ) : null}
             {!isPreviewTerminalMode && previewWorkbenchCandidates.length > 1 ? (
-              <div style={{ position: "relative" }}>
+              <div
+                ref={workbenchChooserAnchorRef}
+                style={{ position: "relative" }}
+              >
                 <button
                   type="button"
                   data-testid="preview-workbench-chooser-toggle"
@@ -4933,25 +4898,23 @@ function PreviewPanel({
                   Workbench
                   <ChevronDown size={10} />
                 </button>
-                {showWorkbenchChooser ? (
-                  <div
-                    data-testid="preview-workbench-chooser"
-                    style={{
-                      position: "absolute",
-                      top: "calc(100% + 8px)",
-                      right: 0,
-                      width: 320,
-                      maxWidth: "min(320px, 72vw)",
-                      display: "grid",
-                      gap: 10,
-                      padding: 12,
-                      borderRadius: 16,
-                      border: "1px solid var(--overlay-explorer-preview-border)",
-                      background: "var(--overlay-explorer-preview-header-bg)",
-                      boxShadow: "0 18px 48px rgba(0,0,0,0.32)",
-                      zIndex: 32,
-                    }}
-                  >
+                <ExplorerFloatingSurface
+                  anchorRef={workbenchChooserAnchorRef}
+                  open={showWorkbenchChooser}
+                  surfaceGroup="explorer-menu"
+                  data-testid="preview-workbench-chooser"
+                  style={{
+                    width: 320,
+                    maxWidth: "min(320px, 72vw)",
+                    display: "grid",
+                    gap: 10,
+                    padding: 12,
+                    borderRadius: 16,
+                    border: "1px solid var(--overlay-explorer-preview-border)",
+                    background: "var(--overlay-explorer-preview-header-bg)",
+                    boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
+                  }}
+                >
                     <div style={{ display: "grid", gap: 3 }}>
                       <div
                         style={{
@@ -5070,8 +5033,7 @@ function PreviewPanel({
                         Current: {activePreviewWorkbenchCandidate.title}
                       </div>
                     ) : null}
-                  </div>
-                ) : null}
+                </ExplorerFloatingSurface>
               </div>
             ) : null}
           </div>
@@ -9581,6 +9543,8 @@ export function FileExplorer({
   const previewContentHostRef = useRef<HTMLDivElement | null>(null);
   const bottomTerminalAnchorRef = useRef<HTMLDivElement | null>(null);
   const explorerViewportRef = useRef<HTMLDivElement | null>(null);
+  const [explorerRootNode, setExplorerRootNode] =
+    useState<HTMLDivElement | null>(null);
   const [explorerFileAreaNode, setExplorerFileAreaNode] =
     useState<HTMLDivElement | null>(null);
   const [explorerViewportNode, setExplorerViewportNode] =
@@ -9610,14 +9574,8 @@ export function FileExplorer({
       createExplorerLayoutZoomState(viewMode, gridZoom),
     );
   const liveLayoutZoomTargetStateRef = useRef(liveLayoutZoomState);
-  const renderedLayoutZoomStateRef = useRef(liveLayoutZoomState);
-  const layoutZoomTarget = useMotionValue(liveLayoutZoomState.layoutZoom);
-  const layoutZoomSpring = useSpring(layoutZoomTarget, {
-    stiffness: 320,
-    damping: 36,
-    mass: 0.24,
-    restDelta: 0.0005,
-  });
+  const publishedLayoutZoomStateRef = useRef(liveLayoutZoomState);
+  const layoutZoomPublishFrameRef = useRef<number | null>(null);
   const [experimentalHudVisible, setExperimentalHudVisible] = useState(false);
   const experimentalHudTimerRef = useRef<number | null>(null);
   const [localTreeRefreshRevision, setLocalTreeRefreshRevision] = useState(0);
@@ -9628,6 +9586,10 @@ export function FileExplorer({
       clientHeight: 0,
       clientWidth: 0,
     });
+  const bindExplorerRootRef = useCallback((node: HTMLDivElement | null) => {
+    explorerRootRef.current = node;
+    setExplorerRootNode(node);
+  }, []);
   const bindExplorerFileAreaRef = useCallback((node: HTMLDivElement | null) => {
     explorerFileAreaRef.current = node;
     setExplorerFileAreaNode(node);
@@ -9636,6 +9598,38 @@ export function FileExplorer({
     explorerViewportRef.current = node;
     setExplorerViewportNode(node);
   }, []);
+  const publishLiveLayoutZoomState = useCallback(() => {
+    layoutZoomPublishFrameRef.current = null;
+    const nextState = liveLayoutZoomTargetStateRef.current;
+    publishedLayoutZoomStateRef.current = nextState;
+
+    applyExplorerLayoutZoomCssVariables(
+      mainRef.current,
+      nextState,
+      explorerTheme,
+      themedViewMode,
+    );
+
+    setLiveLayoutZoomState((current) =>
+      current.family === nextState.family &&
+      Math.abs(current.layoutZoom - nextState.layoutZoom) < 0.0001 &&
+      Math.abs(current.storedGridZoom - nextState.storedGridZoom) < 0.0001
+        ? current
+        : nextState,
+    );
+  }, [explorerTheme, themedViewMode]);
+  const scheduleLiveLayoutZoomPublish = useCallback(() => {
+    if (layoutZoomPublishFrameRef.current != null) {
+      return;
+    }
+    if (typeof window.requestAnimationFrame !== "function") {
+      publishLiveLayoutZoomState();
+      return;
+    }
+    layoutZoomPublishFrameRef.current = window.requestAnimationFrame(() => {
+      publishLiveLayoutZoomState();
+    });
+  }, [publishLiveLayoutZoomState]);
   const currentPathIsHome = isExplorerHomePath(currentPath);
   const currentArchiveVirtualLocation = useMemo(
     () => parseExplorerArchiveVirtualPath(currentPath),
@@ -9941,92 +9935,9 @@ export function FileExplorer({
     [clearExplorerInternalDragAutoScroll, stepExplorerInternalDragAutoScroll],
   );
 
-  const shouldHandleExplorerLayoutWheelEvent = useCallback(
-    (
-      event: Pick<
-        WheelEvent,
-        "target" | "ctrlKey" | "metaKey" | "deltaX" | "deltaY"
-      >,
-    ) => {
-      if (
-        isCompactDock ||
-        search.trim().length > 0 ||
-        !(event.ctrlKey || event.metaKey)
-      ) {
-        return false;
-      }
-      if (isEditableKeyboardTarget(event.target)) {
-        return false;
-      }
-      if (
-        Math.abs(event.deltaY) <= Math.abs(event.deltaX) ||
-        Math.abs(event.deltaY) < 6
-      ) {
-        return false;
-      }
-
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('[data-overlay-explorer-plane="preview"]')) {
-        return false;
-      }
-
-      return Boolean(
-        target?.closest(
-          '[data-overlay-explorer-plane="file-area"], [data-overlay-explorer-plane="content-viewport"], .overlay-scroll-area__viewport, .overlay-scroll-area__content',
-        ),
-      );
-    },
-    [isCompactDock, search],
-  );
-
   const resetExplorerViewport = useCallback(() => {
     setExplorerViewportScrollTop(0);
   }, [setExplorerViewportScrollTop]);
-
-  useEffect(() => {
-    // FPilot-style smoothness: the spring drives CSS variables every frame via
-    // direct DOM mutation, while React state only updates on family flips during
-    // an active gesture (rare, and required so columns/details/list child
-    // surfaces actually swap). Once the gesture commits, normal diff-based
-    // updates resume so the final React state stays accurate as the spring
-    // settles.
-    const unsubscribe = layoutZoomSpring.on("change", (nextValue) => {
-      const nextRenderedState = resolveExplorerLayoutZoomStateAtValue(
-        renderedLayoutZoomStateRef.current,
-        nextValue,
-      );
-      renderedLayoutZoomStateRef.current = nextRenderedState;
-
-      applyExplorerLayoutZoomCssVariables(
-        mainRef.current,
-        nextRenderedState,
-        explorerTheme,
-        themedViewMode,
-      );
-
-      setLiveLayoutZoomState((current) => {
-        if (current.family !== nextRenderedState.family) {
-          return nextRenderedState;
-        }
-        if (layoutZoomGestureActiveRef.current) {
-          // Within the same family during an active gesture, keep React state
-          // pinned to avoid 120Hz rerenders of the entire explorer tree.
-          return current;
-        }
-        if (
-          Math.abs(current.layoutZoom - nextRenderedState.layoutZoom) <
-            0.0001 &&
-          Math.abs(current.storedGridZoom - nextRenderedState.storedGridZoom) <
-            0.0001
-        ) {
-          return current;
-        }
-        return nextRenderedState;
-      });
-    });
-
-    return unsubscribe;
-  }, [explorerTheme, layoutZoomSpring, themedViewMode]);
 
   useEffect(() => {
     let disposed = false;
@@ -10325,18 +10236,26 @@ export function FileExplorer({
     }
 
     const handlePointerDown = (event: MouseEvent) => {
+      const targetNode = event.target as Node;
+      const targetElement =
+        event.target instanceof Element ? event.target : null;
+      if (explorerLayoutCommandMenuRef.current?.contains(targetNode)) {
+        return;
+      }
+      if (modeProfileMenuAnchorRef.current?.contains(targetNode)) {
+        return;
+      }
+      if (layoutMenuAnchorRef.current?.contains(targetNode)) {
+        return;
+      }
+      if (archiveActionsMenuAnchorRef.current?.contains(targetNode)) {
+        return;
+      }
       if (
-        explorerLayoutCommandMenuRef.current?.contains(event.target as Node)
+        targetElement?.closest(
+          '[data-overlay-explorer-floating-surface-group="explorer-menu"]',
+        )
       ) {
-        return;
-      }
-      if (modeProfileMenuAnchorRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      if (layoutMenuAnchorRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      if (archiveActionsMenuAnchorRef.current?.contains(event.target as Node)) {
         return;
       }
       setShowExplorerLayoutCommandMenu(false);
@@ -20341,7 +20260,13 @@ export function FileExplorer({
 
     const nextState = createExplorerLayoutZoomState(themedViewMode, gridZoom);
     liveLayoutZoomTargetStateRef.current = nextState;
-    renderedLayoutZoomStateRef.current = nextState;
+    publishedLayoutZoomStateRef.current = nextState;
+    applyExplorerLayoutZoomCssVariables(
+      mainRef.current,
+      nextState,
+      explorerTheme,
+      themedViewMode,
+    );
     setLiveLayoutZoomState((current) =>
       current.family === nextState.family &&
       Math.abs(current.layoutZoom - nextState.layoutZoom) < 0.0001 &&
@@ -20349,8 +20274,7 @@ export function FileExplorer({
         ? current
         : nextState,
     );
-    layoutZoomTarget.set(nextState.layoutZoom);
-  }, [gridZoom, layoutZoomTarget, themedViewMode]);
+  }, [explorerTheme, gridZoom, themedViewMode]);
   const resolvedLiveLayoutZoom = useMemo(
     () => resolveExplorerLayoutZoomState(liveLayoutZoomState),
     [liveLayoutZoomState],
@@ -20430,22 +20354,11 @@ export function FileExplorer({
         : effectiveViewModeDefinition.label,
     [effectiveExperimentalViewMode, effectiveViewModeDefinition.label],
   );
-  const activeGridIconMode = useMemo(
-    () =>
-      resolveExplorerGridIconModeForCommittedViewMode(
-        themedViewMode,
-        resolvedLiveLayoutZoom,
-      ),
-    [resolvedLiveLayoutZoom, themedViewMode],
-  );
   const activeGridMetrics = useMemo(
     () =>
       effectiveViewModeDefinition.presentation === "grid"
         ? applyExplorerThemeToGridMetrics(
-            getExplorerGridMetricsForZoom(
-              liveWheelGridZoom,
-              activeGridIconMode ? { iconMode: activeGridIconMode } : undefined,
-            ),
+            getExplorerGridMetricsForZoom(liveWheelGridZoom),
             explorerTheme,
           )
         : effectiveViewModeDefinition.grid
@@ -20455,7 +20368,6 @@ export function FileExplorer({
             )
           : effectiveViewModeDefinition.grid,
     [
-      activeGridIconMode,
       effectiveViewModeDefinition,
       explorerTheme,
       liveWheelGridZoom,
@@ -22536,23 +22448,21 @@ export function FileExplorer({
               </span>
               <MoreHorizontal size={12} />
             </button>
-            {showArchiveActionsMenu ? (
-              <div
-                role="menu"
-                aria-label="Archive actions menu"
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 8px)",
-                  right: 0,
-                  zIndex: 60,
-                  minWidth: 260,
-                  borderRadius: "var(--overlay-explorer-panel-radius)",
-                  border: "1px solid var(--overlay-explorer-toolbar-border)",
-                  background: "var(--overlay-explorer-toolbar-bg)",
-                  boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
-                  padding: 8,
-                }}
-              >
+            <ExplorerFloatingSurface
+              anchorRef={archiveActionsMenuAnchorRef}
+              open={showArchiveActionsMenu}
+              surfaceGroup="explorer-menu"
+              role="menu"
+              aria-label="Archive actions menu"
+              style={{
+                minWidth: 260,
+                borderRadius: "var(--overlay-explorer-panel-radius)",
+                border: "1px solid var(--overlay-explorer-toolbar-border)",
+                background: "var(--overlay-explorer-toolbar-bg)",
+                boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
+                padding: 8,
+              }}
+            >
                 <div
                   style={{
                     display: "grid",
@@ -22616,8 +22526,7 @@ export function FileExplorer({
                     Extract Folder + Trash Archive
                   </button>
                 </div>
-              </div>
-            ) : null}
+            </ExplorerFloatingSurface>
           </div>
         ),
       },
@@ -23468,23 +23377,21 @@ export function FileExplorer({
                 />
               </button>
             </div>
-            {showModeProfileMenu && (
-              <div
-                role="menu"
-                aria-label="Explorer layout menu"
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 8px)",
-                  right: 0,
-                  zIndex: 60,
-                  minWidth: 280,
-                  borderRadius: "var(--overlay-explorer-panel-radius)",
-                  border: "1px solid var(--overlay-explorer-toolbar-border)",
-                  background: "var(--overlay-explorer-toolbar-bg)",
-                  boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
-                  padding: 8,
-                }}
-              >
+            <ExplorerFloatingSurface
+              anchorRef={modeProfileMenuAnchorRef}
+              open={showModeProfileMenu}
+              surfaceGroup="explorer-menu"
+              role="menu"
+              aria-label="Explorer layout menu"
+              style={{
+                minWidth: 280,
+                borderRadius: "var(--overlay-explorer-panel-radius)",
+                border: "1px solid var(--overlay-explorer-toolbar-border)",
+                background: "var(--overlay-explorer-toolbar-bg)",
+                boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
+                padding: 8,
+              }}
+            >
                 {(
                   [
                     ["Shipped", explorerLayoutsBySource.shipped],
@@ -23676,8 +23583,7 @@ export function FileExplorer({
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
+            </ExplorerFloatingSurface>
           </div>
         ),
       },
@@ -23802,23 +23708,21 @@ export function FileExplorer({
                 </div>
               </div>
             )}
-            {showLayoutMenu && (
-              <div
-                role="menu"
-                aria-label="Explorer layout menu"
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 8px)",
-                  right: 0,
-                  zIndex: 40,
-                  minWidth: 240,
-                  borderRadius: "var(--overlay-explorer-panel-radius)",
-                  border: "1px solid var(--overlay-explorer-toolbar-border)",
-                  background: "var(--overlay-explorer-toolbar-bg)",
-                  boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
-                  padding: 8,
-                }}
-              >
+            <ExplorerFloatingSurface
+              anchorRef={layoutMenuAnchorRef}
+              open={showLayoutMenu}
+              surfaceGroup="explorer-menu"
+              role="menu"
+              aria-label="Explorer layout menu"
+              style={{
+                minWidth: 240,
+                borderRadius: "var(--overlay-explorer-panel-radius)",
+                border: "1px solid var(--overlay-explorer-toolbar-border)",
+                background: "var(--overlay-explorer-toolbar-bg)",
+                boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
+                padding: 8,
+              }}
+            >
                 <div
                   style={{ display: "flex", flexDirection: "column", gap: 2 }}
                 >
@@ -23923,8 +23827,7 @@ export function FileExplorer({
                   Ctrl/Cmd + wheel now zooms continuously through the icon grid
                   and drops into compact list mode at the smallest boundary.
                 </div>
-              </div>
-            )}
+            </ExplorerFloatingSurface>
           </div>
         ),
       },
@@ -25506,28 +25409,6 @@ export function FileExplorer({
     syncExplorerViewportSize,
   ]);
 
-  useLayoutEffect(() => {
-    const fileArea = explorerFileAreaNode;
-    if (!fileArea) {
-      return;
-    }
-
-    const handleNativeLayoutWheel = (event: WheelEvent) => {
-      if (!shouldHandleExplorerLayoutWheelEvent(event)) {
-        return;
-      }
-      event.preventDefault();
-    };
-
-    fileArea.addEventListener("wheel", handleNativeLayoutWheel, {
-      passive: false,
-    });
-
-    return () => {
-      fileArea.removeEventListener("wheel", handleNativeLayoutWheel);
-    };
-  }, [explorerFileAreaNode, shouldHandleExplorerLayoutWheelEvent]);
-
   const createLayoutZoomPointerAnchor = useCallback(
     (event: Pick<WheelEvent, "clientX" | "clientY">) => {
       const viewport = explorerViewportRef.current;
@@ -25700,61 +25581,103 @@ export function FileExplorer({
 
     applyLayoutZoomPointerAnchor(liveLayoutZoomState);
   }, [applyLayoutZoomPointerAnchor, liveLayoutZoomState]);
+  const getExplorerZoomGestureViewportHeight = useCallback(
+    () =>
+      explorerViewportRef.current?.clientHeight ??
+      explorerFileAreaRef.current?.clientHeight ??
+      explorerRootRef.current?.clientHeight ??
+      0,
+    [],
+  );
+  const { registerZoomController } = useExplorerZoomGestureRouter({
+    scopeNode: explorerFileAreaNode ?? explorerRootNode,
+    hotkeyBinding: keybindings.zoomAdjust,
+    getViewportHeight: getExplorerZoomGestureViewportHeight,
+  });
+  const commitExplorerLayoutZoomGesture = useCallback(() => {
+    const committedState = liveLayoutZoomTargetStateRef.current;
+    const nextCommit = commitExplorerLayoutZoomState(committedState);
+    const frameDurations = [...layoutZoomFrameSampleRef.current];
+    if (frameDurations.length > 0) {
+      const sortedDurations = [...frameDurations].sort(
+        (left, right) => left - right,
+      );
+      const p95Index = Math.min(
+        sortedDurations.length - 1,
+        Math.max(0, Math.ceil(sortedDurations.length * 0.95) - 1),
+      );
+      recordExplorerPerformanceSample({
+        metricId: "explorer_layout_zoom",
+        durationMs:
+          sortedDurations[p95Index] ??
+          sortedDurations[sortedDurations.length - 1] ??
+          0,
+        metadata: {
+          frameCount: frameDurations.length,
+          family: committedState.family,
+          targetViewMode: nextCommit.viewMode,
+          worstFrameMs: sortedDurations[sortedDurations.length - 1] ?? 0,
+        },
+      });
+    }
 
-  const handleExplorerLayoutWheel = useCallback(
-    (event: WheelEvent) => {
-      if (!shouldHandleExplorerLayoutWheelEvent(event)) {
-        return;
+    layoutZoomGestureActiveRef.current = false;
+    setLayoutZoomGestureActive(false);
+    layoutZoomPointerAnchorRef.current = null;
+    layoutZoomCommitTimerRef.current = null;
+
+    if (committedState.family === "list" || committedState.family === "table") {
+      updateExplorerSettings({ viewMode: nextCommit.viewMode });
+      return;
+    }
+
+    updateExplorerSettings({
+      viewMode: nextCommit.viewMode,
+      gridZoom: nextCommit.gridZoom ?? committedState.storedGridZoom,
+    });
+  }, [updateExplorerSettings]);
+  const shouldHandleStandardExplorerLayoutZoomGesture = useCallback(
+    (gesture: ExplorerZoomGesture) => {
+      if (
+        effectiveExperimentalViewMode !== "off" ||
+        isCompactDock ||
+        isSearchActive
+      ) {
+        return false;
       }
-
-      event.preventDefault();
-      event.stopPropagation();
-      const direction = event.deltaY < 0 ? "larger" : "smaller";
-
-      if (effectiveExperimentalViewMode !== "off") {
-        let nextDensity = experimentalDensity;
-        for (let stepIndex = 0; stepIndex < 1; stepIndex += 1) {
-          const steppedDensity = stepAdaptiveSemanticDensity(
-            nextDensity,
-            direction,
-          );
-          if (steppedDensity === nextDensity) {
-            break;
-          }
-          nextDensity = steppedDensity;
-        }
-
-        if (nextDensity !== experimentalDensity) {
-          updateExplorerSettings({ experimentalDensity: nextDensity });
-          showExperimentalHud();
-        }
-        return;
+      if (isEditableKeyboardTarget(gesture.target)) {
+        return false;
       }
-
-      const normalizedDeltaY = getNormalizedExplorerLayoutWheelDelta(
-        event,
-        explorerViewportRef.current?.clientHeight ?? 0,
+      if (isExplorerZoomGestureInsidePreviewSurface(gesture.target)) {
+        return false;
+      }
+      if (!isExplorerZoomGestureOnPrimarySurface(gesture.target)) {
+        return false;
+      }
+      if (!isExplorerZoomGestureVerticalDominant(gesture)) {
+        return false;
+      }
+      return isExplorerZoomGestureMeaningful(gesture);
+    },
+    [effectiveExperimentalViewMode, isCompactDock, isSearchActive],
+  );
+  const applyStandardExplorerLayoutWheelZoom = useCallback(
+    (gesture: ExplorerZoomGesture) => {
+      const rawDelta = resolveExplorerLayoutZoomWheelDelta(
+        gesture.rawEvent,
+        getExplorerZoomGestureViewportHeight(),
       );
-      const normalizedRawDelta = Math.max(
-        -EXPLORER_LAYOUT_WHEEL_MAX_DELTA,
-        Math.min(
-          EXPLORER_LAYOUT_WHEEL_MAX_DELTA,
-          -normalizedDeltaY * EXPLORER_LAYOUT_WHEEL_ZOOM_SENSITIVITY,
-        ),
-      );
-      const rawDelta = adjustExplorerLayoutWheelDeltaForRange(
-        liveLayoutZoomTargetStateRef.current.layoutZoom,
-        normalizedRawDelta,
-      );
-      if (Math.abs(rawDelta) < 0.0005) {
-        return;
+      if (rawDelta === 0) {
+        return true;
       }
 
       layoutZoomPointerAnchorRef.current = createLayoutZoomPointerAnchor(
-        event,
+        gesture.rawEvent,
       );
-      layoutZoomGestureActiveRef.current = true;
-      setLayoutZoomGestureActive(true);
+      if (!layoutZoomGestureActiveRef.current) {
+        layoutZoomGestureActiveRef.current = true;
+        setLayoutZoomGestureActive(true);
+      }
 
       const nextState = resolveExplorerLayoutZoomStateAtValue(
         liveLayoutZoomTargetStateRef.current,
@@ -25767,90 +25690,179 @@ export function FileExplorer({
         ),
       );
       liveLayoutZoomTargetStateRef.current = nextState;
-      layoutZoomTarget.set(nextState.layoutZoom);
+      scheduleLiveLayoutZoomPublish();
       showZoomHud();
 
       if (layoutZoomCommitTimerRef.current != null) {
         window.clearTimeout(layoutZoomCommitTimerRef.current);
       }
       layoutZoomCommitTimerRef.current = window.setTimeout(() => {
-        const committedState = liveLayoutZoomTargetStateRef.current;
-        const nextCommit = commitExplorerLayoutZoomState(committedState);
-        const frameDurations = [...layoutZoomFrameSampleRef.current];
-        if (frameDurations.length > 0) {
-          const sortedDurations = [...frameDurations].sort(
-            (left, right) => left - right,
-          );
-          const p95Index = Math.min(
-            sortedDurations.length - 1,
-            Math.max(0, Math.ceil(sortedDurations.length * 0.95) - 1),
-          );
-          recordExplorerPerformanceSample({
-            metricId: "explorer_layout_zoom",
-            durationMs:
-              sortedDurations[p95Index] ??
-              sortedDurations[sortedDurations.length - 1] ??
-              0,
-            metadata: {
-              frameCount: frameDurations.length,
-              family: committedState.family,
-              targetViewMode: nextCommit.viewMode,
-              worstFrameMs: sortedDurations[sortedDurations.length - 1] ?? 0,
-            },
-          });
-        }
-
-        layoutZoomGestureActiveRef.current = false;
-        setLayoutZoomGestureActive(false);
-        layoutZoomPointerAnchorRef.current = null;
-        layoutZoomCommitTimerRef.current = null;
-
-        if (committedState.family === "list" || committedState.family === "table") {
-          updateExplorerSettings({ viewMode: nextCommit.viewMode });
-        } else {
-          updateExplorerSettings({
-            viewMode: nextCommit.viewMode,
-            gridZoom:
-              nextCommit.gridZoom ??
-              liveLayoutZoomTargetStateRef.current.storedGridZoom,
-          });
-        }
+        commitExplorerLayoutZoomGesture();
       }, EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS);
+      return true;
     },
     [
+      commitExplorerLayoutZoomGesture,
       createLayoutZoomPointerAnchor,
-      effectiveExperimentalViewMode,
-      experimentalDensity,
-      showExperimentalHud,
+      getExplorerZoomGestureViewportHeight,
+      scheduleLiveLayoutZoomPublish,
       showZoomHud,
-      shouldHandleExplorerLayoutWheelEvent,
-      updateExplorerSettings,
     ],
   );
+  const shouldHandleExperimentalExplorerZoomGesture = useCallback(
+    (gesture: ExplorerZoomGesture) => {
+      if (
+        effectiveExperimentalViewMode === "off" ||
+        effectiveExperimentalViewMode === "constellation"
+      ) {
+        return false;
+      }
+      if (isEditableKeyboardTarget(gesture.target)) {
+        return false;
+      }
+      if (isExplorerZoomGestureInsidePreviewSurface(gesture.target)) {
+        return false;
+      }
+      if (!isExplorerZoomGestureOnPrimarySurface(gesture.target)) {
+        return false;
+      }
+      if (!isExplorerZoomGestureVerticalDominant(gesture)) {
+        return false;
+      }
+      return isExplorerZoomGestureMeaningful(gesture);
+    },
+    [effectiveExperimentalViewMode],
+  );
+  const applyExperimentalExplorerWheelZoom = useCallback(
+    (gesture: ExplorerZoomGesture) => {
+      const direction =
+        gesture.normalizedDeltaY < 0 ? "larger" : "smaller";
+      const nextDensity = stepAdaptiveSemanticDensity(
+        experimentalDensity,
+        direction,
+      );
+      if (nextDensity !== experimentalDensity) {
+        updateExplorerSettings({ experimentalDensity: nextDensity });
+      }
+      showExperimentalHud();
+      return true;
+    },
+    [experimentalDensity, showExperimentalHud, updateExplorerSettings],
+  );
+  const shouldHandleConstellationExplorerZoomGesture = useCallback(
+    (gesture: ExplorerZoomGesture) => {
+      if (
+        effectiveExperimentalViewMode !== "constellation" ||
+        !constellationFieldLayout
+      ) {
+        return false;
+      }
+      if (isEditableKeyboardTarget(gesture.target)) {
+        return false;
+      }
+      if (isExplorerZoomGestureInsideConstellationUi(gesture.target)) {
+        return false;
+      }
+      if (!isExplorerZoomGestureInsideConstellationSurface(gesture.target)) {
+        return false;
+      }
+      if (!isExplorerZoomGestureVerticalDominant(gesture)) {
+        return false;
+      }
+      return isExplorerZoomGestureMeaningful(gesture, 2);
+    },
+    [constellationFieldLayout, effectiveExperimentalViewMode],
+  );
+  const applyConstellationExplorerWheelZoom = useCallback(
+    (gesture: ExplorerZoomGesture) => {
+      if (!constellationFieldLayout) {
+        return false;
+      }
+      const metrics = getConstellationViewportMetrics();
+      const rect = constellationViewportRef.current?.getBoundingClientRect();
+      if (!metrics || !rect) {
+        return false;
+      }
 
-  // React's onWheel is passive in React 17+, which makes event.preventDefault()
-  // a silent no-op — the result is that ctrl+wheel zoom and the underlying
-  // viewport scroll fire simultaneously, causing the scrollbar/layout to drift
-  // while zooming. Attach a native non-passive listener in the capture phase so
-  // preventDefault genuinely cancels the default scroll, locking the scroll
-  // position for the duration of the zoom gesture.
-  useLayoutEffect(() => {
-    const node = explorerFileAreaNode;
-    if (!node) {
-      return;
-    }
-    const listener: EventListener = (event) => {
-      handleExplorerLayoutWheel(event as WheelEvent);
-    };
-    const options: AddEventListenerOptions = {
-      passive: false,
-      capture: true,
-    };
-    node.addEventListener("wheel", listener, options);
-    return () => {
-      node.removeEventListener("wheel", listener, options);
-    };
-  }, [explorerFileAreaNode, handleExplorerLayoutWheel]);
+      constellationCameraUserOwnedRef.current = true;
+      const focalPoint = {
+        x:
+          rect.width > 0
+            ? gesture.clientX - rect.left
+            : metrics.viewportWidth / 2,
+        y:
+          rect.height > 0
+            ? gesture.clientY - rect.top
+            : metrics.viewportHeight / 2,
+      };
+      setConstellationCamera((current) => {
+        const nextZoom = getConstellationWheelZoom(
+          current.zoom,
+          gesture.normalizedDeltaY,
+        );
+        if (Math.abs(nextZoom - current.zoom) < 0.0001) {
+          return current;
+        }
+        return zoomConstellationCameraAtViewportPoint(
+          current,
+          nextZoom,
+          focalPoint,
+          metrics,
+          constellationFieldLayout,
+        );
+      });
+      return true;
+    },
+    [constellationFieldLayout, getConstellationViewportMetrics],
+  );
+  const standardExplorerZoomController = useMemo<ExplorerZoomController>(
+    () => ({
+      id: "file-layout",
+      priority: 10,
+      canHandleZoomGesture: shouldHandleStandardExplorerLayoutZoomGesture,
+      applyWheelZoom: applyStandardExplorerLayoutWheelZoom,
+    }),
+    [
+      applyStandardExplorerLayoutWheelZoom,
+      shouldHandleStandardExplorerLayoutZoomGesture,
+    ],
+  );
+  const experimentalExplorerZoomController = useMemo<ExplorerZoomController>(
+    () => ({
+      id: "experimental-density",
+      priority: 20,
+      canHandleZoomGesture: shouldHandleExperimentalExplorerZoomGesture,
+      applyWheelZoom: applyExperimentalExplorerWheelZoom,
+    }),
+    [
+      applyExperimentalExplorerWheelZoom,
+      shouldHandleExperimentalExplorerZoomGesture,
+    ],
+  );
+  const constellationExplorerZoomController = useMemo<ExplorerZoomController>(
+    () => ({
+      id: "constellation-camera",
+      priority: 30,
+      canHandleZoomGesture: shouldHandleConstellationExplorerZoomGesture,
+      applyWheelZoom: applyConstellationExplorerWheelZoom,
+    }),
+    [
+      applyConstellationExplorerWheelZoom,
+      shouldHandleConstellationExplorerZoomGesture,
+    ],
+  );
+  useEffect(() => {
+    const unregister = registerZoomController(standardExplorerZoomController);
+    return unregister;
+  }, [registerZoomController, standardExplorerZoomController]);
+  useEffect(() => {
+    const unregister = registerZoomController(experimentalExplorerZoomController);
+    return unregister;
+  }, [experimentalExplorerZoomController, registerZoomController]);
+  useEffect(() => {
+    const unregister = registerZoomController(constellationExplorerZoomController);
+    return unregister;
+  }, [constellationExplorerZoomController, registerZoomController]);
 
   useEffect(() => {
     if (explorerPicker) {
@@ -26404,9 +26416,8 @@ export function FileExplorer({
         isSel,
         isDragHoverTarget,
       );
-      const rowThumbnailStageSize = Math.max(
-        (activeRowMetrics.iconSize ?? 16) + 12,
-        28,
+      const rowThumbnailStageSize = resolveExplorerRowThumbnailStageSize(
+        activeRowMetrics.iconSize ?? 16,
       );
       const thumbnail = getRenderableEntryThumbnail(entry, rowThumbnailStageSize);
       const iconStagePresentation = getExplorerEntryIconStageStyle(
@@ -26664,9 +26675,8 @@ export function FileExplorer({
         isSel,
         isDragHoverTarget,
       );
-      const rowThumbnailStageSize = Math.max(
-        (activeRowMetrics.iconSize ?? 16) + 12,
-        28,
+      const rowThumbnailStageSize = resolveExplorerRowThumbnailStageSize(
+        activeRowMetrics.iconSize ?? 16,
       );
       const thumbnail = getRenderableEntryThumbnail(entry, rowThumbnailStageSize);
       const iconStagePresentation = getExplorerEntryIconStageStyle(
@@ -30589,8 +30599,9 @@ export function FileExplorer({
 
   return (
     <div
-      ref={explorerRootRef}
+      ref={bindExplorerRootRef}
       data-overlay-explorer
+      data-explorer-zoom-scope="true"
       data-overlay-explorer-view-mode={effectiveViewMode}
       data-overlay-explorer-experimental-mode={effectiveExperimentalViewMode}
       {...getExplorerDropBindingElementProps(explorerScopeDropBinding)}

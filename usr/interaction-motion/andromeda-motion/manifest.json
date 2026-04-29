@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "andromeda-motion",
+  "name": "Andromeda Motion",
+  "description": "Gentle lift and glide tuned for a floating observatory shell.",
+  "author": "Codex",
+  "tags": [
+    "space",
+    "motion",
+    "reference"
+  ]
+}

@@ -1047,32 +1047,24 @@ export function resolveExplorerThemeRecipe(
     '--overlay-explorer-rail-title-size': formatLength(typography.railTitleSize),
     '--overlay-explorer-entry-title-weight': String(Math.round(typography.entryTitleWeight)),
     '--overlay-explorer-label-spacing': typography.labelLetterSpacing,
-    // ── Semantic surface tokens used inside FileExplorer ────────────────────
-    // Modal/dialog scrim backdrop
-    '--overlay-explorer-modal-scrim': 'rgba(0,0,0,0.72)',
-    // Floating modal card surface
-    '--overlay-explorer-modal-surface': 'rgba(15,18,24,0.94)',
-    // Modal card drop shadow
-    '--overlay-explorer-modal-shadow': '0 24px 64px rgba(0,0,0,0.9)',
-    // Dark code/editor pane background (Monaco fallback, EditorFallback component)
-    '--overlay-explorer-code-bg': '#0f131a',
-    // Drag preview chip: background, text border, accent dot
-    '--overlay-explorer-drag-preview-bg': 'rgba(18,18,24,0.96)',
-    '--overlay-explorer-drag-preview-border': 'rgba(255,255,255,0.14)',
-    '--overlay-explorer-drag-preview-dot': '#5aa2ff',
-    // Danger-soft: used for destructive banners/borders in dialogs
-    '--overlay-explorer-danger-soft-bg': 'rgba(248,113,113,0.12)',
-    '--overlay-explorer-danger-soft-border': 'rgba(248,113,113,0.28)',
-    '--overlay-explorer-danger-text': 'rgba(248,113,113,0.95)',
-    // Context menu drop shadow
-    '--overlay-explorer-ctx-menu-shadow': '0 16px 48px rgba(0,0,0,0.8)',
-    // Floating popup / mode-switcher surface
-    '--overlay-explorer-popup-bg': 'rgba(15,18,24,0.94)',
-    '--overlay-explorer-popup-shadow': '0 12px 30px rgba(0,0,0,0.32)',
-    '--overlay-explorer-popup-item-hover-bg': 'rgba(255,255,255,0.08)',
-    '--overlay-explorer-popup-shadow-lg': '0 18px 42px rgba(0,0,0,0.42)',
-    // Jump filter HUD shadow
-    '--overlay-explorer-hud-shadow': '0 14px 36px rgba(0,0,0,0.35)',
+    '--overlay-explorer-modal-scrim': 'var(--overlay-bg-scrim)',
+    '--overlay-explorer-modal-surface': 'var(--overlay-bg-panel)',
+    '--overlay-explorer-modal-shadow': 'var(--overlay-shadow)',
+    '--overlay-explorer-code-bg': 'var(--overlay-bg-terminal)',
+    '--overlay-explorer-drag-preview-bg': 'var(--overlay-bg-card)',
+    '--overlay-explorer-drag-preview-border': 'var(--overlay-border)',
+    '--overlay-explorer-drag-preview-dot': 'var(--overlay-accent)',
+    '--overlay-explorer-danger-soft-bg': 'color-mix(in srgb, var(--overlay-danger) 14%, transparent)',
+    '--overlay-explorer-danger-soft-border': 'color-mix(in srgb, var(--overlay-danger) 34%, var(--overlay-border))',
+    '--overlay-explorer-danger-text': 'var(--overlay-danger)',
+    '--overlay-explorer-ctx-menu-shadow': 'var(--overlay-shadow)',
+    '--overlay-explorer-popup-bg': 'var(--overlay-bg-menu)',
+    '--overlay-explorer-popup-shadow': 'var(--overlay-shadow)',
+    '--overlay-explorer-popup-item-hover-bg': 'var(--overlay-bg-card-hover)',
+    '--overlay-explorer-popup-shadow-lg': 'var(--overlay-shadow)',
+    '--overlay-explorer-hud-shadow': 'var(--overlay-shadow)',
+    '--overlay-explorer-floating-menu-layer': '9997',
+    '--overlay-explorer-floating-context-layer': '9998',
     ...(userRecipe?.cssVars ?? {}),
   };
 

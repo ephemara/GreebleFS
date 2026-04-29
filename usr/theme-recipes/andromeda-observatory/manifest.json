@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "andromeda-observatory",
+  "name": "Andromeda Observatory Recipe",
+  "description": "Minimal observatory chrome tuned for the shell, explorer, and mobile share surface.",
+  "author": "Codex",
+  "tags": [
+    "space",
+    "glass",
+    "reference"
+  ]
+}

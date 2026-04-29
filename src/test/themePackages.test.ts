@@ -8,7 +8,13 @@ import {
 import {
   createInlineThemeAppearancePack,
   createInlineThemeEnginePack,
+  loadThemeAppearancePacksFromDirectoryEntries,
+  loadThemeEnginePacksFromDirectoryEntries,
+  loadThemeInteractionMotionPacksFromDirectoryEntries,
+  loadThemeRecipePacksFromDirectoryEntries,
 } from '../config/themeBundlePacks';
+import { resolveOverlayAppearance } from '../config/appearance';
+import { createMobileShareThemeSnapshot } from '../config/mobileTheme';
 
 interface FileEntry {
   name: string;
@@ -455,6 +461,241 @@ describe('theme bundle loader', () => {
     expect(result.animations[0]?.name).toBe('Package Open');
   });
 
+  it('composes flat /usr appearance, motion, recipe, and engine packs into desktop and mobile CSS variables', async () => {
+    const textFiles: Record<string, string> = {
+      'themes/token-lab/theme.json': JSON.stringify({
+        version: 1,
+        id: 'token-lab',
+        name: 'Token Lab',
+        extends: 'github-dark',
+        themeEngineId: 'token-engine',
+      }),
+      'usr/appearance-packs/token-appearance/manifest.json': JSON.stringify({
+        version: 1,
+        id: 'token-appearance',
+        name: 'Token Appearance',
+        extendsThemeId: 'github-dark',
+      }),
+      'usr/appearance-packs/token-appearance/tokens/color.json': JSON.stringify({
+        palette: {
+          accent: '#123456',
+          panelBackground: 'rgba(10,20,30,0.9)',
+        },
+        tokens: {
+          accent: '#123456',
+          modalScrim: 'rgba(0,0,0,0.6)',
+        },
+      }),
+      'usr/appearance-packs/token-appearance/tokens/typography.json': JSON.stringify({
+        fonts: {
+          ui: 'Token UI',
+          mono: 'Token Mono',
+        },
+      }),
+      'usr/appearance-packs/token-appearance/tokens/spacing.json': JSON.stringify({
+        panelGap: 15,
+      }),
+      'usr/appearance-packs/token-appearance/tokens/radius.json': JSON.stringify({
+        panelRadius: 21,
+      }),
+      'usr/appearance-packs/token-appearance/tokens/border.json': JSON.stringify({
+        accentBorder: 'rgba(18,52,86,0.4)',
+      }),
+      'usr/appearance-packs/token-appearance/tokens/shadow.json': JSON.stringify({
+        effects: {
+          shadow: '0 2px 8px rgba(0,0,0,0.4)',
+          overlayShadow: '0 6px 22px rgba(0,0,0,0.4)',
+        },
+      }),
+      'usr/appearance-packs/token-appearance/tokens/opacity.json': JSON.stringify({
+        surfaceOpacity: 0.9,
+      }),
+      'usr/appearance-packs/token-appearance/tokens/blur.json': JSON.stringify({
+        backdropBlur: 'blur(8px)',
+      }),
+      'usr/appearance-packs/token-appearance/tokens/geometry.json': JSON.stringify({
+        railWidth: 244,
+      }),
+      'usr/appearance-packs/token-appearance/tokens/layer.json': JSON.stringify({
+        modal: 80,
+      }),
+      'usr/interaction-motion/token-motion/manifest.json': JSON.stringify({
+        version: 1,
+        id: 'token-motion',
+        name: 'Token Motion',
+      }),
+      'usr/interaction-motion/token-motion/tokens/motion.json': JSON.stringify({
+        defaultDurationMs: 180,
+      }),
+      'usr/interaction-motion/token-motion/tokens/interaction.json': JSON.stringify({
+        interactionMotion: {
+          defaultPresetId: 'snappy',
+        },
+        tokens: {
+          touchTarget: 50,
+        },
+      }),
+      'usr/theme-recipes/token-recipe/manifest.json': JSON.stringify({
+        version: 1,
+        id: 'token-recipe',
+        name: 'Token Recipe',
+      }),
+      'usr/theme-recipes/token-recipe/presentation.json': JSON.stringify({
+        chromeStyle: 'system',
+        panelSpacing: 15,
+      }),
+      'usr/theme-recipes/token-recipe/layout.json': JSON.stringify({
+        layoutPrimitives: [
+          {
+            id: 'token-layout',
+            name: 'Token Layout',
+            kind: 'dock',
+            props: {
+              gap: 15,
+            },
+          },
+        ],
+        defaultLayoutPrimitiveId: 'token-layout',
+      }),
+      'usr/theme-recipes/token-recipe/navigation.json': JSON.stringify({
+        navigationPatterns: [
+          {
+            id: 'token-nav',
+            name: 'Token Nav',
+            kind: 'tabbed',
+            axis: 'horizontal',
+            props: {
+              wrap: true,
+            },
+          },
+        ],
+        defaultNavigationPatternId: 'token-nav',
+      }),
+      'usr/theme-recipes/token-recipe/render.json': JSON.stringify({
+        renderStyles: [
+          {
+            id: 'token-render',
+            label: 'Token Render',
+            kind: 'vs-code-workbench',
+            entryModule: 'renderers/token.tsx',
+            supportsLiveSwap: true,
+          },
+        ],
+        defaultRenderStyleId: 'token-render',
+      }),
+      'usr/theme-recipes/token-recipe/workbench.json': JSON.stringify({
+        metrics: {
+          chromeHeight: 44,
+          panelGap: 15,
+          panelRadius: 21,
+        },
+      }),
+      'usr/theme-recipes/token-recipe/explorer.json': JSON.stringify({
+        metrics: {
+          railWidth: 244,
+          previewWidth: 388,
+        },
+        cssVars: {
+          '--overlay-explorer-modal-scrim': 'rgba(0,0,0,0.6)',
+        },
+      }),
+      'usr/theme-recipes/token-recipe/mobile.json': JSON.stringify({
+        metrics: {
+          pagePadding: 19,
+          touchTarget: 57,
+        },
+        cssVars: {
+          '--mobile-token-proof': 'yes',
+        },
+      }),
+      'usr/theme-engines/token-engine/theme-engine.json': JSON.stringify({
+        version: 1,
+        id: 'token-engine',
+        name: 'Token Engine',
+        appearancePackId: 'token-appearance',
+        interactionMotionPackId: 'token-motion',
+        themeRecipeId: 'token-recipe',
+      }),
+    };
+
+    mockFilesystem({
+      directories: {
+        'themes/token-lab': [],
+      },
+      textFiles,
+    });
+
+    const loadResolvedPackage = async () => {
+      const appearanceResult = await loadThemeAppearancePacksFromDirectoryEntries([
+        createDirectoryEntry('usr/appearance-packs/token-appearance'),
+      ]);
+      const interactionMotionResult = await loadThemeInteractionMotionPacksFromDirectoryEntries([
+        createDirectoryEntry('usr/interaction-motion/token-motion'),
+      ]);
+      const themeRecipeResult = await loadThemeRecipePacksFromDirectoryEntries([
+        createDirectoryEntry('usr/theme-recipes/token-recipe'),
+      ]);
+      const themeEngineResult = await loadThemeEnginePacksFromDirectoryEntries([
+        createDirectoryEntry('usr/theme-engines/token-engine'),
+      ]);
+
+      const result = await loadThemePackagesFromDirectoryEntries([
+        { name: 'token-lab', path: 'themes/token-lab' },
+      ], 'themes', {
+        dependencyCatalogs: {
+          ...createEmptyGlobalThemeBundleCatalogs(),
+          appearancePacks: appearanceResult.packs,
+          interactionMotionPacks: interactionMotionResult.packs,
+          themeRecipePacks: themeRecipeResult.packs,
+          themeEnginePacks: themeEngineResult.packs,
+        },
+      });
+
+      return result.packages[0]?.theme;
+    };
+
+    const firstTheme = await loadResolvedPackage();
+    if (!firstTheme) {
+      throw new Error('Expected token-lab theme');
+    }
+
+    expect(firstTheme.palette.accent).toBe('#123456');
+    expect(firstTheme.fonts?.ui).toBe('Token UI');
+    expect(firstTheme.presentation?.chromeStyle).toBe('system');
+    expect(firstTheme.engineManifest?.defaultLayoutPrimitiveId).toBe('token-layout');
+    expect(firstTheme.compiledEngineManifest?.defaultRenderStyle?.id).toBe('token-render');
+    expect(firstTheme.compiledEngineManifest?.manifest.designTokens.map(token => token.kind)).toEqual(
+      expect.arrayContaining(['color', 'border', 'opacity', 'blur', 'geometry', 'layer', 'motion', 'interaction']),
+    );
+    expect(firstTheme.cssVars?.['--gfs-ui-color-accent']).toBe('#123456');
+    expect(firstTheme.interactionMotion?.defaultPresetId).toBe('snappy');
+
+    const appearance = resolveOverlayAppearance({
+      activeThemeId: 'token-lab',
+      packageThemes: [firstTheme],
+    });
+    expect(appearance.cssVars['--overlay-workbench-chrome-height']).toBe('44px');
+    expect(appearance.explorerTheme.cssVars['--overlay-explorer-rail-width']).toBe('244px');
+    expect(appearance.explorerTheme.cssVars['--overlay-explorer-modal-scrim']).toBe('rgba(0,0,0,0.6)');
+
+    const mobileSnapshot = createMobileShareThemeSnapshot(appearance);
+    expect(mobileSnapshot.metrics.pagePadding).toBe(19);
+    expect(mobileSnapshot.metrics.touchTarget).toBe(57);
+    expect(mobileSnapshot.cssVars['--mobile-token-proof']).toBe('yes');
+
+    textFiles['usr/appearance-packs/token-appearance/tokens/color.json'] = JSON.stringify({
+      palette: {
+        accent: '#abcdef',
+      },
+      tokens: {
+        accent: '#abcdef',
+      },
+    });
+    const secondTheme = await loadResolvedPackage();
+    expect(secondTheme?.palette.accent).toBe('#abcdef');
+    expect(secondTheme?.cssVars?.['--gfs-ui-color-accent']).toBe('#abcdef');
+  });
+
   it('keeps healthy bundles when a sibling bundle has invalid runtime contributions', async () => {
     const directories: Record<string, FileEntry[]> = {
       'themes/good': [],
@@ -682,7 +923,7 @@ describe('theme bundle loader', () => {
     expect(materialPackage?.sourceKind).toBe('vscode-theme-vsix');
     expect(materialPackage?.sourceInfo?.source).toBe('vsix');
     expect(materialPackage?.sourceInfo?.cachedExtractionPath).toBe('/cache/material-night');
-    expect(materialPackage?.manifestPath).toBe('/cache/material-night/extension/themes/material-night.json');
+    expect(normalizePath(materialPackage?.manifestPath)).toBe('/cache/material-night/extension/themes/material-night.json');
     expect(materialPackage?.theme.assets?.monacoTheme?.baseTheme).toBe('vs-dark');
     expect(materialPackage?.theme.palette.sidebarBackground).toBe('#252526');
   });

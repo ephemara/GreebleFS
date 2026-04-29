@@ -14,14 +14,14 @@
   ],
   "extends": "github-dark",
   "preview": "wallpapers/andromeda-halo.svg",
-  "appearancePackId": "appearance-core",
+  "appearancePackId": "andromeda-appearance",
   "topBarId": "stellar-bridge",
   "iconThemeId": "andromeda-icons",
   "wallpaperId": "andromeda-halo",
   "shaderId": "andromeda-drift",
   "openAnimationId": "andromeda-gate",
   "closeAnimationId": "andromeda-gate",
-  "interactionMotionPackId": "motion-core",
-  "themeRecipeId": "recipe-core",
-  "themeEngineId": "engine-core"
+  "interactionMotionPackId": "andromeda-motion",
+  "themeRecipeId": "andromeda-observatory",
+  "themeEngineId": "andromeda-engine"
 }

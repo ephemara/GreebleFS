@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { ExplorerRuntimeMenuNode } from './explorerMenuRuntime';
 
@@ -448,15 +449,17 @@ export function ExplorerContextMenu({
     }
   };
 
-  return (
+  return createPortal(
     <div
       ref={rootRef}
       tabIndex={-1}
+      data-overlay-explorer-floating-surface="true"
+      data-overlay-explorer-floating-surface-group="explorer-context-menu"
       onKeyDown={handleKeyDown}
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 9999,
+        zIndex: 'var(--overlay-explorer-floating-context-layer, 9998)',
         outline: 'none',
       }}
     >
@@ -479,6 +482,7 @@ export function ExplorerContextMenu({
         onClose={onClose}
         anchorRectsByNodeId={anchorRectsByNodeIdRef.current}
       />
-    </div>
+    </div>,
+    document.body,
   );
 }

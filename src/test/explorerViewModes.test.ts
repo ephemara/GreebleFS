@@ -43,7 +43,10 @@ describe('explorerViewModes', () => {
     const metrics = getExplorerGridMetricsForZoom(0.25);
     expect(layoutMetrics.minWidth).toBeGreaterThan(94);
     expect(layoutMetrics.minWidth).toBeLessThan(122);
-    expect(metrics.iconSize).toBe(
+    expect(metrics.iconSize).toBeGreaterThan(
+      getExplorerGridIconMetricsForMode('icons-s').iconSize,
+    );
+    expect(metrics.iconSize).toBeLessThan(
       getExplorerGridIconMetricsForMode('icons-m').iconSize,
     );
   });
@@ -53,8 +56,11 @@ describe('explorerViewModes', () => {
     const oversizedLayoutMetrics = getExplorerGridLayoutMetricsForZoom(2.8);
 
     expect(oversizedLayoutMetrics.minWidth).toBeGreaterThan(560);
-    expect(oversizedMetrics.iconStageSize).toBe(
+    expect(oversizedMetrics.iconStageSize).toBeGreaterThan(
       getExplorerGridIconMetricsForMode('icons-xl').iconStageSize,
+    );
+    expect(oversizedMetrics.iconSize).toBeGreaterThan(
+      getExplorerGridIconMetricsForMode('icons-xl').iconSize,
     );
     expect(oversizedLayoutMetrics.nameLines).toBe(4);
     expect(commitExplorerLayoutZoomState({
@@ -104,10 +110,10 @@ describe('explorerViewModes', () => {
     expect(tableState.family).toBe('table');
     expect(resolveExplorerLayoutZoomState(tableState)).toMatchObject({
       family: 'table',
-      viewMode: 'columns',
+      viewMode: 'details',
       zoomPercent: null,
     });
-    const listState = adjustExplorerLayoutZoomState(tableState, -0.12);
+    const listState = adjustExplorerLayoutZoomState(tableState, -0.24);
     expect(listState.family).toBe('list');
     expect(commitExplorerLayoutZoomState(listState)).toEqual({ viewMode: 'list' });
   });

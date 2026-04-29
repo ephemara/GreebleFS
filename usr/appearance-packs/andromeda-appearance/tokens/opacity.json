@@ -1,0 +1,9 @@
+{
+  "shellLuster": 0.76,
+  "starOpacity": 0.42,
+  "scanlineOpacity": 0.04,
+  "noiseOpacity": 0.025,
+  "vignetteOpacity": 0.16,
+  "glowOpacity": 0.14,
+  "tintOpacity": 0.06
+}

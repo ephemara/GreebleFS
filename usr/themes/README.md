@@ -1,6 +1,19 @@
-# OverlayTerm Theme Packages
+# GreebleFS Theme Packages
 
-Drop theme folders into this directory and OverlayTerm will discover them automatically.
+Drop theme bundle folders into this directory and GreebleFS will discover them automatically.
+
+## Canonical `/usr` Token Pipeline
+
+Top-level `/usr` is the single authored source of truth for UI visual and interaction values. Theme bundles in `usr/themes/` should orchestrate external packs by id instead of embedding colors, spacing, radii, shadows, motion, z-layers, mobile metrics, or other presentational values inline.
+
+Canonical storage lanes:
+
+- `usr/appearance-packs/<pack-id>/manifest.json` plus `tokens/color.json`, `typography.json`, `spacing.json`, `radius.json`, `border.json`, `shadow.json`, `opacity.json`, `blur.json`, `geometry.json`, and `layer.json`.
+- `usr/interaction-motion/<pack-id>/manifest.json` plus `tokens/motion.json` and `tokens/interaction.json`.
+- `usr/theme-recipes/<recipe-id>/manifest.json` plus `presentation.json`, `layout.json`, `navigation.json`, `render.json`, `workbench.json`, `explorer.json`, and `mobile.json`.
+- `usr/theme-engines/<engine-id>/theme-engine.json` is a thin composition manifest with `appearancePackId`, `interactionMotionPackId`, and `themeRecipeId`; do not put inline token payloads in engine files.
+
+`usr/domain/theme-manifests.json` is derived/cache metadata for the Rust domain catalog. Do not use it as an authored UI value store.
 
 ## Folder Shape
 
@@ -30,21 +43,15 @@ themes/
 
 `theme.json` or `theme.toml` is supported.
 
-Top-level fields:
+Top-level bundle fields:
 
 - `id`, `name`, `description`, `author`, `homepage`, `tags`
 - `extends`
   - Optional base theme id. Can point at a built-in theme or another package theme.
-- `theme`
-  - Partial OverlayTerm theme definition with `palette`, `effects`, `xterm`, `fonts`, `cssVars`, `visuals`, `defaultShaderId`, `defaultOpenAnimationId`, `defaultCloseAnimationId`, `workbench`, and `explorer`.
-  - `theme.workbench` is the app-wide shell recipe overlay. It controls the command-center chrome, command palette, terminal shell, settings shell, tabs, shell radii, and shared workbench surfaces.
-  - `theme.explorer` is the explorer-shell recipe overlay. It controls structural choices such as `toolbarStyle`, `breadcrumbStyle`, `previewStyle`, `statusBarStyle`, `railPosition`, `preferredViewMode`, and `preferredExperimentalViewMode`, then lets authors override geometry/surfaces through `metrics`, `surfaces`, `typography`, and raw explorer-scoped `cssVars`.
-  - `theme.dock.workbench` is an optional dock-only workbench recipe overlay. It applies when the shell is in dock mode and lets authors tune the dock shell without changing the application shell recipe.
-  - `theme.dock.explorer` is an optional dock-only explorer recipe overlay. It applies on top of the dock base theme so dock mode can use different explorer chrome, metrics, and presets than app mode.
-- `designTokens`, `layoutPrimitives`, `navigationPatterns`
-  - Typed backend contract slices. Token values and primitive props can be strings, numbers, booleans, or structured JSON values.
-- `renderStyles`
-  - Backend render-style contracts. These now drive the live shell interaction runtime, not just theme metadata. Set `supportsLiveSwap` on a style when it can be hot-swapped without restarting the explorer shell.
+- `appearancePackId`, `interactionMotionPackId`, `themeRecipeId`, `themeEngineId`
+  - The preferred v1 theme path. `appearance.activeThemeEngineId` remains the persisted selector in Settings, and the selected engine composes these packs into the resolved desktop/mobile CSS variable snapshot.
+- `topBarId`, `iconThemeId`, `wallpaperId`, `shaderId`, `openAnimationId`, `closeAnimationId`, `soundPackId`, `homePackId`, `menuPackId`
+  - Bundle orchestration ids for non-token assets and subsystem packs.
 - `themeRenderer`
   - Optional V2 shell renderer module. This is the opt-in path for themes that want to replace the built-in workbench presentation with a theme-authored React shell while still using host-owned panels, navigation state, wallpaper APIs, and native capabilities.
   - `entryModule`
@@ -110,8 +117,8 @@ Current built-in runtime mappings:
   - High-level chrome/entry colors for the root shell, toolbar, omnibox, preview, status bar, chips, hover state, selected state, and drop state
 - `theme.explorer.typography`
   - Explorer-specific font sizing and label weighting without touching the rest of the workbench
-- `theme.explorer.cssVars`
-  - Raw escape hatch for explorer-only CSS variables when the typed fields are not enough
+- `explorer.json` `cssVars`
+  - Recipe-authored explorer-only CSS variables for semantic surfaces when the typed fields are not enough.
 
 This is the layer that makes theme packages capable of approximating shells like PS3 XMB flows, Wii channel grids, iOS-inspired launchers, glassy dock navigators, or heavier desktop workbenches without forking the explorer component.
 
@@ -131,14 +138,15 @@ This is the layer that makes theme packages capable of approximating shells like
   - `chromeHeight`, `controlRadius`, `panelRadius`, `shellInset`, `commandPaletteWidth`, `commandPaletteTopInset`, `pagePadding`, `panelGap`
 - `theme.workbench.surfaces`
   - App-wide shell surfaces for chrome, menus, command palette, settings shell, terminal shell, and shared button/tab treatments
-- `theme.workbench.cssVars`
-  - Raw escape hatch for workbench-only CSS variables when the typed fields are not enough
+- `workbench.json` `cssVars`
+  - Recipe-authored workbench-only CSS variables for semantic surfaces when the typed fields are not enough.
 
-## Authoring Format
+## Authoring Rules
 
 - Theme manifests are authored in `JSON` or `TOML`.
-- Color/effect/layout values are mostly CSS-like strings and numbers.
-  - Examples: `rgba(...)`, `linear-gradient(...)`, `blur(18px)`, `24`, `0.18`
+- UI value literals are data, not source code. Put CSS-like strings and numeric presentation values in the `/usr` pack files above.
+- UI source under `src/**` and `src-mobile/**` should consume emitted CSS variables or typed token lookups. New raw `px`, color, blur, shadow, duration, easing, and z-layer literals are blocked by `node scripts/audit-ui-literals.mjs`.
+- Numeric literals are acceptable only for non-presentational algorithmic math, percentages, SVG viewBox data, and values derived from tokens.
 - Icon themes are authored in `JSON`.
 - Shaders and animations are authored as `TSX` runtime modules inside `shaders/` and `animations/`.
 

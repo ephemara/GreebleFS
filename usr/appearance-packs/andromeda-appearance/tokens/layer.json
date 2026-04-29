@@ -1,0 +1,7 @@
+{
+  "shell": 1,
+  "chrome": 10,
+  "popup": 50,
+  "modal": 100,
+  "hud": 120
+}

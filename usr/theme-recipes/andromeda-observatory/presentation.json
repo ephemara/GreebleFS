@@ -1,0 +1,20 @@
+{
+  "chromeStyle": "floating",
+  "density": "comfortable",
+  "iconStyle": "vector",
+  "motionStyle": "fluid",
+  "cornerRadius": 28,
+  "panelSpacing": 12,
+  "compatibility": {
+    "shellBlueprints": [
+      "classic-dock",
+      "xmb-cross-media"
+    ],
+    "tags": [
+      "andromeda",
+      "space",
+      "minimal",
+      "reference"
+    ]
+  }
+}

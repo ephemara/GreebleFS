@@ -79,6 +79,13 @@
       "bootstrapToManagedRoot": true
     },
     {
+      "id": "explorerZoomBehaviors",
+      "relativeDirectory": "explorer-zoom-behaviors",
+      "envVarSuffix": "EXPLORER_ZOOM_BEHAVIORS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
       "id": "homePacks",
       "relativeDirectory": "home-packs",
       "envVarSuffix": "HOME_PACKS",

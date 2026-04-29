@@ -6,6 +6,10 @@ import {
   normalizeKeybindingSettings,
   normalizeKeybindingValue,
 } from '../config/hotkeys';
+import {
+  isEventInsideExplorerZoomScope,
+  shouldExplorerZoomScopeOwnWheelGesture,
+} from '../components/explorer/useExplorerZoomGestureRouter';
 
 describe('hotkey config helpers', () => {
   it('normalizes shortcut spacing and preserves meaningful tokens', () => {
@@ -149,6 +153,41 @@ describe('hotkey config helpers', () => {
       { ctrlKey: false, metaKey: false, altKey: true, shiftKey: false },
       'Alt+Scroll',
     )).toBe(true);
+  });
+
+  it('marks ctrl-wheel targets inside the explorer zoom scope so app zoom can back off', () => {
+    const scope = document.createElement('div');
+    scope.setAttribute('data-explorer-zoom-scope', 'true');
+    const child = document.createElement('button');
+    scope.appendChild(child);
+    document.body.appendChild(scope);
+
+    try {
+      expect(isEventInsideExplorerZoomScope(child)).toBe(true);
+      expect(shouldExplorerZoomScopeOwnWheelGesture({
+        event: { ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        binding: 'Ctrl+Scroll',
+        target: child,
+      })).toBe(true);
+    } finally {
+      scope.remove();
+    }
+  });
+
+  it('leaves ctrl-wheel outside the explorer zoom scope available to global app zoom', () => {
+    const outside = document.createElement('div');
+    document.body.appendChild(outside);
+
+    try {
+      expect(isEventInsideExplorerZoomScope(outside)).toBe(false);
+      expect(shouldExplorerZoomScopeOwnWheelGesture({
+        event: { ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        binding: 'Ctrl+Scroll',
+        target: outside,
+      })).toBe(false);
+    } finally {
+      outside.remove();
+    }
   });
 
   it('matches keyboard shortcuts with modifier keys for local actions', () => {

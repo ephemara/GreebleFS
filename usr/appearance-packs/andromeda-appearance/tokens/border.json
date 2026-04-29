@@ -1,0 +1,6 @@
+{
+  "chromeBorder": "color-mix(in srgb, var(--overlay-accent) 18%, var(--overlay-border))",
+  "panelBorder": "rgba(255,255,255,0.08)",
+  "accentBorder": "rgba(143,231,255,0.34)",
+  "dangerSoftBorder": "rgba(248,113,113,0.28)"
+}
