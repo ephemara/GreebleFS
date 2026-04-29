@@ -3,8 +3,14 @@ import {
   computeAnchoredOverlayWindowLayout,
   clampOverlayWindowBoundsToWorkArea,
   computeOverlayWindowLayout,
+  computeWindowSizeConstraints,
   overlayWindowGeometry,
+  panelWindowGeometry,
 } from '../config/overlayWindow';
+import {
+  computePanelWindowConstraints,
+  computePanelWindowLayout,
+} from '../runtime/overlayRuntimeUtils';
 
 const WORK_AREA = {
   position: { x: 0, y: 0 },
@@ -87,5 +93,51 @@ describe('clampOverlayWindowBoundsToWorkArea', () => {
     expect(bounds.height).toBe(WORK_AREA.size.height - overlayWindowGeometry.logicalPadding * 2);
     expect(bounds.x).toBe(overlayWindowGeometry.logicalPadding);
     expect(bounds.y).toBe(overlayWindowGeometry.logicalPadding);
+  });
+});
+
+describe('panel window geometry', () => {
+  it('clamps restored app-mode bounds to a chrome-safe minimum', () => {
+    const layout = computePanelWindowLayout({
+      workArea: WORK_AREA,
+      scaleFactor: 1,
+      windowedWidth: 200,
+      windowedHeight: 120,
+    });
+
+    expect(layout.width).toBe(panelWindowGeometry.minWidth);
+    expect(layout.height).toBe(panelWindowGeometry.minHeight);
+    expect(layout.x).toBe(Math.round((WORK_AREA.size.width - panelWindowGeometry.minWidth) / 2));
+    expect(layout.y).toBe(Math.round((WORK_AREA.size.height - panelWindowGeometry.minHeight) / 2));
+  });
+
+  it('uses monitor work-area limits as native app-mode max constraints', () => {
+    const constraints = computePanelWindowConstraints({
+      workArea: WORK_AREA,
+      scaleFactor: 1,
+    });
+
+    expect(constraints).toEqual({
+      minWidth: panelWindowGeometry.minWidth,
+      minHeight: panelWindowGeometry.minHeight,
+      maxWidth: WORK_AREA.size.width - panelWindowGeometry.logicalPadding * 2,
+      maxHeight: WORK_AREA.size.height - panelWindowGeometry.logicalPadding * 2,
+    });
+  });
+
+  it('keeps minimum chrome constraints authoritative on unusually small work areas', () => {
+    const constraints = computeWindowSizeConstraints({
+      workArea: {
+        position: { x: 0, y: 0 },
+        size: { width: 640, height: 360 },
+      },
+      scaleFactor: 1,
+      geometry: panelWindowGeometry,
+    });
+
+    expect(constraints.minWidth).toBe(panelWindowGeometry.minWidth);
+    expect(constraints.minHeight).toBe(panelWindowGeometry.minHeight);
+    expect(constraints.maxWidth).toBe(panelWindowGeometry.minWidth);
+    expect(constraints.maxHeight).toBe(panelWindowGeometry.minHeight);
   });
 });

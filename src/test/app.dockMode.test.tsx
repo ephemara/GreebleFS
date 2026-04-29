@@ -420,16 +420,20 @@ describe('App dock mode behavior', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(vi.mocked(commands.windowApplyMode)).toHaveBeenCalledWith(
-        false,
-        false,
-        false,
-        true,
-        expect.any(Number),
-        expect.any(Number),
-        expect.any(Number),
-        expect.any(Number),
-      );
+      expect(vi.mocked(commands.windowApplyMode)).toHaveBeenCalledWith(expect.objectContaining({
+        decorations: false,
+        alwaysOnTop: false,
+        shadow: false,
+        skipTaskbar: true,
+        x: expect.any(Number),
+        y: expect.any(Number),
+        width: expect.any(Number),
+        height: expect.any(Number),
+        minWidth: expect.any(Number),
+        minHeight: expect.any(Number),
+        maxWidth: expect.any(Number),
+        maxHeight: expect.any(Number),
+      }));
     });
     expect(vi.mocked(commands.windowSetTaskbarVisibility)).toHaveBeenCalledWith(false);
     expect(vi.mocked(commands.traySetVisible)).toHaveBeenCalledWith(true);
@@ -459,8 +463,8 @@ describe('App dock mode behavior', () => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
     });
     const lastApplyModeCall = vi.mocked(commands.windowApplyMode).mock.lastCall;
-    expect(lastApplyModeCall?.[0]).toBe(false);
-    expect(lastApplyModeCall?.[3]).toBe(false);
+    expect(lastApplyModeCall?.[0]?.decorations).toBe(false);
+    expect(lastApplyModeCall?.[0]?.skipTaskbar).toBe(false);
   });
 
   it('hides the tray icon when the persisted system setting disables it', async () => {

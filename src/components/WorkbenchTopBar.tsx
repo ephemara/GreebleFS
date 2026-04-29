@@ -170,6 +170,32 @@ interface WorkbenchTopBarProps {
   ) => void;
 }
 
+const WINDOW_CHROME_INTERACTIVE_SELECTOR = [
+  'a',
+  'button',
+  'input',
+  'select',
+  'textarea',
+  '[contenteditable="true"]',
+  '[draggable="true"]',
+  '[role="button"]',
+  '[role="menu"]',
+  '[role="menuitem"]',
+  '[role="slider"]',
+  '[role="tab"]',
+  '[data-gfs-window-drag-exclusion="true"]',
+].join(',');
+
+function isWindowChromeInteractiveTarget(target: EventTarget | null): boolean {
+  const element = target instanceof Element
+    ? target
+    : target instanceof Node
+      ? target.parentElement
+      : null;
+
+  return Boolean(element?.closest(WINDOW_CHROME_INTERACTIVE_SELECTOR));
+}
+
 function renderControlZone(
   children: ReactNode[],
   side: 'leading' | 'trailing',
@@ -555,13 +581,20 @@ export function WorkbenchTopBar({
 
   const handleStartWindowDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const canDragWindow = isWindowedMode || (windowMode === 'overlay' && dockPlacementMode === 'floating');
-    if (!canDragWindow || event.button !== 0 || !isTauri()) {
+    if (
+      !canDragWindow
+      || topBarCustomizeActive
+      || event.defaultPrevented
+      || event.button !== 0
+      || !isTauri()
+      || isWindowChromeInteractiveTarget(event.target)
+    ) {
       return;
     }
 
     event.preventDefault();
     getCurrentWindow().startDragging().catch(() => {});
-  }, [dockPlacementMode, isWindowedMode, windowMode]);
+  }, [dockPlacementMode, isWindowedMode, topBarCustomizeActive, windowMode]);
 
   const handleCycleDockPlacement = useCallback(() => {
     if (windowMode !== 'overlay') {
@@ -603,6 +636,20 @@ export function WorkbenchTopBar({
     await currentWindow.maximize().catch(() => {});
     setIsWindowMaximized(true);
   }, [isWindowedMode]);
+
+  const handleTopBarDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      !isWindowedMode
+      || topBarCustomizeActive
+      || event.defaultPrevented
+      || isWindowChromeInteractiveTarget(event.target)
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    void handleToggleMaximize();
+  }, [handleToggleMaximize, isWindowedMode, topBarCustomizeActive]);
 
   useEffect(() => {
     if (!isSurfaceControlsOpen && !isMobileMenuOpen && !isShellModeMenuOpen) {
@@ -2768,6 +2815,16 @@ export function WorkbenchTopBar({
 
   return (
     <div
+      data-gfs-window-drag-region="topbar"
+      onPointerDown={handleStartWindowDrag}
+      onDoubleClick={handleTopBarDoubleClick}
+      title={
+        isWindowedMode
+          ? 'Drag Window'
+          : windowMode === 'overlay' && dockPlacementMode === 'floating'
+            ? 'Drag Floating Dock'
+            : undefined
+      }
       style={{
         position: 'relative',
         display: 'flex',
@@ -2802,7 +2859,10 @@ export function WorkbenchTopBar({
         {topBarShaderLayer}
       </div>
       {shouldShowLeadingWindowControls ? (
-        <div style={{ borderRight: `1px solid ${borderColor}`, flexShrink: 0 }}>
+        <div
+          data-gfs-window-drag-exclusion="true"
+          style={{ borderRight: `1px solid ${borderColor}`, flexShrink: 0 }}
+        >
           <WindowControls
             platform={blurPlatform}
             isMaximized={isWindowMaximized}
@@ -2816,31 +2876,10 @@ export function WorkbenchTopBar({
       {topBarUsesLayoutDynamics ? null : renderControlZone(leadingControls, 'leading')}
       {topBarMainSurface}
       {topBarUsesLayoutDynamics ? null : renderControlZone(shellModeControls, 'trailing')}
-
-      {(isWindowedMode || (windowMode === 'overlay' && dockPlacementMode === 'floating')) ? (
-        <div
-          data-tauri-drag-region
-          onPointerDown={handleStartWindowDrag}
-          onDoubleClick={() => {
-            if (isWindowedMode) {
-              void handleToggleMaximize();
-            }
-          }}
-          title={isWindowedMode ? 'Drag Window' : 'Drag Floating Dock'}
-          style={{
-            width: 72,
-            minWidth: 72,
-            flexShrink: 0,
-            borderLeft: `1px solid ${borderColor}`,
-            background: 'var(--overlay-workbench-chrome-button-bg)',
-            cursor: 'grab',
-            userSelect: 'none',
-          }}
-        />
-      ) : null}
       {topBarUsesLayoutDynamics ? null : renderControlZone(trailingControls, 'trailing')}
       {shouldShowTrailingWindowControls ? (
         <div
+          data-gfs-window-drag-exclusion="true"
           style={{
             display: 'flex',
             alignItems: 'center',

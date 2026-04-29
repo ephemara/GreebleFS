@@ -1,10 +1,15 @@
-import type { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import type { CSSProperties } from 'react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
-import { clampOverlayVisualControlValue, overlayVisualControls } from '../config/overlayWindow';
+import {
+  clampOverlayVisualControlValue,
+  computeWindowSizeConstraints,
+  overlayWindowGeometry,
+  overlayVisualControls,
+  panelWindowGeometry,
+  type OverlayWindowArea,
+  type OverlayWindowSizeConstraints,
+} from '../config/overlayWindow';
 import * as explorerBackend from './explorerBackend';
-
-const LOGICAL_PADDING = 12;
 
 export interface PanelWindowLayout {
   width: number;
@@ -40,20 +45,32 @@ export async function ensureDir(path: string): Promise<void> {
 }
 
 export function computePanelWindowLayout(args: {
-  workArea: { position: PhysicalPosition; size: PhysicalSize };
+  workArea: OverlayWindowArea;
   scaleFactor: number;
   windowedWidth: number;
   windowedHeight: number;
 }): PanelWindowLayout {
-  const physPad = Math.round(LOGICAL_PADDING * args.scaleFactor);
-  const availableLogicalWidth = Math.max(Math.round(args.workArea.size.width / args.scaleFactor) - LOGICAL_PADDING * 2, 720);
-  const availableLogicalHeight = Math.max(Math.round(args.workArea.size.height / args.scaleFactor) - LOGICAL_PADDING * 2, 480);
-  const targetLogicalWidth = args.windowedWidth > 0 ? args.windowedWidth : 1440;
-  const targetLogicalHeight = args.windowedHeight > 0 ? args.windowedHeight : 920;
+  const physPad = Math.round(panelWindowGeometry.logicalPadding * args.scaleFactor);
+  const availableLogicalWidth = Math.max(
+    Math.round(args.workArea.size.width / args.scaleFactor) - panelWindowGeometry.logicalPadding * 2,
+    panelWindowGeometry.minWidth,
+  );
+  const availableLogicalHeight = Math.max(
+    Math.round(args.workArea.size.height / args.scaleFactor) - panelWindowGeometry.logicalPadding * 2,
+    panelWindowGeometry.minHeight,
+  );
+  const targetLogicalWidth = args.windowedWidth > 0 ? args.windowedWidth : panelWindowGeometry.defaultWidth;
+  const targetLogicalHeight = args.windowedHeight > 0 ? args.windowedHeight : panelWindowGeometry.defaultHeight;
   const healedWidth = targetLogicalWidth > availableLogicalWidth ? availableLogicalWidth : null;
   const healedHeight = targetLogicalHeight > availableLogicalHeight ? availableLogicalHeight : null;
-  const logicalWidth = Math.max(Math.min(healedWidth ?? targetLogicalWidth, availableLogicalWidth), Math.min(720, availableLogicalWidth));
-  const logicalHeight = Math.max(Math.min(healedHeight ?? targetLogicalHeight, availableLogicalHeight), Math.min(480, availableLogicalHeight));
+  const logicalWidth = Math.max(
+    Math.min(healedWidth ?? targetLogicalWidth, availableLogicalWidth),
+    Math.min(panelWindowGeometry.minWidth, availableLogicalWidth),
+  );
+  const logicalHeight = Math.max(
+    Math.min(healedHeight ?? targetLogicalHeight, availableLogicalHeight),
+    Math.min(panelWindowGeometry.minHeight, availableLogicalHeight),
+  );
   const width = Math.round(logicalWidth * args.scaleFactor);
   const height = Math.round(logicalHeight * args.scaleFactor);
 
@@ -65,6 +82,28 @@ export function computePanelWindowLayout(args: {
     healedWidth,
     healedHeight,
   };
+}
+
+export function computePanelWindowConstraints(args: {
+  workArea: OverlayWindowArea;
+  scaleFactor: number;
+}): OverlayWindowSizeConstraints {
+  return computeWindowSizeConstraints({
+    workArea: args.workArea,
+    scaleFactor: args.scaleFactor,
+    geometry: panelWindowGeometry,
+  });
+}
+
+export function computeOverlayWindowConstraints(args: {
+  workArea: OverlayWindowArea;
+  scaleFactor: number;
+}): OverlayWindowSizeConstraints {
+  return computeWindowSizeConstraints({
+    workArea: args.workArea,
+    scaleFactor: args.scaleFactor,
+    geometry: overlayWindowGeometry,
+  });
 }
 
 function getThemeVisualAnimation(layer: NonNullable<ResolvedOverlayAppearance['theme']['visuals']>[number]): string | undefined {

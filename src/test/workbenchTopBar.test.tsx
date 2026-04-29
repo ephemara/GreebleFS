@@ -1,4 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { WorkbenchTopBar } from '../components/WorkbenchTopBar';
@@ -51,6 +54,70 @@ const renderRuntime: ResolvedWorkbenchRenderRuntime = {
   preferLargeLauncherTargets: false,
   useGroupedNavigation: false,
 };
+
+type WorkbenchTopBarTestProps = ComponentProps<typeof WorkbenchTopBar>;
+
+function renderWorkbenchTopBar(
+  overrides: Partial<WorkbenchTopBarTestProps> = {},
+) {
+  const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
+  const layoutProfile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'overlay-classic');
+  const defaultProps: WorkbenchTopBarTestProps = {
+    appearance,
+    renderRuntime,
+    layoutProfile,
+    layoutSourcePath: null,
+    availableLayoutProfiles: BUILT_IN_LAYOUT_MANIFEST.profiles,
+    panels: [],
+    openPanelIds: [],
+    pinnedPanelIds: [],
+    activePanelId: null,
+    onPanelSelect: vi.fn(),
+    onPanelToggle: vi.fn(),
+    onPanelClose: vi.fn(),
+    onPanelReorder: vi.fn(),
+    onOpenSettings: vi.fn(),
+    onToggleShellMode: vi.fn(),
+    onSelectLayoutProfile: vi.fn(),
+    onCycleLayout: vi.fn(),
+    onSetWindowMode: vi.fn(),
+    onOpenCommandPalette: vi.fn(),
+    onToggleOverlayAnchor: vi.fn(),
+    onClose: vi.fn(),
+    accent: appearance.theme.palette.accent,
+    blur: false,
+    blurStrength: 0,
+    blurPlatform: 'linux',
+    appOpacity: 1,
+    panelTransparency: 0,
+    appZoom: 1,
+    onUpdateAppearanceVisuals: vi.fn(),
+    windowMode: 'overlay',
+    overlayAnchor: 'top',
+    commandPaletteShortcutLabel: 'Ctrl+K',
+    mobileShareShortcutLabel: 'Ctrl+Alt+Shift+M',
+    toggleShortcutLabel: 'Ctrl+Space',
+    mobileShareRemoteAccessMode: 'lan',
+    mobileSharePhase: 'idle',
+    mobileShareSession: null,
+    mobileShareError: null,
+    mobileShareNotice: null,
+    onToggleMobileShare: vi.fn(),
+    onStartMobileShare: vi.fn(),
+    onStopMobileShare: vi.fn(),
+    onSetMobileShareRemoteAccessMode: vi.fn(),
+    onOpenMobileSettings: vi.fn(),
+    zenFocusMode: false,
+    zenFocusShortcutLabel: 'Ctrl+.',
+    onToggleZenFocusMode: vi.fn(),
+    topBarDefinition,
+    topBarCustomizeActive: false,
+    onToggleTopBarCustomize: vi.fn(),
+    onCommitTopBarLayoutSnapshot: vi.fn(),
+  };
+
+  return render(<WorkbenchTopBar {...defaultProps} {...overrides} />);
+}
 
 describe('WorkbenchTopBar', () => {
   it('routes top-bar buttons and panel tabs through shared interaction motion bindings', () => {
@@ -623,5 +690,44 @@ describe('WorkbenchTopBar', () => {
 
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'notes');
     expect(onPanelReorder).toHaveBeenCalledWith('notes', 'terminal');
+  });
+
+  it('treats empty windowed chrome as a native drag region without stealing control clicks', async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    const currentWindow = getCurrentWindow() as unknown as {
+      startDragging: ReturnType<typeof vi.fn>;
+      isMaximized: ReturnType<typeof vi.fn>;
+      maximize: ReturnType<typeof vi.fn>;
+      unmaximize: ReturnType<typeof vi.fn>;
+    };
+    currentWindow.startDragging.mockClear();
+    currentWindow.isMaximized.mockResolvedValue(false);
+    currentWindow.maximize.mockClear();
+    currentWindow.unmaximize.mockClear();
+
+    renderWorkbenchTopBar({
+      blurPlatform: 'windows',
+      windowMode: 'windowed',
+      topBarDefinition: {
+        ...topBarDefinition,
+        leadingControls: [],
+        navigationShortcuts: [],
+        trailingControls: [],
+      },
+    });
+
+    const topBar = screen.getByTitle('Drag Window');
+    const maximizeButton = screen.getByTitle('Maximize');
+    fireEvent.pointerDown(topBar, { button: 0 });
+    expect(currentWindow.startDragging).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerDown(screen.getByTitle('Minimize'), { button: 0 });
+    expect(currentWindow.startDragging).toHaveBeenCalledTimes(1);
+
+    fireEvent.doubleClick(topBar);
+    await waitFor(() => expect(currentWindow.maximize).toHaveBeenCalledTimes(1));
+
+    fireEvent.doubleClick(maximizeButton);
+    expect(currentWindow.maximize).toHaveBeenCalledTimes(1);
   });
 });

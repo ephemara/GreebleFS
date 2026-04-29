@@ -1,6 +1,8 @@
 use tauri::{AppHandle, PhysicalPosition, PhysicalSize, WebviewWindow};
 
-use crate::linux_graphics::{current_linux_display_backend, LinuxDisplayBackend};
+use crate::linux_graphics::current_linux_display_backend;
+#[cfg(target_os = "linux")]
+use crate::linux_graphics::LinuxDisplayBackend;
 use crate::wayland_dock::{
     apply_wayland_dock_layout, wayland_dock_host_status, WaylandDockAnchor, WaylandDockHostStatus,
 };
@@ -8,50 +10,108 @@ use crate::wayland_dock::{
 pub const MAIN_TRAY_ICON_ID: &str = "main-tray";
 pub const MAIN_WINDOW_LABEL: &str = "main";
 
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowApplyModeRequest {
+    pub decorations: bool,
+    pub always_on_top: bool,
+    pub shadow: bool,
+    pub skip_taskbar: bool,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub min_width: u32,
+    pub min_height: u32,
+    pub max_width: u32,
+    pub max_height: u32,
+}
+
 /// Atomically apply all window presentation properties in one IPC call.
 /// This prevents the race condition where decorations/alwaysOnTop are set
 /// separately from geometry, causing the WM to see intermediate invalid states.
 #[tauri::command]
 #[specta::specta]
-#[allow(clippy::too_many_arguments)]
 pub fn window_apply_mode(
     app: AppHandle,
     window: WebviewWindow,
-    decorations: bool,
-    always_on_top: bool,
-    shadow: bool,
-    skip_taskbar: bool,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
+    request: WindowApplyModeRequest,
 ) -> Result<(), String> {
     // Some Linux WMs reject presentation-only flags during startup or for
     // transparent undecorated windows. Geometry must still apply so the dock
     // cannot get stranded in the center of the screen.
-    log_optional_window_error(window.set_decorations(decorations), "set_decorations");
-    log_optional_window_error(window.set_always_on_top(always_on_top), "set_always_on_top");
-    log_optional_window_error(window.set_shadow(shadow), "set_shadow");
     log_optional_window_error(
-        set_native_taskbar_visibility(&app, &window, !skip_taskbar),
+        window.set_decorations(request.decorations),
+        "set_decorations",
+    );
+    log_optional_window_error(
+        window.set_always_on_top(request.always_on_top),
+        "set_always_on_top",
+    );
+    log_optional_window_error(window.set_shadow(request.shadow), "set_shadow");
+    log_optional_window_error(
+        set_native_taskbar_visibility(&app, &window, !request.skip_taskbar),
         "set_taskbar_visibility",
     );
 
-    if should_preserve_hidden_wayland_overlay_geometry(&window, decorations, always_on_top) {
+    let (min_size, max_size) = normalize_window_size_constraints(
+        request.min_width,
+        request.min_height,
+        request.max_width,
+        request.max_height,
+    );
+    log_optional_window_error(
+        window.set_min_size(None::<PhysicalSize<u32>>),
+        "clear_min_size",
+    );
+    log_optional_window_error(
+        window.set_max_size(None::<PhysicalSize<u32>>),
+        "clear_max_size",
+    );
+    log_optional_window_error(window.set_max_size(max_size), "set_max_size");
+    log_optional_window_error(window.set_min_size(min_size), "set_min_size");
+
+    if should_preserve_hidden_wayland_overlay_geometry(
+        &window,
+        request.decorations,
+        request.always_on_top,
+    ) {
         return Ok(());
     }
 
-    // Then geometry atomically — size before position
-    if width > 0 && height > 0 {
+    // Then geometry atomically: size before position.
+    if request.width > 0 && request.height > 0 {
         window
-            .set_size(PhysicalSize::new(width, height))
+            .set_size(PhysicalSize::new(request.width, request.height))
             .map_err(|error| format!("window_apply_mode set_size failed: {error}"))?;
     }
     window
-        .set_position(PhysicalPosition::new(x, y))
+        .set_position(PhysicalPosition::new(request.x, request.y))
         .map_err(|error| format!("window_apply_mode set_position failed: {error}"))?;
 
     Ok(())
+}
+
+fn normalize_window_size_constraints(
+    min_width: u32,
+    min_height: u32,
+    max_width: u32,
+    max_height: u32,
+) -> (Option<PhysicalSize<u32>>, Option<PhysicalSize<u32>>) {
+    let min_size =
+        (min_width > 0 && min_height > 0).then(|| PhysicalSize::new(min_width, min_height));
+    let max_size = (max_width > 0 && max_height > 0).then(|| {
+        if let Some(min_size) = min_size {
+            return PhysicalSize::new(
+                max_width.max(min_size.width),
+                max_height.max(min_size.height),
+            );
+        }
+
+        PhysicalSize::new(max_width, max_height)
+    });
+
+    (min_size, max_size)
 }
 
 #[tauri::command]

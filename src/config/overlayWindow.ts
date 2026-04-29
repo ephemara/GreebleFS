@@ -24,6 +24,13 @@ export interface DockPresentationWindowLayout extends OverlayWindowLayout {
   floating: boolean;
 }
 
+export interface OverlayWindowSizeConstraints {
+  minWidth: number;
+  minHeight: number;
+  maxWidth: number;
+  maxHeight: number;
+}
+
 export const overlayWindowGeometry = {
   logicalPadding: 12,
   defaultWidth: 1000,
@@ -32,7 +39,21 @@ export const overlayWindowGeometry = {
   minHeight: 150,
 } as const;
 
-type OverlayWindowArea = {
+export const panelWindowGeometry = {
+  logicalPadding: overlayWindowGeometry.logicalPadding,
+  defaultWidth: 1440,
+  defaultHeight: 920,
+  minWidth: 800,
+  minHeight: 560,
+} as const;
+
+type WindowConstraintGeometry = {
+  logicalPadding: number;
+  minWidth: number;
+  minHeight: number;
+};
+
+export type OverlayWindowArea = {
   position: { x: number; y: number };
   size: { width: number; height: number };
 };
@@ -104,6 +125,26 @@ function clampValue(value: number, min: number, max: number): number {
 
 function resolvePhysicalPadding(scaleFactor: number): number {
   return Math.round(overlayWindowGeometry.logicalPadding * scaleFactor);
+}
+
+export function computeWindowSizeConstraints(args: {
+  workArea: OverlayWindowArea;
+  scaleFactor: number;
+  geometry?: WindowConstraintGeometry;
+}): OverlayWindowSizeConstraints {
+  const geometry = args.geometry ?? overlayWindowGeometry;
+  const physicalPadding = Math.round(geometry.logicalPadding * args.scaleFactor);
+  const minWidth = Math.max(1, Math.round(geometry.minWidth * args.scaleFactor));
+  const minHeight = Math.max(1, Math.round(geometry.minHeight * args.scaleFactor));
+  const availableWidth = Math.max(1, args.workArea.size.width - physicalPadding * 2);
+  const availableHeight = Math.max(1, args.workArea.size.height - physicalPadding * 2);
+
+  return {
+    minWidth,
+    minHeight,
+    maxWidth: Math.max(minWidth, availableWidth),
+    maxHeight: Math.max(minHeight, availableHeight),
+  };
 }
 
 export function computeOverlayWindowLayout(args: {

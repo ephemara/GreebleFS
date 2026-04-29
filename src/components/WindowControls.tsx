@@ -42,6 +42,8 @@ function MacOSDot({
   const [hovered, setHovered] = useState(false);
   return (
     <button
+      aria-label={title}
+      data-gfs-window-drag-exclusion="true"
       title={title}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
@@ -72,6 +74,7 @@ function MacOSDot({
 function MacOSControls({ onMinimize, onMaximize, onClose }: Pick<WindowControlsProps, 'onMinimize' | 'onMaximize' | 'onClose'>) {
   return (
     <div
+      data-gfs-window-drag-exclusion="true"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -81,6 +84,7 @@ function MacOSControls({ onMinimize, onMaximize, onClose }: Pick<WindowControlsP
         flexShrink: 0,
       }}
       // Prevent the drag region from swallowing click events on the dots
+      onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
       <MacOSDot
@@ -126,10 +130,13 @@ function WinButton({
   const [hovered, setHovered] = useState(false);
   return (
     <button
+      aria-label={title}
+      data-gfs-window-drag-exclusion="true"
       title={title}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       style={{
         width: 46,
@@ -163,7 +170,12 @@ function WindowsControls({
   textMuted = 'rgba(255,255,255,0.5)',
 }: Pick<WindowControlsProps, 'isMaximized' | 'onMinimize' | 'onMaximize' | 'onClose' | 'textMuted'>) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+    <div
+      data-gfs-window-drag-exclusion="true"
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
+    >
       <WinButton label="─" title="Minimize" onClick={onMinimize ?? (() => {})} textMuted={textMuted} />
       <WinButton
         label={isMaximized ? '❐' : '□'}

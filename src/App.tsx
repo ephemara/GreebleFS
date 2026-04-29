@@ -212,6 +212,7 @@ import {
   type OverlayWindowBounds,
   overlayWindowGeometry,
   overlayVisualControls,
+  panelWindowGeometry,
 } from './config/overlayWindow';
 import { resolveConditionalBlurFilter } from './config/chromeEffects';
 import { detectClientPlatform, joinPlatformPath } from './config/platform';
@@ -235,6 +236,8 @@ import { DevPerformanceHud } from './components/DevPerformanceHud';
 import { useGlobalShortcut } from './input/GlobalShortcuts';
 import {
   buildThemeVisualStyle,
+  computeOverlayWindowConstraints,
+  computePanelWindowConstraints,
   computePanelWindowLayout,
   ensureDir,
   parseExternalArgs,
@@ -2288,6 +2291,10 @@ function App() {
     deferMs?: number;
   }) => {
     const layout = resolveDockOverlayLayout(args);
+    const constraints = computeOverlayWindowConstraints({
+      workArea: args.monitor.workArea,
+      scaleFactor: args.scaleFactor,
+    });
     const store = useSettingsStore.getState().settings.dock;
 
     if (layout.healedHeight !== null && layout.healedHeight !== store.edgeSize) {
@@ -2329,16 +2336,20 @@ function App() {
 
     isProgrammaticResizeRef.current = true;
     try {
-      unwrapTauriResult(await commands.windowApplyMode(
-        false,
-        true,
-        false,
-        shouldSkipTaskbar,
-        layout.x,
-        layout.y,
-        layout.width,
-        layout.height,
-      ));
+      unwrapTauriResult(await commands.windowApplyMode({
+        decorations: false,
+        alwaysOnTop: true,
+        shadow: false,
+        skipTaskbar: shouldSkipTaskbar,
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+        minWidth: constraints.minWidth,
+        minHeight: constraints.minHeight,
+        maxWidth: constraints.maxWidth,
+        maxHeight: constraints.maxHeight,
+      }));
     } finally {
       isProgrammaticResizeRef.current = false;
     }
@@ -2487,6 +2498,10 @@ function App() {
         windowedWidth: store.windowedWidth,
         windowedHeight: store.windowedHeight,
       });
+      const constraints = computePanelWindowConstraints({
+        workArea: monitor.workArea,
+        scaleFactor,
+      });
       const nextAnimation = resolveAnimationById(
         resolvedOpenAnimationId,
         animationSystemConfig.defaultOpenAnimationId,
@@ -2517,25 +2532,36 @@ function App() {
 
       // Atomic: set decorations + geometry in one call
       if (isTauri() && !isMaximized) {
-        unwrapTauriResult(await commands.windowApplyMode(
-          false,
-          false,
-          false,
-          shouldSkipTaskbar,
-          layout.x,
-          layout.y,
-          layout.width,
-          layout.height,
-        ));
+        unwrapTauriResult(await commands.windowApplyMode({
+          decorations: false,
+          alwaysOnTop: false,
+          shadow: false,
+          skipTaskbar: shouldSkipTaskbar,
+          x: layout.x,
+          y: layout.y,
+          width: layout.width,
+          height: layout.height,
+          minWidth: constraints.minWidth,
+          minHeight: constraints.minHeight,
+          maxWidth: constraints.maxWidth,
+          maxHeight: constraints.maxHeight,
+        }));
       } else if (isTauri()) {
         // Already maximized — just set the presentation flags, skip geometry
-        unwrapTauriResult(await commands.windowApplyMode(
-          false,
-          false,
-          false,
-          shouldSkipTaskbar,
-          0, 0, 0, 0,
-        ));
+        unwrapTauriResult(await commands.windowApplyMode({
+          decorations: false,
+          alwaysOnTop: false,
+          shadow: false,
+          skipTaskbar: shouldSkipTaskbar,
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          minWidth: constraints.minWidth,
+          minHeight: constraints.minHeight,
+          maxWidth: constraints.maxWidth,
+          maxHeight: constraints.maxHeight,
+        }));
       }
       await win.show();
       await win.unminimize().catch(() => {});
@@ -2961,23 +2987,46 @@ function App() {
           windowedWidth: store.windowedWidth,
           windowedHeight: store.windowedHeight,
         });
+        const constraints = computePanelWindowConstraints({
+          workArea: monitor.workArea,
+          scaleFactor,
+        });
         const isMaximized = await win.isMaximized().catch(() => false);
-        if (!isMaximized) {
-          isProgrammaticResizeRef.current = true;
-          try {
-            unwrapTauriResult(await commands.windowApplyMode(
-              false,
-              false,
-              false,
-              shouldSkipTaskbar,
-              layout.x,
-              layout.y,
-              layout.width,
-              layout.height,
-            ));
-          } finally {
-            isProgrammaticResizeRef.current = false;
+        isProgrammaticResizeRef.current = true;
+        try {
+          if (!isMaximized) {
+            unwrapTauriResult(await commands.windowApplyMode({
+              decorations: false,
+              alwaysOnTop: false,
+              shadow: false,
+              skipTaskbar: shouldSkipTaskbar,
+              x: layout.x,
+              y: layout.y,
+              width: layout.width,
+              height: layout.height,
+              minWidth: constraints.minWidth,
+              minHeight: constraints.minHeight,
+              maxWidth: constraints.maxWidth,
+              maxHeight: constraints.maxHeight,
+            }));
+          } else {
+            unwrapTauriResult(await commands.windowApplyMode({
+              decorations: false,
+              alwaysOnTop: false,
+              shadow: false,
+              skipTaskbar: shouldSkipTaskbar,
+              x: 0,
+              y: 0,
+              width: 0,
+              height: 0,
+              minWidth: constraints.minWidth,
+              minHeight: constraints.minHeight,
+              maxWidth: constraints.maxWidth,
+              maxHeight: constraints.maxHeight,
+            }));
           }
+        } finally {
+          isProgrammaticResizeRef.current = false;
         }
         if (
           (layout.healedWidth !== null && layout.healedWidth !== store.windowedWidth)
@@ -3284,8 +3333,8 @@ function App() {
         }
 
         useSettingsStore.getState().updateTerminal({
-          windowedHeight: Math.max(logH, 480),
-          windowedWidth: Math.max(logW, 720),
+          windowedHeight: Math.max(logH, panelWindowGeometry.minHeight),
+          windowedWidth: Math.max(logW, panelWindowGeometry.minWidth),
         });
         return;
       }
