@@ -2738,8 +2738,7 @@ function getSettingsSectionContent(
     case "context-menus":
       return {
         summary: `${context.activeMenuPackSummary} · ${context.availableMenuPacksCount} pack${context.availableMenuPacksCount === 1 ? "" : "s"} · ${context.customizedContextMenuContextCount} customized context${context.customizedContextMenuContextCount === 1 ? "" : "s"}`,
-        detail:
-          "Author explorer context menus as a first-class system: menu packs, context-aware layout overrides, renderer selection, and future shareable menu setups all live here.",
+        detail: "Menu packs, renderer choices, and layout overrides.",
       };
     case "home":
       return {
@@ -15612,67 +15611,6 @@ export function SettingsPage({
             }
           />
         )}
-
-        {/*
-            {false && activeSection === 'context-menus' && (
-              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                <SectionTitle
-                  icon={<Puzzle size={12} />}
-                  title="Context Menus"
-                  subtitle={activeSectionMeta.detail}
-                />
-
-                <div className="mt-4 space-y-3">
-                  <div className="rounded border p-3" style={{ borderColor: `${accent}44`, background: `${accent}0d` }}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="max-w-[760px]">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Explorer Menu Runtime</div>
-                        <p className="mt-2 text-[12px] leading-5" style={{ color: muted }}>
-                          Context menus are now a first-class authored system. Menu packs define the structure, the command graph defines behavior, themes can steer renderer presentation, and user overrides own the composer layer for shareable setups and future renderer/layout packs.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
-                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                          {activeMenuPack?.name ?? 'No Pack'}
-                        </span>
-                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                          {menuPacks.length} Pack{menuPacks.length === 1 ? '' : 's'}
-                        </span>
-                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                          {Object.keys(settings.explorer.contextMenuLayoutOverridesByContext).length} Customized Context{Object.keys(settings.explorer.contextMenuLayoutOverridesByContext).length === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-2 xl:grid-cols-3">
-                    <div className="rounded border p-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Menu Packs</div>
-                      <p className="mt-2 opacity-45">
-                        Switch authored menu structures without touching command execution. This is the lane for future shared packs, curated defaults, and per-team context menu presets.
-                      </p>
-                    </div>
-                    <div className="rounded border p-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Composer Overrides</div>
-                      <p className="mt-2 opacity-45">
-                        Reorder nodes, create submenus, assign quick slots, and control fallback buckets per context without hardcoding any renderer-specific UI trees.
-                      </p>
-                    </div>
-                    <div className="rounded border p-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Renderer Growth</div>
-                      <p className="mt-2 opacity-45">
-                        Classic nested menus ship first, but this section is where radial, hybrid, sheet, HUD, and shared presentation recipes can expand without being buried under generic explorer settings.
-                      </p>
-                    </div>
-                  </div>
-
-                  {contextMenuComposerSurface}
-                </div>
-              </section>
-            )}
-
-            )}
-            */}
 
         {activeSection === "home" && (
           <section

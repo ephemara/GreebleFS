@@ -1659,11 +1659,7 @@ describe('SettingsPage behavior', () => {
 
     expect(screen.getByText('Context Menu Composer')).toBeInTheDocument();
     expect(screen.getByText('Menu Canvas')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /Author the explorer menu by editing the menu itself/i,
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'About Composer' })).toBeInTheDocument();
   });
 
   it('saves cloud provider credentials from settings and enables the provider login action', async () => {
