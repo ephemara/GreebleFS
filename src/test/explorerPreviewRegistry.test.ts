@@ -270,6 +270,32 @@ describe("explorerPreviewRegistry", () => {
         previewKinds: ["text"],
       },
     });
+    const pythonLane = createPluginLane({
+      id: "greeblefs-workbench-python.preview.python",
+      pluginId: "greeblefs-workbench-python",
+      pluginName: "GreebleFS Python Workbench",
+      title: "Python Workbench",
+      priority: 680,
+      match: {
+        appliesTo: "file",
+        extensions: ["py", "pyw"],
+        fileNames: [],
+        previewKinds: ["text"],
+      },
+    });
+    const shaderLane = createPluginLane({
+      id: "greeblefs-workbench-shader.preview.shader",
+      pluginId: "greeblefs-workbench-shader",
+      pluginName: "GreebleFS Shader Workbench",
+      title: "Shader Workbench",
+      priority: 760,
+      match: {
+        appliesTo: "file",
+        extensions: ["wgsl", "hlsl", "spv"],
+        fileNames: [],
+        previewKinds: ["shader"],
+      },
+    });
 
     const folderDescriptor = resolveExplorerPreviewDescriptor(
       createEntry({
@@ -311,6 +337,52 @@ describe("explorerPreviewRegistry", () => {
       extension: "md",
       language: "markdown",
       renderKind: "markdown",
+    });
+
+    const pythonDescriptor = resolveExplorerPreviewDescriptor(
+      createEntry({
+        name: "hello.py",
+        path: "/tmp/hello.py",
+        extension: "py",
+        size: 512,
+      }),
+      {
+        ...PREVIEW_OPTIONS,
+        pluginPreviewLanes: [pythonLane, textLane],
+      },
+    );
+    expect(pythonDescriptor.kind).toBe("plugin");
+    if (pythonDescriptor.kind !== "plugin") {
+      throw new Error("Expected python to resolve through a plugin workbench.");
+    }
+    expect(pythonDescriptor.lane.id).toBe(pythonLane.id);
+    expect(pythonDescriptor.delegateDescriptor).toEqual({
+      kind: "text",
+      extension: "py",
+      language: "python",
+      renderKind: "none",
+    });
+
+    const shaderDescriptor = resolveExplorerPreviewDescriptor(
+      createEntry({
+        name: "surface.wgsl",
+        path: "/tmp/surface.wgsl",
+        extension: "wgsl",
+        size: 2048,
+      }),
+      {
+        ...PREVIEW_OPTIONS,
+        pluginPreviewLanes: [shaderLane],
+      },
+    );
+    expect(shaderDescriptor.kind).toBe("plugin");
+    if (shaderDescriptor.kind !== "plugin") {
+      throw new Error("Expected shader to resolve through a plugin workbench.");
+    }
+    expect(shaderDescriptor.delegateDescriptor).toEqual({
+      kind: "shader",
+      extension: "wgsl",
+      format: "wgsl",
     });
   });
 

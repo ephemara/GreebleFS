@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import { readTextFile } from '@tauri-apps/plugin-fs';
 
 import { getExplorerArchiveDescriptor } from '../config/explorerArchives';
 import {
@@ -9,14 +8,24 @@ import {
   getVideoPreviewMimeType,
 } from '../config/filePreview';
 import { useSettingsStore } from '../store/settingsStore';
+import { readExplorerTextFile } from '../runtime/explorerBackend';
 import {
   openExplorerPdfPreviewDocument,
   type ExplorerPdfPreviewDocument,
 } from '../runtime/pdfPreviewBackend';
+import {
+  inspectExplorerShaderPreviewDocument,
+  type ExplorerShaderPreviewCompileOutput,
+  type ExplorerShaderPreviewDiagnostic,
+  type ExplorerShaderPreviewEntryPoint,
+  type ExplorerShaderPreviewFormat,
+  type ExplorerShaderPreviewStage,
+} from '../runtime/shaderPreviewBackend';
 import { ExplorerArchivePreview } from './ExplorerArchivePreview';
 import { ExplorerAudioWorkbench } from './ExplorerAudioWorkbench';
 import { ExplorerDocxWorkbench } from './ExplorerDocxWorkbench';
 import { ExplorerFolderPreview } from './ExplorerFolderPreview';
+import { ExplorerShaderWorkbench } from './ExplorerShaderWorkbench';
 import { ModelPreview } from './ModelPreview';
 import { ExplorerPdfWorkbench } from './ExplorerPdfWorkbench';
 import { ExplorerSpreadsheetWorkbench } from './ExplorerSpreadsheetWorkbench';
@@ -46,6 +55,42 @@ function resolveSpreadsheetWorkbenchStatus(
     return {
       label: 'Unsaved',
       tone: 'danger',
+    };
+  }
+
+  return {
+    label: 'Saved',
+    tone: 'success',
+  };
+}
+
+function resolveShaderWorkbenchStatus(status: {
+  isDirty: boolean;
+  isSaving: boolean;
+  error: string | null;
+} | null): OverlayPluginPreviewWorkbenchStatus | null {
+  if (!status) {
+    return null;
+  }
+
+  if (status.error) {
+    return {
+      label: 'Error',
+      tone: 'danger',
+    };
+  }
+
+  if (status.isSaving) {
+    return {
+      label: 'Saving?',
+      tone: 'warning',
+    };
+  }
+
+  if (status.isDirty) {
+    return {
+      label: 'Unsaved',
+      tone: 'warning',
     };
   }
 
@@ -92,7 +137,7 @@ async function readStandaloneTextPreviewFile(
     return response.text();
   }
 
-  return readTextFile(filePath);
+  return readExplorerTextFile(filePath);
 }
 
 function useStandaloneTextWorkbenchState({
@@ -194,6 +239,162 @@ function useStandalonePdfDocument({
   }, [enabled, filePath]);
 
   return { document, error };
+}
+
+type StandaloneShaderWorkbenchState = {
+  format: ExplorerShaderPreviewFormat;
+  editableSource: string | null;
+  inspectionSource: string;
+  isReadOnly: boolean;
+  normalizedWgsl: string | null;
+  diagnostics: ExplorerShaderPreviewDiagnostic[];
+  entryPoints: ExplorerShaderPreviewEntryPoint[];
+  selectedScene: 'sphere' | 'fullscreen';
+  selectedStage: ExplorerShaderPreviewStage | null;
+  selectedEntryPoint: string | null;
+  previewAbi: string;
+  supportsLivePreview: boolean;
+  isDirty: boolean;
+  isSaving: boolean;
+  error: string | null;
+};
+
+function useStandaloneShaderWorkbenchState({
+  enabled,
+  filePath,
+}: {
+  enabled: boolean;
+  filePath: string;
+}) {
+  const shaderPerformanceMode = useSettingsStore(
+    (state) => state.settings.appearance.shaderPerformanceMode,
+  );
+  const [state, setState] = useState<StandaloneShaderWorkbenchState | null>(null);
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setState(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    let active = true;
+    setState(null);
+    setLoading(true);
+    setError(null);
+    void inspectExplorerShaderPreviewDocument(filePath)
+      .then((document) => {
+        if (!active) {
+          return;
+        }
+
+        setState({
+          format: document.format,
+          editableSource: document.editableSource,
+          inspectionSource: document.inspectionSource,
+          isReadOnly: document.isReadOnly,
+          normalizedWgsl: document.normalizedWgsl,
+          diagnostics: document.diagnostics,
+          entryPoints: document.entryPoints,
+          selectedScene: 'sphere',
+          selectedStage: document.selectedStage,
+          selectedEntryPoint: document.selectedEntryPoint,
+          previewAbi: document.previewAbi,
+          supportsLivePreview: document.supportsLivePreview,
+          isDirty: false,
+          isSaving: false,
+          error: null,
+        });
+        setLoading(false);
+      })
+      .catch((nextError) => {
+        if (!active) {
+          return;
+        }
+        setState(null);
+        setError(String(nextError));
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [enabled, filePath]);
+
+  const onSourceChange = useCallback((value: string) => {
+    setState((current) =>
+      current
+        ? {
+            ...current,
+            editableSource: value,
+            inspectionSource: value,
+            isDirty: true,
+            error: null,
+          }
+        : current,
+    );
+  }, []);
+
+  const onSelectionChange = useCallback(
+    (selection: {
+      selectedStage?: ExplorerShaderPreviewStage | null;
+      selectedEntryPoint?: string | null;
+    }) => {
+      setState((current) =>
+        current
+          ? {
+              ...current,
+              selectedStage:
+                selection.selectedStage !== undefined
+                  ? selection.selectedStage
+                  : current.selectedStage,
+              selectedEntryPoint:
+                selection.selectedEntryPoint !== undefined
+                  ? selection.selectedEntryPoint
+                  : current.selectedEntryPoint,
+            }
+          : current,
+      );
+    },
+    [],
+  );
+
+  const onCompileResult = useCallback((result: ExplorerShaderPreviewCompileOutput) => {
+    setState((current) =>
+      current
+        ? {
+            ...current,
+            inspectionSource: result.inspectionSource,
+            entryPoints: result.entryPoints,
+            selectedStage: result.selectedStage,
+            selectedEntryPoint: result.selectedEntryPoint,
+            diagnostics: result.diagnostics,
+            normalizedWgsl: result.normalizedWgsl,
+            previewAbi: result.previewAbi,
+            supportsLivePreview: result.supportsLivePreview,
+            error: null,
+          }
+        : current,
+    );
+  }, []);
+
+  const onSceneChange = useCallback((scene: 'sphere' | 'fullscreen') => {
+    setState((current) => (current ? { ...current, selectedScene: scene } : current));
+  }, []);
+
+  return {
+    shaderPerformanceMode,
+    state,
+    loading,
+    error,
+    onSourceChange,
+    onSelectionChange,
+    onCompileResult,
+    onSceneChange,
+  };
 }
 
 export function SqliteWorkbenchPreviewAdapter({
@@ -475,6 +676,137 @@ export function TextWorkbenchPreviewAdapter({
       onRunPythonManaged={textWorkbench?.onRunPythonManaged}
       onRunPythonInTerminal={textWorkbench?.onRunPythonInTerminal}
       onOpenManagedPythonRepl={textWorkbench?.onOpenManagedPythonRepl}
+    />
+  );
+}
+
+export function ShaderWorkbenchPreviewAdapter({
+  appearance,
+  file,
+  workbench,
+  viewMode,
+  onRegisterCloseGuard,
+  onRegisterWorkbenchStatus,
+}: OverlayPluginPreviewLaneProps) {
+  const editorSettings = useSettingsStore((state) => state.settings.editor);
+  const standaloneState = useStandaloneShaderWorkbenchState({
+    enabled: !workbench?.shader,
+    filePath: file.resolvedPath,
+  });
+  const shaderHost = workbench?.shader ?? null;
+  const shaderWorkbench = shaderHost ?? standaloneState.state;
+
+  useEffect(() => {
+    if (!onRegisterWorkbenchStatus) {
+      return undefined;
+    }
+
+    if (shaderWorkbench) {
+      onRegisterWorkbenchStatus(
+        resolveShaderWorkbenchStatus({
+          isDirty: shaderWorkbench.isDirty,
+          isSaving: shaderWorkbench.isSaving,
+          error: shaderWorkbench.error,
+        }),
+      );
+      return () => onRegisterWorkbenchStatus(null);
+    }
+
+    onRegisterWorkbenchStatus({
+      label: standaloneState.loading
+        ? 'Loading'
+        : standaloneState.error
+          ? 'Error'
+          : 'Preview',
+      tone: standaloneState.error ? 'danger' : 'neutral',
+    });
+    return () => onRegisterWorkbenchStatus(null);
+  }, [
+    onRegisterWorkbenchStatus,
+    shaderWorkbench,
+    standaloneState.error,
+    standaloneState.loading,
+  ]);
+
+  if (!shaderWorkbench && standaloneState.loading) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'grid',
+          placeItems: 'center',
+          background: 'var(--overlay-explorer-preview-bg)',
+          color: 'var(--overlay-text-muted)',
+          fontSize: 11,
+        }}
+      >
+        Loading shader workbench...
+      </div>
+    );
+  }
+
+  if (!shaderWorkbench && standaloneState.error) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'grid',
+          placeItems: 'center',
+          background: 'var(--overlay-explorer-preview-bg)',
+          color: 'var(--overlay-danger, #fca5a5)',
+          fontSize: 11,
+          padding: 16,
+          textAlign: 'center',
+        }}
+      >
+        {standaloneState.error}
+      </div>
+    );
+  }
+
+  if (!shaderWorkbench) {
+    return null;
+  }
+
+  return (
+    <ExplorerShaderWorkbench
+      path={file.resolvedPath}
+      name={file.name}
+      format={shaderWorkbench.format}
+      editableSource={shaderWorkbench.editableSource}
+      inspectionSource={shaderWorkbench.inspectionSource}
+      isReadOnly={shaderWorkbench.isReadOnly}
+      normalizedWgsl={shaderWorkbench.normalizedWgsl}
+      diagnostics={shaderWorkbench.diagnostics}
+      entryPoints={shaderWorkbench.entryPoints}
+      selectedScene={shaderWorkbench.selectedScene}
+      selectedStage={shaderWorkbench.selectedStage}
+      selectedEntryPoint={shaderWorkbench.selectedEntryPoint}
+      isDirty={shaderWorkbench.isDirty}
+      isSaving={shaderWorkbench.isSaving}
+      error={shaderWorkbench.error}
+      viewMode={viewMode}
+      appearance={appearance as any}
+      editorSettings={editorSettings}
+      shaderPerformanceMode={standaloneState.shaderPerformanceMode}
+      onSourceChange={(_path, value) =>
+        shaderHost
+          ? shaderHost.onSourceChange(value)
+          : standaloneState.onSourceChange(value)
+      }
+      onSelectionChange={(_path, selection) =>
+        shaderHost
+          ? shaderHost.onSelectionChange(selection)
+          : standaloneState.onSelectionChange(selection)
+      }
+      onCompileResult={(_path, result) =>
+        shaderHost
+          ? shaderHost.onCompileResult(result)
+          : standaloneState.onCompileResult(result)
+      }
+      onRegisterCloseGuard={onRegisterCloseGuard}
     />
   );
 }

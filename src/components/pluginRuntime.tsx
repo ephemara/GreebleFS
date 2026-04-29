@@ -64,6 +64,13 @@ import type {
   ManagedPythonActionResponse,
   ManagedPythonRuntimeConfig,
 } from '../runtime/pythonRuntimeBackend';
+import type {
+  ExplorerShaderPreviewCompileOutput,
+  ExplorerShaderPreviewDiagnostic,
+  ExplorerShaderPreviewEntryPoint,
+  ExplorerShaderPreviewFormat,
+  ExplorerShaderPreviewStage,
+} from '../runtime/shaderPreviewBackend';
 import {
   getPluginPanelOpenRequestEvent,
   readPluginPanelOpenRequest,
@@ -250,11 +257,38 @@ export interface OverlayPluginTextWorkbenchHost {
   onOpenManagedPythonRepl?: () => Promise<void>;
 }
 
+export interface OverlayPluginShaderWorkbenchHost {
+  format: ExplorerShaderPreviewFormat;
+  editableSource: string | null;
+  inspectionSource: string;
+  isReadOnly: boolean;
+  normalizedWgsl: string | null;
+  diagnostics: ExplorerShaderPreviewDiagnostic[];
+  entryPoints: ExplorerShaderPreviewEntryPoint[];
+  selectedScene: 'sphere' | 'fullscreen';
+  selectedStage: ExplorerShaderPreviewStage | null;
+  selectedEntryPoint: string | null;
+  previewAbi: string;
+  supportsLivePreview: boolean;
+  isDirty: boolean;
+  isSaving: boolean;
+  error: string | null;
+  onSourceChange: (value: string) => void;
+  onSelectionChange: (selection: {
+    selectedStage?: ExplorerShaderPreviewStage | null;
+    selectedEntryPoint?: string | null;
+  }) => void;
+  onCompileResult: (result: ExplorerShaderPreviewCompileOutput) => void;
+  onSceneChange: (scene: 'sphere' | 'fullscreen') => void;
+  onSave?: () => Promise<void>;
+}
+
 export interface OverlayPluginPreviewWorkbenchContext {
   delegateDescriptor: ExplorerResolvedBuiltInPreviewDescriptor | null;
   collection?: OverlayPluginCollectionWorkbenchHost;
   pdf?: OverlayPluginPdfWorkbenchHost;
   text?: OverlayPluginTextWorkbenchHost;
+  shader?: OverlayPluginShaderWorkbenchHost;
 }
 
 export interface OverlayPluginPreviewRuntimeBridge {

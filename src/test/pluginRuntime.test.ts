@@ -425,6 +425,8 @@ describe('pluginRuntime helpers', () => {
     ['model3d', 'greeblefs-workbench-model3d/preview/model3dWorkbench.tsx'],
     ['pdf', 'greeblefs-workbench-pdf/preview/pdfWorkbench.tsx'],
     ['text', 'greeblefs-workbench-text/preview/textWorkbench.tsx'],
+    ['shader', 'greeblefs-workbench-shader/preview/shaderWorkbench.tsx'],
+    ['python', 'greeblefs-workbench-python/preview/pythonWorkbench.tsx'],
   ])('loads the shipped %s workbench adapter lane', async (_label, relativePath) => {
     const previewLanePath = resolve(pluginSystemConfig.pluginsDirectory, relativePath);
     const source = await readFile(previewLanePath, 'utf8');

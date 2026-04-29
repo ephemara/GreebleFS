@@ -1,0 +1,41 @@
+id = "greeblefs-workbench-shader"
+version = "1"
+name = "GreebleFS Shader Workbench"
+description = "First-party extension-backed shader preview and edit workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "shader", "wgsl", "hlsl", "graphics"]
+
+[[testFiles]]
+id = "shader-fixture"
+label = "Shader Fixture"
+path = "examples/surface-glow.wgsl"
+description = "Tiny WGSL fixture for plugin-panel shader preview smoke tests."
+
+[[contributions.previewLanes]]
+id = "shader"
+title = "Shader Workbench"
+renderer = "preview/shaderWorkbench.tsx"
+priority = 760
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = ["wgsl", "hlsl", "spv"]
+fileNames = []
+previewKinds = ["shader"]
+
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = true
+topBarDensity = "compact"
+
+[contributions.previewLanes.capabilities]
+editable = true
+save = true
+export = false
+workflowTabs = false
+contextMenu = true
+prefetch = true
+closeGuard = true

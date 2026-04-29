@@ -1,0 +1,41 @@
+id = "greeblefs-workbench-python"
+version = "1"
+name = "GreebleFS Python Workbench"
+description = "First-party extension-backed Python preview, edit, and managed runtime workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "python", "runtime", "code"]
+
+[[testFiles]]
+id = "python-fixture"
+label = "Python Fixture"
+path = "examples/hello-python.py"
+description = "Small Python fixture for plugin-panel runtime preview smoke tests."
+
+[[contributions.previewLanes]]
+id = "python"
+title = "Python Workbench"
+renderer = "preview/pythonWorkbench.tsx"
+priority = 680
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = ["py", "pyw"]
+fileNames = []
+previewKinds = ["text"]
+
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = true
+topBarDensity = "compact"
+
+[contributions.previewLanes.capabilities]
+editable = true
+save = true
+export = false
+workflowTabs = true
+contextMenu = true
+prefetch = true
+closeGuard = true

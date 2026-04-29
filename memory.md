@@ -1,3 +1,17 @@
+# 2026-04-29 - Shader And Python Workbenches Joined The First-Party Plugin Pipeline
+
+- The first-party extracted workbench catalog now also includes `usr/plugins/greeblefs-workbench-shader` and `usr/plugins/greeblefs-workbench-python`. Python is a specialized package over the existing text/runtime lane for `.py` / `.pyw`, while shader is a true delegated workbench lane for `.wgsl`, `.hlsl`, and `.spv`.
+- `src/components/pluginWorkbenchAdapters.tsx` no longer reads standalone text previews through `@tauri-apps/plugin-fs`. The text adapter now uses `readExplorerTextFile(...)`, which keeps plugin-panel and explorer-hosted text workbenches on the same permission-safe backend path and fixes the Tauri `fs.read_text_file not allowed` failure.
+- `FileExplorer.tsx` now has a plugin delegate host for shader workbenches in the same spirit as the existing PDF/text delegate context. Plugin shader lanes receive the loaded inspection session, dirty/save state, stage/entrypoint selections, scene selection, and compile result callbacks, and Explorer preview chrome reuses that host to keep `Preview | Edit`, `Sphere | Fullscreen`, and `Save` behavior alive after extraction.
+- Durable regression rules:
+  - Treat Python as a specialized text workbench, not as a separate ad hoc preview state shape. If a future package wants custom `.py` ownership, it should still reuse the text delegate path unless the runtime model truly diverges.
+  - Shader packages need the delegated host path, not a copy-pasted browser-only editor. Keep shader inspect/compile truth in `shaderPreviewBackend.ts` plus `FileExplorer.tsx` session state, then pass that through `OverlayPluginPreviewLaneProps.workbench.shader`.
+  - Standalone text workbench reads in plugin previews should continue to use explorer backends or fetch fallbacks, never direct plugin-fs reads from the preview adapter.
+- Validation for this pass:
+  - `node_modules\.bin\vitest.exe run src/test/pluginWorkbenchAdapters.test.tsx src/test/explorerPreviewRegistry.test.ts src/test/pluginRuntime.test.ts src/test/pluginsManager.test.tsx --reporter=dot --testTimeout=30000`
+  - `node_modules\.bin\vitest.exe run src/test/fileExplorer.viewModes.test.tsx -t "routes shader files into the inline shader workbench|lets plugin preview lanes claim files and register workflow tabs plus preview context actions" --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript diagnostic sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`; full repo `tsc --noEmit` still exits on unrelated baseline diagnostics outside the preview-workbench extraction.
+
 # 2026-04-29 - Top Bar Panel Spawning And IDE Tab Reordering Restored
 
 - The shell panel launcher now lives in `src/components/WorkbenchTopBar.tsx` inside Surface Controls. It groups all registered built-in panels plus enabled folder-plugin panels through `groupPanelsForWorkbenchNavigation`, exposes focus/open/close actions, and leaves the menu open so operators can spawn several panels in one pass.

@@ -1165,6 +1165,31 @@ type PreviewTextWorkbenchSession = PreviewTextWorkbenchState & {
   resolvedPath?: string;
 };
 
+type PreviewShaderWorkbenchState = {
+  size: number;
+  format: ShaderPreviewFormat;
+  editableSource: string | null;
+  inspectionSource: string;
+  isReadOnly: boolean;
+  selectedScene: "sphere" | "fullscreen";
+  selectedStage: ExplorerShaderPreviewStage | null;
+  selectedEntryPoint: string | null;
+  entryPoints: ExplorerShaderPreviewEntryPoint[];
+  diagnostics: ExplorerShaderPreviewDiagnostic[];
+  normalizedWgsl: string | null;
+  previewAbi: string;
+  supportsLivePreview: boolean;
+  isDirty: boolean;
+  isSaving: boolean;
+  error: string | null;
+};
+
+type PreviewShaderWorkbenchSession = PreviewShaderWorkbenchState & {
+  path: string;
+  name: string;
+  resolvedPath?: string;
+};
+
 type PreviewState =
   | { type: "none"; path: string }
   | ({
@@ -1280,6 +1305,7 @@ type PreviewState =
       delegateDescriptor: ExplorerResolvedBuiltInPreviewDescriptor | null;
       delegatePdfDocument?: ExplorerPdfPreviewDocument | null;
       delegateText?: PreviewTextWorkbenchState | null;
+      delegateShader?: PreviewShaderWorkbenchState | null;
     } & PreviewResolvedPathState)
   | ({
       type: "fallback";
@@ -1358,6 +1384,93 @@ function updatePreviewTextWorkbenchState(
     return {
       ...preview,
       delegateText: updater(preview.delegateText),
+    };
+  }
+
+  return preview;
+}
+
+function getPreviewShaderWorkbenchSession(
+  preview: PreviewState,
+  path: string,
+): PreviewShaderWorkbenchSession | null {
+  if (preview.path !== path) {
+    return null;
+  }
+
+  if (preview.type === "shader") {
+    return {
+      path: preview.path,
+      resolvedPath: preview.resolvedPath,
+      name: preview.name,
+      size: preview.size,
+      format: preview.format,
+      editableSource: preview.editableSource,
+      inspectionSource: preview.inspectionSource,
+      isReadOnly: preview.isReadOnly,
+      selectedScene: preview.selectedScene,
+      selectedStage: preview.selectedStage,
+      selectedEntryPoint: preview.selectedEntryPoint,
+      entryPoints: preview.entryPoints,
+      diagnostics: preview.diagnostics,
+      normalizedWgsl: preview.normalizedWgsl,
+      previewAbi: preview.previewAbi,
+      supportsLivePreview: preview.supportsLivePreview,
+      isDirty: preview.isDirty,
+      isSaving: preview.isSaving,
+      error: preview.error,
+    };
+  }
+
+  if (preview.type === "plugin" && preview.delegateShader) {
+    return {
+      ...preview.delegateShader,
+      path: preview.path,
+      resolvedPath: preview.resolvedPath,
+      name: preview.name,
+    };
+  }
+
+  return null;
+}
+
+function updatePreviewShaderWorkbenchState(
+  preview: PreviewState,
+  path: string,
+  updater: (state: PreviewShaderWorkbenchState) => PreviewShaderWorkbenchState,
+): PreviewState {
+  if (preview.path !== path) {
+    return preview;
+  }
+
+  if (preview.type === "shader") {
+    return {
+      ...preview,
+      ...updater({
+        size: preview.size,
+        format: preview.format,
+        editableSource: preview.editableSource,
+        inspectionSource: preview.inspectionSource,
+        isReadOnly: preview.isReadOnly,
+        selectedScene: preview.selectedScene,
+        selectedStage: preview.selectedStage,
+        selectedEntryPoint: preview.selectedEntryPoint,
+        entryPoints: preview.entryPoints,
+        diagnostics: preview.diagnostics,
+        normalizedWgsl: preview.normalizedWgsl,
+        previewAbi: preview.previewAbi,
+        supportsLivePreview: preview.supportsLivePreview,
+        isDirty: preview.isDirty,
+        isSaving: preview.isSaving,
+        error: preview.error,
+      }),
+    };
+  }
+
+  if (preview.type === "plugin" && preview.delegateShader) {
+    return {
+      ...preview,
+      delegateShader: updater(preview.delegateShader),
     };
   }
 
@@ -4935,6 +5048,19 @@ function PreviewPanel({
         };
       }
 
+      if (preview.delegateShader) {
+        context.shader = {
+          ...preview.delegateShader,
+          onSourceChange: (value) => onShaderSourceChange(preview.path, value),
+          onSelectionChange: (selection) =>
+            onShaderSelectionChange(preview.path, selection),
+          onCompileResult: (result) =>
+            onShaderCompileResult(preview.path, result),
+          onSceneChange: (scene) => onShaderSceneChange(preview.path, scene),
+          onSave: () => onShaderSave(preview.path),
+        };
+      }
+
       return context;
     }, [
       defaultFolderIcon,
@@ -4952,6 +5078,11 @@ function PreviewPanel({
       onRunPythonInTerminal,
       onRunPythonManaged,
       onRunTextScript,
+      onShaderCompileResult,
+      onShaderSave,
+      onShaderSceneChange,
+      onShaderSelectionChange,
+      onShaderSourceChange,
       onStartDragOutPreviewEntry,
       onStopTextScriptRun,
       onTextChange,
@@ -5325,6 +5456,72 @@ function PreviewPanel({
                       style={previewChipButtonStyle(
                         preview.isDirty && !preview.isSaving,
                         !preview.isDirty || preview.isSaving,
+                      )}
+                    >
+                      <Save size={11} />
+                      Save
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          }
+
+          if (
+            preview.type === "plugin" &&
+            preview.delegateDescriptor?.kind === "shader" &&
+            pluginPreviewWorkbenchContext?.shader
+          ) {
+            const shaderWorkbench = pluginPreviewWorkbenchContext.shader;
+            const canSave = !shaderWorkbench.isReadOnly;
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  flexWrap: "wrap",
+                }}
+              >
+                {renderPreviewWorkflowToggle()}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: 2,
+                    borderRadius: "var(--overlay-explorer-control-radius)",
+                    border: "1px solid var(--overlay-explorer-chip-border)",
+                    background: "var(--overlay-explorer-chip-bg)",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => shaderWorkbench.onSceneChange("sphere")}
+                    style={previewChipButtonStyle(
+                      shaderWorkbench.selectedScene === "sphere",
+                    )}
+                  >
+                    Sphere
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => shaderWorkbench.onSceneChange("fullscreen")}
+                    style={previewChipButtonStyle(
+                      shaderWorkbench.selectedScene === "fullscreen",
+                    )}
+                  >
+                    Fullscreen
+                  </button>
+                  {canSave ? (
+                    <button
+                      type="button"
+                      onClick={() => void shaderWorkbench.onSave?.()}
+                      disabled={!shaderWorkbench.isDirty || shaderWorkbench.isSaving}
+                      style={previewChipButtonStyle(
+                        shaderWorkbench.isDirty && !shaderWorkbench.isSaving,
+                        !shaderWorkbench.isDirty || shaderWorkbench.isSaving,
                       )}
                     >
                       <Save size={11} />
@@ -13978,42 +14175,35 @@ export function FileExplorer({
 
   const persistShaderPreviewSource = useCallback(async (path: string) => {
     const currentPreview = previewRef.current;
-    if (
-      currentPreview.type !== "shader" ||
-      currentPreview.path !== path ||
-      currentPreview.isReadOnly ||
-      currentPreview.editableSource == null
-    ) {
+    const shaderSession = getPreviewShaderWorkbenchSession(currentPreview, path);
+    if (!shaderSession || shaderSession.isReadOnly || shaderSession.editableSource == null) {
       return;
     }
 
-    const sourceAtSave = currentPreview.editableSource;
+    const sourceAtSave = shaderSession.editableSource;
     setPreview((prev) =>
-      prev.type === "shader" && prev.path === path
-        ? { ...prev, isSaving: true, error: null }
-        : prev,
+      updatePreviewShaderWorkbenchState(prev, path, (state) => ({
+        ...state,
+        isSaving: true,
+        error: null,
+      })),
     );
 
     try {
       await writeExplorerFile(path, sourceAtSave);
       invalidateExplorerResultCaches();
       clearExplorerEditDraft(EXPLORER_SHADER_DRAFT_SCOPE, path);
-      setPreview((prev) => {
-        if (
-          prev.type !== "shader" ||
-          prev.path !== path ||
-          prev.editableSource == null
-        ) {
-          return prev;
-        }
-        const isStillSame = prev.editableSource === sourceAtSave;
-        return {
-          ...prev,
-          isSaving: false,
-          isDirty: !isStillSame,
-          error: null,
-        };
-      });
+      setPreview((prev) =>
+        updatePreviewShaderWorkbenchState(prev, path, (state) => {
+          const isStillSame = state.editableSource === sourceAtSave;
+          return {
+            ...state,
+            isSaving: false,
+            isDirty: !isStillSame,
+            error: null,
+          };
+        }),
+      );
     } catch (saveError) {
       persistExplorerEditDraft(
         EXPLORER_SHADER_DRAFT_SCOPE,
@@ -14022,15 +14212,13 @@ export function FileExplorer({
         explorerStringDraftSerializer,
       );
       setPreview((prev) =>
-        prev.type === "shader" && prev.path === path
-          ? {
-              ...prev,
-              isSaving: false,
-              error: buildExplorerDraftPreservedMessage(saveError),
-            }
-          : prev,
+        updatePreviewShaderWorkbenchState(prev, path, (state) => ({
+          ...state,
+          isSaving: false,
+          error: buildExplorerDraftPreservedMessage(saveError),
+        })),
       );
-      setError(`Save failed for ${currentPreview.name}: ${saveError}`);
+      setError(`Save failed for ${shaderSession.name}: ${saveError}`);
     }
   }, []);
 
@@ -14043,15 +14231,13 @@ export function FileExplorer({
         explorerStringDraftSerializer,
       );
       setPreview((prev) =>
-        prev.type === "shader" && prev.path === path
-          ? {
-              ...prev,
-              editableSource: content,
-              inspectionSource: content,
-              isDirty: true,
-              error: null,
-            }
-          : prev,
+        updatePreviewShaderWorkbenchState(prev, path, (state) => ({
+          ...state,
+          editableSource: content,
+          inspectionSource: content,
+          isDirty: true,
+          error: null,
+        })),
       );
     },
     [],
@@ -14077,13 +14263,11 @@ export function FileExplorer({
       };
       shaderPreviewSelectionMemoryRef.current.set(path, nextSelection);
       setPreview((prev) =>
-        prev.type === "shader" && prev.path === path
-          ? {
-              ...prev,
-              selectedStage: nextSelection.selectedStage,
-              selectedEntryPoint: nextSelection.selectedEntryPoint,
-            }
-          : prev,
+        updatePreviewShaderWorkbenchState(prev, path, (state) => ({
+          ...state,
+          selectedStage: nextSelection.selectedStage,
+          selectedEntryPoint: nextSelection.selectedEntryPoint,
+        })),
       );
     },
     [],
@@ -14097,19 +14281,17 @@ export function FileExplorer({
       };
       shaderPreviewSelectionMemoryRef.current.set(path, selection);
       setPreview((prev) =>
-        prev.type === "shader" && prev.path === path
-          ? {
-              ...prev,
-              inspectionSource: result.inspectionSource,
-              entryPoints: result.entryPoints,
-              selectedStage: result.selectedStage,
-              selectedEntryPoint: result.selectedEntryPoint,
-              diagnostics: result.diagnostics,
-              normalizedWgsl: result.normalizedWgsl,
-              supportsLivePreview: result.supportsLivePreview,
-              previewAbi: result.previewAbi,
-            }
-          : prev,
+        updatePreviewShaderWorkbenchState(prev, path, (state) => ({
+          ...state,
+          inspectionSource: result.inspectionSource,
+          entryPoints: result.entryPoints,
+          selectedStage: result.selectedStage,
+          selectedEntryPoint: result.selectedEntryPoint,
+          diagnostics: result.diagnostics,
+          normalizedWgsl: result.normalizedWgsl,
+          supportsLivePreview: result.supportsLivePreview,
+          previewAbi: result.previewAbi,
+        })),
       );
     },
     [],
@@ -14118,9 +14300,10 @@ export function FileExplorer({
   const updateShaderPreviewScene = useCallback(
     (path: string, scene: "sphere" | "fullscreen") => {
       setPreview((prev) =>
-        prev.type === "shader" && prev.path === path
-          ? { ...prev, selectedScene: scene }
-          : prev,
+        updatePreviewShaderWorkbenchState(prev, path, (state) => ({
+          ...state,
+          selectedScene: scene,
+        })),
       );
     },
     [],
@@ -15828,6 +16011,118 @@ export function FileExplorer({
                   isDirty: hasRestoredDraft,
                   isSaving: false,
                   lastSavedAt: hasRestoredDraft ? null : Date.now(),
+                  error: null,
+                },
+              });
+            } catch (error) {
+              if (!isCurrentPreviewRequest()) {
+                return;
+              }
+              const errorFallback = buildExplorerPreviewErrorFallback(
+                resolvedPreview,
+                error,
+              );
+              setPreview({
+                type: "fallback",
+                path: entry.path,
+                ...previewResolvedPathProps,
+                name: entry.name,
+                label: errorFallback.label,
+                detail: errorFallback.detail,
+              });
+            } finally {
+              if (isCurrentPreviewRequest()) {
+                dismissPreviewLoadingIndicator();
+              }
+            }
+            return;
+          }
+
+          if (delegateDescriptor?.kind === "shader") {
+            setDocumentViewMode("preview");
+            const rememberedSelection =
+              shaderPreviewSelectionMemoryRef.current.get(entry.path) ?? null;
+
+            if (
+              currentPreview.type === "plugin" &&
+              currentPreview.path === entry.path &&
+              currentPreview.delegateDescriptor?.kind === "shader" &&
+              currentPreview.delegateShader
+            ) {
+              if (isCurrentPreviewRequest()) {
+                setPreview((prev) =>
+                  prev.type === "plugin" && prev.path === entry.path
+                    ? {
+                        ...prev,
+                        ...previewResolvedPathProps,
+                        name: entry.name,
+                        extension: resolvedPreview.extension,
+                        size: entry.size,
+                        delegateDescriptor,
+                        delegateShader: {
+                          ...prev.delegateShader!,
+                          size: entry.size,
+                          format:
+                            delegateDescriptor.format ?? prev.delegateShader!.format,
+                        },
+                      }
+                    : prev,
+                );
+                dismissPreviewLoadingIndicator();
+              }
+              return;
+            }
+
+            try {
+              const document =
+                await inspectExplorerShaderPreviewDocument(previewResolvedPath);
+              if (!isCurrentPreviewRequest()) {
+                return;
+              }
+
+              const restoredDraft =
+                document.editableSource == null
+                  ? null
+                  : loadExplorerEditDraft(
+                      EXPLORER_SHADER_DRAFT_SCOPE,
+                      entry.path,
+                      explorerStringDraftSerializer,
+                    );
+              const resolvedEditableSource =
+                restoredDraft ?? document.editableSource;
+              const resolvedInspectionSource =
+                restoredDraft ?? document.inspectionSource;
+              const hasRestoredDraft =
+                restoredDraft != null &&
+                restoredDraft !== document.editableSource;
+              const selectedStage =
+                rememberedSelection?.selectedStage ?? document.selectedStage;
+              const selectedEntryPoint =
+                rememberedSelection?.selectedEntryPoint ??
+                document.selectedEntryPoint;
+              shaderPreviewSelectionMemoryRef.current.set(entry.path, {
+                selectedStage,
+                selectedEntryPoint,
+              });
+              setPreview({
+                ...basePluginPreviewState,
+                delegateShader: {
+                  size: entry.size,
+                  format: delegateDescriptor.format ?? document.format,
+                  editableSource: resolvedEditableSource,
+                  inspectionSource: resolvedInspectionSource,
+                  isReadOnly:
+                    document.isReadOnly || isExplorerArchiveVirtualPath(entry.path),
+                  selectedScene: shaderPerformanceProfile.previewDefaultScene,
+                  selectedStage,
+                  selectedEntryPoint,
+                  entryPoints: document.entryPoints,
+                  diagnostics: document.diagnostics,
+                  normalizedWgsl: document.normalizedWgsl,
+                  previewAbi: document.previewAbi,
+                  supportsLivePreview: document.supportsLivePreview,
+                  isDirty: hasRestoredDraft,
+                  isSaving: false,
                   error: null,
                 },
               });
