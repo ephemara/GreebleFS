@@ -2,19 +2,21 @@
 
 - Explorer popup layering regressions around toolbar menus and the preview workbench chooser were not caused by the menu contents themselves. The real fault was ownership: several explorer menus still rendered as absolutely positioned children inside explorer chrome rows and preview headers, so they could end up clipped or visually buried behind sibling pane/UI stacking contexts even with local `z-index` values.
 - Durable ownership after this pass:
-  - `src/components/explorer/ExplorerFloatingSurface.tsx` is the shared anchored portal for explorer popup surfaces that should stay attached to a button but render at the document layer.
-  - `src/components/FileExplorer.tsx` now routes the preview workbench chooser plus the archive actions, layout preset, and view-layout menus through that shared floating surface instead of keeping them inline in toolbar DOM.
+  - `src/components/explorer/ExplorerFloatingSurface.tsx` is the shared anchored portal for explorer popup surfaces that should stay attached to a button but render above explorer entries and panes. It mounts under the nearest `[data-overlay-explorer]` root so explorer theme CSS vars are inherited.
+  - `src/components/explorer/ExplorerPopupSurface.tsx` and `src/components/explorer/explorerPopupStyles.ts` are the shared themed menu surface on top of the anchored portal. Reuse them before adding another local explorer menu card style.
+  - `src/components/FileExplorer.tsx` now routes the preview workbench chooser plus the archive actions, layout preset, view-layout menus, and transient zoom HUDs through the shared floating surface instead of keeping them inline in toolbar DOM.
   - `src/components/explorer/ExplorerWorkspace.tsx` now routes the workspace pane-actions menu through the same document-level popup lane.
-  - `src/components/explorer/ExplorerContextMenu.tsx` now portals the full context-menu root to `document.body` and uses the dedicated explorer context floating layer token instead of relying on the explorer subtree stacking context.
-  - `src/config/explorerTheme.ts` now exposes `--overlay-explorer-floating-menu-layer` and `--overlay-explorer-floating-context-layer` as the canonical z-layer vars for explorer popup surfaces.
+  - `src/components/explorer/ExplorerContextMenu.tsx` now accepts an explorer-root portal target from `FileExplorer.tsx` and uses the dedicated explorer context floating layer token instead of relying on inline menu ownership.
+  - `src/config/explorerTheme.ts` now exposes `--overlay-explorer-floating-hud-layer`, `--overlay-explorer-floating-menu-layer`, and `--overlay-explorer-floating-context-layer` as the canonical z-layer vars for explorer floating surfaces.
 - Durable regression rule:
-  - If an explorer menu, chooser, or context-menu-like surface can appear behind preview panes, rail chrome, or other explorer UI, do not fix it with a bigger inline `z-index` first. Move it onto the shared floating portal lane so it escapes overflow clipping and local stacking contexts entirely.
+  - If an explorer menu, chooser, HUD, or context-menu-like surface can appear behind preview panes, icons, rail chrome, or other explorer UI, do not fix it with a bigger inline `z-index` first. Move it onto the shared floating portal lane under the explorer root so it escapes local stacking bugs without losing explorer theme variables.
   - Keep click-outside handling aware of portaled surfaces by checking the floating-surface group markers, not only the original anchor DOM subtree.
 - Validation that passed for this pass:
   - `bun x vitest run src/test/ExplorerWorkspace.test.tsx --reporter=dot`
-  - `bun x vitest run src/test/fileExplorer.viewModes.test.tsx -t "lets the user pick columns from the explorer layout menu|lets plugin preview lanes claim files and register workflow tabs plus preview context actions|opens the explorer layout switcher as a popup instead of a fixed utility strip" --reporter=dot --testTimeout=30000`
+  - `bun x vitest run src/test/explorerContextMenuRenderer.test.tsx --reporter=dot`
+  - `bun x vitest run src/test/fileExplorer.viewModes.test.tsx -t "scales the explorer grid with ctrl-wheel without changing app zoom and only commits after idle|lets the user pick columns from the explorer layout menu|lets plugin preview lanes claim files and register workflow tabs plus preview context actions|opens the explorer layout switcher as a popup instead of a fixed utility strip" --reporter=dot --testTimeout=30000`
   - `node scripts/audit-ui-literals.mjs`
-  - touched-file TypeScript sweep was clean for the new popup-layer work; the filtered `tsc` output only reported pre-existing unused `EXPLORER_LAYOUT_ZOOM_*` constants in `src/components/FileExplorer.tsx`.
+  - touched-file TypeScript sweep was clean for the new popup/HUD-layer work.
 
 # 2026-04-28 - Explorer Live Zoom Now Scales Visible Icon And Thumbnail Stages Without Reintroducing Churn
 

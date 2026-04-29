@@ -76,7 +76,8 @@ import {
 import { recordExplorerActionRun } from "../../store/explorerActionRunStore";
 import { openExplorerTaskCenter } from "../../store/explorerTaskStore";
 import { ExplorerDragOverlay } from "./ExplorerDragOverlay";
-import { ExplorerFloatingSurface } from "./ExplorerFloatingSurface";
+import { ExplorerPopupSurface } from "./ExplorerPopupSurface";
+import { resolveExplorerPopupSurfaceStyle } from "./explorerPopupStyles";
 import { FileExplorer } from "../FileExplorer";
 import type {
   ExplorerExternalChromeControlDefinition,
@@ -1280,7 +1281,7 @@ export function ExplorerWorkspace({
           >
             <MoreHorizontal size={sizing.iconSize} />
           </button>
-          <ExplorerFloatingSurface
+          <ExplorerPopupSurface
             anchorRef={paneActionsMenuRef}
             open={paneActionsMenuOpen}
             surfaceGroup="explorer-workspace-menu"
@@ -1518,7 +1519,7 @@ export function ExplorerWorkspace({
                   ) : null}
                 </>
               ) : null}
-          </ExplorerFloatingSurface>
+          </ExplorerPopupSurface>
         </div>
       );
     },
@@ -2811,15 +2812,12 @@ function paneActionButtonStyle(
 }
 
 const workspaceOverflowMenuStyle: React.CSSProperties = {
+  ...resolveExplorerPopupSurfaceStyle({
+    minWidth: 240,
+  }),
   display: "flex",
   flexDirection: "column",
   gap: 4,
-  minWidth: 240,
-  padding: 8,
-  borderRadius: 14,
-  border: "1px solid var(--overlay-border)",
-  background: "color-mix(in srgb, var(--overlay-bg-panel) 94%, black 6%)",
-  boxShadow: "0 20px 40px rgba(0,0,0,0.28)",
 };
 
 function workspaceOverflowMenuItemStyle(

@@ -366,6 +366,7 @@ describe('ExplorerWorkspace', () => {
     expect(
       getWorkspacePaneActionsButton().parentElement?.contains(paneActionsMenu),
     ).toBe(false);
+    expect(paneActionsMenu.style.background).toBe('var(--overlay-explorer-popup-bg)');
     expect(within(paneActionsMenu).getByText('1 selected -> P2 · destination')).toBeInTheDocument();
 
     fireEvent.click(within(paneActionsMenu).getByRole('menuitem', { name: /sync target pane/i }));

@@ -24,6 +24,31 @@ export function shouldOpenExplorerEntryOnTrigger({
   return trigger === 'double-click';
 }
 
+export function shouldNavigateExplorerDirectoryOnSecondClick({
+  isDirectory,
+  clickDetail,
+  plainClick,
+  folderClickMode,
+  selectionModeActive,
+  immediateNavigationEnabled,
+}: {
+  isDirectory: boolean;
+  clickDetail: number;
+  plainClick: boolean;
+  folderClickMode: ExplorerFolderClickMode;
+  selectionModeActive: boolean;
+  immediateNavigationEnabled: boolean;
+}): boolean {
+  return (
+    immediateNavigationEnabled &&
+    isDirectory &&
+    clickDetail > 1 &&
+    plainClick &&
+    folderClickMode === 'double' &&
+    !selectionModeActive
+  );
+}
+
 export function shouldShowExplorerFolderOpenIcon({
   isDirectory,
   isSelected,

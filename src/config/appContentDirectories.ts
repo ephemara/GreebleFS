@@ -152,6 +152,19 @@ const shippedManagedDirectoryMetadata = {
     ],
     order: 27.4,
   },
+  explorerPerformance: {
+    label: "Explorer Performance",
+    description:
+      "Author Explorer hot-path interaction tuning and latency budgets here.",
+    keywords: [
+      "explorer performance",
+      "folder activation",
+      "double click",
+      "latency budget",
+      "navigation warm",
+    ],
+    order: 27.6,
+  },
   homePacks: {
     label: "Home Packs",
     description:

@@ -19,6 +19,7 @@ interface ExplorerFloatingSurfaceProps
   offset?: number;
   viewportPadding?: number;
   zIndexCssVar?: string;
+  zIndexFallback?: number | string;
   surfaceGroup?: string;
   children: React.ReactNode;
 }
@@ -26,6 +27,18 @@ interface ExplorerFloatingSurfaceProps
 interface ExplorerFloatingSurfacePosition {
   left: number;
   top: number;
+}
+
+function resolveExplorerFloatingSurfacePortalRoot(
+  anchorElement: HTMLElement | null,
+): HTMLElement | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  return (
+    anchorElement?.closest<HTMLElement>("[data-overlay-explorer]") ??
+    document.body
+  );
 }
 
 function clampExplorerFloatingSurfacePosition(
@@ -87,6 +100,7 @@ export function ExplorerFloatingSurface({
   offset = 8,
   viewportPadding = 8,
   zIndexCssVar = "--overlay-explorer-floating-menu-layer",
+  zIndexFallback = 9997,
   surfaceGroup,
   style,
   children,
@@ -95,15 +109,22 @@ export function ExplorerFloatingSurface({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] =
     useState<ExplorerFloatingSurfacePosition | null>(null);
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
 
   useLayoutEffect(() => {
     if (!open) {
       setPosition(null);
+      setPortalRoot(null);
       return undefined;
     }
 
     const updatePosition = () => {
       const anchorElement = anchorRef.current;
+      const nextPortalRoot =
+        resolveExplorerFloatingSurfacePortalRoot(anchorElement);
+      setPortalRoot((currentPortalRoot) =>
+        currentPortalRoot === nextPortalRoot ? currentPortalRoot : nextPortalRoot,
+      );
       const panelElement = panelRef.current;
       if (!anchorElement || !panelElement) {
         setPosition(null);
@@ -141,9 +162,9 @@ export function ExplorerFloatingSurface({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [align, anchorRef, offset, open, side, viewportPadding]);
+  }, [align, anchorRef, offset, open, portalRoot, side, viewportPadding]);
 
-  if (!open || typeof document === "undefined") {
+  if (!open || typeof document === "undefined" || !portalRoot) {
     return null;
   }
 
@@ -157,12 +178,12 @@ export function ExplorerFloatingSurface({
         position: "fixed",
         left: position?.left ?? -99999,
         top: position?.top ?? -99999,
-        zIndex: `var(${zIndexCssVar}, 9997)`,
+        zIndex: `var(${zIndexCssVar}, ${zIndexFallback})`,
         ...style,
       }}
     >
       {children}
     </div>,
-    document.body,
+    portalRoot,
   );
 }

@@ -8,12 +8,14 @@ import React, {
 import { createPortal } from 'react-dom';
 
 import type { ExplorerRuntimeMenuNode } from './explorerMenuRuntime';
+import { resolveExplorerPopupSurfaceStyle } from './explorerPopupStyles';
 
 interface ExplorerContextMenuProps {
   visible: boolean;
   x: number;
   y: number;
   nodes: ExplorerRuntimeMenuNode[];
+  portalRoot?: HTMLElement | null;
   density?: 'compact' | 'balanced' | 'touch';
   showDescriptions?: boolean;
   onClose: () => void;
@@ -152,20 +154,17 @@ function MenuPanel({
         ref={panelRef}
         data-overlay-explorer-context-menu-panel={pathKey}
         style={{
+          ...resolveExplorerPopupSurfaceStyle({
+            minWidth: isCompactDensity ? 208 : isTouchDensity ? 248 : 228,
+            maxWidth: isCompactDensity ? 272 : isTouchDensity ? 336 : 300,
+            maxHeight: 'min(70vh, 640px)',
+            padding: isCompactDensity ? '2px 0' : isTouchDensity ? '6px 0' : '4px 0',
+          }),
           position: 'fixed',
           left: position.left,
           top: position.top,
           zIndex: 10000 + path.length,
-          minWidth: isCompactDensity ? 208 : isTouchDensity ? 248 : 228,
-          maxWidth: isCompactDensity ? 272 : isTouchDensity ? 336 : 300,
-          maxHeight: 'min(70vh, 640px)',
-          overflowY: 'auto',
-          background: 'var(--overlay-explorer-preview-bg)',
-          border: '1px solid var(--overlay-explorer-preview-border)',
-          borderRadius: 'var(--overlay-explorer-panel-radius)',
           boxShadow: 'var(--overlay-explorer-ctx-menu-shadow)',
-          padding: isCompactDensity ? '2px 0' : isTouchDensity ? '6px 0' : '4px 0',
-          backdropFilter: 'blur(14px)',
         }}
       >
         {nodes.map((node, index) => {
@@ -315,6 +314,7 @@ export function ExplorerContextMenu({
   x,
   y,
   nodes,
+  portalRoot,
   density = 'balanced',
   showDescriptions = true,
   onClose,
@@ -449,6 +449,12 @@ export function ExplorerContextMenu({
     }
   };
 
+  const resolvedPortalRoot =
+    portalRoot ?? (typeof document !== 'undefined' ? document.body : null);
+  if (!resolvedPortalRoot) {
+    return null;
+  }
+
   return createPortal(
     <div
       ref={rootRef}
@@ -483,6 +489,6 @@ export function ExplorerContextMenu({
         anchorRectsByNodeId={anchorRectsByNodeIdRef.current}
       />
     </div>,
-    document.body,
+    resolvedPortalRoot,
   );
 }

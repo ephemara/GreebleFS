@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-explorer-performance",
+  "name": "GreebleFS Core Explorer Performance",
+  "description": "Canonical Explorer hot-path interaction tuning and latency budgets.",
+  "folderActivation": {
+    "doubleClickPreviewPrimeDelayMs": 180,
+    "doubleClickSecondClickImmediateNavigation": true,
+    "doubleClickDedupeWindowMs": 96,
+    "pointerDownDirectoryWarmEnabled": true
+  },
+  "budgets": {
+    "doubleClickSecondClickToNavigateDispatchMs": 1
+  }
+}

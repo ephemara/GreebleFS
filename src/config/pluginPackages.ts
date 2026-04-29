@@ -39,6 +39,7 @@ import {
   type OverlayPluginContext,
   type OverlayPluginPreviewLaneProps,
   type OverlayPluginSettingsSlotProps,
+  type OverlayPluginTestFile,
   type PluginFileEntry,
   loadPluginPreviewLaneFromSource,
   loadPluginSettingsSlotFromSource,
@@ -145,6 +146,13 @@ interface PluginPackageSettingsSlotManifest {
   fields?: OverlayPluginSettingsFieldDefinition[];
 }
 
+interface PluginPackageTestFileManifest {
+  id?: string;
+  label?: string;
+  path: string;
+  description?: string;
+}
+
 interface PluginPackageManifest {
   version?: number | string;
   id?: string;
@@ -155,6 +163,9 @@ interface PluginPackageManifest {
   entry?: string;
   defaultOpen?: boolean;
   keepMounted?: boolean;
+  category?: string;
+  tags?: string[];
+  testFiles?: PluginPackageTestFileManifest[];
   permissions?: Record<string, unknown>;
   runtimes?: Array<Record<string, unknown>>;
   artifacts?: Array<Record<string, unknown>>;
@@ -573,6 +584,36 @@ function asSettingsSlotManifestArray(
   });
 }
 
+function asTestFileManifestArray(value: unknown): PluginPackageTestFileManifest[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry, index) => {
+    if (typeof entry === 'string' && entry.trim()) {
+      const normalizedPath = entry.trim();
+      return [{
+        id: deriveIdFromName(normalizedPath, `test-file-${index + 1}`),
+        label: deriveDisplayNameFromFilePath(normalizedPath),
+        path: normalizedPath,
+      }];
+    }
+
+    const record = asRecord(entry);
+    const path = asString(record?.path);
+    if (!record || !path) {
+      return [];
+    }
+
+    return [{
+      id: asString(record.id) || deriveIdFromName(path, `test-file-${index + 1}`),
+      label: asString(record.label) || deriveDisplayNameFromFilePath(path),
+      path,
+      description: asString(record.description) || undefined,
+    }];
+  });
+}
+
 function parsePluginManifestText(text: string, filePath: string): PluginPackageManifest {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -601,6 +642,9 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
     entry: asString(source.entry),
     defaultOpen: asBoolean(source.defaultOpen),
     keepMounted: asBoolean(source.keepMounted),
+    category: asString(source.category) || undefined,
+    tags: asStringArray(source.tags),
+    testFiles: asTestFileManifestArray(source.testFiles),
     permissions: asRecord(source.permissions) ?? undefined,
     runtimes: Array.isArray(source.runtimes)
       ? source.runtimes.filter((entry): entry is Record<string, unknown> => Boolean(asRecord(entry)))
@@ -756,6 +800,24 @@ function derivePackageName(record: PluginPackageRecord): string {
     asString(record.manifest.name) ||
     deriveDisplayNameFromFilePath(record.directoryName)
   );
+}
+
+function resolvePackageTestFiles(record: PluginPackageRecord): OverlayPluginTestFile[] {
+  return (record.manifest.testFiles ?? []).flatMap((testFile) => {
+    if (!isSafeRelativePath(testFile.path)) {
+      return [];
+    }
+
+    const normalizedPath = normalizeRelativePath(testFile.path);
+    const extension = getBaseName(normalizedPath).split('.').pop()?.toLowerCase() ?? '';
+    return [{
+      id: testFile.id || deriveIdFromName(normalizedPath, 'test-file'),
+      label: testFile.label || deriveDisplayNameFromFilePath(normalizedPath),
+      path: joinPlatformPath(record.directoryPath, normalizedPath),
+      description: testFile.description,
+      extension,
+    }];
+  });
 }
 
 function toAssetUrl(filePath: string): string {
@@ -933,6 +995,9 @@ async function loadPluginPackage(
 
   const packageId = derivePackageId(record);
   const packageName = derivePackageName(record);
+  const packageCategory = record.manifest.category || 'General';
+  const packageTags = record.manifest.tags ?? [];
+  const packageTestFiles = resolvePackageTestFiles(record);
   const packageWarnings: string[] = [];
   const packageBackendDirectory = joinPlatformPath(
     record.directoryPath,
@@ -972,6 +1037,9 @@ async function loadPluginPackage(
           sourceKind: 'package-plugin',
           sourceLabel: packageName,
           manifestPath: record.manifestPath,
+          category: packageCategory,
+          tags: packageTags,
+          testFiles: packageTestFiles,
         },
         resolveRelativeModuleSource: createPluginRelativeModuleSourceResolver(record.directoryPath),
       });

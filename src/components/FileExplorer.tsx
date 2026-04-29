@@ -325,6 +325,7 @@ import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
 import { ExplorerActionsPane } from "./explorer/ExplorerActionsPane";
 import { ExplorerCustomizeDragOverlay } from "./explorer/ExplorerCustomizeDragOverlay";
 import { ExplorerFloatingSurface } from "./explorer/ExplorerFloatingSurface";
+import { ExplorerPopupSurface } from "./explorer/ExplorerPopupSurface";
 import {
   buildExplorerRuntimeMenu,
   resolveMenuInvocationInputModality,
@@ -4929,21 +4930,18 @@ function PreviewPanel({
                   Workbench
                   <ChevronDown size={10} />
                 </button>
-                <ExplorerFloatingSurface
+                <ExplorerPopupSurface
                   anchorRef={workbenchChooserAnchorRef}
                   open={showWorkbenchChooser}
                   surfaceGroup="explorer-menu"
+                  tone="preview"
                   data-testid="preview-workbench-chooser"
+                  minWidth="var(--overlay-explorer-preview-chooser-width)"
+                  maxWidth="min(var(--overlay-explorer-preview-chooser-width), 72vw)"
                   style={{
-                    width: 320,
-                    maxWidth: "min(320px, 72vw)",
+                    width: "var(--overlay-explorer-preview-chooser-width)",
                     display: "grid",
                     gap: 10,
-                    padding: 12,
-                    borderRadius: 16,
-                    border: "1px solid var(--overlay-explorer-preview-border)",
-                    background: "var(--overlay-explorer-preview-header-bg)",
-                    boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
                   }}
                 >
                     <div style={{ display: "grid", gap: 3 }}>
@@ -5064,7 +5062,7 @@ function PreviewPanel({
                         Current: {activePreviewWorkbenchCandidate.title}
                       </div>
                     ) : null}
-                </ExplorerFloatingSurface>
+                </ExplorerPopupSurface>
               </div>
             ) : null}
           </div>
@@ -9588,6 +9586,7 @@ export function FileExplorer({
   const explorerLayoutCommandMenuRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const archiveActionsMenuAnchorRef = useRef<HTMLDivElement>(null);
+  const explorerFooterViewSwitcherAnchorRef = useRef<HTMLDivElement>(null);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
   const [zoomHudVisible, setZoomHudVisible] = useState(false);
@@ -22476,19 +22475,16 @@ export function FileExplorer({
               </span>
               <MoreHorizontal size={12} />
             </button>
-            <ExplorerFloatingSurface
+            <ExplorerPopupSurface
               anchorRef={archiveActionsMenuAnchorRef}
               open={showArchiveActionsMenu}
               surfaceGroup="explorer-menu"
               role="menu"
               aria-label="Archive actions menu"
+              minWidth={260}
               style={{
-                minWidth: 260,
-                borderRadius: "var(--overlay-explorer-panel-radius)",
-                border: "1px solid var(--overlay-explorer-toolbar-border)",
-                background: "var(--overlay-explorer-toolbar-bg)",
-                boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
-                padding: 8,
+                display: "grid",
+                gap: 8,
               }}
             >
                 <div
@@ -22554,7 +22550,7 @@ export function FileExplorer({
                     Extract Folder + Trash Archive
                   </button>
                 </div>
-            </ExplorerFloatingSurface>
+            </ExplorerPopupSurface>
           </div>
         ),
       },
@@ -23405,19 +23401,16 @@ export function FileExplorer({
                 />
               </button>
             </div>
-            <ExplorerFloatingSurface
+            <ExplorerPopupSurface
               anchorRef={modeProfileMenuAnchorRef}
               open={showModeProfileMenu}
               surfaceGroup="explorer-menu"
               role="menu"
               aria-label="Explorer layout menu"
+              minWidth={280}
               style={{
-                minWidth: 280,
-                borderRadius: "var(--overlay-explorer-panel-radius)",
-                border: "1px solid var(--overlay-explorer-toolbar-border)",
-                background: "var(--overlay-explorer-toolbar-bg)",
-                boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
-                padding: 8,
+                display: "grid",
+                gap: 8,
               }}
             >
                 {(
@@ -23611,7 +23604,7 @@ export function FileExplorer({
                     </button>
                   </div>
                 </div>
-            </ExplorerFloatingSurface>
+            </ExplorerPopupSurface>
           </div>
         ),
       },
@@ -23676,79 +23669,77 @@ export function FileExplorer({
                 </span>
               </span>
             </button>
-            {zoomHudVisible && zoomHudProgressPercent != null && (
+            <ExplorerFloatingSurface
+              anchorRef={layoutMenuAnchorRef}
+              open={zoomHudVisible && zoomHudProgressPercent != null}
+              surfaceGroup="explorer-hud"
+              zIndexCssVar="--overlay-explorer-floating-hud-layer"
+              zIndexFallback={9996}
+              data-testid="explorer-layout-zoom-hud"
+              style={{
+                minWidth: 148,
+                padding: "8px 10px",
+                borderRadius: 10,
+                border: `1px solid ${accent}55`,
+                background: "var(--overlay-explorer-popup-bg)",
+                boxShadow: "var(--overlay-explorer-popup-shadow)",
+                backdropFilter: resolveExplorerInnerBlurFilter(10),
+                WebkitBackdropFilter: resolveExplorerInnerBlurFilter(10),
+                pointerEvents: "none",
+                ...BOUNDED_CHROME_CONTAINMENT_STYLE,
+              }}
+            >
               <div
                 style={{
-                  position: "absolute",
-                  top: "calc(100% + 8px)",
-                  right: 0,
-                  zIndex: 45,
-                  minWidth: 148,
-                  padding: "8px 10px",
-                  borderRadius: 10,
-                  border: `1px solid ${accent}55`,
-                  background: "var(--overlay-explorer-popup-bg)",
-                  boxShadow: "var(--overlay-explorer-popup-shadow)",
-                  backdropFilter: resolveExplorerInnerBlurFilter(10),
-                  WebkitBackdropFilter: resolveExplorerInnerBlurFilter(10),
-                  pointerEvents: "none",
-                  ...BOUNDED_CHROME_CONTAINMENT_STYLE,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: EXP.text,
+                  }}
+                >
+                  {layoutZoomBadgeLabel}
+                </span>
+              </div>
+              <div
+                style={{
+                  marginTop: 8,
+                  height: 5,
+                  borderRadius: 999,
+                  background: "var(--overlay-explorer-popup-item-hover-bg)",
+                  overflow: "hidden",
                 }}
               >
                 <div
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 10,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      letterSpacing: "0.08em",
-                      textTransform: "uppercase",
-                      color: EXP.text,
-                    }}
-                  >
-                    {layoutZoomBadgeLabel}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    marginTop: 8,
-                    height: 5,
+                    width: `${zoomHudProgressPercent ?? 0}%`,
+                    height: "100%",
                     borderRadius: 999,
-                    background: "var(--overlay-explorer-popup-item-hover-bg)",
-                    overflow: "hidden",
+                    background: `linear-gradient(90deg, ${accent}99, ${accent})`,
+                    transition: "width 0.14s ease",
                   }}
-                >
-                  <div
-                    style={{
-                      width: `${zoomHudProgressPercent ?? 0}%`,
-                      height: "100%",
-                      borderRadius: 999,
-                      background: `linear-gradient(90deg, ${accent}99, ${accent})`,
-                      transition: "width 0.14s ease",
-                    }}
-                  />
-                </div>
+                />
               </div>
-            )}
-            <ExplorerFloatingSurface
+            </ExplorerFloatingSurface>
+            <ExplorerPopupSurface
               anchorRef={layoutMenuAnchorRef}
               open={showLayoutMenu}
               surfaceGroup="explorer-menu"
               role="menu"
               aria-label="Explorer layout menu"
+              minWidth={260}
+              maxWidth="var(--overlay-explorer-view-menu-max-width)"
               style={{
-                minWidth: 240,
-                borderRadius: "var(--overlay-explorer-panel-radius)",
-                border: "1px solid var(--overlay-explorer-toolbar-border)",
-                background: "var(--overlay-explorer-toolbar-bg)",
-                boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
-                padding: 8,
+                display: "grid",
+                gap: 8,
               }}
             >
                 <div
@@ -23855,7 +23846,7 @@ export function FileExplorer({
                   Ctrl/Cmd + wheel now zooms continuously through the icon grid
                   and drops into compact list mode at the smallest boundary.
                 </div>
-            </ExplorerFloatingSurface>
+            </ExplorerPopupSurface>
           </div>
         ),
       },
@@ -24175,16 +24166,22 @@ export function FileExplorer({
           });
 
           return (
-            <div style={{ position: "relative" }}>
+            <div
+              ref={explorerFooterViewSwitcherAnchorRef}
+              style={{ position: "relative" }}
+            >
               {experimentalHudVisible &&
                 selectedExperimentalModeDefinition &&
                 experimentalDensityPercent != null && (
-                  <div
+                  <ExplorerFloatingSurface
+                    anchorRef={explorerFooterViewSwitcherAnchorRef}
+                    open
+                    side="top"
+                    surfaceGroup="explorer-hud"
+                    zIndexCssVar="--overlay-explorer-floating-hud-layer"
+                    zIndexFallback={9996}
+                    data-testid="explorer-experimental-density-hud"
                     style={{
-                      position: "absolute",
-                      right: 0,
-                      bottom: "calc(100% + 8px)",
-                      zIndex: 45,
                       minWidth: 168,
                       padding: "8px 10px",
                       borderRadius: 10,
@@ -24247,7 +24244,7 @@ export function FileExplorer({
                         }}
                       />
                     </div>
-                  </div>
+                  </ExplorerFloatingSurface>
                 )}
               <div
                 role="group"
@@ -25065,10 +25062,7 @@ export function FileExplorer({
           alignItems: "flex-start",
           justifyContent: "center",
           paddingTop: "min(13vh, 96px)",
-          background:
-            "color-mix(in srgb, var(--overlay-bg) 46%, transparent)",
-          backdropFilter: resolveExplorerInnerBlurFilter(8),
-          WebkitBackdropFilter: resolveExplorerInnerBlurFilter(8),
+          background: "var(--overlay-explorer-modal-scrim)",
         }}
       >
         <div
@@ -25081,9 +25075,9 @@ export function FileExplorer({
             display: "flex",
             flexDirection: "column",
             borderRadius: "var(--overlay-explorer-panel-radius)",
-            border: "1px solid var(--overlay-explorer-toolbar-border)",
-            background: "var(--overlay-explorer-toolbar-bg)",
-            boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
+            border: "var(--overlay-explorer-modal-border)",
+            background: "var(--overlay-explorer-modal-surface)",
+            boxShadow: "var(--overlay-explorer-modal-shadow)",
             overflow: "hidden",
             color: EXP.text,
           }}
@@ -31581,6 +31575,7 @@ export function FileExplorer({
         showDescriptions={resolvedContextMenu?.presentation.showDescriptions}
         onClose={closeContextMenu}
         renderIcon={resolveContextMenuIcon}
+        portalRoot={explorerRootNode}
       />
 
       {deleteTargets.length > 0 && (

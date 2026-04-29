@@ -86,6 +86,13 @@
       "bootstrapToManagedRoot": true
     },
     {
+      "id": "explorerPerformance",
+      "relativeDirectory": "explorer-performance",
+      "envVarSuffix": "EXPLORER_PERFORMANCE",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
       "id": "homePacks",
       "relativeDirectory": "home-packs",
       "envVarSuffix": "HOME_PACKS",

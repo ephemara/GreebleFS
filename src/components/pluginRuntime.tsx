@@ -285,8 +285,19 @@ export interface OverlayPluginDiagnostics {
   sourceKind: OverlayPluginSourceKind;
   sourceLabel: string;
   manifestPath?: string;
+  category: string;
+  tags: string[];
+  testFiles: OverlayPluginTestFile[];
   warnings: string[];
   capabilities: OverlayPluginCapabilitySummary;
+}
+
+export interface OverlayPluginTestFile {
+  id: string;
+  label: string;
+  path: string;
+  description?: string;
+  extension: string;
 }
 
 export interface LoadedOverlayPlugin extends OverlayPluginContext {
@@ -386,6 +397,9 @@ export async function loadPluginFromSource(
     sourceKind: options?.diagnostics?.sourceKind ?? 'file-plugin',
     sourceLabel: options?.diagnostics?.sourceLabel ?? context.filePath,
     manifestPath: options?.diagnostics?.manifestPath,
+    category: options?.diagnostics?.category ?? 'General',
+    tags: options?.diagnostics?.tags ?? [],
+    testFiles: options?.diagnostics?.testFiles ?? [],
     warnings: options?.diagnostics?.warnings ?? [],
     capabilities: {
       panel: options?.diagnostics?.capabilities?.panel ?? true,

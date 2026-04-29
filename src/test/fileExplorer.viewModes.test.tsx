@@ -1706,6 +1706,11 @@ describe("FileExplorer view modes", () => {
     await screen.findByText("alpha");
 
     fireEvent.click(screen.getByRole("button", { name: /explorer layout:/i }));
+    const layoutMenu = await screen.findByRole("menu", {
+      name: /explorer layout menu/i,
+    });
+    expect(layoutMenu.closest("[data-overlay-explorer]")).not.toBeNull();
+    expect(layoutMenu.style.background).toBe("var(--overlay-explorer-popup-bg)");
     fireEvent.click(screen.getByRole("menuitemradio", { name: /columns/i }));
 
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
@@ -5599,6 +5604,16 @@ const value = 1;
     const appearanceZoomBefore =
       useSettingsStore.getState().settings.appearance.appZoom;
     dispatchLayoutWheel("alpha", -120);
+    const zoomHud = await screen.findByTestId("explorer-layout-zoom-hud");
+    expect(zoomHud.closest("[data-overlay-explorer]")).not.toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: /explorer layout:/i })
+        .parentElement?.contains(zoomHud),
+    ).toBe(false);
+    expect(zoomHud.style.zIndex).toBe(
+      "var(--overlay-explorer-floating-hud-layer, 9996)",
+    );
 
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
       "icons-m",
