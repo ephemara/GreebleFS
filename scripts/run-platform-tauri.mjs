@@ -48,6 +48,7 @@ const spectaBindingsGeneratedPath = path.join(projectRoot, spectaBindingsGenerat
 const spectaBindingsCacheDirectory = path.join(tauriCargoTargetDir, "dev-cache");
 const spectaBindingsCachePath = path.join(spectaBindingsCacheDirectory, "specta-bindings-state.json");
 const spectaBindingsCacheVersion = 1;
+const mobileShareBundleDist = path.join(projectRoot, "dist-mobile");
 const spectaBindingsFingerprintTargets = [
   { kind: "file", relativePath: "Cargo.toml" },
   { kind: "file", relativePath: "Cargo.lock" },
@@ -472,6 +473,20 @@ async function prepareGoRuntimeAssets(packageManagerCommand, tauriCommand) {
   }
 }
 
+async function prepareMobileShareBundle(packageManagerCommand, tauriCommand) {
+  if (tauriCommand !== "dev") {
+    return;
+  }
+
+  console.log(
+    `Preparing mobile share bundle at ${normalizePathForLogs(path.relative(projectRoot, mobileShareBundleDist) || ".") }...`
+  );
+  const mobileBundleExitCode = await runCommand(packageManagerCommand, ["run", "build:mobile"]);
+  if (mobileBundleExitCode !== 0) {
+    process.exit(mobileBundleExitCode);
+  }
+}
+
 function runCommand(command, args, extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
@@ -582,6 +597,7 @@ async function main() {
     });
   }
   await prepareGoRuntimeAssets(packageManagerCommand, tauriCommand);
+  await prepareMobileShareBundle(packageManagerCommand, tauriCommand);
   await prepareTauriDevBindings(
     packageManagerCommand,
     tauriCommand,

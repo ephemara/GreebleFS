@@ -80,7 +80,9 @@ pub async fn start_lan_share(
     let http_port = find_available_port(HTTP_DEFAULT_PORT, &[])?;
     let tailscale_target = match remote_access_mode {
         ShareRemoteAccessMode::Tailscale => Some(get_tailscale_share_target()?),
-        ShareRemoteAccessMode::Lan => get_tailscale_share_target().ok(),
+        // Keep LAN startup sovereign so a Tailscale install or DNS/cert issue
+        // cannot block local QR generation or route selection.
+        ShareRemoteAccessMode::Lan => None,
     };
 
     let is_directory = state.share_path.is_dir();

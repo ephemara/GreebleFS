@@ -5768,3 +5768,28 @@
   - passed: `cargo check --manifest-path src-tauri/Cargo.toml -q`
   - note: `cargo test --manifest-path src-tauri/Cargo.toml tailscale_commands::tests -- --nocapture` compiled the crate and test binary but the test executable failed to launch in this workspace with Windows `STATUS_ENTRYPOINT_NOT_FOUND` before Rust tests could run.
   - note: repo-wide TypeScript validation still has broad unrelated branch errors (`ExplorerSideRail`, `ExplorerImageCutoutSurface`, vendored `tiptap`, and other existing drift), so targeted Settings/Vitest verification could not be proven cleanly from the current workspace baseline even though the new settings regression case is present in `src/test/settingsPage.behavior.test.tsx`.
+
+## 2026-04-28 - Tauri Dev Now Prebuilds The Mobile Share Bundle So Windows Sessions Cannot Boot With An Empty `dist-mobile`
+
+- A separate Windows regression turned out not to be Tailscale at all: `dist-mobile/` existed but was empty, which leaves the phone-facing share URLs without the actual mobile PWA payload even though the desktop share controls can still come up.
+- Durable implementation shape:
+  - `scripts/run-platform-tauri.mjs` now runs `build:mobile` before `tauri dev` launches the desktop host. That gives the dev path the same “mobile payload exists” guarantee the full production `build` script already had.
+  - The empty bundle was repaired in-place with `bun run build:mobile`, restoring `dist-mobile/index.html`, `dist-mobile/assets/*`, and `dist-mobile/sw.js`.
+- Durable product notes:
+  - If mobile share suddenly “hangs” for both LAN and tailnet on Windows, check `dist-mobile/` before blaming Tailscale. An empty bundle can mimic a transport regression because the share URL resolves but the phone app payload is missing.
+  - The launcher-side prebuild is intentional reliability bias. It costs a few seconds on `tauri dev`, but it removes a class of “desktop host launched fine, phone share is silently dead” failures that are especially painful during Windows iteration.
+- Validation:
+  - passed: `bun run build:mobile`
+  - passed: `node --check scripts/run-platform-tauri.mjs`
+  - passed: `Get-ChildItem dist-mobile -Force` showed `index.html`, `assets/`, `manifest.webmanifest`, and `sw.js` after the rebuild.
+
+## 2026-04-28 - Windows Mobile Share Now Chooses The Routed LAN IPv4 And LAN Mode No Longer Depends On Tailscale
+
+- Another Windows-only regression turned out to live in the native mobile share server, not in React: `src-tauri/src/lan_share/network.rs` was manually preferring `192.168.*` over `172.16-31.*`, which picked this machine's host-only `192.168.56.1` adapter instead of the real Wi-Fi `172.20.10.6` route. That poisoned LAN QR URLs on Windows even though the same code looked fine on Linux.
+- Durable implementation shape:
+  - `src-tauri/src/lan_share/network.rs` now trusts the OS-routed/default-route IPv4 from `local_ip_address::local_ip()` first, then only falls back to adapter scanning when that default-route lookup is unavailable.
+  - the LAN resolver now explicitly ignores Tailscale CGNAT addresses (`100.64.0.0/10`) so the tailnet adapter cannot masquerade as the LAN QR endpoint.
+  - `src-tauri/src/lan_share/server.rs` no longer probes Tailscale at all when the selected mobile access mode is `LAN`. LAN startup now stays LAN-only instead of letting a tailnet install, DNS warning, or cert state interfere with QR generation.
+- Durable product rule:
+  - if the user selected `LAN`, mobile share should succeed without caring whether Tailscale is installed, healthy, or misconfigured.
+  - if the user selected `Tailscale`, the server can require a real tailnet route and certificate because that is the requested transport.
