@@ -1,25 +1,40 @@
 use crate::acceleration_runtime::AccelerationRoutingMode;
+#[cfg(not(test))]
 use crate::fs_commands::{
     complete_manual_explorer_task, create_manual_explorer_task_with_id, fail_manual_explorer_task,
     update_manual_explorer_task, ExplorerTaskKind, ExplorerTaskRegistration,
 };
+#[cfg(not(test))]
 use crate::python_commands::PythonRuntimeConfig;
+#[cfg(not(test))]
 use crate::python_sidecar::{self, PythonSidecarDecodedActionResponse};
+#[cfg(not(test))]
 use crate::telemetry::{finish_native_span, start_native_span};
 use ignore::WalkBuilder;
+#[cfg(not(test))]
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashSet};
+#[cfg(not(test))]
+use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(test))]
+use std::path::PathBuf;
 use std::sync::OnceLock;
+#[cfg(not(test))]
 use std::thread;
+#[cfg(not(test))]
 use tauri::{AppHandle, Manager};
+#[cfg(not(test))]
 use uuid::Uuid;
 
+#[cfg(not(test))]
 const SEMANTIC_SEARCH_DIRECTORY: &str = "semantic-search";
+#[cfg(not(test))]
 const SEMANTIC_SEARCH_DATABASE_FILENAME: &str = "semantic-index-v1.sqlite3";
+#[cfg(not(test))]
 const SEMANTIC_SEARCH_SCHEMA_VERSION: u32 = 1;
 const SEMANTIC_SEARCH_MAX_INDEXABLE_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const SEMANTIC_SEARCH_DEFAULT_RESULT_LIMIT: usize = 60;
@@ -66,6 +81,7 @@ pub struct ExplorerSemanticIndexSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 pub struct ExplorerSemanticIndexBuildRequest {
     pub config: Option<PythonRuntimeConfig>,
     pub root_path: String,
@@ -77,6 +93,7 @@ pub struct ExplorerSemanticIndexBuildRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 pub struct ExplorerSemanticIndexBuildStartResponse {
     pub task_id: String,
     pub root_path: String,
@@ -84,6 +101,7 @@ pub struct ExplorerSemanticIndexBuildStartResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 pub struct ExplorerSemanticSearchRequest {
     pub config: Option<PythonRuntimeConfig>,
     pub root_path: String,
@@ -96,6 +114,7 @@ pub struct ExplorerSemanticSearchRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 pub struct ExplorerSemanticFindSimilarRequest {
     pub config: Option<PythonRuntimeConfig>,
     pub root_path: String,
@@ -147,6 +166,7 @@ pub struct ExplorerSemanticSearchResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 struct PythonSemanticIndexRootPayload {
     db_path: String,
     root_path: String,
@@ -160,6 +180,7 @@ struct PythonSemanticIndexRootPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 struct PythonSemanticIndexRootResult {
     indexed: bool,
     root_path: String,
@@ -173,6 +194,7 @@ struct PythonSemanticIndexRootResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 struct PythonSemanticDeleteIndexPayload {
     db_path: String,
     root_path: String,
@@ -180,6 +202,7 @@ struct PythonSemanticDeleteIndexPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 struct PythonSemanticIndexStatusResult {
     indexed: bool,
     root_path: String,
@@ -193,6 +216,7 @@ struct PythonSemanticIndexStatusResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 struct PythonSemanticSearchPayload {
     db_path: String,
     root_path: String,
@@ -205,6 +229,7 @@ struct PythonSemanticSearchPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 struct PythonSemanticFindSimilarPayload {
     db_path: String,
     root_path: String,
@@ -217,6 +242,7 @@ struct PythonSemanticFindSimilarPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 struct PythonSemanticSearchDiagnostics {
     backend_kind: String,
     provider_kind: String,
@@ -227,12 +253,14 @@ struct PythonSemanticSearchDiagnostics {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(not(test))]
 struct PythonSemanticSearchResponse {
     results: Vec<ExplorerSemanticSearchResult>,
     diagnostics: PythonSemanticSearchDiagnostics,
 }
 
 #[derive(Debug, Clone)]
+#[cfg(not(test))]
 struct IndexedRootRow {
     file_count: u64,
     chunk_count: u64,
@@ -264,6 +292,7 @@ fn semantic_search_extensions() -> &'static HashSet<String> {
     })
 }
 
+#[cfg(not(test))]
 fn semantic_search_allowed_extension_list() -> Vec<String> {
     let mut extensions = semantic_search_extensions()
         .iter()
@@ -273,10 +302,12 @@ fn semantic_search_allowed_extension_list() -> Vec<String> {
     extensions
 }
 
+#[cfg(not(test))]
 fn semantic_search_path_to_string(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
 
+#[cfg(not(test))]
 fn semantic_search_data_root(app: &AppHandle) -> Result<PathBuf, String> {
     let root = app
         .path()
@@ -289,10 +320,12 @@ fn semantic_search_data_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(root)
 }
 
+#[cfg(not(test))]
 fn semantic_search_database_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(semantic_search_data_root(app)?.join(SEMANTIC_SEARCH_DATABASE_FILENAME))
 }
 
+#[cfg(not(test))]
 fn open_semantic_search_connection(app: &AppHandle) -> Result<Connection, String> {
     let database_path = semantic_search_database_path(app)?;
     let connection = Connection::open(&database_path).map_err(|error| {
@@ -311,6 +344,7 @@ fn open_semantic_search_connection(app: &AppHandle) -> Result<Connection, String
     Ok(connection)
 }
 
+#[cfg(not(test))]
 fn ensure_semantic_search_schema(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch(
@@ -377,6 +411,7 @@ fn ensure_semantic_search_schema(connection: &Connection) -> Result<(), String> 
     Ok(())
 }
 
+#[cfg(not(test))]
 fn canonicalize_local_directory(raw_path: &str) -> Result<PathBuf, String> {
     let trimmed = raw_path.trim();
     if trimmed.is_empty() {
@@ -398,6 +433,7 @@ fn canonicalize_local_directory(raw_path: &str) -> Result<PathBuf, String> {
     Ok(canonical_path)
 }
 
+#[cfg(not(test))]
 fn canonicalize_local_file(raw_path: &str) -> Result<PathBuf, String> {
     let trimmed = raw_path.trim();
     if trimmed.is_empty() {
@@ -424,7 +460,7 @@ fn ensure_path_within_root(root_path: &Path, candidate_path: &Path) -> Result<()
         return Ok(());
     }
     Err(format!(
-        "Semantic-search target '{}' is outside indexed root '{}'.",
+        "Semantic-search target '{}' is outside the indexed root '{}'.",
         candidate_path.display(),
         root_path.display()
     ))
@@ -501,6 +537,7 @@ fn compute_root_source_signature(root_path: &Path) -> Result<(String, u64), Stri
     Ok((format!("{:x}", hasher.finalize()), indexed_file_count))
 }
 
+#[cfg(not(test))]
 fn read_indexed_root_row(
     connection: &Connection,
     root_path: &str,
@@ -538,6 +575,7 @@ fn read_indexed_root_row(
         .map_err(|error| format!("Failed to read semantic-search index status: {error}"))
 }
 
+#[cfg(not(test))]
 fn read_semantic_index_summary_for_root(
     app: &AppHandle,
     root_path: &Path,
@@ -584,6 +622,7 @@ fn normalize_result_limit(limit: Option<usize>) -> usize {
         .clamp(1, SEMANTIC_SEARCH_MAX_RESULT_LIMIT)
 }
 
+#[cfg(not(test))]
 fn semantic_index_task_detail(
     mode: ExplorerSemanticIndexBuildMode,
     root_path: &Path,
@@ -619,6 +658,7 @@ fn semantic_index_task_detail(
     }
 }
 
+#[cfg(not(test))]
 fn semantic_index_task_registration(
     root_path: &Path,
     mode: ExplorerSemanticIndexBuildMode,
@@ -654,10 +694,12 @@ fn semantic_index_task_registration(
     }
 }
 
+#[cfg(not(test))]
 fn semantic_search_db_path_string(app: &AppHandle) -> Result<String, String> {
     semantic_search_database_path(app).map(|path| semantic_search_path_to_string(&path))
 }
 
+#[cfg(not(test))]
 fn run_semantic_index_task(
     app: AppHandle,
     task_id: String,
@@ -756,6 +798,7 @@ fn run_semantic_index_task(
     Ok(())
 }
 
+#[cfg(not(test))]
 fn build_semantic_search_response(
     query_kind: ExplorerSemanticSearchQueryKind,
     stale_index: bool,
@@ -781,6 +824,7 @@ fn build_semantic_search_response(
 
 #[tauri::command]
 #[specta::specta]
+#[cfg(not(test))]
 pub async fn explorer_semantic_index_get_summary(
     app: AppHandle,
     root_path: String,
@@ -795,6 +839,7 @@ pub async fn explorer_semantic_index_get_summary(
 
 #[tauri::command]
 #[specta::specta]
+#[cfg(not(test))]
 pub async fn explorer_semantic_index_build(
     app: AppHandle,
     request: ExplorerSemanticIndexBuildRequest,
@@ -828,6 +873,7 @@ pub async fn explorer_semantic_index_build(
 
 #[tauri::command]
 #[specta::specta]
+#[cfg(not(test))]
 pub async fn explorer_semantic_search(
     app: AppHandle,
     request: ExplorerSemanticSearchRequest,
@@ -921,6 +967,7 @@ pub async fn explorer_semantic_search(
 
 #[tauri::command]
 #[specta::specta]
+#[cfg(not(test))]
 pub async fn explorer_semantic_find_similar(
     app: AppHandle,
     request: ExplorerSemanticFindSimilarRequest,

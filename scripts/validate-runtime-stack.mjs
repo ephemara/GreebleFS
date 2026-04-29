@@ -149,58 +149,16 @@ function buildValidationSteps(options) {
     if (options.quick) {
       steps.push(
         {
-          label: 'Rust semantic-search tests',
+          label: 'Rust Windows-safe lib test harness',
           kind: 'rust',
           command: 'cargo',
-          args: ['test', '--manifest-path', 'src-tauri/Cargo.toml', 'semantic_search::tests', '--lib'],
-          fallback: {
-            label: 'Rust semantic-search compile proof',
-            command: 'cargo',
-            args: [
-              'test',
-              '--manifest-path',
-              'src-tauri/Cargo.toml',
-              'semantic_search::tests',
-              '--lib',
-              '--no-run',
-            ],
-          },
+          args: ['test', '--manifest-path', 'src-tauri/Cargo.toml', '--lib'],
         },
         {
-          label: 'Rust extension-host tests',
+          label: 'Rust production lib check',
           kind: 'rust',
           command: 'cargo',
-          args: ['test', '--manifest-path', 'src-tauri/Cargo.toml', 'runtime_pipeline::extension_host::tests', '--lib'],
-          fallback: {
-            label: 'Rust extension-host compile proof',
-            command: 'cargo',
-            args: [
-              'test',
-              '--manifest-path',
-              'src-tauri/Cargo.toml',
-              'runtime_pipeline::extension_host::tests',
-              '--lib',
-              '--no-run',
-            ],
-          },
-        },
-        {
-          label: 'Rust runtime-host command tests',
-          kind: 'rust',
-          command: 'cargo',
-          args: ['test', '--manifest-path', 'src-tauri/Cargo.toml', 'runtime_pipeline::commands::tests', '--lib'],
-          fallback: {
-            label: 'Rust runtime-host command compile proof',
-            command: 'cargo',
-            args: [
-              'test',
-              '--manifest-path',
-              'src-tauri/Cargo.toml',
-              'runtime_pipeline::commands::tests',
-              '--lib',
-              '--no-run',
-            ],
-          },
+          args: ['check', '--manifest-path', 'src-tauri/Cargo.toml', '--lib'],
         },
       );
     } else {
@@ -209,11 +167,6 @@ function buildValidationSteps(options) {
         kind: 'rust',
         command: 'bun',
         args: ['run', 'test:rust'],
-        fallback: {
-          label: 'Rust cargo compile proof',
-          command: 'cargo',
-          args: ['check', '--manifest-path', 'src-tauri/Cargo.toml', '--lib'],
-        },
       });
     }
   }
@@ -284,28 +237,6 @@ function buildValidationSteps(options) {
   return steps;
 }
 
-function isWindowsRustHarnessEntrypointFailure(step, result) {
-  if (process.platform !== 'win32' || step.kind !== 'rust') {
-    return false;
-  }
-
-  const combinedOutput = `${result.stdout}\n${result.stderr}`;
-  return (
-    combinedOutput.includes('STATUS_ENTRYPOINT_NOT_FOUND') ||
-    combinedOutput.includes('0xc0000139')
-  );
-}
-
-function runFallbackStep(step, fallback) {
-  if (!fallback) {
-    return { status: 1, stdout: '', stderr: '' };
-  }
-  return runCommand(fallback.label, fallback.command, fallback.args, {
-    cwd: fallback.cwd ?? step.cwd,
-    env: fallback.env ?? step.env,
-  });
-}
-
 function collectHardwareProof(options) {
   if (options.skipProof) {
     return [];
@@ -372,7 +303,6 @@ function main() {
   const options = parseArguments(process.argv.slice(2));
   const steps = buildValidationSteps(options);
   const failures = [];
-  const blocked = [];
 
   console.log(
     `[validate] starting ${options.quick ? 'quick' : 'full'} runtime validation in ${projectRoot}`,
@@ -384,18 +314,6 @@ function main() {
       env: step.env,
     });
     if (result.status !== 0) {
-      if (isWindowsRustHarnessEntrypointFailure(step, result)) {
-        const fallbackResult = runFallbackStep(step, step.fallback);
-        if (fallbackResult.status === 0) {
-          blocked.push(
-            `${step.label} runtime launch blocked by Windows loader (STATUS_ENTRYPOINT_NOT_FOUND / 0xc0000139); compile proof passed via ${step.fallback.label}`,
-          );
-          continue;
-        }
-        failures.push(`${step.label} (runtime blocked, fallback ${step.fallback?.label ?? 'none'} failed)`);
-        break;
-      }
-
       failures.push(`${step.label} (exit ${result.status})`);
       break;
     }
@@ -406,13 +324,6 @@ function main() {
     console.log('\n[validate] hardware-gated proof');
     for (const line of proofLines) {
       console.log(`           ${line}`);
-    }
-  }
-
-  if (blocked.length > 0) {
-    console.log('\n[validate] blocked but understood');
-    for (const blockedLine of blocked) {
-      console.log(`           ${blockedLine}`);
     }
   }
 

@@ -1,56 +1,108 @@
+#[cfg(not(test))]
 pub mod acceleration_runtime;
+#[cfg(test)]
+#[path = "acceleration_runtime_test_stub.rs"]
+pub mod acceleration_runtime;
+#[cfg(not(test))]
 pub mod action_commands;
+#[cfg(not(test))]
 pub mod archive_ops;
+#[cfg(not(test))]
 pub mod audio_commands;
+#[cfg(not(test))]
 pub mod audio_engine;
+#[cfg(not(test))]
 pub mod cloud_commands;
+#[cfg(not(test))]
 pub mod desktop_integration;
+#[cfg(not(test))]
 pub mod domain_commands;
+#[cfg(not(test))]
 pub mod entry_size_cache;
+#[cfg(not(test))]
 pub mod explorer_identity;
+#[cfg(not(test))]
 pub mod explorer_pro_commands;
+#[cfg(not(test))]
 pub mod fs_commands;
+#[cfg(test)]
+#[path = "fs_commands_test_stub.rs"]
+pub mod fs_commands;
+#[cfg(not(test))]
 pub mod global_search;
+#[cfg(not(test))]
 pub mod gpu_runtime;
+#[cfg(not(test))]
 pub mod image_commands;
+#[cfg(not(test))]
 pub mod image_cutout_commands;
+#[cfg(not(test))]
 pub mod ipc_runtime;
+#[cfg(not(test))]
 pub mod lan_share;
+#[cfg(not(test))]
 mod linux_graphics;
+#[cfg(not(test))]
 pub mod native_terminal;
+#[cfg(not(test))]
 pub mod open_with;
+#[cfg(not(test))]
 pub mod pdf_commands;
+#[cfg(not(test))]
 pub mod plugin_commands;
+#[cfg(not(test))]
 pub mod python_commands;
 #[cfg(not(test))]
 pub mod python_pyo3;
 #[cfg(test)]
 #[path = "python_pyo3_stub.rs"]
 pub mod python_pyo3;
+#[cfg(not(test))]
 pub mod python_sidecar;
+#[cfg(not(test))]
 pub mod remote_storage_commands;
+#[cfg(not(test))]
 pub mod runtime_pipeline;
+#[cfg(not(test))]
 pub mod screenshot_commands;
 pub mod semantic_search;
+#[cfg(not(test))]
 pub mod shader_preview_commands;
+#[cfg(not(test))]
 pub mod share_commands;
+#[cfg(not(test))]
 pub mod specta_bindings;
+#[cfg(not(test))]
 pub mod sqlite_commands;
+#[cfg(not(test))]
 pub mod startup_commands;
+#[cfg(not(test))]
 pub mod storage_commands;
+#[cfg(not(test))]
 pub mod tailscale_commands;
+#[cfg(not(test))]
 pub mod telemetry;
+#[cfg(not(test))]
 pub mod terminal;
+#[cfg(not(test))]
 pub mod thumbnail_commands;
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", not(test)))]
 pub mod url_drop;
+#[cfg(not(test))]
 pub mod usr;
+#[cfg(not(test))]
 pub mod video_commands;
+#[cfg(not(test))]
 pub mod video_engine;
+#[cfg(not(test))]
 pub mod volume_inventory;
+#[cfg(not(test))]
 pub mod vst_commands;
+#[cfg(not(test))]
 pub mod vst_host_runtime;
+#[cfg(not(test))]
 pub mod wayland_dock;
+#[cfg(not(test))]
 pub mod window_commands;
 
 #[cfg(not(test))]

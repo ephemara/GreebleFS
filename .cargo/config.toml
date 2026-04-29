@@ -1,6 +1,0 @@
-[target.x86_64-pc-windows-msvc]
-runner = [
-  "node",
-  "-e",
-  'const { spawnSync } = require("node:child_process"); const [binaryPath, ...binaryArgs] = process.argv.slice(1); const sanitize = (value) => typeof value === "string" ? value.split(";").filter((entry) => !entry.toLowerCase().includes("windows performance toolkit")).join(";") : value; const env = { ...process.env, PATH: sanitize(process.env.PATH), Path: sanitize(process.env.Path) }; const result = spawnSync(binaryPath, binaryArgs, { cwd: process.cwd(), env, stdio: "inherit", shell: false }); if (result.error) { console.error(result.error.message); process.exit(1); } process.exit(result.status ?? 1);',
-]

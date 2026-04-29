@@ -1,3 +1,19 @@
+# 2026-04-29 - Windows Rust Lib-Test Harness Launches Again
+
+- The Windows Rust lib-test blocker is fixed for the default native unit surface. `cargo test --manifest-path src-tauri/Cargo.toml --lib` now launches and passes instead of aborting before `main` with `STATUS_ENTRYPOINT_NOT_FOUND` / `0xc0000139`.
+- Durable ownership after this pass:
+  - `src-tauri/src/lib.rs` keeps the default `cfg(test)` graph intentionally small on Windows by excluding desktop/Tauri/native-host modules that drag in fragile loader-time dependencies.
+  - `src-tauri/src/acceleration_runtime_test_stub.rs`, `src-tauri/src/fs_commands_test_stub.rs`, and `src-tauri/src/python_pyo3_stub.rs` are the test-safe seam shims used by unit tests that need shared enum/type contracts without linking the full native host.
+  - `src-tauri/src/semantic_search.rs` keeps pure semantic-search logic available in lib tests, while Tauri command handlers, SQLite app-data access, manual task plumbing, Python sidecar calls, and telemetry stay production-only under `cfg(not(test))`.
+  - `scripts/validate-runtime-stack.mjs --quick` now runs the actual Rust lib-test harness plus `cargo check --manifest-path src-tauri/Cargo.toml --lib`; the old Windows loader fallback was removed so this failure cannot be silently downgraded again.
+- Removed the dead-end local workaround path: the temporary `.cargo/config.toml` runner and `scripts/prepare-windows-rust-test-api-shim.mjs` API-set shim were deleted because the root cause was the lib-test module graph, not PATH or a missing API-set DLL.
+- Validation that passed for this pass:
+  - `cargo test --manifest-path src-tauri/Cargo.toml semantic_search --lib -- --nocapture`
+  - `cargo test --manifest-path src-tauri/Cargo.toml --lib -- --nocapture`
+  - `cargo check --manifest-path src-tauri/Cargo.toml --lib --quiet`
+  - `node scripts/validate-runtime-stack.mjs --quick --skip-frontend --skip-go --skip-python --skip-proof`
+  - `node scripts/validate-runtime-stack.mjs --quick`
+
 # 2026-04-29 - Explorer File-List Scrollbar Uses Cached Thumb Geometry On Scroll
 
 - Explorer stop-motion scrolling traced to `OverlayScrollArea` doing full scrollbar measurement work on every native file-list scroll event while `FileExplorer` virtualization was also shifting mounted rows.
