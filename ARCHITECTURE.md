@@ -696,6 +696,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Tauri/backend bridge helpers.
 - `src/store/`
   Persisted settings, explorer state, terminal state, and task state.
+- `crates/`
+  Repo-local Rust crates and vendored native substrates consumed by the Tauri host.
+- `crates/tauri-plugins/`
+  Source-controlled Tauri plugin crates that GreebleFS needs to inspect, patch, fork, or own more tightly than `crates.io` allows. This is a staging-and-promotion lane: dormant plugin source may live here with an entry in `tauri-plugin-source-index.toml`, but only active plugins should be added to the root Cargo workspace and consumed by `src-tauri/Cargo.toml` through explicit path dependencies. Runtime package plugins still live under `usr/plugins/`, and app-owned native command modules still live under `src-tauri/src/`.
 - `themes/`
   Theme bundles discovered at runtime. Each bundle is an orchestration manifest that can package local child folders and/or reference standalone managed packs.
   `themes/andromeda/` is the canonical bundle-first reference theme and shows the preferred authored layout for future theme work.
@@ -831,6 +835,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run test:browser` currently launches a headed Playwright Chromium session in this workspace. Without an X server it fails before any tests run; use `xvfb-run` or a headless browser config if you need browser validation locally.
 - Keep Vite/Vitest watcher ignore lists covering the repo-root Rust `target/` tree, not just `src-tauri/target*`. After `cargo test` or `export-bindings`, browser runs can hit Linux `ENOSPC` watcher limits if the root `target/` artifacts are still inside the watch graph.
 - `plugins/**/dist/**` is versioned source for packaged frontend plugins in this repo. Do not treat those directories like app-build output or let a blanket `dist/` ignore swallow shipped plugin entries.
+- Vendored Tauri plugin source belongs under `crates/tauri-plugins/`, not `usr/plugins/` or `src-tauri/src/`. Keep source staged with `tauri-plugin-source-index.toml` and per-plugin integration notes; when a plugin becomes active, wire it deliberately through root Cargo workspace membership, a `src-tauri/Cargo.toml` path dependency, `src-tauri/src/lib.rs` registration, and `src-tauri/capabilities/default.json` permissions.
 - The reference scrubber is intentionally destructive. Future agents should not manually flatten `reference/*` by hand and should not point the scrubber at anything outside `reference/`; use `python3 reference_scrub.py --repo <name>` or the wrapper scripts so the safety checks and repomap generation stay intact.
 - Packaged frontend plugins are no longer single-file only. `src/components/pluginRuntime.tsx` now executes a package-local module graph, so plugin entries may import sibling helpers with relative paths, but those imports must remain inside the plugin root and still cannot pull arbitrary npm dependencies.
 - Packaged preview lanes now ride the same plugin package system as actions/context menus instead of a separate extension stack.

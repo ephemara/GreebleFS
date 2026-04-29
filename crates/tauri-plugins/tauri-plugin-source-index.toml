@@ -1,0 +1,33 @@
+# Data-driven inventory for vendored Tauri plugin source.
+#
+# Add one [[plugins]] table per imported plugin. Keep dormant source listed here
+# even before it is wired into the Cargo workspace so future agents can see
+# what is staged, active, patched, or retired.
+
+schema_version = 1
+
+# Status vocabulary:
+# - "staged": source is present but not built by GreebleFS.
+# - "active": src-tauri consumes this plugin through a path dependency.
+# - "patched": active or staged source has local behavior changes from upstream.
+# - "retired": source is intentionally kept only for audit/history.
+#
+# Example:
+#
+# [[plugins]]
+# id = "tauri-plugin-example"
+# crate_name = "tauri-plugin-example"
+# local_path = "crates/tauri-plugins/tauri-plugin-example"
+# upstream_repository = "https://github.com/example/tauri-plugin-example"
+# upstream_revision = "main@0000000000000000000000000000000000000000"
+# license = "MIT"
+# status = "staged"
+# reason_for_vendoring = "Need source-level control over platform behavior before activation."
+# integration_notes = "crates/tauri-plugins/tauri-plugin-example/integration-notes.md"
+#
+# [plugins.integration]
+# workspace_member = false
+# src_tauri_dependency = false
+# registered_in_lib_rs = false
+# capabilities_updated = false
+# frontend_runtime_wrapper = ""

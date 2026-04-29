@@ -6358,3 +6358,13 @@
   - `FileExplorer.tsx` mounts small folders up to a bounded entry limit instead of virtualizing them. This removes virtual-window churn for ordinary home/project folders while keeping 100k-entry folders bounded.
 - Durable product rule:
   - Do not reattach custom momentum/inertial wheel code to the primary Explorer file list without a measured reason. Native scroll plus bounded virtualization is the default; use synthetic scroll behavior only for specialized non-file-list surfaces.
+
+## 2026-04-29 - Vendored Tauri Plugin Source Lane Added
+
+- Added `crates/tauri-plugins/` as the canonical place to stage or activate Tauri plugin source when GreebleFS needs source-level control instead of a `crates.io` dependency.
+- Durable implementation shape:
+  - `crates/tauri-plugins/README.md` explains the boundary: compile-time Rust/Tauri plugin source belongs here, runtime package plugins stay in `usr/plugins/`, and app-owned native command modules stay in `src-tauri/src/`.
+  - `crates/tauri-plugins/tauri-plugin-source-index.toml` is the data-driven inventory for staged, active, patched, or retired plugin source.
+  - `crates/tauri-plugins/_template/integration-notes.md` is the minimum per-plugin record for upstream revision, vendoring reason, GreebleFS boundary, local changes, and validation.
+- Durable product rule:
+  - Keep plugin source dormant until needed. When activating a plugin, wire it through root Cargo workspace membership, a `src-tauri/Cargo.toml` path dependency, `src-tauri/src/lib.rs` registration, `src-tauri/capabilities/default.json` permissions, and a host-owned frontend runtime wrapper if guest JS APIs are exposed.
