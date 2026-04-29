@@ -21,8 +21,11 @@ import {
   ExplorerTaskCenterContent,
   getExplorerTaskSummary,
 } from './ExplorerTaskCenterContent';
+import { ExplorerFloatingSurface } from './ExplorerFloatingSurface';
 import { OverlayScrollArea } from '../OverlayScrollArea';
 import type { ExplorerChromeSizeVariant } from '../../config/explorerChromeLayouts';
+
+const EXPLORER_TASK_CENTER_FLOATING_SURFACE_GROUP = 'explorer-task-center';
 
 interface ExplorerTaskStatusBadgeProps {
   accent: string;
@@ -153,7 +156,16 @@ export function ExplorerTaskStatusBadge({
     }
 
     const handlePointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const targetElement = target instanceof Element ? target : null;
+      if (
+        targetElement?.closest(
+          `[data-overlay-explorer-floating-surface-group="${EXPLORER_TASK_CENTER_FLOATING_SURFACE_GROUP}"]`,
+        )
+      ) {
+        return;
+      }
+      if (!containerRef.current?.contains(target)) {
         closeExplorerTaskCenter();
       }
     };
@@ -202,6 +214,8 @@ export function ExplorerTaskStatusBadge({
       <button
         type="button"
         onClick={toggleExplorerTaskCenter}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -232,12 +246,21 @@ export function ExplorerTaskStatusBadge({
         <span style={{ color: muted, whiteSpace: 'nowrap' }}>{summary.label}</span>
       </button>
 
-      {isOpen ? (
+      <ExplorerFloatingSurface
+        anchorRef={containerRef}
+        open={isOpen}
+        side="top"
+        align="end"
+        offset={10}
+        viewportPadding={10}
+        surfaceGroup={EXPLORER_TASK_CENTER_FLOATING_SURFACE_GROUP}
+        zIndexCssVar="--overlay-explorer-floating-menu-layer"
+        zIndexFallback={9997}
+      >
         <div
+          role="dialog"
+          aria-label="Explorer task center"
           style={{
-            position: 'absolute',
-            right: 0,
-            bottom: 'calc(100% + 10px)',
             width: 380,
             maxWidth: 'min(380px, 78vw)',
             maxHeight: 460,
@@ -246,7 +269,6 @@ export function ExplorerTaskStatusBadge({
             background: 'rgba(14,18,24,0.96)',
             boxShadow: '0 20px 48px rgba(0,0,0,0.35)',
             backdropFilter: 'blur(18px)',
-            zIndex: 40,
           }}
         >
           <OverlayScrollArea
@@ -304,7 +326,7 @@ export function ExplorerTaskStatusBadge({
             </div>
           </OverlayScrollArea>
         </div>
-      ) : null}
+      </ExplorerFloatingSurface>
     </div>
   );
 }
