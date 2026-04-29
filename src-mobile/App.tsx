@@ -79,6 +79,7 @@ import {
   type MobilePushNotificationIntent,
   type MobilePushRuntimeSnapshot,
 } from "./mobilePush";
+import { MobilePluginRuntimeSurface } from "./mobilePluginRuntime";
 import {
   defaultMobileLayoutSettings,
   isMobileGridViewMode,
@@ -2686,78 +2687,92 @@ export default function App() {
         </div>
 
         <section className="mobile-stack">
-          {pane.sections.length === 0 ? (
-            <div className="mobile-empty-state">
-              This plugin pane has no mobile sections yet.
-            </div>
-          ) : (
-            pane.sections.map((section) => (
-              <article key={section.id} className="mobile-settings-card">
-                <div className="mobile-settings-card__title">{section.title}</div>
-                {section.body ? (
-                  <div className="mobile-settings-card__body">{section.body}</div>
-                ) : null}
-                {section.assetUrl ? (
-                  <div className="mobile-settings-card__actions">
-                    <a
-                      className="mobile-action-button mobile-plugin-asset-link"
-                      href={section.assetUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <ExternalLink size={18} strokeWidth={1.7} />
-                      Open Asset
-                    </a>
-                  </div>
-                ) : null}
-              </article>
-            ))
-          )}
+          {pane.rendererUrl ? (
+            <MobilePluginRuntimeSurface
+              pane={pane}
+              plugin={pluginSummary ?? null}
+              currentPath={currentPath}
+              onOpenPath={(relativePath) => navigateToExplorerPath(relativePath, "push")}
+              onOpenPreview={(relativePath) => openPreviewForPath(relativePath, null)}
+            />
+          ) : null}
 
-          {pane.actions.length > 0 ? (
-            <article className="mobile-settings-card">
-              <div className="mobile-settings-card__title">Plugin Actions</div>
-              <div className="mobile-plugin-action-grid">
-                {pane.actions.map((action) => {
-                  const Icon = getMobilePluginActionIcon(action);
-                  const actionKey = buildMobilePluginActionKey(pane, action);
-                  const result = pluginActionState[actionKey];
-                  const isRunning = result?.phase === "running";
-                  return (
-                    <div key={action.id} className="mobile-plugin-action">
-                      <button
-                        type="button"
-                        className={`mobile-action-button mobile-plugin-action__button mobile-plugin-action__button--${action.tone}`}
-                        disabled={isRunning}
-                        onClick={() => {
-                          void runMobilePluginPaneAction(pane, action);
-                        }}
-                      >
-                        <Icon size={18} strokeWidth={1.7} />
-                        {isRunning ? "Running" : action.label}
-                      </button>
-                      {action.description ? (
-                        <div className="mobile-plugin-action__description">
-                          {action.description}
-                        </div>
-                      ) : null}
-                      {result ? (
-                        <div
-                          className={`mobile-plugin-action__result mobile-plugin-action__result--${result.phase}`}
+          {!pane.rendererUrl ? (
+            <>
+              {pane.sections.length === 0 ? (
+                <div className="mobile-empty-state">
+                  This plugin pane has no mobile sections yet.
+                </div>
+              ) : (
+                pane.sections.map((section) => (
+                  <article key={section.id} className="mobile-settings-card">
+                    <div className="mobile-settings-card__title">{section.title}</div>
+                    {section.body ? (
+                      <div className="mobile-settings-card__body">{section.body}</div>
+                    ) : null}
+                    {section.assetUrl ? (
+                      <div className="mobile-settings-card__actions">
+                        <a
+                          className="mobile-action-button mobile-plugin-asset-link"
+                          href={section.assetUrl}
+                          target="_blank"
+                          rel="noreferrer"
                         >
-                          <div>{result.message}</div>
-                          {result.status != null ? (
-                            <div>Status {result.status}</div>
+                          <ExternalLink size={18} strokeWidth={1.7} />
+                          Open Asset
+                        </a>
+                      </div>
+                    ) : null}
+                  </article>
+                ))
+              )}
+
+              {pane.actions.length > 0 ? (
+                <article className="mobile-settings-card">
+                  <div className="mobile-settings-card__title">Plugin Actions</div>
+                  <div className="mobile-plugin-action-grid">
+                    {pane.actions.map((action) => {
+                      const Icon = getMobilePluginActionIcon(action);
+                      const actionKey = buildMobilePluginActionKey(pane, action);
+                      const result = pluginActionState[actionKey];
+                      const isRunning = result?.phase === "running";
+                      return (
+                        <div key={action.id} className="mobile-plugin-action">
+                          <button
+                            type="button"
+                            className={`mobile-action-button mobile-plugin-action__button mobile-plugin-action__button--${action.tone}`}
+                            disabled={isRunning}
+                            onClick={() => {
+                              void runMobilePluginPaneAction(pane, action);
+                            }}
+                          >
+                            <Icon size={18} strokeWidth={1.7} />
+                            {isRunning ? "Running" : action.label}
+                          </button>
+                          {action.description ? (
+                            <div className="mobile-plugin-action__description">
+                              {action.description}
+                            </div>
                           ) : null}
-                          {result.stdout ? <pre>{result.stdout}</pre> : null}
-                          {result.stderr ? <pre>{result.stderr}</pre> : null}
+                          {result ? (
+                            <div
+                              className={`mobile-plugin-action__result mobile-plugin-action__result--${result.phase}`}
+                            >
+                              <div>{result.message}</div>
+                              {result.status != null ? (
+                                <div>Status {result.status}</div>
+                              ) : null}
+                              {result.stdout ? <pre>{result.stdout}</pre> : null}
+                              {result.stderr ? <pre>{result.stderr}</pre> : null}
+                            </div>
+                          ) : null}
                         </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </article>
+                      );
+                    })}
+                  </div>
+                </article>
+              ) : null}
+            </>
           ) : null}
 
           {pluginSummary ? (

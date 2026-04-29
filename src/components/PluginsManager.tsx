@@ -1265,6 +1265,9 @@ function getPluginCapabilityLabels(plugin: LoadedOverlayPlugin): string[] {
   if (plugin.diagnostics.capabilities.themes > 0) {
     labels.push(`Themes ${plugin.diagnostics.capabilities.themes}`);
   }
+  if ((plugin.diagnostics.capabilities.mobilePanes ?? 0) > 0) {
+    labels.push(`Mobile ${plugin.diagnostics.capabilities.mobilePanes}`);
+  }
   if (plugin.diagnostics.capabilities.shaders > 0) {
     labels.push(`Shaders ${plugin.diagnostics.capabilities.shaders}`);
   }

@@ -1,5 +1,6 @@
 import type {
   MobileLayoutSettings,
+  MobileIndexPicturesResponse,
   MobilePluginBackendRunRequest,
   MobilePluginBackendRunResponse,
   MobilePluginCatalogResponse,
@@ -134,6 +135,25 @@ export async function fetchMobileSearchResults(
     showHiddenFiles: String(options.showHiddenFiles),
   });
   return fetchJson<MobileSearchResponse>(`/api/search?${params.toString()}`);
+}
+
+export async function fetchMobileIndexPictures(options: {
+  query?: string | null;
+  limit?: number;
+  offset?: number;
+  showHiddenFiles?: boolean;
+} = {}): Promise<MobileIndexPicturesResponse> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 96),
+    offset: String(options.offset ?? 0),
+  });
+  if (options.query?.trim()) {
+    params.set("query", options.query.trim());
+  }
+  if (typeof options.showHiddenFiles === "boolean") {
+    params.set("showHiddenFiles", String(options.showHiddenFiles));
+  }
+  return fetchJson<MobileIndexPicturesResponse>(`/api/index/pictures?${params.toString()}`);
 }
 
 export async function startMobileSearchScan(): Promise<void> {

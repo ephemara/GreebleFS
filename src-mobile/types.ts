@@ -75,6 +75,16 @@ export interface MobileSearchResponse {
   entries: MobileSearchResultEntry[];
 }
 
+export interface MobileIndexPicturesResponse {
+  query: string;
+  shareName: string;
+  scopePath: string;
+  totalCount: number;
+  offset: number;
+  limit: number;
+  entries: MobileSearchResultEntry[];
+}
+
 export interface MobileSearchStatusValue {
   isScanInProgress: boolean;
   isCommitting: boolean;
@@ -154,6 +164,7 @@ export interface MobilePluginSummary {
 }
 
 export interface MobilePluginCapabilitySummary {
+  desktopPanel: boolean;
   mobilePanes: number;
   backendActions: number;
   themes: number;
@@ -188,6 +199,10 @@ export interface MobilePluginPane {
   order: number;
   category: string;
   kind: "dashboard" | "tool" | "inspector" | "viewer" | string;
+  renderer: string;
+  rendererUrl: string;
+  styles: string[];
+  styleUrls: string[];
   theme: MobilePluginPaneTheme;
   sections: MobilePluginPaneSection[];
   actions: MobilePluginPaneAction[];

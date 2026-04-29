@@ -150,6 +150,14 @@ interface PluginPackageSettingsSlotManifest {
   fields?: OverlayPluginSettingsFieldDefinition[];
 }
 
+interface PluginPackageMobilePaneManifest {
+  id?: string;
+  title?: string;
+  renderer?: string;
+  rendererEntry?: string;
+  styles?: string[];
+}
+
 interface PluginPackageTestFileManifest {
   id?: string;
   label?: string;
@@ -183,6 +191,7 @@ interface PluginPackageManifest {
     contextMenuItems?: PluginPackageContextMenuItemManifest[];
     previewLanes?: PluginPackagePreviewLaneManifest[];
     settingsSlots?: PluginPackageSettingsSlotManifest[];
+    mobilePanes?: PluginPackageMobilePaneManifest[];
   };
 }
 
@@ -850,6 +859,7 @@ function estimatePackageManifestCapabilities(
   const contributions = record.manifest.contributions;
   return {
     panel: Boolean(record.manifest.entry),
+    mobilePanes: contributions?.mobilePanes?.length ?? 0,
     themes: contributions?.themes?.length ?? 0,
     shaders: contributions?.shaders?.length ?? 0,
     fonts: contributions?.fonts?.length ?? 0,
@@ -1618,6 +1628,7 @@ async function loadPluginPackage(
   if (packagePlugin) {
     const capabilities: OverlayPluginCapabilitySummary = {
       panel: true,
+      mobilePanes: record.manifest.contributions?.mobilePanes?.length ?? 0,
       themes: result.themePackages.length,
       shaders: result.shaders.length,
       fonts: result.fonts.length,

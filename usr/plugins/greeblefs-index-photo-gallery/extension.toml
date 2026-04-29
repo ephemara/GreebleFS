@@ -11,3 +11,20 @@ tags = ["first-party", "index", "gallery", "photos", "media"]
 [permissions]
 fsRead = true
 launchIntents = ["open-explorer"]
+
+[[contributions.mobilePanes]]
+id = "photo-gallery"
+title = "Photo Gallery"
+description = "Browse indexed pictures from the paired mobile shell using the same plugin package."
+iconName = "Images"
+order = 42
+category = "First-party Media"
+kind = "viewer"
+renderer = "mobile/gallery.js"
+styles = ["mobile/gallery.css"]
+
+[contributions.mobilePanes.theme]
+accent = "var(--mobile-accent)"
+
+[contributions.mobilePanes.theme.cssVars]
+"--mobile-plugin-accent" = "var(--mobile-accent)"

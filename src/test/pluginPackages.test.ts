@@ -324,6 +324,14 @@ describe('plugin package discovery', () => {
                 ],
               },
             ],
+            mobilePanes: [
+              {
+                id: 'notes-mobile',
+                title: 'Notes Mobile',
+                renderer: 'mobile/notes-gallery.js',
+                styles: ['mobile/notes-gallery.css'],
+              },
+            ],
           },
         });
       }
@@ -473,6 +481,7 @@ describe('plugin package discovery', () => {
     expect(result.plugins[1]?.diagnostics.capabilities.contextMenuItems).toBe(3);
     expect(result.plugins[1]?.diagnostics.capabilities.previewLanes).toBe(1);
     expect(result.plugins[1]?.diagnostics.capabilities.settingsSlots).toBe(1);
+    expect(result.plugins[1]?.diagnostics.capabilities.mobilePanes).toBe(1);
     expect(result.themePackages).toHaveLength(0);
     expect(result.shaders).toHaveLength(1);
     expect(result.shaders[0]?.name).toBe('Plugin Halo');

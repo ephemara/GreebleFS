@@ -38,8 +38,9 @@ use super::types::{
 };
 use crate::archive_ops::{self, FsArchiveEntryListingEntry};
 use crate::global_search::{
-    self, GlobalSearchQueryOptions, GlobalSearchResultEntry, GlobalSearchScanSettings,
-    GlobalSearchStatus,
+    self, GlobalSearchIndexQueryRequest, GlobalSearchIndexSortDirection,
+    GlobalSearchIndexSortKey, GlobalSearchQueryOptions, GlobalSearchResultEntry,
+    GlobalSearchScanSettings, GlobalSearchStatus,
 };
 use crate::thumbnail_commands::{self, ExplorerEntryThumbnailRequest};
 
@@ -47,11 +48,16 @@ const MOBILE_DEFAULT_PAGE_SIZE: usize = 160;
 const MOBILE_MAX_PAGE_SIZE: usize = 320;
 const MOBILE_SEARCH_DEFAULT_LIMIT: usize = 48;
 const MOBILE_SEARCH_MAX_LIMIT: usize = 120;
+const MOBILE_INDEX_PICTURES_DEFAULT_LIMIT: usize = 96;
+const MOBILE_INDEX_PICTURES_MAX_LIMIT: usize = 240;
 const MOBILE_THUMBNAIL_WIDTH: u32 = 160;
 const MOBILE_THUMBNAIL_HEIGHT: u32 = 160;
 const MOBILE_PREVIEW_TEXT_BYTES: usize = 48 * 1024;
 const MOBILE_FOLDER_PREVIEW_ENTRY_LIMIT: usize = 60;
 const MOBILE_ARCHIVE_PREVIEW_ENTRY_LIMIT: usize = 60;
+const MOBILE_INDEX_IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico", "avif", "tiff", "tif",
+];
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +106,15 @@ struct MobileListQuery {
 struct MobileSearchQuery {
     query: String,
     limit: Option<usize>,
+    show_hidden_files: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MobileIndexPicturesQuery {
+    query: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
     show_hidden_files: Option<bool>,
 }
 
@@ -193,6 +208,18 @@ struct MobileSearchResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct MobileIndexPicturesResponse {
+    query: String,
+    share_name: String,
+    scope_path: String,
+    total_count: usize,
+    offset: usize,
+    limit: usize,
+    entries: Vec<MobileSearchEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct MobileSearchStatusResponse {
     share_name: String,
     scope_path: String,
@@ -277,6 +304,7 @@ pub(super) fn build_mobile_router(state: ShareState) -> Router {
         .route("/api/list", get(mobile_list_handler))
         .route("/api/theme", get(mobile_theme_handler))
         .route("/api/search", get(mobile_search_handler))
+        .route("/api/index/pictures", get(mobile_index_pictures_handler))
         .route("/api/search/status", get(mobile_search_status_handler))
         .route("/api/search/scan", post(mobile_search_scan_handler))
         .route("/api/search/cancel", post(mobile_search_cancel_handler))
@@ -477,6 +505,109 @@ async fn mobile_search_handler(
         share_name: share_root_label(&state.share_path),
         scope_path: String::new(),
         total_count: entries.len(),
+        entries,
+    };
+    (StatusCode::OK, axum::Json(response)).into_response()
+}
+
+async fn mobile_index_pictures_handler(
+    State(state): State<ShareState>,
+    Query(query): Query<MobileIndexPicturesQuery>,
+) -> Response {
+    let snapshot = ACTIVE_MOBILE_THEME_SNAPSHOT.read().await.clone();
+    let browse_policy = MobileBrowsePolicy {
+        show_hidden_files: query
+            .show_hidden_files
+            .unwrap_or(snapshot.layout.show_hidden_files),
+        ..MobileBrowsePolicy::default()
+    };
+    let limit = query
+        .limit
+        .unwrap_or(MOBILE_INDEX_PICTURES_DEFAULT_LIMIT)
+        .clamp(1, MOBILE_INDEX_PICTURES_MAX_LIMIT);
+    let offset = query.offset.unwrap_or(0);
+    let trimmed_query = query.query.unwrap_or_default().trim().to_string();
+
+    if let Some(hub) = &state.file_hub {
+        let (total_count, entries) =
+            build_hub_picture_entries(hub, &trimmed_query, offset, limit, browse_policy, &snapshot);
+        let response = MobileIndexPicturesResponse {
+            query: trimmed_query,
+            share_name: share_root_label(&state.share_path),
+            scope_path: String::new(),
+            total_count,
+            offset,
+            limit,
+            entries,
+        };
+        return (StatusCode::OK, axum::Json(response)).into_response();
+    }
+
+    if let Err(error) = global_search::global_search_init(state.app_handle.clone()) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to initialize mobile media index: {error}"),
+        )
+            .into_response();
+    }
+
+    let request = GlobalSearchIndexQueryRequest {
+        query: (!trimmed_query.is_empty()).then(|| trimmed_query.clone()),
+        limit,
+        offset,
+        include_files: true,
+        include_directories: false,
+        include_hidden: browse_policy.show_hidden_files,
+        extensions: MOBILE_INDEX_IMAGE_EXTENSIONS
+            .iter()
+            .map(|extension| (*extension).to_string())
+            .collect(),
+        root_paths: vec![state.share_path.to_string_lossy().into_owned()],
+        exact_match: false,
+        typo_tolerance: true,
+        min_score_threshold: None,
+        sort_key: Some(GlobalSearchIndexSortKey::ModifiedTime),
+        sort_direction: Some(GlobalSearchIndexSortDirection::Desc),
+    };
+
+    let results = match crate::global_search::query::global_search_query_index(
+        state.app_handle.clone(),
+        request,
+    )
+    .await
+    {
+        Ok(results) => results,
+        Err(error) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to query mobile media index: {error}"),
+            )
+                .into_response()
+        }
+    };
+
+    let mut entries = results
+        .into_iter()
+        .filter_map(|result| {
+            build_mobile_search_entry_from_result(
+                &state.share_path,
+                result,
+                browse_policy,
+                &snapshot,
+            )
+        })
+        .filter(|entry| matches!(entry.entry_kind, MobileEntryKind::Image))
+        .collect::<Vec<_>>();
+    sort_mobile_search_entries(&mut entries, browse_policy);
+    let total_count = offset.saturating_add(entries.len());
+
+    let response = MobileIndexPicturesResponse {
+        query: trimmed_query,
+        share_name: share_root_label(&state.share_path),
+        scope_path: String::new(),
+        total_count,
+        offset,
+        limit,
         entries,
     };
     (StatusCode::OK, axum::Json(response)).into_response()
@@ -1217,6 +1348,67 @@ fn build_hub_search_entries(
     sort_mobile_search_entries(&mut entries, browse_policy);
     entries.truncate(limit);
     entries
+}
+
+fn build_hub_picture_entries(
+    hub: &[PathBuf],
+    query: &str,
+    offset: usize,
+    limit: usize,
+    browse_policy: MobileBrowsePolicy,
+    snapshot: &MobileThemeSnapshot,
+) -> (usize, Vec<MobileSearchEntry>) {
+    let normalized_query = query.to_lowercase();
+    let mut entries = Vec::new();
+
+    for (index, path) in hub.iter().enumerate() {
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_string();
+        if !normalized_query.is_empty() && !name.to_lowercase().contains(&normalized_query) {
+            continue;
+        }
+
+        let metadata = match build_target_metadata(path, index.to_string()) {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+        if metadata.is_hidden && !browse_policy.show_hidden_files {
+            continue;
+        }
+        let entry = build_mobile_entry_info(metadata, snapshot);
+        if !matches!(entry.entry_kind, MobileEntryKind::Image) {
+            continue;
+        }
+
+        entries.push(MobileSearchEntry {
+            name: entry.name,
+            relative_path: entry.relative_path,
+            parent_relative_path: String::new(),
+            is_dir: entry.is_dir,
+            is_hidden: entry.is_hidden,
+            size: entry.size,
+            extension: entry.extension,
+            mime_type: entry.mime_type,
+            modified_ms: entry.modified_ms,
+            entry_kind: entry.entry_kind,
+            icon_id: entry.icon_id,
+            thumbnail_url: entry.thumbnail_url,
+            preview_kind: entry.preview_kind,
+            can_preview: entry.can_preview,
+            can_download: entry.can_download,
+            file_url: entry.file_url,
+            download_url: entry.download_url,
+            score: 1.0,
+        });
+    }
+
+    sort_mobile_search_entries(&mut entries, browse_policy);
+    let total_count = entries.len();
+    let paged_entries = entries.into_iter().skip(offset).take(limit).collect();
+    (total_count, paged_entries)
 }
 
 fn build_target_metadata(

@@ -273,6 +273,7 @@ export type OverlayPluginSourceKind = 'file-plugin' | 'package-plugin';
 
 export interface OverlayPluginCapabilitySummary {
   panel: boolean;
+  mobilePanes?: number;
   themes: number;
   shaders: number;
   fonts: number;

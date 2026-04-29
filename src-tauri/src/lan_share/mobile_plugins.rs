@@ -55,6 +55,7 @@ pub(super) struct MobilePluginSummary {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MobilePluginCapabilitySummary {
+    desktop_panel: bool,
     mobile_panes: usize,
     backend_actions: usize,
     themes: usize,
@@ -93,6 +94,10 @@ pub(super) struct MobilePluginPane {
     order: i32,
     category: String,
     kind: String,
+    renderer: String,
+    renderer_url: String,
+    styles: Vec<String>,
+    style_urls: Vec<String>,
     theme: MobilePluginPaneTheme,
     sections: Vec<MobilePluginPaneSection>,
     actions: Vec<MobilePluginPaneAction>,
@@ -418,6 +423,7 @@ fn parse_mobile_plugin_manifest(
         category,
         tags,
         capabilities: MobilePluginCapabilitySummary {
+            desktop_panel: as_string(manifest_value.get("entry")).is_some(),
             mobile_panes: mobile_panes.len(),
             backend_actions: backend_action_count,
             themes: as_array(contributions.and_then(|value| value.get("themes"))).len(),
@@ -468,6 +474,23 @@ fn normalize_mobile_plugin_pane(
     let category =
         as_string(record.get("category")).unwrap_or_else(|| fallback_category.to_string());
     let kind = normalize_pane_kind(as_string(record.get("kind")).as_deref());
+    let renderer = as_string(record.get("renderer"))
+        .or_else(|| as_string(record.get("rendererEntry")))
+        .and_then(|path| normalize_safe_relative_path(&path))
+        .unwrap_or_default();
+    let renderer_url = if renderer.is_empty() {
+        String::new()
+    } else {
+        build_mobile_plugin_asset_url(plugin_route_id, &renderer)
+    };
+    let styles = as_string_array(record.get("styles"))
+        .into_iter()
+        .filter_map(|path| normalize_safe_relative_path(&path))
+        .collect::<Vec<_>>();
+    let style_urls = styles
+        .iter()
+        .map(|path| build_mobile_plugin_asset_url(plugin_route_id, path))
+        .collect::<Vec<_>>();
     let theme = normalize_mobile_plugin_pane_theme(record.get("theme"));
     let sections = as_array(record.get("sections"))
         .iter()
@@ -497,6 +520,10 @@ fn normalize_mobile_plugin_pane(
         order,
         category,
         kind,
+        renderer,
+        renderer_url,
+        styles,
+        style_urls,
         theme,
         sections,
         actions,

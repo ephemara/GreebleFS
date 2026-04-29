@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../../src-mobile/App";
+import type { MobilePluginRuntimeContext } from "../../src-mobile/mobilePluginRuntime";
 import { useMobileStore } from "../../src-mobile/mobileStore";
 import type {
   MobilePreviewResponse,
@@ -203,6 +204,7 @@ const pluginCatalogResponse = {
       category: "Utilities",
       tags: ["mobile"],
       capabilities: {
+        desktopPanel: true,
         mobilePanes: 1,
         backendActions: 1,
         themes: 0,
@@ -238,6 +240,10 @@ const pluginCatalogResponse = {
       order: 25,
       category: "Utilities",
       kind: "dashboard",
+      renderer: "",
+      rendererUrl: "",
+      styles: [],
+      styleUrls: [],
       theme: {
         accent: "var(--mobile-accent)",
         cssVars: {},
@@ -273,6 +279,8 @@ const pluginCatalogResponse = {
   warnings: [],
 };
 
+let activePluginCatalogResponse = pluginCatalogResponse;
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -298,6 +306,8 @@ describe("mobile app shell", () => {
 
     vi.spyOn(window, "open").mockImplementation(() => null);
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    activePluginCatalogResponse = pluginCatalogResponse;
+    window.__GREEBLEFS_MOBILE_PLUGIN_MODULES__ = {};
 
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), "https://mobile.greeblefs.test");
@@ -306,7 +316,7 @@ describe("mobile app shell", () => {
         return jsonResponse(mobileThemeSnapshot);
       }
       if (url.pathname === "/api/plugins") {
-        return jsonResponse(pluginCatalogResponse);
+        return jsonResponse(activePluginCatalogResponse);
       }
       if (url.pathname === "/api/plugins/demo-mobile/backend") {
         const body = init?.body ? JSON.parse(String(init.body)) : {};
@@ -330,6 +340,23 @@ describe("mobile app shell", () => {
       }
       if (url.pathname === "/api/search") {
         return jsonResponse(searchResponse);
+      }
+      if (url.pathname === "/api/index/pictures") {
+        return jsonResponse({
+          query: url.searchParams.get("query") ?? "",
+          shareName: "GreebleFS",
+          scopePath: "",
+          totalCount: 1,
+          offset: Number(url.searchParams.get("offset") ?? 0),
+          limit: Number(url.searchParams.get("limit") ?? 96),
+          entries: [
+            {
+              ...listingResponse.entries[1],
+              parentRelativePath: "",
+              score: 1,
+            },
+          ],
+        });
       }
       if (url.pathname === "/api/preview") {
         return jsonResponse(previewResponse);
@@ -449,6 +476,59 @@ describe("mobile app shell", () => {
       paneId: "tools",
       actionId: "run-context",
     });
+  });
+
+  it("mounts plugin-provided mobile renderer modules with host index helpers", async () => {
+    const user = userEvent.setup();
+    const rendererUrl = "/api/plugins/demo-mobile/assets/mobile/gallery.js";
+    const runtimeMount = vi.fn(async (
+      container: HTMLElement,
+      api: MobilePluginRuntimeContext,
+    ) => {
+      const response = await api.index.media.findPictures({ limit: 1 });
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `Runtime ${response.entries[0]?.name ?? "empty"}`;
+      button.addEventListener("click", () => {
+        void api.files.openPreview(response.entries[0]?.relativePath ?? "");
+      });
+      container.append(button);
+      return {
+        update: vi.fn(),
+        dispose: vi.fn(),
+      };
+    });
+    window.__GREEBLEFS_MOBILE_PLUGIN_MODULES__ = {
+      [rendererUrl]: {
+        mount: runtimeMount,
+      },
+    };
+    activePluginCatalogResponse = {
+      ...pluginCatalogResponse,
+      panes: pluginCatalogResponse.panes.map((pane) => ({
+        ...pane,
+        title: "Gallery",
+        renderer: "mobile/gallery.js",
+        rendererUrl,
+        styles: ["mobile/gallery.css"],
+        styleUrls: ["/api/plugins/demo-mobile/assets/mobile/gallery.css"],
+      })),
+    };
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Gallery" }));
+    expect(await screen.findByText("Runtime photo.png")).toBeInTheDocument();
+    expect(runtimeMount).toHaveBeenCalled();
+
+    const mediaRequest = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .map(([input]) => new URL(String(input), "https://mobile.greeblefs.test"))
+      .find((url) => url.pathname === "/api/index/pictures");
+    expect(mediaRequest?.searchParams.get("limit")).toBe("1");
+
+    await user.click(screen.getByRole("button", { name: "Runtime photo.png" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("Download")).toBeInTheDocument();
   });
 
   it("pins mobile paths and surfaces saved path shortcuts", async () => {
