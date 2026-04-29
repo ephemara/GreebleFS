@@ -30,6 +30,7 @@ import {
 
 export interface ExplorerChromeSurfaceLayoutDynamics {
   enabled: boolean;
+  authoringCanvasEnabled?: boolean;
   axisMode: LayoutDynamicsAxisMode;
   solver: LayoutDynamicsSolverProfile;
   intensity: number;
@@ -169,7 +170,9 @@ export function ExplorerChromeSurface({
     [surfaceDefinition.rows],
   );
   const useDynamicSurfaceLayout =
-    layoutDynamics?.enabled === true && editModeActive;
+    layoutDynamics?.enabled === true &&
+    layoutDynamics.authoringCanvasEnabled === true &&
+    editModeActive;
   const usesFreeformDynamicCanvas =
     useDynamicSurfaceLayout && layoutDynamics?.axisMode === "free-2d";
   const freeformDynamicCanvasBandId = `${surface.surfaceId}:freeform-canvas`;

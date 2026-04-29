@@ -2208,7 +2208,7 @@ describe("FileExplorer view modes", () => {
     ]);
   });
 
-  it("renders the status bar through layout dynamics during explorer customize mode", async () => {
+  it("keeps the status bar representative during explorer customize mode", async () => {
     useExplorerStore.getState().openChromeEditSession({
       themeId: "operator",
       layoutId: "default",
@@ -2224,6 +2224,11 @@ describe("FileExplorer view modes", () => {
       expect(
         document.querySelector(
           '[data-layout-dynamics-surface="explorerStatusBar"]',
+        ),
+      ).toBeNull();
+      expect(
+        document.querySelector(
+          '[data-overlay-explorer-surface="explorerStatusBar"]',
         ),
       ).not.toBeNull();
     });

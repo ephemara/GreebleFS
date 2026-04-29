@@ -89,6 +89,7 @@ describe("ExplorerChromeSurface", () => {
         dynamicCanvasMinHeightPx={64}
         layoutDynamics={{
           enabled: true,
+          authoringCanvasEnabled: true,
           axisMode: "free-2d",
           solver: {
             id: "test-solver",
@@ -591,7 +592,7 @@ describe("ExplorerChromeSurface", () => {
     ).toBeNull();
   });
 
-  it("switches adopted explorer surfaces into the layout-dynamics canvas during customize mode even before anchors exist", () => {
+  it("keeps customize mode representative unless the layout-dynamics authoring canvas is explicitly enabled", () => {
     const rendered = render(
       <ExplorerChromeSurface
         surface={toolbarSurface}
@@ -637,11 +638,16 @@ describe("ExplorerChromeSurface", () => {
       rendered.container.querySelector(
         '[data-layout-dynamics-surface="explorerToolbar"]',
       ),
+    ).toBeNull();
+    expect(
+      rendered.container.querySelector(
+        '[data-overlay-explorer-row="primary"]',
+      ),
     ).not.toBeNull();
     expect(
       rendered.container.querySelectorAll(
         "[data-explorer-customize-insertion-ghost='true']",
       ),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 });

@@ -57,7 +57,7 @@ vi.mock('../components/FileExplorer', () => ({
         style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}
       >
         {externalChromeControls.length > 0 ? (
-          <div data-layout-dynamics-surface={activeHeaderSurface}>
+          <div data-overlay-explorer-surface={activeHeaderSurface}>
             {externalChromeControls
               .filter((entry) => entry.surfaces.includes(activeHeaderSurface))
               .map((entry) => {
@@ -82,7 +82,7 @@ vi.mock('../components/FileExplorer', () => ({
           </div>
         ) : null}
         {chromeEditActive ? (
-          <div data-layout-dynamics-surface={activeHeaderSurface} />
+          <div data-overlay-explorer-surface={activeHeaderSurface} />
         ) : null}
         <div data-testid={`file-explorer-${instanceId}`} />
       </div>
@@ -572,7 +572,7 @@ describe('ExplorerWorkspace', () => {
     ).toBe('end');
   });
 
-  it('uses the layout-dynamics canvas for the workspace header during customize mode', async () => {
+  it('keeps the workspace header representative during customize mode', async () => {
     useExplorerStore.getState().openChromeEditSession({
       themeId: 'operator',
       layoutId: 'default',
@@ -587,6 +587,11 @@ describe('ExplorerWorkspace', () => {
       expect(
         container.querySelector(
           '[data-layout-dynamics-surface="explorerToolbar"]',
+        ),
+      ).toBeNull();
+      expect(
+        container.querySelector(
+          '[data-overlay-explorer-surface="explorerToolbar"]',
         ),
       ).not.toBeNull();
     });

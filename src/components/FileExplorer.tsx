@@ -19988,9 +19988,8 @@ export function FileExplorer({
   const explorerTopbarLayoutDynamics =
     useMemo<ExplorerChromeSurfaceLayoutDynamics>(
       () => ({
-        enabled:
-          explorerTopbarLayoutDynamicsSettings.enabled ||
-          Boolean(activeChromeEditSession),
+        enabled: explorerTopbarLayoutDynamicsSettings.enabled,
+        authoringCanvasEnabled: false,
         axisMode: explorerTopbarLayoutDynamicsSettings.surface.axisMode,
         solver: explorerTopbarLayoutDynamicsSettings.preset,
         intensity: explorerTopbarLayoutDynamicsSettings.intensity,
@@ -20011,9 +20010,8 @@ export function FileExplorer({
   const explorerToolbarLayoutDynamics =
     useMemo<ExplorerChromeSurfaceLayoutDynamics>(
       () => ({
-        enabled:
-          explorerToolbarLayoutDynamicsSettings.enabled ||
-          Boolean(activeChromeEditSession),
+        enabled: explorerToolbarLayoutDynamicsSettings.enabled,
+        authoringCanvasEnabled: false,
         axisMode: explorerToolbarLayoutDynamicsSettings.surface.axisMode,
         solver: explorerToolbarLayoutDynamicsSettings.preset,
         intensity: explorerToolbarLayoutDynamicsSettings.intensity,
@@ -20034,9 +20032,8 @@ export function FileExplorer({
   const explorerRailHeaderLayoutDynamics =
     useMemo<ExplorerChromeSurfaceLayoutDynamics>(
       () => ({
-        enabled:
-          explorerRailHeaderLayoutDynamicsSettings.enabled ||
-          Boolean(activeChromeEditSession),
+        enabled: explorerRailHeaderLayoutDynamicsSettings.enabled,
+        authoringCanvasEnabled: false,
         axisMode: explorerRailHeaderLayoutDynamicsSettings.surface.axisMode,
         solver: explorerRailHeaderLayoutDynamicsSettings.preset,
         intensity: explorerRailHeaderLayoutDynamicsSettings.intensity,
@@ -20057,9 +20054,8 @@ export function FileExplorer({
   const explorerPreviewHeaderLayoutDynamics =
     useMemo<ExplorerChromeSurfaceLayoutDynamics>(
       () => ({
-        enabled:
-          explorerPreviewHeaderLayoutDynamicsSettings.enabled ||
-          Boolean(activeChromeEditSession),
+        enabled: explorerPreviewHeaderLayoutDynamicsSettings.enabled,
+        authoringCanvasEnabled: false,
         axisMode: explorerPreviewHeaderLayoutDynamicsSettings.surface.axisMode,
         solver: explorerPreviewHeaderLayoutDynamicsSettings.preset,
         intensity: explorerPreviewHeaderLayoutDynamicsSettings.intensity,
@@ -20080,9 +20076,8 @@ export function FileExplorer({
   const explorerStatusBarLayoutDynamics =
     useMemo<ExplorerChromeSurfaceLayoutDynamics>(
       () => ({
-        enabled:
-          explorerStatusBarLayoutDynamicsSettings.enabled ||
-          Boolean(activeChromeEditSession),
+        enabled: explorerStatusBarLayoutDynamicsSettings.enabled,
+        authoringCanvasEnabled: false,
         axisMode: explorerStatusBarLayoutDynamicsSettings.surface.axisMode,
         solver: explorerStatusBarLayoutDynamicsSettings.preset,
         intensity: explorerStatusBarLayoutDynamicsSettings.intensity,
@@ -21591,34 +21586,20 @@ export function FileExplorer({
   const explorerToolbarPrimaryRowStyle = useMemo<CSSProperties>(
     () => ({
       ...toolbarPrimaryRowStyle,
-      minHeight:
-        activeChromeEditSession &&
-        resolvedUnifiedHeaderSurfaceId === "explorerToolbar"
-          ? resolvedUnifiedHeaderHeightPx
-          : resolvedExplorerToolbarHeightPx,
+      minHeight: resolvedExplorerToolbarHeightPx,
     }),
     [
-      activeChromeEditSession,
       resolvedExplorerToolbarHeightPx,
-      resolvedUnifiedHeaderHeightPx,
-      resolvedUnifiedHeaderSurfaceId,
       toolbarPrimaryRowStyle,
     ],
   );
   const explorerToolbarSecondaryRowStyle = useMemo<CSSProperties>(
     () => ({
       ...toolbarSecondaryRowStyle,
-      minHeight:
-        activeChromeEditSession &&
-        resolvedUnifiedHeaderSurfaceId === "explorerToolbar"
-          ? resolvedUnifiedHeaderHeightPx
-          : resolvedExplorerToolbarHeightPx,
+      minHeight: resolvedExplorerToolbarHeightPx,
     }),
     [
-      activeChromeEditSession,
       resolvedExplorerToolbarHeightPx,
-      resolvedUnifiedHeaderHeightPx,
-      resolvedUnifiedHeaderSurfaceId,
       toolbarSecondaryRowStyle,
     ],
   );
