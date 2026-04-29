@@ -1,8 +1,7 @@
 import type { CSSProperties } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { IconThemeProvider, RefreshCw, X } from '@/components/AppIcons';
-import { resolveOverlayAppearance } from '../config/appearance';
 import {
   describeFileOperationsWindowRequest,
   listenToFileOperationsWindowRequests,
@@ -16,15 +15,13 @@ import {
 import { useSettingsStore } from '../store/settingsStore';
 import { ExplorerTaskCenterContent } from '../components/explorer/ExplorerTaskCenterContent';
 import { OverlayScrollArea } from '../components/OverlayScrollArea';
+import { useSyncedWindowAppearance } from './useSyncedWindowAppearance';
 
 export default function FileOperationsWindowApp() {
   useExplorerTaskProgressFeed();
 
   const appearanceSelection = useSettingsStore((state) => state.settings.appearance);
-  const resolvedAppearance = useMemo(
-    () => resolveOverlayAppearance(appearanceSelection),
-    [appearanceSelection],
-  );
+  const windowAppearance = useSyncedWindowAppearance(appearanceSelection);
   const tasks = useExplorerTaskSnapshots();
   const [request, setRequest] = useState<FileOperationsWindowRequest | null>(() =>
     readFileOperationsWindowRequest(),
@@ -45,19 +42,25 @@ export default function FileOperationsWindowApp() {
     void getCurrentWindow().close().catch(() => undefined);
   }, []);
 
-  const palette = resolvedAppearance.theme.palette;
+  const palette = windowAppearance.palette;
   const title = describeFileOperationsWindowRequest(request);
 
   return (
-    <IconThemeProvider iconTheme={resolvedAppearance.theme.assets?.iconTheme}>
+    <IconThemeProvider iconTheme={windowAppearance.iconTheme}>
       <div
+        data-overlay-explorer
+        data-file-operations-theme-id={windowAppearance.themeId}
         className="overlay-window-host w-full h-full overflow-hidden"
         style={{
-          ...(resolvedAppearance.cssVars as CSSProperties),
+          ...(windowAppearance.cssVars as CSSProperties),
+          ...(windowAppearance.explorerCssVars as CSSProperties),
           minHeight: '100vh',
-          background: `radial-gradient(circle at top right, ${palette.accentSoft}22, transparent 34%), linear-gradient(180deg, ${palette.appBackgroundAlt}, ${palette.appBackground})`,
+          backgroundColor: 'var(--overlay-bg-app)',
+          backgroundImage: 'var(--overlay-background-image), var(--overlay-workbench-settings-bg, linear-gradient(180deg, var(--overlay-bg-app-alt), var(--overlay-bg-app)))',
+          backgroundPosition: 'var(--overlay-background-position)',
+          backgroundSize: 'var(--overlay-background-size)',
           color: palette.textPrimary,
-          fontFamily: resolvedAppearance.fonts.ui,
+          fontFamily: windowAppearance.fonts.ui,
         }}
       >
         <div
@@ -74,9 +77,8 @@ export default function FileOperationsWindowApp() {
               justifyContent: 'space-between',
               gap: 16,
               padding: '18px 20px',
-              borderBottom: '1px solid var(--overlay-border)',
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
-              backdropFilter: 'blur(18px)',
+              borderBottom: '1px solid var(--overlay-workbench-chrome-border, var(--overlay-border))',
+              background: 'var(--overlay-workbench-chrome-bg, var(--overlay-bg-topbar))',
             }}
           >
             <div style={{ minWidth: 0 }}>
@@ -110,9 +112,9 @@ export default function FileOperationsWindowApp() {
                 justifyContent: 'center',
                 width: 34,
                 height: 34,
-                borderRadius: 10,
-                border: '1px solid var(--overlay-border)',
-                background: 'rgba(255,255,255,0.05)',
+                borderRadius: 'var(--overlay-explorer-control-radius, 10px)',
+                border: '1px solid var(--overlay-workbench-chrome-border, var(--overlay-border))',
+                background: 'var(--overlay-workbench-chrome-button-bg, var(--overlay-bg-card))',
                 color: palette.textPrimary,
                 cursor: 'pointer',
               }}
@@ -122,7 +124,7 @@ export default function FileOperationsWindowApp() {
               <X size={14} />
             </button>
           </header>
-          <OverlayScrollArea style={{ minHeight: 0 }}>
+          <OverlayScrollArea style={{ minHeight: 0 }} scrollbarStyle="themed">
             <div style={{ padding: 20 }}>
               <ExplorerTaskCenterContent
                 accent={palette.accent}
@@ -141,9 +143,9 @@ export default function FileOperationsWindowApp() {
                       alignItems: 'center',
                       gap: 6,
                       padding: '8px 12px',
-                      borderRadius: 10,
-                      border: '1px solid var(--overlay-border)',
-                      background: 'rgba(255,255,255,0.04)',
+                      borderRadius: 'var(--overlay-explorer-control-radius, 10px)',
+                      border: '1px solid var(--overlay-explorer-chip-border, var(--overlay-border))',
+                      background: 'var(--overlay-explorer-chip-bg, var(--overlay-bg-card))',
                       color: palette.textPrimary,
                       cursor: 'pointer',
                       fontSize: 12,

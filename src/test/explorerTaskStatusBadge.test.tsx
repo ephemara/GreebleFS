@@ -46,6 +46,7 @@ describe('ExplorerTaskStatusBadge', () => {
       hydrationState: 'idle',
       hydrationError: null,
       isTaskCenterOpen: false,
+      activeTaskCenterSurfaceId: null,
     });
     useExplorerActionRunStore.setState({
       runs: {},
@@ -99,6 +100,42 @@ describe('ExplorerTaskStatusBadge', () => {
       expect(
         screen.queryByRole('dialog', { name: /explorer task center/i }),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  it('keeps duplicate task badge surfaces from opening multiple task centers', async () => {
+    render(
+      <div data-overlay-explorer="true" data-testid="explorer-root">
+        <ExplorerTaskStatusBadge
+          accent="cyan"
+          border="rgba(255,255,255,0.18)"
+          danger="red"
+          muted="gray"
+          text="white"
+        />
+        <ExplorerTaskStatusBadge
+          accent="cyan"
+          border="rgba(255,255,255,0.18)"
+          danger="red"
+          muted="gray"
+          text="white"
+        />
+      </div>,
+    );
+
+    const taskButtons = screen.getAllByRole('button', { name: /tasks\s*no tasks/i });
+    expect(taskButtons).toHaveLength(2);
+
+    fireEvent.click(taskButtons[1]);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('dialog', { name: /explorer task center/i })).toHaveLength(1);
+    });
+
+    fireEvent.click(taskButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('dialog', { name: /explorer task center/i })).toHaveLength(1);
     });
   });
 });

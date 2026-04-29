@@ -1,3 +1,15 @@
+# 2026-04-29 - Explorer Task Center Is Surface-Owned And File Operations Popout Syncs Shell Theme
+
+- The Explorer task-center flyout is now anchored to one registered surface id at a time instead of a global boolean that every mounted `ExplorerTaskStatusBadge` renders. `src/store/explorerTaskStore.ts` owns the registered surface list plus the active surface id; badge clicks pass their generated surface id into `toggleExplorerTaskCenter(...)`, while automatic task/action opens choose the current/last/first registered surface so only one task menu appears.
+- `src/components/explorer/ExplorerTaskStatusBadge.tsx` now renders through the shared `ExplorerPopupSurface`, so the embedded task menu inherits explorer popup variables instead of local hardcoded dark glass.
+- Secondary windows can consume the main shell's resolved theme snapshot through `src/runtime/appearanceSync.ts` and `src/windows/useSyncedWindowAppearance.ts`. `App.tsx` publishes the sanitized resolved appearance snapshot, and `FileOperationsWindowApp.tsx` merges that snapshot with local fallback settings so the task popout follows package/custom theme CSS vars and explorer popup vars without reimplementing the full app theme package loader.
+- Regression rules:
+  - Do not return the task center to a plain global open boolean; any duplicate task badges will render duplicate menus.
+  - Do not make file-operation secondary windows rebuild full package/plugin theme discovery unless they need authored content catalogs. Prefer the resolved appearance snapshot for CSS vars, palette, fonts, and explorer surface vars.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerTaskStatusBadge.test.tsx src/test/explorerTaskStore.test.tsx src/test/appearanceSync.test.ts src/test/fileOperationsWindow.test.ts --reporter=dot --testTimeout=30000`
+  - passed: touched-file TypeScript diagnostic sweep for the task-store/task-badge/file-operations/appearance-sync files returned no matching diagnostics. Full `tsc --noEmit` is still blocked by unrelated in-progress dock-presentation edits in `src/App.tsx`.
+
 # 2026-04-29 - Native Scrollbars Are Theme-Owned And Small Explorer Folders Stay Off Parent Scroll State
 
 - Xplorer reference check showed the useful pattern is not a custom scrollbar: native `overflow-auto` surfaces are styled globally (`::-webkit-scrollbar`, theme classes, and hidden utility lanes), while large explorer views keep DOM bounded with virtual rows.

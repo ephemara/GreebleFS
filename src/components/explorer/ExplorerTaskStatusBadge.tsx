@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useId, useMemo, useRef } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -11,6 +11,7 @@ import type { ExplorerTaskSnapshot } from '../../runtime/explorerBackend';
 import { openFileOperationsWindow } from '../../runtime/fileOperationsWindow';
 import {
   closeExplorerTaskCenter,
+  registerExplorerTaskCenterSurface,
   toggleExplorerTaskCenter,
   useExplorerTaskCenterOpen,
   useExplorerTaskSnapshots,
@@ -21,7 +22,7 @@ import {
   ExplorerTaskCenterContent,
   getExplorerTaskSummary,
 } from './ExplorerTaskCenterContent';
-import { ExplorerFloatingSurface } from './ExplorerFloatingSurface';
+import { ExplorerPopupSurface } from './ExplorerPopupSurface';
 import { OverlayScrollArea } from '../OverlayScrollArea';
 import type { ExplorerChromeSizeVariant } from '../../config/explorerChromeLayouts';
 
@@ -34,6 +35,7 @@ interface ExplorerTaskStatusBadgeProps {
   danger: string;
   muted: string;
   sizeVariant?: ExplorerChromeSizeVariant;
+  surfaceId?: string;
   text: string;
 }
 
@@ -139,16 +141,26 @@ export function ExplorerTaskStatusBadge({
   danger,
   muted,
   sizeVariant = 'regular',
+  surfaceId,
   text,
 }: ExplorerTaskStatusBadgeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const isOpen = useExplorerTaskCenterOpen();
+  const generatedSurfaceId = useId();
+  const taskCenterSurfaceId = useMemo(
+    () => surfaceId?.trim() || `explorer-task-center-${generatedSurfaceId}`,
+    [generatedSurfaceId, surfaceId],
+  );
+  const isOpen = useExplorerTaskCenterOpen(taskCenterSurfaceId);
   const tasks = useExplorerTaskSnapshots();
   const actionRuns = useExplorerActionRunSnapshots();
   const metrics = useMemo(
     () => resolveExplorerTaskBadgeMetrics(sizeVariant),
     [sizeVariant],
   );
+
+  useEffect(() => {
+    return registerExplorerTaskCenterSurface(taskCenterSurfaceId);
+  }, [taskCenterSurfaceId]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -213,7 +225,7 @@ export function ExplorerTaskStatusBadge({
     >
       <button
         type="button"
-        onClick={toggleExplorerTaskCenter}
+        onClick={() => toggleExplorerTaskCenter(taskCenterSurfaceId)}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
         style={{
@@ -246,7 +258,7 @@ export function ExplorerTaskStatusBadge({
         <span style={{ color: muted, whiteSpace: 'nowrap' }}>{summary.label}</span>
       </button>
 
-      <ExplorerFloatingSurface
+      <ExplorerPopupSurface
         anchorRef={containerRef}
         open={isOpen}
         side="top"
@@ -256,21 +268,16 @@ export function ExplorerTaskStatusBadge({
         surfaceGroup={EXPLORER_TASK_CENTER_FLOATING_SURFACE_GROUP}
         zIndexCssVar="--overlay-explorer-floating-menu-layer"
         zIndexFallback={9997}
+        tone="menu"
+        padding={0}
+        overflowY="hidden"
+        maxHeight={460}
+        style={{
+          width: 380,
+          maxWidth: 'min(380px, 78vw)',
+        }}
       >
-        <div
-          role="dialog"
-          aria-label="Explorer task center"
-          style={{
-            width: 380,
-            maxWidth: 'min(380px, 78vw)',
-            maxHeight: 460,
-            borderRadius: 16,
-            border: `1px solid ${border}`,
-            background: 'rgba(14,18,24,0.96)',
-            boxShadow: '0 20px 48px rgba(0,0,0,0.35)',
-            backdropFilter: 'blur(18px)',
-          }}
-        >
+        <div role="dialog" aria-label="Explorer task center">
           <OverlayScrollArea
             style={{ maxHeight: 460 }}
             viewportStyle={{ padding: 14 }}
@@ -305,10 +312,10 @@ export function ExplorerTaskStatusBadge({
                         }}
                         style={{
                           border: `1px solid ${border}`,
-                          background: 'rgba(255,255,255,0.04)',
+                          background: 'var(--overlay-explorer-chip-bg, rgba(255,255,255,0.04))',
                           color: text,
                           cursor: 'pointer',
-                          borderRadius: 8,
+                          borderRadius: 'var(--overlay-explorer-control-radius, 8px)',
                           padding: '5px 8px',
                           fontSize: 10,
                           fontWeight: 700,
@@ -326,7 +333,7 @@ export function ExplorerTaskStatusBadge({
             </div>
           </OverlayScrollArea>
         </div>
-      </ExplorerFloatingSurface>
+      </ExplorerPopupSurface>
     </div>
   );
 }

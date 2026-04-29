@@ -22,6 +22,7 @@ interface ExplorerTaskStoreState {
   hydrationState: ExplorerTaskStoreStatus;
   hydrationError: string | null;
   isTaskCenterOpen: boolean;
+  activeTaskCenterSurfaceId: string | null;
   replaceTasks: (tasks: ExplorerTaskSnapshot[]) => void;
   upsertTask: (task: ExplorerTaskSnapshot) => void;
   pruneTasks: (scope: ExplorerTaskHistoryScope) => void;
@@ -29,12 +30,14 @@ interface ExplorerTaskStoreState {
   setSubscriptionState: (state: ExplorerTaskStoreStatus) => void;
   setHydrationError: (message: string | null) => void;
   setHydrationState: (state: ExplorerTaskStoreStatus) => void;
-  setTaskCenterOpen: (open: boolean) => void;
+  setTaskCenterOpen: (open: boolean, surfaceId?: string | null) => void;
 }
 
 let subscriptionPromise: Promise<void> | null = null;
 let hydrationPromise: Promise<void> | null = null;
 let subscriptionReady = false;
+let registeredTaskCenterSurfaceIds: string[] = [];
+let lastTaskCenterSurfaceId: string | null = null;
 
 function sortExplorerTasks(tasks: ExplorerTaskSnapshot[]): ExplorerTaskSnapshot[] {
   return [...tasks].sort((left, right) => {
@@ -82,6 +85,7 @@ export const useExplorerTaskStore = create<ExplorerTaskStoreState>((set) => ({
   hydrationState: 'idle',
   hydrationError: null,
   isTaskCenterOpen: false,
+  activeTaskCenterSurfaceId: null,
   replaceTasks: (tasks) => set(normalizeTaskCollection(tasks)),
   upsertTask: (task) => set((state) => normalizeTaskCollection([
     ...state.taskOrder
@@ -105,7 +109,12 @@ export const useExplorerTaskStore = create<ExplorerTaskStoreState>((set) => ({
     hydrationState: message ? 'error' : 'ready',
   }),
   setHydrationState: (hydrationState) => set({ hydrationState }),
-  setTaskCenterOpen: (isTaskCenterOpen) => set({ isTaskCenterOpen }),
+  setTaskCenterOpen: (isTaskCenterOpen, requestedSurfaceId = null) => set((state) => ({
+    isTaskCenterOpen,
+    activeTaskCenterSurfaceId: isTaskCenterOpen
+      ? resolveExplorerTaskCenterSurfaceId(requestedSurfaceId, state.activeTaskCenterSurfaceId)
+      : null,
+  })),
 }));
 
 async function ensureExplorerTaskHydration(): Promise<void> {
@@ -189,21 +198,106 @@ export function useExplorerTaskSnapshots(): ExplorerTaskSnapshot[] {
     .filter((task): task is ExplorerTaskSnapshot => Boolean(task))));
 }
 
-export function useExplorerTaskCenterOpen(): boolean {
-  return useExplorerTaskStore((state) => state.isTaskCenterOpen);
+function normalizeTaskCenterSurfaceId(surfaceId: string | null | undefined): string | null {
+  if (typeof surfaceId !== 'string') {
+    return null;
+  }
+  const trimmedSurfaceId = surfaceId.trim();
+  return trimmedSurfaceId.length > 0 ? trimmedSurfaceId : null;
 }
 
-export function openExplorerTaskCenter(): void {
-  useExplorerTaskStore.getState().setTaskCenterOpen(true);
+function resolveExplorerTaskCenterSurfaceId(
+  requestedSurfaceId: string | null | undefined,
+  currentSurfaceId: string | null,
+): string | null {
+  const explicitSurfaceId = normalizeTaskCenterSurfaceId(requestedSurfaceId);
+  if (explicitSurfaceId) {
+    lastTaskCenterSurfaceId = explicitSurfaceId;
+    return explicitSurfaceId;
+  }
+
+  if (currentSurfaceId && registeredTaskCenterSurfaceIds.includes(currentSurfaceId)) {
+    return currentSurfaceId;
+  }
+
+  if (lastTaskCenterSurfaceId && registeredTaskCenterSurfaceIds.includes(lastTaskCenterSurfaceId)) {
+    return lastTaskCenterSurfaceId;
+  }
+
+  return registeredTaskCenterSurfaceIds[0] ?? null;
+}
+
+export function registerExplorerTaskCenterSurface(surfaceId: string): () => void {
+  const normalizedSurfaceId = normalizeTaskCenterSurfaceId(surfaceId);
+  if (!normalizedSurfaceId) {
+    return () => undefined;
+  }
+
+  if (!registeredTaskCenterSurfaceIds.includes(normalizedSurfaceId)) {
+    registeredTaskCenterSurfaceIds = [
+      ...registeredTaskCenterSurfaceIds,
+      normalizedSurfaceId,
+    ];
+  }
+
+  return () => {
+    registeredTaskCenterSurfaceIds = registeredTaskCenterSurfaceIds.filter(
+      (candidateSurfaceId) => candidateSurfaceId !== normalizedSurfaceId,
+    );
+
+    if (lastTaskCenterSurfaceId === normalizedSurfaceId) {
+      lastTaskCenterSurfaceId =
+        registeredTaskCenterSurfaceIds[registeredTaskCenterSurfaceIds.length - 1]
+        ?? null;
+    }
+
+    const state = useExplorerTaskStore.getState();
+    if (state.activeTaskCenterSurfaceId !== normalizedSurfaceId) {
+      return;
+    }
+
+    const nextSurfaceId = resolveExplorerTaskCenterSurfaceId(null, null);
+    useExplorerTaskStore.setState({
+      isTaskCenterOpen: Boolean(nextSurfaceId),
+      activeTaskCenterSurfaceId: nextSurfaceId,
+    });
+  };
+}
+
+export function useExplorerTaskCenterOpen(surfaceId?: string | null): boolean {
+  return useExplorerTaskStore((state) => {
+    if (!state.isTaskCenterOpen) {
+      return false;
+    }
+
+    const normalizedSurfaceId = normalizeTaskCenterSurfaceId(surfaceId);
+    if (!normalizedSurfaceId) {
+      return true;
+    }
+
+    return state.activeTaskCenterSurfaceId === normalizedSurfaceId;
+  });
+}
+
+export function openExplorerTaskCenter(surfaceId?: string | null): void {
+  useExplorerTaskStore.getState().setTaskCenterOpen(true, surfaceId ?? null);
 }
 
 export function closeExplorerTaskCenter(): void {
   useExplorerTaskStore.getState().setTaskCenterOpen(false);
 }
 
-export function toggleExplorerTaskCenter(): void {
+export function toggleExplorerTaskCenter(surfaceId?: string | null): void {
   const state = useExplorerTaskStore.getState();
-  state.setTaskCenterOpen(!state.isTaskCenterOpen);
+  const nextSurfaceId = resolveExplorerTaskCenterSurfaceId(
+    surfaceId ?? null,
+    state.activeTaskCenterSurfaceId,
+  );
+  const shouldCloseActiveSurface =
+    state.isTaskCenterOpen
+    && state.activeTaskCenterSurfaceId === nextSurfaceId;
+
+  state.setTaskCenterOpen(!shouldCloseActiveSurface, nextSurfaceId);
 }
 
 export async function retryExplorerTaskById(taskId: string): Promise<ExplorerTaskSnapshot> {

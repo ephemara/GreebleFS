@@ -65,6 +65,7 @@ describe('explorerTaskStore', () => {
       hydrationState: 'idle',
       hydrationError: null,
       isTaskCenterOpen: false,
+      activeTaskCenterSurfaceId: null,
     });
   });
 
@@ -94,8 +95,9 @@ describe('explorerTaskStore', () => {
       makeTask('failed-1', 'failed', { startedAt: 120, finishedAt: 130 }),
     ]);
 
-    storeModule.openExplorerTaskCenter();
+    storeModule.openExplorerTaskCenter('test-surface');
     expect(storeModule.useExplorerTaskStore.getState().isTaskCenterOpen).toBe(true);
+    expect(storeModule.useExplorerTaskStore.getState().activeTaskCenterSurfaceId).toBe('test-surface');
 
     await storeModule.retryFailedExplorerTasks();
 

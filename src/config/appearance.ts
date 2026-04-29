@@ -1255,6 +1255,7 @@ function createResolvedCssVars(args: {
     '--overlay-bg-card': theme.palette.cardBackground,
     '--overlay-bg-card-hover': theme.palette.cardHoverBackground,
     '--overlay-bg-context': theme.palette.contextMenuBackground,
+    '--overlay-bg-menu': theme.palette.contextMenuBackground,
     '--overlay-bg-input': theme.palette.inputBackground,
     '--overlay-bg-terminal': theme.palette.terminalBackground,
     '--overlay-bg-selection': theme.palette.selectionBackground,

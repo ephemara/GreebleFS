@@ -233,6 +233,7 @@ import {
   PLUGIN_PANEL_OPEN_REQUEST_EVENT,
   type PluginPanelOpenRequest,
 } from './runtime/pluginPanelRequests';
+import { publishSyncedOverlayAppearanceSnapshot } from './runtime/appearanceSync';
 import { openFileOperationsWindow } from './runtime/fileOperationsWindow';
 import {
   listenToExplorerPickerRequests,
@@ -1206,6 +1207,9 @@ function App() {
   );
   const theme = resolvedAppearance.theme;
   const accent = theme.palette.accent;
+  useEffect(() => {
+    publishSyncedOverlayAppearanceSnapshot(resolvedAppearance);
+  }, [resolvedAppearance]);
   const resolvedSoundPack = useMemo(() => {
     const requestedSoundPackId = audioSettings.activeSoundPackId
       ?? resolvedAppearance.baseTheme.defaultSoundPackId
