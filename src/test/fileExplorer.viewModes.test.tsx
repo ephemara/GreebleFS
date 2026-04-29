@@ -571,7 +571,7 @@ import type { LoadedExplorerAction } from "../config/actionPacks";
 import type { OverlayPluginPreviewLaneContribution } from "../config/pluginContributions";
 import { EXPLORER_CANONICAL_LAYOUT_ID } from "../config/explorerLayouts";
 import { toExplorerActionChromeControlId } from "../config/explorerCustomizeCatalog";
-import { invalidateExplorerThumbnailArtifactRuntimeCache } from "../runtime/explorerThumbnailArtifactRuntime";
+import * as explorerThumbnailArtifactRuntime from "../runtime/explorerThumbnailArtifactRuntime";
 import { EXPLORER_PREVIEW_WIDTH_BOUNDS } from "../config/explorerShellLayouts";
 import {
   normalizeThemeDefinition,
@@ -1371,7 +1371,7 @@ describe("FileExplorer view modes", () => {
       .replaceRail(createDefaultExplorerRailSnapshot());
     useExplorerStore.getState().clearPersistenceNotice();
     invalidateExplorerResultCaches();
-    invalidateExplorerThumbnailArtifactRuntimeCache();
+    explorerThumbnailArtifactRuntime.invalidateExplorerThumbnailArtifactRuntimeCache();
 
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockImplementation(
@@ -5906,60 +5906,84 @@ const value = 1;
     );
   });
 
-  it("keeps a 100000-entry folder bounded to the virtual surface", async () => {
-    const longEntries = Array.from({ length: 100000 }, (_, index) => ({
-      name: `item-${index.toString().padStart(6, "0")}.txt`,
-      path: `${REPO_ROOT}\\\\item-${index.toString().padStart(6, "0")}.txt`,
-      is_dir: false,
-      size: index + 1,
-      modified: index,
-      extension: "txt",
-      is_hidden: false,
-      is_symlink: false,
-    }));
-    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
-    if (!baseInvokeImplementation) {
-      throw new Error("Missing default invoke mock implementation");
-    }
+  it.each([
+    { viewMode: "list" as const, virtualSurface: "list" },
+    { viewMode: "columns" as const, virtualSurface: "table" },
+    { viewMode: "details" as const, virtualSurface: "table" },
+  ])(
+    "keeps a 100000-entry folder bounded to the $viewMode virtual surface",
+    async ({ viewMode, virtualSurface }) => {
+      const longEntries = Array.from({ length: 100000 }, (_, index) => ({
+        name: `item-${index.toString().padStart(6, "0")}.txt`,
+        path: `${REPO_ROOT}\\\\item-${index.toString().padStart(6, "0")}.txt`,
+        is_dir: false,
+        size: index + 1,
+        modified: index,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      }));
+      const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+      if (!baseInvokeImplementation) {
+        throw new Error("Missing default invoke mock implementation");
+      }
 
-    vi.mocked(invoke).mockImplementation(
-      async (command: string, args?: unknown) => {
-        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
-          return longEntries;
-        }
-        return baseInvokeImplementation(
-          command,
-          args as Parameters<typeof invoke>[1],
-        );
-      },
-    );
-    useSettingsStore.getState().updateExplorer({ viewMode: "list" });
-
-    renderExplorer();
-    await screen.findByText("item-000000.txt", undefined, {
-      timeout: 10000,
-    });
-
-    expect(
-      document.querySelector("[data-overlay-explorer-virtual-surface='list']"),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("item-099999.txt")).not.toBeInTheDocument();
-    expect(document.querySelectorAll("[data-entry-path]").length).toBeLessThan(
-      160,
-    );
-
-    const viewport = getExplorerViewport("item-000000.txt");
-    viewport.scrollTop = 10000;
-    fireEvent.scroll(viewport);
-
-    await waitFor(() => {
-      expect(screen.getByText("item-000220.txt")).toBeInTheDocument();
-      expect(screen.queryByText("item-000000.txt")).not.toBeInTheDocument();
-      expect(document.querySelectorAll("[data-entry-path]").length).toBeLessThan(
-        180,
+      vi.mocked(invoke).mockImplementation(
+        async (command: string, args?: unknown) => {
+          if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+            return longEntries;
+          }
+          return baseInvokeImplementation(
+            command,
+            args as Parameters<typeof invoke>[1],
+          );
+        },
       );
-    });
-  }, 20000);
+
+      const thumbnailPeekSpy = vi.spyOn(
+        explorerThumbnailArtifactRuntime,
+        "peekExplorerThumbnailForEntry",
+      );
+      useSettingsStore.getState().updateExplorer({ viewMode });
+
+      renderExplorer();
+      await screen.findByText("item-000000.txt", undefined, {
+        timeout: 10000,
+      });
+
+      expect(
+        document.querySelector(
+          `[data-overlay-explorer-virtual-surface='${virtualSurface}']`,
+        ),
+      ).toBeInTheDocument();
+      expect(
+        document.querySelector(
+          `[data-overlay-explorer-virtual-surface='${
+            virtualSurface === "list" ? "table" : "list"
+          }']`,
+        ),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText("item-099999.txt")).not.toBeInTheDocument();
+      expect(document.querySelectorAll("[data-entry-path]").length).toBeLessThan(
+        160,
+      );
+      expect(thumbnailPeekSpy.mock.calls.length).toBeLessThan(1000);
+
+      const viewport = getExplorerViewport("item-000000.txt");
+      viewport.scrollTop = 10000;
+      fireEvent.scroll(viewport);
+
+      await waitFor(() => {
+        expect(screen.getByText("item-000220.txt")).toBeInTheDocument();
+        expect(screen.queryByText("item-000000.txt")).not.toBeInTheDocument();
+        expect(
+          document.querySelectorAll("[data-entry-path]").length,
+        ).toBeLessThan(180);
+      });
+      thumbnailPeekSpy.mockRestore();
+    },
+    20000,
+  );
 
   it("switches between icon and list view from footer toggles", async () => {
     useSettingsStore.getState().updateExplorer({

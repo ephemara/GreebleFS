@@ -5940,3 +5940,19 @@
   - Do not use `tailscale serve` as implicit mobile-share infrastructure unless the product explicitly owns its lifecycle, validates the proxy target, and tears it down. A stale OS-level Serve proxy can outlive the app and make the bare MagicDNS host return 502.
   - `sfm.local` is a product mDNS constant, not a per-user hardcode. Keep it as a convenience fallback only; enterprise-grade copied/QR URLs should prefer deterministic routable addresses discovered at runtime.
   - A notice saying mobile share is live for a path like `C:\automations\tidus` reflects the active Explorer session path passed into the share runtime. It is not hardcoded in the share server.
+
+## 2026-04-28 - Explorer Folder Entry And Row Modes Stop Paying Full-Directory Frontend Costs
+
+- Windows explorer navigation had another hot path after the orchestration/runtime fixes: entering a folder still forced frontend work proportional to the entire listing before the user could scroll, and list/columns/details row modes were building unused sibling row trees.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now uses lazy path/index lookup wrappers for `visibleEntries`. Default folder entry no longer eagerly builds `Map(path -> entry)` or `Map(path -> index)` for huge directories; those maps are only materialized when a real selection, keyboard, context menu, properties, or range action asks for lookup behavior.
+  - Standard virtual row rendering now uses `virtualWindow.startIndex + localIndex` for visible-row motion sequencing instead of looking every rendered row up in a full-directory index map.
+  - List mode only builds list rows, and `columns`/`details` only build table rows. Row-based modes still share the same virtual window, but they no longer pay the JSX construction cost for the inactive sibling presentation on every scroll/re-render.
+  - Successful folder navigation now clears `entryThumbnailMap` and lets visible rows lazily query the thumbnail artifact cache. This removes the previous full-list thumbnail-cache scan that ran immediately after every folder listing arrived.
+- Durable product notes:
+  - Treat Explorer folder entry as a first-frame path. Any work added to navigation commit must either be O(visible window), lazy, or explicitly deferred behind user action.
+  - Tests that claim to cover huge-folder performance must include `list`, `columns`, and `details`, not just grid/list, and must assert both bounded mounted rows and bounded thumbnail-cache probes.
+- Validation:
+  - passed: `node_modules\.bin\vitest.exe run src/test/fileExplorer.viewModes.test.tsx -t "100000-entry folder bounded|entire huge folder" --reporter=dot --testTimeout=30000`
+  - passed: `node_modules\.bin\vitest.exe run src/test/explorerVisibleEntries.test.ts src/test/explorerVisibleEntries.workerBridge.test.ts src/test/explorerExtensionContext.test.ts --reporter=dot`
+  - passed: touched-file TypeScript diagnostic sweep printed `No touched-file TypeScript diagnostics`

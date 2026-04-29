@@ -1686,6 +1686,55 @@ function buildExplorerEntryPathLookup(
   return new Map(entries.map((entry) => [entry.path, entry] as const));
 }
 
+type ExplorerPathLookup<T extends { path: string }> = Pick<
+  ReadonlyMap<string, T>,
+  "get" | "has"
+>;
+
+type ExplorerIndexLookup = Pick<ReadonlyMap<string, number>, "get" | "has">;
+
+function createLazyExplorerPathLookup<T extends { path: string }>(
+  entries: readonly T[],
+): ExplorerPathLookup<T> {
+  let lookup: Map<string, T> | null = null;
+  const getLookup = () => {
+    if (lookup == null) {
+      lookup = new Map(entries.map((entry) => [entry.path, entry] as const));
+    }
+    return lookup;
+  };
+  return {
+    get(path: string) {
+      return getLookup().get(path);
+    },
+    has(path: string) {
+      return getLookup().has(path);
+    },
+  };
+}
+
+function createLazyExplorerIndexLookup(
+  entries: readonly FileEntry[],
+): ExplorerIndexLookup {
+  let lookup: Map<string, number> | null = null;
+  const getLookup = () => {
+    if (lookup == null) {
+      lookup = new Map(
+        entries.map((entry, index) => [entry.path, index] as const),
+      );
+    }
+    return lookup;
+  };
+  return {
+    get(path: string) {
+      return getLookup().get(path);
+    },
+    has(path: string) {
+      return getLookup().has(path);
+    },
+  };
+}
+
 function reconcileExplorerPathValueRecord<T>(args: {
   previousEntries: readonly FileEntry[];
   nextEntries: readonly FileEntry[];
@@ -1757,21 +1806,6 @@ function reconcileExplorerPathSet(args: {
   }
 
   return nextPaths;
-}
-
-function buildSeededExplorerThumbnailMap(
-  entries: readonly FileEntry[],
-): Record<string, ExplorerEntryThumbnailData | null> {
-  const nextThumbnails: Record<string, ExplorerEntryThumbnailData | null> = {};
-  for (const entry of entries) {
-    const cachedThumbnail = peekExplorerThumbnailForEntry(
-      buildExplorerPosterThumbnailRequest(entry),
-    );
-    if (cachedThumbnail !== undefined) {
-      nextThumbnails[entry.path] = cachedThumbnail;
-    }
-  }
-  return nextThumbnails;
 }
 
 function reconcileExplorerThumbnailMap(args: {
@@ -10533,9 +10567,8 @@ export function FileExplorer({
         showHidden,
         listing,
       });
-      const seededThumbnailMap = buildSeededExplorerThumbnailMap(listing.entries);
       setEntries(listing.entries);
-      setEntryThumbnailMap(seededThumbnailMap);
+      setEntryThumbnailMap({});
       setEntrySizeLoadingPaths(new Set());
       setEntryThumbnailLoadingPaths(new Set());
       setVideoHoverThumbnailLoadingPaths(new Set());
@@ -11634,18 +11667,19 @@ export function FileExplorer({
       jumpFilter.resultPaths,
     ],
   );
-  const visibleEntryLookup = useMemo(
-    () => new Map(visibleEntries.map((entry) => [entry.path, entry] as const)),
+  const visibleEntryLookup = useMemo<ExplorerPathLookup<FileEntry>>(
+    () => createLazyExplorerPathLookup(visibleEntries),
     [visibleEntries],
   );
-  const contextMenuEntryLookup = useMemo(() => {
+  const contextMenuEntryLookup = useMemo<
+    ExplorerPathLookup<FileEntry | ExplorerNormalizedSearchResult>
+  >(() => {
     if (
       !isSearchActive &&
       canReuseBackendVisibleEntries &&
       !jumpFilterHasQuery
     ) {
-      return visibleEntryLookup as Map<
-        string,
+      return visibleEntryLookup as ExplorerPathLookup<
         FileEntry | ExplorerNormalizedSearchResult
       >;
     }
@@ -11670,11 +11704,8 @@ export function FileExplorer({
     searchResults,
     visibleEntryLookup,
   ]);
-  const visibleEntryIndexLookup = useMemo(
-    () =>
-      new Map(
-        visibleEntries.map((entry, index) => [entry.path, index] as const),
-      ),
+  const visibleEntryIndexLookup = useMemo<ExplorerIndexLookup>(
+    () => createLazyExplorerIndexLookup(visibleEntries),
     [visibleEntries],
   );
   const sourceEntryCount = isSearchActive
@@ -12043,7 +12074,7 @@ export function FileExplorer({
     const pending = cacheEntries.some((value) => value.pending);
     return { totalBytes, fileCount, folderCount, pending };
   }, [propertiesPanel.targetPaths, recursiveSizeCache]);
-  const duplicateEntryLookup = useMemo(() => {
+  const duplicateEntryLookup = useMemo<ExplorerPathLookup<FileEntry>>(() => {
     if (
       !isSearchActive &&
       !duplicateFinder.status?.groups?.length &&
@@ -26177,8 +26208,8 @@ export function FileExplorer({
       return [];
     }
 
-    return virtualizedEntries.map((entry) => {
-      const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
+    return virtualizedEntries.map((entry, virtualizedIndex) => {
+      const motionStepIndex = virtualWindow.startIndex + virtualizedIndex;
       const isSel = selected.has(entry.path);
       const dragPresentation = getExplorerEntryDragPresentation(entry);
       const isDrop = dragPresentation.isDropTarget;
@@ -26393,16 +26424,20 @@ export function FileExplorer({
     selectedEntrySurface,
     themeIconTheme,
     virtualWindow.kind,
-    visibleEntryIndexLookup,
+    virtualWindow.startIndex,
     virtualizedEntries,
   ]);
   const listVirtualizedEntryElements = useMemo(() => {
-    if (virtualWindow.kind !== "list" || activeRowMetrics == null) {
+    if (
+      virtualWindow.kind !== "list" ||
+      effectiveViewModeDefinition.presentation !== "list" ||
+      activeRowMetrics == null
+    ) {
       return [];
     }
 
-    return virtualizedEntries.map((entry) => {
-      const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
+    return virtualizedEntries.map((entry, virtualizedIndex) => {
+      const motionStepIndex = virtualWindow.startIndex + virtualizedIndex;
       const isSel = selected.has(entry.path);
       const dragPresentation = getExplorerEntryDragPresentation(entry);
       const isDrop = dragPresentation.isDropTarget;
@@ -26651,17 +26686,22 @@ export function FileExplorer({
     selected,
     selectedEntrySurface,
     themeIconTheme,
+    effectiveViewModeDefinition.presentation,
     virtualWindow.kind,
-    visibleEntryIndexLookup,
+    virtualWindow.startIndex,
     virtualizedEntries,
   ]);
   const tableVirtualizedEntryElements = useMemo(() => {
-    if (virtualWindow.kind !== "list" || activeRowMetrics == null) {
+    if (
+      virtualWindow.kind !== "list" ||
+      effectiveViewModeDefinition.presentation !== "table" ||
+      activeRowMetrics == null
+    ) {
       return [];
     }
 
-    return virtualizedEntries.map((entry) => {
-      const motionStepIndex = visibleEntryIndexLookup.get(entry.path) ?? 0;
+    return virtualizedEntries.map((entry, virtualizedIndex) => {
+      const motionStepIndex = virtualWindow.startIndex + virtualizedIndex;
       const isSel = selected.has(entry.path);
       const dragPresentation = getExplorerEntryDragPresentation(entry);
       const isDrop = dragPresentation.isDropTarget;
@@ -26927,9 +26967,10 @@ export function FileExplorer({
     selected,
     selectedEntrySurface,
     themeIconTheme,
+    effectiveViewModeDefinition.presentation,
     virtualWindow.kind,
     virtualWindow.rowHeight,
-    visibleEntryIndexLookup,
+    virtualWindow.startIndex,
     virtualizedEntries,
   ]);
   const standardExplorerTableHeader = useMemo(
