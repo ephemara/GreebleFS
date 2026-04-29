@@ -370,7 +370,7 @@ describe('SettingsPage behavior', () => {
 
     await user.click(findSectionButton('Appearance'));
 
-    expect(screen.getByText(/VS Code color-theme extension folders, or/i)).toBeInTheDocument();
+    expect(screen.getByText(/VS Code color-theme folders, or/i)).toBeInTheDocument();
     expect(screen.getAllByText((_, node) =>
       node?.tagName.toLowerCase() === 'p'
       && (node.textContent?.includes('cached .vsix extracts never masquerade as authored bundles') ?? false),
@@ -392,6 +392,8 @@ describe('SettingsPage behavior', () => {
     expect(content).toHaveAttribute('data-settings-active-section', 'appearance');
     expect(content).toHaveAttribute('data-settings-active-archetype', 'catalog-inspector');
     expect(container.querySelector('[data-settings-catalog-grid]')).not.toBeNull();
+    expect(container.querySelector('[data-appearance-layout="compact-theme-catalog"]')).not.toBeNull();
+    expect(container.querySelector('[data-theme-catalog-density="compact"]')).not.toBeNull();
     expect(container.querySelector('[data-settings-inspector="Theme Inspector"]')).not.toBeNull();
 
     await user.click(findSectionButton('System'));

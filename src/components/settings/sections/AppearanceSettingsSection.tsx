@@ -124,61 +124,66 @@ export function AppearanceSettingsSection({
   void muted;
 
   return (
-    <section className="space-y-4" data-settings-section="appearance">
+    <section className="min-w-0 space-y-3" data-settings-section="appearance">
       <SettingsSectionHeader
         icon={<Palette size={12} />}
         title="Appearance"
         subtitle="Theme recipes, UI fonts, and direct palette editing."
       />
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-4">
+      <div
+        className="grid min-w-0 grid-cols-1 gap-3 2xl:grid-cols-[minmax(0,1fr)_minmax(17.5rem,21rem)]"
+        data-appearance-layout="compact-theme-catalog"
+      >
+        <div className="min-w-0 space-y-3">
           <SettingsSectionBlock
             title="Theme Bundles"
             subtitle={(
               <>
-                Drop native theme bundles, VS Code color-theme extension folders, or <code>.vsix</code> archives into <code>{themePackagesDirectory}</code>. GreebleFS will compose native manifests as full theme bundles and adapt VS Code color themes into shell-safe theme packages with Monaco token colors and carried icon catalogs. Official pilot bundles surface first, built-ins stay supported, and compatibility imports stay clearly labeled so cached <code>.vsix</code> extracts never masquerade as authored bundles.
+                Drop native bundles, VS Code color-theme folders, or <code>.vsix</code> archives into <code>{themePackagesDirectory}</code>.
               </>
             )}
+            actions={(
+              <SettingsActionStrip>
+                <button
+                  type="button"
+                  onClick={() => void onOpenThemesFolder()}
+                  className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                  style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                >
+                  Open Folder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void onRefreshThemes()}
+                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                  style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
+                >
+                  <RefreshCw size={10} />
+                  Refresh
+                </button>
+              </SettingsActionStrip>
+            )}
             tone="muted"
+            contentClassName="space-y-3"
           >
-            <SettingsActionStrip>
-              <button
-                type="button"
-                onClick={() => void onOpenThemesFolder()}
-                className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
-              >
-                Open Folder
-              </button>
-              <button
-                type="button"
-                onClick={() => void onRefreshThemes()}
-                className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
-              >
-                <RefreshCw size={10} />
-                Refresh
-              </button>
-            </SettingsActionStrip>
-
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+            <div className="flex flex-wrap items-center gap-2 text-[10px]">
               <ThemeBadge label={themePackagesLoading ? 'Scanning Bundles' : `${themePackagesCount} Bundles Loaded`} active />
               <ThemeBadge label={`Active Source ${getThemeSourceLabel(editableTheme)}`} />
             </div>
 
-            <p className="mt-3 text-[11px] opacity-40">
+            <p className="text-[11px] leading-4 opacity-40">
               Official pilot bundles surface first, built-ins stay supported, and compatibility imports stay clearly labeled so cached .vsix extracts never masquerade as authored bundles.
             </p>
 
             {themePackagesError ? (
-              <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+              <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
                 Theme package scan failed: {themePackagesError}
               </div>
             ) : null}
 
             {themePackagesWarnings.length > 0 ? (
-              <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
+              <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
                 <div className="font-semibold uppercase tracking-[0.12em]">Package warnings</div>
                 <div className="mt-2 space-y-1.5">
                   {themePackagesWarnings.map(warning => (
@@ -189,7 +194,7 @@ export function AppearanceSettingsSection({
             ) : null}
           </SettingsSectionBlock>
 
-          <div className="space-y-1.5">
+          <div className="min-w-0 space-y-1.5">
             <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Curated Theme Suite</label>
             <ThemeCatalogGrid
               themes={appearance.themes}
@@ -197,11 +202,12 @@ export function AppearanceSettingsSection({
               onSelect={onApplyThemeSelection}
               themePackageLookup={themePackageLookup}
               createThemeCardMotion={createThemeCardMotion}
+              density="compact"
             />
           </div>
 
           {dockThemeMode === 'override' ? (
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-1.5">
               <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Curated Dock Theme Suite</label>
               <ThemeCatalogGrid
                 themes={appearance.themes}
@@ -209,12 +215,13 @@ export function AppearanceSettingsSection({
                 onSelect={onApplyDockThemeSelection}
                 themePackageLookup={themePackageLookup}
                 createThemeCardMotion={createThemeCardMotion}
+                density="compact"
               />
             </div>
           ) : null}
         </div>
 
-        <div className="space-y-3">
+        <div className="min-w-0 space-y-3">
           <SettingsInspectorPanel
             title="Theme Inspector"
             subtitle={activeThemePackage?.description ?? activeTheme?.description ?? 'Choose an active theme bundle and adjust how the dock follows it.'}
@@ -224,7 +231,7 @@ export function AppearanceSettingsSection({
             ]}
             accent={accent}
           >
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <div className="flex flex-wrap gap-1.5">
                 {renderThemeCatalogPackageBadges(activeTheme, activeThemePackage)}
                 <ThemeBadge label={`App ${appAppearanceName}`} />
@@ -236,7 +243,7 @@ export function AppearanceSettingsSection({
                 subtitle="Keep dock mode on the application theme, or pin dock mode to a separate theme while still honoring dock-specific recipe overrides."
                 tone="muted"
               >
-                <div className="grid grid-cols-1 gap-2">
+                <div className="grid min-w-0 grid-cols-1 gap-2">
                   {[
                     {
                       value: 'follow-app',
@@ -277,7 +284,7 @@ export function AppearanceSettingsSection({
                 subtitle="Choose the UI font family for shell chrome and settings surfaces."
                 tone="muted"
               >
-                <div className="grid grid-cols-1 gap-2">
+                <div className="grid min-w-0 grid-cols-1 gap-2">
                   {overlayFontCatalog.map(font => {
                     const active = uiFontFamily === font.family;
                     return (
@@ -306,7 +313,7 @@ export function AppearanceSettingsSection({
                 subtitle="Directly tune the editable theme bundle palette."
                 tone="muted"
               >
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 2xl:grid-cols-1">
                   <ColorToken label="Accent" value={editableTheme.palette.accent} onChange={value => onUpdateThemePalette({ accent: value, accentSoft: `${value}22` })} />
                   <ColorToken label="App Background" value={editableTheme.palette.appBackground} onChange={value => onUpdateThemePalette({ appBackground: value, shellBackgroundSolid: value })} />
                   <ColorToken label="Panel" value={editableTheme.palette.panelBackground} onChange={value => onUpdateThemePalette({ panelBackground: value, sidebarBackground: value })} />
@@ -322,7 +329,7 @@ export function AppearanceSettingsSection({
             accent={accent}
             tone="muted"
           >
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-2.5">
               <RangeField
                 label="Window Opacity"
                 description="How translucent the overlay surface should feel."
@@ -332,6 +339,7 @@ export function AppearanceSettingsSection({
                 value={appOpacity}
                 valueLabel={formatOverlayVisualControlValue('opacity', appOpacity)}
                 onChange={value => onUpdateAppearance({ appOpacity: clampOverlayVisualControlValue('opacity', value) })}
+                density="compact"
               />
               <RangeField
                 label="Panel Transparency"
@@ -342,6 +350,7 @@ export function AppearanceSettingsSection({
                 value={panelTransparency}
                 valueLabel={formatOverlayVisualControlValue('panelTransparency', panelTransparency)}
                 onChange={value => onUpdateAppearance({ panelTransparency: clampOverlayVisualControlValue('panelTransparency', value) })}
+                density="compact"
               />
               <RangeField
                 label="Blur Strength"
@@ -352,6 +361,7 @@ export function AppearanceSettingsSection({
                 value={appBlurStrength}
                 valueLabel={formatOverlayVisualControlValue('blurStrength', appBlurStrength)}
                 onChange={value => onUpdateAppearance({ appBlurStrength: clampOverlayVisualControlValue('blurStrength', value) })}
+                density="compact"
               />
               <RangeField
                 label="Window Zoom"
@@ -362,6 +372,7 @@ export function AppearanceSettingsSection({
                 value={appZoom}
                 valueLabel={formatOverlayVisualControlValue('zoom', appZoom)}
                 onChange={value => onUpdateAppearance({ appZoom: clampOverlayVisualControlValue('zoom', value) })}
+                density="compact"
               />
               <SettingsRow
                 title="Native Glass Blur"

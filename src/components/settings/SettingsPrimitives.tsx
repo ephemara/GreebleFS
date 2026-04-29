@@ -247,13 +247,13 @@ function resolveSettingsSurfaceStyle(
 export function ThemeBadge({ label, active = false }: { label: string; active?: boolean }) {
   return (
     <span
-      className="rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
+      className="inline-flex max-w-full items-center rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
       style={{
         border: `1px solid ${active ? 'currentColor' : 'var(--overlay-workbench-settings-badge-border)'}`,
         background: active ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-settings-badge-bg)',
       }}
     >
-      {label}
+      <span className="truncate">{label}</span>
     </span>
   );
 }
@@ -631,14 +631,14 @@ export function SettingsCatalogCard({
       {preview ? <div className="mb-3">{preview}</div> : null}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-[11px] font-semibold">{title}</div>
+          <div className="truncate text-[11px] font-semibold">{title}</div>
           {subtitle ? (
             <div className="mt-1 text-[9px] uppercase tracking-[0.14em] opacity-55">{subtitle}</div>
           ) : null}
         </div>
         {badges ? <div className="shrink-0">{badges}</div> : null}
       </div>
-      {description ? <div className="mt-2 text-[11px] leading-4 opacity-45">{description}</div> : null}
+      {description ? <div className="mt-2 break-words text-[11px] leading-4 opacity-45">{description}</div> : null}
       {metadata ? <div className="mt-2">{metadata}</div> : null}
       {footer ? <div className="mt-3">{footer}</div> : null}
     </Component>
@@ -801,6 +801,7 @@ export function RangeField({
   value,
   valueLabel,
   onChange,
+  density = 'comfortable',
 }: {
   label: string;
   description: string;
@@ -810,19 +811,20 @@ export function RangeField({
   value: number;
   valueLabel: string;
   onChange: (value: number) => void;
+  density?: 'comfortable' | 'compact';
 }) {
   return (
-    <label className="rounded border p-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{label}</div>
-          <p className="mt-1 text-[11px] opacity-40">{description}</p>
+    <label className="block min-w-0 overflow-hidden rounded border p-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{label}</div>
+          <p className="mt-1 break-words text-[11px] leading-4 opacity-40">{description}</p>
         </div>
-        <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-80">
+        <span className="shrink-0 rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-80">
           {valueLabel}
         </span>
       </div>
-      <div className="mt-3">
+      <div className="mt-3 min-w-0 overflow-hidden">
         <PremiumSlider
           ariaLabel={label}
           ariaValueText={valueLabel}
@@ -831,6 +833,7 @@ export function RangeField({
           step={step}
           value={value}
           onChange={onChange}
+          density={density}
         />
       </div>
     </label>

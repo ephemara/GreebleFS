@@ -7,6 +7,7 @@ import { ThemeBadge } from './SettingsPrimitives';
 import { getThemeSourceLabel } from '../../config/appearance';
 
 type ThemeCatalogSectionId = 'official-pilot' | 'built-in' | 'legacy-archive';
+type ThemeCatalogDensity = 'comfortable' | 'compact';
 
 function getThemePreviewBackground(
   theme: OverlayThemeDefinition,
@@ -125,6 +126,7 @@ function ThemeCatalogCard({
   packageInfo,
   active,
   sectionId,
+  density,
   onSelect,
   motionBinding,
 }: {
@@ -132,6 +134,7 @@ function ThemeCatalogCard({
   packageInfo: LoadedOverlayThemePackage | undefined;
   active: boolean;
   sectionId: ThemeCatalogSectionId;
+  density: ThemeCatalogDensity;
   onSelect: (themeId: string) => void;
   motionBinding?: InteractionMotionBinding;
 }) {
@@ -157,7 +160,12 @@ function ThemeCatalogCard({
     packageInfo?.capabilitySummary.visuals ? `Visuals ${packageInfo.capabilitySummary.visuals}` : null,
     compiledEngineManifest?.capabilitySummary.designTokens ? `Tokens ${compiledEngineManifest.capabilitySummary.designTokens}` : null,
     packageInfo?.capabilitySummary.themeRenderer ? 'Renderer V2' : null,
-  ].filter((value): value is string => Boolean(value)).slice(0, 10);
+  ].filter((value): value is string => Boolean(value));
+  const visibleCapabilityLabels = capabilityLabels.slice(0, density === 'compact' ? 4 : 10);
+  const visibleTags = (packageInfo?.tags ?? []).slice(0, density === 'compact' ? 1 : 3);
+  const previewMinHeight = density === 'compact'
+    ? (sectionId === 'official-pilot' ? '6.5rem' : '5rem')
+    : (sectionId === 'official-pilot' ? '11rem' : '6.75rem');
 
   return (
     <button
@@ -165,7 +173,7 @@ function ThemeCatalogCard({
       data-settings-catalog-card={themeOption.name}
       data-theme-catalog-theme-id={themeOption.id}
       onClick={() => onSelect(themeOption.id)}
-      className="overflow-hidden rounded text-left transition-opacity hover:opacity-100"
+      className="min-w-0 overflow-hidden rounded text-left transition-opacity hover:opacity-100"
       {...motionBinding?.motionDataAttributes}
       onPointerEnter={motionBinding?.onPointerEnter}
       onPointerLeave={motionBinding?.onPointerLeave}
@@ -184,20 +192,20 @@ function ThemeCatalogCard({
       <div
         className="relative w-full"
         style={{
-          minHeight: sectionId === 'official-pilot' ? '11rem' : '6.75rem',
+          minHeight: previewMinHeight,
           backgroundImage: previewBackground,
           backgroundSize: packageInfo?.previewUrl ? 'cover' : '100% 100%',
           backgroundPosition: 'center',
         }}
       >
         <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-1">
             <ThemeBadge label={getThemeSourceLabel(themeOption)} active={active} />
             {packageInfo ? <ThemeBadge label={getThemePackageSourceBadgeLabel(packageInfo.sourceKind)} active={active} /> : null}
             <ThemeBadge label={getThemeCatalogBadgeLabel(sectionId, packageInfo)} active={active} />
           </div>
-          {packageInfo ? (
-            <div className="flex items-center gap-1">
+          {packageInfo && density !== 'compact' ? (
+            <div className="flex min-w-0 shrink items-center justify-end gap-1">
               {packageInfo.warnings.length ? <ThemeBadge label={`Warnings ${packageInfo.warnings.length}`} /> : null}
               <ThemeBadge label={`v${packageInfo.version}`} active={active} />
               {packageInfo.author ? <ThemeBadge label={packageInfo.author} /> : null}
@@ -212,23 +220,23 @@ function ThemeCatalogCard({
           {active ? <span className="text-[9px] font-semibold uppercase tracking-[0.12em] opacity-75">Live</span> : null}
         </div>
       </div>
-      <div className={sectionId === 'legacy-archive' ? 'space-y-2 px-3 py-2.5' : 'space-y-2 px-3 py-3'}>
-        <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.12em] opacity-55">
-          <span>{themeOption.id}</span>
-          {packageInfo?.sourceLabel ? (
+      <div className={density === 'compact' ? 'space-y-2 px-2.5 py-2' : sectionId === 'legacy-archive' ? 'space-y-2 px-3 py-2.5' : 'space-y-2 px-3 py-3'}>
+        <div className="flex min-w-0 items-center gap-1.5 text-[9px] uppercase tracking-[0.12em] opacity-55">
+          <span className="truncate">{themeOption.id}</span>
+          {packageInfo?.sourceLabel && density !== 'compact' ? (
             <>
               <span aria-hidden="true">•</span>
-              <span>{packageInfo.sourceLabel}</span>
+              <span className="truncate">{packageInfo.sourceLabel}</span>
             </>
           ) : null}
-          {packageInfo?.homepage ? <span>• {packageInfo.homepage.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span> : null}
+          {packageInfo?.homepage && density !== 'compact' ? <span className="truncate">• {packageInfo.homepage.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span> : null}
         </div>
         {description ? (
-          <p className={sectionId === 'official-pilot' ? 'min-h-[3rem] text-[11px] leading-4 opacity-75' : 'min-h-[2.5rem] text-[11px] leading-4 opacity-70'}>
+          <p className={density === 'compact' ? 'max-h-12 overflow-hidden break-words text-[11px] leading-4 opacity-70' : sectionId === 'official-pilot' ? 'min-h-[3rem] break-words text-[11px] leading-4 opacity-75' : 'min-h-[2.5rem] break-words text-[11px] leading-4 opacity-70'}>
             {description}
           </p>
         ) : (
-          <p className="min-h-[2.5rem] text-[11px] leading-4 opacity-35">No package summary provided yet.</p>
+          <p className={density === 'compact' ? 'text-[11px] leading-4 opacity-35' : 'min-h-[2.5rem] text-[11px] leading-4 opacity-35'}>No package summary provided yet.</p>
         )}
         <div className="flex flex-wrap gap-1.5">
           {defaultLayoutPrimitive ? <ThemeBadge label={`Layout ${defaultLayoutPrimitive.kind}`} active={active} /> : null}
@@ -244,14 +252,14 @@ function ThemeCatalogCard({
           {themeOption.defaultOpenAnimationId ? <ThemeBadge label={`Open ${themeOption.defaultOpenAnimationId}`} active={active} /> : null}
           {themeOption.defaultCloseAnimationId ? <ThemeBadge label={`Close ${themeOption.defaultCloseAnimationId}`} active={active} /> : null}
           {defaultAnimationProfile ? <ThemeBadge label={`Profile ${defaultAnimationProfile.id}`} active={active} /> : null}
-          {capabilityLabels.map(label => (
+          {visibleCapabilityLabels.map(label => (
             <ThemeBadge key={`${themeOption.id}-${label}`} label={label} />
           ))}
-          {(packageInfo?.tags ?? []).slice(0, 3).map(tag => (
+          {visibleTags.map(tag => (
             <ThemeBadge key={`${themeOption.id}-tag-${tag}`} label={tag} />
           ))}
         </div>
-        {packageInfo?.warnings.length ? (
+        {packageInfo?.warnings.length && density !== 'compact' ? (
           <div className="rounded border px-2.5 py-2 text-[10px] leading-4" style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.12)', color: '#fde68a' }}>
             {packageInfo.warnings.map(warning => (
               <div key={`${themeOption.id}-${warning}`}>{warning}</div>
@@ -270,6 +278,7 @@ function ThemeCatalogSection({
   onSelect,
   themePackageLookup,
   createThemeCardMotion,
+  density,
 }: {
   sectionId: ThemeCatalogSectionId;
   themes: OverlayThemeDefinition[];
@@ -277,6 +286,7 @@ function ThemeCatalogSection({
   onSelect: (themeId: string) => void;
   themePackageLookup: Map<string, LoadedOverlayThemePackage>;
   createThemeCardMotion?: (active: boolean) => InteractionMotionBinding;
+  density: ThemeCatalogDensity;
 }) {
   if (themes.length === 0) {
     return null;
@@ -313,22 +323,22 @@ function ThemeCatalogSection({
   return (
     <section
       data-theme-catalog-group={sectionId}
-      className="rounded border p-3"
+      className={density === 'compact' ? 'rounded border p-2.5' : 'rounded border p-3'}
       style={sectionStyle}
     >
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div>
+      <div className={density === 'compact' ? 'mb-2.5 flex flex-wrap items-start justify-between gap-2' : 'mb-3 flex flex-wrap items-start justify-between gap-3'}>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] opacity-65">
             {isOfficialSuite ? <Sparkles size={11} /> : <LayoutGrid size={11} />}
             <span>{getThemeCatalogSectionTitle(sectionId)}</span>
           </div>
-          <p className="mt-1 text-[11px] leading-4 opacity-48">
+          <p className={density === 'compact' ? 'mt-1 max-w-prose text-[11px] leading-4 opacity-48' : 'mt-1 text-[11px] leading-4 opacity-48'}>
             {getThemeCatalogSectionSubtitle(sectionId)}
           </p>
         </div>
         <ThemeBadge label={`${themes.length} theme${themes.length === 1 ? '' : 's'}`} active={isOfficialSuite} />
       </div>
-      <div className={isOfficialSuite ? 'grid grid-cols-1 gap-4 xl:grid-cols-2' : 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3'}>
+      <div className={density === 'compact' ? 'grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3' : isOfficialSuite ? 'grid grid-cols-1 gap-4 xl:grid-cols-2' : 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3'}>
         {sortedThemes.map((themeOption, index) => {
           const packageInfo = themePackageLookup.get(themeOption.id);
           const active = activeThemeId === themeOption.id;
@@ -341,6 +351,7 @@ function ThemeCatalogSection({
               packageInfo={packageInfo}
               active={active}
               sectionId={themeSectionId}
+              density={density}
               onSelect={onSelect}
               motionBinding={createThemeCardMotion?.(active)}
             />
@@ -357,12 +368,14 @@ export function ThemeCatalogGrid({
   onSelect,
   themePackageLookup,
   createThemeCardMotion,
+  density = 'comfortable',
 }: {
   themes: OverlayThemeDefinition[];
   activeThemeId: string | null;
   onSelect: (themeId: string) => void;
   themePackageLookup: Map<string, LoadedOverlayThemePackage>;
   createThemeCardMotion?: (active: boolean) => InteractionMotionBinding;
+  density?: ThemeCatalogDensity;
 }) {
   const catalogSections = useMemo(() => {
     const groupedThemes: Record<ThemeCatalogSectionId, OverlayThemeDefinition[]> = {
@@ -384,7 +397,7 @@ export function ThemeCatalogGrid({
   }, [themes, themePackageLookup]);
 
   return (
-    <div className="space-y-4" data-settings-catalog-grid="theme-catalog">
+    <div className={density === 'compact' ? 'space-y-3' : 'space-y-4'} data-settings-catalog-grid="theme-catalog" data-theme-catalog-density={density}>
       {catalogSections.map(section => (
         <ThemeCatalogSection
           key={section.sectionId}
@@ -394,6 +407,7 @@ export function ThemeCatalogGrid({
           onSelect={onSelect}
           themePackageLookup={themePackageLookup}
           createThemeCardMotion={createThemeCardMotion}
+          density={density}
         />
       ))}
     </div>
