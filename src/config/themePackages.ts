@@ -1046,7 +1046,7 @@ async function loadChildWallpapers(
       .filter(entry => isFrontendWallpaperFile(entry) || isMediaWallpaperFile(entry))
       .map(async entry => {
         if (isMediaWallpaperFile(entry)) {
-          return scopeWallpaperToBundle(bundleId, createMediaWallpaperFromFile(entry));
+          return scopeWallpaperToBundle(bundleId, await createMediaWallpaperFromFile(entry));
         }
 
         const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);

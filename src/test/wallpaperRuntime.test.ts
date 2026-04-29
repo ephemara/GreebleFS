@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
 import {
+  createMediaWallpaperFromFile,
   createThemeAssetWallpaper,
   resolveActiveWallpaper,
   type LoadedOverlayWallpaper,
@@ -26,6 +28,64 @@ function createWallpaper(id: string): LoadedOverlayWallpaper {
 }
 
 describe('wallpaperRuntime', () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockReset();
+  });
+
+  it('inlines managed SVG wallpapers into data URLs for dependable shell backdrops', async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'fs_read_file_base64') {
+        return 'PHN2Zy8+';
+      }
+      throw new Error(`Unexpected invoke call: ${command}`);
+    });
+
+    const wallpaper = await createMediaWallpaperFromFile({
+      name: 'aurora.svg',
+      path: 'wallpapers/aurora.svg',
+      is_dir: false,
+      extension: 'svg',
+      modified: 1,
+    });
+
+    expect(wallpaper.assetUrl).toBe('data:image/svg+xml;base64,PHN2Zy8+');
+    expect(wallpaper.previewUrl).toBe('data:image/svg+xml;base64,PHN2Zy8+');
+  });
+
+  it('keeps prebuilt SVG data URLs intact when the filesystem bridge already returns one', async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'fs_read_file_base64') {
+        return 'data:image/svg+xml;base64,PHN2Zy8+';
+      }
+      throw new Error(`Unexpected invoke call: ${command}`);
+    });
+
+    const wallpaper = await createMediaWallpaperFromFile({
+      name: 'aurora.svg',
+      path: 'wallpapers/aurora.svg',
+      is_dir: false,
+      extension: 'svg',
+      modified: 1,
+    });
+
+    expect(wallpaper.assetUrl).toBe('data:image/svg+xml;base64,PHN2Zy8+');
+    expect(wallpaper.previewUrl).toBe('data:image/svg+xml;base64,PHN2Zy8+');
+  });
+
+  it('keeps raster wallpapers on the direct asset path', async () => {
+    const wallpaper = await createMediaWallpaperFromFile({
+      name: 'aurora.png',
+      path: 'wallpapers/aurora.png',
+      is_dir: false,
+      extension: 'png',
+      modified: 1,
+    });
+
+    expect(wallpaper.assetUrl).toBe('asset://localhost/wallpapers/aurora.png');
+    expect(wallpaper.previewUrl).toBe('asset://localhost/wallpapers/aurora.png');
+    expect(vi.mocked(invoke)).not.toHaveBeenCalled();
+  });
+
   it('follows the theme wallpaper when there is no user override', () => {
     const themeWallpaper = createThemeAssetWallpaper({
       themeId: 'vista-glass',

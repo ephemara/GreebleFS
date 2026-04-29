@@ -1,3 +1,30 @@
+# 2026-04-28 - Managed SVG Wallpapers Now Inline Before The Shell Backdrop Layer
+
+- Wallpaper rendering failures on this Windows/WebView2 setup traced back to filesystem-backed SVG wallpaper URLs, not to the shell backdrop stack. Theme-selected SVG wallpapers and imported custom SVG wallpapers could both intermittently miss the backdrop layer even though `App.tsx` was still rendering the wallpaper scene underneath panels.
+- Durable ownership after this pass:
+  - `src/components/wallpaperRuntime.tsx` now treats managed SVG wallpaper files as a special display path. `createMediaWallpaperFromFile(...)` became async, reads SVG media through `fsReadFileBase64`, preserves already-complete data URLs, and only falls back to raw `convertFileSrc(...)` asset URLs for raster/video media or bridge-read failures.
+  - `src/config/themePackages.ts` now awaits `createMediaWallpaperFromFile(...)` when composing bundle-local wallpaper catalogs, so theme manifests that select a local SVG wallpaper resolve `theme.assets.backgroundUrl` to the WebKit-safe data URL form.
+  - Authored/imported wallpaper refresh in `App.tsx` already runs through `Promise.all(...)`, so the async wallpaper-media loader continues to slot cleanly into the user wallpaper catalog lane without another architecture change.
+- Durable wallpaper rule:
+  - if a wallpaper asset is an SVG that lives in managed content (`usr/wallpapers`, bundle-local `wallpapers/`, or other filesystem-backed theme media roots), inline it before it reaches the DOM. Raw asset URLs are fine for raster images and videos, but SVG wallpaper backdrops are not reliable on this host path.
+  - `fs_read_file_base64` may already return a full data URL. Keep the existing guard that accepts those values as-is instead of wrapping them in a second `data:image/...;base64,` prefix.
+- Validation that passed for this pass:
+  - `node_modules\\.bin\\vitest.exe run src/test/wallpaperRuntime.test.ts src/test/andromedaThemeBundle.test.ts --reporter=dot`
+
+# 2026-04-28 - Explorer And UI Theme-System Audit
+
+- Ran a repo-wide UI audit focused on `src/components/**`, especially `SettingsPage.tsx`, `src/components/settings/**`, `FileExplorer.tsx`, and `src/components/explorer/**`.
+- Durable report lives at `docs/reviews/explorer-ui-theme-audit-2026-04-28.md`.
+- Highest-value durable findings:
+  - `SettingsPage.tsx` still duplicates `ThemeBadge`, `renderSettingsContextMenuIcon`, and the settings-side context-menu preview renderer even though shared owners already exist or should exist.
+  - Settings extraction is only partial: the page still renders 20 inline section bodies, while only a smaller extracted subset (`appearance`, `icons`, `layout-dynamics`, `system`, `context-menus`, `plugins`) fully ride the `settings/sections` architecture.
+  - Explorer surfaces are mostly theme-aware but not truly shared. `FileExplorer.tsx`, `ExplorerSideRail.tsx`, and `ExplorerWorkspace.tsx` each carry their own chip/button/pill families instead of using a common explorer control primitive layer.
+  - Several UI islands still bypass the semantic control system entirely: `AppearanceSettingsSection.tsx`, `IconSettingsSection.tsx`, `AppModal.tsx`, `MobileShareQrDialog.tsx`, `ExplorerImageEditor.tsx`, `ExplorerVideoEditor.tsx`, and `ExplorerAudioWorkbench.tsx`.
+- Recommended next move:
+  - extract shared `SettingsContextMenuPreview` primitives first
+  - add `SettingsNotice` plus stronger shared settings action/button variants
+  - build `src/components/explorer/ExplorerControlPrimitives.tsx` and migrate the duplicated explorer chrome/button families into it
+
 # 2026-04-28 - Explorer Folder Open Stops Paying Full Runtime-Orchestration Costs
 
 - Windows Explorer performance was still collapsing after the initial Go-sidecar default fix because folder navigation had two independent O(entry-count) hot-path taxes:

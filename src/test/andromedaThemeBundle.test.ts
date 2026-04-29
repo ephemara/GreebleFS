@@ -17,7 +17,7 @@ interface FileEntry {
 }
 
 const projectRoot = process.cwd();
-const bundleRelativeRoot = 'themes/andromeda';
+const bundleRelativeRoot = 'usr/themes/andromeda';
 const bundleAbsoluteRoot = resolve(projectRoot, bundleRelativeRoot);
 
 function normalizePath(path: string): string {
@@ -130,7 +130,8 @@ describe('andromeda theme bundle', () => {
     expect(andromeda.theme.defaultOpenAnimationId).toBe('andromeda:andromeda-gate');
     expect(andromeda.theme.defaultCloseAnimationId).toBe('andromeda:andromeda-gate');
     expect(andromeda.theme.assets?.iconTheme?.id).toBe('andromeda:andromeda-icons');
-    expect(andromeda.theme.assets?.backgroundUrl).toContain(`${bundleRelativeRoot}/wallpapers/andromeda-halo.svg`);
+    expect(andromeda.localCatalogs?.wallpapers[0]?.assetUrl ?? '').toMatch(/^data:image\/svg\+xml;base64,/);
+    expect(andromeda.theme.assets?.backgroundUrl ?? '').toMatch(/^data:image\/svg\+xml;base64,/);
     expect(andromeda.theme.workbench?.brandLabel).toBe('Andromeda');
     expect(andromeda.theme.explorer?.railBrandLabel).toBe('Deep Field');
     expect(andromeda.capabilitySummary).toMatchObject({

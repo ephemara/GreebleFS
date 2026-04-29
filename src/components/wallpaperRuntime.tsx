@@ -21,6 +21,10 @@ import {
   type RuntimeFileEntry,
   unwrapRuntimeModuleExport,
 } from '../runtime/moduleRuntime';
+import {
+  commands,
+  unwrapTauriResult,
+} from '../runtime/tauriClient';
 
 export interface WallpaperFileEntry extends RuntimeFileEntry {}
 
@@ -86,6 +90,7 @@ export interface ResolvedWallpaperSelection {
 
 const imageExtensions = new Set<string>(wallpaperSystemConfig.imageExtensions);
 const videoExtensions = new Set<string>(wallpaperSystemConfig.videoExtensions);
+const inlineWallpaperExtensions = new Set<string>(['svg']);
 
 export function defineWallpaper(definition: OverlayWallpaperDefinition): OverlayWallpaperDefinition {
   return definition;
@@ -146,6 +151,52 @@ export function resolveWallpaperAssetUrl(filePath: string): string {
   } catch {
     const normalized = filePath.replace(/\\/g, '/');
     return normalized.startsWith('/') ? `file://${encodeURI(normalized)}` : `file:///${encodeURI(normalized)}`;
+  }
+}
+
+function isResolvedWallpaperAssetPath(path: string): boolean {
+  return /^(?:\/|data:|blob:|https?:|asset:|file:)/i.test(path);
+}
+
+function getWallpaperAssetExtension(path: string): string {
+  const normalizedPath = path.split('#')[0]?.split('?')[0] ?? path;
+  return normalizedPath.split('.').pop()?.toLowerCase() ?? '';
+}
+
+function shouldInlineWallpaperAsset(path: string): boolean {
+  return inlineWallpaperExtensions.has(getWallpaperAssetExtension(path));
+}
+
+function detectWallpaperAssetMimeType(path: string): string {
+  const extension = getWallpaperAssetExtension(path);
+  if (extension === 'svg') {
+    return 'image/svg+xml';
+  }
+  return 'application/octet-stream';
+}
+
+async function resolveWallpaperDisplayAssetUrl(filePath: string): Promise<string> {
+  const trimmedPath = filePath.trim();
+  if (!trimmedPath) {
+    return trimmedPath;
+  }
+
+  if (isResolvedWallpaperAssetPath(trimmedPath)) {
+    return trimmedPath;
+  }
+
+  if (!shouldInlineWallpaperAsset(trimmedPath)) {
+    return resolveWallpaperAssetUrl(trimmedPath);
+  }
+
+  try {
+    const fileData = await commands.fsReadFileBase64(trimmedPath).then(unwrapTauriResult);
+    if (isResolvedWallpaperAssetPath(fileData)) {
+      return fileData;
+    }
+    return `data:${detectWallpaperAssetMimeType(trimmedPath)};base64,${fileData}`;
+  } catch {
+    return resolveWallpaperAssetUrl(trimmedPath);
   }
 }
 
@@ -274,11 +325,12 @@ export async function loadWallpaperFromSource(
   }
 }
 
-export function createMediaWallpaperFromFile(
+export async function createMediaWallpaperFromFile(
   entry: WallpaperFileEntry,
   options?: LoadWallpaperFromSourceOptions,
-): LoadedOverlayWallpaper {
+): Promise<LoadedOverlayWallpaper> {
   const kind = detectWallpaperKindFromExtension(entry.extension);
+  const assetUrl = options?.context?.assetUrl ?? await resolveWallpaperDisplayAssetUrl(entry.path);
   const context: OverlayWallpaperContext = {
     id: options?.context?.id ?? deriveWallpaperId(entry.name),
     name: options?.context?.name ?? deriveWallpaperName(entry.name),
@@ -286,8 +338,8 @@ export function createMediaWallpaperFromFile(
     wallpaperRoot: options?.context?.wallpaperRoot ?? wallpaperSystemConfig.wallpapersDirectory,
     source: options?.context?.source ?? 'folder',
     kind,
-    assetUrl: options?.context?.assetUrl ?? resolveWallpaperAssetUrl(entry.path),
-    previewUrl: options?.context?.previewUrl ?? (kind === 'image' ? resolveWallpaperAssetUrl(entry.path) : undefined),
+    assetUrl,
+    previewUrl: options?.context?.previewUrl ?? (kind === 'image' ? assetUrl : undefined),
   };
 
   return {
