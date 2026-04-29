@@ -11,7 +11,21 @@ import {
 import type { MobileShareThemeSnapshot } from "./types";
 import type { MobileShareEntry } from "./types";
 
-export type MobileTabId = "explorer" | "search" | "transfers" | "settings";
+export type MobileBuiltInTabId = "explorer" | "search" | "transfers" | "settings";
+export type MobilePluginTabId = `plugin:${string}`;
+export type MobileTabId = MobileBuiltInTabId | MobilePluginTabId;
+
+export function buildMobilePluginTabId(paneId: string): MobilePluginTabId {
+  return `plugin:${paneId}`;
+}
+
+export function isMobilePluginTabId(tabId: MobileTabId | string): tabId is MobilePluginTabId {
+  return tabId.startsWith("plugin:");
+}
+
+export function getMobilePluginPaneIdFromTab(tabId: MobileTabId | string): string | null {
+  return isMobilePluginTabId(tabId) ? tabId.slice("plugin:".length) : null;
+}
 
 export interface MobileUiIconReference {
   kind: "icon" | "lucide";

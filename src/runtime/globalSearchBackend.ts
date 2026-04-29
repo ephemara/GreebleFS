@@ -10,6 +10,7 @@ import {
 } from "./tauriClient";
 import type {
   DriveInfo,
+  GlobalSearchIndexQueryRequest,
   GlobalSearchQueryOptions,
   GlobalSearchResultEntry,
   GlobalSearchScanSettings,
@@ -19,6 +20,7 @@ import type {
 export type GlobalSearchStatusValue = GlobalSearchStatus;
 export type GlobalSearchResultValue = GlobalSearchResultEntry;
 export type GlobalSearchQueryOptionsValue = GlobalSearchQueryOptions;
+export type GlobalSearchIndexQueryRequestValue = GlobalSearchIndexQueryRequest;
 export type GlobalSearchScanSettingsValue = GlobalSearchScanSettings;
 
 function deduplicateDriveRoots(drives: DriveInfo[]): string[] {
@@ -147,6 +149,53 @@ export async function queryGlobalSearch(args: {
     indexedResults,
     priorityResults,
     limit,
+  });
+}
+
+export async function queryGlobalSearchIndex(
+  request: Partial<GlobalSearchIndexQueryRequestValue>,
+): Promise<GlobalSearchResultValue[]> {
+  const limit = request.limit ?? globalSearchPaletteConfig.resultLimit;
+  const resolvedRequest: GlobalSearchIndexQueryRequestValue = {
+    query: request.query ?? null,
+    limit,
+    offset: request.offset ?? 0,
+    includeFiles: request.includeFiles ?? true,
+    includeDirectories: request.includeDirectories ?? false,
+    includeHidden: request.includeHidden ?? false,
+    extensions: request.extensions ?? [],
+    rootPaths: request.rootPaths ?? [],
+    exactMatch: request.exactMatch ?? false,
+    typoTolerance: request.typoTolerance ?? true,
+    minScoreThreshold: request.minScoreThreshold ?? null,
+    sortKey: request.sortKey ?? null,
+    sortDirection: request.sortDirection ?? null,
+  };
+
+  return unwrapTauriResult(await commands.globalSearchQueryIndex(resolvedRequest));
+}
+
+export async function findGlobalSearchByExtensions(args: {
+  extensions: string[];
+  query?: string | null;
+  limit?: number;
+  offset?: number;
+  rootPaths?: string[];
+  includeHidden?: boolean;
+  sortKey?: GlobalSearchIndexQueryRequestValue["sortKey"];
+  sortDirection?: GlobalSearchIndexQueryRequestValue["sortDirection"];
+}): Promise<GlobalSearchResultValue[]> {
+  return queryGlobalSearchIndex({
+    query: args.query ?? null,
+    limit: args.limit,
+    offset: args.offset,
+    includeFiles: true,
+    includeDirectories: false,
+    includeHidden: args.includeHidden ?? false,
+    extensions: args.extensions,
+    rootPaths: args.rootPaths ?? [],
+    sortKey: args.sortKey ?? "modifiedTime",
+    sortDirection: args.sortDirection ?? "desc",
   });
 }
 

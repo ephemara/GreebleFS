@@ -27,6 +27,7 @@ use crate::fs_commands::{
     fs_list_archive_dir, fs_list_dir, fs_open_file, fs_read_text_file, fs_write_file, git_exec,
     FileEntry, FsWriteFileContent,
 };
+use crate::global_search::{GlobalSearchIndexQueryRequest, GlobalSearchScanSettings};
 use crate::ipc_runtime::IpcRuntimeState;
 use crate::remote_storage_commands::{remote_list_dir, remote_open_file, RemoteStorageState};
 use crate::runtime_pipeline::cache::{CacheKeyParts, CompileCacheLayout};
@@ -62,6 +63,10 @@ use crate::runtime_pipeline::sidecar::{
 };
 use crate::runtime_pipeline::toolchain::{probe_runtime_toolchains, RuntimeToolchainStatus};
 use crate::runtime_pipeline::tui::{build_tui_launch, ExternalRuntimeTuiLaunch};
+use crate::semantic_search::{
+    ExplorerSemanticFindSimilarRequest, ExplorerSemanticIndexBuildRequest,
+    ExplorerSemanticSearchRequest,
+};
 use crate::terminal::{
     ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalWriteRequest,
 };
@@ -252,6 +257,12 @@ struct ExtensionHostFileStat {
 #[serde(rename_all = "camelCase")]
 struct ExtensionHostFileStatRequest {
     path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostSemanticRootRequest {
+    root_path: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1333,6 +1344,99 @@ async fn dispatch_extension_host_call(
                         .and_then(|context| context.preview_session)
                 });
             encode_runtime_host_bridge_result(&preview_session)
+        }
+        "index.init" => {
+            let status = crate::global_search::global_search_init(app.clone())?;
+            encode_runtime_host_bridge_result(&status)
+        }
+        "index.get_status" => {
+            let status = crate::global_search::global_search_get_status()?;
+            encode_runtime_host_bridge_result(&status)
+        }
+        "index.start_scan" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_read,
+                "fsRead",
+            )?;
+            let payload: GlobalSearchScanSettings =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            crate::global_search::global_search_start_scan(app.clone(), payload).await?;
+            Ok("null".to_string())
+        }
+        "index.cancel_scan" => {
+            crate::global_search::global_search_cancel_scan()?;
+            Ok("null".to_string())
+        }
+        "index.search" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_read,
+                "fsRead",
+            )?;
+            let payload: GlobalSearchIndexQueryRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let results =
+                crate::global_search::global_search_query_index(app.clone(), payload).await?;
+            encode_runtime_host_bridge_result(&results)
+        }
+        "semantic.get_summary" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_read,
+                "fsRead",
+            )?;
+            let payload: ExtensionHostSemanticRootRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let summary = crate::semantic_search::explorer_semantic_index_get_summary(
+                app.clone(),
+                payload.root_path,
+            )
+            .await?;
+            encode_runtime_host_bridge_result(&summary)
+        }
+        "semantic.build" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_read,
+                "fsRead",
+            )?;
+            let payload: ExplorerSemanticIndexBuildRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let started =
+                crate::semantic_search::explorer_semantic_index_build(app.clone(), payload).await?;
+            encode_runtime_host_bridge_result(&started)
+        }
+        "semantic.search" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_read,
+                "fsRead",
+            )?;
+            let payload: ExplorerSemanticSearchRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let response =
+                crate::semantic_search::explorer_semantic_search(app.clone(), payload).await?;
+            encode_runtime_host_bridge_result(&response)
+        }
+        "semantic.find_similar" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_read,
+                "fsRead",
+            )?;
+            let payload: ExplorerSemanticFindSimilarRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let response =
+                crate::semantic_search::explorer_semantic_find_similar(app.clone(), payload)
+                    .await?;
+            encode_runtime_host_bridge_result(&response)
         }
         "events.describe_topics" => {
             encode_runtime_host_bridge_result(&builtin_host_topic_catalog())

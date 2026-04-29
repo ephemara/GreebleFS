@@ -11,6 +11,7 @@ import {
   ChevronRight,
   ChevronUp,
   CornerDownRight,
+  Copy,
   Download,
   ExternalLink,
   Eye,
@@ -25,6 +26,10 @@ import {
   Images,
   LayoutGrid,
   List,
+  Pin,
+  PinOff,
+  Play,
+  Puzzle,
   RefreshCcw,
   ScanSearch,
   Search,
@@ -56,10 +61,12 @@ import {
   buildMobileFileUrl,
   cancelMobileSearchScan,
   fetchMobileListing,
+  fetchMobilePluginCatalog,
   fetchMobilePreview,
   fetchMobileSearchResults,
   fetchMobileSearchStatus,
   fetchMobileThemeSnapshot,
+  runMobilePluginBackend,
   startMobileSearchScan,
   startMobileUpload,
   type MobileBrowseRequestOptions,
@@ -82,18 +89,26 @@ import {
 } from "../src/config/mobileLayout";
 import {
   buildMobileIconUrl,
+  buildMobilePluginTabId,
   formatBytes,
   formatModifiedLabel,
   formatRelativePath,
+  getMobilePluginPaneIdFromTab,
   isIosSafari,
+  isMobilePluginTabId,
   isStandaloneWebApp,
   resolveMobileEntryIconUrl,
   resolveMobileNavIcon,
+  type MobileBuiltInTabId,
   type MobileTabId,
 } from "./mobileShared";
 import { useMobileStore } from "./mobileStore";
 import type {
   MobilePreviewResponse,
+  MobilePluginBackendRunResponse,
+  MobilePluginCatalogResponse,
+  MobilePluginPane,
+  MobilePluginPaneAction,
   MobileSearchResponse,
   MobileSearchStatusResponse,
   MobileShareEntry,
@@ -118,6 +133,16 @@ interface MobileShellMetrics {
   bottomNavHeight: number;
   actionStripHeight: number;
   pagePadding: number;
+}
+
+type MobilePluginActionPhase = "idle" | "running" | "completed" | "error";
+
+interface MobilePluginActionState {
+  phase: MobilePluginActionPhase;
+  message: string;
+  stdout: string;
+  stderr: string;
+  status: number | null;
 }
 
 const BOTTOM_DOCK_TABS = [
@@ -146,7 +171,7 @@ const BOTTOM_DOCK_TABS = [
     fallback: Settings2,
   },
 ] satisfies Array<{
-  id: MobileTabId;
+  id: MobileBuiltInTabId;
   label: string;
   slotId: string;
   fallback: LucideIcon;
@@ -192,6 +217,7 @@ const MOBILE_LUCIDE_ICON_REGISTRY: Record<string, LucideIcon> = {
   ChevronRight,
   ChevronUp,
   CornerDownRight,
+  Copy,
   Download,
   ExternalLink,
   Eye,
@@ -206,6 +232,10 @@ const MOBILE_LUCIDE_ICON_REGISTRY: Record<string, LucideIcon> = {
   Images,
   LayoutGrid,
   List,
+  Pin,
+  PinOff,
+  Play,
+  Puzzle,
   RefreshCcw,
   ScanSearch,
   Search,
@@ -253,7 +283,7 @@ function buildMobileThemeCssVars(
     ...(snapshot.metrics.actionStripHeight !== undefined ? { "--mobile-action-strip-height": `${snapshot.metrics.actionStripHeight}px` } : {}),
     ...(snapshot.metrics.entryIconSize !== undefined ? { "--mobile-entry-icon-size": `${snapshot.metrics.entryIconSize}px` } : {}),
     ...(snapshot.metrics.gridMinWidth !== undefined ? { "--mobile-grid-min-width": `${snapshot.metrics.gridMinWidth}px` } : {}),
-    ...snapshot.cssVars,
+    ...(snapshot.cssVars ?? {}),
   };
 }
 
@@ -274,9 +304,11 @@ function applyMobileThemeSnapshot(snapshot: MobileShareThemeSnapshot): void {
 function readMobileLocationState(): MobileLocationState {
   const params = new URLSearchParams(window.location.search);
   const tabParam = params.get("tab");
-  const normalizedTab = BOTTOM_DOCK_TABS.some((tab) => tab.id === tabParam)
-    ? (tabParam as MobileTabId)
-    : "explorer";
+  const normalizedTab =
+    BOTTOM_DOCK_TABS.some((tab) => tab.id === tabParam) ||
+    (tabParam != null && isMobilePluginTabId(tabParam))
+      ? (tabParam as MobileTabId)
+      : "explorer";
   const path = params.get("path")?.trim() ?? "";
   return {
     tab: normalizedTab,
@@ -582,6 +614,49 @@ function getRowMetaLabel(entry: MobileShareEntry): string {
     parts.push(formatBytes(entry.size));
   }
   return parts.join(" · ");
+}
+
+function buildMobilePluginActionKey(
+  pane: MobilePluginPane,
+  action: MobilePluginPaneAction,
+): string {
+  return `${pane.id}:${action.id}`;
+}
+
+function resolveMobilePluginTemplateValue(
+  value: string,
+  pane: MobilePluginPane,
+  currentPath: string,
+): string {
+  const replacements: Record<string, string> = {
+    "{actionPath}": currentPath,
+    "{contextPath}": currentPath,
+    "{currentPath}": currentPath,
+    "{paneId}": pane.localId,
+    "{pluginId}": pane.pluginId,
+    "{pluginName}": pane.pluginName,
+  };
+  return Object.entries(replacements).reduce(
+    (current, [token, replacement]) => current.replaceAll(token, replacement),
+    value,
+  );
+}
+
+function getMobilePluginActionIcon(action: MobilePluginPaneAction): LucideIcon {
+  const configuredIcon = MOBILE_LUCIDE_ICON_REGISTRY[action.iconName];
+  if (configuredIcon) {
+    return configuredIcon;
+  }
+  switch (action.kind) {
+    case "backend":
+      return Play;
+    case "copy":
+      return Copy;
+    case "link":
+      return ExternalLink;
+    default:
+      return Puzzle;
+  }
 }
 
 function renderThemedIcon(args: {
@@ -1049,10 +1124,16 @@ export default function App() {
   const {
     activeTab,
     explorerPath,
+    pinnedPaths,
+    recentPaths,
     transfers,
     layoutOverrides,
     setActiveTab,
     setExplorerPath,
+    pinPath,
+    unpinPath,
+    recordRecentPath,
+    clearRecentPaths,
     patchLayoutOverrides,
     createTransfer,
     patchTransfer,
@@ -1101,6 +1182,13 @@ export default function App() {
     loading: false,
     error: null,
   });
+  const [pluginCatalog, setPluginCatalog] =
+    useState<MobilePluginCatalogResponse | null>(null);
+  const [pluginCatalogLoading, setPluginCatalogLoading] = useState(false);
+  const [pluginCatalogError, setPluginCatalogError] = useState<string | null>(null);
+  const [pluginActionState, setPluginActionState] = useState<
+    Record<string, MobilePluginActionState>
+  >({});
   const [isStandalone, setIsStandalone] = useState(isStandaloneWebApp());
   const [viewportSnapshot, setViewportSnapshot] = useState<MobileViewportSnapshot>(
     () => readCurrentViewportSnapshot(),
@@ -1198,6 +1286,44 @@ export default function App() {
 
     return [...matchedEntries, ...fallbackEntries].slice(0, 6);
   }, [currentPath, loadedEntries]);
+  const activePluginPaneId = getMobilePluginPaneIdFromTab(activeTab);
+  const mobilePluginPanes = pluginCatalog?.panes ?? [];
+  const activePluginPane = useMemo(
+    () =>
+      activePluginPaneId
+        ? mobilePluginPanes.find((pane) => pane.id === activePluginPaneId) ?? null
+        : null,
+    [activePluginPaneId, mobilePluginPanes],
+  );
+  const mobileBottomNavTabs = useMemo<
+    Array<{
+      id: MobileTabId;
+      label: string;
+      slotId?: string;
+      fallback: LucideIcon;
+      iconId?: string;
+      pluginPane?: MobilePluginPane;
+    }>
+  >(
+    () => [
+      ...BOTTOM_DOCK_TABS,
+      ...mobilePluginPanes.map((pane) => ({
+        id: buildMobilePluginTabId(pane.id),
+        label: pane.title,
+        slotId: pane.iconId,
+        fallback: MOBILE_LUCIDE_ICON_REGISTRY[pane.iconName] ?? Puzzle,
+        iconId: pane.iconId,
+        pluginPane: pane,
+      })),
+    ],
+    [mobilePluginPanes],
+  );
+  const pinnedPathSet = useMemo(() => new Set(pinnedPaths), [pinnedPaths]);
+  const currentPathIsPinned = currentPath.length > 0 && pinnedPathSet.has(currentPath);
+  const visibleRecentPaths = useMemo(
+    () => recentPaths.filter((path) => path !== currentPath && !pinnedPathSet.has(path)).slice(0, 6),
+    [currentPath, pinnedPathSet, recentPaths],
+  );
   const gridCardSize = getGridIconSizeForViewport(
     resolvedLayout,
     viewportSnapshot.width,
@@ -1678,6 +1804,21 @@ export default function App() {
     }
   }
 
+  const refreshMobilePluginCatalog = useCallback(async (): Promise<void> => {
+    setPluginCatalogLoading(true);
+    setPluginCatalogError(null);
+    try {
+      const catalog = await fetchMobilePluginCatalog();
+      setPluginCatalog(catalog);
+    } catch (error) {
+      setPluginCatalogError(
+        error instanceof Error ? error.message : "Failed to load mobile plugins.",
+      );
+    } finally {
+      setPluginCatalogLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (lastLocationKeyRef.current.length > 0) {
       return;
@@ -1702,6 +1843,10 @@ export default function App() {
   useEffect(() => {
     setExplorerPath(currentPath);
   }, [currentPath, setExplorerPath]);
+
+  useEffect(() => {
+    recordRecentPath(currentPath);
+  }, [currentPath, recordRecentPath]);
 
   useEffect(() => {
     const nextState = {
@@ -1989,6 +2134,24 @@ export default function App() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
+
+  useEffect(() => {
+    void refreshMobilePluginCatalog();
+    const intervalId = window.setInterval(() => {
+      void refreshMobilePluginCatalog();
+    }, 20000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshMobilePluginCatalog();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshMobilePluginCatalog]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -2358,6 +2521,269 @@ export default function App() {
     }
   }
 
+  async function runMobilePluginPaneAction(
+    pane: MobilePluginPane,
+    action: MobilePluginPaneAction,
+  ): Promise<void> {
+    const actionKey = buildMobilePluginActionKey(pane, action);
+    setPluginActionState((current) => ({
+      ...current,
+      [actionKey]: {
+        phase: "running",
+        message: `${action.label} is running.`,
+        stdout: "",
+        stderr: "",
+        status: null,
+      },
+    }));
+
+    try {
+      if (action.kind === "copy") {
+        const copyText = resolveMobilePluginTemplateValue(
+          action.copyText || currentPath,
+          pane,
+          currentPath,
+        );
+        await navigator.clipboard.writeText(copyText);
+        setPluginActionState((current) => ({
+          ...current,
+          [actionKey]: {
+            phase: "completed",
+            message: "Copied to clipboard.",
+            stdout: copyText,
+            stderr: "",
+            status: 0,
+          },
+        }));
+        return;
+      }
+
+      if (action.kind === "backend" && action.backend) {
+        const response: MobilePluginBackendRunResponse = await runMobilePluginBackend(
+          pane.pluginId,
+          {
+            entry: action.backend.entry,
+            args: action.backend.args.map((arg) =>
+              resolveMobilePluginTemplateValue(arg, pane, currentPath),
+            ),
+            contextPath: currentPath,
+            paneId: pane.localId,
+            actionId: action.id,
+          },
+        );
+        setPluginActionState((current) => ({
+          ...current,
+          [actionKey]: {
+            phase: response.status === 0 ? "completed" : "error",
+            message:
+              response.status === 0
+                ? action.backend?.successMessage || "Plugin action finished."
+                : `Plugin backend exited with status ${response.status}.`,
+            stdout: response.stdout,
+            stderr: response.stderr,
+            status: response.status,
+          },
+        }));
+        return;
+      }
+
+      const href = resolveMobilePluginTemplateValue(action.href, pane, currentPath);
+      if (!href) {
+        throw new Error("Plugin action has no link target.");
+      }
+      window.open(href, "_blank", "noopener,noreferrer");
+      setPluginActionState((current) => ({
+        ...current,
+        [actionKey]: {
+          phase: "completed",
+          message: "Opened plugin link.",
+          stdout: href,
+          stderr: "",
+          status: 0,
+        },
+      }));
+    } catch (error) {
+      setPluginActionState((current) => ({
+        ...current,
+        [actionKey]: {
+          phase: "error",
+          message:
+            error instanceof Error ? error.message : "Plugin action failed.",
+          stdout: "",
+          stderr: "",
+          status: null,
+        },
+      }));
+    }
+  }
+
+  function renderMobilePluginPane() {
+    if (!activePluginPane) {
+      return (
+        <section className="mobile-tab mobile-tab--scroll">
+          <div className="mobile-hero mobile-hero--compact">
+            <div className="mobile-hero__title">Plugin Pane Unavailable</div>
+            <div className="mobile-hero__body">
+              {pluginCatalogLoading
+                ? "Refreshing the mobile plugin catalog."
+                : "This pane is not in the current plugin catalog."}
+            </div>
+            <div className="mobile-hero__actions">
+              <button
+                type="button"
+                className="mobile-action-button"
+                onClick={() => {
+                  void refreshMobilePluginCatalog();
+                }}
+              >
+                <RefreshCcw size={18} strokeWidth={1.7} />
+                Refresh Plugins
+              </button>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    const pane = activePluginPane;
+    const pluginSummary = pluginCatalog?.plugins.find(
+      (plugin) => plugin.id === pane.pluginId,
+    );
+    const paneStyle = {
+      ...(pane.theme.cssVars ?? {}),
+      ...(pane.theme.accent ? { "--mobile-plugin-accent": pane.theme.accent } : {}),
+    } as CSSProperties;
+
+    return (
+      <section
+        className="mobile-tab mobile-tab--scroll mobile-tab--plugin"
+        style={paneStyle}
+      >
+        <div className="mobile-hero mobile-hero--compact mobile-plugin-hero">
+          <div className="mobile-plugin-hero__icon">
+            {renderThemedIcon({
+              iconId: pane.iconId || undefined,
+              themeSnapshot,
+              fallback: MOBILE_LUCIDE_ICON_REGISTRY[pane.iconName] ?? Puzzle,
+              className: "mobile-plugin-hero__icon-svg",
+            })}
+          </div>
+          <div className="mobile-plugin-hero__content">
+            <div className="mobile-hero__title">{pane.title}</div>
+            <div className="mobile-hero__body">
+              {pane.description || `${pane.pluginName} mobile pane`}
+            </div>
+            <div className="mobile-plugin-hero__meta">
+              <span className="mobile-status-chip">{pane.pluginName}</span>
+              <span className="mobile-status-chip">{pane.category}</span>
+              {pluginSummary?.rootAccess.sameRootAsDesktopPlugins ? (
+                <span className="mobile-status-chip mobile-status-chip--accent">
+                  usr/plugins root
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <section className="mobile-stack">
+          {pane.sections.length === 0 ? (
+            <div className="mobile-empty-state">
+              This plugin pane has no mobile sections yet.
+            </div>
+          ) : (
+            pane.sections.map((section) => (
+              <article key={section.id} className="mobile-settings-card">
+                <div className="mobile-settings-card__title">{section.title}</div>
+                {section.body ? (
+                  <div className="mobile-settings-card__body">{section.body}</div>
+                ) : null}
+                {section.assetUrl ? (
+                  <div className="mobile-settings-card__actions">
+                    <a
+                      className="mobile-action-button mobile-plugin-asset-link"
+                      href={section.assetUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <ExternalLink size={18} strokeWidth={1.7} />
+                      Open Asset
+                    </a>
+                  </div>
+                ) : null}
+              </article>
+            ))
+          )}
+
+          {pane.actions.length > 0 ? (
+            <article className="mobile-settings-card">
+              <div className="mobile-settings-card__title">Plugin Actions</div>
+              <div className="mobile-plugin-action-grid">
+                {pane.actions.map((action) => {
+                  const Icon = getMobilePluginActionIcon(action);
+                  const actionKey = buildMobilePluginActionKey(pane, action);
+                  const result = pluginActionState[actionKey];
+                  const isRunning = result?.phase === "running";
+                  return (
+                    <div key={action.id} className="mobile-plugin-action">
+                      <button
+                        type="button"
+                        className={`mobile-action-button mobile-plugin-action__button mobile-plugin-action__button--${action.tone}`}
+                        disabled={isRunning}
+                        onClick={() => {
+                          void runMobilePluginPaneAction(pane, action);
+                        }}
+                      >
+                        <Icon size={18} strokeWidth={1.7} />
+                        {isRunning ? "Running" : action.label}
+                      </button>
+                      {action.description ? (
+                        <div className="mobile-plugin-action__description">
+                          {action.description}
+                        </div>
+                      ) : null}
+                      {result ? (
+                        <div
+                          className={`mobile-plugin-action__result mobile-plugin-action__result--${result.phase}`}
+                        >
+                          <div>{result.message}</div>
+                          {result.status != null ? (
+                            <div>Status {result.status}</div>
+                          ) : null}
+                          {result.stdout ? <pre>{result.stdout}</pre> : null}
+                          {result.stderr ? <pre>{result.stderr}</pre> : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+          ) : null}
+
+          {pluginSummary ? (
+            <article className="mobile-settings-card">
+              <div className="mobile-settings-card__title">Root Access</div>
+              <div className="mobile-settings-card__row">
+                <span>Directory</span>
+                <span>{pluginSummary.rootAccess.usrRelativeRoot}/{pluginSummary.rootAccess.pluginDirectoryName}</span>
+              </div>
+              <div className="mobile-settings-card__row">
+                <span>Backend</span>
+                <span>
+                  {pluginSummary.rootAccess.canRunBackend ? "Available" : "No backend folder"}
+                </span>
+              </div>
+              <div className="mobile-settings-card__row">
+                <span>Current path</span>
+                <span>{formatRelativePath(currentPath)}</span>
+              </div>
+            </article>
+          ) : null}
+        </section>
+      </section>
+    );
+  }
+
   return (
     <div
       className={`mobile-shell mobile-shell--${resolvedLayout.touchComfort}`}
@@ -2514,6 +2940,47 @@ export default function App() {
                         }}
                       >
                         {entry.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {pinnedPaths.length > 0 ? (
+                <div className="mobile-quick-places">
+                  <div className="mobile-quick-places__label">Pinned</div>
+                  <div className="mobile-breadcrumbs mobile-breadcrumbs--scroll">
+                    {pinnedPaths.slice(0, 6).map((path) => (
+                      <button
+                        key={path}
+                        type="button"
+                        className="mobile-breadcrumbs__segment mobile-quick-places__pill mobile-quick-places__pill--saved"
+                        onClick={() => {
+                          navigateToExplorerPath(path, "push");
+                        }}
+                      >
+                        <Pin size={14} strokeWidth={1.7} />
+                        {formatRelativePath(path)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {visibleRecentPaths.length > 0 ? (
+                <div className="mobile-quick-places">
+                  <div className="mobile-quick-places__label">Recent</div>
+                  <div className="mobile-breadcrumbs mobile-breadcrumbs--scroll">
+                    {visibleRecentPaths.map((path) => (
+                      <button
+                        key={path}
+                        type="button"
+                        className="mobile-breadcrumbs__segment mobile-quick-places__pill"
+                        onClick={() => {
+                          navigateToExplorerPath(path, "push");
+                        }}
+                      >
+                        {formatRelativePath(path)}
                       </button>
                     ))}
                   </div>
@@ -2677,6 +3144,8 @@ export default function App() {
           </section>
         ) : null}
 
+        {isMobilePluginTabId(activeTab) ? renderMobilePluginPane() : null}
+
         {activeTab === "settings" ? (
           <section className="mobile-tab mobile-tab--scroll">
             <div className="mobile-stack">
@@ -2698,6 +3167,127 @@ export default function App() {
                   <span>URL</span>
                   <span>{window.location.origin}</span>
                 </div>
+              </article>
+
+              <article className="mobile-settings-card">
+                <div className="mobile-settings-card__title">Mobile Plugins</div>
+                <div className="mobile-settings-card__row">
+                  <span>Catalog</span>
+                  <span>
+                    {pluginCatalogLoading
+                      ? "Refreshing"
+                      : `${pluginCatalog?.plugins.length ?? 0} plugins`}
+                  </span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Panes</span>
+                  <span>{pluginCatalog?.panes.length ?? 0}</span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Backend actions</span>
+                  <span>
+                    {pluginCatalog?.plugins.reduce(
+                      (total, plugin) => total + plugin.capabilities.backendActions,
+                      0,
+                    ) ?? 0}
+                  </span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Root</span>
+                  <span>{pluginCatalog?.pluginRoot ?? "usr/plugins"}</span>
+                </div>
+                {pluginCatalogError ? (
+                  <div className="mobile-settings-card__note mobile-settings-card__note--error">
+                    {pluginCatalogError}
+                  </div>
+                ) : null}
+                {pluginCatalog?.warnings.length ? (
+                  <div className="mobile-settings-card__note">
+                    {pluginCatalog.warnings.slice(0, 2).join(" ")}
+                  </div>
+                ) : null}
+                <div className="mobile-settings-card__actions">
+                  <button
+                    type="button"
+                    className="mobile-action-button"
+                    onClick={() => {
+                      void refreshMobilePluginCatalog();
+                    }}
+                  >
+                    <RefreshCcw size={18} strokeWidth={1.7} />
+                    Refresh Plugins
+                  </button>
+                </div>
+                {mobilePluginPanes.length > 0 ? (
+                  <div className="mobile-settings-card__section">
+                    <div className="mobile-settings-card__section-label">Panes</div>
+                    <div className="mobile-plugin-pane-list">
+                      {mobilePluginPanes.map((pane) => (
+                        <button
+                          key={pane.id}
+                          type="button"
+                          className="mobile-plugin-pane-list__item"
+                          onClick={() => {
+                            navigateTo(
+                              {
+                                tab: buildMobilePluginTabId(pane.id),
+                                path: currentPath,
+                              },
+                              "push",
+                            );
+                          }}
+                        >
+                          <span>{pane.title}</span>
+                          <span>{pane.pluginName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+
+              <article className="mobile-settings-card">
+                <div className="mobile-settings-card__title">Saved Paths</div>
+                <div className="mobile-settings-card__row">
+                  <span>Pinned</span>
+                  <span>{pinnedPaths.length}</span>
+                </div>
+                <div className="mobile-settings-card__row">
+                  <span>Recent</span>
+                  <span>{recentPaths.length}</span>
+                </div>
+                {pinnedPaths.length > 0 ? (
+                  <div className="mobile-settings-card__section">
+                    <div className="mobile-settings-card__section-label">Pinned</div>
+                    <div className="mobile-layout-toggle-grid">
+                      {pinnedPaths.slice(0, 6).map((path) => (
+                        <button
+                          key={path}
+                          type="button"
+                          className="mobile-layout-pill"
+                          onClick={() => {
+                            navigateToExplorerPath(path, "push");
+                          }}
+                        >
+                          {formatRelativePath(path)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {recentPaths.length > 0 ? (
+                  <div className="mobile-settings-card__actions">
+                    <button
+                      type="button"
+                      className="mobile-action-button"
+                      onClick={() => {
+                        clearRecentPaths();
+                      }}
+                    >
+                      Clear Recent
+                    </button>
+                  </div>
+                ) : null}
               </article>
 
               <article className="mobile-settings-card">
@@ -3104,6 +3694,29 @@ export default function App() {
 
             <button
               type="button"
+              className={`mobile-toolbar-chip${
+                currentPathIsPinned ? " mobile-toolbar-chip--active" : ""
+              }`}
+              disabled={currentPath.length === 0}
+              onClick={() => {
+                if (currentPathIsPinned) {
+                  unpinPath(currentPath);
+                } else {
+                  pinPath(currentPath);
+                }
+              }}
+              aria-label={currentPathIsPinned ? "Unpin current path" : "Pin current path"}
+            >
+              {currentPathIsPinned ? (
+                <PinOff size={15} strokeWidth={1.7} />
+              ) : (
+                <Pin size={15} strokeWidth={1.7} />
+              )}
+              {currentPathIsPinned ? "Pinned" : "Pin"}
+            </button>
+
+            <button
+              type="button"
               className="mobile-toolbar-chip mobile-toolbar-chip--accent"
               onClick={() => {
                 generalUploadInputRef.current?.click();
@@ -3128,7 +3741,7 @@ export default function App() {
       ) : null}
 
       <nav className="mobile-bottom-nav" aria-label="Mobile sections">
-        {BOTTOM_DOCK_TABS.map((tab) => (
+        {mobileBottomNavTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -3148,7 +3761,8 @@ export default function App() {
           >
             <span className="mobile-bottom-nav__icon">
               {renderThemedIcon({
-                slotId: tab.slotId,
+                slotId: tab.pluginPane ? undefined : tab.slotId,
+                iconId: tab.iconId || undefined,
                 themeSnapshot,
                 fallback: tab.fallback,
                 className: "mobile-bottom-nav__icon-svg",

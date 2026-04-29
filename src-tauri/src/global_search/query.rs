@@ -2,16 +2,20 @@ use super::ignore::{build_ignored_path_list, is_ignored_path, normalize_case};
 use super::index::global_search_index_dir;
 use super::scoring::{calculate_similarity_score, get_min_score_for_query_length};
 use super::state::{GlobalSearchIndexFields, GLOBAL_SEARCH_STATE};
-use super::types::{GlobalSearchQueryOptions, GlobalSearchResultEntry};
+use super::types::{
+    GlobalSearchIndexQueryRequest, GlobalSearchIndexSortDirection, GlobalSearchIndexSortKey,
+    GlobalSearchQueryOptions, GlobalSearchResultEntry,
+};
 use super::utils::{is_hidden_path, metadata_times_unix_ms, path_extension_lowercase};
 use regex::escape as escape_regex;
-use std::collections::BTreeMap;
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use tantivy::collector::TopDocs;
-use tantivy::query::{BooleanQuery, FuzzyTermQuery, Query, RegexQuery, TermQuery};
+use tantivy::collector::{DocSetCollector, TopDocs};
+use tantivy::query::{AllQuery, BooleanQuery, FuzzyTermQuery, Query, RegexQuery, TermQuery};
 use tantivy::schema::{IndexRecordOption, Value};
-use tantivy::IndexReader;
 use tantivy::Term;
+use tantivy::{DocAddress, IndexReader};
 use tauri::Manager;
 
 fn build_query(
@@ -66,6 +70,96 @@ fn matches_type(
 
 fn candidate_limit(limit: usize) -> usize {
     limit.saturating_mul(64).clamp(256, 20_000)
+}
+
+const INDEX_QUERY_DEFAULT_LIMIT: usize = 100;
+const INDEX_QUERY_MAX_LIMIT: usize = 5_000;
+const INDEX_QUERY_MAX_OFFSET: usize = 100_000;
+
+#[derive(Debug, Clone)]
+struct NormalizedGlobalSearchIndexQueryRequest {
+    query: String,
+    limit: usize,
+    offset: usize,
+    options: GlobalSearchQueryOptions,
+    include_hidden: bool,
+    extensions: BTreeSet<String>,
+    root_paths: Vec<String>,
+    sort_key: GlobalSearchIndexSortKey,
+    sort_direction: GlobalSearchIndexSortDirection,
+}
+
+fn normalize_index_query_request(
+    request: GlobalSearchIndexQueryRequest,
+) -> NormalizedGlobalSearchIndexQueryRequest {
+    let query = request.query.unwrap_or_default().trim().to_string();
+    let limit = if request.limit == 0 {
+        INDEX_QUERY_DEFAULT_LIMIT
+    } else {
+        request.limit.clamp(1, INDEX_QUERY_MAX_LIMIT)
+    };
+    let offset = request.offset.min(INDEX_QUERY_MAX_OFFSET);
+    let include_files = request.include_files || !request.include_directories;
+    let include_directories = request.include_directories;
+    let sort_key = request.sort_key.unwrap_or_else(|| {
+        if query.is_empty() {
+            GlobalSearchIndexSortKey::ModifiedTime
+        } else {
+            GlobalSearchIndexSortKey::Relevance
+        }
+    });
+
+    NormalizedGlobalSearchIndexQueryRequest {
+        query,
+        limit,
+        offset,
+        options: GlobalSearchQueryOptions {
+            limit: offset.saturating_add(limit),
+            include_files,
+            include_directories,
+            exact_match: request.exact_match,
+            typo_tolerance: request.typo_tolerance,
+            min_score_threshold: request.min_score_threshold,
+        },
+        include_hidden: request.include_hidden,
+        extensions: request
+            .extensions
+            .into_iter()
+            .map(|extension| normalize_extension_filter_value(&extension))
+            .filter(|extension| !extension.is_empty())
+            .collect(),
+        root_paths: request
+            .root_paths
+            .into_iter()
+            .map(|root_path| normalize_scope_root_path(&root_path))
+            .filter(|root_path| !root_path.is_empty())
+            .collect(),
+        sort_key,
+        sort_direction: request
+            .sort_direction
+            .unwrap_or(GlobalSearchIndexSortDirection::Desc),
+    }
+}
+
+fn normalize_extension_filter_value(extension: &str) -> String {
+    extension.trim().trim_start_matches('.').to_lowercase()
+}
+
+fn build_combined_scope_query(
+    fields: &GlobalSearchIndexFields,
+    root_paths: &[String],
+) -> Option<Box<dyn Query>> {
+    let mut scope_queries: Vec<(tantivy::query::Occur, Box<dyn Query>)> = root_paths
+        .iter()
+        .filter_map(|root_path| build_scope_query(fields, root_path))
+        .map(|query| (tantivy::query::Occur::Should, query))
+        .collect();
+
+    match scope_queries.len() {
+        0 => None,
+        1 => Some(scope_queries.remove(0).1),
+        _ => Some(Box::new(BooleanQuery::from(scope_queries))),
+    }
 }
 
 fn normalize_scope_root_path(raw_root_path: &str) -> String {
@@ -139,6 +233,55 @@ fn sort_results(results: &mut [GlobalSearchResultEntry]) {
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| right.modified_time.cmp(&left.modified_time))
             .then_with(|| left.path.cmp(&right.path))
+    });
+}
+
+fn compare_index_query_results(
+    left: &GlobalSearchResultEntry,
+    right: &GlobalSearchResultEntry,
+    sort_key: GlobalSearchIndexSortKey,
+) -> Ordering {
+    match sort_key {
+        GlobalSearchIndexSortKey::Relevance => right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| right.modified_time.cmp(&left.modified_time))
+            .then_with(|| left.path.cmp(&right.path)),
+        GlobalSearchIndexSortKey::ModifiedTime => right
+            .modified_time
+            .cmp(&left.modified_time)
+            .then_with(|| {
+                right
+                    .score
+                    .partial_cmp(&left.score)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .then_with(|| left.path.cmp(&right.path)),
+        GlobalSearchIndexSortKey::Name => left
+            .name
+            .to_lowercase()
+            .cmp(&right.name.to_lowercase())
+            .reverse()
+            .then_with(|| left.path.cmp(&right.path)),
+        GlobalSearchIndexSortKey::Path => right.path.cmp(&left.path),
+        GlobalSearchIndexSortKey::Size => right
+            .size
+            .cmp(&left.size)
+            .then_with(|| left.path.cmp(&right.path)),
+    }
+}
+
+fn sort_index_query_results(
+    results: &mut [GlobalSearchResultEntry],
+    request: &NormalizedGlobalSearchIndexQueryRequest,
+) {
+    results.sort_by(|left, right| {
+        let ordering = compare_index_query_results(left, right, request.sort_key);
+        match request.sort_direction {
+            GlobalSearchIndexSortDirection::Desc => ordering,
+            GlobalSearchIndexSortDirection::Asc => ordering.reverse(),
+        }
     });
 }
 
@@ -281,6 +424,200 @@ fn execute_index_query(
     Ok(results)
 }
 
+fn index_query_candidate_limit(
+    searcher_doc_count: usize,
+    request: &NormalizedGlobalSearchIndexQueryRequest,
+) -> usize {
+    if request.query.is_empty() {
+        return searcher_doc_count;
+    }
+
+    candidate_limit(request.options.limit).min(searcher_doc_count)
+}
+
+fn build_plugin_index_query(
+    fields: &GlobalSearchIndexFields,
+    request: &NormalizedGlobalSearchIndexQueryRequest,
+) -> Box<dyn Query> {
+    let content_query: Box<dyn Query> = if request.query.is_empty() {
+        Box::new(AllQuery)
+    } else {
+        build_query(fields, &request.query, &request.options)
+    };
+
+    match build_combined_scope_query(fields, &request.root_paths) {
+        Some(scope_query) => Box::new(BooleanQuery::from(vec![
+            (tantivy::query::Occur::Must, content_query),
+            (tantivy::query::Occur::Must, scope_query),
+        ])),
+        None => content_query,
+    }
+}
+
+fn result_entry_from_index_document(
+    fields: &GlobalSearchIndexFields,
+    retrieved: &tantivy::TantivyDocument,
+    score: f32,
+) -> Option<GlobalSearchResultEntry> {
+    let path_value = retrieved
+        .get_first(fields.path)
+        .and_then(|value| value.as_str())?
+        .to_string();
+    let name_value = retrieved
+        .get_first(fields.name)
+        .and_then(|value| value.as_str())?
+        .to_string();
+    let document_is_file = retrieved
+        .get_first(fields.is_file)
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let document_is_dir = retrieved
+        .get_first(fields.is_dir)
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let modified_time = retrieved
+        .get_first(fields.modified_time)
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let size = retrieved
+        .get_first(fields.size)
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+
+    Some(GlobalSearchResultEntry {
+        name: name_value,
+        extension: path_extension_lowercase(Path::new(&path_value)),
+        path: path_value,
+        size,
+        modified_time,
+        accessed_time: 0,
+        created_time: 0,
+        is_file: document_is_file == 1,
+        is_dir: document_is_dir == 1,
+        is_symlink: false,
+        is_hidden: false,
+        score,
+    })
+}
+
+fn matches_index_query_filters(
+    entry: &GlobalSearchResultEntry,
+    request: &NormalizedGlobalSearchIndexQueryRequest,
+    ignored_paths: &[String],
+) -> bool {
+    if is_ignored_path(&entry.path, ignored_paths) {
+        return false;
+    }
+
+    if entry.is_hidden && !request.include_hidden {
+        return false;
+    }
+
+    if !((request.options.include_files && entry.is_file)
+        || (request.options.include_directories && entry.is_dir))
+    {
+        return false;
+    }
+
+    if request.extensions.is_empty() {
+        return true;
+    }
+
+    entry
+        .extension
+        .as_deref()
+        .map(|extension| request.extensions.contains(extension))
+        .unwrap_or(false)
+}
+
+fn calculate_index_query_score(
+    entry_name: &str,
+    normalized_query: &str,
+    min_score: f32,
+) -> Option<f32> {
+    if normalized_query.is_empty() {
+        return Some(1.0);
+    }
+
+    let name_score = calculate_similarity_score(normalized_query, entry_name);
+    if name_score < min_score {
+        return None;
+    }
+    Some(name_score)
+}
+
+fn retrieve_index_query_entries(
+    reader: &IndexReader,
+    fields: &GlobalSearchIndexFields,
+    request: &NormalizedGlobalSearchIndexQueryRequest,
+    query: &dyn Query,
+) -> Result<Vec<GlobalSearchResultEntry>, String> {
+    let searcher = reader.searcher();
+    let normalized_query = normalize_case(&request.query);
+    let min_score = request
+        .options
+        .min_score_threshold
+        .unwrap_or_else(|| get_min_score_for_query_length(normalized_query.len()));
+    let ignored_paths = build_ignored_path_list(&[]);
+    let searcher_doc_count = searcher.num_docs() as usize;
+    let candidate_limit = index_query_candidate_limit(searcher_doc_count, request);
+
+    let doc_addresses: Vec<DocAddress> = if request.query.is_empty() {
+        searcher
+            .search(query, &DocSetCollector)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .collect()
+    } else {
+        searcher
+            .search(query, &TopDocs::with_limit(candidate_limit))
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|(_score, doc_address)| doc_address)
+            .collect()
+    };
+
+    let mut results = Vec::new();
+    for doc_address in doc_addresses {
+        let retrieved: tantivy::TantivyDocument = searcher
+            .doc(doc_address)
+            .map_err(|error| error.to_string())?;
+
+        let Some(mut entry) = result_entry_from_index_document(fields, &retrieved, 1.0) else {
+            continue;
+        };
+        let Some(score) = calculate_index_query_score(&entry.name, &normalized_query, min_score)
+        else {
+            continue;
+        };
+        entry.score = score;
+
+        if !matches_index_query_filters(&entry, request, &ignored_paths) {
+            continue;
+        }
+
+        results.push(entry);
+    }
+
+    Ok(results)
+}
+
+fn execute_plugin_index_query(
+    reader: &IndexReader,
+    fields: &GlobalSearchIndexFields,
+    request: &NormalizedGlobalSearchIndexQueryRequest,
+) -> Result<Vec<GlobalSearchResultEntry>, String> {
+    let query = build_plugin_index_query(fields, request);
+    let mut results = retrieve_index_query_entries(reader, fields, request, query.as_ref())?;
+
+    sort_index_query_results(&mut results, request);
+    Ok(results
+        .into_iter()
+        .skip(request.offset)
+        .take(request.limit)
+        .collect())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn global_search_query(
@@ -295,6 +632,17 @@ pub async fn global_search_query(
 
     let (reader, fields) = open_search_reader(&app)?;
     execute_index_query(&reader, &fields, trimmed_query, &options, None)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn global_search_query_index(
+    app: tauri::AppHandle,
+    request: GlobalSearchIndexQueryRequest,
+) -> Result<Vec<GlobalSearchResultEntry>, String> {
+    let normalized_request = normalize_index_query_request(request);
+    let (reader, fields) = open_search_reader(&app)?;
+    execute_plugin_index_query(&reader, &fields, &normalized_request)
 }
 
 #[tauri::command]
@@ -412,8 +760,11 @@ pub async fn global_search_query_paths(
 
 #[cfg(test)]
 mod tests {
-    use super::global_search_query_paths;
-    use crate::global_search::types::GlobalSearchQueryOptions;
+    use super::{global_search_query_paths, normalize_index_query_request};
+    use crate::global_search::types::{
+        GlobalSearchIndexQueryRequest, GlobalSearchIndexSortDirection, GlobalSearchIndexSortKey,
+        GlobalSearchQueryOptions,
+    };
     use tempfile::tempdir;
 
     #[tokio::test]
@@ -441,5 +792,34 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "readme.md");
+    }
+
+    #[test]
+    fn index_query_request_normalizes_gallery_filters() {
+        let request = normalize_index_query_request(GlobalSearchIndexQueryRequest {
+            query: Some("  ".to_string()),
+            limit: 0,
+            offset: 200_000,
+            include_files: false,
+            include_directories: false,
+            include_hidden: false,
+            extensions: vec![".JPG".to_string(), " png ".to_string()],
+            root_paths: vec!["".to_string(), "C:\\Users\\Pictures\\".to_string()],
+            exact_match: false,
+            typo_tolerance: true,
+            min_score_threshold: None,
+            sort_key: None,
+            sort_direction: Some(GlobalSearchIndexSortDirection::Asc),
+        });
+
+        assert_eq!(request.limit, 100);
+        assert_eq!(request.offset, 100_000);
+        assert!(request.options.include_files);
+        assert!(!request.options.include_directories);
+        assert!(request.extensions.contains("jpg"));
+        assert!(request.extensions.contains("png"));
+        assert_eq!(request.sort_key, GlobalSearchIndexSortKey::ModifiedTime);
+        assert_eq!(request.sort_direction, GlobalSearchIndexSortDirection::Asc);
+        assert_eq!(request.root_paths.len(), 1);
     }
 }

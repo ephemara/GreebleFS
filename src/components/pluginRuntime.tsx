@@ -48,6 +48,7 @@ import {
   type RuntimePreparePackageResponse,
 } from '../runtime/externalRuntimeBackend';
 import { type ExtensionHostClient } from '../runtime/extensionHostApi';
+import type { OverlayPluginIndexApi } from '../runtime/pluginIndexApi';
 import {
   getPluginPanelOpenRequestEvent,
   readPluginPanelOpenRequest,
@@ -74,6 +75,7 @@ export interface OverlayPluginApi {
   fs: typeof TauriFs;
   notification: typeof TauriNotification;
   host: ExtensionHostClient;
+  index: OverlayPluginIndexApi;
   settings?: OverlayPluginSettingsApi;
   storage?: OverlayPluginStorageApi;
   assets?: OverlayPluginAssetsApi;

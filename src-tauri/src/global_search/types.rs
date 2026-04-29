@@ -27,6 +27,41 @@ pub struct GlobalSearchQueryOptions {
     pub min_score_threshold: Option<f32>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum GlobalSearchIndexSortKey {
+    Relevance,
+    ModifiedTime,
+    Name,
+    Path,
+    Size,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum GlobalSearchIndexSortDirection {
+    Asc,
+    Desc,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalSearchIndexQueryRequest {
+    pub query: Option<String>,
+    pub limit: usize,
+    pub offset: usize,
+    pub include_files: bool,
+    pub include_directories: bool,
+    pub include_hidden: bool,
+    pub extensions: Vec<String>,
+    pub root_paths: Vec<String>,
+    pub exact_match: bool,
+    pub typo_tolerance: bool,
+    pub min_score_threshold: Option<f32>,
+    pub sort_key: Option<GlobalSearchIndexSortKey>,
+    pub sort_direction: Option<GlobalSearchIndexSortDirection>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalSearchResultEntry {

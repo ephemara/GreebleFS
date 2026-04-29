@@ -53,7 +53,7 @@ export const MODEL_THUMBNAIL_RENDER_CONFIG = {
   maxPixelRatio: 1.5,
 } as const;
 
-const IMAGE_PREVIEW_EXTENSIONS = [
+export const EXPLORER_IMAGE_PREVIEW_EXTENSIONS = [
   "jpg",
   "jpeg",
   "png",
@@ -559,7 +559,9 @@ const MONACO_LANGUAGE_BY_EXTENSION: Record<string, string> = {
   ink: "plaintext",
 };
 
-const IMAGE_PREVIEW_EXTENSION_SET = new Set<string>(IMAGE_PREVIEW_EXTENSIONS);
+const IMAGE_PREVIEW_EXTENSION_SET = new Set<string>(
+  EXPLORER_IMAGE_PREVIEW_EXTENSIONS,
+);
 const PYTHON_PREVIEW_EXTENSION_SET = new Set<string>(PYTHON_PREVIEW_EXTENSIONS);
 const AUDIO_PREVIEW_EXTENSION_SET = new Set<string>(
   Object.keys(AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION),

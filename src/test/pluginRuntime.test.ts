@@ -81,6 +81,53 @@ describe('pluginRuntime helpers', () => {
     expect(typeof loaded.component).toBe('function');
   });
 
+  it('injects the streamlined index api into frontend plugins', async () => {
+    const loaded = await loadPluginFromSource(
+      `
+        import React from 'react';
+        import { definePlugin } from 'overlayterm-plugin';
+
+        export default definePlugin({
+          name: 'Index Plugin',
+          component: function IndexPlugin({ api }) {
+            return React.createElement('div', null, typeof api.index.media.findPictures);
+          },
+        });
+      `,
+      {
+        name: 'index-plugin.tsx',
+        path: 'plugins/index-plugin.tsx',
+        is_dir: false,
+        modified: 42,
+        extension: 'tsx',
+      },
+      () => createMockOverlayPluginApi(),
+    );
+
+    expect(loaded.error).toBeNull();
+    const markup = renderToStaticMarkup(
+      React.createElement(loaded.component as React.ComponentType<any>, {
+        appearance: {
+          theme: {
+            id: 'test-theme',
+            name: 'Test Theme',
+            author: null,
+            mode: 'dark',
+            description: null,
+            tags: [],
+          },
+          fonts: {
+            ui: 'sans-serif',
+            mono: 'monospace',
+          },
+          cssVars: {},
+        },
+      }),
+    );
+
+    expect(markup).toContain('function');
+  });
+
   it('loads multi-file package plugin modules through relative imports', async () => {
     const loaded = await loadPluginFromSource(
       `
@@ -194,6 +241,7 @@ describe('pluginRuntime helpers', () => {
     const candidateFilenames = [
       'drawable-canvas.tsx',
       'filesystem-aquarium/dist/index.tsx',
+      'greeblefs-index-photo-gallery/index.tsx',
       'test-extension-hello/index.tsx',
       'vibe-capsule/dist/index.tsx',
     ];

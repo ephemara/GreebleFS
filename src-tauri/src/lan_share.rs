@@ -6,6 +6,7 @@ pub mod commands;
 pub mod handlers;
 pub mod mdns;
 pub mod mobile;
+pub mod mobile_plugins;
 pub mod network;
 pub mod push;
 pub mod server;

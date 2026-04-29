@@ -38,6 +38,7 @@ import {
   createExtensionHostClient,
   type ExecutionContextSnapshot,
 } from './extensionHostApi';
+import { createPluginIndexApi } from './pluginIndexApi';
 import { createOverlayPluginRuntimeSettingsController } from './pluginSettingsRuntime';
 
 export interface UseFolderPluginRuntimeResult {
@@ -122,6 +123,7 @@ export function useFolderPluginRuntime(
     };
     const settingsController =
       createOverlayPluginRuntimeSettingsController(plugin.id);
+    const indexApi = createPluginIndexApi();
 
     const createBoundPluginApi = (
       executionContext: ExecutionContextSnapshot | null,
@@ -135,6 +137,7 @@ export function useFolderPluginRuntime(
         callerPluginId: plugin.id,
         getExecutionContext: () => executionContext,
       }),
+      index: indexApi,
       settings: {
         pluginId: plugin.id,
         getStoredValues: settingsController.getStoredValues,

@@ -77,6 +77,60 @@ pub fn build_extension_host_api_schema() -> ExtensionHostApiSchema {
                 &[],
             ),
             build_method_descriptor(
+                "index.init",
+                "index",
+                "Open or initialize the host global filename index and return its status.",
+                &[],
+            ),
+            build_method_descriptor(
+                "index.get_status",
+                "index",
+                "Return the host global filename index status.",
+                &[],
+            ),
+            build_method_descriptor(
+                "index.start_scan",
+                "index",
+                "Start a host global filename index scan using explicit scan settings.",
+                &["fsRead"],
+            ),
+            build_method_descriptor(
+                "index.cancel_scan",
+                "index",
+                "Request cancellation for the active host global filename index scan.",
+                &[],
+            ),
+            build_method_descriptor(
+                "index.search",
+                "index",
+                "Query the host global filename index with structured filters.",
+                &["fsRead"],
+            ),
+            build_method_descriptor(
+                "semantic.get_summary",
+                "semantic",
+                "Return semantic index status for one local root.",
+                &["fsRead"],
+            ),
+            build_method_descriptor(
+                "semantic.build",
+                "semantic",
+                "Start a semantic index build for one local root.",
+                &["fsRead"],
+            ),
+            build_method_descriptor(
+                "semantic.search",
+                "semantic",
+                "Search one semantic index root with a natural-language query.",
+                &["fsRead"],
+            ),
+            build_method_descriptor(
+                "semantic.find_similar",
+                "semantic",
+                "Find indexed files similar to one target file under a semantic root.",
+                &["fsRead"],
+            ),
+            build_method_descriptor(
                 "events.describe_topics",
                 "events",
                 "Return the built-in host event topic catalog.",
@@ -1363,6 +1417,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(method_ids.contains(&"host.get_api_schema"));
+        assert!(method_ids.contains(&"index.search"));
+        assert!(method_ids.contains(&"semantic.search"));
         assert!(method_ids.contains(&"tasks.run_command"));
         assert!(method_ids.contains(&"terminal.spawn"));
 

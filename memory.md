@@ -1,3 +1,21 @@
+# 2026-04-29 - Mobile PWA Plugin Panes Reuse The Desktop Plugin Root
+
+- The mobile/PWA shell now has a host-owned plugin catalog instead of a fixed built-in-only tab set. `src-tauri/src/lan_share/mobile_plugins.rs` scans the same `usr/plugins` root as the desktop packaged plugin system, reads manifest `contributions.mobilePanes`, and exposes `/api/plugins` plus plugin asset/backend routes under `/api/plugins/{pluginId}/...`.
+- Durable ownership after this pass:
+  - `src-tauri/src/lan_share/mobile_plugins.rs` owns mobile plugin root resolution, manifest parsing, safe path validation, asset streaming, current mobile-share context resolution, and backend action dispatch through the existing `plugin_run_backend(...)` command path.
+  - `src-tauri/src/lan_share/mobile.rs` only wires the Axum routes into the mobile share router; keep the catalog/action logic out of the main mobile API file.
+  - `src-mobile/types.ts`, `src-mobile/mobileApi.ts`, and `src-mobile/mobileShared.ts` own the browser-safe plugin contract, fetch helpers, and `plugin:<paneId>` tab ids.
+  - `src-mobile/App.tsx` renders dynamic plugin tabs, manifest theme CSS vars, sections, copy/link/backend actions, root-access metadata, and the Settings catalog summary. `src-mobile/mobileStore.ts` owns mobile-only pinned/recent path memory as the first QoL layer.
+  - Mobile plugin manifests should declare pane UI through data (`contributions.mobilePanes`) instead of hardcoded React branches. `usr/plugins/test-extension-hello/extension.toml` is the small smoke example.
+- Durable regression rules:
+  - `src-mobile/**` must remain browser/PWA safe: no Tauri `invoke`, no desktop filesystem APIs, and no direct imports from the desktop plugin runtime.
+  - Mobile backend and asset access must remain host-mediated in Rust, with plugin ids and asset/backend entries normalized before resolving paths.
+  - Plugin pane theming should flow through manifest CSS variables and existing mobile theme tokens, not one-off raw colors in `App.tsx` or `mobile.css`.
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/mobileApp.test.tsx --reporter=dot --testTimeout=30000`
+  - `cargo check --manifest-path src-tauri/Cargo.toml --lib --quiet`
+  - `bun run build:mobile`
+
 # 2026-04-29 - Constellation View Graph Work Is Bounded And Hover Reuses Lookups
 
 - The remaining measured Explorer bottleneck in this pass was Constellation's relationship graph. `buildConstellationGraph(...)` used to pairwise-compare every visible entry, so a large directory could do quadratic scoring work even though the rendered field only displays a bounded set of nodes.

@@ -1,5 +1,8 @@
 import type {
   MobileLayoutSettings,
+  MobilePluginBackendRunRequest,
+  MobilePluginBackendRunResponse,
+  MobilePluginCatalogResponse,
   MobilePreviewResponse,
   MobileSearchResponse,
   MobileSearchStatusResponse,
@@ -56,6 +59,30 @@ export function buildMobileThumbnailUrl(
   height = 160,
 ): string {
   return `/api/thumbnail?${buildPathQuery(relativePath)}&w=${width}&h=${height}`;
+}
+
+export async function fetchMobilePluginCatalog(): Promise<MobilePluginCatalogResponse> {
+  return fetchJson<MobilePluginCatalogResponse>("/api/plugins", {
+    headers: {
+      "Cache-Control": "no-cache",
+    },
+  });
+}
+
+export async function runMobilePluginBackend(
+  pluginId: string,
+  request: MobilePluginBackendRunRequest,
+): Promise<MobilePluginBackendRunResponse> {
+  return fetchJson<MobilePluginBackendRunResponse>(
+    `/api/plugins/${encodeURIComponent(pluginId)}/backend`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  );
 }
 
 export async function fetchMobileListing(

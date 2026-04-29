@@ -1,0 +1,13 @@
+id = "greeblefs-index-photo-gallery"
+version = "1"
+name = "Index Photo Gallery"
+description = "First-party gallery plugin backed by the global filename index."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = true
+category = "First-party Media"
+tags = ["first-party", "index", "gallery", "photos", "media"]
+
+[permissions]
+fsRead = true
+launchIntents = ["open-explorer"]

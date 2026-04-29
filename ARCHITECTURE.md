@@ -33,7 +33,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/main.tsx`
   Frontend bootstrap. It now selects the root app by webview label, rendering `App` for the main shell and `src/windows/FileOperationsWindowApp.tsx` for the dedicated `file-operations` popout.
 - `vite.mobile.config.ts`, `src-mobile/main.tsx`, `src-mobile/App.tsx`, `src-mobile/mobileApi.ts`, and `src-mobile/mobileStore.ts`
-  The browser-safe mobile/PWA surface. This is a separate Vite entrypoint that builds `dist-mobile/` for Axum to serve over LAN/mobile sharing; it must stay free of Tauri-only runtime assumptions and talks to the desktop host through HTTP endpoints instead of direct `invoke()` calls. The mobile shell is now a real four-tab app (`Explorer`, `Search`, `Transfers`, `Settings`) with its own browser-safe Zustand store, dedicated preview overlay flow, upload/download queueing, and desktop-owned theme/icon resources delivered over the mobile API instead of duplicated in the phone bundle.
+  The browser-safe mobile/PWA surface. This is a separate Vite entrypoint that builds `dist-mobile/` for Axum to serve over LAN/mobile sharing; it must stay free of Tauri-only runtime assumptions and talks to the desktop host through HTTP endpoints instead of direct `invoke()` calls. The mobile shell has built-in `Explorer`, `Search`, `Transfers`, and `Settings` tabs, plus host-discovered plugin tabs from `usr/plugins/**/extension.toml` `contributions.mobilePanes`. Its browser-safe Zustand store owns mobile-only path memory, transfer state, and layout overrides while desktop-owned theme/icon resources and plugin catalogs arrive over HTTP instead of being duplicated in the phone bundle.
 - `install.sh`
   Root Linux local-install wrapper. It delegates to `scripts/build-and-install-linux-local-release.sh`, which builds the app and installs a per-user release on Linux.
 - `install.ps1`
@@ -193,7 +193,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/runtime/ipc/` and `src-tauri/src/ipc_runtime/`
   Shared desktop IPC foundation. `control` stays on Specta-generated commands/events for small typed payloads, `artifact` owns backend-cached files and staged binary outputs, `stream` owns ordered packet feeds, and `resource` owns opaque handles for long-lived native/Python state. New high-throughput or long-lived host-facing work should choose one of those lanes explicitly instead of inventing base64/data-URL payloads, `number[]` byte arrays, or custom event-name plumbing.
 - `src-tauri/src/lan_share/mobile.rs`
-  Browser-facing Axum surface for the sovereign mobile share. It serves the compiled `dist-mobile/` bundle, exposes the full mobile control plane (`/api/list`, `/api/theme`, `/api/search`, `/api/search/status`, `/api/search/scan`, `/api/search/cancel`, `/api/preview`, `/api/thumbnail`, `/api/icon`, `/api/upload`), falls back cleanly when the mobile bundle is missing, and reuses the existing file/Range streaming lane for direct media playback from the desktop host. This layer is now also the resolver for mobile presentation metadata such as entry kind, icon ids, thumbnail URLs, preview capability, and desktop-authored icon-theme/folder-icon rules.
+  Browser-facing Axum surface for the sovereign mobile share. It serves the compiled `dist-mobile/` bundle, exposes the full mobile control plane (`/api/list`, `/api/theme`, `/api/search`, `/api/search/status`, `/api/search/scan`, `/api/search/cancel`, `/api/preview`, `/api/thumbnail`, `/api/icon`, `/api/upload`, `/api/plugins`), falls back cleanly when the mobile bundle is missing, and reuses the existing file/Range streaming lane for direct media playback from the desktop host. This layer is now also the resolver for mobile presentation metadata such as entry kind, icon ids, thumbnail URLs, preview capability, and desktop-authored icon-theme/folder-icon rules.
+- `src-tauri/src/lan_share/mobile_plugins.rs`
+  Host-owned mobile plugin bridge. It scans the same desktop `usr/plugins` root as the packaged plugin system, reads `contributions.mobilePanes` from JSON/TOML manifests, exposes a mobile-safe catalog through `/api/plugins`, streams plugin-local assets through `/api/plugins/{pluginId}/assets/{path}`, and runs mobile backend actions through the existing `plugin_run_backend(...)` path so mobile panes get desktop plugin root access without adding Tauri APIs to the phone bundle.
 - `src-tauri/src/open_with/`
   Native `Open With` subsystem. It wraps the vendored platform association/runtime crate, resolves associated apps for Windows/Linux/macOS, launches a selected app against a file, and backs the system picker fallback used by explorer context menus.
 - `src-tauri/src/tailscale_commands.rs`
@@ -759,6 +761,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run test:browser`
 - `bunx vitest run src/test/commandPalette.test.tsx src/test/ExplorerWorkspace.test.tsx src/test/explorerStore.test.ts --reporter=dot`
 - `bun run build:mobile`
+- `bunx vitest run src/test/mobileApp.test.tsx --reporter=dot --testTimeout=30000`
 - `bun run build`
 - `cargo test --manifest-path src-tauri/Cargo.toml global_search -- --nocapture`
 - `python3 -m py_compile src-python/greeblefs_sidecar/*.py`
@@ -835,6 +838,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - Keep `src/config/plugins.ts`, `src/config/pluginPackages.ts`, and `src-tauri/src/runtime_pipeline/extension_host.rs` in sync whenever manifest shape changes.
 - `.gfsx` is now the canonical packed extension artifact and `src-tauri/src/bin/greeble.rs` is the local bundling/install CLI.
   - Source-folder authoring still stays valid under `usr/plugins/**`, but distribution/validation should prefer `greeble ext inspect`, `build`, `pack`, and `install` instead of hand-copying plugin folders around.
+- Mobile plugin panes deliberately reuse the desktop plugin root but stay HTTP-only on the PWA side.
+  - `src-tauri/src/lan_share/mobile_plugins.rs` owns manifest discovery, backend execution, asset path validation, and current mobile-share context resolution.
+  - `src-mobile/**` should consume `/api/plugins` through `mobileApi.ts` and should never import Tauri `invoke`, desktop plugin runtime modules, or filesystem APIs.
+  - Mobile pane theme data belongs in manifest-driven CSS variables (`contributions.mobilePanes.theme.cssVars`) so plugin panes can follow the same bundle/themeable pipeline without hardcoded phone UI colors.
 - `cargo-native` is now a real runtime compiler family and `c-native` is still intentionally unsupported.
   - If an extension needs native Rust behavior today, route it through `cargo-native`. If `c-native` is requested, the current correct behavior is the explicit typed unsupported-driver error from `runtime_pipeline/driver.rs`, not a silent fallback.
 - Host event streaming is now dual-stack.

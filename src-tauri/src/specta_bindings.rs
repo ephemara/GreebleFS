@@ -343,6 +343,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::global_search::scan::global_search_start_scan,
             crate::global_search::scan::global_search_cancel_scan,
             crate::global_search::query::global_search_query,
+            crate::global_search::query::global_search_query_index,
             crate::global_search::query::global_search_query_paths,
             crate::explorer_pro_commands::explorer_tags_list,
             crate::explorer_pro_commands::explorer_tags_set_for_paths,

@@ -19,6 +19,16 @@ import type {
   HostTopicDescriptor,
   IpcStreamHandle,
   ExternalTerminalRequest,
+  ExplorerSemanticFindSimilarRequest,
+  ExplorerSemanticIndexBuildRequest,
+  ExplorerSemanticIndexBuildStartResponse,
+  ExplorerSemanticIndexSummary,
+  ExplorerSemanticSearchRequest,
+  ExplorerSemanticSearchResponse,
+  GlobalSearchIndexQueryRequest,
+  GlobalSearchResultEntry,
+  GlobalSearchScanSettings,
+  GlobalSearchStatus,
   TerminalShellIntegrationRequest,
   TerminalShellIntegrationState,
   TerminalWriteRequest,
@@ -36,6 +46,10 @@ export type {
   ExtensionHostTaskOutputEvent,
   ExtensionHostTaskProgressEvent,
   ExtensionHostApiSchema,
+  ExplorerSemanticIndexSummary,
+  ExplorerSemanticSearchResponse,
+  GlobalSearchResultEntry,
+  GlobalSearchStatus,
   ExtensionInspection,
   ExtensionInstallResult,
   ExtensionPackResult,
@@ -276,6 +290,27 @@ export interface ExtensionHostClient {
   preview: {
     getSession: () => Promise<ExecutionContextPreviewSession | null>;
   };
+  index: {
+    init: () => Promise<GlobalSearchStatus>;
+    getStatus: () => Promise<GlobalSearchStatus>;
+    startScan: (settings: GlobalSearchScanSettings) => Promise<void>;
+    cancelScan: () => Promise<void>;
+    search: (
+      request: GlobalSearchIndexQueryRequest,
+    ) => Promise<GlobalSearchResultEntry[]>;
+  };
+  semantic: {
+    getSummary: (rootPath: string) => Promise<ExplorerSemanticIndexSummary>;
+    build: (
+      request: ExplorerSemanticIndexBuildRequest,
+    ) => Promise<ExplorerSemanticIndexBuildStartResponse>;
+    search: (
+      request: ExplorerSemanticSearchRequest,
+    ) => Promise<ExplorerSemanticSearchResponse>;
+    findSimilar: (
+      request: ExplorerSemanticFindSimilarRequest,
+    ) => Promise<ExplorerSemanticSearchResponse>;
+  };
   events: {
     describeTopics: () => Promise<HostTopicDescriptor[]>;
     subscribe: (
@@ -366,6 +401,43 @@ export function createExtensionHostClient(
     preview: {
       getSession: () =>
         call<ExecutionContextPreviewSession | null>('preview.get_session'),
+    },
+    index: {
+      init: () => call<GlobalSearchStatus>('index.init'),
+      getStatus: () => call<GlobalSearchStatus>('index.get_status'),
+      startScan: async (settings) => {
+        await call<null, GlobalSearchScanSettings>('index.start_scan', settings);
+      },
+      cancelScan: async () => {
+        await call<null>('index.cancel_scan');
+      },
+      search: (request) =>
+        call<GlobalSearchResultEntry[], GlobalSearchIndexQueryRequest>(
+          'index.search',
+          request,
+        ),
+    },
+    semantic: {
+      getSummary: (rootPath) =>
+        call<ExplorerSemanticIndexSummary, { rootPath: string }>(
+          'semantic.get_summary',
+          { rootPath },
+        ),
+      build: (request) =>
+        call<
+          ExplorerSemanticIndexBuildStartResponse,
+          ExplorerSemanticIndexBuildRequest
+        >('semantic.build', request),
+      search: (request) =>
+        call<ExplorerSemanticSearchResponse, ExplorerSemanticSearchRequest>(
+          'semantic.search',
+          request,
+        ),
+      findSimilar: (request) =>
+        call<
+          ExplorerSemanticSearchResponse,
+          ExplorerSemanticFindSimilarRequest
+        >('semantic.find_similar', request),
     },
     events: {
       describeTopics: () => call<HostTopicDescriptor[]>('events.describe_topics'),

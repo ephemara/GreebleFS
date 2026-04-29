@@ -23,6 +23,9 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 use super::handlers::handle_multipart_upload;
+use super::mobile_plugins::{
+    mobile_plugin_asset_handler, mobile_plugin_backend_handler, mobile_plugin_catalog_handler,
+};
 use super::push::{
     get_mobile_push_config, register_mobile_push_subscription, unregister_mobile_push_subscription,
     MobilePushSubscriptionInput, MobilePushSubscriptionRemovalRequest,
@@ -281,6 +284,15 @@ pub(super) fn build_mobile_router(state: ShareState) -> Router {
         .route("/api/thumbnail", get(mobile_thumbnail_handler))
         .route("/api/icon", get(mobile_icon_handler))
         .route("/api/upload", post(mobile_upload_handler))
+        .route("/api/plugins", get(mobile_plugin_catalog_handler))
+        .route(
+            "/api/plugins/{plugin_id}/backend",
+            post(mobile_plugin_backend_handler),
+        )
+        .route(
+            "/api/plugins/{plugin_id}/assets/{*asset_path}",
+            get(mobile_plugin_asset_handler),
+        )
         .route("/api/push/config", get(mobile_push_config_handler))
         .route("/api/push/subscribe", post(mobile_push_subscribe_handler))
         .route(

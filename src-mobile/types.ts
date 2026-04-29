@@ -132,3 +132,114 @@ export interface MobilePreviewResponse {
 export interface MobileUploadResponse {
   uploaded: number;
 }
+
+export interface MobilePluginCatalogResponse {
+  pluginRoot: string;
+  refreshedAtMs: number;
+  plugins: MobilePluginSummary[];
+  panes: MobilePluginPane[];
+  warnings: string[];
+}
+
+export interface MobilePluginSummary {
+  id: string;
+  manifestId: string;
+  directoryName: string;
+  name: string;
+  description: string;
+  category: string;
+  tags: string[];
+  capabilities: MobilePluginCapabilitySummary;
+  rootAccess: MobilePluginRootAccess;
+}
+
+export interface MobilePluginCapabilitySummary {
+  mobilePanes: number;
+  backendActions: number;
+  themes: number;
+  shaders: number;
+  fonts: number;
+  commands: number;
+  previewLanes: number;
+  settingsSlots: number;
+  contextMenuItems: number;
+}
+
+export interface MobilePluginRootAccess {
+  sameRootAsDesktopPlugins: boolean;
+  usrRelativeRoot: string;
+  pluginDirectoryName: string;
+  backendDirectoryName: string;
+  canRunBackend: boolean;
+  backendRoute: string;
+  assetRoutePrefix: string;
+}
+
+export interface MobilePluginPane {
+  id: string;
+  localId: string;
+  pluginId: string;
+  manifestId: string;
+  pluginName: string;
+  title: string;
+  description: string;
+  iconName: string;
+  iconId: string;
+  order: number;
+  category: string;
+  kind: "dashboard" | "tool" | "inspector" | "viewer" | string;
+  theme: MobilePluginPaneTheme;
+  sections: MobilePluginPaneSection[];
+  actions: MobilePluginPaneAction[];
+}
+
+export interface MobilePluginPaneTheme {
+  accent: string;
+  cssVars: Record<string, string>;
+}
+
+export interface MobilePluginPaneSection {
+  id: string;
+  title: string;
+  body: string;
+  assetPath: string;
+  assetUrl: string;
+}
+
+export interface MobilePluginPaneAction {
+  id: string;
+  label: string;
+  description: string;
+  iconName: string;
+  tone: "neutral" | "accent" | "danger" | "success" | "warning" | string;
+  kind: "backend" | "link" | "copy" | string;
+  href: string;
+  copyText: string;
+  backend: MobilePluginPaneBackendAction | null;
+}
+
+export interface MobilePluginPaneBackendAction {
+  entry: string;
+  args: string[];
+  successMessage: string;
+}
+
+export interface MobilePluginBackendRunRequest {
+  entry: string;
+  args?: string[];
+  contextPath?: string;
+  paneId?: string;
+  actionId?: string;
+}
+
+export interface MobilePluginBackendRunResponse {
+  pluginId: string;
+  entry: string;
+  contextPath: string;
+  contextAbsolutePath: string;
+  paneId: string;
+  actionId: string;
+  stdout: string;
+  stderr: string;
+  status: number;
+}

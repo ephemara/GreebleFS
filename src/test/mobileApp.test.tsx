@@ -39,6 +39,7 @@ const mobileThemeSnapshot: MobileShareThemeSnapshot = {
     panelGap: 14,
   },
   shadow: "0 18px 48px rgba(0, 0, 0, 0.34)",
+  cssVars: {},
   iconTheme: {
     id: "builtin",
     name: "Builtin",
@@ -189,6 +190,89 @@ const searchResponse: MobileSearchResponse = {
   ],
 };
 
+const pluginCatalogResponse = {
+  pluginRoot: "C:/Dev/GreebleFS/usr/plugins",
+  refreshedAtMs: 1710000000000,
+  plugins: [
+    {
+      id: "demo-mobile",
+      manifestId: "demo-mobile",
+      directoryName: "demo-mobile",
+      name: "Demo Mobile",
+      description: "Demo plugin",
+      category: "Utilities",
+      tags: ["mobile"],
+      capabilities: {
+        mobilePanes: 1,
+        backendActions: 1,
+        themes: 0,
+        shaders: 0,
+        fonts: 0,
+        commands: 0,
+        previewLanes: 0,
+        settingsSlots: 0,
+        contextMenuItems: 0,
+      },
+      rootAccess: {
+        sameRootAsDesktopPlugins: true,
+        usrRelativeRoot: "plugins",
+        pluginDirectoryName: "demo-mobile",
+        backendDirectoryName: "backend",
+        canRunBackend: true,
+        backendRoute: "/api/plugins/demo-mobile/backend",
+        assetRoutePrefix: "/api/plugins/demo-mobile/assets",
+      },
+    },
+  ],
+  panes: [
+    {
+      id: "demo-mobile.mobile-pane.tools",
+      localId: "tools",
+      pluginId: "demo-mobile",
+      manifestId: "demo-mobile",
+      pluginName: "Demo Mobile",
+      title: "Tools",
+      description: "Plugin-powered phone tools.",
+      iconName: "Puzzle",
+      iconId: "",
+      order: 25,
+      category: "Utilities",
+      kind: "dashboard",
+      theme: {
+        accent: "var(--mobile-accent)",
+        cssVars: {},
+      },
+      sections: [
+        {
+          id: "status",
+          title: "Plugin Status",
+          body: "Rendered from the plugin catalog.",
+          assetPath: "assets/status.txt",
+          assetUrl: "/api/plugins/demo-mobile/assets/assets/status.txt",
+        },
+      ],
+      actions: [
+        {
+          id: "run-context",
+          label: "Run Context",
+          description: "Runs a backend action with the current mobile path.",
+          iconName: "Play",
+          tone: "accent",
+          kind: "backend",
+          href: "",
+          copyText: "",
+          backend: {
+            entry: "hello-mobile.cmd",
+            args: ["{currentPath}"],
+            successMessage: "Backend finished.",
+          },
+        },
+      ],
+    },
+  ],
+  warnings: [],
+};
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -201,10 +285,13 @@ function jsonResponse(body: unknown): Response {
 describe("mobile app shell", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/");
+    window.localStorage.clear();
     useMobileStore.setState((state) => ({
       ...state,
       activeTab: "explorer",
       explorerPath: "",
+      pinnedPaths: [],
+      recentPaths: [],
       transfers: [],
       layoutOverrides: {},
     }));
@@ -212,11 +299,28 @@ describe("mobile app shell", () => {
     vi.spyOn(window, "open").mockImplementation(() => null);
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
-    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), "https://mobile.greeblefs.test");
 
       if (url.pathname === "/api/theme") {
         return jsonResponse(mobileThemeSnapshot);
+      }
+      if (url.pathname === "/api/plugins") {
+        return jsonResponse(pluginCatalogResponse);
+      }
+      if (url.pathname === "/api/plugins/demo-mobile/backend") {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        return jsonResponse({
+          pluginId: "demo-mobile",
+          entry: body.entry,
+          contextPath: body.contextPath ?? "",
+          contextAbsolutePath: "C:/share",
+          paneId: body.paneId ?? "",
+          actionId: body.actionId ?? "",
+          stdout: `context=${body.contextPath ?? ""}`,
+          stderr: "",
+          status: 0,
+        });
       }
       if (url.pathname === "/api/list") {
         return jsonResponse(listingResponse);
@@ -311,5 +415,55 @@ describe("mobile app shell", () => {
       expect(screen.getByText("Indexed 42 items")).toBeInTheDocument();
     });
     expect(await screen.findByText("photo.png")).toBeInTheDocument();
+  });
+
+  it("renders mobile plugin panes and runs host backend actions with path context", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /photos folder/i }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Tools" }));
+
+    expect(await screen.findByText("Plugin Status")).toBeInTheDocument();
+    expect(screen.getByText("Rendered from the plugin catalog.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Run Context" }));
+
+    expect(await screen.findByText("Backend finished.")).toBeInTheDocument();
+    expect(screen.getByText("context=photos")).toBeInTheDocument();
+
+    const backendRequest = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .map(([input, init]) => ({
+        url: new URL(String(input), "https://mobile.greeblefs.test"),
+        init: init as RequestInit | undefined,
+      }))
+      .find((call) => call.url.pathname === "/api/plugins/demo-mobile/backend");
+    expect(backendRequest).toBeDefined();
+    expect(JSON.parse(String(backendRequest?.init?.body))).toMatchObject({
+      entry: "hello-mobile.cmd",
+      args: ["photos"],
+      contextPath: "photos",
+      paneId: "tools",
+      actionId: "run-context",
+    });
+  });
+
+  it("pins mobile paths and surfaces saved path shortcuts", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /photos folder/i }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Pin current path" }));
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+
+    expect(await screen.findByText("Saved Paths")).toBeInTheDocument();
+    expect(useMobileStore.getState().pinnedPaths).toContain("photos");
+    expect(screen.getAllByText("photos").length).toBeGreaterThan(0);
   });
 });
