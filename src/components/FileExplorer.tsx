@@ -659,9 +659,9 @@ const LazyMonacoEditor = React.lazy(async () => {
 
 const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
-const EXPLORER_LIST_OVERSCAN = 32;
-const EXPLORER_GRID_OVERSCAN_ROWS = 14;
-const EXPLORER_FULL_MOUNT_ENTRY_LIMIT = 512;
+const EXPLORER_LIST_OVERSCAN = 10;
+const EXPLORER_GRID_OVERSCAN_ROWS = 5;
+const EXPLORER_FULL_MOUNT_ENTRY_LIMIT = 200;
 const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_WIDTH = 1280;
 const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_HEIGHT = 720;
 const EXPLORER_VIRTUAL_SCROLL_STATE_GRANULARITY_PX = 128;
@@ -9601,6 +9601,7 @@ export function FileExplorer({
   const [explorerViewportNode, setExplorerViewportNode] =
     useState<HTMLDivElement | null>(null);
   const explorerViewportScrollTopRef = useRef(0);
+  const explorerViewportRequiresVirtualScrollStateRef = useRef(false);
   const explorerViewportCommittedVirtualScrollTopRef = useRef(0);
   const explorerViewportPendingVirtualScrollTopRef = useRef<number | null>(null);
   const explorerViewportScrollFrameRef = useRef<number | null>(null);
@@ -9783,8 +9784,23 @@ export function FileExplorer({
   }, [applyExplorerViewportVirtualScrollTop]);
 
   const commitExplorerViewportScrollTop = useCallback(
-    (scrollTop: number, options?: { immediate?: boolean }) => {
+    (
+      scrollTop: number,
+      options?: { immediate?: boolean; forceState?: boolean },
+    ) => {
       explorerViewportScrollTopRef.current = scrollTop;
+
+      if (
+        options?.forceState !== true &&
+        !explorerViewportRequiresVirtualScrollStateRef.current
+      ) {
+        explorerViewportPendingVirtualScrollTopRef.current = null;
+        if (explorerViewportScrollFrameRef.current != null) {
+          window.cancelAnimationFrame(explorerViewportScrollFrameRef.current);
+          explorerViewportScrollFrameRef.current = null;
+        }
+        return;
+      }
 
       const virtualScrollTop = quantizeExplorerVirtualScrollTop(scrollTop);
       const committedVirtualScrollTop =
@@ -9839,22 +9855,17 @@ export function FileExplorer({
     [commitExplorerViewportScrollTop],
   );
 
-  const handleExplorerViewportScroll = useCallback(
-    (event: React.UIEvent<HTMLDivElement>) => {
-      commitExplorerViewportScrollTop(event.currentTarget.scrollTop, {
-        immediate: true,
-      });
-    },
-    [commitExplorerViewportScrollTop],
-  );
-
   const setExplorerViewportScrollTop = useCallback(
-    (scrollTop: number) => {
+    (scrollTop: number, options?: { forceState?: boolean }) => {
       const viewport = explorerViewportRef.current;
       if (viewport && Math.abs(viewport.scrollTop - scrollTop) > 0.5) {
         viewport.scrollTop = scrollTop;
       }
-      commitExplorerViewportScrollTop(scrollTop, { immediate: true });
+      commitExplorerViewportScrollTop(scrollTop, {
+        immediate: true,
+        forceState:
+          options?.forceState ?? explorerViewportRequiresVirtualScrollStateRef.current,
+      });
     },
     [commitExplorerViewportScrollTop],
   );
@@ -9988,7 +9999,7 @@ export function FileExplorer({
   );
 
   const resetExplorerViewport = useCallback(() => {
-    setExplorerViewportScrollTop(0);
+    setExplorerViewportScrollTop(0, { forceState: true });
   }, [setExplorerViewportScrollTop]);
 
   useEffect(() => {
@@ -26057,14 +26068,7 @@ export function FileExplorer({
         };
       }
       const clampedScrollTop = Math.min(virtualizedScrollTop, maxScrollTop);
-      const viewportRows = Math.max(
-        1,
-        Math.ceil(virtualizedViewportHeight / rowAdvance),
-      );
-      const overscanRows = Math.max(
-        EXPLORER_GRID_OVERSCAN_ROWS,
-        Math.ceil(viewportRows * 3),
-      );
+      const overscanRows = EXPLORER_GRID_OVERSCAN_ROWS;
       const startRow = Math.max(
         0,
         Math.floor(clampedScrollTop / rowAdvance) - overscanRows,
@@ -26117,14 +26121,7 @@ export function FileExplorer({
       };
     }
     const clampedScrollTop = Math.min(virtualizedScrollTop, maxScrollTop);
-    const viewportRows = Math.max(
-      1,
-      Math.ceil(virtualizedViewportHeight / rowHeight),
-    );
-    const overscanRows = Math.max(
-      EXPLORER_LIST_OVERSCAN,
-      Math.ceil(viewportRows * 3),
-    );
+    const overscanRows = EXPLORER_LIST_OVERSCAN;
     const startRow = Math.max(
       0,
       Math.floor(clampedScrollTop / rowHeight) - overscanRows,
@@ -26297,6 +26294,39 @@ export function FileExplorer({
       visibleEntries.slice(virtualWindow.startIndex, virtualWindow.endIndex),
     [virtualWindow.endIndex, virtualWindow.startIndex, visibleEntries],
   );
+  const explorerViewportRequiresVirtualScrollState =
+    effectiveExperimentalViewMode === "off" &&
+    !currentPathIsHome &&
+    visibleEntries.length > EXPLORER_FULL_MOUNT_ENTRY_LIMIT;
+  explorerViewportRequiresVirtualScrollStateRef.current =
+    explorerViewportRequiresVirtualScrollState;
+  const handleExplorerViewportScroll = useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      commitExplorerViewportScrollTop(event.currentTarget.scrollTop, {
+        immediate: true,
+        forceState: explorerViewportRequiresVirtualScrollState,
+      });
+    },
+    [
+      commitExplorerViewportScrollTop,
+      explorerViewportRequiresVirtualScrollState,
+    ],
+  );
+  useLayoutEffect(() => {
+    if (!explorerViewportRequiresVirtualScrollState) {
+      explorerViewportPendingVirtualScrollTopRef.current = null;
+      if (explorerViewportScrollFrameRef.current != null) {
+        window.cancelAnimationFrame(explorerViewportScrollFrameRef.current);
+        explorerViewportScrollFrameRef.current = null;
+      }
+      return;
+    }
+
+    commitExplorerViewportScrollTop(
+      explorerViewportRef.current?.scrollTop ?? explorerViewportScrollTopRef.current,
+      { immediate: true, forceState: true },
+    );
+  }, [commitExplorerViewportScrollTop, explorerViewportRequiresVirtualScrollState]);
   const deferredVirtualizedEntries = useDeferredValue(virtualizedEntries);
   const gridVirtualizedEntryElements = useMemo(() => {
     if (virtualWindow.kind !== "grid" || !activeGridMetrics) {

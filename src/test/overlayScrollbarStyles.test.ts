@@ -17,9 +17,25 @@ describe("overlay scrollbar style contract", () => {
     );
   });
 
-  it("excludes OverlayScrollArea viewports from the generic scrollbar catch-all", () => {
+  it("applies the native scrollbar contract to the scope element itself", () => {
     expect(overlayScrollbarStylesSource).toContain(
-      ":where(:not(.overlay-scroll-area__viewport))",
+      ".overlay-scrollbar-scope::-webkit-scrollbar",
+    );
+    expect(overlayScrollbarStylesSource).toContain(
+      "color-scheme: var(--overlay-color-scheme)",
+    );
+    expect(overlayScrollbarStylesSource).toContain(
+      "--overlay-color-scheme: dark;",
+    );
+  });
+
+  it("keeps a reusable native scrollbar utility for escaped scroll hosts", () => {
+    expect(overlayScrollbarStylesSource).toContain(".overlay-native-scrollbar");
+    expect(overlayScrollbarStylesSource).toMatch(
+      /\.overlay-native-scrollbar,\s*\.overlay-scrollbar-scope,/s,
+    );
+    expect(overlayScrollbarStylesSource).toMatch(
+      /\.overlay-native-scrollbar::-webkit-scrollbar\s*,[^}]*\.overlay-scrollbar-scope::-webkit-scrollbar/s,
     );
   });
 
@@ -34,7 +50,7 @@ describe("overlay scrollbar style contract", () => {
 
   it("keeps explorer file-list scrollbars native and compositor-owned", () => {
     expect(overlayScrollbarStylesSource).toMatch(
-      /\.overlay-scroll-area__viewport--explorer-file-list\s*{[^}]*scrollbar-width:\s*thin;[^}]*scrollbar-gutter:\s*stable;/s,
+      /\.overlay-scroll-area__viewport--explorer-file-list\s*{[^}]*scrollbar-width:\s*thin;[^}]*scrollbar-color:\s*var\(--overlay-scrollbar-thumb\)\s*var\(--overlay-scrollbar-track\);[^}]*scrollbar-gutter:\s*stable;/s,
     );
     expect(overlayScrollbarStylesSource).toMatch(
       /\.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar\s*{[^}]*width:\s*var\(--overlay-scrollbar-size\);[^}]*height:\s*var\(--overlay-scrollbar-size\);/s,

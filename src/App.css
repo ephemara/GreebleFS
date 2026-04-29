@@ -21,6 +21,7 @@ html, body, #root {
   --overlay-scrollbar-track: color-mix(in srgb, var(--overlay-bg-panel-alt) 82%, black 18%);
   --overlay-scrollbar-corner: color-mix(in srgb, var(--overlay-bg-panel) 88%, black 12%);
   --overlay-scrollbar-thumb-border-width: 3px;
+  --overlay-color-scheme: dark;
   --overlay-toggle-width: 48px;
   --overlay-toggle-height: 26px;
   --overlay-toggle-border: color-mix(in srgb, var(--overlay-accent) 16%, var(--overlay-border));
@@ -30,6 +31,7 @@ html, body, #root {
   --overlay-toggle-thumb-gloss: rgba(255, 255, 255, 0.94);
   --overlay-toggle-thumb-shadow: rgba(0, 0, 0, 0.34);
   --overlay-toggle-focus-ring: color-mix(in srgb, var(--overlay-accent) 36%, transparent);
+  color-scheme: var(--overlay-color-scheme);
 }
 
 .overlay-scrollbar-scope :where(input[type='checkbox']):not([data-overlay-toggle-ignore='true']) {
@@ -133,41 +135,56 @@ html, body, #root {
   --overlay-toggle-height: 18px;
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport)) {
+.overlay-native-scrollbar,
+.overlay-scrollbar-scope,
+.overlay-scrollbar-scope :where(*):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)) {
+  color-scheme: var(--overlay-color-scheme);
   scrollbar-width: thin;
   scrollbar-color: var(--overlay-scrollbar-thumb) var(--overlay-scrollbar-track);
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport))::-webkit-scrollbar {
+.overlay-native-scrollbar::-webkit-scrollbar,
+.overlay-scrollbar-scope::-webkit-scrollbar,
+.overlay-scrollbar-scope :where(*):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none))::-webkit-scrollbar {
   width: var(--overlay-scrollbar-size);
   height: var(--overlay-scrollbar-size);
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport))::-webkit-scrollbar-track {
+.overlay-native-scrollbar::-webkit-scrollbar-track,
+.overlay-scrollbar-scope::-webkit-scrollbar-track,
+.overlay-scrollbar-scope :where(*):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none))::-webkit-scrollbar-track {
   background: var(--overlay-scrollbar-track);
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport))::-webkit-scrollbar-thumb {
+.overlay-native-scrollbar::-webkit-scrollbar-thumb,
+.overlay-scrollbar-scope::-webkit-scrollbar-thumb,
+.overlay-scrollbar-scope :where(*):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none))::-webkit-scrollbar-thumb {
   background: var(--overlay-scrollbar-thumb);
   border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport)):hover::-webkit-scrollbar-thumb {
+.overlay-native-scrollbar:hover::-webkit-scrollbar-thumb,
+.overlay-scrollbar-scope:hover::-webkit-scrollbar-thumb,
+.overlay-scrollbar-scope :where(*):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):hover::-webkit-scrollbar-thumb {
   background: var(--overlay-scrollbar-thumb-hover);
   border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
   background-clip: padding-box;
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport))::-webkit-scrollbar-button {
+.overlay-native-scrollbar::-webkit-scrollbar-button,
+.overlay-scrollbar-scope::-webkit-scrollbar-button,
+.overlay-scrollbar-scope :where(*):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none))::-webkit-scrollbar-button {
   width: 0;
   height: 0;
   display: none;
   background: transparent;
 }
 
-.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none)):where(:not(.overlay-scroll-area__viewport))::-webkit-scrollbar-corner {
+.overlay-native-scrollbar::-webkit-scrollbar-corner,
+.overlay-scrollbar-scope::-webkit-scrollbar-corner,
+.overlay-scrollbar-scope :where(*):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none))::-webkit-scrollbar-corner {
   background: var(--overlay-scrollbar-corner);
 }
 

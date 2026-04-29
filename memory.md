@@ -1,3 +1,19 @@
+# 2026-04-29 - Native Scrollbars Are Theme-Owned And Small Explorer Folders Stay Off Parent Scroll State
+
+- Xplorer reference check showed the useful pattern is not a custom scrollbar: native `overflow-auto` surfaces are styled globally (`::-webkit-scrollbar`, theme classes, and hidden utility lanes), while large explorer views keep DOM bounded with virtual rows.
+- Durable ownership after this pass:
+  - `src/App.css` now styles the scope element itself plus all normal descendants and escaped native scroll hosts through `.overlay-native-scrollbar`; `html`, `body`, `#root`, portals, and raw `overflow: auto` panes should no longer fall through to white Windows/WebView scrollbars in normal themes.
+  - `src/components/OverlayScrollArea.tsx` marks `scrollbarStyle="explorer-file-list"` viewports with `overlay-native-scrollbar` and `data-overlay-native-scrollbar="explorer-file-list"` while still rendering no app-owned scrollbar track/thumb DOM for the hot file-list lane.
+  - `src/components/FileExplorer.tsx` now follows the Xplorer-sized standard-window policy more closely: direct render is capped at 200 entries, list overscan is 10 rows, grid overscan is 5 rows, and folders at or below the direct-render cap do not publish ordinary scroll ticks into broad `FileExplorer` React state.
+- Durable regression rules:
+  - Do not re-add descendant-only scrollbar selectors that miss `.overlay-scrollbar-scope` itself. Root/self scrollbars and portal descendants must be theme-owned.
+  - Small direct-render folders must keep scroll exact in `explorerViewportScrollTopRef` without calling `setExplorerViewportMetrics` on ordinary scroll. Large virtualized folders may still commit the quantized visible-window state.
+- Validation for this pass:
+  - `bunx vitest run src/test/overlayScrollArea.test.tsx src/test/overlayScrollbarStyles.test.ts --reporter=dot`
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "uses the dedicated explorer viewport class|does not mount an entire huge folder|keeps a 100000-entry folder bounded" --reporter=dot --testTimeout=30000`
+  - Filtered TypeScript sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS` for the touched scroll files.
+  - `git diff --check` passed.
+
 # 2026-04-29 - Scroll Pipeline Is Native And Shortcut-Gated
 
 - Explorer stop-motion scrolling had one more root cause after native file-list scrollbar styling: shared scroll/shortcut code was still capable of putting ordinary wheel movement behind main-thread JavaScript.

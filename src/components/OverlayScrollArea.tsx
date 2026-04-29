@@ -45,6 +45,8 @@ export function OverlayScrollArea({
   const scrollbarDragStateRef = useRef<OverlayScrollbarDragState | null>(null);
   const scrollbarSizePxRef = useRef(11);
   const usesAppOwnedScrollbarChrome = scrollbarStyle === 'themed';
+  const nativeScrollbarStyle =
+    scrollbarStyle === 'explorer-file-list' ? 'explorer-file-list' : undefined;
 
   const refreshScrollbarSizeFromStyle = useCallback(() => {
     const root = rootRef.current;
@@ -376,6 +378,7 @@ export function OverlayScrollArea({
           viewportClassName,
         )}
         data-overlay-scrollbar-style={scrollbarStyle}
+        data-overlay-native-scrollbar={nativeScrollbarStyle}
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -576,7 +579,7 @@ function resolveScrollbarViewportClassName(scrollbarStyle: OverlayScrollbarStyle
     case 'themed':
       return 'overlay-scroll-area__viewport--scrollbar-themed';
     case 'explorer-file-list':
-      return 'overlay-scroll-area__viewport--explorer-file-list';
+      return 'overlay-native-scrollbar overlay-scroll-area__viewport--explorer-file-list';
     case 'hidden':
     default:
       return 'overlay-scroll-area__viewport--scrollbar-hidden';

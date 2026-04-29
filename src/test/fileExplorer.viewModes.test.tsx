@@ -5896,6 +5896,11 @@ const value = 1;
     expect(getExplorerViewport("alpha")).toHaveClass(
       "overlay-scroll-area__viewport--explorer-file-list",
     );
+    expect(getExplorerViewport("alpha")).toHaveClass("overlay-native-scrollbar");
+    expect(getExplorerViewport("alpha")).toHaveAttribute(
+      "data-overlay-native-scrollbar",
+      "explorer-file-list",
+    );
   });
 
   it("does not mount an entire huge folder while waiting for viewport measurement", async () => {
@@ -6004,8 +6009,15 @@ const value = 1;
       fireEvent.scroll(viewport);
 
       await waitFor(() => {
-        expect(screen.getByText("item-000220.txt")).toBeInTheDocument();
         expect(screen.queryByText("item-000000.txt")).not.toBeInTheDocument();
+        expect(
+          Array.from(document.querySelectorAll("[data-entry-path]")).some(
+            (node) =>
+              /item-0002[0-9]{2}\.txt$/.test(
+                node.getAttribute("data-entry-path") ?? "",
+              ),
+          ),
+        ).toBe(true);
         expect(
           document.querySelectorAll("[data-entry-path]").length,
         ).toBeLessThan(180);

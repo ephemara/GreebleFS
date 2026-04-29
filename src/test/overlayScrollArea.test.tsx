@@ -101,7 +101,9 @@ describe('OverlayScrollArea', () => {
 
     const viewport = getViewport(container, 'vertical');
     expect(viewport.dataset.overlayScrollbarStyle).toBe('explorer-file-list');
+    expect(viewport.dataset.overlayNativeScrollbar).toBe('explorer-file-list');
     expect(viewport.getAttribute('data-overlay-inertial-scroll')).toBeNull();
+    expect(viewport.classList.contains('overlay-native-scrollbar')).toBe(true);
     expect(viewport.classList.contains('overlay-scroll-area__viewport--explorer-file-list')).toBe(true);
     expect(container.querySelector('.overlay-scroll-area__scrollbar--vertical')).toBeNull();
     expect(container.querySelector('.overlay-scroll-area__scrollbar--horizontal')).toBeNull();
