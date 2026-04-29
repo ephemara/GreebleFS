@@ -346,6 +346,88 @@ describe("ExplorerChromeSurface", () => {
     expect(control?.style.maxWidth).toBe("240px");
   });
 
+  it("keeps normal chrome rows rigid and scrollable without visible scrollbar chrome", () => {
+    const rendered = render(
+      <ExplorerChromeSurface
+        surface={{
+          ...toolbarSurface,
+          rows: [
+            {
+              ...toolbarSurface.rows[0]!,
+              zones: [
+                {
+                  ...toolbarSurface.rows[0]!.zones[0]!,
+                  controls: [
+                    {
+                      ...toolbarSurface.rows[0]!.zones[0]!.controls[0]!,
+                      widthPx: 240,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+        getRowStyle={() => ({
+          display: "flex",
+          flexWrap: "wrap",
+        })}
+        getZoneStyle={() => ({
+          display: "flex",
+          flexWrap: "wrap",
+        })}
+        renderControl={() => <button type="button">Refresh</button>}
+      />,
+    );
+
+    const row = rendered.container.querySelector(
+      "[data-overlay-explorer-row='primary']",
+    ) as HTMLElement | null;
+    const zone = rendered.container.querySelector(
+      "[data-overlay-explorer-zone='primaryStart']",
+    ) as HTMLElement | null;
+    const control = rendered.container.querySelector(
+      "[data-overlay-explorer-control='refresh']",
+    ) as HTMLElement | null;
+
+    expect(row?.classList.contains("overlay-scrollbars-none")).toBe(true);
+    expect(row?.style.flexWrap).toBe("nowrap");
+    expect(row?.style.overflowX).toBe("auto");
+    expect(row?.style.overflowY).toBe("hidden");
+    expect(zone?.style.flexWrap).toBe("nowrap");
+    expect(zone?.style.minWidth).toBe("max-content");
+    expect(control?.style.flexShrink).toBe("0");
+  });
+
+  it("maps vertical wheel movement to horizontal chrome row scroll only while overflow can move", () => {
+    const rendered = render(
+      <ExplorerChromeSurface
+        surface={toolbarSurface}
+        renderControl={() => <button type="button">Refresh</button>}
+      />,
+    );
+    const row = rendered.container.querySelector(
+      "[data-overlay-explorer-row='primary']",
+    ) as HTMLElement;
+
+    Object.defineProperty(row, "scrollWidth", {
+      configurable: true,
+      value: 520,
+    });
+    Object.defineProperty(row, "clientWidth", {
+      configurable: true,
+      value: 200,
+    });
+
+    row.scrollLeft = 0;
+    fireEvent.wheel(row, { deltaX: 0, deltaY: 64 });
+    expect(row.scrollLeft).toBe(64);
+
+    row.scrollLeft = 320;
+    fireEvent.wheel(row, { deltaX: 0, deltaY: 64 });
+    expect(row.scrollLeft).toBe(320);
+  });
+
   it("preserves authored free-space offsets on rendered chrome controls", () => {
     const rendered = render(
       <ExplorerChromeSurface

@@ -437,6 +437,33 @@ export function ExplorerChromeSurface({
     useDynamicSurfaceLayout,
     usesFreeformDynamicCanvas,
   ]);
+  const handleHorizontalChromeWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      const rowElement = event.currentTarget;
+      const horizontalIntent = Math.abs(event.deltaX) > Math.abs(event.deltaY);
+      if (horizontalIntent || event.deltaY === 0) {
+        return;
+      }
+
+      const maxScrollLeft =
+        rowElement.scrollWidth - rowElement.clientWidth;
+      if (maxScrollLeft <= 1) {
+        return;
+      }
+
+      const nextScrollLeft = Math.max(
+        0,
+        Math.min(maxScrollLeft, rowElement.scrollLeft + event.deltaY),
+      );
+      if (nextScrollLeft === rowElement.scrollLeft) {
+        return;
+      }
+
+      event.preventDefault();
+      rowElement.scrollLeft = nextScrollLeft;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!editModeActive || !registerSurface) {
@@ -577,6 +604,7 @@ export function ExplorerChromeSurface({
 
   return (
     <div
+      className="explorer-chrome-surface"
       data-overlay-explorer-surface={surface.surfaceId}
       data-explorer-customize-surface-id={surface.surfaceId}
       style={{
@@ -596,14 +624,20 @@ export function ExplorerChromeSurface({
 
         return (
           <div
+            className="explorer-chrome-surface__row overlay-scrollbars-none"
             key={row.id}
             data-overlay-explorer-row={row.id}
             data-explorer-customize-row-id={row.id}
+            onWheel={handleHorizontalChromeWheel}
             style={{
               width: "100%",
               minWidth: 0,
               position: "relative",
               ...(getRowStyle?.(row.id) ?? {}),
+              flexWrap: "nowrap",
+              overflowX: "auto",
+              overflowY: "hidden",
+              overscrollBehaviorX: "contain",
             }}
           >
             {row.zones.map((zone) => {
@@ -624,13 +658,16 @@ export function ExplorerChromeSurface({
 
               return (
                 <div
+                  className="explorer-chrome-surface__zone"
                   key={zone.id}
                   data-overlay-explorer-zone={zone.id}
                   data-explorer-customize-zone-id={zone.id}
                   style={{
-                    minWidth: 0,
                     position: "relative",
                     ...(getZoneStyle?.(zone.id) ?? {}),
+                    flexWrap: "nowrap",
+                    flexShrink: 0,
+                    minWidth: "max-content",
                     ...(editModeActive
                       ? {
                           minHeight: 32,
@@ -784,7 +821,7 @@ export function ExplorerChromeSurface({
                             minWidth: 0,
                             position: "relative",
                             flexGrow: hasExplicitWidth ? 0 : responsivePlacement.grow ?? 0,
-                            flexShrink: hasExplicitWidth ? 1 : responsivePlacement.shrink ?? 0,
+                            flexShrink: 0,
                             flexBasis: hasExplicitWidth ? responsivePlacement.widthPx : undefined,
                             width: hasExplicitWidth ? responsivePlacement.widthPx : undefined,
                             maxWidth: hasExplicitWidth ? responsivePlacement.widthPx : undefined,

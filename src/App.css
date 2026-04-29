@@ -238,6 +238,17 @@ html, body, #root {
   backface-visibility: hidden;
 }
 
+.explorer-chrome-surface__row {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.explorer-chrome-surface__row::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 .overlay-scroll-area__scrollbar {
   position: absolute;
   z-index: 4;

@@ -1058,6 +1058,7 @@ export function ExplorerWorkspace({
           ) : null}
 
           <div
+            className="overlay-scrollbars-none"
             aria-label="Workspace tabs"
             style={{
               display: "flex",
