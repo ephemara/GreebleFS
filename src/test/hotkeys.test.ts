@@ -41,6 +41,8 @@ describe('hotkey config helpers', () => {
     expect(defaults.closeTab).toBe('Ctrl+W');
     expect(defaults.mobileShareToggle).toBe('Ctrl+Alt+Shift+M');
     expect(normalized.mobileShareToggle).toBe(defaults.mobileShareToggle);
+    expect(defaults.appZoomIn).toBe('Ctrl+=');
+    expect(defaults.appZoomOut).toBe('Ctrl+-');
     expect(normalized.zoomAdjust).toBe('Ctrl+Scroll');
     expect(defaults.opacityAdjust).toBe('Alt+Scroll');
     expect(defaults.goBackDirectory).toBe('Alt+Left');
@@ -123,6 +125,18 @@ describe('hotkey config helpers', () => {
     expect(matchesWheelHotkey(
       { ctrlKey: false, metaKey: false, altKey: true, shiftKey: false },
       'Option+Scroll',
+    )).toBe(true);
+  });
+
+  it('treats ctrl-plus keyboard events as matches for ctrl-equals bindings', () => {
+    expect(matchesKeybinding(
+      { key: '+', ctrlKey: true, metaKey: false, altKey: false, shiftKey: true },
+      'Ctrl+=',
+    )).toBe(true);
+
+    expect(matchesKeybinding(
+      { key: '+', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+      'Ctrl+=',
     )).toBe(true);
   });
 

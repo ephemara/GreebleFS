@@ -19,7 +19,10 @@ import {
   type PointerEvent as ReactPointerEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
-import { matchesKeybinding } from '../config/hotkeys';
+import {
+  LOCAL_APP_ZOOM_HOTKEY_SCOPE_ATTRIBUTE,
+  matchesKeybinding,
+} from '../config/hotkeys';
 import {
   cancelPendingExplorerPdfPreviewDocumentClose,
   renderExplorerPdfPreviewPage,
@@ -1292,6 +1295,7 @@ export function ExplorerPdfWorkbench({
   return (
     <div
       ref={rootRef}
+      {...{ [LOCAL_APP_ZOOM_HOTKEY_SCOPE_ATTRIBUTE]: 'true' }}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       style={{

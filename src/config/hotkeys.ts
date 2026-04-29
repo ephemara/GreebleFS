@@ -3,6 +3,8 @@ export type HotkeyBindingKey =
   | "toggleDeveloperTelemetryHud"
   | "commandPalette"
   | "mobileShareToggle"
+  | "appZoomIn"
+  | "appZoomOut"
   | "terminalFocus"
   | "terminalToggle"
   | "windowModeToggle"
@@ -104,6 +106,9 @@ export type HotkeyBindingSettings = Record<HotkeyBindingKey, string> & {
 interface ShippedHotkeyManifest {
   bindings?: HotkeyBindingDefinition[];
 }
+
+export const LOCAL_APP_ZOOM_HOTKEY_SCOPE_ATTRIBUTE =
+  "data-gfs-local-app-zoom-hotkeys";
 
 const shippedHotkeyManifest =
   shippedHotkeyManifestJson as ShippedHotkeyManifest;
@@ -253,6 +258,35 @@ function normalizeKeyToken(token: string): string {
   }
 }
 
+const IMPLICIT_SHIFT_KEY_ALIASES: Record<string, readonly string[]> = {
+  "=": ["+"],
+};
+
+function matchesImplicitShiftKeyAlias(
+  bindingKeyToken: string,
+  eventKeyToken: string,
+): boolean {
+  return (
+    IMPLICIT_SHIFT_KEY_ALIASES[bindingKeyToken]?.includes(eventKeyToken) ??
+    false
+  );
+}
+
+export function isEventTargetInsideLocalAppZoomHotkeyScope(
+  target: EventTarget | null,
+): boolean {
+  const element =
+    target instanceof Element
+      ? target
+      : target instanceof Node
+        ? target.parentElement
+        : null;
+
+  return Boolean(
+    element?.closest(`[${LOCAL_APP_ZOOM_HOTKEY_SCOPE_ATTRIBUTE}="true"]`),
+  );
+}
+
 export function matchesKeybinding(
   event: Pick<
     KeyboardEvent,
@@ -301,17 +335,22 @@ export function matchesKeybinding(
     ? true
     : event.metaKey === needsMeta;
   const altMatches = event.altKey === needsAlt;
-  const shiftMatches = event.shiftKey === needsShift;
   const normalizedEventKey = normalizeKeyToken(
     event.key.length === 1 ? event.key.toLowerCase() : event.key,
   );
+  const implicitShiftAliasMatch =
+    !needsShift &&
+    matchesImplicitShiftKeyAlias(keyToken, normalizedEventKey);
+  const shiftMatches = needsShift
+    ? event.shiftKey
+    : !event.shiftKey || implicitShiftAliasMatch;
 
   return (
     ctrlMatches &&
     metaMatches &&
     altMatches &&
     shiftMatches &&
-    normalizedEventKey === keyToken
+    (normalizedEventKey === keyToken || implicitShiftAliasMatch)
   );
 }
 

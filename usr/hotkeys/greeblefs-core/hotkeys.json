@@ -48,6 +48,20 @@
       "scope": "gesture"
     },
     {
+      "key": "appZoomIn",
+      "label": "Zoom App In",
+      "description": "Increase the global shell zoom while the app window is focused.",
+      "defaultValue": "Ctrl+=",
+      "scope": "local"
+    },
+    {
+      "key": "appZoomOut",
+      "label": "Zoom App Out",
+      "description": "Decrease the global shell zoom while the app window is focused.",
+      "defaultValue": "Ctrl+-",
+      "scope": "local"
+    },
+    {
       "key": "opacityAdjust",
       "label": "Opacity Overlay",
       "description": "Hold the modifier and scroll anywhere in the overlay to change opacity.",

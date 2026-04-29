@@ -183,6 +183,8 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.commandPalette).toBe('Ctrl+Shift+P');
     expect(settings.keybindings.closeTab).toBe('Ctrl+W');
     expect(settings.keybindings.mobileShareToggle).toBe('Ctrl+Alt+Shift+M');
+    expect(settings.keybindings.appZoomIn).toBe('Ctrl+=');
+    expect(settings.keybindings.appZoomOut).toBe('Ctrl+-');
     expect(settings.keybindings.explorerMoveSelectionUp).toBe('ArrowUp');
     expect(settings.keybindings.explorerMoveSelectionDown).toBe('ArrowDown');
     expect(settings.keybindings.explorerMoveSelectionLeft).toBe('ArrowLeft');

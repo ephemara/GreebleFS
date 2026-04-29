@@ -730,4 +730,29 @@ describe('WorkbenchTopBar', () => {
     fireEvent.doubleClick(maximizeButton);
     expect(currentWindow.maximize).toHaveBeenCalledTimes(1);
   });
+
+  it('uses the top bar as the floating dock drag surface', () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+    const currentWindow = getCurrentWindow() as unknown as {
+      startDragging: ReturnType<typeof vi.fn>;
+    };
+    currentWindow.startDragging.mockClear();
+
+    renderWorkbenchTopBar({
+      blurPlatform: 'windows',
+      windowMode: 'overlay',
+      dockPlacementMode: 'floating',
+      topBarDefinition: {
+        ...topBarDefinition,
+        leadingControls: [],
+        navigationShortcuts: [],
+        trailingControls: [],
+      },
+    });
+
+    const topBar = screen.getByTitle('Drag Floating Dock');
+    expect(topBar).toHaveStyle({ cursor: 'grab' });
+    fireEvent.pointerDown(topBar, { button: 0 });
+    expect(currentWindow.startDragging).toHaveBeenCalledTimes(1);
+  });
 });

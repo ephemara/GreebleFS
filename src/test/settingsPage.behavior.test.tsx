@@ -1997,6 +1997,8 @@ describe('SettingsPage behavior', () => {
     });
 
     await user.click(findSectionButton('Hotkeys'));
+    expect(screen.getByText('Zoom App In')).toBeInTheDocument();
+    expect(screen.getByText('Zoom App Out')).toBeInTheDocument();
     const toggleInput = screen.getByDisplayValue('Ctrl+Space');
     await user.clear(toggleInput);
     await user.type(toggleInput, 'Ctrl + Shift + Space');

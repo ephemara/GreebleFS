@@ -1,3 +1,15 @@
+# 2026-04-29 - Floating Dock Dragging And Global App Zoom Hotkeys
+
+- `src/components/WorkbenchTopBar.tsx` is now the explicit native drag surface for floating dock mode as well as normal app mode. Keep floating dock window dragging on the top bar instead of adding second drag regions in `App.tsx` or panel content.
+- Global app zoom now has first-class hotkey bindings in `usr/hotkeys/greeblefs-core/hotkeys.json`: `appZoomIn = Ctrl+=` and `appZoomOut = Ctrl+-`. `src/App.tsx` consumes them at the shell level and writes `settings.appearance.appZoom`.
+- `src/config/hotkeys.ts` now treats `Ctrl+=` as a valid match for `Ctrl` plus keyboard events that surface as `event.key === '+'`, which is the Windows/browser shape for the usual zoom-in chord.
+- Local zoom-owning surfaces can opt out of shell zoom interception by marking a root with `data-gfs-local-app-zoom-hotkeys="true"`. `src/components/ExplorerPdfWorkbench.tsx` is the first adopter so PDF page zoom keeps owning `Ctrl+=` / `Ctrl+-`.
+- Validation for this pass:
+  - `bunx vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/workbenchTopBar.test.tsx --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/app.dockMode.test.tsx -t "adjusts the global app zoom from ctrl-plus and ctrl-minus|yields ctrl-plus app zoom to local zoom-owned surfaces" --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "syncs startup registration, desktop visibility toggles, and commits hotkey edits" --reporter=dot --testTimeout=30000`
+  - the broader `src/test/app.dockMode.test.tsx` suite still carries the same pre-existing Wayland dock-host failures on this Windows/jsdom path (`routes dock handoff...` and `keeps the dock host...`).
+
 # 2026-04-29 - Window Chrome Dragging And Native Size Constraints
 
 - GreebleFS now combines the useful reference patterns from `reference/xplorer-next` and `reference/spacedrive-main`: the React top bar behaves like a guarded drag region, while Rust owns native min/max size constraints through a typed `WindowApplyModeRequest`.

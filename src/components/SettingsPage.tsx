@@ -13477,6 +13477,8 @@ export function SettingsPage({
                   (definition) =>
                     definition.scope === "global" ||
                     definition.scope === "gesture" ||
+                    definition.key === "appZoomIn" ||
+                    definition.key === "appZoomOut" ||
                     definition.key === "mobileShareToggle" ||
                     definition.key === "windowModeToggle" ||
                     definition.key === "zenFocusModeToggle" ||

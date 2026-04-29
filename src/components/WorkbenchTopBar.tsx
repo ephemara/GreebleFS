@@ -466,6 +466,8 @@ export function WorkbenchTopBar({
   const showPrimaryLauncherChrome = !rendererOwnsLauncher;
   const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
   const isWindowedMode = windowMode === 'windowed';
+  const isFloatingDockWindow = windowMode === 'overlay' && dockPlacementMode === 'floating';
+  const canDragWindow = isWindowedMode || isFloatingDockWindow;
   const windowedChromeTopInset = isWindowedMode && blurPlatform === 'windows' && !isWindowMaximized ? 10 : 0;
   const topBarBackdropFilter = resolveInnerSurfaceBlurFilter({
     enabled: blur && effectiveTopBarStyle === 'glass',
@@ -580,7 +582,6 @@ export function WorkbenchTopBar({
   );
 
   const handleStartWindowDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const canDragWindow = isWindowedMode || (windowMode === 'overlay' && dockPlacementMode === 'floating');
     if (
       !canDragWindow
       || topBarCustomizeActive
@@ -594,7 +595,7 @@ export function WorkbenchTopBar({
 
     event.preventDefault();
     getCurrentWindow().startDragging().catch(() => {});
-  }, [dockPlacementMode, isWindowedMode, topBarCustomizeActive, windowMode]);
+  }, [canDragWindow, topBarCustomizeActive]);
 
   const handleCycleDockPlacement = useCallback(() => {
     if (windowMode !== 'overlay') {
@@ -2821,7 +2822,7 @@ export function WorkbenchTopBar({
       title={
         isWindowedMode
           ? 'Drag Window'
-          : windowMode === 'overlay' && dockPlacementMode === 'floating'
+          : isFloatingDockWindow
             ? 'Drag Floating Dock'
             : undefined
       }
@@ -2850,6 +2851,7 @@ export function WorkbenchTopBar({
           : (isBottomBar
               ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
               : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)'),
+        cursor: canDragWindow && !topBarCustomizeActive ? 'grab' : undefined,
         overflow: isMobileMenuOpen || isSurfaceControlsOpen ? 'visible' : 'hidden',
         backdropFilter: topBarBackdropFilter,
         WebkitBackdropFilter: topBarBackdropFilter,

@@ -172,6 +172,7 @@ import {
 } from './config/globalSearch';
 import {
   formatHotkeyLabel,
+  isEventTargetInsideLocalAppZoomHotkeyScope,
   matchesKeybinding,
   matchesWheelHotkey,
   shouldArmNonPassiveWheelHotkeyListener,
@@ -5569,6 +5570,30 @@ function App() {
         return;
       }
 
+      const matchesAppZoomIn = matchesKeybinding(event, keybindings.appZoomIn);
+      const matchesAppZoomOut = matchesKeybinding(event, keybindings.appZoomOut);
+
+      if (
+        !isEventTargetInsideLocalAppZoomHotkeyScope(target)
+        && (matchesAppZoomIn || matchesAppZoomOut)
+      ) {
+        const zoomDirection = matchesAppZoomIn
+          ? 1
+          : -1;
+        const currentAppZoom =
+          useSettingsStore.getState().settings.appearance.appZoom
+          ?? overlayVisualControls.zoom.defaultValue;
+        const nextAppZoom = clampOverlayVisualControlValue(
+          'zoom',
+          currentAppZoom + overlayVisualControls.zoom.step * zoomDirection,
+        );
+
+        event.preventDefault();
+        event.stopPropagation();
+        updateAppearance({ appZoom: nextAppZoom });
+        return;
+      }
+
       if (matchesKeybinding(event, keybindings.commandPalette)) {
         event.preventDefault();
         event.stopPropagation();
@@ -5659,6 +5684,8 @@ function App() {
     handleToggleMobileShare,
     handleToggleWindowMode,
     handleToggleZenFocusMode,
+    keybindings.appZoomIn,
+    keybindings.appZoomOut,
     keybindings.closeTab,
     keybindings.commandPalette,
     keybindings.mobileShareToggle,
@@ -5668,6 +5695,7 @@ function App() {
     keybindings.windowModeToggle,
     keybindings.zenFocusModeToggle,
     systemSettings.developerMode,
+    updateAppearance,
   ]);
 
   useEffect(() => {

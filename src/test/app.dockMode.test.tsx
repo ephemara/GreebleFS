@@ -236,6 +236,8 @@ vi.mock('../runtime/tauriClient', () => ({
 }));
 
 import App from '../App';
+import { LOCAL_APP_ZOOM_HOTKEY_SCOPE_ATTRIBUTE } from '../config/hotkeys';
+import { overlayVisualControls } from '../config/overlayWindow';
 import { commands } from '../runtime/tauriClient';
 import { resetMobileShareState } from '../store/mobileShareStore';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
@@ -628,6 +630,59 @@ describe('App dock mode behavior', () => {
     await waitFor(() => {
       expect(vi.mocked(commands.lanShareStop)).toHaveBeenCalled();
     });
+  });
+
+  it('adjusts the global app zoom from ctrl-plus and ctrl-minus', async () => {
+    render(<App />);
+
+    expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
+    const baselineZoom = useSettingsStore.getState().settings.appearance.appZoom;
+
+    fireEvent.keyDown(window, { key: '+', ctrlKey: true, shiftKey: true });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.appearance.appZoom).toBeCloseTo(
+        baselineZoom + overlayVisualControls.zoom.step,
+        5,
+      );
+    });
+
+    fireEvent.keyDown(window, { key: '-', ctrlKey: true });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.appearance.appZoom).toBeCloseTo(
+        baselineZoom,
+        5,
+      );
+    });
+  });
+
+  it('yields ctrl-plus app zoom to local zoom-owned surfaces', async () => {
+    render(<App />);
+
+    expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
+    const baselineZoom = useSettingsStore.getState().settings.appearance.appZoom;
+    const localZoomScope = document.createElement('div');
+    const localZoomTarget = document.createElement('button');
+    localZoomScope.setAttribute(LOCAL_APP_ZOOM_HOTKEY_SCOPE_ATTRIBUTE, 'true');
+    localZoomScope.appendChild(localZoomTarget);
+    document.body.appendChild(localZoomScope);
+
+    try {
+      fireEvent.keyDown(localZoomTarget, {
+        key: '+',
+        ctrlKey: true,
+        shiftKey: true,
+      });
+
+      await waitFor(() => {
+        expect(useSettingsStore.getState().settings.appearance.appZoom).toBe(
+          baselineZoom,
+        );
+      });
+    } finally {
+      localZoomScope.remove();
+    }
   });
 
   it('reapplies window mode once when syncing tray and taskbar changes', async () => {
