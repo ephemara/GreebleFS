@@ -1,3 +1,18 @@
+# 2026-04-29 - Scroll Pipeline Is Native And Shortcut-Gated
+
+- Explorer stop-motion scrolling had one more root cause after native file-list scrollbar styling: shared scroll/shortcut code was still capable of putting ordinary wheel movement behind main-thread JavaScript.
+- Durable ownership after this pass:
+  - `src/components/OverlayScrollArea.tsx` no longer exposes `inertialScroll`, no longer installs wheel listeners, and no longer remaps or prevents wheel input. Browser/WebView native scrolling owns the physics for all scroll hosts.
+  - `scrollbarStyle="explorer-file-list"` is fully compositor-owned: no fake track/thumb DOM, no scrollbar measurement RAF, no ResizeObserver loop, and no app-owned thumb sizing.
+  - `scrollbarStyle="themed"` remains available for non-hot custom chrome, but its CSS size is cached outside scroll frames and unchanged dataset/style writes are skipped to avoid resize-observer feedback loops.
+  - `App.tsx` and `src/components/explorer/useExplorerZoomGestureRouter.ts` no longer mount permanent non-passive wheel listeners. Visual zoom/opacity and explorer zoom wheel handlers arm their non-passive listener only while the matching modifier-wheel shortcut can actually fire.
+- Durable regression rule: do not add permanent `{ passive: false }` wheel listeners to `window`, explorer scope nodes, or `OverlayScrollArea`. If a wheel shortcut needs `preventDefault()`, gate listener attachment behind modifier state with `shouldArmNonPassiveWheelHotkeyListener(...)`.
+- Validation for this pass:
+  - `bunx vitest run src/test/overlayScrollArea.test.tsx src/test/overlayScrollbarStyles.test.ts src/test/hotkeys.test.ts --reporter=dot`
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "uses the dedicated explorer viewport class|does not mount an entire huge folder|keeps a 100000-entry folder bounded" --reporter=dot --testTimeout=30000`
+  - Touched-file TypeScript sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`.
+  - `git diff --check` passed for the touched scroll files.
+
 # 2026-04-29 - Plugin Enablement Is Settings-Backed And Runtime-Safe
 
 - Plugins now have a UE-style enable/disable lifecycle in the desktop plugin manager. The persisted source of truth is `settings.plugins.enablementByPluginId` in `src/store/settingsStore.ts`; disabled plugins are stored as explicit `false` overrides, while enabled/default plugins do not need an entry.

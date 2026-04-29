@@ -72,8 +72,8 @@ export function OverlayScrollArea({
     if (!usesAppOwnedScrollbarChrome) {
       setDatasetValueIfChanged(root, 'overlayVerticalScrollbarVisible', 'false');
       setDatasetValueIfChanged(root, 'overlayHorizontalScrollbarVisible', 'false');
-      setStylePropertyIfChanged(root, '--overlay-scroll-area-vertical-reserve', '0px');
-      setStylePropertyIfChanged(root, '--overlay-scroll-area-horizontal-reserve', '0px');
+      setStylePropertyIfChanged(root, '--overlay-scroll-area-vertical-reserve', '0');
+      setStylePropertyIfChanged(root, '--overlay-scroll-area-horizontal-reserve', '0');
       return measurement;
     }
 
@@ -98,12 +98,12 @@ export function OverlayScrollArea({
     setStylePropertyIfChanged(
       root,
       '--overlay-scroll-area-vertical-reserve',
-      verticalScrollbarVisible ? `${scrollbarSizePx}px` : '0px',
+      verticalScrollbarVisible ? `${scrollbarSizePx}px` : '0',
     );
     setStylePropertyIfChanged(
       root,
       '--overlay-scroll-area-horizontal-reserve',
-      horizontalScrollbarVisible ? `${scrollbarSizePx}px` : '0px',
+      horizontalScrollbarVisible ? `${scrollbarSizePx}px` : '0',
     );
 
     syncAxisScrollbarPresentation({
@@ -464,9 +464,9 @@ function syncAxisScrollbarPresentation(args: {
   if (!visible) {
     setStylePropertyIfChanged(thumb, 'transform', 'translate3d(0, 0, 0)');
     if (axis === 'vertical') {
-      setStylePropertyIfChanged(thumb, 'height', '0px');
+      setStylePropertyIfChanged(thumb, 'height', '0');
     } else {
-      setStylePropertyIfChanged(thumb, 'width', '0px');
+      setStylePropertyIfChanged(thumb, 'width', '0');
     }
     return;
   }
