@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   shouldOpenExplorerEntryOnTrigger,
+  shouldNavigateExplorerDirectoryOnSecondClick,
   shouldNavigateUpOnEmptyExplorerDoubleClick,
   shouldShowExplorerFolderOpenIcon,
 } from '../components/fileExplorerClickBehavior';
@@ -138,6 +139,70 @@ describe('shouldOpenExplorerEntryOnTrigger', () => {
       enabled: true,
       target: button,
       currentTarget: viewport,
+    })).toBe(false);
+  });
+});
+
+describe('shouldNavigateExplorerDirectoryOnSecondClick', () => {
+  it('treats the second plain folder click in double-click mode as immediate navigation', () => {
+    expect(shouldNavigateExplorerDirectoryOnSecondClick({
+      isDirectory: true,
+      clickDetail: 2,
+      plainClick: true,
+      folderClickMode: 'double',
+      selectionModeActive: false,
+      immediateNavigationEnabled: true,
+    })).toBe(true);
+  });
+
+  it('keeps non-folder and non-plain interactions out of the immediate folder path', () => {
+    expect(shouldNavigateExplorerDirectoryOnSecondClick({
+      isDirectory: false,
+      clickDetail: 2,
+      plainClick: true,
+      folderClickMode: 'double',
+      selectionModeActive: false,
+      immediateNavigationEnabled: true,
+    })).toBe(false);
+    expect(shouldNavigateExplorerDirectoryOnSecondClick({
+      isDirectory: true,
+      clickDetail: 2,
+      plainClick: false,
+      folderClickMode: 'double',
+      selectionModeActive: false,
+      immediateNavigationEnabled: true,
+    })).toBe(false);
+    expect(shouldNavigateExplorerDirectoryOnSecondClick({
+      isDirectory: true,
+      clickDetail: 1,
+      plainClick: true,
+      folderClickMode: 'double',
+      selectionModeActive: false,
+      immediateNavigationEnabled: true,
+    })).toBe(false);
+    expect(shouldNavigateExplorerDirectoryOnSecondClick({
+      isDirectory: true,
+      clickDetail: 2,
+      plainClick: true,
+      folderClickMode: 'single',
+      selectionModeActive: false,
+      immediateNavigationEnabled: true,
+    })).toBe(false);
+    expect(shouldNavigateExplorerDirectoryOnSecondClick({
+      isDirectory: true,
+      clickDetail: 2,
+      plainClick: true,
+      folderClickMode: 'double',
+      selectionModeActive: true,
+      immediateNavigationEnabled: true,
+    })).toBe(false);
+    expect(shouldNavigateExplorerDirectoryOnSecondClick({
+      isDirectory: true,
+      clickDetail: 2,
+      plainClick: true,
+      folderClickMode: 'double',
+      selectionModeActive: false,
+      immediateNavigationEnabled: false,
     })).toBe(false);
   });
 });

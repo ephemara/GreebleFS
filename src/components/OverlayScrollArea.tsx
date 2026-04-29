@@ -61,6 +61,8 @@ export function OverlayScrollArea({
     useRef<OverlayScrollbarMeasurementSnapshot | null>(null);
   const scrollbarDragStateRef = useRef<OverlayScrollbarDragState | null>(null);
   const runtimePlatformRef = useRef(detectClientPlatform());
+  const shouldRunInertialScroll =
+    inertialScroll && scrollbarStyle !== 'explorer-file-list';
 
   const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     if (event.ctrlKey || event.metaKey || event.altKey) {
@@ -307,7 +309,7 @@ export function OverlayScrollArea({
 
   useEffect(() => {
     const viewport = internalViewportRef.current;
-    if (!viewport || !inertialScroll) {
+    if (!viewport || !shouldRunInertialScroll) {
       stopInertialScroll();
       return;
     }
@@ -368,8 +370,8 @@ export function OverlayScrollArea({
   }, [
     applyInertialScrollDelta,
     direction,
-    inertialScroll,
     scheduleScrollbarPresentationSync,
+    shouldRunInertialScroll,
     startInertialScroll,
     stopInertialScroll,
   ]);

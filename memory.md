@@ -5994,3 +5994,23 @@
   - `src/components/WorkbenchTopBar.tsx` receives clamped appearance values plus `onUpdateAppearanceVisuals` from `App.tsx`, so the popover writes to the same settings-backed appearance lane as Settings and the existing wheel gestures. The popover intentionally omits blur controls while blur is being stripped back.
 - Durable product note:
   - Do not reintroduce a generic panel launcher under the old "Toggle Panels" label. If panel launching comes back to the top bar, give it a distinct authored control id and label. `surface-controls` should stay focused on zoom/transparency/opacity and should continue to use `overlayVisualControls` for ranges, clamps, and formatting.
+
+## 2026-04-29 - Explorer Folder Navigation Stops Starting Recursive Size Work
+
+- Remaining folder-entry lag on small-looking folders came from hidden background work rather than row count:
+  - `FileExplorer.tsx` still auto-measured one visible directory recursively in the entry-size enrichment effect. Opening or scrolling `C:\Users\Admin` could therefore start a recursive scan of `AppData` or another deep folder just to populate a size label.
+  - Developer mode still auto-started an entry-size root watcher for every navigated local folder. The native watcher was recursive, so entering broad user folders could arm expensive filesystem watching even though folder browsing does not need it.
+- Durable implementation shape:
+  - Normal Explorer browsing now auto-measures file sizes only. Directory recursive size remains available through explicit Properties/recursive-size flows rather than the visible-row background lane.
+  - The entry-size root watcher is no longer tied to developer mode by itself. It requires `VITE_GREEBLEFS_EXPLORER_ENTRY_SIZE_ROOT_WATCH=1` or `true`, and the native watcher uses `RecursiveMode::NonRecursive` if diagnostics force it on.
+- Durable product rule:
+  - Never start recursive filesystem scans or recursive watchers from ordinary folder open, scroll, or row enrichment. Directory size is a user-requested operation, not a passive browsing feature.
+
+## 2026-04-29 - Explorer File-List Scrolling Uses Native Wheel Behavior
+
+- The primary Explorer list/grid/table surface had an extra scroll cost: `OverlayScrollArea` could attach its synthetic inertial wheel interceptor to the `explorer-file-list` scroll host. That layer normalizes wheel deltas, prevents default scrolling for coarse wheel streams, writes scroll offsets manually, and then drives a RAF momentum loop. On top of virtualized rows this is too much machinery for the main file browser.
+- Durable implementation shape:
+  - `OverlayScrollArea.tsx` now skips the synthetic inertial wheel runtime whenever `scrollbarStyle` is `explorer-file-list`. The file-list surface still gets themed scrollbar chrome and scroll thumb sync, but native browser/WebView scrolling owns the actual wheel path.
+  - `FileExplorer.tsx` mounts small folders up to a bounded entry limit instead of virtualizing them. This removes virtual-window churn for ordinary home/project folders while keeping 100k-entry folders bounded.
+- Durable product rule:
+  - Do not reattach custom momentum/inertial wheel code to the primary Explorer file list without a measured reason. Native scroll plus bounded virtualization is the default; use synthetic scroll behavior only for specialized non-file-list surfaces.

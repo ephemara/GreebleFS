@@ -57,6 +57,14 @@ const {
         historyIdx: number;
       }
     >(),
+    resolveEntryOpenWithPolicyCalls: [] as Array<{
+      entry: {
+        path: string;
+        is_dir: boolean;
+        extension?: string;
+      };
+      previewEnabled: boolean;
+    }>,
     returnNullHistoryOnNextNavigate: false,
   },
 }));
@@ -139,6 +147,7 @@ vi.mock("../runtime/explorerBackend", async () => {
         };
         previewEnabled: boolean;
       }) => {
+        explorerPolicyMockState.resolveEntryOpenWithPolicyCalls.push(request);
         if (
           request.entry.is_dir ||
           isMockExplorerPolicyArchivePath(request.entry.path)
@@ -1356,6 +1365,7 @@ describe("FileExplorer view modes", () => {
     spreadsheetWorkbenchMockState.lastMode = "preview";
     shaderWorkbenchMockState.lastSelectionLabel = "";
     explorerPolicyMockState.sessions.clear();
+    explorerPolicyMockState.resolveEntryOpenWithPolicyCalls = [];
     explorerPolicyMockState.returnNullHistoryOnNextNavigate = false;
     vi.mocked(currentWindow.onDragDropEvent).mockClear();
     vi.mocked(currentWindow.scaleFactor).mockClear();
@@ -6463,6 +6473,11 @@ const value = 1;
     await vi.advanceTimersByTimeAsync(220);
 
     expect(screen.queryByText("Folder Contents")).not.toBeInTheDocument();
+    expect(
+      explorerPolicyMockState.resolveEntryOpenWithPolicyCalls.some(
+        (request) => request.entry.path === alphaPath,
+      ),
+    ).toBe(false);
 
     deferredListing.resolve(childEntries);
 

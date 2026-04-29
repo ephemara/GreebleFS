@@ -369,7 +369,7 @@ pub async fn fs_watch_entry_size_root(
     .map_err(|error| format!("Could not create entry size watcher: {error}"))?;
 
     watcher
-        .watch(&watch_root, RecursiveMode::Recursive)
+        .watch(&watch_root, RecursiveMode::NonRecursive)
         .map_err(|error| {
             format!(
                 "Could not watch entry size root '{}': {error}",

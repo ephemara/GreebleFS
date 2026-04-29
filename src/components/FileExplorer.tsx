@@ -475,6 +475,7 @@ import {
 } from "../runtime/homeBackend";
 import {
   shouldOpenExplorerEntryOnTrigger,
+  shouldNavigateExplorerDirectoryOnSecondClick,
   shouldNavigateUpOnEmptyExplorerDoubleClick,
   shouldShowExplorerFolderOpenIcon,
 } from "./fileExplorerClickBehavior";
@@ -628,6 +629,13 @@ import {
   cancelExplorerChromeResizeSession,
 } from "./explorer/explorerChromeResizeRuntime";
 import {
+  EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS,
+  EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS,
+  EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS,
+  EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION,
+  EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED,
+} from "../config/explorerPerformance";
+import {
   cycleExplorerSearchMode,
   explorerSearchModeDescriptions,
   explorerSearchModeLabels,
@@ -653,6 +661,7 @@ const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 32;
 const EXPLORER_GRID_OVERSCAN_ROWS = 14;
+const EXPLORER_FULL_MOUNT_ENTRY_LIMIT = 512;
 const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_WIDTH = 1280;
 const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_HEIGHT = 720;
 const EXPLORER_VIRTUAL_SCROLL_STATE_GRANULARITY_PX = 128;
@@ -664,7 +673,16 @@ const EXPLORER_THUMBNAIL_TYPE_BADGE_KINDS = new Set<
 const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
 const EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS = 88;
-const EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS = 180;
+const EXPLORER_AUTO_MEASURE_DIRECTORY_SIZES = false;
+const EXPLORER_ENTRY_SIZE_ROOT_WATCH_ENV_VALUE = String(
+  (import.meta.env as Record<string, string | boolean | undefined>)
+    .VITE_GREEBLEFS_EXPLORER_ENTRY_SIZE_ROOT_WATCH ?? "",
+)
+  .trim()
+  .toLowerCase();
+const EXPLORER_ENTRY_SIZE_ROOT_WATCH_ENABLED =
+  EXPLORER_ENTRY_SIZE_ROOT_WATCH_ENV_VALUE === "1" ||
+  EXPLORER_ENTRY_SIZE_ROOT_WATCH_ENV_VALUE === "true";
 const EXPLORER_OPEN_WITH_REQUEST_TIMEOUT_MS = 4000;
 const EXPLORER_TEXT_DRAFT_SCOPE = "text";
 const EXPLORER_SHADER_DRAFT_SCOPE = "shader";
@@ -9399,6 +9417,10 @@ export function FileExplorer({
   const previewLoadingDelayTimerRef = useRef<number | null>(null);
   const folderActivationPrimeTimerRef = useRef<number | null>(null);
   const pendingFolderActivationPathRef = useRef<string | null>(null);
+  const lastImmediateDirectoryNavigationRef = useRef<{
+    path: string;
+    startedAt: number;
+  } | null>(null);
   const previewSaveTimer = useRef<number | null>(null);
   const previewPrefetchInFlightRef = useRef<Set<string>>(new Set());
   const internalPointerDragCandidateRef =
@@ -11314,7 +11336,8 @@ export function FileExplorer({
       currentPathIsCloud ||
       currentPathIsVirtual ||
       !isTauri() ||
-      !systemSettings.developerMode
+      !systemSettings.developerMode ||
+      !EXPLORER_ENTRY_SIZE_ROOT_WATCH_ENABLED
     ) {
       return undefined;
     }
@@ -15587,10 +15610,10 @@ export function FileExplorer({
     ],
   );
 
-  const warmSingleClickDirectoryNavigation = useCallback(
+  const warmPlainDirectoryNavigation = useCallback(
     (entry: FileEntry) => {
       if (
-        folderClickMode !== "single" ||
+        !EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED ||
         !entry.is_dir ||
         explorerPicker ||
         selectionModeActive
@@ -15605,11 +15628,49 @@ export function FileExplorer({
     },
     [
       explorerPicker,
-      folderClickMode,
       listExplorerLocation,
       selectionModeActive,
       showHidden,
     ],
+  );
+
+  const navigateDirectoryEntryImmediately = useCallback(
+    async (
+      entry: FileEntry,
+      source: "single-click" | "second-click" | "double-click",
+    ) => {
+      if (!entry.is_dir) {
+        return;
+      }
+
+      const startedAt = performance.now();
+      clearPendingFolderActivationPrime();
+      clearExplorerSelection();
+      lastImmediateDirectoryNavigationRef.current = {
+        path: entry.path,
+        startedAt,
+      };
+      void playSoundEffect("explorer-open-entry");
+      void navigate(entry.path).catch((error) => setError(String(error)));
+
+      const elapsedMs = performance.now() - startedAt;
+      if (
+        source === "second-click" &&
+        elapsedMs >
+          EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS
+      ) {
+        console.warn(
+          "GreebleFS Explorer double-click folder dispatch exceeded budget",
+          {
+            path: entry.path,
+            elapsedMs,
+            budgetMs:
+              EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS,
+          },
+        );
+      }
+    },
+    [clearExplorerSelection, clearPendingFolderActivationPrime, navigate],
   );
 
   useEffect(() => {
@@ -17758,8 +17819,7 @@ export function FileExplorer({
       previewReopenOnSelectionRef.current &&
       !isCompactDock;
     if (shouldNavigateDirectoryWithoutSelection) {
-      clearExplorerSelection();
-      void openEntry(entry);
+      void navigateDirectoryEntryImmediately(entry, "single-click");
       return;
     }
     if (e.shiftKey) {
@@ -17814,8 +17874,17 @@ export function FileExplorer({
       return;
     }
     if (entry.is_dir && folderClickMode === "double" && plainClick) {
-      if (e.detail > 1) {
+      if (shouldNavigateExplorerDirectoryOnSecondClick({
+        isDirectory: entry.is_dir,
+        clickDetail: e.detail,
+        plainClick,
+        folderClickMode,
+        selectionModeActive,
+        immediateNavigationEnabled:
+          EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION,
+      })) {
         clearPendingFolderActivationPrime(entry.path);
+        void navigateDirectoryEntryImmediately(entry, "second-click");
         return;
       }
       queueFolderActivationPrime(entry);
@@ -17846,9 +17915,28 @@ export function FileExplorer({
         return;
       }
 
+      if (entry.is_dir) {
+        const lastImmediateNavigation =
+          lastImmediateDirectoryNavigationRef.current;
+        if (
+          lastImmediateNavigation?.path === entry.path &&
+          performance.now() - lastImmediateNavigation.startedAt <=
+            EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS
+        ) {
+          return;
+        }
+        void navigateDirectoryEntryImmediately(entry, "double-click");
+        return;
+      }
+
       void openEntry(entry);
     },
-    [explorerPicker, folderClickMode, openEntry],
+    [
+      explorerPicker,
+      folderClickMode,
+      navigateDirectoryEntryImmediately,
+      openEntry,
+    ],
   );
 
   // ── Breadcrumbs ──
@@ -18189,7 +18277,7 @@ export function FileExplorer({
       const plainPointerDown =
         !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
       if (plainPointerDown) {
-        warmSingleClickDirectoryNavigation(entry);
+        warmPlainDirectoryNavigation(entry);
       }
 
       if (currentPathIsHome) {
@@ -18212,7 +18300,7 @@ export function FileExplorer({
       currentPathIsHome,
       explorerCustomizePointerActive,
       resolveEntriesForAction,
-      warmSingleClickDirectoryNavigation,
+      warmPlainDirectoryNavigation,
     ],
   );
 
@@ -25969,6 +26057,21 @@ export function FileExplorer({
         0,
         contentHeight - virtualizedViewportHeight,
       );
+      if (visibleEntries.length <= EXPLORER_FULL_MOUNT_ENTRY_LIMIT) {
+        return {
+          kind: "grid" as const,
+          columns,
+          rowHeight,
+          contentHeight,
+          maxScrollTop,
+          startRow: 0,
+          endRow: totalRows,
+          startIndex: 0,
+          endIndex: visibleEntries.length,
+          topSpacer: 0,
+          bottomSpacer: 0,
+        };
+      }
       const clampedScrollTop = Math.min(virtualizedScrollTop, maxScrollTop);
       const viewportRows = Math.max(
         1,
@@ -26015,6 +26118,20 @@ export function FileExplorer({
     const totalRows = visibleEntries.length;
     const contentHeight = totalRows * rowHeight;
     const maxScrollTop = Math.max(0, contentHeight - virtualizedViewportHeight);
+    if (visibleEntries.length <= EXPLORER_FULL_MOUNT_ENTRY_LIMIT) {
+      return {
+        kind: "list" as const,
+        rowHeight,
+        contentHeight,
+        maxScrollTop,
+        startRow: 0,
+        endRow: totalRows,
+        startIndex: 0,
+        endIndex: visibleEntries.length,
+        topSpacer: 0,
+        bottomSpacer: 0,
+      };
+    }
     const clampedScrollTop = Math.min(virtualizedScrollTop, maxScrollTop);
     const viewportRows = Math.max(
       1,
@@ -27861,7 +27978,8 @@ export function FileExplorer({
       return;
     }
 
-    const shouldMeasureDirectories = !isSearchActive;
+    const shouldMeasureDirectories =
+      EXPLORER_AUTO_MEASURE_DIRECTORY_SIZES && !isSearchActive;
     const prioritizedSelectedEntries = selectedEntries
       .filter(
         (entry) =>
