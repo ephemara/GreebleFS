@@ -5,6 +5,14 @@ description = "First-party extension-backed video preview and trim workbench."
 entry = "index.tsx"
 defaultOpen = false
 keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "video", "media"]
+
+[[testFiles]]
+id = "video-slate"
+label = "Video Slate Fixture"
+path = "examples/video-slate.mp4"
+description = "Tiny generated MP4 fixture for plugin-panel preview smoke tests."
 
 [[contributions.previewLanes]]
 id = "video"

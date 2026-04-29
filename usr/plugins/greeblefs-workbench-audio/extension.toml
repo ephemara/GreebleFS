@@ -5,6 +5,14 @@ description = "First-party extension-backed audio preview and edit workbench."
 entry = "index.tsx"
 defaultOpen = false
 keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "audio", "media"]
+
+[[testFiles]]
+id = "audio-tone"
+label = "Audio Tone Fixture"
+path = "examples/audio-tone.wav"
+description = "Tiny generated WAV fixture for plugin-panel preview smoke tests."
 
 [[contributions.previewLanes]]
 id = "audio"

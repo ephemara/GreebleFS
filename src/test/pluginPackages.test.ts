@@ -101,6 +101,16 @@ describe('plugin package discovery', () => {
           id: 'mega-plugin',
           name: 'Mega Plugin',
           entry: 'dist/index.js',
+          category: 'First-party Workbenches',
+          tags: ['workbench', 'preview', 'markdown'],
+          testFiles: [
+            {
+              id: 'notes-fixture',
+              label: 'Notes Fixture',
+              path: 'examples/readme.md',
+              description: 'A markdown preview sample.',
+            },
+          ],
           contributions: {
             shaders: ['shaders/halo.tsx'],
             fonts: [
@@ -346,6 +356,20 @@ describe('plugin package discovery', () => {
     expect(result.plugins[0]?.diagnostics.sourceKind).toBe('file-plugin');
     expect(result.plugins[1]?.diagnostics.sourceKind).toBe('package-plugin');
     expect(result.plugins[1]?.diagnostics.manifestPath?.replace(/\\/g, '/')).toBe('plugins/mega-plugin/plugin.json');
+    expect(result.plugins[1]?.diagnostics.category).toBe('First-party Workbenches');
+    expect(result.plugins[1]?.diagnostics.tags).toEqual(['workbench', 'preview', 'markdown']);
+    expect(result.plugins[1]?.diagnostics.testFiles.map(testFile => ({
+      ...testFile,
+      path: testFile.path.replace(/\\/g, '/'),
+    }))).toEqual([
+      {
+        id: 'notes-fixture',
+        label: 'Notes Fixture',
+        path: 'plugins/mega-plugin/examples/readme.md',
+        description: 'A markdown preview sample.',
+        extension: 'md',
+      },
+    ]);
     expect(result.plugins[1]?.diagnostics.capabilities.themes).toBe(0);
     expect(result.plugins[1]?.diagnostics.capabilities.shaders).toBe(1);
     expect(result.plugins[1]?.diagnostics.capabilities.commands).toBe(1);

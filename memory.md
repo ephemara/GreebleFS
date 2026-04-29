@@ -1,3 +1,16 @@
+# 2026-04-29 - Plugins Panel Now Previews First-Party Workbench Fixtures
+
+- The Plugins panel now separates plugin panel entrypoints from workbench preview lanes. `src/components/PluginsManager.tsx` renders a compact Settings-like catalog rail, an inspector lane, a `Preview | Panel` surface switch, and a preview-test host for the selected plugin's first preview lane.
+- Manifest ownership expanded for plugin organization:
+  - `src/config/pluginPackages.ts` reads package-level `category`, `tags`, and `testFiles` from `extension.toml` / `plugin.json`.
+  - `src/components/pluginRuntime.tsx` carries that metadata on `LoadedOverlayPlugin.diagnostics` so UI surfaces can organize package plugins without first-party hardcoding.
+  - First-party workbench packages under `usr/plugins/greeblefs-workbench-*` now declare `category = "First-party Workbenches"`, file-organization tags, and an `examples/*` fixture.
+- Shipped fixture files now exist for plugin-panel preview smoke tests: generated WAV, DOCX, CSV, SQLite, and MP4 examples under each first-party workbench package's `examples/` folder.
+- Durable rule: future first-party workbench packages should include a small valid fixture and declare it in `testFiles`; the Plugins panel should consume that manifest data instead of adding package-specific JSX branches.
+- Validation that passed for this pass:
+  - `node_modules\.bin\vitest.exe run src/test/pluginsManager.test.tsx src/test/pluginPackages.test.ts src/test/pluginRuntime.test.ts --reporter=dot`
+  - filtered touched-file TypeScript sweep: `NO_MATCHING_TOUCHED_FILE_ERRORS` for `PluginsManager`, `pluginRuntime`, `pluginPackages`, and `App.tsx`.
+
 # 2026-04-28 - Explorer Menus And Choosers Now Portal To A Shared Top Layer
 
 - Explorer popup layering regressions around toolbar menus and the preview workbench chooser were not caused by the menu contents themselves. The real fault was ownership: several explorer menus still rendered as absolutely positioned children inside explorer chrome rows and preview headers, so they could end up clipped or visually buried behind sibling pane/UI stacking contexts even with local `z-index` values.

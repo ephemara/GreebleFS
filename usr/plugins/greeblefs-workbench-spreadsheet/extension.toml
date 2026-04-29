@@ -5,6 +5,14 @@ description = "First-party extension-backed spreadsheet and tabular data workben
 entry = "index.tsx"
 defaultOpen = false
 keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "spreadsheet", "table"]
+
+[[testFiles]]
+id = "spreadsheet-inventory"
+label = "Inventory Fixture"
+path = "examples/inventory.csv"
+description = "Small CSV fixture for plugin-panel preview smoke tests."
 
 [[contributions.previewLanes]]
 id = "spreadsheet"

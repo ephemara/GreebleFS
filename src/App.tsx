@@ -4264,6 +4264,7 @@ function App() {
           <PluginsManager
             appearance={resolvedAppearance}
             plugins={folderPlugins}
+            previewLanes={pluginPreviewLanes}
             isLoading={folderPluginsLoading}
             error={folderPluginsError}
             onRefreshPlugins={() => refreshFolderPlugins(true)}
@@ -5758,6 +5759,9 @@ function App() {
             diagnostics: {
               sourceKind: 'file-plugin',
               sourceLabel: panel.label,
+              category: 'General',
+              tags: [],
+              testFiles: [],
               warnings: ['Plugin definition not found.'],
               capabilities: {
                 panel: true,

@@ -5,6 +5,14 @@ description = "First-party extension-backed SQLite/database preview workbench."
 entry = "index.tsx"
 defaultOpen = false
 keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "database", "sqlite"]
+
+[[testFiles]]
+id = "sqlite-library"
+label = "SQLite Library Fixture"
+path = "examples/library.sqlite"
+description = "Tiny generated SQLite fixture for plugin-panel preview smoke tests."
 
 [[contributions.previewLanes]]
 id = "sqlite"

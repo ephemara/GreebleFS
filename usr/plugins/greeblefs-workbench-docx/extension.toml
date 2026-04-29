@@ -5,6 +5,14 @@ description = "First-party extension-backed word-processing document preview wor
 entry = "index.tsx"
 defaultOpen = false
 keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "document", "office"]
+
+[[testFiles]]
+id = "docx-brief"
+label = "Document Brief Fixture"
+path = "examples/document-brief.docx"
+description = "Small generated DOCX fixture for plugin-panel preview smoke tests."
 
 [[contributions.previewLanes]]
 id = "docx"
