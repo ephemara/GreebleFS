@@ -99,9 +99,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/home/ExplorerHomeSurface.tsx`, `src/components/home/homePackRuntime.tsx`, and `src/config/homePackages.ts`
   Explorer Home surface runtime. This subsystem owns the virtual `greeblefs://home` route, the constrained host data/actions exposed to Home packs, built-in Home packs (`command-center`, `favorites-deck`), and authored pack discovery from `home-packs/`.
 - `src/components/WorkbenchTopBar.tsx`
-  Data-driven shell top bar renderer. It resolves launcher controls, navigation tabs or summary mode, window chrome, theme-shader layering, the live top-bar customize mode, and the canonical shell-family switcher (`Classic` vs `IDE`) from the standalone top-bar catalog instead of burying the whole shell header inside `App.tsx`.
+  Data-driven shell top bar renderer. It resolves launcher controls, navigation tabs or summary mode, window chrome, theme-shader layering, the live top-bar customize mode, and the canonical shell-family switcher (`Classic` vs `IDE`) from the standalone top-bar catalog instead of burying the whole shell header inside `App.tsx`. Its Surface Controls menu is also the shell-level panel launcher: it groups every registered built-in and enabled folder-plugin panel, can focus/open/close them, and keeps top-bar tab drag reorder routed through `App.tsx` so classic tabs and IDE dock-graph tabs share one activation surface.
 - `src/components/WorkbenchIdeShell.tsx`
-  Canonical IDE-shell renderer. It owns the phase-1 dock graph UI: activity rail, left/center/right/bottom regions, stack tabs, collapse/restore, maximize, floating utility windows, and split-handle resizing. Extend this component and `ideWorkbenchLayout.ts` together for IDE-shell behavior instead of reintroducing app-shell dock logic in random panels.
+  Canonical IDE-shell renderer. It owns the phase-1 dock graph UI: activity rail, left/center/right/bottom regions, draggable stack tabs, collapse/restore, maximize, floating utility windows with draggable tabs, and split-handle resizing. Extend this component and `ideWorkbenchLayout.ts` together for IDE-shell behavior instead of reintroducing app-shell dock logic in random panels.
 - `src/config/appearance.ts`
   Core overlay theme model and resolved CSS variables.
 - `src/config/pilotThemeContract.ts`
@@ -135,7 +135,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/layoutProfiles.ts`
   Built-in and external layout manifest normalization for shell blueprints, shell families, pinned panels, control docks, and top/bottom chrome behavior. `workbench-ide` is now the built-in canonical IDE-shell profile, and layout cycling can stay scoped to the active shell family instead of blindly rotating across incompatible shell models.
 - `src/config/ideWorkbenchLayout.ts`
-  Dock-graph state model and normalization helpers for the IDE shell. It owns the persisted split tree, stack placements, floating nodes, rail state, focus fallback, maximize state, and the explorer-first default-center behavior.
+  Dock-graph state model and normalization helpers for the IDE shell. It owns the persisted split tree, stack placements, stack/floating tab ordering, floating nodes, rail state, focus fallback, maximize state, and the explorer-first default-center behavior.
 - `src/config/themePackages.ts`
   Theme-bundle discovery and orchestration from `themes/`. Filesystem themes are now bundle manifests that compose external `/usr` pack ids back into resolved `OverlayThemeDefinition` objects; v1 keeps Settings simple by persisting only the active theme engine id.
 - `src/config/themeBundlePacks.ts`
@@ -207,7 +207,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/wallpaperRuntime.tsx`
   Imported image/video wallpapers, authored live wallpaper modules, and theme-wallpaper selection helpers.
 - `src/runtime/pluginPanelRequests.ts`
-  Shared plugin-panel handoff bridge for explorer/plugin context flows. It persists the latest request payload and dispatches shell-level open-panel events plus panel-specific update events.
+  Shared plugin-panel handoff bridge for explorer/plugin context flows. It persists the latest request payload and dispatches shell-level open-panel events plus panel-specific update events. `App.tsx` must route those events through the current shell activation path so requested plugin panels spawn correctly in both classic tabs and the IDE dock graph.
 - `src/runtime/pluginIndexApi.ts`
   Streamlined plugin-facing index adapter. Desktop package plugins should use `api.index.global`, `api.index.semantic`, and `api.index.media` here instead of raw invoke strings when they need indexed filesystem search, semantic RAG/search flows, or media discovery. Mobile renderer modules get the browser-safe parallel through `src-mobile/mobilePluginRuntime.tsx` and `/api/index/pictures`, plus read-only settings access through `api.settings`. `usr/plugins/greeblefs-index-photo-gallery` is the first-party smoke plugin that finds pictures from the native index on both desktop and mobile without crawling the filesystem itself; its settings slot owns `rootPaths`, `fileExtensions`, `resultLimit`, and `includeHidden`.
 - `src/runtime/storageBackend.ts`

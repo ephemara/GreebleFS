@@ -1,3 +1,17 @@
+# 2026-04-29 - Top Bar Panel Spawning And IDE Tab Reordering Restored
+
+- The shell panel launcher now lives in `src/components/WorkbenchTopBar.tsx` inside Surface Controls. It groups all registered built-in panels plus enabled folder-plugin panels through `groupPanelsForWorkbenchNavigation`, exposes focus/open/close actions, and leaves the menu open so operators can spawn several panels in one pass.
+- Top-bar tab drag/drop still uses `onPanelReorder`, but `src/App.tsx` now routes that callback into either classic `panelStateByProfile.openPanelIds` or IDE `reorderDockSurfaceTabs(...)` depending on the active shell blueprint. Plugin panel open requests from `src/runtime/pluginPanelRequests.ts` now activate through the shared `activatePanelRef`, so external plugin requests can reveal panels in IDE dock-graph mode instead of only classic tabs.
+- `src/config/ideWorkbenchLayout.ts` owns `reorderDockSurfaceTabs(...)` for persisted stack/floating tab order, and `src/components/WorkbenchIdeShell.tsx` wires draggable stack tabs plus floating-window tabs to that helper.
+- `Ctrl+W` is no longer only a reserved hotkey. `src/App.tsx` consumes `settings.keybindings.closeTab` globally outside editable targets and closes the active non-enforced/non-explorer panel in either shell family.
+- Durable regression rules:
+  - Do not add a second panel-spawn state model. New built-in/plugin panels should enter through `panelRegistry.tsx`, then use `WorkbenchTopBar`/`App.tsx` activation routing.
+  - Keep IDE tab ordering mutations in `ideWorkbenchLayout.ts`; renderers should call helpers rather than mutate dock-node arrays locally.
+  - Plugin-originated panel reveal flows should use `requestPluginPanelOpen(...)` / `PLUGIN_PANEL_OPEN_REQUEST_EVENT` and rely on `App.tsx` to choose classic vs IDE activation.
+- Validation for this pass:
+  - `node_modules\\.bin\\vitest.exe run src/test/ideWorkbenchLayout.test.ts src/test/workbenchTopBar.test.tsx src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript diagnostic sweep returned `NO_TOUCHED_FILE_TYPE_ERRORS`; full `tsc --noEmit` still exits on unrelated baseline diagnostics in mobile, explorer side rail/storage, image cutout, icon/theme compatibility, vendored Tiptap tests, and other pre-existing areas.
+
 # 2026-04-29 - Folder, Archive, 3D, PDF, And Text Workbenches Became First-Party Packages
 
 - The remaining first-party preview/workbench lanes now have package homes under `usr/plugins/greeblefs-workbench-{folder,archive,model3d,pdf,text}`. Each package declares `category`, `tags`, a shipped `testFiles` fixture, compact `[contributions.previewLanes.workbenchChrome]`, and `match.previewKinds` so format ownership is manifest-driven rather than extension ladders in `FileExplorer.tsx`.

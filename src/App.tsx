@@ -5553,11 +5553,12 @@ function App() {
         event.stopPropagation();
 
         const panelIdToClose = activeWorkbenchActivePanelId;
-        const isPanelCloseable = Boolean(panelIdToClose)
+        if (
+          panelIdToClose
           && panelIdToClose !== 'explorer'
           && !activeWorkbenchPinnedPanelIds.includes(panelIdToClose)
-          && !activeLayoutProfile.behavior.enforcedOpenPanelIds.includes(panelIdToClose);
-        if (panelIdToClose && isPanelCloseable) {
+          && !activeLayoutProfile.behavior.enforcedOpenPanelIds.includes(panelIdToClose)
+        ) {
           handleTopBarClosePanel(panelIdToClose);
         }
         return;
