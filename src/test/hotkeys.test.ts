@@ -38,6 +38,7 @@ describe('hotkey config helpers', () => {
     expect(normalized.windowModeToggle).toBe(defaults.windowModeToggle);
     expect(defaults.zenFocusModeToggle).toBe('Ctrl+Alt+Z');
     expect(normalized.zenFocusModeToggle).toBe(defaults.zenFocusModeToggle);
+    expect(defaults.closeTab).toBe('Ctrl+W');
     expect(defaults.mobileShareToggle).toBe('Ctrl+Alt+Shift+M');
     expect(normalized.mobileShareToggle).toBe(defaults.mobileShareToggle);
     expect(normalized.zoomAdjust).toBe('Ctrl+Scroll');

@@ -181,6 +181,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.windowModeToggle).toBe('F11');
     expect(settings.keybindings.zenFocusModeToggle).toBe('Ctrl+Alt+Z');
     expect(settings.keybindings.commandPalette).toBe('Ctrl+Shift+P');
+    expect(settings.keybindings.closeTab).toBe('Ctrl+W');
     expect(settings.keybindings.mobileShareToggle).toBe('Ctrl+Alt+Shift+M');
     expect(settings.keybindings.explorerMoveSelectionUp).toBe('ArrowUp');
     expect(settings.keybindings.explorerMoveSelectionDown).toBe('ArrowDown');
