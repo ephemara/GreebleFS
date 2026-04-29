@@ -21183,6 +21183,8 @@ export function FileExplorer({
       const explanation = resolveConstellationNodeExplanation({
         nodePath: node.entry.path,
         graph: constellationGraph,
+        edgeLookup: constellationEdgeLookup,
+        adjacencyLookup: constellationAdjacencyLookup,
         activeLens: constellationActiveLens,
         routeAnchorPath: constellationRouteState.anchorPath,
       });
@@ -21219,6 +21221,7 @@ export function FileExplorer({
     [
       constellationActiveLens,
       constellationAdjacencyLookup,
+      constellationEdgeLookup,
       constellationGraph,
       constellationLensDefinition.label,
       constellationRouteState.anchorPath,

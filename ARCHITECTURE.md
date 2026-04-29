@@ -673,6 +673,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - one persisted `experimentalViewMode`
   - one persisted `experimentalDensity`
   - Ctrl/Cmd + wheel and the layout hotkey now route into the active experimental runtime instead of only the adaptive grid
+- `constellation` has a bounded graph-compute contract:
+  - `src/config/constellationGraph.ts` owns graph node budgets and recent-entry limits
+  - `src/components/explorer/constellationGraph.ts` must keep relationship edge comparison capped before pairwise scoring, while preserving selected, pinned, and bookmarked workset nodes
+  - `FileExplorer.tsx` owns memoized Constellation edge/adjacency lookups; hover explanation should reuse those maps instead of rebuilding graph indexes per pointer event
 - `App.tsx`, `CommandPalette.tsx`, `TerminalOverlay.tsx`, and `SettingsPage.tsx` now consume the resolved workbench recipe and apply it to shared command-center chrome.
 
 ## Important Folders

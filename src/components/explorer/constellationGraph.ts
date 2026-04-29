@@ -1,5 +1,7 @@
 import {
+  CONSTELLATION_GRAPH_NODE_BUDGETS,
   CONSTELLATION_HOVER_REASON_LIMIT,
+  CONSTELLATION_LENS_RECENT_ENTRY_LIMIT,
   CONSTELLATION_MIN_EDGE_SCORE_BY_LENS,
   CONSTELLATION_REASON_WEIGHTS,
   CONSTELLATION_ROUTE_TARGET_LIMIT,
@@ -94,6 +96,11 @@ interface NodeMetadata {
   tagIds: string[];
 }
 
+interface RankedConstellationNodeMetadata {
+  node: NodeMetadata;
+  score: number;
+}
+
 type ConstellationRecencyBucketId =
   | "today"
   | "this-week"
@@ -123,19 +130,20 @@ export function buildConstellationGraph(
   input: ConstellationGraphBuildInput,
 ): ConstellationGraph {
   const nodeMetadata = buildNodeMetadata(input.entries, input, Date.now());
+  const comparedNodeMetadata = selectComparedConstellationNodeMetadata(nodeMetadata);
   const edges: ConstellationGraphEdge[] = [];
 
-  for (let leftIndex = 0; leftIndex < nodeMetadata.length; leftIndex += 1) {
-    const left = nodeMetadata[leftIndex];
+  for (let leftIndex = 0; leftIndex < comparedNodeMetadata.length; leftIndex += 1) {
+    const left = comparedNodeMetadata[leftIndex];
     if (!left) {
       continue;
     }
     for (
       let rightIndex = leftIndex + 1;
-      rightIndex < nodeMetadata.length;
+      rightIndex < comparedNodeMetadata.length;
       rightIndex += 1
     ) {
-      const right = nodeMetadata[rightIndex];
+      const right = comparedNodeMetadata[rightIndex];
       if (!right) {
         continue;
       }
@@ -148,7 +156,7 @@ export function buildConstellationGraph(
   }
 
   return {
-    nodes: nodeMetadata.map((node) => ({
+    nodes: comparedNodeMetadata.map((node) => ({
       entry: node.entry,
       pinned: node.pinned,
       selected: node.selected,
@@ -163,15 +171,7 @@ export function buildConstellationLensBands(
   input: ConstellationBandBuildInput,
 ): ConstellationLensBand[] {
   const nodeMetadata = buildNodeMetadata(input.entries, input, input.nowMs ?? Date.now());
-  const referenceNode =
-    nodeMetadata.find((node) => node.selected) ??
-    nodeMetadata.find((node) => node.pinned) ??
-    nodeMetadata.find((node) => node.bookmarked) ??
-    [...nodeMetadata]
-      .filter((node) => !node.entry.is_dir)
-      .sort((left, right) => right.entry.modified - left.entry.modified)[0] ??
-    nodeMetadata[0] ??
-    null;
+  const referenceNode = findConstellationReferenceNode(nodeMetadata);
 
   switch (input.activeLens) {
     case "structure":
@@ -283,10 +283,13 @@ export function findConstellationEdgeBetween(
 export function resolveConstellationNodeExplanation(args: {
   nodePath: string;
   graph: ConstellationGraph;
+  edgeLookup?: ReadonlyMap<string, ConstellationGraphEdge>;
+  adjacencyLookup?: ReadonlyMap<string, readonly ConstellationGraphEdge[]>;
   activeLens: ConstellationLensId;
   routeAnchorPath: string | null;
 }): ConstellationNodeExplanation {
-  const edgeLookup = createConstellationGraphEdgeLookup(args.graph.edges);
+  const edgeLookup =
+    args.edgeLookup ?? createConstellationGraphEdgeLookup(args.graph.edges);
   if (args.routeAnchorPath && args.routeAnchorPath !== args.nodePath) {
     const routedEdge = findConstellationEdgeBetween(
       edgeLookup,
@@ -302,12 +305,19 @@ export function resolveConstellationNodeExplanation(args: {
     }
   }
 
-  const adjacency = createConstellationGraphAdjacencyLookup(args.graph.edges);
-  const strongestEdge =
-    (adjacency.get(args.nodePath) ?? [])
-      .sort((left, right) => (
-        right.scoreByLens[args.activeLens] - left.scoreByLens[args.activeLens]
-      ))[0] ?? null;
+  const adjacency =
+    args.adjacencyLookup ?? createConstellationGraphAdjacencyLookup(args.graph.edges);
+  const localEdges = adjacency.get(args.nodePath) ?? [];
+  let strongestEdge: ConstellationGraphEdge | null = null;
+  for (const edge of localEdges) {
+    if (
+      !strongestEdge ||
+      edge.scoreByLens[args.activeLens] >
+        strongestEdge.scoreByLens[args.activeLens]
+    ) {
+      strongestEdge = edge;
+    }
+  }
   if (!strongestEdge) {
     return {
       edge: null,
@@ -575,11 +585,10 @@ function buildWorkflowBands(
       return Boolean(sharesParent || sharesExtension);
     })
     .map((node) => node.entry);
-  const recentEntries = [...nodeMetadata]
-    .filter((node) => !node.entry.is_dir)
-    .sort((left, right) => right.entry.modified - left.entry.modified)
-    .slice(0, 10)
-    .map((node) => node.entry);
+  const recentEntries = selectRecentConstellationFileEntries(
+    nodeMetadata,
+    CONSTELLATION_LENS_RECENT_ENTRY_LIMIT,
+  );
   const claimedPaths = new Set([
     ...folderEntries.map((entry) => entry.path),
     ...worksetEntries.map((entry) => entry.path),
@@ -626,6 +635,35 @@ function buildWorkflowBands(
   ]);
 }
 
+function findConstellationReferenceNode(
+  nodeMetadata: readonly NodeMetadata[],
+): NodeMetadata | null {
+  let latestFileNode: NodeMetadata | null = null;
+
+  for (const node of nodeMetadata) {
+    if (node.selected) {
+      return node;
+    }
+    if (!latestFileNode && !node.entry.is_dir) {
+      latestFileNode = node;
+    } else if (
+      !node.entry.is_dir &&
+      latestFileNode &&
+      node.entry.modified > latestFileNode.entry.modified
+    ) {
+      latestFileNode = node;
+    }
+  }
+
+  return (
+    nodeMetadata.find((node) => node.pinned) ??
+    nodeMetadata.find((node) => node.bookmarked) ??
+    latestFileNode ??
+    nodeMetadata[0] ??
+    null
+  );
+}
+
 function buildNodeMetadata(
   entries: readonly FileEntry[],
   context: Pick<
@@ -659,6 +697,149 @@ function buildNodeMetadata(
       tagIds,
     };
   });
+}
+
+function selectComparedConstellationNodeMetadata(
+  nodeMetadata: readonly NodeMetadata[],
+): NodeMetadata[] {
+  const maxComparedNodes = CONSTELLATION_GRAPH_NODE_BUDGETS.maxComparedNodes;
+  if (nodeMetadata.length <= maxComparedNodes) {
+    return [...nodeMetadata];
+  }
+
+  const requiredNodes: NodeMetadata[] = [];
+  const candidateNodes: NodeMetadata[] = [];
+
+  for (const node of nodeMetadata) {
+    if (node.selected || node.pinned || node.bookmarked) {
+      requiredNodes.push(node);
+    } else {
+      candidateNodes.push(node);
+    }
+  }
+
+  const selectedRequiredNodes = requiredNodes.slice(0, maxComparedNodes);
+  const remainingBudget = Math.max(0, maxComparedNodes - selectedRequiredNodes.length);
+  const selectedCandidateNodes = selectBestConstellationGraphCandidateNodes(
+    candidateNodes,
+    remainingBudget,
+  );
+
+  return [...selectedRequiredNodes, ...selectedCandidateNodes].sort(
+    (left, right) => left.index - right.index,
+  );
+}
+
+function selectBestConstellationGraphCandidateNodes(
+  candidateNodes: readonly NodeMetadata[],
+  limit: number,
+): NodeMetadata[] {
+  if (limit <= 0) {
+    return [];
+  }
+
+  const rankedNodes: RankedConstellationNodeMetadata[] = [];
+  for (const node of candidateNodes) {
+    const rankedNode = {
+      node,
+      score: getConstellationGraphCandidateScore(node),
+    };
+    const insertIndex = rankedNodes.findIndex(
+      (candidate) => compareRankedConstellationGraphCandidate(rankedNode, candidate) < 0,
+    );
+    if (insertIndex >= 0) {
+      rankedNodes.splice(insertIndex, 0, rankedNode);
+    } else if (rankedNodes.length < limit) {
+      rankedNodes.push(rankedNode);
+    }
+
+    if (rankedNodes.length > limit) {
+      rankedNodes.length = limit;
+    }
+  }
+
+  return rankedNodes.map((candidate) => candidate.node);
+}
+
+function compareRankedConstellationGraphCandidate(
+  left: RankedConstellationNodeMetadata,
+  right: RankedConstellationNodeMetadata,
+): number {
+  return (
+    right.score - left.score ||
+    right.node.entry.modified - left.node.entry.modified ||
+    left.node.index - right.node.index ||
+    TEXT_COLLATOR.compare(left.node.entry.name, right.node.entry.name)
+  );
+}
+
+function getConstellationGraphCandidateScore(node: NodeMetadata): number {
+  let score = 0;
+
+  if (node.entry.is_dir) {
+    score += CONSTELLATION_GRAPH_NODE_BUDGETS.directoryScore;
+  }
+
+  score += getConstellationRecencyCandidateScore(node.recencyBucketId);
+  if (node.tagIds.length > 0) {
+    score += CONSTELLATION_GRAPH_NODE_BUDGETS.taggedScore;
+  }
+  if (node.anchorEligible) {
+    score += 24;
+  }
+
+  return score;
+}
+
+function getConstellationRecencyCandidateScore(
+  bucketId: ConstellationRecencyBucketId,
+): number {
+  switch (bucketId) {
+    case "today":
+      return CONSTELLATION_GRAPH_NODE_BUDGETS.recentTodayScore;
+    case "this-week":
+      return CONSTELLATION_GRAPH_NODE_BUDGETS.recentWeekScore;
+    case "this-month":
+      return CONSTELLATION_GRAPH_NODE_BUDGETS.recentMonthScore;
+    case "this-quarter":
+      return CONSTELLATION_GRAPH_NODE_BUDGETS.recentQuarterScore;
+    case "archive":
+      return CONSTELLATION_GRAPH_NODE_BUDGETS.archiveScore;
+    case "undated":
+    default:
+      return 0;
+  }
+}
+
+function selectRecentConstellationFileEntries(
+  nodeMetadata: readonly NodeMetadata[],
+  limit: number,
+): FileEntry[] {
+  if (limit <= 0) {
+    return [];
+  }
+
+  const recentNodes: NodeMetadata[] = [];
+  for (const node of nodeMetadata) {
+    if (node.entry.is_dir) {
+      continue;
+    }
+
+    const insertIndex = recentNodes.findIndex(
+      (candidate) => node.entry.modified > candidate.entry.modified,
+    );
+    if (insertIndex >= 0) {
+      recentNodes.splice(insertIndex, 0, node);
+    } else if (recentNodes.length < limit) {
+      recentNodes.push(node);
+    }
+
+    if (recentNodes.length > limit) {
+      recentNodes.length = limit;
+    }
+  }
+
+  return recentNodes.map((node) => node.entry);
 }
 
 function buildConstellationEdge(
@@ -1065,7 +1246,16 @@ function intersectStringValues(
   right: readonly string[],
 ): string[] {
   const rightSet = new Set(right);
-  return left.filter((value, index) => rightSet.has(value) && left.indexOf(value) === index);
+  const seen = new Set<string>();
+  const sharedValues: string[] = [];
+  for (const value of left) {
+    if (!rightSet.has(value) || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    sharedValues.push(value);
+  }
+  return sharedValues;
 }
 
 function formatExplorerPathLabel(path: string): string {
@@ -1093,5 +1283,7 @@ function formatRelativeModificationDistance(distanceMs: number): string {
 }
 
 function createConstellationEdgeId(leftPath: string, rightPath: string): string {
-  return [leftPath, rightPath].sort(TEXT_COLLATOR.compare).join("::");
+  return TEXT_COLLATOR.compare(leftPath, rightPath) <= 0
+    ? `${leftPath}::${rightPath}`
+    : `${rightPath}::${leftPath}`;
 }

@@ -218,6 +218,18 @@ export const CONSTELLATION_MIN_EDGE_SCORE_BY_LENS: Record<
 
 export const CONSTELLATION_ROUTE_TARGET_LIMIT = 3;
 export const CONSTELLATION_HOVER_REASON_LIMIT = 3;
+export const CONSTELLATION_LENS_RECENT_ENTRY_LIMIT = 10;
+
+export const CONSTELLATION_GRAPH_NODE_BUDGETS = Object.freeze({
+  maxComparedNodes: 240,
+  recentTodayScore: 360,
+  recentWeekScore: 310,
+  recentMonthScore: 260,
+  recentQuarterScore: 180,
+  archiveScore: 80,
+  directoryScore: 420,
+  taggedScore: 96,
+});
 
 export const CONSTELLATION_CONNECTION_DENSITY_BOUNDS = Object.freeze({
   minPerNode: 2,

@@ -395,9 +395,10 @@ function createConstellationConnection(
   to: ConstellationFieldNode,
   strength: ConstellationFieldConnection["strength"],
 ): ConstellationFieldConnection {
+  const connectionId = createConstellationConnectionId(from.entry.path, to.entry.path);
   return {
-    id: [from.entry.path, to.entry.path].sort().join("::"),
-    edgeId: [from.entry.path, to.entry.path].sort().join("::"),
+    id: connectionId,
+    edgeId: connectionId,
     fromPath: from.entry.path,
     toPath: to.entry.path,
     fromX: from.x,
@@ -411,6 +412,10 @@ function createConstellationConnection(
     activeLensScore: strength === "primary" ? 1 : strength === "bridge" ? 0.82 : 0.48,
     reasons: [],
   };
+}
+
+function createConstellationConnectionId(leftPath: string, rightPath: string): string {
+  return leftPath <= rightPath ? `${leftPath}::${rightPath}` : `${rightPath}::${leftPath}`;
 }
 
 function dedupeConstellationConnections(

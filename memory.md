@@ -1,3 +1,18 @@
+# 2026-04-29 - Constellation View Graph Work Is Bounded And Hover Reuses Lookups
+
+- The remaining measured Explorer bottleneck in this pass was Constellation's relationship graph. `buildConstellationGraph(...)` used to pairwise-compare every visible entry, so a large directory could do quadratic scoring work even though the rendered field only displays a bounded set of nodes.
+- Durable ownership after this pass:
+  - `src/config/constellationGraph.ts` owns `CONSTELLATION_GRAPH_NODE_BUDGETS` and `CONSTELLATION_LENS_RECENT_ENTRY_LIMIT`; tune those constants there instead of adding local limits in `FileExplorer.tsx`.
+  - `src/components/explorer/constellationGraph.ts` now selects a priority-aware graph comparison set capped by `maxComparedNodes`, preserving selected, pinned, and bookmarked entries first, then choosing high-signal directory/recent/tagged candidates.
+  - Workflow recent-entry selection uses a bounded top-N pass instead of sorting the full visible directory just to keep the first ten.
+  - `resolveConstellationNodeExplanation(...)` accepts existing edge and adjacency lookups and scans local edges for the strongest relationship, so Constellation hover does not rebuild graph indexes or sort adjacency on every pointer hover.
+  - `src/components/FileExplorer.tsx` passes its memoized Constellation edge/adjacency maps into hover explanation. Keep that ownership intact if the hover card grows more context.
+- Durable regression rule: do not let Constellation graph construction compare every `visibleEntries` item pair. The field can render from all lens bands, but graph relationship scoring must stay budgeted before the pairwise edge loop.
+- Validation that passed for this pass:
+  - `node_modules\.bin\vitest.exe run src/test/constellationGraph.performance.test.ts --reporter=verbose --testTimeout=30000` (2,400-entry graph budget case completed in 112ms; bounded recent selection completed in 7ms)
+  - `node_modules\.bin\vitest.exe run src/test/constellationGraph.performance.test.ts src/test/constellationLayout.test.ts src/test/fileExplorer.viewModes.test.tsx -t "constellation" --reporter=dot --testTimeout=30000`
+  - Filtered touched-file TypeScript sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`. Full `tsc --noEmit` still fails on pre-existing unrelated drive-info casing, image-cutout contract drift, icon-theme typing, mobile/python test contract drift, script declarations, terminal test mock drift, and vendored TipTap diagnostics.
+
 # 2026-04-29 - Windows Rust Lib-Test Harness Launches Again
 
 - The Windows Rust lib-test blocker is fixed for the default native unit surface. `cargo test --manifest-path src-tauri/Cargo.toml --lib` now launches and passes instead of aborting before `main` with `STATUS_ENTRYPOINT_NOT_FOUND` / `0xc0000139`.
