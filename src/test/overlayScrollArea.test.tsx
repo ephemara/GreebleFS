@@ -110,6 +110,8 @@ describe('OverlayScrollArea', () => {
     const viewport = getViewport(container, 'vertical');
     expect(viewport.dataset.overlayScrollbarStyle).toBe('explorer-file-list');
     expect(viewport.classList.contains('overlay-scroll-area__viewport--explorer-file-list')).toBe(true);
+    expect(container.querySelector('.overlay-scroll-area__scrollbar--vertical')).toBeNull();
+    expect(container.querySelector('.overlay-scroll-area__scrollbar--horizontal')).toBeNull();
   });
 
   it('does not restart the scrollbar settle loop for virtual child identity churn', () => {
@@ -214,7 +216,7 @@ describe('OverlayScrollArea', () => {
     });
   });
 
-  it('keeps explorer file-list scroll ticks on the cached thumb-transform path', async () => {
+  it('keeps explorer file-list scroll ticks on the native compositor scrollbar path', () => {
     const rafSpy = vi.spyOn(window, 'requestAnimationFrame');
     const { container } = render(
       <OverlayScrollArea scrollbarStyle="explorer-file-list">
@@ -223,26 +225,9 @@ describe('OverlayScrollArea', () => {
     );
 
     const viewport = getViewport(container, 'vertical');
-    const verticalTrack = container.querySelector('.overlay-scroll-area__scrollbar--vertical');
-    const verticalThumb = container.querySelector('.overlay-scroll-area__scrollbar-thumb--vertical');
-    if (!(verticalTrack instanceof HTMLDivElement) || !(verticalThumb instanceof HTMLDivElement)) {
-      throw new Error('Missing custom vertical scrollbar chrome.');
-    }
-
     makeScrollable(viewport, {
       clientHeight: 120,
       scrollHeight: 720,
-    });
-    Object.defineProperty(verticalTrack, 'clientHeight', {
-      configurable: true,
-      value: 120,
-    });
-
-    viewport.dispatchEvent(new Event('scroll'));
-
-    await waitFor(() => {
-      expect(verticalTrack.dataset.visible).toBe('true');
-      expect(Number.parseFloat(verticalThumb.style.height)).toBeGreaterThan(0);
     });
 
     rafSpy.mockClear();
@@ -250,9 +235,7 @@ describe('OverlayScrollArea', () => {
     viewport.dispatchEvent(new Event('scroll'));
 
     expect(rafSpy).not.toHaveBeenCalled();
-    expect(verticalThumb.style.transform).toMatch(
-      /^translate3d\(0, (?!0(?:px)?[,)]).+px, 0\)$/,
-    );
+    expect(container.querySelector('.overlay-scroll-area__scrollbar-thumb--vertical')).toBeNull();
     rafSpy.mockRestore();
   });
 

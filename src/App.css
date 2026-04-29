@@ -219,23 +219,47 @@ html, body, #root {
   overflow: auto;
 }
 
-.overlay-scroll-area__viewport--scrollbar-themed,
-.overlay-scroll-area__viewport--explorer-file-list {
+.overlay-scroll-area__viewport--scrollbar-themed {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
 
-.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar,
-.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar {
+.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
 }
 
 .overlay-scroll-area__viewport--explorer-file-list {
+  -ms-overflow-style: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--overlay-scrollbar-thumb) var(--overlay-scrollbar-track);
+  scrollbar-gutter: stable;
   overflow-anchor: none;
-  will-change: transform;
+  will-change: scroll-position;
   backface-visibility: hidden;
+}
+
+.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar {
+  width: var(--overlay-scrollbar-size);
+  height: var(--overlay-scrollbar-size);
+}
+
+.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-track {
+  background: var(--overlay-scrollbar-track);
+}
+
+.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-thumb {
+  background: var(--overlay-scrollbar-thumb);
+  border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.overlay-scroll-area__viewport--explorer-file-list:hover::-webkit-scrollbar-thumb {
+  background: var(--overlay-scrollbar-thumb-hover);
+  border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
+  background-clip: padding-box;
 }
 
 .explorer-chrome-surface__row {

@@ -23,9 +23,21 @@ describe("overlay scrollbar style contract", () => {
     );
   });
 
-  it("suppresses native viewport scrollbars for themed explorer scroll hosts", () => {
+  it("suppresses native viewport scrollbars only for app-owned themed scroll hosts", () => {
     expect(overlayScrollbarStylesSource).toMatch(
-      /\.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar,\s*\.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar\s*{\s*width:\s*0;\s*height:\s*0;\s*display:\s*none;/s,
+      /\.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar\s*{\s*width:\s*0;\s*height:\s*0;\s*display:\s*none;/s,
+    );
+    expect(overlayScrollbarStylesSource).not.toMatch(
+      /\.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar\s*{\s*width:\s*0;\s*height:\s*0;\s*display:\s*none;/s,
+    );
+  });
+
+  it("keeps explorer file-list scrollbars native and compositor-owned", () => {
+    expect(overlayScrollbarStylesSource).toMatch(
+      /\.overlay-scroll-area__viewport--explorer-file-list\s*{[^}]*scrollbar-width:\s*thin;[^}]*scrollbar-gutter:\s*stable;/s,
+    );
+    expect(overlayScrollbarStylesSource).toMatch(
+      /\.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar\s*{[^}]*width:\s*var\(--overlay-scrollbar-size\);[^}]*height:\s*var\(--overlay-scrollbar-size\);/s,
     );
   });
 

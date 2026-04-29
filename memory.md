@@ -1,3 +1,17 @@
+# 2026-04-29 - Explorer File-List Scrollbars Are Native Compositor-Owned
+
+- The prior cached-thumb pass still left the primary explorer file list on app-owned scrollbar chrome, and small folders could still feel like 10 FPS because the fake track/thumb path remained in the scroll surface.
+- Durable redesign after this pass:
+  - `src/components/OverlayScrollArea.tsx` treats `scrollbarStyle="explorer-file-list"` as a native compositor scrollbar lane. It no longer renders `.overlay-scroll-area__scrollbar*` track/thumb DOM, no longer starts the scrollbar measurement/settle `requestAnimationFrame` loop, and no longer observes content/viewport resize for app-owned thumb sizing in that mode.
+  - `scrollbarStyle="themed"` remains the app-owned overlay scrollbar lane for non-hot panel surfaces that need custom chrome.
+  - `src/App.css` now styles the explorer file-list native scrollbar directly with `scrollbar-width`, `scrollbar-color`, `scrollbar-gutter`, and WebKit scrollbar pseudo-elements. The browser/WebView owns thumb sizing and painting cross-platform.
+- Durable regression rule: the main explorer file list must not use JS-painted scrollbars again. If scroll feels bad in folders of any size, first verify that `explorer-file-list` has no app-owned track/thumb nodes and that scroll events only feed `FileExplorer` virtualization state, not scrollbar geometry.
+- Validation for this pass:
+  - `bunx vitest run src/test/overlayScrollArea.test.tsx src/test/overlayScrollbarStyles.test.ts --reporter=dot`
+  - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "uses the dedicated explorer viewport class|does not mount an entire huge folder|keeps a 100000-entry folder bounded" --reporter=dot --testTimeout=30000`
+  - Filtered TypeScript sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS` for the touched scroll files.
+  - `node scripts/audit-ui-literals.mjs` is currently blocked by unrelated dirty mobile/plugin/settings literals; it did not report the touched scroll files.
+
 # 2026-04-29 - Plugins Can Query The Global And Semantic Indexes
 
 - Packaged frontend plugins now have a first-class `api.index` surface instead of needing raw invoke strings or ad hoc filesystem crawling. `src/runtime/pluginIndexApi.ts` owns `global` search/status/scan helpers, `semantic` summary/build/search/similar helpers, and the media helper `findPictures(...)`.
