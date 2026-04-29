@@ -15,7 +15,7 @@ import {
   isExplorerVirtualPath,
 } from "../config/explorerVirtualLocations";
 import { isExecutableBinaryExtension } from "../config/filePreview";
-import { detectClientPlatform, type RuntimePlatform } from "../config/platform";
+import type { RuntimePlatform } from "../config/platform";
 import { commands, events, unwrapTauriResult } from "./tauriClient";
 import { readIpcBinaryBytes } from "./ipc";
 import { useExplorerStore } from "../store/explorerStore";
@@ -934,8 +934,7 @@ export function resolveExplorerPolicyRuntimeMode(args?: {
     return explicitMode;
   }
 
-  const platform = args?.platform ?? detectClientPlatform();
-  return platform === "windows" ? "local" : "go-sidecar";
+  return "local";
 }
 
 function applyLocalExplorerPolicyNavigationHistory(

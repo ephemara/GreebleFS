@@ -467,7 +467,7 @@ export function OverlayScrollArea({
 
   useLayoutEffect(() => {
     scheduleScrollbarPresentationSync({ sustain: true });
-  }, [children, contentClassName, contentStyle, direction, scheduleScrollbarPresentationSync, scrollbarStyle, viewportClassName, viewportStyle]);
+  }, [contentClassName, contentStyle, direction, scheduleScrollbarPresentationSync, scrollbarStyle, viewportClassName, viewportStyle]);
 
   useEffect(() => {
     const viewport = internalViewportRef.current;
@@ -512,7 +512,7 @@ export function OverlayScrollArea({
         pendingScrollbarSyncFrameRef.current = null;
       }
     };
-  }, [children, handleScrollbarDragPointerEnd, scheduleScrollbarPresentationSync]);
+  }, [handleScrollbarDragPointerEnd, scheduleScrollbarPresentationSync]);
 
   return (
     <div

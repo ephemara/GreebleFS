@@ -5956,3 +5956,16 @@
   - passed: `node_modules\.bin\vitest.exe run src/test/fileExplorer.viewModes.test.tsx -t "100000-entry folder bounded|entire huge folder" --reporter=dot --testTimeout=30000`
   - passed: `node_modules\.bin\vitest.exe run src/test/explorerVisibleEntries.test.ts src/test/explorerVisibleEntries.workerBridge.test.ts src/test/explorerExtensionContext.test.ts --reporter=dot`
   - passed: touched-file TypeScript diagnostic sweep printed `No touched-file TypeScript diagnostics`
+
+## 2026-04-29 - Explorer Scroll And Folder Policy Stop Paying React-Orchestration Churn
+
+- A deeper folder-open/scroll audit found two avoidable costs still active after the row-mode fixes:
+  - `OverlayScrollArea` restarted its sustained scrollbar-measurement RAF loop whenever virtualized children changed identity. In Explorer, that meant ordinary list/table scrolling could keep scheduling layout reads because the rendered row slice changes as the virtual window moves.
+  - The Go explorer policy service remained a default route off Windows even though it only performs policy/history decisions and calls back into the Rust host for the actual listing. For normal folder entry, that extra TS -> Rust -> Go -> Rust round trip is orchestration cost without filesystem benefit.
+- Durable implementation shape:
+  - `src/components/OverlayScrollArea.tsx` no longer includes `children` in the mount/style scrollbar-settling effects. Geometry changes still flow through ResizeObserver and real scroll events still sync the thumb, but virtual row identity churn no longer creates a sustained measurement loop.
+  - `src/components/FileExplorer.tsx` now quantizes virtual scroll state at a coarser 128px boundary. The DOM keeps exact native scroll in `explorerViewportScrollTopRef`; React only re-renders the giant explorer surface when the visible window meaningfully advances.
+  - `src/runtime/explorerBackend.ts` now defaults explorer policy to the local in-process adapter on every platform. The Go sidecar remains forceable with `VITE_GREEBLEFS_EXPLORER_POLICY_RUNTIME=go-sidecar` for diagnostics/parity work only.
+- Durable product notes:
+  - Treat standard folder entry as Rust host truth plus local policy unless a feature genuinely needs the Go sidecar's lifecycle or isolation. Do not put ordinary navigation back through `runtime_call` without a measured reason.
+  - For Explorer scroll performance, inspect `OverlayScrollArea` child/effect dependencies before blaming virtualization. A virtual list can be bounded and still feel awful if each row-window update restarts unrelated measurement loops.

@@ -112,6 +112,25 @@ describe('OverlayScrollArea', () => {
     expect(viewport.classList.contains('overlay-scroll-area__viewport--explorer-file-list')).toBe(true);
   });
 
+  it('does not restart the scrollbar settle loop for virtual child identity churn', () => {
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame');
+    const { rerender } = render(
+      <OverlayScrollArea scrollbarStyle="explorer-file-list">
+        <div data-row="1">row 1</div>
+      </OverlayScrollArea>,
+    );
+
+    rafSpy.mockClear();
+    rerender(
+      <OverlayScrollArea scrollbarStyle="explorer-file-list">
+        <div data-row="2">row 2</div>
+      </OverlayScrollArea>,
+    );
+
+    expect(rafSpy).not.toHaveBeenCalled();
+    rafSpy.mockRestore();
+  });
+
   it('renders app-owned scrollbar chrome when themed scrolling overflows', async () => {
     const { container } = render(
       <OverlayScrollArea scrollbarStyle="themed">
