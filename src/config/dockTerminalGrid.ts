@@ -48,7 +48,7 @@ function clampInteger(value: unknown, fallback: number, min: number, max: number
 
 export function normalizeDockTerminalRows(
   value: unknown,
-  fallback = dockTerminalGridGeometry.defaultRows,
+  fallback: number = dockTerminalGridGeometry.defaultRows,
 ): number {
   return clampInteger(
     value,
@@ -60,7 +60,7 @@ export function normalizeDockTerminalRows(
 
 export function normalizeDockTerminalColumns(
   value: unknown,
-  fallback = dockTerminalGridGeometry.defaultColumns,
+  fallback: number = dockTerminalGridGeometry.defaultColumns,
 ): number {
   return clampInteger(
     value,

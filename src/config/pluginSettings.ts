@@ -12,7 +12,9 @@ export type OverlayPluginSettingsFieldKind =
   | 'textarea'
   | 'number'
   | 'select'
-  | 'json';
+  | 'json'
+  | 'path-list'
+  | 'extension-list';
 
 export interface OverlayPluginSettingsOptionDefinition {
   value: string;
@@ -135,6 +137,8 @@ function getOverlayPluginSettingsFieldFallbackValue(
     case 'json':
       return null;
     case 'textarea':
+    case 'path-list':
+    case 'extension-list':
     case 'text':
     default:
       return '';
@@ -184,6 +188,8 @@ export function coerceOverlayPluginSettingsFieldValue(
       return normalizedValue ?? field.defaultValue ?? null;
     }
     case 'textarea':
+    case 'path-list':
+    case 'extension-list':
     case 'text':
     default:
       return typeof value === 'string'

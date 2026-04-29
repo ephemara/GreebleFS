@@ -8,6 +8,7 @@ import {
   hideDockSurface,
   moveSurfaceToDockPlacement,
   normalizeIdeWorkbenchLayoutState,
+  reorderDockSurfaceTabs,
   resolvePrimaryIdeWorkbenchSurfaceId,
   type DockNode,
   type DockStackNode,
@@ -179,5 +180,27 @@ describe('ideWorkbenchLayout', () => {
     expect(nextLayoutState.bottomDockState.collapsed).toBe(true);
     expect(findDockStackById(nextLayoutState.rootDockNode, IDE_WORKBENCH_STACK_IDS.bottomPanel)?.collapsed).toBe(true);
     expect(findDockPlacementForSurface(nextLayoutState, 'terminal')).toBe(null);
+  });
+
+  it('reorders utility tabs inside a shared dock stack while preserving focus', () => {
+    const layoutState = focusDockSurface(
+      focusDockSurface(
+        createDefaultIdeWorkbenchLayoutState(testSurfaceSeeds),
+        'storage',
+        testSurfaceSeeds,
+      ),
+      'settings',
+      testSurfaceSeeds,
+    );
+
+    const reorderedLayoutState = reorderDockSurfaceTabs(layoutState, 'storage', 'settings');
+    const rightStack = findDockStackById(
+      reorderedLayoutState.rootDockNode,
+      IDE_WORKBENCH_STACK_IDS.rightSidebar,
+    );
+
+    expect(rightStack?.tabs).toEqual(['settings', 'storage']);
+    expect(rightStack?.activeSurfaceId).toBe('settings');
+    expect(reorderedLayoutState.focusedSurfaceId).toBe('settings');
   });
 });

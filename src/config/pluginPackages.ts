@@ -577,7 +577,9 @@ function normalizePluginSettingsFieldKind(
     normalizedKind === 'textarea' ||
     normalizedKind === 'number' ||
     normalizedKind === 'select' ||
-    normalizedKind === 'json'
+    normalizedKind === 'json' ||
+    normalizedKind === 'path-list' ||
+    normalizedKind === 'extension-list'
   ) {
     return normalizedKind;
   }

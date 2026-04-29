@@ -13,6 +13,22 @@
   - touched-file TypeScript diagnostic sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`; full repo `tsc --noEmit` still has unrelated baseline diagnostics outside this workbench extraction.
   - `git diff --check` passed with only existing Windows LF/CRLF warnings.
 
+# 2026-04-29 - Plugin Settings Generated Controls Use Shared Settings UI
+
+- Plugin-authored settings slots now have richer generated field kinds instead of falling back to rough text inputs for everything. `src/config/pluginSettings.ts` accepts `path-list` and `extension-list`, and `src/config/pluginPackages.ts` preserves those manifest kinds through discovery.
+- `src/components/settings/sections/PluginSettingsSection.tsx` now renders generated plugin settings through the same Settings primitives as first-party settings:
+  - booleans still pass through `SettingsRow`, which converts native checkboxes to the macOS-style `OverlayToggle`
+  - numbers render through the shared `RangeField` / `PremiumSlider`
+  - `path-list` renders a folder-list control backed by the in-house `openExplorerPicker({ kind: 'openFolders', presentation: 'window' })`
+  - `extension-list` renders default extension toggles plus a final custom-extension text input
+- The plugin settings pane no longer shows the old sidecar debug clutter (`Slot Details`, `Field Catalog`, and `Stored Payload`) for normal generated slots. Raw JSON remains available only for slots with no declared fields.
+- The gallery plugin manifest now declares `rootPaths` as `path-list` and `fileExtensions` as `extension-list` with built-in image extension options, so Settings -> Plugins -> Gallery Settings is a real settings panel instead of a textarea-heavy schema dump.
+- Validation for this pass:
+  - `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "plugin settings|plugin folder pickers|generated plugin settings|settings rail into settings and plugins" --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/pluginPackages.test.ts src/test/pluginIndexApi.test.ts src/test/mobileTheme.test.ts src/test/mobileApp.test.ts src/test/settingsStore.test.ts src/test/panelRegistry.test.tsx --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`; full `tsc --noEmit` still reports unrelated workspace diagnostics outside this settings/plugin lane.
+  - `git diff --check` passed for the touched plugin-settings files.
+
 # 2026-04-29 - Index Photo Gallery Uses Plugin Settings On Desktop And Mobile
 
 - `usr/plugins/greeblefs-index-photo-gallery` is now the first reference plugin that consumes the plugin settings system for both surfaces. Its manifest declares `rootPaths`, `fileExtensions`, `resultLimit`, and `includeHidden` in a `gallery-settings` slot, and both `index.tsx` plus `mobile/gallery.js` normalize those values before querying the index.
@@ -5127,6 +5143,19 @@
 - Validation:
   - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
   - passed: `bunx vitest run src/test/appearance.test.ts src/test/settingsStore.test.ts src/test/themePackageExplorerRecipe.test.ts src/test/settingsPage.behavior.test.tsx src/test/app.dockMode.test.tsx src/test/layoutProfiles.test.ts src/test/fileExplorer.viewModes.test.tsx src/test/themePackages.test.ts`
+
+## 2026-04-29 — Dock Resize Grid And Clamped Controls
+
+- Dock mode now treats Yakuake-style terminal rows/columns as part of the dock sizing contract instead of an invisible side effect of xterm fitting.
+- Durable implementation shape:
+  - `src/config/dockTerminalGrid.ts` owns row/column normalization, pixel-to-grid estimates, grid-to-pixel estimates, and the `columns x rows` display label used by dock controls.
+  - `WorkbenchTopBar.tsx` keeps the dock surface-controls popover fixed and viewport-clamped, adds row/column controls beside pixel height/width controls, and writes all updates through the same `settings.dock` state.
+  - `SettingsPage.tsx` exposes the same terminal-grid defaults in the Dock Mode settings section and resolves grid changes back into dock edge size/width.
+  - `TerminalOverlay.tsx` promotes active pane viewport telemetry into React state so toolbar/status text updates live while the dock or split panes are being resized.
+  - `App.tsx` remains the canonical place to turn native dock resize/move events into persisted dock geometry; edge modes should re-anchor after resize, while floating mode preserves freeform bounds.
+- Validation:
+  - passed: `bunx vitest run src/test/dockTerminalGrid.test.ts src/test/settingsStore.test.ts src/test/overlayWindow.test.ts src/test/workbenchTopBar.test.tsx --reporter=dot`
+  - full `bunx tsc --noEmit --pretty false` still reports existing unrelated repo-wide issues in mobile, explorer drive typing, image cutout, icon themes, vendored Tiptap, and older test mocks; narrowed output for the touched dock/grid files is clean after updating the app dock-mode test mock status shape.
 
 ## 2026-04-15 — Adaptive Explorer Chrome Phase 1
 

@@ -30,17 +30,72 @@ includeHidden = false
 id = "rootPaths"
 label = "Folder Paths"
 description = "Optional absolute desktop paths or mobile-share-relative paths. Leave empty to use the active index scope."
-kind = "textarea"
-placeholder = "C:\\Users\\Admin\\Pictures\nD:\\Reference\\Textures"
+kind = "path-list"
+placeholder = "C:\\Users\\Admin\\Pictures"
 defaultValue = ""
 
 [[contributions.settingsSlots.fields]]
 id = "fileExtensions"
 label = "File Types"
-description = "Comma or newline separated extensions. Leading dots are optional."
-kind = "text"
-placeholder = "jpg, png, webp, avif"
+description = "Enable the built-in gallery image types, then add custom extensions at the end."
+kind = "extension-list"
+placeholder = "raw, heic, exr"
 defaultValue = "jpg, jpeg, png, gif, webp, svg, bmp, ico, avif, tiff, tif"
+
+[[contributions.settingsSlots.fields.options]]
+value = "jpg"
+label = "JPG"
+description = "JPEG photo files."
+
+[[contributions.settingsSlots.fields.options]]
+value = "jpeg"
+label = "JPEG"
+description = "Long-form JPEG extension."
+
+[[contributions.settingsSlots.fields.options]]
+value = "png"
+label = "PNG"
+description = "Portable Network Graphics."
+
+[[contributions.settingsSlots.fields.options]]
+value = "gif"
+label = "GIF"
+description = "Animated or indexed-color GIF images."
+
+[[contributions.settingsSlots.fields.options]]
+value = "webp"
+label = "WebP"
+description = "Modern web image files."
+
+[[contributions.settingsSlots.fields.options]]
+value = "svg"
+label = "SVG"
+description = "Vector image assets."
+
+[[contributions.settingsSlots.fields.options]]
+value = "bmp"
+label = "BMP"
+description = "Bitmap image files."
+
+[[contributions.settingsSlots.fields.options]]
+value = "ico"
+label = "ICO"
+description = "Icon image files."
+
+[[contributions.settingsSlots.fields.options]]
+value = "avif"
+label = "AVIF"
+description = "AV1 image files."
+
+[[contributions.settingsSlots.fields.options]]
+value = "tiff"
+label = "TIFF"
+description = "Tagged image files."
+
+[[contributions.settingsSlots.fields.options]]
+value = "tif"
+label = "TIF"
+description = "Short-form TIFF extension."
 
 [[contributions.settingsSlots.fields]]
 id = "resultLimit"

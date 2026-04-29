@@ -5,6 +5,25 @@ import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewW
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../panels/panelRegistry', () => ({
+  buildWorkbenchSurfaceDefinitions: (panels: Array<{
+    id: string;
+    label: string;
+    render: unknown;
+    dock?: {
+      defaultDockPlacement?: string;
+      defaultOrder?: number;
+      defaultVisibility?: string;
+      ideRole?: string;
+    };
+  }>) => panels.map((panel, index) => ({
+    id: panel.id,
+    label: panel.label,
+    defaultDockPlacement: panel.dock?.defaultDockPlacement ?? 'center',
+    defaultOrder: panel.dock?.defaultOrder ?? index,
+    defaultVisibility: panel.dock?.defaultVisibility ?? 'hidden',
+    ideRole: panel.dock?.ideRole ?? 'utility',
+    render: panel.render,
+  })),
   createBuiltInPanelDefinitions: ({
     appearance,
     explorerLayoutMode,
@@ -136,6 +155,8 @@ vi.mock('../runtime/useFolderPluginRuntime', () => ({
 
 vi.mock('../runtime/explorerBackend', () => ({
   listExplorerDir: vi.fn(async () => []),
+  listExplorerTasks: vi.fn(async () => []),
+  listenToExplorerTaskProgress: vi.fn(async () => () => {}),
   openExplorerPath: vi.fn(async () => undefined),
   getExplorerHomeDir: vi.fn(async () => '/tmp'),
 }));
@@ -165,6 +186,8 @@ vi.mock('../runtime/tauriClient', () => ({
         activeBackend: 'x11',
         preferredBackend: 'auto',
         autoX11FallbackActive: false,
+        nvidiaGpuDetected: false,
+        nvidiaWebkitWorkaroundMode: 'force-off',
       },
     })),
     traySetVisible: vi.fn(async () => undefined),
@@ -257,6 +280,10 @@ function setWindowMode(mode: 'overlay' | 'windowed') {
         ...defaultSettings.terminal,
         windowMode: mode,
       },
+      presentation: {
+        ...defaultSettings.presentation,
+        windowMode: mode === 'overlay' ? 'dock' : 'windowed',
+      },
       layout: {
         ...defaultSettings.layout,
         activeProfileId: 'overlay-classic',
@@ -264,6 +291,13 @@ function setWindowMode(mode: 'overlay' | 'windowed') {
       },
     },
   }));
+}
+
+function setNavigatorPlatform(platform: string) {
+  Object.defineProperty(navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  });
 }
 
 describe('App dock mode behavior', () => {
@@ -294,6 +328,8 @@ describe('App dock mode behavior', () => {
         activeBackend: 'x11',
         preferredBackend: 'auto',
         autoX11FallbackActive: false,
+        nvidiaGpuDetected: false,
+        nvidiaWebkitWorkaroundMode: 'force-off',
       },
     });
     vi.mocked(commands.windowGetLinuxDisplayServer).mockResolvedValue('x11');
@@ -615,6 +651,7 @@ describe('App dock mode behavior', () => {
   it('routes dock handoff to the dedicated dock host on Wayland', async () => {
     const user = userEvent.setup();
 
+    setNavigatorPlatform('Linux x86_64');
     vi.mocked(commands.windowGetLinuxDisplayServer).mockResolvedValue('wayland');
     vi.mocked(commands.windowGetWaylandDockHostStatus).mockResolvedValue({
       enabled: true,
@@ -638,6 +675,7 @@ describe('App dock mode behavior', () => {
   });
 
   it('uses the dedicated Wayland dock layout command on the dock host', async () => {
+    setNavigatorPlatform('Linux x86_64');
     vi.mocked(commands.windowGetLinuxDisplayServer).mockResolvedValue('wayland');
     vi.mocked(commands.windowGetWaylandDockHostStatus).mockResolvedValue({
       enabled: true,
@@ -656,6 +694,7 @@ describe('App dock mode behavior', () => {
   it('keeps the dock host on the layer-shell path during overlay handoff before mode rehydrate', async () => {
     const listeners = new Map<string, (event: { payload: unknown }) => void>();
 
+    setNavigatorPlatform('Linux x86_64');
     vi.mocked(commands.windowGetLinuxDisplayServer).mockResolvedValue('wayland');
     vi.mocked(commands.windowGetWaylandDockHostStatus).mockResolvedValue({
       enabled: true,

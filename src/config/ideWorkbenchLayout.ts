@@ -986,6 +986,87 @@ function updateFloatingNodesForSurface(
   });
 }
 
+function reorderSurfaceIds(ids: string[], draggedSurfaceId: string, targetSurfaceId: string): string[] {
+  if (draggedSurfaceId === targetSurfaceId) {
+    return ids;
+  }
+
+  const nextIds = [...ids];
+  const draggedIndex = nextIds.indexOf(draggedSurfaceId);
+  const targetIndex = nextIds.indexOf(targetSurfaceId);
+  if (draggedIndex < 0 || targetIndex < 0) {
+    return ids;
+  }
+
+  const [draggedId] = nextIds.splice(draggedIndex, 1);
+  nextIds.splice(targetIndex, 0, draggedId);
+  return nextIds;
+}
+
+export function reorderDockSurfaceTabs(
+  layoutState: IdeWorkbenchLayoutState,
+  draggedSurfaceId: string,
+  targetSurfaceId: string,
+): IdeWorkbenchLayoutState {
+  if (draggedSurfaceId === targetSurfaceId) {
+    return layoutState;
+  }
+
+  let reordered = false;
+  const nextRootDockNode = updateDockNode(layoutState.rootDockNode, (candidate) => {
+    if (
+      candidate.type !== 'stack'
+      || !candidate.tabs.includes(draggedSurfaceId)
+      || !candidate.tabs.includes(targetSurfaceId)
+    ) {
+      return candidate;
+    }
+
+    const nextTabs = reorderSurfaceIds(candidate.tabs, draggedSurfaceId, targetSurfaceId);
+    if (nextTabs === candidate.tabs) {
+      return candidate;
+    }
+
+    reordered = true;
+    return withStackActiveSurface(
+      {
+        ...candidate,
+        tabs: nextTabs,
+      },
+      candidate.activeSurfaceId,
+    );
+  });
+  const nextFloatingNodes = layoutState.floatingNodes.map((node) => {
+    if (!node.tabs.includes(draggedSurfaceId) || !node.tabs.includes(targetSurfaceId)) {
+      return node;
+    }
+
+    const nextTabs = reorderSurfaceIds(node.tabs, draggedSurfaceId, targetSurfaceId);
+    if (nextTabs === node.tabs) {
+      return node;
+    }
+
+    reordered = true;
+    return {
+      ...node,
+      tabs: nextTabs,
+      activeSurfaceId: node.activeSurfaceId && nextTabs.includes(node.activeSurfaceId)
+        ? node.activeSurfaceId
+        : nextTabs[0] ?? null,
+    };
+  });
+
+  if (!reordered) {
+    return layoutState;
+  }
+
+  return {
+    ...layoutState,
+    rootDockNode: normalizeDockNodeAfterMutation(nextRootDockNode),
+    floatingNodes: nextFloatingNodes,
+  };
+}
+
 export function moveSurfaceToDockPlacement(
   layoutState: IdeWorkbenchLayoutState,
   surfaceId: string,

@@ -196,6 +196,7 @@ import {
   focusDockSurface,
   hideDockSurface,
   normalizeIdeWorkbenchLayoutState,
+  reorderDockSurfaceTabs,
   resolvePrimaryIdeWorkbenchSurfaceId,
   type IdeWorkbenchLayoutState,
 } from './config/ideWorkbenchLayout';
@@ -1063,10 +1064,10 @@ function App() {
   }, [combinedThemePackages, explorerLayoutPackages]);
   const combinedActionPacks = useMemo(() => {
     const packMap = new Map<string, LoadedActionPack>();
-    for (const pack of actionPacks) {
+    for (const pack of actionPacks ?? []) {
       packMap.set(pack.id, pack);
     }
-    for (const pack of pluginActionPacks) {
+    for (const pack of pluginActionPacks ?? []) {
       packMap.set(pack.id, pack);
     }
     return [...packMap.values()].sort((left, right) => left.name.localeCompare(right.name));
@@ -1076,7 +1077,7 @@ function App() {
     for (const action of combinedActionPacks.flatMap(pack => pack.actions)) {
       actionMap.set(action.id, action);
     }
-    for (const action of pluginActions) {
+    for (const action of pluginActions ?? []) {
       actionMap.set(action.id, action);
     }
     return [...actionMap.values()].sort((left, right) => left.title.localeCompare(right.title));
@@ -2641,7 +2642,7 @@ function App() {
         return;
       }
 
-      setPanelOpenStateDirectly(panelId);
+      activatePanelRef.current(panelId);
       if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
         void showCurrentPresentation();
       }
@@ -2651,7 +2652,7 @@ function App() {
     return () => {
       window.removeEventListener(PLUGIN_PANEL_OPEN_REQUEST_EVENT, handlePluginPanelOpenRequest);
     };
-  }, [setPanelOpenStateDirectly, showCurrentPresentation]);
+  }, [showCurrentPresentation]);
 
 
   const handleSetDockPlacementMode = useCallback((placementMode: DockPlacementMode) => {
@@ -5274,11 +5275,24 @@ function App() {
   ]);
 
   const handleReorderPanels = useCallback((draggedId: string, targetId: string) => {
+    if (activeShellUsesIdeWorkbench) {
+      updateActiveIdeWorkbenchLayoutState(
+        reorderDockSurfaceTabs(resolvedIdeWorkbenchLayoutState, draggedId, targetId),
+      );
+      return;
+    }
+
     updateActiveLayoutPanelState(current => ({
       ...current,
       openPanelIds: reorderPanelIds(tabbedOpenPanelIds, draggedId, targetId),
     }));
-  }, [tabbedOpenPanelIds, updateActiveLayoutPanelState]);
+  }, [
+    activeShellUsesIdeWorkbench,
+    resolvedIdeWorkbenchLayoutState,
+    tabbedOpenPanelIds,
+    updateActiveIdeWorkbenchLayoutState,
+    updateActiveLayoutPanelState,
+  ]);
 
   const handleOpenSettingsSection = useCallback((section: SettingsSectionKey) => {
     setActiveSection(section);
@@ -5534,6 +5548,21 @@ function App() {
         return;
       }
 
+      if (matchesKeybinding(event, keybindings.closeTab)) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const panelIdToClose = activeWorkbenchActivePanelId;
+        const isPanelCloseable = Boolean(panelIdToClose)
+          && panelIdToClose !== 'explorer'
+          && !activeWorkbenchPinnedPanelIds.includes(panelIdToClose)
+          && !activeLayoutProfile.behavior.enforcedOpenPanelIds.includes(panelIdToClose);
+        if (panelIdToClose && isPanelCloseable) {
+          handleTopBarClosePanel(panelIdToClose);
+        }
+        return;
+      }
+
       if (matchesKeybinding(event, keybindings.toggleExplorerCustomize)) {
         event.preventDefault();
         event.stopPropagation();
@@ -5570,12 +5599,17 @@ function App() {
     window.addEventListener('keydown', handleKeydown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeydown, { capture: true });
   }, [
+    activeLayoutProfile.behavior.enforcedOpenPanelIds,
+    activeWorkbenchActivePanelId,
+    activeWorkbenchPinnedPanelIds,
     handleOpenCommandPalette,
     dispatchExplorerLayoutCommand,
     handleActivatePanel,
+    handleTopBarClosePanel,
     handleToggleMobileShare,
     handleToggleWindowMode,
     handleToggleZenFocusMode,
+    keybindings.closeTab,
     keybindings.commandPalette,
     keybindings.mobileShareToggle,
     keybindings.openExplorerLayoutSwitcher,

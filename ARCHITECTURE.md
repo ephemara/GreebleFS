@@ -554,7 +554,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `App.tsx` still forces the explorer forward when entering overlay mode, but now passes `explorerLayoutMode: 'dock'`
   - dock mode keeps the same explorer sessions, filesystem data plane, tabs, and workspace state as app mode
   - dock mode can diverge in workbench recipe, explorer recipe, metrics, and chrome layout without becoming a separate filesystem subsystem
-  - the dock layout contract keeps inline preview closed so the overlay reads like a focused content browser instead of a zoomed-out app shell
+  - `/usr/dock-presentations/**/dock-presentation.json` is the first-class authored source for dock placement, sizing defaults, terminal grid defaults, top-bar choice, and preview policy
+  - dock preview/workbench panes are policy-owned (`settings.dock.previewEnabled` / `previewSplitMode`) rather than hard-disabled by `layoutMode === 'dock'`
+  - dock sizing now has a Yakuake-style terminal grid contract through `src/config/dockTerminalGrid.ts`; pixel height/width changes update default rows/columns, and terminal panes surface live `columns x rows` telemetry during resize
   - `src/config/layoutProfiles.ts` still normalizes legacy persisted `compact-dock` layout values to `dock` for compatibility
 - Linux Wayland dock mode now has a dedicated native host path instead of pretending a normal top-level window can behave like a panel:
   - `src-tauri/src/wayland_dock.rs` owns the separate `dock` webview host and applies `gtk-layer-shell` configuration for anchored panel behavior
@@ -667,7 +669,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Overlay/dock mode now treats position as edge-owned state:
   - `src/config/overlayWindow.ts` exposes `computeAnchoredOverlayWindowLayout()` so current overlay bounds can preserve size without preserving stale X/Y drift
   - `src/App.tsx` re-applies dock geometry after show on Linux so WMs that recenter undecorated windows cannot leave the dock floating in the middle of the screen
-  - resize/move listeners in overlay mode now snap back to the dock edge instead of accepting free-floating coordinates as the persisted dock position
+  - edge dock placements snap back to the configured edge, while floating dock placement preserves clamped freeform bounds and should not be re-anchored after user move/resize
+  - the dock control-strip top-bar popover uses fixed viewport-clamped placement, so settings menus opened near the screen edge must remain visible instead of trailing off-screen
 - The explorer now ships three experimental folder-view runtimes behind the Labs control:
   - `adaptive-semantic-grid`
   - `constellation`

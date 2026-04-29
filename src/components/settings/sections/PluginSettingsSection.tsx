@@ -6,7 +6,15 @@ import {
   type ChangeEvent,
 } from 'react';
 
-import { ExternalLink, Puzzle, RefreshCw, RotateCcw, SlidersHorizontal } from '@/components/AppIcons';
+import {
+  ExternalLink,
+  FolderPlus,
+  Puzzle,
+  RefreshCw,
+  RotateCcw,
+  SlidersHorizontal,
+  X,
+} from '@/components/AppIcons';
 
 import type { OverlayPluginSettingsSlotContribution } from '../../../config/pluginContributions';
 import type {
@@ -18,30 +26,12 @@ import { createOverlayPluginRuntimeSettingsController } from '../../../runtime/p
 import {
   SettingsActionButton,
   SettingsActionStrip,
+  RangeField,
   SettingsRow,
   SettingsRowGroup,
   SettingsSectionBlock,
-  SettingsStatusPill,
-  ThemeBadge,
 } from '../SettingsPrimitives';
-
-function formatPluginSettingsValuePreview(value: OverlayPluginSettingsValue): string {
-  if (value == null) {
-    return 'null';
-  }
-  if (typeof value === 'string') {
-    return value.length > 64 ? `${value.slice(0, 61)}...` : value;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  try {
-    const serialized = JSON.stringify(value);
-    return serialized.length > 64 ? `${serialized.slice(0, 61)}...` : serialized;
-  } catch {
-    return '[unserializable]';
-  }
-}
+import { openExplorerPicker } from '../../../runtime/explorerPicker';
 
 function formatPluginSettingsValueJson(value: OverlayPluginSettingsValue): string {
   if (value == null) {
@@ -75,6 +65,52 @@ function parsePluginSettingsJsonDraft(draft: string): {
       error: error instanceof Error ? error.message : 'Invalid JSON',
     };
   }
+}
+
+function parsePluginSettingsTextList(value: OverlayPluginSettingsValue): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) =>
+      typeof entry === 'string' ? parsePluginSettingsTextList(entry) : [],
+    );
+  }
+  if (typeof value !== 'string') {
+    return [];
+  }
+  return value
+    .split(/[\n,;]+/g)
+    .map(entry => entry.trim())
+    .filter(Boolean);
+}
+
+function dedupePluginSettingsListEntries(entries: string[]): string[] {
+  const seen = new Set<string>();
+  const normalizedEntries: string[] = [];
+  for (const entry of entries) {
+    const normalizedEntry = entry.trim();
+    const key = normalizedEntry.toLocaleLowerCase();
+    if (!normalizedEntry || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalizedEntries.push(normalizedEntry);
+  }
+  return normalizedEntries;
+}
+
+function normalizeExtensionToken(value: string): string {
+  return value.trim().replace(/^\.+/, '').toLocaleLowerCase();
+}
+
+function formatPathListValue(paths: string[]): string {
+  return dedupePluginSettingsListEntries(paths).join('\n');
+}
+
+function formatExtensionListValue(extensions: string[]): string {
+  return dedupePluginSettingsListEntries(
+    extensions
+      .map(normalizeExtensionToken)
+      .filter(Boolean),
+  ).join(', ');
 }
 
 function buildGeneratedFieldControl(
@@ -233,6 +269,303 @@ function PluginLongFormSettingsField({
   );
 }
 
+function PluginPathListSettingsField({
+  field,
+  value,
+  onChange,
+}: {
+  field: OverlayPluginSettingsFieldDefinition;
+  value: OverlayPluginSettingsValue;
+  onChange: (nextValue: unknown) => void;
+}) {
+  const paths = dedupePluginSettingsListEntries(parsePluginSettingsTextList(value));
+
+  const handleAddFolders = async () => {
+    const pickerResult = await openExplorerPicker({
+      kind: 'openFolders',
+      presentation: 'window',
+      title: `Add ${field.label}`,
+      confirmLabel: 'Add Folders',
+      allowCreateDirectory: true,
+      startPath: paths[0] ?? null,
+    });
+
+    if (!pickerResult || pickerResult.cancelled) {
+      return;
+    }
+
+    const nextPaths = pickerResult.entries.length > 0
+      ? pickerResult.entries
+        .filter(entry => entry.kind === 'folder')
+        .map(entry => entry.path)
+      : [pickerResult.currentDirectory];
+
+    onChange(formatPathListValue([...paths, ...nextPaths]));
+  };
+
+  return (
+    <SettingsSectionBlock
+      title={field.label}
+      subtitle={field.description ?? 'Choose one or more folders with the Explorer picker.'}
+      badges={['folder-picker']}
+      tone="muted"
+      actions={(
+        <SettingsActionStrip>
+          <SettingsActionButton onClick={() => void handleAddFolders()}>
+            <FolderPlus size={12} />
+            Add Folder
+          </SettingsActionButton>
+          {paths.length > 0 ? (
+            <SettingsActionButton onClick={() => onChange('')}>
+              <RotateCcw size={12} />
+              Clear
+            </SettingsActionButton>
+          ) : null}
+        </SettingsActionStrip>
+      )}
+    >
+      {paths.length > 0 ? (
+        <div className="space-y-2">
+          {paths.map((path) => (
+            <div
+              key={path}
+              className="flex min-w-0 items-center justify-between gap-3 rounded border px-3 py-2 text-[11px]"
+              style={{
+                borderColor: 'var(--overlay-workbench-settings-card-border)',
+                background: 'var(--overlay-workbench-settings-card-bg)',
+              }}
+            >
+              <span className="min-w-0 flex-1 truncate font-mono opacity-75">
+                {path}
+              </span>
+              <SettingsActionButton
+                aria-label={`Remove ${path}`}
+                onClick={() => onChange(formatPathListValue(paths.filter(entry => entry !== path)))}
+              >
+                <X size={12} />
+                Remove
+              </SettingsActionButton>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div
+          className="rounded border px-3 py-3 text-[11px] leading-5 opacity-65"
+          style={{
+            borderColor: 'var(--overlay-workbench-settings-card-border)',
+            background: 'var(--overlay-workbench-settings-card-bg)',
+          }}
+        >
+          No folders selected. The plugin will use the active index scope.
+        </div>
+      )}
+    </SettingsSectionBlock>
+  );
+}
+
+function PluginExtensionListSettingsField({
+  field,
+  value,
+  onChange,
+}: {
+  field: OverlayPluginSettingsFieldDefinition;
+  value: OverlayPluginSettingsValue;
+  onChange: (nextValue: unknown) => void;
+}) {
+  const extensionOptions = field.options.map(option => ({
+    ...option,
+    value: normalizeExtensionToken(option.value),
+  })).filter(option => option.value);
+  const optionValueSet = new Set(extensionOptions.map(option => option.value));
+  const selectedExtensions = parsePluginSettingsTextList(value)
+    .map(normalizeExtensionToken)
+    .filter(Boolean);
+  const selectedOptionSet = new Set(
+    selectedExtensions.filter(extension => optionValueSet.has(extension)),
+  );
+  const customExtensions = selectedExtensions.filter(
+    extension => !optionValueSet.has(extension),
+  );
+  const customExtensionsDraftValue = customExtensions.join(', ');
+
+  const commitExtensionState = (
+    nextSelectedOptionSet: Set<string>,
+    nextCustomExtensions: string[],
+  ) => {
+    onChange(formatExtensionListValue([
+      ...extensionOptions
+        .map(option => option.value)
+        .filter(extension => nextSelectedOptionSet.has(extension)),
+      ...nextCustomExtensions,
+    ]));
+  };
+
+  return (
+    <SettingsSectionBlock
+      title={field.label}
+      subtitle={field.description ?? 'Choose default image extensions and add custom extensions at the end.'}
+      badges={['image-types', `${selectedExtensions.length} active`]}
+      tone="muted"
+    >
+      <div className="space-y-3">
+        {extensionOptions.length > 0 ? (
+          <SettingsRowGroup>
+            {extensionOptions.map((option) => (
+              <SettingsRow
+                key={option.value}
+                title={`.${option.value}`}
+                description={option.description ?? `Include ${option.label} images in gallery results.`}
+                control={(
+                  <input
+                    type="checkbox"
+                    checked={selectedOptionSet.has(option.value)}
+                    onChange={(event) => {
+                      const nextSelectedOptionSet = new Set(selectedOptionSet);
+                      if (event.target.checked) {
+                        nextSelectedOptionSet.add(option.value);
+                      } else {
+                        nextSelectedOptionSet.delete(option.value);
+                      }
+                      commitExtensionState(nextSelectedOptionSet, customExtensions);
+                    }}
+                  />
+                )}
+              />
+            ))}
+          </SettingsRowGroup>
+        ) : null}
+
+        <label
+          className="block rounded border px-3 py-3"
+          style={{
+            borderColor: 'var(--overlay-workbench-settings-card-border)',
+            background: 'var(--overlay-workbench-settings-card-bg)',
+          }}
+        >
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+            Custom Extensions
+          </div>
+          <p className="mt-1 text-[11px] leading-4 opacity-45">
+            Add comma-separated extras after the default gallery types. Leading dots are optional.
+          </p>
+          <PluginCustomExtensionsInput
+            value={customExtensionsDraftValue}
+            placeholder={field.placeholder}
+            onChange={(nextDraft) => {
+              commitExtensionState(
+                selectedOptionSet,
+                parsePluginSettingsTextList(nextDraft).map(normalizeExtensionToken),
+              );
+            }}
+          />
+        </label>
+      </div>
+    </SettingsSectionBlock>
+  );
+}
+
+function PluginCustomExtensionsInput({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  placeholder?: string;
+  onChange: (nextDraft: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      placeholder={placeholder}
+      onChange={(event) => {
+        const nextDraft = event.target.value;
+        setDraft(nextDraft);
+        onChange(nextDraft);
+      }}
+      className="mt-3 w-full rounded border px-3 py-2 text-[12px]"
+      style={{
+        borderColor: 'var(--overlay-workbench-settings-card-border)',
+        background: 'rgba(255,255,255,0.04)',
+        color: 'var(--overlay-text-primary)',
+      }}
+    />
+  );
+}
+
+function PluginGeneratedSettingsField({
+  field,
+  value,
+  onChange,
+}: {
+  field: OverlayPluginSettingsFieldDefinition;
+  value: OverlayPluginSettingsValue;
+  onChange: (nextValue: unknown) => void;
+}) {
+  if (field.kind === 'textarea' || field.kind === 'json') {
+    return (
+      <PluginLongFormSettingsField
+        field={field}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  }
+
+  if (field.kind === 'path-list') {
+    return (
+      <PluginPathListSettingsField
+        field={field}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  }
+
+  if (field.kind === 'extension-list') {
+    return (
+      <PluginExtensionListSettingsField
+        field={field}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  }
+
+  if (field.kind === 'number') {
+    const numericValue = typeof value === 'number' && Number.isFinite(value)
+      ? value
+      : typeof field.defaultValue === 'number'
+        ? field.defaultValue
+        : field.min ?? 0;
+    return (
+      <RangeField
+        label={field.label}
+        description={field.description ?? 'Numeric plugin setting.'}
+        min={field.min ?? 0}
+        max={field.max ?? Math.max(numericValue, 100)}
+        step={field.step ?? 1}
+        value={numericValue}
+        valueLabel={String(numericValue)}
+        onChange={onChange}
+      />
+    );
+  }
+
+  return (
+    <SettingsRow
+      title={field.label}
+      description={field.description ?? field.kind}
+      note={field.options.length > 0
+        ? `Options: ${field.options.map((option) => option.label).join(', ')}`
+        : undefined}
+      control={buildGeneratedFieldControl(field, value, onChange)}
+    />
+  );
+}
+
 function PluginRawSettingsEditor({
   values,
   onReplace,
@@ -363,93 +696,82 @@ export function PluginSettingsSection({
     [controller, resolvedValues, slot],
   );
 
-  const scalarFields = slot.fields.filter(
-    (field) => field.kind !== 'textarea' && field.kind !== 'json',
-  );
-  const longFormFields = slot.fields.filter(
-    (field) => field.kind === 'textarea' || field.kind === 'json',
-  );
   const hasCustomComponent = slot.component != null;
-  const currentValueEntries = Object.entries(resolvedValues);
 
   return (
-    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="space-y-3">
-        <SettingsSectionBlock
-          title={slot.title}
-          subtitle={
-            slot.description
+    <div className="space-y-3">
+      <SettingsSectionBlock
+        title={slot.title}
+        subtitle={
+          slot.description
             ?? `Plugin-owned settings slot from ${slot.pluginName}.`
-          }
-          badges={[
-            slot.pluginName,
-            hasCustomComponent ? 'custom-ui' : 'generated-ui',
-            `${slot.fields.length} fields`,
-          ]}
-          actions={(
-            <SettingsActionStrip>
-              <SettingsActionButton
-                onClick={() => controller.resetValues()}
-                accent={accent}
-              >
-                <RotateCcw size={12} />
-                Reset Slot
-              </SettingsActionButton>
-              <SettingsActionButton onClick={() => void onRefreshPlugins()}>
-                <RefreshCw size={12} />
-                {pluginsLoading ? 'Refreshing…' : 'Refresh Plugins'}
-              </SettingsActionButton>
-              <SettingsActionButton onClick={() => void onOpenPluginsFolder()}>
-                <ExternalLink size={12} />
-                Open Plugins Folder
-              </SettingsActionButton>
-            </SettingsActionStrip>
-          )}
-          accent={accent}
-        >
-          {pluginsError ? (
-            <div
-              className="rounded border px-3 py-2 text-[11px]"
-              style={{
-                borderColor: 'var(--overlay-danger)',
-                background: 'rgba(255,64,64,0.06)',
-                color: 'var(--overlay-text-primary)',
-              }}
+        }
+        badges={[
+          slot.pluginName,
+          hasCustomComponent ? 'custom-ui' : 'generated-ui',
+          `${slot.fields.length} fields`,
+        ]}
+        actions={(
+          <SettingsActionStrip>
+            <SettingsActionButton
+              onClick={() => controller.resetValues()}
+              accent={accent}
             >
-              {pluginsError}
-            </div>
-          ) : null}
+              <RotateCcw size={12} />
+              Reset Slot
+            </SettingsActionButton>
+            <SettingsActionButton onClick={() => void onRefreshPlugins()}>
+              <RefreshCw size={12} />
+              {pluginsLoading ? 'Refreshing…' : 'Refresh Plugins'}
+            </SettingsActionButton>
+            <SettingsActionButton onClick={() => void onOpenPluginsFolder()}>
+              <ExternalLink size={12} />
+              Open Plugins Folder
+            </SettingsActionButton>
+          </SettingsActionStrip>
+        )}
+        accent={accent}
+      >
+        {pluginsError ? (
+          <div
+            className="rounded border px-3 py-2 text-[11px]"
+            style={{
+              borderColor: 'var(--overlay-danger)',
+              background: 'rgba(255,64,64,0.06)',
+              color: 'var(--overlay-text-primary)',
+            }}
+          >
+            {pluginsError}
+          </div>
+        ) : null}
 
-          {slot.component ? (
-            <slot.component
-              appearance={appearance}
-              slot={slot}
-              host={settingsHost}
-            />
-          ) : (
-            <div className="space-y-3">
-              {scalarFields.length > 0 ? (
-                <SettingsRowGroup>
-                  {scalarFields.map((field) => (
-                    <SettingsRow
+        {slot.component ? (
+          <slot.component
+            appearance={appearance}
+            slot={slot}
+            host={settingsHost}
+          />
+        ) : (
+          <div className="space-y-3">
+            {slot.fields.some(field => !['textarea', 'json', 'path-list', 'extension-list', 'number'].includes(field.kind)) ? (
+              <SettingsRowGroup>
+                {slot.fields
+                  .filter(field => !['textarea', 'json', 'path-list', 'extension-list', 'number'].includes(field.kind))
+                  .map((field) => (
+                    <PluginGeneratedSettingsField
                       key={field.id}
-                      title={field.label}
-                      description={field.description ?? field.kind}
-                      note={field.options.length > 0
-                        ? `Options: ${field.options.map((option) => option.label).join(', ')}`
-                        : undefined}
-                      control={buildGeneratedFieldControl(
-                        field,
-                        resolvedValues[field.id] ?? null,
-                        (nextValue) => controller.setValue(field.id, nextValue),
-                      )}
+                      field={field}
+                      value={resolvedValues[field.id] ?? null}
+                      onChange={(nextValue) => controller.setValue(field.id, nextValue)}
                     />
                   ))}
-                </SettingsRowGroup>
-              ) : null}
+              </SettingsRowGroup>
+            ) : null}
 
-              {longFormFields.map((field) => (
-                <PluginLongFormSettingsField
+            {slot.fields
+              .filter(field => ['textarea', 'json', 'path-list', 'extension-list', 'number'].includes(field.kind))
+              .map((field) => (
+                <PluginGeneratedSettingsField
                   key={field.id}
                   field={field}
                   value={resolvedValues[field.id] ?? null}
@@ -457,112 +779,15 @@ export function PluginSettingsSection({
                 />
               ))}
 
-              {slot.fields.length === 0 ? (
-                <PluginRawSettingsEditor
-                  values={resolvedValues}
-                  onReplace={(nextValues) => controller.patchValues(nextValues)}
-                />
-              ) : null}
-            </div>
-          )}
-        </SettingsSectionBlock>
-      </div>
-
-      <div className="space-y-3">
-        <SettingsSectionBlock
-          title="Slot Details"
-          subtitle="Shared host metadata for this plugin settings lane."
-          tone="muted"
-        >
-          <div className="flex flex-wrap gap-1.5">
-            <ThemeBadge label={slot.pluginName} active />
-            <ThemeBadge label={slot.pluginId} />
-            {slot.rendererEntry ? <ThemeBadge label="custom renderer" /> : null}
+            {slot.fields.length === 0 ? (
+              <PluginRawSettingsEditor
+                values={resolvedValues}
+                onReplace={(nextValues) => controller.patchValues(nextValues)}
+              />
+            ) : null}
           </div>
-          <div className="mt-3 grid grid-cols-1 gap-2 text-[11px]">
-            <div className="rounded border px-3 py-2" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">Slot Id</div>
-              <div className="mt-1 break-all">{slot.id}</div>
-            </div>
-            <div className="rounded border px-3 py-2" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">Keywords</div>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {slot.keywords.length > 0
-                  ? slot.keywords.map((keyword) => (
-                    <SettingsStatusPill key={keyword}>{keyword}</SettingsStatusPill>
-                  ))
-                  : <span className="opacity-45">No keywords declared.</span>}
-              </div>
-            </div>
-            <div className="rounded border px-3 py-2" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">Current Values</div>
-              <div className="mt-1 space-y-1">
-                {currentValueEntries.length > 0 ? currentValueEntries.map(([key, value]) => (
-                  <div key={key} className="flex items-start justify-between gap-3">
-                    <span className="truncate opacity-60">{key}</span>
-                    <span className="max-w-[180px] break-all text-right">{formatPluginSettingsValuePreview(value)}</span>
-                  </div>
-                )) : (
-                  <span className="opacity-45">No values stored yet.</span>
-                )}
-              </div>
-            </div>
-          </div>
-        </SettingsSectionBlock>
-
-        {slot.fields.length > 0 ? (
-          <SettingsSectionBlock
-            title="Field Catalog"
-            subtitle="Schema-backed fields declared by the plugin manifest."
-            tone="muted"
-          >
-            <div className="space-y-2">
-              {slot.fields.map((field) => (
-                <div
-                  key={field.id}
-                  className="rounded border px-3 py-2"
-                  style={{
-                    borderColor: 'var(--overlay-workbench-settings-card-border)',
-                    background: 'rgba(255,255,255,0.02)',
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-semibold">
-                        {field.label}
-                      </div>
-                      <div className="mt-1 text-[10px] opacity-55">
-                        {field.description ?? field.id}
-                      </div>
-                    </div>
-                    <SettingsStatusPill>{field.kind}</SettingsStatusPill>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </SettingsSectionBlock>
-        ) : null}
-
-        <SettingsSectionBlock
-          title="Stored Payload"
-          subtitle="The raw persisted values currently living in the shared settings store."
-          tone="muted"
-        >
-          <pre
-            className="max-h-[360px] overflow-auto rounded border px-3 py-3 text-[11px]"
-            style={{
-              borderColor: 'var(--overlay-workbench-settings-card-border)',
-              background: 'rgba(255,255,255,0.03)',
-              color: 'var(--overlay-text-primary)',
-              fontFamily: appearance.fonts.mono,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
-            {JSON.stringify(storedValues, null, 2) || '{}'}
-          </pre>
-        </SettingsSectionBlock>
-      </div>
+        )}
+      </SettingsSectionBlock>
     </div>
   );
 }

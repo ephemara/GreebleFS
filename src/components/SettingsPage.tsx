@@ -290,8 +290,17 @@ import {
   resolveActiveDockPresentation,
   type DockPlacementMode,
   type DockPreviewSplitMode,
+  type DockPresentationPackageSourceLike,
   type LoadedDockPresentationPackage,
 } from "../config/dockPresentations";
+import {
+  dockTerminalGridGeometry,
+  estimateDockSizeFromTerminalGrid,
+  estimateDockTerminalGridFromSize,
+  formatDockTerminalGrid,
+  normalizeDockTerminalColumns,
+  normalizeDockTerminalRows,
+} from "../config/dockTerminalGrid";
 import type { LoadedExplorerHomePack } from "../config/homePackages";
 import {
   createBuiltInExplorerMenuPack,
@@ -5232,6 +5241,16 @@ export function SettingsPage({
   );
   const availableTopBars = resolvedTopBarSelection.availableTopBars;
   const topBarCatalogLoading = topBarPackagesLoading || themePackagesLoading;
+  const combinedDockPresentationPackageSources = useMemo<DockPresentationPackageSourceLike[]>(
+    () => [
+      ...dockPresentationPackages,
+      ...themePackages.filter(
+        (packageSource): packageSource is LoadedOverlayThemePackage & DockPresentationPackageSourceLike =>
+          Array.isArray((packageSource as DockPresentationPackageSourceLike).dockPresentations),
+      ),
+    ],
+    [dockPresentationPackages, themePackages],
+  );
   const resolvedDockPresentation = useMemo(
     () =>
       resolveActiveDockPresentation({
@@ -5243,19 +5262,23 @@ export function SettingsPage({
         topBarId: settings.dock.topBarId,
         previewEnabled: settings.dock.previewEnabled,
         previewSplitMode: settings.dock.previewSplitMode,
-        packageSources: [...dockPresentationPackages, ...themePackages],
+        defaultTerminalRows: settings.dock.defaultTerminalRows,
+        defaultTerminalColumns: settings.dock.defaultTerminalColumns,
+        packageSources: combinedDockPresentationPackageSources,
       }),
     [
+      combinedDockPresentationPackageSources,
       dockPresentationPackages,
       settings.dock.activePresentationId,
       settings.dock.edgeSize,
       settings.dock.edgeWidth,
       settings.dock.floatingBounds,
+      settings.dock.defaultTerminalColumns,
+      settings.dock.defaultTerminalRows,
       settings.dock.placementMode,
       settings.dock.previewEnabled,
       settings.dock.previewSplitMode,
       settings.dock.topBarId,
-      themePackages,
     ],
   );
   const availableDockPresentations =
@@ -5303,6 +5326,72 @@ export function SettingsPage({
   const dockPreviewSummary = resolvedDockPresentation.previewPolicy.enabled
     ? `Preview ${resolvedDockPresentation.previewPolicy.splitMode}`
     : "Preview disabled";
+  const settingsDockTerminalGrid = useMemo(
+    () =>
+      estimateDockTerminalGridFromSize({
+        edgeSize: resolvedDockPresentation.edgeSize,
+        edgeWidth: resolvedDockPresentation.edgeWidth,
+        terminalFontSize: settings.terminal.fontSize,
+        dockTopBarHeight: dockTerminalGridGeometry.dockTopBarHeight,
+      }),
+    [
+      resolvedDockPresentation.edgeSize,
+      resolvedDockPresentation.edgeWidth,
+      settings.terminal.fontSize,
+    ],
+  );
+  const updateDockGeometryFromPixels = useCallback(
+    (updates: { edgeSize?: number; edgeWidth?: number }) => {
+      const nextEdgeSize = updates.edgeSize ?? settings.dock.edgeSize;
+      const nextEdgeWidth = updates.edgeWidth ?? settings.dock.edgeWidth;
+      const nextGrid = estimateDockTerminalGridFromSize({
+        edgeSize: nextEdgeSize,
+        edgeWidth: nextEdgeWidth,
+        terminalFontSize: settings.terminal.fontSize,
+        dockTopBarHeight: dockTerminalGridGeometry.dockTopBarHeight,
+      });
+      updateDock({
+        edgeSize: nextEdgeSize,
+        edgeWidth: nextEdgeWidth,
+        defaultTerminalRows: nextGrid.rows,
+        defaultTerminalColumns: nextGrid.columns,
+      });
+    },
+    [
+      settings.dock.edgeSize,
+      settings.dock.edgeWidth,
+      settings.terminal.fontSize,
+      updateDock,
+    ],
+  );
+  const updateDockGeometryFromTerminalGrid = useCallback(
+    (updates: { rows?: number; columns?: number }) => {
+      const nextRows = normalizeDockTerminalRows(
+        updates.rows ?? settings.dock.defaultTerminalRows,
+      );
+      const nextColumns = normalizeDockTerminalColumns(
+        updates.columns ?? settings.dock.defaultTerminalColumns,
+      );
+      const nextSize = estimateDockSizeFromTerminalGrid({
+        rows: nextRows,
+        columns: nextColumns,
+        terminalFontSize: settings.terminal.fontSize,
+        dockTopBarHeight: dockTerminalGridGeometry.dockTopBarHeight,
+      });
+      updateDock({
+        edgeSize: nextSize.edgeSize,
+        edgeWidth: nextSize.edgeWidth,
+        defaultTerminalRows: nextRows,
+        defaultTerminalColumns: nextColumns,
+      });
+    },
+    [
+      settings.dock.defaultTerminalColumns,
+      settings.dock.defaultTerminalRows,
+      settings.terminal.fontSize,
+      updateDock,
+    ],
+  );
   const followThemeTopBarDetail =
     resolvedTopBarSelection.resolvedFrom === "theme-default"
       ? `${appearance.baseTheme.name} explicitly defaults to ${resolvedTopBarSelection.topBar.name}.`
@@ -13900,7 +13989,9 @@ export function SettingsPage({
                   step={10}
                   value={settings.dock.edgeSize}
                   onChange={(event) =>
-                    updateDock({ edgeSize: Number(event.target.value) })
+                    updateDockGeometryFromPixels({
+                      edgeSize: Number(event.target.value),
+                    })
                   }
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
                   style={settingsFieldStyle}
@@ -13917,11 +14008,78 @@ export function SettingsPage({
                   step={10}
                   value={settings.dock.edgeWidth}
                   onChange={(event) =>
-                    updateDock({ edgeWidth: Number(event.target.value) })
+                    updateDockGeometryFromPixels({
+                      edgeWidth: Number(event.target.value),
+                    })
                   }
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
                   style={settingsFieldStyle}
                 />
+              </div>
+
+              <div
+                className="space-y-3 rounded border p-3 md:col-span-2"
+                style={{
+                  borderColor: border,
+                  background: "rgba(255,255,255,0.025)",
+                }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                      Terminal Grid Defaults
+                    </div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Edge and floating dock sizes resolve to terminal rows and columns in real time.
+                    </p>
+                  </div>
+                  <SettingsStatusPill>
+                    {formatDockTerminalGrid(settingsDockTerminalGrid)} live
+                  </SettingsStatusPill>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                      Default Rows
+                    </label>
+                    <input
+                      aria-label="Dock Default Terminal Rows"
+                      type="number"
+                      min={dockTerminalGridGeometry.minRows}
+                      max={dockTerminalGridGeometry.maxRows}
+                      step={1}
+                      value={settings.dock.defaultTerminalRows}
+                      onChange={(event) =>
+                        updateDockGeometryFromTerminalGrid({
+                          rows: Number(event.target.value),
+                        })
+                      }
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={settingsFieldStyle}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                      Default Columns
+                    </label>
+                    <input
+                      aria-label="Dock Default Terminal Columns"
+                      type="number"
+                      min={dockTerminalGridGeometry.minColumns}
+                      max={dockTerminalGridGeometry.maxColumns}
+                      step={1}
+                      value={settings.dock.defaultTerminalColumns}
+                      onChange={(event) =>
+                        updateDockGeometryFromTerminalGrid({
+                          columns: Number(event.target.value),
+                        })
+                      }
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={settingsFieldStyle}
+                    />
+                  </div>
+                </div>
               </div>
 
               <label

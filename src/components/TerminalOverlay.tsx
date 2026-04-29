@@ -326,6 +326,10 @@ interface TerminalPaneTelemetry {
   rows: number | null;
   cols: number | null;
 }
+interface TerminalPaneViewportMetrics {
+  rows: number;
+  cols: number;
+}
 type SidebarPanel = 'dirs' | 'cmds' | 'python' | null;
 type SidebarPanelId = Exclude<SidebarPanel, null>;
 
@@ -1732,6 +1736,7 @@ export function TerminalOverlay({
     goPtyTerminalHostDegradedForSession,
   );
   const [terminalActionMessage, setTerminalActionMessage] = useState<string | null>(null);
+  const [paneViewportMetricsById, setPaneViewportMetricsById] = useState<Record<string, TerminalPaneViewportMetrics>>({});
   const paneTelemetryRef = useRef<Record<string, TerminalPaneTelemetry>>({
     [initialPaneIdRef.current]: createPaneTelemetry(),
   });
@@ -1916,6 +1921,14 @@ export function TerminalOverlay({
       delete next[paneId];
       return next;
     });
+    setPaneViewportMetricsById(prev => {
+      if (!(paneId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[paneId];
+      return next;
+    });
     delete paneTelemetryRef.current[paneId];
     delete paneOutputBuffersRef.current[paneId];
   }, [clearTerminalReady]);
@@ -2046,6 +2059,16 @@ export function TerminalOverlay({
       rows,
       cols,
     }));
+    setPaneViewportMetricsById(prev => {
+      const current = prev[paneId];
+      if (current?.rows === rows && current.cols === cols) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [paneId]: { rows, cols },
+      };
+    });
   }, [updatePaneTelemetry]);
 
   const copyPaneOutput = useCallback(async (paneId: string) => {
@@ -2864,9 +2887,20 @@ export function TerminalOverlay({
     splitActivePane,
     toggleBroadcastActiveTab,
   ]);
+  const activePaneViewportMetrics =
+    paneViewportMetricsById[activePaneId] ??
+    (() => {
+      const telemetry = paneTelemetryRef.current[activePaneId];
+      return telemetry?.rows && telemetry.cols
+        ? { rows: telemetry.rows, cols: telemetry.cols }
+        : null;
+    })();
+  const activePaneGridLabel = activePaneViewportMetrics
+    ? `${activePaneViewportMetrics.cols} x ${activePaneViewportMetrics.rows}`
+    : 'grid pending';
   const terminalToolbarDetail = terminalActionMessage
     ?? (activeTerminalReady
-      ? `${activeTabReadyCount}/${activeTabPaneIds.length} panes live · ${activeTab?.broadcastInput ? 'broadcasting input' : 'focused input'}`
+      ? `${activeTabReadyCount}/${activeTabPaneIds.length} panes live · ${activePaneGridLabel} · ${activeTab?.broadcastInput ? 'broadcasting input' : 'focused input'}`
       : `${activeTabLabel} starting...`);
   const sidebarToggleLabel = sidebarOpen ? 'Hide Sidebar' : 'Show Sidebar';
 
@@ -3076,6 +3110,9 @@ export function TerminalOverlay({
       </div>
       <span className="text-[9px] font-mono opacity-20">
         {tabs.length} workspace{tabs.length === 1 ? '' : 's'} · {totalPaneCount} pane{totalPaneCount === 1 ? '' : 's'}
+      </span>
+      <span className="text-[9px] font-mono opacity-35">
+        {activePaneGridLabel}
       </span>
       <div className="flex-1" />
       <span className="text-[9px] opacity-20 select-none" style={{ fontFamily: appearance.fonts.mono }}>

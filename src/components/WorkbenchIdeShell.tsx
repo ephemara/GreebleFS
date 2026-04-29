@@ -2,7 +2,9 @@ import {
   useCallback,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
+  type DragEvent,
   type ReactNode,
 } from 'react';
 
@@ -22,6 +24,7 @@ import {
   focusDockSurface,
   hideDockSurface,
   moveSurfaceToDockPlacement,
+  reorderDockSurfaceTabs,
   toggleDockMaximize,
   toggleDockStackCollapsed,
   updateDockSplitSizes,
@@ -228,6 +231,7 @@ export function WorkbenchIdeShell({
     () => surfaces.filter(surface => surface.railShortcut && surface.ideNavigationTier === 'secondary'),
     [surfaces],
   );
+  const [draggedSurfaceTabId, setDraggedSurfaceTabId] = useState<string | null>(null);
 
   const commitLayoutState = useCallback((nextState: IdeWorkbenchLayoutState) => {
     onLayoutStateChange(nextState);
@@ -257,6 +261,27 @@ export function WorkbenchIdeShell({
   const handleToggleStackMaximized = useCallback((stackId: string) => {
     commitLayoutState(toggleDockMaximize(layoutState, stackId));
   }, [commitLayoutState, layoutState]);
+
+  const handleSurfaceTabDragStart = useCallback((
+    event: DragEvent<HTMLButtonElement>,
+    surfaceId: string,
+  ) => {
+    setDraggedSurfaceTabId(surfaceId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', surfaceId);
+  }, []);
+
+  const handleSurfaceTabDrop = useCallback((
+    event: DragEvent<HTMLButtonElement>,
+    targetSurfaceId: string,
+  ) => {
+    event.preventDefault();
+    const draggedSurfaceId = event.dataTransfer.getData('text/plain') || draggedSurfaceTabId;
+    if (draggedSurfaceId && draggedSurfaceId !== targetSurfaceId) {
+      commitLayoutState(reorderDockSurfaceTabs(layoutState, draggedSurfaceId, targetSurfaceId));
+    }
+    setDraggedSurfaceTabId(null);
+  }, [commitLayoutState, draggedSurfaceTabId, layoutState]);
 
   const renderStackSurfaceActions = useCallback((
     stack: DockStackNode,
@@ -453,7 +478,18 @@ export function WorkbenchIdeShell({
                 <button
                   key={`${stack.id}:${surface.id}`}
                   type="button"
+                  draggable={surfacesInStack.length > 1}
                   onClick={() => handleFocusSurface(surface.id)}
+                  onDragStart={event => handleSurfaceTabDragStart(event, surface.id)}
+                  onDragEnd={() => setDraggedSurfaceTabId(null)}
+                  onDragOver={event => {
+                    if (surfacesInStack.length > 1 && draggedSurfaceTabId !== surface.id) {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                    }
+                  }}
+                  onDrop={event => handleSurfaceTabDrop(event, surface.id)}
+                  data-ide-workbench-stack-tab={surface.id}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -468,6 +504,7 @@ export function WorkbenchIdeShell({
                       : 'var(--overlay-workbench-chrome-button-bg)',
                     color: isActive ? theme.palette.textPrimary : theme.palette.textMuted,
                     cursor: 'pointer',
+                    opacity: draggedSurfaceTabId === surface.id ? 0.5 : 1,
                   }}
                   title={surface.description}
                 >
@@ -549,7 +586,10 @@ export function WorkbenchIdeShell({
     );
   }, [
     explorerSurface,
+    draggedSurfaceTabId,
     handleFocusSurface,
+    handleSurfaceTabDragStart,
+    handleSurfaceTabDrop,
     handleToggleStackCollapsed,
     handleToggleStackMaximized,
     layoutState.focusedSurfaceId,
@@ -732,7 +772,18 @@ export function WorkbenchIdeShell({
                 <button
                   key={`${floatingNode.id}:${surfaceId}`}
                   type="button"
+                  draggable={floatingNode.tabs.length > 1}
                   onClick={() => handleFocusSurface(surfaceId)}
+                  onDragStart={event => handleSurfaceTabDragStart(event, surfaceId)}
+                  onDragEnd={() => setDraggedSurfaceTabId(null)}
+                  onDragOver={event => {
+                    if (floatingNode.tabs.length > 1 && draggedSurfaceTabId !== surfaceId) {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                    }
+                  }}
+                  onDrop={event => handleSurfaceTabDrop(event, surfaceId)}
+                  data-ide-workbench-floating-tab={surfaceId}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -747,6 +798,7 @@ export function WorkbenchIdeShell({
                       : 'var(--overlay-workbench-chrome-button-bg)',
                     color: isActive ? theme.palette.textPrimary : theme.palette.textMuted,
                     cursor: 'pointer',
+                    opacity: draggedSurfaceTabId === surfaceId ? 0.5 : 1,
                   }}
                 >
                   {surface.icon}
@@ -816,9 +868,12 @@ export function WorkbenchIdeShell({
     );
   }, [
     commitLayoutState,
+    draggedSurfaceTabId,
     handleFocusSurface,
     handleHideSurface,
     handleMoveSurface,
+    handleSurfaceTabDragStart,
+    handleSurfaceTabDrop,
     layoutState,
     renderSurfaceBody,
     surfaceById,

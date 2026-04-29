@@ -58,7 +58,10 @@ import {
   overlayVisualControls,
 } from '../config/overlayWindow';
 import { mobileShareMenuHoverDelayMs, type MobileRemoteAccessMode } from '../config/mobileAccess';
-import type { ResolvedWorkbenchRenderRuntime } from '../config/workbenchRenderRuntime';
+import {
+  groupPanelsForWorkbenchNavigation,
+  type ResolvedWorkbenchRenderRuntime,
+} from '../config/workbenchRenderRuntime';
 import type {
   OverlayWindowAnchor,
   TerminalWindowMode,
@@ -104,19 +107,19 @@ interface WorkbenchTopBarProps {
   onSetWindowMode: (mode: TerminalWindowMode) => void;
   onOpenCommandPalette: () => void;
   onToggleOverlayAnchor: () => void;
-  dockPlacementMode: DockPlacementMode;
-  dockAllowedPlacements: DockPlacementMode[];
-  dockEdgeSize: number;
-  dockEdgeWidth: number;
-  dockDefaultTerminalRows: number;
-  dockDefaultTerminalColumns: number;
-  dockTerminalGrid: DockTerminalGrid;
-  dockTerminalFontSize: number;
-  dockTopBarHeight: number;
-  dockPreviewEnabled: boolean;
-  dockPreviewSplitMode: DockPreviewSplitMode;
-  onSetDockPlacementMode: (placementMode: DockPlacementMode) => void;
-  onUpdateDockSettings: (updates: {
+  dockPlacementMode?: DockPlacementMode;
+  dockAllowedPlacements?: DockPlacementMode[];
+  dockEdgeSize?: number;
+  dockEdgeWidth?: number;
+  dockDefaultTerminalRows?: number;
+  dockDefaultTerminalColumns?: number;
+  dockTerminalGrid?: DockTerminalGrid;
+  dockTerminalFontSize?: number;
+  dockTopBarHeight?: number;
+  dockPreviewEnabled?: boolean;
+  dockPreviewSplitMode?: DockPreviewSplitMode;
+  onSetDockPlacementMode?: (placementMode: DockPlacementMode) => void;
+  onUpdateDockSettings?: (updates: {
     edgeSize?: number;
     edgeWidth?: number;
     defaultTerminalRows?: number;
@@ -124,7 +127,7 @@ interface WorkbenchTopBarProps {
     previewEnabled?: boolean;
     previewSplitMode?: DockPreviewSplitMode;
   }) => void;
-  onOpenDockSettings: () => void;
+  onOpenDockSettings?: () => void;
   onClose: () => void;
   accent: string;
   blur: boolean;
@@ -329,8 +332,10 @@ export function WorkbenchTopBar({
   availableLayoutProfiles,
   panels,
   openPanelIds,
+  pinnedPanelIds,
   activePanelId,
   onPanelSelect,
+  onPanelToggle,
   onPanelClose,
   onPanelReorder,
   onOpenSettings,
@@ -340,20 +345,23 @@ export function WorkbenchTopBar({
   onSetWindowMode,
   onOpenCommandPalette,
   onToggleOverlayAnchor,
-  dockPlacementMode,
-  dockAllowedPlacements,
-  dockEdgeSize,
-  dockEdgeWidth,
-  dockDefaultTerminalRows,
-  dockDefaultTerminalColumns,
-  dockTerminalGrid,
-  dockTerminalFontSize,
-  dockTopBarHeight,
-  dockPreviewEnabled,
-  dockPreviewSplitMode,
-  onSetDockPlacementMode,
-  onUpdateDockSettings,
-  onOpenDockSettings,
+  dockPlacementMode = 'bottom-edge',
+  dockAllowedPlacements = ['top-edge', 'bottom-edge', 'floating'],
+  dockEdgeSize = 520,
+  dockEdgeWidth = 1280,
+  dockDefaultTerminalRows = dockTerminalGridGeometry.defaultRows,
+  dockDefaultTerminalColumns = dockTerminalGridGeometry.defaultColumns,
+  dockTerminalGrid = {
+    rows: dockTerminalGridGeometry.defaultRows,
+    columns: dockTerminalGridGeometry.defaultColumns,
+  },
+  dockTerminalFontSize = dockTerminalGridGeometry.defaultTerminalFontSize,
+  dockTopBarHeight = dockTerminalGridGeometry.dockTopBarHeight,
+  dockPreviewEnabled = true,
+  dockPreviewSplitMode = 'pane',
+  onSetDockPlacementMode = () => {},
+  onUpdateDockSettings = () => {},
+  onOpenDockSettings = () => {},
   onClose,
   accent,
   blur,
@@ -453,7 +461,18 @@ export function WorkbenchTopBar({
     () => openPanels.filter(panel => panel.id !== 'explorer' && panel.id !== 'settings'),
     [openPanels],
   );
-  const surfaceControlsMenuWidth = Math.max(286, Math.min(360, viewportSize.width - 24));
+  const spawnablePanelGroups = useMemo(
+    () => groupPanelsForWorkbenchNavigation(
+      panels.filter(panel => !pinnedPanelIds.includes(panel.id)),
+    ),
+    [panels, pinnedPanelIds],
+  );
+  const openPanelIdSet = useMemo(() => new Set(openPanelIds), [openPanelIds]);
+  const enforcedOpenPanelIdSet = useMemo(
+    () => new Set(layoutProfile.behavior.enforcedOpenPanelIds),
+    [layoutProfile.behavior.enforcedOpenPanelIds],
+  );
+  const surfaceControlsMenuWidth = Math.max(320, Math.min(420, viewportSize.width - 24));
   const updateSurfaceControlsMenuPlacement = useCallback(() => {
     const anchor = menuRef.current?.getBoundingClientRect();
     if (!anchor) {
@@ -820,6 +839,192 @@ export function WorkbenchTopBar({
       defaultTerminalColumns: nextGrid.columns,
     });
   };
+  const spawnablePanelCount = spawnablePanelGroups.reduce(
+    (total, group) => total + group.panels.length,
+    0,
+  );
+  const panelSpawnMenu = spawnablePanelGroups.length > 0 ? (
+    <div
+      data-workbench-panel-spawner
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        border: '1px solid var(--overlay-workbench-chrome-border)',
+        borderRadius: workbench.metrics.controlRadius,
+        background: 'rgba(255,255,255,0.025)',
+        padding: 8,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <span style={{ color: text, fontSize: 11, fontWeight: 800 }}>Spawn Panels</span>
+        <span
+          style={{
+            color: muted,
+            fontSize: 9,
+            fontWeight: 800,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+          }}
+        >
+          {spawnablePanelCount} Ready
+        </span>
+      </div>
+      <div style={{ color: muted, fontSize: 10, lineHeight: 1.35 }}>
+        Open built-in tools and enabled plugin panels without leaving the top bar.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {spawnablePanelGroups.map(group => (
+          <div key={`panel-spawn-group:${group.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <div
+              style={{
+                color: muted,
+                fontSize: 9,
+                fontWeight: 800,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                padding: '0 2px',
+              }}
+            >
+              {group.label}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {group.panels.map(panel => {
+                const isOpen = openPanelIdSet.has(panel.id);
+                const isActive = activePanelId === panel.id;
+                const isCloseable = isOpen
+                  && panel.id !== 'explorer'
+                  && !pinnedPanelIds.includes(panel.id)
+                  && !enforcedOpenPanelIdSet.has(panel.id);
+                const statusLabel = isActive ? 'Active' : isOpen ? 'Open' : 'Spawn';
+                const panelKindLabel = panel.kind === 'folder-plugin' ? 'Plugin' : 'Built-in';
+                return (
+                  <div
+                    key={`panel-spawn:${panel.id}`}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: isCloseable ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)',
+                      gap: 5,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      aria-label={`${isOpen ? 'Focus' : 'Open'} ${panel.label} panel`}
+                      onClick={() => {
+                        if (isOpen) {
+                          onPanelSelect(panel.id);
+                          return;
+                        }
+
+                        onPanelToggle(panel.id);
+                      }}
+                      style={{
+                        minWidth: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '7px 8px',
+                        borderRadius: workbench.metrics.controlRadius,
+                        border: `1px solid ${isActive ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                        background: isActive
+                          ? 'var(--overlay-workbench-chrome-tab-active-bg)'
+                          : isOpen
+                            ? 'var(--overlay-workbench-chrome-tab-bg)'
+                            : 'var(--overlay-workbench-chrome-button-bg)',
+                        color: isActive ? text : muted,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ display: 'flex', color: isActive ? accent : muted, flexShrink: 0 }}>
+                        {panel.icon}
+                      </span>
+                      <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+                        <span
+                          style={{
+                            color: isActive ? text : 'var(--overlay-text-primary)',
+                            fontSize: 11,
+                            fontWeight: 800,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {panel.label}
+                        </span>
+                        <span
+                          style={{
+                            color: muted,
+                            fontSize: 9,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {panel.description}
+                        </span>
+                      </span>
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          color: isActive ? accent : muted,
+                          fontSize: 8,
+                          fontWeight: 900,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          padding: '3px 5px',
+                          borderRadius: 999,
+                          border: `1px solid ${isActive ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                          background: isActive
+                            ? 'var(--overlay-workbench-chrome-button-active-bg)'
+                            : 'rgba(255,255,255,0.035)',
+                        }}
+                      >
+                        {statusLabel}
+                      </span>
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          color: panel.kind === 'folder-plugin' ? accent : muted,
+                          fontSize: 8,
+                          fontWeight: 800,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {panelKindLabel}
+                      </span>
+                    </button>
+                    {isCloseable ? (
+                      <button
+                        type="button"
+                        aria-label={`Close ${panel.label} panel`}
+                        title={`Close ${panel.label}`}
+                        onClick={() => onPanelClose(panel.id)}
+                        style={{
+                          width: 30,
+                          borderRadius: workbench.metrics.controlRadius,
+                          border: '1px solid var(--overlay-workbench-chrome-border)',
+                          background: 'var(--overlay-workbench-chrome-button-bg)',
+                          color: muted,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <X size={11} />
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  ) : null;
 
   const surfaceControlsMenu = (
     <div
@@ -872,6 +1077,8 @@ export function WorkbenchTopBar({
           Zoom and transparency without native blur.
         </div>
       </div>
+
+      {panelSpawnMenu}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {surfaceControlRows.map(control => (
@@ -1697,7 +1904,7 @@ export function WorkbenchTopBar({
           return null;
         }
 
-        return renderTopBarControl('dock-placement', motionStepIndex);
+        return renderCompactControl('dock-placement', motionStepIndex);
       case 'mobile-share':
       case 'blur-toggle':
         return (
@@ -2380,18 +2587,25 @@ export function WorkbenchTopBar({
             key={panel.id}
             draggable
             onClick={() => onPanelSelect(panel.id)}
-            onDragStart={() => setDraggedPanelId(panel.id)}
+            onDragStart={event => {
+              setDraggedPanelId(panel.id);
+              event.dataTransfer.effectAllowed = 'move';
+              event.dataTransfer.setData('text/plain', panel.id);
+            }}
             onDragEnd={() => setDraggedPanelId(null)}
             onDragOver={event => {
               event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
             }}
             onDrop={event => {
               event.preventDefault();
-              if (draggedPanelId && draggedPanelId !== panel.id) {
-                onPanelReorder(draggedPanelId, panel.id);
+              const droppedPanelId = event.dataTransfer.getData('text/plain') || draggedPanelId;
+              if (droppedPanelId && droppedPanelId !== panel.id) {
+                onPanelReorder(droppedPanelId, panel.id);
               }
               setDraggedPanelId(null);
             }}
+            data-workbench-top-bar-tab={panel.id}
             {...panelTabMotion.motionDataAttributes}
             onPointerEnter={panelTabMotion.onPointerEnter}
             onPointerLeave={panelTabMotion.onPointerLeave}

@@ -268,6 +268,75 @@ const TEST_PLUGIN_SETTINGS_SLOT: OverlayPluginSettingsSlotContribution = {
   component: null,
 };
 
+const TEST_GALLERY_PLUGIN_SETTINGS_SLOT: OverlayPluginSettingsSlotContribution = {
+  id: 'gallery.plugin.settings.main',
+  pluginId: 'gallery-plugin',
+  pluginName: 'Gallery Plugin',
+  title: 'Gallery Settings',
+  description: 'Gallery plugin settings generated from manifest fields.',
+  iconName: 'Images',
+  keywords: ['gallery', 'folders', 'extensions'],
+  order: 30,
+  rendererEntry: null,
+  defaults: {
+    rootPaths: '',
+    fileExtensions: 'jpg, jpeg, png',
+    resultLimit: 240,
+    includeHidden: false,
+  },
+  fields: [
+    {
+      id: 'rootPaths',
+      label: 'Folder Paths',
+      description: 'Folders to include in the gallery.',
+      kind: 'path-list',
+      options: [],
+      order: 10,
+      keywords: ['folder'],
+      defaultValue: '',
+    },
+    {
+      id: 'fileExtensions',
+      label: 'File Types',
+      description: 'Image file extensions.',
+      kind: 'extension-list',
+      options: [
+        { value: 'jpg', label: 'JPG' },
+        { value: 'jpeg', label: 'JPEG' },
+        { value: 'png', label: 'PNG' },
+        { value: 'webp', label: 'WebP' },
+      ],
+      order: 20,
+      keywords: ['extensions'],
+      defaultValue: 'jpg, jpeg, png',
+    },
+    {
+      id: 'resultLimit',
+      label: 'Result Limit',
+      description: 'Maximum gallery results.',
+      kind: 'number',
+      options: [],
+      order: 30,
+      keywords: ['limit'],
+      defaultValue: 240,
+      min: 24,
+      max: 500,
+      step: 24,
+    },
+    {
+      id: 'includeHidden',
+      label: 'Include Hidden Files',
+      description: 'Include hidden indexed files.',
+      kind: 'boolean',
+      options: [],
+      order: 40,
+      keywords: ['hidden'],
+      defaultValue: false,
+    },
+  ],
+  component: null,
+};
+
 describe('SettingsPage behavior', () => {
   beforeEach(() => {
     useSettingsStore.getState().resetToDefaults();
@@ -1199,6 +1268,69 @@ describe('SettingsPage behavior', () => {
       enabled: true,
       label: 'smoke-lane',
     });
+  });
+
+  it('renders plugin folder pickers, shared sliders, toggles, and extension buttons', async () => {
+    const user = userEvent.setup();
+    const openExplorerPickerMock = vi
+      .spyOn(explorerPickerRuntime, 'openExplorerPicker')
+      .mockResolvedValue({
+        cancelled: false,
+        completedAt: Date.now(),
+        currentDirectory: 'C:/Pictures',
+        entries: [
+          { kind: 'folder', name: 'Pictures', path: 'C:/Pictures' },
+          { kind: 'folder', name: 'Reference', path: 'D:/Reference' },
+        ],
+        nonce: 'picker-gallery-1',
+      });
+
+    renderSettingsPage({
+      pluginSettingsSlots: [TEST_GALLERY_PLUGIN_SETTINGS_SLOT],
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Plugins Path' }));
+
+    expect(screen.getByText('Folder Paths')).toBeInTheDocument();
+    expect(screen.getByText('File Types')).toBeInTheDocument();
+    expect(screen.queryByText('Stored Payload')).not.toBeInTheDocument();
+    expect(screen.queryByText('Field Catalog')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /add folder/i }));
+
+    expect(openExplorerPickerMock).toHaveBeenCalledWith({
+      kind: 'openFolders',
+      presentation: 'window',
+      title: 'Add Folder Paths',
+      confirmLabel: 'Add Folders',
+      allowCreateDirectory: true,
+      startPath: null,
+    });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.plugins.valuesByPluginId['gallery-plugin']).toMatchObject({
+        rootPaths: 'C:/Pictures\nD:/Reference',
+      });
+    });
+
+    const webpToggle = screen.getByRole('checkbox', { name: '.webp' });
+    expect(webpToggle).not.toBeChecked();
+    await user.click(webpToggle);
+
+    const customExtensionsInput = screen.getByRole('textbox', { name: /custom extensions/i });
+    await user.type(customExtensionsInput, 'heic, exr');
+
+    expect(useSettingsStore.getState().settings.plugins.valuesByPluginId['gallery-plugin']).toMatchObject({
+      fileExtensions: 'jpg, jpeg, png, webp, heic, exr',
+    });
+
+    const includeHiddenToggle = screen.getByRole('checkbox', { name: /include hidden files/i });
+    await user.click(includeHiddenToggle);
+
+    expect(useSettingsStore.getState().settings.plugins.valuesByPluginId['gallery-plugin']).toMatchObject({
+      includeHidden: true,
+    });
+    expect(screen.getByRole('slider', { name: /result limit/i })).toBeInTheDocument();
   });
 
   it('updates interaction motion settings and exposes motion-lab preview surfaces', async () => {
