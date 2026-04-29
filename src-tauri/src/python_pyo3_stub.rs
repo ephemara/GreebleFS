@@ -88,12 +88,13 @@ mod tests {
 
     #[test]
     fn embedded_python_stub_keeps_result_decoder_available() {
-        let decoded = decode_embedded_python_result::<serde_json::Value>(&PythonEmbeddedSnippetResponse {
-            callable_name: "main".to_string(),
-            result_json: "{\"value\":42}".to_string(),
-            python_version: "stub".to_string(),
-        })
-        .expect("stub should still decode JSON payloads");
+        let decoded =
+            decode_embedded_python_result::<serde_json::Value>(&PythonEmbeddedSnippetResponse {
+                callable_name: "main".to_string(),
+                result_json: "{\"value\":42}".to_string(),
+                python_version: "stub".to_string(),
+            })
+            .expect("stub should still decode JSON payloads");
 
         assert_eq!(decoded["value"], 42);
     }

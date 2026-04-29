@@ -1381,6 +1381,8 @@ mod tests {
     fn safe_relative_archive_paths_reject_traversal_and_absolute_paths() {
         assert!(is_safe_relative_archive_path(Path::new("nested/file.txt")));
         assert!(!is_safe_relative_archive_path(Path::new("../escape.txt")));
-        assert!(!is_safe_relative_archive_path(Path::new("/absolute/path.txt")));
+        assert!(!is_safe_relative_archive_path(Path::new(
+            "/absolute/path.txt"
+        )));
     }
 }

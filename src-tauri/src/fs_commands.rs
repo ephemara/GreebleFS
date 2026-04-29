@@ -13,8 +13,8 @@ use crate::entry_size_cache::{
 };
 use crate::explorer_identity::{
     apply_move_operation_continuity, build_content_revision, build_virtual_identity,
-    prepare_move_operation_continuity, resolve_fast_local_listing_identity,
-    resolve_local_identity, ExplorerIdentityKind, ExplorerIdentityManager,
+    prepare_move_operation_continuity, resolve_fast_local_listing_identity, resolve_local_identity,
+    ExplorerIdentityKind, ExplorerIdentityManager,
 };
 use crate::explorer_pro_commands::FsBatchRenameItem;
 use crate::telemetry::{finish_native_span, start_native_span};

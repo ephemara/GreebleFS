@@ -41,8 +41,6 @@ pub struct TailscaleConnectRequest {
 #[derive(Debug, Clone)]
 pub struct TailscaleShareTarget {
     pub preferred_host: String,
-    pub cert_domain: Option<String>,
-    pub https_ready: bool,
 }
 
 #[command]
@@ -157,55 +155,11 @@ pub(crate) fn get_tailscale_share_target() -> Result<TailscaleShareTarget, Strin
         );
     }
 
-    let cert_domain = status.cert_domains.first().cloned();
     let preferred_host = get_tailscale_preferred_host(&status).ok_or_else(|| {
         "Tailscale is connected, but no reachable tailnet hostname or IP was found.".to_string()
     })?;
 
-    Ok(TailscaleShareTarget {
-        preferred_host,
-        cert_domain: cert_domain.clone(),
-        https_ready: cert_domain.is_some(),
-    })
-}
-
-pub(crate) async fn generate_tailscale_tls(
-    cert_domain: &str,
-) -> Result<axum_server::tls_rustls::RustlsConfig, String> {
-    let certificate_dir =
-        std::env::temp_dir().join(format!("greeblefs-tailscale-cert-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&certificate_dir)
-        .map_err(|error| format!("Failed to create Tailscale certificate temp dir: {error}"))?;
-
-    let cert_path = certificate_dir.join("certificate.pem");
-    let key_path = certificate_dir.join("certificate.key");
-
-    let args = vec![
-        "cert".to_string(),
-        format!("--cert-file={}", cert_path.display()),
-        format!("--key-file={}", key_path.display()),
-        cert_domain.to_string(),
-    ];
-
-    let certificate_result = async {
-        run_tailscale_command("tailscale cert", &args)?;
-
-        let cert_pem = std::fs::read(&cert_path)
-            .map_err(|error| format!("Failed to read generated Tailscale certificate: {error}"))?;
-        let key_pem = std::fs::read(&key_path)
-            .map_err(|error| format!("Failed to read generated Tailscale key: {error}"))?;
-
-        axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)
-            .await
-            .map_err(|error| format!("Failed to build Tailscale TLS config: {error}"))
-    }
-    .await;
-
-    let _ = std::fs::remove_file(&cert_path);
-    let _ = std::fs::remove_file(&key_path);
-    let _ = std::fs::remove_dir(&certificate_dir);
-
-    certificate_result
+    Ok(TailscaleShareTarget { preferred_host })
 }
 
 pub(crate) fn get_tailscale_status_snapshot() -> TailscaleStatusSnapshot {
@@ -397,10 +351,9 @@ fn suppress_non_blocking_windows_dns_health_messages(
     let filtered_messages: Vec<String> = messages
         .into_iter()
         .filter(|message| {
-            let should_suppress =
-                is_windows_tailscale_dns_access_denied_message(message)
-                    || (has_windows_dns_access_denied_warning
-                        && is_generic_windows_access_denied_message(message));
+            let should_suppress = is_windows_tailscale_dns_access_denied_message(message)
+                || (has_windows_dns_access_denied_warning
+                    && is_generic_windows_access_denied_message(message));
             suppressed_any_message |= should_suppress;
             !should_suppress
         })

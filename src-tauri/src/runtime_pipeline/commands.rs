@@ -2309,12 +2309,10 @@ mod tests {
 
     #[test]
     fn runtime_archive_virtual_paths_round_trip_and_normalize_entries() {
-        let built = build_runtime_archive_virtual_path(
-            r"C:\assets\shots.zip",
-            r"\nested\frames\hero.png\",
-        );
-        let parsed = parse_runtime_archive_virtual_path(&built)
-            .expect("archive virtual path should parse");
+        let built =
+            build_runtime_archive_virtual_path(r"C:\assets\shots.zip", r"\nested\frames\hero.png\");
+        let parsed =
+            parse_runtime_archive_virtual_path(&built).expect("archive virtual path should parse");
 
         assert_eq!(parsed.archive_path, r"C:\assets\shots.zip");
         assert_eq!(parsed.entry_path, "nested/frames/hero.png");
@@ -2360,7 +2358,9 @@ mod tests {
 
     #[test]
     fn repo_command_write_detection_distinguishes_status_from_mutations() {
-        assert!(!extension_host_repo_command_requires_write(&[String::from("status")]));
+        assert!(!extension_host_repo_command_requires_write(&[
+            String::from("status")
+        ]));
         assert!(!extension_host_repo_command_requires_write(&[
             String::from("branch"),
             String::from("--show-current"),

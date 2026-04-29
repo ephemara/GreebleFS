@@ -1087,8 +1087,8 @@ mod tests {
 
         let outside = temp.path().join("outside.rs");
         fs::write(&outside, "pub fn outside() {}\n").expect("write outside");
-        let error = ensure_path_within_root(&root, &outside)
-            .expect_err("outside path should be rejected");
+        let error =
+            ensure_path_within_root(&root, &outside).expect_err("outside path should be rejected");
         assert!(error.contains("outside the indexed root"));
     }
 

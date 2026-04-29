@@ -19,7 +19,7 @@ use super::types::{
     ActiveServer, LanShareResult, ShareState, ACTIVE_SERVER, HTTPS_DEFAULT_PORT, HTTP_DEFAULT_PORT,
     MDNS_DOMAIN,
 };
-use crate::tailscale_commands::{generate_tailscale_tls, get_tailscale_share_target};
+use crate::tailscale_commands::get_tailscale_share_target;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ShareRemoteAccessMode {
@@ -31,6 +31,30 @@ fn normalize_remote_access_mode(value: Option<&str>) -> ShareRemoteAccessMode {
     match value.map(str::trim) {
         Some("tailscale") => ShareRemoteAccessMode::Tailscale,
         _ => ShareRemoteAccessMode::Lan,
+    }
+}
+
+fn resolve_preferred_share_address(
+    remote_access_mode: ShareRemoteAccessMode,
+    address: &str,
+    local_https_address: Option<&String>,
+    ios_address: Option<&String>,
+    mdns_address: Option<&String>,
+    tailscale_address: Option<&String>,
+) -> String {
+    match remote_access_mode {
+        ShareRemoteAccessMode::Tailscale => tailscale_address
+            .cloned()
+            .or_else(|| address.starts_with("http://").then(|| address.to_string()))
+            .or_else(|| local_https_address.cloned())
+            .or_else(|| mdns_address.map(|host| format_http_url(host, HTTP_DEFAULT_PORT)))
+            .unwrap_or_else(|| address.to_string()),
+        ShareRemoteAccessMode::Lan => Some(address.to_string())
+            .filter(|address| !address.contains("127.0.0.1"))
+            .or_else(|| local_https_address.cloned())
+            .or_else(|| ios_address.cloned())
+            .or_else(|| mdns_address.map(|host| format_http_url(host, HTTP_DEFAULT_PORT)))
+            .unwrap_or_else(|| address.to_string()),
     }
 }
 
@@ -118,78 +142,53 @@ pub async fn start_lan_share(
             .ok();
     });
 
-    let (
-        https_handle,
-        https_task,
-        local_https_address,
-        tailscale_https_address,
-        tailscale_https_ready,
-    ) = match find_available_port(HTTPS_DEFAULT_PORT, &[http_port]) {
-        Ok(https_port) => {
-            let tls_result = match (remote_access_mode, tailscale_target.as_ref(), local_ip) {
-                (ShareRemoteAccessMode::Tailscale, Some(tailscale_target), _)
-                    if tailscale_target.https_ready =>
-                {
-                    match tailscale_target.cert_domain.as_deref() {
-                        Some(cert_domain) => generate_tailscale_tls(cert_domain).await,
-                        None => Err(
-                            "Tailscale HTTPS was selected, but no certificate domain is available."
-                                .to_string(),
-                        ),
+    let (https_handle, https_task, local_https_address) =
+        match find_available_port(HTTPS_DEFAULT_PORT, &[http_port]) {
+            Ok(https_port) => {
+                let tls_result = match (remote_access_mode, local_ip) {
+                    (ShareRemoteAccessMode::Lan, Some(local_ip)) => {
+                        generate_self_signed_tls(local_ip).await
+                    }
+                    _ => Err(
+                        "No HTTPS certificate could be generated for the active mobile share."
+                            .to_string(),
+                    ),
+                };
+
+                match tls_result {
+                    Ok(tls_config) => {
+                        let handle = axum_server::Handle::new();
+                        let shutdown_handle = handle.clone();
+                        let https_addr = SocketAddr::from(([0, 0, 0, 0], https_port));
+                        let local_https_address = match (remote_access_mode, local_ip) {
+                            (ShareRemoteAccessMode::Lan, Some(local_ip)) => {
+                                Some(format_https_url(&local_ip.to_string(), https_port))
+                            }
+                            _ => None,
+                        };
+
+                        let task = tokio::spawn(async move {
+                            axum_server::bind_rustls(https_addr, tls_config)
+                                .handle(handle)
+                                .serve(https_router.into_make_service())
+                                .await
+                                .ok();
+                        });
+
+                        (
+                            Some((shutdown_handle, https_port)),
+                            Some(task),
+                            local_https_address,
+                        )
+                    }
+                    Err(err) => {
+                        log::warn!("TLS setup failed (HTTP still works): {err}");
+                        (None, None, None)
                     }
                 }
-                (_, _, Some(local_ip)) => generate_self_signed_tls(local_ip).await,
-                _ => Err(
-                    "No HTTPS certificate could be generated for the active mobile share."
-                        .to_string(),
-                ),
-            };
-
-            match tls_result {
-                Ok(tls_config) => {
-                    let handle = axum_server::Handle::new();
-                    let shutdown_handle = handle.clone();
-                    let https_addr = SocketAddr::from(([0, 0, 0, 0], https_port));
-                    let local_https_address = match (remote_access_mode, local_ip) {
-                        (ShareRemoteAccessMode::Lan, Some(local_ip)) => {
-                            Some(format_https_url(&local_ip.to_string(), https_port))
-                        }
-                        _ => None,
-                    };
-                    let tailscale_https_address = match tailscale_target.as_ref() {
-                        Some(target) if target.https_ready => {
-                            Some(format_https_url(&target.preferred_host, https_port))
-                        }
-                        _ => None,
-                    };
-
-                    let task = tokio::spawn(async move {
-                        axum_server::bind_rustls(https_addr, tls_config)
-                            .handle(handle)
-                            .serve(https_router.into_make_service())
-                            .await
-                            .ok();
-                    });
-
-                    (
-                        Some((shutdown_handle, https_port)),
-                        Some(task),
-                        local_https_address,
-                        tailscale_https_address,
-                        tailscale_target
-                            .as_ref()
-                            .map(|target| target.https_ready)
-                            .unwrap_or(false),
-                    )
-                }
-                Err(err) => {
-                    log::warn!("TLS setup failed (HTTP still works): {err}");
-                    (None, None, None, None, false)
-                }
             }
-        }
-        Err(_) => (None, None, None, None, false),
-    };
+            Err(_) => (None, None, None),
+        };
 
     let mdns_daemon = match local_ip {
         Some(local_ip) => match register_mdns(http_port, local_ip) {
@@ -217,16 +216,12 @@ pub async fn start_lan_share(
         (ShareRemoteAccessMode::Lan, Some((_, https_port)), false, Some(local_ip)) => {
             Some(format_https_url(&local_ip.to_string(), *https_port))
         }
-        _ => local_https_address,
+        _ => local_https_address.clone(),
     };
 
-    let tailscale_address = if let Some(https_address) = tailscale_https_address {
-        Some(https_address)
-    } else {
-        tailscale_target
-            .as_ref()
-            .map(|target| format_http_url(&target.preferred_host, http_port))
-    };
+    let tailscale_address = tailscale_target
+        .as_ref()
+        .map(|target| format_http_url(&target.preferred_host, http_port));
 
     let mut server_lock = ACTIVE_SERVER.lock().await;
     *server_lock = Some(ActiveServer {
@@ -245,25 +240,14 @@ pub async fn start_lan_share(
             .clone()
             .unwrap_or_else(|| format_http_url("127.0.0.1", http_port)),
     };
-    let preferred_address = match remote_access_mode {
-        ShareRemoteAccessMode::Tailscale => tailscale_address
-            .clone()
-            .or_else(|| ios_address.clone())
-            .or_else(|| {
-                mdns_address
-                    .clone()
-                    .map(|host| format_http_url(&host, HTTP_DEFAULT_PORT))
-            })
-            .unwrap_or_else(|| address.clone()),
-        ShareRemoteAccessMode::Lan => ios_address
-            .clone()
-            .or_else(|| {
-                mdns_address
-                    .clone()
-                    .map(|host| format_http_url(&host, HTTP_DEFAULT_PORT))
-            })
-            .unwrap_or_else(|| address.clone()),
-    };
+    let preferred_address = resolve_preferred_share_address(
+        remote_access_mode,
+        &address,
+        local_https_address.as_ref(),
+        ios_address.as_ref(),
+        mdns_address.as_ref(),
+        tailscale_address.as_ref(),
+    );
 
     Ok(LanShareResult {
         address,
@@ -271,7 +255,7 @@ pub async fn start_lan_share(
         mdns_address,
         ios_address,
         tailscale_address,
-        tailscale_https_ready,
+        tailscale_https_ready: false,
     })
 }
 
@@ -296,4 +280,63 @@ pub async fn stop_lan_share_inner() -> Result<(), String> {
 
 pub fn get_local_ip() -> Result<String, String> {
     get_local_ipv4().map(|ip| ip.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lan_mode_prefers_direct_lan_ip_over_mdns_https() {
+        let direct_lan_address = "http://192.168.1.24:55000".to_string();
+        let ios_mdns_address = "https://sfm.local:443".to_string();
+        let mdns_address = "sfm.local:55000".to_string();
+
+        let preferred = resolve_preferred_share_address(
+            ShareRemoteAccessMode::Lan,
+            &direct_lan_address,
+            None,
+            Some(&ios_mdns_address),
+            Some(&mdns_address),
+            None,
+        );
+
+        assert_eq!(preferred, direct_lan_address);
+    }
+
+    #[test]
+    fn tailscale_mode_prefers_explicit_tailnet_http_port() {
+        let local_lan_address = "http://192.168.1.24:55000".to_string();
+        let local_https_address = "https://192.168.1.24:443".to_string();
+        let mdns_address = "sfm.local:55000".to_string();
+        let tailscale_address = "http://workstation.tailnet.ts.net:55000".to_string();
+
+        let preferred = resolve_preferred_share_address(
+            ShareRemoteAccessMode::Tailscale,
+            &local_lan_address,
+            Some(&local_https_address),
+            None,
+            Some(&mdns_address),
+            Some(&tailscale_address),
+        );
+
+        assert_eq!(preferred, tailscale_address);
+    }
+
+    #[test]
+    fn lan_mode_uses_local_https_before_loopback_when_no_lan_ip_exists() {
+        let loopback_address = "http://127.0.0.1:55000".to_string();
+        let local_https_address = "https://192.168.1.24:443".to_string();
+
+        let preferred = resolve_preferred_share_address(
+            ShareRemoteAccessMode::Lan,
+            &loopback_address,
+            Some(&local_https_address),
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(preferred, local_https_address);
+    }
 }
