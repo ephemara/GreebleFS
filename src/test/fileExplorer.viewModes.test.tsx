@@ -578,6 +578,7 @@ import {
 } from "../components/FileExplorer";
 import type { LoadedExplorerAction } from "../config/actionPacks";
 import type { OverlayPluginPreviewLaneContribution } from "../config/pluginContributions";
+import { normalizeExplorerPreviewWorkbenchChromeMetadata } from "../config/previewWorkbenchChrome";
 import { EXPLORER_CANONICAL_LAYOUT_ID } from "../config/explorerLayouts";
 import { toExplorerActionChromeControlId } from "../config/explorerCustomizeCatalog";
 import * as explorerThumbnailArtifactRuntime from "../runtime/explorerThumbnailArtifactRuntime";
@@ -7279,6 +7280,7 @@ const value = 1;
         appliesTo: "file",
         extensions: ["txt"],
         fileNames: [],
+        previewKinds: [],
       },
       capabilities: {
         editable: true,
@@ -7289,6 +7291,12 @@ const value = 1;
         prefetch: false,
         closeGuard: false,
       },
+      workbenchChrome: normalizeExplorerPreviewWorkbenchChromeMetadata(
+        undefined,
+        {
+          includeEditTab: true,
+        },
+      ),
       component: function MockPluginPreviewLane({
         file,
         viewMode,

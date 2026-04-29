@@ -19,7 +19,12 @@ import {
   DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY,
   normalizeOverlayPluginPreviewLaneCapabilities,
   normalizeOverlayPluginPreviewLaneMatchRule,
+  normalizeOverlayPluginPreviewLaneWorkbenchChrome,
 } from './pluginPreviewLanes';
+import type {
+  ExplorerPreviewWildcardWorkflowTab,
+  ExplorerPreviewWorkbenchChromeMetadataInput,
+} from './previewWorkbenchChrome';
 import {
   normalizeOverlayPluginSettingsValueMap,
   type OverlayPluginSettingsFieldDefinition,
@@ -113,6 +118,9 @@ interface PluginPackageContextMenuItemManifest {
   };
 }
 
+interface PluginPackagePreviewWorkbenchChromeManifest
+  extends ExplorerPreviewWorkbenchChromeMetadataInput {}
+
 interface PluginPackagePreviewLaneManifest {
   id?: string;
   title?: string;
@@ -125,6 +133,7 @@ interface PluginPackagePreviewLaneManifest {
     appliesTo?: 'any' | 'file' | 'directory';
     extensions?: string[];
     fileNames?: string[];
+    previewKinds?: string[];
   };
   capabilities?: {
     editable?: boolean;
@@ -135,6 +144,9 @@ interface PluginPackagePreviewLaneManifest {
     prefetch?: boolean;
     closeGuard?: boolean;
   };
+  workflowTabs?: PluginPackagePreviewWorkbenchChromeManifest;
+  workbenchChrome?: PluginPackagePreviewWorkbenchChromeManifest;
+  previewChrome?: PluginPackagePreviewWorkbenchChromeManifest;
 }
 
 interface PluginPackageSettingsSlotManifest {
@@ -153,6 +165,11 @@ interface PluginPackageSettingsSlotManifest {
 interface PluginPackageMobilePaneManifest {
   id?: string;
   title?: string;
+  description?: string;
+  iconName?: string;
+  order?: number;
+  category?: string;
+  kind?: string;
   renderer?: string;
   rendererEntry?: string;
   styles?: string[];
@@ -163,6 +180,7 @@ interface PluginPackageTestFileManifest {
   label?: string;
   path: string;
   description?: string;
+  kind?: 'file' | 'directory';
 }
 
 interface PluginPackageManifest {
@@ -411,6 +429,52 @@ function asContextMenuItemManifestArray(value: unknown): PluginPackageContextMen
   });
 }
 
+function asPreviewWildcardWorkflowTabManifestArray(
+  value: unknown,
+): Partial<ExplorerPreviewWildcardWorkflowTab>[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap(entry => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+
+    const baseMode = asString(record.baseMode);
+    return [{
+      id: asString(record.id),
+      label: asString(record.label),
+      baseMode: baseMode === 'preview' || baseMode === 'edit'
+        ? baseMode
+        : undefined,
+    }];
+  });
+}
+
+function asPreviewWorkbenchChromeManifest(
+  value: unknown,
+): PluginPackagePreviewWorkbenchChromeManifest | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const topBarDensity = asString(record.topBarDensity);
+  return {
+    includePreviewTab: asBoolean(record.includePreviewTab),
+    includeEditTab: asBoolean(record.includeEditTab),
+    wildcardTabs: asPreviewWildcardWorkflowTabManifestArray(
+      record.wildcardTabs ?? record.tabs,
+    ),
+    topBarLayoutId: asString(record.topBarLayoutId) || null,
+    topBarDensity: topBarDensity === 'compact' || topBarDensity === 'regular'
+      ? topBarDensity
+      : null,
+  };
+}
+
 function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneManifest[] {
   if (!Array.isArray(value)) {
     return [];
@@ -434,6 +498,7 @@ function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneMan
           : undefined,
       extensions: asStringArray(matchRecord?.extensions),
       fileNames: asStringArray(matchRecord?.fileNames),
+      previewKinds: asStringArray(matchRecord?.previewKinds),
     });
     const capabilities = normalizeOverlayPluginPreviewLaneCapabilities({
       editable: asBoolean(capabilitiesRecord?.editable),
@@ -444,6 +509,9 @@ function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneMan
       prefetch: asBoolean(capabilitiesRecord?.prefetch),
       closeGuard: asBoolean(capabilitiesRecord?.closeGuard),
     });
+    const workbenchChrome = asPreviewWorkbenchChromeManifest(
+      record.workbenchChrome ?? record.previewChrome ?? record.workflowTabs,
+    );
     const title =
       asString(record.title) ||
       deriveDisplayNameFromFilePath(renderer);
@@ -461,6 +529,9 @@ function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneMan
           : DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY,
       match,
       capabilities,
+      workflowTabs: workbenchChrome,
+      workbenchChrome,
+      previewChrome: workbenchChrome,
     }];
   });
 }
@@ -602,6 +673,40 @@ function asSettingsSlotManifestArray(
   });
 }
 
+function asMobilePaneManifestArray(
+  value: unknown,
+): PluginPackageMobilePaneManifest[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap<PluginPackageMobilePaneManifest>((entry, index) => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+
+    const title = asString(record.title) || asString(record.name)
+      || `Mobile Pane ${index + 1}`;
+
+    return [{
+      id: asString(record.id) || deriveIdFromName(title, 'mobile-pane'),
+      title,
+      description: asString(record.description) || undefined,
+      iconName: asString(record.iconName) || undefined,
+      order:
+        typeof record.order === 'number' && Number.isFinite(record.order)
+          ? Math.round(record.order)
+          : index * 100,
+      category: asString(record.category) || undefined,
+      kind: asString(record.kind) || undefined,
+      renderer: asString(record.renderer) || undefined,
+      rendererEntry: asString(record.rendererEntry) || undefined,
+      styles: asStringArray(record.styles),
+    }];
+  });
+}
+
 function normalizeDisabledPluginIdSet(
   disabledPluginIds: OverlayPluginDiscoveryOptions['disabledPluginIds'],
 ): ReadonlySet<string> {
@@ -640,13 +745,14 @@ function asTestFileManifestArray(value: unknown): PluginPackageTestFileManifest[
     return [];
   }
 
-  return value.flatMap((entry, index) => {
+  return value.flatMap<PluginPackageTestFileManifest>((entry, index) => {
     if (typeof entry === 'string' && entry.trim()) {
       const normalizedPath = entry.trim();
       return [{
         id: deriveIdFromName(normalizedPath, `test-file-${index + 1}`),
         label: deriveDisplayNameFromFilePath(normalizedPath),
         path: normalizedPath,
+        kind: 'file',
       }];
     }
 
@@ -661,6 +767,7 @@ function asTestFileManifestArray(value: unknown): PluginPackageTestFileManifest[
       label: asString(record.label) || deriveDisplayNameFromFilePath(path),
       path,
       description: asString(record.description) || undefined,
+      kind: asString(record.kind) === 'directory' ? 'directory' : 'file',
     }];
   });
 }
@@ -713,6 +820,7 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
       contextMenuItems: asContextMenuItemManifestArray(contributions?.contextMenuItems),
       previewLanes: asPreviewLaneManifestArray(contributions?.previewLanes),
       settingsSlots: asSettingsSlotManifestArray(contributions?.settingsSlots),
+      mobilePanes: asMobilePaneManifestArray(contributions?.mobilePanes),
     },
   };
 }
@@ -963,6 +1071,7 @@ function resolvePackageTestFiles(record: PluginPackageRecord): OverlayPluginTest
       path: joinPlatformPath(record.directoryPath, normalizedPath),
       description: testFile.description,
       extension,
+      isDirectory: testFile.kind === 'directory',
     }];
   });
 }
@@ -1463,6 +1572,20 @@ async function loadPluginPackage(
             api: previewLaneApi.bindExecutionContext(props.executionContext),
             plugin: previewLaneContext,
           });
+        const capabilities = previewLane.capabilities
+          ? normalizeOverlayPluginPreviewLaneCapabilities(
+              previewLane.capabilities,
+            )
+          : normalizeOverlayPluginPreviewLaneCapabilities(undefined);
+        const workbenchChrome =
+          normalizeOverlayPluginPreviewLaneWorkbenchChrome(
+            previewLane.workbenchChrome ??
+              previewLane.previewChrome ??
+              previewLane.workflowTabs,
+            {
+              includeEditTab: capabilities.editable,
+            },
+          );
 
         return {
           id: `${packageId}.preview-lane.${stableId}`,
@@ -1477,11 +1600,8 @@ async function loadPluginPackage(
           match: previewLane.match
             ? normalizeOverlayPluginPreviewLaneMatchRule(previewLane.match)
             : normalizeOverlayPluginPreviewLaneMatchRule(undefined),
-          capabilities: previewLane.capabilities
-            ? normalizeOverlayPluginPreviewLaneCapabilities(
-                previewLane.capabilities,
-              )
-            : normalizeOverlayPluginPreviewLaneCapabilities(undefined),
+          capabilities,
+          workbenchChrome,
           component: boundComponent,
         } satisfies OverlayPluginPreviewLaneContribution;
       },

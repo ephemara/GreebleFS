@@ -1,9 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { resolve } from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import PluginsManager from '../components/PluginsManager';
+import type { OverlayPluginPreviewLaneContribution } from '../config/pluginContributions';
 import { pluginSystemConfig } from '../config/plugins';
 import { joinPlatformPath } from '../config/platform';
+import { normalizeExplorerPreviewWorkbenchChromeMetadata } from '../config/previewWorkbenchChrome';
 
 function makeAppearance() {
   return {
@@ -26,6 +28,95 @@ function makeAppearance() {
     },
     cssVars: {},
   } as never;
+}
+
+function makeWorkbenchPlugin() {
+  return {
+    id: 'media-workbench',
+    name: 'Media Workbench',
+    filePath: resolve(pluginSystemConfig.pluginsDirectory, 'media-workbench/plugin.json'),
+    pluginRoot: pluginSystemConfig.pluginsDirectory,
+    pluginDirectory: joinPlatformPath(pluginSystemConfig.pluginsDirectory, 'media-workbench'),
+    backendDirectory: joinPlatformPath(
+      joinPlatformPath(pluginSystemConfig.pluginsDirectory, 'media-workbench'),
+      pluginSystemConfig.backendDirectoryName,
+    ),
+    modified: 1,
+    enabled: true,
+    defaultOpen: false,
+    keepMounted: false,
+    component: null,
+    error: null,
+    diagnostics: {
+      sourceKind: 'package-plugin',
+      sourceLabel: 'Media Workbench',
+      manifestPath: 'plugins/media-workbench/plugin.json',
+      category: 'First-party Workbenches',
+      tags: ['workbench', 'preview'],
+      testFiles: [
+        {
+          id: 'audio-tone',
+          label: 'Audio Tone',
+          path: 'plugins/media-workbench/examples/audio-tone.wav',
+          extension: 'wav',
+        },
+        {
+          id: 'video-slate',
+          label: 'Video Slate',
+          path: 'plugins/media-workbench/examples/video-slate.mp4',
+          extension: 'mp4',
+        },
+      ],
+      warnings: [],
+      capabilities: {
+        panel: false,
+        themes: 0,
+        shaders: 0,
+        fonts: 0,
+        commands: 0,
+        actions: 0,
+        explorerActions: 0,
+        contextMenuItems: 0,
+        previewLanes: 1,
+        settingsSlots: 0,
+      },
+    },
+  } as never;
+}
+
+function makePreviewLane(
+  partial: Partial<OverlayPluginPreviewLaneContribution> &
+    Pick<OverlayPluginPreviewLaneContribution, 'id' | 'title'>,
+): OverlayPluginPreviewLaneContribution {
+  return {
+    id: partial.id,
+    pluginId: partial.pluginId ?? 'media-workbench',
+    pluginName: partial.pluginName ?? 'Media Workbench',
+    title: partial.title,
+    priority: partial.priority ?? 720,
+    rendererEntry: partial.rendererEntry ?? 'preview/workbench.tsx',
+    runtimeId: partial.runtimeId ?? null,
+    match: partial.match ?? {
+      appliesTo: 'file',
+      extensions: ['wav'],
+      fileNames: [],
+      previewKinds: [],
+    },
+    capabilities: partial.capabilities ?? {
+      editable: true,
+      save: false,
+      export: true,
+      workflowTabs: false,
+      contextMenu: false,
+      prefetch: false,
+      closeGuard: false,
+    },
+    workbenchChrome: partial.workbenchChrome ?? normalizeExplorerPreviewWorkbenchChromeMetadata(
+      undefined,
+      { includeEditTab: partial.capabilities?.editable ?? true },
+    ),
+    component: partial.component ?? (() => null),
+  };
 }
 
 describe('PluginsManager', () => {
@@ -244,5 +335,105 @@ describe('PluginsManager', () => {
 
     expect(diagnosticsToggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('keep this fixture small')).not.toBeInTheDocument();
+  });
+
+  it('renders manifest-declared Preview/Edit/VST tabs for plugin workbench previews', async () => {
+    const plugin = makeWorkbenchPlugin();
+    const lane = makePreviewLane({
+      id: 'media-workbench.preview-lane.audio',
+      title: 'Audio Workbench',
+      workbenchChrome: normalizeExplorerPreviewWorkbenchChromeMetadata({
+        includePreviewTab: true,
+        includeEditTab: true,
+        wildcardTabs: [
+          {
+            id: 'vst',
+            label: 'VST',
+            baseMode: 'edit',
+          },
+        ],
+      }),
+      component: ({ viewMode, workflowTabId }) => (
+        <div data-testid="plugin-preview-props">{viewMode}:{workflowTabId}</div>
+      ),
+    });
+
+    render(
+      <PluginsManager
+        appearance={makeAppearance()}
+        plugins={[plugin]}
+        previewLanes={[lane]}
+        isLoading={false}
+        error={null}
+        onRefreshPlugins={() => undefined}
+        onOpenPluginsFolder={() => Promise.resolve()}
+        onSetPluginEnabled={() => undefined}
+        createPluginApi={() => ({}) as never}
+      />,
+    );
+
+    const workflowTabs = await screen.findByRole('group', { name: /Preview workflow tabs/i });
+    expect(within(workflowTabs).getByRole('button', { name: 'Preview' })).toBeInTheDocument();
+    expect(within(workflowTabs).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(within(workflowTabs).getByRole('button', { name: 'VST' })).toBeInTheDocument();
+    expect(screen.getByTestId('plugin-preview-props')).toHaveTextContent('preview:preview');
+
+    fireEvent.click(within(workflowTabs).getByRole('button', { name: 'Edit' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('plugin-preview-props')).toHaveTextContent('edit:edit');
+    });
+
+    fireEvent.click(within(workflowTabs).getByRole('button', { name: 'VST' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('plugin-preview-props')).toHaveTextContent('edit:vst');
+    });
+  });
+
+  it('renders video-style Preview/Edit tabs without wildcard tabs', async () => {
+    const plugin = makeWorkbenchPlugin();
+    const lane = makePreviewLane({
+      id: 'media-workbench.preview-lane.video',
+      title: 'Video Workbench',
+      match: {
+        appliesTo: 'file',
+        extensions: ['mp4'],
+        fileNames: [],
+        previewKinds: [],
+      },
+      workbenchChrome: normalizeExplorerPreviewWorkbenchChromeMetadata({
+        includePreviewTab: true,
+        includeEditTab: true,
+      }),
+      component: ({ viewMode, workflowTabId, file }) => (
+        <div data-testid="plugin-video-preview-props">
+          {file.name}:{viewMode}:{workflowTabId}
+        </div>
+      ),
+    });
+
+    render(
+      <PluginsManager
+        appearance={makeAppearance()}
+        plugins={[plugin]}
+        previewLanes={[lane]}
+        isLoading={false}
+        error={null}
+        onRefreshPlugins={() => undefined}
+        onOpenPluginsFolder={() => Promise.resolve()}
+        onSetPluginEnabled={() => undefined}
+        createPluginApi={() => ({}) as never}
+      />,
+    );
+
+    const workflowTabs = await screen.findByRole('group', { name: /Preview workflow tabs/i });
+    expect(within(workflowTabs).getByRole('button', { name: 'Preview' })).toBeInTheDocument();
+    expect(within(workflowTabs).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(within(workflowTabs).queryByRole('button', { name: 'VST' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('plugin-video-preview-props')).toHaveTextContent('video-slate.mp4:preview:preview');
+
+    fireEvent.click(within(workflowTabs).getByRole('button', { name: 'Edit' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('plugin-video-preview-props')).toHaveTextContent('video-slate.mp4:edit:edit');
+    });
   });
 });

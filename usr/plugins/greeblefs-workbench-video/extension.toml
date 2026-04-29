@@ -25,6 +25,11 @@ appliesTo = "file"
 extensions = ["3g2", "3gp", "asf", "avi", "flv", "m2ts", "m2v", "m4v", "mkv", "mov", "mp4", "mpe", "mpeg", "mpg", "mts", "ogv", "qt", "webm", "wmv"]
 fileNames = []
 
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = true
+topBarDensity = "compact"
+
 [contributions.previewLanes.capabilities]
 editable = true
 save = false

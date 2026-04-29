@@ -25,6 +25,16 @@ appliesTo = "file"
 extensions = ["aac", "aif", "aiff", "aifc", "alac", "amr", "caf", "flac", "m4a", "m4b", "mid", "midi", "mka", "mp3", "oga", "ogg", "opus", "wav", "wave", "weba", "wma"]
 fileNames = []
 
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = true
+topBarDensity = "compact"
+
+[[contributions.previewLanes.workbenchChrome.wildcardTabs]]
+id = "vst"
+label = "VST"
+baseMode = "edit"
+
 [contributions.previewLanes.capabilities]
 editable = true
 save = false

@@ -25,6 +25,11 @@ appliesTo = "file"
 extensions = ["xlsx", "xlsm", "xlsb", "xls", "ods", "csv", "tsv"]
 fileNames = []
 
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = true
+topBarDensity = "compact"
+
 [contributions.previewLanes.capabilities]
 editable = true
 save = true

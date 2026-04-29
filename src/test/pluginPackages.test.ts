@@ -284,6 +284,34 @@ describe('plugin package discovery', () => {
                   workflowTabs: true,
                   contextMenu: true,
                 },
+                workbenchChrome: {
+                  includePreviewTab: true,
+                  includeEditTab: true,
+                  topBarLayoutId: 'compact-preview-header',
+                  topBarDensity: 'compact',
+                  wildcardTabs: [
+                    {
+                      id: 'vst',
+                      label: 'VST',
+                      baseMode: 'edit',
+                    },
+                    {
+                      id: 'preview',
+                      label: 'Reserved Preview',
+                      baseMode: 'preview',
+                    },
+                    {
+                      id: 'VST',
+                      label: 'Duplicate VST',
+                      baseMode: 'edit',
+                    },
+                    {
+                      id: 'render',
+                      label: 'Render',
+                      baseMode: 'preview',
+                    },
+                  ],
+                },
               },
             ],
             settingsSlots: [
@@ -473,6 +501,7 @@ describe('plugin package discovery', () => {
         path: 'plugins/mega-plugin/examples/readme.md',
         description: 'A markdown preview sample.',
         extension: 'md',
+        isDirectory: false,
       },
     ]);
     expect(result.plugins[1]?.diagnostics.capabilities.themes).toBe(0);
@@ -533,6 +562,24 @@ describe('plugin package discovery', () => {
         contextMenu: true,
         prefetch: false,
         closeGuard: false,
+      },
+      workbenchChrome: {
+        includePreviewTab: true,
+        includeEditTab: true,
+        wildcardTabs: [
+          {
+            id: 'vst',
+            label: 'VST',
+            baseMode: 'edit',
+          },
+          {
+            id: 'render',
+            label: 'Render',
+            baseMode: 'preview',
+          },
+        ],
+        topBarLayoutId: 'compact-preview-header',
+        topBarDensity: 'compact',
       },
     });
     expect(typeof result.previewLanes[0]?.component).toBe('function');

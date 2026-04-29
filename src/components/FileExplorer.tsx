@@ -349,8 +349,13 @@ import {
   useExplorerCustomizePointerSourceKind,
 } from "./explorer/explorerCustomizePointerRuntime";
 import {
+  ExplorerPreviewWorkflowTabControl,
+} from "./explorer/ExplorerPreviewWorkflowTabControl";
+import {
   buildExplorerPreviewWorkflowTabs,
+  mergeExplorerPreviewWildcardWorkflowTabs,
   resolveExplorerPreviewWorkflowActiveTab,
+  type ExplorerPreviewWorkflowTab,
   type ExplorerPreviewWildcardWorkflowTab,
 } from "./explorer/explorerPreviewWorkflowTabs";
 import {
@@ -4154,7 +4159,6 @@ function PreviewPanel({
   canNavigatePreviewBack: boolean;
   externalChromeControls?: ExplorerRenderedChromeControlDefinition[];
 }) {
-  const interactionMotion = useInteractionMotionController();
   const dragging = useRef(false);
   const startX = useRef(0);
   const startW = useRef(width);
@@ -4528,9 +4532,22 @@ function PreviewPanel({
   const isScriptTextPreview =
     preview.type === "text" && preview.scriptPreview != null;
   const hidesPreviewWorkflowTab = isPythonTextPreview || isScriptTextPreview;
-  const effectiveWildcardWorkflowTabs = isScriptTextPreview
-    ? SCRIPT_PREVIEW_WILDCARD_WORKFLOW_TABS
-    : wildcardWorkflowTabs;
+  const pluginPreviewWorkbenchChrome =
+    preview.type === "plugin" ? preview.lane.workbenchChrome : null;
+  const includePreviewWorkflowTab =
+    pluginPreviewWorkbenchChrome?.includePreviewTab ?? !hidesPreviewWorkflowTab;
+  const effectiveWildcardWorkflowTabs = useMemo(
+    () =>
+      isScriptTextPreview
+        ? SCRIPT_PREVIEW_WILDCARD_WORKFLOW_TABS
+        : pluginPreviewWorkbenchChrome
+          ? mergeExplorerPreviewWildcardWorkflowTabs(
+              pluginPreviewWorkbenchChrome.wildcardTabs,
+              wildcardWorkflowTabs,
+            )
+          : wildcardWorkflowTabs,
+    [isScriptTextPreview, pluginPreviewWorkbenchChrome, wildcardWorkflowTabs],
+  );
   const supportsRenderedPreview =
     preview.type === "text" &&
     preview.scriptPreview == null &&
@@ -4547,24 +4564,27 @@ function PreviewPanel({
     isShaderPreview ||
     isSpreadsheetPreview ||
     isEditableImagePreview ||
-    (isPluginPreview && preview.lane.capabilities.editable) ||
+    (isPluginPreview &&
+      (pluginPreviewWorkbenchChrome?.includeEditTab ||
+        effectiveWildcardWorkflowTabs.length > 0)) ||
     effectiveWildcardWorkflowTabs.length > 0;
   const previewSupportsEditableWorkflowTabs =
     isPluginPreview
-      ? preview.lane.capabilities.editable && !previewBackedByArchiveVirtual
+      ? Boolean(pluginPreviewWorkbenchChrome?.includeEditTab) &&
+        !previewBackedByArchiveVirtual
       : !previewBackedByArchiveVirtual ||
         preview.type === "text" ||
         preview.type === "shader";
   const previewWorkflowTabs = useMemo(
     () =>
       buildExplorerPreviewWorkflowTabs({
-        includePreviewTab: !hidesPreviewWorkflowTab,
+        includePreviewTab: includePreviewWorkflowTab,
         includeEditTab: previewSupportsEditableWorkflowTabs,
         wildcardTabs: effectiveWildcardWorkflowTabs,
       }),
     [
       effectiveWildcardWorkflowTabs,
-      hidesPreviewWorkflowTab,
+      includePreviewWorkflowTab,
       previewSupportsEditableWorkflowTabs,
     ],
   );
@@ -4661,69 +4681,30 @@ function PreviewPanel({
       onEditAction?: () => void;
       onRunAction?: () => void;
     }) => (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          padding: 2,
-          borderRadius: "var(--overlay-explorer-control-radius)",
-          border: "1px solid var(--overlay-explorer-chip-border)",
-          background: "var(--overlay-explorer-chip-bg)",
-          flexWrap: "wrap",
+      <ExplorerPreviewWorkflowTabControl
+        tabs={previewWorkflowTabs}
+        activeTabId={activePreviewWorkflowTab.id}
+        onTabSelect={(tab: ExplorerPreviewWorkflowTab) => {
+          onViewModeChange(tab.baseMode);
+          onWorkflowTabChange(tab.id);
+          if (tab.id === "preview") {
+            options?.onPreviewAction?.();
+            return;
+          }
+          if (tab.id === "edit") {
+            options?.onEditAction?.();
+            return;
+          }
+          if (tab.id === "run") {
+            options?.onRunAction?.();
+          }
         }}
-      >
-        {previewWorkflowTabs.map((tab, index) => {
-          const active = activePreviewWorkflowTab.id === tab.id;
-          const workflowTabMotion = interactionMotion.bindSurface({
-            surfaceId: "previewWorkflowTab",
-            triggerState: { activate: active },
-            motionStepIndex: index,
-            baseTransition:
-              "background 0.14s ease, border-color 0.14s ease, color 0.14s ease",
-          });
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                onViewModeChange(tab.baseMode);
-                onWorkflowTabChange(tab.id);
-                if (tab.id === "preview") {
-                  options?.onPreviewAction?.();
-                  return;
-                }
-                if (tab.id === "edit") {
-                  options?.onEditAction?.();
-                  return;
-                }
-                if (tab.id === "run") {
-                  options?.onRunAction?.();
-                }
-              }}
-              {...workflowTabMotion.motionDataAttributes}
-              onPointerEnter={workflowTabMotion.onPointerEnter}
-              onPointerLeave={workflowTabMotion.onPointerLeave}
-              onPointerDown={workflowTabMotion.onPointerDown}
-              onPointerUp={workflowTabMotion.onPointerUp}
-              onPointerCancel={workflowTabMotion.onPointerCancel}
-              style={{
-                ...previewChipButtonStyle(active),
-                ...workflowTabMotion.motionStyle,
-              }}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      />
     ),
     [
       activePreviewWorkflowTab.id,
-      interactionMotion,
       onViewModeChange,
       onWorkflowTabChange,
-      previewChipButtonStyle,
       previewWorkflowTabs,
     ],
   );
@@ -5632,10 +5613,12 @@ function PreviewPanel({
       new Map(previewChromeControlRegistry.map((entry) => [entry.id, entry])),
     [previewChromeControlRegistry],
   );
+  const previewHeaderChromeLayoutId =
+    pluginPreviewWorkbenchChrome?.topBarLayoutId ?? chromeLayoutId;
   const previewHeaderSurface = useMemo(
     () =>
       resolveExplorerChromeSurfaceLayout({
-        layoutId: chromeLayoutId,
+        layoutId: previewHeaderChromeLayoutId,
         surfaceId: "previewHeader",
         controlDefinitions: previewChromeControlRegistry,
         override: chromeOverride,
@@ -5645,8 +5628,8 @@ function PreviewPanel({
             ?.isVisible(surfaceId) ?? false,
       }),
     [
-      chromeLayoutId,
       chromeOverride,
+      previewHeaderChromeLayoutId,
       previewChromeControlRegistry,
       previewChromeControlRegistryById,
     ],
@@ -8438,6 +8421,7 @@ interface FileExplorerProps {
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   layoutMode?: ExplorerLayoutMode;
+  dockPreviewPolicy?: ExplorerDockPreviewPolicy;
   defaultModeProfileId?: ExplorerModeProfileId | null;
   instanceId?: ExplorerInstanceId;
   workspaceTabId?: string | null;
@@ -8463,6 +8447,11 @@ interface FileExplorerProps {
   onExplorerPickerCancel?: () => void;
   externalChromeControls?: ExplorerExternalChromeControlDefinition[];
   renderDragOverlayHost?: boolean;
+}
+
+export interface ExplorerDockPreviewPolicy {
+  enabled: boolean;
+  splitMode: ExplorerPreviewSplitMode;
 }
 
 export interface ExplorerWorkspaceRuntimeSelectionEntry {
@@ -8634,6 +8623,7 @@ export function FileExplorer({
   pluginContextMenuItems = [],
   pluginPreviewLanes = [],
   layoutMode = "full",
+  dockPreviewPolicy,
   defaultModeProfileId = null,
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
   workspaceTabId = null,
@@ -8869,6 +8859,8 @@ export function FileExplorer({
     [explorerSearchScopeId],
   );
   const isCompactDock = layoutMode === "dock";
+  const dockPreviewAllowed =
+    !isCompactDock || dockPreviewPolicy?.enabled !== false;
   const showsGlobalChromeControls = chromeControlSurface === "topbar";
   const usesWorkspaceCompactChrome = workspacePaneCount > 1;
   const usesWorkspaceDenseChrome = workspacePaneCount >= 3;
@@ -9719,7 +9711,7 @@ export function FileExplorer({
     currentPathIsCloud || currentPathIsVirtual ? null : currentPath;
   const bottomTerminalVisible = explorerTerminalVisible;
   const previewPanelVisible =
-    !isCompactDock && previewEnabled && !usesWorkspaceCompactChrome;
+    dockPreviewAllowed && previewEnabled && !usesWorkspaceCompactChrome;
   const hasPreview = previewPanelVisible && preview.type !== "none";
   const canNavigatePreviewBack =
     previewNavigationHistory.length > 0 && preview.type !== "none";
@@ -14422,13 +14414,29 @@ export function FileExplorer({
           Math.min(current, sidebarBounds.maxWidth),
         ),
       );
-      void closePreview();
     }
   }, [
-    closePreview,
     isCompactDock,
     sidebarBounds.maxWidth,
     sidebarBounds.minWidth,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isCompactDock ||
+      !dockPreviewAllowed ||
+      !dockPreviewPolicy?.splitMode ||
+      previewSplitMode === dockPreviewPolicy.splitMode
+    ) {
+      return;
+    }
+
+    setPreviewSplitMode(dockPreviewPolicy.splitMode);
+  }, [
+    dockPreviewAllowed,
+    dockPreviewPolicy?.splitMode,
+    isCompactDock,
+    previewSplitMode,
   ]);
 
   useEffect(() => {
@@ -14716,7 +14724,7 @@ export function FileExplorer({
         allowPreviewLoadWhileClosedRef.current;
       allowPreviewLoadWhileClosedRef.current = false;
 
-      if ((!previewEnabled && !allowPreviewLoadWhileClosed) || isCompactDock) {
+      if ((!previewEnabled && !allowPreviewLoadWhileClosed) || !dockPreviewAllowed) {
         if (isCurrentPreviewRequest()) {
           clearPreviewSurface();
         }
@@ -15464,7 +15472,7 @@ export function FileExplorer({
       getExplorerItemProperties,
       getPreviewAssetUrl,
       flushPreviewTextSave,
-      isCompactDock,
+      dockPreviewAllowed,
       openExplorerPdfPreviewDocument,
       clearPreviewSurface,
       materializeArchiveVirtualEntry,
@@ -15548,14 +15556,14 @@ export function FileExplorer({
 
   const previewExplorerSelectionTarget = useCallback(
     (entry: FileEntry) => {
-      if (explorerPicker || !previewEnabled || isCompactDock) {
+      if (explorerPicker || !previewEnabled || !dockPreviewAllowed) {
         return;
       }
       void previewEntry(entry, getSearchFocusTarget(entry), "selection");
     },
     [
+      dockPreviewAllowed,
       getSearchFocusTarget,
-      isCompactDock,
       previewEnabled,
       previewEntry,
       explorerPicker,
@@ -15564,7 +15572,7 @@ export function FileExplorer({
 
   const openSelectionPreviewFromClick = useCallback(
     (entry: FileEntry) => {
-      if (explorerPicker || isCompactDock) {
+      if (explorerPicker || !dockPreviewAllowed) {
         return;
       }
       const shouldAutoReopenPreview =
@@ -15581,8 +15589,8 @@ export function FileExplorer({
     },
     [
       explorerPicker,
+      dockPreviewAllowed,
       getSearchFocusTarget,
-      isCompactDock,
       previewEnabled,
       previewEntry,
     ],
@@ -15698,7 +15706,7 @@ export function FileExplorer({
   ]);
 
   useEffect(() => {
-    if (!previewEnabled || isCompactDock || selectedEntries.length !== 1) {
+    if (!previewEnabled || !dockPreviewAllowed || selectedEntries.length !== 1) {
       return;
     }
 
@@ -15717,7 +15725,7 @@ export function FileExplorer({
       void prefetchExplorerAdjacentPreview(candidate);
     });
   }, [
-    isCompactDock,
+    dockPreviewAllowed,
     prefetchExplorerAdjacentPreview,
     previewEnabled,
     selectedEntries,
@@ -17828,7 +17836,7 @@ export function FileExplorer({
       !selectionModeActive &&
       !previewEnabled &&
       previewReopenOnSelectionRef.current &&
-      !isCompactDock;
+      dockPreviewAllowed;
     if (shouldNavigateDirectoryWithoutSelection) {
       void navigateDirectoryEntryImmediately(entry, "single-click");
       return;
@@ -17901,7 +17909,7 @@ export function FileExplorer({
       queueFolderActivationPrime(entry);
       return;
     }
-    if ((previewEnabled || shouldAutoReopenPreview) && !isCompactDock) {
+    if ((previewEnabled || shouldAutoReopenPreview) && dockPreviewAllowed) {
       openSelectionPreviewFromClick(entry);
     }
   };

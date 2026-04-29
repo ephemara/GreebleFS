@@ -2,8 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   Blocks,
-  ChevronDown,
-  ChevronRight,
   Eye,
   File,
   FolderOpen,
@@ -31,6 +29,15 @@ import {
 } from './pluginRuntime';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
+import { WorkbenchDisclosureGroup } from './WorkbenchDisclosureGroup';
+import { ExplorerPreviewWorkflowTabControl } from './explorer/ExplorerPreviewWorkflowTabControl';
+import {
+  buildExplorerPreviewWorkflowTabs,
+  mergeExplorerPreviewWildcardWorkflowTabs,
+  resolveExplorerPreviewWorkflowActiveTab,
+  type ExplorerPreviewWildcardWorkflowTab,
+  type ExplorerPreviewWorkflowTab,
+} from './explorer/explorerPreviewWorkflowTabs';
 
 const PANEL = 'var(--overlay-workbench-settings-card-bg)';
 const PANEL_ALT = 'var(--overlay-workbench-settings-rail-bg)';
@@ -97,6 +104,7 @@ export function PluginsManager({
   const accent = appearance?.theme.palette.accent ?? 'var(--overlay-accent)';
   const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null);
   const [selectedSurface, setSelectedSurface] = useState<PluginManagerSurface>('workbench-preview');
+  const [selectedPreviewLaneId, setSelectedPreviewLaneId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = usePersistentPanelSize('overlayterm-plugins-sidebar-width', 236, 190, 320);
   const [collapsedCategoryIds, setCollapsedCategoryIds] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -117,13 +125,27 @@ export function PluginsManager({
     () => selectedPlugin ? previewLanes.filter(lane => lane.pluginId === selectedPlugin.id) : [],
     [previewLanes, selectedPlugin],
   );
+  useEffect(() => {
+    setSelectedPreviewLaneId(current => {
+      if (current && selectedPluginPreviewLanes.some(lane => lane.id === current)) {
+        return current;
+      }
+      return selectedPluginPreviewLanes[0]?.id ?? null;
+    });
+  }, [selectedPluginPreviewLanes]);
+  const selectedPluginPreviewLane = useMemo(
+    () => selectedPluginPreviewLanes.find(lane => lane.id === selectedPreviewLaneId)
+      ?? selectedPluginPreviewLanes[0]
+      ?? null,
+    [selectedPluginPreviewLanes, selectedPreviewLaneId],
+  );
   const selectedPluginCapabilityLabels = useMemo(
     () => (selectedPlugin ? getPluginCapabilityLabels(selectedPlugin) : []),
     [selectedPlugin],
   );
   const selectedTestFile = useMemo(
-    () => resolvePreviewTestFile(selectedPlugin, selectedPluginPreviewLanes[0]),
-    [selectedPlugin, selectedPluginPreviewLanes],
+    () => resolvePreviewTestFile(selectedPlugin, selectedPluginPreviewLane ?? undefined),
+    [selectedPlugin, selectedPluginPreviewLane],
   );
   const effectiveSurface: PluginManagerSurface =
     selectedSurface === 'workbench-preview' && selectedPluginPreviewLanes.length === 0
@@ -355,10 +377,22 @@ export function PluginsManager({
                     <PluginBadge key={`${selectedPlugin.id}-${label}`} label={label} accent={accent} />
                   ))}
                 </div>
-                {selectedTestFile && effectiveSurface === 'workbench-preview' ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: MUTED, fontSize: 10 }}>
-                    <File size={12} />
-                    {selectedTestFile.label}
+                {effectiveSurface === 'workbench-preview' ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {selectedPluginPreviewLanes.length > 1 ? (
+                      <PreviewLaneSegmentedControl
+                        lanes={selectedPluginPreviewLanes}
+                        selectedLaneId={selectedPluginPreviewLane?.id ?? null}
+                        accent={accent}
+                        onLaneChange={setSelectedPreviewLaneId}
+                      />
+                    ) : null}
+                    {selectedTestFile ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: MUTED, fontSize: 10 }}>
+                        <File size={12} />
+                        {selectedTestFile.label}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -367,7 +401,7 @@ export function PluginsManager({
                 {effectiveSurface === 'workbench-preview' ? (
                   <PluginWorkbenchPreviewTestHost
                     plugin={selectedPlugin}
-                    lane={selectedPluginPreviewLanes[0] ?? null}
+                    lane={selectedPluginPreviewLane}
                     testFile={selectedTestFile}
                     appearance={appearance}
                   />
@@ -412,25 +446,17 @@ function PluginRailGroup({
   onSelectPlugin: (pluginId: string) => void;
   onSetPluginEnabled: (plugin: LoadedOverlayPlugin, enabled: boolean) => void;
 }) {
-  const ChevronIcon = collapsed ? ChevronRight : ChevronDown;
   return (
-    <section data-plugin-rail-category={group.category} style={{ marginBottom: 9 }}>
-      <button
-        type="button"
-        aria-expanded={!collapsed}
-        aria-label={`${group.category} ${group.plugins.length} plugin${group.plugins.length === 1 ? '' : 's'}`}
-        onClick={onToggleCollapsed}
-        style={railGroupButtonStyle}
+    <div data-plugin-rail-category={group.category}>
+      <WorkbenchDisclosureGroup
+        label={group.category}
+        count={group.plugins.length}
+        ariaLabel={`${group.category} ${group.plugins.length} plugin${group.plugins.length === 1 ? '' : 's'}`}
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+        variant="rail"
+        mutedColor={MUTED}
       >
-        <span style={{ display: 'inline-flex', minWidth: 0, alignItems: 'center', gap: 5 }}>
-          <ChevronIcon size={11} style={{ flexShrink: 0, color: MUTED }} />
-          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {group.category}
-          </span>
-        </span>
-        <span style={{ opacity: 0.5 }}>{group.plugins.length}</span>
-      </button>
-      {!collapsed ? (
         <div style={{ display: 'grid', gap: 4 }}>
           {group.plugins.map(plugin => (
             <PluginRailItem
@@ -443,8 +469,8 @@ function PluginRailGroup({
             />
           ))}
         </div>
-      ) : null}
-    </section>
+      </WorkbenchDisclosureGroup>
+    </div>
   );
 }
 
@@ -624,6 +650,44 @@ function SurfaceSegmentedControl({
   );
 }
 
+function PreviewLaneSegmentedControl({
+  lanes,
+  selectedLaneId,
+  accent,
+  onLaneChange,
+}: {
+  lanes: readonly OverlayPluginPreviewLaneContribution[];
+  selectedLaneId: string | null;
+  accent: string;
+  onLaneChange: (laneId: string) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 2,
+        border: `1px solid ${BORDER}`,
+        borderRadius: 8,
+        background: 'var(--overlay-workbench-settings-badge-bg)',
+        padding: 2,
+      }}
+    >
+      {lanes.map(lane => (
+        <button
+          key={lane.id}
+          type="button"
+          aria-pressed={lane.id === selectedLaneId}
+          onClick={() => onLaneChange(lane.id)}
+          style={segmentButtonStyle(accent, lane.id === selectedLaneId)}
+        >
+          {lane.title}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function PluginWorkbenchPreviewTestHost({
   plugin,
   lane,
@@ -637,6 +701,11 @@ function PluginWorkbenchPreviewTestHost({
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
+  const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
+  const [workflowTabId, setWorkflowTabId] = useState('preview');
+  const [registeredWildcardTabs, setRegisteredWildcardTabs] = useState<
+    ExplorerPreviewWildcardWorkflowTab[]
+  >([]);
   const appZoom = useSettingsStore(state => state.settings.appearance.appZoom ?? 1);
 
   useEffect(() => {
@@ -662,6 +731,54 @@ function PluginWorkbenchPreviewTestHost({
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    setViewMode('preview');
+    setWorkflowTabId('preview');
+    setRegisteredWildcardTabs([]);
+  }, [lane?.id, testFile?.id]);
+
+  const workflowTabs = useMemo(
+    () => lane
+      ? buildExplorerPreviewWorkflowTabs({
+        includePreviewTab: lane.workbenchChrome.includePreviewTab,
+        includeEditTab: lane.workbenchChrome.includeEditTab,
+        wildcardTabs: mergeExplorerPreviewWildcardWorkflowTabs(
+          lane.workbenchChrome.wildcardTabs,
+          registeredWildcardTabs,
+        ),
+      })
+      : [],
+    [lane, registeredWildcardTabs],
+  );
+  const activeWorkflowTab = useMemo(
+    () => resolveExplorerPreviewWorkflowActiveTab(workflowTabs, workflowTabId),
+    [workflowTabId, workflowTabs],
+  );
+  useEffect(() => {
+    if (workflowTabId !== activeWorkflowTab.id) {
+      setWorkflowTabId(activeWorkflowTab.id);
+    }
+    if (viewMode !== activeWorkflowTab.baseMode) {
+      setViewMode(activeWorkflowTab.baseMode);
+    }
+  }, [activeWorkflowTab.baseMode, activeWorkflowTab.id, viewMode, workflowTabId]);
+
+  const handleWorkflowTabSelect = (tab: ExplorerPreviewWorkflowTab) => {
+    setWorkflowTabId(tab.id);
+    setViewMode(tab.baseMode);
+  };
+  const handleViewModeChange = (mode: 'preview' | 'edit') => {
+    setViewMode(mode);
+    setWorkflowTabId(current => (
+      current === 'preview' || current === 'edit' ? mode : current
+    ));
+  };
+  const handleRegisteredWorkflowTabsChange = (
+    tabs: ExplorerPreviewWildcardWorkflowTab[] | null,
+  ) => {
+    setRegisteredWildcardTabs(tabs ?? []);
+  };
+
   if (!lane || !testFile) {
     return (
       <div style={emptyPreviewStyle}>
@@ -684,26 +801,39 @@ function PluginWorkbenchPreviewTestHost({
 
   return (
     <PluginErrorBoundary pluginName={`${plugin.name} preview`}>
-      <div ref={hostRef} style={{ minWidth: 0, minHeight: 0, width: '100%', height: '100%', overflow: 'hidden', background: 'var(--overlay-bg-shell)' }}>
-        <PreviewComponent
-          lane={lane}
-          file={{
-            path: testFile.path,
-            resolvedPath: testFile.path,
-            name: fileName,
-            extension: testFile.extension,
-            size: 0,
-            assetUrl: toFileAssetUrl(testFile.path),
-            isDirectory: false,
-          }}
-          runtime={createPluginPreviewRuntimeBridge(lane.runtimeId, () => null)}
-          appearance={getPluginAppearance(appearance)}
-          host={previewHost}
-          executionContext={null}
-          viewMode="preview"
-          workflowTabId="preview"
-          previewBackedByArchiveVirtual={false}
-        />
+      <div style={{ minWidth: 0, minHeight: 0, width: '100%', height: '100%', overflow: 'hidden', background: 'var(--overlay-bg-shell)', display: 'flex', flexDirection: 'column' }}>
+        {workflowTabs.length > 1 ? (
+          <div style={{ padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, background: 'var(--overlay-explorer-preview-header-bg)' }}>
+            <ExplorerPreviewWorkflowTabControl
+              tabs={workflowTabs}
+              activeTabId={activeWorkflowTab.id}
+              onTabSelect={handleWorkflowTabSelect}
+            />
+          </div>
+        ) : null}
+        <div ref={hostRef} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+          <PreviewComponent
+            lane={lane}
+            file={{
+              path: testFile.path,
+              resolvedPath: testFile.path,
+              name: fileName,
+              extension: testFile.extension,
+              size: 0,
+              assetUrl: toFileAssetUrl(testFile.path),
+              isDirectory: false,
+            }}
+            runtime={createPluginPreviewRuntimeBridge(lane.runtimeId, () => null)}
+            appearance={getPluginAppearance(appearance)}
+            host={previewHost}
+            executionContext={null}
+            viewMode={viewMode}
+            workflowTabId={activeWorkflowTab.id}
+            previewBackedByArchiveVirtual={false}
+            onRegisterWorkflowTabs={handleRegisteredWorkflowTabsChange}
+            onViewModeChange={handleViewModeChange}
+          />
+        </div>
       </div>
     </PluginErrorBoundary>
   );
@@ -1146,31 +1276,24 @@ function InspectorBlock({
   onToggleCollapsed: (id: string) => void;
   children: React.ReactNode;
 }) {
-  const ChevronIcon = collapsed ? ChevronRight : ChevronDown;
   return (
-    <section style={{ marginBottom: 8, border: `1px solid ${BORDER}`, borderRadius: 8, background: 'rgba(255,255,255,0.025)', overflow: 'hidden' }}>
-      <button
-        type="button"
-        aria-expanded={!collapsed}
-        aria-label={`${title} section`}
-        onClick={() => onToggleCollapsed(id)}
-        style={{
-          ...inspectorHeaderButtonStyle,
-          borderBottom: collapsed ? 'none' : `1px solid ${BORDER}`,
-        }}
-      >
-        <span style={{ display: 'inline-flex', minWidth: 0, alignItems: 'center', gap: 6 }}>
-          <ChevronIcon size={11} style={{ color: MUTED, flexShrink: 0 }} />
-          <span style={{ color: 'var(--overlay-text-secondary)' }}>{icon}</span>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
-        </span>
-      </button>
-      {!collapsed ? (
-        <div style={{ padding: '8px 10px 10px' }}>
-          {children}
-        </div>
-      ) : null}
-    </section>
+    <WorkbenchDisclosureGroup
+      label={title}
+      leadingIcon={icon}
+      ariaLabel={`${title} section`}
+      collapsed={collapsed}
+      onToggleCollapsed={() => onToggleCollapsed(id)}
+      variant="panel"
+      textColor={TEXT}
+      mutedColor={MUTED}
+      borderColor={BORDER}
+      background="rgba(255,255,255,0.025)"
+      sectionStyle={{ marginBottom: 8, borderRadius: 8 }}
+      buttonStyle={inspectorHeaderButtonStyle}
+      contentStyle={{ padding: '8px 10px 10px' }}
+    >
+      {children}
+    </WorkbenchDisclosureGroup>
   );
 }
 
@@ -1418,22 +1541,6 @@ function toFileAssetUrl(filePath: string): string {
     return normalized.startsWith('/') ? `file://${encodeURI(normalized)}` : `file:///${encodeURI(normalized)}`;
   }
 }
-
-const railGroupButtonStyle: React.CSSProperties = {
-  display: 'flex',
-  width: '100%',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 8,
-  padding: '2px 1px 5px',
-  border: 0,
-  background: 'transparent',
-  fontSize: 9,
-  color: MUTED,
-  textTransform: 'uppercase',
-  letterSpacing: '0.16em',
-  cursor: 'pointer',
-};
 
 const headerPathStyle: React.CSSProperties = {
   marginTop: 3,

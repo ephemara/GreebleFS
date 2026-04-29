@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OverlayPluginPreviewLaneContribution } from "../config/pluginContributions";
+import { normalizeExplorerPreviewWorkbenchChromeMetadata } from "../config/previewWorkbenchChrome";
 import {
   resolveExplorerPreviewDescriptor,
   resolveExplorerPreviewWorkbenchSelection,
@@ -47,6 +48,7 @@ function createPluginLane(
       appliesTo: "file",
       extensions: ["txt"],
       fileNames: [],
+      previewKinds: [],
     },
     capabilities: partial.capabilities ?? {
       editable: true,
@@ -57,6 +59,11 @@ function createPluginLane(
       prefetch: false,
       closeGuard: true,
     },
+    workbenchChrome:
+      partial.workbenchChrome ??
+      normalizeExplorerPreviewWorkbenchChromeMetadata(undefined, {
+        includeEditTab: partial.capabilities?.editable ?? true,
+      }),
     component:
       partial.component ??
       ((() => null) as OverlayPluginPreviewLaneContribution["component"]),
@@ -114,6 +121,7 @@ describe("explorerPreviewRegistry", () => {
         appliesTo: "file",
         extensions: ["txt"],
         fileNames: [],
+        previewKinds: [],
       },
     });
 
@@ -182,6 +190,7 @@ describe("explorerPreviewRegistry", () => {
         appliesTo: "file",
         extensions: ["sqlite", "sqlite3", "db"],
         fileNames: [],
+        previewKinds: [],
       },
       capabilities: {
         editable: false,

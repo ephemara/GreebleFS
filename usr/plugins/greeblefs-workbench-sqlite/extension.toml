@@ -25,6 +25,11 @@ appliesTo = "file"
 extensions = ["sqlite", "sqlite3", "db"]
 fileNames = []
 
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = false
+topBarDensity = "compact"
+
 [contributions.previewLanes.capabilities]
 editable = false
 save = false

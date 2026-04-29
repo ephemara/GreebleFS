@@ -1,3 +1,52 @@
+# 2026-04-29 - Index Photo Gallery Uses Plugin Settings On Desktop And Mobile
+
+- `usr/plugins/greeblefs-index-photo-gallery` is now the first reference plugin that consumes the plugin settings system for both surfaces. Its manifest declares `rootPaths`, `fileExtensions`, `resultLimit`, and `includeHidden` in a `gallery-settings` slot, and both `index.tsx` plus `mobile/gallery.js` normalize those values before querying the index.
+- Desktop gallery scrolling is owned inside the plugin surface now: the root stays height-bounded and the grid wrapper is the scroll host. Mobile gallery scrolling is likewise pane-local through `.gfs-mobile-gallery`, with touch scrolling and a bounded viewport height so the phone plugin pane does not trap content off-screen.
+- The desktop-to-mobile settings bridge now flows through `src/config/mobileTheme.ts` and `src-tauri/src/lan_share/types.rs` as `pluginSettingsById`. `src-tauri/src/lan_share/mobile_plugins.rs` copies each plugin's settings into `/api/plugins` as `settingsValues`, and `src-mobile/mobilePluginRuntime.tsx` exposes them to renderer modules as read-only `api.settings.getValues()` / `api.settings.getValue(...)`.
+- `/api/index/pictures` now accepts repeated `rootPaths` and `extensions` query params. The gallery mobile renderer passes its settings through `api.index.media.findPictures(...)`, while the native host keeps paths normalized under the active share root and applies extension filters to hub entries too.
+- Durable regression rules:
+  - Keep plugin settings durable in `settings.plugins.valuesByPluginId`; mobile plugins may read the snapshot but should not write settings from browser code until a dedicated mobile settings write path exists.
+  - Gallery-style plugins should query `api.index.media.findPictures(...)` or desktop `api.index.media.findPictures(...)` with explicit root/extension filters. Do not add filesystem crawling loops inside plugin UI.
+  - If a plugin renders a large media grid, make the plugin's own body the scroll host on both desktop and mobile so parent panes do not swallow wheel/touch scroll.
+- Validation for this pass:
+  - `bunx vitest run src/test/pluginIndexApi.test.ts src/test/mobileTheme.test.ts src/test/mobileApp.test.ts --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/pluginPackages.test.ts src/test/useFolderPluginRuntime.test.tsx src/test/settingsStore.test.ts src/test/panelRegistry.test.tsx --reporter=dot --testTimeout=30000`
+  - `cargo check --manifest-path src-tauri/Cargo.toml --lib --quiet`
+  - `bun run build:mobile`
+  - touched-file TypeScript sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`; full `tsc --noEmit` still exits with unrelated workspace diagnostics outside this gallery/settings lane.
+
+# 2026-04-29 - Plugin Preview Workbench Tabs Are Manifest-Declared And Manager Preview Matches Explorer
+
+- `src/config/previewWorkbenchChrome.ts` is now the source of truth for preview workflow tab normalization. It owns built-in `Preview` / `Edit` inclusion, wildcard tab normalization, manifest/runtime wildcard merging, active-tab fallback, optional preview-header layout ids, and compact top-bar density metadata. `src/components/explorer/explorerPreviewWorkflowTabs.ts` remains as the compatibility export path.
+- Plugin preview lane descriptors now carry normalized `workbenchChrome`. Package manifests can declare it through `[contributions.previewLanes.workbenchChrome]` or compatibility aliases, while mounted workbenches can still call `onRegisterWorkflowTabs(...)` for dynamic tabs. `capabilities.workflowTabs` is legacy capability information only; do not use it as the actual tab list.
+- `src/components/PluginsManager.tsx` now previews the selected plugin lane with the same shared workflow-tab host as Explorer. It owns local `viewMode`, active `workflowTabId`, registered wildcard tabs, lane selection for plugins with multiple preview lanes, and passes `onRegisterWorkflowTabs`, `onViewModeChange`, `viewMode`, and `workflowTabId` into the mounted workbench.
+- First-party workbench manifests now advertise their preview chrome: audio declares `Preview | Edit | VST`, video and spreadsheet declare `Preview | Edit`, and SQLite/docx stay preview-only until their mounted workbenches honestly support edit flow.
+- Durable regression rules:
+  - Keep `src/config/previewWorkbenchChrome.ts` as the shared tab/chrome normalization layer for Explorer and Plugins Manager.
+  - Merge runtime-registered wildcard tabs over manifest wildcard tabs by id so mounted workbenches can refine static metadata without losing pre-mount discoverability.
+  - Keep plugin preview lane test mocks populated with the full match-rule shape, including `previewKinds`, when constructing `OverlayPluginPreviewLaneContribution` objects.
+- Validation for this pass:
+  - `bunx vitest run src/test/explorerPreviewWorkflowTabs.test.ts src/test/pluginPackages.test.ts src/test/pluginsManager.test.tsx --reporter=dot`
+  - `bunx vitest run src/test/explorerPreviewRegistry.test.ts src/test/fileExplorer.viewModes.test.tsx -t "plugin preview lanes|sqlite files through contributed plugin workbenches" --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/explorerPreviewWorkflowTabs.test.ts src/test/pluginPackages.test.ts src/test/pluginsManager.test.tsx src/test/explorerPreviewRegistry.test.ts src/test/fileExplorer.viewModes.test.tsx -t "plugin preview lanes|sqlite files through contributed plugin workbenches|explorer preview workflow tabs|plugin package discovery|PluginsManager" --reporter=dot --testTimeout=30000`
+  - Touched-file TypeScript diagnostic sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS_BY_BASENAME`; full `tsc --noEmit` still exits with unrelated repo diagnostics.
+
+# 2026-04-29 - Settings, Plugins, And Context-Menu Libraries Share One Disclosure Primitive
+
+- `src/components/WorkbenchDisclosureGroup.tsx` is now the shared disclosure primitive for collapsible workbench groups. It covers the narrow rail-style headers used by Settings and Plugins plus the bordered panel-style sections used by inspector/context-menu library surfaces.
+- Durable ownership after this pass:
+  - `src/components/SettingsPage.tsx` uses `WorkbenchDisclosureGroup` for both the main settings rail and plugin-settings rail. Rail categories now have persistent collapsed state keyed by category id, and stale ids are pruned when category catalogs change.
+  - `src/components/PluginsManager.tsx` uses the same primitive for plugin rail categories and the right-hand inspector blocks, so plugin grouping chrome and section collapse behavior stay visually aligned.
+  - `src/components/settings/sections/ContextMenusSettingsSection.tsx` uses the same primitive for the left library sections while preserving the existing force-expand-on-search behavior.
+- Durable regression rules:
+  - Do not reintroduce one-off chevron/header collapse markup for settings/plugin/context-menu grouping when `WorkbenchDisclosureGroup` can cover the use case.
+  - Keep rail collapse state keyed to stable category ids and prune removed ids when authored/plugin categories disappear, otherwise stale collapsed keys will leak across catalog refreshes.
+  - Library-section search in Context Menus must continue to force sections open even if the user had previously collapsed them.
+- Validation for this pass:
+  - `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "lets settings and plugin rail categories collapse through the shared disclosure group|organizes the settings rail|splits the settings rail into settings and plugins paths" --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/pluginsManager.test.tsx --reporter=dot --testTimeout=30000`
+  - Current full `tsc --noEmit` is still blocked by unrelated in-progress dock-presentation typing drift in `src/components/SettingsPage.tsx` (`packageSources` merge), not by the disclosure changes.
+
 # 2026-04-29 - Explorer Task Center Is Surface-Owned And File Operations Popout Syncs Shell Theme
 
 - The Explorer task-center flyout is now anchored to one registered surface id at a time instead of a global boolean that every mounted `ExplorerTaskStatusBadge` renders. `src/store/explorerTaskStore.ts` owns the registered surface list plus the active surface id; badge clicks pass their generated surface id into `toggleExplorerTaskCenter(...)`, while automatic task/action opens choose the current/last/first registered surface so only one task menu appears.
@@ -9,6 +58,25 @@
 - Validation:
   - passed: `bunx vitest run src/test/explorerTaskStatusBadge.test.tsx src/test/explorerTaskStore.test.tsx src/test/appearanceSync.test.ts src/test/fileOperationsWindow.test.ts --reporter=dot --testTimeout=30000`
   - passed: touched-file TypeScript diagnostic sweep for the task-store/task-badge/file-operations/appearance-sync files returned no matching diagnostics. Full `tsc --noEmit` is still blocked by unrelated in-progress dock-presentation edits in `src/App.tsx`.
+
+# 2026-04-29 - Dual Desktop/Mobile Plugin Packages Share One Index-Aware Root
+
+- GreebleFS now has a real dual-surface plugin pattern: one `usr/plugins/<plugin>` package can expose a desktop package entry/contributions and one or more mobile panes through `contributions.mobilePanes`.
+- Durable ownership after this pass:
+  - `src-tauri/src/lan_share/mobile_plugins.rs` remains the host-owned bridge for mobile catalog truth. It scans the same desktop plugin root, turns mobile renderer/style asset paths into `/api/plugins/{pluginId}/assets/...` URLs, and keeps backend actions host-mediated through `plugin_run_backend(...)`.
+  - `src-mobile/mobilePluginRuntime.tsx` is the browser-safe mobile renderer host. It loads pane renderer modules from plugin asset URLs, injects pane style URLs, and gives mobile plugins a narrow host API for assets, backend actions, file open/preview, search scan/status, and indexed picture discovery.
+  - `src-tauri/src/lan_share/mobile.rs` exposes `/api/index/pictures`, which uses the native global index under the active mobile share root. Mobile gallery-style plugins should call this route through `api.index.media.findPictures(...)` instead of crawling folders from browser code.
+  - `src/config/pluginPackages.ts` now preserves `contributions.mobilePanes` in the desktop package manifest model so the Plugins Manager capability diagnostics stay aligned with mobile catalog truth.
+  - `usr/plugins/greeblefs-index-photo-gallery` is the reference dual plugin: desktop uses `entry = "index.tsx"` and mobile uses `mobile/gallery.js` plus `mobile/gallery.css`.
+- Durable regression rules:
+  - Keep `src-mobile/**` free of Tauri imports and desktop runtime imports. Mobile plugin code runs in the phone browser and must use the host API passed by `MobilePluginRuntimeSurface`.
+  - Keep plugin ids route-safe and directory-backed on mobile; manifest ids are metadata only.
+  - Disabled plugins must not execute desktop entries or mobile renderer assets. Keep enablement gating and mobile catalog discovery in sync if mobile enablement controls are added later.
+- Validation for this pass:
+  - `bunx vitest run src/test/mobileApp.test.tsx --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/pluginPackages.test.ts src/test/pluginsManager.test.tsx src/test/useFolderPluginRuntime.test.tsx src/test/settingsStore.test.ts src/test/panelRegistry.test.tsx --reporter=dot`
+  - `cargo check --manifest-path src-tauri/Cargo.toml --lib --quiet`
+  - `bun run build:mobile`
 
 # 2026-04-29 - Native Scrollbars Are Theme-Owned And Small Explorer Folders Stay Off Parent Scroll State
 
