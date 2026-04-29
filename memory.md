@@ -1,3 +1,19 @@
+# 2026-04-28 - Explorer Folder Open Stops Paying Full Runtime-Orchestration Costs
+
+- Windows Explorer performance was still collapsing after the initial Go-sidecar default fix because folder navigation had two independent O(entry-count) hot-path taxes:
+  - `buildExplorerExecutionContextSnapshot(...)` built a full `Map` for every listed entry before syncing a tiny ambient context snapshot into the Rust extension-host/event-bus pipeline, even when there was no selection or preview.
+  - Standard browse mode sent backend-sorted 100k-entry folder arrays through the visible-entry worker path for the default `name/asc` view, causing structured-clone and main-thread reconciliation pressure that unit tests did not represent.
+  - Windows `fs_list_dir` also resolved native identity by opening every listed file handle. Directory listing now uses `build_local_entry_listing_identity(...)`, which keeps Windows listing identity on a fast derived path identity plus in-memory move aliases; the heavier native identity path remains available for operations that explicitly need continuity.
+- Durable performance rules:
+  - Ambient Explorer context snapshots must resolve only selected/preview entries. Do not map every entry in the active directory just to publish `activeDirectory`.
+  - Backend-sorted default browsing (`name/asc`, no active tag filter, not search) should reuse the listing array and skip the `explorer-compute` worker. Worker sorting is for non-default sort/filter/search shaping.
+  - Do not reintroduce Windows per-entry file-handle opens in normal directory listing. If stronger identity is needed, prove it outside first-frame folder load or make it lazy/visible-window scoped.
+- Validation:
+  - passed: `node_modules\.bin\vitest.exe run src/test/explorerExtensionContext.test.ts src/test/explorerVisibleEntries.test.ts src/test/explorerVisibleEntries.workerBridge.test.ts --reporter=dot`
+  - passed: `node_modules\.bin\vitest.exe run src/test/fileExplorer.viewModes.test.tsx -t "100000|huge folder|dedicated explorer viewport|deep-grid viewport anchored" --reporter=dot --testTimeout=30000`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - blocked on this Windows host: targeted `cargo test --manifest-path src-tauri/Cargo.toml explorer_identity::tests::fast_listing_identity_uses_derived_path_identity_without_store_access --lib -- --nocapture` compiled but the test executable failed to launch with `STATUS_ENTRYPOINT_NOT_FOUND`, matching the existing local Rust-test launcher issue.
+
 # 2026-04-28 - Windows Explorer Policy And Terminal Hosts Stop Defaulting To Go Runtime Paths
 
 - Windows performance collapsed after the Go explorer-policy and Go PTY terminal paths became default startup/navigation surfaces. The expensive shape was especially bad on WebView2: Explorer navigation could round-trip TS -> Rust -> Go sidecar -> Rust host for normal folder listing, while fresh terminal sessions tried the Go/Wasm pane before xterm.

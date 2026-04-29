@@ -13,8 +13,8 @@ use crate::entry_size_cache::{
 };
 use crate::explorer_identity::{
     apply_move_operation_continuity, build_content_revision, build_virtual_identity,
-    prepare_move_operation_continuity, resolve_local_identity, ExplorerIdentityKind,
-    ExplorerIdentityManager,
+    prepare_move_operation_continuity, resolve_fast_local_listing_identity,
+    resolve_local_identity, ExplorerIdentityKind, ExplorerIdentityManager,
 };
 use crate::explorer_pro_commands::FsBatchRenameItem;
 use crate::telemetry::{finish_native_span, start_native_span};
@@ -2019,6 +2019,43 @@ fn build_local_entry_identity(
     ))
 }
 
+fn build_local_entry_listing_identity(
+    app: &AppHandle,
+    identity_manager: &ExplorerIdentityManager,
+    path: &Path,
+    size: u64,
+    modified_ms: u64,
+    is_dir: bool,
+    is_symlink: bool,
+) -> Result<(String, ExplorerIdentityKind, String), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        let content_revision =
+            build_local_entry_content_revision(size, modified_ms, is_dir, is_symlink);
+        let resolved_identity =
+            resolve_fast_local_listing_identity(identity_manager, path, &content_revision);
+        Ok((
+            resolved_identity.entity_id,
+            resolved_identity.identity_kind,
+            resolved_identity.content_revision,
+        ))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        build_local_entry_identity(
+            app,
+            identity_manager,
+            path,
+            size,
+            modified_ms,
+            is_dir,
+            is_symlink,
+        )
+    }
+}
+
 fn build_transfer_result_from_destination(
     app: &AppHandle,
     identity_manager: &ExplorerIdentityManager,
@@ -2530,7 +2567,7 @@ where
     let is_dir = entry_type.is_dir() || ChaType::from(metadata.mode).is_dir();
     let size = if is_dir { 0 } else { metadata.len };
     let modified = cha_modified_ms(metadata).unwrap_or(0);
-    let (entity_id, identity_kind, content_revision) = build_local_entry_identity(
+    let (entity_id, identity_kind, content_revision) = build_local_entry_listing_identity(
         app,
         identity_manager,
         &path,

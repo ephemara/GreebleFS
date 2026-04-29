@@ -531,6 +531,7 @@ import {
   queueExplorerTerminalDirectorySync,
 } from "../runtime/explorerBackend";
 import {
+  canReuseBackendSortedExplorerEntries,
   compareExplorerEntries as compareSharedExplorerEntries,
   computeExplorerBaseVisibleEntries,
   getEntryExtension as getSharedEntryExtension,
@@ -2381,6 +2382,7 @@ function getPreviewAssetUrl(filePath: string): string {
 
 const FAST_PREVIEW_LOADING_INDICATOR_DELAY_MS = 160;
 const EXPLORER_VISIBLE_ENTRIES_BACKGROUND_MIN_COUNT = 180;
+const EMPTY_FILE_ENTRIES: FileEntry[] = [];
 
 function isFastSwitchPreviewKind(
   kind: ExplorerResolvedPreviewDescriptor["kind"],
@@ -11328,11 +11330,6 @@ export function FileExplorer({
     }
   }, [currentPath, externalRevealRequest, navigate]);
 
-  const currentDirectoryEntryLookup = useMemo(
-    () => new Map(entries.map((entry) => [entry.path, entry] as const)),
-    [entries],
-  );
-
   useEffect(() => {
     const pendingRevealRequest = pendingWorkspaceRevealRef.current;
     if (!pendingRevealRequest) {
@@ -11348,7 +11345,7 @@ export function FileExplorer({
       return;
     }
 
-    const targetEntry = currentDirectoryEntryLookup.get(selectionPath);
+    const targetEntry = entries.find((entry) => entry.path === selectionPath);
     if (targetEntry) {
       setSelected(new Set([selectionPath]));
       lastSelected.current = selectionPath;
@@ -11360,7 +11357,7 @@ export function FileExplorer({
     if (!loading) {
       pendingWorkspaceRevealRef.current = null;
     }
-  }, [currentDirectoryEntryLookup, currentPath, loading]);
+  }, [currentPath, entries, loading]);
 
   useEffect(() => {
     if (!externalRefreshRequest) {
@@ -11646,13 +11643,20 @@ export function FileExplorer({
       tagMetadata.assignments,
     ],
   );
+  const canReuseBackendVisibleEntries =
+    !isSearchActive &&
+    canReuseBackendSortedExplorerEntries(baseVisibleEntriesInput);
   const immediateBaseVisibleEntries = useMemo(
-    () =>
-      baseVisibleEntriesInput.entries.length <=
-      EXPLORER_VISIBLE_ENTRIES_BACKGROUND_MIN_COUNT
+    () => {
+      if (canReuseBackendVisibleEntries) {
+        return baseVisibleEntriesInput.entries as FileEntry[];
+      }
+      return baseVisibleEntriesInput.entries.length <=
+        EXPLORER_VISIBLE_ENTRIES_BACKGROUND_MIN_COUNT
         ? computeExplorerBaseVisibleEntries(baseVisibleEntriesInput)
-        : null,
-    [baseVisibleEntriesInput],
+        : null;
+    },
+    [baseVisibleEntriesInput, canReuseBackendVisibleEntries],
   );
   const [backgroundBaseVisibleEntries, setBackgroundBaseVisibleEntries] =
     useState<FileEntry[]>(() =>
@@ -11662,7 +11666,11 @@ export function FileExplorer({
   useEffect(() => {
     if (immediateBaseVisibleEntries != null) {
       startTransition(() => {
-        setBackgroundBaseVisibleEntries(immediateBaseVisibleEntries);
+        setBackgroundBaseVisibleEntries((currentEntries) =>
+          currentEntries === immediateBaseVisibleEntries
+            ? currentEntries
+            : immediateBaseVisibleEntries,
+        );
       });
       return;
     }
@@ -11700,22 +11708,26 @@ export function FileExplorer({
   }, [baseVisibleEntriesInput, immediateBaseVisibleEntries, setError]);
   const baseVisibleEntries =
     immediateBaseVisibleEntries ?? backgroundBaseVisibleEntries;
+  const jumpFilterHasQuery =
+    jumpFilter.active && jumpFilter.query.trim().length > 0;
   const baseVisibleEntryLookup = useMemo(
-    () => new Map(baseVisibleEntries.map((entry) => [entry.path, entry])),
-    [baseVisibleEntries],
+    () =>
+      jumpFilterHasQuery
+        ? new Map(baseVisibleEntries.map((entry) => [entry.path, entry]))
+        : null,
+    [baseVisibleEntries, jumpFilterHasQuery],
   );
   const visibleEntries = useMemo(
     () =>
-      jumpFilter.active && jumpFilter.query.trim().length > 0
+      jumpFilterHasQuery
         ? jumpFilter.resultPaths
-            .map((path) => baseVisibleEntryLookup.get(path))
+            .map((path) => baseVisibleEntryLookup?.get(path))
             .filter((entry): entry is FileEntry => Boolean(entry))
         : baseVisibleEntries,
     [
       baseVisibleEntries,
       baseVisibleEntryLookup,
-      jumpFilter.active,
-      jumpFilter.query,
+      jumpFilterHasQuery,
       jumpFilter.resultPaths,
     ],
   );
@@ -11724,15 +11736,37 @@ export function FileExplorer({
     [visibleEntries],
   );
   const contextMenuEntryLookup = useMemo(() => {
+    if (
+      !isSearchActive &&
+      canReuseBackendVisibleEntries &&
+      !jumpFilterHasQuery
+    ) {
+      return visibleEntryLookup as Map<
+        string,
+        FileEntry | ExplorerNormalizedSearchResult
+      >;
+    }
     const entryLookup = new Map<
       string,
       FileEntry | ExplorerNormalizedSearchResult
     >();
-    [...entries, ...searchResults, ...visibleEntries].forEach((entry) => {
+    for (const entry of entries) {
       entryLookup.set(entry.path, entry);
-    });
+    }
+    if (isSearchActive) {
+      for (const entry of searchResults) {
+        entryLookup.set(entry.path, entry);
+      }
+    }
     return entryLookup;
-  }, [entries, searchResults, visibleEntries]);
+  }, [
+    canReuseBackendVisibleEntries,
+    entries,
+    isSearchActive,
+    jumpFilterHasQuery,
+    searchResults,
+    visibleEntryLookup,
+  ]);
   const visibleEntryIndexLookup = useMemo(
     () =>
       new Map(
@@ -11960,17 +11994,31 @@ export function FileExplorer({
   );
   const constellationVisiblePinnedCount = useMemo(
     () =>
-      visibleEntries.reduce(
-        (count, entry) =>
-          count + (constellationPinnedPathSet.has(entry.path) ? 1 : 0),
-        0,
-      ),
-    [constellationPinnedPathSet, visibleEntries],
+      shouldBuildConstellationCompute
+        ? visibleEntries.reduce(
+            (count, entry) =>
+              count + (constellationPinnedPathSet.has(entry.path) ? 1 : 0),
+            0,
+          )
+        : 0,
+    [constellationPinnedPathSet, shouldBuildConstellationCompute, visibleEntries],
   );
   void constellationVisiblePinnedCount;
   const selectedEntries = useMemo(
-    () => visibleEntries.filter((entry) => selected.has(entry.path)),
-    [visibleEntries, selected],
+    () => {
+      if (selected.size === 0) {
+        return EMPTY_FILE_ENTRIES;
+      }
+      const nextSelectedEntries: FileEntry[] = [];
+      for (const selectedPath of selected) {
+        const entry = visibleEntryLookup.get(selectedPath);
+        if (entry) {
+          nextSelectedEntries.push(entry);
+        }
+      }
+      return nextSelectedEntries;
+    },
+    [selected, visibleEntryLookup],
   );
   const semanticSelectionCandidate = useMemo(() => {
     if (
@@ -11990,11 +12038,12 @@ export function FileExplorer({
   }, [currentPathIsCloud, currentPathIsVirtual, selectedEntries]);
   const constellationSelectionIsFullyPinned = useMemo(
     () =>
+      shouldBuildConstellationCompute &&
       selectedEntries.length > 0 &&
       selectedEntries.every((entry) =>
         constellationPinnedPathSet.has(entry.path),
       ),
-    [constellationPinnedPathSet, selectedEntries],
+    [constellationPinnedPathSet, selectedEntries, shouldBuildConstellationCompute],
   );
   void constellationSelectionIsFullyPinned;
   const cycleActiveConstellationLens = useCallback(() => {
@@ -12091,26 +12140,23 @@ export function FileExplorer({
     const pending = cacheEntries.some((value) => value.pending);
     return { totalBytes, fileCount, folderCount, pending };
   }, [propertiesPanel.targetPaths, recursiveSizeCache]);
-  const droppedSourceLookup = useMemo(() => {
-    const lookup = new Map<
-      string,
-      { path: string; name: string; isDirectory: boolean }
-    >();
-    for (const entry of [...entries, ...searchResults]) {
-      if (!lookup.has(entry.path)) {
-        lookup.set(entry.path, {
-          path: entry.path,
-          name: entry.name,
-          isDirectory: entry.is_dir,
-        });
-      }
-    }
-    return lookup;
-  }, [entries, searchResults]);
   const duplicateEntryLookup = useMemo(() => {
+    if (
+      !isSearchActive &&
+      !duplicateFinder.status?.groups?.length &&
+      canReuseBackendVisibleEntries &&
+      !jumpFilterHasQuery
+    ) {
+      return visibleEntryLookup;
+    }
     const lookup = new Map<string, FileEntry>();
-    for (const entry of [...entries, ...searchResults]) {
+    for (const entry of entries) {
       lookup.set(entry.path, entry);
+    }
+    if (isSearchActive) {
+      for (const entry of searchResults) {
+        lookup.set(entry.path, entry);
+      }
     }
     for (const group of duplicateFinder.status?.groups ?? []) {
       for (const entry of group.entries) {
@@ -12120,7 +12166,15 @@ export function FileExplorer({
       }
     }
     return lookup;
-  }, [duplicateFinder.status?.groups, entries, searchResults]);
+  }, [
+    canReuseBackendVisibleEntries,
+    duplicateFinder.status?.groups,
+    entries,
+    isSearchActive,
+    jumpFilterHasQuery,
+    searchResults,
+    visibleEntryLookup,
+  ]);
   const propertiesPanelEntries = useMemo(
     () =>
       propertiesPanel.targetPaths
@@ -12588,18 +12642,18 @@ export function FileExplorer({
             typeof path === "string" && path.trim().length > 0,
         )
         .map((path) => {
-          const known = droppedSourceLookup.get(path);
+          const known = contextMenuEntryLookup.get(path);
           const fallbackName =
             path.split(/[\\/]/).filter(Boolean).pop() ?? path;
           const inferredDirectory =
-            known?.isDirectory ?? !/\.[^\\/]+$/.test(fallbackName);
+            known?.is_dir ?? !/\.[^\\/]+$/.test(fallbackName);
           return {
             path,
             name: known?.name ?? fallbackName,
             isDirectory: inferredDirectory,
           };
         }),
-    [droppedSourceLookup],
+    [contextMenuEntryLookup],
   );
   const isProcessElevatedRef = useRef(false);
   const lastObservedFileTransferNonceRef = useRef<string | null>(null);

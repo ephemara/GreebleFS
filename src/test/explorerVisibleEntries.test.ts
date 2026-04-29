@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canReuseBackendSortedExplorerEntries,
   computeExplorerBaseVisibleEntries,
   sortExplorerEntries,
 } from "../runtime/explorerVisibleEntries";
@@ -119,5 +120,34 @@ describe("explorerVisibleEntries", () => {
         sortOrder: "asc",
       }),
     ).toEqual([]);
+  });
+
+  it("identifies the backend-sorted default browsing shape", () => {
+    expect(
+      canReuseBackendSortedExplorerEntries({
+        activeTagFilterIds: [],
+        pathTagAssignments: [{ path: rustEntry.path, tagIds: ["favorite"] }],
+        sortBy: "name",
+        sortOrder: "asc",
+      }),
+    ).toBe(true);
+
+    expect(
+      canReuseBackendSortedExplorerEntries({
+        activeTagFilterIds: [],
+        pathTagAssignments: [],
+        sortBy: "date",
+        sortOrder: "desc",
+      }),
+    ).toBe(false);
+
+    expect(
+      canReuseBackendSortedExplorerEntries({
+        activeTagFilterIds: ["favorite"],
+        pathTagAssignments: [],
+        sortBy: "name",
+        sortOrder: "asc",
+      }),
+    ).toBe(false);
   });
 });

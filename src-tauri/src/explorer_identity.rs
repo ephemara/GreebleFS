@@ -123,6 +123,25 @@ pub fn resolve_local_identity(
     })
 }
 
+pub fn resolve_fast_local_listing_identity(
+    manager: &ExplorerIdentityManager,
+    path: &Path,
+    content_revision: &str,
+) -> ExplorerResolvedIdentity {
+    let path_key = normalize_path_key(path);
+    if let Ok(cache) = manager.path_identity_aliases.lock() {
+        if let Some(alias) = cache.get(&path_key) {
+            return ExplorerResolvedIdentity {
+                entity_id: alias.entity_id.clone(),
+                identity_kind: alias.identity_kind,
+                content_revision: content_revision.to_string(),
+            };
+        }
+    }
+
+    build_virtual_identity("derived", &path_key, content_revision)
+}
+
 pub fn prepare_move_operation_continuity(
     app: &AppHandle,
     manager: &ExplorerIdentityManager,
@@ -543,5 +562,19 @@ mod tests {
         assert_eq!(left.entity_id, right.entity_id);
         assert_eq!(left.identity_kind, ExplorerIdentityKind::Derived);
         assert_eq!(left.content_revision, right.content_revision);
+    }
+
+    #[test]
+    fn fast_listing_identity_uses_derived_path_identity_without_store_access() {
+        let manager = ExplorerIdentityManager::default();
+        let revision = build_content_revision(12, 34, false, false);
+        let path = Path::new("C:\\workspace\\entry.txt");
+
+        let left = resolve_fast_local_listing_identity(&manager, path, &revision);
+        let right = resolve_fast_local_listing_identity(&manager, path, &revision);
+
+        assert_eq!(left.entity_id, right.entity_id);
+        assert_eq!(left.identity_kind, ExplorerIdentityKind::Derived);
+        assert_eq!(left.content_revision, revision);
     }
 }

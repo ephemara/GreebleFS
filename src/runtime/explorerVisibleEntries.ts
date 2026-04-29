@@ -20,6 +20,19 @@ export interface ExplorerVisibleEntriesComputeInput<
 export const EXPLORER_VISIBLE_ENTRIES_WORKER_TASK_TYPE =
   'shape-base-visible-entries';
 
+export function canReuseBackendSortedExplorerEntries(
+  input: Pick<
+    ExplorerVisibleEntriesComputeInput,
+    'activeTagFilterIds' | 'pathTagAssignments' | 'sortBy' | 'sortOrder'
+  >,
+): boolean {
+  return (
+    input.activeTagFilterIds.length === 0 &&
+    input.sortBy === 'name' &&
+    input.sortOrder === 'asc'
+  );
+}
+
 type ExplorerVisibleEntryLike = Pick<
   FileEntry,
   'path' | 'is_dir' | 'name' | 'extension' | 'size' | 'modified'

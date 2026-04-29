@@ -46,17 +46,31 @@ export interface BuildExplorerExecutionContextSnapshotInput {
 export function buildExplorerExecutionContextSnapshot(
   input: BuildExplorerExecutionContextSnapshotInput,
 ): ExecutionContextSnapshot {
-  const entryByPath = new Map(
-    input.entries.map((entry) => [entry.path, toExecutionContextEntry(entry)]),
+  const previewFocusedPath = input.previewSession?.filePath?.trim() || null;
+  const requestedEntryPaths = new Set(
+    [
+      ...input.selectedPaths.map((path) => path.trim()).filter(Boolean),
+      previewFocusedPath,
+    ].filter((path): path is string => path != null && path.length > 0),
   );
+  const entryByPath = new Map<string, ExecutionContextEntry>();
+  if (requestedEntryPaths.size > 0) {
+    for (const entry of input.entries) {
+      if (!requestedEntryPaths.has(entry.path)) {
+        continue;
+      }
+      entryByPath.set(entry.path, toExecutionContextEntry(entry));
+      if (entryByPath.size === requestedEntryPaths.size) {
+        break;
+      }
+    }
+  }
   const selectedEntries = input.selectedPaths
     .map((path) => entryByPath.get(path))
     .filter((entry): entry is ExecutionContextEntry => entry != null);
-  const fallbackFocusedPath =
-    input.previewSession?.filePath?.trim() || input.activeDirectory?.trim() || null;
   const focusedEntry =
     selectedEntries[0] ??
-    (fallbackFocusedPath ? entryByPath.get(fallbackFocusedPath) ?? null : null);
+    (previewFocusedPath ? entryByPath.get(previewFocusedPath) ?? null : null);
 
   return {
     roots: buildExecutionContextRoots(input.drives, input.activeDirectory),
