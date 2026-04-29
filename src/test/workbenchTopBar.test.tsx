@@ -718,7 +718,10 @@ describe('WorkbenchTopBar', () => {
 
     const topBar = screen.getByTitle('Drag Window');
     const maximizeButton = screen.getByTitle('Maximize');
-    fireEvent.pointerDown(topBar, { button: 0 });
+    fireEvent.mouseDown(topBar, { button: 0, detail: 1 });
+    expect(currentWindow.startDragging).toHaveBeenCalledTimes(1);
+
+    fireEvent.mouseDown(topBar, { button: 0, detail: 2 });
     expect(currentWindow.startDragging).toHaveBeenCalledTimes(1);
 
     fireEvent.pointerDown(screen.getByTitle('Minimize'), { button: 0 });
@@ -752,7 +755,7 @@ describe('WorkbenchTopBar', () => {
 
     const topBar = screen.getByTitle('Drag Floating Dock');
     expect(topBar).toHaveStyle({ cursor: 'grab' });
-    fireEvent.pointerDown(topBar, { button: 0 });
+    fireEvent.mouseDown(topBar, { button: 0, detail: 1 });
     expect(currentWindow.startDragging).toHaveBeenCalledTimes(1);
   });
 });

@@ -581,12 +581,13 @@ export function WorkbenchTopBar({
     [availableLayoutProfiles],
   );
 
-  const handleStartWindowDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+  const handleStartWindowDrag = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (
       !canDragWindow
       || topBarCustomizeActive
       || event.defaultPrevented
       || event.button !== 0
+      || event.detail > 1
       || !isTauri()
       || isWindowChromeInteractiveTarget(event.target)
     ) {
@@ -2817,7 +2818,7 @@ export function WorkbenchTopBar({
   return (
     <div
       data-gfs-window-drag-region="topbar"
-      onPointerDown={handleStartWindowDrag}
+      onMouseDown={handleStartWindowDrag}
       onDoubleClick={handleTopBarDoubleClick}
       title={
         isWindowedMode
