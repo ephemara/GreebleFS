@@ -375,6 +375,7 @@ describe('pluginRuntime helpers', () => {
             appliesTo: 'file',
             extensions: ['test'],
             fileNames: [],
+            previewKinds: [],
           },
           capabilities: {
             editable: false,
@@ -419,6 +420,11 @@ describe('pluginRuntime helpers', () => {
     ],
     ['audio', 'greeblefs-workbench-audio/preview/audioWorkbench.tsx'],
     ['video', 'greeblefs-workbench-video/preview/videoWorkbench.tsx'],
+    ['folder', 'greeblefs-workbench-folder/preview/folderWorkbench.tsx'],
+    ['archive', 'greeblefs-workbench-archive/preview/archiveWorkbench.tsx'],
+    ['model3d', 'greeblefs-workbench-model3d/preview/model3dWorkbench.tsx'],
+    ['pdf', 'greeblefs-workbench-pdf/preview/pdfWorkbench.tsx'],
+    ['text', 'greeblefs-workbench-text/preview/textWorkbench.tsx'],
   ])('loads the shipped %s workbench adapter lane', async (_label, relativePath) => {
     const previewLanePath = resolve(pluginSystemConfig.pluginsDirectory, relativePath);
     const source = await readFile(previewLanePath, 'utf8');

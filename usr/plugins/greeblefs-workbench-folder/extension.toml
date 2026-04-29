@@ -1,0 +1,42 @@
+id = "greeblefs-workbench-folder"
+version = "1"
+name = "GreebleFS Folder Workbench"
+description = "First-party extension-backed folder preview and collection browsing workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "folder", "filesystem", "collection"]
+
+[[testFiles]]
+id = "folder-fixture"
+label = "Folder Fixture"
+path = "examples/folder-fixture"
+kind = "directory"
+description = "Small nested folder fixture for plugin-panel preview smoke tests."
+
+[[contributions.previewLanes]]
+id = "folder"
+title = "Folder Workbench"
+renderer = "preview/folderWorkbench.tsx"
+priority = 720
+
+[contributions.previewLanes.match]
+appliesTo = "directory"
+extensions = []
+fileNames = []
+previewKinds = ["folder"]
+
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = false
+topBarDensity = "compact"
+
+[contributions.previewLanes.capabilities]
+editable = false
+save = false
+export = false
+workflowTabs = false
+contextMenu = true
+prefetch = true
+closeGuard = false

@@ -1,0 +1,41 @@
+id = "greeblefs-workbench-model3d"
+version = "1"
+name = "GreebleFS 3D Model Workbench"
+description = "First-party extension-backed 3D model preview workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "3d", "model", "asset"]
+
+[[testFiles]]
+id = "cube-obj"
+label = "OBJ Cube Fixture"
+path = "examples/cube.obj"
+description = "Small OBJ fixture for plugin-panel preview smoke tests."
+
+[[contributions.previewLanes]]
+id = "model3d"
+title = "3D Model Workbench"
+renderer = "preview/model3dWorkbench.tsx"
+priority = 720
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = []
+fileNames = []
+previewKinds = ["model3d"]
+
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = false
+topBarDensity = "compact"
+
+[contributions.previewLanes.capabilities]
+editable = false
+save = false
+export = false
+workflowTabs = false
+contextMenu = true
+prefetch = true
+closeGuard = false

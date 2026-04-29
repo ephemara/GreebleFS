@@ -59,12 +59,14 @@ function makeWorkbenchPlugin() {
           label: 'Audio Tone',
           path: 'plugins/media-workbench/examples/audio-tone.wav',
           extension: 'wav',
+          isDirectory: false,
         },
         {
           id: 'video-slate',
           label: 'Video Slate',
           path: 'plugins/media-workbench/examples/video-slate.mp4',
           extension: 'mp4',
+          isDirectory: false,
         },
       ],
       warnings: [],
@@ -434,6 +436,68 @@ describe('PluginsManager', () => {
     fireEvent.click(within(workflowTabs).getByRole('button', { name: 'Edit' }));
     await waitFor(() => {
       expect(screen.getByTestId('plugin-video-preview-props')).toHaveTextContent('video-slate.mp4:edit:edit');
+    });
+  });
+
+  it('passes directory test files into workbench preview lanes', async () => {
+    const basePlugin = makeWorkbenchPlugin() as any;
+    const plugin = {
+      ...basePlugin,
+      id: 'folder-workbench',
+      name: 'Folder Workbench',
+      diagnostics: {
+        ...basePlugin.diagnostics,
+        testFiles: [
+          {
+            id: 'folder-fixture',
+            label: 'Folder Fixture',
+            path: 'plugins/folder-workbench/examples/folder-fixture',
+            extension: '',
+            isDirectory: true,
+          },
+        ],
+      },
+    } as never;
+    const lane = makePreviewLane({
+      id: 'folder-workbench.preview-lane.folder',
+      pluginId: 'folder-workbench',
+      pluginName: 'Folder Workbench',
+      title: 'Folder Workbench',
+      match: {
+        appliesTo: 'directory',
+        extensions: [],
+        fileNames: [],
+        previewKinds: ['folder'],
+      },
+      workbenchChrome: normalizeExplorerPreviewWorkbenchChromeMetadata({
+        includePreviewTab: true,
+        includeEditTab: false,
+      }),
+      component: ({ file }) => (
+        <div data-testid="plugin-folder-preview-props">
+          {file.name}:{String(file.isDirectory)}:{file.assetUrl}
+        </div>
+      ),
+    });
+
+    render(
+      <PluginsManager
+        appearance={makeAppearance()}
+        plugins={[plugin]}
+        previewLanes={[lane]}
+        isLoading={false}
+        error={null}
+        onRefreshPlugins={() => undefined}
+        onOpenPluginsFolder={() => Promise.resolve()}
+        onSetPluginEnabled={() => undefined}
+        createPluginApi={() => ({}) as never}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('plugin-folder-preview-props')).toHaveTextContent(
+        'folder-fixture:true:',
+      );
     });
   });
 });

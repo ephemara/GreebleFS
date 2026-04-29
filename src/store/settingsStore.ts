@@ -122,6 +122,11 @@ import {
   type DockPlacementMode,
   type DockPreviewSplitMode,
 } from '../config/dockPresentations';
+import {
+  dockTerminalGridGeometry,
+  normalizeDockTerminalColumns,
+  normalizeDockTerminalRows,
+} from '../config/dockTerminalGrid';
 import { normalizeGpuTierMode, type GpuTierMode } from '../config/gpuRuntime';
 import {
   normalizeAccelerationRoutingMode,
@@ -235,6 +240,8 @@ export interface DockSettings {
   placementMode: DockPlacementMode;
   edgeSize: number;
   edgeWidth: number;
+  defaultTerminalRows: number;
+  defaultTerminalColumns: number;
   floatingBounds: DockFloatingBounds | null;
   topBarId: string | null;
   previewEnabled: boolean;
@@ -913,6 +920,8 @@ function normalizeDockSettings(
   const hasExplicitPlacement = hasOwnProperty(updates, 'placementMode');
   const hasExplicitEdgeSize = hasOwnProperty(updates, 'edgeSize');
   const hasExplicitEdgeWidth = hasOwnProperty(updates, 'edgeWidth');
+  const hasExplicitTerminalRows = hasOwnProperty(updates, 'defaultTerminalRows');
+  const hasExplicitTerminalColumns = hasOwnProperty(updates, 'defaultTerminalColumns');
   const hasExplicitFloatingBounds = hasOwnProperty(updates, 'floatingBounds');
   const hasExplicitTopBarId = hasOwnProperty(updates, 'topBarId');
   const hasExplicitPreviewEnabled = hasOwnProperty(updates, 'previewEnabled');
@@ -943,6 +952,18 @@ function normalizeDockSettings(
         ? updates?.edgeWidth
         : (legacyTerminal?.overlayWidth ?? base.edgeWidth),
       base.edgeWidth,
+    ),
+    defaultTerminalRows: normalizeDockTerminalRows(
+      hasExplicitTerminalRows
+        ? updates?.defaultTerminalRows
+        : base.defaultTerminalRows,
+      base.defaultTerminalRows,
+    ),
+    defaultTerminalColumns: normalizeDockTerminalColumns(
+      hasExplicitTerminalColumns
+        ? updates?.defaultTerminalColumns
+        : base.defaultTerminalColumns,
+      base.defaultTerminalColumns,
     ),
     floatingBounds: hasExplicitFloatingBounds
       ? normalizeDockFloatingBounds(updates?.floatingBounds)
@@ -1438,6 +1459,8 @@ export const defaultSettings: Settings = {
     placementMode: 'bottom-edge',
     edgeSize: overlayWindowGeometry.defaultHeight,
     edgeWidth: overlayWindowGeometry.defaultWidth,
+    defaultTerminalRows: dockTerminalGridGeometry.defaultRows,
+    defaultTerminalColumns: dockTerminalGridGeometry.defaultColumns,
     floatingBounds: null,
     topBarId: DEFAULT_DOCK_TOP_BAR_ID,
     previewEnabled: true,

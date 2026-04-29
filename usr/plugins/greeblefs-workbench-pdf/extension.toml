@@ -1,0 +1,41 @@
+id = "greeblefs-workbench-pdf"
+version = "1"
+name = "GreebleFS PDF Workbench"
+description = "First-party extension-backed PDF preview and annotation workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "pdf", "document"]
+
+[[testFiles]]
+id = "pdf-fixture"
+label = "PDF Fixture"
+path = "examples/plugin-preview.pdf"
+description = "Tiny PDF fixture for plugin-panel preview smoke tests."
+
+[[contributions.previewLanes]]
+id = "pdf"
+title = "PDF Workbench"
+renderer = "preview/pdfWorkbench.tsx"
+priority = 720
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = []
+fileNames = []
+previewKinds = ["pdf"]
+
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = true
+topBarDensity = "compact"
+
+[contributions.previewLanes.capabilities]
+editable = true
+save = true
+export = true
+workflowTabs = true
+contextMenu = true
+prefetch = false
+closeGuard = true

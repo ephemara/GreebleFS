@@ -9,6 +9,7 @@ export {
   type ExplorerPreviewLaneDefinition,
   type ExplorerPreviewMatchContext,
   type ExplorerPreviewResolverOptions,
+  type ExplorerResolvedBuiltInPreviewDescriptor,
   type ExplorerResolvedPreviewDescriptor,
   type ExplorerResolvedPreviewWorkbenchCandidate,
   type ExplorerResolvedPreviewWorkbenchSelection,

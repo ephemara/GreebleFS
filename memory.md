@@ -1,3 +1,18 @@
+# 2026-04-29 - Folder, Archive, 3D, PDF, And Text Workbenches Became First-Party Packages
+
+- The remaining first-party preview/workbench lanes now have package homes under `usr/plugins/greeblefs-workbench-{folder,archive,model3d,pdf,text}`. Each package declares `category`, `tags`, a shipped `testFiles` fixture, compact `[contributions.previewLanes.workbenchChrome]`, and `match.previewKinds` so format ownership is manifest-driven rather than extension ladders in `FileExplorer.tsx`.
+- `FileExplorer.tsx` now treats plugin `previewKinds` as an explicit request for the built-in delegate host. Folder/archive plugin lanes receive collection browsing callbacks, icon/folder-theme data, refresh state, extract, and drag-out hooks. PDF plugin lanes receive the opened PDF document session and chrome/controller callbacks. Text/Monaco plugin lanes receive the existing text draft/save/run state so autosave, Python managed runs, script terminal runs, and cursor reporting survive extraction.
+- `src/components/pluginWorkbenchAdapters.tsx` now exports adapters for folder, archive, model3d, PDF, and text in addition to the existing SQLite/docx/spreadsheet/audio/video adapters. The text adapter registers `Run` / `Runtime` workflow tabs dynamically only when the delegated file is script/Python-backed, while plain Markdown/text keeps the compact `Preview | Edit` chrome.
+- Durable regression rules:
+  - Only hydrate plugin delegate state when the lane explicitly declares the matching `previewKinds`. Extension-only plugin lanes should still be able to claim files without being forced into built-in text/PDF defaults.
+  - Keep new first-party workbench packages one package per lane under `usr/plugins/greeblefs-workbench-*`, with a real fixture under `examples/` so the Plugins panel preview surface can smoke-test the lane.
+  - When moving another built-in branch out of `FileExplorer.tsx`, first route it through `pluginWorkbenchAdapters.tsx` and `match.previewKinds`, then remove the fallback only after parity tests cover close guards, workflow tabs, context actions, and save/export hooks.
+- Validation for this pass:
+  - `node_modules\.bin\vitest.exe run src/test/explorerPreviewRegistry.test.ts src/test/pluginPackages.test.ts src/test/pluginsManager.test.tsx src/test/pluginRuntime.test.ts --reporter=dot --testTimeout=30000`
+  - `node_modules\.bin\vitest.exe run src/test/fileExplorer.viewModes.test.tsx -t "plugin preview lanes|sqlite files through contributed plugin workbenches" --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript diagnostic sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`; full repo `tsc --noEmit` still has unrelated baseline diagnostics outside this workbench extraction.
+  - `git diff --check` passed with only existing Windows LF/CRLF warnings.
+
 # 2026-04-29 - Index Photo Gallery Uses Plugin Settings On Desktop And Mobile
 
 - `usr/plugins/greeblefs-index-photo-gallery` is now the first reference plugin that consumes the plugin settings system for both surfaces. Its manifest declares `rootPaths`, `fileExtensions`, `resultLimit`, and `includeHidden` in a `gallery-settings` slot, and both `index.tsx` plus `mobile/gallery.js` normalize those values before querying the index.

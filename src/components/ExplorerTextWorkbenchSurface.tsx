@@ -5,7 +5,10 @@ import {
   getExplorerTextPreviewMetrics,
 } from '../config/explorerMonaco';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
-import type { ManagedPythonRuntimeConfig } from '../runtime/pythonRuntimeBackend';
+import type {
+  ManagedPythonActionResponse,
+  ManagedPythonRuntimeConfig,
+} from '../runtime/pythonRuntimeBackend';
 import type { ExplorerResolvedScriptPreview } from './explorer/explorerScriptRuntime';
 import type { EditorSearchFocusTarget } from './fileExplorerSearchFocus';
 import { TextDocumentPreview, type DocumentPreviewKind } from './documentPreview';
@@ -32,7 +35,9 @@ export interface ExplorerTextWorkbenchSurfaceProps {
   onCursorPositionChange?: (
     position: ExplorerMonacoCursorPosition,
   ) => void;
-  onRunPythonManaged?: () => Promise<unknown>;
+  onRunScript?: () => Promise<void> | void;
+  onStopScriptRun?: () => void;
+  onRunPythonManaged?: () => Promise<ManagedPythonActionResponse>;
   onRunPythonInTerminal?: () => Promise<void>;
   onOpenManagedPythonRepl?: () => Promise<void>;
 }
@@ -73,14 +78,32 @@ export function ExplorerTextWorkbenchSurface({
   pythonBootstrapPackageInput,
   onChange,
   onCursorPositionChange,
+  onRunScript,
+  onStopScriptRun,
   onRunPythonManaged,
   onRunPythonInTerminal,
   onOpenManagedPythonRepl,
 }: ExplorerTextWorkbenchSurfaceProps) {
   const supportsRenderedPreview =
     scriptPreview == null && renderKind !== 'none';
-  const showsPythonWorkbench = pythonPreview != null;
+  const showsPythonWorkbench =
+    pythonPreview != null &&
+    (workflowTabId === 'run' || workflowTabId === 'runtime');
   const textPreviewMetrics = getExplorerTextPreviewMetrics(content);
+
+  React.useEffect(() => {
+    if (scriptPreview == null || workflowTabId !== 'run') {
+      return;
+    }
+    void onRunScript?.();
+  }, [onRunScript, scriptPreview, workflowTabId]);
+
+  React.useEffect(() => {
+    if (scriptPreview == null || workflowTabId !== 'edit') {
+      return;
+    }
+    onStopScriptRun?.();
+  }, [onStopScriptRun, scriptPreview, workflowTabId]);
 
   if (viewMode === 'preview' && supportsRenderedPreview) {
     return <TextDocumentPreview kind={renderKind} content={content} sourcePath={path} />;
@@ -120,6 +143,7 @@ export function ExplorerTextWorkbenchSurface({
   if (
     viewMode === 'edit' ||
     pythonPreview != null ||
+    scriptPreview != null ||
     (scriptPreview == null && !supportsRenderedPreview)
   ) {
     return (

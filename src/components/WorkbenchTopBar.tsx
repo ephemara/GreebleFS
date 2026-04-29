@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -41,6 +42,15 @@ import type {
   DockPlacementMode,
   DockPreviewSplitMode,
 } from '../config/dockPresentations';
+import {
+  dockTerminalGridGeometry,
+  estimateDockSizeFromTerminalGrid,
+  estimateDockTerminalGridFromSize,
+  formatDockTerminalGrid,
+  normalizeDockTerminalColumns,
+  normalizeDockTerminalRows,
+  type DockTerminalGrid,
+} from '../config/dockTerminalGrid';
 import {
   clampOverlayVisualControlValue,
   formatOverlayVisualControlValue,
@@ -98,12 +108,19 @@ interface WorkbenchTopBarProps {
   dockAllowedPlacements: DockPlacementMode[];
   dockEdgeSize: number;
   dockEdgeWidth: number;
+  dockDefaultTerminalRows: number;
+  dockDefaultTerminalColumns: number;
+  dockTerminalGrid: DockTerminalGrid;
+  dockTerminalFontSize: number;
+  dockTopBarHeight: number;
   dockPreviewEnabled: boolean;
   dockPreviewSplitMode: DockPreviewSplitMode;
   onSetDockPlacementMode: (placementMode: DockPlacementMode) => void;
   onUpdateDockSettings: (updates: {
     edgeSize?: number;
     edgeWidth?: number;
+    defaultTerminalRows?: number;
+    defaultTerminalColumns?: number;
     previewEnabled?: boolean;
     previewSplitMode?: DockPreviewSplitMode;
   }) => void;
@@ -327,6 +344,11 @@ export function WorkbenchTopBar({
   dockAllowedPlacements,
   dockEdgeSize,
   dockEdgeWidth,
+  dockDefaultTerminalRows,
+  dockDefaultTerminalColumns,
+  dockTerminalGrid,
+  dockTerminalFontSize,
+  dockTopBarHeight,
   dockPreviewEnabled,
   dockPreviewSplitMode,
   onSetDockPlacementMode,
@@ -375,10 +397,14 @@ export function WorkbenchTopBar({
   const effectiveTabStyle = topBarDefinition.tabStyle ?? workbench.tabStyle;
   const uiFont = appearance.fonts.ui;
   const monoFont = appearance.fonts.mono;
-  const chromeHeight = workbench.metrics.chromeHeight;
+  const usesDockControlStrip = windowMode === 'overlay' && topBarDefinition.id === 'dock-control-strip';
+  const chromeHeight = usesDockControlStrip
+    ? Math.max(30, workbench.metrics.chromeHeight - 8)
+    : workbench.metrics.chromeHeight;
   const usesFloatingTopBar = effectiveTopBarStyle === 'floating' || effectiveTopBarStyle === 'glass';
   const usesInsetTopBar = usesFloatingTopBar || effectiveTopBarStyle === 'minimal';
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const surfaceControlsPanelRef = useRef<HTMLDivElement | null>(null);
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
   const shellModeMenuRef = useRef<HTMLDivElement | null>(null);
   const mobileMenuOpenTimerRef = useRef<number | null>(null);
@@ -389,6 +415,11 @@ export function WorkbenchTopBar({
   const [isMobileQrDialogOpen, setIsMobileQrDialogOpen] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
+  const [surfaceControlsMenuPlacement, setSurfaceControlsMenuPlacement] = useState({
+    left: 8,
+    top: 8,
+    maxHeight: Math.max(220, window.innerHeight - 16),
+  });
   const [viewportSize, setViewportSize] = useState(() => ({
     width: window.innerWidth,
     height: window.innerHeight,
@@ -423,6 +454,53 @@ export function WorkbenchTopBar({
     [openPanels],
   );
   const surfaceControlsMenuWidth = Math.max(286, Math.min(360, viewportSize.width - 24));
+  const updateSurfaceControlsMenuPlacement = useCallback(() => {
+    const anchor = menuRef.current?.getBoundingClientRect();
+    if (!anchor) {
+      return;
+    }
+
+    const viewportMargin = 8;
+    const maxHeight = Math.max(220, viewportSize.height - viewportMargin * 2);
+    const measuredHeight = Math.min(
+      surfaceControlsPanelRef.current?.offsetHeight ?? maxHeight,
+      maxHeight,
+    );
+    const maxLeft = Math.max(
+      viewportMargin,
+      viewportSize.width - surfaceControlsMenuWidth - viewportMargin,
+    );
+    const clamp = (value: number, min: number, max: number) => Math.min(
+      Math.max(value, min),
+      Math.max(min, max),
+    );
+    const preferredLeft = anchor.right - surfaceControlsMenuWidth;
+    const preferredTop = isBottomBar
+      ? anchor.top - measuredHeight - viewportMargin
+      : anchor.bottom + viewportMargin;
+    const nextPlacement = {
+      left: clamp(preferredLeft, viewportMargin, maxLeft),
+      top: clamp(
+        preferredTop,
+        viewportMargin,
+        viewportSize.height - measuredHeight - viewportMargin,
+      ),
+      maxHeight,
+    };
+
+    setSurfaceControlsMenuPlacement(previous => (
+      previous.left === nextPlacement.left &&
+      previous.top === nextPlacement.top &&
+      previous.maxHeight === nextPlacement.maxHeight
+        ? previous
+        : nextPlacement
+    ));
+  }, [
+    isBottomBar,
+    surfaceControlsMenuWidth,
+    viewportSize.height,
+    viewportSize.width,
+  ]);
   const nextOverlayAnchor = overlayAnchor === 'top' ? 'bottom' : 'top';
   const allowedDockPlacements = dockAllowedPlacements.length > 0
     ? dockAllowedPlacements
@@ -540,6 +618,23 @@ export function WorkbenchTopBar({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!isSurfaceControlsOpen) {
+      return;
+    }
+
+    updateSurfaceControlsMenuPlacement();
+    const frame = window.requestAnimationFrame(updateSurfaceControlsMenuPlacement);
+    const handleViewportChange = () => updateSurfaceControlsMenuPlacement();
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [isSurfaceControlsOpen, updateSurfaceControlsMenuPlacement]);
 
   const clearMobileMenuTimers = useCallback(() => {
     if (mobileMenuOpenTimerRef.current != null) {
@@ -704,16 +799,39 @@ export function WorkbenchTopBar({
     { id: 'wide', label: 'Wide', edgeSize: 500, edgeWidth: 1280 },
     { id: 'deep', label: 'Deep', edgeSize: 680, edgeWidth: 1440 },
   ] as const;
+  const dockTargetTerminalGrid = {
+    rows: normalizeDockTerminalRows(dockDefaultTerminalRows, dockTerminalGrid.rows),
+    columns: normalizeDockTerminalColumns(dockDefaultTerminalColumns, dockTerminalGrid.columns),
+  };
+  const updateDockTerminalGridTarget = (updates: Partial<DockTerminalGrid>) => {
+    const nextGrid = {
+      rows: normalizeDockTerminalRows(updates.rows, dockTargetTerminalGrid.rows),
+      columns: normalizeDockTerminalColumns(updates.columns, dockTargetTerminalGrid.columns),
+    };
+    const nextSize = estimateDockSizeFromTerminalGrid({
+      ...nextGrid,
+      terminalFontSize: dockTerminalFontSize,
+      dockTopBarHeight,
+    });
+
+    onUpdateDockSettings({
+      ...nextSize,
+      defaultTerminalRows: nextGrid.rows,
+      defaultTerminalColumns: nextGrid.columns,
+    });
+  };
 
   const surfaceControlsMenu = (
     <div
+      ref={surfaceControlsPanelRef}
+      className="overlay-native-scrollbar"
       style={{
-        position: 'absolute',
-        top: isBottomBar ? 'auto' : 'calc(100% + 8px)',
-        bottom: isBottomBar ? 'calc(100% + 8px)' : 'auto',
-        right: 0,
+        position: 'fixed',
+        top: surfaceControlsMenuPlacement.top,
+        left: surfaceControlsMenuPlacement.left,
         width: surfaceControlsMenuWidth,
         maxWidth: 'calc(100vw - 16px)',
+        maxHeight: surfaceControlsMenuPlacement.maxHeight,
         background: 'var(--overlay-workbench-chrome-menu-bg)',
         border: '1px solid var(--overlay-workbench-chrome-border)',
         borderRadius: workbench.metrics.panelRadius,
@@ -723,7 +841,8 @@ export function WorkbenchTopBar({
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
-        overflow: 'visible',
+        overflowX: 'hidden',
+        overflowY: 'auto',
         backdropFilter: topBarBackdropFilter,
         WebkitBackdropFilter: topBarBackdropFilter,
       }}
@@ -827,30 +946,111 @@ export function WorkbenchTopBar({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
-            {dockSizePresets.map(preset => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => onUpdateDockSettings({
-                  edgeSize: preset.edgeSize,
-                  edgeWidth: preset.edgeWidth,
-                })}
-                style={{
-                  height: 24,
-                  borderRadius: workbench.metrics.controlRadius,
-                  border: '1px solid var(--overlay-workbench-chrome-border)',
-                  background: 'var(--overlay-workbench-chrome-button-bg)',
-                  color: muted,
-                  fontSize: 9,
-                  fontWeight: 800,
-                  letterSpacing: 'var(--overlay-workbench-label-spacing)',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                }}
-              >
-                {preset.label}
-              </button>
-            ))}
+            {dockSizePresets.map(preset => {
+              const presetGrid = estimateDockTerminalGridFromSize({
+                edgeSize: preset.edgeSize,
+                edgeWidth: preset.edgeWidth,
+                terminalFontSize: dockTerminalFontSize,
+                dockTopBarHeight,
+              });
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => onUpdateDockSettings({
+                    edgeSize: preset.edgeSize,
+                    edgeWidth: preset.edgeWidth,
+                    defaultTerminalRows: presetGrid.rows,
+                    defaultTerminalColumns: presetGrid.columns,
+                  })}
+                  style={{
+                    height: 24,
+                    borderRadius: workbench.metrics.controlRadius,
+                    border: '1px solid var(--overlay-workbench-chrome-border)',
+                    background: 'var(--overlay-workbench-chrome-button-bg)',
+                    color: muted,
+                    fontSize: 9,
+                    fontWeight: 800,
+                    letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              border: '1px solid var(--overlay-workbench-chrome-border)',
+              borderRadius: workbench.metrics.controlRadius,
+              background: 'rgba(255,255,255,0.03)',
+              padding: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <span style={{ color: text, fontSize: 11, fontWeight: 700 }}>Terminal Grid</span>
+              <span style={{ color: muted, fontSize: 10, fontFamily: monoFont }}>
+                {formatDockTerminalGrid(dockTerminalGrid)} live
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <span style={{ color: muted, fontSize: 9, fontWeight: 800, textTransform: 'uppercase' }}>Rows</span>
+                <input
+                  aria-label="Dock Terminal Rows"
+                  type="number"
+                  min={dockTerminalGridGeometry.minRows}
+                  max={dockTerminalGridGeometry.maxRows}
+                  step={1}
+                  value={dockTargetTerminalGrid.rows}
+                  onChange={event => updateDockTerminalGridTarget({ rows: Number(event.currentTarget.value) })}
+                  style={{
+                    minWidth: 0,
+                    width: '100%',
+                    height: 26,
+                    borderRadius: workbench.metrics.controlRadius,
+                    border: '1px solid var(--overlay-workbench-chrome-border)',
+                    background: 'var(--overlay-workbench-chrome-button-bg)',
+                    color: text,
+                    padding: '0 8px',
+                    fontFamily: monoFont,
+                    fontSize: 11,
+                    outline: 'none',
+                  }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <span style={{ color: muted, fontSize: 9, fontWeight: 800, textTransform: 'uppercase' }}>Columns</span>
+                <input
+                  aria-label="Dock Terminal Columns"
+                  type="number"
+                  min={dockTerminalGridGeometry.minColumns}
+                  max={dockTerminalGridGeometry.maxColumns}
+                  step={1}
+                  value={dockTargetTerminalGrid.columns}
+                  onChange={event => updateDockTerminalGridTarget({ columns: Number(event.currentTarget.value) })}
+                  style={{
+                    minWidth: 0,
+                    width: '100%',
+                    height: 26,
+                    borderRadius: workbench.metrics.controlRadius,
+                    border: '1px solid var(--overlay-workbench-chrome-border)',
+                    background: 'var(--overlay-workbench-chrome-button-bg)',
+                    color: text,
+                    padding: '0 8px',
+                    fontFamily: monoFont,
+                    fontSize: 11,
+                    outline: 'none',
+                  }}
+                />
+              </label>
+            </div>
           </div>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -865,7 +1065,20 @@ export function WorkbenchTopBar({
               max={900}
               step={10}
               value={dockEdgeSize}
-              onChange={event => onUpdateDockSettings({ edgeSize: Number(event.currentTarget.value) })}
+              onChange={event => {
+                const nextEdgeSize = Number(event.currentTarget.value);
+                const nextGrid = estimateDockTerminalGridFromSize({
+                  edgeSize: nextEdgeSize,
+                  edgeWidth: dockEdgeWidth,
+                  terminalFontSize: dockTerminalFontSize,
+                  dockTopBarHeight,
+                });
+                onUpdateDockSettings({
+                  edgeSize: nextEdgeSize,
+                  defaultTerminalRows: nextGrid.rows,
+                  defaultTerminalColumns: nextGrid.columns,
+                });
+              }}
               style={{ width: '100%', accentColor: accent }}
             />
           </label>
@@ -882,7 +1095,20 @@ export function WorkbenchTopBar({
               max={1800}
               step={10}
               value={dockEdgeWidth}
-              onChange={event => onUpdateDockSettings({ edgeWidth: Number(event.currentTarget.value) })}
+              onChange={event => {
+                const nextEdgeWidth = Number(event.currentTarget.value);
+                const nextGrid = estimateDockTerminalGridFromSize({
+                  edgeSize: dockEdgeSize,
+                  edgeWidth: nextEdgeWidth,
+                  terminalFontSize: dockTerminalFontSize,
+                  dockTopBarHeight,
+                });
+                onUpdateDockSettings({
+                  edgeWidth: nextEdgeWidth,
+                  defaultTerminalRows: nextGrid.rows,
+                  defaultTerminalColumns: nextGrid.columns,
+                });
+              }}
               style={{ width: '100%', accentColor: accent }}
             />
           </label>

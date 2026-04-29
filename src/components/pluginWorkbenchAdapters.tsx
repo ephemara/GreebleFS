@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { readTextFile } from '@tauri-apps/plugin-fs';
 
 import { getExplorerArchiveDescriptor } from '../config/explorerArchives';
 import {
@@ -65,16 +66,45 @@ function buildStandaloneTextRenderKind(extension: string): 'none' | 'markdown' |
   return 'none';
 }
 
+const TEXT_SCRIPT_WORKFLOW_TABS = [
+  { id: 'run', label: 'Run', baseMode: 'preview' },
+] as const;
+
+const TEXT_PYTHON_WORKFLOW_TABS = [
+  { id: 'run', label: 'Run', baseMode: 'preview' },
+  { id: 'runtime', label: 'Runtime', baseMode: 'preview' },
+] as const;
+
+async function readStandaloneTextPreviewFile(
+  filePath: string,
+  assetUrl: string,
+): Promise<string> {
+  if (!filePath.trim()) {
+    return '';
+  }
+
+  if (
+    typeof window !== 'undefined' &&
+    (window as any).__TAURI_INTERNALS__ == null &&
+    assetUrl.trim()
+  ) {
+    const response = await fetch(assetUrl);
+    return response.text();
+  }
+
+  return readTextFile(filePath);
+}
+
 function useStandaloneTextWorkbenchState({
   enabled,
   filePath,
   extension,
-  apiReadTextFile,
+  assetUrl,
 }: {
   enabled: boolean;
   filePath: string;
   extension: string;
-  apiReadTextFile: (path: string) => Promise<string>;
+  assetUrl: string;
 }) {
   const editorSettings = useSettingsStore((state) => state.settings.editor);
   const [content, setContent] = useState('');
@@ -92,7 +122,7 @@ function useStandaloneTextWorkbenchState({
     let active = true;
     setLoading(true);
     setError(null);
-    void apiReadTextFile(filePath)
+    void readStandaloneTextPreviewFile(filePath, assetUrl)
       .then((nextContent) => {
         if (!active) {
           return;
@@ -112,7 +142,7 @@ function useStandaloneTextWorkbenchState({
     return () => {
       active = false;
     };
-  }, [apiReadTextFile, enabled, filePath]);
+  }, [assetUrl, enabled, filePath]);
 
   return {
     editorSettings,
@@ -304,22 +334,82 @@ export function TextWorkbenchPreviewAdapter({
   viewMode,
   workflowTabId,
   previewBackedByArchiveVirtual,
+  onRegisterWorkflowTabs,
+  onRegisterWorkbenchStatus,
 }: OverlayPluginPreviewLaneProps) {
   const standaloneState = useStandaloneTextWorkbenchState({
     enabled: !workbench?.text,
     filePath: file.resolvedPath,
     extension: file.extension,
-    apiReadTextFile: (path) => (path ? path : '').length > 0
-      ? (window as any).__TAURI_INTERNALS__ == null
-        ? fetch(file.assetUrl || path).then((response) => response.text())
-        : import('@tauri-apps/plugin-fs').then((module) => module.readTextFile(path))
-      : Promise.resolve(''),
+    assetUrl: file.assetUrl,
   });
   const textWorkbench = workbench?.text;
   const content = textWorkbench?.content ?? standaloneState.content;
   const renderKind = textWorkbench?.renderKind ?? standaloneState.renderKind;
   const language = textWorkbench?.language ?? getMonacoLanguage(file.extension);
   const editorSettings = textWorkbench?.editorSettings ?? standaloneState.editorSettings;
+
+  useEffect(() => {
+    if (!onRegisterWorkflowTabs) {
+      return undefined;
+    }
+
+    if (textWorkbench?.pythonPreview) {
+      onRegisterWorkflowTabs([...TEXT_PYTHON_WORKFLOW_TABS]);
+      return () => onRegisterWorkflowTabs(null);
+    }
+
+    if (textWorkbench?.scriptPreview) {
+      onRegisterWorkflowTabs([...TEXT_SCRIPT_WORKFLOW_TABS]);
+      return () => onRegisterWorkflowTabs(null);
+    }
+
+    onRegisterWorkflowTabs(null);
+    return () => onRegisterWorkflowTabs(null);
+  }, [
+    onRegisterWorkflowTabs,
+    textWorkbench?.pythonPreview,
+    textWorkbench?.scriptPreview,
+  ]);
+
+  useEffect(() => {
+    if (!onRegisterWorkbenchStatus) {
+      return undefined;
+    }
+
+    if (textWorkbench) {
+      onRegisterWorkbenchStatus({
+        label: textWorkbench.isSaving
+          ? 'Saving?'
+          : textWorkbench.error
+            ? 'Error'
+            : textWorkbench.isDirty
+              ? 'Unsaved'
+              : 'Saved',
+        tone: textWorkbench.error || textWorkbench.isDirty
+          ? 'warning'
+          : textWorkbench.isSaving
+            ? 'neutral'
+            : 'success',
+      });
+      return () => onRegisterWorkbenchStatus(null);
+    }
+
+    onRegisterWorkbenchStatus({
+      label: standaloneState.loading
+        ? 'Loading'
+        : standaloneState.error
+          ? 'Error'
+          : 'Preview',
+      tone: standaloneState.error ? 'danger' : 'neutral',
+    });
+    return () => onRegisterWorkbenchStatus(null);
+  }, [
+    onRegisterWorkbenchStatus,
+    standaloneState.error,
+    standaloneState.loading,
+    textWorkbench,
+  ]);
 
   if (!textWorkbench && standaloneState.loading) {
     return (
@@ -380,6 +470,8 @@ export function TextWorkbenchPreviewAdapter({
       }
       onChange={textWorkbench?.onChange ?? standaloneState.setContent}
       onCursorPositionChange={textWorkbench?.onCursorPositionChange}
+      onRunScript={textWorkbench?.onRunScript}
+      onStopScriptRun={textWorkbench?.onStopScriptRun}
       onRunPythonManaged={textWorkbench?.onRunPythonManaged}
       onRunPythonInTerminal={textWorkbench?.onRunPythonInTerminal}
       onOpenManagedPythonRepl={textWorkbench?.onOpenManagedPythonRepl}

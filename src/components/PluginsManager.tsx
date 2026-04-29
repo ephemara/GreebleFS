@@ -820,8 +820,8 @@ function PluginWorkbenchPreviewTestHost({
               name: fileName,
               extension: testFile.extension,
               size: 0,
-              assetUrl: toFileAssetUrl(testFile.path),
-              isDirectory: false,
+              assetUrl: testFile.isDirectory ? '' : toFileAssetUrl(testFile.path),
+              isDirectory: testFile.isDirectory,
             }}
             runtime={createPluginPreviewRuntimeBridge(lane.runtimeId, () => null)}
             appearance={getPluginAppearance(appearance)}

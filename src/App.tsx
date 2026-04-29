@@ -120,6 +120,11 @@ import {
   type LoadedDockPresentationPackage,
 } from './config/dockPresentations';
 import {
+  estimateDockTerminalGridFromSize,
+  formatDockTerminalGrid,
+  type DockTerminalGrid,
+} from './config/dockTerminalGrid';
+import {
   actionPackSystemConfig,
   loadExplorerActionPacks as discoverExplorerActionPacks,
   type LoadedActionPack,
@@ -699,10 +704,18 @@ function App() {
   const lastTerminalFocusAtRef = useRef(0);
   const isProgrammaticResizeRef = useRef(false);
   const runtimeOverlayBoundsRef = useRef<OverlayWindowBounds | null>(null);
+  const dockResizeReanchorTimerRef = useRef<number | null>(null);
+  const dockResizeTelemetryHideTimerRef = useRef<number | null>(null);
   const lastResolvedMonitorPointRef = useRef<{ x: number; y: number } | null>(null);
   const interactionLockUntilRef = useRef(0);
   const windowModeRef = useRef<TerminalWindowMode>('overlay');
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const [dockResizeTelemetry, setDockResizeTelemetry] = useState<{
+    grid: DockTerminalGrid;
+    edgeSize: number;
+    edgeWidth: number;
+    updatedAt: number;
+  } | null>(null);
   const [desktopPresentationSynced, setDesktopPresentationSynced] = useState(false);
   const animationSignatureRef = useRef('');
   const shaderSignatureRef = useRef('');
@@ -1260,6 +1273,8 @@ function App() {
       placementMode: dockSettings.placementMode,
       edgeSize: dockSettings.edgeSize,
       edgeWidth: dockSettings.edgeWidth,
+      defaultTerminalRows: dockSettings.defaultTerminalRows,
+      defaultTerminalColumns: dockSettings.defaultTerminalColumns,
       floatingBounds: dockSettings.floatingBounds,
       topBarId: dockSettings.topBarId,
       previewEnabled: dockSettings.previewEnabled,
@@ -1269,6 +1284,8 @@ function App() {
     [
       combinedDockPresentationPackageSources,
       dockSettings.activePresentationId,
+      dockSettings.defaultTerminalColumns,
+      dockSettings.defaultTerminalRows,
       dockSettings.edgeSize,
       dockSettings.edgeWidth,
       dockSettings.floatingBounds,
@@ -1508,7 +1525,26 @@ function App() {
           : 'bottom-edge')
       : resolvedDockPresentation.placementMode;
   const overlayAnchor: OverlayWindowAnchor = dockPlacementMode === 'top-edge' ? 'top' : 'bottom';
+  const dockIsFloating = !isWindowedMode && dockPlacementMode === 'floating';
   const isTopAnchored = !isWindowedMode && overlayAnchor === 'top';
+  const dockTopBarHeight = windowMode === 'overlay'
+    ? Math.max(30, workbench.metrics.chromeHeight - 8)
+    : workbench.metrics.chromeHeight;
+  const dockTerminalGrid = useMemo(
+    () => estimateDockTerminalGridFromSize({
+      edgeSize: resolvedDockPresentation.edgeSize,
+      edgeWidth: resolvedDockPresentation.edgeWidth,
+      terminalFontSize: settings.fontSize,
+      dockTopBarHeight,
+    }),
+    [
+      dockTopBarHeight,
+      resolvedDockPresentation.edgeSize,
+      resolvedDockPresentation.edgeWidth,
+      settings.fontSize,
+    ],
+  );
+  const activeDockResizeGrid = dockResizeTelemetry?.grid ?? dockTerminalGrid;
   const effectiveWindowZoom = isWindowedMode && isWindowMaximized ? 1 : clampedAppZoom;
   const scaledWidth = `${100 / effectiveWindowZoom}%`;
   const scaledHeight = `${100 / effectiveWindowZoom}%`;
@@ -3054,6 +3090,9 @@ function App() {
     if (!overlayVisibleRef.current || windowMode !== 'overlay' || !isCurrentWindowPresentationHost) {
       return;
     }
+    if (dockResizeReanchorTimerRef.current != null) {
+      return;
+    }
 
     let cancelled = false;
 
@@ -3258,10 +3297,35 @@ function App() {
         y: position.y,
       };
       const dockStore = useSettingsStore.getState().settings.dock;
+      const nextOverlayHeight = Math.max(logH, overlayWindowGeometry.minHeight);
+      const nextOverlayWidth = Math.max(logW, overlayWindowGeometry.minWidth);
+      const nextGrid = estimateDockTerminalGridFromSize({
+        edgeSize: nextOverlayHeight,
+        edgeWidth: nextOverlayWidth,
+        terminalFontSize: useSettingsStore.getState().settings.terminal.fontSize,
+        dockTopBarHeight,
+      });
+      setDockResizeTelemetry({
+        grid: nextGrid,
+        edgeSize: nextOverlayHeight,
+        edgeWidth: nextOverlayWidth,
+        updatedAt: Date.now(),
+      });
+      if (dockResizeTelemetryHideTimerRef.current != null) {
+        window.clearTimeout(dockResizeTelemetryHideTimerRef.current);
+      }
+      dockResizeTelemetryHideTimerRef.current = window.setTimeout(() => {
+        dockResizeTelemetryHideTimerRef.current = null;
+        setDockResizeTelemetry(null);
+      }, 1400);
       if (dockStore.placementMode === 'floating') {
         isFreefloatingRef.current = true;
         runtimeOverlayBoundsRef.current = currentBounds;
         useSettingsStore.getState().updateDock({
+          edgeSize: nextOverlayHeight,
+          edgeWidth: nextOverlayWidth,
+          defaultTerminalRows: nextGrid.rows,
+          defaultTerminalColumns: nextGrid.columns,
           floatingBounds: currentBounds,
         });
         return;
@@ -3269,25 +3333,45 @@ function App() {
 
       isFreefloatingRef.current = false;
       runtimeOverlayBoundsRef.current = currentBounds;
-      const nextOverlayHeight = Math.max(logH, overlayWindowGeometry.minHeight);
-      const nextOverlayWidth = Math.max(logW, overlayWindowGeometry.minWidth);
-      if (nextOverlayHeight !== dockStore.edgeSize || nextOverlayWidth !== dockStore.edgeWidth) {
+      if (
+        nextOverlayHeight !== dockStore.edgeSize ||
+        nextOverlayWidth !== dockStore.edgeWidth ||
+        nextGrid.rows !== dockStore.defaultTerminalRows ||
+        nextGrid.columns !== dockStore.defaultTerminalColumns
+      ) {
         useSettingsStore.getState().updateDock({
           edgeSize: nextOverlayHeight,
           edgeWidth: nextOverlayWidth,
+          defaultTerminalRows: nextGrid.rows,
+          defaultTerminalColumns: nextGrid.columns,
         });
       }
-      const monitor = await resolvePreferredMonitor();
-      if (monitor) {
-        await applyDockOverlayLayout({
-          monitor,
-          scaleFactor: factor,
-          currentBounds,
-        });
+      if (dockResizeReanchorTimerRef.current != null) {
+        window.clearTimeout(dockResizeReanchorTimerRef.current);
       }
+      dockResizeReanchorTimerRef.current = window.setTimeout(() => {
+        dockResizeReanchorTimerRef.current = null;
+        void (async () => {
+          const monitor = await resolvePreferredMonitor();
+          if (!monitor || !overlayVisibleRef.current || windowModeRef.current !== 'overlay') {
+            return;
+          }
+          await applyDockOverlayLayout({
+            monitor,
+            scaleFactor: await getCurrentWindow().scaleFactor().catch(() => factor),
+            currentBounds: runtimeOverlayBoundsRef.current,
+          });
+        })();
+      }, 220);
     });
     return () => { unlistenResize.then(fn => fn()); };
-  }, [applyDockOverlayLayout, currentHostUsesWaylandDockLayerShell, isCurrentWindowPresentationHost, resolvePreferredMonitor]);
+  }, [
+    applyDockOverlayLayout,
+    currentHostUsesWaylandDockLayerShell,
+    dockTopBarHeight,
+    isCurrentWindowPresentationHost,
+    resolvePreferredMonitor,
+  ]);
 
   useEffect(() => {
     const unlistenMove = getCurrentWindow().onMoved(async ev => {
@@ -3332,6 +3416,17 @@ function App() {
     });
     return () => { unlistenMove.then(fn => fn()); };
   }, [applyDockOverlayLayout, currentHostUsesWaylandDockLayerShell, isCurrentWindowPresentationHost, resolvePreferredMonitor]);
+
+  useEffect(() => () => {
+    if (dockResizeReanchorTimerRef.current != null) {
+      window.clearTimeout(dockResizeReanchorTimerRef.current);
+      dockResizeReanchorTimerRef.current = null;
+    }
+    if (dockResizeTelemetryHideTimerRef.current != null) {
+      window.clearTimeout(dockResizeTelemetryHideTimerRef.current);
+      dockResizeTelemetryHideTimerRef.current = null;
+    }
+  }, []);
 
   // ── Explorer → Terminal bridge ──
   const handleOpenInTerminal = useCallback(async (path: string) => {
@@ -6298,6 +6393,11 @@ function App() {
       dockAllowedPlacements={resolvedDockPresentation.presentation.allowedPlacements}
       dockEdgeSize={resolvedDockPresentation.edgeSize}
       dockEdgeWidth={resolvedDockPresentation.edgeWidth}
+      dockDefaultTerminalRows={resolvedDockPresentation.defaultTerminalRows}
+      dockDefaultTerminalColumns={resolvedDockPresentation.defaultTerminalColumns}
+      dockTerminalGrid={activeDockResizeGrid}
+      dockTerminalFontSize={settings.fontSize}
+      dockTopBarHeight={dockTopBarHeight}
       dockPreviewEnabled={resolvedDockPresentation.previewPolicy.enabled}
       dockPreviewSplitMode={resolvedDockPresentation.previewPolicy.splitMode}
       onSetDockPlacementMode={handleSetDockPlacementMode}
@@ -6347,9 +6447,43 @@ function App() {
       onCommitTopBarLayoutSnapshot={handleCommitTopBarLayoutSnapshot}
     />
   );
+  const dockResizeTelemetryHud = !isWindowedMode && dockResizeTelemetry ? (
+    <div
+      aria-live="polite"
+      style={{
+        position: 'absolute',
+        left: '50%',
+        top: isTopAnchored ? 'auto' : 12,
+        bottom: isTopAnchored ? 12 : 'auto',
+        transform: 'translateX(-50%)',
+        zIndex: 42,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 10px',
+        borderRadius: workbench.metrics.controlRadius,
+        border: `1px solid ${accent}66`,
+        background: 'var(--overlay-workbench-chrome-menu-bg)',
+        color: theme.palette.textPrimary,
+        fontFamily: resolvedAppearance.fonts.mono,
+        fontSize: 10,
+        fontWeight: 800,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        boxShadow: 'var(--overlay-workbench-shell-shadow)',
+        pointerEvents: 'none',
+      }}
+    >
+      <span>{formatDockTerminalGrid(dockResizeTelemetry.grid)}</span>
+      <span style={{ color: theme.palette.textMuted }}>
+        {Math.round(dockResizeTelemetry.edgeWidth)}px x {Math.round(dockResizeTelemetry.edgeSize)}px
+      </span>
+    </div>
+  ) : null;
   const defaultShellBody = (
     <>
-      {!isWindowedMode && !isTopAnchored && canResizeOverlayShell && (
+      {dockResizeTelemetryHud}
+      {!isWindowedMode && !dockIsFloating && !isTopAnchored && canResizeOverlayShell && (
         <div
           className="h-[4px] shrink-0 cursor-ns-resize select-none"
           style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
@@ -6365,7 +6499,7 @@ function App() {
 
       {!zenFocusMode && !isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
 
-      {!isWindowedMode && isTopAnchored && canResizeOverlayShell && (
+      {!isWindowedMode && !dockIsFloating && isTopAnchored && canResizeOverlayShell && (
         <div
           className="h-[4px] shrink-0 cursor-ns-resize select-none"
           style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
@@ -6378,7 +6512,8 @@ function App() {
   );
   const themeRendererDefaultShellBody = (
     <>
-      {!isWindowedMode && !isTopAnchored && canResizeOverlayShell && (
+      {dockResizeTelemetryHud}
+      {!isWindowedMode && !dockIsFloating && !isTopAnchored && canResizeOverlayShell && (
         <div
           className="h-[4px] shrink-0 cursor-ns-resize select-none"
           style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
@@ -6394,7 +6529,7 @@ function App() {
 
       {!zenFocusMode && !activeThemeRendererSurfaceOwnership?.chrome && !isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
 
-      {!isWindowedMode && isTopAnchored && canResizeOverlayShell && (
+      {!isWindowedMode && !dockIsFloating && isTopAnchored && canResizeOverlayShell && (
         <div
           className="h-[4px] shrink-0 cursor-ns-resize select-none"
           style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
@@ -6744,14 +6879,15 @@ function App() {
       />
       )
     : defaultShellBody;
+  const shellUsesFreeformFrame = isWindowedMode || dockIsFloating;
   const shellSceneFrameStyle = useMemo<CSSProperties>(() => ({
     position: 'absolute',
     left: 0,
-    top: isWindowedMode ? 0 : (isTopAnchored ? 0 : 'auto'),
-    bottom: isWindowedMode ? 'auto' : (isTopAnchored ? 'auto' : 0),
+    top: shellUsesFreeformFrame ? 0 : (isTopAnchored ? 0 : 'auto'),
+    bottom: shellUsesFreeformFrame ? 'auto' : (isTopAnchored ? 'auto' : 0),
     width: scaledWidth,
     height: scaledHeight,
-  }), [isTopAnchored, isWindowedMode, scaledHeight, scaledWidth]);
+  }), [isTopAnchored, scaledHeight, scaledWidth, shellUsesFreeformFrame]);
   const shellSceneContainerStyle = useMemo<CSSProperties>(() => ({
     position: 'relative',
     display: 'flex',
@@ -6765,26 +6901,26 @@ function App() {
     color: theme.palette.textPrimary,
     fontFamily: resolvedAppearance.fonts.ui,
     boxShadow: isWindowedMode && isWindowMaximized ? 'none' : 'var(--overlay-workbench-shell-shadow)',
-    borderTop: isWindowedMode
+    borderTop: shellUsesFreeformFrame
       ? (isWindowMaximized ? 'none' : '1px solid var(--overlay-workbench-chrome-border)')
       : (isTopAnchored ? 'none' : '1px solid var(--overlay-workbench-chrome-border)'),
-    borderBottom: isWindowedMode
+    borderBottom: shellUsesFreeformFrame
       ? (isWindowMaximized ? 'none' : '1px solid var(--overlay-workbench-chrome-border)')
       : (isTopAnchored ? '1px solid var(--overlay-workbench-chrome-border)' : 'none'),
-    borderLeft: isWindowedMode && !isWindowMaximized ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
-    borderRight: isWindowedMode && !isWindowMaximized ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
-    borderTopLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? 0 : workbench.metrics.panelRadius),
-    borderTopRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? 0 : workbench.metrics.panelRadius),
-    borderBottomLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
-    borderBottomRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
+    borderLeft: shellUsesFreeformFrame && !isWindowMaximized ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+    borderRight: shellUsesFreeformFrame && !isWindowMaximized ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+    borderTopLeftRadius: shellUsesFreeformFrame ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? 0 : workbench.metrics.panelRadius),
+    borderTopRightRadius: shellUsesFreeformFrame ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? 0 : workbench.metrics.panelRadius),
+    borderBottomLeftRadius: shellUsesFreeformFrame ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
+    borderBottomRightRadius: shellUsesFreeformFrame ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
     isolation: 'isolate',
   }), [
     isTopAnchored,
     isWindowMaximized,
-    isWindowedMode,
     resolvedAppearance.fonts.ui,
     shellBackgroundColor,
     shellBackdropFilter,
+    shellUsesFreeformFrame,
     theme.palette.textPrimary,
     workbench.metrics.panelRadius,
   ]);
@@ -6829,7 +6965,7 @@ function App() {
   ), [shellBody]);
   const shellSceneTransformOrigin = isWindowedMode
     ? 'center center'
-    : (isTopAnchored ? 'top left' : 'bottom left');
+    : (dockIsFloating ? 'center center' : (isTopAnchored ? 'top left' : 'bottom left'));
   const devHudEnabled = (Boolean(import.meta.env.DEV) || systemSettings.developerMode)
     && systemSettings.devTelemetryHudVisible;
   return (

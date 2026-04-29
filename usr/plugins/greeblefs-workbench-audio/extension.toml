@@ -24,6 +24,7 @@ priority = 720
 appliesTo = "file"
 extensions = ["aac", "aif", "aiff", "aifc", "alac", "amr", "caf", "flac", "m4a", "m4b", "mid", "midi", "mka", "mp3", "oga", "ogg", "opus", "wav", "wave", "weba", "wma"]
 fileNames = []
+previewKinds = ["audio"]
 
 [contributions.previewLanes.workbenchChrome]
 includePreviewTab = true

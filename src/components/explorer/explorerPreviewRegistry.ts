@@ -515,7 +515,7 @@ function resolveBuiltInExplorerPreviewDescriptor(
   for (const lane of BUILT_IN_EXPLORER_PREVIEW_LANES) {
     const descriptor = lane.match(context);
     if (descriptor) {
-      return descriptor;
+      return descriptor as ExplorerResolvedBuiltInPreviewDescriptor;
     }
   }
   return null;

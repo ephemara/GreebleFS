@@ -24,6 +24,7 @@ priority = 720
 appliesTo = "file"
 extensions = ["docx", "doc", "rtf", "odt"]
 fileNames = []
+previewKinds = ["docx"]
 
 [contributions.previewLanes.workbenchChrome]
 includePreviewTab = true

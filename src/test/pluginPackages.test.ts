@@ -278,6 +278,7 @@ describe('plugin package discovery', () => {
                   appliesTo: 'file',
                   extensions: ['md'],
                   fileNames: ['readme.md'],
+                  previewKinds: ['text'],
                 },
                 capabilities: {
                   editable: true,
@@ -553,6 +554,7 @@ describe('plugin package discovery', () => {
         appliesTo: 'file',
         extensions: ['md'],
         fileNames: ['readme.md'],
+        previewKinds: ['text'],
       },
       capabilities: {
         editable: true,

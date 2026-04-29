@@ -1,0 +1,1 @@
+Nested fixture file for folder workbench preview smoke tests.

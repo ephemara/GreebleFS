@@ -56,8 +56,14 @@ import type {
 } from '../runtime/explorerBackend';
 import { type ExtensionHostClient } from '../runtime/extensionHostApi';
 import type { OverlayPluginIndexApi } from '../runtime/pluginIndexApi';
-import type { ExplorerPdfPreviewDocument } from '../runtime/pdfPreviewBackend';
-import type { ManagedPythonRuntimeConfig } from '../runtime/pythonRuntimeBackend';
+import type {
+  ExplorerPdfPreviewDocument,
+  ExplorerPdfSaveEditsOutput,
+} from '../runtime/pdfPreviewBackend';
+import type {
+  ManagedPythonActionResponse,
+  ManagedPythonRuntimeConfig,
+} from '../runtime/pythonRuntimeBackend';
 import {
   getPluginPanelOpenRequestEvent,
   readPluginPanelOpenRequest,
@@ -67,6 +73,10 @@ import type { ExplorerResolvedBuiltInPreviewDescriptor } from './explorer/explor
 import type { ExplorerResolvedScriptPreview } from './explorer/explorerScriptRuntime';
 import type { ExplorerPreviewContextMenuRegistration } from './explorer/explorerPreviewContextMenu';
 import type { ExplorerPreviewWildcardWorkflowTab } from './explorer/explorerPreviewWorkflowTabs';
+import type {
+  ExplorerPdfWorkbenchChromeState,
+  ExplorerPdfWorkbenchController,
+} from './ExplorerPdfWorkbench';
 import type { EditorSearchFocusTarget } from './fileExplorerSearchFocus';
 import type { ExplorerPreviewEntryDragRequest } from './useExplorerPreviewEntryDirectDrag';
 
@@ -207,10 +217,10 @@ export interface OverlayPluginCollectionWorkbenchHost {
 
 export interface OverlayPluginPdfWorkbenchHost {
   document: ExplorerPdfPreviewDocument;
-  onSaved?: (output: unknown) => Promise<void> | void;
+  onSaved?: (output: ExplorerPdfSaveEditsOutput) => Promise<void> | void;
   onDocumentChange?: (document: ExplorerPdfPreviewDocument) => void;
-  onChromeStateChange?: (state: unknown) => void;
-  onControllerChange?: (controller: unknown) => void;
+  onChromeStateChange?: (state: ExplorerPdfWorkbenchChromeState) => void;
+  onControllerChange?: (controller: ExplorerPdfWorkbenchController | null) => void;
   onRegisterCloseGuard?: (guard: (() => Promise<boolean>) | null) => void;
 }
 
@@ -235,7 +245,7 @@ export interface OverlayPluginTextWorkbenchHost {
   ) => void;
   onRunScript?: () => Promise<void> | void;
   onStopScriptRun?: () => void;
-  onRunPythonManaged?: () => Promise<unknown>;
+  onRunPythonManaged?: () => Promise<ManagedPythonActionResponse>;
   onRunPythonInTerminal?: () => Promise<void>;
   onOpenManagedPythonRepl?: () => Promise<void>;
 }

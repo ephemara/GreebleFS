@@ -24,6 +24,7 @@ priority = 720
 appliesTo = "file"
 extensions = ["xlsx", "xlsm", "xlsb", "xls", "ods", "csv", "tsv"]
 fileNames = []
+previewKinds = ["spreadsheet"]
 
 [contributions.previewLanes.workbenchChrome]
 includePreviewTab = true

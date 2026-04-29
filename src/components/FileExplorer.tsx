@@ -237,6 +237,7 @@ import { callExtensionHostMethod } from "../runtime/extensionHostApi";
 import {
   createPluginPreviewRuntimeBridge,
   type OverlayPluginPreviewHostContext,
+  type OverlayPluginPreviewWorkbenchContext,
 } from "./pluginRuntime";
 import {
   listenToFileOperationsTransferCompleted,
@@ -421,6 +422,7 @@ import {
   getExplorerPreviewEntryExtension,
   resolveExplorerPreviewDescriptor,
   resolveExplorerPreviewWorkbenchSelection,
+  type ExplorerResolvedBuiltInPreviewDescriptor,
   type ExplorerResolvedPreviewWorkbenchCandidate,
   type ExplorerResolvedPreviewDescriptor,
   type ExplorerResolvedPreviewWorkbenchSelection,
@@ -1144,6 +1146,25 @@ type ExplorerPythonPreviewMetadata = {
   source: "extension" | "executable";
 };
 
+type PreviewTextWorkbenchState = {
+  content: string;
+  language: string;
+  renderKind: DocumentPreviewKind;
+  scriptPreview: ExplorerResolvedScriptPreview | null;
+  pythonPreview: ExplorerPythonPreviewMetadata | null;
+  focusTarget: EditorSearchFocusTarget | null;
+  isDirty: boolean;
+  isSaving: boolean;
+  lastSavedAt: number | null;
+  error: string | null;
+};
+
+type PreviewTextWorkbenchSession = PreviewTextWorkbenchState & {
+  path: string;
+  name: string;
+  resolvedPath?: string;
+};
+
 type PreviewState =
   | { type: "none"; path: string }
   | ({
@@ -1198,17 +1219,8 @@ type PreviewState =
       type: "text";
       path: string;
       name: string;
-      content: string;
-      language: string;
-      renderKind: DocumentPreviewKind;
-      scriptPreview: ExplorerResolvedScriptPreview | null;
-      pythonPreview: ExplorerPythonPreviewMetadata | null;
-      focusTarget: EditorSearchFocusTarget | null;
-      isDirty: boolean;
-      isSaving: boolean;
-      lastSavedAt: number | null;
-      error: string | null;
-    } & PreviewResolvedPathState)
+    } & PreviewTextWorkbenchState &
+      PreviewResolvedPathState)
   | ({
       type: "shader";
       path: string;
@@ -1265,6 +1277,9 @@ type PreviewState =
       assetUrl: string;
       isDirectory: boolean;
       lane: OverlayPluginPreviewLaneContribution;
+      delegateDescriptor: ExplorerResolvedBuiltInPreviewDescriptor | null;
+      delegatePdfDocument?: ExplorerPdfPreviewDocument | null;
+      delegateText?: PreviewTextWorkbenchState | null;
     } & PreviewResolvedPathState)
   | ({
       type: "fallback";
@@ -1273,6 +1288,81 @@ type PreviewState =
       label: string;
       detail?: string;
     } & PreviewResolvedPathState);
+
+function getPreviewTextWorkbenchSession(
+  preview: PreviewState,
+  path: string,
+): PreviewTextWorkbenchSession | null {
+  if (preview.path !== path) {
+    return null;
+  }
+
+  if (preview.type === "text") {
+    return {
+      path: preview.path,
+      resolvedPath: preview.resolvedPath,
+      name: preview.name,
+      content: preview.content,
+      language: preview.language,
+      renderKind: preview.renderKind,
+      scriptPreview: preview.scriptPreview,
+      pythonPreview: preview.pythonPreview,
+      focusTarget: preview.focusTarget,
+      isDirty: preview.isDirty,
+      isSaving: preview.isSaving,
+      lastSavedAt: preview.lastSavedAt,
+      error: preview.error,
+    };
+  }
+
+  if (preview.type === "plugin" && preview.delegateText) {
+    return {
+      ...preview.delegateText,
+      path: preview.path,
+      resolvedPath: preview.resolvedPath,
+      name: preview.name,
+    };
+  }
+
+  return null;
+}
+
+function updatePreviewTextWorkbenchState(
+  preview: PreviewState,
+  path: string,
+  updater: (state: PreviewTextWorkbenchState) => PreviewTextWorkbenchState,
+): PreviewState {
+  if (preview.path !== path) {
+    return preview;
+  }
+
+  if (preview.type === "text") {
+    return {
+      ...preview,
+      ...updater({
+        content: preview.content,
+        language: preview.language,
+        renderKind: preview.renderKind,
+        scriptPreview: preview.scriptPreview,
+        pythonPreview: preview.pythonPreview,
+        focusTarget: preview.focusTarget,
+        isDirty: preview.isDirty,
+        isSaving: preview.isSaving,
+        lastSavedAt: preview.lastSavedAt,
+        error: preview.error,
+      }),
+    };
+  }
+
+  if (preview.type === "plugin" && preview.delegateText) {
+    return {
+      ...preview,
+      delegateText: updater(preview.delegateText),
+    };
+  }
+
+  return preview;
+}
 type PreviewCloseGuard = () => Promise<boolean>;
 type PreviewSurfaceMode = "content" | "terminal";
 type ExplorerEmbeddedTerminalPlacement = "preview" | "bottom";
@@ -3509,7 +3599,9 @@ function createPreviewNavigationHistoryEntry(
   }
 
   const previewName = preview.name;
-  const isDirectory = preview.type === "folder";
+  const isDirectory =
+    preview.type === "folder" ||
+    (preview.type === "plugin" && preview.isDirectory);
   const previewSize =
     "size" in preview && typeof preview.size === "number" ? preview.size : 0;
   const previewExtension = isDirectory
@@ -4749,23 +4841,129 @@ function PreviewPanel({
   );
   const handlePdfWorkbenchDocumentChange = useCallback(
     (document: ExplorerPdfPreviewDocument) => {
-      if (preview.type !== "pdf") {
+      if (
+        preview.type !== "pdf" &&
+        !(
+          preview.type === "plugin" &&
+          preview.delegateDescriptor?.kind === "pdf"
+        )
+      ) {
         return;
       }
       onPdfDocumentChange(preview.path, document);
     },
-    [onPdfDocumentChange, preview.path, preview.type],
+    [onPdfDocumentChange, preview],
   );
   const handlePdfWorkbenchSaved = useCallback(
     async (output: ExplorerPdfSaveEditsOutput) => {
-      if (preview.type !== "pdf") {
+      if (
+        preview.type !== "pdf" &&
+        !(
+          preview.type === "plugin" &&
+          preview.delegateDescriptor?.kind === "pdf"
+        )
+      ) {
         return;
       }
       onPdfDocumentChange(preview.path, output.document);
       await onRefreshPreviewEntry();
     },
-    [onPdfDocumentChange, onRefreshPreviewEntry, preview.path, preview.type],
+    [onPdfDocumentChange, onRefreshPreviewEntry, preview],
   );
+  const pluginPreviewWorkbenchContext =
+    useMemo<OverlayPluginPreviewWorkbenchContext | null>(() => {
+      if (preview.type !== "plugin") {
+        return null;
+      }
+
+      const context: OverlayPluginPreviewWorkbenchContext = {
+        delegateDescriptor: preview.delegateDescriptor,
+      };
+
+      if (
+        preview.delegateDescriptor?.kind === "folder" ||
+        preview.delegateDescriptor?.kind === "archive"
+      ) {
+        context.collection = {
+          refreshRevision,
+          showHiddenFiles,
+          jumpToFolderEnabled: previewJumpToFolderEnabled,
+          onToggleJumpToFolder: onTogglePreviewJumpToFolder,
+          onOpenEntry: onOpenFolderPreviewEntry,
+          onStartDragOutEntry: onStartDragOutPreviewEntry,
+          onExtractArchive,
+          iconTheme,
+          folderIconRules,
+          defaultFolderIcon,
+        };
+      }
+
+      if (
+        preview.delegateDescriptor?.kind === "pdf" &&
+        preview.delegatePdfDocument
+      ) {
+        context.pdf = {
+          document: preview.delegatePdfDocument,
+          onSaved: handlePdfWorkbenchSaved,
+          onDocumentChange: handlePdfWorkbenchDocumentChange,
+          onChromeStateChange: handlePdfWorkbenchChromeStateChange,
+          onControllerChange: handlePdfWorkbenchControllerChange,
+          onRegisterCloseGuard,
+        };
+      }
+
+      if (preview.delegateText) {
+        context.text = {
+          ...preview.delegateText,
+          editorSettings,
+          pythonRuntimeConfig,
+          pythonBootstrapPackageInput,
+          onChange: (value) => onTextChange(preview.path, value),
+          onSave: () => onTextSave(preview.path),
+          onCursorPositionChange: setTextPreviewCursor,
+          onRunScript: preview.delegateText.scriptPreview
+            ? () =>
+                onRunTextScript(
+                  preview.path,
+                  preview.delegateText!.scriptPreview!,
+                )
+            : undefined,
+          onStopScriptRun: onStopTextScriptRun,
+          onRunPythonManaged: () => onRunPythonManaged(preview.path),
+          onRunPythonInTerminal: () => onRunPythonInTerminal(preview.path),
+          onOpenManagedPythonRepl,
+        };
+      }
+
+      return context;
+    }, [
+      defaultFolderIcon,
+      editorSettings,
+      folderIconRules,
+      handlePdfWorkbenchChromeStateChange,
+      handlePdfWorkbenchControllerChange,
+      handlePdfWorkbenchDocumentChange,
+      handlePdfWorkbenchSaved,
+      iconTheme,
+      onExtractArchive,
+      onOpenFolderPreviewEntry,
+      onOpenManagedPythonRepl,
+      onRegisterCloseGuard,
+      onRunPythonInTerminal,
+      onRunPythonManaged,
+      onRunTextScript,
+      onStartDragOutPreviewEntry,
+      onStopTextScriptRun,
+      onTextChange,
+      onTextSave,
+      onTogglePreviewJumpToFolder,
+      preview,
+      previewJumpToFolderEnabled,
+      pythonBootstrapPackageInput,
+      pythonRuntimeConfig,
+      refreshRevision,
+      showHiddenFiles,
+    ]);
   const getPreviewHeaderZoneStyle = useCallback(
     (zoneId: ExplorerChromeZoneId): CSSProperties => {
       switch (zoneId) {
@@ -5959,6 +6157,7 @@ function PreviewPanel({
                   isDirectory: preview.isDirectory,
                 }}
                 runtime={pluginPreviewRuntimeBridge}
+                workbench={pluginPreviewWorkbenchContext}
                 viewMode={
                   previewBackedByArchiveVirtual ? "preview" : viewMode
                 }
@@ -13664,19 +13863,22 @@ export function FileExplorer({
 
   const persistPreviewText = useCallback(async (path: string) => {
     const currentPreview = previewRef.current;
-    if (currentPreview.type !== "text" || currentPreview.path !== path) {
+    const textSession = getPreviewTextWorkbenchSession(currentPreview, path);
+    if (!textSession) {
       return false;
     }
-    if (isExplorerArchiveVirtualPath(currentPreview.path)) {
+    if (isExplorerArchiveVirtualPath(textSession.path)) {
       return false;
     }
 
-    const contentAtSave = currentPreview.content;
-    const writePath = currentPreview.resolvedPath ?? path;
+    const contentAtSave = textSession.content;
+    const writePath = textSession.resolvedPath ?? path;
     setPreview((prev) =>
-      prev.type === "text" && prev.path === path
-        ? { ...prev, isSaving: true, error: null }
-        : prev,
+      updatePreviewTextWorkbenchState(prev, path, (state) => ({
+        ...state,
+        isSaving: true,
+        error: null,
+      })),
     );
 
     try {
@@ -13684,15 +13886,16 @@ export function FileExplorer({
       invalidateExplorerResultCaches();
       clearExplorerEditDraft(EXPLORER_TEXT_DRAFT_SCOPE, path);
       setPreview((prev) => {
-        if (prev.type !== "text" || prev.path !== path) return prev;
-        const isStillSame = prev.content === contentAtSave;
-        return {
-          ...prev,
+        const nextSession = getPreviewTextWorkbenchSession(prev, path);
+        if (!nextSession) return prev;
+        const isStillSame = nextSession.content === contentAtSave;
+        return updatePreviewTextWorkbenchState(prev, path, (state) => ({
+          ...state,
           isSaving: false,
           isDirty: !isStillSame,
-          lastSavedAt: isStillSame ? Date.now() : prev.lastSavedAt,
+          lastSavedAt: isStillSame ? Date.now() : state.lastSavedAt,
           error: null,
-        };
+        }));
       });
       return true;
     } catch (saveError) {
@@ -13703,15 +13906,13 @@ export function FileExplorer({
         explorerStringDraftSerializer,
       );
       setPreview((prev) =>
-        prev.type === "text" && prev.path === path
-          ? {
-              ...prev,
-              isSaving: false,
-              error: buildExplorerDraftPreservedMessage(saveError),
-            }
-          : prev,
+        updatePreviewTextWorkbenchState(prev, path, (state) => ({
+          ...state,
+          isSaving: false,
+          error: buildExplorerDraftPreservedMessage(saveError),
+        })),
       );
-      setError(`Save failed for ${currentPreview.name}: ${saveError}`);
+      setError(`Save failed for ${textSession.name}: ${saveError}`);
       return false;
     }
   }, []);
@@ -13731,7 +13932,11 @@ export function FileExplorer({
 
   const flushPreviewTextSave = useCallback(async () => {
     const currentPreview = previewRef.current;
-    if (currentPreview.type !== "text" || !currentPreview.isDirty) {
+    const textSession = getPreviewTextWorkbenchSession(
+      currentPreview,
+      currentPreview.path,
+    );
+    if (!textSession?.isDirty) {
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);
         previewSaveTimer.current = null;
@@ -13756,17 +13961,15 @@ export function FileExplorer({
         explorerStringDraftSerializer,
       );
       setPreview((prev) =>
-        prev.type === "text" && prev.path === path
-          ? {
-              ...prev,
-              content,
-              scriptPreview: prev.scriptPreview
-                ? { ...prev.scriptPreview, content }
-                : null,
-              isDirty: true,
-              error: null,
-            }
-          : prev,
+        updatePreviewTextWorkbenchState(prev, path, (state) => ({
+          ...state,
+          content,
+          scriptPreview: state.scriptPreview
+            ? { ...state.scriptPreview, content }
+            : null,
+          isDirty: true,
+          error: null,
+        })),
       );
       queuePreviewSave(path);
     },
@@ -13942,9 +14145,14 @@ export function FileExplorer({
   const updatePdfPreviewDocument = useCallback(
     (path: string, document: ExplorerPdfPreviewDocument) => {
       setPreview((prev) =>
-        prev.type === "pdf" && prev.path === path
-          ? { ...prev, document }
-          : prev,
+        prev.path !== path
+          ? prev
+          : prev.type === "pdf"
+            ? { ...prev, document }
+            : prev.type === "plugin" &&
+                prev.delegateDescriptor?.kind === "pdf"
+              ? { ...prev, delegatePdfDocument: document }
+              : prev,
       );
     },
     [],
@@ -14048,15 +14256,12 @@ export function FileExplorer({
   const runPreviewTextScript = useCallback(
     async (path: string, scriptPreview: ExplorerResolvedScriptPreview) => {
       const currentPreview = previewRef.current;
-      if (
-        currentPreview.type !== "text" ||
-        currentPreview.path !== path ||
-        currentPreview.scriptPreview == null
-      ) {
+      const textSession = getPreviewTextWorkbenchSession(currentPreview, path);
+      if (!textSession?.scriptPreview) {
         return;
       }
 
-      if (currentPreview.isDirty) {
+      if (textSession.isDirty) {
         const didSave = await persistPreviewText(path);
         if (!didSave) {
           return;
@@ -14064,7 +14269,7 @@ export function FileExplorer({
       }
 
       const command = buildTerminalScriptRunCommand({
-        path: currentPreview.resolvedPath ?? path,
+        path: textSession.resolvedPath ?? path,
         shell: useSettingsStore.getState().settings.terminal.shell,
         runner: scriptPreview.runner,
       });
@@ -14090,22 +14295,19 @@ export function FileExplorer({
   const runPreviewPythonManaged = useCallback(
     async (path: string) => {
       const currentPreview = previewRef.current;
-      if (
-        currentPreview.type !== "text" ||
-        currentPreview.path !== path ||
-        currentPreview.pythonPreview == null
-      ) {
+      const textSession = getPreviewTextWorkbenchSession(currentPreview, path);
+      if (!textSession?.pythonPreview) {
         throw new Error("Python preview is no longer active.");
       }
 
-      if (currentPreview.isDirty) {
+      if (textSession.isDirty) {
         const didSave = await persistPreviewText(path);
         if (!didSave) {
           throw new Error("Unable to save the Python file before running it.");
         }
       }
 
-      const entryPath = currentPreview.resolvedPath ?? currentPreview.path;
+      const entryPath = textSession.resolvedPath ?? textSession.path;
       const workingDirectory =
         getPathParent(entryPath) ?? (currentPath.trim() || null);
       if (!workingDirectory) {
@@ -14129,11 +14331,8 @@ export function FileExplorer({
   const runPreviewPythonInTerminal = useCallback(
     async (path: string) => {
       const currentPreview = previewRef.current;
-      if (
-        currentPreview.type !== "text" ||
-        currentPreview.path !== path ||
-        currentPreview.pythonPreview == null
-      ) {
+      const textSession = getPreviewTextWorkbenchSession(currentPreview, path);
+      if (!textSession?.pythonPreview) {
         throw new Error("Python preview is no longer active.");
       }
 
@@ -14143,7 +14342,7 @@ export function FileExplorer({
         );
       }
 
-      if (currentPreview.isDirty) {
+      if (textSession.isDirty) {
         const didSave = await persistPreviewText(path);
         if (!didSave) {
           throw new Error("Unable to save the Python file before running it.");
@@ -14151,7 +14350,7 @@ export function FileExplorer({
       }
 
       const command = buildTerminalPythonRunCommand({
-        path: currentPreview.resolvedPath ?? currentPreview.path,
+        path: textSession.resolvedPath ?? textSession.path,
         shell: useSettingsStore.getState().settings.terminal.shell,
       });
       if (!command) {
@@ -15431,23 +15630,238 @@ export function FileExplorer({
           }
           return;
         }
-        case "plugin":
+        case "plugin": {
+          const rawDelegateDescriptor = resolvedPreview.delegateDescriptor;
+          const delegateDescriptor =
+            rawDelegateDescriptor &&
+            resolvedPreview.lane.match.previewKinds.includes(
+              rawDelegateDescriptor.kind,
+            )
+              ? rawDelegateDescriptor
+              : null;
+          const basePluginPreviewState = {
+            type: "plugin" as const,
+            path: entry.path,
+            ...previewResolvedPathProps,
+            name: entry.name,
+            extension: resolvedPreview.extension,
+            size: entry.size,
+            assetUrl: resolvedPreview.assetUrl,
+            isDirectory: entry.is_dir,
+            lane: resolvedPreview.lane,
+            delegateDescriptor,
+          };
+
+          if (delegateDescriptor?.kind === "pdf") {
+            setDocumentViewMode("preview");
+            if (
+              currentPreview.type === "plugin" &&
+              currentPreview.path === entry.path &&
+              currentPreview.delegateDescriptor?.kind === "pdf" &&
+              currentPreview.delegatePdfDocument
+            ) {
+              if (isCurrentPreviewRequest()) {
+                setPreview((prev) =>
+                  prev.type === "plugin" && prev.path === entry.path
+                    ? {
+                        ...prev,
+                        ...previewResolvedPathProps,
+                        name: entry.name,
+                        size: entry.size,
+                      }
+                    : prev,
+                );
+                dismissPreviewLoadingIndicator();
+              }
+              return;
+            }
+
+            try {
+              const document =
+                await openExplorerPdfPreviewDocument(previewResolvedPath);
+              if (!isCurrentPreviewRequest()) {
+                return;
+              }
+              setPreview({
+                ...basePluginPreviewState,
+                delegatePdfDocument: document,
+              });
+            } catch (error) {
+              if (!isCurrentPreviewRequest()) {
+                return;
+              }
+              const errorFallback = buildExplorerPreviewErrorFallback(
+                resolvedPreview,
+                error,
+              );
+              setPreview({
+                type: "fallback",
+                path: entry.path,
+                ...previewResolvedPathProps,
+                name: entry.name,
+                label: errorFallback.label,
+                detail: errorFallback.detail,
+              });
+            } finally {
+              if (isCurrentPreviewRequest()) {
+                dismissPreviewLoadingIndicator();
+              }
+            }
+            return;
+          }
+
+          if (
+            delegateDescriptor?.kind === "text" ||
+            delegateDescriptor?.kind === "script"
+          ) {
+            const isScriptDelegate = delegateDescriptor.kind === "script";
+            const delegateLanguage = delegateDescriptor.language;
+            const delegateRenderKind =
+              delegateDescriptor.kind === "text"
+                ? delegateDescriptor.renderKind
+                : "none";
+            const delegateScriptRunner =
+              delegateDescriptor.kind === "script"
+                ? delegateDescriptor.runner
+                : null;
+            const pythonPreview =
+              !isScriptDelegate &&
+              isPythonPreviewExtension(delegateDescriptor.extension)
+                ? ({
+                    source: "extension",
+                  } satisfies ExplorerPythonPreviewMetadata)
+                : null;
+            setDocumentViewMode(
+              isScriptDelegate || pythonPreview != null
+                ? "edit"
+                : delegateRenderKind !== "none"
+                  ? "preview"
+                  : "edit",
+            );
+
+            if (
+              currentPreview.type === "plugin" &&
+              currentPreview.path === entry.path &&
+              currentPreview.delegateText
+            ) {
+              if (isCurrentPreviewRequest()) {
+                setPreview((prev) =>
+                  prev.type === "plugin" && prev.path === entry.path
+                    ? {
+                        ...prev,
+                        ...previewResolvedPathProps,
+                        name: entry.name,
+                        extension: resolvedPreview.extension,
+                        size: entry.size,
+                        delegateDescriptor,
+                        delegateText: {
+                          ...prev.delegateText!,
+                          language: delegateLanguage,
+                          renderKind: delegateRenderKind,
+                          scriptPreview: isScriptDelegate
+                            ? prev.delegateText!.scriptPreview
+                              ? {
+                                  ...prev.delegateText!.scriptPreview,
+                                  language: delegateLanguage,
+                                  runner: delegateScriptRunner!,
+                                }
+                              : {
+                                  language: delegateLanguage,
+                                  runner: delegateScriptRunner!,
+                                  content: prev.delegateText!.content,
+                                }
+                            : null,
+                          pythonPreview,
+                          focusTarget,
+                        },
+                      }
+                    : prev,
+                );
+                dismissPreviewLoadingIndicator();
+              }
+              return;
+            }
+
+            try {
+              const cacheKind = isScriptDelegate ? "script" : "text";
+              const previewCacheKey = getExplorerPreviewCacheKey(
+                cacheKind,
+                entry.path,
+              );
+              let content = readCachedExplorerPreview<string>(previewCacheKey);
+              if (content == null) {
+                content = await readExplorerTextFile(previewResolvedPath);
+                storeCachedExplorerPreview({
+                  key: previewCacheKey,
+                  path: entry.path,
+                  value: content,
+                  bytes: estimateStringPreviewCacheBytes(content),
+                });
+              }
+              if (!isCurrentPreviewRequest()) {
+                return;
+              }
+
+              const restoredDraft = loadExplorerEditDraft(
+                EXPLORER_TEXT_DRAFT_SCOPE,
+                entry.path,
+                explorerStringDraftSerializer,
+              );
+              const resolvedContent = restoredDraft ?? content;
+              const hasRestoredDraft =
+                restoredDraft != null && restoredDraft !== content;
+              setPreview({
+                ...basePluginPreviewState,
+                delegateText: {
+                  content: resolvedContent,
+                  language: delegateLanguage,
+                  renderKind: delegateRenderKind,
+                  scriptPreview: isScriptDelegate
+                    ? {
+                        language: delegateLanguage,
+                        runner: delegateScriptRunner!,
+                        content: resolvedContent,
+                      }
+                    : null,
+                  pythonPreview,
+                  focusTarget,
+                  isDirty: hasRestoredDraft,
+                  isSaving: false,
+                  lastSavedAt: hasRestoredDraft ? null : Date.now(),
+                  error: null,
+                },
+              });
+            } catch (error) {
+              if (!isCurrentPreviewRequest()) {
+                return;
+              }
+              const errorFallback = buildExplorerPreviewErrorFallback(
+                resolvedPreview,
+                error,
+              );
+              setPreview({
+                type: "fallback",
+                path: entry.path,
+                ...previewResolvedPathProps,
+                name: entry.name,
+                label: errorFallback.label,
+                detail: errorFallback.detail,
+              });
+            } finally {
+              if (isCurrentPreviewRequest()) {
+                dismissPreviewLoadingIndicator();
+              }
+            }
+            return;
+          }
+
           setDocumentViewMode("preview");
           if (isCurrentPreviewRequest()) {
-            setPreview({
-              type: "plugin",
-              path: entry.path,
-              ...previewResolvedPathProps,
-              name: entry.name,
-              extension: resolvedPreview.extension,
-              size: entry.size,
-              assetUrl: resolvedPreview.assetUrl,
-              isDirectory: entry.is_dir,
-              lane: resolvedPreview.lane,
-            });
+            setPreview(basePluginPreviewState);
             dismissPreviewLoadingIndicator();
           }
           return;
+        }
         case "unsupported": {
           if (isCurrentPreviewRequest()) {
             const fallback = buildExplorerUnsupportedPreviewFallback();
@@ -16105,14 +16519,14 @@ export function FileExplorer({
     const oldPath = rename.path;
     const newPath = dir + sep + newName;
     try {
+      const renamedTextSession = getPreviewTextWorkbenchSession(
+        previewRef.current,
+        oldPath,
+      );
       const shouldResaveRenamedPreview =
-        previewRef.current.path === oldPath &&
-        previewRef.current.type === "text" &&
-        previewRef.current.isDirty;
+        renamedTextSession?.isDirty === true;
       const shouldMoveRenamedTextDraft =
-        previewRef.current.path === oldPath &&
-        previewRef.current.type === "text" &&
-        previewRef.current.isDirty;
+        renamedTextSession?.isDirty === true;
       const shouldMoveRenamedShaderDraft =
         previewRef.current.path === oldPath &&
         previewRef.current.type === "shader" &&
@@ -16867,7 +17281,9 @@ export function FileExplorer({
 
     const previewName =
       "name" in preview ? preview.name : getPathLeaf(previewPath);
-    const isDirectory = preview.type === "folder";
+    const isDirectory =
+      preview.type === "folder" ||
+      (preview.type === "plugin" && preview.isDirectory);
     return {
       path: previewPath,
       name: previewName,
@@ -27614,7 +28030,11 @@ export function FileExplorer({
         return;
       }
       if (
-        (preview.type === "folder" || preview.type === "archive") &&
+        (preview.type === "folder" ||
+          preview.type === "archive" ||
+          (preview.type === "plugin" &&
+            (preview.delegateDescriptor?.kind === "folder" ||
+              preview.delegateDescriptor?.kind === "archive"))) &&
         matchesKeybinding(e, keybindings.cycleCollectionPreviewMode)
       ) {
         e.preventDefault();
@@ -27627,7 +28047,11 @@ export function FileExplorer({
         return;
       }
       if (
-        (preview.type === "folder" || preview.type === "archive") &&
+        (preview.type === "folder" ||
+          preview.type === "archive" ||
+          (preview.type === "plugin" &&
+            (preview.delegateDescriptor?.kind === "folder" ||
+              preview.delegateDescriptor?.kind === "archive"))) &&
         matchesKeybinding(e, keybindings.cycleCollectionPreviewModeReverse)
       ) {
         e.preventDefault();

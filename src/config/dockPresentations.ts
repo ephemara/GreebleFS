@@ -7,6 +7,12 @@ import {
   overlayWindowGeometry,
   type OverlayWindowBounds,
 } from './overlayWindow';
+import {
+  dockTerminalGridGeometry,
+  normalizeDockTerminalColumns,
+  normalizeDockTerminalRows,
+  type DockTerminalGrid,
+} from './dockTerminalGrid';
 import { joinPlatformPath } from './platform';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
@@ -38,6 +44,11 @@ export interface DockPreviewPolicyDefinition {
   splitMode?: DockPreviewSplitMode;
 }
 
+export interface DockTerminalGridDefinition {
+  rows?: number;
+  columns?: number;
+}
+
 export interface DockPresentationDefinition {
   id?: string;
   name?: string;
@@ -46,6 +57,7 @@ export interface DockPresentationDefinition {
   allowedPlacements?: DockPlacementMode[];
   defaultSize?: DockPresentationSizeDefinition;
   minSize?: DockPresentationSizeDefinition;
+  defaultTerminalGrid?: DockTerminalGridDefinition;
   topBarId?: string | null;
   preview?: DockPreviewPolicyDefinition;
   tags?: string[];
@@ -64,6 +76,7 @@ export interface LoadedDockPresentationDefinition {
   allowedPlacements: DockPlacementMode[];
   defaultSize: Required<DockPresentationSizeDefinition>;
   minSize: Required<DockPresentationSizeDefinition>;
+  defaultTerminalGrid: DockTerminalGrid;
   topBarId: string | null;
   preview: Required<DockPreviewPolicyDefinition>;
   tags: string[];
@@ -82,6 +95,8 @@ export interface ResolvedDockPresentation {
   placementMode: DockPlacementMode;
   edgeSize: number;
   edgeWidth: number;
+  defaultTerminalRows: number;
+  defaultTerminalColumns: number;
   floatingBounds: OverlayWindowBounds | null;
   topBarId: string | null;
   previewPolicy: {
@@ -299,6 +314,17 @@ function parseDockSizeDefinition(
   };
 }
 
+function parseDockTerminalGridDefinition(
+  value: unknown,
+  fallback: DockTerminalGrid,
+): DockTerminalGrid {
+  const source = asRecord(value) ?? {};
+  return {
+    rows: normalizeDockTerminalRows(source.rows, fallback.rows),
+    columns: normalizeDockTerminalColumns(source.columns, fallback.columns),
+  };
+}
+
 function parseLooseDockPresentationDefinition(
   source: LooseRecord,
 ): DockPresentationDefinition {
@@ -318,6 +344,7 @@ function parseLooseDockPresentationDefinition(
       : undefined,
     defaultSize: asRecord(source.defaultSize) as DockPresentationSizeDefinition | undefined,
     minSize: asRecord(source.minSize) as DockPresentationSizeDefinition | undefined,
+    defaultTerminalGrid: asRecord(source.defaultTerminalGrid) as DockTerminalGridDefinition | undefined,
     topBarId:
       typeof source.topBarId === 'string' || source.topBarId === null
         ? source.topBarId
@@ -342,6 +369,7 @@ function hasDockPresentationDefinitionFields(source: LooseRecord): boolean {
     'allowedPlacements',
     'defaultSize',
     'minSize',
+    'defaultTerminalGrid',
     'topBarId',
     'preview',
     'tags',
@@ -410,6 +438,7 @@ function cloneDockPresentationDefinition(
     allowedPlacements: [...presentation.allowedPlacements],
     defaultSize: { ...presentation.defaultSize },
     minSize: { ...presentation.minSize },
+    defaultTerminalGrid: { ...presentation.defaultTerminalGrid },
     preview: { ...presentation.preview },
     tags: [...presentation.tags],
   };
@@ -454,6 +483,13 @@ export function createLoadedDockPresentationDefinition(
     width: overlayWindowGeometry.defaultWidth,
     height: overlayWindowGeometry.defaultHeight,
   });
+  const defaultTerminalGrid = parseDockTerminalGridDefinition(
+    definition.defaultTerminalGrid,
+    {
+      rows: dockTerminalGridGeometry.defaultRows,
+      columns: dockTerminalGridGeometry.defaultColumns,
+    },
+  );
 
   return {
     id,
@@ -476,6 +512,7 @@ export function createLoadedDockPresentationDefinition(
       height: Math.max(defaultSize.height, minSize.height),
     },
     minSize,
+    defaultTerminalGrid,
     topBarId: normalizeDockTopBarSelectionId(
       definition.topBarId ?? DEFAULT_DOCK_TOP_BAR_ID,
     ),
@@ -552,6 +589,8 @@ export function resolveActiveDockPresentation(args: {
   placementMode?: unknown;
   edgeSize?: unknown;
   edgeWidth?: unknown;
+  defaultTerminalRows?: unknown;
+  defaultTerminalColumns?: unknown;
   floatingBounds?: unknown;
   topBarId?: unknown;
   previewEnabled?: unknown;
@@ -607,6 +646,14 @@ export function resolveActiveDockPresentation(args: {
     edgeWidth: normalizeDockEdgeWidth(
       args.edgeWidth,
       presentation.defaultSize.width,
+    ),
+    defaultTerminalRows: normalizeDockTerminalRows(
+      args.defaultTerminalRows,
+      presentation.defaultTerminalGrid.rows,
+    ),
+    defaultTerminalColumns: normalizeDockTerminalColumns(
+      args.defaultTerminalColumns,
+      presentation.defaultTerminalGrid.columns,
     ),
     floatingBounds: normalizeFloatingBounds(args.floatingBounds),
     topBarId,

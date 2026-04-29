@@ -243,6 +243,77 @@ describe("explorerPreviewRegistry", () => {
     expect(descriptor.lane.id).toBe(sqlitePluginLane.id);
   });
 
+  it("lets plugin lanes match built-in preview kinds without duplicating extension lists", () => {
+    const folderLane = createPluginLane({
+      id: "greeblefs-workbench-folder.preview.folder",
+      pluginId: "greeblefs-workbench-folder",
+      pluginName: "GreebleFS Folder Workbench",
+      title: "Folder Workbench",
+      priority: 720,
+      match: {
+        appliesTo: "directory",
+        extensions: [],
+        fileNames: [],
+        previewKinds: ["folder"],
+      },
+    });
+    const textLane = createPluginLane({
+      id: "greeblefs-workbench-text.preview.text",
+      pluginId: "greeblefs-workbench-text",
+      pluginName: "GreebleFS Text Workbench",
+      title: "Text Workbench",
+      priority: 640,
+      match: {
+        appliesTo: "file",
+        extensions: [],
+        fileNames: [],
+        previewKinds: ["text"],
+      },
+    });
+
+    const folderDescriptor = resolveExplorerPreviewDescriptor(
+      createEntry({
+        name: "fixtures",
+        path: "/tmp/fixtures",
+        is_dir: true,
+      }),
+      {
+        ...PREVIEW_OPTIONS,
+        pluginPreviewLanes: [folderLane],
+      },
+    );
+    expect(folderDescriptor.kind).toBe("plugin");
+    if (folderDescriptor.kind !== "plugin") {
+      throw new Error("Expected folder to resolve through a plugin workbench.");
+    }
+    expect(folderDescriptor.assetUrl).toBe("");
+    expect(folderDescriptor.delegateDescriptor).toEqual({ kind: "folder" });
+
+    const textDescriptor = resolveExplorerPreviewDescriptor(
+      createEntry({
+        name: "notes.md",
+        path: "/tmp/notes.md",
+        extension: "md",
+        size: 1024,
+      }),
+      {
+        ...PREVIEW_OPTIONS,
+        documentPreviewKindResolver: () => "markdown",
+        pluginPreviewLanes: [textLane],
+      },
+    );
+    expect(textDescriptor.kind).toBe("plugin");
+    if (textDescriptor.kind !== "plugin") {
+      throw new Error("Expected text to resolve through a plugin workbench.");
+    }
+    expect(textDescriptor.delegateDescriptor).toEqual({
+      kind: "text",
+      extension: "md",
+      language: "markdown",
+      renderKind: "markdown",
+    });
+  });
+
   it("lets a saved user default win over a higher priority candidate", () => {
     const lowerPriorityDefault = createPluginLane({
       id: "lower-priority-default",

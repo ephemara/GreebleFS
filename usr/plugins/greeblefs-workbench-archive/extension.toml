@@ -1,0 +1,41 @@
+id = "greeblefs-workbench-archive"
+version = "1"
+name = "GreebleFS Archive Workbench"
+description = "First-party extension-backed archive preview and extraction workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "archive", "zip", "collection"]
+
+[[testFiles]]
+id = "archive-fixture"
+label = "Archive Fixture"
+path = "examples/archive-fixture.zip"
+description = "Tiny ZIP fixture for plugin-panel preview smoke tests."
+
+[[contributions.previewLanes]]
+id = "archive"
+title = "Archive Workbench"
+renderer = "preview/archiveWorkbench.tsx"
+priority = 720
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = []
+fileNames = []
+previewKinds = ["archive"]
+
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = false
+topBarDensity = "compact"
+
+[contributions.previewLanes.capabilities]
+editable = false
+save = false
+export = true
+workflowTabs = false
+contextMenu = true
+prefetch = true
+closeGuard = false

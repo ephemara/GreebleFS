@@ -28,6 +28,10 @@
         "width": 400,
         "height": 150
       },
+      "defaultTerminalGrid": {
+        "rows": 24,
+        "columns": 100
+      },
       "topBarId": "dock-control-strip",
       "preview": {
         "enabled": true,

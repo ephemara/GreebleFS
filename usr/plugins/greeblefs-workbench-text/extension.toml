@@ -1,0 +1,41 @@
+id = "greeblefs-workbench-text"
+version = "1"
+name = "GreebleFS Text Workbench"
+description = "First-party extension-backed Monaco text and code workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "text", "code", "monaco"]
+
+[[testFiles]]
+id = "markdown-notes"
+label = "Markdown Fixture"
+path = "examples/notes.md"
+description = "Small Markdown fixture for plugin-panel preview smoke tests."
+
+[[contributions.previewLanes]]
+id = "text"
+title = "Text Workbench"
+renderer = "preview/textWorkbench.tsx"
+priority = 640
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = []
+fileNames = []
+previewKinds = ["text", "script"]
+
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = true
+topBarDensity = "compact"
+
+[contributions.previewLanes.capabilities]
+editable = true
+save = true
+export = false
+workflowTabs = true
+contextMenu = true
+prefetch = true
+closeGuard = true
