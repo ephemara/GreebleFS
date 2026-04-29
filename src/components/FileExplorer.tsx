@@ -195,9 +195,6 @@ import {
 import {
   EXPLORER_LAYOUT_ZOOM_MAX,
   EXPLORER_LAYOUT_ZOOM_MIN,
-  EXPLORER_LAYOUT_ZOOM_LIST_ENTER,
-  EXPLORER_LAYOUT_ZOOM_TABLE_EXIT,
-  EXPLORER_LAYOUT_ZOOM_TABLE_MIDPOINT,
   getExplorerGridMetricsForZoom,
   getExplorerGridZoomAnchor,
   createExplorerLayoutZoomState,

@@ -16,6 +16,23 @@
   - `node scripts/audit-ui-literals.mjs`
   - touched-file TypeScript sweep was clean for the new popup-layer work; the filtered `tsc` output only reported pre-existing unused `EXPLORER_LAYOUT_ZOOM_*` constants in `src/components/FileExplorer.tsx`.
 
+# 2026-04-28 - Explorer Live Zoom Now Scales Visible Icon And Thumbnail Stages Without Reintroducing Churn
+
+- The previous ctrl-wheel pass fixed gesture ownership and durable commit timing, but it still left the live grid stage visually wrong: the tile layout could grow while thumbnail/icon stages stayed on the old committed band, which made icons look stranded in the middle of enlarged tiles.
+- Durable ownership after this pass:
+  - `src/config/explorerViewModes.ts` now treats `getExplorerGridMetricsForZoom(...)` as the live presentation contract again. Grid `iconSize` and `iconStageSize` interpolate continuously between icon anchors and keep growing through the oversize range instead of staying pinned to a committed band.
+  - `src/config/explorerZoomBehavior.ts` and `usr/explorer-zoom-behaviors/greeblefs-core/explorer-zoom-behavior.json` now own the remaining tweakable zoom presentation math: grid item padding, grid thumbnail radius, and row thumbnail-stage sizing. If live zoom visuals need tuning, adjust the `/usr` manifest first.
+  - `src/components/FileExplorer.tsx` still keeps the committed icon-band marker for debug/HUD state via `resolveExplorerGridIconModeForCommittedViewMode(...)`, but the rendered stage size, fallback icon size, and thumbnail frame now come from the continuous live metrics. Thumbnail identity/fetch remains decoupled from stage size, so visible growth does not refetch already-visible thumbnails.
+- Durable behavior after this pass:
+  - Ctrl/Cmd + wheel inside Explorer should now feel like Dolphin/Nautilus-style layout zoom: the visible tile, thumbnail frame, and fallback icon scale live with the gesture, while durable `viewMode` / `gridZoom` still settle only after idle.
+  - Oversize zoom above `icons-xl` still commits back to the `icons-xl` durable band, but the live stage continues to grow visually instead of freezing at the XL stage.
+- Validation that passed for this pass:
+  - `node_modules\\.bin\\vitest.exe run src/test/explorerViewModes.test.ts --reporter=dot`
+  - `node_modules\\.bin\\vitest.exe run src/test/hotkeys.test.ts --reporter=dot`
+  - `node_modules\\.bin\\vitest.exe run src/test/fileExplorer.viewModes.test.tsx -t "scales the explorer grid with ctrl-wheel without changing app zoom and only commits after idle|keeps the committed icon band stable while the live grid stage grows continuously|settles one explorer-settings commit for a ctrl-wheel gesture burst|scales the explorer grid when ctrl-wheel happens on the file area shell|keeps a deep-grid viewport anchored instead of jumping back to the top while zooming|does not refetch an already-visible generated thumbnail during a zoom gesture|keeps the durable oversize icon band clamped while the live stage keeps growing|keeps ctrl-wheel scaling responsive after the explorer remounts its layout shell|changes adaptive density with ctrl-wheel without leaving the experimental mode|uses plain wheel to zoom the constellation field instead of falling back to page scroll|routes ctrl-wheel inside the constellation field to camera zoom without touching app zoom or density" --reporter=dot --testTimeout=30000`
+  - filtered TypeScript sweep: `node_modules\\.bin\\tsc --noEmit --pretty false -p tsconfig.json` returned `NO_MATCHING_ERRORS` for the touched explorer zoom files/tests.
+  - Full `src/test/fileExplorer.viewModes.test.tsx` still has unrelated long-standing failures outside the zoom path on this branch (embedded preview terminal mounting, multi-pane sources-rail expectations, footer view-switcher expectations, row-mode stepping assertions, and deep-scrolled navigation). Keep treating the focused zoom subset as the reliable proof for this lane until those unrelated explorer regressions are cleaned up.
+
 # 2026-04-29 - Runtime Validation Proofs Now Have A Shipped Settings Surface And A Cross-Stack Quick Runner
 
 - The System settings lane now has a persisted `settings.system.developerTestSettingsEnabled` toggle. When enabled, `src/components/settings/sections/SystemSettingsSection.tsx` surfaces a `Developer Test Proofs` block that reuses existing host/runtime truth instead of inventing parallel diagnostics state:
@@ -5910,3 +5927,16 @@
 - Durable product rule:
   - if the user selected `LAN`, mobile share should succeed without caring whether Tailscale is installed, healthy, or misconfigured.
   - if the user selected `Tailscale`, the server can require a real tailnet route and certificate because that is the requested transport.
+
+## 2026-04-28 - Mobile Share Avoids Bare Tailscale Serve 443 And Copies Deterministic Direct Routes
+
+- A follow-up Windows failure was caused by stale machine-level Tailscale Serve state, not a hardcoded app route: `tailscale serve status --json` showed `tayk47.tail04e752.ts.net:443` proxying `/` to dead `http://127.0.0.1:18790`, which produced browser `HTTP ERROR 502` at the bare tailnet domain even though the GreebleFS mobile server was not actually bound there.
+- Durable implementation shape:
+  - The stale host-level Serve config was cleared with `tailscale serve reset`; `tailscale serve status` then reported `No serve config`.
+  - `src-tauri/src/lan_share/server.rs` no longer generates Tailscale TLS certificates or advertises bare HTTPS tailnet addresses for mobile share. Tailscale mode now copies/QRs an explicit `http://<tailnet-host>:<actual-http-port>` URL, relying on the encrypted tailnet transport instead of Tailscale Serve on port 443.
+  - LAN mode now copies/QRs the direct LAN IP HTTP URL first. mDNS/`sfm.local` and HTTPS compatibility addresses remain available as secondary metadata, but they are no longer the preferred route that the clipboard and QR flow push to users.
+  - Route preference is covered by native tests for LAN direct-IP preference, Tailscale explicit-port preference, and loopback fallback behavior.
+- Durable product notes:
+  - Do not use `tailscale serve` as implicit mobile-share infrastructure unless the product explicitly owns its lifecycle, validates the proxy target, and tears it down. A stale OS-level Serve proxy can outlive the app and make the bare MagicDNS host return 502.
+  - `sfm.local` is a product mDNS constant, not a per-user hardcode. Keep it as a convenience fallback only; enterprise-grade copied/QR URLs should prefer deterministic routable addresses discovered at runtime.
+  - A notice saying mobile share is live for a path like `C:\automations\tidus` reflects the active Explorer session path passed into the share runtime. It is not hardcoded in the share server.

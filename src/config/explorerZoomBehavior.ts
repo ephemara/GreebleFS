@@ -588,9 +588,7 @@ export function resolveExplorerLayoutZoomWheelDelta(
 export function getExplorerLayoutZoomHudProgress(layoutZoom: number): number {
   const {
     columnsDetailsMidpointZoom,
-    gridToTableEnterZoom,
     liveGridMaxZoom,
-    listToTableExitZoom,
     minimumRowZoom,
     tableToGridExitZoom,
     tableToListEnterZoom,

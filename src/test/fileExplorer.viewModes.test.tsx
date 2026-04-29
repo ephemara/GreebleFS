@@ -5637,16 +5637,15 @@ const value = 1;
     dispatchLayoutWheel("alpha", -120);
     dispatchLayoutWheel("alpha", -120);
     dispatchLayoutWheel("alpha", -120);
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 90));
-    });
 
-    expect(getExplorerContentViewportGridIconBand()).toBe("icons-m");
-    expect(
-      getExplorerContentViewportCssNumber(
-        "--overlay-explorer-grid-icon-stage-size",
-      ),
-    ).toBeGreaterThan(initialStageSize);
+    await waitFor(() => {
+      expect(getExplorerContentViewportGridIconBand()).toBe("icons-m");
+      expect(
+        getExplorerContentViewportCssNumber(
+          "--overlay-explorer-grid-icon-stage-size",
+        ),
+      ).toBeGreaterThan(initialStageSize);
+    });
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
@@ -5834,16 +5833,15 @@ const value = 1;
     );
 
     dispatchLayoutWheel("alpha", -120);
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 90));
-    });
 
-    expect(getExplorerContentViewportGridIconBand()).toBe("icons-xl");
-    expect(
-      getExplorerContentViewportCssNumber(
-        "--overlay-explorer-grid-icon-stage-size",
-      ),
-    ).toBeGreaterThan(initialStageSize);
+    await waitFor(() => {
+      expect(getExplorerContentViewportGridIconBand()).toBe("icons-xl");
+      expect(
+        getExplorerContentViewportCssNumber(
+          "--overlay-explorer-grid-icon-stage-size",
+        ),
+      ).toBeGreaterThan(initialStageSize);
+    });
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
@@ -5858,7 +5856,7 @@ const value = 1;
       getExplorerContentViewportCssNumber(
         "--overlay-explorer-grid-icon-stage-size",
       ),
-    ).toBe(initialStageSize);
+    ).toBeGreaterThan(initialStageSize);
   });
 
   it("uses the dedicated explorer viewport class for visible file-list scrollbars", async () => {
