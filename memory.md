@@ -1,3 +1,24 @@
+# 2026-04-29 - Plugins Can Query The Global And Semantic Indexes
+
+- Packaged frontend plugins now have a first-class `api.index` surface instead of needing raw invoke strings or ad hoc filesystem crawling. `src/runtime/pluginIndexApi.ts` owns `global` search/status/scan helpers, `semantic` summary/build/search/similar helpers, and the media helper `findPictures(...)`.
+- Native index reads now have a structured query command: `global_search_query_index` accepts `GlobalSearchIndexQueryRequest` with query text, limit/offset, file/dir toggles, hidden-file policy, extension/root filters, score threshold, and stable sorting. Empty-query filter reads use the Tantivy all-doc path so media/gallery plugins can ask for all indexed images without missing extension-only matches.
+- Cross-runtime parity is explicit:
+  - `src/components/pluginRuntime.tsx` and `src/runtime/useFolderPluginRuntime.ts` inject `api.index` into React package plugins.
+  - `src-tauri/src/runtime_pipeline/extension_host.rs`, `src-tauri/src/runtime_pipeline/commands.rs`, and `src/runtime/extensionHostApi.ts` expose `index.*` and `semantic.*` methods to extension-host callers.
+  - `src/runtime/globalSearchBackend.ts` remains the typed frontend boundary to Specta commands; regenerate `src/generated/tauri.ts` after Rust command/type changes.
+- `usr/plugins/greeblefs-index-photo-gallery` is the first-party smoke plugin. It calls `api.index.media.findPictures(...)`, builds `assetUrl` values through the host adapter, and opens selected files through the explorer host. It must stay index-backed; do not replace it with a recursive directory walk.
+- Durable regression rules:
+  - New RAG/gallery/index plugins should consume `api.index` or the extension-host `index.*` / `semantic.*` methods, not raw command strings.
+  - Keep image extension truth shared from `src/config/filePreview.ts` (`EXPLORER_IMAGE_PREVIEW_EXTENSIONS`) so gallery-style plugins track the explorer preview contract.
+  - When the plugin index contract changes, update the Rust schema, generated bindings, TS wrapper, plugin runtime mock, and focused tests together.
+- Validation for this pass:
+  - `cargo fmt --manifest-path src-tauri/Cargo.toml`
+  - `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - `cargo test --manifest-path src-tauri/Cargo.toml --lib -- --nocapture`
+  - `bun run bindings:generate`
+  - `bunx vitest run src/test/pluginIndexApi.test.ts src/test/pluginRuntime.test.ts src/test/pluginPackages.test.ts --reporter=dot`
+  - `bunx tsc --noEmit --pretty false` is still red on existing wider workspace diagnostics; no new plugin-index files appeared in the reported error set.
+
 # 2026-04-29 - Mobile PWA Plugin Panes Reuse The Desktop Plugin Root
 
 - The mobile/PWA shell now has a host-owned plugin catalog instead of a fixed built-in-only tab set. `src-tauri/src/lan_share/mobile_plugins.rs` scans the same `usr/plugins` root as the desktop packaged plugin system, reads manifest `contributions.mobilePanes`, and exposes `/api/plugins` plus plugin asset/backend routes under `/api/plugins/{pluginId}/...`.
