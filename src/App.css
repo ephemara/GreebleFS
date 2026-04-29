@@ -16,11 +16,16 @@ html, body, #root {
 
 .overlay-scrollbar-scope {
   --overlay-scrollbar-size: 11px;
-  --overlay-scrollbar-thumb: color-mix(in srgb, var(--overlay-border-strong) 72%, transparent);
-  --overlay-scrollbar-thumb-hover: color-mix(in srgb, var(--overlay-accent) 46%, var(--overlay-border-strong));
-  --overlay-scrollbar-track: color-mix(in srgb, var(--overlay-bg-panel-alt) 82%, black 18%);
-  --overlay-scrollbar-corner: color-mix(in srgb, var(--overlay-bg-panel) 88%, black 12%);
+  --overlay-scrollbar-file-list-size: 12px;
+  --overlay-scrollbar-thumb: color-mix(in srgb, var(--overlay-border-strong, rgba(121, 167, 216, 0.32)) 72%, transparent);
+  --overlay-scrollbar-thumb-hover: color-mix(in srgb, var(--overlay-accent, #79d6ff) 46%, var(--overlay-border-strong, rgba(121, 167, 216, 0.32)));
+  --overlay-scrollbar-track: color-mix(in srgb, var(--overlay-bg-panel-alt, #111820) 82%, black 18%);
+  --overlay-scrollbar-corner: color-mix(in srgb, var(--overlay-bg-panel, #101820) 88%, black 12%);
+  --overlay-scrollbar-radius: 999px;
   --overlay-scrollbar-thumb-border-width: 3px;
+  --overlay-scrollbar-track-border: color-mix(in srgb, var(--overlay-border, rgba(121, 167, 216, 0.18)) 58%, transparent);
+  --overlay-scrollbar-track-shadow: inset 0 1px 0 color-mix(in srgb, white 7%, transparent), 0 10px 24px rgba(0,0,0,0.16);
+  --overlay-scrollbar-thumb-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent), 0 8px 18px rgba(0,0,0,0.22);
   --overlay-color-scheme: dark;
   --overlay-toggle-width: 48px;
   --overlay-toggle-height: 26px;
@@ -161,7 +166,7 @@ html, body, #root {
 .overlay-scrollbar-scope :where(*):where(:not(.custom-scrollbar)):where(:not(.hide-scrollbar)):where(:not(.overlay-scrollbars-none))::-webkit-scrollbar-thumb {
   background: var(--overlay-scrollbar-thumb);
   border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
-  border-radius: 999px;
+  border-radius: var(--overlay-scrollbar-radius);
   background-clip: padding-box;
 }
 
@@ -199,7 +204,7 @@ html, body, #root {
 }
 
 .overlay-scroll-area--explorer-file-list {
-  --overlay-scrollbar-size: 12px;
+  --overlay-scrollbar-size: var(--overlay-scrollbar-file-list-size);
 }
 
 .overlay-scroll-area__viewport {
@@ -270,7 +275,7 @@ html, body, #root {
 .overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-thumb {
   background: var(--overlay-scrollbar-thumb);
   border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
-  border-radius: 999px;
+  border-radius: var(--overlay-scrollbar-radius);
   background-clip: padding-box;
 }
 
@@ -314,15 +319,13 @@ html, body, #root {
   right: 4px;
   bottom: calc(6px + var(--overlay-scroll-area-horizontal-reserve, 0px));
   width: var(--overlay-scrollbar-size);
-  border-radius: 999px;
+  border-radius: var(--overlay-scrollbar-radius);
   background:
     linear-gradient(180deg,
       color-mix(in srgb, var(--overlay-scrollbar-track) 92%, rgba(255,255,255,0.04)),
       color-mix(in srgb, var(--overlay-scrollbar-track) 82%, rgba(0,0,0,0.12)));
-  border: 1px solid color-mix(in srgb, var(--overlay-border) 58%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 7%, transparent),
-    0 10px 24px rgba(0,0,0,0.16);
+  border: 1px solid var(--overlay-scrollbar-track-border);
+  box-shadow: var(--overlay-scrollbar-track-shadow);
 }
 
 .overlay-scroll-area__scrollbar--horizontal {
@@ -330,29 +333,25 @@ html, body, #root {
   right: calc(6px + var(--overlay-scroll-area-vertical-reserve, 0px));
   bottom: 4px;
   height: var(--overlay-scrollbar-size);
-  border-radius: 999px;
+  border-radius: var(--overlay-scrollbar-radius);
   background:
     linear-gradient(90deg,
       color-mix(in srgb, var(--overlay-scrollbar-track) 92%, rgba(255,255,255,0.04)),
       color-mix(in srgb, var(--overlay-scrollbar-track) 82%, rgba(0,0,0,0.12)));
-  border: 1px solid color-mix(in srgb, var(--overlay-border) 58%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 7%, transparent),
-    0 10px 24px rgba(0,0,0,0.16);
+  border: 1px solid var(--overlay-scrollbar-track-border);
+  box-shadow: var(--overlay-scrollbar-track-shadow);
 }
 
 .overlay-scroll-area__scrollbar-thumb {
   position: absolute;
-  border-radius: 999px;
+  border-radius: var(--overlay-scrollbar-radius);
   background:
     linear-gradient(180deg,
       color-mix(in srgb, white 8%, var(--overlay-scrollbar-thumb)),
       var(--overlay-scrollbar-thumb));
   border: max(1px, calc(var(--overlay-scrollbar-thumb-border-width) - 1px)) solid transparent;
   background-clip: padding-box;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 12%, transparent),
-    0 8px 18px rgba(0,0,0,0.22);
+  box-shadow: var(--overlay-scrollbar-thumb-shadow);
   will-change: transform;
   transform: translateZ(0);
 }

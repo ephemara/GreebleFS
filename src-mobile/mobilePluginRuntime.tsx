@@ -29,6 +29,13 @@ export interface MobilePluginRuntimeContext {
       args?: string[],
     ) => Promise<MobilePluginBackendRunResponse>;
   };
+  settings: {
+    getValues: () => Record<string, unknown>;
+    getValue: <TValue = unknown>(
+      settingId: string,
+      fallbackValue?: TValue,
+    ) => TValue | null;
+  };
   files: {
     buildFileUrl: (relativePath: string) => string;
     buildThumbnailUrl: (
@@ -49,6 +56,8 @@ export interface MobilePluginRuntimeContext {
         query?: string | null;
         limit?: number;
         offset?: number;
+        rootPaths?: string[];
+        extensions?: string[];
         showHiddenFiles?: boolean;
       }) => Promise<MobileIndexPicturesResponse>;
     };
@@ -177,6 +186,17 @@ export function MobilePluginRuntimeSurface({
         paneId: pane.localId,
       }),
     },
+    settings: {
+      getValues: () => plugin?.settingsValues ?? {},
+      getValue: <TValue = unknown>(settingId: string, fallbackValue?: TValue) => {
+        const normalizedSettingId = settingId.trim();
+        const values = plugin?.settingsValues ?? {};
+        return normalizedSettingId
+          && Object.prototype.hasOwnProperty.call(values, normalizedSettingId)
+          ? (values[normalizedSettingId] as TValue)
+          : (fallbackValue ?? null);
+      },
+    },
     files: {
       buildFileUrl: buildMobileFileUrl,
       buildThumbnailUrl: buildMobileThumbnailUrl,
@@ -205,6 +225,7 @@ export function MobilePluginRuntimeSurface({
     if (!container || !pane.rendererUrl) {
       return;
     }
+    const mountContainer = container;
 
     let disposed = false;
     const styleLinks = pane.styleUrls.map((styleUrl) => {
@@ -221,7 +242,7 @@ export function MobilePluginRuntimeSurface({
         phase: "loading",
         message: "Loading mobile plugin runtime.",
       });
-      container.innerHTML = "";
+      mountContainer.innerHTML = "";
       runtimeInstanceRef.current?.dispose?.();
       runtimeInstanceRef.current = null;
 
@@ -234,7 +255,7 @@ export function MobilePluginRuntimeSurface({
         if (!mount) {
           throw new Error("Mobile plugin renderer does not export mount(container, api).");
         }
-        const cleanup = await mount(container, runtimeContextRef.current ?? runtimeContext);
+        const cleanup = await mount(mountContainer, runtimeContextRef.current ?? runtimeContext);
         if (disposed) {
           normalizeRuntimeCleanup(cleanup).dispose?.();
           return;

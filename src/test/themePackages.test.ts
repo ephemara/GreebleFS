@@ -475,6 +475,12 @@ describe('theme bundle loader', () => {
         id: 'token-appearance',
         name: 'Token Appearance',
         extendsThemeId: 'github-dark',
+        scrollbar: {
+          thumb: '#253850',
+          thumbHover: '#365d89',
+          track: '#08111c',
+          fileListSize: 15,
+        },
       }),
       'usr/appearance-packs/token-appearance/tokens/color.json': JSON.stringify({
         palette: {
@@ -668,6 +674,8 @@ describe('theme bundle loader', () => {
       expect.arrayContaining(['color', 'border', 'opacity', 'blur', 'geometry', 'layer', 'motion', 'interaction']),
     );
     expect(firstTheme.cssVars?.['--gfs-ui-color-accent']).toBe('#123456');
+    expect(firstTheme.scrollbar?.thumb).toBe('#253850');
+    expect(firstTheme.scrollbar?.fileListSize).toBe('15px');
     expect(firstTheme.interactionMotion?.defaultPresetId).toBe('snappy');
 
     const appearance = resolveOverlayAppearance({
@@ -675,6 +683,8 @@ describe('theme bundle loader', () => {
       packageThemes: [firstTheme],
     });
     expect(appearance.cssVars['--overlay-workbench-chrome-height']).toBe('44px');
+    expect(appearance.cssVars['--overlay-scrollbar-thumb']).toBe('#253850');
+    expect(appearance.cssVars['--overlay-scrollbar-file-list-size']).toBe('15px');
     expect(appearance.explorerTheme.cssVars['--overlay-explorer-rail-width']).toBe('244px');
     expect(appearance.explorerTheme.cssVars['--overlay-explorer-modal-scrim']).toBe('rgba(0,0,0,0.6)');
 

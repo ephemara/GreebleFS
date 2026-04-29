@@ -70,6 +70,35 @@
       ]
     },
     {
+      "id": "dock-control-strip",
+      "name": "Dock Control Strip",
+      "description": "Dock-optimized chrome with placement switching, compact settings, shell controls, and Explorer access kept close.",
+      "topBarStyle": "minimal",
+      "leadingControls": [
+        "window-mode",
+        "dock-placement",
+        "surface-controls"
+      ],
+      "navigationShortcuts": [
+        "explorer-shortcut",
+        "settings-shortcut"
+      ],
+      "trailingControls": [
+        "layout-cycle",
+        "command-palette",
+        "zen-mode",
+        "shortcut-badge",
+        "shell-mode",
+        "close-overlay"
+      ],
+      "navigationMode": "summary",
+      "tags": [
+        "dock",
+        "floating",
+        "settings"
+      ]
+    },
+    {
       "id": "launcher-rack",
       "name": "Launcher Rack",
       "description": "A launcher-first strip that turns the middle lane into a status surface instead of a tab strip.",

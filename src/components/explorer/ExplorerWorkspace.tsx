@@ -80,6 +80,7 @@ import { ExplorerPopupSurface } from "./ExplorerPopupSurface";
 import { resolveExplorerPopupSurfaceStyle } from "./explorerPopupStyles";
 import { FileExplorer } from "../FileExplorer";
 import type {
+  ExplorerDockPreviewPolicy,
   ExplorerExternalChromeControlDefinition,
   ExplorerWorkspaceNavigationRequest,
   ExplorerWorkspaceRevealRequest,
@@ -125,6 +126,7 @@ interface ExplorerWorkspaceProps {
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   explorerLayouts?: LoadedExplorerLayoutDefinition[];
   layoutMode?: ExplorerLayoutMode;
+  dockPreviewPolicy?: ExplorerDockPreviewPolicy;
   defaultModeProfileId?: ExplorerModeProfileId | null;
   chromeControlSurface?: "toolbar" | "topbar";
   explorerPicker?: ExplorerPickerRequest | null;
@@ -324,6 +326,7 @@ export function ExplorerWorkspace({
   pluginPreviewLanes = [],
   explorerLayouts = [],
   layoutMode = "full",
+  dockPreviewPolicy,
   defaultModeProfileId = null,
   chromeControlSurface = "toolbar",
   explorerPicker = null,
@@ -2359,6 +2362,7 @@ export function ExplorerWorkspace({
             instanceId={paneSnapshot.instanceId}
             workspaceTabId={activeWorkspaceTab?.id ?? null}
             layoutMode={layoutMode}
+            dockPreviewPolicy={dockPreviewPolicy}
             defaultModeProfileId={defaultModeProfileId}
             renderDragOverlayHost={false}
             workspacePaneCount={workspacePaneCount}
@@ -2395,6 +2399,7 @@ export function ExplorerWorkspace({
       appearance,
       chromeControlSurface,
       handleWorkspaceSelectionTransferComplete,
+      dockPreviewPolicy,
       layoutMode,
       navigationRequestsByInstanceId,
       onAddBookmark,

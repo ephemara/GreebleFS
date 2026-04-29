@@ -12,6 +12,53 @@ tags = ["first-party", "index", "gallery", "photos", "media"]
 fsRead = true
 launchIntents = ["open-explorer"]
 
+[[contributions.settingsSlots]]
+id = "gallery-settings"
+title = "Gallery Settings"
+description = "Control which indexed folders and picture extensions the gallery uses on desktop and mobile."
+iconName = "SlidersHorizontal"
+keywords = ["gallery", "photos", "index", "mobile", "folders", "extensions"]
+order = 42
+
+[contributions.settingsSlots.defaults]
+rootPaths = ""
+fileExtensions = "jpg, jpeg, png, gif, webp, svg, bmp, ico, avif, tiff, tif"
+resultLimit = 240
+includeHidden = false
+
+[[contributions.settingsSlots.fields]]
+id = "rootPaths"
+label = "Folder Paths"
+description = "Optional absolute desktop paths or mobile-share-relative paths. Leave empty to use the active index scope."
+kind = "textarea"
+placeholder = "C:\\Users\\Admin\\Pictures\nD:\\Reference\\Textures"
+defaultValue = ""
+
+[[contributions.settingsSlots.fields]]
+id = "fileExtensions"
+label = "File Types"
+description = "Comma or newline separated extensions. Leading dots are optional."
+kind = "text"
+placeholder = "jpg, png, webp, avif"
+defaultValue = "jpg, jpeg, png, gif, webp, svg, bmp, ico, avif, tiff, tif"
+
+[[contributions.settingsSlots.fields]]
+id = "resultLimit"
+label = "Result Limit"
+description = "Maximum indexed pictures to request per refresh."
+kind = "number"
+defaultValue = 240
+min = 24
+max = 500
+step = 24
+
+[[contributions.settingsSlots.fields]]
+id = "includeHidden"
+label = "Include Hidden Files"
+description = "Include hidden files and folders when querying the index."
+kind = "boolean"
+defaultValue = false
+
 [[contributions.mobilePanes]]
 id = "photo-gallery"
 title = "Photo Gallery"

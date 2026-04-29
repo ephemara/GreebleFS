@@ -1,4 +1,17 @@
 const GALLERY_LIMIT = 120;
+const DEFAULT_GALLERY_EXTENSIONS = [
+  "jpg",
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "svg",
+  "bmp",
+  "ico",
+  "avif",
+  "tiff",
+  "tif",
+];
 
 function createElement(tagName, className, textContent) {
   const element = document.createElement(tagName);
@@ -15,6 +28,67 @@ function formatCount(count) {
   return `${count.toLocaleString()} ${count === 1 ? "picture" : "pictures"}`;
 }
 
+function parseTextList(value, splitPattern) {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => parseTextList(entry, splitPattern));
+  }
+  if (typeof value !== "string") {
+    return [];
+  }
+  return value
+    .split(splitPattern)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function parseRootPaths(value) {
+  return [...new Set(parseTextList(value, /[\n\r;]+/g))];
+}
+
+function parseExtensions(value) {
+  const parsed = parseTextList(value, /[\n\r,;\s]+/g)
+    .map((extension) => extension.replace(/^\.+/, "").toLowerCase())
+    .filter((extension) => /^[a-z0-9]{1,24}$/.test(extension));
+  const unique = [...new Set(parsed)];
+  return unique.length > 0 ? unique : DEFAULT_GALLERY_EXTENSIONS;
+}
+
+function readNumberSetting(value, fallback, min, max) {
+  const candidate = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim()
+      ? Number(value)
+      : fallback;
+  if (!Number.isFinite(candidate)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(candidate)));
+}
+
+function readGallerySettings(api) {
+  const settings = api.settings;
+  return {
+    rootPaths: parseRootPaths(settings?.getValue("rootPaths", "") ?? ""),
+    extensions: parseExtensions(
+      settings?.getValue(
+        "fileExtensions",
+        DEFAULT_GALLERY_EXTENSIONS.join(", "),
+      ) ?? DEFAULT_GALLERY_EXTENSIONS.join(", "),
+    ),
+    resultLimit: readNumberSetting(
+      settings?.getValue("resultLimit", GALLERY_LIMIT),
+      GALLERY_LIMIT,
+      24,
+      240,
+    ),
+    includeHidden: settings?.getValue("includeHidden", false) === true,
+  };
+}
+
+function serializeGallerySettings(settings) {
+  return JSON.stringify(settings);
+}
+
 function buildPictureUrl(api, picture) {
   return (
     picture.thumbnailUrl ||
@@ -28,6 +102,7 @@ export function mount(container, api) {
   let query = "";
   let pictures = [];
   let status = null;
+  let gallerySettings = readGallerySettings(api);
   let loading = true;
   let error = null;
   let disposed = false;
@@ -43,7 +118,10 @@ export function mount(container, api) {
         currentApi.index.global.getStatus(),
         currentApi.index.media.findPictures({
           query: query.trim() || null,
-          limit: GALLERY_LIMIT,
+          limit: gallerySettings.resultLimit,
+          rootPaths: gallerySettings.rootPaths,
+          extensions: gallerySettings.extensions,
+          showHiddenFiles: gallerySettings.includeHidden,
         }),
       ]);
       if (disposed) {
@@ -132,6 +210,18 @@ export function mount(container, api) {
           : "Index not ready",
       ),
     );
+    meta.append(
+      createElement(
+        "span",
+        "",
+        gallerySettings.rootPaths.length > 0
+          ? `${gallerySettings.rootPaths.length} scoped folders`
+          : "Share scope",
+      ),
+    );
+    meta.append(
+      createElement("span", "", `${gallerySettings.extensions.length} types`),
+    );
     header.append(meta);
     root.append(header);
   }
@@ -196,7 +286,12 @@ export function mount(container, api) {
 
   return {
     update(nextApi) {
+      const previousSettings = serializeGallerySettings(gallerySettings);
       currentApi = nextApi;
+      gallerySettings = readGallerySettings(nextApi);
+      if (serializeGallerySettings(gallerySettings) !== previousSettings) {
+        void refresh();
+      }
     },
     dispose() {
       disposed = true;

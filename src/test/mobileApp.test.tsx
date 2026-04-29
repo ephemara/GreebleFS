@@ -7,6 +7,7 @@ import type { MobilePluginRuntimeContext } from "../../src-mobile/mobilePluginRu
 import { useMobileStore } from "../../src-mobile/mobileStore";
 import type {
   MobilePreviewResponse,
+  MobilePluginCatalogResponse,
   MobileSearchResponse,
   MobileSearchStatusResponse,
   MobileShareListingResponse,
@@ -92,6 +93,7 @@ const mobileThemeSnapshot: MobileShareThemeSnapshot = {
     directoriesFirst: true,
     showTabLabels: true,
   },
+  pluginSettingsById: {},
 };
 
 const listingResponse: MobileShareListingResponse = {
@@ -191,7 +193,7 @@ const searchResponse: MobileSearchResponse = {
   ],
 };
 
-const pluginCatalogResponse = {
+const pluginCatalogResponse: MobilePluginCatalogResponse = {
   pluginRoot: "C:/Dev/GreebleFS/usr/plugins",
   refreshedAtMs: 1710000000000,
   plugins: [
@@ -203,6 +205,7 @@ const pluginCatalogResponse = {
       description: "Demo plugin",
       category: "Utilities",
       tags: ["mobile"],
+      settingsValues: {},
       capabilities: {
         desktopPanel: true,
         mobilePanes: 1,
@@ -485,7 +488,11 @@ describe("mobile app shell", () => {
       container: HTMLElement,
       api: MobilePluginRuntimeContext,
     ) => {
-      const response = await api.index.media.findPictures({ limit: 1 });
+      const response = await api.index.media.findPictures({
+        limit: 1,
+        rootPaths: api.settings.getValue<string[]>("rootPaths", []) ?? [],
+        extensions: api.settings.getValue<string[]>("extensions", []) ?? [],
+      });
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = `Runtime ${response.entries[0]?.name ?? "empty"}`;
@@ -505,6 +512,13 @@ describe("mobile app shell", () => {
     };
     activePluginCatalogResponse = {
       ...pluginCatalogResponse,
+      plugins: pluginCatalogResponse.plugins.map((plugin) => ({
+        ...plugin,
+        settingsValues: {
+          rootPaths: ["photos"],
+          extensions: ["png", "webp"],
+        },
+      })),
       panes: pluginCatalogResponse.panes.map((pane) => ({
         ...pane,
         title: "Gallery",
@@ -525,6 +539,8 @@ describe("mobile app shell", () => {
       .map(([input]) => new URL(String(input), "https://mobile.greeblefs.test"))
       .find((url) => url.pathname === "/api/index/pictures");
     expect(mediaRequest?.searchParams.get("limit")).toBe("1");
+    expect(mediaRequest?.searchParams.getAll("rootPaths")).toEqual(["photos"]);
+    expect(mediaRequest?.searchParams.getAll("extensions")).toEqual(["png", "webp"]);
 
     await user.click(screen.getByRole("button", { name: "Runtime photo.png" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();

@@ -7,6 +7,7 @@ import type {
   OverlayThemeFonts,
   OverlayThemePalette,
   OverlayThemePresentation,
+  OverlayThemeScrollbar,
   OverlayThemeVisualLayer,
   OverlayXTermTheme,
 } from './appearance';
@@ -75,6 +76,7 @@ export interface ThemeAppearancePackManifest {
   extendsThemeId?: string;
   palette?: Partial<OverlayThemePalette>;
   effects?: Partial<OverlayThemeEffects>;
+  scrollbar?: OverlayThemeScrollbar;
   xterm?: Partial<OverlayXTermTheme>;
   fonts?: OverlayThemeFonts;
   visuals?: OverlayThemeVisualLayer[];
@@ -492,6 +494,7 @@ function parseThemeAppearancePackManifest(source: LooseRecord): ThemeAppearanceP
     extendsThemeId: asString(source.extendsThemeId || source.extends),
     palette: asRecord(source.palette) as Partial<OverlayThemePalette> | undefined,
     effects: asRecord(source.effects) as Partial<OverlayThemeEffects> | undefined,
+    scrollbar: asRecord(source.scrollbar) as OverlayThemeScrollbar | undefined,
     xterm: asRecord(source.xterm) as Partial<OverlayXTermTheme> | undefined,
     fonts: asRecord(source.fonts) as OverlayThemeFonts | undefined,
     visuals: Array.isArray(source.visuals) ? source.visuals as OverlayThemeVisualLayer[] : undefined,

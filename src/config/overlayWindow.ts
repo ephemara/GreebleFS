@@ -1,3 +1,5 @@
+import type { DockPlacementMode } from './dockPresentations';
+
 export interface OverlayVisualControlDefinition {
   min: number;
   max: number;
@@ -15,6 +17,11 @@ export interface OverlayWindowBounds {
 
 export interface OverlayWindowLayout extends OverlayWindowBounds {
   healedHeight: number | null;
+}
+
+export interface DockPresentationWindowLayout extends OverlayWindowLayout {
+  placementMode: DockPlacementMode;
+  floating: boolean;
 }
 
 export const overlayWindowGeometry = {
@@ -205,5 +212,61 @@ export function clampOverlayWindowBoundsToWorkArea(args: {
     height,
     x: clampValue(Math.round(args.bounds.x), minX, maxX),
     y: clampValue(Math.round(args.bounds.y), minY, maxY),
+  };
+}
+
+export function computeDockPresentationWindowLayout(args: {
+  workArea: OverlayWindowArea;
+  scaleFactor: number;
+  placementMode: DockPlacementMode;
+  edgeSize: number;
+  edgeWidth: number;
+  floatingBounds?: OverlayWindowBounds | null;
+  currentBounds?: OverlayWindowBounds | null;
+}): DockPresentationWindowLayout {
+  if (args.placementMode !== 'floating') {
+    const anchoredLayout = computeAnchoredOverlayWindowLayout({
+      workArea: args.workArea,
+      scaleFactor: args.scaleFactor,
+      overlayHeight: args.edgeSize,
+      overlayWidth: args.edgeWidth,
+      overlayAnchor: args.placementMode === 'top-edge' ? 'top' : 'bottom',
+      currentBounds: args.currentBounds ?? null,
+    });
+
+    return {
+      ...anchoredLayout,
+      placementMode: args.placementMode,
+      floating: false,
+    };
+  }
+
+  const minPhysicalWidth = Math.round(overlayWindowGeometry.minWidth * args.scaleFactor);
+  const minPhysicalHeight = Math.round(overlayWindowGeometry.minHeight * args.scaleFactor);
+  const requestedWidth = Math.max(
+    minPhysicalWidth,
+    Math.round(args.edgeWidth * args.scaleFactor),
+  );
+  const requestedHeight = Math.max(
+    minPhysicalHeight,
+    Math.round(args.edgeSize * args.scaleFactor),
+  );
+  const centeredBounds = {
+    width: requestedWidth,
+    height: requestedHeight,
+    x: args.workArea.position.x + Math.round((args.workArea.size.width - requestedWidth) / 2),
+    y: args.workArea.position.y + Math.round((args.workArea.size.height - requestedHeight) / 2),
+  };
+  const floatingBounds = clampOverlayWindowBoundsToWorkArea({
+    workArea: args.workArea,
+    scaleFactor: args.scaleFactor,
+    bounds: args.currentBounds ?? args.floatingBounds ?? centeredBounds,
+  });
+
+  return {
+    ...floatingBounds,
+    healedHeight: null,
+    placementMode: 'floating',
+    floating: true,
   };
 }

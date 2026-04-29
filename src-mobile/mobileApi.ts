@@ -141,6 +141,8 @@ export async function fetchMobileIndexPictures(options: {
   query?: string | null;
   limit?: number;
   offset?: number;
+  rootPaths?: string[];
+  extensions?: string[];
   showHiddenFiles?: boolean;
 } = {}): Promise<MobileIndexPicturesResponse> {
   const params = new URLSearchParams({
@@ -152,6 +154,16 @@ export async function fetchMobileIndexPictures(options: {
   }
   if (typeof options.showHiddenFiles === "boolean") {
     params.set("showHiddenFiles", String(options.showHiddenFiles));
+  }
+  for (const rootPath of options.rootPaths ?? []) {
+    if (rootPath.trim()) {
+      params.append("rootPaths", rootPath.trim());
+    }
+  }
+  for (const extension of options.extensions ?? []) {
+    if (extension.trim()) {
+      params.append("extensions", extension.trim());
+    }
   }
   return fetchJson<MobileIndexPicturesResponse>(`/api/index/pictures?${params.toString()}`);
 }

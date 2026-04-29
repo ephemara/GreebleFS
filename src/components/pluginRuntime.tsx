@@ -7,16 +7,19 @@ import * as TauriNotification from '@tauri-apps/plugin-notification';
 import * as LucideReact from '@/components/AppIcons';
 import * as WorkbenchAdapters from './pluginWorkbenchAdapters';
 import type { OverlayThemeDefinition } from '../config/appearance';
+import type { OverlayResolvedIconTheme } from '../config/iconTheme';
 import type { OverlayPluginPreviewLaneDescriptor } from '../config/pluginPreviewLanes';
 import type {
   OverlayPluginSettingsSlotDescriptor,
   OverlayPluginSettingsValue,
 } from '../config/pluginSettings';
+import type { FolderIconRule, FolderIconValue } from '../config/folderIcons';
 import {
   getPluginBackendDirectory,
   getPluginDirectory,
   pluginSystemConfig,
 } from '../config/plugins';
+import type { EditorSettings } from '../store/settingsStore';
 import {
   deriveRuntimeModuleId,
   deriveRuntimeModuleName,
@@ -47,15 +50,25 @@ import {
   type RuntimePreparePackageRequest,
   type RuntimePreparePackageResponse,
 } from '../runtime/externalRuntimeBackend';
+import type {
+  ExplorerArchiveExtractionMode,
+  ExplorerFileEntry,
+} from '../runtime/explorerBackend';
 import { type ExtensionHostClient } from '../runtime/extensionHostApi';
 import type { OverlayPluginIndexApi } from '../runtime/pluginIndexApi';
+import type { ExplorerPdfPreviewDocument } from '../runtime/pdfPreviewBackend';
+import type { ManagedPythonRuntimeConfig } from '../runtime/pythonRuntimeBackend';
 import {
   getPluginPanelOpenRequestEvent,
   readPluginPanelOpenRequest,
   requestPluginPanelOpen,
 } from '../runtime/pluginPanelRequests';
+import type { ExplorerResolvedBuiltInPreviewDescriptor } from './explorer/explorerPreviewRegistry';
+import type { ExplorerResolvedScriptPreview } from './explorer/explorerScriptRuntime';
 import type { ExplorerPreviewContextMenuRegistration } from './explorer/explorerPreviewContextMenu';
 import type { ExplorerPreviewWildcardWorkflowTab } from './explorer/explorerPreviewWorkflowTabs';
+import type { EditorSearchFocusTarget } from './fileExplorerSearchFocus';
+import type { ExplorerPreviewEntryDragRequest } from './useExplorerPreviewEntryDirectDrag';
 
 export interface PluginFileEntry extends RuntimeFileEntry {}
 
@@ -168,6 +181,72 @@ export interface OverlayPluginPreviewFileContext {
   isDirectory: boolean;
 }
 
+export interface OverlayPluginPreviewCursorPosition {
+  lineNumber: number;
+  column: number;
+}
+
+export interface OverlayPluginPythonPreviewMetadata {
+  source: 'extension' | 'executable';
+}
+
+export interface OverlayPluginCollectionWorkbenchHost {
+  refreshRevision: number;
+  showHiddenFiles: boolean;
+  jumpToFolderEnabled: boolean;
+  onToggleJumpToFolder?: () => void;
+  onOpenEntry: (entry: ExplorerFileEntry) => void;
+  onStartDragOutEntry?: (
+    request: ExplorerPreviewEntryDragRequest<ExplorerFileEntry>,
+  ) => void;
+  onExtractArchive?: (mode: ExplorerArchiveExtractionMode) => void;
+  iconTheme?: OverlayResolvedIconTheme;
+  folderIconRules?: readonly FolderIconRule[];
+  defaultFolderIcon?: FolderIconValue;
+}
+
+export interface OverlayPluginPdfWorkbenchHost {
+  document: ExplorerPdfPreviewDocument;
+  onSaved?: (output: unknown) => Promise<void> | void;
+  onDocumentChange?: (document: ExplorerPdfPreviewDocument) => void;
+  onChromeStateChange?: (state: unknown) => void;
+  onControllerChange?: (controller: unknown) => void;
+  onRegisterCloseGuard?: (guard: (() => Promise<boolean>) | null) => void;
+}
+
+export interface OverlayPluginTextWorkbenchHost {
+  content: string;
+  language: string;
+  renderKind: 'none' | 'markdown' | 'html';
+  scriptPreview: ExplorerResolvedScriptPreview | null;
+  pythonPreview: OverlayPluginPythonPreviewMetadata | null;
+  focusTarget: EditorSearchFocusTarget | null;
+  isDirty: boolean;
+  isSaving: boolean;
+  lastSavedAt: number | null;
+  error: string | null;
+  editorSettings: EditorSettings;
+  pythonRuntimeConfig: ManagedPythonRuntimeConfig | null;
+  pythonBootstrapPackageInput: string;
+  onChange: (value: string) => void;
+  onSave: () => Promise<boolean>;
+  onCursorPositionChange?: (
+    position: OverlayPluginPreviewCursorPosition,
+  ) => void;
+  onRunScript?: () => Promise<void> | void;
+  onStopScriptRun?: () => void;
+  onRunPythonManaged?: () => Promise<unknown>;
+  onRunPythonInTerminal?: () => Promise<void>;
+  onOpenManagedPythonRepl?: () => Promise<void>;
+}
+
+export interface OverlayPluginPreviewWorkbenchContext {
+  delegateDescriptor: ExplorerResolvedBuiltInPreviewDescriptor | null;
+  collection?: OverlayPluginCollectionWorkbenchHost;
+  pdf?: OverlayPluginPdfWorkbenchHost;
+  text?: OverlayPluginTextWorkbenchHost;
+}
+
 export interface OverlayPluginPreviewRuntimeBridge {
   runtimeId: string | null;
   getRuntimePackage: () => Promise<DiscoveredRuntimePackage | null>;
@@ -206,6 +285,7 @@ export interface OverlayPluginPreviewLaneProps {
   lane: OverlayPluginPreviewLaneDescriptor;
   file: OverlayPluginPreviewFileContext;
   runtime: OverlayPluginPreviewRuntimeBridge;
+  workbench?: OverlayPluginPreviewWorkbenchContext | null;
   viewMode: 'preview' | 'edit';
   workflowTabId: string;
   previewBackedByArchiveVirtual: boolean;
@@ -302,6 +382,7 @@ export interface OverlayPluginTestFile {
   path: string;
   description?: string;
   extension: string;
+  isDirectory: boolean;
 }
 
 export interface LoadedOverlayPlugin extends OverlayPluginContext {

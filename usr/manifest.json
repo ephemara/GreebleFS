@@ -30,6 +30,13 @@
       "bootstrapToManagedRoot": true
     },
     {
+      "id": "dockPresentations",
+      "relativeDirectory": "dock-presentations",
+      "envVarSuffix": "DOCK_PRESENTATIONS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true
+    },
+    {
       "id": "explorerLayouts",
       "relativeDirectory": "explorer-layouts",
       "envVarSuffix": "EXPLORER_LAYOUTS",

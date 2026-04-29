@@ -11,11 +11,12 @@ use axum::extract::{Path as AxumPath, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use overlay_contracts::ThemeValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::streaming::{resolve_sub_path, stream_file_response};
-use super::types::ShareState;
+use super::types::{MobileThemeSnapshot, ShareState, ACTIVE_MOBILE_THEME_SNAPSHOT};
 
 const MOBILE_PLUGIN_MANIFEST_NAMES: &[&str] = &[
     "extension.toml",
@@ -48,6 +49,7 @@ pub(super) struct MobilePluginSummary {
     description: String,
     category: String,
     tags: Vec<String>,
+    settings_values: BTreeMap<String, ThemeValue>,
     capabilities: MobilePluginCapabilitySummary,
     root_access: MobilePluginRootAccess,
 }
@@ -178,7 +180,8 @@ struct ResolvedMobilePluginContext {
 }
 
 pub(super) async fn mobile_plugin_catalog_handler(State(state): State<ShareState>) -> Response {
-    match build_mobile_plugin_catalog(&state) {
+    let snapshot = ACTIVE_MOBILE_THEME_SNAPSHOT.read().await.clone();
+    match build_mobile_plugin_catalog(&state, &snapshot) {
         Ok(catalog) => (StatusCode::OK, Json(catalog)).into_response(),
         Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error).into_response(),
     }
@@ -292,7 +295,10 @@ pub(super) async fn mobile_plugin_asset_handler(
     stream_file_response(&canonical_asset, &headers).await
 }
 
-fn build_mobile_plugin_catalog(state: &ShareState) -> Result<MobilePluginCatalogResponse, String> {
+fn build_mobile_plugin_catalog(
+    state: &ShareState,
+    snapshot: &MobileThemeSnapshot,
+) -> Result<MobilePluginCatalogResponse, String> {
     let plugins_root = resolve_mobile_plugins_root(state)?;
     let plugin_root_display = plugins_root.to_string_lossy().into_owned();
     let mut warnings = Vec::new();
@@ -326,7 +332,17 @@ fn build_mobile_plugin_catalog(state: &ShareState) -> Result<MobilePluginCatalog
         };
 
         match parse_mobile_plugin_manifest(&plugin_route_id, &manifest_path) {
-            Ok(parsed) => {
+            Ok(mut parsed) => {
+                parsed.summary.settings_values = snapshot
+                    .plugin_settings_by_id
+                    .get(&plugin_route_id)
+                    .or_else(|| {
+                        snapshot
+                            .plugin_settings_by_id
+                            .get(&parsed.summary.manifest_id)
+                    })
+                    .cloned()
+                    .unwrap_or_default();
                 warnings.extend(parsed.warnings);
                 panes.extend(parsed.panes);
                 plugins.push(parsed.summary);
@@ -422,6 +438,7 @@ fn parse_mobile_plugin_manifest(
         description,
         category,
         tags,
+        settings_values: BTreeMap::new(),
         capabilities: MobilePluginCapabilitySummary {
             desktop_panel: as_string(manifest_value.get("entry")).is_some(),
             mobile_panes: mobile_panes.len(),

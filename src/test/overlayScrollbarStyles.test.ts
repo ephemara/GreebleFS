@@ -27,6 +27,12 @@ describe("overlay scrollbar style contract", () => {
     expect(overlayScrollbarStylesSource).toContain(
       "--overlay-color-scheme: dark;",
     );
+    expect(overlayScrollbarStylesSource).toContain(
+      "--overlay-scrollbar-file-list-size: 12px;",
+    );
+    expect(overlayScrollbarStylesSource).toContain(
+      "--overlay-scrollbar-radius: 999px;",
+    );
   });
 
   it("keeps a reusable native scrollbar utility for escaped scroll hosts", () => {
@@ -54,6 +60,9 @@ describe("overlay scrollbar style contract", () => {
     );
     expect(overlayScrollbarStylesSource).toMatch(
       /\.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar\s*{[^}]*width:\s*var\(--overlay-scrollbar-size\);[^}]*height:\s*var\(--overlay-scrollbar-size\);/s,
+    );
+    expect(overlayScrollbarStylesSource).toMatch(
+      /\.overlay-scroll-area--explorer-file-list\s*{[^}]*--overlay-scrollbar-size:\s*var\(--overlay-scrollbar-file-list-size\);/s,
     );
   });
 

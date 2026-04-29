@@ -32,6 +32,14 @@
   --mobile-bottom-nav-height: 88px;
   --mobile-action-strip-height: 72px;
   --mobile-viewport-height: 100dvh;
+  --mobile-color-scheme: dark;
+  --mobile-scrollbar-size: 11px;
+  --mobile-scrollbar-thumb: color-mix(in srgb, var(--mobile-border-strong) 76%, transparent);
+  --mobile-scrollbar-thumb-hover: color-mix(in srgb, var(--mobile-accent) 46%, var(--mobile-border-strong));
+  --mobile-scrollbar-track: color-mix(in srgb, var(--mobile-surface-strong) 84%, var(--mobile-bg-alt));
+  --mobile-scrollbar-corner: var(--mobile-bg-alt);
+  --mobile-scrollbar-radius: 999px;
+  --mobile-scrollbar-thumb-border-width: 3px;
 }
 
 * {
@@ -45,6 +53,53 @@ body,
   height: 100%;
   min-height: 100%;
   margin: 0;
+  color-scheme: var(--mobile-color-scheme);
+  scrollbar-width: thin;
+  scrollbar-color: var(--mobile-scrollbar-thumb) var(--mobile-scrollbar-track);
+}
+
+body * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--mobile-scrollbar-thumb) var(--mobile-scrollbar-track);
+}
+
+body::-webkit-scrollbar,
+body *::-webkit-scrollbar {
+  width: var(--mobile-scrollbar-size);
+  height: var(--mobile-scrollbar-size);
+}
+
+body::-webkit-scrollbar-track,
+body *::-webkit-scrollbar-track {
+  background: var(--mobile-scrollbar-track);
+}
+
+body::-webkit-scrollbar-thumb,
+body *::-webkit-scrollbar-thumb {
+  background: var(--mobile-scrollbar-thumb);
+  border: var(--mobile-scrollbar-thumb-border-width) solid transparent;
+  border-radius: var(--mobile-scrollbar-radius);
+  background-clip: padding-box;
+}
+
+body:hover::-webkit-scrollbar-thumb,
+body *:hover::-webkit-scrollbar-thumb {
+  background: var(--mobile-scrollbar-thumb-hover);
+  border: var(--mobile-scrollbar-thumb-border-width) solid transparent;
+  background-clip: padding-box;
+}
+
+body::-webkit-scrollbar-button,
+body *::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  display: none;
+  background: transparent;
+}
+
+body::-webkit-scrollbar-corner,
+body *::-webkit-scrollbar-corner {
+  background: var(--mobile-scrollbar-corner);
 }
 
 body {

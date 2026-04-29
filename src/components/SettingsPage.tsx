@@ -285,6 +285,13 @@ import {
   type LoadedThemeShellRendererPack,
 } from "../config/themeBundlePacks";
 import type { LoadedOverlayTopBarPackage } from "../config/topBarPackages";
+import {
+  dockPresentationSystemConfig,
+  resolveActiveDockPresentation,
+  type DockPlacementMode,
+  type DockPreviewSplitMode,
+  type LoadedDockPresentationPackage,
+} from "../config/dockPresentations";
 import type { LoadedExplorerHomePack } from "../config/homePackages";
 import {
   createBuiltInExplorerMenuPack,
@@ -364,6 +371,7 @@ import {
   useSettingsStore,
   resolveSystemPresentationState,
   type IntegratedTerminalHost,
+  type PresentationWindowMode,
   type TerminalWindowMode,
 } from "../store/settingsStore";
 import { useExplorerStore } from "../store/explorerStore";
@@ -2584,6 +2592,8 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <Bot size={14} />;
     case "terminal":
       return <TerminalSquare size={14} />;
+    case "dock":
+      return <MonitorPlay size={14} />;
     case "explorer":
       return <FolderOpen size={14} />;
     case "context-menus":
@@ -2642,7 +2652,9 @@ interface SettingsSectionContentContext {
   startMobileShareOnBoot: boolean;
   systemPresentationState: ReturnType<typeof resolveSystemPresentationState>;
   platform: "windows" | "macos" | "linux" | "unknown";
-  terminalWindowMode: TerminalWindowMode;
+  presentationWindowMode: PresentationWindowMode;
+  dockPlacementSummary: string;
+  dockPreviewSummary: string;
   terminalPreferredOpenMode: "integrated" | "external";
   terminalCursorStyle: string;
   explorerViewModeLabel: string;
@@ -2726,9 +2738,15 @@ function getSettingsSectionContent(
       };
     case "terminal":
       return {
-        summary: `${context.terminalWindowMode === "windowed" ? "application" : "dock"} mode · ${context.terminalPreferredOpenMode} · ${context.terminalCursorStyle} cursor`,
+        summary: `${context.terminalPreferredOpenMode} · ${context.terminalCursorStyle} cursor`,
         detail:
           "Control the integrated terminal, its typography, and how commands hand off to external shells.",
+      };
+    case "dock":
+      return {
+        summary: `${context.presentationWindowMode === "dock" ? "Dock mode" : "Application mode"} · ${context.dockPlacementSummary} · ${context.dockPreviewSummary}`,
+        detail:
+          "Dock mode has its own presentation lane for placement, size, chrome, and Explorer preview behavior.",
       };
     case "explorer":
       return {
@@ -3081,6 +3099,11 @@ export function SettingsPage({
   topBarPackagesLoading,
   topBarPackagesError,
   topBarPackagesWarnings,
+  dockPresentationPackages = [],
+  dockPresentationPackagesDirectory = dockPresentationSystemConfig.dockPresentationsDirectory,
+  dockPresentationPackagesLoading = false,
+  dockPresentationPackagesError = null,
+  dockPresentationPackagesWarnings = [],
   homePacks = [],
   menuPacks = [],
   actionPacks = [],
@@ -3139,6 +3162,8 @@ export function SettingsPage({
   soundPacksWarnings = [],
   onRefreshTopBars,
   onOpenTopBarsFolder,
+  onRefreshDockPresentations = async () => {},
+  onOpenDockPresentationsFolder = async () => {},
   onRefreshHomePacks = async () => {},
   onRefreshMenuPacks = async () => {},
   onRefreshActions = async () => {},
@@ -3198,6 +3223,11 @@ export function SettingsPage({
   topBarPackagesLoading: boolean;
   topBarPackagesError: string | null;
   topBarPackagesWarnings: string[];
+  dockPresentationPackages?: LoadedDockPresentationPackage[];
+  dockPresentationPackagesDirectory?: string;
+  dockPresentationPackagesLoading?: boolean;
+  dockPresentationPackagesError?: string | null;
+  dockPresentationPackagesWarnings?: string[];
   homePacks?: LoadedExplorerHomePack[];
   menuPacks?: LoadedExplorerMenuPack[];
   actionPacks?: LoadedActionPack[];
@@ -3256,6 +3286,8 @@ export function SettingsPage({
   soundPacksWarnings?: string[];
   onRefreshTopBars: () => Promise<void>;
   onOpenTopBarsFolder: () => Promise<void>;
+  onRefreshDockPresentations?: () => Promise<void>;
+  onOpenDockPresentationsFolder?: () => Promise<void>;
   onRefreshHomePacks?: () => Promise<void>;
   onRefreshMenuPacks?: () => Promise<void>;
   onRefreshActions?: () => Promise<void>;
@@ -3337,6 +3369,8 @@ export function SettingsPage({
     setActivePluginSettingsSlotId,
     setActiveContextMenuComposerContext,
     settings,
+    updatePresentation,
+    updateDock,
     updateTerminal,
     updatePython,
     updateExplorer,
@@ -3369,6 +3403,8 @@ export function SettingsPage({
       setActiveContextMenuComposerContext:
         state.setActiveContextMenuComposerContext,
       settings: state.settings,
+      updatePresentation: state.updatePresentation,
+      updateDock: state.updateDock,
       updateTerminal: state.updateTerminal,
       updatePython: state.updatePython,
       updateExplorer: state.updateExplorer,
@@ -5196,6 +5232,36 @@ export function SettingsPage({
   );
   const availableTopBars = resolvedTopBarSelection.availableTopBars;
   const topBarCatalogLoading = topBarPackagesLoading || themePackagesLoading;
+  const resolvedDockPresentation = useMemo(
+    () =>
+      resolveActiveDockPresentation({
+        requestedPresentationId: settings.dock.activePresentationId,
+        placementMode: settings.dock.placementMode,
+        edgeSize: settings.dock.edgeSize,
+        edgeWidth: settings.dock.edgeWidth,
+        floatingBounds: settings.dock.floatingBounds,
+        topBarId: settings.dock.topBarId,
+        previewEnabled: settings.dock.previewEnabled,
+        previewSplitMode: settings.dock.previewSplitMode,
+        packageSources: [...dockPresentationPackages, ...themePackages],
+      }),
+    [
+      dockPresentationPackages,
+      settings.dock.activePresentationId,
+      settings.dock.edgeSize,
+      settings.dock.edgeWidth,
+      settings.dock.floatingBounds,
+      settings.dock.placementMode,
+      settings.dock.previewEnabled,
+      settings.dock.previewSplitMode,
+      settings.dock.topBarId,
+      themePackages,
+    ],
+  );
+  const availableDockPresentations =
+    resolvedDockPresentation.availableDockPresentations;
+  const dockPresentationCatalogLoading =
+    dockPresentationPackagesLoading || themePackagesLoading;
   const authoredTopBarCount = useMemo(
     () => topBarPackages.reduce((total, pkg) => total + pkg.topBars.length, 0),
     [topBarPackages],
@@ -5228,6 +5294,15 @@ export function SettingsPage({
       : resolvedTopBarSelection.explicitSelectionMissing
         ? `Pinned missing · ${resolvedTopBarSelection.topBar.name}`
         : `Pinned · ${resolvedTopBarSelection.topBar.name}`;
+  const dockPlacementSummary =
+    resolvedDockPresentation.placementMode === "floating"
+      ? "Floating"
+      : resolvedDockPresentation.placementMode === "top-edge"
+        ? "Top edge"
+        : "Bottom edge";
+  const dockPreviewSummary = resolvedDockPresentation.previewPolicy.enabled
+    ? `Preview ${resolvedDockPresentation.previewPolicy.splitMode}`
+    : "Preview disabled";
   const followThemeTopBarDetail =
     resolvedTopBarSelection.resolvedFrom === "theme-default"
       ? `${appearance.baseTheme.name} explicitly defaults to ${resolvedTopBarSelection.topBar.name}.`
@@ -7497,7 +7572,9 @@ export function SettingsPage({
       startMobileShareOnBoot: settings.system.startMobileShareOnBoot,
       systemPresentationState,
       platform: platform as SettingsSectionContentContext["platform"],
-      terminalWindowMode: settings.terminal.windowMode,
+      presentationWindowMode: settings.presentation.windowMode,
+      dockPlacementSummary,
+      dockPreviewSummary,
       terminalPreferredOpenMode: settings.terminal.preferredOpenMode,
       terminalCursorStyle: settings.terminal.cursorStyle,
       explorerViewModeLabel: getExplorerViewModeDefinition(
@@ -7574,6 +7651,8 @@ export function SettingsPage({
       availableWallpapers.length,
       connectedCloudAccountCount,
       configuredCloudProviderCount,
+      dockPlacementSummary,
+      dockPreviewSummary,
       mobileRemoteAccessDefinition.label,
       effectiveTheme.name,
       effectiveInteractionMotionProfileLabel,
@@ -7616,6 +7695,7 @@ export function SettingsPage({
       settings.layout.zenFocusMode,
       settings.mobile.remoteAccessMode,
       settings.mobile.tailscaleHostname,
+      settings.presentation.windowMode,
       settings.system.launchAtStartup,
       shaderFailures.length,
       shaderPerformanceProfile.label,
@@ -9072,87 +9152,87 @@ export function SettingsPage({
               viewportStyle={{ padding: "7px 8px 10px 8px" }}
             >
               <div className="space-y-3">
-                  {isPluginRailActive
-                    ? pluginSettingsSlotGroups.map((category) => (
-                      <div key={category.key} data-settings-rail-category={category.label}>
-                        <WorkbenchDisclosureGroup
-                          label={category.label}
-                          count={category.slots.length}
-                          ariaLabel={`${category.label} ${category.slots.length} slot${category.slots.length === 1 ? "" : "s"}`}
-                          collapsed={collapsedPluginCategoryKeys.has(category.key)}
-                          onToggleCollapsed={() =>
-                            togglePluginRailCategoryCollapsed(category.key)
-                          }
-                          variant="rail"
-                          mutedColor={muted}
-                          buttonStyle={{ marginBottom: 6 }}
-                        >
-                          <div title={category.description} className="space-y-1">
-                            {category.slots.map((slotEntry) => (
-                              <SettingsRailButton
-                                key={slotEntry.key}
-                                active={activePluginSettingsSlot?.id === slotEntry.slot.id}
-                                icon={<Puzzle size={12} />}
-                                label={slotEntry.label}
-                                subtitle={slotEntry.subtitle}
-                                summary={slotEntry.summary}
-                                accent={accent}
-                                border={border}
-                                text={text}
-                                muted={muted}
-                                onClick={() => {
-                                  setActiveRailPath('plugins');
-                                  setActivePluginSettingsSlotId(slotEntry.slot.id);
-                                }}
-                                motionBinding={bindSettingsCardMotion(
-                                  activePluginSettingsSlot?.id === slotEntry.slot.id,
-                                )}
-                              />
-                            ))}
-                          </div>
-                        </WorkbenchDisclosureGroup>
-                      </div>
-                    ))
-                    : settingsSectionGroups.map((category) => (
-                      <div key={category.key} data-settings-rail-category={category.label}>
-                        <WorkbenchDisclosureGroup
-                          label={category.label}
-                          count={category.sections.length}
-                          ariaLabel={`${category.label} ${category.sections.length} section${category.sections.length === 1 ? "" : "s"}`}
-                          collapsed={collapsedSettingsCategoryKeys.has(category.key)}
-                          onToggleCollapsed={() =>
-                            toggleSettingsRailCategoryCollapsed(category.key)
-                          }
-                          variant="rail"
-                          mutedColor={muted}
-                          buttonStyle={{ marginBottom: 6 }}
-                        >
-                          <div title={category.description} className="space-y-1">
-                            {category.sections.map((section) => (
-                              <SettingsRailButton
-                                key={section.key}
-                                active={activeSection === section.key}
-                                icon={section.icon}
-                                label={section.label}
-                                subtitle={section.subtitle}
-                                summary={section.summary}
-                                accent={accent}
-                                border={border}
-                                text={text}
-                                muted={muted}
-                                onClick={() => {
-                                  setActiveRailPath('settings');
-                                  setActiveSection(section.key);
-                                }}
-                                motionBinding={bindSettingsCardMotion(
-                                  activeSection === section.key,
-                                )}
-                              />
-                            ))}
-                          </div>
-                        </WorkbenchDisclosureGroup>
-                      </div>
-                    ))}
+                {isPluginRailActive
+                  ? pluginSettingsSlotGroups.map((category) => (
+                    <div key={category.key} data-settings-rail-category={category.label}>
+                      <WorkbenchDisclosureGroup
+                        label={category.label}
+                        count={category.slots.length}
+                        ariaLabel={`${category.label} ${category.slots.length} slot${category.slots.length === 1 ? "" : "s"}`}
+                        collapsed={collapsedPluginCategoryKeys.has(category.key)}
+                        onToggleCollapsed={() =>
+                          togglePluginRailCategoryCollapsed(category.key)
+                        }
+                        variant="rail"
+                        mutedColor={muted}
+                        buttonStyle={{ marginBottom: 6 }}
+                      >
+                        <div title={category.description} className="space-y-1">
+                          {category.slots.map((slotEntry) => (
+                            <SettingsRailButton
+                              key={slotEntry.key}
+                              active={activePluginSettingsSlot?.id === slotEntry.slot.id}
+                              icon={<Puzzle size={12} />}
+                              label={slotEntry.label}
+                              subtitle={slotEntry.subtitle}
+                              summary={slotEntry.summary}
+                              accent={accent}
+                              border={border}
+                              text={text}
+                              muted={muted}
+                              onClick={() => {
+                                setActiveRailPath('plugins');
+                                setActivePluginSettingsSlotId(slotEntry.slot.id);
+                              }}
+                              motionBinding={bindSettingsCardMotion(
+                                activePluginSettingsSlot?.id === slotEntry.slot.id,
+                              )}
+                            />
+                          ))}
+                        </div>
+                      </WorkbenchDisclosureGroup>
+                    </div>
+                  ))
+                  : settingsSectionGroups.map((category) => (
+                    <div key={category.key} data-settings-rail-category={category.label}>
+                      <WorkbenchDisclosureGroup
+                        label={category.label}
+                        count={category.sections.length}
+                        ariaLabel={`${category.label} ${category.sections.length} section${category.sections.length === 1 ? "" : "s"}`}
+                        collapsed={collapsedSettingsCategoryKeys.has(category.key)}
+                        onToggleCollapsed={() =>
+                          toggleSettingsRailCategoryCollapsed(category.key)
+                        }
+                        variant="rail"
+                        mutedColor={muted}
+                        buttonStyle={{ marginBottom: 6 }}
+                      >
+                        <div title={category.description} className="space-y-1">
+                          {category.sections.map((section) => (
+                            <SettingsRailButton
+                              key={section.key}
+                              active={activeSection === section.key}
+                              icon={section.icon}
+                              label={section.label}
+                              subtitle={section.subtitle}
+                              summary={section.summary}
+                              accent={accent}
+                              border={border}
+                              text={text}
+                              muted={muted}
+                              onClick={() => {
+                                setActiveRailPath('settings');
+                                setActiveSection(section.key);
+                              }}
+                              motionBinding={bindSettingsCardMotion(
+                                activeSection === section.key,
+                              )}
+                            />
+                          ))}
+                        </div>
+                      </WorkbenchDisclosureGroup>
+                    </div>
+                  ))}
                 {isPluginRailActive && pluginSettingsSlotGroups.length === 0 ? (
                   <div
                     className="rounded border px-3 py-3 text-[11px] leading-5"
@@ -13671,6 +13751,276 @@ export function SettingsPage({
           </section>
         )}
 
+        {activeSection === "dock" && (
+          <section
+            className="rounded border p-4"
+            style={{
+              borderColor: border,
+              background: "rgba(255,255,255,0.03)",
+            }}
+          >
+            <SectionTitle
+              icon={<MonitorPlay size={12} />}
+              title="Dock Mode"
+              subtitle="Presentation, placement, sizing, top bar, and Explorer preview policy."
+            />
+
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="md:col-span-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                {(
+                  [
+                    {
+                      value: "dock",
+                      label: "Dock Mode",
+                      terminalMode: "overlay",
+                    },
+                    {
+                      value: "windowed",
+                      label: "Application Mode",
+                      terminalMode: "windowed",
+                    },
+                  ] as const satisfies Array<{
+                    value: PresentationWindowMode;
+                    label: string;
+                    terminalMode: TerminalWindowMode;
+                  }>
+                ).map((option) => {
+                  const active =
+                    settings.presentation.windowMode === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        if (onSetWindowMode) {
+                          void onSetWindowMode(option.terminalMode);
+                          return;
+                        }
+                        updatePresentation({ windowMode: option.value });
+                      }}
+                      className="rounded px-3 py-3 text-left transition-colors"
+                      style={{
+                        border: `1px solid ${active ? accent : border}`,
+                        background: active
+                          ? `${accent}14`
+                          : "rgba(255,255,255,0.03)",
+                        color: text,
+                      }}
+                    >
+                      <div className="text-[11px] font-semibold">
+                        {option.label}
+                      </div>
+                      <p className="mt-1 text-[11px] opacity-45">
+                        {option.value === "dock"
+                          ? "Uses the dock presentation lane and the dock top bar."
+                          : "Uses the regular desktop workbench window."}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                  Active Dock Presentation
+                </label>
+                <select
+                  aria-label="Active Dock Presentation"
+                  value={settings.dock.activePresentationId ?? ""}
+                  onChange={(event) =>
+                    updateDock({
+                      activePresentationId: event.target.value || null,
+                    })
+                  }
+                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsSelectStyle}
+                >
+                  {availableDockPresentations.map((presentation) => (
+                    <option key={presentation.id} value={presentation.id}>
+                      {presentation.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] opacity-40">
+                  Current: {resolvedDockPresentation.presentation.name}
+                  {resolvedDockPresentation.explicitSelectionMissing
+                    ? " (pinned presentation was missing)"
+                    : ""}
+                </p>
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                  Placement
+                </div>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                  {resolvedDockPresentation.presentation.allowedPlacements.map(
+                    (placement: DockPlacementMode) => {
+                      const active =
+                        resolvedDockPresentation.placementMode === placement;
+                      const label =
+                        placement === "floating"
+                          ? "Floating"
+                          : placement === "top-edge"
+                            ? "Top Edge"
+                            : "Bottom Edge";
+                      return (
+                        <button
+                          key={placement}
+                          type="button"
+                          onClick={() =>
+                            updateDock({ placementMode: placement })
+                          }
+                          className="rounded px-3 py-2 text-left transition-colors"
+                          style={{
+                            border: `1px solid ${active ? accent : border}`,
+                            background: active
+                              ? `${accent}14`
+                              : "rgba(255,255,255,0.03)",
+                            color: text,
+                          }}
+                        >
+                          <div className="text-[11px] font-semibold">
+                            {label}
+                          </div>
+                        </button>
+                      );
+                    },
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                  Dock Height
+                </label>
+                <input
+                  type="number"
+                  min={150}
+                  step={10}
+                  value={settings.dock.edgeSize}
+                  onChange={(event) =>
+                    updateDock({ edgeSize: Number(event.target.value) })
+                  }
+                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsFieldStyle}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                  Dock Width
+                </label>
+                <input
+                  type="number"
+                  min={400}
+                  step={10}
+                  value={settings.dock.edgeWidth}
+                  onChange={(event) =>
+                    updateDock({ edgeWidth: Number(event.target.value) })
+                  }
+                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsFieldStyle}
+                />
+              </div>
+
+              <label
+                className="flex items-center justify-between gap-3 rounded border px-3 py-2 text-[11px]"
+                style={{ borderColor: border }}
+              >
+                <div>
+                  <div className="font-medium">Explorer Preview Pane</div>
+                  <p className="mt-1 text-[10px] opacity-45">
+                    Enables preview and workbench surfaces while the Explorer is hosted inside dock mode.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  aria-label="Explorer Preview Pane"
+                  checked={settings.dock.previewEnabled}
+                  onChange={(event) =>
+                    updateDock({ previewEnabled: event.target.checked })
+                  }
+                />
+              </label>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                  Preview Split Mode
+                </label>
+                <select
+                  aria-label="Dock Preview Split Mode"
+                  value={settings.dock.previewSplitMode}
+                  onChange={(event) =>
+                    updateDock({
+                      previewSplitMode: event.target
+                        .value as DockPreviewSplitMode,
+                    })
+                  }
+                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsSelectStyle}
+                >
+                  <option value="pane">Pane</option>
+                  <option value="inline">Inline</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                  Dock Top Bar
+                </label>
+                <input
+                  aria-label="Dock Top Bar"
+                  value={settings.dock.topBarId ?? ""}
+                  onChange={(event) =>
+                    updateDock({ topBarId: event.target.value || null })
+                  }
+                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={settingsFieldStyle}
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2 md:col-span-2">
+                <SettingsActionButton
+                  onClick={() => void onRefreshDockPresentations()}
+                >
+                  <RefreshCw size={12} />
+                  {dockPresentationCatalogLoading
+                    ? "Refreshing..."
+                    : "Refresh Presentations"}
+                </SettingsActionButton>
+                <SettingsActionButton
+                  onClick={() => void onOpenDockPresentationsFolder()}
+                >
+                  <FolderOpen size={12} />
+                  Open Dock Presentations
+                </SettingsActionButton>
+                <SettingsStatusPill>
+                  {dockPresentationPackagesDirectory}
+                </SettingsStatusPill>
+              </div>
+
+              {(dockPresentationPackagesError ||
+                dockPresentationPackagesWarnings.length > 0) && (
+                <div
+                  className="md:col-span-2 rounded border p-3 text-[11px]"
+                  style={{
+                    borderColor: dockPresentationPackagesError ? "#ef4444" : border,
+                    background: "rgba(255,255,255,0.025)",
+                  }}
+                >
+                  {dockPresentationPackagesError ? (
+                    <div>{dockPresentationPackagesError}</div>
+                  ) : null}
+                  {dockPresentationPackagesWarnings.map((warning) => (
+                    <div key={warning}>{warning}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
         {activeSection === "terminal" && (
           <section
             className="rounded border p-4"
@@ -13682,7 +14032,7 @@ export function SettingsPage({
             <SectionTitle
               icon={<TerminalSquare size={12} />}
               title="Terminal"
-              subtitle="Application mode, dock mode, integrated shell defaults, and external terminal handoff."
+              subtitle="Integrated shell defaults, sidebar behavior, and external terminal handoff."
             />
 
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -13696,19 +14046,11 @@ export function SettingsPage({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-                      Shell Presentation
+                      Terminal Sidebar
                     </div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      `Ctrl+Space` always shows the current presentation mode.
-                      Use{" "}
-                      {formatHotkeyLabel(settings.keybindings.windowModeToggle)}{" "}
-                      to swap between the dock-style overlay shell and a regular
-                      desktop application window, and{" "}
-                      {formatHotkeyLabel(
-                        settings.keybindings.zenFocusModeToggle,
-                      )}{" "}
-                      to hide the shell top bar for a cleaner explorer-focused
-                      pass.
+                      Keep the terminal's directory and command rail ready when
+                      the integrated shell opens.
                     </p>
                   </div>
                   <span
@@ -13719,12 +14061,14 @@ export function SettingsPage({
                       color: text,
                     }}
                   >
-                    {settings.terminal.windowMode === "windowed"
-                      ? "Application Window"
-                      : "Dock Overlay"}
+                    {settings.terminal.showSidebar
+                      ? "Sidebar On"
+                      : "Sidebar Off"}
                   </span>
                 </div>
 
+                {false && (
+                  <>
                 <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                   {(
                     [
@@ -13818,6 +14162,8 @@ export function SettingsPage({
                     />
                   </div>
                 </div>
+                  </>
+                )}
 
                 <label
                   className="flex items-center justify-between gap-3 rounded border px-3 py-2 text-[11px]"

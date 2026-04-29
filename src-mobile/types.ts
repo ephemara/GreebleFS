@@ -159,6 +159,7 @@ export interface MobilePluginSummary {
   description: string;
   category: string;
   tags: string[];
+  settingsValues: Record<string, unknown>;
   capabilities: MobilePluginCapabilitySummary;
   rootAccess: MobilePluginRootAccess;
 }

@@ -1044,6 +1044,7 @@ export function resolveLoadedThemePackages(
       extendsThemeId: appearancePack?.appearance.extendsThemeId ?? (extendsId || fallbackTheme.id),
       palette: appearancePack?.appearance.palette ?? packageInfo.theme.palette,
       effects: appearancePack?.appearance.effects ?? packageInfo.theme.effects,
+      scrollbar: appearancePack?.appearance.scrollbar ?? packageInfo.theme.scrollbar,
       xterm: appearancePack?.appearance.xterm ?? packageInfo.theme.xterm,
       fonts: appearancePack?.appearance.fonts ?? packageInfo.theme.fonts,
       visuals: appearancePack?.appearance.visuals ?? packageInfo.theme.visuals,

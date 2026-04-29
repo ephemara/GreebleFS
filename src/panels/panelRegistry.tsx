@@ -11,6 +11,7 @@ import type {
 } from '../config/pluginContributions';
 import TerminalOverlay from '../components/TerminalOverlay';
 import { ExplorerWorkspace } from '../components/explorer/ExplorerWorkspace';
+import type { ExplorerDockPreviewPolicy } from '../components/FileExplorer';
 import { FolderPluginRenderer } from '../components/PluginsManager';
 import type { LoadedOverlayAnimation } from '../components/animationRuntime';
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
@@ -29,6 +30,7 @@ import type {
   LoadedThemeShellRendererPack,
 } from '../config/themeBundlePacks';
 import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
+import type { LoadedDockPresentationPackage } from '../config/dockPresentations';
 import type { LoadedExplorerLayoutDefinition } from '../config/explorerLayouts';
 import {
   iconThemeSystemConfig,
@@ -197,6 +199,7 @@ export function createBuiltInPanelDefinitions({
   appearance,
   explorerChromeControlSurface,
   explorerLayoutMode,
+  explorerDockPreviewPolicy,
   explorerDefaultModeProfileId,
   explorerPicker,
   isOpen,
@@ -223,6 +226,11 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesLoading,
   topBarPackagesError,
   topBarPackagesWarnings,
+  dockPresentationPackages = [],
+  dockPresentationPackagesDirectory = '',
+  dockPresentationPackagesLoading = false,
+  dockPresentationPackagesError = null,
+  dockPresentationPackagesWarnings = [],
   explorerLayouts,
   homePacks = [],
   menuPacks = [],
@@ -270,6 +278,8 @@ export function createBuiltInPanelDefinitions({
   themeEnginePacksWarnings = [],
   onRefreshTopBars,
   onOpenTopBarsFolder,
+  onRefreshDockPresentations = async () => {},
+  onOpenDockPresentationsFolder = async () => {},
   onRefreshActions = async () => {},
   onOpenActionsFolder = async () => {},
   onRefreshHomePacks = async () => {},
@@ -334,6 +344,7 @@ export function createBuiltInPanelDefinitions({
   appearance: ResolvedOverlayAppearance;
   explorerChromeControlSurface?: 'toolbar' | 'topbar';
   explorerLayoutMode?: ExplorerLayoutMode;
+  explorerDockPreviewPolicy?: ExplorerDockPreviewPolicy;
   explorerDefaultModeProfileId?: ExplorerModeProfileId | null;
   explorerPicker?: ExplorerPickerRequest | null;
   onExplorerPickerConfirm?: (result: {
@@ -365,6 +376,11 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesLoading: boolean;
   topBarPackagesError: string | null;
   topBarPackagesWarnings: string[];
+  dockPresentationPackages?: LoadedDockPresentationPackage[];
+  dockPresentationPackagesDirectory?: string;
+  dockPresentationPackagesLoading?: boolean;
+  dockPresentationPackagesError?: string | null;
+  dockPresentationPackagesWarnings?: string[];
   explorerLayouts: LoadedExplorerLayoutDefinition[];
   explorerLayoutsDirectory: string;
   explorerLayoutsLoading: boolean;
@@ -416,6 +432,8 @@ export function createBuiltInPanelDefinitions({
   themeEnginePacksWarnings?: string[];
   onRefreshTopBars: () => Promise<void>;
   onOpenTopBarsFolder: () => Promise<void>;
+  onRefreshDockPresentations?: () => Promise<void>;
+  onOpenDockPresentationsFolder?: () => Promise<void>;
   onRefreshActions?: () => Promise<void>;
   onOpenActionsFolder?: () => Promise<void>;
   onRefreshHomePacks?: () => Promise<void>;
@@ -514,6 +532,7 @@ export function createBuiltInPanelDefinitions({
           appearance={appearance}
           chromeControlSurface={explorerChromeControlSurface}
           layoutMode={explorerLayoutMode}
+          dockPreviewPolicy={explorerDockPreviewPolicy}
           defaultModeProfileId={explorerDefaultModeProfileId}
           explorerPicker={explorerPicker}
           theme={explorerTheme}
@@ -717,6 +736,11 @@ export function createBuiltInPanelDefinitions({
             topBarPackagesLoading={topBarPackagesLoading}
             topBarPackagesError={topBarPackagesError}
             topBarPackagesWarnings={topBarPackagesWarnings}
+            dockPresentationPackages={dockPresentationPackages}
+            dockPresentationPackagesDirectory={dockPresentationPackagesDirectory}
+            dockPresentationPackagesLoading={dockPresentationPackagesLoading}
+            dockPresentationPackagesError={dockPresentationPackagesError}
+            dockPresentationPackagesWarnings={dockPresentationPackagesWarnings}
             homePacks={homePacks}
             menuPacks={menuPacks}
             actionPacks={actionPacks}
@@ -765,6 +789,8 @@ export function createBuiltInPanelDefinitions({
             themeEnginePacksWarnings={themeEnginePacksWarnings}
             onRefreshTopBars={onRefreshTopBars}
             onOpenTopBarsFolder={onOpenTopBarsFolder}
+            onRefreshDockPresentations={onRefreshDockPresentations}
+            onOpenDockPresentationsFolder={onOpenDockPresentationsFolder}
             onRefreshActions={onRefreshActions}
             onOpenActionsFolder={onOpenActionsFolder}
             onRefreshHomePacks={onRefreshHomePacks}

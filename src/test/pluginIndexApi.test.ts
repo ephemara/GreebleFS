@@ -13,14 +13,15 @@ describe('pluginIndexApi', () => {
         extensions: string[];
         includeFiles: boolean;
         includeDirectories: boolean;
+        includeHidden: boolean;
         limit: number;
         rootPaths: string[];
         sortKey: string;
       };
-      expect(request.extensions).toContain('jpg');
-      expect(request.extensions).toContain('png');
+      expect(request.extensions).toEqual(['png', 'webp']);
       expect(request.includeFiles).toBe(true);
       expect(request.includeDirectories).toBe(false);
+      expect(request.includeHidden).toBe(true);
       expect(request.limit).toBe(2);
       expect(request.rootPaths).toEqual(['C:/Pictures']);
       expect(request.sortKey).toBe('modifiedTime');
@@ -46,6 +47,8 @@ describe('pluginIndexApi', () => {
     const pictures = await createPluginIndexApi().media.findPictures({
       limit: 2,
       rootPaths: ['C:/Pictures'],
+      extensions: ['png', 'webp'],
+      includeHidden: true,
     });
 
     expect(pictures).toHaveLength(1);

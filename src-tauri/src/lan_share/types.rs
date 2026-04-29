@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use overlay_contracts::ThemeValue;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
@@ -153,6 +154,8 @@ pub struct MobileThemeSnapshot {
     pub folder_icon_rules: Vec<MobileFolderIconRuleSnapshot>,
     pub default_folder_icon: String,
     pub layout: MobileThemeLayoutSnapshot,
+    #[serde(default)]
+    pub plugin_settings_by_id: BTreeMap<String, BTreeMap<String, ThemeValue>>,
 }
 
 impl Default for MobileThemeSnapshot {
@@ -226,6 +229,7 @@ impl Default for MobileThemeSnapshot {
                 directories_first: true,
                 show_tab_labels: true,
             },
+            plugin_settings_by_id: BTreeMap::new(),
         }
     }
 }

@@ -15,6 +15,7 @@ export type OverlayTopBarControlId =
   | "shell-mode"
   | "window-mode"
   | "overlay-anchor"
+  | "dock-placement"
   | "mobile-share"
   | "surface-controls"
   | "blur-toggle"
@@ -94,6 +95,7 @@ const topBarControlCatalog = new Set<OverlayTopBarControlId>([
   "shell-mode",
   "window-mode",
   "overlay-anchor",
+  "dock-placement",
   "mobile-share",
   "surface-controls",
   "blur-toggle",
@@ -111,7 +113,7 @@ const defaultTopBarControls = {
   leading: [
     "layout-cycle",
     "window-mode",
-    "overlay-anchor",
+    "dock-placement",
     "mobile-share",
     "zen-mode",
     "surface-controls",
@@ -530,6 +532,8 @@ export function getTopBarControlLabel(
       return "Window Mode";
     case "overlay-anchor":
       return "Dock Edge";
+    case "dock-placement":
+      return "Dock Placement";
     case "mobile-share":
       return "Mobile";
     case "blur-toggle":

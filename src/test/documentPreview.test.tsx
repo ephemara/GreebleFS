@@ -44,6 +44,7 @@ const value = 1;
     const styleTag = container.querySelector('style');
 
     expect(root).toHaveAttribute('data-document-preview-kind', 'markdown');
+    expect(root).toHaveClass('overlay-native-scrollbar');
     expect(root.style.background).toBe('var(--overlay-explorer-preview-bg)');
     expect(article.style.color).toBe('var(--overlay-text-primary)');
     expect(styleTag?.textContent).toContain(
@@ -54,6 +55,9 @@ const value = 1;
     );
     expect(styleTag?.textContent).toContain(
       'border: 1px solid var(--overlay-border);',
+    );
+    expect(styleTag?.textContent).toContain(
+      'scrollbar-color: var(--overlay-scrollbar-thumb) var(--overlay-scrollbar-track);',
     );
     expect(styleTag?.textContent).not.toContain('#171a22');
     expect(styleTag?.textContent).not.toContain('rgba(8, 12, 18, 0.9)');
@@ -67,6 +71,7 @@ const value = 1;
     );
 
     expect(srcDoc).toContain('<base href="asset://localhost/');
+    expect(srcDoc).toContain('data-greeblefs-scrollbars');
     expect(srcDoc).toContain('<style>body { color: red; }</style>');
     expect(srcDoc).not.toContain('<script>');
     expect(srcDoc).toContain('<img src="./poster.png">');

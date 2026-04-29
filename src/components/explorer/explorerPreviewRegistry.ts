@@ -30,7 +30,7 @@ import type { OverlayPluginPreviewLaneContribution } from "../../config/pluginCo
 import type { ExplorerFileEntry as FileEntry } from "../../runtime/explorerBackend";
 import type { DocumentPreviewKind } from "../documentPreview";
 
-export type ExplorerResolvedPreviewDescriptor =
+export type ExplorerResolvedBuiltInPreviewDescriptor =
   | { kind: "folder" }
   | { kind: "model3d"; format: ModelPreviewFormat }
   | { kind: "archive"; descriptor: ExplorerArchiveFormatDescriptor }
@@ -78,12 +78,16 @@ export type ExplorerResolvedPreviewDescriptor =
       extension: string;
       language: string;
       renderKind: DocumentPreviewKind;
-    }
+    };
+
+export type ExplorerResolvedPreviewDescriptor =
+  | ExplorerResolvedBuiltInPreviewDescriptor
   | {
       kind: "plugin";
       extension: string;
       assetUrl: string;
       lane: OverlayPluginPreviewLaneContribution;
+      delegateDescriptor: ExplorerResolvedBuiltInPreviewDescriptor | null;
     }
   | {
       kind: "unsupported";
@@ -422,16 +426,28 @@ function createPluginExplorerPreviewLaneDefinition(
     id: lane.id,
     title: `${lane.pluginName}: ${lane.title}`,
     priority: lane.priority,
-    match: ({ entry, extension, options }) => {
-      if (!matchesOverlayPluginPreviewLane(entry, extension, lane)) {
+    match: (context) => {
+      const builtInDelegateDescriptor =
+        resolveBuiltInExplorerPreviewDescriptor(context);
+      if (
+        !matchesOverlayPluginPreviewLane(
+          context.entry,
+          context.extension,
+          lane,
+          builtInDelegateDescriptor,
+        )
+      ) {
         return null;
       }
 
       return {
         kind: "plugin",
-        extension,
-        assetUrl: entry.is_dir ? "" : options.assetUrlResolver(entry.path),
+        extension: context.extension,
+        assetUrl: context.entry.is_dir
+          ? ""
+          : context.options.assetUrlResolver(context.entry.path),
         lane,
+        delegateDescriptor: builtInDelegateDescriptor,
       };
     },
   };
@@ -441,6 +457,7 @@ function matchesOverlayPluginPreviewLane(
   entry: FileEntry,
   extension: string,
   lane: OverlayPluginPreviewLaneContribution,
+  builtInDelegateDescriptor: ExplorerResolvedBuiltInPreviewDescriptor | null,
 ): boolean {
   if (!matchesOverlayPluginPreviewLaneAppliesTo(entry, lane)) {
     return false;
@@ -448,8 +465,17 @@ function matchesOverlayPluginPreviewLane(
 
   const hasExtensionRules = lane.match.extensions.length > 0;
   const hasFileNameRules = lane.match.fileNames.length > 0;
-  if (!hasExtensionRules && !hasFileNameRules) {
+  const hasPreviewKindRules = lane.match.previewKinds.length > 0;
+  if (!hasExtensionRules && !hasFileNameRules && !hasPreviewKindRules) {
     return true;
+  }
+
+  if (
+    hasPreviewKindRules &&
+    (!builtInDelegateDescriptor ||
+      !lane.match.previewKinds.includes(builtInDelegateDescriptor.kind))
+  ) {
+    return false;
   }
 
   if (
@@ -481,4 +507,16 @@ function matchesOverlayPluginPreviewLaneAppliesTo(
     case "file":
       return !entry.is_dir;
   }
+}
+
+function resolveBuiltInExplorerPreviewDescriptor(
+  context: ExplorerPreviewMatchContext,
+): ExplorerResolvedBuiltInPreviewDescriptor | null {
+  for (const lane of BUILT_IN_EXPLORER_PREVIEW_LANES) {
+    const descriptor = lane.match(context);
+    if (descriptor) {
+      return descriptor;
+    }
+  }
+  return null;
 }

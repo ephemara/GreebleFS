@@ -112,6 +112,14 @@ import {
   type LoadedOverlayTopBarPackage,
 } from './config/topBarPackages';
 import {
+  dockPresentationSystemConfig,
+  loadDockPresentationPackages as discoverDockPresentationPackages,
+  resolveActiveDockPresentation,
+  type DockPresentationPackageSourceLike,
+  type DockPlacementMode,
+  type LoadedDockPresentationPackage,
+} from './config/dockPresentations';
+import {
   actionPackSystemConfig,
   loadExplorerActionPacks as discoverExplorerActionPacks,
   type LoadedActionPack,
@@ -193,7 +201,7 @@ import {
   type OverlayAnimationPhase,
 } from './config/overlayAnimations';
 import {
-  computeAnchoredOverlayWindowLayout,
+  computeDockPresentationWindowLayout,
   clampOverlayVisualControlValue,
   type OverlayWindowBounds,
   overlayWindowGeometry,
@@ -700,6 +708,7 @@ function App() {
   const shaderSignatureRef = useRef('');
   const wallpaperSignatureRef = useRef('');
   const topBarPackagesSignatureRef = useRef('');
+  const dockPresentationPackagesSignatureRef = useRef('');
   const explorerLayoutPackagesSignatureRef = useRef('');
   const themePackagesSignatureRef = useRef('');
   const iconThemePackagesSignatureRef = useRef('');
@@ -715,6 +724,8 @@ function App() {
   const authoredWallpapersRefreshQueuedRef = useRef(false);
   const topBarPackagesRefreshInFlightRef = useRef(false);
   const topBarPackagesRefreshQueuedRef = useRef(false);
+  const dockPresentationPackagesRefreshInFlightRef = useRef(false);
+  const dockPresentationPackagesRefreshQueuedRef = useRef(false);
   const explorerLayoutPackagesRefreshInFlightRef = useRef(false);
   const explorerLayoutPackagesRefreshQueuedRef = useRef(false);
   const themePackagesRefreshInFlightRef = useRef(false);
@@ -751,6 +762,10 @@ function App() {
   const [topBarPackagesLoading, setTopBarPackagesLoading] = useState(true);
   const [topBarPackagesError, setTopBarPackagesError] = useState<string | null>(null);
   const [topBarPackagesWarnings, setTopBarPackagesWarnings] = useState<string[]>([]);
+  const [dockPresentationPackages, setDockPresentationPackages] = useState<LoadedDockPresentationPackage[]>([]);
+  const [dockPresentationPackagesLoading, setDockPresentationPackagesLoading] = useState(true);
+  const [dockPresentationPackagesError, setDockPresentationPackagesError] = useState<string | null>(null);
+  const [dockPresentationPackagesWarnings, setDockPresentationPackagesWarnings] = useState<string[]>([]);
   const [explorerLayoutPackages, setExplorerLayoutPackages] = useState<LoadedExplorerLayoutPackage[]>([]);
   const [explorerLayoutPackagesLoading, setExplorerLayoutPackagesLoading] = useState(true);
   const [explorerLayoutPackagesError, setExplorerLayoutPackagesError] = useState<string | null>(null);
@@ -813,33 +828,41 @@ function App() {
 
   const {
     settings,
+    presentationSettings,
+    dockSettings,
     appearance,
     keybindings,
     layoutSettings,
     explorerSettings,
+    pluginSettings,
     mobileSettings,
     pythonSettings,
     audioSettings,
     systemSettings,
     setActiveSection,
     updateAppearance,
-    updateTerminal,
+    updatePresentation,
+    updateDock,
     updateLayout,
     updateMobile,
     updateSystem,
   } = useSettingsStore(useShallow(state => ({
     settings: state.settings.terminal,
+    presentationSettings: state.settings.presentation,
+    dockSettings: state.settings.dock,
     appearance: state.settings.appearance,
     keybindings: state.settings.keybindings,
     layoutSettings: state.settings.layout,
     explorerSettings: state.settings.explorer,
+    pluginSettings: state.settings.plugins,
     mobileSettings: state.settings.mobile,
     pythonSettings: state.settings.python,
     audioSettings: state.settings.audio,
     systemSettings: state.settings.system,
     setActiveSection: state.setActiveSection,
     updateAppearance: state.updateAppearance,
-    updateTerminal: state.updateTerminal,
+    updatePresentation: state.updatePresentation,
+    updateDock: state.updateDock,
     updateLayout: state.updateLayout,
     updateMobile: state.updateMobile,
     updateSystem: state.updateSystem,
@@ -1061,6 +1084,16 @@ function App() {
     () => [...topBarPackages, ...combinedThemePackages],
     [combinedThemePackages, topBarPackages],
   );
+  const combinedDockPresentationPackageSources = useMemo<DockPresentationPackageSourceLike[]>(
+    () => [
+      ...dockPresentationPackages,
+      ...combinedThemePackages.filter(
+        (packageSource): packageSource is LoadedOverlayThemePackage & DockPresentationPackageSourceLike =>
+          Array.isArray((packageSource as DockPresentationPackageSourceLike).dockPresentations),
+      ),
+    ],
+    [combinedThemePackages, dockPresentationPackages],
+  );
   const selectedIconTheme = useMemo(() => {
     return resolveLoadedIconThemePackage(iconThemePackages, appearance.activeIconThemeId)?.iconTheme ?? null;
   }, [appearance.activeIconThemeId, iconThemePackages]);
@@ -1176,7 +1209,7 @@ function App() {
     () => [...combinedThemePackages.map(pkg => pkg.theme), ...resolvedCustomBundleThemes],
     [combinedThemePackages, resolvedCustomBundleThemes],
   );
-  const windowMode: TerminalWindowMode = settings.windowMode === 'windowed' ? 'windowed' : 'overlay';
+  const windowMode: TerminalWindowMode = presentationSettings.windowMode === 'dock' ? 'overlay' : 'windowed';
   const zenFocusMode = layoutSettings.zenFocusMode === true;
   windowModeRef.current = windowMode;
   const resolvedAppearance = useMemo(
@@ -1221,6 +1254,30 @@ function App() {
     combinedSoundPacks,
     resolvedAppearance.baseTheme.defaultSoundPackId,
   ]);
+  const resolvedDockPresentation = useMemo(
+    () => resolveActiveDockPresentation({
+      requestedPresentationId: dockSettings.activePresentationId,
+      placementMode: dockSettings.placementMode,
+      edgeSize: dockSettings.edgeSize,
+      edgeWidth: dockSettings.edgeWidth,
+      floatingBounds: dockSettings.floatingBounds,
+      topBarId: dockSettings.topBarId,
+      previewEnabled: dockSettings.previewEnabled,
+      previewSplitMode: dockSettings.previewSplitMode,
+      packageSources: combinedDockPresentationPackageSources,
+    }),
+    [
+      combinedDockPresentationPackageSources,
+      dockSettings.activePresentationId,
+      dockSettings.edgeSize,
+      dockSettings.edgeWidth,
+      dockSettings.floatingBounds,
+      dockSettings.placementMode,
+      dockSettings.previewEnabled,
+      dockSettings.previewSplitMode,
+      dockSettings.topBarId,
+    ],
+  );
   useEffect(() => {
     configureSoundEffectsRuntime({
       enabled: audioSettings.soundEffectsEnabled,
@@ -1314,24 +1371,31 @@ function App() {
       folderIconRules: explorerSettings.folderIconRules,
       defaultFolderIcon: explorerSettings.defaultFolderIcon,
       layout: mobileSettings.layout,
+      pluginSettingsById: pluginSettings.valuesByPluginId,
     }),
     [
       resolvedAppearance,
       explorerSettings.defaultFolderIcon,
       explorerSettings.folderIconRules,
       mobileSettings.layout,
+      pluginSettings.valuesByPluginId,
     ],
   );
   const resolvedTopBarSelection = useMemo(
     () => resolveActiveTopBarSelection({
-      requestedTopBarId: appearance.activeTopBarId,
+      requestedTopBarId:
+        windowMode === 'overlay'
+          ? (resolvedDockPresentation.topBarId ?? appearance.activeTopBarId)
+          : appearance.activeTopBarId,
       theme: resolvedAppearance.baseTheme,
       packageSources: combinedTopBarPackageSources,
     }),
     [
       appearance.activeTopBarId,
       combinedTopBarPackageSources,
+      resolvedDockPresentation.topBarId,
       resolvedAppearance.baseTheme,
+      windowMode,
     ],
   );
   const resolvedTopBarLayoutSnapshot = useMemo(
@@ -1436,7 +1500,14 @@ function App() {
   const effectiveShellBlurEnabled = shellEffectsPolicy.blurEnabled;
   const effectiveShellBlurStrength = shellEffectsPolicy.blurStrength;
   const wallpaperOpacity = clampOverlayVisualControlValue('opacity', appearance.wallpaperOpacity ?? 1);
-  const overlayAnchor: OverlayWindowAnchor = settings.overlayAnchor === 'top' ? 'top' : 'bottom';
+  const dockPlacementMode: DockPlacementMode =
+    currentHostUsesWaylandDockLayerShell &&
+    resolvedDockPresentation.placementMode === 'floating'
+      ? (resolvedDockPresentation.presentation.defaultPlacement === 'top-edge'
+          ? 'top-edge'
+          : 'bottom-edge')
+      : resolvedDockPresentation.placementMode;
+  const overlayAnchor: OverlayWindowAnchor = dockPlacementMode === 'top-edge' ? 'top' : 'bottom';
   const isTopAnchored = !isWindowedMode && overlayAnchor === 'top';
   const effectiveWindowZoom = isWindowedMode && isWindowMaximized ? 1 : clampedAppZoom;
   const scaledWidth = `${100 / effectiveWindowZoom}%`;
@@ -1816,16 +1887,16 @@ function App() {
       return;
     }
 
-    const persistedWindowMode = useSettingsStore.getState().settings.terminal.windowMode;
-    if (persistedWindowMode !== 'overlay') {
+    const persistedWindowMode = useSettingsStore.getState().settings.presentation.windowMode;
+    if (persistedWindowMode !== 'dock') {
       return;
     }
 
     console.warn(
       'GreebleFS: forcing Linux Wayland startup back to windowed mode because the separate dock host can strand the main window during launch.',
     );
-    updateTerminal({ windowMode: 'windowed' });
-  }, [shouldForceWindowedStartupMode, updateTerminal]);
+    updatePresentation({ windowMode: 'windowed' });
+  }, [shouldForceWindowedStartupMode, updatePresentation]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -2149,17 +2220,29 @@ function App() {
     scaleFactor: number;
     currentBounds?: OverlayWindowBounds | null;
   }) => {
-    const store = useSettingsStore.getState().settings.terminal;
+    const store = useSettingsStore.getState().settings.dock;
+    const requestedPlacement = store.placementMode ?? resolvedDockPresentation.placementMode;
+    const effectivePlacement: DockPlacementMode =
+      currentHostUsesWaylandDockLayerShell && requestedPlacement === 'floating'
+        ? (resolvedDockPresentation.presentation.defaultPlacement === 'top-edge'
+            ? 'top-edge'
+            : 'bottom-edge')
+        : requestedPlacement;
 
-    return computeAnchoredOverlayWindowLayout({
+    return computeDockPresentationWindowLayout({
       workArea: args.monitor.workArea,
       scaleFactor: args.scaleFactor,
-      overlayHeight: store.overlayHeight,
-      overlayWidth: store.overlayWidth,
-      overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
+      placementMode: effectivePlacement,
+      edgeSize: store.edgeSize,
+      edgeWidth: store.edgeWidth,
+      floatingBounds: store.floatingBounds,
       currentBounds: args.currentBounds ?? null,
     });
-  }, []);
+  }, [
+    currentHostUsesWaylandDockLayerShell,
+    resolvedDockPresentation.placementMode,
+    resolvedDockPresentation.presentation.defaultPlacement,
+  ]);
 
   const applyDockOverlayLayout = useCallback(async (args: {
     monitor: NonNullable<Awaited<ReturnType<typeof currentMonitor>>>;
@@ -2168,10 +2251,10 @@ function App() {
     deferMs?: number;
   }) => {
     const layout = resolveDockOverlayLayout(args);
-    const store = useSettingsStore.getState().settings.terminal;
+    const store = useSettingsStore.getState().settings.dock;
 
-    if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
-      useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
+    if (layout.healedHeight !== null && layout.healedHeight !== store.edgeSize) {
+      useSettingsStore.getState().updateDock({ edgeSize: layout.healedHeight });
     }
 
     const nextRuntimeBounds = isWaylandOverlaySession
@@ -2195,7 +2278,7 @@ function App() {
 
     if (currentHostUsesWaylandDockLayerShell) {
       unwrapTauriResult(await commands.windowApplyWaylandDockLayout(
-        store.overlayAnchor === 'top' ? 'top' : 'bottom',
+        layout.placementMode === 'top-edge' ? 'top' : 'bottom',
         args.monitor.name ?? null,
         layout.width,
         layout.height,
@@ -2238,8 +2321,12 @@ function App() {
         return;
       }
 
-      const store = useSettingsStore.getState().settings.terminal;
-      const rememberedBounds = isFreefloatingRef.current ? runtimeOverlayBoundsRef.current : null;
+      const dockStore = useSettingsStore.getState().settings.dock;
+      const shouldRestoreFloatingBounds =
+        dockStore.placementMode === 'floating' && !currentHostUsesWaylandDockLayerShell;
+      const rememberedBounds = shouldRestoreFloatingBounds
+        ? (runtimeOverlayBoundsRef.current ?? dockStore.floatingBounds)
+        : null;
       const layout = resolveDockOverlayLayout({
         monitor,
         scaleFactor,
@@ -2260,8 +2347,8 @@ function App() {
       markOverlayRuntimePhase('opening', true);
       interactionLockUntilRef.current = Date.now() + nextDurationMs + 80;
       setOverlayPhase('closed');
-      if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
-        useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
+      if (layout.healedHeight !== null && layout.healedHeight !== dockStore.edgeSize) {
+        useSettingsStore.getState().updateDock({ edgeSize: layout.healedHeight });
       }
       await applyDockOverlayLayout({
         monitor,
@@ -2331,7 +2418,19 @@ function App() {
       markOverlayRuntimePhase('closed', false);
       console.warn('OverlayTerm: failed to position/show', e);
     }
-  }, [appAnimationDurationMs, applyDockOverlayLayout, clearAnimationClock, isWaylandOverlaySession, markOverlayRuntimePhase, openWithoutMonitorLayout, resolveAnimationById, resolveDockOverlayLayout, resolvedOpenAnimationId, runtimePlatform]);
+  }, [
+    appAnimationDurationMs,
+    applyDockOverlayLayout,
+    clearAnimationClock,
+    currentHostUsesWaylandDockLayerShell,
+    isWaylandOverlaySession,
+    markOverlayRuntimePhase,
+    openWithoutMonitorLayout,
+    resolveAnimationById,
+    resolveDockOverlayLayout,
+    resolvedOpenAnimationId,
+    runtimePlatform,
+  ]);
 
   const showWindowedPanel = useCallback(async () => {
     clearAnimationClock();
@@ -2519,12 +2618,17 @@ function App() {
   }, [setPanelOpenStateDirectly, showCurrentPresentation]);
 
 
+  const handleSetDockPlacementMode = useCallback((placementMode: DockPlacementMode) => {
+    isFreefloatingRef.current = placementMode === 'floating';
+    updateDock({ placementMode });
+  }, [updateDock]);
+
   const handleToggleOverlayAnchor = useCallback(() => {
-    isFreefloatingRef.current = false;
-    updateTerminal({
-      overlayAnchor: overlayAnchor === 'top' ? 'bottom' : 'top',
-    });
-  }, [overlayAnchor, updateTerminal]);
+    const nextPlacement: DockPlacementMode = overlayAnchor === 'top'
+      ? 'bottom-edge'
+      : 'top-edge';
+    handleSetDockPlacementMode(nextPlacement);
+  }, [handleSetDockPlacementMode, overlayAnchor]);
 
   const hideOverlay = useCallback(async () => {
     const currentPhase = overlayPhaseRef.current;
@@ -2575,7 +2679,9 @@ function App() {
     });
     const shouldCarryVisibleSession = overlayVisibleRef.current || await isCurrentHostWindowVisible();
 
-    updateTerminal({ windowMode: nextWindowMode });
+    updatePresentation({
+      windowMode: nextWindowMode === 'overlay' ? 'dock' : 'windowed',
+    });
     if (nextWindowMode === 'overlay') {
       setPanelOpenStateDirectly('explorer');
     }
@@ -2599,7 +2705,7 @@ function App() {
     hideCurrentHostImmediately,
     isCurrentHostWindowVisible,
     setPanelOpenStateDirectly,
-    updateTerminal,
+    updatePresentation,
     usesSeparateWaylandDockHost,
   ]);
 
@@ -2848,15 +2954,26 @@ function App() {
         return;
       }
 
+      const dockStore = useSettingsStore.getState().settings.dock;
+      const shouldRestoreFloatingBounds =
+        dockStore.placementMode === 'floating' && !currentHostUsesWaylandDockLayerShell;
+
       await applyDockOverlayLayout({
         monitor,
         scaleFactor,
-        currentBounds: isFreefloatingRef.current ? runtimeOverlayBoundsRef.current : null,
+        currentBounds: shouldRestoreFloatingBounds
+          ? (runtimeOverlayBoundsRef.current ?? dockStore.floatingBounds)
+          : null,
       });
     } catch (error) {
       console.warn('OverlayTerm: failed to transition window presentation', error);
     }
-  }, [applyDockOverlayLayout, isCurrentWindowPresentationHost, shouldSkipTaskbar]);
+  }, [
+    applyDockOverlayLayout,
+    currentHostUsesWaylandDockLayerShell,
+    isCurrentWindowPresentationHost,
+    shouldSkipTaskbar,
+  ]);
 
   const handleToggleWindowMode = useCallback(() => {
     const nextWindowMode = windowMode === 'windowed' ? 'overlay' : 'windowed';
@@ -2964,7 +3081,17 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [applyDockOverlayLayout, isCurrentWindowPresentationHost, overlayAnchor, windowMode, resolvePreferredMonitor]);
+  }, [
+    applyDockOverlayLayout,
+    dockPlacementMode,
+    dockSettings.edgeSize,
+    dockSettings.edgeWidth,
+    dockSettings.floatingBounds,
+    isCurrentWindowPresentationHost,
+    overlayAnchor,
+    windowMode,
+    resolvePreferredMonitor,
+  ]);
 
   useEffect(() => {
     if (!isOverlayVisible || typeof window === 'undefined' || !isTauri()) {
@@ -3130,15 +3257,24 @@ function App() {
         x: position.x,
         y: position.y,
       };
-      isFreefloatingRef.current = true;
+      const dockStore = useSettingsStore.getState().settings.dock;
+      if (dockStore.placementMode === 'floating') {
+        isFreefloatingRef.current = true;
+        runtimeOverlayBoundsRef.current = currentBounds;
+        useSettingsStore.getState().updateDock({
+          floatingBounds: currentBounds,
+        });
+        return;
+      }
+
+      isFreefloatingRef.current = false;
       runtimeOverlayBoundsRef.current = currentBounds;
-      const store = useSettingsStore.getState().settings.terminal;
       const nextOverlayHeight = Math.max(logH, overlayWindowGeometry.minHeight);
       const nextOverlayWidth = Math.max(logW, overlayWindowGeometry.minWidth);
-      if (nextOverlayHeight !== store.overlayHeight || nextOverlayWidth !== store.overlayWidth) {
-        useSettingsStore.getState().updateTerminal({
-          overlayHeight: nextOverlayHeight,
-          overlayWidth: nextOverlayWidth,
+      if (nextOverlayHeight !== dockStore.edgeSize || nextOverlayWidth !== dockStore.edgeWidth) {
+        useSettingsStore.getState().updateDock({
+          edgeSize: nextOverlayHeight,
+          edgeWidth: nextOverlayWidth,
         });
       }
       const monitor = await resolvePreferredMonitor();
@@ -3172,7 +3308,17 @@ function App() {
         x: ev.payload.x,
         y: ev.payload.y,
       };
-      isFreefloatingRef.current = true;
+      const dockStore = useSettingsStore.getState().settings.dock;
+      if (dockStore.placementMode === 'floating') {
+        isFreefloatingRef.current = true;
+        runtimeOverlayBoundsRef.current = currentBounds;
+        useSettingsStore.getState().updateDock({
+          floatingBounds: currentBounds,
+        });
+        return;
+      }
+
+      isFreefloatingRef.current = false;
       runtimeOverlayBoundsRef.current = currentBounds;
       const scaleFactor = await win.scaleFactor().catch(() => 1);
       const monitor = await resolvePreferredMonitor();
@@ -3668,6 +3814,69 @@ function App() {
       } while (topBarPackagesRefreshQueuedRef.current);
     } finally {
       topBarPackagesRefreshInFlightRef.current = false;
+    }
+  }, []);
+
+  const refreshDockPresentationPackages = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setDockPresentationPackages([]);
+      setDockPresentationPackagesError(null);
+      setDockPresentationPackagesWarnings([]);
+      setDockPresentationPackagesLoading(false);
+      return;
+    }
+
+    if (force) {
+      dockPresentationPackagesRefreshQueuedRef.current = true;
+    }
+    if (dockPresentationPackagesRefreshInFlightRef.current) {
+      dockPresentationPackagesRefreshQueuedRef.current = true;
+      return;
+    }
+
+    dockPresentationPackagesRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || dockPresentationPackagesRefreshQueuedRef.current;
+        dockPresentationPackagesRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          dockPresentationPackagesSignatureRef.current = '';
+        }
+
+        setDockPresentationPackagesLoading(prev => prev && !nextForce);
+        try {
+          await ensureDir(dockPresentationSystemConfig.dockPresentationsDirectory);
+          const listed = await listExplorerDir(
+            dockPresentationSystemConfig.dockPresentationsDirectory,
+            false,
+          );
+          const nextSignature = listed
+            .map(entry => `${entry.path}:${entry.modified}`)
+            .sort()
+            .join('|');
+
+          if (!nextForce && nextSignature === dockPresentationPackagesSignatureRef.current) {
+            setDockPresentationPackagesLoading(false);
+            continue;
+          }
+
+          dockPresentationPackagesSignatureRef.current = nextSignature;
+          const result = await discoverDockPresentationPackages();
+          setDockPresentationPackages(result.packages);
+          setDockPresentationPackagesError(result.sourceError);
+          setDockPresentationPackagesWarnings(result.warnings);
+        } catch (error) {
+          setDockPresentationPackages([]);
+          setDockPresentationPackagesError(String(error));
+          setDockPresentationPackagesWarnings([]);
+        } finally {
+          setDockPresentationPackagesLoading(false);
+        }
+      } while (dockPresentationPackagesRefreshQueuedRef.current);
+    } finally {
+      dockPresentationPackagesRefreshInFlightRef.current = false;
     }
   }, []);
 
@@ -4187,6 +4396,22 @@ function App() {
   }, [isOverlayVisible, liveReloadEnabled, refreshTopBarPackages]);
 
   useEffect(() => {
+    void refreshDockPresentationPackages(true);
+  }, [refreshDockPresentationPackages]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !dockPresentationSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshDockPresentationPackages();
+    }, dockPresentationSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshDockPresentationPackages]);
+
+  useEffect(() => {
     void refreshExplorerLayoutPackages(true);
   }, [refreshExplorerLayoutPackages]);
 
@@ -4208,6 +4433,7 @@ function App() {
         appearance: resolvedAppearance,
         explorerChromeControlSurface: 'toolbar',
         explorerLayoutMode: explorerPanelLayoutMode,
+        explorerDockPreviewPolicy: resolvedDockPresentation.previewPolicy,
         explorerDefaultModeProfileId,
         explorerPicker: activeExplorerPickerRequest,
         isOpen: isOverlayVisible,
@@ -4234,6 +4460,11 @@ function App() {
         topBarPackagesLoading,
         topBarPackagesError,
         topBarPackagesWarnings,
+        dockPresentationPackages,
+        dockPresentationPackagesDirectory: dockPresentationSystemConfig.dockPresentationsDirectory,
+        dockPresentationPackagesLoading,
+        dockPresentationPackagesError,
+        dockPresentationPackagesWarnings,
         explorerLayouts: combinedExplorerLayouts,
         explorerLayoutsDirectory: explorerLayoutSystemConfig.explorerLayoutsDirectory,
         explorerLayoutsLoading: explorerLayoutPackagesLoading,
@@ -4285,6 +4516,8 @@ function App() {
         themeEnginePacksWarnings: themeBundleDependencyCatalogs.warnings,
         onRefreshTopBars: refreshTopBarCatalog,
         onOpenTopBarsFolder: openTopBarsFolder,
+        onRefreshDockPresentations: () => refreshDockPresentationPackages(true),
+        onOpenDockPresentationsFolder: () => openManagedContentDirectory('dockPresentations'),
         onRefreshActions: () => refreshActionPacks(true),
         onOpenActionsFolder: openActionsFolder,
         onRefreshHomePacks: () => refreshHomePacks(true),
@@ -4423,6 +4656,7 @@ function App() {
       openWallpapersFolder,
       openIconThemesFolder,
       openThemesFolder,
+      openManagedContentDirectory,
       pendingRepositoryImports,
       refreshIconThemePackages,
       refreshTopBarCatalog,
@@ -4430,13 +4664,19 @@ function App() {
       topBarPackagesError,
       topBarPackagesLoading,
       topBarPackagesWarnings,
+      dockPresentationPackages,
+      dockPresentationPackagesError,
+      dockPresentationPackagesLoading,
+      dockPresentationPackagesWarnings,
       refreshActionPacks,
+      refreshDockPresentationPackages,
       refreshThemePackages,
       refreshAuthoredAnimations,
       refreshAuthoredWallpapers,
       refreshAuthoredShaders,
       refreshFolderPlugins,
       requestWindowModeChange,
+      resolvedDockPresentation.previewPolicy,
       resolvedAppearance,
       setPluginEnabled,
       combinedThemePackages,
@@ -5557,15 +5797,26 @@ function App() {
         onSelect: handleToggleZenFocusMode,
       },
       ...(windowMode === 'overlay'
-        ? [{
-            id: 'toggle-dock-edge',
-            title: `Dock To ${overlayAnchor === 'top' ? 'Bottom' : 'Top'} Edge`,
-            subtitle: `Move the dock shell from the ${overlayAnchor} edge to the ${overlayAnchor === 'top' ? 'bottom' : 'top'} edge.`,
-            group: 'Layout',
-            keywords: ['dock', 'anchor', 'top', 'bottom', 'edge'],
-            badge: 'Edge',
-            onSelect: handleToggleOverlayAnchor,
-          } satisfies OverlayCommandPaletteAction]
+        ? resolvedDockPresentation.presentation.allowedPlacements.map((placement) => {
+            const placementLabel =
+              placement === 'floating'
+                ? 'Floating'
+                : placement === 'top-edge'
+                  ? 'Top Edge'
+                  : 'Bottom Edge';
+            return {
+              id: `set-dock-placement:${placement}`,
+              title: `Dock Placement: ${placementLabel}`,
+              subtitle:
+                placement === 'floating'
+                  ? 'Restore the dock shell as a draggable freeform window.'
+                  : `Anchor the dock shell to the ${placement === 'top-edge' ? 'top' : 'bottom'} edge.`,
+              group: 'Layout',
+              keywords: ['dock', 'placement', 'float', 'floating', 'top', 'bottom', 'edge'],
+              badge: dockPlacementMode === placement ? 'Active' : 'Dock',
+              onSelect: () => handleSetDockPlacementMode(placement),
+            } satisfies OverlayCommandPaletteAction;
+          })
         : []),
     ];
 
@@ -5679,9 +5930,10 @@ function App() {
     handleOpenSettingsSection,
     handleStartMobileShare,
     handleStopMobileShare,
-    handleToggleOverlayAnchor,
+    handleSetDockPlacementMode,
     handleToggleZenFocusMode,
     handleToggleWindowMode,
+    dockPlacementMode,
     overlayAnchor,
     openManagedContentDirectory,
     pinnedPanelIds,
@@ -5694,6 +5946,7 @@ function App() {
     refreshAuthoredShaders,
     refreshFolderPlugins,
     refreshThemePackages,
+    resolvedDockPresentation.presentation.allowedPlacements,
     startGlobalSearchScan,
     windowMode,
     zenFocusMode,
@@ -6041,6 +6294,15 @@ function App() {
       onSetWindowMode={(mode) => { void requestWindowModeChange(mode); }}
       onOpenCommandPalette={handleOpenCommandPalette}
       onToggleOverlayAnchor={handleToggleOverlayAnchor}
+      dockPlacementMode={dockPlacementMode}
+      dockAllowedPlacements={resolvedDockPresentation.presentation.allowedPlacements}
+      dockEdgeSize={resolvedDockPresentation.edgeSize}
+      dockEdgeWidth={resolvedDockPresentation.edgeWidth}
+      dockPreviewEnabled={resolvedDockPresentation.previewPolicy.enabled}
+      dockPreviewSplitMode={resolvedDockPresentation.previewPolicy.splitMode}
+      onSetDockPlacementMode={handleSetDockPlacementMode}
+      onUpdateDockSettings={updateDock}
+      onOpenDockSettings={() => handleOpenSettingsSection('dock')}
       onClose={() => { void hideOverlay(); }}
       accent={accent}
       blur={effectiveShellBlurEnabled}

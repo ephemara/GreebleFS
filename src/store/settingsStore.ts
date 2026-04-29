@@ -108,7 +108,20 @@ import {
   clampOverlayVisualControlValue,
   overlayVisualControls,
   overlayWindowGeometry,
+  type OverlayWindowBounds,
 } from '../config/overlayWindow';
+import {
+  DEFAULT_DOCK_PRESENTATION_ID,
+  DEFAULT_DOCK_TOP_BAR_ID,
+  normalizeDockEdgeSize,
+  normalizeDockEdgeWidth,
+  normalizeDockPlacementMode,
+  normalizeDockPresentationSelectionId,
+  normalizeDockPreviewSplitMode,
+  normalizeDockTopBarSelectionId,
+  type DockPlacementMode,
+  type DockPreviewSplitMode,
+} from '../config/dockPresentations';
 import { normalizeGpuTierMode, type GpuTierMode } from '../config/gpuRuntime';
 import {
   normalizeAccelerationRoutingMode,
@@ -207,6 +220,25 @@ export interface TerminalSettings {
   externalTerminalProfile: ExternalTerminalProfile;
   externalTerminalCommand: string;
   externalTerminalArgs: string;
+}
+
+export type PresentationWindowMode = 'windowed' | 'dock';
+
+export interface PresentationSettings {
+  windowMode: PresentationWindowMode;
+}
+
+export type DockFloatingBounds = OverlayWindowBounds;
+
+export interface DockSettings {
+  activePresentationId: string | null;
+  placementMode: DockPlacementMode;
+  edgeSize: number;
+  edgeWidth: number;
+  floatingBounds: DockFloatingBounds | null;
+  topBarId: string | null;
+  previewEnabled: boolean;
+  previewSplitMode: DockPreviewSplitMode;
 }
 
 export type IntegratedTerminalHost = 'go-pty-panel' | 'xterm';
@@ -404,6 +436,8 @@ export interface LayoutPanelState {
 
 export interface Settings {
   editor: EditorSettings;
+  presentation: PresentationSettings;
+  dock: DockSettings;
   terminal: TerminalSettings;
   python: PythonSettings;
   models: ModelsSettings;
@@ -457,6 +491,33 @@ export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAncho
 
 export function normalizeTerminalWindowMode(value: unknown): TerminalWindowMode {
   return value === 'overlay' ? 'overlay' : 'windowed';
+}
+
+export function normalizePresentationWindowMode(
+  value: unknown,
+  fallback: PresentationWindowMode = 'windowed',
+): PresentationWindowMode {
+  if (value === 'dock' || value === 'overlay') {
+    return 'dock';
+  }
+  if (value === 'windowed') {
+    return 'windowed';
+  }
+  return fallback;
+}
+
+export function terminalWindowModeToPresentationMode(
+  mode: unknown,
+): PresentationWindowMode {
+  return normalizeTerminalWindowMode(mode) === 'overlay' ? 'dock' : 'windowed';
+}
+
+export function presentationWindowModeToTerminalMode(
+  mode: unknown,
+): TerminalWindowMode {
+  return normalizePresentationWindowMode(mode) === 'dock'
+    ? 'overlay'
+    : 'windowed';
 }
 
 export function normalizeIntegratedTerminalHost(
@@ -778,6 +839,127 @@ function normalizeSavedWindowDimension(value: unknown, fallback: number, min: nu
   }
 
   return Math.max(Math.round(value), min);
+}
+
+function hasOwnProperty<T extends object>(
+  value: T | undefined,
+  key: PropertyKey,
+): boolean {
+  return value != null && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function normalizePresentationSettings(
+  base: PresentationSettings,
+  updates?: Partial<PresentationSettings>,
+  legacyTerminal?: Partial<TerminalSettings>,
+): PresentationSettings {
+  const legacyWindowMode = legacyTerminal?.windowMode != null
+    ? terminalWindowModeToPresentationMode(legacyTerminal.windowMode)
+    : undefined;
+  return {
+    windowMode: normalizePresentationWindowMode(
+      updates?.windowMode ?? legacyWindowMode ?? base.windowMode,
+      base.windowMode,
+    ),
+  };
+}
+
+function normalizeDockFloatingBounds(value: unknown): DockFloatingBounds | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const source = value as Partial<Record<keyof DockFloatingBounds, unknown>>;
+  const width = normalizeDockEdgeWidth(source.width, overlayWindowGeometry.defaultWidth);
+  const height = normalizeDockEdgeSize(source.height, overlayWindowGeometry.defaultHeight);
+  const x = typeof source.x === 'number' && Number.isFinite(source.x)
+    ? Math.round(source.x)
+    : Number.NaN;
+  const y = typeof source.y === 'number' && Number.isFinite(source.y)
+    ? Math.round(source.y)
+    : Number.NaN;
+
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+
+  return { width, height, x, y };
+}
+
+function legacyTerminalAnchorToDockPlacement(
+  anchor: unknown,
+): DockPlacementMode {
+  return anchor === 'top' ? 'top-edge' : 'bottom-edge';
+}
+
+function dockPlacementToLegacyTerminalAnchor(
+  placement: DockPlacementMode,
+): OverlayWindowAnchor | null {
+  if (placement === 'top-edge') {
+    return 'top';
+  }
+  if (placement === 'bottom-edge') {
+    return 'bottom';
+  }
+  return null;
+}
+
+function normalizeDockSettings(
+  base: DockSettings,
+  updates?: Partial<DockSettings>,
+  legacyTerminal?: Partial<TerminalSettings>,
+): DockSettings {
+  const hasExplicitPresentation = hasOwnProperty(updates, 'activePresentationId');
+  const hasExplicitPlacement = hasOwnProperty(updates, 'placementMode');
+  const hasExplicitEdgeSize = hasOwnProperty(updates, 'edgeSize');
+  const hasExplicitEdgeWidth = hasOwnProperty(updates, 'edgeWidth');
+  const hasExplicitFloatingBounds = hasOwnProperty(updates, 'floatingBounds');
+  const hasExplicitTopBarId = hasOwnProperty(updates, 'topBarId');
+  const hasExplicitPreviewEnabled = hasOwnProperty(updates, 'previewEnabled');
+  const hasExplicitPreviewSplitMode = hasOwnProperty(updates, 'previewSplitMode');
+
+  const legacyPlacement = legacyTerminal?.overlayAnchor != null
+    ? legacyTerminalAnchorToDockPlacement(legacyTerminal.overlayAnchor)
+    : undefined;
+
+  return {
+    activePresentationId: hasExplicitPresentation
+      ? normalizeDockPresentationSelectionId(updates?.activePresentationId)
+      : base.activePresentationId,
+    placementMode: normalizeDockPlacementMode(
+      hasExplicitPlacement
+        ? updates?.placementMode
+        : (legacyPlacement ?? base.placementMode),
+      base.placementMode,
+    ),
+    edgeSize: normalizeDockEdgeSize(
+      hasExplicitEdgeSize
+        ? updates?.edgeSize
+        : (legacyTerminal?.overlayHeight ?? base.edgeSize),
+      base.edgeSize,
+    ),
+    edgeWidth: normalizeDockEdgeWidth(
+      hasExplicitEdgeWidth
+        ? updates?.edgeWidth
+        : (legacyTerminal?.overlayWidth ?? base.edgeWidth),
+      base.edgeWidth,
+    ),
+    floatingBounds: hasExplicitFloatingBounds
+      ? normalizeDockFloatingBounds(updates?.floatingBounds)
+      : base.floatingBounds,
+    topBarId: hasExplicitTopBarId
+      ? normalizeDockTopBarSelectionId(updates?.topBarId)
+      : base.topBarId,
+    previewEnabled: hasExplicitPreviewEnabled
+      ? updates?.previewEnabled !== false
+      : base.previewEnabled,
+    previewSplitMode: normalizeDockPreviewSplitMode(
+      hasExplicitPreviewSplitMode
+        ? updates?.previewSplitMode
+        : base.previewSplitMode,
+      base.previewSplitMode,
+    ),
+  };
 }
 
 function normalizeTerminalShellText(value: unknown): string {
@@ -1248,6 +1430,19 @@ export const defaultSettings: Settings = {
     formatOnSave: true,
     formatOnPaste: false,
   },
+  presentation: {
+    windowMode: 'windowed',
+  },
+  dock: {
+    activePresentationId: DEFAULT_DOCK_PRESENTATION_ID,
+    placementMode: 'bottom-edge',
+    edgeSize: overlayWindowGeometry.defaultHeight,
+    edgeWidth: overlayWindowGeometry.defaultWidth,
+    floatingBounds: null,
+    topBarId: DEFAULT_DOCK_TOP_BAR_ID,
+    previewEnabled: true,
+    previewSplitMode: 'pane',
+  },
   terminal: {
     fontSize: 13,
     fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace',
@@ -1634,6 +1829,16 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     ...base,
     ...imported,
     editor: { ...base.editor, ...imported?.editor },
+    presentation: normalizePresentationSettings(
+      base.presentation,
+      (imported as Partial<Settings> | undefined)?.presentation,
+      importedTerminal,
+    ),
+    dock: normalizeDockSettings(
+      base.dock,
+      (imported as Partial<Settings> | undefined)?.dock,
+      importedTerminal,
+    ),
     terminal: normalizeTerminalSettings(base.terminal, importedTerminal),
     python: { ...base.python, ...(imported as Partial<Settings> | undefined)?.python },
     models: normalizeModelsSettings(base.models, (imported as Partial<Settings> | undefined)?.models),
@@ -1734,6 +1939,8 @@ interface SettingsState {
   
   // Update settings
   updateEditor: (updates: Partial<EditorSettings>) => void;
+  updatePresentation: (updates: Partial<PresentationSettings>) => void;
+  updateDock: (updates: Partial<DockSettings>) => void;
   updateTerminal: (updates: Partial<TerminalSettings>) => void;
   updatePython: (updates: Partial<PythonSettings>) => void;
   updateModels: (updates: Partial<ModelsSettings>) => void;
@@ -1842,13 +2049,80 @@ export const useSettingsStore = create<SettingsState>()(
           editor: { ...state.settings.editor, ...updates },
         },
       })),
+
+      updatePresentation: (updates) => set((state) => {
+        const nextPresentation = normalizePresentationSettings(
+          state.settings.presentation,
+          updates,
+        );
+
+        return {
+          settings: {
+            ...state.settings,
+            presentation: nextPresentation,
+            terminal: normalizeTerminalSettings(state.settings.terminal, {
+              windowMode: presentationWindowModeToTerminalMode(
+                nextPresentation.windowMode,
+              ),
+            }),
+          },
+        };
+      }),
+
+      updateDock: (updates) => set((state) => {
+        const nextDock = normalizeDockSettings(state.settings.dock, updates);
+        const legacyAnchor = dockPlacementToLegacyTerminalAnchor(
+          nextDock.placementMode,
+        );
+
+        return {
+          settings: {
+            ...state.settings,
+            dock: nextDock,
+            terminal: normalizeTerminalSettings(state.settings.terminal, {
+              overlayHeight: nextDock.edgeSize,
+              overlayWidth: nextDock.edgeWidth,
+              ...(legacyAnchor ? { overlayAnchor: legacyAnchor } : {}),
+            }),
+          },
+        };
+      }),
       
-      updateTerminal: (updates) => set((state) => ({
-        settings: {
-          ...state.settings,
-          terminal: normalizeTerminalSettings(state.settings.terminal, updates),
-        },
-      })),
+      updateTerminal: (updates) => set((state) => {
+        const legacyPresentationUpdates: Partial<PresentationSettings> = {};
+        if (hasOwnProperty(updates, 'windowMode')) {
+          legacyPresentationUpdates.windowMode =
+            terminalWindowModeToPresentationMode(updates.windowMode);
+        }
+
+        const legacyDockUpdates: Partial<DockSettings> = {};
+        if (hasOwnProperty(updates, 'overlayHeight')) {
+          legacyDockUpdates.edgeSize = updates.overlayHeight;
+        }
+        if (hasOwnProperty(updates, 'overlayWidth')) {
+          legacyDockUpdates.edgeWidth = updates.overlayWidth;
+        }
+        if (hasOwnProperty(updates, 'overlayAnchor')) {
+          legacyDockUpdates.placementMode =
+            legacyTerminalAnchorToDockPlacement(updates.overlayAnchor);
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            terminal: normalizeTerminalSettings(state.settings.terminal, updates),
+            presentation: Object.keys(legacyPresentationUpdates).length > 0
+              ? normalizePresentationSettings(
+                  state.settings.presentation,
+                  legacyPresentationUpdates,
+                )
+              : state.settings.presentation,
+            dock: Object.keys(legacyDockUpdates).length > 0
+              ? normalizeDockSettings(state.settings.dock, legacyDockUpdates)
+              : state.settings.dock,
+          },
+        };
+      }),
 
       updatePython: (updates) => set((state) => ({
         settings: {

@@ -13,6 +13,10 @@ import {
   getBuiltInIconTheme,
   type OverlayResolvedIconTheme,
 } from './iconTheme';
+import {
+  normalizeOverlayPluginSettingsValueMap,
+  type OverlayPluginSettingsValue,
+} from './pluginSettings';
 
 export interface MobileShareThemePaletteSnapshot {
   appBackground: string;
@@ -72,6 +76,11 @@ export interface MobileShareFolderIconRuleSnapshot {
 
 export interface MobileShareThemeLayoutSnapshot extends MobileLayoutSettings {}
 
+export type MobileSharePluginSettingsSnapshot = Record<
+  string,
+  Record<string, OverlayPluginSettingsValue>
+>;
+
 export interface MobileShareThemeSnapshot {
   themeId: string;
   themeName: string;
@@ -85,12 +94,22 @@ export interface MobileShareThemeSnapshot {
   folderIconRules: MobileShareFolderIconRuleSnapshot[];
   defaultFolderIcon: string;
   layout: MobileShareThemeLayoutSnapshot;
+  pluginSettingsById: MobileSharePluginSettingsSnapshot;
 }
 
 export interface CreateMobileShareThemeSnapshotOptions {
   folderIconRules?: readonly FolderIconRule[];
   defaultFolderIcon?: FolderIconValue;
   layout?: MobileLayoutSettings;
+  pluginSettingsById?: MobileSharePluginSettingsSnapshot;
+}
+
+function resolveMobileScrollbarCssValue(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed.includes('var(--overlay-')) {
+    return fallback;
+  }
+  return trimmed;
 }
 
 function cloneIconThemeSnapshot(
@@ -122,6 +141,27 @@ function cloneFolderIconRules(
   }));
 }
 
+function clonePluginSettingsSnapshot(
+  settingsByPluginId: MobileSharePluginSettingsSnapshot | undefined,
+): MobileSharePluginSettingsSnapshot {
+  if (!settingsByPluginId) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(settingsByPluginId).flatMap(([pluginId, values]) => {
+      const normalizedPluginId = pluginId.trim();
+      if (!normalizedPluginId) {
+        return [];
+      }
+      return [[
+        normalizedPluginId,
+        normalizeOverlayPluginSettingsValueMap(values),
+      ]];
+    }),
+  );
+}
+
 export function createMobileShareThemeSnapshot(
   appearance: ResolvedOverlayAppearance,
   options: CreateMobileShareThemeSnapshotOptions = {},
@@ -131,6 +171,38 @@ export function createMobileShareThemeSnapshot(
   const mobileRecipe = appearance.theme.mobile;
   const resolvedIconTheme =
     appearance.theme.assets?.iconTheme ?? getBuiltInIconTheme();
+  const scrollbar = appearance.theme.scrollbar;
+  const scrollbarCssVars = {
+    '--mobile-color-scheme': appearance.cssVars['--overlay-color-scheme'] ?? 'dark',
+    '--mobile-scrollbar-size': resolveMobileScrollbarCssValue(
+      String(scrollbar?.size ?? appearance.cssVars['--overlay-scrollbar-size'] ?? ''),
+      '11px',
+    ),
+    '--mobile-scrollbar-thumb': resolveMobileScrollbarCssValue(
+      scrollbar?.thumb ?? appearance.cssVars['--overlay-scrollbar-thumb'],
+      palette.borderStrong,
+    ),
+    '--mobile-scrollbar-thumb-hover': resolveMobileScrollbarCssValue(
+      scrollbar?.thumbHover ?? appearance.cssVars['--overlay-scrollbar-thumb-hover'],
+      palette.accent,
+    ),
+    '--mobile-scrollbar-track': resolveMobileScrollbarCssValue(
+      scrollbar?.track ?? appearance.cssVars['--overlay-scrollbar-track'],
+      palette.panelBackground,
+    ),
+    '--mobile-scrollbar-corner': resolveMobileScrollbarCssValue(
+      scrollbar?.corner ?? appearance.cssVars['--overlay-scrollbar-corner'],
+      palette.panelBackground,
+    ),
+    '--mobile-scrollbar-radius': resolveMobileScrollbarCssValue(
+      String(scrollbar?.radius ?? appearance.cssVars['--overlay-scrollbar-radius'] ?? ''),
+      '999px',
+    ),
+    '--mobile-scrollbar-thumb-border-width': resolveMobileScrollbarCssValue(
+      String(scrollbar?.thumbBorderWidth ?? appearance.cssVars['--overlay-scrollbar-thumb-border-width'] ?? ''),
+      '3px',
+    ),
+  };
 
   return {
     themeId: appearance.theme.id,
@@ -161,7 +233,10 @@ export function createMobileShareThemeSnapshot(
       ...(mobileRecipe?.metrics ?? {}),
     },
     shadow: mobileRecipe?.shadow ?? appearance.theme.effects.shadow,
-    cssVars: mobileRecipe?.cssVars ?? {},
+    cssVars: {
+      ...scrollbarCssVars,
+      ...(mobileRecipe?.cssVars ?? {}),
+    },
     iconTheme: cloneIconThemeSnapshot(resolvedIconTheme),
     folderIconRules: cloneFolderIconRules(options.folderIconRules),
     defaultFolderIcon:
@@ -169,6 +244,9 @@ export function createMobileShareThemeSnapshot(
     layout: normalizeMobileLayoutSettings(
       defaultMobileLayoutSettings,
       options.layout,
+    ),
+    pluginSettingsById: clonePluginSettingsSnapshot(
+      options.pluginSettingsById,
     ),
   };
 }

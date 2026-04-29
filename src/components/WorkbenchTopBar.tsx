@@ -37,9 +37,14 @@ import type {
   LoadedOverlayTopBarDefinition,
   OverlayTopBarControlId,
 } from '../config/topBars';
+import type {
+  DockPlacementMode,
+  DockPreviewSplitMode,
+} from '../config/dockPresentations';
 import {
   clampOverlayVisualControlValue,
   formatOverlayVisualControlValue,
+  overlayWindowGeometry,
   overlayVisualControls,
 } from '../config/overlayWindow';
 import { mobileShareMenuHoverDelayMs, type MobileRemoteAccessMode } from '../config/mobileAccess';
@@ -89,6 +94,20 @@ interface WorkbenchTopBarProps {
   onSetWindowMode: (mode: TerminalWindowMode) => void;
   onOpenCommandPalette: () => void;
   onToggleOverlayAnchor: () => void;
+  dockPlacementMode: DockPlacementMode;
+  dockAllowedPlacements: DockPlacementMode[];
+  dockEdgeSize: number;
+  dockEdgeWidth: number;
+  dockPreviewEnabled: boolean;
+  dockPreviewSplitMode: DockPreviewSplitMode;
+  onSetDockPlacementMode: (placementMode: DockPlacementMode) => void;
+  onUpdateDockSettings: (updates: {
+    edgeSize?: number;
+    edgeWidth?: number;
+    previewEnabled?: boolean;
+    previewSplitMode?: DockPreviewSplitMode;
+  }) => void;
+  onOpenDockSettings: () => void;
   onClose: () => void;
   accent: string;
   blur: boolean;
@@ -304,6 +323,15 @@ export function WorkbenchTopBar({
   onSetWindowMode,
   onOpenCommandPalette,
   onToggleOverlayAnchor,
+  dockPlacementMode,
+  dockAllowedPlacements,
+  dockEdgeSize,
+  dockEdgeWidth,
+  dockPreviewEnabled,
+  dockPreviewSplitMode,
+  onSetDockPlacementMode,
+  onUpdateDockSettings,
+  onOpenDockSettings,
   onClose,
   accent,
   blur,
@@ -394,8 +422,16 @@ export function WorkbenchTopBar({
     () => openPanels.filter(panel => panel.id !== 'explorer' && panel.id !== 'settings'),
     [openPanels],
   );
-  const surfaceControlsMenuWidth = Math.max(254, Math.min(320, viewportSize.width - 24));
+  const surfaceControlsMenuWidth = Math.max(286, Math.min(360, viewportSize.width - 24));
   const nextOverlayAnchor = overlayAnchor === 'top' ? 'bottom' : 'top';
+  const allowedDockPlacements = dockAllowedPlacements.length > 0
+    ? dockAllowedPlacements
+    : (['top-edge', 'bottom-edge', 'floating'] as DockPlacementMode[]);
+  const dockPlacementLabel = dockPlacementMode === 'floating'
+    ? 'Floating'
+    : dockPlacementMode === 'top-edge'
+      ? 'Top Edge'
+      : 'Bottom Edge';
   const layoutButtonTitle = isWindowedMode
     ? (layoutSourcePath
       ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}`
@@ -421,13 +457,30 @@ export function WorkbenchTopBar({
   );
 
   const handleStartWindowDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!isWindowedMode || event.button !== 0 || !isTauri()) {
+    const canDragWindow = isWindowedMode || (windowMode === 'overlay' && dockPlacementMode === 'floating');
+    if (!canDragWindow || event.button !== 0 || !isTauri()) {
       return;
     }
 
     event.preventDefault();
     getCurrentWindow().startDragging().catch(() => {});
-  }, [isWindowedMode]);
+  }, [dockPlacementMode, isWindowedMode, windowMode]);
+
+  const handleCycleDockPlacement = useCallback(() => {
+    if (windowMode !== 'overlay') {
+      return;
+    }
+    const currentIndex = allowedDockPlacements.indexOf(dockPlacementMode);
+    const nextPlacement = allowedDockPlacements[
+      (currentIndex >= 0 ? currentIndex + 1 : 0) % allowedDockPlacements.length
+    ] ?? 'bottom-edge';
+    onSetDockPlacementMode(nextPlacement);
+  }, [
+    allowedDockPlacements,
+    dockPlacementMode,
+    onSetDockPlacementMode,
+    windowMode,
+  ]);
 
   const handleMinimizeWindow = useCallback(() => {
     if (!isWindowedMode || !isTauri()) {
@@ -646,6 +699,12 @@ export function WorkbenchTopBar({
     },
   ] as const;
 
+  const dockSizePresets = [
+    { id: 'compact', label: 'Compact', edgeSize: 360, edgeWidth: 960 },
+    { id: 'wide', label: 'Wide', edgeSize: 500, edgeWidth: 1280 },
+    { id: 'deep', label: 'Deep', edgeSize: 680, edgeWidth: 1440 },
+  ] as const;
+
   const surfaceControlsMenu = (
     <div
       style={{
@@ -719,6 +778,160 @@ export function WorkbenchTopBar({
         ))}
       </div>
 
+      {windowMode === 'overlay' ? (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            borderTop: '1px solid var(--overlay-workbench-chrome-border)',
+            paddingTop: 10,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <span style={{ color: text, fontSize: 11, fontWeight: 700 }}>Dock Placement</span>
+            <span style={{ color: muted, fontSize: 10, fontFamily: monoFont }}>{dockPlacementLabel}</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${allowedDockPlacements.length}, minmax(0, 1fr))`, gap: 6 }}>
+            {allowedDockPlacements.map(placement => {
+              const active = placement === dockPlacementMode;
+              const label = placement === 'floating'
+                ? 'Float'
+                : placement === 'top-edge'
+                  ? 'Top'
+                  : 'Bottom';
+              return (
+                <button
+                  key={placement}
+                  type="button"
+                  onClick={() => onSetDockPlacementMode(placement)}
+                  style={{
+                    height: 26,
+                    borderRadius: workbench.metrics.controlRadius,
+                    border: `1px solid ${active ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                    background: active
+                      ? 'var(--overlay-workbench-chrome-button-active-bg)'
+                      : 'var(--overlay-workbench-chrome-button-bg)',
+                    color: active ? text : muted,
+                    fontSize: 10,
+                    fontWeight: 800,
+                    letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+            {dockSizePresets.map(preset => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => onUpdateDockSettings({
+                  edgeSize: preset.edgeSize,
+                  edgeWidth: preset.edgeWidth,
+                })}
+                style={{
+                  height: 24,
+                  borderRadius: workbench.metrics.controlRadius,
+                  border: '1px solid var(--overlay-workbench-chrome-border)',
+                  background: 'var(--overlay-workbench-chrome-button-bg)',
+                  color: muted,
+                  fontSize: 9,
+                  fontWeight: 800,
+                  letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ color: text, fontSize: 11, fontWeight: 700 }}>Dock Height</span>
+              <span style={{ color: muted, fontSize: 10, fontFamily: monoFont }}>{Math.round(dockEdgeSize)}px</span>
+            </span>
+            <input
+              aria-label="Dock Height"
+              type="range"
+              min={overlayWindowGeometry.minHeight}
+              max={900}
+              step={10}
+              value={dockEdgeSize}
+              onChange={event => onUpdateDockSettings({ edgeSize: Number(event.currentTarget.value) })}
+              style={{ width: '100%', accentColor: accent }}
+            />
+          </label>
+
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ color: text, fontSize: 11, fontWeight: 700 }}>Dock Width</span>
+              <span style={{ color: muted, fontSize: 10, fontFamily: monoFont }}>{Math.round(dockEdgeWidth)}px</span>
+            </span>
+            <input
+              aria-label="Dock Width"
+              type="range"
+              min={overlayWindowGeometry.minWidth}
+              max={1800}
+              step={10}
+              value={dockEdgeWidth}
+              onChange={event => onUpdateDockSettings({ edgeWidth: Number(event.currentTarget.value) })}
+              style={{ width: '100%', accentColor: accent }}
+            />
+          </label>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => onUpdateDockSettings({ previewEnabled: !dockPreviewEnabled })}
+              style={{
+                height: 26,
+                borderRadius: workbench.metrics.controlRadius,
+                border: `1px solid ${dockPreviewEnabled ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                background: dockPreviewEnabled
+                  ? 'var(--overlay-workbench-chrome-button-active-bg)'
+                  : 'var(--overlay-workbench-chrome-button-bg)',
+                color: dockPreviewEnabled ? text : muted,
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              Preview {dockPreviewEnabled ? 'On' : 'Off'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onUpdateDockSettings({
+                previewSplitMode: dockPreviewSplitMode === 'pane' ? 'inline' : 'pane',
+              })}
+              style={{
+                height: 26,
+                borderRadius: workbench.metrics.controlRadius,
+                border: '1px solid var(--overlay-workbench-chrome-border)',
+                background: 'var(--overlay-workbench-chrome-button-bg)',
+                color: muted,
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              {dockPreviewSplitMode === 'pane' ? 'Pane' : 'Inline'}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div style={{ display: 'flex', gap: 8 }}>
         <button
           type="button"
@@ -742,6 +955,25 @@ export function WorkbenchTopBar({
           }}
         >
           Reset
+        </button>
+        <button
+          type="button"
+          onClick={onOpenDockSettings}
+          style={{
+            height: 24,
+            padding: '0 9px',
+            borderRadius: workbench.metrics.controlRadius,
+            border: '1px solid var(--overlay-workbench-chrome-border)',
+            background: 'var(--overlay-workbench-chrome-button-bg)',
+            color: muted,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: 'var(--overlay-workbench-label-spacing)',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}
+        >
+          Dock Settings
         </button>
         <button
           type="button"
@@ -1193,23 +1425,26 @@ export function WorkbenchTopBar({
             <span>{windowMode === 'windowed' ? 'Dock' : 'App'}</span>
           </button>
         );
-      case 'overlay-anchor':
+      case 'dock-placement':
         if (windowMode !== 'overlay') {
           return null;
         }
 
-        const overlayAnchorMotion = bindTopBarButtonMotion(false, motionStepIndex);
+        const dockPlacementMotion = bindTopBarButtonMotion(
+          dockPlacementMode === 'floating',
+          motionStepIndex,
+        );
         return (
           <button
             key={controlId}
-            onClick={onToggleOverlayAnchor}
-            title={`Docked to ${overlayAnchor === 'top' ? 'top' : 'bottom'} edge`}
-            {...overlayAnchorMotion.motionDataAttributes}
-            onPointerEnter={overlayAnchorMotion.onPointerEnter}
-            onPointerLeave={overlayAnchorMotion.onPointerLeave}
-            onPointerDown={overlayAnchorMotion.onPointerDown}
-            onPointerUp={overlayAnchorMotion.onPointerUp}
-            onPointerCancel={overlayAnchorMotion.onPointerCancel}
+            onClick={handleCycleDockPlacement}
+            title={`Dock placement: ${dockPlacementLabel}`}
+            {...dockPlacementMotion.motionDataAttributes}
+            onPointerEnter={dockPlacementMotion.onPointerEnter}
+            onPointerLeave={dockPlacementMotion.onPointerLeave}
+            onPointerDown={dockPlacementMotion.onPointerDown}
+            onPointerUp={dockPlacementMotion.onPointerUp}
+            onPointerCancel={dockPlacementMotion.onPointerCancel}
             style={{
               height: 22,
               display: 'inline-flex',
@@ -1225,12 +1460,18 @@ export function WorkbenchTopBar({
               letterSpacing: 'var(--overlay-workbench-label-spacing)',
               textTransform: 'uppercase',
               cursor: 'pointer',
-              ...overlayAnchorMotion.motionStyle,
+              ...dockPlacementMotion.motionStyle,
             }}
           >
-            <span>{overlayAnchor === 'top' ? 'Top Edge' : 'Bottom Edge'}</span>
+            <span>{dockPlacementLabel}</span>
           </button>
         );
+      case 'overlay-anchor':
+        if (windowMode !== 'overlay') {
+          return null;
+        }
+
+        return renderTopBarControl('dock-placement', motionStepIndex);
       case 'mobile-share':
       case 'blur-toggle':
         return (
@@ -1475,6 +1716,8 @@ export function WorkbenchTopBar({
     activeShellFamily,
     activeShellFamilyLabel,
     alternateShellFamilyLabel,
+    dockPlacementLabel,
+    dockPlacementMode,
     borderColor,
     clearMobileMenuTimers,
     commandPaletteShortcutLabel,
@@ -1482,6 +1725,7 @@ export function WorkbenchTopBar({
     handleStartMobileShareFromMenu,
     handleStopMobileShareFromMenu,
     handleOpenMobileSettingsFromChrome,
+    handleCycleDockPlacement,
     isMobileMenuOpen,
     isMobileShareActive,
     isMobileShareBusy,
@@ -2109,7 +2353,7 @@ export function WorkbenchTopBar({
           : (isBottomBar
               ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
               : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)'),
-        overflow: isMobileMenuOpen ? 'visible' : 'hidden',
+        overflow: isMobileMenuOpen || isSurfaceControlsOpen ? 'visible' : 'hidden',
         backdropFilter: topBarBackdropFilter,
         WebkitBackdropFilter: topBarBackdropFilter,
       }}
@@ -2133,12 +2377,16 @@ export function WorkbenchTopBar({
       {topBarMainSurface}
       {topBarUsesLayoutDynamics ? null : renderControlZone(shellModeControls, 'trailing')}
 
-      {isWindowedMode ? (
+      {(isWindowedMode || (windowMode === 'overlay' && dockPlacementMode === 'floating')) ? (
         <div
           data-tauri-drag-region
           onPointerDown={handleStartWindowDrag}
-          onDoubleClick={() => { void handleToggleMaximize(); }}
-          title="Drag Window"
+          onDoubleClick={() => {
+            if (isWindowedMode) {
+              void handleToggleMaximize();
+            }
+          }}
+          title={isWindowedMode ? 'Drag Window' : 'Drag Floating Dock'}
           style={{
             width: 72,
             minWidth: 72,

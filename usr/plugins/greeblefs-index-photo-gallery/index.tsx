@@ -3,11 +3,26 @@ import { Camera, FolderOpen, Image, RefreshCcw, Search } from 'lucide-react';
 import { definePlugin } from 'overlayterm-plugin';
 
 const GALLERY_LIMIT = 240;
+const DEFAULT_GALLERY_EXTENSIONS = [
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'svg',
+  'bmp',
+  'ico',
+  'avif',
+  'tiff',
+  'tif',
+];
 
 const panelStyle = {
   display: 'grid',
   gridTemplateRows: 'auto 1fr',
-  minHeight: '100%',
+  height: '100%',
+  minHeight: 0,
+  overflow: 'hidden',
   color: 'var(--overlay-text-primary)',
   background: 'var(--overlay-surface-base)',
   fontFamily: 'var(--overlay-font-ui, sans-serif)',
@@ -85,6 +100,7 @@ const statusStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
+  flexWrap: 'wrap',
   gap: 10,
   minHeight: 24,
   color: 'var(--overlay-text-secondary)',
@@ -93,7 +109,8 @@ const statusStyle = {
 
 const gridWrapStyle = {
   minHeight: 0,
-  overflow: 'auto',
+  overflowX: 'hidden',
+  overflowY: 'auto',
   padding: 16,
 };
 
@@ -168,12 +185,92 @@ function formatCount(count) {
   return `${count.toLocaleString()} ${count === 1 ? 'picture' : 'pictures'}`;
 }
 
+function parseTextList(value, splitPattern) {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => parseTextList(entry, splitPattern));
+  }
+  if (typeof value !== 'string') {
+    return [];
+  }
+  return value
+    .split(splitPattern)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function parseRootPaths(value) {
+  return [...new Set(parseTextList(value, /[\n\r;]+/g))];
+}
+
+function parseExtensions(value) {
+  const parsed = parseTextList(value, /[\n\r,;\s]+/g)
+    .map((extension) => extension.replace(/^\.+/, '').toLowerCase())
+    .filter((extension) => /^[a-z0-9]{1,24}$/.test(extension));
+  const unique = [...new Set(parsed)];
+  return unique.length > 0 ? unique : DEFAULT_GALLERY_EXTENSIONS;
+}
+
+function readBooleanSetting(value, fallback) {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function readNumberSetting(value, fallback, min, max) {
+  const candidate = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim()
+      ? Number(value)
+      : fallback;
+  if (!Number.isFinite(candidate)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(candidate)));
+}
+
+function readGallerySettings(api) {
+  const settings = api.settings;
+  return {
+    rootPaths: parseRootPaths(settings?.getValue('rootPaths', '') ?? ''),
+    extensions: parseExtensions(
+      settings?.getValue(
+        'fileExtensions',
+        DEFAULT_GALLERY_EXTENSIONS.join(', '),
+      ) ?? DEFAULT_GALLERY_EXTENSIONS.join(', '),
+    ),
+    resultLimit: readNumberSetting(
+      settings?.getValue('resultLimit', GALLERY_LIMIT),
+      GALLERY_LIMIT,
+      24,
+      500,
+    ),
+    includeHidden: readBooleanSetting(
+      settings?.getValue('includeHidden', false),
+      false,
+    ),
+  };
+}
+
+function useGallerySettings(api) {
+  const [gallerySettings, setGallerySettings] = React.useState(() =>
+    readGallerySettings(api),
+  );
+
+  React.useEffect(() => {
+    setGallerySettings(readGallerySettings(api));
+    return api.settings?.subscribe(() => {
+      setGallerySettings(readGallerySettings(api));
+    });
+  }, [api]);
+
+  return gallerySettings;
+}
+
 function IndexPhotoGalleryPanel({ api }) {
   const [query, setQuery] = React.useState('');
   const [pictures, setPictures] = React.useState([]);
   const [status, setStatus] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(null);
+  const gallerySettings = useGallerySettings(api);
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -183,7 +280,10 @@ function IndexPhotoGalleryPanel({ api }) {
         api.index.global.init(),
         api.index.media.findPictures({
           query: query.trim() || null,
-          limit: GALLERY_LIMIT,
+          limit: gallerySettings.resultLimit,
+          rootPaths: gallerySettings.rootPaths,
+          extensions: gallerySettings.extensions,
+          includeHidden: gallerySettings.includeHidden,
         }),
       ]);
       setStatus(nextStatus);
@@ -193,7 +293,7 @@ function IndexPhotoGalleryPanel({ api }) {
     } finally {
       setLoading(false);
     }
-  }, [api, query]);
+  }, [api, gallerySettings, query]);
 
   React.useEffect(() => {
     void refresh();
@@ -202,13 +302,17 @@ function IndexPhotoGalleryPanel({ api }) {
   const startScan = React.useCallback(async () => {
     setError(null);
     try {
-      await api.index.global.startScan();
+      await api.index.global.startScan(
+        gallerySettings.rootPaths.length > 0
+          ? { driveRoots: gallerySettings.rootPaths }
+          : undefined,
+      );
       const nextStatus = await api.index.global.getStatus();
       setStatus(nextStatus);
     } catch (caught) {
       setError(String(caught));
     }
-  }, [api]);
+  }, [api, gallerySettings.rootPaths]);
 
   const openPicture = React.useCallback(async (picture) => {
     await api.host.explorer.openPath(picture.path);
@@ -222,6 +326,10 @@ function IndexPhotoGalleryPanel({ api }) {
   const indexText = status?.isIndexValid
     ? `${status.indexedItemCount.toLocaleString()} indexed items`
     : 'Index not ready';
+  const scopeText = gallerySettings.rootPaths.length > 0
+    ? `${gallerySettings.rootPaths.length} scoped ${gallerySettings.rootPaths.length === 1 ? 'folder' : 'folders'}`
+    : 'All indexed folders';
+  const typeText = `${gallerySettings.extensions.length} file types`;
 
   return (
     <section style={panelStyle}>
@@ -259,6 +367,8 @@ function IndexPhotoGalleryPanel({ api }) {
         <div style={statusStyle}>
           <span>{statusText}</span>
           <span>{indexText}</span>
+          <span>{scopeText}</span>
+          <span>{typeText}</span>
         </div>
       </header>
       <div style={gridWrapStyle}>

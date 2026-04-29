@@ -60,6 +60,19 @@ const shippedManagedDirectoryMetadata = {
     keywords: ["top bar", "chrome", "header", "shell chrome"],
     order: 25,
   },
+  dockPresentations: {
+    label: "Dock Presentations",
+    description:
+      "Author dock placement, sizing, preview policy, and dock top-bar contracts here.",
+    keywords: [
+      "dock",
+      "presentation",
+      "floating",
+      "yakuake",
+      "preview",
+    ],
+    order: 25.5,
+  },
   explorerLayouts: {
     label: "Explorer Layouts",
     description:

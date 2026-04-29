@@ -120,6 +120,23 @@ export interface OverlayThemeEffects {
   overlayShadow: string;
 }
 
+export type OverlayThemeScrollbarColorScheme = 'dark' | 'light';
+
+export interface OverlayThemeScrollbar {
+  colorScheme?: OverlayThemeScrollbarColorScheme;
+  size?: number | string;
+  fileListSize?: number | string;
+  thumb?: string;
+  thumbHover?: string;
+  track?: string;
+  corner?: string;
+  radius?: number | string;
+  thumbBorderWidth?: number | string;
+  trackBorder?: string;
+  trackShadow?: string;
+  thumbShadow?: string;
+}
+
 export type OverlayThemeSource = 'built-in' | 'custom' | 'package';
 
 export interface OverlayThemeVisualAnimation {
@@ -198,6 +215,7 @@ export interface OverlayThemeDefinition {
   layoutDynamics?: LayoutDynamicsThemeRecipe;
   palette: OverlayThemePalette;
   effects: OverlayThemeEffects;
+  scrollbar?: OverlayThemeScrollbar;
   xterm: OverlayXTermTheme;
   source?: OverlayThemeSource;
   extendsThemeId?: string;
@@ -485,6 +503,7 @@ function createTheme(
     fonts?: OverlayThemeFonts;
     compatibility?: OverlayThemeCompatibility;
     presentation?: OverlayThemePresentation;
+    scrollbar?: OverlayThemeScrollbar;
     workbench?: OverlayWorkbenchThemeRecipe;
     explorer?: OverlayExplorerThemeRecipe;
     dock?: OverlayThemeDefinition['dock'];
@@ -543,6 +562,7 @@ function createTheme(
       overlayShadow: '0 -4px 0 0 #6366f1, 0 -32px 80px rgba(0,0,0,0.98)',
       ...effects,
     },
+    scrollbar: normalizeOverlayThemeScrollbar(options?.scrollbar),
     xterm: {
       background: '#05050e',
       foreground: '#c9d1d9',
@@ -1230,6 +1250,134 @@ function createDockResolvedThemeDefinition(theme: OverlayThemeDefinition): Overl
   }, theme);
 }
 
+function normalizeThemeCssLength(value: unknown): string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `${Math.max(0, Math.round(value * 100) / 100)}px`;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return undefined;
+}
+
+function normalizeOverlayThemeScrollbar(
+  scrollbar?: OverlayThemeScrollbar,
+  fallback?: OverlayThemeScrollbar,
+): OverlayThemeScrollbar | undefined {
+  if (!scrollbar && !fallback) {
+    return undefined;
+  }
+
+  const source = scrollbar ?? {};
+  const fallbackSource = fallback ?? {};
+  const readLength = (
+    value: number | string | undefined,
+    fallbackValue: number | string | undefined,
+  ) => normalizeThemeCssLength(value) ?? normalizeThemeCssLength(fallbackValue);
+  const readString = (
+    value: string | undefined,
+    fallbackValue: string | undefined,
+  ) => {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+    if (typeof fallbackValue === 'string' && fallbackValue.trim().length > 0) {
+      return fallbackValue.trim();
+    }
+    return undefined;
+  };
+  const colorScheme =
+    source.colorScheme === 'light' || source.colorScheme === 'dark'
+      ? source.colorScheme
+      : fallbackSource.colorScheme;
+  const size = readLength(source.size, fallbackSource.size);
+  const fileListSize = readLength(source.fileListSize, fallbackSource.fileListSize);
+  const radius = readLength(source.radius, fallbackSource.radius);
+  const thumbBorderWidth = readLength(source.thumbBorderWidth, fallbackSource.thumbBorderWidth);
+  const thumb = readString(source.thumb, fallbackSource.thumb);
+  const thumbHover = readString(source.thumbHover, fallbackSource.thumbHover);
+  const track = readString(source.track, fallbackSource.track);
+  const corner = readString(source.corner, fallbackSource.corner);
+  const trackBorder = readString(source.trackBorder, fallbackSource.trackBorder);
+  const trackShadow = readString(source.trackShadow, fallbackSource.trackShadow);
+  const thumbShadow = readString(source.thumbShadow, fallbackSource.thumbShadow);
+  const normalized: OverlayThemeScrollbar = {
+    ...(colorScheme ? { colorScheme } : {}),
+    ...(size ? { size } : {}),
+    ...(fileListSize ? { fileListSize } : {}),
+    ...(thumb ? { thumb } : {}),
+    ...(thumbHover ? { thumbHover } : {}),
+    ...(track ? { track } : {}),
+    ...(corner ? { corner } : {}),
+    ...(radius ? { radius } : {}),
+    ...(thumbBorderWidth ? { thumbBorderWidth } : {}),
+    ...(trackBorder ? { trackBorder } : {}),
+    ...(trackShadow ? { trackShadow } : {}),
+    ...(thumbShadow ? { thumbShadow } : {}),
+  };
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function parseHexColorForLuminance(color: string): { red: number; green: number; blue: number } | null {
+  const trimmed = color.trim();
+  if (!trimmed.startsWith('#')) {
+    return null;
+  }
+
+  const hex = trimmed.slice(1);
+  const expanded = hex.length === 3
+    ? hex.split('').map(character => `${character}${character}`).join('')
+    : hex.length >= 6
+      ? hex.slice(0, 6)
+      : '';
+  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) {
+    return null;
+  }
+
+  return {
+    red: Number.parseInt(expanded.slice(0, 2), 16),
+    green: Number.parseInt(expanded.slice(2, 4), 16),
+    blue: Number.parseInt(expanded.slice(4, 6), 16),
+  };
+}
+
+function inferScrollbarColorScheme(theme: OverlayThemeDefinition): OverlayThemeScrollbarColorScheme {
+  if (theme.scrollbar?.colorScheme === 'light' || theme.scrollbar?.colorScheme === 'dark') {
+    return theme.scrollbar.colorScheme;
+  }
+
+  const background = parseHexColorForLuminance(theme.palette.shellBackgroundSolid)
+    ?? parseHexColorForLuminance(theme.palette.appBackground)
+    ?? parseHexColorForLuminance(theme.palette.panelBackground);
+  if (!background) {
+    return 'dark';
+  }
+
+  const luminance = (0.299 * background.red + 0.587 * background.green + 0.114 * background.blue) / 255;
+  return luminance >= 0.62 ? 'light' : 'dark';
+}
+
+function createResolvedScrollbarCssVars(theme: OverlayThemeDefinition): Record<string, string> {
+  const scrollbar = theme.scrollbar ?? {};
+  return {
+    '--overlay-color-scheme': inferScrollbarColorScheme(theme),
+    '--overlay-scrollbar-size': normalizeThemeCssLength(scrollbar.size) ?? '11px',
+    '--overlay-scrollbar-file-list-size': normalizeThemeCssLength(scrollbar.fileListSize) ?? '12px',
+    '--overlay-scrollbar-thumb': scrollbar.thumb ?? 'color-mix(in srgb, var(--overlay-border-strong) 72%, transparent)',
+    '--overlay-scrollbar-thumb-hover': scrollbar.thumbHover ?? 'color-mix(in srgb, var(--overlay-accent) 46%, var(--overlay-border-strong))',
+    '--overlay-scrollbar-track': scrollbar.track ?? 'color-mix(in srgb, var(--overlay-bg-panel-alt) 82%, black 18%)',
+    '--overlay-scrollbar-corner': scrollbar.corner ?? 'color-mix(in srgb, var(--overlay-bg-panel) 88%, black 12%)',
+    '--overlay-scrollbar-radius': normalizeThemeCssLength(scrollbar.radius) ?? '999px',
+    '--overlay-scrollbar-thumb-border-width': normalizeThemeCssLength(scrollbar.thumbBorderWidth) ?? '3px',
+    '--overlay-scrollbar-track-border': scrollbar.trackBorder ?? 'color-mix(in srgb, var(--overlay-border) 58%, transparent)',
+    '--overlay-scrollbar-track-shadow': scrollbar.trackShadow ?? 'inset 0 1px 0 color-mix(in srgb, white 7%, transparent), 0 10px 24px rgba(0,0,0,0.16)',
+    '--overlay-scrollbar-thumb-shadow': scrollbar.thumbShadow ?? 'inset 0 1px 0 color-mix(in srgb, white 12%, transparent), 0 8px 18px rgba(0,0,0,0.22)',
+  };
+}
+
 function createResolvedCssVars(args: {
   theme: OverlayThemeDefinition;
   fonts: {
@@ -1291,6 +1439,7 @@ function createResolvedCssVars(args: {
     '--overlay-motion-style': theme.presentation?.motionStyle ?? 'fluid',
     '--overlay-corner-radius': String(theme.presentation?.cornerRadius ?? 18),
     '--overlay-panel-spacing': String(theme.presentation?.panelSpacing ?? 12),
+    ...createResolvedScrollbarCssVars(theme),
     ...workbenchTheme.cssVars,
     ...(theme.cssVars ?? {}),
   };
@@ -1410,6 +1559,7 @@ export function normalizeThemeDefinition(
       ...fallback.effects,
       ...(theme.effects ?? {}),
     },
+    scrollbar: normalizeOverlayThemeScrollbar(theme.scrollbar, fallback.scrollbar),
     xterm: {
       ...fallback.xterm,
       ...(theme.xterm ?? {}),

@@ -38,9 +38,9 @@ use super::types::{
 };
 use crate::archive_ops::{self, FsArchiveEntryListingEntry};
 use crate::global_search::{
-    self, GlobalSearchIndexQueryRequest, GlobalSearchIndexSortDirection,
-    GlobalSearchIndexSortKey, GlobalSearchQueryOptions, GlobalSearchResultEntry,
-    GlobalSearchScanSettings, GlobalSearchStatus,
+    self, GlobalSearchIndexQueryRequest, GlobalSearchIndexSortDirection, GlobalSearchIndexSortKey,
+    GlobalSearchQueryOptions, GlobalSearchResultEntry, GlobalSearchScanSettings,
+    GlobalSearchStatus,
 };
 use crate::thumbnail_commands::{self, ExplorerEntryThumbnailRequest};
 
@@ -115,6 +115,8 @@ struct MobileIndexPicturesQuery {
     query: Option<String>,
     limit: Option<usize>,
     offset: Option<usize>,
+    root_paths: Option<Vec<String>>,
+    extensions: Option<Vec<String>>,
     show_hidden_files: Option<bool>,
 }
 
@@ -527,10 +529,20 @@ async fn mobile_index_pictures_handler(
         .clamp(1, MOBILE_INDEX_PICTURES_MAX_LIMIT);
     let offset = query.offset.unwrap_or(0);
     let trimmed_query = query.query.unwrap_or_default().trim().to_string();
+    let extensions = normalize_mobile_index_extensions(query.extensions.as_deref());
+    let root_paths =
+        normalize_mobile_index_root_paths(&state.share_path, query.root_paths.as_deref());
 
     if let Some(hub) = &state.file_hub {
-        let (total_count, entries) =
-            build_hub_picture_entries(hub, &trimmed_query, offset, limit, browse_policy, &snapshot);
+        let (total_count, entries) = build_hub_picture_entries(
+            hub,
+            &trimmed_query,
+            &extensions,
+            offset,
+            limit,
+            browse_policy,
+            &snapshot,
+        );
         let response = MobileIndexPicturesResponse {
             query: trimmed_query,
             share_name: share_root_label(&state.share_path),
@@ -558,11 +570,8 @@ async fn mobile_index_pictures_handler(
         include_files: true,
         include_directories: false,
         include_hidden: browse_policy.show_hidden_files,
-        extensions: MOBILE_INDEX_IMAGE_EXTENSIONS
-            .iter()
-            .map(|extension| (*extension).to_string())
-            .collect(),
-        root_paths: vec![state.share_path.to_string_lossy().into_owned()],
+        extensions,
+        root_paths,
         exact_match: false,
         typo_tolerance: true,
         min_score_threshold: None,
@@ -1353,6 +1362,7 @@ fn build_hub_search_entries(
 fn build_hub_picture_entries(
     hub: &[PathBuf],
     query: &str,
+    extensions: &[String],
     offset: usize,
     limit: usize,
     browse_policy: MobileBrowsePolicy,
@@ -1380,6 +1390,13 @@ fn build_hub_picture_entries(
         }
         let entry = build_mobile_entry_info(metadata, snapshot);
         if !matches!(entry.entry_kind, MobileEntryKind::Image) {
+            continue;
+        }
+        if !extensions.is_empty()
+            && !extensions
+                .iter()
+                .any(|extension| extension.eq_ignore_ascii_case(&entry.extension))
+        {
             continue;
         }
 
@@ -1715,6 +1732,77 @@ fn mobile_relative_path_is_hidden(relative_path: &str) -> bool {
         .split(['/', '\\'])
         .filter(|segment| !segment.is_empty())
         .any(mobile_name_is_hidden)
+}
+
+fn normalize_mobile_index_extensions(values: Option<&[String]>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for raw_value in values.unwrap_or(&[]) {
+        for raw_extension in raw_value.split([',', ';', '\n', '\r', '\t', ' ']) {
+            let extension = raw_extension.trim().trim_start_matches('.').to_lowercase();
+            if extension.is_empty()
+                || extension.len() > 24
+                || !extension
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric())
+            {
+                continue;
+            }
+            if seen.insert(extension.clone()) {
+                normalized.push(extension);
+            }
+        }
+    }
+
+    if normalized.is_empty() {
+        return MOBILE_INDEX_IMAGE_EXTENSIONS
+            .iter()
+            .map(|extension| (*extension).to_string())
+            .collect();
+    }
+
+    normalized
+}
+
+fn normalize_mobile_index_root_paths(share_root: &Path, values: Option<&[String]>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for raw_value in values.unwrap_or(&[]) {
+        for raw_root in raw_value.split(['\n', '\r']) {
+            let Some(root_path) = resolve_mobile_index_root_path(share_root, raw_root) else {
+                continue;
+            };
+            if seen.insert(root_path.clone()) {
+                normalized.push(root_path);
+            }
+        }
+    }
+
+    if normalized.is_empty() {
+        normalized.push(share_root.to_string_lossy().into_owned());
+    }
+
+    normalized
+}
+
+fn resolve_mobile_index_root_path(share_root: &Path, raw_root: &str) -> Option<String> {
+    let trimmed = raw_root.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let requested_path = PathBuf::from(trimmed);
+    let resolved = if requested_path.is_absolute() {
+        requested_path
+    } else {
+        resolve_sub_path(share_root, Some(trimmed)).ok()?
+    };
+
+    if resolved == share_root || resolved.starts_with(share_root) {
+        Some(resolved.to_string_lossy().into_owned())
+    } else {
+        None
+    }
 }
 
 #[cfg(windows)]

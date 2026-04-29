@@ -189,6 +189,16 @@ function normalizeMonacoColorValue(color: string | undefined): string | undefine
   return `#${toHexComponent(red)}${toHexComponent(green)}${toHexComponent(blue)}${alphaComponent}`;
 }
 
+function resolveMonacoLiteralColor(...candidates: Array<string | undefined>): string | undefined {
+  for (const candidate of candidates) {
+    const normalized = normalizeMonacoColorValue(candidate);
+    if (typeof normalized === "string" && /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(normalized)) {
+      return normalized;
+    }
+  }
+  return undefined;
+}
+
 function normalizeMonacoThemeColors(
   colors: Record<string, string>,
 ): Record<string, string> {
@@ -235,6 +245,15 @@ export function buildExplorerMonacoThemeDescriptor(
   appearance?: ResolvedOverlayAppearance | null,
 ): ExplorerMonacoThemeDescriptor {
   const compatibilityTheme = appearance?.theme.assets?.monacoTheme;
+  const scrollbarTheme = appearance?.theme.scrollbar;
+  const scrollbarThumbColor = resolveMonacoLiteralColor(
+    scrollbarTheme?.thumb,
+    appearance?.cssVars["--overlay-scrollbar-thumb"],
+  );
+  const scrollbarThumbHoverColor = resolveMonacoLiteralColor(
+    scrollbarTheme?.thumbHover,
+    appearance?.cssVars["--overlay-scrollbar-thumb-hover"],
+  );
   const base = compatibilityTheme?.baseTheme
     ?? (appearance && isLightAppearance(appearance) ? "vs" : "vs-dark");
   const colors = normalizeMonacoThemeColors({
@@ -252,9 +271,15 @@ export function buildExplorerMonacoThemeDescriptor(
     "editorIndentGuide.activeBackground": appearance?.theme.palette.borderStrong ?? "#46566f",
     "editorWidget.background": appearance?.theme.palette.cardBackground ?? "#141922",
     "editorWidget.border": appearance?.theme.palette.borderStrong ?? "#46566f",
-    "scrollbarSlider.background": appearance?.theme.palette.border ?? "#394456",
-    "scrollbarSlider.hoverBackground": appearance?.theme.palette.borderStrong ?? "#516178",
-    "scrollbarSlider.activeBackground": appearance?.theme.palette.accentSoft ?? "#6d86aa",
+    "scrollbarSlider.background": scrollbarThumbColor
+      ?? appearance?.theme.palette.border
+      ?? "#394456",
+    "scrollbarSlider.hoverBackground": scrollbarThumbHoverColor
+      ?? appearance?.theme.palette.borderStrong
+      ?? "#516178",
+    "scrollbarSlider.activeBackground": scrollbarThumbHoverColor
+      ?? appearance?.theme.palette.accentSoft
+      ?? "#6d86aa",
     "diffEditor.insertedTextBackground": appearance?.theme.palette.success ?? "#3fb95044",
     "diffEditor.removedTextBackground": appearance?.theme.palette.danger ?? "#ff7b7244",
     ...(compatibilityTheme?.colors ?? {}),

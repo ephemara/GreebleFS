@@ -44,14 +44,22 @@ const MARKDOWN_DOCUMENT_PREVIEW_STYLES = `
     border-radius: 10px;
     padding: 14px 16px;
     overflow: auto;
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--overlay-scrollbar-thumb) var(--overlay-scrollbar-track);
     max-width: 100%;
   }
   [data-document-preview] pre::-webkit-scrollbar {
-    width: 0;
-    height: 0;
-    display: none;
+    width: var(--overlay-scrollbar-size);
+    height: var(--overlay-scrollbar-size);
+  }
+  [data-document-preview] pre::-webkit-scrollbar-track {
+    background: var(--overlay-scrollbar-track);
+  }
+  [data-document-preview] pre::-webkit-scrollbar-thumb {
+    background: var(--overlay-scrollbar-thumb);
+    border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
+    border-radius: var(--overlay-scrollbar-radius);
+    background-clip: padding-box;
   }
   [data-document-preview] pre code {
     background: transparent;
@@ -86,6 +94,111 @@ const MARKDOWN_DOCUMENT_PREVIEW_STYLES = `
     border-radius: 10px;
   }
 `;
+
+const EMBEDDED_DOCUMENT_SCROLLBAR_FALLBACK = {
+  colorScheme: 'dark',
+  size: '11px',
+  thumb: '#5f6673',
+  thumbHover: '#7d8796',
+  track: '#111820',
+  corner: '#111820',
+  radius: '999px',
+  thumbBorderWidth: '3px',
+};
+
+function readEmbeddedDocumentScrollbarToken(name: string, fallback: string): string {
+  if (typeof window === 'undefined') {
+    return sanitizeEmbeddedDocumentCssValue(fallback);
+  }
+
+  const root = document.documentElement;
+  const value = window.getComputedStyle(root).getPropertyValue(name).trim();
+  return sanitizeEmbeddedDocumentCssValue(value || fallback);
+}
+
+function sanitizeEmbeddedDocumentCssValue(value: string): string {
+  return value
+    .replace(/[<>]/g, '')
+    .replace(/\/\*/g, '')
+    .replace(/\*\//g, '')
+    .trim();
+}
+
+function buildEmbeddedDocumentScrollbarStyles(): string {
+  const colorScheme = readEmbeddedDocumentScrollbarToken(
+    '--overlay-color-scheme',
+    EMBEDDED_DOCUMENT_SCROLLBAR_FALLBACK.colorScheme,
+  );
+  const size = readEmbeddedDocumentScrollbarToken(
+    '--overlay-scrollbar-size',
+    EMBEDDED_DOCUMENT_SCROLLBAR_FALLBACK.size,
+  );
+  const thumb = readEmbeddedDocumentScrollbarToken(
+    '--overlay-scrollbar-thumb',
+    EMBEDDED_DOCUMENT_SCROLLBAR_FALLBACK.thumb,
+  );
+  const thumbHover = readEmbeddedDocumentScrollbarToken(
+    '--overlay-scrollbar-thumb-hover',
+    EMBEDDED_DOCUMENT_SCROLLBAR_FALLBACK.thumbHover,
+  );
+  const track = readEmbeddedDocumentScrollbarToken(
+    '--overlay-scrollbar-track',
+    EMBEDDED_DOCUMENT_SCROLLBAR_FALLBACK.track,
+  );
+  const corner = readEmbeddedDocumentScrollbarToken(
+    '--overlay-scrollbar-corner',
+    EMBEDDED_DOCUMENT_SCROLLBAR_FALLBACK.corner,
+  );
+  const radius = readEmbeddedDocumentScrollbarToken(
+    '--overlay-scrollbar-radius',
+    EMBEDDED_DOCUMENT_SCROLLBAR_FALLBACK.radius,
+  );
+  const thumbBorderWidth = readEmbeddedDocumentScrollbarToken(
+    '--overlay-scrollbar-thumb-border-width',
+    EMBEDDED_DOCUMENT_SCROLLBAR_FALLBACK.thumbBorderWidth,
+  );
+
+  return `
+    <style data-greeblefs-scrollbars>
+      :root {
+        color-scheme: ${colorScheme};
+        scrollbar-width: thin;
+        scrollbar-color: ${thumb} ${track};
+      }
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: ${thumb} ${track};
+      }
+      *::-webkit-scrollbar {
+        width: ${size};
+        height: ${size};
+      }
+      *::-webkit-scrollbar-track {
+        background: ${track};
+      }
+      *::-webkit-scrollbar-thumb {
+        background: ${thumb};
+        border: ${thumbBorderWidth} solid transparent;
+        border-radius: ${radius};
+        background-clip: padding-box;
+      }
+      *:hover::-webkit-scrollbar-thumb {
+        background: ${thumbHover};
+        border: ${thumbBorderWidth} solid transparent;
+        background-clip: padding-box;
+      }
+      *::-webkit-scrollbar-button {
+        width: 0;
+        height: 0;
+        display: none;
+        background: transparent;
+      }
+      *::-webkit-scrollbar-corner {
+        background: ${corner};
+      }
+    </style>
+  `;
+}
 
 marked.setOptions({
   gfm: true,
@@ -160,6 +273,7 @@ export function renderHtmlDocumentPreviewSrcDoc(
     '<meta charset="utf-8" />',
     '<meta name="viewport" content="width=device-width, initial-scale=1" />',
     baseHref ? `<base href="${escapeHtmlAttribute(baseHref)}" />` : '',
+    buildEmbeddedDocumentScrollbarStyles(),
   ]
     .filter(Boolean)
     .join('');
@@ -215,7 +329,7 @@ export function TextDocumentPreview({
 
   return (
     <div
-      className="overlay-scrollbars-none"
+      className="overlay-native-scrollbar"
       data-testid="document-preview-root"
       data-document-preview-kind={kind}
       style={{
@@ -228,7 +342,6 @@ export function TextDocumentPreview({
     >
       <style>{MARKDOWN_DOCUMENT_PREVIEW_STYLES}</style>
       <div
-        className="hide-scrollbar"
         data-testid="document-preview-article"
         style={{
           maxWidth: 920,
