@@ -157,6 +157,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.system.hideAppInTray).toBe(true);
     expect(settings.system.showInTaskbar).toBe(true);
     expect(settings.system.gpuTierMode).toBe('auto');
+    expect(settings.system.developerTestSettingsEnabled).toBe(false);
     expect(settings.system.devTelemetryHudVisible).toBe(true);
     expect(settings.system.sourceTraceModeEnabled).toBe(false);
     expect(settings.system.developerTelemetryEnabled).toBe(false);
@@ -906,6 +907,18 @@ describe('useSettingsStore.updateSystem()', () => {
     store.updateSystem({ showInTaskbar: false });
     expect(useSettingsStore.getState().settings.system.hideAppInTray).toBe(true);
     expect(useSettingsStore.getState().settings.system.showInTaskbar).toBe(false);
+  });
+
+  it('stores the developer test settings toggle as persisted system state', () => {
+    const store = useSettingsStore.getState();
+
+    expect(store.settings.system.developerTestSettingsEnabled).toBe(false);
+
+    store.updateSystem({ developerTestSettingsEnabled: true });
+    expect(useSettingsStore.getState().settings.system.developerTestSettingsEnabled).toBe(true);
+
+    store.resetToDefaults();
+    expect(useSettingsStore.getState().settings.system.developerTestSettingsEnabled).toBe(false);
   });
 
   it('stores a normalized Linux display backend preference', () => {

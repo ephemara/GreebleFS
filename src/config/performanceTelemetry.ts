@@ -175,6 +175,21 @@ export function summarizeExplorerPerformance(
   return createMetricRecord((metricId) => summarizeMetric(metricId, snapshot.samples[metricId] ?? []));
 }
 
+export function findLatestExplorerPerformanceSample(
+  snapshot: ExplorerPerformanceSnapshot,
+  metricId: ExplorerPerformanceMetricId,
+  predicate?: (sample: ExplorerPerformanceSample) => boolean,
+): ExplorerPerformanceSample | null {
+  const metricSamples = snapshot.samples[metricId] ?? [];
+  for (let index = metricSamples.length - 1; index >= 0; index -= 1) {
+    const sample = metricSamples[index];
+    if (sample && (!predicate || predicate(sample))) {
+      return sample;
+    }
+  }
+  return null;
+}
+
 function summarizeMetric(
   metricId: ExplorerPerformanceMetricId,
   samples: ExplorerPerformanceSample[],

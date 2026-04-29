@@ -1006,9 +1006,11 @@ pub async fn explorer_semantic_find_similar(
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_root_source_signature, is_indexable_semantic_file, normalize_result_limit,
-        semantic_search_extensions, ExplorerSemanticIndexSummary,
+        compute_root_source_signature, ensure_path_within_root, is_indexable_semantic_file,
+        normalize_result_limit, semantic_force_cpu, semantic_search_extensions,
+        ExplorerSemanticIndexSummary,
     };
+    use crate::acceleration_runtime::AccelerationRoutingMode;
     use std::fs;
     use std::path::Path;
     use tempfile::tempdir;
@@ -1049,6 +1051,45 @@ mod tests {
         assert_ne!(before, after);
         assert_eq!(count_before, 1);
         assert_eq!(count_after, 2);
+    }
+
+    #[test]
+    fn semantic_search_signature_ignores_non_indexable_files() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path();
+        fs::write(root.join("first.rs"), "fn main() {}\n").expect("write first");
+        let (before, count_before) = compute_root_source_signature(root).expect("signature before");
+
+        fs::write(root.join("preview.png"), "not-indexable").expect("write ignored image");
+        let (after, count_after) = compute_root_source_signature(root).expect("signature after");
+
+        assert_eq!(before, after);
+        assert_eq!(count_before, 1);
+        assert_eq!(count_after, 1);
+    }
+
+    #[test]
+    fn semantic_search_force_cpu_only_routing_is_explicit() {
+        assert!(semantic_force_cpu(Some(AccelerationRoutingMode::CpuOnly)));
+        assert!(!semantic_force_cpu(Some(AccelerationRoutingMode::Auto)));
+        assert!(!semantic_force_cpu(None));
+    }
+
+    #[test]
+    fn semantic_search_rejects_candidates_outside_the_index_root() {
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("root");
+        fs::create_dir_all(root.join("nested")).expect("create root");
+
+        let inside = root.join("nested").join("inside.rs");
+        fs::write(&inside, "pub fn inside() {}\n").expect("write inside");
+        ensure_path_within_root(&root, &inside).expect("inside path should be allowed");
+
+        let outside = temp.path().join("outside.rs");
+        fs::write(&outside, "pub fn outside() {}\n").expect("write outside");
+        let error = ensure_path_within_root(&root, &outside)
+            .expect_err("outside path should be rejected");
+        assert!(error.contains("outside the indexed root"));
     }
 
     #[test]

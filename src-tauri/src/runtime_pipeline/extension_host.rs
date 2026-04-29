@@ -1352,4 +1352,35 @@ mod tests {
         assert_eq!(installed.manifest.id, "demo-plugin");
         assert!(installed_root.join(EXTENSION_MANIFEST_FILE_NAME).exists());
     }
+
+    #[test]
+    fn extension_host_api_schema_exposes_terminal_and_task_methods() {
+        let schema = build_extension_host_api_schema();
+        let method_ids = schema
+            .methods
+            .iter()
+            .map(|method| method.method_id.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(method_ids.contains(&"host.get_api_schema"));
+        assert!(method_ids.contains(&"tasks.run_command"));
+        assert!(method_ids.contains(&"terminal.spawn"));
+
+        let task_method = schema
+            .methods
+            .iter()
+            .find(|method| method.method_id == "tasks.run_command")
+            .expect("tasks.run_command should exist");
+        assert!(task_method
+            .required_permissions
+            .iter()
+            .any(|permission| permission.contains("taskExecution")));
+    }
+
+    #[test]
+    fn safe_relative_archive_paths_reject_traversal_and_absolute_paths() {
+        assert!(is_safe_relative_archive_path(Path::new("nested/file.txt")));
+        assert!(!is_safe_relative_archive_path(Path::new("../escape.txt")));
+        assert!(!is_safe_relative_archive_path(Path::new("/absolute/path.txt")));
+    }
 }

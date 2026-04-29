@@ -45,6 +45,30 @@ def decode_mask_data_url(data_url: str):
     return cutout_runtime.Image.open(io.BytesIO(base64.b64decode(payload))).convert("L")
 
 
+def resolve_output_artifact_path(payload: dict[str, object], *, token: str) -> Path:
+    output_artifacts = payload.get("outputArtifacts")
+    if not isinstance(output_artifacts, list):
+        raise AssertionError("Expected outputArtifacts in the cutout runtime payload.")
+
+    for artifact in output_artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        if artifact.get("token") != token:
+            continue
+        file_path = artifact.get("filePath")
+        if not isinstance(file_path, str) or not file_path.strip():
+            raise AssertionError(f"Output artifact {token!r} did not include a filePath.")
+        return Path(file_path)
+
+    raise AssertionError(f"Output artifact token {token!r} was not present in the payload.")
+
+
+def decode_mask_artifact(payload: dict[str, object]) -> object:
+    token = payload["result"]["previewMaskArtifactToken"]
+    artifact_path = resolve_output_artifact_path(payload, token=token)
+    return cutout_runtime.Image.open(artifact_path).convert("L")
+
+
 @unittest.skipIf(cutout_runtime.Image is None, "Pillow is unavailable in this environment.")
 class CutoutRuntimeWorkflowModeTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -93,7 +117,13 @@ class CutoutRuntimeWorkflowModeTest(unittest.TestCase):
         self.assertEqual(session.workflow_mode, cutout_runtime.WORKFLOW_MODE_CUTOUT)
         self.assertEqual(session.base_mask.getextrema(), (0, 0))
         self.assertEqual(session.current_mask.getextrema(), (0, 0))
-        self.assertIn("No automatic background removal", payload["diagnostics"]["message"])
+        self.assertIn(
+            "No automatic background removal",
+            payload["result"]["diagnostics"]["message"],
+        )
+        self.assertEqual(payload["result"]["promptCount"], 0)
+        open_mask = decode_mask_artifact(payload)
+        self.assertEqual(open_mask.getextrema(), (0, 0))
 
         reset_payload = cutout_runtime.image_cutout_reset_session_action(
             {"sessionId": "cutout-session"},
@@ -103,7 +133,7 @@ class CutoutRuntimeWorkflowModeTest(unittest.TestCase):
         reset_session = cutout_runtime._CUTOUT_SESSION_CACHE["cutout-session"]
         self.assertEqual(reset_session.base_mask.getextrema(), (0, 0))
         self.assertEqual(reset_session.current_mask.getextrema(), (0, 0))
-        reset_mask = decode_mask_data_url(reset_payload["previewMaskDataUrl"])
+        reset_mask = decode_mask_artifact(reset_payload)
         self.assertEqual(reset_mask.getextrema(), (0, 0))
 
     def test_remove_background_open_and_reset_restore_the_auto_mask(self) -> None:
@@ -124,7 +154,13 @@ class CutoutRuntimeWorkflowModeTest(unittest.TestCase):
         )
         self.assertGreater(session.base_mask.getextrema()[1], 0)
         self.assertGreater(session.current_mask.getextrema()[1], 0)
-        self.assertIn("Auto background removal", payload["diagnostics"]["message"])
+        self.assertIn(
+            "Auto background removal",
+            payload["result"]["diagnostics"]["message"],
+        )
+        self.assertEqual(payload["result"]["promptCount"], 0)
+        open_mask = decode_mask_artifact(payload)
+        self.assertGreater(open_mask.getextrema()[1], 0)
 
         cutout_runtime.image_cutout_apply_prompts_action(
             {
@@ -142,7 +178,7 @@ class CutoutRuntimeWorkflowModeTest(unittest.TestCase):
         self.assertEqual(reset_session.prompts, [])
         self.assertGreater(reset_session.base_mask.getextrema()[1], 0)
         self.assertGreater(reset_session.current_mask.getextrema()[1], 0)
-        reset_mask = decode_mask_data_url(reset_payload["previewMaskDataUrl"])
+        reset_mask = decode_mask_artifact(reset_payload)
         self.assertGreater(reset_mask.getextrema()[1], 0)
 
     def test_stage_export_writes_pngs_for_both_workflow_modes(self) -> None:

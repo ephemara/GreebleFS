@@ -338,6 +338,7 @@ import {
   overlayVisualControls,
 } from "../config/overlayWindow";
 import {
+  findLatestExplorerPerformanceSample,
   loadExplorerPerformanceSnapshot,
   summarizeExplorerPerformance,
 } from "../config/performanceTelemetry";
@@ -7017,6 +7018,52 @@ export function SettingsPage({
     () => loadExplorerPerformanceSnapshot(),
     [performanceTelemetryRevision],
   );
+  const semanticSearchProof = useMemo(() => {
+    const latestSemanticSearchSample = findLatestExplorerPerformanceSample(
+      performanceSnapshot,
+      "explorer_search",
+      (sample) => sample.metadata.semanticSearch === true,
+    );
+    if (!latestSemanticSearchSample) {
+      return null;
+    }
+
+    const metadata = latestSemanticSearchSample.metadata;
+    return {
+      recordedAt: latestSemanticSearchSample.recordedAt,
+      durationMs: latestSemanticSearchSample.durationMs,
+      queryKind:
+        typeof metadata.semanticQueryKind === "string"
+          ? metadata.semanticQueryKind
+          : null,
+      backendKind:
+        typeof metadata.semanticBackendKind === "string"
+          ? metadata.semanticBackendKind
+          : null,
+      providerKind:
+        typeof metadata.semanticProviderKind === "string"
+          ? metadata.semanticProviderKind
+          : null,
+      indexedFileCount:
+        typeof metadata.semanticIndexedFileCount === "number"
+          ? metadata.semanticIndexedFileCount
+          : null,
+      indexedChunkCount:
+        typeof metadata.semanticIndexedChunkCount === "number"
+          ? metadata.semanticIndexedChunkCount
+          : null,
+      staleIndex:
+        typeof metadata.semanticStaleIndex === "boolean"
+          ? metadata.semanticStaleIndex
+          : null,
+      forceCpu:
+        typeof metadata.semanticForcedCpu === "boolean"
+          ? metadata.semanticForcedCpu
+          : null,
+      resultCount:
+        typeof metadata.resultCount === "number" ? metadata.resultCount : null,
+    };
+  }, [performanceSnapshot]);
   const performanceSummary = useMemo(
     () => summarizeExplorerPerformance(performanceSnapshot),
     [performanceSnapshot],
@@ -14275,6 +14322,9 @@ export function SettingsPage({
             hideAppInTray={settings.system.hideAppInTray}
             showInTaskbar={settings.system.showInTaskbar}
             developerMode={settings.system.developerMode}
+            developerTestSettingsEnabled={
+              settings.system.developerTestSettingsEnabled
+            }
             developerTelemetryEnabled={
               settings.system.developerTelemetryEnabled
             }
@@ -14350,6 +14400,7 @@ export function SettingsPage({
             }
             accelerationRuntimeSnapshot={accelerationRuntimeSnapshot}
             accelerationWorkloadRoutes={accelerationWorkloadRoutes}
+            semanticSearchProof={semanticSearchProof}
             onSetLaunchAtStartup={setLaunchAtStartup}
             onUpdateSystem={updateSystem}
             onSetHideAppInTray={setHideAppInTray}

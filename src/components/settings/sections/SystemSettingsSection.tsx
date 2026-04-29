@@ -38,6 +38,19 @@ type TelemetrySessionStatusView = {
   current_file_path: string | null;
 };
 
+type SemanticSearchProofView = {
+  recordedAt: number;
+  durationMs: number;
+  queryKind: string | null;
+  backendKind: string | null;
+  providerKind: string | null;
+  indexedFileCount: number | null;
+  indexedChunkCount: number | null;
+  staleIndex: boolean | null;
+  forceCpu: boolean | null;
+  resultCount: number | null;
+};
+
 export function SystemSettingsSection({
   platform,
   startupSyncPending,
@@ -47,6 +60,7 @@ export function SystemSettingsSection({
   hideAppInTray,
   showInTaskbar,
   developerMode,
+  developerTestSettingsEnabled,
   developerTelemetryEnabled,
   sourceTraceModeEnabled,
   consumerDiagnosticsEnabled,
@@ -94,6 +108,7 @@ export function SystemSettingsSection({
   accelerationAutoInstallPlanAvailable,
   accelerationRuntimeSnapshot,
   accelerationWorkloadRoutes,
+  semanticSearchProof,
   onSetLaunchAtStartup,
   onUpdateSystem,
   onSetHideAppInTray,
@@ -114,6 +129,7 @@ export function SystemSettingsSection({
   hideAppInTray: boolean;
   showInTaskbar: boolean;
   developerMode: boolean;
+  developerTestSettingsEnabled: boolean;
   developerTelemetryEnabled: boolean;
   sourceTraceModeEnabled: boolean;
   consumerDiagnosticsEnabled: boolean;
@@ -165,6 +181,7 @@ export function SystemSettingsSection({
   accelerationAutoInstallPlanAvailable: boolean;
   accelerationRuntimeSnapshot: AccelerationRuntimeStatusSnapshot;
   accelerationWorkloadRoutes: AccelerationWorkloadRouteView[];
+  semanticSearchProof: SemanticSearchProofView | null;
   onSetLaunchAtStartup: (enabled: boolean) => Promise<void> | void;
   onUpdateSystem: (patch: Record<string, unknown>) => void;
   onSetHideAppInTray: (enabled: boolean) => void;
@@ -177,6 +194,17 @@ export function SystemSettingsSection({
   onTelemetryExport: () => Promise<void> | void;
   onTelemetryClear: () => Promise<void> | void;
 }) {
+  const semanticBackendLabel = [
+    semanticSearchProof?.backendKind,
+    semanticSearchProof?.providerKind,
+  ]
+    .filter(Boolean)
+    .join(' / ');
+  const semanticRecordedAtLabel =
+    semanticSearchProof == null
+      ? null
+      : new Date(semanticSearchProof.recordedAt).toISOString();
+
   return (
     <section className="space-y-4" data-settings-section="system">
       <SettingsSectionHeader
@@ -474,6 +502,11 @@ export function SystemSettingsSection({
             control={<input type="checkbox" checked={developerMode} onChange={event => onUpdateSystem({ developerMode: event.target.checked })} />}
           />
           <SettingsRow
+            title="Developer Test Settings"
+            description="Exposes release-safe proof surfaces for GPU workload telemetry and semantic-search routing so backend validation can happen without dev-only HUDs."
+            control={<input type="checkbox" checked={developerTestSettingsEnabled} onChange={event => onUpdateSystem({ developerTestSettingsEnabled: event.target.checked })} />}
+          />
+          <SettingsRow
             title="Developer Telemetry"
             description="Records frontend, bridge, native, and plugin/runtime spans into structured session traces for deep debugging in dev and installed builds."
             control={<input type="checkbox" checked={developerTelemetryEnabled} onChange={event => onUpdateSystem({ developerTelemetryEnabled: event.target.checked })} />}
@@ -493,6 +526,100 @@ export function SystemSettingsSection({
             control={<input type="checkbox" checked={consumerDiagnosticsEnabled} onChange={event => onUpdateSystem({ consumerDiagnosticsEnabled: event.target.checked })} />}
           />
         </SettingsRowGroup>
+
+        {developerTestSettingsEnabled ? (
+          <SettingsSectionBlock
+            title="Developer Test Proofs"
+            subtitle="Turns live runtime snapshots and explorer telemetry into explicit backend proof for GPU, CUDA, and semantic-search routing."
+            tone="muted"
+            badges={[
+              gpuRuntimeSnapshot.computeAvailable ? 'GPU compute visible' : 'GPU compute unavailable',
+              semanticSearchProof ? 'Semantic proof captured' : 'Semantic proof pending',
+            ]}
+          >
+            <div className="grid gap-3 md:grid-cols-2">
+              <div
+                className="rounded border px-3 py-3 text-[11px]"
+                style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
+              >
+                <div className="font-semibold uppercase tracking-[0.12em] opacity-60">GPU Workload Proof</div>
+                <p className="mt-2 opacity-70">
+                  {gpuRuntimeSnapshot.adapterName ?? 'No adapter detected'} · {gpuRuntimeSnapshot.backendName ?? 'backend n/a'} · {gpuRuntimeSnapshot.computeAvailable ? 'compute ready' : 'compute unavailable'}
+                </p>
+                {gpuRuntimeSnapshot.workloads.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {gpuRuntimeSnapshot.workloads.map(workload => (
+                      <div
+                        key={workload.workloadId}
+                        className="rounded border px-3 py-2"
+                        style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-semibold">{workload.label}</div>
+                          <div className="text-[10px] uppercase tracking-[0.12em] opacity-60">
+                            {workload.ready ? 'GPU ready' : 'Fallback active'}
+                          </div>
+                        </div>
+                        <div className="mt-2 opacity-70">
+                          exec {workload.executions} · fallback {workload.fallbackCount} · last {workload.lastExecutionPath ?? 'never'}
+                        </div>
+                        {workload.lastFallbackReason ? (
+                          <div className="mt-1 opacity-60">
+                            Last fallback: {workload.lastFallbackReason}
+                          </div>
+                        ) : null}
+                        {workload.kernelLabels.length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {workload.kernelLabels.map(label => (
+                              <ThemeBadge key={`${workload.workloadId}-${label}`} label={label} />
+                            ))}
+                          </div>
+                        ) : null}
+                        {workload.lastError ? (
+                          <div className="mt-2" style={{ color: '#fca5a5' }}>
+                            Last error: {workload.lastError}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 opacity-60">
+                    No workload executions recorded yet. Use the explorer thumbnail, preview, or audio analysis paths to capture proof on this machine.
+                  </p>
+                )}
+              </div>
+
+              <div
+                className="rounded border px-3 py-3 text-[11px]"
+                style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
+              >
+                <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Semantic Search Proof</div>
+                {semanticSearchProof ? (
+                  <>
+                    <p className="mt-2 opacity-70">
+                      {semanticBackendLabel || 'backend unknown'} · {semanticSearchProof.queryKind ?? 'query kind unknown'} · {semanticSearchProof.durationMs.toFixed(2)} ms
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <ThemeBadge label={`files ${semanticSearchProof.indexedFileCount ?? 'n/a'}`} />
+                      <ThemeBadge label={`chunks ${semanticSearchProof.indexedChunkCount ?? 'n/a'}`} />
+                      <ThemeBadge label={semanticSearchProof.staleIndex ? 'stale index' : 'fresh index'} />
+                      <ThemeBadge label={semanticSearchProof.forceCpu ? 'forced CPU' : 'accelerator allowed'} />
+                      <ThemeBadge label={`results ${semanticSearchProof.resultCount ?? 'n/a'}`} />
+                    </div>
+                    <p className="mt-3 opacity-60">
+                      Latest proof recorded {semanticRecordedAtLabel}.
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-2 opacity-60">
+                    No semantic-search proof captured yet. Run a semantic explorer search and return here to inspect backend/provider routing evidence.
+                  </p>
+                )}
+              </div>
+            </div>
+          </SettingsSectionBlock>
+        ) : null}
 
         <div className="grid gap-3 md:grid-cols-2">
           <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>

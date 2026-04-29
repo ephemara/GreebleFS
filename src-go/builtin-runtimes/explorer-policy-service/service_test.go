@@ -95,3 +95,58 @@ func TestApplyNavigationHistoryUsesExplicitHistoryIndexForBackForwardNavigation(
 		t.Fatalf("expected history[%d] to be %q, got %q", historyIdx, want, got)
 	}
 }
+
+func TestResolveOpenEntryKeepsExecutableFilesOnOpenPathEvenWithPreviewEnabled(t *testing.T) {
+	service := newExplorerPolicyService()
+	result, err := service.resolveOpenEntry(nil, explorerPolicyResolveOpenEntryRequest{
+		SessionID:      "pane-1",
+		PreviewEnabled: true,
+		CompactDock:    false,
+		ShowHidden:     false,
+		Entry: explorerPolicyFileEntry{
+			Name:      "installer.exe",
+			Path:      "/tmp/installer.exe",
+			IsDir:     false,
+			Extension: "exe",
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolveOpenEntry returned error: %v", err)
+	}
+	if got, want := result.Effect, "openPath"; got != want {
+		t.Fatalf("expected effect %q, got %q", want, got)
+	}
+}
+
+func TestBuildArchiveVirtualPathNormalizesNestedEntrySeparators(t *testing.T) {
+	virtualPath := buildArchiveVirtualPath(`C:\tmp\assets.zip`, `\nested\frames\hero.png\`)
+	if !isArchiveVirtualPath(virtualPath) {
+		t.Fatalf("expected %q to be recognized as an archive virtual path", virtualPath)
+	}
+	if got, want := normalizeArchiveEntryPath(`\nested\frames\hero.png\`), "nested/frames/hero.png"; got != want {
+		t.Fatalf("expected normalized archive entry path %q, got %q", want, got)
+	}
+}
+
+func TestNormalizePolicySessionSnapshotTrimsHistoryAndClampsIndex(t *testing.T) {
+	snapshot := normalizePolicySessionSnapshot(explorerPolicySessionSnapshot{
+		CurrentPath: " /Users/alice/Documents ",
+		History: []string{
+			" / ",
+			"",
+			" /Users ",
+			" /Users/alice/Documents ",
+		},
+		HistoryIdx: 99,
+	})
+
+	if got, want := snapshot.CurrentPath, "/Users/alice/Documents"; got != want {
+		t.Fatalf("expected current path %q, got %q", want, got)
+	}
+	if got, want := len(snapshot.History), 3; got != want {
+		t.Fatalf("expected trimmed history length %d, got %d", want, got)
+	}
+	if got, want := snapshot.HistoryIdx, 2; got != want {
+		t.Fatalf("expected clamped history index %d, got %d", want, got)
+	}
+}

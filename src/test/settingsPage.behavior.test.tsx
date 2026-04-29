@@ -10,6 +10,7 @@ import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/ap
 import { createDefaultFolderIconRules } from '../config/folderIcons';
 import { homePackSystemConfig, type LoadedExplorerHomePack } from '../config/homePackages';
 import { createBuiltInExplorerMenuPack, menuPackSystemConfig, type LoadedExplorerMenuPack } from '../config/menuPacks';
+import { recordExplorerPerformanceSample, resetExplorerPerformanceSnapshot } from '../config/performanceTelemetry';
 import { resolveThemeCatalogPackageMetadata } from '../config/themeCatalogCuration';
 import { pluginSystemConfig } from '../config/plugins';
 import { screenshotFeatureConfig } from '../config/screenshots';
@@ -30,6 +31,7 @@ import { createLoadedTopBarDefinition } from '../config/topBars';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
 import { useAccelerationRuntimeStore } from '../store/accelerationRuntimeStore';
 import { useExplorerStore } from '../store/explorerStore';
+import { useGpuRuntimeStore } from '../store/gpuRuntimeStore';
 import { resetMobileShareState, useMobileShareStore } from '../store/mobileShareStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
@@ -273,6 +275,7 @@ describe('SettingsPage behavior', () => {
     useSettingsStore.setState({ activeSection: 'overview' });
     useExplorerStore.getState().resetSession();
     resetMobileShareState();
+    resetExplorerPerformanceSnapshot(window.localStorage);
     useAccelerationRuntimeStore.setState(state => ({
       ...state,
       snapshot: {
@@ -286,6 +289,26 @@ describe('SettingsPage behavior', () => {
       },
       hydrationState: 'ready',
       hydrationError: null,
+    }));
+    useGpuRuntimeStore.setState(state => ({
+      ...state,
+      snapshot: {
+        ...state.snapshot,
+        configuredMode: 'auto',
+        effectiveTier: 'safe',
+        adapterName: null,
+        adapterType: null,
+        backendName: null,
+        softwareRenderer: false,
+        computeAvailable: false,
+        queueDepth: 0,
+        runtimeError: null,
+        workloads: [],
+      },
+      hydrationState: 'ready',
+      hydrationError: null,
+      subscriptionState: 'ready',
+      subscriptionError: null,
     }));
     useTerminalStore.setState({
       isInitialized: true,
@@ -1312,6 +1335,70 @@ describe('SettingsPage behavior', () => {
     expect(telemetryCaptureSelect.style.appearance).toBe('none');
     expect(telemetryCaptureSelect.style.colorScheme).toBe('dark');
     expect(telemetryCaptureSelect.style.backgroundImage).not.toBe('');
+  });
+
+  it('reveals developer test proof surfaces when the toggle is enabled', async () => {
+    const user = userEvent.setup();
+
+    useGpuRuntimeStore.setState(state => ({
+      ...state,
+      snapshot: {
+        ...state.snapshot,
+        effectiveTier: 'discrete',
+        adapterName: 'Quadro RTX 3000',
+        adapterType: 'discrete-gpu',
+        backendName: 'vulkan',
+        computeAvailable: true,
+        workloads: [
+          {
+            workloadId: 'imageThumbnail',
+            label: 'Image Thumbnail',
+            ready: true,
+            supportedTiers: ['integrated', 'discrete'],
+            executions: 14,
+            fallbackCount: 1,
+            cachePolicy: 'reuse-artifacts',
+            kernelLabels: ['thumbnail-rgba8', 'sampler-linear'],
+            lastExecutionPath: 'gpu-discrete',
+            lastFallbackReason: null,
+            lastError: null,
+          },
+        ],
+      },
+    }));
+    recordExplorerPerformanceSample({
+      metricId: 'explorer_search',
+      durationMs: 42,
+      recordedAt: Date.UTC(2026, 3, 28, 16, 5, 0),
+      metadata: {
+        semanticSearch: true,
+        semanticQueryKind: 'nearest-neighbor',
+        semanticBackendKind: 'sqlite-vss',
+        semanticProviderKind: 'cudaPython',
+        semanticIndexedFileCount: 128,
+        semanticIndexedChunkCount: 2048,
+        semanticStaleIndex: false,
+        semanticForcedCpu: false,
+        resultCount: 24,
+      },
+    });
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('System'));
+    expect(screen.queryByText('Developer Test Proofs')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Developer Test Settings' }));
+
+    expect(await screen.findByText('Developer Test Proofs')).toBeInTheDocument();
+    expect(screen.getByText('GPU Workload Proof')).toBeInTheDocument();
+    expect(screen.getByText('Semantic Search Proof')).toBeInTheDocument();
+    expect(screen.getAllByText(/Quadro RTX 3000/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Image Thumbnail')).toBeInTheDocument();
+    expect(screen.getAllByText(/exec 14/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/sqlite-vss \/ cudaPython/)).toBeInTheDocument();
+    expect(screen.getAllByText(/nearest-neighbor/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Latest proof recorded 2026-04-28T16:05:00.000Z/)).toBeInTheDocument();
   });
 
   it('lets the dedicated context menu composer add plugin menu items and edit them inline on the menu row', async () => {

@@ -316,6 +316,7 @@ export interface SystemSettings {
   gpuTierMode: GpuTierMode;
   accelerationRoutingMode: AccelerationRoutingMode;
   developerMode: boolean;
+  developerTestSettingsEnabled: boolean;
   devTelemetryHudVisible: boolean;
   sourceTraceModeEnabled: boolean;
   developerTelemetryEnabled: boolean;
@@ -944,6 +945,7 @@ export function normalizeSystemSettings(
     gpuTierMode: normalizeGpuTierMode(merged.gpuTierMode),
     accelerationRoutingMode: normalizeAccelerationRoutingMode(merged.accelerationRoutingMode),
     developerMode: Boolean(merged.developerMode),
+    developerTestSettingsEnabled: Boolean(merged.developerTestSettingsEnabled),
     devTelemetryHudVisible: merged.devTelemetryHudVisible !== false,
     sourceTraceModeEnabled: Boolean(merged.sourceTraceModeEnabled),
     developerTelemetryEnabled: Boolean(merged.developerTelemetryEnabled),
@@ -1368,6 +1370,7 @@ export const defaultSettings: Settings = {
     gpuTierMode: 'auto',
     accelerationRoutingMode: 'auto',
     developerMode: false,
+    developerTestSettingsEnabled: false,
     devTelemetryHudVisible: true,
     sourceTraceModeEnabled: false,
     developerTelemetryEnabled: false,

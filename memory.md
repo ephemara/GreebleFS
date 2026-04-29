@@ -1,3 +1,29 @@
+# 2026-04-29 - Runtime Validation Proofs Now Have A Shipped Settings Surface And A Cross-Stack Quick Runner
+
+- The System settings lane now has a persisted `settings.system.developerTestSettingsEnabled` toggle. When enabled, `src/components/settings/sections/SystemSettingsSection.tsx` surfaces a `Developer Test Proofs` block that reuses existing host/runtime truth instead of inventing parallel diagnostics state:
+  - GPU proof comes from `gpuRuntimeStore` workload telemetry (`executions`, `fallbackCount`, `lastExecutionPath`, `lastFallbackReason`, `lastError`, `kernelLabels`) plus the live adapter/backend snapshot.
+  - Semantic-search proof comes from explorer performance telemetry. `src/config/performanceTelemetry.ts` now exposes `findLatestExplorerPerformanceSample(...)`, and `SettingsPage.tsx` feeds the latest semantic-search sample into the System section so the UI can show backend/provider, query kind, duration, indexed counts, result count, and whether the query was forced to CPU.
+- Durable validation ownership after this pass:
+  - `scripts/validate-runtime-stack.mjs` is the new cross-stack runtime validator. `bun run test:runtime-stack:quick` is the fast proof path for this machine, while `bun run test:runtime-stack` is the broader existing-pipeline pass.
+  - Quick mode intentionally uses focused frontend proof tests (`performanceTelemetry`, `settingsStore`, and the developer-proof-surface assertion) instead of the full `settingsPage.behavior` file, because the larger file can trip a Vitest worker OOM on this Windows host.
+  - Quick mode also treats Windows Rust lib-test startup failure honestly. On this machine, `cargo test --manifest-path src-tauri/Cargo.toml ... --lib` still aborts before `main` with `STATUS_ENTRYPOINT_NOT_FOUND` / `0xc0000139`; the validator now records that as a blocked Rust harness launch and falls back to compile proof (`cargo test --no-run` for targeted quick Rust checks).
+  - `src-tauri/src/lib.rs` now swaps `python_pyo3_stub.rs` into `cfg(test)` builds so Rust lib tests no longer import `python311.dll` at process startup. Normal app builds still compile the real `python_pyo3.rs` path; keep that split unless the Windows harness issue is fully eliminated.
+- Durable test coverage added in this pass:
+  - TypeScript: `src/test/performanceTelemetry.test.ts`, `src/test/settingsStore.test.ts`, and `src/test/settingsPage.behavior.test.tsx` now cover the developer proof toggle plus semantic/GPU proof rendering.
+  - Rust: `src-tauri/src/semantic_search.rs`, `src-tauri/src/runtime_pipeline/extension_host.rs`, and `src-tauri/src/runtime_pipeline/commands.rs` now have new targeted tests for semantic force-CPU/root validation, extension-host schema/safe archive paths, and archive/context-path/working-directory/runtime-command helpers.
+  - Go: `src-go/builtin-runtimes/explorer-policy-service/service_test.go` now covers executable open policy, archive virtual path normalization, and session snapshot trimming.
+  - Python: `tests_python/test_acceleration_actions.py` now proves mocked CUDA/provider probing, and `tests_python/test_cutout_runtime.py` was updated to validate the current artifact-based cutout payload contract (`result.diagnostics` plus `outputArtifacts`) instead of stale top-level `diagnostics` / inline data URLs.
+- Validation that passed for this pass:
+  - `bun x vitest run src/test/performanceTelemetry.test.ts`
+  - `bun x vitest run src/test/settingsStore.test.ts`
+  - `bun x vitest run src/test/settingsPage.behavior.test.tsx -t "reveals developer test proof surfaces when the toggle is enabled"`
+  - `node scripts/validate-runtime-stack.mjs --quick`
+  - `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - `bun run go:test`
+  - `bun run go:check`
+  - `python -m unittest tests_python.test_acceleration_actions tests_python.test_cutout_runtime tests_python.test_reference_scrub`
+  - hardware proof on this machine: `nvidia-smi` reports `Quadro RTX 3000`, Go wasm host resolved from `C:\Program Files\Go\lib\wasm\wasm_exec.js`, TinyGo remains optional/not installed.
+
 # 2026-04-29 - UI Tokenization Moves Theme Values Into Top-Level `/usr`
 
 - UI theme authorship now treats top-level `/usr` as the canonical value store for visual and interaction tokens. First-party appearance values live under `usr/appearance-packs/<pack>/tokens/{color,typography,spacing,radius,border,shadow,opacity,blur,geometry,layer}.json`, interaction values under `usr/interaction-motion/<pack>/tokens/{motion,interaction}.json`, and semantic recipe values under `usr/theme-recipes/<recipe>/{presentation,layout,navigation,render,workbench,explorer,mobile}.json`.

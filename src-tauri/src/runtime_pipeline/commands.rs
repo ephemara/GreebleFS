@@ -2297,3 +2297,92 @@ fn managed_runtimes_root(app: &AppHandle) -> Option<PathBuf> {
     let local = app.path().app_local_data_dir().ok()?;
     Some(local.join(RUNTIMES_MANAGED_DIR_NAME))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_runtime_archive_virtual_path, build_runtime_local_breadcrumbs,
+        extension_host_repo_command_requires_write, normalize_runtime_archive_entry_path,
+        parse_runtime_archive_virtual_path, resolve_extension_context_path,
+        resolve_extension_host_working_directory, ExecutionContextSnapshot,
+    };
+
+    #[test]
+    fn runtime_archive_virtual_paths_round_trip_and_normalize_entries() {
+        let built = build_runtime_archive_virtual_path(
+            r"C:\assets\shots.zip",
+            r"\nested\frames\hero.png\",
+        );
+        let parsed = parse_runtime_archive_virtual_path(&built)
+            .expect("archive virtual path should parse");
+
+        assert_eq!(parsed.archive_path, r"C:\assets\shots.zip");
+        assert_eq!(parsed.entry_path, "nested/frames/hero.png");
+        assert_eq!(
+            normalize_runtime_archive_entry_path(r"\nested\frames\hero.png\"),
+            "nested/frames/hero.png",
+        );
+    }
+
+    #[test]
+    fn extension_context_path_prefers_explicit_requested_path() {
+        let execution_context = ExecutionContextSnapshot {
+            cwd: Some("/workspace/current".to_string()),
+            active_directory: Some("/workspace/active".to_string()),
+            ..ExecutionContextSnapshot::default()
+        };
+
+        assert_eq!(
+            resolve_extension_context_path(Some("  /override/path  "), Some(&execution_context)),
+            Some("/override/path".to_string()),
+        );
+        assert_eq!(
+            resolve_extension_context_path(None, Some(&execution_context)),
+            Some("/workspace/current".to_string()),
+        );
+    }
+
+    #[test]
+    fn extension_host_working_directory_falls_back_to_execution_context_cwd() {
+        let execution_context = ExecutionContextSnapshot {
+            cwd: Some("/workspace/runtime".to_string()),
+            ..ExecutionContextSnapshot::default()
+        };
+
+        let resolved = resolve_extension_host_working_directory(None, Some(&execution_context))
+            .expect("cwd fallback should resolve");
+        assert_eq!(resolved, "/workspace/runtime");
+
+        let error = resolve_extension_host_working_directory(None, None)
+            .expect_err("missing cwd should fail");
+        assert!(error.contains("working directory"));
+    }
+
+    #[test]
+    fn repo_command_write_detection_distinguishes_status_from_mutations() {
+        assert!(!extension_host_repo_command_requires_write(&[String::from("status")]));
+        assert!(!extension_host_repo_command_requires_write(&[
+            String::from("branch"),
+            String::from("--show-current"),
+        ]));
+        assert!(extension_host_repo_command_requires_write(&[
+            String::from("commit"),
+            String::from("-m"),
+            String::from("ship it"),
+        ]));
+        assert!(extension_host_repo_command_requires_write(&[
+            String::from("branch"),
+            String::from("feature/proof"),
+        ]));
+    }
+
+    #[test]
+    fn runtime_local_breadcrumbs_keep_windows_drive_roots_stable() {
+        let breadcrumbs = build_runtime_local_breadcrumbs(r"C:\Users\Admin\Projects");
+        let labels = breadcrumbs
+            .iter()
+            .map(|entry| entry.label.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(labels, vec![r"C:\\", "Users", "Admin", "Projects"]);
+    }
+}

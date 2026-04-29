@@ -22,6 +22,10 @@ pub mod open_with;
 pub mod pdf_commands;
 pub mod plugin_commands;
 pub mod python_commands;
+#[cfg(not(test))]
+pub mod python_pyo3;
+#[cfg(test)]
+#[path = "python_pyo3_stub.rs"]
 pub mod python_pyo3;
 pub mod python_sidecar;
 pub mod remote_storage_commands;

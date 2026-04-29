@@ -1,5 +1,6 @@
 import {
   EXPLORER_PERFORMANCE_HISTORY_KEY,
+  findLatestExplorerPerformanceSample,
   loadExplorerPerformanceSnapshot,
   recordExplorerPerformanceSample,
   resetExplorerPerformanceSnapshot,
@@ -95,6 +96,43 @@ describe('performanceTelemetry', () => {
     expect(summary.overlay_frame_time.latestMs).toBe(17.2);
     expect(summary.overlay_frame_time.latestMetadata.avgFps).toBe(58.1);
     expect(summary.overlay_frame_time.latestMetadata.openPanelCount).toBe(3);
+  });
+
+  it('finds the latest matching sample for semantic search proof surfaces', () => {
+    recordExplorerPerformanceSample({
+      metricId: 'explorer_search',
+      durationMs: 48,
+      recordedAt: 100,
+      metadata: { semanticSearch: false, resultCount: 2 },
+    }, memoryStorage);
+    recordExplorerPerformanceSample({
+      metricId: 'explorer_search',
+      durationMs: 63,
+      recordedAt: 200,
+      metadata: {
+        semanticSearch: true,
+        semanticBackendKind: 'sqlite-vss',
+        semanticProviderKind: 'cudaPython',
+      },
+    }, memoryStorage);
+    recordExplorerPerformanceSample({
+      metricId: 'explorer_search',
+      durationMs: 71,
+      recordedAt: 300,
+      metadata: { semanticSearch: false, resultCount: 5 },
+    }, memoryStorage);
+
+    const snapshot = loadExplorerPerformanceSnapshot(memoryStorage);
+    const semanticSample = findLatestExplorerPerformanceSample(
+      snapshot,
+      'explorer_search',
+      (sample) => sample.metadata.semanticSearch === true,
+    );
+
+    expect(semanticSample).not.toBeNull();
+    expect(semanticSample?.recordedAt).toBe(200);
+    expect(semanticSample?.metadata.semanticBackendKind).toBe('sqlite-vss');
+    expect(semanticSample?.metadata.semanticProviderKind).toBe('cudaPython');
   });
 
   it('resets persisted telemetry cleanly', () => {
