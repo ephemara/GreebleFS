@@ -714,6 +714,7 @@ function App() {
   const lastResolvedMonitorPointRef = useRef<{ x: number; y: number } | null>(null);
   const interactionLockUntilRef = useRef(0);
   const windowModeRef = useRef<TerminalWindowMode>('overlay');
+  const lastWindowedMaximizedRef = useRef(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [dockResizeTelemetry, setDockResizeTelemetry] = useState<{
     grid: DockTerminalGrid;
@@ -2529,36 +2530,21 @@ function App() {
         });
       }
 
-      const isMaximized = await win.isMaximized().catch(() => false);
+      const currentlyMaximized = await win.isMaximized().catch(() => false);
+      const shouldRestoreMaximizedWindow =
+        lastWindowedMaximizedRef.current || currentlyMaximized;
       isProgrammaticResizeRef.current = true;
 
-      // Atomic: set decorations + geometry in one call
-      if (isTauri() && !isMaximized) {
+      if (isTauri()) {
         unwrapTauriResult(await commands.windowApplyMode({
           decorations: false,
           alwaysOnTop: false,
           shadow: false,
           skipTaskbar: shouldSkipTaskbar,
-          x: layout.x,
-          y: layout.y,
-          width: layout.width,
-          height: layout.height,
-          minWidth: constraints.minWidth,
-          minHeight: constraints.minHeight,
-          maxWidth: constraints.maxWidth,
-          maxHeight: constraints.maxHeight,
-        }));
-      } else if (isTauri()) {
-        // Already maximized — just set the presentation flags, skip geometry
-        unwrapTauriResult(await commands.windowApplyMode({
-          decorations: false,
-          alwaysOnTop: false,
-          shadow: false,
-          skipTaskbar: shouldSkipTaskbar,
-          x: 0,
-          y: 0,
-          width: 0,
-          height: 0,
+          x: shouldRestoreMaximizedWindow ? 0 : layout.x,
+          y: shouldRestoreMaximizedWindow ? 0 : layout.y,
+          width: shouldRestoreMaximizedWindow ? 0 : layout.width,
+          height: shouldRestoreMaximizedWindow ? 0 : layout.height,
           minWidth: constraints.minWidth,
           minHeight: constraints.minHeight,
           maxWidth: constraints.maxWidth,
@@ -2568,6 +2554,13 @@ function App() {
       await win.show();
       await win.unminimize().catch(() => {});
       await win.setFocus();
+      if (shouldRestoreMaximizedWindow) {
+        await win.maximize().catch(() => {});
+        setIsWindowMaximized(true);
+      } else {
+        setIsWindowMaximized(false);
+      }
+      lastWindowedMaximizedRef.current = false;
 
       let committedOpenPhase = false;
       const commitOpenPhase = () => {
@@ -2743,6 +2736,20 @@ function App() {
       useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
     });
     const shouldCarryVisibleSession = overlayVisibleRef.current || await isCurrentHostWindowVisible();
+
+    if (isTauri() && currentWindowMode === 'windowed' && nextWindowMode === 'overlay') {
+      const currentWindow = getCurrentWindow();
+      const wasWindowedMaximized = await currentWindow.isMaximized().catch(
+        () => lastWindowedMaximizedRef.current,
+      );
+      lastWindowedMaximizedRef.current = wasWindowedMaximized;
+      if (wasWindowedMaximized) {
+        await currentWindow.unmaximize().catch(() => {});
+        setIsWindowMaximized(false);
+      } else {
+        lastWindowedMaximizedRef.current = false;
+      }
+    }
 
     updatePresentation({
       windowMode: nextWindowMode === 'overlay' ? 'dock' : 'windowed',
@@ -2993,40 +3000,32 @@ function App() {
           workArea: monitor.workArea,
           scaleFactor,
         });
-        const isMaximized = await win.isMaximized().catch(() => false);
+        const currentlyMaximized = await win.isMaximized().catch(() => false);
+        const shouldRestoreMaximizedWindow =
+          lastWindowedMaximizedRef.current || currentlyMaximized;
         isProgrammaticResizeRef.current = true;
         try {
-          if (!isMaximized) {
-            unwrapTauriResult(await commands.windowApplyMode({
-              decorations: false,
-              alwaysOnTop: false,
-              shadow: false,
-              skipTaskbar: shouldSkipTaskbar,
-              x: layout.x,
-              y: layout.y,
-              width: layout.width,
-              height: layout.height,
-              minWidth: constraints.minWidth,
-              minHeight: constraints.minHeight,
-              maxWidth: constraints.maxWidth,
-              maxHeight: constraints.maxHeight,
-            }));
+          unwrapTauriResult(await commands.windowApplyMode({
+            decorations: false,
+            alwaysOnTop: false,
+            shadow: false,
+            skipTaskbar: shouldSkipTaskbar,
+            x: shouldRestoreMaximizedWindow ? 0 : layout.x,
+            y: shouldRestoreMaximizedWindow ? 0 : layout.y,
+            width: shouldRestoreMaximizedWindow ? 0 : layout.width,
+            height: shouldRestoreMaximizedWindow ? 0 : layout.height,
+            minWidth: constraints.minWidth,
+            minHeight: constraints.minHeight,
+            maxWidth: constraints.maxWidth,
+            maxHeight: constraints.maxHeight,
+          }));
+          if (shouldRestoreMaximizedWindow) {
+            await win.maximize().catch(() => {});
+            setIsWindowMaximized(true);
           } else {
-            unwrapTauriResult(await commands.windowApplyMode({
-              decorations: false,
-              alwaysOnTop: false,
-              shadow: false,
-              skipTaskbar: shouldSkipTaskbar,
-              x: 0,
-              y: 0,
-              width: 0,
-              height: 0,
-              minWidth: constraints.minWidth,
-              minHeight: constraints.minHeight,
-              maxWidth: constraints.maxWidth,
-              maxHeight: constraints.maxHeight,
-            }));
+            setIsWindowMaximized(false);
           }
+          lastWindowedMaximizedRef.current = false;
         } finally {
           isProgrammaticResizeRef.current = false;
         }

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -92,7 +93,29 @@ vi.mock('../components/WorkbenchNavigationSurface', () => ({
 }));
 
 vi.mock('../components/WindowControls', () => ({
-  WindowControls: () => null,
+  WindowControls: ({
+    isMaximized,
+    onClose,
+    onMaximize,
+    onMinimize,
+  }: {
+    isMaximized?: boolean;
+    onClose?: () => void;
+    onMaximize?: () => void;
+    onMinimize?: () => void;
+  }) => (
+    <div data-testid="window-controls">
+      <button title="Minimize" type="button" onClick={onMinimize}>-</button>
+      <button
+        title={isMaximized ? 'Restore Down' : 'Maximize'}
+        type="button"
+        onClick={onMaximize}
+      >
+        []
+      </button>
+      <button title="Close" type="button" onClick={onClose}>x</button>
+    </div>
+  ),
 }));
 
 vi.mock('../components/animationRuntime', () => ({
@@ -236,8 +259,10 @@ vi.mock('../runtime/tauriClient', () => ({
 }));
 
 import App from '../App';
+import * as appearanceModule from '../config/appearance';
 import { LOCAL_APP_ZOOM_HOTKEY_SCOPE_ATTRIBUTE } from '../config/hotkeys';
 import { overlayVisualControls } from '../config/overlayWindow';
+import { overlayThemeRendererApiVersion } from '../components/themeRendererRuntime';
 import { commands } from '../runtime/tauriClient';
 import { resetMobileShareState } from '../store/mobileShareStore';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
@@ -313,6 +338,11 @@ describe('App dock mode behavior', () => {
     vi.mocked(WebviewWindow.getByLabel).mockImplementation(async label => (
       label === 'dock' ? dockHostWindow as never : mainHostWindow as never
     ));
+    const currentWindow = getCurrentWindow();
+    vi.mocked(currentWindow.isMaximized).mockReset();
+    vi.mocked(currentWindow.isMaximized).mockResolvedValue(false);
+    vi.mocked(currentWindow.maximize).mockClear();
+    vi.mocked(currentWindow.unmaximize).mockClear();
     vi.mocked(commands.traySetVisible).mockClear();
     vi.mocked(commands.windowApplyMode).mockClear();
     vi.mocked(commands.windowApplyWaylandDockLayout).mockClear();
@@ -683,6 +713,110 @@ describe('App dock mode behavior', () => {
     } finally {
       localZoomScope.remove();
     }
+  });
+
+  it('falls back to the host chrome in app mode when a theme renderer owns dock chrome', async () => {
+    setWindowMode('overlay');
+    const baseTheme = appearanceModule.resolveOverlayAppearance({
+      activeThemeId: defaultSettings.appearance.activeThemeId,
+      activeDockThemeId: defaultSettings.appearance.activeDockThemeId,
+      dockThemeMode: defaultSettings.appearance.dockThemeMode,
+      customThemes: defaultSettings.appearance.customThemes,
+      uiFontFamily: defaultSettings.appearance.uiFontFamily,
+      monoFontFamily: defaultSettings.appearance.monoFontFamily,
+      panelTransparency: defaultSettings.appearance.panelTransparency,
+      windowMode: 'overlay',
+    }).baseTheme;
+
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'test-windowed-chrome-renderer-theme',
+          customThemes: [
+            {
+              ...baseTheme,
+              id: 'test-windowed-chrome-renderer-theme',
+              name: 'Test Windowed Chrome Renderer Theme',
+              source: 'custom',
+              themeRenderer: {
+                id: 'test-windowed-chrome-renderer',
+                name: 'Test Windowed Chrome Renderer',
+                filePath: '/tmp/test-windowed-chrome-renderer.tsx',
+                rendererRoot: '/tmp',
+                entryModule: 'index.tsx',
+                apiVersion: overlayThemeRendererApiVersion,
+                supportsLiveSwap: true,
+                fallbackRuntime: null,
+                capabilities: {
+                  customScreens: true,
+                  wallpaperScene: false,
+                  surfaceAdapters: true,
+                },
+                surfaceOwnership: {
+                  chrome: true,
+                  launcher: true,
+                  contentFrame: true,
+                  pinnedPanels: false,
+                  wallpaper: false,
+                },
+                component: ({ host }: { host: { layout: { windowMode: string } } }) => (
+                  <div data-testid={`renderer-shell:${host.layout.windowMode}`}>renderer shell</div>
+                ),
+                error: null,
+              },
+            },
+          ],
+        },
+      },
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByTestId('renderer-shell:overlay')).toBeInTheDocument();
+
+    useSettingsStore.getState().updatePresentation({ windowMode: 'windowed' });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('renderer-shell:windowed')).toBeNull();
+      expect(screen.getByTitle('Maximize')).toBeInTheDocument();
+      expect(screen.getByTitle('Minimize')).toBeInTheDocument();
+    });
+  });
+
+  it('restores a real app window after leaving dock mode from a maximized app state', async () => {
+    const user = userEvent.setup();
+    const currentWindow = getCurrentWindow();
+    let isMaximized = false;
+    vi.mocked(currentWindow.isMaximized).mockImplementation(async () => isMaximized);
+    vi.mocked(currentWindow.maximize).mockImplementation(async () => {
+      isMaximized = true;
+    });
+    vi.mocked(currentWindow.unmaximize).mockImplementation(async () => {
+      isMaximized = false;
+    });
+
+    render(<App />);
+
+    expect(await screen.findByTestId('explorer-layout-mode')).toHaveTextContent('full');
+
+    isMaximized = true;
+    await user.click(screen.getByTitle('Switch to Dock Mode'));
+
+    await waitFor(() => {
+      expect(currentWindow.unmaximize).toHaveBeenCalled();
+      expect(useSettingsStore.getState().settings.presentation.windowMode).toBe('dock');
+    });
+
+    await user.click(screen.getByTitle('Switch to Application Mode'));
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.presentation.windowMode).toBe('windowed');
+      expect(currentWindow.maximize).toHaveBeenCalled();
+      expect(screen.getByTitle('Minimize')).toBeInTheDocument();
+      expect(screen.getByTestId('window-controls')).toBeInTheDocument();
+    });
   });
 
   it('reapplies window mode once when syncing tray and taskbar changes', async () => {
