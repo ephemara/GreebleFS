@@ -6467,16 +6467,34 @@ function App() {
   const defaultWorkbenchContent = activeShellUsesIdeWorkbench
     ? ideWorkbenchContent
     : classicWorkbenchContent;
+  const themeRendererApiSupported = !activeThemeRenderer
+    || activeThemeRenderer.apiVersion === overlayThemeRendererApiVersion;
+  const themeRendererOwnsWindowChrome = Boolean(
+    activeThemeRenderer?.surfaceOwnership.chrome,
+  );
+  const shouldBypassThemeRendererForWindowedChrome = isWindowedMode
+    && themeRendererOwnsWindowChrome;
+  const canRenderThemeRenderer = Boolean(activeThemeRenderer?.component)
+    && !activeThemeRenderer?.error
+    && !themeRendererRuntimeError
+    && themeRendererApiSupported
+    && !shouldBypassThemeRendererForWindowedChrome;
+  const themeRenderer = canRenderThemeRenderer ? activeThemeRenderer : null;
+  const effectiveThemeRendererSurfaceOwnership = themeRenderer?.surfaceOwnership ?? null;
+  const themeRendererControlsWallpaper = Boolean(
+    themeRenderer
+      && (themeRenderer.capabilities.wallpaperScene || themeRenderer.surfaceOwnership.wallpaper),
+  );
   const themeRendererDefaultWorkbenchContent = (
     <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-      {!activeThemeRendererSurfaceOwnership?.pinnedPanels && renderPinnedPanelSurface('left')}
+      {!effectiveThemeRendererSurfaceOwnership?.pinnedPanels && renderPinnedPanelSurface('left')}
 
       <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
-        {!activeThemeRendererSurfaceOwnership?.launcher && defaultNavigationSurface}
+        {!effectiveThemeRendererSurfaceOwnership?.launcher && defaultNavigationSurface}
         {activeShellUsesIdeWorkbench ? ideWorkbenchContent : classicContentSurface}
       </div>
 
-      {!activeThemeRendererSurfaceOwnership?.pinnedPanels && renderPinnedPanelSurface('right')}
+      {!effectiveThemeRendererSurfaceOwnership?.pinnedPanels && renderPinnedPanelSurface('right')}
     </div>
   );
   const chromeBar = (
@@ -6526,7 +6544,7 @@ function App() {
       onUpdateAppearanceVisuals={updateAppearance}
       windowMode={windowMode}
       overlayAnchor={overlayAnchor}
-      surfaceOwnership={activeThemeRendererSurfaceOwnership}
+      surfaceOwnership={effectiveThemeRendererSurfaceOwnership}
       commandPaletteShortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
       mobileShareShortcutLabel={formatHotkeyLabel(keybindings.mobileShareToggle)}
       toggleShortcutLabel={formatHotkeyLabel(keybindings.terminalToggle)}
@@ -6635,11 +6653,11 @@ function App() {
         />
       )}
 
-      {!zenFocusMode && !activeThemeRendererSurfaceOwnership?.chrome && (isWindowedMode || activeLayoutProfile.chrome.barPosition === 'top') && chromeBar}
+      {!zenFocusMode && !effectiveThemeRendererSurfaceOwnership?.chrome && (isWindowedMode || activeLayoutProfile.chrome.barPosition === 'top') && chromeBar}
 
       {themeRendererDefaultWorkbenchContent}
 
-      {!zenFocusMode && !activeThemeRendererSurfaceOwnership?.chrome && !isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
+      {!zenFocusMode && !effectiveThemeRendererSurfaceOwnership?.chrome && !isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
 
       {!isWindowedMode && !dockIsFloating && isTopAnchored && canResizeOverlayShell && (
         <div
@@ -6965,17 +6983,7 @@ function App() {
     wallpaperSelection,
     windowMode,
   ]);
-  const themeRendererApiSupported = !activeThemeRenderer
-    || activeThemeRenderer.apiVersion === overlayThemeRendererApiVersion;
-  const canRenderThemeRenderer = Boolean(activeThemeRenderer?.component)
-    && !activeThemeRenderer?.error
-    && !themeRendererRuntimeError
-    && themeRendererApiSupported;
-  const themeRenderer = canRenderThemeRenderer ? activeThemeRenderer : null;
-  const themeRendererControlsWallpaper = Boolean(
-    themeRenderer
-      && (themeRenderer.capabilities.wallpaperScene || themeRenderer.surfaceOwnership.wallpaper),
-  );
+
   const shellBody = canRenderThemeRenderer
     ? (
       <ThemeRendererBoundary
