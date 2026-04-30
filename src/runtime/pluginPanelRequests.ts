@@ -1,8 +1,14 @@
+import { isTauri } from '@tauri-apps/api/core';
+import { emit } from '@tauri-apps/api/event';
+
 export const PLUGIN_PANEL_OPEN_REQUEST_EVENT = 'greeblefs:plugin-panel:open-request';
+
+export type PluginPanelOpenRequestPresentation = 'docked' | 'native-window' | 'dock-window';
 
 export interface PluginPanelOpenRequest {
   panelId: string;
   payload: Record<string, string>;
+  presentation: PluginPanelOpenRequestPresentation;
   requestedAt: number;
   nonce: string;
   source: 'plugin-context-menu' | 'plugin-runtime' | 'host';
@@ -25,6 +31,7 @@ export function createPluginPanelOpenRequest(
   panelId: string,
   payload: Record<string, string>,
   source: PluginPanelOpenRequest['source'] = 'host',
+  presentation: PluginPanelOpenRequestPresentation = 'docked',
 ): PluginPanelOpenRequest | null {
   const trimmedPanelId = panelId.trim();
   if (!trimmedPanelId) {
@@ -34,6 +41,7 @@ export function createPluginPanelOpenRequest(
   return {
     panelId: trimmedPanelId,
     payload: normalizePluginPanelPayload(payload),
+    presentation,
     requestedAt: Date.now(),
     nonce: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     source,
@@ -72,6 +80,9 @@ export function readPluginPanelOpenRequest(
     return {
       panelId: trimmedPanelId,
       payload: normalizePluginPanelPayload(asStringRecord(parsed.payload)),
+      presentation: parsed.presentation === 'native-window' || parsed.presentation === 'dock-window'
+        ? parsed.presentation
+        : 'docked',
       requestedAt: typeof parsed.requestedAt === 'number' ? parsed.requestedAt : 0,
       nonce: parsed.nonce,
       source: parsed.source === 'plugin-runtime' || parsed.source === 'host'
@@ -87,12 +98,18 @@ export function requestPluginPanelOpen(
   panelId: string,
   payload: Record<string, string>,
   options?: {
+    presentation?: PluginPanelOpenRequestPresentation;
     storage?: StorageLike | null;
     source?: PluginPanelOpenRequest['source'];
     target?: Pick<Window, 'dispatchEvent'> | null;
   },
 ): PluginPanelOpenRequest | null {
-  const request = createPluginPanelOpenRequest(panelId, payload, options?.source ?? 'host');
+  const request = createPluginPanelOpenRequest(
+    panelId,
+    payload,
+    options?.source ?? 'host',
+    options?.presentation ?? 'docked',
+  );
   if (!request) {
     return null;
   }
@@ -116,8 +133,34 @@ export function requestPluginPanelOpen(
     getPluginPanelOpenRequestEvent(request.panelId),
     { detail: request },
   ));
+  if (isTauri()) {
+    void emit(PLUGIN_PANEL_OPEN_REQUEST_EVENT, request).catch(() => undefined);
+    void emit(getPluginPanelOpenRequestEvent(request.panelId), request).catch(() => undefined);
+  }
 
   return request;
+}
+
+export function requestPluginPanelWindowOpen(
+  panelId: string,
+  payload: Record<string, string> = {},
+  options?: Omit<Parameters<typeof requestPluginPanelOpen>[2], 'presentation'>,
+): PluginPanelOpenRequest | null {
+  return requestPluginPanelOpen(panelId, payload, {
+    ...options,
+    presentation: 'native-window',
+  });
+}
+
+export function requestPluginPanelWindowDock(
+  panelId: string,
+  payload: Record<string, string> = {},
+  options?: Omit<Parameters<typeof requestPluginPanelOpen>[2], 'presentation'>,
+): PluginPanelOpenRequest | null {
+  return requestPluginPanelOpen(panelId, payload, {
+    ...options,
+    presentation: 'dock-window',
+  });
 }
 
 function asStringRecord(value: unknown): Record<string, string> {

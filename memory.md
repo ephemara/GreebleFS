@@ -1,3 +1,39 @@
+# 2026-04-29 - Unified Secondary Window System And IDE Native Tear-Off
+
+- GreebleFS now has one host-owned secondary-window pipeline instead of feature-local `new WebviewWindow(...)` calls:
+  - `src-tauri/src/secondary_windows.rs` owns the typed open/focus/close/dock-back commands, policy defaults by surface kind, duplicate-window focusing, secondary-window lifecycle events, and dock-back eligibility checks.
+  - `src/runtime/secondaryWindows.ts` is the TS contract for those commands plus descriptor parsing and secondary-window event listeners. New popouts should build `createSecondaryWindowOpenRequest(...)` objects and go through this client rather than calling Tauri window constructors directly.
+- Picker/task popouts now use that shared pipeline:
+  - `src/runtime/explorerPicker.ts` delegates window-mode picker opens to the secondary-window manager while preserving the existing nonce-correlated request/result flow and embedded-picker mode.
+  - `src/runtime/fileOperationsWindow.ts` delegates the Task Center popout to the same manager while preserving the transfer event feed and theme-sync behavior.
+  - `src/main.tsx` no longer relies on hardcoded `picker` / `file-operations` labels alone; it now asks the native host for the current secondary-window descriptor and chooses `App`, `PickerWindowApp`, or `FileOperationsWindowApp` from that descriptor.
+- IDE dock state now tracks native tear-off without creating a second docking model:
+  - `src/config/ideWorkbenchLayout.ts` adds `externalizedWindowId` and `externalizedRestorePlacement` to `surfaceStateById`, with helpers to externalize, restore, clear, and collect native-window surfaces.
+  - Externalized surfaces are intentionally withheld from normalized dock stacks and floating nodes until they dock back.
+  - `focusDockSurface(...)` now keeps externalized surfaces externalized and only updates focus metadata; move/float/hide paths clear externalized state when a surface re-enters the in-window layout.
+- `src/components/WorkbenchIdeShell.tsx`, `src/panels/panelRegistry.tsx`, `src/runtime/pluginPanelRequests.ts`, `src/runtime/useFolderPluginRuntime.ts`, and `src/components/pluginRuntime.tsx` now form the shell-side tear-off contract:
+  - registered non-explorer workbench surfaces auto-allow `'native-window'` presentation in the panel registry
+  - the IDE shell exposes an `Open in native window` action for eligible surfaces and can route focus requests through an externalized-window callback
+  - plugin panel requests now carry `presentation: 'docked' | 'native-window' | 'dock-window'`
+  - packaged plugins get `api.openPanel(...)`, `api.openWindowedPanel(...)`, and `api.dockWindowedPanel(...)`
+- `src/App.tsx` is now the activation policy layer for native tear-off:
+  - it opens native workbench windows through `openWorkbenchSurfaceInNativeWindow(...)`
+  - listens for plugin panel requests from both browser events and Tauri global events
+  - restores IDE surfaces on dock-back and clears them on native close
+  - renders dedicated native workbench windows through `App({ secondaryWindowDescriptor })` with a minimal drag header and dock-back/close actions, while gating off the normal overlay/window-host routing behavior for those dedicated windows
+- Durable regression rules:
+  - Do not reintroduce direct `WebviewWindow` spawning for picker, file operations, plugin panels, or future workbench popouts. Go through `src/runtime/secondaryWindows.ts`.
+  - Do not create a parallel “native window layout” store. IDE-native tear-off must remain an externalized state over `ideWorkbenchLayout.ts`.
+  - Dock-back in v1 is only for registered workbench surfaces with stable ids. Non-panel widgets can open as secondary windows but should stay close-only until a stable restore target exists.
+- Validation for this pass:
+  - `bun run bindings:generate`
+  - `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - `node_modules\.bin\vitest.exe run src/test/explorerPicker.test.ts src/test/fileOperationsWindow.test.ts src/test/pluginPanelRequests.test.ts src/test/ideWorkbenchLayout.test.ts src/test/panelRegistry.test.tsx --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript diagnostic sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`
+  - `node_modules\.bin\vitest.exe run src/test/app.dockMode.test.tsx --reporter=dot --testTimeout=30000` still carries the same pre-existing Wayland/jsdom dock-host failures (`routes dock handoff...` and `keeps the dock host...`); the rest of that suite passed
+- Next recommended step:
+  - add App-level tests that exercise `secondaryWindowDescriptor` rendering plus plugin `native-window` / `dock-window` requests against the IDE shell so the dock-back lifecycle is covered above the pure layout-helper level.
+
 # 2026-04-29 - Unified Explorer Workflow Modal System
 
 - Explorer modal-style tools now have one explorer-scoped workflow runtime instead of separate bespoke dialog branches. `src/components/FileExplorer.tsx` owns one active workflow session per explorer instance, and the shared host UI lives in `src/components/explorer/ExplorerWorkflowModal.tsx`, `ExplorerWorkflowPrimitives.tsx`, `ExplorerBuiltInWorkflowViews.tsx`, and `explorerWorkflowContracts.ts`.

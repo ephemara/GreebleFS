@@ -1,7 +1,11 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import type { ScrollBarStyle } from '@tauri-apps/api/window';
-import { WebviewWindow, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import {
+  EXPLORER_PICKER_SECONDARY_WINDOW_ID,
+  createSecondaryWindowOpenRequest,
+  openSecondaryWindow,
+} from './secondaryWindows';
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -83,8 +87,6 @@ export const EXPLORER_PICKER_WINDOW_CONFIG = {
   title: EXPLORER_PICKER_WINDOW_BASE_TITLE,
   width: 1080,
 } as const;
-
-const SECONDARY_WINDOW_READY_TIMEOUT_MS = 4_000;
 
 export function isCurrentExplorerPickerWindow(): boolean {
   if (!isTauri()) {
@@ -184,22 +186,20 @@ export async function openExplorerPicker(
   await broadcastWindowEvent(EXPLORER_PICKER_REQUEST_EVENT, request);
 
   if (request.presentation === 'window' && isTauri()) {
-    const existingWindow = await WebviewWindow.getByLabel(EXPLORER_PICKER_WINDOW_LABEL);
-    if (existingWindow) {
-      await invokeOptionalWindowMethod(existingWindow, 'show');
-      await invokeOptionalWindowMethod(existingWindow, 'setFocus');
-    } else {
-      const pickerWindow = new WebviewWindow(EXPLORER_PICKER_WINDOW_LABEL, {
-        ...EXPLORER_PICKER_WINDOW_CONFIG,
-        focus: true,
-        scrollBarStyle: 'default' as ScrollBarStyle,
+    try {
+      await openSecondaryWindow(createSecondaryWindowOpenRequest({
+        windowId: EXPLORER_PICKER_SECONDARY_WINDOW_ID,
+        surfaceKind: 'explorer-picker',
+        presentation: 'frameless-widget',
         title: request.title || EXPLORER_PICKER_WINDOW_BASE_TITLE,
-        url: getCurrentWindowUrl(),
-      });
-      await waitForSecondaryWindowCreation(
-        pickerWindow,
-        request.title || EXPLORER_PICKER_WINDOW_BASE_TITLE,
-      );
+        payload: {
+          requestKind: request.kind,
+          requestNonce: request.nonce,
+        },
+      }));
+    } catch (error) {
+      console.error('GreebleFS: failed to open explorer picker window', error);
+      return null;
     }
   }
 
@@ -605,102 +605,6 @@ function getCurrentWindowLabel(): string | null {
     return getCurrentWebviewWindow().label;
   } catch {
     return null;
-  }
-}
-
-function getCurrentWindowUrl(): string {
-  if (typeof window === 'undefined') {
-    return '/';
-  }
-
-  const { pathname, search, hash } = window.location;
-  return `${pathname || '/'}${search}${hash}`;
-}
-
-async function waitForSecondaryWindowCreation(
-  windowHandle: object,
-  windowName: string,
-): Promise<void> {
-  const onceMethod = Reflect.get(windowHandle, 'once');
-  if (typeof onceMethod !== 'function') {
-    await invokeOptionalWindowMethod(windowHandle, 'setFocus');
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const settle = (callback: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timeoutHandle);
-      callback();
-    };
-    const timeoutHandle = setTimeout(() => {
-      settle(() => reject(new Error(`Timed out while opening ${windowName}`)));
-    }, SECONDARY_WINDOW_READY_TIMEOUT_MS);
-
-    const handleCreated = () => {
-      settle(resolve);
-      void invokeOptionalWindowMethod(windowHandle, 'setFocus');
-    };
-
-    const handleError = (error: unknown) => {
-      const message = describeSecondaryWindowCreationError(error);
-      settle(() => reject(new Error(`Failed to open ${windowName}: ${message}`)));
-    };
-
-    try {
-      void Promise.resolve(onceMethod.call(windowHandle, 'tauri://created', handleCreated))
-        .catch(handleError);
-      void Promise.resolve(onceMethod.call(windowHandle, 'tauri://error', handleError))
-        .catch(handleError);
-    } catch (error) {
-      handleError(error);
-    }
-  });
-}
-
-function describeSecondaryWindowCreationError(error: unknown): string {
-  if (typeof error === 'string') {
-    const normalized = error.trim();
-    return normalized || 'unknown window creation error';
-  }
-
-  if (error instanceof Error) {
-    const normalized = error.message.trim();
-    return normalized || 'unknown window creation error';
-  }
-
-  if (error && typeof error === 'object') {
-    const payload = Reflect.get(error, 'payload');
-    if (typeof payload === 'string' && payload.trim()) {
-      return payload.trim();
-    }
-
-    const message = Reflect.get(error, 'message');
-    if (typeof message === 'string' && message.trim()) {
-      return message.trim();
-    }
-  }
-
-  return 'unknown window creation error';
-}
-
-async function invokeOptionalWindowMethod(
-  windowHandle: object,
-  methodName: 'setFocus' | 'show',
-): Promise<void> {
-  const candidateMethod = Reflect.get(windowHandle, methodName);
-  if (typeof candidateMethod !== 'function') {
-    return;
-  }
-
-  try {
-    await candidateMethod.call(windowHandle);
-  } catch {
-    // Best-effort only. Window restoration should not surface as an unhandled rejection.
   }
 }
 

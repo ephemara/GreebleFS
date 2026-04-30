@@ -1,8 +1,7 @@
 import type { CSSProperties } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { IconThemeProvider, X } from '@/components/AppIcons';
-import { resolveOverlayAppearance } from '../config/appearance';
 import { FileExplorer } from '../components/FileExplorer';
 import {
   EXPLORER_PICKER_WINDOW_CONFIG,
@@ -12,6 +11,7 @@ import {
   type ExplorerPickerRequest,
 } from '../runtime/explorerPicker';
 import { useSettingsStore } from '../store/settingsStore';
+import { useSyncedWindowAppearance } from './useSyncedWindowAppearance';
 
 function isWindowPickerRequest(
   request: ExplorerPickerRequest | null,
@@ -21,10 +21,7 @@ function isWindowPickerRequest(
 
 export default function PickerWindowApp() {
   const appearanceSelection = useSettingsStore((state) => state.settings.appearance);
-  const resolvedAppearance = useMemo(
-    () => resolveOverlayAppearance(appearanceSelection),
-    [appearanceSelection],
-  );
+  const resolvedAppearance = useSyncedWindowAppearance(appearanceSelection);
   const [request, setRequest] = useState<ExplorerPickerRequest | null>(() => {
     const initialRequest = readExplorerPickerRequest();
     return isWindowPickerRequest(initialRequest) ? initialRequest : null;

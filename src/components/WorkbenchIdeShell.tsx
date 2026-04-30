@@ -47,6 +47,11 @@ interface WorkbenchIdeShellProps {
   surfaceSeeds: WorkbenchSurfaceLayoutSeed[];
   layoutState: IdeWorkbenchLayoutState;
   onLayoutStateChange: (nextState: IdeWorkbenchLayoutState) => void;
+  onRequestFocusSurface?: (surfaceId: string) => boolean | void;
+  onRequestExternalizeSurface?: (
+    surfaceId: string,
+    placement: DockStackPlacement,
+  ) => void;
   renderSurfaceBody: (surfaceId: string, isActive: boolean) => ReactNode;
 }
 
@@ -211,6 +216,8 @@ export function WorkbenchIdeShell({
   surfaceSeeds,
   layoutState,
   onLayoutStateChange,
+  onRequestFocusSurface,
+  onRequestExternalizeSurface,
   renderSurfaceBody,
 }: WorkbenchIdeShellProps) {
   const theme = appearance.theme;
@@ -238,8 +245,12 @@ export function WorkbenchIdeShell({
   }, [onLayoutStateChange]);
 
   const handleFocusSurface = useCallback((surfaceId: string) => {
+    if (onRequestFocusSurface?.(surfaceId) === true) {
+      return;
+    }
+
     commitLayoutState(focusDockSurface(layoutState, surfaceId, surfaceSeeds));
-  }, [commitLayoutState, layoutState, surfaceSeeds]);
+  }, [commitLayoutState, layoutState, onRequestFocusSurface, surfaceSeeds]);
 
   const handleMoveSurface = useCallback((surfaceId: string, placement: DockPlacement) => {
     if (placement === 'floating') {
@@ -287,11 +298,17 @@ export function WorkbenchIdeShell({
     stack: DockStackNode,
     activeSurfaceId: string,
   ) => {
+    const activeSurface = surfaceById.get(activeSurfaceId) ?? null;
     const actions: Array<{ key: string; title: string; placement: DockPlacement }> = [
       { key: 'right', title: 'Dock right sidebar', placement: 'right-sidebar' },
       { key: 'bottom', title: 'Dock bottom panel', placement: 'bottom-panel' },
       { key: 'float', title: 'Float panel', placement: 'floating' },
     ];
+    const canExternalizeSurface = Boolean(
+      activeSurface
+      && activeSurface.id !== explorerSurface?.id
+      && activeSurface.allowedPresentations.includes('native-window'),
+    );
 
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -323,6 +340,14 @@ export function WorkbenchIdeShell({
             {action.placement === 'floating' ? 'Float' : dockPlacementLabel(action.placement)}
           </button>
         ))}
+        {canExternalizeSurface ? (
+          <DockActionButton
+            title="Open in native window"
+            onClick={() => onRequestExternalizeSurface?.(activeSurfaceId, stack.placement)}
+          >
+            <Monitor size={12} />
+          </DockActionButton>
+        ) : null}
         <DockActionButton
           title="Hide panel"
           onClick={() => handleHideSurface(activeSurfaceId)}
@@ -331,7 +356,15 @@ export function WorkbenchIdeShell({
         </DockActionButton>
       </div>
     );
-  }, [handleHideSurface, handleMoveSurface, theme.palette.textMuted, theme.palette.textPrimary]);
+  }, [
+    explorerSurface,
+    handleHideSurface,
+    handleMoveSurface,
+    onRequestExternalizeSurface,
+    surfaceById,
+    theme.palette.textMuted,
+    theme.palette.textPrimary,
+  ]);
 
   const renderCollapsedStack = useCallback((stack: DockStackNode) => {
     const direction = stack.placement === 'bottom-panel' ? 'row' : 'column';
@@ -368,8 +401,14 @@ export function WorkbenchIdeShell({
               key={`${stack.id}:collapsed:${surface.id}`}
               type="button"
               onClick={() => {
+                const expandedLayoutState = toggleDockStackCollapsed(layoutState, stack.id);
+                if (onRequestFocusSurface?.(surface.id) === true) {
+                  commitLayoutState(expandedLayoutState);
+                  return;
+                }
+
                 commitLayoutState(focusDockSurface(
-                  toggleDockStackCollapsed(layoutState, stack.id),
+                  expandedLayoutState,
                   surface.id,
                   surfaceSeeds,
                 ));
@@ -398,6 +437,7 @@ export function WorkbenchIdeShell({
     commitLayoutState,
     handleToggleStackCollapsed,
     layoutState,
+    onRequestFocusSurface,
     surfaceById,
     surfaceSeeds,
     theme.palette.border,

@@ -14,6 +14,10 @@ import {
 import { initializeManagedContentDirectories } from "./config/appContentDirectories";
 import { FILE_OPERATIONS_WINDOW_LABEL } from "./runtime/fileOperationsWindow";
 import { EXPLORER_PICKER_WINDOW_LABEL } from "./runtime/explorerPicker";
+import {
+    getCurrentSecondaryWindowDescriptor,
+    type SecondaryWindowDescriptor,
+} from "./runtime/secondaryWindows";
 
 window.addEventListener("error", (event) => {
     reportGlobalError(
@@ -60,35 +64,65 @@ document.addEventListener('keydown', (e) => {
     }
 }, { capture: true });
 
-async function resolveBootstrapComponent() {
+async function resolveBootstrapTarget() {
     if (isTauri()) {
         try {
+            const secondaryWindowDescriptor = await getCurrentSecondaryWindowDescriptor();
+            if (secondaryWindowDescriptor) {
+                if (secondaryWindowDescriptor.surfaceKind === 'file-operations') {
+                    return {
+                        RootComponent: (await import("./windows/FileOperationsWindowApp")).default,
+                        rootProps: {},
+                    };
+                }
+                if (secondaryWindowDescriptor.surfaceKind === 'explorer-picker') {
+                    return {
+                        RootComponent: (await import("./windows/PickerWindowApp")).default,
+                        rootProps: {},
+                    };
+                }
+
+                return {
+                    RootComponent: (await import("./App")).default,
+                    rootProps: { secondaryWindowDescriptor },
+                };
+            }
+
             const windowLabel = getCurrentWebviewWindow().label;
             if (windowLabel === FILE_OPERATIONS_WINDOW_LABEL) {
-                return import("./windows/FileOperationsWindowApp");
+                return {
+                    RootComponent: (await import("./windows/FileOperationsWindowApp")).default,
+                    rootProps: {},
+                };
             }
             if (windowLabel === EXPLORER_PICKER_WINDOW_LABEL) {
-                return import("./windows/PickerWindowApp");
+                return {
+                    RootComponent: (await import("./windows/PickerWindowApp")).default,
+                    rootProps: {},
+                };
             }
         } catch {
             // Fall back to the main app bootstrap when the webview label is unavailable.
         }
     }
 
-    return import("./App");
+    return {
+        RootComponent: (await import("./App")).default,
+        rootProps: {} as { secondaryWindowDescriptor?: SecondaryWindowDescriptor | null },
+    };
 }
 
 async function bootstrapApp() {
     try {
         await initializeManagedContentDirectories();
-        const { default: RootComponent } = await resolveBootstrapComponent();
+        const { RootComponent, rootProps } = await resolveBootstrapTarget();
         document.documentElement.classList.add('overlay-scrollbar-scope');
         document.body.classList.add('overlay-scrollbar-scope');
         document.getElementById('root')?.classList.add('overlay-scrollbar-scope');
 
         ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
           <React.StrictMode>
-            <RootComponent />
+            <RootComponent {...rootProps} />
           </React.StrictMode>
         );
     } catch (error) {

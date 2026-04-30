@@ -1,6 +1,19 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const secondaryWindowMocks = vi.hoisted(() => ({
+  openSecondaryWindow: vi.fn(),
+}));
+
+vi.mock('../runtime/secondaryWindows', async () => {
+  const actual = await vi.importActual<typeof import('../runtime/secondaryWindows')>(
+    '../runtime/secondaryWindows',
+  );
+  return {
+    ...actual,
+    openSecondaryWindow: secondaryWindowMocks.openSecondaryWindow,
+  };
+});
 
 import {
   FILE_OPERATIONS_TRANSFER_COMPLETED_EVENT,
@@ -16,19 +29,26 @@ import {
   readFileOperationsTransferCompletedEvent,
   readFileOperationsWindowRequest,
 } from '../runtime/fileOperationsWindow';
+import * as secondaryWindows from '../runtime/secondaryWindows';
 import { createTestExplorerTransferResult } from './helpers/explorerEntries';
 
 describe('fileOperationsWindow', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     window.localStorage.clear();
     vi.mocked(getCurrentWindow().emit).mockClear();
-    vi.mocked(WebviewWindow.getByLabel).mockClear();
-
-    const existingWindow = await WebviewWindow.getByLabel(FILE_OPERATIONS_WINDOW_LABEL);
-    if (existingWindow) {
-      vi.mocked(existingWindow.show).mockClear();
-      vi.mocked(existingWindow.setFocus).mockClear();
-    }
+    secondaryWindowMocks.openSecondaryWindow.mockReset();
+    secondaryWindowMocks.openSecondaryWindow.mockResolvedValue({
+      dockTarget: null,
+      initialSize: null,
+      minSize: null,
+      payloadJson: null,
+      presentation: 'tool-window',
+      sourceWindowLabel: 'main',
+      surfaceKind: 'file-operations',
+      title: 'File Operations',
+      windowId: secondaryWindows.FILE_OPERATIONS_SECONDARY_WINDOW_ID,
+      windowLabel: FILE_OPERATIONS_WINDOW_LABEL,
+    });
   });
 
   it('creates normalized task window requests', () => {
@@ -43,7 +63,7 @@ describe('fileOperationsWindow', () => {
     expect(request?.nonce).toBeTruthy();
   });
 
-  it('persists task requests, dispatches browser listeners, and creates a popout window', async () => {
+  it('persists task requests, dispatches browser listeners, and delegates to the shared secondary window manager', async () => {
     const receivedRequests: Array<ReturnType<typeof readFileOperationsWindowRequest>> = [];
     const stopListening = listenToFileOperationsWindowRequests((request) => {
       receivedRequests.push(request);
@@ -65,21 +85,25 @@ describe('fileOperationsWindow', () => {
       FILE_OPERATIONS_WINDOW_REQUEST_EVENT,
       expect.objectContaining({ view: 'tasks' }),
     );
-    expect(await WebviewWindow.getByLabel(FILE_OPERATIONS_WINDOW_LABEL)).not.toBeNull();
+    expect(secondaryWindows.openSecondaryWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        windowId: secondaryWindows.FILE_OPERATIONS_SECONDARY_WINDOW_ID,
+        surfaceKind: 'file-operations',
+        presentation: 'tool-window',
+        title: 'File Operations',
+        payloadJson: JSON.stringify({ view: 'tasks' }),
+      }),
+    );
   });
 
-  it('reuses and focuses an existing popout window', async () => {
+  it('uses the stable file-operations secondary window id across repeated opens', async () => {
     await openFileOperationsWindow({ view: 'tasks' });
-    const existingWindow = await WebviewWindow.getByLabel(FILE_OPERATIONS_WINDOW_LABEL);
-    expect(existingWindow).not.toBeNull();
-
-    vi.mocked(existingWindow!.show).mockClear();
-    vi.mocked(existingWindow!.setFocus).mockClear();
-
     await openFileOperationsWindow({ view: 'tasks' });
 
-    expect(existingWindow?.show).toHaveBeenCalledTimes(1);
-    expect(existingWindow?.setFocus).toHaveBeenCalledTimes(1);
+    expect(secondaryWindows.openSecondaryWindow).toHaveBeenCalledTimes(2);
+    for (const [request] of vi.mocked(secondaryWindows.openSecondaryWindow).mock.calls) {
+      expect(request.windowId).toBe(secondaryWindows.FILE_OPERATIONS_SECONDARY_WINDOW_ID);
+    }
   });
 
   it('publishes completed transfer payloads for cross-window listeners', async () => {

@@ -2,13 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import {
   IDE_WORKBENCH_STACK_IDS,
+  clearExternalizedDockSurface,
+  collectExternalizedSurfaceIds,
   createDefaultIdeWorkbenchLayoutState,
+  externalizeDockSurface,
   findDockPlacementForSurface,
   focusDockSurface,
+  getExternalizedSurfaceWindowId,
   hideDockSurface,
+  isDockSurfaceExternalized,
   moveSurfaceToDockPlacement,
   normalizeIdeWorkbenchLayoutState,
   reorderDockSurfaceTabs,
+  restoreExternalizedDockSurface,
   resolvePrimaryIdeWorkbenchSurfaceId,
   type DockNode,
   type DockStackNode,
@@ -202,5 +208,132 @@ describe('ideWorkbenchLayout', () => {
     expect(rightStack?.tabs).toEqual(['settings', 'storage']);
     expect(rightStack?.activeSurfaceId).toBe('settings');
     expect(reorderedLayoutState.focusedSurfaceId).toBe('settings');
+  });
+
+  it('externalizes and restores native-window workbench surfaces through shared layout state', () => {
+    const layoutState = focusDockSurface(
+      createDefaultIdeWorkbenchLayoutState(testSurfaceSeeds),
+      'settings',
+      testSurfaceSeeds,
+    );
+
+    const externalizedLayoutState = externalizeDockSurface(
+      layoutState,
+      'settings',
+      'workbench-surface-settings',
+      'right-sidebar',
+    );
+
+    expect(isDockSurfaceExternalized(externalizedLayoutState, 'settings')).toBe(true);
+    expect(collectExternalizedSurfaceIds(externalizedLayoutState)).toEqual(['settings']);
+    expect(getExternalizedSurfaceWindowId(externalizedLayoutState, 'settings')).toBe('workbench-surface-settings');
+    expect(findDockPlacementForSurface(externalizedLayoutState, 'settings')).toBe(null);
+
+    const restoredLayoutState = restoreExternalizedDockSurface(
+      externalizedLayoutState,
+      'settings',
+      testSurfaceSeeds,
+    );
+
+    expect(isDockSurfaceExternalized(restoredLayoutState, 'settings')).toBe(false);
+    expect(findDockPlacementForSurface(restoredLayoutState, 'settings')).toBe('right-sidebar');
+    expect(restoredLayoutState.focusedSurfaceId).toBe('settings');
+  });
+
+  it('keeps externalized surfaces out of normalized dock stacks and can clear them back to hidden', () => {
+    const normalizedLayoutState = normalizeIdeWorkbenchLayoutState({
+      version: 2,
+      focusedSurfaceId: 'settings',
+      rootDockNode: {
+        type: 'split',
+        id: 'ide:root',
+        orientation: 'horizontal',
+        sizes: [0.24, 1, 0.3],
+        children: [
+          {
+            type: 'stack',
+            id: 'ide:left-sidebar',
+            placement: 'left-sidebar',
+            presentation: 'stack',
+            tabs: [],
+            activeSurfaceId: null,
+            collapsed: true,
+          },
+          {
+            type: 'split',
+            id: 'ide:center-column',
+            orientation: 'vertical',
+            sizes: [1, 0.3],
+            children: [
+              {
+                type: 'stack',
+                id: 'ide:center',
+                placement: 'center',
+                presentation: 'stack',
+                tabs: ['explorer'],
+                activeSurfaceId: 'explorer',
+                collapsed: false,
+              },
+              {
+                type: 'stack',
+                id: 'ide:bottom-panel',
+                placement: 'bottom-panel',
+                presentation: 'stack',
+                tabs: ['terminal'],
+                activeSurfaceId: 'terminal',
+                collapsed: true,
+              },
+            ],
+          },
+          {
+            type: 'stack',
+            id: 'ide:right-sidebar',
+            placement: 'right-sidebar',
+            presentation: 'stack',
+            tabs: ['settings'],
+            activeSurfaceId: 'settings',
+            collapsed: false,
+          },
+        ],
+      },
+      surfaceStateById: {
+        explorer: {
+          hidden: false,
+          collapsed: false,
+          externalizedWindowId: null,
+          externalizedRestorePlacement: null,
+        },
+        storage: {
+          hidden: true,
+          collapsed: false,
+          externalizedWindowId: null,
+          externalizedRestorePlacement: null,
+        },
+        terminal: {
+          hidden: false,
+          collapsed: true,
+          externalizedWindowId: null,
+          externalizedRestorePlacement: null,
+        },
+        settings: {
+          hidden: false,
+          collapsed: false,
+          externalizedWindowId: 'workbench-surface-settings',
+          externalizedRestorePlacement: 'right-sidebar',
+        },
+      },
+    }, testSurfaceSeeds);
+
+    expect(findDockPlacementForSurface(normalizedLayoutState, 'settings')).toBe(null);
+    expect(collectExternalizedSurfaceIds(normalizedLayoutState)).toEqual(['settings']);
+
+    const clearedLayoutState = clearExternalizedDockSurface(
+      normalizedLayoutState,
+      'settings',
+      { hidden: true },
+    );
+
+    expect(clearedLayoutState.surfaceStateById.settings.hidden).toBe(true);
+    expect(isDockSurfaceExternalized(clearedLayoutState, 'settings')).toBe(false);
   });
 });

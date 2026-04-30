@@ -117,6 +117,8 @@ export interface PanelCatalogEntry {
   example?: boolean;
 }
 
+export type WorkbenchSurfacePresentation = 'stack' | 'floating' | 'native-window';
+
 export interface OverlayPanelDefinition {
   id: string;
   label: string;
@@ -135,7 +137,7 @@ export interface OverlayPanelDefinition {
     defaultPlacement: DockStackPlacement;
     defaultOrder: number;
     defaultVisibility: WorkbenchSurfaceDefaultVisibility;
-    allowedPresentations?: Array<'stack' | 'floating'>;
+    allowedPresentations?: WorkbenchSurfacePresentation[];
     railShortcut?: boolean;
     ideRole?: WorkbenchSurfaceIdeRole;
     ideNavigationTier?: 'primary' | 'secondary';
@@ -154,7 +156,7 @@ export interface WorkbenchSurfaceDefinition {
   defaultDockPlacement: DockStackPlacement;
   defaultOrder: number;
   defaultVisibility: WorkbenchSurfaceDefaultVisibility;
-  allowedPresentations: Array<'stack' | 'floating'>;
+  allowedPresentations: WorkbenchSurfacePresentation[];
   railShortcut: boolean;
   ideRole: WorkbenchSurfaceIdeRole;
   ideNavigationTier: 'primary' | 'secondary';
@@ -164,6 +166,8 @@ export interface WorkbenchSurfaceDefinition {
 function createWorkbenchSurfaceDefinition(
   panel: OverlayPanelDefinition,
 ): WorkbenchSurfaceDefinition {
+  const allowedPresentations = panel.dock?.allowedPresentations ?? ['stack', 'floating'];
+  const supportsNativeWindow = panel.id !== 'explorer' && !allowedPresentations.includes('native-window');
   return {
     id: panel.id,
     label: panel.label,
@@ -175,7 +179,9 @@ function createWorkbenchSurfaceDefinition(
     defaultDockPlacement: panel.dock?.defaultPlacement ?? 'right-sidebar',
     defaultOrder: panel.dock?.defaultOrder ?? panel.navigation?.itemOrder ?? 999,
     defaultVisibility: panel.dock?.defaultVisibility ?? 'hidden',
-    allowedPresentations: panel.dock?.allowedPresentations ?? ['stack', 'floating'],
+    allowedPresentations: supportsNativeWindow
+      ? [...allowedPresentations, 'native-window']
+      : allowedPresentations,
     railShortcut: panel.dock?.railShortcut ?? true,
     ideRole: panel.dock?.ideRole ?? 'utility',
     ideNavigationTier: panel.dock?.ideNavigationTier ?? 'secondary',

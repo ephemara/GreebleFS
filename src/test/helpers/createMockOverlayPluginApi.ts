@@ -363,6 +363,9 @@ export function createMockOverlayPluginApi(
     },
     refreshPlugins: async () => undefined,
     openPluginsFolder: async () => undefined,
+    openPanel: () => undefined,
+    openWindowedPanel: () => undefined,
+    dockWindowedPanel: () => undefined,
     runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
     bindExecutionContext: (nextExecutionContext) =>
       createMockOverlayPluginApi(nextExecutionContext),

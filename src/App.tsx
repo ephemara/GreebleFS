@@ -192,12 +192,19 @@ import {
 } from './config/layoutProfiles';
 import {
   areIdeWorkbenchLayoutStatesEqual,
+  type DockStackPlacement,
+  clearExternalizedDockSurface,
+  collectExternalizedSurfaceIds,
   collectSurfaceIdsFromDockNode,
   collectSurfaceIdsFromFloatingNodes,
+  externalizeDockSurface,
   focusDockSurface,
+  getExternalizedSurfaceWindowId,
   hideDockSurface,
+  isDockSurfaceExternalized,
   normalizeIdeWorkbenchLayoutState,
   reorderDockSurfaceTabs,
+  restoreExternalizedDockSurface,
   resolvePrimaryIdeWorkbenchSurfaceId,
   type IdeWorkbenchLayoutState,
 } from './config/ideWorkbenchLayout';
@@ -259,6 +266,18 @@ import {
   publishExplorerPickerResult,
   type ExplorerPickerRequest,
 } from './runtime/explorerPicker';
+import {
+  closeSecondaryWindow,
+  createSecondaryWindowOpenRequest,
+  createWorkbenchSurfaceSecondaryWindowId,
+  dockBackSecondaryWindow,
+  focusSecondaryWindow,
+  listenToSecondaryWindowClosed,
+  listenToSecondaryWindowDockBack,
+  openSecondaryWindow,
+  parseSecondaryWindowPayload,
+  type SecondaryWindowDescriptor,
+} from './runtime/secondaryWindows';
 import {
   listExplorerDir,
   openExplorerPath,
@@ -671,8 +690,29 @@ function LayoutPinnedPanelSlot({
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
-function App() {
-  const [overlayPhase, setOverlayPhase] = useState<OverlayAnimationPhase>('closed');
+interface AppProps {
+  secondaryWindowDescriptor?: SecondaryWindowDescriptor | null;
+}
+
+function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
+  const dedicatedSecondaryWindowPayload = parseSecondaryWindowPayload<{ panelId?: string }>(
+    secondaryWindowDescriptor?.payloadJson,
+  );
+  const dedicatedSecondarySurfaceId = secondaryWindowDescriptor?.dockTarget?.surfaceId
+    ?? dedicatedSecondaryWindowPayload?.panelId
+    ?? null;
+  const isDedicatedSecondaryWindowHost = secondaryWindowDescriptor != null;
+  const isDedicatedSecondaryWorkbenchSurfaceWindow = Boolean(
+    isDedicatedSecondaryWindowHost
+    && dedicatedSecondarySurfaceId
+    && (
+      secondaryWindowDescriptor.surfaceKind === 'panel'
+      || secondaryWindowDescriptor.surfaceKind === 'plugin-panel'
+    ),
+  );
+  const [overlayPhase, setOverlayPhase] = useState<OverlayAnimationPhase>(
+    isDedicatedSecondaryWindowHost ? 'open' : 'closed',
+  );
   const [overlayAnimationDirection, setOverlayAnimationDirection] = useState<OverlayAnimationDirection>('enter');
   const [activeAnimation, setActiveAnimation] = useState<LoadedOverlayAnimation | null>(null);
   const [authoredAnimations, setAuthoredAnimations] = useState<LoadedOverlayAnimation[]>([]);
@@ -700,7 +740,9 @@ function App() {
   const [waylandDockHostStatusResolved, setWaylandDockHostStatusResolved] = useState(runtimePlatform !== 'linux');
   const builtInAnimations = useMemo(() => createBuiltInOverlayAnimations(), []);
   const builtInShaders = useMemo(() => createBuiltInOverlayShaders(), []);
-  const overlayPhaseRef = useRef<OverlayAnimationPhase>('closed');
+  const overlayPhaseRef = useRef<OverlayAnimationPhase>(
+    isDedicatedSecondaryWindowHost ? 'open' : 'closed',
+  );
   overlayPhaseRef.current = overlayPhase;
   const overlayVisibleRef = useRef(false);
   const animationTimerRef = useRef<number | null>(null);
@@ -1261,8 +1303,12 @@ function App() {
   const theme = resolvedAppearance.theme;
   const accent = theme.palette.accent;
   useEffect(() => {
+    if (isDedicatedSecondaryWindowHost) {
+      return;
+    }
+
     publishSyncedOverlayAppearanceSnapshot(resolvedAppearance);
-  }, [resolvedAppearance]);
+  }, [isDedicatedSecondaryWindowHost, resolvedAppearance]);
   const resolvedSoundPack = useMemo(() => {
     const requestedSoundPackId = audioSettings.activeSoundPackId
       ?? resolvedAppearance.baseTheme.defaultSoundPackId
@@ -1721,7 +1767,6 @@ function App() {
     ? 'inspector'
     : null;
   const activeThemeRenderer = resolvedAppearance.baseTheme.themeRenderer ?? null;
-  const activeThemeRendererSurfaceOwnership = activeThemeRenderer?.surfaceOwnership;
   const renderRuntime = useMemo(
     () => resolveWorkbenchRenderRuntime(
       resolvedAppearance,
@@ -2077,6 +2122,10 @@ function App() {
   }, []);
 
   const hideCurrentHostImmediately = useCallback(async () => {
+    if (isDedicatedSecondaryWindowHost) {
+      return;
+    }
+
     clearAnimationClock();
     dragHideRestoreRef.current = false;
     setIsCommandPaletteOpen(false);
@@ -2484,6 +2533,10 @@ function App() {
   ]);
 
   const showWindowedPanel = useCallback(async () => {
+    if (isDedicatedSecondaryWindowHost) {
+      return;
+    }
+
     clearAnimationClock();
     try {
       const win = getCurrentWindow();
@@ -2606,6 +2659,10 @@ function App() {
   ]);
 
   const showCurrentPresentation = useCallback(async () => {
+    if (isDedicatedSecondaryWindowHost) {
+      return;
+    }
+
     if (shouldWaitForWindowRouting) {
       return;
     }
@@ -2632,6 +2689,7 @@ function App() {
     await positionAndShow();
   }, [
     currentWindowHostRole,
+    isDedicatedSecondaryWindowHost,
     positionAndShow,
     shouldWaitForWindowRouting,
     showWindowedPanel,
@@ -2650,31 +2708,6 @@ function App() {
       void showCurrentPresentation();
     }
   }, [setPanelOpenStateDirectly, showCurrentPresentation]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-
-    const handlePluginPanelOpenRequest = (event: Event) => {
-      const request = (event as CustomEvent<PluginPanelOpenRequest>).detail;
-      const panelId = request?.panelId?.trim();
-      if (!panelId) {
-        return;
-      }
-
-      activatePanelRef.current(panelId);
-      if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
-        void showCurrentPresentation();
-      }
-    };
-
-    window.addEventListener(PLUGIN_PANEL_OPEN_REQUEST_EVENT, handlePluginPanelOpenRequest);
-    return () => {
-      window.removeEventListener(PLUGIN_PANEL_OPEN_REQUEST_EVENT, handlePluginPanelOpenRequest);
-    };
-  }, [showCurrentPresentation]);
-
 
   const handleSetDockPlacementMode = useCallback((placementMode: DockPlacementMode) => {
     isFreefloatingRef.current = placementMode === 'floating';
@@ -2813,12 +2846,15 @@ function App() {
   useGlobalShortcut(
     keybindings.terminalToggle,
     handleToggleOverlayRequest,
-    isTauri() && shouldRegisterGlobalShortcutForHost(currentWindowHostRole),
+    isTauri()
+      && !isDedicatedSecondaryWindowHost
+      && shouldRegisterGlobalShortcutForHost(currentWindowHostRole),
   );
 
   useEffect(() => {
     if (
       !isTauri()
+      || isDedicatedSecondaryWindowHost
       || !desktopPresentationSynced
       || startupPresentationShownRef.current
       || shouldWaitForWindowRouting
@@ -2862,6 +2898,7 @@ function App() {
     };
   }, [
     desktopPresentationSynced,
+    isDedicatedSecondaryWindowHost,
     isCurrentHostWindowVisible,
     isCurrentWindowPresentationHost,
     shouldWaitForWindowRouting,
@@ -2872,6 +2909,7 @@ function App() {
   useEffect(() => {
     if (
       !isTauri()
+      || isDedicatedSecondaryWindowHost
       || !usesSeparateWaylandDockHost
       || shouldWaitForWindowRouting
       || isCurrentWindowPresentationHost
@@ -2893,6 +2931,7 @@ function App() {
     };
   }, [
     hideCurrentHostImmediately,
+    isDedicatedSecondaryWindowHost,
     isCurrentHostWindowVisible,
     isCurrentWindowPresentationHost,
     shouldWaitForWindowRouting,
@@ -2900,7 +2939,7 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (!isTauri()) {
+    if (!isTauri() || isDedicatedSecondaryWindowHost) {
       return;
     }
 
@@ -2945,6 +2984,7 @@ function App() {
   }, [
     currentWindowHostRole,
     handleToggleOverlayRequest,
+    isDedicatedSecondaryWindowHost,
     positionAndShow,
     showWindowedPanel,
     usesSeparateWaylandDockHost,
@@ -2976,7 +3016,12 @@ function App() {
   }, [positionAndShow]);
 
   const syncWindowPresentation = useCallback(async (mode: TerminalWindowMode) => {
-    if (!isTauri() || !overlayVisibleRef.current || !isCurrentWindowPresentationHost) {
+    if (
+      !isTauri()
+      || isDedicatedSecondaryWindowHost
+      || !overlayVisibleRef.current
+      || !isCurrentWindowPresentationHost
+    ) {
       return;
     }
 
@@ -3058,6 +3103,7 @@ function App() {
   }, [
     applyDockOverlayLayout,
     currentHostUsesWaylandDockLayerShell,
+    isDedicatedSecondaryWindowHost,
     isCurrentWindowPresentationHost,
     shouldSkipTaskbar,
   ]);
@@ -3105,15 +3151,20 @@ function App() {
   }, [restoreOverlayAfterDrag]);
 
   useEffect(() => {
-    if (!isTauri() || !overlayVisibleRef.current || !isCurrentWindowPresentationHost) {
+    if (
+      !isTauri()
+      || isDedicatedSecondaryWindowHost
+      || !overlayVisibleRef.current
+      || !isCurrentWindowPresentationHost
+    ) {
       return;
     }
 
     void syncWindowPresentation(windowMode);
-  }, [isCurrentWindowPresentationHost, syncWindowPresentation, windowMode]);
+  }, [isCurrentWindowPresentationHost, isDedicatedSecondaryWindowHost, syncWindowPresentation, windowMode]);
 
   useEffect(() => {
-    if (!isTauri()) {
+    if (!isTauri() || isDedicatedSecondaryWindowHost) {
       return;
     }
 
@@ -3135,7 +3186,7 @@ function App() {
     return () => {
       unlisten?.();
     };
-  }, [hideOverlay]);
+  }, [hideOverlay, isDedicatedSecondaryWindowHost]);
 
   useEffect(() => {
     if (!overlayVisibleRef.current || windowMode !== 'overlay' || !isCurrentWindowPresentationHost) {
@@ -4590,8 +4641,8 @@ function App() {
         pluginExplorerActions,
         pluginContextMenuItems,
         pluginPreviewLanes,
-        pluginWorkflows,
         pluginSettingsSlots,
+        pluginWorkflows,
         pluginsLoading: folderPluginsLoading,
         pluginsError: folderPluginsError,
         onRefreshPlugins: refreshFolderPlugins,
@@ -4864,6 +4915,10 @@ function App() {
     () => buildWorkbenchSurfaceDefinitions(panelDefinitions),
     [panelDefinitions],
   );
+  const workbenchSurfaceLookup = useMemo(
+    () => new Map(workbenchSurfaceDefinitions.map(surface => [surface.id, surface] as const)),
+    [workbenchSurfaceDefinitions],
+  );
   const workbenchSurfaceSeeds = useMemo(
     () => workbenchSurfaceDefinitions.map(surface => ({
       id: surface.id,
@@ -4890,8 +4945,13 @@ function App() {
     () => uniquePanelIds([
       ...collectSurfaceIdsFromDockNode(resolvedIdeWorkbenchLayoutState.rootDockNode),
       ...collectSurfaceIdsFromFloatingNodes(resolvedIdeWorkbenchLayoutState.floatingNodes),
+      ...collectExternalizedSurfaceIds(resolvedIdeWorkbenchLayoutState),
     ]),
-    [resolvedIdeWorkbenchLayoutState.floatingNodes, resolvedIdeWorkbenchLayoutState.rootDockNode],
+    [
+      resolvedIdeWorkbenchLayoutState,
+      resolvedIdeWorkbenchLayoutState.floatingNodes,
+      resolvedIdeWorkbenchLayoutState.rootDockNode,
+    ],
   );
   const ideWorkbenchActiveSurfaceId = useMemo(
     () => resolvePrimaryIdeWorkbenchSurfaceId(resolvedIdeWorkbenchLayoutState),
@@ -4935,6 +4995,211 @@ function App() {
       },
     });
   }, [activeLayoutProfile.id, workbenchSurfaceSeeds]);
+  const focusExternalizedWorkbenchSurface = useCallback((surfaceId: string): boolean => {
+    if (!activeShellUsesIdeWorkbench || !isDockSurfaceExternalized(resolvedIdeWorkbenchLayoutState, surfaceId)) {
+      return false;
+    }
+
+    const windowId = getExternalizedSurfaceWindowId(resolvedIdeWorkbenchLayoutState, surfaceId);
+    if (!windowId) {
+      return false;
+    }
+
+    updateActiveIdeWorkbenchLayoutState(
+      focusDockSurface(resolvedIdeWorkbenchLayoutState, surfaceId, workbenchSurfaceSeeds),
+    );
+    void focusSecondaryWindow(windowId).catch(() => undefined);
+    return true;
+  }, [
+    activeShellUsesIdeWorkbench,
+    resolvedIdeWorkbenchLayoutState,
+    updateActiveIdeWorkbenchLayoutState,
+    workbenchSurfaceSeeds,
+  ]);
+  const closeExternalizedWorkbenchSurface = useCallback((surfaceId: string): boolean => {
+    const windowId = getExternalizedSurfaceWindowId(resolvedIdeWorkbenchLayoutState, surfaceId);
+    if (!windowId) {
+      return false;
+    }
+
+    void closeSecondaryWindow(windowId).catch(() => undefined);
+    return true;
+  }, [resolvedIdeWorkbenchLayoutState]);
+  const openWorkbenchSurfaceInNativeWindow = useCallback(async (
+    surfaceId: string,
+    options?: {
+      restorePlacement?: DockStackPlacement | null;
+    },
+  ) => {
+    const surface = workbenchSurfaceLookup.get(surfaceId);
+    const allowedPresentations = surface?.allowedPresentations ?? [];
+    if (
+      !surface
+      || surface.id === 'explorer'
+      || !allowedPresentations.includes('native-window')
+    ) {
+      return;
+    }
+
+    const windowId = createWorkbenchSurfaceSecondaryWindowId(surfaceId);
+    const surfaceKind = surface.kind === 'folder-plugin' ? 'plugin-panel' : 'panel';
+    const restorePlacement = options?.restorePlacement
+      ?? surface.defaultDockPlacement;
+    const request = createSecondaryWindowOpenRequest({
+      windowId,
+      surfaceKind,
+      presentation: 'tool-window',
+      title: surface.label,
+      dockTarget: activeShellUsesIdeWorkbench
+        ? {
+          surfaceId,
+          restorePlacement,
+        }
+        : null,
+      payload: {
+        panelId: surfaceId,
+      },
+    });
+    const nextIdeLayoutState = activeShellUsesIdeWorkbench
+      ? externalizeDockSurface(
+        resolvedIdeWorkbenchLayoutState,
+        surfaceId,
+        windowId,
+        restorePlacement,
+      )
+      : null;
+
+    if (nextIdeLayoutState) {
+      updateActiveIdeWorkbenchLayoutState(nextIdeLayoutState);
+    }
+
+    try {
+      await openSecondaryWindow(request);
+    } catch (error) {
+      if (nextIdeLayoutState) {
+        updateActiveIdeWorkbenchLayoutState(
+          restoreExternalizedDockSurface(nextIdeLayoutState, surfaceId, workbenchSurfaceSeeds),
+        );
+      }
+      console.error('GreebleFS: failed to open native workbench surface window', error);
+    }
+  }, [
+    activeShellUsesIdeWorkbench,
+    resolvedIdeWorkbenchLayoutState,
+    updateActiveIdeWorkbenchLayoutState,
+    workbenchSurfaceLookup,
+    workbenchSurfaceSeeds,
+  ]);
+  useEffect(() => {
+    if (typeof window === 'undefined' || isDedicatedSecondaryWindowHost) {
+      return undefined;
+    }
+
+    const handlePluginPanelOpenRequest = (request: PluginPanelOpenRequest | null | undefined) => {
+      const panelId = request?.panelId?.trim();
+      if (!panelId) {
+        return;
+      }
+
+      if (request?.presentation === 'native-window') {
+        void openWorkbenchSurfaceInNativeWindow(panelId);
+      } else if (request?.presentation === 'dock-window') {
+        const windowId = getExternalizedSurfaceWindowId(resolvedIdeWorkbenchLayoutState, panelId);
+        if (activeShellUsesIdeWorkbench && windowId) {
+          void dockBackSecondaryWindow(windowId).catch(() => undefined);
+        } else {
+          activatePanelRef.current(panelId);
+        }
+      } else if (activeShellUsesIdeWorkbench && isDockSurfaceExternalized(resolvedIdeWorkbenchLayoutState, panelId)) {
+        updateActiveIdeWorkbenchLayoutState(
+          restoreExternalizedDockSurface(
+            resolvedIdeWorkbenchLayoutState,
+            panelId,
+            workbenchSurfaceSeeds,
+          ),
+        );
+      } else {
+        activatePanelRef.current(panelId);
+      }
+
+      if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
+        void showCurrentPresentation();
+      }
+    };
+
+    const handleBrowserPluginPanelOpenRequest = (event: Event) => {
+      handlePluginPanelOpenRequest((event as CustomEvent<PluginPanelOpenRequest>).detail);
+    };
+
+    window.addEventListener(PLUGIN_PANEL_OPEN_REQUEST_EVENT, handleBrowserPluginPanelOpenRequest);
+
+    let tauriUnlisten: (() => void) | null = null;
+    if (isTauri()) {
+      void listen<PluginPanelOpenRequest>(PLUGIN_PANEL_OPEN_REQUEST_EVENT, (event) => {
+        handlePluginPanelOpenRequest(event.payload);
+      }).then((unlistenPluginPanelRequest) => {
+        tauriUnlisten = unlistenPluginPanelRequest;
+      }).catch(() => undefined);
+    }
+
+    return () => {
+      window.removeEventListener(PLUGIN_PANEL_OPEN_REQUEST_EVENT, handleBrowserPluginPanelOpenRequest);
+      tauriUnlisten?.();
+    };
+  }, [
+    activeShellUsesIdeWorkbench,
+    isDedicatedSecondaryWindowHost,
+    openWorkbenchSurfaceInNativeWindow,
+    resolvedIdeWorkbenchLayoutState,
+    showCurrentPresentation,
+    updateActiveIdeWorkbenchLayoutState,
+    workbenchSurfaceSeeds,
+  ]);
+  useEffect(() => {
+    if (isDedicatedSecondaryWindowHost) {
+      return undefined;
+    }
+
+    const stopListeningForDockBack = listenToSecondaryWindowDockBack((detail) => {
+      const surfaceId = detail.dockTarget.surfaceId.trim();
+      if (!surfaceId || !activeShellUsesIdeWorkbench) {
+        return;
+      }
+
+      updateActiveIdeWorkbenchLayoutState(
+        restoreExternalizedDockSurface(
+          resolvedIdeWorkbenchLayoutState,
+          surfaceId,
+          workbenchSurfaceSeeds,
+        ),
+      );
+    });
+    const stopListeningForClosed = listenToSecondaryWindowClosed((detail) => {
+      const surfaceId = detail.descriptor.dockTarget?.surfaceId?.trim();
+      if (!surfaceId || !activeShellUsesIdeWorkbench) {
+        return;
+      }
+
+      updateActiveIdeWorkbenchLayoutState(
+        clearExternalizedDockSurface(
+          resolvedIdeWorkbenchLayoutState,
+          surfaceId,
+          { hidden: true },
+        ),
+      );
+    });
+
+    return () => {
+      stopListeningForDockBack();
+      stopListeningForClosed();
+    };
+  }, [
+    activeShellUsesIdeWorkbench,
+    isDedicatedSecondaryWindowHost,
+    resolvedIdeWorkbenchLayoutState,
+    updateActiveIdeWorkbenchLayoutState,
+    workbenchSurfaceSeeds,
+  ]);
   useEffect(() => {
     if (!activeShellUsesIdeWorkbench) {
       return;
@@ -5263,6 +5528,10 @@ function App() {
     }
 
     if (activeShellUsesIdeWorkbench) {
+      if (focusExternalizedWorkbenchSurface(panelId)) {
+        return;
+      }
+
       updateActiveIdeWorkbenchLayoutState(
         focusDockSurface(resolvedIdeWorkbenchLayoutState, panelId, workbenchSurfaceSeeds),
       );
@@ -5272,6 +5541,7 @@ function App() {
     handleSelectPanel(panelId);
   }, [
     activeShellUsesIdeWorkbench,
+    focusExternalizedWorkbenchSurface,
     handleSelectPanel,
     resolvedIdeWorkbenchLayoutState,
     updateActiveIdeWorkbenchLayoutState,
@@ -5279,6 +5549,10 @@ function App() {
   ]);
   const handleTopBarTogglePanel = useCallback((panelId: string) => {
     if (activeShellUsesIdeWorkbench) {
+      if (focusExternalizedWorkbenchSurface(panelId)) {
+        return;
+      }
+
       if (panelId === 'explorer') {
         updateActiveIdeWorkbenchLayoutState(
           focusDockSurface(resolvedIdeWorkbenchLayoutState, panelId, workbenchSurfaceSeeds),
@@ -5298,6 +5572,7 @@ function App() {
   }, [
     activeShellUsesIdeWorkbench,
     activeWorkbenchOpenPanelIds,
+    focusExternalizedWorkbenchSurface,
     handleTogglePanel,
     resolvedIdeWorkbenchLayoutState,
     updateActiveIdeWorkbenchLayoutState,
@@ -5305,6 +5580,10 @@ function App() {
   ]);
   const handleTopBarClosePanel = useCallback((panelId: string) => {
     if (activeShellUsesIdeWorkbench) {
+      if (closeExternalizedWorkbenchSurface(panelId)) {
+        return;
+      }
+
       if (panelId === 'explorer') {
         updateActiveIdeWorkbenchLayoutState(
           focusDockSurface(resolvedIdeWorkbenchLayoutState, panelId, workbenchSurfaceSeeds),
@@ -5319,6 +5598,7 @@ function App() {
     handleClosePanel(panelId);
   }, [
     activeShellUsesIdeWorkbench,
+    closeExternalizedWorkbenchSurface,
     handleClosePanel,
     resolvedIdeWorkbenchLayoutState,
     updateActiveIdeWorkbenchLayoutState,
@@ -5348,6 +5628,10 @@ function App() {
   const handleOpenSettingsSection = useCallback((section: SettingsSectionKey) => {
     setActiveSection(section);
     if (activeShellUsesIdeWorkbench) {
+      if (focusExternalizedWorkbenchSurface('settings')) {
+        return;
+      }
+
       updateActiveIdeWorkbenchLayoutState(
         focusDockSurface(resolvedIdeWorkbenchLayoutState, 'settings', workbenchSurfaceSeeds),
       );
@@ -5361,6 +5645,7 @@ function App() {
     }));
   }, [
     activeShellUsesIdeWorkbench,
+    focusExternalizedWorkbenchSurface,
     resolvedIdeWorkbenchLayoutState,
     setActiveSection,
     updateActiveIdeWorkbenchLayoutState,
@@ -5379,6 +5664,10 @@ function App() {
     }
 
     if (activeShellUsesIdeWorkbench) {
+      if (focusExternalizedWorkbenchSurface(panelId)) {
+        return;
+      }
+
       updateActiveIdeWorkbenchLayoutState(
         focusDockSurface(resolvedIdeWorkbenchLayoutState, panelId, workbenchSurfaceSeeds),
       );
@@ -5396,6 +5685,7 @@ function App() {
     }));
   }, [
     activeShellUsesIdeWorkbench,
+    focusExternalizedWorkbenchSurface,
     panelLookup,
     pinnedPanelIds,
     resolvedIdeWorkbenchLayoutState,
@@ -6398,6 +6688,135 @@ function App() {
 
     return renderPanelBody(panel, isActive);
   }, [panelLookup, renderPanelBody]);
+  const dedicatedSecondaryWorkbenchSurfaceDefinition = dedicatedSecondarySurfaceId
+    ? workbenchSurfaceLookup.get(dedicatedSecondarySurfaceId) ?? null
+    : null;
+  const dedicatedSecondaryWindowContent = isDedicatedSecondaryWorkbenchSurfaceWindow
+    && dedicatedSecondarySurfaceId
+    ? (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100%',
+          height: '100%',
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+          background: theme.palette.panelBackground,
+          color: theme.palette.textPrimary,
+          fontFamily: resolvedAppearance.fonts.ui,
+        }}
+      >
+        <div
+          onPointerDown={(event) => {
+            if (
+              event.button !== 0
+              || (event.target instanceof HTMLElement
+                && event.target.closest('[data-gfs-window-drag-exclusion="true"]'))
+            ) {
+              return;
+            }
+
+            void getCurrentWindow().startDragging().catch(() => undefined);
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            minHeight: 38,
+            padding: '0 12px',
+            borderBottom: `1px solid ${theme.palette.border}`,
+            background: theme.palette.appBackgroundAlt,
+            userSelect: 'none',
+          }}
+        >
+          <div
+            style={{
+              minWidth: 0,
+              fontSize: 12,
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {secondaryWindowDescriptor?.title
+              ?? dedicatedSecondaryWorkbenchSurfaceDefinition?.label
+              ?? 'Workbench Surface'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {secondaryWindowDescriptor?.dockTarget ? (
+              <button
+                type="button"
+                data-gfs-window-drag-exclusion="true"
+                onClick={() => {
+                  void dockBackSecondaryWindow(secondaryWindowDescriptor.windowId).catch(() => undefined);
+                }}
+                style={{
+                  height: 24,
+                  padding: '0 10px',
+                  borderRadius: 999,
+                  border: `1px solid ${theme.palette.border}`,
+                  background: 'var(--overlay-workbench-chrome-button-bg)',
+                  color: theme.palette.textPrimary,
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              >
+                Dock Back
+              </button>
+            ) : null}
+            <button
+              type="button"
+              data-gfs-window-drag-exclusion="true"
+              onClick={() => {
+                if (!secondaryWindowDescriptor) {
+                  return;
+                }
+
+                void closeSecondaryWindow(secondaryWindowDescriptor.windowId).catch(() => undefined);
+              }}
+              style={{
+                height: 24,
+                padding: '0 10px',
+                borderRadius: 999,
+                border: `1px solid ${theme.palette.border}`,
+                background: 'var(--overlay-workbench-chrome-button-bg)',
+                color: theme.palette.textPrimary,
+                cursor: 'pointer',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+        <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+          {dedicatedSecondaryWorkbenchSurfaceDefinition
+            ? renderWorkbenchIdeSurfaceBody(dedicatedSecondarySurfaceId, true)
+            : (
+              <div
+                style={{
+                  display: 'grid',
+                  placeItems: 'center',
+                  width: '100%',
+                  height: '100%',
+                  padding: 24,
+                  color: theme.palette.textMuted,
+                  fontSize: 12,
+                }}
+              >
+                This native workbench surface is no longer available.
+              </div>
+            )}
+        </div>
+      </div>
+    )
+    : null;
   const renderPinnedPanelSurface = useCallback((side: 'left' | 'right') => {
     const entries = side === 'left' ? leftPinnedPanels : rightPinnedPanels;
     return entries.map(({ panel, definition }) => (
@@ -6459,6 +6878,12 @@ function App() {
       surfaceSeeds={workbenchSurfaceSeeds}
       layoutState={resolvedIdeWorkbenchLayoutState}
       onLayoutStateChange={updateActiveIdeWorkbenchLayoutState}
+      onRequestFocusSurface={focusExternalizedWorkbenchSurface}
+      onRequestExternalizeSurface={(surfaceId, placement) => {
+        void openWorkbenchSurfaceInNativeWindow(surfaceId, {
+          restorePlacement: placement,
+        });
+      }}
       renderSurfaceBody={renderWorkbenchIdeSurfaceBody}
     />
   );
@@ -6984,7 +7409,6 @@ function App() {
     wallpaperSelection,
     windowMode,
   ]);
-
   const shellBody = canRenderThemeRenderer
     ? (
       <ThemeRendererBoundary
@@ -7089,6 +7513,23 @@ function App() {
     : (dockIsFloating ? 'center center' : (isTopAnchored ? 'top left' : 'bottom left'));
   const devHudEnabled = (Boolean(import.meta.env.DEV) || systemSettings.developerMode)
     && systemSettings.devTelemetryHudVisible;
+  if (isDedicatedSecondaryWindowHost && dedicatedSecondaryWindowContent) {
+    return (
+      <IconThemeProvider iconTheme={resolvedAppearance.theme.assets?.iconTheme}>
+        <div
+          className="overlay-window-host w-full h-full overflow-hidden"
+          style={{
+            ...(resolvedAppearance.cssVars as CSSProperties),
+            position: 'relative',
+            backgroundColor: theme.palette.panelBackground,
+          }}
+        >
+          {dedicatedSecondaryWindowContent}
+        </div>
+      </IconThemeProvider>
+    );
+  }
+
   return (
     <IconThemeProvider iconTheme={resolvedAppearance.theme.assets?.iconTheme}>
       <div

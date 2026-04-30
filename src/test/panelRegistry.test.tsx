@@ -253,12 +253,14 @@ describe('createBuiltInPanelDefinitions', () => {
     expect(explorer).toMatchObject({
       defaultDockPlacement: 'center',
       defaultVisibility: 'visible',
+      allowedPresentations: expect.not.arrayContaining(['native-window']),
       ideRole: 'explorer-core',
       ideNavigationTier: 'primary',
     });
     expect(terminal).toMatchObject({
       defaultDockPlacement: 'bottom-panel',
       defaultVisibility: 'collapsed',
+      allowedPresentations: expect.arrayContaining(['native-window']),
       ideRole: 'utility',
       ideNavigationTier: 'primary',
     });
@@ -317,6 +319,7 @@ describe('createBuiltInPanelDefinitions', () => {
       id: 'plugin.catalog',
       defaultDockPlacement: 'right-sidebar',
       defaultVisibility: 'hidden',
+      allowedPresentations: expect.arrayContaining(['native-window']),
       ideRole: 'utility',
       ideNavigationTier: 'secondary',
     });

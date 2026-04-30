@@ -1,6 +1,19 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const secondaryWindowMocks = vi.hoisted(() => ({
+  openSecondaryWindow: vi.fn(),
+}));
+
+vi.mock('../runtime/secondaryWindows', async () => {
+  const actual = await vi.importActual<typeof import('../runtime/secondaryWindows')>(
+    '../runtime/secondaryWindows',
+  );
+  return {
+    ...actual,
+    openSecondaryWindow: secondaryWindowMocks.openSecondaryWindow,
+  };
+});
 
 import {
   EXPLORER_PICKER_REQUEST_EVENT,
@@ -15,18 +28,25 @@ import {
   readExplorerPickerRequest,
   readExplorerPickerResult,
 } from '../runtime/explorerPicker';
+import * as secondaryWindows from '../runtime/secondaryWindows';
 
 describe('explorerPicker', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     window.localStorage.clear();
     vi.mocked(getCurrentWindow().emit).mockClear();
-    vi.mocked(WebviewWindow.getByLabel).mockClear();
-
-    const existingWindow = await WebviewWindow.getByLabel(EXPLORER_PICKER_WINDOW_LABEL);
-    if (existingWindow) {
-      vi.mocked(existingWindow.show).mockClear();
-      vi.mocked(existingWindow.setFocus).mockClear();
-    }
+    secondaryWindowMocks.openSecondaryWindow.mockReset();
+    secondaryWindowMocks.openSecondaryWindow.mockResolvedValue({
+      dockTarget: null,
+      initialSize: null,
+      minSize: null,
+      payloadJson: null,
+      presentation: 'frameless-widget',
+      sourceWindowLabel: 'main',
+      surfaceKind: 'explorer-picker',
+      title: 'Explorer Picker',
+      windowId: secondaryWindows.EXPLORER_PICKER_SECONDARY_WINDOW_ID,
+      windowLabel: EXPLORER_PICKER_WINDOW_LABEL,
+    });
   });
 
   it('normalizes request defaults and extension filters', () => {
@@ -46,7 +66,7 @@ describe('explorerPicker', () => {
     expect(request?.nonce).toBeTruthy();
   });
 
-  it('persists window picker requests, dispatches listeners, and opens the picker window', async () => {
+  it('persists window picker requests, dispatches listeners, and delegates to the shared secondary window manager', async () => {
     const receivedRequests: Array<ReturnType<typeof readExplorerPickerRequest>> = [];
     const stopListening = listenToExplorerPickerRequests((request) => {
       receivedRequests.push(request);
@@ -75,9 +95,17 @@ describe('explorerPicker', () => {
       EXPLORER_PICKER_REQUEST_EVENT,
       expect.objectContaining({ kind: 'pickDestinationFolder' }),
     );
-    expect(vi.mocked(WebviewWindow.getByLabel)).toHaveBeenCalledWith(
-      EXPLORER_PICKER_WINDOW_LABEL,
-    );
+    await vi.waitFor(() => {
+      expect(secondaryWindows.openSecondaryWindow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          windowId: secondaryWindows.EXPLORER_PICKER_SECONDARY_WINDOW_ID,
+          surfaceKind: 'explorer-picker',
+          presentation: 'frameless-widget',
+          title: 'Move To…',
+          payloadJson: expect.any(String),
+        }),
+      );
+    });
 
     await publishExplorerPickerResult({
       currentDirectory: '/tmp/out',

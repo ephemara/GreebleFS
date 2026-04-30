@@ -42,6 +42,11 @@ import {
 import { createPluginIndexApi } from './pluginIndexApi';
 import { createOverlayPluginRuntimeSettingsController } from './pluginSettingsRuntime';
 import { dispatchExplorerWorkflowRequest } from './explorerWorkflowBridge';
+import {
+  requestPluginPanelOpen,
+  requestPluginPanelWindowDock,
+  requestPluginPanelWindowOpen,
+} from './pluginPanelRequests';
 import { useSettingsStore } from '../store/settingsStore';
 
 export interface UseFolderPluginRuntimeResult {
@@ -230,6 +235,21 @@ export function useFolderPluginRuntime(
         await refreshFolderPluginsRef.current(true);
       },
       openPluginsFolder,
+      openPanel: (panelId, payload = {}) => {
+        requestPluginPanelOpen(panelId, payload, {
+          source: 'plugin-runtime',
+        });
+      },
+      openWindowedPanel: (panelId, payload = {}) => {
+        requestPluginPanelWindowOpen(panelId, payload, {
+          source: 'plugin-runtime',
+        });
+      },
+      dockWindowedPanel: (panelId, payload = {}) => {
+        requestPluginPanelWindowDock(panelId, payload, {
+          source: 'plugin-runtime',
+        });
+      },
       runBackend: async (entry, args = []) => commands
         .pluginRunBackend(pluginSystemConfig.pluginsDirectory, plugin.id, entry, args)
         .then(unwrapTauriResult),

@@ -132,6 +132,9 @@ export interface OverlayPluginApi {
   workflows: OverlayPluginWorkflowApi;
   refreshPlugins: () => Promise<void>;
   openPluginsFolder: () => Promise<void>;
+  openPanel: (panelId: string, payload?: Record<string, string>) => void;
+  openWindowedPanel: (panelId: string, payload?: Record<string, string>) => void;
+  dockWindowedPanel: (panelId: string, payload?: Record<string, string>) => void;
   runBackend: (entry: string, args?: string[]) => Promise<PluginBackendResult>;
   bindExecutionContext: (
     executionContext: ExecutionContextSnapshot | null,

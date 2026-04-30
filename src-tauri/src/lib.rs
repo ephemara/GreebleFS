@@ -65,6 +65,7 @@ pub mod remote_storage_commands;
 pub mod runtime_pipeline;
 #[cfg(not(test))]
 pub mod screenshot_commands;
+pub mod secondary_windows;
 pub mod semantic_search;
 #[cfg(not(test))]
 pub mod shader_preview_commands;
@@ -270,7 +271,11 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_filter(|label| secondary_windows::should_window_label_remember_bounds(label))
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
@@ -291,6 +296,7 @@ pub fn run() {
             app.manage(TerminalManager::new());
             app.manage(CloudRuntimeState::default());
             app.manage(RemoteStorageState::default());
+            app.manage(secondary_windows::SecondaryWindowManagerState::default());
             app.manage(AudioEngineManager::default());
             app.manage(ExplorerIdentityManager::default());
             app.manage(gpu_runtime);

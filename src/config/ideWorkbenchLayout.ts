@@ -72,6 +72,8 @@ export interface IdeWorkbenchBottomDockState {
 export interface IdeWorkbenchSurfaceState {
   hidden: boolean;
   collapsed: boolean;
+  externalizedWindowId: string | null;
+  externalizedRestorePlacement: DockStackPlacement | null;
 }
 
 export interface IdeWorkbenchLayoutState {
@@ -166,6 +168,15 @@ function normalizeUtilityDockPlacement(placement: DockStackPlacement): DockStack
   }
 
   return placement;
+}
+
+function normalizeDockStackPlacement(value: unknown): DockStackPlacement | null {
+  return value === 'left-sidebar'
+    || value === 'center'
+    || value === 'right-sidebar'
+    || value === 'bottom-panel'
+    ? value
+    : null;
 }
 
 function uniqueSurfaceIds(ids: string[]): string[] {
@@ -328,6 +339,8 @@ function createDefaultSurfaceStateById(
         collapsed: isExplorerCoreSurface(seed.id)
           ? false
           : seed.defaultVisibility === 'collapsed',
+        externalizedWindowId: null,
+        externalizedRestorePlacement: null,
       },
     ]),
   );
@@ -343,6 +356,28 @@ export function collectSurfaceIdsFromDockNode(node: DockNode): string[] {
 
 export function collectSurfaceIdsFromFloatingNodes(nodes: FloatingDockNode[]): string[] {
   return nodes.flatMap(node => node.tabs);
+}
+
+export function collectExternalizedSurfaceIds(
+  layoutState: IdeWorkbenchLayoutState,
+): string[] {
+  return Object.entries(layoutState.surfaceStateById)
+    .filter(([, surfaceState]) => Boolean(surfaceState.externalizedWindowId))
+    .map(([surfaceId]) => surfaceId);
+}
+
+export function isDockSurfaceExternalized(
+  layoutState: IdeWorkbenchLayoutState,
+  surfaceId: string,
+): boolean {
+  return Boolean(layoutState.surfaceStateById[surfaceId]?.externalizedWindowId);
+}
+
+export function getExternalizedSurfaceWindowId(
+  layoutState: IdeWorkbenchLayoutState,
+  surfaceId: string,
+): string | null {
+  return layoutState.surfaceStateById[surfaceId]?.externalizedWindowId ?? null;
 }
 
 function updateDockNode(
@@ -652,9 +687,9 @@ function buildNormalizedRootDockNode(
 
   walk(sourceNode);
 
-  const hiddenSurfaceIds = new Set(
+  const withheldSurfaceIds = new Set(
     Object.entries(surfaceStateById)
-      .filter(([, surfaceState]) => surfaceState.hidden)
+      .filter(([, surfaceState]) => surfaceState.hidden || Boolean(surfaceState.externalizedWindowId))
       .map(([surfaceId]) => surfaceId),
   );
   const placedSurfaceIds = new Set<string>();
@@ -670,7 +705,7 @@ function buildNormalizedRootDockNode(
 
     const override = stackOverridesById.get(candidate.id);
     const overrideTabs = normalizeSurfaceTabs(override?.tabs, availableSurfaceIds)
-      .filter(surfaceId => !hiddenSurfaceIds.has(surfaceId))
+      .filter(surfaceId => !withheldSurfaceIds.has(surfaceId))
       .filter((surfaceId) => {
         if (candidate.id === IDE_WORKBENCH_STACK_IDS.center) {
           return isExplorerCoreSurface(surfaceId);
@@ -688,7 +723,7 @@ function buildNormalizedRootDockNode(
     const nextTabs = overrideTabs.length > 0
       ? overrideTabs
       : candidate.tabs
-        .filter(surfaceId => !hiddenSurfaceIds.has(surfaceId))
+        .filter(surfaceId => !withheldSurfaceIds.has(surfaceId))
         .filter((surfaceId) => {
           if (candidate.id === IDE_WORKBENCH_STACK_IDS.center) {
             return isExplorerCoreSurface(surfaceId);
@@ -708,7 +743,11 @@ function buildNormalizedRootDockNode(
   });
 
   for (const seed of seeds) {
-    if (surfaceStateById[seed.id]?.hidden || placedSurfaceIds.has(seed.id)) {
+    if (
+      surfaceStateById[seed.id]?.hidden
+      || surfaceStateById[seed.id]?.externalizedWindowId
+      || placedSurfaceIds.has(seed.id)
+    ) {
       continue;
     }
 
@@ -752,6 +791,14 @@ function normalizeSurfaceStateById(
             : typeof partialState?.collapsed === 'boolean'
             ? partialState.collapsed
             : defaultSurfaceStateById[seed.id]?.collapsed ?? false,
+          externalizedWindowId: isExplorerCoreSurface(seed.id)
+            ? null
+            : typeof partialState?.externalizedWindowId === 'string' && partialState.externalizedWindowId.trim()
+            ? partialState.externalizedWindowId.trim()
+            : null,
+          externalizedRestorePlacement: isExplorerCoreSurface(seed.id)
+            ? null
+            : normalizeDockStackPlacement(partialState?.externalizedRestorePlacement),
         },
       ] satisfies [string, IdeWorkbenchSurfaceState];
     }),
@@ -810,9 +857,15 @@ export function normalizeIdeWorkbenchLayoutState(
     ...collectSurfaceIdsFromDockNode(rootDockNode),
     ...collectSurfaceIdsFromFloatingNodes(floatingNodes),
   ]);
+  const focusableSurfaceIds = new Set([
+    ...placedSurfaceIds,
+    ...Object.entries(surfaceStateById)
+      .filter(([, surfaceState]) => Boolean(surfaceState.externalizedWindowId))
+      .map(([surfaceId]) => surfaceId),
+  ]);
   const focusedSurfaceId = shouldResetLegacyWorkbenchLayout
     ? defaultState.focusedSurfaceId
-    : typeof source.focusedSurfaceId === 'string' && placedSurfaceIds.has(source.focusedSurfaceId)
+    : typeof source.focusedSurfaceId === 'string' && focusableSurfaceIds.has(source.focusedSurfaceId)
       ? source.focusedSurfaceId
       : resolvePreferredDockSurfaceId(rootDockNode, floatingNodes);
 
@@ -964,11 +1017,151 @@ function ensureSurfaceVisibleState(
     surfaceStateById: {
       ...layoutState.surfaceStateById,
       [surfaceId]: {
+        ...currentSurfaceState,
         hidden: false,
         collapsed: false,
       },
     },
   };
+}
+
+function getRestorePlacementForSurface(
+  layoutState: IdeWorkbenchLayoutState,
+  surfaceId: string,
+  currentPlacement: DockPlacement | null,
+): DockStackPlacement {
+  if (currentPlacement && currentPlacement !== 'floating') {
+    return currentPlacement;
+  }
+
+  return layoutState.surfaceStateById[surfaceId]?.externalizedRestorePlacement
+    ?? 'right-sidebar';
+}
+
+function clearExternalizedSurfaceState(
+  hidden: boolean,
+): IdeWorkbenchSurfaceState {
+  return {
+    hidden,
+    collapsed: false,
+    externalizedWindowId: null,
+    externalizedRestorePlacement: null,
+  };
+}
+
+export function externalizeDockSurface(
+  layoutState: IdeWorkbenchLayoutState,
+  surfaceId: string,
+  windowId: string,
+  restorePlacement: DockStackPlacement | null = null,
+): IdeWorkbenchLayoutState {
+  if (isExplorerCoreSurface(surfaceId)) {
+    return layoutState;
+  }
+
+  const trimmedWindowId = windowId.trim();
+  if (!trimmedWindowId) {
+    return layoutState;
+  }
+
+  const currentPlacement = findDockPlacementForSurface(layoutState, surfaceId);
+  const nextRootDockNode = normalizeDockNodeAfterMutation(
+    removeSurfaceFromDockNode(layoutState.rootDockNode, surfaceId),
+  );
+  const nextFloatingNodes = updateFloatingNodesForSurface(layoutState.floatingNodes, surfaceId, (node) => {
+    const nextTabs = node.tabs.filter(tabId => tabId !== surfaceId);
+    if (nextTabs.length === 0) {
+      return null;
+    }
+
+    return {
+      ...node,
+      tabs: nextTabs,
+      activeSurfaceId: node.activeSurfaceId === surfaceId
+        ? nextTabs[0] ?? null
+        : node.activeSurfaceId,
+    };
+  });
+  const nextRestorePlacement = restorePlacement
+    ?? getRestorePlacementForSurface(layoutState, surfaceId, currentPlacement);
+
+  return {
+    ...layoutState,
+    rootDockNode: nextRootDockNode,
+    floatingNodes: nextFloatingNodes,
+    focusedSurfaceId: layoutState.focusedSurfaceId === surfaceId
+      ? resolvePreferredDockSurfaceId(nextRootDockNode, nextFloatingNodes)
+      : layoutState.focusedSurfaceId,
+    bottomDockState: synchronizeBottomDockState(nextRootDockNode, layoutState.bottomDockState),
+    surfaceStateById: {
+      ...layoutState.surfaceStateById,
+      [surfaceId]: {
+        hidden: false,
+        collapsed: false,
+        externalizedWindowId: trimmedWindowId,
+        externalizedRestorePlacement: nextRestorePlacement,
+      },
+    },
+  };
+}
+
+export function clearExternalizedDockSurface(
+  layoutState: IdeWorkbenchLayoutState,
+  surfaceId: string,
+  options?: {
+    hidden?: boolean;
+  },
+): IdeWorkbenchLayoutState {
+  const hidden = options?.hidden === true;
+  const nextRootDockNode = normalizeDockNodeAfterMutation(
+    removeSurfaceFromDockNode(layoutState.rootDockNode, surfaceId),
+  );
+  const nextFloatingNodes = updateFloatingNodesForSurface(layoutState.floatingNodes, surfaceId, (node) => {
+    const nextTabs = node.tabs.filter(tabId => tabId !== surfaceId);
+    if (nextTabs.length === 0) {
+      return null;
+    }
+
+    return {
+      ...node,
+      tabs: nextTabs,
+      activeSurfaceId: node.activeSurfaceId === surfaceId
+        ? nextTabs[0] ?? null
+        : node.activeSurfaceId,
+    };
+  });
+
+  return {
+    ...layoutState,
+    rootDockNode: nextRootDockNode,
+    floatingNodes: nextFloatingNodes,
+    focusedSurfaceId: hidden && layoutState.focusedSurfaceId === surfaceId
+      ? resolvePreferredDockSurfaceId(nextRootDockNode, nextFloatingNodes)
+      : layoutState.focusedSurfaceId,
+    bottomDockState: synchronizeBottomDockState(nextRootDockNode, layoutState.bottomDockState),
+    surfaceStateById: {
+      ...layoutState.surfaceStateById,
+      [surfaceId]: clearExternalizedSurfaceState(hidden),
+    },
+  };
+}
+
+export function restoreExternalizedDockSurface(
+  layoutState: IdeWorkbenchLayoutState,
+  surfaceId: string,
+  seeds: WorkbenchSurfaceLayoutSeed[],
+): IdeWorkbenchLayoutState {
+  const surfaceState = layoutState.surfaceStateById[surfaceId];
+  const seed = seeds.find(candidate => candidate.id === surfaceId);
+  const restorePlacement = surfaceState?.externalizedRestorePlacement
+    ?? seed?.defaultDockPlacement
+    ?? 'right-sidebar';
+
+  return moveSurfaceToDockPlacement(
+    clearExternalizedDockSurface(layoutState, surfaceId, { hidden: false }),
+    surfaceId,
+    restorePlacement,
+  );
 }
 
 function updateFloatingNodesForSurface(
@@ -1120,6 +1313,10 @@ export function moveSurfaceToDockPlacement(
     floatingNodes: withoutFloatingSurface,
     focusedSurfaceId: surfaceId,
     bottomDockState: nextBottomDockState,
+    surfaceStateById: {
+      ...layoutState.surfaceStateById,
+      [surfaceId]: clearExternalizedSurfaceState(false),
+    },
   };
 }
 
@@ -1128,6 +1325,21 @@ export function focusDockSurface(
   surfaceId: string,
   seeds: WorkbenchSurfaceLayoutSeed[],
 ): IdeWorkbenchLayoutState {
+  if (layoutState.surfaceStateById[surfaceId]?.externalizedWindowId) {
+    return {
+      ...layoutState,
+      focusedSurfaceId: surfaceId,
+      surfaceStateById: {
+        ...layoutState.surfaceStateById,
+        [surfaceId]: {
+          ...layoutState.surfaceStateById[surfaceId],
+          hidden: false,
+          collapsed: false,
+        },
+      },
+    };
+  }
+
   const currentPlacement = findDockPlacementForSurface(layoutState, surfaceId);
   if (currentPlacement === 'floating') {
     return {
@@ -1210,6 +1422,8 @@ export function hideDockSurface(
       [surfaceId]: {
         hidden: true,
         collapsed: false,
+        externalizedWindowId: null,
+        externalizedRestorePlacement: null,
       },
     },
   };
@@ -1268,6 +1482,10 @@ export function floatDockSurface(
     floatingNodes: nextFloatingNodes,
     focusedSurfaceId: surfaceId,
     bottomDockState: synchronizeBottomDockState(nextRootDockNode, layoutState.bottomDockState),
+    surfaceStateById: {
+      ...layoutState.surfaceStateById,
+      [surfaceId]: clearExternalizedSurfaceState(false),
+    },
   };
 }
 

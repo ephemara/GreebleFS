@@ -6,7 +6,8 @@
     "main",
     "dock",
     "picker",
-    "file-operations"
+    "file-operations",
+    "secondary-*"
   ],
   "permissions": [
     "core:default",
