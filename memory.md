@@ -1,3 +1,26 @@
+# 2026-04-29 - Unified Explorer Workflow Modal System
+
+- Explorer modal-style tools now have one explorer-scoped workflow runtime instead of separate bespoke dialog branches. `src/components/FileExplorer.tsx` owns one active workflow session per explorer instance, and the shared host UI lives in `src/components/explorer/ExplorerWorkflowModal.tsx`, `ExplorerWorkflowPrimitives.tsx`, `ExplorerBuiltInWorkflowViews.tsx`, and `explorerWorkflowContracts.ts`.
+- `Batch Rename` and `Duplicate Finder` are the first built-in migrations onto that host. Keep their backend truth where it already lives (`explorerBackend.ts` / `explorer_pro_commands.rs`); the new workflow layer only owns shell chrome, status/footer actions, busy/close behavior, and reusable form/result primitives.
+- Workflow launches are now a first-class explorer extensibility lane:
+  - `src/config/actionPacks.ts` supports `presentation.kind: "command" | "workflow"`, plus `presentation.workflowId` and optional `presentation.workflowPayload`.
+  - `src/components/explorer/ExplorerWorkspace.tsx` and `src/components/FileExplorer.tsx` now treat workflow-backed actions as launch requests instead of command executions.
+  - `src/runtime/explorerWorkflowBridge.ts` is the explorer-scoped bridge used by workspace header actions, custom actions, and plugin APIs to open/close workflows against a specific pane/workspace target.
+- Packaged plugins can now contribute explorer workflows and open them through the same host:
+  - `src/config/pluginContributions.ts` / `src/config/pluginPackages.ts` accept `contributions.workflows[]`.
+  - `src/components/pluginRuntime.tsx` exports `defineWorkflow(...)` and exposes `api.workflows.open(...)` / `api.workflows.close()`.
+  - `src/runtime/useFolderPluginRuntime.ts` binds the active explorer execution context into those workflow API calls and surfaces discovered `pluginWorkflows` up through `App.tsx`, `panelRegistry.tsx`, `ExplorerWorkspace.tsx`, and `FileExplorer.tsx`.
+- Durable regression rules:
+  - New explorer modal tools should register as workflow definitions and render through the shared workflow host, not add another fixed overlay branch in `FileExplorer.tsx`.
+  - Action packs remain UI-launch metadata only in v1. If an authored action wants custom modal UI, it should launch a registered workflow instead of embedding ad hoc UI in the action executor.
+  - Plugin workflow launch should stay explorer-scoped in v1: requests must carry pane/workspace targeting through `explorerWorkflowBridge.ts`, and plugin UI should use `api.workflows.*` instead of reaching into explorer component state.
+  - Keep workflow descriptors/host controls in `explorerWorkflowContracts.ts` and plugin workflow loading in `pluginRuntime.tsx` / `pluginPackages.ts`; do not duplicate those contracts in package consumers.
+- Validation for this pass:
+  - `bunx vitest run src/test/explorerWorkflowModal.test.tsx src/test/ExplorerBuiltInWorkflowViews.test.tsx src/test/ExplorerWorkspace.test.tsx src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.fallback.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/pluginRuntime.test.ts src/test/pluginPackages.test.ts --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript diagnostic sweep returned `NO_MATCHING_TOUCHED_FILE_ERRORS`
+- Next recommended step:
+  - Move the next explorer-owned bespoke dialog or assistant flow onto the same workflow host so the registry, payload contract, and plugin workflow API keep proving out under a third real tool.
+
 # 2026-04-29 - Floating Dock Dragging And Global App Zoom Hotkeys
 
 - `src/components/WorkbenchTopBar.tsx` is now the explicit native drag surface for floating dock mode as well as normal app mode. Keep floating dock window dragging on the top bar instead of adding second drag regions in `App.tsx` or panel content.

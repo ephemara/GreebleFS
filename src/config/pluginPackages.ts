@@ -14,6 +14,7 @@ import type {
   OverlayPluginExplorerActionContribution,
   OverlayPluginPreviewLaneContribution,
   OverlayPluginSettingsSlotContribution,
+  OverlayPluginWorkflowContribution,
 } from './pluginContributions';
 import {
   DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY,
@@ -42,18 +43,22 @@ import { type LoadedOverlayShader, loadShaderFromSource } from '../components/sh
 import {
   type BoundOverlayPluginPreviewLaneComponent,
   type BoundOverlayPluginSettingsSlotComponent,
+  type BoundOverlayPluginWorkflowComponent,
   type LoadedOverlayPlugin,  
   type OverlayPluginApi,
   type OverlayPluginCapabilitySummary,
   type OverlayPluginContext,
   type OverlayPluginPreviewLaneProps,
   type OverlayPluginSettingsSlotProps,
+  type OverlayPluginWorkflowDefinition,
   type OverlayPluginTestFile,
   type PluginFileEntry,
   loadPluginPreviewLaneFromSource,
   loadPluginSettingsSlotFromSource,
+  loadPluginWorkflowFromSource,
   loadPluginFromSource,
 } from '../components/pluginRuntime';
+import type { OverlayPluginWorkflowDescriptor } from '../components/explorer/explorerWorkflowContracts';
 import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
@@ -162,6 +167,19 @@ interface PluginPackageSettingsSlotManifest {
   fields?: OverlayPluginSettingsFieldDefinition[];
 }
 
+interface PluginPackageWorkflowManifest {
+  id?: string;
+  title?: string;
+  description?: string;
+  iconName?: string;
+  keywords?: string[];
+  entry?: string;
+  renderer?: string;
+  rendererEntry?: string;
+  contexts?: OverlayPluginWorkflowDescriptor['contexts'];
+  defaultSize?: OverlayPluginWorkflowDescriptor['defaultSize'];
+}
+
 interface PluginPackageMobilePaneManifest {
   id?: string;
   title?: string;
@@ -209,6 +227,7 @@ interface PluginPackageManifest {
     contextMenuItems?: PluginPackageContextMenuItemManifest[];
     previewLanes?: PluginPackagePreviewLaneManifest[];
     settingsSlots?: PluginPackageSettingsSlotManifest[];
+    workflows?: PluginPackageWorkflowManifest[];
     mobilePanes?: PluginPackageMobilePaneManifest[];
   };
 }
@@ -237,6 +256,7 @@ export interface OverlayPluginDiscoveryResult {
   contextMenuItems: OverlayPluginContextMenuContribution[];
   previewLanes: OverlayPluginPreviewLaneContribution[];
   settingsSlots: OverlayPluginSettingsSlotContribution[];
+  workflows: OverlayPluginWorkflowContribution[];
   warnings: string[];
 }
 
@@ -675,6 +695,72 @@ function asSettingsSlotManifestArray(
   });
 }
 
+function asWorkflowContextManifestArray(
+  value: unknown,
+): OverlayPluginWorkflowDescriptor['contexts'] {
+  const contexts = asStringArray(value).filter(
+    (entry): entry is OverlayPluginWorkflowDescriptor['contexts'][number] =>
+      entry === 'entry' ||
+      entry === 'background' ||
+      entry === 'multi-select' ||
+      entry === 'search-result' ||
+      entry === 'preview-pane',
+  );
+  return contexts.length > 0 ? contexts : ['background'];
+}
+
+function asWorkflowDefaultSize(
+  value: unknown,
+): OverlayPluginWorkflowDescriptor['defaultSize'] {
+  const normalized = asString(value);
+  if (
+    normalized === 'sm' ||
+    normalized === 'md' ||
+    normalized === 'lg' ||
+    normalized === 'xl'
+  ) {
+    return normalized;
+  }
+  return 'md';
+}
+
+function asWorkflowManifestArray(
+  value: unknown,
+): PluginPackageWorkflowManifest[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry, index) => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+
+    const renderer =
+      asString(record.entry) ||
+      asString(record.renderer) ||
+      asString(record.rendererEntry);
+    if (!renderer) {
+      return [];
+    }
+
+    const title = asString(record.title) || `Workflow ${index + 1}`;
+    return [{
+      id: asString(record.id) || deriveIdFromName(title, 'workflow'),
+      title,
+      description: asString(record.description) || undefined,
+      iconName: asString(record.iconName) || undefined,
+      keywords: asStringArray(record.keywords),
+      entry: renderer,
+      renderer,
+      rendererEntry: asString(record.rendererEntry) || undefined,
+      contexts: asWorkflowContextManifestArray(record.contexts),
+      defaultSize: asWorkflowDefaultSize(record.defaultSize),
+    }];
+  });
+}
+
 function asMobilePaneManifestArray(
   value: unknown,
 ): PluginPackageMobilePaneManifest[] {
@@ -822,6 +908,7 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
       contextMenuItems: asContextMenuItemManifestArray(contributions?.contextMenuItems),
       previewLanes: asPreviewLaneManifestArray(contributions?.previewLanes),
       settingsSlots: asSettingsSlotManifestArray(contributions?.settingsSlots),
+      workflows: asWorkflowManifestArray(contributions?.workflows),
       mobilePanes: asMobilePaneManifestArray(contributions?.mobilePanes),
     },
   };
@@ -1249,6 +1336,7 @@ async function loadPluginPackage(
     contextMenuItems: [],
     previewLanes: [],
     settingsSlots: [],
+    workflows: [],
     warnings: [],
   };
 
@@ -1618,6 +1706,127 @@ async function loadPluginPackage(
     ),
   );
 
+  const workflowModuleResolver = createPluginRelativeModuleSourceResolver(
+    record.directoryPath,
+  );
+  const workflowDefinitionCache = new Map<
+    string,
+    OverlayPluginWorkflowDefinition
+  >();
+  const loadedWorkflows: Array<
+    OverlayPluginWorkflowContribution | null
+  > = await Promise.all(
+    (record.manifest.contributions?.workflows ?? []).map(
+      async (workflowManifest) => {
+        const workflowTitle = workflowManifest.title || 'Plugin Workflow';
+        const stableId =
+          workflowManifest.id || deriveIdFromName(workflowTitle, 'workflow');
+        const rendererEntryValue = workflowManifest.entry?.trim() || null;
+        if (!rendererEntryValue || !isSafeRelativePath(rendererEntryValue)) {
+          packageWarnings.push(
+            `workflow ${workflowTitle}: invalid renderer path`,
+          );
+          return null;
+        }
+
+        const normalizedRendererEntry = normalizeRelativePath(
+          rendererEntryValue,
+        );
+        let workflowDefinition =
+          workflowDefinitionCache.get(normalizedRendererEntry) ?? null;
+        if (!workflowDefinition) {
+          const rendererEntry = await resolveRelativeFileEntry(
+            record.directoryPath,
+            normalizedRendererEntry,
+          );
+          if (
+            !rendererEntry ||
+            !pluginSystemConfig.frontendExtensions.includes(
+              rendererEntry.extension as never,
+            )
+          ) {
+            packageWarnings.push(
+              `workflow ${workflowTitle}: renderer ${normalizedRendererEntry} could not be resolved`,
+            );
+            return null;
+          }
+
+          try {
+            const source = await commands
+              .fsReadTextFile(rendererEntry.path)
+              .then(unwrapTauriResult);
+            workflowDefinition = await loadPluginWorkflowFromSource(
+              source,
+              rendererEntry as PluginFileEntry,
+              {
+                resolveRelativeModuleSource: workflowModuleResolver,
+              },
+            );
+            workflowDefinitionCache.set(
+              normalizedRendererEntry,
+              workflowDefinition,
+            );
+          } catch (error) {
+            packageWarnings.push(
+              `workflow ${workflowTitle}: ${String(error)}`,
+            );
+            return null;
+          }
+        }
+
+        const rendererFilePath = joinPlatformPath(
+          record.directoryPath,
+          normalizedRendererEntry,
+        );
+        const workflowContext: OverlayPluginContext = {
+          ...packagePreviewBaseContext,
+          filePath: rendererFilePath,
+        };
+        const workflowApi = hostApiFactory(workflowContext);
+        const boundComponent: BoundOverlayPluginWorkflowComponent = (
+          props,
+        ) =>
+          React.createElement(workflowDefinition!.component, {
+            ...props,
+            api: workflowApi.bindExecutionContext(props.executionContext),
+            plugin: workflowContext,
+          });
+        const runtimeDescriptor = workflowDefinition.descriptor ?? {};
+
+        return {
+          id: `${packageId}.workflow.${stableId}`,
+          pluginId: packageId,
+          pluginName: packageName,
+          title: runtimeDescriptor.title ?? workflowTitle,
+          description:
+            runtimeDescriptor.description ?? workflowManifest.description,
+          iconName:
+            runtimeDescriptor.iconName ?? workflowManifest.iconName,
+          keywords: [
+            ...(workflowManifest.keywords ?? []),
+            ...(runtimeDescriptor.keywords ?? []),
+          ].filter(Boolean),
+          contexts:
+            runtimeDescriptor.contexts ?? workflowManifest.contexts ?? ['background'],
+          defaultSize:
+            runtimeDescriptor.defaultSize ??
+            workflowManifest.defaultSize ??
+            'md',
+          rendererEntry: normalizedRendererEntry,
+          component: boundComponent,
+        } satisfies OverlayPluginWorkflowContribution;
+      },
+    ),
+  );
+  result.workflows.push(
+    ...loadedWorkflows.filter(
+      (
+        contribution,
+      ): contribution is OverlayPluginWorkflowContribution =>
+        contribution != null,
+    ),
+  );
+
   const settingsModuleResolver = createPluginRelativeModuleSourceResolver(
     record.directoryPath,
   );
@@ -1791,6 +2000,7 @@ export async function discoverOverlayPlugins(
     contextMenuItems: [],
     previewLanes: [],
     settingsSlots: [],
+    workflows: [],
     warnings: [],
   };
 
@@ -1819,6 +2029,7 @@ export async function discoverOverlayPlugins(
     contextMenuItems: [],
     previewLanes: [],
     settingsSlots: [],
+    workflows: [],
     warnings: [],
   };
 
@@ -1872,6 +2083,7 @@ export async function discoverOverlayPlugins(
       aggregate.contextMenuItems.push(...packageResult.contextMenuItems);
       aggregate.previewLanes.push(...packageResult.previewLanes);
       aggregate.settingsSlots.push(...packageResult.settingsSlots);
+      aggregate.workflows.push(...packageResult.workflows);
       aggregate.warnings.push(...packageResult.warnings);
     } catch (error) {
       aggregate.warnings.push(`${directory.name}: ${String(error)}`);
@@ -1887,6 +2099,7 @@ export async function discoverOverlayPlugins(
   aggregate.actions.sort((left, right) => left.title.localeCompare(right.title));
   aggregate.explorerActions.sort((left, right) => left.label.localeCompare(right.label));
   aggregate.contextMenuItems.sort((left, right) => left.title.localeCompare(right.title));
+  aggregate.workflows.sort((left, right) => left.title.localeCompare(right.title));
   aggregate.settingsSlots.sort(
     (left, right) =>
       left.order - right.order || left.title.localeCompare(right.title),

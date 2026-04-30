@@ -8,6 +8,7 @@ import type {
   OverlayPluginExplorerActionContribution,
   OverlayPluginPreviewLaneContribution,
   OverlayPluginSettingsSlotContribution,
+  OverlayPluginWorkflowContribution,
 } from '../config/pluginContributions';
 import TerminalOverlay from '../components/TerminalOverlay';
 import { ExplorerWorkspace } from '../components/explorer/ExplorerWorkspace';
@@ -211,6 +212,7 @@ export function createBuiltInPanelDefinitions({
   pluginContextMenuItems,
   pluginPreviewLanes = [],
   pluginSettingsSlots = [],
+  pluginWorkflows = [],
   pluginsLoading = false,
   pluginsError = null,
   onRefreshPlugins = async () => {},
@@ -361,6 +363,7 @@ export function createBuiltInPanelDefinitions({
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   pluginSettingsSlots?: OverlayPluginSettingsSlotContribution[];
+  pluginWorkflows?: OverlayPluginWorkflowContribution[];
   pluginsLoading?: boolean;
   pluginsError?: string | null;
   onRefreshPlugins?: () => Promise<void>;
@@ -550,6 +553,7 @@ export function createBuiltInPanelDefinitions({
           pluginActions={pluginExplorerActions}
           pluginContextMenuItems={pluginContextMenuItems}
           pluginPreviewLanes={pluginPreviewLanes}
+          pluginWorkflows={pluginWorkflows}
         />
       ),
     },

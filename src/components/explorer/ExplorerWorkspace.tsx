@@ -35,6 +35,7 @@ import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginPreviewLaneContribution,
+  OverlayPluginWorkflowContribution,
 } from "../../config/pluginContributions";
 import type { ExplorerLayoutMode } from "../../config/layoutProfiles";
 import type { LoadedExplorerLayoutDefinition } from "../../config/explorerLayouts";
@@ -73,6 +74,7 @@ import {
   normalizeExplorerActionOutputTarget,
   type ExplorerActionExecutionInput,
 } from "../../runtime/actionBackend";
+import { dispatchExplorerWorkflowRequest } from "../../runtime/explorerWorkflowBridge";
 import { recordExplorerActionRun } from "../../store/explorerActionRunStore";
 import { openExplorerTaskCenter } from "../../store/explorerTaskStore";
 import { ExplorerDragOverlay } from "./ExplorerDragOverlay";
@@ -124,6 +126,7 @@ interface ExplorerWorkspaceProps {
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
+  pluginWorkflows?: OverlayPluginWorkflowContribution[];
   explorerLayouts?: LoadedExplorerLayoutDefinition[];
   layoutMode?: ExplorerLayoutMode;
   dockPreviewPolicy?: ExplorerDockPreviewPolicy;
@@ -324,6 +327,7 @@ export function ExplorerWorkspace({
   pluginActions = [],
   pluginContextMenuItems = [],
   pluginPreviewLanes = [],
+  pluginWorkflows = [],
   explorerLayouts = [],
   layoutMode = "full",
   dockPreviewPolicy,
@@ -1622,7 +1626,11 @@ export function ExplorerWorkspace({
         primaryEntry: ReturnType<typeof toWorkspaceActionInvocationEntry> | null;
         targetEntries: ReturnType<typeof toWorkspaceActionInvocationEntry>[];
       },
-    ): ExplorerActionExecutionInput => ({
+    ): ExplorerActionExecutionInput | null => {
+      if (!action.execution) {
+        return null;
+      }
+      return {
       packId: action.packId,
       actionId: action.actionId,
       actionTitle: action.title,
@@ -1651,7 +1659,8 @@ export function ExplorerWorkspace({
         capabilities: runtimeContext.invocation.capabilities,
         runtimePlatform,
       },
-    }),
+      };
+    },
     [runtimePlatform, toWorkspaceActionInvocationEntry],
   );
   const buildWorkspaceChromeActionRuntimeContext = useCallback(
@@ -1751,13 +1760,32 @@ export function ExplorerWorkspace({
     ) => {
       const runtimeContext =
         buildWorkspaceChromeActionRuntimeContext(inputModality);
+      if (action.presentation.kind === "workflow") {
+        dispatchExplorerWorkflowRequest({
+          kind: "open",
+          workflowId: action.presentation.workflowId ?? "",
+          payload: action.presentation.workflowPayload ?? null,
+          source: "workspace-action",
+          pluginId: action.pluginId ?? null,
+          targetPaneId: activePaneSnapshot?.instanceId ?? null,
+          workspaceTabId: activeWorkspaceTab?.id ?? null,
+          contextKind: runtimeContext.invocation.kind,
+        });
+        return;
+      }
+
       const startedAt = Date.now();
       const outputTarget = action.presentation.outputTarget;
+      const executionRequest = buildWorkspaceActionExecutionRequest(
+        action,
+        runtimeContext,
+      );
+      if (!executionRequest) {
+        return;
+      }
 
       try {
-        const result = await executeExplorerAction(
-          buildWorkspaceActionExecutionRequest(action, runtimeContext),
-        );
+        const result = await executeExplorerAction(executionRequest);
         const finishedAt = Date.now();
         const runStatus = result.launchedInNativeTerminal
           ? "launched"
@@ -1820,8 +1848,11 @@ export function ExplorerWorkspace({
           finishedAt: Date.now(),
           exitCode: null,
           timedOut: false,
-          runtimeUsed: action.execution.interpreter ?? action.execution.runner,
-          commandDisplay: action.execution.entry,
+          runtimeUsed:
+            action.execution?.interpreter ??
+            action.execution?.runner ??
+            "interpreter",
+          commandDisplay: action.execution?.entry ?? action.title,
           workingDirectory: runtimeContext.invocation.currentLocation,
           stdout: "",
           stderr: message,
@@ -1832,6 +1863,7 @@ export function ExplorerWorkspace({
     },
     [
       activePaneSnapshot?.instanceId,
+      activeWorkspaceTab?.id,
       buildWorkspaceActionExecutionRequest,
       buildWorkspaceChromeActionRuntimeContext,
       issueRefreshRequest,
@@ -2375,6 +2407,7 @@ export function ExplorerWorkspace({
             pluginActions={pluginActions}
             pluginContextMenuItems={pluginContextMenuItems}
             pluginPreviewLanes={pluginPreviewLanes}
+            pluginWorkflows={pluginWorkflows}
             explorerPicker={isActivePane ? explorerPicker : null}
             onExplorerPickerConfirm={onExplorerPickerConfirm}
             onExplorerPickerCancel={onExplorerPickerCancel}
@@ -2418,6 +2451,7 @@ export function ExplorerWorkspace({
       pluginActions,
       pluginContextMenuItems,
       pluginPreviewLanes,
+      pluginWorkflows,
       publishRuntimeSnapshot,
       refreshRequestsByInstanceId,
       revealRequestsByInstanceId,

@@ -104,6 +104,7 @@ import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginPreviewLaneContribution,
+  OverlayPluginWorkflowContribution,
 } from "../config/pluginContributions";
 import type { LoadedExplorerMenuPack } from "../config/menuPacks";
 import {
@@ -234,6 +235,7 @@ import {
 import { requestPluginPanelOpen } from "../runtime/pluginPanelRequests";
 import { buildExplorerExecutionContextSnapshot } from "../runtime/explorerExtensionContext";
 import { callExtensionHostMethod } from "../runtime/extensionHostApi";
+import { subscribeToExplorerWorkflowRequests } from "../runtime/explorerWorkflowBridge";
 import {
   createPluginPreviewRuntimeBridge,
   type OverlayPluginPreviewHostContext,
@@ -296,6 +298,10 @@ import { ExplorerShaderWorkbench } from "./ExplorerShaderWorkbench";
 import { ExplorerVideoEditor } from "./ExplorerVideoEditor";
 import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
 import { ExplorerFolderPreview } from "./ExplorerFolderPreview";
+import {
+  BatchRenameWorkflowView,
+  DuplicateFinderWorkflowView,
+} from "./explorer/ExplorerBuiltInWorkflowViews";
 import { ExplorerContextMenu } from "./explorer/ExplorerContextMenu";
 import { ExplorerFontPreview } from "./ExplorerFontPreview";
 import { ExplorerSpreadsheetWorkbench } from "./ExplorerSpreadsheetWorkbench";
@@ -308,7 +314,6 @@ import {
 } from "./ExplorerPdfWorkbench";
 import {
   type ExplorerBatchRenameMode,
-  type ExplorerBatchRenamePreviewRow,
 } from "./explorerBatchRename";
 import {
   appendExplorerJumpFilterCharacter,
@@ -327,12 +332,20 @@ import { ExplorerActionsPane } from "./explorer/ExplorerActionsPane";
 import { ExplorerCustomizeDragOverlay } from "./explorer/ExplorerCustomizeDragOverlay";
 import { ExplorerFloatingSurface } from "./explorer/ExplorerFloatingSurface";
 import { ExplorerPopupSurface } from "./explorer/ExplorerPopupSurface";
+import { ExplorerWorkflowModal } from "./explorer/ExplorerWorkflowModal";
 import {
   buildExplorerRuntimeMenu,
   resolveMenuInvocationInputModality,
   type ExplorerOpenWithProgramsState,
 } from "./explorer/explorerMenuRuntime";
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
+import type {
+  ExplorerWorkflowComponentProps,
+  ExplorerWorkflowDefinition,
+  ExplorerWorkflowHostControls,
+  ExplorerWorkflowLaunchRequest,
+  ExplorerWorkflowSession,
+} from "./explorer/explorerWorkflowContracts";
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { useLayoutDynamicsController } from "../animation/layoutDynamics";
 import {
@@ -1104,7 +1117,6 @@ interface RenameState {
   name: string;
 }
 interface BatchRenameState {
-  visible: boolean;
   mode: ExplorerBatchRenameMode;
   findText: string;
   replaceText: string;
@@ -1126,7 +1138,6 @@ interface TagDialogState {
   description: string;
 }
 interface DuplicateFinderState {
-  visible: boolean;
   scanId: string | null;
   status: ExplorerDuplicateScan | null;
   loading: boolean;
@@ -1145,6 +1156,18 @@ type PreviewResolvedPathState = {
 type ExplorerPythonPreviewMetadata = {
   source: "extension" | "executable";
 };
+
+type ExplorerWorkflowPayload = Record<string, unknown> | null;
+
+interface ResolvedExplorerWorkflowEntry {
+  definition: ExplorerWorkflowDefinition<ExplorerWorkflowPayload>;
+  render: (
+    props: ExplorerWorkflowComponentProps<ExplorerWorkflowPayload>,
+  ) => React.ReactNode;
+}
+
+const BUILTIN_BATCH_RENAME_WORKFLOW_ID = "builtin.batchRename";
+const BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID = "builtin.duplicateFinder";
 
 type PreviewTextWorkbenchState = {
   content: string;
@@ -7789,308 +7812,6 @@ function SaveSearchDialog({
   );
 }
 
-function BatchRenameDialog({
-  state,
-  preview,
-  onChange,
-  onConfirm,
-  onCancel,
-}: {
-  state: BatchRenameState;
-  preview: ExplorerBatchRenamePreviewRow[];
-  onChange: (updates: Partial<BatchRenameState>) => void;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const previewCount = preview.length;
-  const collisionCount = preview.filter((row) => row.collision).length;
-  const validationError =
-    preview.find((row) => row.validationError)?.validationError ?? null;
-  const canCommit =
-    previewCount > 0 && !validationError && collisionCount === 0;
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 10000,
-        background: "var(--overlay-explorer-modal-scrim)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <div
-        style={{
-          width: "min(1040px, 96vw)",
-          maxHeight: "86vh",
-          display: "flex",
-          flexDirection: "column",
-          background: "var(--overlay-explorer-preview-bg)",
-          border: "1px solid var(--overlay-explorer-preview-border)",
-          borderRadius: "var(--overlay-explorer-panel-radius)",
-          padding: 20,
-          boxShadow: "var(--overlay-explorer-modal-shadow)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div>
-            <div style={{ color: EXP.text, fontWeight: 700, fontSize: 14 }}>
-              Batch Rename
-            </div>
-            <div style={{ marginTop: 4, color: EXP.muted, fontSize: 11 }}>
-              {state.mode === "regex"
-                ? "Regex mode supports capture groups like $1 and ${name}. Tokens: {{date}}, {{index}}, {{parent}}."
-                : "Literal mode replaces plain text in the filename stem and still expands tokens after replacement."}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              onClick={() =>
-                onChange({ mode: state.mode === "regex" ? "literal" : "regex" })
-              }
-              style={
-                state.mode === "regex"
-                  ? dialogSecondaryButtonStyle
-                  : dialogSecondaryButtonStyle
-              }
-              title="Toggle regex mode"
-            >
-              {state.mode === "regex" ? "Regex On" : "Regex Off"}
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              style={dialogSecondaryButtonStyle}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-            gap: 10,
-          }}
-        >
-          <input
-            value={state.findText}
-            onChange={(event) => onChange({ findText: event.target.value })}
-            placeholder={state.mode === "regex" ? "Find pattern" : "Find text"}
-            style={dialogInputStyle}
-          />
-          <input
-            value={state.replaceText}
-            onChange={(event) => onChange({ replaceText: event.target.value })}
-            placeholder="Replace with"
-            style={dialogInputStyle}
-          />
-          <input
-            value={state.prefix}
-            onChange={(event) => onChange({ prefix: event.target.value })}
-            placeholder="Prefix"
-            style={dialogInputStyle}
-          />
-          <input
-            value={state.suffix}
-            onChange={(event) => onChange({ suffix: event.target.value })}
-            placeholder="Suffix"
-            style={dialogInputStyle}
-          />
-          <input
-            value={state.startingNumber}
-            onChange={(event) =>
-              onChange({ startingNumber: Number(event.target.value) || 1 })
-            }
-            placeholder="Start #"
-            type="number"
-            style={dialogInputStyle}
-          />
-          <input
-            value={state.padding}
-            onChange={(event) =>
-              onChange({ padding: Number(event.target.value) || 1 })
-            }
-            placeholder="Pad width"
-            type="number"
-            style={dialogInputStyle}
-          />
-        </div>
-        <div
-          style={{
-            marginTop: 10,
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 8,
-            alignItems: "center",
-            color: EXP.muted,
-            fontSize: 11,
-          }}
-        >
-          <span>
-            Capture groups:{" "}
-            {state.mode === "regex" ? "$1..$99, ${name}" : "literal text"}
-          </span>
-          <span>
-            Tokens: <code style={{ color: EXP.text }}>{"{{date}}"}</code>,{" "}
-            <code style={{ color: EXP.text }}>{"{{index}}"}</code>,{" "}
-            <code style={{ color: EXP.text }}>{"{{parent}}"}</code>
-          </span>
-          {previewCount > 0 && <span>{previewCount} files</span>}
-          {collisionCount > 0 && (
-            <span style={{ color: "var(--overlay-explorer-danger-text)" }}>
-              {collisionCount} collision{collisionCount === 1 ? "" : "s"}
-            </span>
-          )}
-          {validationError && (
-            <span style={{ color: "var(--overlay-explorer-danger-text)" }}>
-              {validationError}
-            </span>
-          )}
-        </div>
-        <div
-          style={{
-            marginTop: 14,
-            border: "1px solid var(--overlay-border)",
-            borderRadius: 12,
-            overflow: "hidden",
-            minHeight: 0,
-            flex: 1,
-          }}
-        >
-          <OverlayScrollArea style={{ maxHeight: "50vh" }}>
-            <div
-              style={{
-                display: "grid",
-                gap: 1,
-                background: "var(--overlay-border)",
-              }}
-            >
-              {preview.map((row) => (
-                <div
-                  key={row.sourcePath}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto",
-                    gap: 12,
-                    background: "var(--overlay-bg-panel)",
-                    padding: "9px 12px",
-                    alignItems: "center",
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        color: EXP.muted,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {row.currentName}
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 2,
-                        color: EXP.muted2,
-                        fontSize: 10,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {row.sourcePath}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      minWidth: 0,
-                      color: EXP.text,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {row.nextName}
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    {row.collision && (
-                      <span
-                        style={{
-                          color: "var(--overlay-explorer-danger-text)",
-                          fontSize: 10,
-                          fontWeight: 700,
-                        }}
-                      >
-                        Collision
-                      </span>
-                    )}
-                    {row.validationError && (
-                      <span
-                        style={{
-                          color: "var(--overlay-explorer-danger-text)",
-                          fontSize: 10,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {row.validationError}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </OverlayScrollArea>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            justifyContent: "flex-end",
-            marginTop: 14,
-          }}
-        >
-          <button onClick={onCancel} style={dialogSecondaryButtonStyle}>
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={!canCommit}
-            style={{
-              background: canCommit
-                ? "var(--overlay-explorer-chip-active-bg)"
-                : "rgba(255,255,255,0.08)",
-              border: "1px solid var(--overlay-explorer-chip-active-border)",
-              borderRadius: "var(--overlay-explorer-control-radius)",
-              color: canCommit
-                ? "var(--overlay-explorer-chip-active-text)"
-                : EXP.muted,
-              padding: "6px 14px",
-              fontSize: 12,
-              cursor: canCommit ? "pointer" : "not-allowed",
-              fontWeight: 600,
-              opacity: canCommit ? 1 : 0.7,
-            }}
-          >
-            Rename
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ExplorerPropertiesDialog({
   state,
   entries,
@@ -8569,223 +8290,11 @@ function ExplorerPropertiesDialog({
   );
 }
 
-function DuplicateFinderDialog({
-  state,
-  onCancelScan,
-  onClose,
-  onSelectPath,
-  onRevealPath,
-  onTrashPath,
-  onDeletePath,
-}: {
-  state: DuplicateFinderState;
-  onCancelScan: () => void;
-  onClose: () => void;
-  onSelectPath: (path: string) => void;
-  onRevealPath: (path: string) => void;
-  onTrashPath: (path: string) => void;
-  onDeletePath: (path: string) => void;
-}) {
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 10000,
-        background: "var(--overlay-explorer-modal-scrim)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <div
-        style={{
-          width: "min(1100px, 96vw)",
-          maxHeight: "86vh",
-          display: "flex",
-          flexDirection: "column",
-          background: "var(--overlay-explorer-preview-bg)",
-          border: "1px solid var(--overlay-explorer-preview-border)",
-          borderRadius: "var(--overlay-explorer-panel-radius)",
-          padding: 20,
-          boxShadow: "var(--overlay-explorer-modal-shadow)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            marginBottom: 14,
-          }}
-        >
-          <div>
-            <div style={{ color: EXP.text, fontWeight: 700, fontSize: 14 }}>
-              Duplicate Finder
-            </div>
-            <div style={{ marginTop: 4, color: EXP.muted, fontSize: 11 }}>
-              {state.status
-                ? `${state.status.groups.length} groups, ${state.status.scannedFileCount} files scanned`
-                : state.loading
-                  ? "Scanning current folder tree…"
-                  : "Preparing duplicate scan…"}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {state.loading && (
-              <button onClick={onCancelScan} style={dialogSecondaryButtonStyle}>
-                Cancel Scan
-              </button>
-            )}
-            <button onClick={onClose} style={dialogSecondaryButtonStyle}>
-              Close
-            </button>
-          </div>
-        </div>
-        <div
-          style={{
-            minHeight: 0,
-            flex: 1,
-            border: "1px solid var(--overlay-border)",
-            borderRadius: 12,
-            overflow: "hidden",
-          }}
-        >
-          <OverlayScrollArea style={{ maxHeight: "68vh" }}>
-            <div style={{ display: "grid", gap: 12, padding: 12 }}>
-              {state.status?.groups.map((group) => (
-                <div
-                  key={`${group.contentHash}-${group.fileSize}`}
-                  style={{
-                    border: "1px solid var(--overlay-border)",
-                    borderRadius: 12,
-                    overflow: "hidden",
-                    background: "var(--overlay-bg-panel)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      padding: "10px 12px",
-                      borderBottom: "1px solid var(--overlay-border)",
-                    }}
-                  >
-                    <span
-                      style={{ color: EXP.text, fontSize: 12, fontWeight: 700 }}
-                    >
-                      {group.entries.length} duplicates
-                    </span>
-                    <span style={{ color: EXP.muted, fontSize: 11 }}>
-                      {formatSize(group.fileSize)}
-                    </span>
-                  </div>
-                  {group.entries.map((entry, index) => (
-                    <div
-                      key={entry.path}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "minmax(0, 1fr) auto",
-                        gap: 12,
-                        padding: "9px 12px",
-                        borderTop:
-                          index === 0
-                            ? "none"
-                            : "1px solid var(--overlay-border)",
-                      }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        <div
-                          style={{
-                            color: EXP.text,
-                            fontSize: 11.5,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {entry.name}
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 3,
-                            color: EXP.muted,
-                            fontSize: 10,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {entry.path}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          onClick={() => onSelectPath(entry.path)}
-                          style={dialogSecondaryButtonStyle}
-                        >
-                          Select
-                        </button>
-                        <button
-                          onClick={() => onRevealPath(entry.path)}
-                          style={dialogSecondaryButtonStyle}
-                        >
-                          Reveal
-                        </button>
-                        <button
-                          onClick={() => onTrashPath(entry.path)}
-                          style={dialogSecondaryButtonStyle}
-                        >
-                          Trash
-                        </button>
-                        <button
-                          onClick={() => onDeletePath(entry.path)}
-                          style={dialogDangerButtonStyle}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </OverlayScrollArea>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const dialogInputStyle: CSSProperties = {
-  width: "100%",
-  background: "var(--overlay-explorer-input-bg)",
-  border: "1px solid var(--overlay-explorer-input-border)",
-  borderRadius: "var(--overlay-explorer-control-radius)",
-  color: EXP.text,
-  fontSize: 12,
-  padding: "8px 10px",
-  outline: "none",
-  boxSizing: "border-box",
-};
-
 const dialogSecondaryButtonStyle: CSSProperties = {
   background: "var(--overlay-explorer-chip-bg)",
   border: "1px solid var(--overlay-explorer-chip-border)",
   borderRadius: "var(--overlay-explorer-control-radius)",
   color: EXP.text,
-  padding: "6px 12px",
-  fontSize: 12,
-  cursor: "pointer",
-};
-
-const dialogDangerButtonStyle: CSSProperties = {
-  background: "var(--overlay-explorer-danger-soft-bg)",
-  border: "1px solid var(--overlay-explorer-danger-soft-border)",
-  borderRadius: "var(--overlay-explorer-control-radius)",
-  color: EXP.red,
   padding: "6px 12px",
   fontSize: 12,
   cursor: "pointer",
@@ -8816,6 +8325,7 @@ interface FileExplorerProps {
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
+  pluginWorkflows?: OverlayPluginWorkflowContribution[];
   layoutMode?: ExplorerLayoutMode;
   dockPreviewPolicy?: ExplorerDockPreviewPolicy;
   defaultModeProfileId?: ExplorerModeProfileId | null;
@@ -9018,6 +8528,7 @@ export function FileExplorer({
   pluginActions = [],
   pluginContextMenuItems = [],
   pluginPreviewLanes = [],
+  pluginWorkflows = [],
   layoutMode = "full",
   dockPreviewPolicy,
   defaultModeProfileId = null,
@@ -9724,7 +9235,6 @@ export function FileExplorer({
     description: "",
   });
   const [batchRename, setBatchRename] = useState<BatchRenameState>({
-    visible: false,
     mode: "literal",
     findText: "",
     replaceText: "",
@@ -9752,11 +9262,12 @@ export function FileExplorer({
     name: "",
   });
   const [duplicateFinder, setDuplicateFinder] = useState<DuplicateFinderState>({
-    visible: false,
     scanId: null,
     status: null,
     loading: false,
   });
+  const [activeWorkflowSession, setActiveWorkflowSession] =
+    useState<ExplorerWorkflowSession<ExplorerWorkflowPayload> | null>(null);
   const [tagMetadata, setTagMetadata] = useState<ExplorerTagMetadataSnapshot>({
     tags: [],
     assignments: [],
@@ -9805,10 +9316,49 @@ export function FileExplorer({
   const previewLoadingDelayTimerRef = useRef<number | null>(null);
   const folderActivationPrimeTimerRef = useRef<number | null>(null);
   const pendingFolderActivationPathRef = useRef<string | null>(null);
+  const activeWorkflowSessionRef =
+    useRef<ExplorerWorkflowSession<ExplorerWorkflowPayload> | null>(null);
+  const workflowCloseGuardRef = useRef<(() => Promise<boolean>) | null>(null);
   const lastImmediateDirectoryNavigationRef = useRef<{
     path: string;
     startedAt: number;
   } | null>(null);
+  activeWorkflowSessionRef.current = activeWorkflowSession;
+  const availableWorkflowDefinitionsById = useMemo(() => {
+    const definitions = new Map<
+      string,
+      ExplorerWorkflowDefinition<ExplorerWorkflowPayload>
+    >();
+    definitions.set(BUILTIN_BATCH_RENAME_WORKFLOW_ID, {
+      id: BUILTIN_BATCH_RENAME_WORKFLOW_ID,
+      title: "Batch Rename",
+      description:
+        "Preview and apply batch renaming recipes across the visible or selected files in this explorer pane.",
+      contexts: ["entry", "background", "multi-select"],
+      defaultSize: "lg",
+      keywords: ["rename", "batch", "files"],
+      iconName: "Edit3",
+    });
+    definitions.set(BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID, {
+      id: BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID,
+      title: "Duplicate Finder",
+      description:
+        "Scan the current folder tree for duplicate files and route each result back into explorer actions.",
+      contexts: ["background", "entry", "multi-select"],
+      defaultSize: "xl",
+      keywords: ["duplicates", "scan", "cleanup"],
+      iconName: "Sparkles",
+    });
+    for (const workflow of pluginWorkflows) {
+      definitions.set(workflow.id, workflow);
+    }
+    return definitions;
+  }, [pluginWorkflows]);
+  const activeWorkflowId = activeWorkflowSession?.definition.id ?? null;
+  const isBatchRenameWorkflowOpen =
+    activeWorkflowId === BUILTIN_BATCH_RENAME_WORKFLOW_ID;
+  const isDuplicateFinderWorkflowOpen =
+    activeWorkflowId === BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID;
   const previewSaveTimer = useRef<number | null>(null);
   const previewPrefetchInFlightRef = useRef<Set<string>>(new Set());
   const internalPointerDragCandidateRef =
@@ -9982,11 +9532,13 @@ export function FileExplorer({
   const previewContentHostRef = useRef<HTMLDivElement | null>(null);
   const bottomTerminalAnchorRef = useRef<HTMLDivElement | null>(null);
   const explorerViewportRef = useRef<HTMLDivElement | null>(null);
+  const observedExplorerViewportRef = useRef<HTMLDivElement | null>(null);
+  const explorerViewportResizeObserverRef = useRef<ResizeObserver | null>(
+    null,
+  );
   const [explorerRootNode, setExplorerRootNode] =
     useState<HTMLDivElement | null>(null);
   const [explorerFileAreaNode, setExplorerFileAreaNode] =
-    useState<HTMLDivElement | null>(null);
-  const [explorerViewportNode, setExplorerViewportNode] =
     useState<HTMLDivElement | null>(null);
   const explorerViewportScrollTopRef = useRef(0);
   const explorerViewportRequiresVirtualScrollStateRef = useRef(false);
@@ -10029,15 +9581,18 @@ export function FileExplorer({
     });
   const bindExplorerRootRef = useCallback((node: HTMLDivElement | null) => {
     explorerRootRef.current = node;
-    setExplorerRootNode(node);
+    if (node) {
+      setExplorerRootNode((current) => (current === node ? current : node));
+    }
   }, []);
   const bindExplorerFileAreaRef = useCallback((node: HTMLDivElement | null) => {
     explorerFileAreaRef.current = node;
-    setExplorerFileAreaNode(node);
+    if (node) {
+      setExplorerFileAreaNode((current) => (current === node ? current : node));
+    }
   }, []);
   const bindExplorerViewportRef = useCallback((node: HTMLDivElement | null) => {
     explorerViewportRef.current = node;
-    setExplorerViewportNode(node);
   }, []);
   const publishLiveLayoutZoomState = useCallback(() => {
     layoutZoomPublishFrameRef.current = null;
@@ -16987,6 +16542,107 @@ export function FileExplorer({
     const folderCount = visibleSizes.length - fileCount;
     return { totalBytes, fileCount, folderCount };
   }, [entrySizes, visibleEntries]);
+  const requestCloseActiveWorkflow = useCallback(async () => {
+    const session = activeWorkflowSessionRef.current;
+    if (!session) {
+      return true;
+    }
+    if (session.busy) {
+      return false;
+    }
+    const guard = workflowCloseGuardRef.current;
+    if (!guard) {
+      return true;
+    }
+    try {
+      return await guard();
+    } catch (guardError) {
+      setError(String(guardError));
+      return false;
+    }
+  }, [setError]);
+  const closeExplorerWorkflow = useCallback(async () => {
+    const session = activeWorkflowSessionRef.current;
+    if (!session) {
+      return true;
+    }
+    const canClose = await requestCloseActiveWorkflow();
+    if (!canClose) {
+      return false;
+    }
+    workflowCloseGuardRef.current = null;
+    if (session.definition.id === BUILTIN_BATCH_RENAME_WORKFLOW_ID) {
+      setBatchRenamePreviewRows([]);
+    }
+    if (session.definition.id === BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID) {
+      setDuplicateFinder({
+        scanId: null,
+        status: null,
+        loading: false,
+      });
+    }
+    setActiveWorkflowSession(null);
+    return true;
+  }, [requestCloseActiveWorkflow]);
+  const resolveExplorerWorkflowDefinition = useCallback(
+    (
+      workflowId: string,
+      pluginId?: string | null,
+    ): ExplorerWorkflowDefinition<ExplorerWorkflowPayload> | null => {
+      const directMatch =
+        availableWorkflowDefinitionsById.get(workflowId) ?? null;
+      if (directMatch) {
+        return directMatch;
+      }
+      if (!pluginId) {
+        return null;
+      }
+      return (
+        availableWorkflowDefinitionsById.get(
+          `${pluginId}.workflow.${workflowId}`,
+        ) ?? null
+      );
+    },
+    [availableWorkflowDefinitionsById],
+  );
+  const openExplorerWorkflow = useCallback(
+    async (
+      launch: ExplorerWorkflowLaunchRequest<ExplorerWorkflowPayload>,
+    ) => {
+      const definition = resolveExplorerWorkflowDefinition(
+        launch.workflowId,
+        launch.pluginId ?? null,
+      );
+      if (!definition) {
+        setError(`Unknown explorer workflow: ${launch.workflowId}`);
+        return false;
+      }
+      if (activeWorkflowSessionRef.current) {
+        const closed = await closeExplorerWorkflow();
+        if (!closed) {
+          return false;
+        }
+      }
+      workflowCloseGuardRef.current = null;
+      setActiveWorkflowSession({
+        id: `${definition.id}:${Date.now()}`,
+        definition,
+        launch: {
+          ...launch,
+          payload: launch.payload ?? definition.initialPayload ?? null,
+        },
+        title:
+          launch.titleOverride?.trim() || definition.title,
+        size: definition.defaultSize,
+        busy: false,
+        status: null,
+        footerActions: [],
+        openedAt: Date.now(),
+      });
+      return true;
+    },
+    [closeExplorerWorkflow, resolveExplorerWorkflowDefinition, setError],
+  );
 
   const batchRenameTargets = useMemo(
     () =>
@@ -17014,7 +16670,7 @@ export function FileExplorer({
   );
 
   useEffect(() => {
-    if (!batchRename.visible) {
+    if (!isBatchRenameWorkflowOpen) {
       return;
     }
 
@@ -17041,30 +16697,36 @@ export function FileExplorer({
         setBatchRenamePreviewRows([]);
       });
   }, [
-    batchRename.visible,
     batchRenameRecipe,
+    isBatchRenameWorkflowOpen,
     previewExplorerBatchRename,
     setError,
   ]);
 
   const commitBatchRename = useCallback(async () => {
     if (batchRenameRecipe.sourcePaths.length === 0) {
-      setBatchRename((current) => ({ ...current, visible: false }));
+      await closeExplorerWorkflow();
       return;
     }
     try {
       const results = await applyExplorerBatchRenameRecipe(batchRenameRecipe);
       if (results.length === 0) {
-        setBatchRename((current) => ({ ...current, visible: false }));
+        await closeExplorerWorkflow();
         return;
       }
       invalidateExplorerResultCaches();
-      setBatchRename((current) => ({ ...current, visible: false }));
+      await closeExplorerWorkflow();
       refresh();
     } catch (renameError) {
       setError(String(renameError));
     }
-  }, [applyExplorerBatchRenameRecipe, batchRenameRecipe, refresh, setError]);
+  }, [
+    applyExplorerBatchRenameRecipe,
+    batchRenameRecipe,
+    closeExplorerWorkflow,
+    refresh,
+    setError,
+  ]);
 
   const saveCurrentSearch = useCallback(async () => {
     const name = saveSearchState.name.trim() || search.trim();
@@ -17271,7 +16933,7 @@ export function FileExplorer({
     ],
   );
 
-  const startDuplicateFinder = useCallback(async () => {
+  const startDuplicateFinderScan = useCallback(async () => {
     if (
       !currentPath ||
       currentPathIsCloud ||
@@ -17281,7 +16943,6 @@ export function FileExplorer({
       return;
     }
     setDuplicateFinder({
-      visible: true,
       scanId: null,
       status: null,
       loading: true,
@@ -17289,7 +16950,6 @@ export function FileExplorer({
     try {
       const response = await startExplorerDuplicateScan(currentPath);
       setDuplicateFinder({
-        visible: true,
         scanId: response.scanId,
         status: null,
         loading: true,
@@ -17297,13 +16957,14 @@ export function FileExplorer({
     } catch (scanError) {
       setError(String(scanError));
       setDuplicateFinder({
-        visible: false,
         scanId: null,
         status: null,
         loading: false,
       });
+      await closeExplorerWorkflow();
     }
   }, [
+    closeExplorerWorkflow,
     currentPath,
     currentPathIsCloud,
     currentPathIsHome,
@@ -17312,7 +16973,7 @@ export function FileExplorer({
   ]);
 
   useEffect(() => {
-    if (!duplicateFinder.visible || !duplicateFinder.scanId) {
+    if (!isDuplicateFinderWorkflowOpen || !duplicateFinder.scanId) {
       return;
     }
     let cancelled = false;
@@ -17343,7 +17004,7 @@ export function FileExplorer({
     };
   }, [
     duplicateFinder.scanId,
-    duplicateFinder.visible,
+    isDuplicateFinderWorkflowOpen,
     pollExplorerDuplicateScan,
   ]);
 
@@ -17962,7 +17623,11 @@ export function FileExplorer({
         primaryEntry: ExplorerMenuInvocationEntry | null;
         targetEntries: ExplorerMenuInvocationEntry[];
       },
-    ): ExplorerActionExecutionInput => ({
+    ): ExplorerActionExecutionInput | null => {
+      if (!action.execution) {
+        return null;
+      }
+      return {
       packId: action.packId,
       actionId: action.actionId,
       actionTitle: action.title,
@@ -18017,7 +17682,8 @@ export function FileExplorer({
         },
         runtimePlatform: explorerMenuRuntimePlatform,
       },
-    }),
+      };
+    },
     [explorerMenuRuntimePlatform, toExplorerActionInvocationEntry],
   );
   const announcePreviewTerminalActionResult = useCallback(
@@ -18048,14 +17714,33 @@ export function FileExplorer({
         targetEntries: ExplorerMenuInvocationEntry[];
       },
     ) => {
+      if (action.presentation.kind === "workflow") {
+        await openExplorerWorkflow({
+          workflowId: action.presentation.workflowId ?? "",
+          payload: action.presentation.workflowPayload ?? null,
+          source: "action",
+          pluginId: action.pluginId ?? null,
+          targetPaneId: instanceId,
+          workspaceTabId,
+          contextKind: runtimeContext.invocation.kind,
+        });
+        return;
+      }
+
       const startedAt = Date.now();
       const outputTarget = action.presentation.outputTarget;
       const shouldRecordSuccessfulRun = outputTarget !== "silent";
+      const executionRequest = buildExplorerActionExecutionRequest(
+        action,
+        runtimeContext,
+      );
+      if (!executionRequest) {
+        setError(`Action "${action.title}" is missing an execution entry.`);
+        return;
+      }
 
       try {
-        const result = await executeExplorerAction(
-          buildExplorerActionExecutionRequest(action, runtimeContext),
-        );
+        const result = await executeExplorerAction(executionRequest);
         const finishedAt = Date.now();
         const runStatus = result.launchedInNativeTerminal
           ? "launched"
@@ -18128,8 +17813,11 @@ export function FileExplorer({
           finishedAt: Date.now(),
           exitCode: null,
           timedOut: false,
-          runtimeUsed: action.execution.interpreter ?? action.execution.runner,
-          commandDisplay: action.execution.entry,
+          runtimeUsed:
+            action.execution?.interpreter ??
+            action.execution?.runner ??
+            "interpreter",
+          commandDisplay: action.execution?.entry ?? action.title,
           workingDirectory: runtimeContext.invocation.currentLocation,
           stdout: "",
           stderr: message,
@@ -18145,8 +17833,11 @@ export function FileExplorer({
     [
       announcePreviewTerminalActionResult,
       buildExplorerActionExecutionRequest,
+      instanceId,
+      openExplorerWorkflow,
       refresh,
       setError,
+      workspaceTabId,
     ],
   );
   const activeOpenWithTargetPath = useMemo(() => {
@@ -23780,11 +23471,12 @@ export function FileExplorer({
           <button
             type="button"
             onClick={() =>
-              setBatchRename((current) => ({
-                ...current,
-                visible: true,
-                mode: current.mode ?? "literal",
-              }))
+              void openExplorerWorkflow({
+                workflowId: BUILTIN_BATCH_RENAME_WORKFLOW_ID,
+                source: "builtin",
+                targetPaneId: instanceId,
+                workspaceTabId,
+              })
             }
             disabled={batchRenameTargets.length === 0}
             title="Batch rename visible or selected files"
@@ -23840,7 +23532,14 @@ export function FileExplorer({
         render: () => (
           <button
             type="button"
-            onClick={() => void startDuplicateFinder()}
+            onClick={() =>
+              void openExplorerWorkflow({
+                workflowId: BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID,
+                source: "builtin",
+                targetPaneId: instanceId,
+                workspaceTabId,
+              })
+            }
             disabled={!currentPath}
             title="Scan the current folder tree for duplicates"
             style={toolbarChipButtonStyle(!currentPath)}
@@ -25296,7 +24995,6 @@ export function FileExplorer({
       selectedSizeSummary,
       setAddressDraft,
       setAddressEditing,
-      setBatchRename,
       setSaveSearchState,
       setSearchMode,
       setShowArchiveActionsMenu,
@@ -25309,7 +25007,7 @@ export function FileExplorer({
       showToolbarLocationStrips,
       showToolbarTextLabels,
       showZoomHud,
-      startDuplicateFinder,
+      openExplorerWorkflow,
       submitAddressDraft,
       triggerFindSimilarForPath,
       toggleSelectionMode,
@@ -25536,11 +25234,12 @@ export function FileExplorer({
           ) {
             return false;
           }
-          setBatchRename((current) => ({
-            ...current,
-            visible: true,
-            mode: current.mode ?? "literal",
-          }));
+          void openExplorerWorkflow({
+            workflowId: BUILTIN_BATCH_RENAME_WORKFLOW_ID,
+            source: "builtin",
+            targetPaneId: instanceId,
+            workspaceTabId,
+          });
           return true;
         case "tagSelection":
           if (
@@ -25566,7 +25265,12 @@ export function FileExplorer({
           if (!currentPath) {
             return false;
           }
-          void startDuplicateFinder();
+          void openExplorerWorkflow({
+            workflowId: BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID,
+            source: "builtin",
+            targetPaneId: instanceId,
+            workspaceTabId,
+          });
           return true;
         case "openPropertiesPanel":
           if (!currentPath || currentPathIsHome) {
@@ -25729,7 +25433,6 @@ export function FileExplorer({
       selectedEntries,
       semanticIndexSummary?.indexed,
       setActivePreviewWorkflowTabId,
-      setBatchRename,
       setDocumentViewMode,
       setPreviewSplitMode,
       setSaveSearchState,
@@ -25737,7 +25440,7 @@ export function FileExplorer({
       setShowLayoutMenu,
       setShowModeProfileMenu,
       showHidden,
-      startDuplicateFinder,
+      openExplorerWorkflow,
       toggleBottomExplorerTerminal,
       togglePreviewEnabled,
       togglePreviewLock,
@@ -26208,30 +25911,33 @@ export function FileExplorer({
   }, [layoutZoomGestureActive]);
 
   useLayoutEffect(() => {
-    const viewport = explorerViewportNode;
-    if (!viewport) {
+    const viewport = explorerViewportRef.current;
+    if (!viewport || observedExplorerViewportRef.current === viewport) {
       return;
     }
 
+    explorerViewportResizeObserverRef.current?.disconnect();
+    observedExplorerViewportRef.current = viewport;
     const resizeObserver =
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(() => {
             syncExplorerViewportSize(viewport);
           })
         : null;
+    explorerViewportResizeObserverRef.current = resizeObserver;
 
     resizeObserver?.observe(viewport);
     syncExplorerViewportSize(viewport);
     syncExplorerViewportScrollTop(viewport);
-
-    return () => {
-      resizeObserver?.disconnect();
-    };
-  }, [
-    explorerViewportNode,
-    syncExplorerViewportScrollTop,
-    syncExplorerViewportSize,
-  ]);
+  });
+  useEffect(
+    () => () => {
+      explorerViewportResizeObserverRef.current?.disconnect();
+      explorerViewportResizeObserverRef.current = null;
+      observedExplorerViewportRef.current = null;
+    },
+    [],
+  );
 
   const createLayoutZoomPointerAnchor = useCallback(
     (event: Pick<WheelEvent, "clientX" | "clientY">) => {
@@ -31159,6 +30865,205 @@ export function FileExplorer({
     selected,
     workspaceTabId,
   ]);
+  const workflowHostAppearance = useMemo(
+    () => appearance ?? resolveOverlayAppearance({}),
+    [appearance],
+  );
+  const createExplorerWorkflowHostControls = useCallback(
+    (sessionId: string): ExplorerWorkflowHostControls => ({
+      close: async () => {
+        if (activeWorkflowSessionRef.current?.id !== sessionId) {
+          return;
+        }
+        await closeExplorerWorkflow();
+      },
+      setTitle: (title) => {
+        setActiveWorkflowSession((current) =>
+          current?.id === sessionId ? { ...current, title } : current,
+        );
+      },
+      setStatus: (status) => {
+        setActiveWorkflowSession((current) =>
+          current?.id === sessionId ? { ...current, status } : current,
+        );
+      },
+      setBusy: (busy) => {
+        setActiveWorkflowSession((current) =>
+          current?.id === sessionId ? { ...current, busy } : current,
+        );
+      },
+      setSize: (size) => {
+        setActiveWorkflowSession((current) =>
+          current?.id === sessionId ? { ...current, size } : current,
+        );
+      },
+      setFooterActions: (footerActions) => {
+        setActiveWorkflowSession((current) =>
+          current?.id === sessionId
+            ? { ...current, footerActions }
+            : current,
+        );
+      },
+      setCloseGuard: (guard) => {
+        if (activeWorkflowSessionRef.current?.id !== sessionId) {
+          return;
+        }
+        workflowCloseGuardRef.current = guard;
+      },
+    }),
+    [closeExplorerWorkflow],
+  );
+  const activeWorkflowHostControls = useMemo(
+    () =>
+      activeWorkflowSession
+        ? createExplorerWorkflowHostControls(activeWorkflowSession.id)
+        : null,
+    [activeWorkflowSession, createExplorerWorkflowHostControls],
+  );
+  const resolvedWorkflowEntriesById = useMemo(() => {
+    const entriesById = new Map<string, ResolvedExplorerWorkflowEntry>();
+    const batchRenameDefinition =
+      availableWorkflowDefinitionsById.get(
+        BUILTIN_BATCH_RENAME_WORKFLOW_ID,
+      ) ?? null;
+    if (batchRenameDefinition) {
+      entriesById.set(batchRenameDefinition.id, {
+        definition: batchRenameDefinition,
+        render: (props) => (
+          <BatchRenameWorkflowView
+            {...props}
+            state={batchRename}
+            previewRows={batchRenamePreview.rows}
+            targetCount={batchRenameTargets.length}
+            onChange={(updates) =>
+              setBatchRename((current) => ({ ...current, ...updates }))
+            }
+            onConfirm={commitBatchRename}
+          />
+        ),
+      });
+    }
+    const duplicateFinderDefinition =
+      availableWorkflowDefinitionsById.get(
+        BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID,
+      ) ?? null;
+    if (duplicateFinderDefinition) {
+      entriesById.set(duplicateFinderDefinition.id, {
+        definition: duplicateFinderDefinition,
+        render: (props) => (
+          <DuplicateFinderWorkflowView
+            {...props}
+            state={duplicateFinder}
+            formatSize={formatSize}
+            onStartScan={startDuplicateFinderScan}
+            onCancelScan={async () => {
+              try {
+                if (duplicateFinder.scanId) {
+                  await cancelExplorerDuplicateScan(duplicateFinder.scanId);
+                }
+                setDuplicateFinder((current) => ({
+                  ...current,
+                  loading: false,
+                }));
+              } catch (scanError) {
+                setError(String(scanError));
+              }
+            }}
+            onSelectPath={(path) => {
+              const parentPath = path.replace(/[/\\][^/\\]+$/, "");
+              if (parentPath && parentPath !== currentPath) {
+                void navigate(parentPath).finally(() => {
+                  setSelected(new Set([path]));
+                  lastSelected.current = path;
+                  selectionRangeAnchorPathRef.current = path;
+                });
+                return;
+              }
+              setSelected(new Set([path]));
+              lastSelected.current = path;
+              selectionRangeAnchorPathRef.current = path;
+            }}
+            onRevealPath={(path) => {
+              void revealExplorerPath(path).catch((revealError) =>
+                setError(String(revealError)),
+              );
+            }}
+            onTrashPath={(path) => {
+              const entry = duplicateEntryLookup.get(path);
+              if (entry) {
+                openTrashDialog([entry]);
+              }
+            }}
+            onDeletePath={(path) => {
+              const entry = duplicateEntryLookup.get(path);
+              if (entry) {
+                setDeleteTargets([entry]);
+              }
+            }}
+          />
+        ),
+      });
+    }
+    for (const workflow of pluginWorkflows) {
+      entriesById.set(workflow.id, {
+        definition: workflow,
+        render: ({ executionContext, host, launch, session }) =>
+          React.createElement(workflow.component, {
+            appearance: {
+              theme: workflowHostAppearance.theme,
+              fonts: workflowHostAppearance.fonts,
+              cssVars: workflowHostAppearance.cssVars,
+            },
+            host: {
+              mode: "explorer-workflow",
+              width:
+                session.size === "xl"
+                  ? 1260
+                  : session.size === "lg"
+                    ? 1040
+                    : session.size === "md"
+                      ? 880
+                      : 680,
+              height: 760,
+              compact: session.size === "sm",
+              density: session.size === "sm" ? "compact" : "regular",
+            },
+            executionContext,
+            workflow,
+            launch,
+            controls: host,
+          }),
+      });
+    }
+    return entriesById;
+  }, [
+    availableWorkflowDefinitionsById,
+    batchRename,
+    batchRenamePreview.rows,
+    batchRenameTargets.length,
+    cancelExplorerDuplicateScan,
+    commitBatchRename,
+    currentPath,
+    duplicateEntryLookup,
+    duplicateFinder,
+    formatSize,
+    navigate,
+    openTrashDialog,
+    pluginWorkflows,
+    setError,
+    startDuplicateFinderScan,
+    workflowHostAppearance.cssVars,
+    workflowHostAppearance.fonts,
+    workflowHostAppearance.theme,
+  ]);
+  const activeWorkflowEntry = useMemo(
+    () =>
+      activeWorkflowSession
+        ? resolvedWorkflowEntriesById.get(activeWorkflowSession.definition.id) ??
+          null
+        : null,
+    [activeWorkflowSession, resolvedWorkflowEntriesById],
+  );
   useEffect(() => {
     if (!isTauri()) {
       return;
@@ -31168,6 +31073,31 @@ export function FileExplorer({
       isActive: isActiveWorkspacePane,
     }).catch(() => {});
   }, [isActiveWorkspacePane, pluginPreviewExecutionContext]);
+  useEffect(
+    () =>
+      subscribeToExplorerWorkflowRequests((request) => {
+        const paneMatches =
+          request.targetPaneId == null ||
+          request.targetPaneId === instanceId;
+        const workspaceTabMatches =
+          request.workspaceTabId == null ||
+          request.workspaceTabId === workspaceTabId;
+        if (!paneMatches || !workspaceTabMatches) {
+          return;
+        }
+        if (request.kind === "close") {
+          void closeExplorerWorkflow();
+          return;
+        }
+        void openExplorerWorkflow(request);
+      }),
+    [
+      closeExplorerWorkflow,
+      instanceId,
+      openExplorerWorkflow,
+      workspaceTabId,
+    ],
+  );
   const explorerPreviewPane = useMemo(() => {
     if (!previewPanelVisible) {
       return null;
@@ -32499,72 +32429,21 @@ export function FileExplorer({
         placeholder="tag-one, tag-two"
       />
 
-      {batchRename.visible && (
-        <BatchRenameDialog
-          state={batchRename}
-          preview={batchRenamePreview.rows}
-          onChange={(updates) =>
-            setBatchRename((current) => ({ ...current, ...updates }))
-          }
-          onConfirm={() => {
-            void commitBatchRename();
+      {activeWorkflowSession && activeWorkflowEntry && activeWorkflowHostControls ? (
+        <ExplorerWorkflowModal
+          session={activeWorkflowSession}
+          onRequestClose={() => {
+            void closeExplorerWorkflow();
           }}
-          onCancel={() =>
-            setBatchRename((current) => ({ ...current, visible: false }))
-          }
-        />
-      )}
-
-      {duplicateFinder.visible && (
-        <DuplicateFinderDialog
-          state={duplicateFinder}
-          onCancelScan={() => {
-            if (duplicateFinder.scanId) {
-              void cancelExplorerDuplicateScan(duplicateFinder.scanId);
-            }
-            setDuplicateFinder((current) => ({ ...current, loading: false }));
-          }}
-          onClose={() =>
-            setDuplicateFinder({
-              visible: false,
-              scanId: null,
-              status: null,
-              loading: false,
-            })
-          }
-          onSelectPath={(path) => {
-            const parentPath = path.replace(/[/\\][^/\\]+$/, "");
-            if (parentPath && parentPath !== currentPath) {
-              void navigate(parentPath).finally(() => {
-                setSelected(new Set([path]));
-                lastSelected.current = path;
-                selectionRangeAnchorPathRef.current = path;
-              });
-            } else {
-              setSelected(new Set([path]));
-              lastSelected.current = path;
-              selectionRangeAnchorPathRef.current = path;
-            }
-          }}
-          onRevealPath={(path) => {
-            void revealExplorerPath(path).catch((revealError) =>
-              setError(String(revealError)),
-            );
-          }}
-          onTrashPath={(path) => {
-            const entry = duplicateEntryLookup.get(path);
-            if (entry) {
-              openTrashDialog([entry]);
-            }
-          }}
-          onDeletePath={(path) => {
-            const entry = duplicateEntryLookup.get(path);
-            if (entry) {
-              setDeleteTargets([entry]);
-            }
-          }}
-        />
-      )}
+        >
+          {activeWorkflowEntry.render({
+            session: activeWorkflowSession,
+            launch: activeWorkflowSession.launch,
+            host: activeWorkflowHostControls,
+            executionContext: pluginPreviewExecutionContext,
+          })}
+        </ExplorerWorkflowModal>
+      ) : null}
 
       {propertiesPanel.visible && (
         <ExplorerPropertiesDialog

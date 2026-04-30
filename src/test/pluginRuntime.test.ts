@@ -10,6 +10,7 @@ import {
   derivePluginName,
   isFrontendPluginFile,
   loadPluginPreviewLaneFromSource,
+  loadPluginWorkflowFromSource,
   loadPluginFromSource,
 } from '../components/pluginRuntime';
 import { pluginSystemConfig } from '../config/plugins';
@@ -166,6 +167,44 @@ describe('pluginRuntime helpers', () => {
     expect(loaded.error).toBeNull();
     expect(loaded.name).toBe('Multi File Plugin');
     expect(typeof loaded.component).toBe('function');
+  });
+
+  it('loads explorer workflow modules through defineWorkflow exports', async () => {
+    const loaded = await loadPluginWorkflowFromSource(
+      `
+        import React from 'react';
+        import { defineWorkflow } from 'overlayterm-plugin';
+
+        function WorkflowSurface() {
+          return React.createElement('div', null, 'workflow-ready');
+        }
+
+        export default defineWorkflow({
+          component: WorkflowSurface,
+          descriptor: {
+            title: 'Workflow Surface',
+            description: 'Plugin workflow smoke test',
+            contexts: ['background'],
+            defaultSize: 'lg',
+          },
+        });
+      `,
+      {
+        name: 'workflow-surface.tsx',
+        path: 'plugins/workflow-surface.tsx',
+        is_dir: false,
+        modified: 5,
+        extension: 'tsx',
+      },
+    );
+
+    expect(typeof loaded.component).toBe('function');
+    expect(loaded.descriptor).toMatchObject({
+      title: 'Workflow Surface',
+      description: 'Plugin workflow smoke test',
+      contexts: ['background'],
+      defaultSize: 'lg',
+    });
   });
 
   it('allows plugins to import the notification runtime', async () => {

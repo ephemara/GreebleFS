@@ -1,6 +1,7 @@
 import type {
   BoundOverlayPluginPreviewLaneComponent,
   BoundOverlayPluginSettingsSlotComponent,
+  BoundOverlayPluginWorkflowComponent,
 } from '../components/pluginRuntime';
 import type {
   OverlayPluginPreviewLaneCapabilityFlags,
@@ -8,6 +9,7 @@ import type {
   OverlayPluginPreviewLaneMatchRule,
 } from './pluginPreviewLanes';
 import type { OverlayPluginSettingsSlotDescriptor } from './pluginSettings';
+import type { OverlayPluginWorkflowDescriptor } from '../components/explorer/explorerWorkflowContracts';
 
 export interface OverlayPluginCommandContribution {
   id: string;
@@ -71,6 +73,11 @@ export interface OverlayPluginPreviewLaneContribution
 export interface OverlayPluginSettingsSlotContribution
   extends OverlayPluginSettingsSlotDescriptor {
   component: BoundOverlayPluginSettingsSlotComponent | null;
+}
+
+export interface OverlayPluginWorkflowContribution
+  extends OverlayPluginWorkflowDescriptor {
+  component: BoundOverlayPluginWorkflowComponent;
 }
 
 export interface OverlayPluginCommandContext {

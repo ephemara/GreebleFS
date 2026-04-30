@@ -357,6 +357,10 @@ export function createMockOverlayPluginApi(
       resetValues: () => undefined,
       subscribe: () => () => undefined,
     },
+    workflows: {
+      open: async () => undefined,
+      close: async () => undefined,
+    },
     refreshPlugins: async () => undefined,
     openPluginsFolder: async () => undefined,
     runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),

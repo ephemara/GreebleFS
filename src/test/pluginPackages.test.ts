@@ -627,6 +627,120 @@ describe('plugin package discovery', () => {
     expect(typeof result.settingsSlots[0]?.component).toBe('function');
   });
 
+  it('discovers plugin workflow contributions from package manifests', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginSystemConfig.pluginsDirectory) {
+        return [
+          {
+            name: 'workflow-package',
+            path: 'plugins/workflow-package',
+            is_dir: true,
+            extension: '',
+            modified: 30,
+          },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/workflow-package/plugin.json') {
+        return JSON.stringify({
+          id: 'workflow-package',
+          name: 'Workflow Package',
+          entry: 'dist/index.js',
+          contributions: {
+            workflows: [
+              {
+                id: 'rename-slate',
+                title: 'Rename Slate',
+                description: 'Package workflow contribution smoke test.',
+                entry: 'workflows/rename.js',
+                contexts: ['background', 'entry'],
+                defaultSize: 'lg',
+              },
+            ],
+          },
+        });
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === 'plugins/workflow-package/dist') {
+        return [
+          {
+            name: 'index.js',
+            path: 'plugins/workflow-package/dist/index.js',
+            is_dir: false,
+            extension: 'js',
+            modified: 31,
+          },
+        ];
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === 'plugins/workflow-package/workflows') {
+        return [
+          {
+            name: 'rename.js',
+            path: 'plugins/workflow-package/workflows/rename.js',
+            is_dir: false,
+            extension: 'js',
+            modified: 32,
+          },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/workflow-package/dist/index.js') {
+        return `
+          import React from 'react';
+          import { definePlugin } from 'overlayterm-plugin';
+
+          export default definePlugin({
+            name: 'Workflow Package',
+            component: function WorkflowPackagePanel() {
+              return React.createElement('div', null, 'workflow-package');
+            },
+          });
+        `;
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/workflow-package/workflows/rename.js') {
+        return `
+          import React from 'react';
+          import { defineWorkflow } from 'overlayterm-plugin';
+
+          function RenameWorkflowSurface() {
+            return React.createElement('div', null, 'rename-workflow');
+          }
+
+          export default defineWorkflow({
+            component: RenameWorkflowSurface,
+            descriptor: {
+              title: 'Rename Slate',
+              description: 'Package workflow contribution smoke test.',
+              contexts: ['background', 'entry'],
+              defaultSize: 'lg',
+            },
+          });
+        `;
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
+
+    expect(result.workflows).toHaveLength(1);
+    expect(result.workflows[0]).toMatchObject({
+      id: 'workflow-package.workflow.rename-slate',
+      pluginId: 'workflow-package',
+      pluginName: 'Workflow Package',
+      title: 'Rename Slate',
+      description: 'Package workflow contribution smoke test.',
+      contexts: ['background', 'entry'],
+      defaultSize: 'lg',
+    });
+    expect(typeof result.workflows[0]?.component).toBe('function');
+  });
+
   it('rejects unsafe package-relative paths before loading bundled assets', async () => {
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       const params = args as { path?: string; showHidden?: boolean } | undefined;

@@ -13,6 +13,11 @@ import type {
   OverlayPluginSettingsSlotDescriptor,
   OverlayPluginSettingsValue,
 } from '../config/pluginSettings';
+import type {
+  ExplorerWorkflowHostControls,
+  ExplorerWorkflowLaunchRequest,
+  OverlayPluginWorkflowDescriptor,
+} from './explorer/explorerWorkflowContracts';
 import type { FolderIconRule, FolderIconValue } from '../config/folderIcons';
 import {
   getPluginBackendDirectory,
@@ -86,6 +91,20 @@ import type {
 } from './ExplorerPdfWorkbench';
 import type { EditorSearchFocusTarget } from './fileExplorerSearchFocus';
 import type { ExplorerPreviewEntryDragRequest } from './useExplorerPreviewEntryDirectDrag';
+import {
+  ExplorerWorkflowButton,
+  ExplorerWorkflowEmptyState,
+  ExplorerWorkflowFieldGrid,
+  ExplorerWorkflowInput,
+  ExplorerWorkflowMetaStrip,
+  ExplorerWorkflowResultCard,
+  ExplorerWorkflowResultCardHeader,
+  ExplorerWorkflowResultList,
+  ExplorerWorkflowResultRow,
+  ExplorerWorkflowRowActions,
+  ExplorerWorkflowSection,
+  ExplorerWorkflowStatusNotice,
+} from './explorer/ExplorerWorkflowPrimitives';
 
 export interface PluginFileEntry extends RuntimeFileEntry {}
 
@@ -110,6 +129,7 @@ export interface OverlayPluginApi {
   settings?: OverlayPluginSettingsApi;
   storage?: OverlayPluginStorageApi;
   assets?: OverlayPluginAssetsApi;
+  workflows: OverlayPluginWorkflowApi;
   refreshPlugins: () => Promise<void>;
   openPluginsFolder: () => Promise<void>;
   runBackend: (entry: string, args?: string[]) => Promise<PluginBackendResult>;
@@ -145,6 +165,17 @@ export interface OverlayPluginSettingsApi {
   subscribe: (
     listener: (values: Record<string, OverlayPluginSettingsValue>) => void,
   ) => () => void;
+}
+
+export interface OverlayPluginWorkflowApi {
+  open: (
+    workflowId: string,
+    options?: {
+      payload?: Record<string, unknown> | null;
+      titleOverride?: string | null;
+    },
+  ) => Promise<void>;
+  close: () => Promise<void>;
 }
 
 export interface OverlayPluginHostContext {
@@ -351,6 +382,35 @@ export interface OverlayPluginPreviewLaneDefinition {
   component: React.ComponentType<OverlayPluginPreviewLaneProps>;
 }
 
+export interface OverlayPluginWorkflowHostContext {
+  mode: 'explorer-workflow';
+  width: number;
+  height: number;
+  compact: boolean;
+  density: 'compact' | 'regular';
+}
+
+export interface OverlayPluginWorkflowProps {
+  plugin: OverlayPluginContext;
+  api: OverlayPluginApi;
+  appearance: OverlayPluginProps['appearance'];
+  host: OverlayPluginWorkflowHostContext;
+  executionContext: ExecutionContextSnapshot | null;
+  workflow: OverlayPluginWorkflowDescriptor;
+  launch: ExplorerWorkflowLaunchRequest<Record<string, unknown> | null>;
+  controls: ExplorerWorkflowHostControls;
+}
+
+export interface OverlayPluginWorkflowDefinition {
+  component: React.ComponentType<OverlayPluginWorkflowProps>;
+  descriptor?: Partial<
+    Pick<
+      OverlayPluginWorkflowDescriptor,
+      'title' | 'description' | 'iconName' | 'keywords' | 'contexts' | 'defaultSize'
+    >
+  >;
+}
+
 export interface OverlayPluginSettingsSlotHost {
   getValues: () => Record<string, OverlayPluginSettingsValue>;
   getValue: <TValue = OverlayPluginSettingsValue>(
@@ -392,6 +452,14 @@ export type BoundOverlayPluginSettingsSlotProps = Omit<
 
 export type BoundOverlayPluginSettingsSlotComponent =
   React.ComponentType<BoundOverlayPluginSettingsSlotProps>;
+
+export type BoundOverlayPluginWorkflowProps = Omit<
+  OverlayPluginWorkflowProps,
+  'plugin' | 'api'
+>;
+
+export type BoundOverlayPluginWorkflowComponent =
+  React.ComponentType<BoundOverlayPluginWorkflowProps>;
 
 export type OverlayPluginSourceKind = 'file-plugin' | 'package-plugin';
 
@@ -482,6 +550,19 @@ export function defineSettingsSlot(
     | OverlayPluginSettingsSlotDefinition
     | React.ComponentType<OverlayPluginSettingsSlotProps>,
 ): OverlayPluginSettingsSlotDefinition {
+  if (typeof definition === 'function') {
+    return {
+      component: definition,
+    };
+  }
+  return definition;
+}
+
+export function defineWorkflow(
+  definition:
+    | OverlayPluginWorkflowDefinition
+    | React.ComponentType<OverlayPluginWorkflowProps>,
+): OverlayPluginWorkflowDefinition {
   if (typeof definition === 'function') {
     return {
       component: definition,
@@ -635,6 +716,22 @@ export async function loadPluginSettingsSlotFromSource(
   return normalizeSettingsSlotExport(exported).component;
 }
 
+export async function loadPluginWorkflowFromSource(
+  source: string,
+  entry: PluginFileEntry,
+  options?: {
+    resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
+  },
+): Promise<OverlayPluginWorkflowDefinition> {
+  const transpiledGraph = await transpilePluginGraph(
+    entry.path,
+    source,
+    options?.resolveRelativeModuleSource,
+  );
+  const exported = executePluginModuleGraph(transpiledGraph);
+  return normalizeWorkflowExport(exported);
+}
+
 async function transpilePluginGraph(
   entryModulePath: string,
   source: string,
@@ -661,9 +758,22 @@ function executePluginModuleGraph(graph: RuntimeModuleGraph): unknown {
       definePlugin,
       definePreviewLane,
       defineSettingsSlot,
+      defineWorkflow,
       getPluginPanelOpenRequestEvent,
       readPluginPanelOpenRequest,
       requestPluginPanelOpen,
+      ExplorerWorkflowButton,
+      ExplorerWorkflowEmptyState,
+      ExplorerWorkflowFieldGrid,
+      ExplorerWorkflowInput,
+      ExplorerWorkflowMetaStrip,
+      ExplorerWorkflowResultCard,
+      ExplorerWorkflowResultCardHeader,
+      ExplorerWorkflowResultList,
+      ExplorerWorkflowResultRow,
+      ExplorerWorkflowRowActions,
+      ExplorerWorkflowSection,
+      ExplorerWorkflowStatusNotice,
     },
     'greeblefs-workbenches': WorkbenchAdapters,
   };
@@ -768,6 +878,41 @@ function normalizeSettingsSlotExport(
 
   throw new Error(
     'Settings slot must export either a React component or defineSettingsSlot({ component }).',
+  );
+}
+
+function normalizeWorkflowExport(
+  exported: unknown,
+): OverlayPluginWorkflowDefinition {
+  const candidate = unwrapRuntimeModuleExport(exported, [
+    'pluginWorkflow',
+    'workflow',
+    'plugin',
+  ]);
+
+  if (typeof candidate === 'function') {
+    return {
+      component:
+        candidate as React.ComponentType<OverlayPluginWorkflowProps>,
+    };
+  }
+
+  if (
+    candidate &&
+    typeof candidate === 'object' &&
+    'component' in candidate
+  ) {
+    const definition = candidate as OverlayPluginWorkflowDefinition;
+    if (typeof definition.component !== 'function') {
+      throw new Error(
+        'Workflow export must provide a React component.',
+      );
+    }
+    return definition;
+  }
+
+  throw new Error(
+    'Workflow must export either a React component or defineWorkflow({ component }).',
   );
 }
 

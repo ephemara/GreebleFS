@@ -193,9 +193,26 @@ const workspaceHeaderAction: LoadedExplorerAction = {
     env: {},
   },
   presentation: {
+    kind: 'command',
     outputTarget: 'silent',
   },
   warnings: [],
+};
+
+const workspaceWorkflowAction: LoadedExplorerAction = {
+  ...workspaceHeaderAction,
+  id: 'workspace.workflow-action',
+  actionId: 'workflow-action',
+  title: 'Launch Batch Rename',
+  execution: null,
+  presentation: {
+    kind: 'workflow',
+    outputTarget: 'silent',
+    workflowId: 'builtin.batchRename',
+    workflowPayload: {
+      source: 'workspace-test',
+    },
+  },
 };
 
 function renderWorkspace(
@@ -570,6 +587,80 @@ describe('ExplorerWorkspace', () => {
     expect(
       placedControl?.getAttribute('data-overlay-explorer-control-zone'),
     ).toBe('end');
+  });
+
+  it('dispatches workflow launch requests for workflow-backed workspace header actions', async () => {
+    const workflowRequests: Array<Record<string, unknown>> = [];
+    const handleWorkflowRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<Record<string, unknown>>;
+      workflowRequests.push(customEvent.detail);
+    };
+    window.addEventListener(
+      'greeblefs:explorer-workflow-request',
+      handleWorkflowRequest,
+    );
+
+    useSettingsStore.setState((state) => ({
+      ...state,
+      settings: {
+        ...state.settings,
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'operator',
+        },
+        explorer: {
+          ...state.settings.explorer,
+          chromeLayoutOverridesByThemeId: {
+            ...state.settings.explorer.chromeLayoutOverridesByThemeId,
+            operator: {
+              ...(state.settings.explorer.chromeLayoutOverridesByThemeId.operator ?? {}),
+              default: {
+                entries: [
+                  {
+                    controlId: 'action:workspace.workflow-action',
+                    surfaceId: 'workspaceHeader',
+                    zone: 'end',
+                    order: 10,
+                    offsetPx: 64,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    }));
+
+    renderWorkspace(undefined, {
+      actions: [workspaceWorkflowAction],
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /launch batch rename/i }),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /launch batch rename/i }),
+    );
+
+    expect(workflowRequests).toHaveLength(1);
+    expect(workflowRequests[0]).toMatchObject({
+      kind: 'open',
+      workflowId: 'builtin.batchRename',
+      source: 'workspace-action',
+      targetPaneId: PRIMARY_EXPLORER_INSTANCE_ID,
+      workspaceTabId: PRIMARY_EXPLORER_TAB_ID,
+      payload: {
+        source: 'workspace-test',
+      },
+    });
+
+    window.removeEventListener(
+      'greeblefs:explorer-workflow-request',
+      handleWorkflowRequest,
+    );
   });
 
   it('keeps the workspace header representative during customize mode', async () => {

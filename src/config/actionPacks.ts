@@ -36,6 +36,7 @@ export type ExplorerActionOutputTarget =
   | 'preview-terminal'
   | 'native-terminal'
   | 'silent';
+export type ExplorerActionPresentationKind = 'command' | 'workflow';
 
 export interface ExplorerActionSelectionDefinition {
   minCount?: number;
@@ -54,7 +55,10 @@ export interface ExplorerActionExecutionDefinition {
 }
 
 export interface ExplorerActionPresentationDefinition {
+  kind: ExplorerActionPresentationKind;
   outputTarget: ExplorerActionOutputTarget;
+  workflowId?: string;
+  workflowPayload?: Record<string, unknown> | null;
 }
 
 export interface ExplorerActionPackManifest {
@@ -102,7 +106,7 @@ export interface LoadedExplorerAction {
   contexts: ExplorerActionMenuContextKind[];
   appliesTo: ExplorerActionSelectionTarget;
   selection: ExplorerActionSelectionDefinition;
-  execution: ExplorerActionExecutionDefinition;
+  execution: ExplorerActionExecutionDefinition | null;
   presentation: ExplorerActionPresentationDefinition;
   iconName?: string;
   iconAssetPath?: string;
@@ -272,6 +276,19 @@ function sanitizeActionOutputTarget(value: unknown): ExplorerActionOutputTarget 
     : 'task-center';
 }
 
+function sanitizeActionPresentationKind(
+  value: unknown,
+  workflowId?: string,
+): ExplorerActionPresentationKind {
+  if (value === 'workflow') {
+    return 'workflow';
+  }
+  if (value === 'command') {
+    return 'command';
+  }
+  return workflowId ? 'workflow' : 'command';
+}
+
 function sanitizeSelectionCount(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? Math.round(value)
@@ -315,8 +332,12 @@ function normalizeActionExecution(value: unknown): ExplorerActionExecutionDefini
 
 function normalizeActionPresentation(value: unknown): ExplorerActionPresentationDefinition {
   const record = asRecord(value);
+  const workflowId = asString(record?.workflowId) || undefined;
   return {
+    kind: sanitizeActionPresentationKind(record?.kind, workflowId),
     outputTarget: sanitizeActionOutputTarget(record?.outputTarget),
+    workflowId,
+    workflowPayload: asRecord(record?.workflowPayload),
   };
 }
 
@@ -509,7 +530,12 @@ async function loadActionsForPack(
       const appliesTo = sanitizeActionAppliesTo(actionRecord.manifest.appliesTo);
       const selection = normalizeActionSelection(actionRecord.manifest.selection, appliesTo);
       const execution = normalizeActionExecution(actionRecord.manifest.execution);
-      if (!execution) {
+      const presentation = normalizeActionPresentation(actionRecord.manifest.presentation);
+      if (presentation.kind === 'workflow' && !presentation.workflowId) {
+        warnings.push(`${packName}: ${title} is missing presentation.workflowId.`);
+        continue;
+      }
+      if (presentation.kind === 'command' && !execution) {
         warnings.push(`${packName}: ${title} is missing execution.entry.`);
         continue;
       }
@@ -539,7 +565,7 @@ async function loadActionsForPack(
         appliesTo,
         selection,
         execution,
-        presentation: normalizeActionPresentation(actionRecord.manifest.presentation),
+        presentation,
         iconName: iconLooksLikeAssetPath ? 'Sparkles' : (iconValue || 'Sparkles'),
         iconAssetPath,
         iconAssetUrl: iconAssetPath ? readDirectoryAssetUrl(iconAssetPath) : undefined,

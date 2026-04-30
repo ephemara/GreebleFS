@@ -30,6 +30,7 @@ const emptyDiscoveryResult: pluginPackages.OverlayPluginDiscoveryResult = {
   contextMenuItems: [],
   previewLanes: [],
   settingsSlots: [],
+  workflows: [],
   warnings: [],
 };
 

@@ -25,6 +25,7 @@ import type {
   OverlayPluginExplorerActionContribution,
   OverlayPluginPreviewLaneContribution,
   OverlayPluginSettingsSlotContribution,
+  OverlayPluginWorkflowContribution,
 } from '../config/pluginContributions';
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
@@ -40,6 +41,7 @@ import {
 } from './extensionHostApi';
 import { createPluginIndexApi } from './pluginIndexApi';
 import { createOverlayPluginRuntimeSettingsController } from './pluginSettingsRuntime';
+import { dispatchExplorerWorkflowRequest } from './explorerWorkflowBridge';
 import { useSettingsStore } from '../store/settingsStore';
 
 export interface UseFolderPluginRuntimeResult {
@@ -55,6 +57,7 @@ export interface UseFolderPluginRuntimeResult {
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   pluginPreviewLanes: OverlayPluginPreviewLaneContribution[];
   pluginSettingsSlots: OverlayPluginSettingsSlotContribution[];
+  pluginWorkflows: OverlayPluginWorkflowContribution[];
   folderPluginsError: string | null;
   folderPluginsLoading: boolean;
   openPluginsFolder: () => Promise<void>;
@@ -90,6 +93,7 @@ export function useFolderPluginRuntime(
   const [pluginContextMenuItems, setPluginContextMenuItems] = useState<OverlayPluginContextMenuContribution[]>([]);
   const [pluginPreviewLanes, setPluginPreviewLanes] = useState<OverlayPluginPreviewLaneContribution[]>([]);
   const [pluginSettingsSlots, setPluginSettingsSlots] = useState<OverlayPluginSettingsSlotContribution[]>([]);
+  const [pluginWorkflows, setPluginWorkflows] = useState<OverlayPluginWorkflowContribution[]>([]);
   const [folderPluginsError, setFolderPluginsError] = useState<string | null>(null);
   const [folderPluginsLoading, setFolderPluginsLoading] = useState(true);
 
@@ -175,6 +179,27 @@ export function useFolderPluginRuntime(
         resetValues: settingsController.resetValues,
         subscribe: settingsController.subscribe,
       },
+      workflows: {
+        open: async (workflowId, options) => {
+          dispatchExplorerWorkflowRequest({
+            kind: 'open',
+            workflowId,
+            payload: options?.payload ?? null,
+            titleOverride: options?.titleOverride ?? null,
+            source: 'plugin-api',
+            pluginId: plugin.id,
+            targetPaneId: executionContext?.paneId ?? null,
+            workspaceTabId: executionContext?.workspaceTabId ?? null,
+          });
+        },
+        close: async () => {
+          dispatchExplorerWorkflowRequest({
+            kind: 'close',
+            targetPaneId: executionContext?.paneId ?? null,
+            workspaceTabId: executionContext?.workspaceTabId ?? null,
+          });
+        },
+      },
       storage: {
         rootDir: storageRoot,
         ensureDir: ensureStorageDir,
@@ -229,6 +254,7 @@ export function useFolderPluginRuntime(
       setPluginContextMenuItems([]);
       setPluginPreviewLanes([]);
       setPluginSettingsSlots([]);
+      setPluginWorkflows([]);
       setFolderPluginsError(null);
       setFolderPluginsLoading(false);
       return;
@@ -297,6 +323,7 @@ export function useFolderPluginRuntime(
           setPluginContextMenuItems(discovered.contextMenuItems);
           setPluginPreviewLanes(discovered.previewLanes);
           setPluginSettingsSlots(discovered.settingsSlots);
+          setPluginWorkflows(discovered.workflows);
           setFolderPluginsError(discovered.warnings.length > 0 ? discovered.warnings.join('\n') : null);
         } catch (error) {
           setFolderPlugins([]);
@@ -311,6 +338,7 @@ export function useFolderPluginRuntime(
           setPluginContextMenuItems([]);
           setPluginPreviewLanes([]);
           setPluginSettingsSlots([]);
+          setPluginWorkflows([]);
           setFolderPluginsError(String(error));
         } finally {
           setFolderPluginsLoading(false);
@@ -480,6 +508,7 @@ export function useFolderPluginRuntime(
     pluginContextMenuItems,
     pluginPreviewLanes,
     pluginSettingsSlots,
+    pluginWorkflows,
     folderPluginsError,
     folderPluginsLoading,
     openPluginsFolder,

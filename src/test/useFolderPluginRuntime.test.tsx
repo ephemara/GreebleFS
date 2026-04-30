@@ -31,6 +31,7 @@ const emptyDiscoveryResult: pluginPackages.OverlayPluginDiscoveryResult = {
   contextMenuItems: [],
   previewLanes: [],
   settingsSlots: [],
+  workflows: [],
   warnings: [],
 };
 
@@ -530,5 +531,76 @@ describe('useFolderPluginRuntime', () => {
       density: 'compact',
       autoWrap: true,
     });
+  });
+
+  it('dispatches explorer workflow bridge requests from the bound plugin workflow api', async () => {
+    const workflowRequests: Array<Record<string, unknown>> = [];
+    const handleWorkflowRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<Record<string, unknown>>;
+      workflowRequests.push(customEvent.detail);
+    };
+    window.addEventListener(
+      'greeblefs:explorer-workflow-request',
+      handleWorkflowRequest,
+    );
+
+    const { result } = renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
+
+    const api = result.current
+      .createPluginApi({
+        id: 'notes-tools',
+        name: 'Notes Tools',
+        filePath: 'plugins/notes-tools/index.tsx',
+        pluginRoot: pluginSystemConfig.pluginsDirectory,
+        pluginDirectory: 'plugins/notes-tools',
+        backendDirectory: 'plugins/notes-tools/backend',
+      })
+      .bindExecutionContext({
+        roots: [],
+        activeDirectory: 'C:/workspace/notes',
+        cwd: 'C:/workspace/notes',
+        focusedEntry: null,
+        selectedEntries: [],
+        previewSession: null,
+        paneId: 'pane-1',
+        workspaceTabId: 'tab-1',
+        repoContext: null,
+        activeFileType: null,
+        revision: 'workflow-test',
+      });
+
+    await act(async () => {
+      await api.workflows.open('builtin.batchRename', {
+        payload: { preset: 'notes' },
+        titleOverride: 'Rename Notes',
+      });
+      await api.workflows.close();
+    });
+
+    expect(workflowRequests).toEqual([
+      expect.objectContaining({
+        kind: 'open',
+        workflowId: 'builtin.batchRename',
+        source: 'plugin-api',
+        pluginId: 'notes-tools',
+        targetPaneId: 'pane-1',
+        workspaceTabId: 'tab-1',
+        titleOverride: 'Rename Notes',
+        payload: {
+          preset: 'notes',
+        },
+      }),
+      expect.objectContaining({
+        kind: 'close',
+        targetPaneId: 'pane-1',
+        workspaceTabId: 'tab-1',
+      }),
+    ]);
+
+    window.removeEventListener(
+      'greeblefs:explorer-workflow-request',
+      handleWorkflowRequest,
+    );
   });
 });

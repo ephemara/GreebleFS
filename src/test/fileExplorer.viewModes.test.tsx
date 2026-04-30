@@ -762,6 +762,7 @@ const sampleExplorerAction: LoadedExplorerAction = {
     env: {},
   },
   presentation: {
+    kind: "command",
     outputTarget: "silent",
   },
   warnings: [],

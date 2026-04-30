@@ -1,4 +1,11 @@
-import { useEffect, useId, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 
 type AppDialogTone = 'accent' | 'danger';
 
@@ -43,6 +50,89 @@ interface AppConfirmDialogProps {
   children?: ReactNode;
 }
 
+interface AppModalSurfaceProps {
+  children: ReactNode;
+  onClose?: () => void;
+  closeOnBackdrop?: boolean;
+  closeOnEscape?: boolean;
+  dismissDisabled?: boolean;
+}
+
+export function AppModalSurface({
+  children,
+  onClose,
+  closeOnBackdrop = true,
+  closeOnEscape = true,
+  dismissDisabled = false,
+}: AppModalSurfaceProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const panelElement = panelRef.current;
+    if (!panelElement) {
+      return;
+    }
+
+    const focusableElements = getFocusableElements(panelElement);
+    const initialFocusTarget =
+      focusableElements[0] ?? panelElement;
+    initialFocusTarget.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!closeOnEscape || dismissDisabled) {
+      return;
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+      event.preventDefault();
+      onClose?.();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeOnEscape, dismissDisabled, onClose]);
+
+  return (
+    <div
+      role="presentation"
+      onMouseDown={(event) => {
+        if (
+          !closeOnBackdrop ||
+          dismissDisabled ||
+          event.target !== event.currentTarget
+        ) {
+          return;
+        }
+        onClose?.();
+      }}
+      style={overlayStyle}
+    >
+      <div
+        ref={panelRef}
+        onKeyDown={(event) => {
+          if (event.key !== 'Tab') {
+            return;
+          }
+          trapFocusInside(event, panelRef.current);
+        }}
+        tabIndex={-1}
+        style={{
+          outline: 'none',
+          minWidth: 0,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function AppDialogFrame({
   title,
   description,
@@ -66,16 +156,7 @@ export function AppDialogFrame({
     : maxHeight;
 
   return (
-    <div
-      role="presentation"
-      onMouseDown={(event) => {
-        if (!closeOnBackdrop || event.target !== event.currentTarget) {
-          return;
-        }
-        onClose?.();
-      }}
-      style={overlayStyle}
-    >
+    <AppModalSurface onClose={onClose} closeOnBackdrop={closeOnBackdrop}>
       <div
         role="dialog"
         aria-modal="true"
@@ -100,7 +181,7 @@ export function AppDialogFrame({
         {children ? <div style={{ marginTop: 16 }}>{children}</div> : null}
         {actions ? <div style={actionsStyle}>{actions}</div> : null}
       </div>
-    </div>
+    </AppModalSurface>
   );
 }
 
@@ -239,6 +320,46 @@ function getToneButtonStyle(tone: AppDialogTone): CSSProperties {
   return primaryButtonStyle;
 }
 
+function getFocusableElements(root: HTMLElement): HTMLElement[] {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => !element.hasAttribute('disabled'));
+}
+
+function trapFocusInside(
+  event: KeyboardEvent<HTMLDivElement>,
+  root: HTMLDivElement | null,
+): void {
+  if (!root) {
+    return;
+  }
+  const focusableElements = getFocusableElements(root);
+  if (focusableElements.length === 0) {
+    event.preventDefault();
+    root.focus();
+    return;
+  }
+
+  const firstElement = focusableElements[0];
+  const lastElement = focusableElements[focusableElements.length - 1];
+  const activeElement = document.activeElement;
+
+  if (event.shiftKey) {
+    if (activeElement === firstElement || activeElement === root) {
+      event.preventDefault();
+      lastElement.focus();
+    }
+    return;
+  }
+
+  if (activeElement === lastElement) {
+    event.preventDefault();
+    firstElement.focus();
+  }
+}
+
 const overlayStyle: CSSProperties = {
   position: 'fixed',
   inset: 0,
@@ -247,7 +368,7 @@ const overlayStyle: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   padding: 'clamp(12px, 2vw, 20px)',
-  background: 'rgba(0,0,0,0.72)',
+  background: 'var(--overlay-explorer-modal-scrim, var(--overlay-bg-scrim))',
 };
 
 const panelStyle: CSSProperties = {
@@ -255,7 +376,7 @@ const panelStyle: CSSProperties = {
   border: '1px solid var(--overlay-explorer-preview-border, var(--overlay-border))',
   background: 'var(--overlay-explorer-preview-bg, var(--overlay-bg-panel))',
   color: 'var(--overlay-text-primary)',
-  boxShadow: '0 24px 64px rgba(0,0,0,0.9)',
+  boxShadow: 'var(--overlay-explorer-modal-shadow, var(--overlay-shadow))',
   padding: 'clamp(16px, 1.8vw, 20px)',
   display: 'flex',
   flexDirection: 'column',
@@ -334,8 +455,8 @@ const primaryButtonStyle: CSSProperties = {
 };
 
 const dangerButtonStyle: CSSProperties = {
-  background: 'rgba(248,113,113,0.12)',
-  border: '1px solid rgba(248,113,113,0.28)',
+  background: 'var(--overlay-explorer-danger-soft-bg, rgba(248,113,113,0.12))',
+  border: '1px solid var(--overlay-explorer-danger-soft-border, rgba(248,113,113,0.28))',
   borderRadius: 'var(--overlay-explorer-control-radius, 10px)',
   color: 'var(--overlay-danger, #f87171)',
   padding: '7px 14px',
