@@ -261,7 +261,7 @@ vi.mock('../runtime/tauriClient', () => ({
 import App from '../App';
 import * as appearanceModule from '../config/appearance';
 import { LOCAL_APP_ZOOM_HOTKEY_SCOPE_ATTRIBUTE } from '../config/hotkeys';
-import { overlayVisualControls } from '../config/overlayWindow';
+import { overlayVisualControls, panelWindowGeometry } from '../config/overlayWindow';
 import { overlayThemeRendererApiVersion } from '../components/themeRendererRuntime';
 import { commands } from '../runtime/tauriClient';
 import { resetMobileShareState } from '../store/mobileShareStore';
@@ -723,7 +723,6 @@ describe('App dock mode behavior', () => {
       dockThemeMode: defaultSettings.appearance.dockThemeMode,
       customThemes: defaultSettings.appearance.customThemes,
       uiFontFamily: defaultSettings.appearance.uiFontFamily,
-      monoFontFamily: defaultSettings.appearance.monoFontFamily,
       panelTransparency: defaultSettings.appearance.panelTransparency,
       windowMode: 'overlay',
     }).baseTheme;
@@ -817,6 +816,13 @@ describe('App dock mode behavior', () => {
       expect(screen.getByTitle('Minimize')).toBeInTheDocument();
       expect(screen.getByTestId('window-controls')).toBeInTheDocument();
     });
+
+    expect(vi.mocked(commands.windowApplyMode)).toHaveBeenLastCalledWith(expect.objectContaining({
+      width: panelWindowGeometry.defaultWidth,
+      height: panelWindowGeometry.defaultHeight,
+      x: Math.round((1920 - panelWindowGeometry.defaultWidth) / 2),
+      y: Math.round((1080 - panelWindowGeometry.defaultHeight) / 2),
+    }));
   });
 
   it('reapplies window mode once when syncing tray and taskbar changes', async () => {

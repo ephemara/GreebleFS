@@ -249,6 +249,7 @@ import {
   computePanelWindowLayout,
   ensureDir,
   parseExternalArgs,
+  type PanelWindowLayout,
 } from './runtime/overlayRuntimeUtils';
 import {
   FILESYSTEM_AQUARIUM_PANEL_ID,
@@ -591,6 +592,36 @@ function resolveShellBackgroundColor(
   const minimumGlassAlpha = Math.max(0.16, translucentAlpha * 0.45);
   const targetAlpha = solidAlpha - ((solidAlpha - minimumGlassAlpha) * normalizedStrength);
   return withColorAlpha(translucentColor, targetAlpha);
+}
+
+function resolveWindowedModeApplyGeometry(args: {
+  layout: PanelWindowLayout;
+  shouldRestoreMaximizedWindow: boolean;
+  shouldSeedRestoreBoundsBeforeMaximize: boolean;
+}): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  if (
+    !args.shouldRestoreMaximizedWindow
+    || args.shouldSeedRestoreBoundsBeforeMaximize
+  ) {
+    return {
+      x: args.layout.x,
+      y: args.layout.y,
+      width: args.layout.width,
+      height: args.layout.height,
+    };
+  }
+
+  return {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  };
 }
 
 const EMPTY_LAYOUT_PANEL_STATE: LayoutPanelState = {
@@ -2584,8 +2615,14 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       }
 
       const currentlyMaximized = await win.isMaximized().catch(() => false);
+      const shouldSeedRestoreBoundsBeforeMaximize = lastWindowedMaximizedRef.current;
       const shouldRestoreMaximizedWindow =
-        lastWindowedMaximizedRef.current || currentlyMaximized;
+        shouldSeedRestoreBoundsBeforeMaximize || currentlyMaximized;
+      const applyGeometry = resolveWindowedModeApplyGeometry({
+        layout,
+        shouldRestoreMaximizedWindow,
+        shouldSeedRestoreBoundsBeforeMaximize,
+      });
       isProgrammaticResizeRef.current = true;
 
       if (isTauri()) {
@@ -2594,10 +2631,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           alwaysOnTop: false,
           shadow: false,
           skipTaskbar: shouldSkipTaskbar,
-          x: shouldRestoreMaximizedWindow ? 0 : layout.x,
-          y: shouldRestoreMaximizedWindow ? 0 : layout.y,
-          width: shouldRestoreMaximizedWindow ? 0 : layout.width,
-          height: shouldRestoreMaximizedWindow ? 0 : layout.height,
+          x: applyGeometry.x,
+          y: applyGeometry.y,
+          width: applyGeometry.width,
+          height: applyGeometry.height,
           minWidth: constraints.minWidth,
           minHeight: constraints.minHeight,
           maxWidth: constraints.maxWidth,
@@ -3046,8 +3083,17 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           scaleFactor,
         });
         const currentlyMaximized = await win.isMaximized().catch(() => false);
+        // When we come back from dock mode after a maximized app session,
+        // Windows keeps the dock-sized restore rect unless we seed a real
+        // app-mode rectangle before maximizing again.
+        const shouldSeedRestoreBoundsBeforeMaximize = lastWindowedMaximizedRef.current;
         const shouldRestoreMaximizedWindow =
-          lastWindowedMaximizedRef.current || currentlyMaximized;
+          shouldSeedRestoreBoundsBeforeMaximize || currentlyMaximized;
+        const applyGeometry = resolveWindowedModeApplyGeometry({
+          layout,
+          shouldRestoreMaximizedWindow,
+          shouldSeedRestoreBoundsBeforeMaximize,
+        });
         isProgrammaticResizeRef.current = true;
         try {
           unwrapTauriResult(await commands.windowApplyMode({
@@ -3055,10 +3101,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
             alwaysOnTop: false,
             shadow: false,
             skipTaskbar: shouldSkipTaskbar,
-            x: shouldRestoreMaximizedWindow ? 0 : layout.x,
-            y: shouldRestoreMaximizedWindow ? 0 : layout.y,
-            width: shouldRestoreMaximizedWindow ? 0 : layout.width,
-            height: shouldRestoreMaximizedWindow ? 0 : layout.height,
+            x: applyGeometry.x,
+            y: applyGeometry.y,
+            width: applyGeometry.width,
+            height: applyGeometry.height,
             minWidth: constraints.minWidth,
             minHeight: constraints.minHeight,
             maxWidth: constraints.maxWidth,
