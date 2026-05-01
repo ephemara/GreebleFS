@@ -6,9 +6,6 @@ import {
   clearManagedContentDirectoryStackOverrides,
   type ManagedContentDirectoryStackOverride,
 } from '../config/appContentDirectories';
-import type { Result } from '../generated/tauri';
-import { unwrapTauriResult } from './tauriClient';
-
 export type UsrProfileLaneMode = 'shared-root' | 'profile-overlay';
 
 export interface UsrProfileSummary {
@@ -285,12 +282,34 @@ function currentSettingsJsonOrNull(explicitSettings?: unknown): string | null {
   }
 }
 
+function formatUsrProfileInvokeError(commandName: string, error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  if (typeof error === 'string' && error.trim().length > 0) {
+    return new Error(error);
+  }
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message?: unknown }).message === 'string'
+  ) {
+    return new Error((error as { message: string }).message);
+  }
+
+  return new Error(`Tauri command ${commandName} failed`);
+}
+
 async function invokeUsrProfileCommand<T>(
   commandName: string,
   args: Record<string, unknown>,
 ): Promise<T> {
-  const result = await invoke<Result<T, string>>(commandName, args);
-  return unwrapTauriResult(result);
+  try {
+    return await invoke<T>(commandName, args);
+  } catch (error) {
+    throw formatUsrProfileInvokeError(commandName, error);
+  }
 }
 
 export async function initializeUsrProfilesBootstrap(): Promise<UsrProfileRuntimeSnapshot | null> {
