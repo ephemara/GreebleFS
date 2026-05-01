@@ -1629,7 +1629,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     ],
   );
   const activeDockResizeGrid = dockResizeTelemetry?.grid ?? dockTerminalGrid;
-  const effectiveWindowZoom = isWindowedMode && isWindowMaximized ? 1 : clampedAppZoom;
+  const effectiveWindowZoom = clampedAppZoom;
   const scaledWidth = `${100 / effectiveWindowZoom}%`;
   const scaledHeight = `${100 / effectiveWindowZoom}%`;
   const shellBackgroundColor = effectiveShellBlurEnabled

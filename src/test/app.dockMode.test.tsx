@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../panels/panelRegistry', () => ({
@@ -90,6 +91,20 @@ vi.mock('../components/PluginsManager', () => ({
 
 vi.mock('../components/WorkbenchNavigationSurface', () => ({
   WorkbenchNavigationSurface: () => null,
+}));
+
+vi.mock('../components/OverlayShellScene', () => ({
+  OverlayShellScene: ({
+    zoom,
+    contentLayer,
+  }: {
+    zoom: number;
+    contentLayer: ReactNode;
+  }) => (
+    <div data-testid="overlay-shell-scene" data-zoom={String(zoom)}>
+      {contentLayer}
+    </div>
+  ),
 }));
 
 vi.mock('../components/WindowControls', () => ({
@@ -823,6 +838,19 @@ describe('App dock mode behavior', () => {
       x: Math.round((1920 - panelWindowGeometry.defaultWidth) / 2),
       y: Math.round((1080 - panelWindowGeometry.defaultHeight) / 2),
     }));
+  });
+
+  it('keeps the configured app zoom while a windowed app is maximized', async () => {
+    setWindowMode('windowed');
+    const currentWindow = getCurrentWindow();
+    vi.mocked(currentWindow.isMaximized).mockResolvedValue(true);
+    useSettingsStore.getState().updateAppearance({ appZoom: 0.82 });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('overlay-shell-scene')).toHaveAttribute('data-zoom', '0.82');
+    });
   });
 
   it('reapplies window mode once when syncing tray and taskbar changes', async () => {
